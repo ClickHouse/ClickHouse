@@ -6,7 +6,9 @@
 #include <Columns/ColumnTuple.h>
 
 #include <Common/typeid_cast.h>
+#include <Columns/ColumnDecimal.h>
 
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
 
@@ -168,7 +170,7 @@ void Set::setHeader(const ColumnsWithTypeAndName & header)
     }
 
     /// Choose data structure to use for the set.
-    data.init(data.chooseMethod(key_columns, key_sizes));
+    data.init(SetVariants::chooseMethod(key_columns, key_sizes));
 }
 
 void Set::fillSetElements()
@@ -275,7 +277,109 @@ void Set::appendSetElements(SetKeyColumns & holder)
 void Set::checkIsCreated() const
 {
     if (!is_created.load())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: Trying to use set before it has been built.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to use set before it has been built.");
+}
+
+ColumnUInt8::Ptr checkDateTimePrecision(const ColumnWithTypeAndName & column_to_cast)
+{
+    // Handle nullable columns
+    const ColumnNullable * original_nullable_column = typeid_cast<const ColumnNullable *>(column_to_cast.column.get());
+    const IColumn * original_nested_column = original_nullable_column
+        ? &original_nullable_column->getNestedColumn()
+        : column_to_cast.column.get();
+
+    // Check if the original column is of ColumnDecimal<DateTime64> type
+    const auto * original_decimal_column = typeid_cast<const ColumnDecimal<DateTime64> *>(original_nested_column);
+    if (!original_decimal_column)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ColumnDecimal for DateTime64");
+
+    // Get the data array from the original column
+    const auto & original_data = original_decimal_column->getData();
+    size_t vec_res_size = original_data.size();
+
+    // Prepare the precision null map
+    auto precision_null_map_column = ColumnUInt8::create(vec_res_size, 0);
+    NullMap & precision_null_map = precision_null_map_column->getData();
+
+    // Determine which rows should be null based on precision loss
+    const auto * datetime64_type = assert_cast<const DataTypeDateTime64 *>(column_to_cast.type.get());
+    auto scale = datetime64_type->getScale();
+    if (scale >= 1)
+    {
+        Int64 scale_multiplier = common::exp10_i32(scale);
+        for (size_t row = 0; row < vec_res_size; ++row)
+        {
+            Int64 value = original_data[row];
+            if (value % scale_multiplier != 0)
+                precision_null_map[row] = 1; // Mark as null due to precision loss
+            else
+                precision_null_map[row] = 0;
+        }
+    }
+
+    return precision_null_map_column;
+}
+
+ColumnPtr mergeNullMaps(const ColumnPtr & null_map_column1, const ColumnUInt8::Ptr & null_map_column2)
+{
+    if (!null_map_column1)
+        return null_map_column2;
+    if (!null_map_column2)
+        return null_map_column1;
+
+    const auto & null_map1 = assert_cast<const ColumnUInt8 &>(*null_map_column1).getData();
+    const auto & null_map2 = (*null_map_column2).getData();
+
+    size_t size = null_map1.size();
+    if (size != null_map2.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Null maps have different sizes");
+
+    auto merged_null_map_column = ColumnUInt8::create(size);
+    auto & merged_null_map = merged_null_map_column->getData();
+
+    for (size_t i = 0; i < size; ++i)
+        merged_null_map[i] = null_map1[i] || null_map2[i];
+
+    return merged_null_map_column;
+}
+
+void Set::processDateTime64Column(
+    const ColumnWithTypeAndName & column_to_cast,
+    ColumnPtr & result,
+    ColumnPtr & null_map_holder,
+    ConstNullMapPtr & null_map) const
+{
+    // Check for sub-second precision and create a null map
+    ColumnUInt8::Ptr filtered_null_map_column = checkDateTimePrecision(column_to_cast);
+
+    // Extract existing null map and nested column from the result
+    const ColumnNullable * result_nullable_column = typeid_cast<const ColumnNullable *>(result.get());
+    const IColumn * nested_result_column = result_nullable_column
+        ? &result_nullable_column->getNestedColumn()
+        : result.get();
+
+    ColumnPtr existing_null_map_column = result_nullable_column
+        ? result_nullable_column->getNullMapColumnPtr()
+        : nullptr;
+
+    if (transform_null_in)
+    {
+        if (!null_map_holder)
+            null_map_holder = filtered_null_map_column;
+        else
+            null_map_holder = mergeNullMaps(null_map_holder, filtered_null_map_column);
+
+        const ColumnUInt8 * null_map_column = checkAndGetColumn<ColumnUInt8>(null_map_holder.get());
+        if (!null_map_column)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Null map must be ColumnUInt8");
+
+        null_map = &null_map_column->getData();
+    }
+    else
+    {
+        ColumnPtr merged_null_map_column = mergeNullMaps(existing_null_map_column, filtered_null_map_column);
+        result = ColumnNullable::create(nested_result_column->getPtr(), merged_null_map_column);
+    }
 }
 
 ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) const
@@ -283,7 +387,7 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
     size_t num_key_columns = columns.size();
 
     if (0 == num_key_columns)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: no columns passed to Set::execute method.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No columns passed to Set::execute method.");
 
     auto res = ColumnUInt8::create();
     ColumnUInt8::Container & vec_res = res->getData();
@@ -314,6 +418,10 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
     Columns materialized_columns;
     materialized_columns.reserve(num_key_columns);
 
+    /// We will check existence in Set only for keys whose components do not contain any NULL value.
+    ConstNullMapPtr null_map{};
+    ColumnPtr null_map_holder;
+
     for (size_t i = 0; i < num_key_columns; ++i)
     {
         ColumnPtr result;
@@ -324,20 +432,24 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
 
         if (!transform_null_in && data_types[i]->canBeInsideNullable())
         {
-            result = castColumnAccurateOrNull(column_to_cast, data_types[i]);
+            result = castColumnAccurateOrNull(column_to_cast, data_types[i], cast_cache.get());
         }
         else
         {
-            result = castColumnAccurate(column_to_cast, data_types[i]);
+            result = castColumnAccurate(column_to_cast, data_types[i], cast_cache.get());
         }
 
-        materialized_columns.emplace_back() = result;
-        key_columns.emplace_back() = materialized_columns.back().get();
+        // If the original column is DateTime64, check for sub-second precision
+        if (isDateTime64(column_to_cast.column->getDataType()))
+        {
+            processDateTime64Column(column_to_cast, result, null_map_holder, null_map);
+        }
+
+        // Append the result to materialized columns
+        materialized_columns.emplace_back(std::move(result));
+        key_columns.emplace_back(materialized_columns.back().get());
     }
 
-    /// We will check existence in Set only for keys whose components do not contain any NULL value.
-    ConstNullMapPtr null_map{};
-    ColumnPtr null_map_holder;
     if (!transform_null_in)
         null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
@@ -346,6 +458,24 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
     return res;
 }
 
+bool Set::hasNull() const
+{
+    checkIsCreated();
+
+    if (!transform_null_in)
+        return false;
+
+    if (data_types.size() != 1)
+        return false;
+
+    if (!data_types[0]->isNullable())
+        return false;
+
+    auto col = data_types[0]->createColumn();
+    col->insert(Field());
+    auto res = execute({ColumnWithTypeAndName(std::move(col), data_types[0], std::string())}, false);
+    return res->getBool(0);
+}
 
 bool Set::empty() const
 {
@@ -558,8 +688,7 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
             lhs.get(row, f);
             if (f.isNull())
                 return 0; // +Inf == +Inf
-            else
-                return -1;
+            return -1;
         }
         return lhs.compareAt(row, 0, *rhs.column, 1);
     };
@@ -625,20 +754,19 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
         /// Check if it's an empty range
         if (!left_included || !right_included)
             return {false, true};
-        else if (left_lower != indices.end() && equals(*left_lower, left_point))
+        if (left_lower != indices.end() && equals(*left_lower, left_point))
             return {true, false};
-        else
-            return {false, true};
+        return {false, true};
     }
 
     /// If there are more than one element in the range, it can always be false. Thus we only need to check if it may be true or not.
     /// Given left_lower >= left_point, right_lower >= right_point, find if there may be a match in between left_lower and right_lower.
     if (left_lower + 1 < right_lower)
     {
-        /// There is an point in between: left_lower + 1
+        /// There is a point in between: left_lower + 1
         return {true, true};
     }
-    else if (left_lower + 1 == right_lower)
+    if (left_lower + 1 == right_lower)
     {
         /// Need to check if left_lower is a valid match, as left_point <= left_lower < right_point <= right_lower.
         /// Note: left_lower is valid.
@@ -649,12 +777,10 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
         /// Check if there is a match at the right boundary.
         return {right_included && right_lower != indices.end() && equals(*right_lower, right_point), true};
     }
-    else // left_lower == right_lower
-    {
-        /// Need to check if right_point is a valid match, as left_point < right_point <= left_lower = right_lower.
-        /// Check if there is a match at the left boundary.
-        return {right_included && right_lower != indices.end() && equals(*right_lower, right_point), true};
-    }
+    // left_lower == right_lower
+    /// Need to check if right_point is a valid match, as left_point < right_point <= left_lower = right_lower.
+    /// Check if there is a match at the left boundary.
+    return {right_included && right_lower != indices.end() && equals(*right_lower, right_point), true};
 }
 
 bool MergeTreeSetIndex::hasMonotonicFunctionsChain() const

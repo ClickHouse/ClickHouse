@@ -1,24 +1,37 @@
-#include <Functions/IFunction.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnsNumber.h>
+#include <Core/Settings.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/getLeastSupertype.h>
-#include <Columns/ColumnMap.h>
+#include <Functions/IFunction.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <Common/HashTable/HashSet.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_variant_type;
+    extern const SettingsBool use_variant_as_common_type;
+}
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
     extern const int ILLEGAL_COLUMN;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -30,9 +43,18 @@ class FunctionMap : public IFunction
 public:
     static constexpr auto name = "map";
 
-    static FunctionPtr create(ContextPtr)
+    explicit FunctionMap(ContextPtr context_)
+        : context(context_)
+        , use_variant_as_common_type(
+              context->getSettingsRef()[Setting::allow_experimental_variant_type] && context->getSettingsRef()[Setting::use_variant_as_common_type])
+        , function_array(FunctionFactory::instance().get("array", context))
+        , function_map_from_arrays(FunctionFactory::instance().get("mapFromArrays", context))
     {
-        return std::make_shared<FunctionMap>();
+    }
+
+    static FunctionPtr create(ContextPtr context)
+    {
+        return std::make_shared<FunctionMap>(context);
     }
 
     String getName() const override
@@ -77,70 +99,57 @@ public:
         }
 
         DataTypes tmp;
-        tmp.emplace_back(getLeastSupertype(keys));
-        tmp.emplace_back(getLeastSupertype(values));
+        if (use_variant_as_common_type)
+        {
+            tmp.emplace_back(getLeastSupertypeOrVariant(keys));
+            tmp.emplace_back(getLeastSupertypeOrVariant(values));
+        }
+        else
+        {
+            tmp.emplace_back(getLeastSupertype(keys));
+            tmp.emplace_back(getLeastSupertype(values));
+        }
         return std::make_shared<DataTypeMap>(tmp);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         size_t num_elements = arguments.size();
-
         if (num_elements == 0)
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
+
+        ColumnsWithTypeAndName key_args;
+        ColumnsWithTypeAndName value_args;
+        for (size_t i = 0; i < num_elements; i += 2)
+        {
+            key_args.emplace_back(arguments[i]);
+            value_args.emplace_back(arguments[i+1]);
+        }
 
         const auto & result_type_map = static_cast<const DataTypeMap &>(*result_type);
         const DataTypePtr & key_type = result_type_map.getKeyType();
         const DataTypePtr & value_type = result_type_map.getValueType();
+        const DataTypePtr & key_array_type = std::make_shared<DataTypeArray>(key_type);
+        const DataTypePtr & value_array_type = std::make_shared<DataTypeArray>(value_type);
 
-        Columns columns_holder(num_elements);
-        ColumnRawPtrs column_ptrs(num_elements);
+        /// key_array = array(args[0], args[2]...)
+        ColumnPtr key_array = function_array->build(key_args)->execute(key_args, key_array_type, input_rows_count);
+        /// value_array = array(args[1], args[3]...)
+        ColumnPtr value_array = function_array->build(value_args)->execute(value_args, value_array_type, input_rows_count);
 
-        for (size_t i = 0; i < num_elements; ++i)
-        {
-            const auto & arg = arguments[i];
-            const auto to_type = i % 2 == 0 ? key_type : value_type;
-
-            ColumnPtr preprocessed_column = castColumn(arg, to_type);
-            preprocessed_column = preprocessed_column->convertToFullColumnIfConst();
-
-            columns_holder[i] = std::move(preprocessed_column);
-            column_ptrs[i] = columns_holder[i].get();
-        }
-
-        /// Create and fill the result map.
-
-        MutableColumnPtr keys_data = key_type->createColumn();
-        MutableColumnPtr values_data = value_type->createColumn();
-        MutableColumnPtr offsets = DataTypeNumber<IColumn::Offset>().createColumn();
-
-        size_t total_elements = input_rows_count * num_elements / 2;
-        keys_data->reserve(total_elements);
-        values_data->reserve(total_elements);
-        offsets->reserve(input_rows_count);
-
-        IColumn::Offset current_offset = 0;
-        for (size_t i = 0; i < input_rows_count; ++i)
-        {
-            for (size_t j = 0; j < num_elements; j += 2)
-            {
-                keys_data->insertFrom(*column_ptrs[j], i);
-                values_data->insertFrom(*column_ptrs[j + 1], i);
-            }
-
-            current_offset += num_elements / 2;
-            offsets->insert(current_offset);
-        }
-
-        auto nested_column = ColumnArray::create(
-            ColumnTuple::create(Columns{std::move(keys_data), std::move(values_data)}),
-            std::move(offsets));
-
-        return ColumnMap::create(nested_column);
+        /// result = mapFromArrays(key_array, value_array)
+        ColumnsWithTypeAndName map_args{{key_array, key_array_type, ""}, {value_array, value_array_type, ""}};
+        return function_map_from_arrays->build(map_args)->execute(map_args, result_type, input_rows_count);
     }
+
+private:
+    ContextPtr context;
+    bool use_variant_as_common_type = false;
+    FunctionOverloadResolverPtr function_array;
+    FunctionOverloadResolverPtr function_map_from_arrays;
 };
 
-/// mapFromArrays(keys, values) is a function that allows you to make key-value pair from a pair of arrays
+/// mapFromArrays(keys, values) is a function that allows you to make key-value pair from a pair of arrays or maps
 class FunctionMapFromArrays : public IFunction
 {
 public:
@@ -152,8 +161,9 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNulls() const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -164,21 +174,28 @@ public:
                 getName(),
                 arguments.size());
 
-        /// The first argument should always be Array.
-        /// Because key type can not be nested type of Map, which is Tuple
-        DataTypePtr key_type;
-        if (const auto * keys_type = checkAndGetDataType<DataTypeArray>(arguments[0].get()))
-            key_type = keys_type->getNestedType();
-        else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be an Array", getName());
+        auto get_nested_type = [&](const DataTypePtr & type)
+        {
+            DataTypePtr nested;
+            if (const auto * type_as_array = checkAndGetDataType<DataTypeArray>(type.get()))
+                nested = type_as_array->getNestedType();
+            else if (const auto * type_as_map = checkAndGetDataType<DataTypeMap>(type.get()))
+                nested = std::make_shared<DataTypeTuple>(type_as_map->getKeyValueTypes());
+            else
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Arguments of function {} must be Array or Map, but {} is given",
+                    getName(),
+                    type->getName());
 
-        DataTypePtr value_type;
-        if (const auto * value_array_type = checkAndGetDataType<DataTypeArray>(arguments[1].get()))
-            value_type = value_array_type->getNestedType();
-        else if (const auto * value_map_type = checkAndGetDataType<DataTypeMap>(arguments[1].get()))
-            value_type = std::make_shared<DataTypeTuple>(value_map_type->getKeyValueTypes());
-        else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for function {} must be Array or Map", getName());
+            return nested;
+        };
+
+        auto key_type = get_nested_type(arguments[0]);
+        auto value_type = get_nested_type(arguments[1]);
+
+        /// We accept Array(Nullable(T)) or Array(LowCardinality(Nullable(T))) as key types as long as the actual array doesn't contain NULL value(this is checked in executeImpl).
+        key_type = removeNullableOrLowCardinalityNullable(key_type);
 
         DataTypes key_value_types{key_type, value_type};
         return std::make_shared<DataTypeMap>(key_value_types);
@@ -187,44 +204,59 @@ public:
     ColumnPtr executeImpl(
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t /* input_rows_count */) const override
     {
-        bool is_keys_const = isColumnConst(*arguments[0].column);
-        ColumnPtr holder_keys;
-        const ColumnArray * col_keys;
-        if (is_keys_const)
+        auto get_array_column = [&](const ColumnPtr & column) -> std::pair<const ColumnArray *, ColumnPtr>
         {
-            holder_keys = arguments[0].column->convertToFullColumnIfConst();
-            col_keys = checkAndGetColumn<ColumnArray>(holder_keys.get());
-        }
-        else
+            bool is_const = isColumnConst(*column);
+            ColumnPtr holder = is_const ? column->convertToFullColumnIfConst() : column;
+
+            const ColumnArray * col_res = nullptr;
+            if (const auto * col_array = checkAndGetColumn<ColumnArray>(holder.get()))
+                col_res = col_array;
+            else if (const auto * col_map = checkAndGetColumn<ColumnMap>(holder.get()))
+                col_res = &col_map->getNestedColumn();
+            else
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Argument columns of function {} must be Array or Map, but {} is given",
+                    getName(),
+                    holder->getName());
+
+            return {col_res, holder};
+        };
+
+        auto [col_keys, key_holder] = get_array_column(arguments[0].column);
+        auto [col_values, values_holder] = get_array_column(arguments[1].column);
+
+        /// Nullable(T) or LowCardinality(Nullable(T)) are okay as nested key types but actual NULL values are not okay.
+        ColumnPtr data_keys = col_keys->getDataPtr();
+        if (isColumnNullableOrLowCardinalityNullable(*data_keys))
         {
-            col_keys = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
+            const NullMap * null_map = nullptr;
+            if (const auto * nullable = checkAndGetColumn<ColumnNullable>(data_keys.get()))
+            {
+                null_map = &nullable->getNullMapData();
+                data_keys = nullable->getNestedColumnPtr();
+            }
+            else if (const auto * low_cardinality = checkAndGetColumn<ColumnLowCardinality>(data_keys.get()))
+            {
+                if (const auto * nullable_dict = checkAndGetColumn<ColumnNullable>(low_cardinality->getDictionaryPtr().get()))
+                {
+                    null_map = &nullable_dict->getNullMapData();
+                    data_keys = ColumnLowCardinality::create(nullable_dict->getNestedColumnPtr(), low_cardinality->getIndexesPtr());
+                }
+            }
+
+            if (null_map && !memoryIsZero(null_map->data(), 0, null_map->size()))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS, "The nested column of first argument in function {} must not contain NULLs", getName());
         }
-
-        if (!col_keys)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The first argument of function {} must be Array", getName());
-
-        bool is_values_const = isColumnConst(*arguments[1].column);
-        ColumnPtr holder_values;
-        if (is_values_const)
-            holder_values = arguments[1].column->convertToFullColumnIfConst();
-        else
-            holder_values = arguments[1].column;
-
-        const ColumnArray * col_values;
-        if (const auto * col_values_array = checkAndGetColumn<ColumnArray>(holder_values.get()))
-            col_values = col_values_array;
-        else if (const auto * col_values_map = checkAndGetColumn<ColumnMap>(holder_values.get()))
-            col_values = &col_values_map->getNestedColumn();
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The second arguments of function {} must be Array or Map", getName());
 
         if (!col_keys->hasEqualOffsets(*col_values))
-            throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Two arguments for function {} must have equal sizes", getName());
+            throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Two arguments of function {} must have equal sizes", getName());
 
-        const auto & data_keys = col_keys->getDataPtr();
         const auto & data_values = col_values->getDataPtr();
         const auto & offsets = col_keys->getOffsetsPtr();
-        auto nested_column = ColumnArray::create(ColumnTuple::create(Columns{data_keys, data_values}), offsets);
+        auto nested_column = ColumnArray::create(ColumnTuple::create(Columns{std::move(data_keys), data_values}), offsets);
         return ColumnMap::create(nested_column);
     }
 };
@@ -235,10 +267,7 @@ public:
     static constexpr auto name = "mapUpdate";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMapUpdate>(); }
 
-    String getName() const override
-    {
-        return name;
-    }
+    String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 2; }
 
@@ -247,9 +276,11 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Number of arguments for function {} doesn't match: passed {}, should be 2",
-                getName(), arguments.size());
+                getName(),
+                arguments.size());
 
         const auto * left = checkAndGetDataType<DataTypeMap>(arguments[0].type.get());
         const auto * right = checkAndGetDataType<DataTypeMap>(arguments[1].type.get());
@@ -365,7 +396,6 @@ public:
         return ColumnMap::create(nested_column);
     }
 };
-
 }
 
 REGISTER_FUNCTION(Map)

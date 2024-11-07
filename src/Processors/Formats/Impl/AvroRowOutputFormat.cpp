@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeMap.h>
 
 #include <Columns/ColumnArray.h>
@@ -27,12 +28,13 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
 
+#include <Common/re2.h>
+
 #include <DataFile.hh>
 #include <Encoder.hh>
 #include <Node.hh>
 #include <Schema.hh>
 
-#include <re2/re2.h>
 #include <boost/algorithm/string.hpp>
 
 namespace DB
@@ -51,7 +53,7 @@ public:
         : string_to_string_regexp(settings_.avro.string_column_pattern)
     {
         if (!string_to_string_regexp.ok())
-            throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP, "Avro: cannot compile re2: {}, error: {}. "
+            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Avro: cannot compile re2: {}, error: {}. "
                 "Look at https://github.com/google/re2/wiki/Syntax for reference.",
                 settings_.avro.string_column_pattern, string_to_string_regexp.error());
     }
@@ -125,7 +127,6 @@ AvroSerializer::SchemaWithSerializeFn createBigIntegerSchemaWithSerializeFn(cons
 }
 
 }
-
 AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeFn(const DataTypePtr & data_type, size_t & type_name_increment, const String & column_name)
 {
     ++type_name_increment;
@@ -258,12 +259,13 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
         }
         case TypeIndex::String:
             if (traits->isStringAsString(column_name))
-                return {avro::StringSchema(), [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
+                return {
+                    avro::StringSchema(),
+                    [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
                     {
                         const std::string_view & s = assert_cast<const ColumnString &>(column).getDataAt(row_num).toView();
                         encoder.encodeString(std::string(s));
-                    }
-                };
+                    }};
             else
                 return {avro::BytesSchema(), [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
                     {
@@ -338,26 +340,28 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             const auto & array_type = assert_cast<const DataTypeArray &>(*data_type);
             auto nested_mapping = createSchemaWithSerializeFn(array_type.getNestedType(), type_name_increment, column_name);
             auto schema = avro::ArraySchema(nested_mapping.schema);
-            return {schema, [nested_mapping](const IColumn & column, size_t row_num, avro::Encoder & encoder)
-            {
-                const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
-                const ColumnArray::Offsets & offsets = column_array.getOffsets();
-                size_t offset = offsets[row_num - 1];
-                size_t next_offset = offsets[row_num];
-                size_t row_count = next_offset - offset;
-                const IColumn & nested_column = column_array.getData();
+            return {
+                schema,
+                [nested_mapping](const IColumn & column, size_t row_num, avro::Encoder & encoder)
+                {
+                    const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
+                    const ColumnArray::Offsets & offsets = column_array.getOffsets();
+                    size_t offset = offsets[row_num - 1];
+                    size_t next_offset = offsets[row_num];
+                    size_t row_count = next_offset - offset;
+                    const IColumn & nested_column = column_array.getData();
 
-                encoder.arrayStart();
-                if (row_count > 0)
-                {
-                    encoder.setItemCount(row_count);
-                }
-                for (size_t i = offset; i < next_offset; ++i)
-                {
-                    nested_mapping.serialize(nested_column, i, encoder);
-                }
-                encoder.arrayEnd();
-            }};
+                    encoder.arrayStart();
+                    if (row_count > 0)
+                    {
+                        encoder.setItemCount(row_count);
+                    }
+                    for (size_t i = offset; i < next_offset; ++i)
+                    {
+                        nested_mapping.serialize(nested_column, i, encoder);
+                    }
+                    encoder.arrayEnd();
+                }};
         }
         case TypeIndex::Nullable:
         {
@@ -367,26 +371,23 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             {
                 return nested_mapping;
             }
-            else
+            avro::UnionSchema union_schema;
+            union_schema.addType(avro::NullSchema());
+            union_schema.addType(nested_mapping.schema);
+            return {union_schema, [nested_mapping](const IColumn & column, size_t row_num, avro::Encoder & encoder)
             {
-                avro::UnionSchema union_schema;
-                union_schema.addType(avro::NullSchema());
-                union_schema.addType(nested_mapping.schema);
-                return {union_schema, [nested_mapping](const IColumn & column, size_t row_num, avro::Encoder & encoder)
+                const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
+                if (!col.isNullAt(row_num))
                 {
-                    const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
-                    if (!col.isNullAt(row_num))
-                    {
-                        encoder.encodeUnionIndex(1);
-                        nested_mapping.serialize(col.getNestedColumn(), row_num, encoder);
-                    }
-                    else
-                    {
-                        encoder.encodeUnionIndex(0);
-                        encoder.encodeNull();
-                    }
-                }};
-            }
+                    encoder.encodeUnionIndex(1);
+                    nested_mapping.serialize(col.getNestedColumn(), row_num, encoder);
+                }
+                else
+                {
+                    encoder.encodeUnionIndex(0);
+                    encoder.encodeNull();
+                }
+            }};
         }
         case TypeIndex::LowCardinality:
         {
@@ -400,6 +401,49 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
         }
         case TypeIndex::Nothing:
             return {avro::NullSchema(), [](const IColumn &, size_t, avro::Encoder & encoder) { encoder.encodeNull(); }};
+        case TypeIndex::Variant:
+        {
+            const auto & variant_type = assert_cast<const DataTypeVariant &>(*data_type);
+
+            avro::UnionSchema union_schema;
+            const auto & nested_types = variant_type.getVariants();
+
+            std::vector<SerializeFn> nested_serializers;
+            nested_serializers.reserve(nested_types.size());
+
+            for (const auto & nested_type : nested_types)
+            {
+                const auto [schema, serialize] = createSchemaWithSerializeFn(nested_type, type_name_increment, column_name);
+                union_schema.addType(schema);
+                nested_serializers.push_back(serialize);
+            }
+
+            // Since Variants have no schema-guaranteed nullability, we need to always include the null as one of the options in Avro Union.
+            // This is because Variant is considered Null in case it doesn't have any of the variants defined.
+            const auto null_union_index = nested_types.size();
+            union_schema.addType(avro::NullSchema());
+
+            return {
+                static_cast<avro::Schema>(union_schema),
+                [serializers = std::move(nested_serializers),
+                 null_union_index](const IColumn & column, const size_t row_num, avro::Encoder & encoder)
+                {
+                    const auto & col = assert_cast<const ColumnVariant &>(column);
+                    const auto global_discriminator = col.globalDiscriminatorAt(row_num);
+
+                    if (global_discriminator == ColumnVariant::NULL_DISCRIMINATOR)
+                    {
+                        encoder.encodeUnionIndex(null_union_index);
+                        encoder.encodeNull();
+                    }
+                    else
+                    {
+                        size_t offset = col.offsetAt(row_num);
+                        encoder.encodeUnionIndex(global_discriminator);
+                        serializers[global_discriminator](col.getVariantByGlobalDiscriminator(global_discriminator), offset, encoder);
+                    }
+                }};
+        }
         case TypeIndex::Tuple:
         {
             const auto & tuple_type = assert_cast<const DataTypeTuple &>(*data_type);
@@ -519,8 +563,11 @@ static avro::Codec getCodec(const std::string & codec_name)
 
     if (codec_name == "null")    return avro::Codec::NULL_CODEC;
     if (codec_name == "deflate") return avro::Codec::DEFLATE_CODEC;
+    if (codec_name == "zstd")
+        return avro::Codec::ZSTD_CODEC;
 #ifdef SNAPPY_CODEC_AVAILABLE
-    if (codec_name == "snappy")  return avro::Codec::SNAPPY_CODEC;
+    if (codec_name == "snappy")
+        return avro::Codec::SNAPPY_CODEC;
 #endif
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Avro codec {} is not available", codec_name);

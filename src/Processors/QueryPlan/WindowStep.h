@@ -6,17 +6,15 @@
 namespace DB
 {
 
-class ActionsDAG;
-using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
-
 class WindowTransform;
 
 class WindowStep : public ITransformingStep
 {
 public:
-    explicit WindowStep(const DataStream & input_stream_,
+    explicit WindowStep(const Header & input_header_,
             const WindowDescription & window_description_,
-            const std::vector<WindowFunctionDescription> & window_functions_);
+            const std::vector<WindowFunctionDescription> & window_functions_,
+            bool streams_fan_out_);
 
     String getName() const override { return "Window"; }
 
@@ -28,10 +26,11 @@ public:
     const WindowDescription & getWindowDescription() const;
 
 private:
-    void updateOutputStream() override;
+    void updateOutputHeader() override;
 
     WindowDescription window_description;
     std::vector<WindowFunctionDescription> window_functions;
+    bool streams_fan_out;
 };
 
 }

@@ -21,17 +21,13 @@ VerticalRowOutputFormat::VerticalRowOutputFormat(
     Widths name_widths(columns);
     size_t max_name_width = 0;
 
-    String serialized_value;
-
     for (size_t i = 0; i < columns; ++i)
     {
         /// Note that number of code points is just a rough approximation of visible string width.
         const String & name = sample.getByPosition(i).name;
 
         name_widths[i] = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(name.data()), name.size());
-
-        if (name_widths[i] > max_name_width)
-            max_name_width = name_widths[i];
+        max_name_width = std::max(name_widths[i], max_name_width);
     }
 
     names_and_paddings.resize(columns);

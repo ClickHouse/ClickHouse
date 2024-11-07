@@ -1,24 +1,33 @@
-#include <Interpreters/Cluster.h>
-#include <Common/DNSResolver.h>
-#include <Common/escapeForFileName.h>
-#include <Common/isLocalAddress.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/parseAddress.h>
-#include <Common/Config/AbstractConfigurationComparison.h>
-#include <Common/Config/ConfigHelper.h>
 #include <Core/Settings.h>
-#include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-#include <Poco/Util/AbstractConfiguration.h>
-#include <Poco/Util/Application.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/Cluster.h>
 #include <base/range.h>
 #include <base/sort.h>
-#include <boost/range/algorithm_ext/erase.hpp>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/Util/Application.h>
+#include <Common/Config/AbstractConfigurationComparison.h>
+#include <Common/Config/ConfigHelper.h>
+#include <Common/DNSResolver.h>
+#include <Common/StringUtils.h>
+#include <Common/escapeForFileName.h>
+#include <Common/isLocalAddress.h>
+#include <Common/parseAddress.h>
+#include <Common/randomSeed.h>
 
 #include <span>
+#include <pcg_random.hpp>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 distributed_connections_pool_size;
+    extern const SettingsUInt64 distributed_replica_error_cap;
+    extern const SettingsSeconds distributed_replica_error_half_life;
+    extern const SettingsLoadBalancing load_balancing;
+    extern const SettingsBool prefer_localhost_replica;
+}
 
 namespace ErrorCodes
 {
@@ -110,6 +119,9 @@ Cluster::Address::Address(
     default_database = config.getString(config_prefix + ".default_database", "");
     secure = ConfigHelper::getBool(config, config_prefix + ".secure", false, /* empty_as */true) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
     priority = Priority{config.getInt(config_prefix + ".priority", 1)};
+
+    proto_send_chunked = config.getString(config_prefix + ".proto_caps.send", "notchunked");
+    proto_recv_chunked = config.getString(config_prefix + ".proto_caps.recv", "notchunked");
 
     const char * port_type = secure == Protocol::Secure::Enable ? "tcp_port_secure" : "tcp_port";
     auto default_port = config.getInt(port_type, 0);
@@ -214,72 +226,85 @@ String Cluster::Address::toFullString(bool use_compact_format) const
 
         return fmt::format("shard{}_replica{}", shard_index, replica_index);
     }
-    else
-    {
-        return
-            escapeForFileName(user)
-            + (password.empty() ? "" : (':' + escapeForFileName(password))) + '@'
-            + escapeForFileName(host_name) + ':' + std::to_string(port)
-            + (default_database.empty() ? "" : ('#' + escapeForFileName(default_database)))
-            + ((secure == Protocol::Secure::Enable) ? "+secure" : "");
-    }
+
+    return escapeForFileName(user) + (password.empty() ? "" : (':' + escapeForFileName(password))) + '@' + escapeForFileName(host_name)
+        + ':' + std::to_string(port) + (default_database.empty() ? "" : ('#' + escapeForFileName(default_database)))
+        + ((secure == Protocol::Secure::Enable) ? "+secure" : "");
 }
 
-Cluster::Address Cluster::Address::fromFullString(const String & full_string)
+Cluster::Address Cluster::Address::fromFullString(std::string_view full_string)
 {
-    const char * address_begin = full_string.data();
-    const char * address_end = address_begin + full_string.size();
-
-    const char * user_pw_end = strchr(full_string.data(), '@');
+    std::string_view user_password;
+    if (auto pos = full_string.find('@'); pos != std::string_view::npos)
+        user_password = full_string.substr(pos + 1);
 
     /// parsing with the new shard{shard_index}[_replica{replica_index}] format
-    if (!user_pw_end && startsWith(full_string, "shard"))
+    if (user_password.empty() && full_string.starts_with("shard"))
     {
-        const char * underscore = strchr(full_string.data(), '_');
-
         Address address;
-        address.shard_index = parse<UInt32>(address_begin + strlen("shard"));
-        address.replica_index = underscore ? parse<UInt32>(underscore + strlen("_replica")) : 0;
 
-        return address;
-    }
-    else
-    {
-        /// parsing with the old user[:password]@host:port#default_database format
-        /// This format is appeared to be inconvenient for the following reasons:
-        /// - credentials are exposed in file name;
-        /// - the file name can be too long.
-
-        Protocol::Secure secure = Protocol::Secure::Disable;
-        const char * secure_tag = "+secure";
-        if (endsWith(full_string, secure_tag))
+        if (auto underscore_pos = full_string.find('_'); underscore_pos != std::string_view::npos)
         {
-            address_end -= strlen(secure_tag);
-            secure = Protocol::Secure::Enable;
+            address.shard_index = parse<UInt32>(full_string.substr(0, underscore_pos).substr(strlen("shard")));
+
+            if (full_string.substr(underscore_pos + 1).starts_with("replica"))
+            {
+                address.replica_index = parse<UInt32>(full_string.substr(underscore_pos + 1 + strlen("replica")));
+            }
+            else if (full_string.substr(underscore_pos + 1).starts_with("all_replicas"))
+            {
+                address.replica_index = 0;
+            }
+            else
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Incorrect address '{}', should be in a form of `shardN_all_replicas` or `shardN_replicaM`", full_string);
+        }
+        else
+        {
+            address.shard_index = parse<UInt32>(full_string.substr(strlen("shard")));
+            address.replica_index = 0;
         }
 
-        const char * colon = strchr(full_string.data(), ':');
-        if (!user_pw_end || !colon)
-            throw Exception(ErrorCodes::SYNTAX_ERROR, "Incorrect user[:password]@host:port#default_database format {}", full_string);
-
-        const bool has_pw = colon < user_pw_end;
-        const char * host_end = has_pw ? strchr(user_pw_end + 1, ':') : colon;
-        if (!host_end)
-            throw Exception(ErrorCodes::SYNTAX_ERROR, "Incorrect address '{}', it does not contain port", full_string);
-
-        const char * has_db = strchr(full_string.data(), '#');
-        const char * port_end = has_db ? has_db : address_end;
-
-        Address address;
-        address.secure = secure;
-        address.port = parse<UInt16>(host_end + 1, port_end - (host_end + 1));
-        address.host_name = unescapeForFileName(std::string(user_pw_end + 1, host_end));
-        address.user = unescapeForFileName(std::string(address_begin, has_pw ? colon : user_pw_end));
-        address.password = has_pw ? unescapeForFileName(std::string(colon + 1, user_pw_end)) : std::string();
-        address.default_database = has_db ? unescapeForFileName(std::string(has_db + 1, address_end)) : std::string();
-        // address.priority ignored
         return address;
     }
+
+    /// parsing with the old user[:password]@host:port#default_database format
+    /// This format is appeared to be inconvenient for the following reasons:
+    /// - credentials are exposed in file name;
+    /// - the file name can be too long.
+
+    const char * address_begin = full_string.data();
+    const char * address_end = address_begin + full_string.size();
+    const char * user_pw_end = strchr(address_begin, '@');
+
+    Protocol::Secure secure = Protocol::Secure::Disable;
+    const char * secure_tag = "+secure";
+    if (full_string.ends_with(secure_tag))
+    {
+        address_end -= strlen(secure_tag);
+        secure = Protocol::Secure::Enable;
+    }
+
+    const char * colon = strchr(full_string.data(), ':');
+    if (!user_pw_end || !colon)
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Incorrect user[:password]@host:port#default_database format {}", full_string);
+
+    const bool has_pw = colon < user_pw_end;
+    const char * host_end = has_pw ? strchr(user_pw_end + 1, ':') : colon;
+    if (!host_end)
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Incorrect address '{}', it does not contain port", full_string);
+
+    const char * has_db = strchr(full_string.data(), '#');
+    const char * port_end = has_db ? has_db : address_end;
+
+    Address address;
+    address.secure = secure;
+    address.port = parse<UInt16>(host_end + 1, port_end - (host_end + 1));
+    address.host_name = unescapeForFileName(std::string(user_pw_end + 1, host_end));
+    address.user = unescapeForFileName(std::string(address_begin, has_pw ? colon : user_pw_end));
+    address.password = has_pw ? unescapeForFileName(std::string(colon + 1, user_pw_end)) : std::string();
+    address.default_database = has_db ? unescapeForFileName(std::string(has_db + 1, address_end)) : std::string();
+    // address.priority ignored
+    return address;
 }
 
 
@@ -390,10 +415,10 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
     config_prefix += ".";
 
     secret = config.getString(config_prefix + "secret", "");
-    boost::range::remove_erase(config_keys, "secret");
+    std::erase(config_keys, "secret");
 
     allow_distributed_ddl_queries = config.getBool(config_prefix + "allow_distributed_ddl_queries", true);
-    boost::range::remove_erase(config_keys, "allow_distributed_ddl_queries");
+    std::erase(config_keys, "allow_distributed_ddl_queries");
 
     if (config_keys.empty())
         throw Exception(ErrorCodes::SHARD_HAS_NO_CONNECTIONS, "No cluster elements (shard, node) specified in config at path {}", config_prefix);
@@ -420,18 +445,24 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
             if (address.is_local)
                 info.local_addresses.push_back(address);
 
-            info.all_addresses.push_back(address);
-
             auto pool = ConnectionPoolFactory::instance().get(
-                static_cast<unsigned>(settings.distributed_connections_pool_size),
-                address.host_name, address.port,
-                address.default_database, address.user, address.password, address.quota_key,
-                address.cluster, address.cluster_secret,
-                "server", address.compression,
-                address.secure, address.priority);
+                static_cast<unsigned>(settings[Setting::distributed_connections_pool_size]),
+                address.host_name,
+                address.port,
+                address.default_database,
+                address.user,
+                address.password,
+                address.proto_send_chunked,
+                address.proto_recv_chunked,
+                address.quota_key,
+                address.cluster,
+                address.cluster_secret,
+                "server",
+                address.compression,
+                address.secure,
+                address.priority);
 
-            info.pool = std::make_shared<ConnectionPoolWithFailover>(
-                ConnectionPoolPtrs{pool}, settings.load_balancing);
+            info.pool = std::make_shared<ConnectionPoolWithFailover>(ConnectionPoolPtrs{pool}, settings[Setting::load_balancing]);
             info.per_replica_pools = {std::move(pool)};
 
             if (weight)
@@ -488,8 +519,14 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
                     throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}", replica_key);
             }
 
-            addShard(settings, std::move(replica_addresses), /* treat_local_as_remote = */ false, current_shard_num,
-                     std::move(insert_paths), weight, internal_replication);
+            addShard(
+                settings,
+                replica_addresses,
+                /* treat_local_as_remote = */ false,
+                current_shard_num,
+                weight,
+                std::move(insert_paths),
+                internal_replication);
         }
         else
             throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}", key);
@@ -525,7 +562,7 @@ Cluster::Cluster(
 
         addresses_with_failover.emplace_back(current);
 
-        addShard(settings, std::move(current), params.treat_local_as_remote, current_shard_num, /* insert_paths= */ {}, /* weight= */ 1);
+        addShard(settings, std::move(current), params.treat_local_as_remote, current_shard_num, /* weight= */ 1);
         ++current_shard_num;
     }
 
@@ -553,18 +590,23 @@ Cluster::Cluster(
 
         addresses_with_failover.emplace_back(current);
 
-        addShard(settings, std::move(current), params.treat_local_as_remote, current_shard_num, /* insert_paths= */ {}, /* weight= */ 1);
+        addShard(settings, std::move(current), params.treat_local_as_remote, current_shard_num, /* weight= */ 1);
         ++current_shard_num;
     }
 
     initMisc();
 }
 
-void Cluster::addShard(const Settings & settings, Addresses && addresses, bool treat_local_as_remote, UInt32 current_shard_num,
-                       ShardInfoInsertPathForInternalReplication && insert_paths, UInt32 weight, bool internal_replication)
+void Cluster::addShard(
+    const Settings & settings,
+    Addresses addresses,
+    bool treat_local_as_remote,
+    UInt32 current_shard_num,
+    UInt32 weight,
+    ShardInfoInsertPathForInternalReplication insert_paths,
+    bool internal_replication)
 {
     Addresses shard_local_addresses;
-    Addresses shard_all_addresses;
 
     ConnectionPoolPtrs all_replicas_pools;
     all_replicas_pools.reserve(addresses.size());
@@ -572,21 +614,31 @@ void Cluster::addShard(const Settings & settings, Addresses && addresses, bool t
     for (const auto & replica : addresses)
     {
         auto replica_pool = ConnectionPoolFactory::instance().get(
-            static_cast<unsigned>(settings.distributed_connections_pool_size),
-            replica.host_name, replica.port,
-            replica.default_database, replica.user, replica.password, replica.quota_key,
-            replica.cluster, replica.cluster_secret,
-            "server", replica.compression,
-            replica.secure, replica.priority);
+            static_cast<unsigned>(settings[Setting::distributed_connections_pool_size]),
+            replica.host_name,
+            replica.port,
+            replica.default_database,
+            replica.user,
+            replica.password,
+            replica.proto_send_chunked,
+            replica.proto_recv_chunked,
+            replica.quota_key,
+            replica.cluster,
+            replica.cluster_secret,
+            "server",
+            replica.compression,
+            replica.secure,
+            replica.priority);
 
         all_replicas_pools.emplace_back(replica_pool);
         if (replica.is_local && !treat_local_as_remote)
             shard_local_addresses.push_back(replica);
-        shard_all_addresses.push_back(replica);
     }
     ConnectionPoolWithFailoverPtr shard_pool = std::make_shared<ConnectionPoolWithFailover>(
-        all_replicas_pools, settings.load_balancing,
-        settings.distributed_replica_error_half_life.totalSeconds(), settings.distributed_replica_error_cap);
+        all_replicas_pools,
+        settings[Setting::load_balancing],
+        settings[Setting::distributed_replica_error_half_life].totalSeconds(),
+        settings[Setting::distributed_replica_error_cap]);
 
     if (weight)
         slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
@@ -596,7 +648,6 @@ void Cluster::addShard(const Settings & settings, Addresses && addresses, bool t
         current_shard_num,
         weight,
         std::move(shard_local_addresses),
-        std::move(shard_all_addresses),
         std::move(shard_pool),
         std::move(all_replicas_pools),
         internal_replication
@@ -608,8 +659,7 @@ Poco::Timespan Cluster::saturate(Poco::Timespan v, Poco::Timespan limit)
 {
     if (limit.totalMicroseconds() == 0)
         return v;
-    else
-        return (v > limit) ? limit : v;
+    return (v > limit) ? limit : v;
 }
 
 
@@ -665,10 +715,9 @@ namespace
 
 void shuffleReplicas(std::vector<Cluster::Address> & replicas, const Settings & settings, size_t replicas_needed)
 {
-    std::random_device rd;
-    std::mt19937 gen{rd()};
+    pcg64_fast gen{randomSeed()};
 
-    if (settings.prefer_localhost_replica)
+    if (settings[Setting::prefer_localhost_replica])
     {
         // force for local replica to always be included
         auto first_non_local_replica = std::partition(replicas.begin(), replicas.end(), [](const auto & replica) { return replica.is_local; });
@@ -720,15 +769,15 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
                 if (address.is_local)
                     info.local_addresses.push_back(address);
 
-                info.all_addresses.push_back(address);
-
                 auto pool = ConnectionPoolFactory::instance().get(
-                    static_cast<unsigned>(settings.distributed_connections_pool_size),
+                    static_cast<unsigned>(settings[Setting::distributed_connections_pool_size]),
                     address.host_name,
                     address.port,
                     address.default_database,
                     address.user,
                     address.password,
+                    address.proto_send_chunked,
+                    address.proto_recv_chunked,
                     address.quota_key,
                     address.cluster,
                     address.cluster_secret,
@@ -737,7 +786,7 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
                     address.secure,
                     address.priority);
 
-                info.pool = std::make_shared<ConnectionPoolWithFailover>(ConnectionPoolPtrs{pool}, settings.load_balancing);
+                info.pool = std::make_shared<ConnectionPoolWithFailover>(ConnectionPoolPtrs{pool}, settings[Setting::load_balancing]);
                 info.per_replica_pools = {std::move(pool)};
 
                 addresses_with_failover.emplace_back(Addresses{address});
@@ -853,10 +902,8 @@ const std::string & Cluster::ShardInfo::insertPathForInternalReplication(bool pr
         }
         return path;
     }
-    else
-    {
-        return paths.compact;
-    }
+
+    return paths.compact;
 }
 
 bool Cluster::maybeCrossReplication() const

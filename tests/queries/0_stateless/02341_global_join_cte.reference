@@ -1,5 +1,10 @@
 -- { echo }
-with rhs as (select * from remote('127.{1,2}', view(select dummy d1, dummy d2 from system.one))) select lhs.d2 from remote('127.{1,2}', view(select dummy d1, dummy d2 from system.one)) lhs global join rhs using (d1) order by rhs.d2; -- { serverError ALIAS_REQUIRED }
+with rhs as (select * from remote('127.{1,2}', view(select dummy d1, dummy d2 from system.one))) select lhs.d2 from remote('127.{1,2}', view(select dummy d1, dummy d2 from system.one)) lhs global join rhs using (d1) order by rhs.d2 settings enable_analyzer=0; -- { serverError ALIAS_REQUIRED }
+with rhs as (select * from remote('127.{1,2}', view(select dummy d1, dummy d2 from system.one))) select lhs.d2 from remote('127.{1,2}', view(select dummy d1, dummy d2 from system.one)) lhs global join rhs using (d1) order by rhs.d2 settings enable_analyzer=1; -- It works with analyzer; rhs is an alias itself.
+0
+0
+0
+0
 with rhs as (select * from remote('127.{1,2}', view(select dummy d1, dummy d2 from system.one))) select lhs.d2 from remote('127.{1,2}', view(select dummy d1, dummy d2 from system.one)) lhs global join rhs using (d1) order by rhs.d2 settings joined_subquery_requires_alias=0;
 0
 0

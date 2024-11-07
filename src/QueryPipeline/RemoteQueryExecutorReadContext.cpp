@@ -22,7 +22,7 @@ RemoteQueryExecutorReadContext::RemoteQueryExecutorReadContext(RemoteQueryExecut
     : AsyncTaskExecutor(std::make_unique<Task>(*this)), executor(executor_), suspend_when_query_sent(suspend_when_query_sent_)
 {
     if (-1 == pipe2(pipe_fd, O_NONBLOCK))
-        throwFromErrno("Cannot create pipe", ErrorCodes::CANNOT_OPEN_FILE);
+        throw ErrnoException(ErrorCodes::CANNOT_OPEN_FILE, "Cannot create pipe");
 
     epoll.add(pipe_fd[0]);
     epoll.add(timer.getDescriptor());
@@ -132,7 +132,7 @@ void RemoteQueryExecutorReadContext::cancelBefore()
             break;
 
         if (errno != EINTR)
-            throwFromErrno("Cannot write to pipe", ErrorCodes::CANNOT_READ_FROM_SOCKET);
+            throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_SOCKET, "Cannot write to pipe");
     }
 }
 
@@ -141,12 +141,12 @@ RemoteQueryExecutorReadContext::~RemoteQueryExecutorReadContext()
     /// connection_fd is closed by Poco::Net::Socket or Epoll
     if (pipe_fd[0] != -1)
     {
-        int err = close(pipe_fd[0]);
+        [[maybe_unused]] int err = close(pipe_fd[0]);
         chassert(!err || errno == EINTR);
     }
     if (pipe_fd[1] != -1)
     {
-        int err = close(pipe_fd[1]);
+        [[maybe_unused]] int err = close(pipe_fd[1]);
         chassert(!err || errno == EINTR);
     }
 }

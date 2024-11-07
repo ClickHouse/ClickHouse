@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <Storages/MemorySettings.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/parseQuery.h>
@@ -7,6 +8,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -74,6 +76,7 @@ private:
                 {"a", std::make_shared<DataTypeUInt8>()},
                 {"b", std::make_shared<DataTypeDate>()},
                 {"foo", std::make_shared<DataTypeString>()},
+                {"is_value", DataTypeFactory::instance().get("Bool")},
             }),
         TableWithColumnNamesAndTypes(
             createDBAndTable("table2"),
@@ -103,7 +106,7 @@ private:
                 context,
                 table_name,
                 std::make_shared<StorageMemory>(
-                    StorageID(db_name, table_name), ColumnsDescription{tab.columns}, ConstraintsDescription{}, String{}));
+                    StorageID(db_name, table_name), ColumnsDescription{tab.columns}, ConstraintsDescription{}, String{}, MemorySettings{}));
         }
         DatabaseCatalog::instance().attachDatabase(database->getDatabaseName(), database);
 
@@ -118,7 +121,7 @@ static void checkOld(
     const std::string & expected)
 {
     ParserSelectQuery parser;
-    ASTPtr ast = parseQuery(parser, query, 1000, 1000);
+    ASTPtr ast = parseQuery(parser, query, 1000, 1000, 1000000);
     SelectQueryInfo query_info;
     SelectQueryOptions select_options;
     query_info.syntax_analyzer_result
@@ -161,7 +164,7 @@ static void checkNewAnalyzer(
     const std::string & expected)
 {
     ParserSelectQuery parser;
-    ASTPtr ast = parseQuery(parser, query, 1000, 1000);
+    ASTPtr ast = parseQuery(parser, query, 1000, 1000, 1000000);
 
     SelectQueryOptions select_query_options;
     auto query_tree = buildQueryTree(ast, state.context);
@@ -279,9 +282,13 @@ TEST(TransformQueryForExternalDatabase, MultipleAndSubqueries)
 {
     const State & state = State::instance();
 
-    check(state, 1, {"column"},
-          "SELECT column FROM test.table WHERE 1 = 1 AND toString(column) = '42' AND column = 42 AND left(toString(column), 10) = RIGHT(toString(column), 10) AND column IN (1, 42) AND SUBSTRING(toString(column) FROM 1 FOR 2) = 'Hello' AND column != 4",
-          R"(SELECT "column" FROM "test"."table" WHERE 1 AND ("column" = 42) AND ("column" IN (1, 42)) AND ("column" != 4))");
+    check(
+        state,
+        1,
+        {"column"},
+        "SELECT column FROM test.table WHERE 1 = 1 AND toString(column) = '42' AND column = 42 AND left(toString(column), 10) = "
+        "RIGHT(toString(column), 10) AND column IN (1, 42) AND SUBSTRING(toString(column) FROM 1 FOR 2) = 'Hello' AND column != 4",
+        R"(SELECT "column" FROM "test"."table" WHERE (1 = 1) AND ("column" = 42) AND ("column" IN (1, 42)) AND ("column" != 4))");
     check(state, 1, {"column"},
           "SELECT column FROM test.table WHERE toString(column) = '42' AND left(toString(column), 10) = RIGHT(toString(column), 10) AND column = 42",
           R"(SELECT "column" FROM "test"."table" WHERE "column" = 42)");
@@ -314,6 +321,18 @@ TEST(TransformQueryForExternalDatabase, ForeignColumnInWhere)
           "JOIN test.table2 AS table2 ON (test.table.apply_id = table2.num) "
           "WHERE column > 2 AND apply_id = 1 AND table2.num = 1 AND table2.attr != ''",
           R"(SELECT "column", "apply_id" FROM "test"."table" WHERE ("column" > 2) AND ("apply_id" = 1))");
+}
+
+TEST(TransformQueryForExternalDatabase, TupleSurroundPredicates)
+{
+    const State & state = State::instance();
+
+    check(
+        state,
+        1,
+        {"column", "field", "a"},
+        "SELECT column, field, a FROM table WHERE ((column > 10) AND (length(field) > 0)) AND a > 0",
+        R"(SELECT "column", "field", "a" FROM "test"."table" WHERE ("a" > 0) AND ("column" > 10))");
 }
 
 TEST(TransformQueryForExternalDatabase, NoStrict)
@@ -352,17 +371,21 @@ TEST(TransformQueryForExternalDatabase, Null)
 
     check(state, 1, {"field"},
           "SELECT field FROM table WHERE field IS NULL",
-          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NULL)");
+          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NULL)",
+          R"(SELECT "field" FROM "test"."table" WHERE 1 = 0)");
     check(state, 1, {"field"},
           "SELECT field FROM table WHERE field IS NOT NULL",
-          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NOT NULL)");
+          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NOT NULL)",
+          R"(SELECT "field" FROM "test"."table")");
 
     check(state, 1, {"field"},
           "SELECT field FROM table WHERE isNull(field)",
-          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NULL)");
+          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NULL)",
+          R"(SELECT "field" FROM "test"."table" WHERE 1 = 0)");
     check(state, 1, {"field"},
           "SELECT field FROM table WHERE isNotNull(field)",
-          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NOT NULL)");
+          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NOT NULL)",
+          R"(SELECT "field" FROM "test"."table")");
 }
 
 TEST(TransformQueryForExternalDatabase, ToDate)
@@ -391,6 +414,14 @@ TEST(TransformQueryForExternalDatabase, Analyzer)
         R"(SELECT "column" FROM "test"."table")");
 
     check(state, 1, {"column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo"},
-        "SELECT * FROM table WHERE (column) IN (1)",
+        "SELECT * EXCEPT (is_value) FROM table WHERE (column) IN (1)",
         R"(SELECT "column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo" FROM "test"."table" WHERE "column" IN (1))");
+
+    check(state, 1, {"is_value"},
+        "SELECT is_value FROM table WHERE is_value = true",
+        R"(SELECT "is_value" FROM "test"."table" WHERE "is_value" = true)");
+
+    check(state, 1, {"is_value"},
+        "SELECT is_value FROM table WHERE is_value = 1",
+        R"(SELECT "is_value" FROM "test"."table" WHERE "is_value" = 1)");
 }

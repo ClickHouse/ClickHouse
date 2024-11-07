@@ -45,14 +45,15 @@ class MergeTreeDataWriter
 public:
     explicit MergeTreeDataWriter(MergeTreeData & data_)
         : data(data_)
-        , log(&Poco::Logger::get(data.getLogName() + " (Writer)"))
-    {}
+        , log(getLogger(data.getLogName() + " (Writer)"))
+    {
+    }
 
     /** Split the block to blocks, each of them must be written as separate part.
       *  (split rows by partition)
       * Works deterministically: if same block was passed, function will return same result in same order.
       */
-    static BlocksWithPartition splitBlockIntoParts(const Block & block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, AsyncInsertInfoPtr async_insert_info = nullptr);
+    static BlocksWithPartition splitBlockIntoParts(Block && block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, AsyncInsertInfoPtr async_insert_info = nullptr);
 
     /// This structure contains not completely written temporary part.
     /// Some writes may happen asynchronously, e.g. for blob storages.
@@ -91,22 +92,23 @@ public:
     /// For insertion.
     static TemporaryPart writeProjectionPart(
         const MergeTreeData & data,
-        Poco::Logger * log,
+        LoggerPtr log,
         Block block,
         const ProjectionDescription & projection,
-        IMergeTreeDataPart * parent_part);
+        IMergeTreeDataPart * parent_part,
+        bool merge_is_needed);
 
     /// For mutation: MATERIALIZE PROJECTION.
     static TemporaryPart writeTempProjectionPart(
         const MergeTreeData & data,
-        Poco::Logger * log,
+        LoggerPtr log,
         Block block,
         const ProjectionDescription & projection,
         IMergeTreeDataPart * parent_part,
         size_t block_num);
 
     static Block mergeBlock(
-        const Block & block,
+        Block && block,
         SortDescription sort_description,
         const Names & partition_key_columns,
         IColumn::Permutation *& permutation,
@@ -126,12 +128,13 @@ private:
         bool is_temp,
         IMergeTreeDataPart * parent_part,
         const MergeTreeData & data,
-        Poco::Logger * log,
+        LoggerPtr log,
         Block block,
-        const ProjectionDescription & projection);
+        const ProjectionDescription & projection,
+        bool merge_is_needed);
 
     MergeTreeData & data;
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 }

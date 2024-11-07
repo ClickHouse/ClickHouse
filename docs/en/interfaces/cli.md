@@ -16,7 +16,7 @@ ClickHouse provides a native command-line client: `clickhouse-client`. The clien
 $ clickhouse-client
 ClickHouse client version 20.13.1.5273 (official build).
 Connecting to localhost:9000 as user default.
-Connected to ClickHouse server version 20.13.1 revision 54442.
+Connected to ClickHouse server version 20.13.1.
 
 :)
 ```
@@ -30,7 +30,7 @@ It may lack support for new features.
 
 ## Usage {#cli_usage}
 
-The client can be used in interactive and non-interactive (batch) mode. 
+The client can be used in interactive and non-interactive (batch) mode.
 
 ### Gather your connection details
 <ConnectionDetails />
@@ -155,7 +155,7 @@ Format a query as usual, then place the values that you want to pass from the ap
 
 ``` bash
 $ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" -q "SELECT * FROM table WHERE val = {tuple_in_tuple:Tuple(UInt8, Tuple(String, UInt8))}"
-$ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="number" --query "SELECT {col:Identifier} FROM {db:Identifier}.{tbl:Identifier} LIMIT 10"
+$ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="number" --param_alias="top_ten" --query "SELECT {col:Identifier} as {alias:Identifier} FROM {db:Identifier}.{tbl:Identifier} LIMIT 10"
 ```
 
 ## Configuring {#interfaces_cli_configuration}
@@ -177,24 +177,53 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 - `--user, -u` – The username. Default value: default.
 - `--password` – The password. Default value: empty string.
 - `--ask-password` - Prompt the user to enter a password.
-- `--query, -q` – The query to process when using non-interactive mode. Cannot be used simultaneously with `--queries-file`.
-- `--queries-file` – file path with queries to execute. Cannot be used simultaneously with `--query`.
+- `--query, -q` – The query to process when using non-interactive mode. `--query` can be specified multiple times, e.g. `--query "SELECT 1" --query "SELECT 2"`. Cannot be used simultaneously with `--queries-file`.
+- `--queries-file` – file path with queries to execute. `--queries-file` can be specified multiple times, e.g. `--queries-file  queries1.sql --queries-file  queries2.sql`. Cannot be used simultaneously with `--query`.
 - `--multiquery, -n` – If specified, multiple queries separated by semicolons can be listed after the `--query` option. For convenience, it is also possible to omit `--query` and pass the queries directly after `--multiquery`.
 - `--multiline, -m` – If specified, allow multiline queries (do not send the query on Enter).
 - `--database, -d` – Select the current default database. Default value: the current database from the server settings (‘default’ by default).
 - `--format, -f` – Use the specified default format to output the result.
 - `--vertical, -E` – If specified, use the [Vertical format](../interfaces/formats.md#vertical) by default to output the result. This is the same as `–format=Vertical`. In this format, each value is printed on a separate line, which is helpful when displaying wide tables.
 - `--time, -t` – If specified, print the query execution time to ‘stderr’ in non-interactive mode.
+- `--memory-usage` – If specified, print memory usage to ‘stderr’ in non-interactive mode]. Possible values: 'none' - do not print memory usage, 'default' - print number of bytes, 'readable' - print memory usage in human-readable format.
 - `--stacktrace` – If specified, also print the stack trace if an exception occurs.
 - `--config-file` – The name of the configuration file.
-- `--secure` – If specified, will connect to server over secure connection (TLS). You might need to configure your CA certificates in the [configuration file](#configuration_files). The available configuration settings are the same as for [server-side TLS configuration](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-openssl).
+- `--secure` – If specified, will connect to server over secure connection (TLS). You might need to configure your CA certificates in the [configuration file](#configuration_files). The available configuration settings are the same as for [server-side TLS configuration](../operations/server-configuration-parameters/settings.md#openssl).
 - `--history_file` — Path to a file containing command history.
+- `--history_max_entries` — Maximum number of entries in the history file. Default value: 1 000 000.
 - `--param_<name>` — Value for a [query with parameters](#cli-queries-with-parameters).
 - `--hardware-utilization` — Print hardware utilization information in progress bar.
 - `--print-profile-events` – Print `ProfileEvents` packets.
 - `--profile-events-delay-ms` – Delay between printing `ProfileEvents` packets (-1 - print only totals, 0 - print every single packet).
+- `--jwt` – If specified, enables authorization via JSON Web Token. Server JWT authorization is available only in ClickHouse Cloud.
+- `--progress` – Print progress of query execution. Possible values: 'tty|on|1|true|yes' - outputs to TTY in interactive mode; 'err' - outputs to STDERR non-interactive mode; 'off|0|false|no' - disables the progress printing. Default: TTY in interactive mode, disabled in non-interactive.
+- `--progress-table` – Print a progress table with changing metrics during query execution. Possible values: 'tty|on|1|true|yes' - outputs to TTY in interactive mode; 'err' - outputs to STDERR non-interactive mode; 'off|0|false|no' - disables the progress table. Default: TTY in interactive mode, disabled in non-interactive.
+- `--enable-progress-table-toggle` – Enable toggling of the progress table by pressing the control key (Space). Only applicable in interactive mode with the progress table printing enabled. Default: 'true'.
 
 Instead of `--host`, `--port`, `--user` and `--password` options, ClickHouse client also supports connection strings (see next section).
+
+
+## Aliases {#cli_aliases}
+
+- `\l` - SHOW DATABASES
+- `\d` - SHOW TABLES
+- `\c <DATABASE>` - USE DATABASE
+- `.` - repeat the last query
+
+
+## Shortkeys {#shortkeys_aliases}
+
+- `Alt (Option) + Shift + e` - open editor with current query. It is possible to set up an environment variable - `EDITOR`, by default vim is used.
+- `Alt (Option) + #` - comment line.
+- `Ctrl + r` - fuzzy history search.
+
+:::tip
+To configure the correct work of meta key (Option) on MacOS:
+
+iTerm2: Go to Preferences -> Profile -> Keys -> Left Option key and click Esc+
+:::
+
+The full list with all available shortkeys - [replxx](https://github.com/AmokHuginnsson/replxx/blob/1f149bf/src/replxx_impl.cxx#L262).
 
 
 ## Connection string {#connection_string}
@@ -220,7 +249,7 @@ If no database is specified, the `default` database will be used.
 
 If the user name, password or database was specified in the connection string, it cannot be specified using `--user`, `--password` or `--database` (and vice versa).
 
-The host component can either be an a host name and IP address. Put an IPv6 address in square brackets to specify it:
+The host component can either be a host name and IP address. Put an IPv6 address in square brackets to specify it:
 
 ```text
 clickhouse://[2001:db8::1234]
@@ -315,7 +344,7 @@ clickhouse-client clickhouse://some_user%40some_mail.com@localhost:9000
 Connect to one of provides hosts: `192.168.1.15`, `192.168.1.25`.
 
 ``` bash
-clickhouse-client clickhouse://192.168.1.15,192.168.1.25 
+clickhouse-client clickhouse://192.168.1.15,192.168.1.25
 ```
 
 ### Configuration Files {#configuration_files}
@@ -343,7 +372,7 @@ Example of a config file:
 ```
 
 Or the same config in a YAML format:
- 
+
 ```yaml
 user: username
 password: 'password'

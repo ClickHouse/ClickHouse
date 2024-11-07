@@ -18,6 +18,10 @@
 #include "vec_crc32.h"
 #endif
 
+#if defined(__s390x__) && __BYTE_ORDER__==__ORDER_BIG_ENDIAN__
+#include <crc32-s390x.h>
+#endif
+
 namespace DB
 {
 
@@ -43,7 +47,7 @@ struct Hash
 #elif (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
         return crc32_ppc(crc, reinterpret_cast<const unsigned char *>(&val), sizeof(val));
 #elif defined(__s390x__) && __BYTE_ORDER__==__ORDER_BIG_ENDIAN__
-        return s390x_crc32(crc, val);
+        return crc32c_le(static_cast<UInt32>(crc), reinterpret_cast<unsigned char *>(&val), sizeof(val));
 #else
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "String hash is not implemented without sse4.2 support");
 #endif
@@ -58,7 +62,7 @@ struct Hash
 #elif (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
         return crc32_ppc(crc, reinterpret_cast<const unsigned char *>(&val), sizeof(val));
 #elif defined(__s390x__) && __BYTE_ORDER__==__ORDER_BIG_ENDIAN__
-        return s390x_crc32_u32(crc, val);
+        return crc32c_le(static_cast<UInt32>(crc), reinterpret_cast<unsigned char *>(&val), sizeof(val));
 #else
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "String hash is not implemented without sse4.2 support");
 #endif
@@ -73,7 +77,7 @@ struct Hash
 #elif (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
         return crc32_ppc(crc, reinterpret_cast<const unsigned char *>(&val), sizeof(val));
 #elif defined(__s390x__) && __BYTE_ORDER__==__ORDER_BIG_ENDIAN__
-        return s390x_crc32_u16(crc, val);
+        return crc32c_le(static_cast<UInt32>(crc), reinterpret_cast<unsigned char *>(&val), sizeof(val));
 #else
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "String hash is not implemented without sse4.2 support");
 #endif
@@ -88,7 +92,7 @@ struct Hash
 #elif (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
         return crc32_ppc(crc, reinterpret_cast<const unsigned char *>(&val), sizeof(val));
 #elif defined(__s390x__) && __BYTE_ORDER__==__ORDER_BIG_ENDIAN__
-        return s390x_crc32_u8(crc, val);
+        return crc32c_le(static_cast<UInt32>(crc), reinterpret_cast<unsigned char *>(&val), sizeof(val));
 #else
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "String hash is not implemented without sse4.2 support");
 #endif
@@ -311,9 +315,9 @@ struct SimHashImpl
         return getSimHash(finger_vec);
     }
 
-    static void apply(const ColumnString::Chars & data, const ColumnString::Offsets & offsets, size_t shingle_size, PaddedPODArray<UInt64> & res)
+    static void apply(const ColumnString::Chars & data, const ColumnString::Offsets & offsets, size_t shingle_size, PaddedPODArray<UInt64> & res, size_t input_rows_count)
     {
-        for (size_t i = 0; i < offsets.size(); ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             const UInt8 * one_data = &data[offsets[i - 1]];
             const size_t data_size = offsets[i] - offsets[i - 1] - 1;
@@ -539,12 +543,13 @@ struct MinHashImpl
         PaddedPODArray<UInt64> * res1,
         PaddedPODArray<UInt64> * res2,
         ColumnTuple * res1_strings,
-        ColumnTuple * res2_strings)
+        ColumnTuple * res2_strings,
+        size_t input_rows_count)
     {
         MinHeap min_heap;
         MaxHeap max_heap;
 
-        for (size_t i = 0; i < offsets.size(); ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             const UInt8 * one_data = &data[offsets[i - 1]];
             const size_t data_size = offsets[i] - offsets[i - 1] - 1;

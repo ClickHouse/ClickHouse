@@ -7,7 +7,7 @@ databases:            ['_table_function','default']
 tables:               ['_table_function.numbers','default.table_a','default.table_b','default.table_c']
 views:                ['default.matview_a_to_b','default.matview_b_to_c']
 sleep_calls:          200
-sleep_us:             298
+sleep_us:             300
 profile_select_rows:  300
 profile_select_bytes: 3600
 profile_insert_rows:  201
@@ -23,7 +23,7 @@ view_query:           SELECT toFloat64(a) AS a, b + sleepEachRow(0.000001) AS co
 read_rows:            100
 written_rows:         100
 sleep_calls:          100
-sleep_us:             99
+sleep_us:             100
 profile_select_rows:  100
 profile_select_bytes: 2000
 profile_insert_rows:  100
@@ -40,7 +40,7 @@ view_query:           SELECT sum(a + sleepEachRow(0.000002)) AS a FROM default.t
 read_rows:            100
 written_rows:         1
 sleep_calls:          100
-sleep_us:             199
+sleep_us:             200
 profile_select_rows:  100
 profile_select_bytes: 800
 profile_insert_rows:  1

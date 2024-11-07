@@ -13,8 +13,8 @@ REGISTER_FUNCTION(ToDayOfYear)
 {
     factory.registerFunction<FunctionToDayOfYear>();
 
-    /// MysQL compatibility alias.
-    factory.registerAlias("DAYOFYEAR", "toDayOfYear", FunctionFactory::CaseInsensitive);
+    /// MySQL compatibility alias.
+    factory.registerAlias("DAYOFYEAR", "toDayOfYear", FunctionFactory::Case::Insensitive);
 }
 
 }

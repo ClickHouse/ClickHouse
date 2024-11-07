@@ -10,6 +10,8 @@
 #include <IO/ReadHelpers.h>
 #include <base/JSON.h>
 
+#include <boost/range/adaptor/map.hpp>
+
 
 namespace fs = std::filesystem;
 
@@ -29,7 +31,7 @@ FileChecker::FileChecker(const String & file_info_path_) : FileChecker(nullptr, 
 
 FileChecker::FileChecker(DiskPtr disk_, const String & file_info_path_)
     : disk(std::move(disk_))
-    , log(&Poco::Logger::get("FileChecker"))
+    , log(getLogger("FileChecker"))
 {
     setPath(file_info_path_);
     try
@@ -82,33 +84,32 @@ size_t FileChecker::getTotalSize() const
 }
 
 
-CheckResults FileChecker::check() const
+FileChecker::DataValidationTasksPtr FileChecker::getDataValidationTasks()
 {
-    if (map.empty())
+    return std::make_unique<DataValidationTasks>(map);
+}
+
+std::optional<CheckResult> FileChecker::checkNextEntry(DataValidationTasksPtr & check_data_tasks) const
+{
+    String name;
+    size_t expected_size;
+    bool is_finished = check_data_tasks->next(name, expected_size);
+    if (is_finished)
         return {};
 
-    CheckResults results;
+    String path = parentPath(files_info_path) + name;
+    bool exists = fileReallyExists(path);
+    auto real_size = exists ? getRealFileSize(path) : 0;  /// No race condition assuming no one else is working with these files.
 
-    for (const auto & name_size : map)
+    if (real_size != expected_size)
     {
-        const String & name = name_size.first;
-        String path = parentPath(files_info_path) + name;
-        bool exists = fileReallyExists(path);
-        auto real_size = exists ? getRealFileSize(path) : 0;  /// No race condition assuming no one else is working with these files.
-
-        if (real_size != name_size.second)
-        {
-            String failure_message = exists
-                ? ("Size of " + path + " is wrong. Size is " + toString(real_size) + " but should be " + toString(name_size.second))
-                : ("File " + path + " doesn't exist");
-            results.emplace_back(name, false, failure_message);
-            break;
-        }
-
-        results.emplace_back(name, true, "");
+        String failure_message = exists
+            ? ("Size of " + path + " is wrong. Size is " + toString(real_size) + " but should be " + toString(expected_size))
+            : ("File " + path + " doesn't exist");
+        return CheckResult(name, false, failure_message);
     }
 
-    return results;
+    return CheckResult(name, true, "");
 }
 
 void FileChecker::repair()
@@ -175,7 +176,7 @@ void FileChecker::load()
     if (!fileReallyExists(files_info_path))
         return;
 
-    std::unique_ptr<ReadBuffer> in = disk ? disk->readFile(files_info_path) : std::make_unique<ReadBufferFromFile>(files_info_path);
+    std::unique_ptr<ReadBuffer> in = disk ? disk->readFile(files_info_path, getReadSettings()) : std::make_unique<ReadBufferFromFile>(files_info_path);
     WriteBufferFromOwnString out;
 
     /// The JSON library does not support whitespace. We delete them. Inefficient.
@@ -195,7 +196,7 @@ void FileChecker::load()
 
 bool FileChecker::fileReallyExists(const String & path_) const
 {
-    return disk ? disk->exists(path_) : fs::exists(path_);
+    return disk ? disk->existsFile(path_) : fs::exists(path_);
 }
 
 size_t FileChecker::getRealFileSize(const String & path_) const

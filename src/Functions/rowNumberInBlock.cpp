@@ -56,8 +56,7 @@ public:
         auto column = ColumnUInt64::create();
         auto & data = column->getData();
         data.resize(input_rows_count);
-        for (size_t i = 0; i < input_rows_count; ++i)
-            data[i] = i;
+        iota(data.data(), input_rows_count, UInt64(0));
 
         return column;
     }

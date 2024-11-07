@@ -1,6 +1,9 @@
+// NOLINTBEGIN(clang-analyzer-optin.core.EnumCastOutOfRange)
+
 #include <Storages/MergeTree/GinIndexStore.h>
 #include <Columns/ColumnString.h>
 #include <Common/FST.h>
+#include <Compression/CompressionFactory.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -21,6 +24,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_FORMAT_VERSION;
+    extern const int NOT_IMPLEMENTED;
 };
 
 GinIndexPostingsBuilder::GinIndexPostingsBuilder(UInt64 limit)
@@ -32,11 +36,9 @@ bool GinIndexPostingsBuilder::contains(UInt32 row_id) const
 {
     if (useRoaring())
         return rowid_bitmap.contains(row_id);
-    else
-    {
-        const auto * const it = std::find(rowid_lst.begin(), rowid_lst.begin()+rowid_lst_length, row_id);
-        return it != rowid_lst.begin() + rowid_lst_length;
-    }
+
+    const auto * const it = std::find(rowid_lst.begin(), rowid_lst.begin() + rowid_lst_length, row_id);
+    return it != rowid_lst.begin() + rowid_lst_length;
 }
 
 void GinIndexPostingsBuilder::add(UInt32 row_id)
@@ -71,7 +73,7 @@ void GinIndexPostingsBuilder::add(UInt32 row_id)
     }
 }
 
-UInt64 GinIndexPostingsBuilder::serialize(WriteBuffer & buffer) const
+UInt64 GinIndexPostingsBuilder::serialize(WriteBuffer & buffer)
 {
     UInt64 written_bytes = 0;
     buffer.write(rowid_lst_length);
@@ -79,15 +81,24 @@ UInt64 GinIndexPostingsBuilder::serialize(WriteBuffer & buffer) const
 
     if (useRoaring())
     {
+        rowid_bitmap.runOptimize();
         auto size = rowid_bitmap.getSizeInBytes();
+        auto buf = std::make_unique<char[]>(size);
+        rowid_bitmap.write(buf.get());
+
+        auto codec = CompressionCodecFactory::instance().get(GIN_COMPRESSION_CODEC, GIN_COMPRESSION_LEVEL);
+        Memory<> memory;
+        memory.resize(codec->getCompressedReserveSize(static_cast<UInt32>(size)));
+        auto compressed_size = codec->compress(buf.get(), static_cast<UInt32>(size), memory.data());
 
         writeVarUInt(size, buffer);
         written_bytes += getLengthOfVarUInt(size);
 
-        auto buf = std::make_unique<char[]>(size);
-        rowid_bitmap.write(buf.get());
-        buffer.write(buf.get(), size);
-        written_bytes += size;
+        writeVarUInt(compressed_size, buffer);
+        written_bytes += getLengthOfVarUInt(compressed_size);
+
+        buffer.write(memory.data(), compressed_size);
+        written_bytes += compressed_size;
     }
     else
     {
@@ -109,44 +120,54 @@ GinIndexPostingsListPtr GinIndexPostingsBuilder::deserialize(ReadBuffer & buffer
     if (postings_list_size == USES_BIT_MAP)
     {
         size_t size = 0;
+        size_t compressed_size = 0;
         readVarUInt(size, buffer);
-        auto buf = std::make_unique<char[]>(size);
-        buffer.readStrict(reinterpret_cast<char *>(buf.get()), size);
+        readVarUInt(compressed_size, buffer);
+        auto buf = std::make_unique<char[]>(compressed_size);
+        buffer.readStrict(reinterpret_cast<char *>(buf.get()), compressed_size);
 
-        GinIndexPostingsListPtr postings_list = std::make_shared<GinIndexPostingsList>(GinIndexPostingsList::read(buf.get()));
+        Memory<> memory;
+        memory.resize(size);
+        auto codec = CompressionCodecFactory::instance().get(GIN_COMPRESSION_CODEC, GIN_COMPRESSION_LEVEL);
+        codec->decompress(buf.get(), static_cast<UInt32>(compressed_size), memory.data());
+
+        GinIndexPostingsListPtr postings_list = std::make_shared<GinIndexPostingsList>(GinIndexPostingsList::read(memory.data()));
 
         return postings_list;
     }
-    else
-    {
-        assert(postings_list_size < MIN_SIZE_FOR_ROARING_ENCODING);
-        GinIndexPostingsListPtr postings_list = std::make_shared<GinIndexPostingsList>();
-        UInt32 row_ids[MIN_SIZE_FOR_ROARING_ENCODING];
 
-        for (auto i = 0; i < postings_list_size; ++i)
-            readVarUInt(row_ids[i], buffer);
-        postings_list->addMany(postings_list_size, row_ids);
-        return postings_list;
-    }
+    assert(postings_list_size < MIN_SIZE_FOR_ROARING_ENCODING);
+    GinIndexPostingsListPtr postings_list = std::make_shared<GinIndexPostingsList>();
+    UInt32 row_ids[MIN_SIZE_FOR_ROARING_ENCODING];
+
+    for (auto i = 0; i < postings_list_size; ++i)
+        readVarUInt(row_ids[i], buffer);
+    postings_list->addMany(postings_list_size, row_ids);
+    return postings_list;
 }
 
 GinIndexStore::GinIndexStore(const String & name_, DataPartStoragePtr storage_)
     : name(name_)
     , storage(storage_)
 {
+    if (storage->getType() != MergeTreeDataPartStorageType::Full)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "INDEX {} with 'full_text' type supports only full storage", name);
 }
+
 GinIndexStore::GinIndexStore(const String & name_, DataPartStoragePtr storage_, MutableDataPartStoragePtr data_part_storage_builder_, UInt64 max_digestion_size_)
     : name(name_)
     , storage(storage_)
     , data_part_storage_builder(data_part_storage_builder_)
     , max_digestion_size(max_digestion_size_)
 {
+    if (storage->getType() != MergeTreeDataPartStorageType::Full)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "INDEX {} with 'full_text' type supports only full storage", name);
 }
 
 bool GinIndexStore::exists() const
 {
     String segment_id_file_name = getName() + GIN_SEGMENT_ID_FILE_TYPE;
-    return storage->exists(segment_id_file_name);
+    return storage->existsFile(segment_id_file_name);
 }
 
 UInt32 GinIndexStore::getNextSegmentIDRange(const String & file_name, size_t n)
@@ -154,7 +175,7 @@ UInt32 GinIndexStore::getNextSegmentIDRange(const String & file_name, size_t n)
     std::lock_guard guard(mutex);
 
     /// When the method is called for the first time, the file doesn't exist yet, need to create it and write segment ID 1.
-    if (!storage->exists(file_name))
+    if (!storage->existsFile(file_name))
     {
         /// Create file
         std::unique_ptr<DB::WriteBufferFromFileBase> ostr = this->data_part_storage_builder->writeFile(file_name, DBMS_DEFAULT_BUFFER_SIZE, {});
@@ -212,7 +233,7 @@ UInt32 GinIndexStore::getNumOfSegments()
         return cached_segment_num;
 
     String segment_id_file_name = getName() + GIN_SEGMENT_ID_FILE_TYPE;
-    if (!storage->exists(segment_id_file_name))
+    if (!storage->existsFile(segment_id_file_name))
         return 0;
 
     UInt32 result = 0;
@@ -223,7 +244,7 @@ UInt32 GinIndexStore::getNumOfSegments()
         readBinary(version, *istr);
 
         if (version > static_cast<std::underlying_type_t<Format>>(CURRENT_GIN_FILE_FORMAT_VERSION))
-            throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unsupported inverted index version {}", version);
+            throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unsupported full-text index version {}", version);
 
         readVarUInt(result, *istr);
     }
@@ -487,3 +508,5 @@ void GinIndexStoreFactory::remove(const String & part_path)
 }
 
 }
+
+// NOLINTEND(clang-analyzer-optin.core.EnumCastOutOfRange)

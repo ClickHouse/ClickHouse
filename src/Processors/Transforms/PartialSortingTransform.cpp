@@ -1,7 +1,8 @@
-#include <Processors/Transforms/PartialSortingTransform.h>
-#include <Interpreters/sortBlock.h>
 #include <Core/SortCursor.h>
+#include <Interpreters/sortBlock.h>
+#include <Processors/Transforms/PartialSortingTransform.h>
 #include <Common/PODArray.h>
+#include <Common/iota.h>
 
 namespace DB
 {
@@ -36,9 +37,7 @@ size_t getFilterMask(const ColumnRawPtrs & raw_block_columns, const Columns & th
     else
     {
         rows_to_compare.resize(num_rows);
-
-        for (size_t i = 0; i < num_rows; ++i)
-            rows_to_compare[i] = i;
+        iota(rows_to_compare.data(), num_rows, UInt64(0));
 
         size_t size = description.size();
         for (size_t i = 0; i < size; ++i)
@@ -75,7 +74,7 @@ bool compareWithThreshold(const ColumnRawPtrs & raw_block_columns, size_t min_bl
 
         if (res < 0)
             return true;
-        else if (res > 0)
+        if (res > 0)
             return false;
     }
 

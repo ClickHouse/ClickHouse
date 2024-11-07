@@ -3,6 +3,8 @@
 #include <utility>
 
 #include <Core/Types.h>
+#include <DataTypes/DataTypeInterval.h>
+
 
 namespace DB
 {
@@ -16,7 +18,7 @@ struct TypePair
 
 
 template <typename T, bool _int, bool _float, bool _decimal, bool _datetime, typename F>
-bool callOnBasicType(TypeIndex number, F && f)
+static bool callOnBasicType(TypeIndex number, F && f)
 {
     if constexpr (_int)
     {
@@ -86,7 +88,7 @@ bool callOnBasicType(TypeIndex number, F && f)
 
 /// Unroll template using TypeIndex
 template <bool _int, bool _float, bool _decimal, bool _datetime, typename F>
-inline bool callOnBasicTypes(TypeIndex type_num1, TypeIndex type_num2, F && f)
+static inline bool callOnBasicTypes(TypeIndex type_num1, TypeIndex type_num2, F && f)
 {
     if constexpr (_int)
     {
@@ -170,7 +172,7 @@ template <is_decimal T> class DataTypeDecimal;
 
 
 template <typename T, typename F, typename... ExtraArgs>
-bool callOnIndexAndDataType(TypeIndex number, F && f, ExtraArgs && ... args)
+static bool callOnIndexAndDataType(TypeIndex number, F && f, ExtraArgs && ... args)
 {
     switch (number)
     {
@@ -210,6 +212,8 @@ bool callOnIndexAndDataType(TypeIndex number, F && f, ExtraArgs && ... args)
         case TypeIndex::UUID:           return f(TypePair<DataTypeUUID, T>(), std::forward<ExtraArgs>(args)...);
         case TypeIndex::IPv4:           return f(TypePair<DataTypeIPv4, T>(), std::forward<ExtraArgs>(args)...);
         case TypeIndex::IPv6:           return f(TypePair<DataTypeIPv6, T>(), std::forward<ExtraArgs>(args)...);
+
+        case TypeIndex::Interval:       return f(TypePair<DataTypeInterval, T>(), std::forward<ExtraArgs>(args)...);
 
         default:
             break;

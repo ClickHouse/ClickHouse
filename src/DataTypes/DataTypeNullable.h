@@ -16,7 +16,6 @@ public:
     explicit DataTypeNullable(const DataTypePtr & nested_data_type_);
     std::string doGetName() const override { return "Nullable(" + nested_data_type->getName() + ")"; }
     const char * getFamilyName() const override { return "Nullable"; }
-    String getSQLCompatibleName() const override { return nested_data_type->getSQLCompatibleName(); }
     TypeIndex getTypeId() const override { return TypeIndex::Nullable; }
 
     MutableColumnPtr createColumn() const override;
@@ -42,8 +41,12 @@ public:
     bool onlyNull() const override;
     bool canBeInsideLowCardinality() const override { return nested_data_type->canBeInsideLowCardinality(); }
     bool canBePromoted() const override { return nested_data_type->canBePromoted(); }
+    ColumnPtr createColumnConst(size_t size, const Field & field) const override;
 
     const DataTypePtr & getNestedType() const { return nested_data_type; }
+
+    void forEachChild(const ChildCallback & callback) const override;
+
 private:
     SerializationPtr doGetDefaultSerialization() const override;
 
@@ -55,5 +58,10 @@ DataTypePtr makeNullable(const DataTypePtr & type);
 DataTypePtr makeNullableSafe(const DataTypePtr & type);
 DataTypePtr removeNullable(const DataTypePtr & type);
 DataTypePtr makeNullableOrLowCardinalityNullable(const DataTypePtr & type);
+DataTypePtr makeNullableOrLowCardinalityNullableSafe(const DataTypePtr & type);
+/// Nullable(T) -> T, LowCardinality(Nullable(T)) -> T
+DataTypePtr removeNullableOrLowCardinalityNullable(const DataTypePtr & type);
+
+bool canContainNull(const IDataType & type);
 
 }

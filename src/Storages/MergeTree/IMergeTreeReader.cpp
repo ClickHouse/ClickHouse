@@ -1,6 +1,9 @@
 #include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/MergeTreeReadTask.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNested.h>
 #include <Common/escapeForFileName.h>
 #include <Compression/CachedCompressedReadBuffer.h>
 #include <Columns/ColumnArray.h>
@@ -18,12 +21,13 @@ namespace
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
-
 
 IMergeTreeReader::IMergeTreeReader(
     MergeTreeDataPartInfoForReaderPtr data_part_info_for_read_,
     const NamesAndTypesList & columns_,
+    const VirtualFields & virtual_fields_,
     const StorageSnapshotPtr & storage_snapshot_,
     UncompressedCache * uncompressed_cache_,
     MarkCache * mark_cache_,
@@ -40,12 +44,14 @@ IMergeTreeReader::IMergeTreeReader(
     , alter_conversions(data_part_info_for_read->getAlterConversions())
     /// For wide parts convert plain arrays of Nested to subcolumns
     /// to allow to use shared offset column from cache.
+    , original_requested_columns(columns_)
     , requested_columns(data_part_info_for_read->isWidePart()
         ? Nested::convertToSubcolumns(columns_)
         : columns_)
     , part_columns(data_part_info_for_read->isWidePart()
         ? data_part_info_for_read->getColumnsDescriptionWithCollectedNested()
         : data_part_info_for_read->getColumnsDescription())
+    , virtual_fields(virtual_fields_)
 {
     columns_to_read.reserve(requested_columns.size());
     serializations.reserve(requested_columns.size());
@@ -60,6 +66,48 @@ IMergeTreeReader::IMergeTreeReader(
 const IMergeTreeReader::ValueSizeMap & IMergeTreeReader::getAvgValueSizeHints() const
 {
     return avg_value_size_hints;
+}
+
+void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
+{
+    chassert(columns.size() == requested_columns.size());
+
+    const auto * loaded_part_info = typeid_cast<const LoadedMergeTreeDataPartInfoForReader *>(data_part_info_for_read.get());
+    if (!loaded_part_info)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Filling of virtual columns is supported only for LoadedMergeTreeDataPartInfoForReader");
+
+    const auto & data_part = loaded_part_info->getDataPart();
+    const auto & storage_columns = storage_snapshot->metadata->getColumns();
+    const auto & virtual_columns = storage_snapshot->virtual_columns;
+
+    auto it = requested_columns.begin();
+    for (size_t pos = 0; pos < columns.size(); ++pos, ++it)
+    {
+        if (columns[pos] || storage_columns.has(it->name))
+            continue;
+
+        auto virtual_column = virtual_columns->tryGet(it->name);
+        if (!virtual_column)
+            continue;
+
+        if (!it->type->equals(*virtual_column->type))
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Data type for virtual column {} mismatched. Requested type: {}, virtual column type: {}",
+                it->name, it->type->getName(), virtual_column->type->getName());
+        }
+
+        if (MergeTreeRangeReader::virtuals_to_fill.contains(it->name))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Virtual column {} must be filled by range reader", it->name);
+
+        Field field;
+        if (auto field_it = virtual_fields.find(it->name); field_it != virtual_fields.end())
+            field = field_it->second;
+        else
+            field = getFieldForConstVirtualColumn(it->name, *data_part);
+
+        columns[pos] = virtual_column->type->createColumnConst(rows, field)->convertToFullColumnIfConst();
+    }
 }
 
 void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows) const
@@ -92,41 +140,72 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
 {
     try
     {
-        size_t num_columns = requested_columns.size();
+        size_t num_columns = original_requested_columns.size();
 
         if (res_columns.size() != num_columns)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "invalid number of columns passed to MergeTreeReader::fillMissingColumns. "
                             "Expected {}, got {}", num_columns, res_columns.size());
 
-        /// Convert columns list to block.
-        /// TODO: rewrite with columns interface. It will be possible after changes in ExpressionActions.
-        auto name_and_type = requested_columns.begin();
-        for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
-        {
-            if (res_columns[pos] == nullptr)
-                continue;
+        NameSet full_requested_columns_set;
+        NamesAndTypesList full_requested_columns;
 
-            additional_columns.insert({res_columns[pos], name_and_type->type, name_and_type->name});
+        /// Convert columns list to block. And convert subcolumns to full columns.
+        /// Defaults should be executed on full columns to get correct values for subcolumns.
+        /// TODO: rewrite with columns interface. It will be possible after changes in ExpressionActions.
+
+        auto it = original_requested_columns.begin();
+        for (size_t pos = 0; pos < num_columns; ++pos, ++it)
+        {
+            if (res_columns[pos])
+            {
+                /// If column is already read, request it as is.
+                if (full_requested_columns_set.emplace(it->name).second)
+                    full_requested_columns.emplace_back(it->name, it->type);
+
+                additional_columns.insert({res_columns[pos], it->type, it->name});
+            }
+            else
+            {
+                /// If column or subcolumn is missed, request full column for correct evaluation of defaults of subcolumns.
+                auto name_in_storage = it->getNameInStorage();
+                if (full_requested_columns_set.emplace(name_in_storage).second)
+                    full_requested_columns.emplace_back(name_in_storage, it->getTypeInStorage());
+            }
         }
 
         auto dag = DB::evaluateMissingDefaults(
-            additional_columns, requested_columns,
+            additional_columns, full_requested_columns,
             storage_snapshot->metadata->getColumns(),
             data_part_info_for_read->getContext());
 
         if (dag)
         {
-            dag->addMaterializingOutputActions();
-            auto actions = std::make_shared<
-                ExpressionActions>(std::move(dag),
+            dag->addMaterializingOutputActions(/*materialize_sparse=*/ false);
+            auto actions = std::make_shared<ExpressionActions>(
+                std::move(*dag),
                 ExpressionActionsSettings::fromSettings(data_part_info_for_read->getContext()->getSettingsRef()));
             actions->execute(additional_columns);
         }
 
         /// Move columns from block.
-        name_and_type = requested_columns.begin();
-        for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
-            res_columns[pos] = std::move(additional_columns.getByName(name_and_type->name).column);
+        it = original_requested_columns.begin();
+        for (size_t pos = 0; pos < num_columns; ++pos, ++it)
+        {
+            if (additional_columns.has(it->name))
+            {
+                res_columns[pos] = additional_columns.getByName(it->name).column;
+                continue;
+            }
+
+            auto name_in_storage = it->getNameInStorage();
+            res_columns[pos] = additional_columns.getByName(name_in_storage).column;
+
+            if (it->isSubcolumn())
+            {
+                const auto & type_in_storage = it->getTypeInStorage();
+                res_columns[pos] = type_in_storage->getSubcolumn(it->getSubcolumnName(), res_columns[pos]);
+            }
+        }
     }
     catch (Exception & e)
     {
@@ -140,16 +219,34 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
     }
 }
 
+bool IMergeTreeReader::isSubcolumnOffsetsOfNested(const String & name_in_storage, const String & subcolumn_name) const
+{
+    /// We cannot read separate subcolumn with offsets from compact parts.
+    if (!data_part_info_for_read->isWidePart() || subcolumn_name != "size0")
+        return false;
+
+    auto split = Nested::splitName(name_in_storage);
+    if (split.second.empty())
+        return false;
+
+    auto nested_column = part_columns.tryGetColumn(GetColumnsOptions::All, split.first);
+    return nested_column && isNested(nested_column->type);
+}
+
 String IMergeTreeReader::getColumnNameInPart(const NameAndTypePair & required_column) const
 {
     auto name_in_storage = required_column.getNameInStorage();
-    if (alter_conversions->isColumnRenamed(name_in_storage))
-    {
-        name_in_storage = alter_conversions->getColumnOldName(name_in_storage);
-        return Nested::concatenateName(name_in_storage, required_column.getSubcolumnName());
-    }
+    auto subcolumn_name = required_column.getSubcolumnName();
 
-    return required_column.name;
+    if (alter_conversions->isColumnRenamed(name_in_storage))
+        name_in_storage = alter_conversions->getColumnOldName(name_in_storage);
+
+    /// A special case when we read subcolumn of shared offsets of Nested.
+    /// E.g. instead of requested column "n.arr1.size0" we must read column "n.size0" from disk.
+    if (isSubcolumnOffsetsOfNested(name_in_storage, subcolumn_name))
+        name_in_storage = Nested::splitName(name_in_storage).first;
+
+    return Nested::concatenateName(name_in_storage, subcolumn_name);
 }
 
 NameAndTypePair IMergeTreeReader::getColumnInPart(const NameAndTypePair & required_column) const
@@ -205,7 +302,8 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
         /// Move columns from block.
         name_and_type = requested_columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
-            res_columns[pos] = std::move(copy_block.getByName(name_and_type->name).column);
+            if (copy_block.has(name_and_type->name))
+                res_columns[pos] = std::move(copy_block.getByName(name_and_type->name).column);
     }
     catch (Exception & e)
     {

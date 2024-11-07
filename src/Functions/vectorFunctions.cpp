@@ -1,9 +1,9 @@
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeInterval.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeNothing.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/ITupleFunction.h>
@@ -12,11 +12,42 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
     extern const int ARGUMENT_OUT_OF_BOUND;
+}
+
+namespace
+{
+
+/// Checks that passed data types are tuples and have the same size.
+/// Returns size of tuples.
+size_t checkAndGetTuplesSize(const DataTypePtr & lhs_type, const DataTypePtr & rhs_type, const String & function_name = {})
+{
+    const auto * left_tuple = checkAndGetDataType<DataTypeTuple>(lhs_type.get());
+    const auto * right_tuple = checkAndGetDataType<DataTypeTuple>(rhs_type.get());
+
+    if (!left_tuple)
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0{} should be tuple, got {}",
+                        function_name.empty() ? "" : fmt::format(" of function {}", function_name), lhs_type->getName());
+
+    if (!right_tuple)
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 1{}should be tuple, got {}",
+                        function_name.empty() ? "" : fmt::format(" of function {}", function_name), rhs_type->getName());
+
+    const auto & left_types = left_tuple->getElements();
+    const auto & right_types = right_tuple->getElements();
+
+    if (left_types.size() != right_types.size())
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Expected tuples of the same size as arguments{}, got {} and {}",
+                        function_name.empty() ? "" : fmt::format(" of function {}", function_name), lhs_type->getName(), rhs_type->getName());
+    return left_types.size();
+}
+
 }
 
 struct PlusName { static constexpr auto name = "plus"; };
@@ -33,8 +64,7 @@ struct L2SquaredLabel { static constexpr auto name = "2Squared"; };
 struct LinfLabel { static constexpr auto name = "inf"; };
 struct LpLabel { static constexpr auto name = "p"; };
 
-/// str starts from the lowercase letter; not constexpr due to the compiler version
-/*constexpr*/ std::string makeFirstLetterUppercase(const std::string& str)
+constexpr std::string makeFirstLetterUppercase(const std::string & str)
 {
     std::string res(str);
     res[0] += 'A' - 'a';
@@ -57,35 +87,13 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        const auto * left_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
-        const auto * right_tuple = checkAndGetDataType<DataTypeTuple>(arguments[1].type.get());
+        size_t tuple_size = checkAndGetTuplesSize(arguments[0].type, arguments[1].type, getName());
 
-        if (!left_tuple)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuple, got {}",
-                            getName(), arguments[0].type->getName());
+        const auto & left_types = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get())->getElements();
+        const auto & right_types = checkAndGetDataType<DataTypeTuple>(arguments[1].type.get())->getElements();
 
-        if (!right_tuple)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 1 of function {} should be tuple, got {}",
-                            getName(), arguments[1].type->getName());
-
-        const auto & left_types = left_tuple->getElements();
-        const auto & right_types = right_tuple->getElements();
-
-        Columns left_elements;
-        Columns right_elements;
-        if (arguments[0].column)
-            left_elements = getTupleElements(*arguments[0].column);
-        if (arguments[1].column)
-            right_elements = getTupleElements(*arguments[1].column);
-
-        if (left_types.size() != right_types.size())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "Expected tuples of the same size as arguments of function {}. Got {} and {}",
-                            getName(), arguments[0].type->getName(), arguments[1].type->getName());
-
-        size_t tuple_size = left_types.size();
-        if (tuple_size == 0)
-            return std::make_shared<DataTypeUInt8>();
+        Columns left_elements = arguments[0].column ? getTupleElements(*arguments[0].column) : Columns();
+        Columns right_elements = arguments[1].column ? getTupleElements(*arguments[1].column) : Columns();
 
         auto func = FunctionFactory::instance().get(FuncName::name, context);
         DataTypes types(tuple_size);
@@ -119,7 +127,7 @@ public:
 
         size_t tuple_size = left_elements.size();
         if (tuple_size == 0)
-            return DataTypeUInt8().createColumnConstWithDefaultValue(input_rows_count);
+            return ColumnTuple::create(input_rows_count);
 
         auto func = FunctionFactory::instance().get(FuncName::name, context);
         Columns columns(tuple_size);
@@ -177,9 +185,6 @@ public:
             cur_elements = getTupleElements(*arguments[0].column);
 
         size_t tuple_size = cur_types.size();
-        if (tuple_size == 0)
-            return std::make_shared<DataTypeUInt8>();
-
         auto negate = FunctionFactory::instance().get("negate", context);
         DataTypes types(tuple_size);
         for (size_t i = 0; i < tuple_size; ++i)
@@ -197,7 +202,7 @@ public:
             }
         }
 
-        return std::make_shared<DataTypeTuple>(types);
+        return std::make_shared<DataTypeTuple>(std::move(types));
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -208,7 +213,7 @@ public:
 
         size_t tuple_size = cur_elements.size();
         if (tuple_size == 0)
-            return DataTypeUInt8().createColumnConstWithDefaultValue(input_rows_count);
+            return ColumnTuple::create(input_rows_count);
 
         auto negate = FunctionFactory::instance().get("negate", context);
         Columns columns(tuple_size);
@@ -248,13 +253,9 @@ public:
 
         const auto & cur_types = cur_tuple->getElements();
 
-        Columns cur_elements;
-        if (arguments[0].column)
-            cur_elements = getTupleElements(*arguments[0].column);
+        Columns cur_elements = arguments[0].column ? getTupleElements(*arguments[0].column) : Columns();
 
         size_t tuple_size = cur_types.size();
-        if (tuple_size == 0)
-            return std::make_shared<DataTypeUInt8>();
 
         const auto & p_column = arguments[1];
         auto func = FunctionFactory::instance().get(FuncName::name, context);
@@ -285,7 +286,7 @@ public:
 
         size_t tuple_size = cur_elements.size();
         if (tuple_size == 0)
-            return DataTypeUInt8().createColumnConstWithDefaultValue(input_rows_count);
+            return ColumnTuple::create(input_rows_count);
 
         const auto & p_column = arguments[1];
         auto func = FunctionFactory::instance().get(FuncName::name, context);
@@ -583,11 +584,14 @@ public:
             types = {arguments[0]};
         }
 
-        const auto * interval_last = checkAndGetDataType<DataTypeInterval>(types.back().get());
-        const auto * interval_new = checkAndGetDataType<DataTypeInterval>(arguments[1].get());
+        if (!types.empty())
+        {
+            const auto * interval_last = checkAndGetDataType<DataTypeInterval>(types.back().get());
+            const auto * interval_new = checkAndGetDataType<DataTypeInterval>(arguments[1].get());
 
-        if (!interval_last->equals(*interval_new))
-            types.push_back(arguments[1]);
+            if (!interval_last->equals(*interval_new))
+                types.push_back(arguments[1]);
+        }
 
         return std::make_shared<DataTypeTuple>(types);
     }
@@ -632,14 +636,10 @@ public:
             size_t tuple_size = cur_elements.size();
 
             if (tuple_size == 0)
-            {
-                can_be_merged = false;
-            }
-            else
-            {
-                const auto * tuple_last_interval = checkAndGetDataType<DataTypeInterval>(cur_types.back().get());
-                can_be_merged = tuple_last_interval->equals(*second_interval);
-            }
+                return ColumnTuple::create(input_rows_count);
+
+            const auto * tuple_last_interval = checkAndGetDataType<DataTypeInterval>(cur_types.back().get());
+            can_be_merged = tuple_last_interval->equals(*second_interval);
 
             if (can_be_merged)
                 tuple_columns.resize(tuple_size);
@@ -726,9 +726,7 @@ public:
 
         const auto & cur_types = cur_tuple->getElements();
 
-        Columns cur_elements;
-        if (arguments[0].column)
-            cur_elements = getTupleElements(*arguments[0].column);
+        Columns cur_elements = arguments[0].column ? getTupleElements(*arguments[0].column) : Columns();
 
         size_t tuple_size = cur_types.size();
         if (tuple_size == 0)
@@ -1147,7 +1145,7 @@ public:
         double p;
         if (isFloat(p_column.column->getDataType()))
             p = p_column.column->getFloat64(0);
-        else if (isUnsignedInteger(p_column.column->getDataType()))
+        else if (isUInt(p_column.column->getDataType()))
             p = p_column.column->getUInt(0);
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must be either constant Float64 or constant UInt", getName());
@@ -1344,6 +1342,11 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
+        size_t tuple_size = checkAndGetTuplesSize(arguments[0].type, arguments[1].type, getName());
+        if (tuple_size == 0)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Result of function {} is undefined for empty tuples", getName());
+
         FunctionDotProduct dot(context);
         ColumnWithTypeAndName dot_result{dot.getReturnTypeImpl(arguments), {}};
 
@@ -1364,11 +1367,11 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        if (getReturnTypeImpl(arguments)->isNullable())
-        {
-            return DataTypeNullable(std::make_shared<DataTypeNothing>())
-                   .createColumnConstWithDefaultValue(input_rows_count);
-        }
+        /// TODO: cosineDistance does not support nullable arguments
+        /// https://github.com/ClickHouse/ClickHouse/pull/27933#issuecomment-916670286
+        auto return_type = getReturnTypeImpl(arguments);
+        if (return_type->isNullable())
+            return return_type->createColumnConstWithDefaultValue(input_rows_count);
 
         FunctionDotProduct dot(context);
         ColumnWithTypeAndName dot_result{dot.executeImpl(arguments, DataTypePtr(), input_rows_count),
@@ -1400,7 +1403,7 @@ public:
                                                     divide_result.type, input_rows_count);
 
         auto minus_elem = minus->build({one, divide_result});
-        return minus_elem->execute({one, divide_result}, minus_elem->getResultType(), {});
+        return minus_elem->execute({one, divide_result}, minus_elem->getResultType(), input_rows_count);
     }
 };
 
@@ -1573,9 +1576,9 @@ using TupleOrArrayFunctionCosineDistance = TupleOrArrayFunction<CosineDistanceTr
 REGISTER_FUNCTION(VectorFunctions)
 {
     factory.registerFunction<FunctionTuplePlus>();
-    factory.registerAlias("vectorSum", FunctionTuplePlus::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("vectorSum", FunctionTuplePlus::name, FunctionFactory::Case::Insensitive);
     factory.registerFunction<FunctionTupleMinus>();
-    factory.registerAlias("vectorDifference", FunctionTupleMinus::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("vectorDifference", FunctionTupleMinus::name, FunctionFactory::Case::Insensitive);
     factory.registerFunction<FunctionTupleMultiply>();
     factory.registerFunction<FunctionTupleDivide>();
     factory.registerFunction<FunctionTupleModulo>();
@@ -1649,7 +1652,7 @@ If the types of the first interval (or the interval in the tuple) and the second
     factory.registerFunction<FunctionTupleIntDivOrZeroByNumber>();
 
     factory.registerFunction<TupleOrArrayFunctionDotProduct>();
-    factory.registerAlias("scalarProduct", TupleOrArrayFunctionDotProduct::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("scalarProduct", TupleOrArrayFunctionDotProduct::name, FunctionFactory::Case::Insensitive);
 
     factory.registerFunction<TupleOrArrayFunctionL1Norm>();
     factory.registerFunction<TupleOrArrayFunctionL2Norm>();
@@ -1657,11 +1660,11 @@ If the types of the first interval (or the interval in the tuple) and the second
     factory.registerFunction<TupleOrArrayFunctionLinfNorm>();
     factory.registerFunction<TupleOrArrayFunctionLpNorm>();
 
-    factory.registerAlias("normL1", TupleOrArrayFunctionL1Norm::name, FunctionFactory::CaseInsensitive);
-    factory.registerAlias("normL2", TupleOrArrayFunctionL2Norm::name, FunctionFactory::CaseInsensitive);
-    factory.registerAlias("normL2Squared", TupleOrArrayFunctionL2SquaredNorm::name, FunctionFactory::CaseInsensitive);
-    factory.registerAlias("normLinf", TupleOrArrayFunctionLinfNorm::name, FunctionFactory::CaseInsensitive);
-    factory.registerAlias("normLp", FunctionLpNorm::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("normL1", TupleOrArrayFunctionL1Norm::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("normL2", TupleOrArrayFunctionL2Norm::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("normL2Squared", TupleOrArrayFunctionL2SquaredNorm::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("normLinf", TupleOrArrayFunctionLinfNorm::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("normLp", FunctionLpNorm::name, FunctionFactory::Case::Insensitive);
 
     factory.registerFunction<TupleOrArrayFunctionL1Distance>();
     factory.registerFunction<TupleOrArrayFunctionL2Distance>();
@@ -1669,21 +1672,21 @@ If the types of the first interval (or the interval in the tuple) and the second
     factory.registerFunction<TupleOrArrayFunctionLinfDistance>();
     factory.registerFunction<TupleOrArrayFunctionLpDistance>();
 
-    factory.registerAlias("distanceL1", FunctionL1Distance::name, FunctionFactory::CaseInsensitive);
-    factory.registerAlias("distanceL2", FunctionL2Distance::name, FunctionFactory::CaseInsensitive);
-    factory.registerAlias("distanceL2Squared", FunctionL2SquaredDistance::name, FunctionFactory::CaseInsensitive);
-    factory.registerAlias("distanceLinf", FunctionLinfDistance::name, FunctionFactory::CaseInsensitive);
-    factory.registerAlias("distanceLp", FunctionLpDistance::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("distanceL1", FunctionL1Distance::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("distanceL2", FunctionL2Distance::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("distanceL2Squared", FunctionL2SquaredDistance::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("distanceLinf", FunctionLinfDistance::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("distanceLp", FunctionLpDistance::name, FunctionFactory::Case::Insensitive);
 
     factory.registerFunction<FunctionL1Normalize>();
     factory.registerFunction<FunctionL2Normalize>();
     factory.registerFunction<FunctionLinfNormalize>();
     factory.registerFunction<FunctionLpNormalize>();
 
-    factory.registerAlias("normalizeL1", FunctionL1Normalize::name, FunctionFactory::CaseInsensitive);
-    factory.registerAlias("normalizeL2", FunctionL2Normalize::name, FunctionFactory::CaseInsensitive);
-    factory.registerAlias("normalizeLinf", FunctionLinfNormalize::name, FunctionFactory::CaseInsensitive);
-    factory.registerAlias("normalizeLp", FunctionLpNormalize::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("normalizeL1", FunctionL1Normalize::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("normalizeL2", FunctionL2Normalize::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("normalizeLinf", FunctionLinfNormalize::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("normalizeLp", FunctionLpNormalize::name, FunctionFactory::Case::Insensitive);
 
     factory.registerFunction<TupleOrArrayFunctionCosineDistance>();
 }

@@ -16,7 +16,7 @@ ExpressionTransform × 4
                     (Expression)
                     ExpressionTransform × 4
                       (ReadFromMergeTree)
-                      MergeTreeInOrder × 4 0 → 1
+                      MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 4 0 → 1
           (ReadFromRemote)
 select a from remote(test_cluster_two_shards, currentDatabase(), t) group by a order by a limit 5 offset 100500;
 100500
@@ -47,7 +47,7 @@ ExpressionTransform × 4
                               (Expression)
                               ExpressionTransform × 4
                                 (ReadFromMergeTree)
-                                MergeTreeInOrder × 4 0 → 1
+                                MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 4 0 → 1
                     (ReadFromRemote)
           (ReadFromRemote)
 select a from remote(test_cluster_two_shards, currentDatabase(), dist_t) group by a order by a limit 5 offset 100500;
@@ -84,7 +84,7 @@ ExpressionTransform
                                 (Expression)
                                 ExpressionTransform × 4
                                   (ReadFromMergeTree)
-                                  MergeTreeInOrder × 4 0 → 1
+                                  MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 4 0 → 1
                       (ReadFromRemote)
 select a, count() from dist_t_different_dbs group by a order by a limit 5 offset 500;
 500	2000
@@ -100,7 +100,7 @@ select a, count() from dist_t_different_dbs group by a, b order by a limit 5 off
 504	2000
 1000000
 -- { echoOn } --
-explain pipeline select a from pr_t group by a order by a limit 5 offset 500;
+explain pipeline select a from pr_t group by a order by a limit 5 offset 500 settings parallel_replicas_local_plan=0;
 (Expression)
 ExpressionTransform
   (Limit)
@@ -119,6 +119,31 @@ ExpressionTransform
                     Resize 1 → 4
                       GroupingAggregatedTransform 3 → 1
                         (ReadFromRemoteParallelReplicas)
+explain pipeline select a from pr_t group by a order by a limit 5 offset 500 settings allow_experimental_analyzer=1, parallel_replicas_local_plan=1;
+(Expression)
+ExpressionTransform
+  (Limit)
+  Limit
+    (Sorting)
+    MergingSortedTransform 4 → 1
+      MergeSortingTransform × 4
+        LimitsCheckingTransform × 4
+          PartialSortingTransform × 4
+            (Expression)
+            ExpressionTransform × 4
+              (MergingAggregated)
+              MergingAggregatedBucketTransform × 4
+                Resize 1 → 4
+                  FinishAggregatingInOrderTransform 3 → 1
+                    (Union)
+                      (Aggregating)
+                      FinalizeAggregatedTransform
+                        AggregatingInOrderTransform
+                          (Expression)
+                          ExpressionTransform
+                            (ReadFromMergeTree)
+                            MergeTreeSelect(pool: ReadPoolParallelReplicasInOrder, algorithm: InOrder) 0 → 1
+                      (ReadFromRemoteParallelReplicas)
 select a, count() from pr_t group by a order by a limit 5 offset 500;
 500	1000
 501	1000

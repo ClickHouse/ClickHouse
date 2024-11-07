@@ -20,7 +20,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
     ...
-) ENGINE = ReplacingMergeTree([ver])
+) ENGINE = ReplacingMergeTree([ver [, is_deleted]])
 [PARTITION BY expr]
 [ORDER BY expr]
 [SAMPLE BY expr]
@@ -29,7 +29,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Описание параметров запроса смотрите в [описании запроса](../../../engines/table-engines/mergetree-family/replacingmergetree.md).
 
-:::warning "Внимание"
+:::warning Внимание
 Уникальность строк определяется `ORDER BY` секцией таблицы, а не `PRIMARY KEY`.
 :::
 
@@ -86,6 +86,58 @@ SELECT * FROM mySecondReplacingMT FINAL;
 │   1 │ first   │ 2020-01-01 01:01:01 │
 └─────┴─────────┴─────────────────────┘
 ```
+### is_deleted
+
+`is_deleted` —  Имя столбца, который используется во время слияния для обозначения того, нужно ли отображать строку или она подлежит удалению; `1` - для удаления строки, `0` - для отображения строки.
+
+  Тип данных столбца — `UInt8`.
+
+:::note
+`is_deleted` может быть использован, если `ver` используется.
+
+Строка удаляется в следующих случаях:
+
+    - при использовании инструкции `OPTIMIZE ... FINAL CLEANUP`
+    - при использовании инструкции `OPTIMIZE ... FINAL`
+    - есть новые версии строки
+
+Не рекомендуется выполнять `FINAL CLEANUP`, это может привести к неожиданным результатам, например удаленные строки могут вновь появиться.
+
+Вне зависимости от производимых изменений над данными, версия должна увеличиваться. Если у двух строк одна и та же версия, то остается только последняя вставленная строка.
+:::
+
+Пример:
+
+```sql
+-- with ver and is_deleted
+CREATE OR REPLACE TABLE myThirdReplacingMT
+(
+    `key` Int64,
+    `someCol` String,
+    `eventTime` DateTime,
+    `is_deleted` UInt8
+)
+ENGINE = ReplacingMergeTree(eventTime, is_deleted)
+ORDER BY key;
+
+INSERT INTO myThirdReplacingMT Values (1, 'first', '2020-01-01 01:01:01', 0);
+INSERT INTO myThirdReplacingMT Values (1, 'first', '2020-01-01 01:01:01', 1); 
+
+select * from myThirdReplacingMT final;
+
+0 rows in set. Elapsed: 0.003 sec.
+
+-- delete rows with is_deleted
+OPTIMIZE TABLE myThirdReplacingMT FINAL CLEANUP; 
+
+INSERT INTO myThirdReplacingMT Values (1, 'first', '2020-01-01 00:00:00', 0);
+
+select * from myThirdReplacingMT final; 
+
+┌─key─┬─someCol─┬───────────eventTime─┬─is_deleted─┐
+│   1 │ first   │ 2020-01-01 00:00:00 │          0 │
+└─────┴─────────┴─────────────────────┴────────────┘
+```
 
 ## Секции запроса
 
@@ -95,7 +147,7 @@ SELECT * FROM mySecondReplacingMT FINAL;
 
 <summary>Устаревший способ создания таблицы</summary>
 
-:::warning "Внимание"
+:::warning Внимание
 Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ, описанный выше.
 :::
 

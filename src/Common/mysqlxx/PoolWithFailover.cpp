@@ -2,10 +2,16 @@
 #include <ctime>
 #include <random>
 #include <thread>
+#include <pcg_random.hpp>
 #include <mysqlxx/PoolWithFailover.h>
+#include <Common/randomSeed.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
+namespace DB::ErrorCodes
+{
+    extern const int ALL_CONNECTION_TRIES_FAILED;
+}
 
 using namespace mysqlxx;
 
@@ -40,10 +46,7 @@ PoolWithFailover::PoolWithFailover(
         /// PoolWithFailover objects are stored in a cache inside PoolFactory.
         /// This cache is reset by ExternalDictionariesLoader after every SYSTEM RELOAD DICTIONAR{Y|IES}
         /// which triggers massive re-constructing of connection pools.
-        /// The state of PRNGs like std::mt19937 is considered to be quite heavy
-        /// thus here we attempt to optimize its construction.
-        static thread_local std::mt19937 rnd_generator(static_cast<uint_fast32_t>(
-                std::hash<std::thread::id>{}(std::this_thread::get_id()) + std::clock()));
+        static thread_local pcg64_fast rnd_generator(randomSeed());
         for (auto & [_, replicas] : replicas_by_priority)
         {
             if (replicas.size() > 1)
@@ -191,10 +194,6 @@ PoolWithFailover::Entry PoolWithFailover::get()
     }
 
     DB::WriteBufferFromOwnString message;
-    if (replicas_by_priority.size() > 1)
-        message << "Connections to all mysql replicas failed: ";
-    else
-        message << "Connections to mysql failed: ";
 
     for (auto it = replicas_by_priority.begin(); it != replicas_by_priority.end(); ++it)
     {
@@ -211,5 +210,8 @@ PoolWithFailover::Entry PoolWithFailover::get()
         }
     }
 
-    throw Poco::Exception(message.str());
+
+    if (replicas_by_priority.size() > 1)
+        throw DB::Exception(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Connections to all mysql replicas failed: {}", message.str());
+    throw DB::Exception(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Connections to mysql failed: {}", message.str());
 }

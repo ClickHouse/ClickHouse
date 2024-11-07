@@ -6,7 +6,7 @@ sidebar_label: file
 
 # file
 
-Provides a table-like interface to SELECT from and INSERT to files. This table function is similar to the [s3](/docs/en/sql-reference/table-functions/url.md) table function.  Use file() when working with local files, and s3() when working with buckets in S3, GCS, or MinIO.
+A table engine which provides a table-like interface to SELECT from and INSERT into files, similar to the [s3](/docs/en/sql-reference/table-functions/url.md) table function.  Use `file()` when working with local files, and `s3()` when working with buckets in object storage such as S3, GCS, or MinIO.
 
 The `file` function can be used in `SELECT` and `INSERT` queries to read from or write to files.
 
@@ -18,18 +18,18 @@ file([path_to_archive ::] path [,format] [,structure] [,compression])
 
 **Parameters**
 
-- `path` — The relative path to the file from [user_files_path](/docs/en/operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_files_path). Path to file support following globs in read-only mode: `*`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc', 'def'` — strings.
-- `path_to_archive` - The relative path to zip/tar/7z archive. Path to archive support the same globs as `path`.
+- `path` — The relative path to the file from [user_files_path](/docs/en/operations/server-configuration-parameters/settings.md#user_files_path). Supports in read-only mode the following [globs](#globs-in-path): `*`, `?`, `{abc,def}` (with `'abc'` and `'def'` being strings) and `{N..M}` (with `N` and `M` being numbers).
+- `path_to_archive` - The relative path to a zip/tar/7z archive. Supports the same globs as `path`.
 - `format` — The [format](/docs/en/interfaces/formats.md#formats) of the file.
 - `structure` — Structure of the table. Format: `'column1_name column1_type, column2_name column2_type, ...'`.
-- `compression` — The existing compression type when used in a `SELECT` query, or the desired compression type when used in an `INSERT` query.  The supported compression types are `gz`, `br`, `xz`, `zst`, `lz4`, and `bz2`.
+- `compression` — The existing compression type when used in a `SELECT` query, or the desired compression type when used in an `INSERT` query. Supported compression types are `gz`, `br`, `xz`, `zst`, `lz4`, and `bz2`.
 
 
 **Returned value**
 
-A table with the specified structure for reading or writing data in the specified file.
+A table for reading or writing data in a file.
 
-## File Write Examples
+## Examples for Writing to a File
 
 ### Write to a TSV file
 
@@ -48,9 +48,9 @@ As a result, the data is written into the file `test.tsv`:
 1	3	2
 ```
 
-### Partitioned Write to multiple TSV files
+### Partitioned write to multiple TSV files
 
-If you specify `PARTITION BY` expression when inserting data into a file() function, a separate file is created for each partition value. Splitting the data into separate files helps to improve reading operations efficiency.
+If you specify a `PARTITION BY` expression when inserting data into a table function of type `file()`, then a separate file is created for each partition. Splitting the data into separate files helps to improve performance of read operations.
 
 ```sql
 INSERT INTO TABLE FUNCTION
@@ -72,11 +72,11 @@ As a result, the data is written into three files: `test_1.tsv`, `test_2.tsv`, a
 1	2	3
 ```
 
-## File Read Examples
+## Examples for Reading from a File
 
 ### SELECT from a CSV file
 
-Setting `user_files_path` and the contents of the file `test.csv`:
+First, set `user_files_path` in the server configuration and prepare a file `test.csv`:
 
 ``` bash
 $ grep user_files_path /etc/clickhouse-server/config.xml
@@ -88,7 +88,7 @@ $ cat /var/lib/clickhouse/user_files/test.csv
     78,43,45
 ```
 
-Getting data from a table in `test.csv` and selecting the first two rows from it:
+Then, read data from `test.csv` into a table and select its first two rows:
 
 ``` sql
 SELECT * FROM
@@ -103,15 +103,7 @@ LIMIT 2;
 └─────────┴─────────┴─────────┘
 ```
 
-Getting the first 10 lines of a table that contains 3 columns of [UInt32](/docs/en/sql-reference/data-types/int-uint.md) type from a CSV file:
-
-``` sql
-SELECT * FROM
-file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
-LIMIT 10;
-```
-
-### Inserting data from a file into a table:
+### Inserting data from a file into a table
 
 ``` sql
 INSERT INTO FUNCTION
@@ -130,44 +122,53 @@ file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 └─────────┴─────────┴─────────┘
 ```
 
-Getting data from table in table.csv, located in archive1.zip or/and archive2.zip
+Reading data from `table.csv`, located in `archive1.zip` or/and `archive2.zip`:
+
 ``` sql
 SELECT * FROM file('user_files/archives/archive{1..2}.zip :: table.csv');
 ```
 
-## Globs in Path
+## Globs in path
 
-Multiple path components can have globs. For being processed file must exist and match to the whole path pattern (not only suffix or prefix).
+Paths may use globbing. Files must match the whole path pattern, not only the suffix or prefix. There is one exception that if the path refers to an existing
+directory and does not use globs, a `*` will be implicitly added to the path so
+all the files in the directory are selected.
 
-- `*` — Substitutes any number of any characters except `/` including empty string.
-- `?` — Substitutes any single character.
-- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`, including `/`.
-- `{N..M}` — Substitutes any number in range from N to M including both borders.
-- `**` - Fetches all files inside the folder recursively.
+- `*` — Represents arbitrarily many characters except `/` but including the empty string.
+- `?` — Represents an arbitrary single character.
+- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`. The strings can contain the `/` symbol.
+- `{N..M}` — Represents any number `>= N` and `<= M`.
+- `**` - Represents all files inside a folder recursively.
 
-Constructions with `{}` are similar to the [remote](remote.md) table function.
+Constructions with `{}` are similar to the [remote](remote.md) and [hdfs](hdfs.md) table functions.
 
 **Example**
 
-Suppose we have several files with the following relative paths:
+Suppose there are these files with the following relative paths:
 
-- 'some_dir/some_file_1'
-- 'some_dir/some_file_2'
-- 'some_dir/some_file_3'
-- 'another_dir/some_file_1'
-- 'another_dir/some_file_2'
-- 'another_dir/some_file_3'
+- `some_dir/some_file_1`
+- `some_dir/some_file_2`
+- `some_dir/some_file_3`
+- `another_dir/some_file_1`
+- `another_dir/some_file_2`
+- `another_dir/some_file_3`
 
-Query the number of rows in these files:
+Query the total number of rows in all files:
 
 ``` sql
 SELECT count(*) FROM file('{some,another}_dir/some_file_{1..3}', 'TSV', 'name String, value UInt32');
 ```
 
-Query the number of rows in all files of these two directories:
+An alternative path expression which achieves the same:
 
 ``` sql
 SELECT count(*) FROM file('{some,another}_dir/*', 'TSV', 'name String, value UInt32');
+```
+
+Query the total number of rows in `some_dir` using the implicit `*`:
+
+```sql
+SELECT count(*) FROM file('some_dir', 'TSV', 'name String, value UInt32');
 ```
 
 :::note
@@ -176,7 +177,7 @@ If your listing of files contains number ranges with leading zeros, use the cons
 
 **Example**
 
-Query the data from files named `file000`, `file001`, … , `file999`:
+Query the total number of rows in files named `file000`, `file001`, ... , `file999`:
 
 ``` sql
 SELECT count(*) FROM file('big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name String, value UInt32');
@@ -184,7 +185,7 @@ SELECT count(*) FROM file('big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name String,
 
 **Example**
 
-Query the data from all files inside `big_dir` directory recursively:
+Query the total number of rows from all files inside directory `big_dir/` recursively:
 
 ``` sql
 SELECT count(*) FROM file('big_dir/**', 'CSV', 'name String, value UInt32');
@@ -192,25 +193,39 @@ SELECT count(*) FROM file('big_dir/**', 'CSV', 'name String, value UInt32');
 
 **Example**
 
-Query the data from all `file002` files from any folder inside `big_dir` directory recursively:
+Query the total number of rows from all files `file002` inside any folder in directory `big_dir/` recursively:
 
 ``` sql
 SELECT count(*) FROM file('big_dir/**/file002', 'CSV', 'name String, value UInt32');
 ```
 
-## Virtual Columns
+## Virtual Columns {#virtual-columns}
 
-- `_path` — Path to the file.
-- `_file` — Name of the file.
+- `_path` — Path to the file. Type: `LowCardinalty(String)`.
+- `_file` — Name of the file. Type: `LowCardinalty(String)`.
+- `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the file size is unknown, the value is `NULL`.
+- `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 
-## Settings
+## Hive-style partitioning {#hive-style-partitioning}
 
-- [engine_file_empty_if_not_exists](/docs/en/operations/settings/settings.md#engine-file-emptyif-not-exists) - allows to select empty data from a file that doesn't exist. Disabled by default.
+When setting `use_hive_partitioning` is set to 1, ClickHouse will detect Hive-style partitioning in the path (`/name=value/`) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
+
+**Example**
+
+Use virtual column, created with Hive-style partitioning
+
+``` sql
+SET use_hive_partitioning = 1;
+SELECT * from file('data/path/date=*/country=*/code=*/*.parquet') where _date > '2020-01-01' and _country = 'Netherlands' and _code = 42;
+```
+
+## Settings {#settings}
+
+- [engine_file_empty_if_not_exists](/docs/en/operations/settings/settings.md#engine-file-empty_if-not-exists) - allows to select empty data from a file that doesn't exist. Disabled by default.
 - [engine_file_truncate_on_insert](/docs/en/operations/settings/settings.md#engine-file-truncate-on-insert) - allows to truncate file before insert into it. Disabled by default.
 - [engine_file_allow_create_multiple_files](/docs/en/operations/settings/settings.md#engine_file_allow_create_multiple_files) - allows to create a new file on each insert if format has suffix. Disabled by default.
 - [engine_file_skip_empty_files](/docs/en/operations/settings/settings.md#engine_file_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
-- [storage_file_read_method](/docs/en/operations/settings/settings.md#engine-file-emptyif-not-exists) - method of reading data from storage file, one of: read, pread, mmap (only for clickhouse-local). Default value: `pread` for clickhouse-server, `mmap` for clickhouse-local.
-
+- [storage_file_read_method](/docs/en/operations/settings/settings.md#engine-file-empty_if-not-exists) - method of reading data from storage file, one of: read, pread, mmap (only for clickhouse-local). Default value: `pread` for clickhouse-server, `mmap` for clickhouse-local.
 
 
 **See Also**

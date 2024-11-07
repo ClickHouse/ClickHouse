@@ -1,0 +1,100 @@
+-- const arguments
+clickhouse	mouse	10
+clickhouse	mouse	6
+clickhouse	mouse	6
+clickhouse	mouse	0.4
+clickhouse	mouse	0.4
+clickhouse	mouse	0
+clickhouse	mouse	0
+-- test aliases
+clickhouse	mouse	10
+clickhouse	mouse	6
+-- Deny DoS using too large inputs
+-- non-const arguments
+byteHammingDistance			0
+byteHammingDistance		abc	3
+byteHammingDistance	Jerry	我是谁	9
+byteHammingDistance	abc		3
+byteHammingDistance	abc	ab	1
+byteHammingDistance	abc	abc	0
+byteHammingDistance	abc	bc	3
+byteHammingDistance	clickhouse	mouse	10
+byteHammingDistance	我是谁	Tom	9
+byteHammingDistance	我是谁	我是我	3
+editDistance			0
+editDistance		abc	3
+editDistance	Jerry	我是谁	9
+editDistance	abc		3
+editDistance	abc	ab	1
+editDistance	abc	abc	0
+editDistance	abc	bc	1
+editDistance	clickhouse	mouse	6
+editDistance	我是谁	Tom	9
+editDistance	我是谁	我是我	3
+editDistanceUTF8			0
+editDistanceUTF8		abc	3
+editDistanceUTF8	Jerry	我是谁	5
+editDistanceUTF8	abc		3
+editDistanceUTF8	abc	ab	1
+editDistanceUTF8	abc	abc	0
+editDistanceUTF8	abc	bc	1
+editDistanceUTF8	clickhouse	mouse	6
+editDistanceUTF8	我是谁	Tom	3
+editDistanceUTF8	我是谁	我是我	1
+damerauLevenshteinDistance			0
+damerauLevenshteinDistance		abc	3
+damerauLevenshteinDistance	Jerry	我是谁	9
+damerauLevenshteinDistance	abc		3
+damerauLevenshteinDistance	abc	ab	1
+damerauLevenshteinDistance	abc	abc	0
+damerauLevenshteinDistance	abc	bc	1
+damerauLevenshteinDistance	clickhouse	mouse	6
+damerauLevenshteinDistance	我是谁	Tom	9
+damerauLevenshteinDistance	我是谁	我是我	3
+stringJaccardIndex			0
+stringJaccardIndex		abc	0
+stringJaccardIndex	Jerry	我是谁	0
+stringJaccardIndex	abc		0
+stringJaccardIndex	abc	ab	0.6666666666666666
+stringJaccardIndex	abc	abc	1
+stringJaccardIndex	abc	bc	0.6666666666666666
+stringJaccardIndex	clickhouse	mouse	0.4
+stringJaccardIndex	我是谁	Tom	0
+stringJaccardIndex	我是谁	我是我	0.625
+stringJaccardIndexUTF8			0
+stringJaccardIndexUTF8		abc	0
+stringJaccardIndexUTF8	Jerry	我是谁	0
+stringJaccardIndexUTF8	abc		0
+stringJaccardIndexUTF8	abc	ab	0.6666666666666666
+stringJaccardIndexUTF8	abc	abc	1
+stringJaccardIndexUTF8	abc	bc	0.6666666666666666
+stringJaccardIndexUTF8	clickhouse	mouse	0.4
+stringJaccardIndexUTF8	我是谁	Tom	0
+stringJaccardIndexUTF8	我是谁	我是我	0.6666666666666666
+jaroSimilarity			0
+jaroSimilarity		abc	3
+jaroSimilarity	Jerry	我是谁	0
+jaroSimilarity	abc		3
+jaroSimilarity	abc	ab	0.8888888888888888
+jaroSimilarity	abc	abc	1
+jaroSimilarity	abc	bc	0
+jaroSimilarity	clickhouse	mouse	0
+jaroSimilarity	我是谁	Tom	0
+jaroSimilarity	我是谁	我是我	0.7777777777777777
+jaroWinklerSimilarity			0
+jaroWinklerSimilarity		abc	3
+jaroWinklerSimilarity	Jerry	我是谁	0
+jaroWinklerSimilarity	abc		3
+jaroWinklerSimilarity	abc	ab	0.9111111111111111
+jaroWinklerSimilarity	abc	abc	1
+jaroWinklerSimilarity	abc	bc	0
+jaroWinklerSimilarity	clickhouse	mouse	0
+jaroWinklerSimilarity	我是谁	Tom	0
+jaroWinklerSimilarity	我是谁	我是我	0.8666666666666666
+-- Special UTF-8 tests
+0.4
+0
+0
+0
+0
+0.25	0.625

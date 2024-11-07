@@ -39,16 +39,17 @@ LIMIT 2
 └─────────┴─────────┴─────────┘
 ```
 
-**Globs in path**
+## Globs in path {#globs_in_path}
 
-Multiple path components can have globs. For being processed file should exists and matches to the whole path pattern (not only suffix or prefix).
+Paths may use globbing. Files must match the whole path pattern, not only the suffix or prefix.
 
-- `*` — Substitutes any number of any characters except `/` including empty string.
-- `?` — Substitutes any single character.
-- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
-- `{N..M}` — Substitutes any number in range from N to M including both borders.
+- `*` — Represents arbitrarily many characters except `/` but including the empty string.
+- `**` — Represents all files inside a folder recursively.
+- `?` — Represents an arbitrary single character.
+- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`. The strings can contain the `/` symbol.
+- `{N..M}` — Represents any number `>= N` and `<= M`.
 
-Constructions with `{}` are similar to the [remote table function](../../sql-reference/table-functions/remote.md)).
+Constructions with `{}` are similar to the [remote](remote.md) and [file](file.md) table functions.
 
 **Example**
 
@@ -85,7 +86,7 @@ If your listing of files contains number ranges with leading zeros, use the cons
 
 **Example**
 
-Query the data from files named `file000`, `file001`, … , `file999`:
+Query the data from files named `file000`, `file001`, ... , `file999`:
 
 ``` sql
 SELECT count(*)
@@ -94,14 +95,30 @@ FROM hdfs('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name Strin
 
 ## Virtual Columns
 
-- `_path` — Path to the file.
-- `_file` — Name of the file.
+- `_path` — Path to the file. Type: `LowCardinalty(String)`.
+- `_file` — Name of the file. Type: `LowCardinalty(String)`.
+- `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
+- `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
+
+## Hive-style partitioning {#hive-style-partitioning}
+
+When setting `use_hive_partitioning` is set to 1, ClickHouse will detect Hive-style partitioning in the path (`/name=value/`) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
+
+**Example**
+
+Use virtual column, created with Hive-style partitioning
+
+``` sql
+SET use_hive_partitioning = 1;
+SELECT * from HDFS('hdfs://hdfs1:9000/data/path/date=*/country=*/code=*/*.parquet') where _date > '2020-01-01' and _country = 'Netherlands' and _code = 42;
+```
 
 ## Storage Settings {#storage-settings}
 
-- [hdfs_truncate_on_insert](/docs/en/operations/settings/settings.md#hdfs-truncate-on-insert) - allows to truncate file before insert into it. Disabled by default.
-- [hdfs_create_multiple_files](/docs/en/operations/settings/settings.md#hdfs_allow_create_multiple_files) - allows to create a new file on each insert if format has suffix. Disabled by default.
+- [hdfs_truncate_on_insert](/docs/en/operations/settings/settings.md#hdfs_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
+- [hdfs_create_new_file_on_insert](/docs/en/operations/settings/settings.md#hdfs_create_new_file_on_insert) - allows to create a new file on each insert if format has suffix. Disabled by default.
 - [hdfs_skip_empty_files](/docs/en/operations/settings/settings.md#hdfs_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
+- [ignore_access_denied_multidirectory_globs](/docs/en/operations/settings/settings.md#ignore_access_denied_multidirectory_globs) - allows to ignore permission denied errors for multi-directory globs.
 
 **See Also**
 

@@ -27,7 +27,7 @@ public:
     /// There're 2 compression variants:
     /// Byte - transpose bit matrix by bytes (only the last not full byte is transposed by bits). It's default.
     /// Bits - full bit-transpose of the bit matrix. It uses more resources and leads to better compression with ZSTD (but worse with LZ4).
-    enum class Variant
+    enum class Variant : uint8_t
     {
         Byte,
         Bit
@@ -66,6 +66,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
     extern const int ILLEGAL_CODEC_PARAMETER;
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -90,6 +91,7 @@ enum class MagicNumber : uint8_t
     Decimal32   = 19,
     Decimal64   = 20,
     IPv4        = 21,
+    Date32      = 22,
 };
 
 MagicNumber serializeTypeId(std::optional<TypeIndex> type_id)
@@ -108,6 +110,7 @@ MagicNumber serializeTypeId(std::optional<TypeIndex> type_id)
         case TypeIndex::Int32:      return MagicNumber::Int32;
         case TypeIndex::Int64:      return MagicNumber::Int64;
         case TypeIndex::Date:       return MagicNumber::Date;
+        case TypeIndex::Date32:     return MagicNumber::Date32;
         case TypeIndex::DateTime:   return MagicNumber::DateTime;
         case TypeIndex::DateTime64: return MagicNumber::DateTime64;
         case TypeIndex::Enum8:      return MagicNumber::Enum8;
@@ -136,6 +139,7 @@ TypeIndex deserializeTypeId(uint8_t serialized_type_id)
         case MagicNumber::Int32:        return TypeIndex::Int32;
         case MagicNumber::Int64:        return TypeIndex::Int64;
         case MagicNumber::Date:         return TypeIndex::Date;
+        case MagicNumber::Date32:       return TypeIndex::Date32;
         case MagicNumber::DateTime:     return TypeIndex::DateTime;
         case MagicNumber::DateTime64:   return TypeIndex::DateTime64;
         case MagicNumber::Enum8:        return TypeIndex::Enum8;
@@ -145,7 +149,7 @@ TypeIndex deserializeTypeId(uint8_t serialized_type_id)
         case MagicNumber::IPv4:         return TypeIndex::IPv4;
     }
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Bad magic number in T64 codec: {}", static_cast<UInt32>(serialized_type_id));
+    throw Exception(ErrorCodes::INCORRECT_DATA, "Bad magic number in T64 codec: {}", static_cast<UInt32>(serialized_type_id));
 }
 
 
@@ -164,6 +168,7 @@ TypeIndex baseType(TypeIndex type_idx)
             return TypeIndex::Int16;
         case TypeIndex::Int32:
         case TypeIndex::Decimal32:
+        case TypeIndex::Date32:
             return TypeIndex::Int32;
         case TypeIndex::Int64:
         case TypeIndex::Decimal64:
@@ -204,6 +209,7 @@ TypeIndex typeIdx(const IDataType * data_type)
         case TypeIndex::UInt16:
         case TypeIndex::Enum16:
         case TypeIndex::Date:
+        case TypeIndex::Date32:
         case TypeIndex::Int32:
         case TypeIndex::UInt32:
         case TypeIndex::IPv4:
@@ -378,13 +384,6 @@ void transpose(const T * src, char * dst, UInt32 num_bits, UInt32 tail = 64)
 
 /// UInt64[N] transposed matrix -> UIntX[64]
 template <typename T, bool full = false>
-#if defined(__s390x__)
-
-/* Compiler Bug for S390x :- https://github.com/llvm/llvm-project/issues/62572
- * Please remove this after the fix is backported
- */
-        __attribute__((noinline))
-#endif
 void reverseTranspose(const char * src, T * buf, UInt32 num_bits, UInt32 tail = 64)
 {
     UInt64 matrix[64] = {};
@@ -452,11 +451,9 @@ UInt32 getValuableBitsNumber(Int64 min, Int64 max)
     {
         if (min + max >= 0)
             return getValuableBitsNumber(0ull, static_cast<UInt64>(max)) + 1;
-        else
-            return getValuableBitsNumber(0ull, static_cast<UInt64>(~min)) + 1;
+        return getValuableBitsNumber(0ull, static_cast<UInt64>(~min)) + 1;
     }
-    else
-        return getValuableBitsNumber(static_cast<UInt64>(min), static_cast<UInt64>(max));
+    return getValuableBitsNumber(static_cast<UInt64>(min), static_cast<UInt64>(max));
 }
 
 
@@ -489,7 +486,7 @@ UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
     static constexpr const UInt32 header_size = 2 * sizeof(UInt64);
 
     if (bytes_size % sizeof(T))
-        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress, data size {} is not multiplier of {}",
+        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with T64 codec, data size {} is not multiplier of {}",
                         bytes_size, sizeof(T));
 
     UInt32 src_size = bytes_size / sizeof(T);
@@ -544,12 +541,13 @@ void decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 unco
     static constexpr const UInt32 header_size = 2 * sizeof(UInt64);
 
     if (bytes_size < header_size)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress, data size {} is less then T64 header",
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress T64-encoded data, data size ({}) is less than the size of T64 header",
                         bytes_size);
 
     if (uncompressed_size % sizeof(T))
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress, unexpected uncompressed size {}",
-                        uncompressed_size);
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress T64-encoded data, unexpected uncompressed size ({})"
+                        " isn't a multiple of the data type size ({})",
+                        uncompressed_size, sizeof(T));
 
     UInt64 num_elements = uncompressed_size / sizeof(T);
     MinMaxType min;
@@ -576,13 +574,19 @@ void decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 unco
     UInt32 dst_shift = sizeof(T) * matrix_size;
 
     if (!bytes_size || bytes_size % src_shift)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress, data size {} is not multiplier of {}",
-                        bytes_size, toString(src_shift));
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress T64-encoded data, data size ({}) is not a multiplier of {}",
+                        bytes_size, src_shift);
 
     UInt32 num_full = bytes_size / src_shift;
     UInt32 tail = num_elements % matrix_size;
     if (tail)
         --num_full;
+
+    UInt64 expected = static_cast<UInt64>(num_full) * matrix_size + tail;    /// UInt64 to avoid overflow.
+    if (expected != num_elements)
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress, the number of elements in the compressed data ({})"
+                        " is not equal to the expected number of elements in the decompressed data ({})",
+                        expected, num_elements);
 
     T upper_min = 0;
     T upper_max [[maybe_unused]] = 0;
@@ -665,13 +669,13 @@ UInt32 CompressionCodecT64::doCompressData(const char * src, UInt32 src_size, ch
             break;
     }
 
-    throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with T64");
+    throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with T64 codec");
 }
 
 void CompressionCodecT64::doDecompressData(const char * src, UInt32 src_size, char * dst, UInt32 uncompressed_size) const
 {
     if (!src_size)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress with T64");
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress T64-encoded data");
 
     UInt8 cookie = unalignedLoad<UInt8>(src);
     src += 1;
@@ -683,26 +687,34 @@ void CompressionCodecT64::doDecompressData(const char * src, UInt32 src_size, ch
     switch (baseType(saved_type_id))
     {
         case TypeIndex::Int8:
-            return decompressData<Int8>(src, src_size, dst, uncompressed_size, saved_variant);
+            decompressData<Int8>(src, src_size, dst, uncompressed_size, saved_variant);
+            return;
         case TypeIndex::Int16:
-            return decompressData<Int16>(src, src_size, dst, uncompressed_size, saved_variant);
+            decompressData<Int16>(src, src_size, dst, uncompressed_size, saved_variant);
+            return;
         case TypeIndex::Int32:
-            return decompressData<Int32>(src, src_size, dst, uncompressed_size, saved_variant);
+            decompressData<Int32>(src, src_size, dst, uncompressed_size, saved_variant);
+            return;
         case TypeIndex::Int64:
-            return decompressData<Int64>(src, src_size, dst, uncompressed_size, saved_variant);
+            decompressData<Int64>(src, src_size, dst, uncompressed_size, saved_variant);
+            return;
         case TypeIndex::UInt8:
-            return decompressData<UInt8>(src, src_size, dst, uncompressed_size, saved_variant);
+            decompressData<UInt8>(src, src_size, dst, uncompressed_size, saved_variant);
+            return;
         case TypeIndex::UInt16:
-            return decompressData<UInt16>(src, src_size, dst, uncompressed_size, saved_variant);
+            decompressData<UInt16>(src, src_size, dst, uncompressed_size, saved_variant);
+            return;
         case TypeIndex::UInt32:
-            return decompressData<UInt32>(src, src_size, dst, uncompressed_size, saved_variant);
+            decompressData<UInt32>(src, src_size, dst, uncompressed_size, saved_variant);
+            return;
         case TypeIndex::UInt64:
-            return decompressData<UInt64>(src, src_size, dst, uncompressed_size, saved_variant);
+            decompressData<UInt64>(src, src_size, dst, uncompressed_size, saved_variant);
+            return;
         default:
             break;
     }
 
-    throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress with T64");
+    throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress T64-encoded data");
 }
 
 uint8_t CompressionCodecT64::getMethodByte() const
@@ -722,7 +734,7 @@ CompressionCodecT64::CompressionCodecT64(std::optional<TypeIndex> type_idx_, Var
 
 void CompressionCodecT64::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash);
+    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
     hash.update(type_idx.value_or(TypeIndex::Nothing));
     hash.update(variant);
 }

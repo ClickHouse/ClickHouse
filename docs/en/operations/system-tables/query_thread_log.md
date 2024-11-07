@@ -7,10 +7,10 @@ Contains information about threads that execute queries, for example, thread nam
 
 To start logging:
 
-1.  Configure parameters in the [query_thread_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) section.
-2.  Set [log_query_threads](../../operations/settings/settings.md#settings-log-query-threads) to 1.
+1.  Configure parameters in the [query_thread_log](../../operations/server-configuration-parameters/settings.md#query_thread_log) section.
+2.  Set [log_query_threads](../../operations/settings/settings.md#log-query-threads) to 1.
 
-The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_thread_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
+The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_thread_log](../../operations/server-configuration-parameters/settings.md#query_thread_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
 
 ClickHouse does not delete data from the table automatically. See [Introduction](../../operations/system-tables/index.md#system-tables-introduction) for more details.
 
@@ -18,9 +18,10 @@ You can use the [log_queries_probability](../../operations/settings/settings.md#
 
 Columns:
 
+- `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `event_date` ([Date](../../sql-reference/data-types/date.md)) — The date when the thread has finished execution of the query.
 - `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — The date and time when the thread has finished execution of the query.
-- `event_time_microsecinds` ([DateTime](../../sql-reference/data-types/datetime.md)) — The date and time when the thread has finished execution of the query with microseconds precision.
+- `event_time_microseconds` ([DateTime](../../sql-reference/data-types/datetime.md)) — The date and time when the thread has finished execution of the query with microseconds precision.
 - `query_start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Start time of query execution.
 - `query_start_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Start time of query execution with microsecond precision.
 - `query_duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Duration of query execution.
@@ -31,8 +32,7 @@ Columns:
 - `memory_usage` ([Int64](../../sql-reference/data-types/int-uint.md)) — The difference between the amount of allocated and freed memory in context of this thread.
 - `peak_memory_usage` ([Int64](../../sql-reference/data-types/int-uint.md)) — The maximum difference between the amount of allocated and freed memory in context of this thread.
 - `thread_name` ([String](../../sql-reference/data-types/string.md)) — Name of the thread.
-- `thread_number` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Internal thread ID.
-- `thread_id` ([Int32](../../sql-reference/data-types/int-uint.md)) — thread ID.
+- `thread_id` ([UInt64](../../sql-reference/data-types/int-uint.md)) — OS thread ID.
 - `master_thread_id` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — OS initial ID of initial thread.
 - `query` ([String](../../sql-reference/data-types/string.md)) — Query string.
 - `is_initial_query` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Query type. Possible values:
@@ -74,6 +74,7 @@ Columns:
 ``` text
 Row 1:
 ──────
+hostname:                      clickhouse.eu-central1.internal
 event_date:                    2020-09-11
 event_time:                    2020-09-11 10:08:17
 event_time_microseconds:       2020-09-11 10:08:17.134042

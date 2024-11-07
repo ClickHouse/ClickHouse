@@ -1,15 +1,19 @@
 #include <Common/parseGlobs.h>
+#include <Common/re2.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
-#include <re2/re2.h>
 #include <algorithm>
 #include <sstream>
 #include <iomanip>
 
-
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 /* Transforms string from grep-wildcard-syntax ("{N..M}", "{a,b,c}" as in remote table function and "*", "?") to perl-regexp for using re2 library for matching
  * with such steps:
  * 1) search intervals like {0..9} and enums like {abc,xyz,qwe} in {}, replace them by regexp with pipe (expr1|expr2|expr3),
@@ -108,5 +112,80 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
         previous = letter;
     }
     return buf_final_processing.str();
+}
+
+namespace
+{
+void expandSelectorGlobImpl(const std::string & path, std::vector<std::string> & for_match_paths_expanded)
+{
+    /// regexp for {expr1,expr2,....} (a selector glob);
+    /// expr1, expr2,... cannot contain any of these: '{', '}', ','
+    static const re2::RE2 selector_regex(R"({([^{}*,]+,[^{}*]*[^{}*,])})");
+
+    std::string_view path_view(path);
+    std::string_view matched;
+
+    // No (more) selector globs found, quit
+    if (!RE2::FindAndConsume(&path_view, selector_regex, &matched))
+    {
+        for_match_paths_expanded.push_back(path);
+        return;
+    }
+
+    std::vector<size_t> anchor_positions;
+    bool opened = false;
+    bool closed = false;
+
+    // Looking for first occurrence of {} selector: write down positions of {, } and all intermediate commas
+    for (auto it = path.begin(); it != path.end(); ++it)
+    {
+        if (*it == '{')
+        {
+            if (opened)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Unexpected '{{' found in path '{}' at position {}.", path, it - path.begin());
+            anchor_positions.push_back(std::distance(path.begin(), it));
+            opened = true;
+        }
+        else if (*it == '}')
+        {
+            if (!opened)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Unexpected '}}' found in path '{}' at position {}.", path, it - path.begin());
+            anchor_positions.push_back(std::distance(path.begin(), it));
+            closed = true;
+            break;
+        }
+        else if (*it == ',')
+        {
+            if (!opened)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Unexpected ',' found in path '{}' at position {}.", path, std::distance(path.begin(), it));
+            anchor_positions.push_back(std::distance(path.begin(), it));
+        }
+    }
+    if (!opened || !closed)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Invalid {{}} glob in path {}.", path);
+
+    // generate result: prefix/{a,b,c}/suffix -> [prefix/a/suffix, prefix/b/suffix, prefix/c/suffix]
+    std::string common_prefix = path.substr(0, anchor_positions.front());
+    std::string common_suffix = path.substr(anchor_positions.back() + 1);
+    for (size_t i = 1; i < anchor_positions.size(); ++i)
+    {
+        std::string current_selection =
+                path.substr(anchor_positions[i-1] + 1, (anchor_positions[i] - anchor_positions[i-1] - 1));
+
+        std::string expanded_matcher = common_prefix + current_selection + common_suffix;
+        expandSelectorGlobImpl(expanded_matcher, for_match_paths_expanded);
+    }
+}
+}
+
+std::vector<std::string> expandSelectionGlob(const std::string & path)
+{
+    std::vector<std::string> result;
+    expandSelectorGlobImpl(path, result);
+    return result;
 }
 }

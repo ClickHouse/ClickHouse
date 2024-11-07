@@ -1,25 +1,22 @@
-#include "StorageSystemParts.h"
+#include <Storages/System/StorageSystemParts.h>
 #include <atomic>
 #include <memory>
 #include <string_view>
 
-#include <Common/escapeForFileName.h>
-#include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeUUID.h>
-#include <Storages/VirtualColumnUtils.h>
-#include <Databases/IDatabase.h>
 #include <Parsers/queryToString.h>
-#include <base/hex.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <Interpreters/Context.h>
 
+
 namespace
 {
+
 std::string_view getRemovalStateDescription(DB::DataPartRemovalState state)
 {
     switch (state)
@@ -34,6 +31,8 @@ std::string_view getRemovalStateDescription(DB::DataPartRemovalState state)
         return "Part hasn't reached removal time yet";
     case DB::DataPartRemovalState::HAS_SKIPPED_MUTATION_PARENT:
         return "Waiting mutation parent to be removed";
+    case DB::DataPartRemovalState::EMPTY_PART_COVERS_OTHER_PARTS:
+        return "Waiting for covered parts to be removed first";
     case DB::DataPartRemovalState::REMOVED:
         return "Part was selected to be removed";
     }
@@ -46,82 +45,82 @@ namespace DB
 
 StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
     : StorageSystemPartsBase(table_id_,
-    {
-        {"partition",                                   std::make_shared<DataTypeString>()},
-        {"name",                                        std::make_shared<DataTypeString>()},
-        {"uuid",                                        std::make_shared<DataTypeUUID>()},
-        {"part_type",                                   std::make_shared<DataTypeString>()},
-        {"active",                                      std::make_shared<DataTypeUInt8>()},
-        {"marks",                                       std::make_shared<DataTypeUInt64>()},
-        {"rows",                                        std::make_shared<DataTypeUInt64>()},
-        {"bytes_on_disk",                               std::make_shared<DataTypeUInt64>()},
-        {"data_compressed_bytes",                       std::make_shared<DataTypeUInt64>()},
-        {"data_uncompressed_bytes",                     std::make_shared<DataTypeUInt64>()},
-        {"primary_key_size",                            std::make_shared<DataTypeUInt64>()},
-        {"marks_bytes",                                 std::make_shared<DataTypeUInt64>()},
-        {"secondary_indices_compressed_bytes",          std::make_shared<DataTypeUInt64>()},
-        {"secondary_indices_uncompressed_bytes",        std::make_shared<DataTypeUInt64>()},
-        {"secondary_indices_marks_bytes",               std::make_shared<DataTypeUInt64>()},
-        {"modification_time",                           std::make_shared<DataTypeDateTime>()},
-        {"remove_time",                                 std::make_shared<DataTypeDateTime>()},
-        {"refcount",                                    std::make_shared<DataTypeUInt32>()},
-        {"min_date",                                    std::make_shared<DataTypeDate>()},
-        {"max_date",                                    std::make_shared<DataTypeDate>()},
-        {"min_time",                                    std::make_shared<DataTypeDateTime>()},
-        {"max_time",                                    std::make_shared<DataTypeDateTime>()},
-        {"partition_id",                                std::make_shared<DataTypeString>()},
-        {"min_block_number",                            std::make_shared<DataTypeInt64>()},
-        {"max_block_number",                            std::make_shared<DataTypeInt64>()},
-        {"level",                                       std::make_shared<DataTypeUInt32>()},
-        {"data_version",                                std::make_shared<DataTypeUInt64>()},
-        {"primary_key_bytes_in_memory",                 std::make_shared<DataTypeUInt64>()},
-        {"primary_key_bytes_in_memory_allocated",       std::make_shared<DataTypeUInt64>()},
-        {"is_frozen",                                   std::make_shared<DataTypeUInt8>()},
+    ColumnsDescription{
+        {"partition",                                   std::make_shared<DataTypeString>(),    "The partition name."},
+        {"name",                                        std::make_shared<DataTypeString>(),    "Name of the data part."},
+        {"uuid",                                        std::make_shared<DataTypeUUID>(),      "The UUID of data part."},
+        {"part_type",                                   std::make_shared<DataTypeString>(),    "The data part storing format. Possible Values: Wide (a file per column) and Compact (a single file for all columns)."},
+        {"active",                                      std::make_shared<DataTypeUInt8>(),     "Flag that indicates whether the data part is active. If a data part is active, it's used in a table. Otherwise, it's about to be deleted. Inactive data parts appear after merging and mutating operations."},
+        {"marks",                                       std::make_shared<DataTypeUInt64>(),    "The number of marks. To get the approximate number of rows in a data part, multiply marks by the index granularity (usually 8192) (this hint does not work for adaptive granularity)."},
+        {"rows",                                        std::make_shared<DataTypeUInt64>(),    "The number of rows."},
+        {"bytes_on_disk",                               std::make_shared<DataTypeUInt64>(),    "Total size of all the data part files in bytes."},
+        {"data_compressed_bytes",                       std::make_shared<DataTypeUInt64>(),    "Total size of compressed data in the data part. All the auxiliary files (for example, files with marks) are not included."},
+        {"data_uncompressed_bytes",                     std::make_shared<DataTypeUInt64>(),    "Total size of uncompressed data in the data part. All the auxiliary files (for example, files with marks) are not included."},
+        {"primary_key_size",                            std::make_shared<DataTypeUInt64>(),    "The amount of memory (in bytes) used by primary key values in the primary.idx/cidx file on disk."},
+        {"marks_bytes",                                 std::make_shared<DataTypeUInt64>(),    "The size of the file with marks."},
+        {"secondary_indices_compressed_bytes",          std::make_shared<DataTypeUInt64>(),    "Total size of compressed data for secondary indices in the data part. All the auxiliary files (for example, files with marks) are not included."},
+        {"secondary_indices_uncompressed_bytes",        std::make_shared<DataTypeUInt64>(),    "Total size of uncompressed data for secondary indices in the data part. All the auxiliary files (for example, files with marks) are not included."},
+        {"secondary_indices_marks_bytes",               std::make_shared<DataTypeUInt64>(),    "The size of the file with marks for secondary indices."},
+        {"modification_time",                           std::make_shared<DataTypeDateTime>(),  "The time the directory with the data part was modified. This usually corresponds to the time of data part creation."},
+        {"remove_time",                                 std::make_shared<DataTypeDateTime>(),  "The time when the data part became inactive."},
+        {"refcount",                                    std::make_shared<DataTypeUInt32>(),    "The number of places where the data part is used. A value greater than 2 indicates that the data part is used in queries or merges."},
+        {"min_date",                                    std::make_shared<DataTypeDate>(),      "The minimum value of the date key in the data part."},
+        {"max_date",                                    std::make_shared<DataTypeDate>(),      "The maximum value of the date key in the data part."},
+        {"min_time",                                    std::make_shared<DataTypeDateTime>(),  "The minimum value of the date and time key in the data part."},
+        {"max_time",                                    std::make_shared<DataTypeDateTime>(),  "The maximum value of the date and time key in the data part."},
+        {"partition_id",                                std::make_shared<DataTypeString>(),    "ID of the partition."},
+        {"min_block_number",                            std::make_shared<DataTypeInt64>(),     "The minimum number of data parts that make up the current part after merging."},
+        {"max_block_number",                            std::make_shared<DataTypeInt64>(),     "The maximum number of data parts that make up the current part after merging."},
+        {"level",                                       std::make_shared<DataTypeUInt32>(),    "Depth of the merge tree. Zero means that the current part was created by insert rather than by merging other parts."},
+        {"data_version",                                std::make_shared<DataTypeUInt64>(),    "Number that is used to determine which mutations should be applied to the data part (mutations with a version higher than data_version)."},
+        {"primary_key_bytes_in_memory",                 std::make_shared<DataTypeUInt64>(),    "The amount of memory (in bytes) used by primary key values."},
+        {"primary_key_bytes_in_memory_allocated",       std::make_shared<DataTypeUInt64>(),    "The amount of memory (in bytes) reserved for primary key values."},
+        {"is_frozen",                                   std::make_shared<DataTypeUInt8>(),     "Flag that shows that a partition data backup exists. 1, the backup exists. 0, the backup does not exist. "},
 
-        {"database",                                    std::make_shared<DataTypeString>()},
-        {"table",                                       std::make_shared<DataTypeString>()},
-        {"engine",                                      std::make_shared<DataTypeString>()},
-        {"disk_name",                                   std::make_shared<DataTypeString>()},
-        {"path",                                        std::make_shared<DataTypeString>()},
+        {"database",                                    std::make_shared<DataTypeString>(),    "Name of the database."},
+        {"table",                                       std::make_shared<DataTypeString>(),    "Name of the table."},
+        {"engine",                                      std::make_shared<DataTypeString>(),    "Name of the table engine without parameters."},
+        {"disk_name",                                   std::make_shared<DataTypeString>(),    "Name of a disk that stores the data part."},
+        {"path",                                        std::make_shared<DataTypeString>(),    "Absolute path to the folder with data part files."},
 
-        {"hash_of_all_files",                           std::make_shared<DataTypeString>()},
-        {"hash_of_uncompressed_files",                  std::make_shared<DataTypeString>()},
-        {"uncompressed_hash_of_compressed_files",       std::make_shared<DataTypeString>()},
+        {"hash_of_all_files",                           std::make_shared<DataTypeString>(),    "sipHash128 of compressed files."},
+        {"hash_of_uncompressed_files",                  std::make_shared<DataTypeString>(),    "sipHash128 of uncompressed files (files with marks, index file etc.)."},
+        {"uncompressed_hash_of_compressed_files",       std::make_shared<DataTypeString>(),    "sipHash128 of data in the compressed files as if they were uncompressed."},
 
-        {"delete_ttl_info_min",                         std::make_shared<DataTypeDateTime>()},
-        {"delete_ttl_info_max",                         std::make_shared<DataTypeDateTime>()},
+        {"delete_ttl_info_min",                         std::make_shared<DataTypeDateTime>(),  "The minimum value of the date and time key for TTL DELETE rule."},
+        {"delete_ttl_info_max",                         std::make_shared<DataTypeDateTime>(),  "The maximum value of the date and time key for TTL DELETE rule."},
 
-        {"move_ttl_info.expression",                    std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"move_ttl_info.min",                           std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
-        {"move_ttl_info.max",                           std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
+        {"move_ttl_info.expression",                    std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),   "Array of expressions. Each expression defines a TTL MOVE rule."},
+        {"move_ttl_info.min",                           std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "Array of date and time values. Each element describes the minimum key value for a TTL MOVE rule."},
+        {"move_ttl_info.max",                           std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "Array of date and time values. Each element describes the maximum key value for a TTL MOVE rule."},
 
-        {"default_compression_codec",                   std::make_shared<DataTypeString>()},
+        {"default_compression_codec",                   std::make_shared<DataTypeString>(), "The name of the codec used to compress this data part (in case when there is no explicit codec for columns)."},
 
-        {"recompression_ttl_info.expression",           std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"recompression_ttl_info.min",                  std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
-        {"recompression_ttl_info.max",                  std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
+        {"recompression_ttl_info.expression",           std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),   "The TTL expression."},
+        {"recompression_ttl_info.min",                  std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "The minimum value of the calculated TTL expression within this part. Used to understand whether we have at least one row with expired TTL."},
+        {"recompression_ttl_info.max",                  std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "The maximum value of the calculated TTL expression within this part. Used to understand whether we have all rows with expired TTL."},
 
-        {"group_by_ttl_info.expression",                std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"group_by_ttl_info.min",                       std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
-        {"group_by_ttl_info.max",                       std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
+        {"group_by_ttl_info.expression",                std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),   "The TTL expression."},
+        {"group_by_ttl_info.min",                       std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "The minimum value of the calculated TTL expression within this part. Used to understand whether we have at least one row with expired TTL."},
+        {"group_by_ttl_info.max",                       std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "The maximum value of the calculated TTL expression within this part. Used to understand whether we have all rows with expired TTL."},
 
-        {"rows_where_ttl_info.expression",              std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"rows_where_ttl_info.min",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
-        {"rows_where_ttl_info.max",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
+        {"rows_where_ttl_info.expression",              std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),   "The TTL expression."},
+        {"rows_where_ttl_info.min",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "The minimum value of the calculated TTL expression within this part. Used to understand whether we have at least one row with expired TTL."},
+        {"rows_where_ttl_info.max",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "The maximum value of the calculated TTL expression within this part. Used to understand whether we have all rows with expired TTL."},
 
-        {"projections",                                 std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"projections",                                 std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The list of projection names calculated for this part."},
 
-        {"visible",                                     std::make_shared<DataTypeUInt8>()},
-        {"creation_tid",                                getTransactionIDDataType()},
-        {"removal_tid_lock",                            std::make_shared<DataTypeUInt64>()},
-        {"removal_tid",                                 getTransactionIDDataType()},
-        {"creation_csn",                                std::make_shared<DataTypeUInt64>()},
-        {"removal_csn",                                 std::make_shared<DataTypeUInt64>()},
+        {"visible",                                     std::make_shared<DataTypeUInt8>(), "Flag which indicated whether this part is visible for SELECT queries."},
+        {"creation_tid",                                getTransactionIDDataType(), "ID of transaction that has created/is trying to create this object."},
+        {"removal_tid_lock",                            std::make_shared<DataTypeUInt64>(), "Hash of removal_tid, used to lock an object for removal."},
+        {"removal_tid",                                 getTransactionIDDataType(), "ID of transaction that has removed/is trying to remove this object"},
+        {"creation_csn",                                std::make_shared<DataTypeUInt64>(), "CSN of transaction that has created this object"},
+        {"removal_csn",                                 std::make_shared<DataTypeUInt64>(), "CSN of transaction that has removed this object"},
 
-        {"has_lightweight_delete",                      std::make_shared<DataTypeUInt8>()},
+        {"has_lightweight_delete",                      std::make_shared<DataTypeUInt8>(), "The flag which indicated whether the part has lightweight delete mask."},
 
-        {"last_removal_attempt_time",                    std::make_shared<DataTypeDateTime>()},
-        {"removal_state",                               std::make_shared<DataTypeString>()},
+        {"last_removal_attempt_time",                   std::make_shared<DataTypeDateTime>(), "The last time the server tried to delete this part."},
+        {"removal_state",                               std::make_shared<DataTypeString>(), "The current state of part removal process."},
     }
     )
 {
@@ -142,7 +141,7 @@ void StorageSystemParts::processNextStorage(
         auto part_state = all_parts_state[part_number];
 
         ColumnSize columns_size = part->getTotalColumnsSize();
-        ColumnSize secondary_indexes_size = part->getTotalSeconaryIndicesSize();
+        ColumnSize secondary_indexes_size = part->getTotalSecondaryIndicesSize();
 
         size_t src_index = 0, res_index = 0;
         if (columns_mask[src_index++])

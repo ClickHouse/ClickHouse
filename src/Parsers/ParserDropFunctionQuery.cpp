@@ -9,10 +9,10 @@ namespace DB
 
 bool ParserDropFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_drop("DROP");
-    ParserKeyword s_function("FUNCTION");
-    ParserKeyword s_if_exists("IF EXISTS");
-    ParserKeyword s_on("ON");
+    ParserKeyword s_drop(Keyword::DROP);
+    ParserKeyword s_function(Keyword::FUNCTION);
+    ParserKeyword s_if_exists(Keyword::IF_EXISTS);
+    ParserKeyword s_on(Keyword::ON);
     ParserIdentifier function_name_p;
 
     String cluster_str;

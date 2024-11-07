@@ -8,13 +8,15 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
-#include <QueryPipeline/Pipe.h>
-#include <Processors/ISimpleTransform.h>
-#include <Processors/Formats/IOutputFormat.h>
-#include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Interpreters/Context.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Formats/IOutputFormat.h>
+#include <Processors/ISimpleTransform.h>
+#include <QueryPipeline/Pipe.h>
+
 #include <boost/circular_buffer.hpp>
 
+#include <ranges>
 
 namespace DB
 {
@@ -44,7 +46,7 @@ static void makeFdNonBlocking(int fd)
 {
     bool result = tryMakeFdNonBlocking(fd);
     if (!result)
-        throwFromErrno("Cannot set non-blocking mode of pipe", ErrorCodes::CANNOT_FCNTL);
+        throw ErrnoException(ErrorCodes::CANNOT_FCNTL, "Cannot set non-blocking mode of pipe");
 }
 
 static bool tryMakeFdBlocking(int fd)
@@ -63,26 +65,35 @@ static void makeFdBlocking(int fd)
 {
     bool result = tryMakeFdBlocking(fd);
     if (!result)
-        throwFromErrno("Cannot set blocking mode of pipe", ErrorCodes::CANNOT_FCNTL);
+        throw ErrnoException(ErrorCodes::CANNOT_FCNTL, "Cannot set blocking mode of pipe");
 }
 
 static int pollWithTimeout(pollfd * pfds, size_t num, size_t timeout_milliseconds)
 {
+    auto logger = getLogger("TimeoutReadBufferFromFileDescriptor");
+    auto describe_fd = [](const auto & pollfd) { return fmt::format("(fd={}, flags={})", pollfd.fd, fcntl(pollfd.fd, F_GETFL)); };
+
     int res;
 
     while (true)
     {
         Stopwatch watch;
+
+        LOG_TEST(logger, "Polling descriptors: {}", fmt::join(std::span(pfds, pfds + num) | std::views::transform(describe_fd), ", "));
+
         res = poll(pfds, static_cast<nfds_t>(num), static_cast<int>(timeout_milliseconds));
 
         if (res < 0)
         {
             if (errno != EINTR)
-                throwFromErrno("Cannot poll", ErrorCodes::CANNOT_POLL);
+                throw ErrnoException(ErrorCodes::CANNOT_POLL, "Cannot poll");
 
             const auto elapsed = watch.elapsedMilliseconds();
             if (timeout_milliseconds <= elapsed)
+            {
+                LOG_TEST(logger, "Timeout exceeded: elapsed={}, timeout={}", elapsed, timeout_milliseconds);
                 break;
+            }
             timeout_milliseconds -= elapsed;
         }
         else
@@ -90,6 +101,12 @@ static int pollWithTimeout(pollfd * pfds, size_t num, size_t timeout_millisecond
             break;
         }
     }
+
+    LOG_TEST(
+        logger,
+        "Poll for descriptors: {} returned {}",
+        fmt::join(std::span(pfds, pfds + num) | std::views::transform(describe_fd), ", "),
+        res);
 
     return res;
 }
@@ -156,9 +173,8 @@ public:
                     std::string_view str(stderr_read_buf.get(), res);
                     if (stderr_reaction == ExternalCommandStderrReaction::THROW)
                         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Executable generates stderr: {}", str);
-                    else if (stderr_reaction == ExternalCommandStderrReaction::LOG)
-                        LOG_WARNING(
-                            &::Poco::Logger::get("TimeoutReadBufferFromFileDescriptor"), "Executable generates stderr: {}", str);
+                    if (stderr_reaction == ExternalCommandStderrReaction::LOG)
+                        LOG_WARNING(getLogger("TimeoutReadBufferFromFileDescriptor"), "Executable generates stderr: {}", str);
                     else if (stderr_reaction == ExternalCommandStderrReaction::LOG_FIRST)
                     {
                         res = std::min(ssize_t(stderr_result_buf.reserve()), res);
@@ -177,7 +193,7 @@ public:
                 ssize_t res = ::read(stdout_fd, internal_buffer.begin(), internal_buffer.size());
 
                 if (-1 == res && errno != EINTR)
-                    throwFromErrno("Cannot read from pipe", ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
+                    throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read from pipe");
 
                 if (res == 0)
                     break;
@@ -200,12 +216,6 @@ public:
         return true;
     }
 
-    void reset() const
-    {
-        makeFdBlocking(stdout_fd);
-        makeFdBlocking(stderr_fd);
-    }
-
     ~TimeoutReadBufferFromFileDescriptor() override
     {
         tryMakeFdBlocking(stdout_fd);
@@ -217,7 +227,7 @@ public:
             stderr_result.reserve(stderr_result_buf.size());
             stderr_result.append(stderr_result_buf.begin(), stderr_result_buf.end());
             LOG_WARNING(
-                &::Poco::Logger::get("ShellCommandSource"),
+                getLogger("ShellCommandSource"),
                 "Executable generates stderr at the {}: {}",
                 stderr_reaction == ExternalCommandStderrReaction::LOG_FIRST ? "beginning" : "end",
                 stderr_result);
@@ -261,7 +271,7 @@ public:
             ssize_t res = ::write(fd, working_buffer.begin() + bytes_written, offset() - bytes_written);
 
             if ((-1 == res || 0 == res) && errno != EINTR)
-                throwFromErrno("Cannot write into pipe", ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR);
+                throw ErrnoException(ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR, "Cannot write into pipe");
 
             if (res > 0)
                 bytes_written += res;
@@ -347,51 +357,64 @@ namespace
             , process_pool(process_pool_)
             , check_exit_code(check_exit_code_)
         {
-            for (auto && send_data_task : send_data_tasks)
+            try
             {
-                send_data_threads.emplace_back([task = std::move(send_data_task), this]() mutable
+                for (auto && send_data_task : send_data_tasks)
                 {
-                    try
+                    send_data_threads.emplace_back([task = std::move(send_data_task), this]() mutable
                     {
-                        task();
-                    }
-                    catch (...)
-                    {
-                        std::lock_guard lock(send_data_lock);
-                        exception_during_send_data = std::current_exception();
+                        try
+                        {
+                            task();
+                        }
+                        catch (...)
+                        {
+                            std::lock_guard lock(send_data_lock);
+                            exception_during_send_data = std::current_exception();
 
-                        /// task should be reset inside catch block or else it breaks d'tor
-                        /// invariants such as in ~WriteBuffer.
-                        task = {};
-                    }
-                });
-            }
+                            /// task should be reset inside catch block or else it breaks d'tor
+                            /// invariants such as in ~WriteBuffer.
+                            task = {};
+                        }
+                    });
+                }
+                size_t max_block_size = configuration.max_block_size;
 
-            size_t max_block_size = configuration.max_block_size;
-
-            if (configuration.read_fixed_number_of_rows)
-            {
-                /** Currently parallel parsing input format cannot read exactly max_block_size rows from input,
-                  * so it will be blocked on ReadBufferFromFileDescriptor because this file descriptor represent pipe that does not have eof.
-                  */
-                auto context_for_reading = Context::createCopy(context);
-                context_for_reading->setSetting("input_format_parallel_parsing", false);
-                context = context_for_reading;
-
-                if (configuration.read_number_of_rows_from_process_output)
+                if (configuration.read_fixed_number_of_rows)
                 {
-                    /// Initialize executor in generate
-                    return;
+                    /** Currently parallel parsing input format cannot read exactly max_block_size rows from input,
+                    * so it will be blocked on ReadBufferFromFileDescriptor because this file descriptor represent pipe that does not have eof.
+                    */
+                    auto context_for_reading = Context::createCopy(context);
+                    context_for_reading->setSetting("input_format_parallel_parsing", false);
+                    context = context_for_reading;
+
+                    if (configuration.read_number_of_rows_from_process_output)
+                    {
+                        /// Initialize executor in generate
+                        return;
+                    }
+
+                    max_block_size = configuration.number_of_rows_to_read;
                 }
 
-                max_block_size = configuration.number_of_rows_to_read;
+                pipeline = QueryPipeline(Pipe(context->getInputFormat(format, timeout_command_out, sample_block, max_block_size)));
+                executor = std::make_unique<PullingPipelineExecutor>(pipeline);
             }
-
-            pipeline = QueryPipeline(Pipe(context->getInputFormat(format, timeout_command_out, sample_block, max_block_size)));
-            executor = std::make_unique<PullingPipelineExecutor>(pipeline);
+            catch (...)
+            {
+                cleanup();
+                throw;
+            }
         }
 
         ~ShellCommandSource() override
+        {
+            cleanup();
+        }
+
+    protected:
+        void cleanup()
         {
             for (auto & thread : send_data_threads)
                 if (thread.joinable())
@@ -410,8 +433,6 @@ namespace
                 process_pool->returnObject(std::move(command_holder));
             }
         }
-
-    protected:
 
         Chunk generate() override
         {
@@ -588,8 +609,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
                 {
                     if (execute_direct)
                         return ShellCommand::executeDirect(command_config);
-                    else
-                        return ShellCommand::execute(command_config);
+                    return ShellCommand::execute(command_config);
                 };
 
                 return std::make_unique<ShellCommandHolder>(std::move(func));

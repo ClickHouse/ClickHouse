@@ -14,12 +14,19 @@ namespace ErrorCodes
 
 class Credentials;
 class ExternalAuthenticators;
+class SettingsChanges;
 
 /// TODO: Try to move this checking to Credentials.
 struct Authentication
 {
     /// Checks the credentials (passwords, readiness, etc.)
-    static bool areCredentialsValid(const Credentials & credentials, const AuthenticationData & auth_data, const ExternalAuthenticators & external_authenticators);
+    /// If necessary, makes a request to external authenticators and fills in the session settings if they were
+    /// returned by the authentication server
+    static bool areCredentialsValid(
+        const Credentials & credentials,
+        const AuthenticationData & authentication_method,
+        const ExternalAuthenticators & external_authenticators,
+        SettingsChanges & settings);
 
     // A signaling class used to communicate requirements for credentials.
     template <typename CredentialsType>

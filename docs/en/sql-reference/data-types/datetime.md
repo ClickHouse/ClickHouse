@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/data-types/datetime
-sidebar_position: 48
+sidebar_position: 16
 sidebar_label: DateTime
 ---
 
@@ -18,6 +18,12 @@ Supported range of values: \[1970-01-01 00:00:00, 2106-02-07 06:28:15\].
 
 Resolution: 1 second.
 
+## Speed
+
+The `Date` datatype is faster than `DateTime` under _most_ conditions.
+
+The `Date` type requires 2 bytes of storage, while `DateTime` requires 4. However, when the database compresses the database, this difference is amplified. This amplification is due to the minutes and seconds in `DateTime` being less compressible. Filtering and aggregating `Date` instead of `DateTime` is also faster.
+
 ## Usage Remarks
 
 The point in time is saved as a [Unix timestamp](https://en.wikipedia.org/wiki/Unix_time), regardless of the time zone or daylight saving time. The time zone affects how the values of the `DateTime` type values are displayed in text format and how the values specified as strings are parsed (‘2020-01-01 05:00:01’).
@@ -26,13 +32,13 @@ Timezone agnostic Unix timestamp is stored in tables, and the timezone is used t
 
 A list of supported time zones can be found in the [IANA Time Zone Database](https://www.iana.org/time-zones) and also can be queried by `SELECT * FROM system.time_zones`. [The list](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) is also available at Wikipedia.
 
-You can explicitly set a time zone for `DateTime`-type columns when creating a table. Example: `DateTime('UTC')`. If the time zone isn’t set, ClickHouse uses the value of the [timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) parameter in the server settings or the operating system settings at the moment of the ClickHouse server start.
+You can explicitly set a time zone for `DateTime`-type columns when creating a table. Example: `DateTime('UTC')`. If the time zone isn’t set, ClickHouse uses the value of the [timezone](../../operations/server-configuration-parameters/settings.md#timezone) parameter in the server settings or the operating system settings at the moment of the ClickHouse server start.
 
 The [clickhouse-client](../../interfaces/cli.md) applies the server time zone by default if a time zone isn’t explicitly set when initializing the data type. To use the client time zone, run `clickhouse-client` with the `--use_client_time_zone` parameter.
 
-ClickHouse outputs values depending on the value of the [date_time_output_format](../../operations/settings/settings.md#settings-date_time_output_format) setting. `YYYY-MM-DD hh:mm:ss` text format by default. Additionally, you can change the output with the [formatDateTime](../../sql-reference/functions/date-time-functions.md#formatdatetime) function.
+ClickHouse outputs values depending on the value of the [date_time_output_format](../../operations/settings/settings-formats.md#date_time_output_format) setting. `YYYY-MM-DD hh:mm:ss` text format by default. Additionally, you can change the output with the [formatDateTime](../../sql-reference/functions/date-time-functions.md#formatdatetime) function.
 
-When inserting data into ClickHouse, you can use different formats of date and time strings, depending on the value of the [date_time_input_format](../../operations/settings/settings.md#settings-date_time_input_format) setting.
+When inserting data into ClickHouse, you can use different formats of date and time strings, depending on the value of the [date_time_input_format](../../operations/settings/settings-formats.md#date_time_input_format) setting.
 
 ## Examples
 
@@ -48,17 +54,18 @@ ENGINE = TinyLog;
 ```
 
 ``` sql
-INSERT INTO dt Values (1546300800, 1), ('2019-01-01 00:00:00', 2);
-```
+-- Parse DateTime
+-- - from string,
+-- - from integer interpreted as number of seconds since 1970-01-01.
+INSERT INTO dt VALUES ('2019-01-01 00:00:00', 1), (1546300800, 3);
 
-``` sql
 SELECT * FROM dt;
 ```
 
 ``` text
 ┌───────────timestamp─┬─event_id─┐
-│ 2019-01-01 03:00:00 │        1 │
 │ 2019-01-01 00:00:00 │        2 │
+│ 2019-01-01 03:00:00 │        1 │
 └─────────────────────┴──────────┘
 ```
 
@@ -73,7 +80,7 @@ SELECT * FROM dt WHERE timestamp = toDateTime('2019-01-01 00:00:00', 'Asia/Istan
 
 ``` text
 ┌───────────timestamp─┬─event_id─┐
-│ 2019-01-01 00:00:00 │        2 │
+│ 2019-01-01 00:00:00 │        1 │
 └─────────────────────┴──────────┘
 ```
 
@@ -85,7 +92,7 @@ SELECT * FROM dt WHERE timestamp = '2019-01-01 00:00:00'
 
 ``` text
 ┌───────────timestamp─┬─event_id─┐
-│ 2019-01-01 03:00:00 │        1 │
+│ 2019-01-01 00:00:00 │        1 │
 └─────────────────────┴──────────┘
 ```
 
@@ -130,7 +137,7 @@ If the time transition (due to daylight saving time or for other reasons) was pe
 
 Non-monotonic calendar dates. For example, in Happy Valley - Goose Bay, the time was transitioned one hour backwards at 00:01:00 7 Nov 2010 (one minute after midnight). So after 6th Nov has ended, people observed a whole one minute of 7th Nov, then time was changed back to 23:01 6th Nov and after another 59 minutes the 7th Nov started again. ClickHouse does not (yet) support this kind of fun. During these days the results of time processing functions may be slightly incorrect.
 
-Similar issue exists for Casey Antarctic station in year 2010. They changed time three hours back at 5 Mar, 02:00. If you are working in antarctic station, please don't afraid to use ClickHouse. Just make sure you set timezone to UTC or be aware of inaccuracies.
+Similar issue exists for Casey Antarctic station in year 2010. They changed time three hours back at 5 Mar, 02:00. If you are working in antarctic station, please don't be afraid to use ClickHouse. Just make sure you set timezone to UTC or be aware of inaccuracies.
 
 Time shifts for multiple days. Some pacific islands changed their timezone offset from UTC+14 to UTC-12. That's alright but some inaccuracies may present if you do calculations with their timezone for historical time points at the days of conversion.
 
@@ -140,9 +147,9 @@ Time shifts for multiple days. Some pacific islands changed their timezone offse
 - [Type conversion functions](../../sql-reference/functions/type-conversion-functions.md)
 - [Functions for working with dates and times](../../sql-reference/functions/date-time-functions.md)
 - [Functions for working with arrays](../../sql-reference/functions/array-functions.md)
-- [The `date_time_input_format` setting](../../operations/settings/settings-formats.md#settings-date_time_input_format)
-- [The `date_time_output_format` setting](../../operations/settings/settings-formats.md#settings-date_time_output_format)
-- [The `timezone` server configuration parameter](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
+- [The `date_time_input_format` setting](../../operations/settings/settings-formats.md#date_time_input_format)
+- [The `date_time_output_format` setting](../../operations/settings/settings-formats.md#date_time_output_format)
+- [The `timezone` server configuration parameter](../../operations/server-configuration-parameters/settings.md#timezone)
 - [The `session_timezone` setting](../../operations/settings/settings.md#session_timezone)
 - [Operators for working with dates and times](../../sql-reference/operators/index.md#operators-datetime)
 - [The `Date` data type](../../sql-reference/data-types/date.md)

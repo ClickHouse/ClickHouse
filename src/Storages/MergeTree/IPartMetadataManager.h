@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <unordered_map>
 #include <city.h>
 #include <base/types.h>
@@ -20,7 +21,6 @@ using DiskPtr = std::shared_ptr<IDisk>;
 /// - PartMetadataManagerOrdinary: manage metadata from disk directly. deleteAll/assertAllDeleted/updateAll/check
 ///   are all empty implementations because they are not needed for PartMetadataManagerOrdinary(those operations
 ///   are done implicitly when removing or renaming part directory).
-/// - PartMetadataManagerWithCache: manage metadata from RocksDB cache and disk.
 class IPartMetadataManager
 {
 public:
@@ -32,6 +32,9 @@ public:
 
     /// Read metadata content and return ReadBuffer object.
     virtual std::unique_ptr<ReadBuffer> read(const String & file_name) const = 0;
+
+    /// Read metadata content and return ReadBuffer object if it exists, otherwise return nullptr.
+    virtual std::unique_ptr<ReadBuffer> readIfExists(const String & file_name) const;
 
     /// Return true if metadata exists in part.
     virtual bool exists(const String & file_name) const = 0;

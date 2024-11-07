@@ -1,0 +1,47 @@
+SELECT missing column WITH default_format=JSON
+404NotFound
+Content-Type:application/json;charset=UTF-8
+X-ClickHouse-Ex---tion-Code:47
+"exception":"Code:47.
+
+INSERT WITH default_format=JSON
+501NotImplemented
+Content-Type:application/json;charset=UTF-8
+X-ClickHouse-Ex---tion-Code:48
+"exception":"Code:48.
+
+INSERT WITH default_format=XML
+501NotImplemented
+Content-Type:application/xml;charset=UTF-8
+X-ClickHouse-Ex---tion-Code:48
+<exception>Code:48.DB::Ex---tion:
+
+INSERT WITH default_format=BADFORMAT
+501NotImplemented
+Content-Type:text/plain;charset=UTF-8
+X-ClickHouse-Ex---tion-Code:48
+Code:48.DB::Ex---tion:
+
+SELECT missing column WITH X-ClickHouse-Format: JSON
+404NotFound
+Content-Type:application/json;charset=UTF-8
+X-ClickHouse-Ex---tion-Code:47
+"exception":"Code:47.
+
+INSERT WITH X-ClickHouse-Format: JSON
+501NotImplemented
+Content-Type:application/json;charset=UTF-8
+X-ClickHouse-Ex---tion-Code:48
+"exception":"Code:48.
+
+INSERT WITH X-ClickHouse-Format: XML
+501NotImplemented
+Content-Type:application/xml;charset=UTF-8
+X-ClickHouse-Ex---tion-Code:48
+<exception>Code:48.DB::Ex---tion:
+
+INSERT WITH X-ClickHouse-Format: BADFORMAT
+501NotImplemented
+Content-Type:text/plain;charset=UTF-8
+X-ClickHouse-Ex---tion-Code:48
+Code:48.DB::Ex---tion:

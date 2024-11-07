@@ -2,12 +2,15 @@
 
 #if USE_MYSQL
 #include <vector>
+
 #include <Core/MySQL/MySQLReplication.h>
+#include <Core/Settings.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnTuple.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -25,6 +28,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 external_storage_max_read_bytes;
+    extern const SettingsUInt64 external_storage_max_read_rows;
+    extern const SettingsUInt64 max_block_size;
+}
 
 namespace ErrorCodes
 {
@@ -33,8 +42,9 @@ namespace ErrorCodes
 }
 
 StreamSettings::StreamSettings(const Settings & settings, bool auto_close_, bool fetch_by_name_, size_t max_retry_)
-    : max_read_mysql_row_nums((settings.external_storage_max_read_rows) ? settings.external_storage_max_read_rows : settings.max_block_size)
-    , max_read_mysql_bytes_size(settings.external_storage_max_read_bytes)
+    : max_read_mysql_row_nums(
+          (settings[Setting::external_storage_max_read_rows]) ? settings[Setting::external_storage_max_read_rows] : settings[Setting::max_block_size])
+    , max_read_mysql_bytes_size(settings[Setting::external_storage_max_read_bytes])
     , auto_close(auto_close_)
     , fetch_by_name(fetch_by_name_)
     , default_num_tries_on_connection_loss(max_retry_)
@@ -57,7 +67,7 @@ MySQLSource::MySQLSource(
     const Block & sample_block,
     const StreamSettings & settings_)
     : ISource(sample_block.cloneEmpty())
-    , log(&Poco::Logger::get("MySQLSource"))
+    , log(getLogger("MySQLSource"))
     , connection{std::make_unique<Connection>(entry, query_str)}
     , settings{std::make_unique<StreamSettings>(settings_)}
 {
@@ -68,7 +78,7 @@ MySQLSource::MySQLSource(
 /// For descendant MySQLWithFailoverSource
 MySQLSource::MySQLSource(const Block &sample_block_, const StreamSettings & settings_)
     : ISource(sample_block_.cloneEmpty())
-    , log(&Poco::Logger::get("MySQLSource"))
+    , log(getLogger("MySQLSource"))
     , settings(std::make_unique<StreamSettings>(settings_))
 {
     description.init(sample_block_);
@@ -216,11 +226,11 @@ namespace
                 read_bytes_size += 8;
                 break;
             case ValueType::vtEnum8:
-                assert_cast<ColumnInt8 &>(column).insertValue(assert_cast<const DataTypeEnum<Int8> &>(data_type).castToValue(value.data()).get<Int8>());
+                assert_cast<ColumnInt8 &>(column).insertValue(assert_cast<const DataTypeEnum<Int8> &>(data_type).castToValue(value.data()).safeGet<Int8>());
                 read_bytes_size += assert_cast<ColumnInt8 &>(column).byteSize();
                 break;
             case ValueType::vtEnum16:
-                assert_cast<ColumnInt16 &>(column).insertValue(assert_cast<const DataTypeEnum<Int16> &>(data_type).castToValue(value.data()).get<Int16>());
+                assert_cast<ColumnInt16 &>(column).insertValue(assert_cast<const DataTypeEnum<Int16> &>(data_type).castToValue(value.data()).safeGet<Int16>());
                 read_bytes_size += assert_cast<ColumnInt16 &>(column).byteSize();
                 break;
             case ValueType::vtString:
@@ -240,8 +250,7 @@ namespace
                 ReadBufferFromString in(value);
                 time_t time = 0;
                 readDateTimeText(time, in, assert_cast<const DataTypeDateTime &>(data_type).getTimeZone());
-                if (time < 0)
-                    time = 0;
+                time = std::max<time_t>(time, 0);
                 assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(time));
                 read_bytes_size += 4;
                 break;
@@ -265,6 +274,41 @@ namespace
                 assert_cast<ColumnFixedString &>(column).insertData(value.data(), value.size());
                 read_bytes_size += column.sizeOfValueIfFixed();
                 break;
+            case ValueType::vtPoint:
+            {
+                /// The value is 25 bytes:
+                /// 4 bytes for integer SRID (0)
+                /// 1 byte for integer byte order (1 = little-endian)
+                /// 4 bytes for integer type information (1 = Point)
+                /// 8 bytes for double-precision X coordinate
+                /// 8 bytes for double-precision Y coordinate
+                ReadBufferFromMemory payload(value.data(), value.size());
+                payload.ignore(4);
+
+                UInt8 endian;
+                readBinary(endian, payload);
+
+                Int32 point_type;
+                readBinary(point_type, payload);
+                if (point_type != 1)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only Point data type is supported");
+
+                Float64 x, y;
+                if (endian == 1)
+                {
+                    readBinaryLittleEndian(x, payload);
+                    readBinaryLittleEndian(y, payload);
+                }
+                else
+                {
+                    readBinaryBigEndian(x, payload);
+                    readBinaryBigEndian(y, payload);
+                }
+
+                assert_cast<ColumnTuple &>(column).insert(Tuple({Field(x), Field(y)}));
+                read_bytes_size += value.size();
+                break;
+            }
             default:
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported value type");
         }

@@ -2,7 +2,8 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include "Core/ProtocolDefines.h"
+#include <Core/ProtocolDefines.h>
+#include <Parsers/ASTLiteral.h>
 
 namespace DB
 {
@@ -19,12 +20,18 @@ MergeTreePartInfo MergeTreePartInfo::fromPartName(const String & part_name, Merg
 {
     if (auto part_opt = tryParsePartName(part_name, format_version))
         return *part_opt;
-    else
-        throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Unexpected part name: {} for format version: {}", part_name, format_version);
+    throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Unexpected part name: {} for format version: {}", part_name, format_version);
 }
 
-void MergeTreePartInfo::validatePartitionID(const String & partition_id, MergeTreeDataFormatVersion format_version)
+void MergeTreePartInfo::validatePartitionID(const ASTPtr & partition_id_ast, MergeTreeDataFormatVersion format_version)
 {
+    std::string partition_id;
+    if (auto * literal = partition_id_ast->as<ASTLiteral>(); literal != nullptr && literal->value.getType() == Field::Types::String)
+        partition_id = literal->value.safeGet<String>();
+
+    else
+        throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Partition id must be string literal");
+
     if (partition_id.empty())
         throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Partition id is empty");
 
@@ -123,7 +130,7 @@ std::optional<MergeTreePartInfo> MergeTreePartInfo::tryParsePartName(
         /// "Part 20170601_20170630_0_2_999999999 intersects 201706_0_1_4294967295".
         /// So we replace unexpected max level to make contains(...) method and comparison operators work
         /// correctly with such virtual parts. On part name serialization we will use legacy max level to keep the name unchanged.
-        part_info.use_leagcy_max_level = true;
+        part_info.use_legacy_max_level = true;
         level = MAX_LEVEL;
     }
 
@@ -197,7 +204,7 @@ String MergeTreePartInfo::getPartNameV1() const
     writeChar('_', wb);
     writeIntText(max_block, wb);
     writeChar('_', wb);
-    if (use_leagcy_max_level)
+    if (use_legacy_max_level)
     {
         assert(level == MAX_LEVEL);
         writeIntText(LEGACY_MAX_LEVEL, wb);
@@ -236,7 +243,7 @@ String MergeTreePartInfo::getPartNameV0(DayNum left_date, DayNum right_date) con
     writeChar('_', wb);
     writeIntText(max_block, wb);
     writeChar('_', wb);
-    if (use_leagcy_max_level)
+    if (use_legacy_max_level)
     {
         assert(level == MAX_LEVEL);
         writeIntText(LEGACY_MAX_LEVEL, wb);
@@ -266,7 +273,7 @@ void MergeTreePartInfo::serialize(WriteBuffer & out) const
     writeIntBinary(max_block, out);
     writeIntBinary(level, out);
     writeIntBinary(mutation, out);
-    writeBoolText(use_leagcy_max_level, out);
+    writeBoolText(use_legacy_max_level, out);
 }
 
 
@@ -289,7 +296,34 @@ void MergeTreePartInfo::deserialize(ReadBuffer & in)
     readIntBinary(max_block, in);
     readIntBinary(level, in);
     readIntBinary(mutation, in);
-    readBoolText(use_leagcy_max_level, in);
+    readBoolText(use_legacy_max_level, in);
+}
+
+bool MergeTreePartInfo::areAllBlockNumbersCovered(const MergeTreePartInfo & blocks_range, std::vector<MergeTreePartInfo> candidates)
+{
+    if (candidates.empty())
+        return false;
+
+    std::sort(candidates.begin(), candidates.end());
+
+    /// First doesn't cover left border
+    if (candidates[0].min_block != blocks_range.min_block)
+        return false;
+
+    int64_t current_right_block = candidates[0].min_block - 1;
+
+    for (const auto & candidate : candidates)
+    {
+        if (current_right_block + 1 != candidate.min_block)
+            return false;
+
+        current_right_block = candidate.max_block;
+    }
+
+    if (current_right_block != blocks_range.max_block)
+        return false;
+
+    return true;
 }
 
 DetachedPartInfo DetachedPartInfo::parseDetachedPartName(
@@ -359,9 +393,10 @@ DetachedPartInfo DetachedPartInfo::parseDetachedPartName(
     return part_info;
 }
 
-void DetachedPartInfo::addParsedPartInfo(const MergeTreePartInfo& part)
+void DetachedPartInfo::addParsedPartInfo(const MergeTreePartInfo & part)
 {
     // Both class are aggregates so it's ok.
     static_cast<MergeTreePartInfo &>(*this) = part;
 }
+
 }

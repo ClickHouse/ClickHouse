@@ -1,0 +1,223 @@
+number	Nullable(Int64)					
+i8	Nullable(Int8)					
+i16	Nullable(Int16)					
+i32	Nullable(Int32)					
+i64	Nullable(Int64)					
+date32	Nullable(Date32)					
+dt64_ms	Nullable(DateTime64(9))					
+dt64_us	Nullable(DateTime64(9))					
+dt64_ns	Nullable(DateTime64(9))					
+dt64_s	Nullable(DateTime64(9))					
+dt64_cs	Nullable(DateTime64(9))					
+f32	Nullable(Float32)					
+f64	Nullable(Float64)					
+s	Nullable(String)					
+fs	Nullable(String)					
+d32	Nullable(Decimal(9, 3))					
+d64	Nullable(Decimal(18, 10))					
+d128	Nullable(Decimal(38, 20))					
+-- Go over all types individually
+-- { echoOn }
+select count(), sum(number) from file('02892.orc') where indexHint(i8 in (10, 15, -6));
+1100	5744450
+select count(1), min(i8), max(i8) from file('02892.orc') where i8 in (10, 15, -6);
+99	-6	15
+select count(), sum(number) from file('02892.orc') where indexHint(i8 between -3 and 2);
+1000	4999500
+select count(1), min(i8), max(i8) from file('02892.orc') where i8 between -3 and 2;
+208	-3	2
+select count(), sum(number) from file('02892.orc') where indexHint(i16 between 4000 and 61000 or i16 == 42);
+1200	1099400
+select count(1), min(i16), max(i16) from file('02892.orc') where i16 between 4000 and 61000 or i16 == 42;
+1002	42	5000
+select count(), sum(number) from file('02892.orc') where indexHint(i16 between -150 and 250);
+500	2474750
+select count(1), min(i16), max(i16) from file('02892.orc') where i16 between -150 and 250;
+401	-150	250
+select count(), sum(number) from file('02892.orc') where indexHint(i32 in (42, -1000));
+200	1099900
+select count(1), min(i32), max(i32) from file('02892.orc') where i32 in (42, -1000);
+2	-1000	42
+select count(), sum(number) from file('02892.orc') where indexHint(i32 between -150 and 250);
+500	2474750
+select count(1), min(i32), max(i32) from file('02892.orc') where i32 between -150 and 250;
+401	-150	250
+select count(), sum(number) from file('02892.orc') where indexHint(i64 in (42, -1000));
+200	1099900
+select count(1), min(i64), max(i64) from file('02892.orc') where i64 in (42, -1000);
+2	-1000	42
+select count(), sum(number) from file('02892.orc') where indexHint(i64 between -150 and 250);
+500	2474750
+select count(1), min(i64), max(i64) from file('02892.orc') where i64 between -150 and 250;
+401	-150	250
+select count(), sum(number) from file('02892.orc') where indexHint(date32 between '1992-01-01' and '2023-08-02');
+2100	5563950
+select count(1), min(date32), max(date32) from file('02892.orc') where date32 between '1992-01-01' and '2023-08-02';
+1994	1992-01-04	2023-08-02
+select count(), sum(number) from file('02892.orc') where indexHint(dt64_ms between '2000-01-01' and '2005-01-01');
+300	1184850
+select count(1), min(dt64_ms), max(dt64_ms) from file('02892.orc') where dt64_ms between '2000-01-01' and '2005-01-01';
+158	2000-01-04 15:33:20.000000000	2004-12-25 18:40:00.000000000
+select count(), sum(number) from file('02892.orc') where indexHint(dt64_us between toDateTime64(900000000, 2) and '2005-01-01');
+400	1599800
+select count(1), min(dt64_us), max(dt64_us) from file('02892.orc') where (dt64_us between toDateTime64(900000000, 2) and '2005-01-01');
+205	1998-07-09 16:00:00.000000000	2004-12-25 18:40:00.000000000
+select count(), sum(number) from file('02892.orc') where indexHint(dt64_ns between '2000-01-01' and '2005-01-01');
+300	1184850
+select count(1), min(dt64_ns), max(dt64_ns) from file('02892.orc') where (dt64_ns between '2000-01-01' and '2005-01-01');
+158	2000-01-04 15:33:20.000000000	2004-12-25 18:40:00.000000000
+select count(), sum(number) from file('02892.orc') where indexHint(dt64_s between toDateTime64('-2.01e8'::Decimal64(0), 0) and toDateTime64(1.5e8::Decimal64(0), 0));
+500	2524750
+select count(1), min(dt64_s), max(dt64_s) from file('02892.orc') where (dt64_s between toDateTime64('-2.01e8'::Decimal64(0), 0) and toDateTime64(1.5e8::Decimal64(0), 0));
+352	1963-08-19 14:40:00.000000000	1974-10-03 02:40:00.000000000
+select count(), sum(number) from file('02892.orc') where indexHint(dt64_cs between toDateTime64('-2.01e8'::Decimal64(1), 1) and toDateTime64(1.5e8::Decimal64(2), 2));
+500	2524750
+select count(1), min(dt64_cs), max(dt64_cs) from file('02892.orc') where (dt64_cs between toDateTime64('-2.01e8'::Decimal64(1), 1) and toDateTime64(1.5e8::Decimal64(2), 2));
+352	1963-08-19 14:40:00.000000000	1974-10-03 02:40:00.000000000
+select count(), sum(number) from file('02892.orc') where indexHint(f32 between -0.11::Float32 and 0.06::Float32);
+300	1514850
+select count(1), min(f32), max(f32) from file('02892.orc') where (f32 between -0.11::Float32 and 0.06::Float32);
+171	-0.11	0.06
+select count(), sum(number) from file('02892.orc') where indexHint(f64 between -0.11 and 0.06);
+300	1514850
+select count(1), min(f64), max(f64) from file('02892.orc') where (f64 between -0.11 and 0.06);
+171	-0.11	0.06
+select count(), sum(number) from file('02892.orc') where indexHint(s between '-9' and '1!!!');
+300	1594850
+select count(1), min(s), max(s) from file('02892.orc') where (s between '-9' and '1!!!');
+113	-9	1
+select count(), sum(number) from file('02892.orc') where indexHint(fs between '-9' and '1!!!');
+300	1594850
+select count(1), min(fs), max(fs) from file('02892.orc') where (fs between '-9' and '1!!!');
+113	-9\0\0\0\0\0\0\0	1\0\0\0\0\0\0\0\0
+select count(), sum(number) from file('02892.orc') where indexHint(d32 between '-0.011'::Decimal32(3) and 0.006::Decimal32(3));
+200	999900
+select count(1), min(d32), max(d32) from file('02892.orc') where (d32 between '-0.011'::Decimal32(3) and 0.006::Decimal32(3));
+23	-0.011	0.006
+select count(), sum(number) from file('02892.orc') where indexHint(d64 between '-0.0000011'::Decimal64(7) and 0.0000006::Decimal64(9));
+200	999900
+select count(1), min(d64), max(d64) from file('02892.orc') where (d64 between '-0.0000011'::Decimal64(7) and 0.0000006::Decimal64(9));
+21	-0.000001053	0.000000567
+select count(), sum(number) from file('02892.orc') where indexHint(d128 between '-0.00000000000011'::Decimal128(20) and 0.00000000000006::Decimal128(20));
+200	999900
+select count(1), min(d128), max(128) from file('02892.orc') where (d128 between '-0.00000000000011'::Decimal128(20) and 0.00000000000006::Decimal128(20));
+21	-0.0000000000001053	128
+-- Some random other cases.
+select count(), sum(number) from file('02892.orc') where indexHint(0);
+0	\N
+select count(), min(number), max(number) from file('02892.orc') where indexHint(0);
+0	\N	\N
+select count(), sum(number) from file('02892.orc') where indexHint(s like '99%' or i64 == 2000);
+300	1204850
+select count(), min(s), max(s) from file('02892.orc') where (s like '99%' or i64 == 2000);
+12	2000	999
+select count(), sum(number) from file('02892.orc') where indexHint(s like 'z%');
+0	\N
+select count(), min(s), max(s) from file('02892.orc') where (s like 'z%');
+0	\N	\N
+select count(), sum(number) from file('02892.orc') where indexHint(i8 == 10 or 1 == 1);
+10000	49995000
+select count(), min(i8), max(i8) from file('02892.orc') where (i8 == 10 or 1 == 1);
+10000	-128	127
+select count(), sum(number) from file('02892.orc') where indexHint(i8 < 0);
+5300	26042350
+select count(), min(i8), max(i8) from file('02892.orc') where (i8 < 0);
+5001	-128	-1
+-- { echoOn }
+select count(), sum(number) from file('02892.orc') where indexHint(sometimes_null is NULL);
+500	244750
+select count(), min(sometimes_null), max(sometimes_null) from file('02892.orc') where (sometimes_null is NULL);
+5	\N	\N
+select count(), sum(number) from file('02892.orc') where indexHint(sometimes_null_lc is NULL);
+500	244750
+select count(), min(sometimes_null_lc), max(sometimes_null_lc) from file('02892.orc') where (sometimes_null_lc is NULL);
+5	\N	\N
+select count(), sum(number) from file('02892.orc') where indexHint(mostly_null is not NULL);
+300	104850
+select count(), min(mostly_null), max(mostly_null) from file('02892.orc') where (mostly_null is not NULL);
+3	0	690
+select count(), sum(number) from file('02892.orc') where indexHint(mostly_null_lc is not NULL);
+300	104850
+select count(), min(mostly_null_lc), max(mostly_null_lc) from file('02892.orc') where (mostly_null_lc is not NULL);
+3	0	690
+select count(), sum(number) from file('02892.orc') where indexHint(sometimes_null > 850);
+200	179900
+select count(), min(sometimes_null), max(sometimes_null) from file('02892.orc') where (sometimes_null > 850);
+148	851	999
+select count(), sum(number) from file('02892.orc') where indexHint(sometimes_null_lc > 850);
+200	179900
+select count(), min(sometimes_null_lc), max(sometimes_null_lc) from file('02892.orc') where (sometimes_null_lc > 850);
+148	851	999
+select count(), sum(number) from file('02892.orc') where indexHint(never_null > 850);
+200	179900
+select count(), min(never_null), max(never_null) from file('02892.orc') where (never_null > 850);
+149	851	999
+select count(), sum(number) from file('02892.orc') where indexHint(never_null_lc > 850);
+200	179900
+select count(), min(never_null_lc), max(never_null_lc) from file('02892.orc') where (never_null_lc > 850);
+149	851	999
+select count(), sum(number) from file('02892.orc') where indexHint(never_null < 150);
+200	19900
+select count(), min(never_null), max(never_null) from file('02892.orc') where (never_null < 150);
+150	0	149
+select count(), sum(number) from file('02892.orc') where indexHint(never_null_lc < 150);
+200	19900
+select count(), min(never_null_lc), max(never_null_lc) from file('02892.orc') where (never_null_lc < 150);
+150	0	149
+select count(), sum(number) from file('02892.orc') where indexHint(sometimes_null < 150);
+200	19900
+select count(), min(sometimes_null), max(sometimes_null) from file('02892.orc') where (sometimes_null < 150);
+149	1	149
+select count(), sum(number) from file('02892.orc') where indexHint(sometimes_null_lc < 150);
+200	19900
+select count(), min(sometimes_null_lc), max(sometimes_null_lc) from file('02892.orc') where (sometimes_null_lc < 150);
+149	1	149
+-- { echoOn }
+select count(), sum(number) from file('02892.orc') where indexHint(positive_or_null < 50); -- quirk with infinities
+0	\N
+select count(), min(positive_or_null), max(positive_or_null) from file('02892.orc') where (positive_or_null < 50);
+0	\N	\N
+select count(), sum(number) from file('02892.orc', ORC, 'number UInt64, positive_or_null UInt64') where indexHint(positive_or_null < 50);
+1000	499500
+select count(), min(positive_or_null), max(positive_or_null) from file('02892.orc', ORC, 'number UInt64, positive_or_null UInt64') where (positive_or_null < 50);
+5	0	0
+select count(), sum(number) from file('02892.orc') where indexHint(negative_or_null > -50);
+0	\N
+select count(), min(negative_or_null), max(negative_or_null) from file('02892.orc') where (negative_or_null > -50);
+0	\N	\N
+select count(), sum(number) from file('02892.orc', ORC, 'number UInt64, negative_or_null Int64') where indexHint(negative_or_null > -50);
+1000	499500
+select count(), min(negative_or_null), max(negative_or_null) from file('02892.orc', ORC, 'number UInt64, negative_or_null Int64') where (negative_or_null > -50);
+5	0	0
+select count(), sum(number) from file('02892.orc') where indexHint(string_or_null == ''); -- quirk with infinities
+0	\N
+select count(), min(string_or_null), max(string_or_null) from file('02892.orc') where (string_or_null == '');
+0	\N	\N
+select count(), sum(number) from file('02892.orc', ORC, 'number UInt64, string_or_null String') where indexHint(string_or_null == '');
+1000	499500
+select count(), min(string_or_null), max(string_or_null) from file('02892.orc', ORC, 'number UInt64, string_or_null String') where (string_or_null == '');
+5		
+select count(), sum(number) from file('02892.orc', ORC, 'number UInt64, nEgAtIvE_oR_nUlL Int64') where indexHint(nEgAtIvE_oR_nUlL > -50) settings input_format_orc_case_insensitive_column_matching = 1;
+1000	499500
+select count(), min(nEgAtIvE_oR_nUlL), max(nEgAtIvE_oR_nUlL) from file('02892.orc', ORC, 'number UInt64, nEgAtIvE_oR_nUlL Int64') where (nEgAtIvE_oR_nUlL > -50) settings input_format_orc_case_insensitive_column_matching = 1;
+5	0	0
+select count(), sum(number) from file('02892.orc', ORC, 'number UInt64, negative_or_null Int64') where indexHint(negative_or_null < -500);
+600	419700
+select count(), min(negative_or_null), max(negative_or_null) from file('02892.orc', ORC, 'number UInt64, negative_or_null Int64') where (negative_or_null < -500);
+596	-1099	-501
+select count(), sum(number) from file('02892.orc', ORC, 'number UInt64, negative_or_null Int64') where indexHint(negative_or_null is null) settings allow_experimental_analyzer=1;
+0	0
+select count(), min(negative_or_null), max(negative_or_null) from file('02892.orc', ORC, 'number UInt64, negative_or_null Int64') where (negative_or_null is null);
+0	0	0
+select count(), sum(number) from file('02892.orc', ORC, 'number UInt64, negative_or_null Int64') where indexHint(negative_or_null in (0, -1, -10, -100, -1000));
+1000	499500
+select count(), min(negative_or_null), max(negative_or_null) from file('02892.orc', ORC, 'number UInt64, negative_or_null Int64') where (negative_or_null in (0, -1, -10, -100, -1000));
+6	-1000	0
+select count(), sum(number) from file('02892.orc', ORC, 'number UInt64, string_or_null LowCardinality(String)') where indexHint(string_or_null like 'I am%');
+1000	499500
+select count(), min(string_or_null), max(string_or_null) from file('02892.orc', ORC, 'number UInt64, string_or_null LowCardinality(String)') where (string_or_null like 'I am%');
+995	I am a string	I am a string
+select count(), sum(number) from file('02892.orc', ORC, 'number UInt64, string_or_null LowCardinality(Nullable(String))') where indexHint(string_or_null like 'I am%');
+1000	499500
+select count(), min(string_or_null), max(string_or_null) from file('02892.orc', ORC, 'number UInt64, string_or_null LowCardinality(Nullable(String))') where (string_or_null like 'I am%');
+995	I am a string	I am a string

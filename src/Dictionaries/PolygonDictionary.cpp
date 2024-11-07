@@ -1,10 +1,10 @@
 #include "PolygonDictionary.h"
 
-#include <numeric>
 #include <cmath>
 
 #include <base/sort.h>
 
+#include <Common/iota.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeArray.h>
@@ -14,6 +14,7 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionarySource.h>
+#include <Dictionaries/DictionaryPipelineExecutor.h>
 
 
 namespace DB
@@ -69,15 +70,29 @@ void IPolygonDictionary::convertKeyColumns(Columns & key_columns, DataTypes & ke
 
 ColumnPtr IPolygonDictionary::getColumn(
     const std::string & attribute_name,
-    const DataTypePtr & result_type,
+    const DataTypePtr & attribute_type,
     const Columns & key_columns,
     const DataTypes &,
-    const ColumnPtr & default_values_column) const
+    DefaultOrFilter default_or_filter) const
 {
+    bool is_short_circuit = std::holds_alternative<RefFilter>(default_or_filter);
+    assert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
+
     const auto requested_key_points = extractPoints(key_columns);
 
-    const auto & attribute = dict_struct.getAttribute(attribute_name, result_type);
-    DefaultValueProvider default_value_provider(attribute.null_value, default_values_column);
+    const auto & attribute = dict_struct.getAttribute(attribute_name, attribute_type);
+
+    std::optional<std::reference_wrapper<IColumn::Filter>> default_mask;
+    std::optional<DefaultValueProvider> default_value_provider;
+    if (is_short_circuit)
+    {
+        default_mask = std::get<RefFilter>(default_or_filter).get();
+    }
+    else
+    {
+        const ColumnPtr & default_values_column = std::get<RefDefault>(default_or_filter).get();
+        default_value_provider = DefaultValueProvider(attribute.null_value, default_values_column);
+    }
 
     size_t attribute_index = dict_struct.attribute_name_to_index.find(attribute_name)->second;
     const auto & attribute_values_column = attributes_columns[attribute_index];
@@ -87,11 +102,22 @@ ColumnPtr IPolygonDictionary::getColumn(
 
     if (unlikely(attribute.is_nullable))
     {
-        getItemsImpl<Field>(
-            requested_key_points,
-            [&](size_t row) { return (*attribute_values_column)[row]; },
-            [&](Field & value) { result->insert(value); },
-            default_value_provider);
+        if (is_short_circuit)
+        {
+            getItemsShortCircuitImpl<Field>(
+                requested_key_points,
+                [&](size_t row) { return (*attribute_values_column)[row]; },
+                [&](Field & value) { result->insert(value); },
+                default_mask.value());
+        }
+        else
+        {
+            getItemsImpl<Field>(
+                requested_key_points,
+                [&](size_t row) { return (*attribute_values_column)[row]; },
+                [&](Field & value) { result->insert(value); },
+                default_value_provider.value());
+        }
     }
     else
     {
@@ -111,30 +137,63 @@ ColumnPtr IPolygonDictionary::getColumn(
 
             if constexpr (std::is_same_v<ValueType, Array>)
             {
-                getItemsImpl<ValueType>(
-                    requested_key_points,
-                    [&](size_t row) { return (*attribute_values_column)[row].get<Array>(); },
-                    [&](Array & value) { result_column_typed.insert(value); },
-                    default_value_provider);
+                if (is_short_circuit)
+                {
+                    getItemsShortCircuitImpl<ValueType>(
+                        requested_key_points,
+                        [&](size_t row) { return (*attribute_values_column)[row].safeGet<Array>(); },
+                        [&](Array & value) { result_column_typed.insert(value); },
+                        default_mask.value());
+                }
+                else
+                {
+                    getItemsImpl<ValueType>(
+                        requested_key_points,
+                        [&](size_t row) { return (*attribute_values_column)[row].safeGet<Array>(); },
+                        [&](Array & value) { result_column_typed.insert(value); },
+                        default_value_provider.value());
+                }
             }
             else if constexpr (std::is_same_v<ValueType, StringRef>)
             {
-                getItemsImpl<ValueType>(
-                    requested_key_points,
-                    [&](size_t row) { return attribute_values_column->getDataAt(row); },
-                    [&](StringRef value) { result_column_typed.insertData(value.data, value.size); },
-                    default_value_provider);
+                if (is_short_circuit)
+                {
+                    getItemsShortCircuitImpl<ValueType>(
+                        requested_key_points,
+                        [&](size_t row) { return attribute_values_column->getDataAt(row); },
+                        [&](StringRef value) { result_column_typed.insertData(value.data, value.size); },
+                        default_mask.value());
+                }
+                else
+                {
+                    getItemsImpl<ValueType>(
+                        requested_key_points,
+                        [&](size_t row) { return attribute_values_column->getDataAt(row); },
+                        [&](StringRef value) { result_column_typed.insertData(value.data, value.size); },
+                        default_value_provider.value());
+                }
             }
             else
             {
                 auto & attribute_data = attribute_values_column_typed->getData();
                 auto & result_data = result_column_typed.getData();
 
-                getItemsImpl<ValueType>(
-                    requested_key_points,
-                    [&](size_t row) { return attribute_data[row]; },
-                    [&](auto value) { result_data.emplace_back(static_cast<AttributeType>(value)); },
-                    default_value_provider);
+                if (is_short_circuit)
+                {
+                    getItemsShortCircuitImpl<ValueType>(
+                        requested_key_points,
+                        [&](size_t row) { return attribute_data[row]; },
+                        [&](auto value) { result_data.emplace_back(static_cast<AttributeType>(value)); },
+                        default_mask.value());
+                }
+                else
+                {
+                    getItemsImpl<ValueType>(
+                        requested_key_points,
+                        [&](size_t row) { return attribute_data[row]; },
+                        [&](auto value) { result_data.emplace_back(static_cast<AttributeType>(value)); },
+                        default_value_provider.value());
+                }
             }
         };
 
@@ -231,7 +290,8 @@ void IPolygonDictionary::loadData()
 {
     QueryPipeline pipeline(source_ptr->loadAll());
 
-    PullingPipelineExecutor executor(pipeline);
+    DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+    pipeline.setConcurrencyControl(false);
     Block block;
     while (executor.pull(block))
         blockToAttributes(block);
@@ -373,21 +433,57 @@ void IPolygonDictionary::getItemsImpl(
             }
             else if constexpr (std::is_same_v<AttributeType, Array>)
             {
-                set_value(default_value.get<Array>());
+                set_value(default_value.safeGet<Array>());
             }
             else if constexpr (std::is_same_v<AttributeType, StringRef>)
             {
-                auto default_value_string = default_value.get<String>();
+                auto default_value_string = default_value.safeGet<String>();
                 set_value(default_value_string);
             }
             else
             {
-                set_value(default_value.get<NearestFieldType<AttributeType>>());
+                set_value(default_value.safeGet<NearestFieldType<AttributeType>>());
             }
         }
     }
 
     query_count.fetch_add(requested_key_points.size(), std::memory_order_relaxed);
+    found_count.fetch_add(keys_found, std::memory_order_relaxed);
+}
+
+template <typename AttributeType, typename ValueGetter, typename ValueSetter>
+void IPolygonDictionary::getItemsShortCircuitImpl(
+    const std::vector<IPolygonDictionary::Point> & requested_key_points,
+    ValueGetter && get_value,
+    ValueSetter && set_value,
+    IColumn::Filter & default_mask) const
+{
+    size_t polygon_index = 0;
+    size_t keys_found = 0;
+    size_t requested_key_size = requested_key_points.size();
+    default_mask.resize(requested_key_size);
+
+    for (size_t requested_key_index = 0; requested_key_index < requested_key_size; ++requested_key_index)
+    {
+        const auto found = find(requested_key_points[requested_key_index], polygon_index);
+
+        if (found)
+        {
+            size_t attribute_values_index = polygon_index_to_attribute_value_index[polygon_index];
+            auto value = get_value(attribute_values_index);
+            set_value(value);
+            ++keys_found;
+            default_mask[requested_key_index] = 0;
+        }
+        else
+        {
+            auto value = AttributeType{};
+            set_value(value);
+            default_mask[requested_key_index] = 1;
+        }
+    }
+
+    query_count.fetch_add(requested_key_size, std::memory_order_relaxed);
     found_count.fetch_add(keys_found, std::memory_order_relaxed);
 }
 
@@ -506,7 +602,7 @@ const IColumn * unrollSimplePolygons(const ColumnPtr & column, Offset & offset)
     if (!ptr_polygons)
         throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected a column containing arrays of points");
     offset.ring_offsets.assign(ptr_polygons->getOffsets());
-    std::iota(offset.polygon_offsets.begin(), offset.polygon_offsets.end(), 1);
+    iota<IColumn::Offsets::value_type>(offset.polygon_offsets.data(), offset.polygon_offsets.size(), IColumn::Offsets::value_type(1));
     offset.multi_polygon_offsets.assign(offset.polygon_offsets);
 
     return ptr_polygons->getDataPtr().get();

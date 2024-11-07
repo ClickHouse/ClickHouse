@@ -3,12 +3,12 @@ set -e
 # set -x
 
 PROGRAM=clickhouse-keeper
-KEEPER_USER=${KEEPER_USER:=clickhouse}
-KEEPER_GROUP=${KEEPER_GROUP:=clickhouse}
+KEEPER_USER=${KEEPER_USER:-clickhouse}
+KEEPER_GROUP=${KEEPER_GROUP:-clickhouse}
 # Please note that we don't support paths with whitespaces. This is rather ignorant.
-KEEPER_CONFDIR=${KEEPER_CONFDIR:=/etc/$PROGRAM}
-KEEPER_DATADIR=${KEEPER_DATADIR:=/var/lib/clickhouse}
-KEEPER_LOGDIR=${KEEPER_LOGDIR:=/var/log/$PROGRAM}
+KEEPER_CONFDIR=${KEEPER_CONFDIR:-/etc/$PROGRAM}
+KEEPER_DATADIR=${KEEPER_DATADIR:-/var/lib/clickhouse}
+KEEPER_LOGDIR=${KEEPER_LOGDIR:-/var/log/$PROGRAM}
 
 [ -f /usr/share/debconf/confmodule ] && . /usr/share/debconf/confmodule
 [ -f /etc/default/clickhouse-keeper ] && . /etc/default/clickhouse-keeper

@@ -1,3 +1,5 @@
+// NOLINTBEGIN(clang-analyzer-optin.core.EnumCastOutOfRange)
+
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
@@ -7,8 +9,8 @@
 #include <Disks/DiskLocal.h>
 #include <Interpreters/GinFilter.h>
 #include <Storages/MergeTree/GinIndexStore.h>
+#include <Storages/MergeTree/MergeTreeIndexBloomFilterText.h>
 #include <Storages/MergeTree/MergeTreeIndexFullText.h>
-#include <Storages/MergeTree/MergeTreeIndexInverted.h>
 #include <string>
 #include <algorithm>
 #include <city.h>
@@ -21,14 +23,15 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-GinFilterParameters::GinFilterParameters(size_t ngrams_, Float64 density_)
+GinFilterParameters::GinFilterParameters(size_t ngrams_, UInt64 max_rows_per_postings_list_)
     : ngrams(ngrams_)
-    , density(density_)
+    , max_rows_per_postings_list(max_rows_per_postings_list_)
 {
+    if (max_rows_per_postings_list == UNLIMITED_ROWS_PER_POSTINGS_LIST)
+        max_rows_per_postings_list = std::numeric_limits<UInt64>::max();
+
     if (ngrams > 8)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The size of inverted index filter cannot be greater than 8");
-    if (density <= 0 || density > 1)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The density inverted index gin filter must be between 0 and 1");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The size of full-text index filter cannot be greater than 8");
 }
 
 GinFilter::GinFilter(const GinFilterParameters & params_)
@@ -36,7 +39,7 @@ GinFilter::GinFilter(const GinFilterParameters & params_)
 {
 }
 
-void GinFilter::add(const char * data, size_t len, UInt32 rowID, GinIndexStorePtr & store, UInt64 limit) const
+void GinFilter::add(const char * data, size_t len, UInt32 rowID, GinIndexStorePtr & store) const
 {
     if (len > FST::MAX_TERM_LENGTH)
         return;
@@ -51,8 +54,7 @@ void GinFilter::add(const char * data, size_t len, UInt32 rowID, GinIndexStorePt
     }
     else
     {
-        UInt64 size_limit = std::lround(limit * params.density);
-        auto builder = std::make_shared<GinIndexPostingsBuilder>(size_limit);
+        auto builder = std::make_shared<GinIndexPostingsBuilder>(params.max_rows_per_postings_list);
         builder->add(rowID);
 
         store->setPostingsBuilder(term, builder);
@@ -174,3 +176,5 @@ bool GinFilter::match(const GinPostingsCache & postings_cache) const
 }
 
 }
+
+// NOLINTEND(clang-analyzer-optin.core.EnumCastOutOfRange)

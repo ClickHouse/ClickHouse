@@ -5,13 +5,13 @@ DistinctTransform
 -- enable optimize_distinct_in_order
 -- distinct with all primary key columns -> pre-distinct optimization only
 DistinctTransform
-DistinctSortedChunkTransform
+DistinctSortedStreamTransform
 -- distinct with primary key prefix -> pre-distinct optimization only
 DistinctTransform
-DistinctSortedChunkTransform
+DistinctSortedStreamTransform
 -- distinct with primary key prefix and order by column in distinct -> pre-distinct and final distinct optimization
 DistinctSortedTransform
-DistinctSortedChunkTransform
+DistinctSortedStreamTransform
 -- distinct with primary key prefix and order by the same columns -> pre-distinct and final distinct optimization
 DistinctSortedStreamTransform
 DistinctSortedStreamTransform
@@ -20,10 +20,10 @@ DistinctSortedTransform
 DistinctSortedStreamTransform
 -- distinct with primary key prefix and order by column in distinct but non-primary key prefix -> pre-distinct and final distinct optimization
 DistinctSortedTransform
-DistinctSortedChunkTransform
+DistinctSortedStreamTransform
 -- distinct with primary key prefix and order by column _not_ in distinct -> pre-distinct optimization only
 DistinctTransform
-DistinctSortedChunkTransform
+DistinctSortedStreamTransform
 -- distinct with non-primary key prefix -> ordinary distinct
 DistinctTransform
 DistinctTransform
@@ -38,81 +38,77 @@ DistinctTransform
 DistinctTransform
 -- Check reading in order for distinct
 -- disabled, distinct columns match sorting key
-MergeTreeThread
+algorithm: Thread
 -- enabled, distinct columns match sorting key
-MergeTreeInOrder
+algorithm: InOrder
 -- enabled, distinct columns form prefix of sorting key
-MergeTreeInOrder
+algorithm: InOrder
 -- enabled, distinct columns DON't form prefix of sorting key
-MergeTreeThread
+algorithm: Thread
 -- enabled, distinct columns contains constant columns, non-const columns form prefix of sorting key
-MergeTreeInOrder
+algorithm: InOrder
 -- enabled, distinct columns contains constant columns, non-const columns match prefix of sorting key
-MergeTreeInOrder
+algorithm: InOrder
 -- enabled, only part of distinct columns form prefix of sorting key
-MergeTreeThread
+algorithm: InOrder
 === disable new analyzer ===
 -- enabled, check that sorting properties are propagated from ReadFromMergeTree till preliminary distinct
-Sorting (Stream): a ASC, b ASC
-Sorting (Stream): a ASC, b ASC
-Sorting (Stream): a ASC, b ASC
+Sorting: a ASC, b ASC
+Sorting: a ASC, b ASC
 -- check that reading in order optimization for ORDER BY and DISTINCT applied correctly in the same query
 -- disabled, check that sorting description for ReadFromMergeTree match ORDER BY columns
-Sorting (Stream): a ASC
-Sorting (Stream): a ASC
-Sorting (Stream): a ASC
+Sorting: a ASC
+Sorting: a ASC
 -- enabled, check that ReadFromMergeTree sorting description is overwritten by DISTINCT optimization i.e. it contains columns from DISTINCT clause
-Sorting (Stream): a ASC, b ASC
-Sorting (Stream): a ASC, b ASC
-Sorting (Stream): a ASC, b ASC
+Sorting: a ASC
+Sorting: a ASC
+Sorting: a ASC, b ASC
+Sorting: a ASC, b ASC
 -- enabled, check that ReadFromMergeTree sorting description is overwritten by DISTINCT optimization, but direction used from ORDER BY clause
-Sorting (Stream): a DESC, b DESC
-Sorting (Stream): a DESC, b DESC
-Sorting (Stream): a DESC, b DESC
+Sorting: a DESC
+Sorting: a DESC
+Sorting: a DESC, b DESC
+Sorting: a DESC, b DESC
 -- enabled, check that ReadFromMergeTree sorting description is NOT overwritten by DISTINCT optimization (1), - it contains columns from ORDER BY clause
-Sorting (Stream): a ASC, b ASC
-Sorting (Stream): a ASC, b ASC
-Sorting (Stream): a ASC, b ASC
+Sorting: a ASC
+Sorting: a ASC, b ASC
+Sorting: a ASC
+Sorting: a ASC, b ASC
 -- enabled, check that ReadFromMergeTree sorting description is NOT overwritten by DISTINCT optimization (2), - direction used from ORDER BY clause
-Sorting (Stream): a DESC, b DESC
-Sorting (Stream): a DESC, b DESC
-Sorting (Stream): a DESC, b DESC
+Sorting: a DESC, b DESC
+Sorting: a DESC, b DESC
+Sorting: a DESC, b DESC
+Sorting: a DESC, b DESC
 -- enabled, check that disabling other 'read in order' optimizations do not disable distinct in order optimization
-Sorting (Stream): a ASC, b ASC
-Sorting (Stream): a ASC, b ASC
-Sorting (Stream): a ASC, b ASC
+Sorting: a ASC, b ASC
+Sorting: a ASC, b ASC
 === enable new analyzer ===
 -- enabled, check that sorting properties are propagated from ReadFromMergeTree till preliminary distinct
-Sorting (Stream): a_1 ASC, b_0 ASC
-Sorting (Stream): a_1 ASC, b_0 ASC
-Sorting (Stream): a_1 ASC, b_0 ASC
-Sorting (Stream): a_1 ASC, b ASC
+Sorting: __table1.a ASC, __table1.b ASC
+Sorting: a ASC, b ASC
 -- disabled, check that sorting description for ReadFromMergeTree match ORDER BY columns
-Sorting (Stream): a_1 ASC
-Sorting (Stream): a_1 ASC
-Sorting (Stream): a_1 ASC
-Sorting (Stream): a ASC
+Sorting: __table1.a ASC
+Sorting: a ASC
 -- enabled, check that ReadFromMergeTree sorting description is overwritten by DISTINCT optimization i.e. it contains columns from DISTINCT clause
-Sorting (Stream): a_1 ASC, b_0 ASC
-Sorting (Stream): a_1 ASC, b_0 ASC
-Sorting (Stream): a_1 ASC, b_0 ASC
-Sorting (Stream): a ASC, b ASC
+Sorting: __table1.a ASC
+Sorting: __table1.a ASC
+Sorting: __table1.a ASC, __table1.b ASC
+Sorting: a ASC, b ASC
 -- enabled, check that ReadFromMergeTree sorting description is overwritten by DISTINCT optimization, but direction used from ORDER BY clause
-Sorting (Stream): a_1 DESC, b_0 DESC
-Sorting (Stream): a_1 DESC, b_0 DESC
-Sorting (Stream): a_1 DESC, b_0 DESC
-Sorting (Stream): a DESC, b DESC
+Sorting: __table1.a DESC
+Sorting: __table1.a DESC
+Sorting: __table1.a DESC, __table1.b DESC
+Sorting: a DESC, b DESC
 -- enabled, check that ReadFromMergeTree sorting description is NOT overwritten by DISTINCT optimization (1), - it contains columns from ORDER BY clause
-Sorting (Stream): a_0 ASC, b_1 ASC
-Sorting (Stream): a_0 ASC, b_1 ASC
-Sorting (Stream): a_0 ASC, b_1 ASC
-Sorting (Stream): a ASC, b ASC
+Sorting: __table1.a ASC
+Sorting: __table1.a ASC, __table1.b ASC
+Sorting: __table1.a ASC
+Sorting: a ASC, b ASC
 -- enabled, check that ReadFromMergeTree sorting description is NOT overwritten by DISTINCT optimization (2), - direction used from ORDER BY clause
-Sorting (Stream): a_1 DESC, b_0 DESC
-Sorting (Stream): a_1 DESC, b_0 DESC
-Sorting (Stream): a_1 DESC, b_0 DESC
-Sorting (Stream): a DESC, b DESC
+Sorting: __table1.a DESC, __table1.b DESC
+Sorting: __table1.a DESC, __table1.b DESC
+Sorting: __table1.a DESC, __table1.b DESC
+Sorting: a DESC, b DESC
 -- enabled, check that disabling other 'read in order' optimizations do not disable distinct in order optimization
-Sorting (Stream): a_0 ASC, b_1 ASC
-Sorting (Stream): a_0 ASC, b_1 ASC
-Sorting (Stream): a ASC, b ASC
+Sorting: __table1.a ASC, __table1.b ASC
+Sorting: a ASC, b ASC

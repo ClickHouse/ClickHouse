@@ -2,6 +2,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 
 namespace DB
 {
@@ -13,6 +14,28 @@ void RewriteArrayExistsFunctionMatcher::visit(ASTPtr & ast, Data & data)
             return;
 
         visit(*func, ast, data);
+    }
+    else if (auto * join = ast->as<ASTTableJoin>())
+    {
+        if (join->using_expression_list)
+        {
+            auto * it = std::find(join->children.begin(), join->children.end(), join->using_expression_list);
+
+            visit(join->using_expression_list, data);
+
+            if (it && *it != join->using_expression_list)
+                *it = join->using_expression_list;
+        }
+
+        if (join->on_expression)
+        {
+            auto * it = std::find(join->children.begin(), join->children.end(), join->on_expression);
+
+            visit(join->on_expression, data);
+
+            if (it && *it != join->on_expression)
+                *it = join->on_expression;
+        }
     }
 }
 
@@ -64,8 +87,7 @@ void RewriteArrayExistsFunctionMatcher::visit(const ASTFunction & func, ASTPtr &
         ast = std::move(new_func);
         return;
     }
-    else if (
-        (filter_id = filter_arguments[1]->as<ASTIdentifier>()) && filter_arguments[0]->as<ASTLiteral>()
+    if ((filter_id = filter_arguments[1]->as<ASTIdentifier>()) && filter_arguments[0]->as<ASTLiteral>()
         && filter_id->full_name == id->full_name)
     {
         /// arrayExists(x -> elem = x, arr) -> has(arr, elem)
@@ -75,5 +97,15 @@ void RewriteArrayExistsFunctionMatcher::visit(const ASTFunction & func, ASTPtr &
         return;
     }
 }
+
+bool RewriteArrayExistsFunctionMatcher::needChildVisit(const ASTPtr & ast, const ASTPtr &)
+{
+    /// Children of ASTTableJoin are handled separately in visit() function
+    if (auto * /*join*/ _ = ast->as<ASTTableJoin>())
+        return false;
+
+    return true;
+}
+
 
 }

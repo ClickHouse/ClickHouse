@@ -50,7 +50,7 @@ bool SlowWithHyperscanChecker::isSlowOneRepeat(std::string_view regexp)
     size_t start_pos = 0;
     while (start_pos < haystack.size())
     {
-        if (searcher_one_repeat.Match(haystack, start_pos, haystack.size(), re2_st::RE2::Anchor::UNANCHORED, matches, 2))
+        if (searcher_one_repeat.Match(haystack, start_pos, haystack.size(), re2::RE2::Anchor::UNANCHORED, matches, 2))
         {
             const auto & match = matches[0];
             start_pos = (matches[0].data() - haystack.data()) + match.size(); // new start pos = prefix before match + match length
@@ -72,7 +72,7 @@ bool SlowWithHyperscanChecker::isSlowTwoRepeats(std::string_view regexp)
     size_t start_pos = 0;
     while (start_pos < haystack.size())
     {
-        if (searcher_two_repeats.Match(haystack, start_pos, haystack.size(), re2_st::RE2::Anchor::UNANCHORED, matches, 3))
+        if (searcher_two_repeats.Match(haystack, start_pos, haystack.size(), re2::RE2::Anchor::UNANCHORED, matches, 3))
         {
             const auto & match = matches[0];
             start_pos = (matches[0].data() - haystack.data()) + match.size(); // new start pos = prefix before match + match length
@@ -97,7 +97,7 @@ bool SlowWithHyperscanChecker::isSlow(std::string_view regexp)
 {
     if (isSlowOneRepeat(regexp))
         return true;
-    else if (isSlowTwoRepeats(regexp))
+    if (isSlowTwoRepeats(regexp))
         return true;
     return false;
 }

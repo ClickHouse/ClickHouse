@@ -3,6 +3,7 @@
 #include <Processors/Formats/Impl/RegexpRowInputFormat.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <Formats/FormatFactory.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <IO/ReadHelpers.h>
 
@@ -13,10 +14,14 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
-RegexpFieldExtractor::RegexpFieldExtractor(const FormatSettings & format_settings) : regexp(format_settings.regexp.regexp), skip_unmatched(format_settings.regexp.skip_unmatched)
+RegexpFieldExtractor::RegexpFieldExtractor(const FormatSettings & format_settings) : regexp_str(format_settings.regexp.regexp), regexp(regexp_str), skip_unmatched(format_settings.regexp.skip_unmatched)
 {
+    if (regexp_str.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The regular expression is not set for the `Regexp` format. It requires setting the value of the `format_regexp` setting.");
+
     size_t fields_count = regexp.NumberOfCapturingGroups();
     matched_fields.resize(fields_count);
     re2_arguments.resize(fields_count);
@@ -51,15 +56,15 @@ bool RegexpFieldExtractor::parseRow(PeekableReadBuffer & buf)
     if (line_size > 0 && buf.position()[line_size - 1] == '\r')
         --line_to_match;
 
-    bool match = re2_st::RE2::FullMatchN(
-        re2_st::StringPiece(buf.position(), line_to_match),
+    bool match = re2::RE2::FullMatchN(
+        re2::StringPiece(buf.position(), line_to_match),
         regexp,
         re2_arguments_ptrs.data(),
         static_cast<int>(re2_arguments_ptrs.size()));
 
     if (!match && !skip_unmatched)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Line \"{}\" doesn't match the regexp.",
-                        std::string(buf.position(), line_to_match));
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Line \"{}\" doesn't match the regexp: `{}`",
+            std::string(buf.position(), line_to_match), regexp_str);
 
     buf.position() += line_size;
     if (!buf.eof() && !checkChar('\n', buf))
@@ -84,10 +89,16 @@ RegexpRowInputFormat::RegexpRowInputFormat(
 {
 }
 
-void RegexpRowInputFormat::resetParser()
+void RegexpRowInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    IRowInputFormat::resetParser();
-    buf->reset();
+    buf = std::make_unique<PeekableReadBuffer>(in_);
+    IRowInputFormat::setReadBuffer(*buf);
+}
+
+void RegexpRowInputFormat::resetReadBuffer()
+{
+    buf.reset();
+    IRowInputFormat::resetReadBuffer();
 }
 
 bool RegexpRowInputFormat::readField(size_t index, MutableColumns & columns)
@@ -126,11 +137,6 @@ bool RegexpRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & 
     if (field_extractor.parseRow(*buf))
         readFieldsFromMatch(columns, ext);
     return true;
-}
-
-void RegexpRowInputFormat::setReadBuffer(ReadBuffer & in_)
-{
-    buf->setSubBuffer(in_);
 }
 
 RegexpSchemaReader::RegexpSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
@@ -190,7 +196,7 @@ static std::pair<bool, size_t> segmentationEngine(ReadBuffer & in, DB::Memory<> 
         pos = find_first_symbols<'\r', '\n'>(pos, in.buffer().end());
         if (pos > in.buffer().end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
-        else if (pos == in.buffer().end())
+        if (pos == in.buffer().end())
             continue;
 
         ++number_of_rows;

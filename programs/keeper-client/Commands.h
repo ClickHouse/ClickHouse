@@ -51,7 +51,7 @@ class CDCommand : public IKeeperClientCommand
 
     void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
 
-    String getHelpMessage() const override { return "{} [path] -- Change the working path (default `.`)"; }
+    String getHelpMessage() const override { return "{} [path] -- Changes the working path (default `.`)"; }
 };
 
 class SetCommand : public IKeeperClientCommand
@@ -64,7 +64,7 @@ class SetCommand : public IKeeperClientCommand
 
     String getHelpMessage() const override
     {
-        return "{} <path> <value> [version] -- Updates the node's value. Only update if version matches (default: -1)";
+        return "{} <path> <value> [version] -- Updates the node's value. Only updates if version matches (default: -1)";
     }
 };
 
@@ -99,6 +99,17 @@ class GetCommand : public IKeeperClientCommand
     void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
 
     String getHelpMessage() const override { return "{} <path> -- Returns the node's value"; }
+};
+
+class ExistsCommand : public IKeeperClientCommand
+{
+    String getName() const override { return "exists"; }
+
+    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+
+    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+
+    String getHelpMessage() const override { return "{} <path> -- Returns `1` if node exists, `0` otherwise"; }
 };
 
 class GetStatCommand : public IKeeperClientCommand
@@ -154,7 +165,6 @@ class FindBigFamily : public IKeeperClientCommand
     }
 };
 
-
 class RMCommand : public IKeeperClientCommand
 {
     String getName() const override { return "rm"; }
@@ -163,7 +173,7 @@ class RMCommand : public IKeeperClientCommand
 
     void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
 
-    String getHelpMessage() const override { return "{} <path> -- Remove the node"; }
+    String getHelpMessage() const override { return "{} <path> [version] -- Removes the node only if version matches (default: -1)"; }
 };
 
 class RMRCommand : public IKeeperClientCommand
@@ -174,7 +184,36 @@ class RMRCommand : public IKeeperClientCommand
 
     void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
 
-    String getHelpMessage() const override { return "{} <path> -- Recursively deletes path. Confirmation required"; }
+    String getHelpMessage() const override { return "{} <path> [limit] -- Recursively deletes path if the subtree size is smaller than the limit. Confirmation required (default limit = 100)"; }
+};
+
+class ReconfigCommand : public IKeeperClientCommand
+{
+    enum class Operation : UInt8
+    {
+        ADD = 0,
+        REMOVE = 1,
+        SET = 2,
+    };
+
+    String getName() const override { return "reconfig"; }
+
+    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+
+    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+
+    String getHelpMessage() const override { return "{} <add|remove|set> \"<arg>\" [version] -- Reconfigure Keeper cluster. See https://clickhouse.com/docs/en/guides/sre/keeper/clickhouse-keeper#reconfiguration"; }
+};
+
+class SyncCommand: public IKeeperClientCommand
+{
+    String getName() const override { return "sync"; }
+
+    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+
+    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+
+    String getHelpMessage() const override { return "{} <path> -- Synchronizes node between processes and leader"; }
 };
 
 class HelpCommand : public IKeeperClientCommand
@@ -197,6 +236,62 @@ class FourLetterWordCommand : public IKeeperClientCommand
     void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
 
     String getHelpMessage() const override { return "{} <command> -- Executes four-letter-word command"; }
+};
+
+class GetDirectChildrenNumberCommand : public IKeeperClientCommand
+{
+    String getName() const override { return "get_direct_children_number"; }
+
+    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+
+    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+
+    String getHelpMessage() const override
+    {
+        return "{} [path] -- Get numbers of direct children nodes under a specific path";
+    }
+};
+
+class GetAllChildrenNumberCommand : public IKeeperClientCommand
+{
+    String getName() const override { return "get_all_children_number"; }
+
+    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+
+    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+
+    String getHelpMessage() const override
+    {
+        return "{} [path] -- Get all numbers of children nodes under a specific path";
+    }
+};
+
+class CPCommand : public IKeeperClientCommand
+{
+    String getName() const override { return "cp"; }
+
+    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+
+    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+
+    String getHelpMessage() const override
+    {
+        return "{} <src> <dest> -- Copies 'src' node to 'dest' path.";
+    }
+};
+
+class MVCommand : public IKeeperClientCommand
+{
+    String getName() const override { return "mv"; }
+
+    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+
+    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+
+    String getHelpMessage() const override
+    {
+        return "{} <src> <dest> -- Moves 'src' node to the 'dest' path.";
+    }
 };
 
 }

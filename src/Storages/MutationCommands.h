@@ -21,7 +21,7 @@ class ReadBuffer;
 /// to values from set of columns which satisfy predicate.
 struct MutationCommand
 {
-    ASTPtr ast; /// The AST of the whole command
+    ASTPtr ast = {}; /// The AST of the whole command
 
     enum Type
     {
@@ -30,40 +30,45 @@ struct MutationCommand
         UPDATE,
         MATERIALIZE_INDEX,
         MATERIALIZE_PROJECTION,
+        MATERIALIZE_STATISTICS,
         READ_COLUMN, /// Read column and apply conversions (MODIFY COLUMN alter query).
         DROP_COLUMN,
         DROP_INDEX,
         DROP_PROJECTION,
+        DROP_STATISTICS,
         MATERIALIZE_TTL,
         RENAME_COLUMN,
         MATERIALIZE_COLUMN,
+        APPLY_DELETED_MASK,
         ALTER_WITHOUT_MUTATION, /// pure metadata command, currently unusned
     };
 
     Type type = EMPTY;
 
     /// WHERE part of mutation
-    ASTPtr predicate;
+    ASTPtr predicate = {};
 
     /// Columns with corresponding actions
-    std::unordered_map<String, ASTPtr> column_to_update_expression;
+    std::unordered_map<String, ASTPtr> column_to_update_expression = {};
 
-    /// For MATERIALIZE INDEX and PROJECTION
-    String index_name;
-    String projection_name;
+    /// For MATERIALIZE INDEX and PROJECTION and STATISTICS
+    String index_name = {};
+    String projection_name = {};
+    std::vector<String> statistics_columns = {};
+    std::vector<String> statistics_types = {};
 
     /// For MATERIALIZE INDEX, UPDATE and DELETE.
-    ASTPtr partition;
+    ASTPtr partition = {};
 
     /// For reads, drops and etc.
-    String column_name;
-    DataTypePtr data_type; /// Maybe empty if we just want to drop column
+    String column_name = {};
+    DataTypePtr data_type = {}; /// Maybe empty if we just want to drop column
 
     /// We need just clear column, not drop from metadata.
     bool clear = false;
 
     /// Column rename_to
-    String rename_to;
+    String rename_to = {};
 
     /// If parse_alter_commands, than consider more Alter commands as mutation commands
     static std::optional<MutationCommand> parse(ASTAlterCommand * command, bool parse_alter_commands = false);
@@ -87,6 +92,7 @@ public:
     /// stick with other commands. Commands from one set have already been validated
     /// to be executed without issues on the creation state.
     bool containBarrierCommand() const;
+    NameSet getAllUpdatedColumns() const;
 };
 
 using MutationCommandsConstPtr = std::shared_ptr<MutationCommands>;

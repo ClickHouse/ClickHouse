@@ -5,28 +5,21 @@ import logging
 import os
 import sys
 import time
-
 from pathlib import Path
+from typing import Any, List
 
 import boto3  # type: ignore
-import requests  # type: ignore
-from github import Github
 
-from build_download_helper import get_build_name_for_check
-from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
-from commit_status_helper import RerunHelper, get_commit, post_commit_status
+from build_download_helper import read_build_urls
+from ci_config import CI
 from compress_files import compress_fast
-from env_helper import REPO_COPY, TEMP_PATH, S3_BUILDS_BUCKET, S3_DOWNLOAD
-from get_robot_token import get_best_robot_token, get_parameter_from_ssm
+from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
+from get_robot_token import get_parameter_from_ssm
 from pr_info import PRInfo
-from report import TestResults, TestResult
-from s3_helper import S3Helper
+from report import FAILURE, SUCCESS, JobReport, TestResult, TestResults
 from ssh import SSHKey
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
-from upload_result_helper import upload_results
-from version_helper import get_version_from_repo
-from build_check import get_release_or_pr
 
 JEPSEN_GROUP_NAME = "jepsen_group"
 
@@ -34,11 +27,10 @@ KEEPER_DESIRED_INSTANCE_COUNT = 3
 SERVER_DESIRED_INSTANCE_COUNT = 4
 
 KEEPER_IMAGE_NAME = "clickhouse/keeper-jepsen-test"
-KEEPER_CHECK_NAME = "ClickHouse Keeper Jepsen"
+KEEPER_CHECK_NAME = CI.JobNames.JEPSEN_KEEPER
 
 SERVER_IMAGE_NAME = "clickhouse/server-jepsen-test"
-SERVER_CHECK_NAME = "ClickHouse Server Jepsen"
-
+SERVER_CHECK_NAME = CI.JobNames.JEPSEN_SERVER
 
 SUCCESSFUL_TESTS_ANCHOR = "# Successful tests"
 INTERMINATE_TESTS_ANCHOR = "# Indeterminate tests"
@@ -46,10 +38,10 @@ CRASHED_TESTS_ANCHOR = "# Crashed tests"
 FAILED_TESTS_ANCHOR = "# Failed tests"
 
 
-def _parse_jepsen_output(path: str) -> TestResults:
+def _parse_jepsen_output(path: Path) -> TestResults:
     test_results = []  # type: TestResults
     current_type = ""
-    with open(path, "r") as f:
+    with open(path, "r", encoding="utf-8") as f:
         for line in f:
             if SUCCESSFUL_TESTS_ANCHOR in line:
                 current_type = "OK"
@@ -104,7 +96,7 @@ def prepare_autoscaling_group_and_get_hostnames(count):
         instances = get_autoscaling_group_instances_ids(asg_client, JEPSEN_GROUP_NAME)
         counter += 1
         if counter > 30:
-            raise Exception("Cannot wait autoscaling group")
+            raise RuntimeError("Cannot wait autoscaling group")
 
     ec2_client = boto3.client("ec2", region_name="us-east-1")
     return get_instances_addresses(ec2_client, instances)
@@ -122,12 +114,12 @@ def clear_autoscaling_group():
         instances = get_autoscaling_group_instances_ids(asg_client, JEPSEN_GROUP_NAME)
         counter += 1
         if counter > 30:
-            raise Exception("Cannot wait autoscaling group")
+            raise RuntimeError("Cannot wait autoscaling group")
 
 
-def save_nodes_to_file(instances, temp_path):
-    nodes_path = os.path.join(temp_path, "nodes.txt")
-    with open(nodes_path, "w") as f:
+def save_nodes_to_file(instances: List[Any], temp_path: Path) -> Path:
+    nodes_path = temp_path / "nodes.txt"
+    with open(nodes_path, "w", encoding="utf-8") as f:
         f.write("\n".join(instances))
         f.flush()
     return nodes_path
@@ -151,7 +143,7 @@ def get_run_command(
     )
 
 
-if __name__ == "__main__":
+def main():
     logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser(
         prog="Jepsen Check",
@@ -162,11 +154,13 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    if args.program != "server" and args.program != "keeper":
+    if args.program not in ("server", "keeper"):
         logging.warning("Invalid argument '%s'", args.program)
         sys.exit(0)
 
     stopwatch = Stopwatch()
+    temp_path = Path(TEMP_PATH)
+    temp_path.mkdir(parents=True, exist_ok=True)
 
     pr_info = PRInfo()
 
@@ -181,22 +175,13 @@ if __name__ == "__main__":
         logging.info("Not jepsen test label in labels list, skipping")
         sys.exit(0)
 
-    gh = Github(get_best_robot_token(), per_page=100)
-    commit = get_commit(gh, pr_info.sha)
-
     check_name = KEEPER_CHECK_NAME if args.program == "keeper" else SERVER_CHECK_NAME
-
-    rerun_helper = RerunHelper(commit, check_name)
-    if rerun_helper.is_already_finished_by_status():
-        logging.info("Check is already finished according to github status, exiting")
-        sys.exit(0)
 
     if not os.path.exists(TEMP_PATH):
         os.makedirs(TEMP_PATH)
 
-    result_path = os.path.join(TEMP_PATH, "result_path")
-    if not os.path.exists(result_path):
-        os.makedirs(result_path)
+    result_path = temp_path / "result_path"
+    result_path.mkdir(parents=True, exist_ok=True)
 
     instances = prepare_autoscaling_group_and_get_hostnames(
         KEEPER_DESIRED_INSTANCE_COUNT
@@ -204,30 +189,20 @@ if __name__ == "__main__":
         else SERVER_DESIRED_INSTANCE_COUNT
     )
     nodes_path = save_nodes_to_file(
-        instances[:KEEPER_DESIRED_INSTANCE_COUNT], TEMP_PATH
+        instances[:KEEPER_DESIRED_INSTANCE_COUNT], temp_path
     )
 
     # always use latest
     docker_image = KEEPER_IMAGE_NAME if args.program == "keeper" else SERVER_IMAGE_NAME
 
-    build_name = get_build_name_for_check(check_name)
-
-    release_or_pr, _ = get_release_or_pr(pr_info, get_version_from_repo())
-
-    # This check run separately from other checks because it requires exclusive
-    # run (see .github/workflows/jepsen.yml) So we cannot add explicit
-    # dependency on a build job and using busy loop on it's results. For the
-    # same reason we are using latest docker image.
-    build_url = f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/{release_or_pr}/{pr_info.sha}/{build_name}/clickhouse"
-    head = requests.head(build_url)
-    counter = 0
-    while head.status_code != 200:
-        time.sleep(10)
-        head = requests.head(build_url)
-        counter += 1
-        if counter >= 180:
-            logging.warning("Cannot fetch build in 30 minutes, exiting")
-            sys.exit(0)
+    # binary_release assumed to be always ready on the master as it's part of the merge queue workflow
+    build_name = CI.get_required_build_name(check_name)
+    urls = read_build_urls(build_name, REPORT_PATH)
+    build_url = None
+    for url in urls:
+        if url.endswith("clickhouse"):
+            build_url = url
+    assert build_url, "No build url found in the report"
 
     extra_args = ""
     if args.program == "server":
@@ -249,7 +224,7 @@ if __name__ == "__main__":
         )
         logging.info("Going to run jepsen: %s", cmd)
 
-        run_log_path = os.path.join(TEMP_PATH, "run.log")
+        run_log_path = temp_path / "run.log"
 
         with TeePopen(cmd, run_log_path) as process:
             retcode = process.wait()
@@ -258,49 +233,39 @@ if __name__ == "__main__":
             else:
                 logging.info("Run failed")
 
-    status = "success"
+    status = SUCCESS
     description = "No invalid analysis found ヽ(‘ー`)ノ"
-    jepsen_log_path = os.path.join(result_path, "jepsen_run_all_tests.log")
+    jepsen_log_path = result_path / "jepsen_run_all_tests.log"
     additional_data = []
     try:
         test_result = _parse_jepsen_output(jepsen_log_path)
-        if any(r.status == "FAIL" for r in test_result):
-            status = "failure"
+        if len(test_result) == 0:
+            status = FAILURE
+            description = "No test results found"
+        elif any(r.status == "FAIL" for r in test_result):
+            status = FAILURE
             description = "Found invalid analysis (ﾉಥ益ಥ）ﾉ ┻━┻"
 
-        compress_fast(
-            Path(result_path) / "store",
-            Path(result_path) / "jepsen_store.tar.zst",
-        )
-        additional_data.append(os.path.join(result_path, "jepsen_store.tar.zst"))
+        compress_fast(result_path / "store", result_path / "jepsen_store.tar.zst")
+        additional_data.append(result_path / "jepsen_store.tar.zst")
     except Exception as ex:
         print("Exception", ex)
-        status = "failure"
+        status = FAILURE
         description = "No Jepsen output log"
         test_result = [TestResult("No Jepsen output log", "FAIL")]
 
-    s3_helper = S3Helper()
-    report_url = upload_results(
-        s3_helper,
-        pr_info.number,
-        pr_info.sha,
-        test_result,
-        [run_log_path] + additional_data,
-        check_name,
-    )
+    JobReport(
+        description=description,
+        test_results=test_result,
+        status=status,
+        start_time=stopwatch.start_time_str,
+        duration=stopwatch.duration_seconds,
+        additional_files=[run_log_path] + additional_data,
+        check_name=check_name,
+    ).dump()
 
-    print(f"::notice ::Report url: {report_url}")
-    post_commit_status(commit, status, report_url, description, check_name, pr_info)
-
-    ch_helper = ClickHouseHelper()
-    prepared_events = prepare_tests_results_for_clickhouse(
-        pr_info,
-        test_result,
-        status,
-        stopwatch.duration_seconds,
-        stopwatch.start_time_str,
-        report_url,
-        check_name,
-    )
-    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
     clear_autoscaling_group()
+
+
+if __name__ == "__main__":
+    main()

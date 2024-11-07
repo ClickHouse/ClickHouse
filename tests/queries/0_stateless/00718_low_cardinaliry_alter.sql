@@ -7,7 +7,7 @@ alter table tab_00718 modify column b UInt32;
 select *, toTypeName(b) from tab_00718;
 alter table tab_00718 modify column b LowCardinality(UInt32);
 select *, toTypeName(b) from tab_00718;
-alter table tab_00718 modify column b StringWithDictionary;
+alter table tab_00718 modify column b LowCardinality(String);
 select *, toTypeName(b) from tab_00718;
 alter table tab_00718 modify column b LowCardinality(UInt32);
 select *, toTypeName(b) from tab_00718;

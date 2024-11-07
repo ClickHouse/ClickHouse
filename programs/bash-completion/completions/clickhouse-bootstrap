@@ -46,6 +46,7 @@ CLICKHOUSE_Format=(
     ArrowStream
     Avro
     AvroConfluent
+    BSONEachRow
     CSV
     CSVWithNames
     CSVWithNamesAndTypes
@@ -56,6 +57,7 @@ CLICKHOUSE_Format=(
     CustomSeparatedIgnoreSpacesWithNamesAndTypes
     CustomSeparatedWithNames
     CustomSeparatedWithNamesAndTypes
+    DWARF
     HiveText
     JSON
     JSONAsObject
@@ -74,7 +76,7 @@ CLICKHOUSE_Format=(
     JSONEachRow
     JSONEachRowWithProgress
     JSONLines
-    JSONStringEachRow
+    JSONObjectEachRow
     JSONStrings
     JSONStringsEachRow
     JSONStringsEachRowWithProgress
@@ -90,14 +92,19 @@ CLICKHOUSE_Format=(
     Null
     ODBCDriver2
     ORC
+    One
     Parquet
+    ParquetMetadata
     PostgreSQLWire
     Pretty
     PrettyCompact
     PrettyCompactMonoBlock
     PrettyCompactNoEscapes
     PrettyCompactNoEscapesMonoBlock
+    PrettyJSONEachRow
+    PrettyJSONLines
     PrettyMonoBlock
+    PrettyNDJSON
     PrettyNoEscapes
     PrettyNoEscapesMonoBlock
     PrettySpace
@@ -111,6 +118,7 @@ CLICKHOUSE_Format=(
     RawBLOB
     Regexp
     RowBinary
+    RowBinaryWithDefaults
     RowBinaryWithNames
     RowBinaryWithNamesAndTypes
     SQLInsert
@@ -146,7 +154,8 @@ function _clickhouse_quote()
 # Extract every option (everything that starts with "-") from the --help dialog.
 function _clickhouse_get_options()
 {
-    "$@" --help 2>&1 | awk -F '[ ,=<>]' '{ for (i=1; i <= NF; ++i) { if (substr($i, 0, 1) == "-" && length($i) > 1) print $i; } }' | sort -u
+    # By default --help will not print all settings, this is done only under --verbose
+    "$@" --help --verbose 2>&1 | LANG=c awk -F '[ ,=<>.]' '{ for (i=1; i <= NF; ++i) { if (substr($i, 1, 1) == "-" && length($i) > 1) print $i; } }' | sort -u
 }
 
 function _complete_for_clickhouse_generic_bin_impl()

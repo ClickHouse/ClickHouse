@@ -1,34 +1,32 @@
-import pytest
-
-import time
 import os.path as p
 import random
+import threading
+import time
+from random import randrange
+
+import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
-from helpers.test_tools import TSV
-
-from random import randrange
-import threading
-
-from helpers.postgres_utility import get_postgres_conn
-from helpers.postgres_utility import PostgresManager
-
-from helpers.postgres_utility import create_replication_slot, drop_replication_slot
-from helpers.postgres_utility import create_postgres_schema, drop_postgres_schema
-from helpers.postgres_utility import create_postgres_table, drop_postgres_table
-from helpers.postgres_utility import check_tables_are_synchronized
-from helpers.postgres_utility import check_several_tables_are_synchronized
-from helpers.postgres_utility import assert_nested_table_is_created
-from helpers.postgres_utility import assert_number_of_columns
 from helpers.postgres_utility import (
+    PostgresManager,
+    assert_nested_table_is_created,
+    assert_number_of_columns,
+    check_several_tables_are_synchronized,
+    check_tables_are_synchronized,
+    create_postgres_schema,
+    create_postgres_table,
+    create_replication_slot,
+    drop_postgres_schema,
+    drop_postgres_table,
+    drop_replication_slot,
+    get_postgres_conn,
     postgres_table_template,
     postgres_table_template_2,
     postgres_table_template_3,
     postgres_table_template_4,
+    queries,
 )
-from helpers.postgres_utility import queries
-
+from helpers.test_tools import TSV, assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -179,9 +177,7 @@ def test_different_data_types(started_cluster):
     for i in range(10):
         col = random.choice(["a", "b", "c"])
         cursor.execute("UPDATE test_data_types SET {} = {};".format(col, i))
-        cursor.execute(
-            """UPDATE test_data_types SET i = '2020-12-12';""".format(col, i)
-        )
+        cursor.execute("UPDATE test_data_types SET i = '2020-12-12';")
 
     check_tables_are_synchronized(instance, "test_data_types", "id")
 
@@ -393,18 +389,19 @@ def test_table_schema_changes(started_cluster):
 
 
 def test_many_concurrent_queries(started_cluster):
+    table = "test_many_conc"
     query_pool = [
-        "DELETE FROM postgresql_replica_{} WHERE (value*value) % 3 = 0;",
-        "UPDATE postgresql_replica_{} SET value = value - 125 WHERE key % 2 = 0;",
-        "DELETE FROM postgresql_replica_{} WHERE key % 10 = 0;",
-        "UPDATE postgresql_replica_{} SET value = value*5 WHERE key % 2 = 1;",
-        "DELETE FROM postgresql_replica_{} WHERE value % 2 = 0;",
-        "UPDATE postgresql_replica_{} SET value = value + 2000 WHERE key % 5 = 0;",
-        "DELETE FROM postgresql_replica_{} WHERE value % 3 = 0;",
-        "UPDATE postgresql_replica_{} SET value = value * 2 WHERE key % 3 = 0;",
-        "DELETE FROM postgresql_replica_{} WHERE value % 9 = 2;",
-        "UPDATE postgresql_replica_{} SET value = value + 2  WHERE key % 3 = 1;",
-        "DELETE FROM postgresql_replica_{} WHERE value%5 = 0;",
+        "DELETE FROM {} WHERE (value*value) % 3 = 0;",
+        "UPDATE {} SET value = value - 125 WHERE key % 2 = 0;",
+        "DELETE FROM {} WHERE key % 10 = 0;",
+        "UPDATE {} SET value = value*5 WHERE key % 2 = 1;",
+        "DELETE FROM {} WHERE value % 2 = 0;",
+        "UPDATE {} SET value = value + 2000 WHERE key % 5 = 0;",
+        "DELETE FROM {} WHERE value % 3 = 0;",
+        "UPDATE {} SET value = value * 2 WHERE key % 3 = 0;",
+        "DELETE FROM {} WHERE value % 9 = 2;",
+        "UPDATE {} SET value = value + 2  WHERE key % 3 = 1;",
+        "DELETE FROM {} WHERE value%5 = 0;",
     ]
 
     NUM_TABLES = 5
@@ -414,7 +411,10 @@ def test_many_concurrent_queries(started_cluster):
         port=started_cluster.postgres_port,
         database=True,
     )
-    pg_manager.create_and_fill_postgres_tables(NUM_TABLES, numbers=10000)
+    cursor = conn.cursor()
+    pg_manager.create_and_fill_postgres_tables(
+        NUM_TABLES, numbers=10000, table_name_base=table
+    )
 
     def attack(thread_id):
         print("thread {}".format(thread_id))
@@ -422,17 +422,23 @@ def test_many_concurrent_queries(started_cluster):
         for i in range(20):
             query_id = random.randrange(0, len(query_pool) - 1)
             table_id = random.randrange(0, 5)  # num tables
+            random_table_name = f"{table}_{table_id}"
+            table_name = f"{table}_{thread_id}"
 
             # random update / delete query
-            cursor.execute(query_pool[query_id].format(table_id))
-            print("table {} query {} ok".format(table_id, query_id))
+            cursor.execute(query_pool[query_id].format(random_table_name))
+            print(
+                "Executing for table {} query: {}".format(
+                    random_table_name, query_pool[query_id]
+                )
+            )
 
             # allow some thread to do inserts (not to violate key constraints)
             if thread_id < 5:
                 print("try insert table {}".format(thread_id))
                 instance.query(
-                    "INSERT INTO postgres_database.postgresql_replica_{} SELECT {}*10000*({} +  number), number from numbers(1000)".format(
-                        i, thread_id, k
+                    "INSERT INTO postgres_database.{} SELECT {}*10000*({} +  number), number from numbers(1000)".format(
+                        table_name, thread_id, k
                     )
                 )
                 k += 1
@@ -442,8 +448,8 @@ def test_many_concurrent_queries(started_cluster):
                     # also change primary key value
                     print("try update primary key {}".format(thread_id))
                     cursor.execute(
-                        "UPDATE postgresql_replica_{} SET key=key%100000+100000*{} WHERE key%{}=0".format(
-                            thread_id, i + 1, i + 1
+                        "UPDATE {} SET key=key%100000+100000*{} WHERE key%{}=0".format(
+                            table_name, i + 1, i + 1
                         )
                     )
                     print("update primary key {} ok".format(thread_id))
@@ -466,25 +472,25 @@ def test_many_concurrent_queries(started_cluster):
     n[0] = 50000
     for table_id in range(NUM_TABLES):
         n[0] += 1
+        table_name = f"{table}_{table_id}"
         instance.query(
-            "INSERT INTO postgres_database.postgresql_replica_{} SELECT {} +  number, number from numbers(5000)".format(
-                table_id, n[0]
+            "INSERT INTO postgres_database.{} SELECT {} +  number, number from numbers(5000)".format(
+                table_name, n[0]
             )
         )
-        # cursor.execute("UPDATE postgresql_replica_{} SET key=key%100000+100000*{} WHERE key%{}=0".format(table_id, table_id+1, table_id+1))
+        # cursor.execute("UPDATE {table}_{} SET key=key%100000+100000*{} WHERE key%{}=0".format(table_id, table_id+1, table_id+1))
 
     for thread in threads:
         thread.join()
 
     for i in range(NUM_TABLES):
-        check_tables_are_synchronized(instance, "postgresql_replica_{}".format(i))
+        table_name = f"{table}_{i}"
+        check_tables_are_synchronized(instance, table_name)
         count1 = instance.query(
-            "SELECT count() FROM postgres_database.postgresql_replica_{}".format(i)
+            "SELECT count() FROM postgres_database.{}".format(table_name)
         )
         count2 = instance.query(
-            "SELECT count() FROM (SELECT * FROM test_database.postgresql_replica_{})".format(
-                i
-            )
+            "SELECT count() FROM (SELECT * FROM test_database.{})".format(table_name)
         )
         assert int(count1) == int(count2)
         print(count1, count2)

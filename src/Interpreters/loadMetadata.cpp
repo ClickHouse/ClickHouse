@@ -1,14 +1,17 @@
+#include <Common/thread_local_rng.h>
 #include <Common/ThreadPool.h>
+#include <Common/PoolId.h>
 
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/parseQuery.h>
 
+#include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/loadMetadata.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/loadMetadata.h>
 
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/TablesLoader.h>
@@ -21,6 +24,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
+#include <Core/Settings.h>
 
 #include <filesystem>
 
@@ -28,14 +32,14 @@
 
 namespace fs = std::filesystem;
 
-namespace CurrentMetrics
-{
-    extern const Metric StartupSystemTablesThreads;
-    extern const Metric StartupSystemTablesThreadsActive;
-}
-
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_deprecated_database_ordinary;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+}
 
 namespace ErrorCodes
 {
@@ -59,9 +63,16 @@ static void executeCreateQuery(
     bool create,
     bool has_force_restore_data_flag)
 {
+    const Settings & settings = context->getSettingsRef();
     ParserCreateQuery parser;
     ASTPtr ast = parseQuery(
-        parser, query.data(), query.data() + query.size(), "in file " + file_name, 0, context->getSettingsRef().max_parser_depth);
+        parser,
+        query.data(),
+        query.data() + query.size(),
+        "in file " + file_name,
+        0,
+        settings[Setting::max_parser_depth],
+        settings[Setting::max_parser_backtracks]);
 
     auto & ast_create_query = ast->as<ASTCreateQuery &>();
     ast_create_query.setDatabase(database);
@@ -158,19 +169,29 @@ static void checkIncompleteOrdinaryToAtomicConversion(ContextPtr context, const 
     }
 }
 
-void loadMetadata(ContextMutablePtr context, const String & default_database_name)
+LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_database_name, bool async_load_databases)
 {
-    Poco::Logger * log = &Poco::Logger::get("loadMetadata");
+    LoggerPtr log = getLogger("loadMetadata");
 
     String path = context->getPath() + "metadata";
 
-    /** There may exist 'force_restore_data' file, that means,
-      *  skip safety threshold on difference of data parts while initializing tables.
-      * This file is deleted after successful loading of tables.
-      * (flag is "one-shot")
-      */
+    /// There may exist 'force_restore_data' file, which means skip safety threshold
+    /// on difference of data parts while initializing tables.
+    /// This file is immediately deleted i.e. "one-shot".
     auto force_restore_data_flag_file = fs::path(context->getFlagsPath()) / "force_restore_data";
     bool has_force_restore_data_flag = fs::exists(force_restore_data_flag_file);
+    if (has_force_restore_data_flag)
+    {
+        try
+        {
+            fs::remove(force_restore_data_flag_file);
+        }
+        catch (...)
+        {
+            tryLogCurrentException("Load metadata", "Can't remove force restore file to enable data sanity checks");
+        }
+    }
+
 
     /// Loop over databases.
     std::map<String, String> databases;
@@ -228,22 +249,34 @@ void loadMetadata(ContextMutablePtr context, const String & default_database_nam
         loaded_databases.insert({name, DatabaseCatalog::instance().getDatabase(name)});
     }
 
-    auto mode = getLoadingStrictnessLevel(/* attach */ true, /* force_attach */ true, has_force_restore_data_flag);
+    auto mode = getLoadingStrictnessLevel(/* attach */ true, /* force_attach */ true, has_force_restore_data_flag, /*secondary*/ false);
     TablesLoader loader{context, std::move(loaded_databases), mode};
-    loader.loadTables();
-    loader.startupTables();
+    auto load_tasks = loader.loadTablesAsync();
+    auto startup_tasks = loader.startupTablesAsync();
 
-    if (has_force_restore_data_flag)
+    if (async_load_databases)
     {
-        try
-        {
-            fs::remove(force_restore_data_flag_file);
-        }
-        catch (...)
-        {
-            tryLogCurrentException("Load metadata", "Can't remove force restore file to enable data sanity checks");
-        }
+        LOG_INFO(log, "Start asynchronous loading of databases");
+
+        // Schedule all the jobs.
+        // Note that to achieve behaviour similar to synchronous case (postponing of merges) we use priorities.
+        // All startup jobs are assigned to pool with lower priority than load jobs pool.
+        // So all tables will finish loading before the first table startup if there are no queries (or dependencies).
+        // Query waiting for a table boosts its priority by moving jobs into `TablesLoaderForegroundPoolId` pool
+        // to finish table startup faster than load of the other tables.
+        scheduleLoad(load_tasks);
+        scheduleLoad(startup_tasks);
+
+        // Do NOT wait, just return tasks for continuation or later wait.
+        return joinTasks(load_tasks, startup_tasks);
     }
+
+    // NOTE: some tables can still be started up in the "loading" phase if they are required by dependencies during loading of other tables
+    LOG_INFO(log, "Start synchronous loading of databases");
+    waitLoad(TablesLoaderForegroundPoolId, load_tasks); // First prioritize, schedule and wait all the load table tasks
+    LOG_INFO(log, "Start synchronous startup of databases");
+    waitLoad(TablesLoaderForegroundPoolId, startup_tasks); // Only then prioritize, schedule and wait all the startup tasks
+    return {};
 }
 
 static void loadSystemDatabaseImpl(ContextMutablePtr context, const String & database_name, const String & default_engine)
@@ -270,7 +303,7 @@ static void loadSystemDatabaseImpl(ContextMutablePtr context, const String & dat
     }
 }
 
-static void convertOrdinaryDatabaseToAtomic(Poco::Logger * log, ContextMutablePtr context, const DatabasePtr & database,
+static void convertOrdinaryDatabaseToAtomic(LoggerPtr log, ContextMutablePtr context, const DatabasePtr & database,
                                             const String & name, const String tmp_name)
 {
     /// It's kind of C++ script that creates temporary database with Atomic engine,
@@ -282,7 +315,7 @@ static void convertOrdinaryDatabaseToAtomic(Poco::Logger * log, ContextMutablePt
     LOG_INFO(log, "Will convert database {} from Ordinary to Atomic", name_quoted);
 
     String create_database_query = fmt::format("CREATE DATABASE IF NOT EXISTS {}", tmp_name_quoted);
-    auto res = executeQuery(create_database_query, context, true);
+    auto res = executeQuery(create_database_query, context, QueryFlags{ .internal = true }).second;
     executeTrivialBlockIO(res, context);
     res = {};
     auto tmp_database = DatabaseCatalog::instance().getDatabase(tmp_name);
@@ -322,7 +355,7 @@ static void convertOrdinaryDatabaseToAtomic(Poco::Logger * log, ContextMutablePt
         String tmp_qualified_quoted_name = id.getFullTableName();
 
         String move_table_query = fmt::format("RENAME TABLE {} TO {}", qualified_quoted_name, tmp_qualified_quoted_name);
-        res = executeQuery(move_table_query, context, true);
+        res = executeQuery(move_table_query, context, QueryFlags{ .internal = true }).second;
         executeTrivialBlockIO(res, context);
         res = {};
     }
@@ -334,12 +367,12 @@ static void convertOrdinaryDatabaseToAtomic(Poco::Logger * log, ContextMutablePt
 
     String drop_query = fmt::format("DROP DATABASE {}", name_quoted);
     context->setSetting("force_remove_data_recursively_on_drop", false);
-    res = executeQuery(drop_query, context, true);
+    res = executeQuery(drop_query, context, QueryFlags{ .internal = true }).second;
     executeTrivialBlockIO(res, context);
     res = {};
 
     String rename_query = fmt::format("RENAME DATABASE {} TO {}", tmp_name_quoted, name_quoted);
-    res = executeQuery(rename_query, context, true);
+    res = executeQuery(rename_query, context, QueryFlags{ .internal = true }).second;
     executeTrivialBlockIO(res, context);
 
     LOG_INFO(log, "Finished database engine conversion of {}", name_quoted);
@@ -347,9 +380,9 @@ static void convertOrdinaryDatabaseToAtomic(Poco::Logger * log, ContextMutablePt
 
 /// Converts database with Ordinary engine to Atomic. Does nothing if database is not Ordinary.
 /// Can be called only during server startup when there are no queries from users.
-static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, const String & database_name, bool tables_started)
+static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, const String & database_name, const LoadTaskPtrs & load_system_metadata_tasks = {})
 {
-    Poco::Logger * log = &Poco::Logger::get("loadMetadata");
+    LoggerPtr log = getLogger("loadMetadata");
 
     auto database = DatabaseCatalog::instance().getDatabase(database_name);
     if (!database)
@@ -361,7 +394,7 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
     if (database->getEngineName() != "Ordinary")
         return;
 
-    Strings permanently_detached_tables = database->getNamesOfPermanentlyDetachedTables();
+    const Strings permanently_detached_tables = database->getNamesOfPermanentlyDetachedTables();
     if (!permanently_detached_tables.empty())
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot automatically convert database {} from Ordinary to Atomic, "
@@ -374,12 +407,8 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
 
     try
     {
-        if (!tables_started)
-        {
-            /// It's not quite correct to run DDL queries while database is not started up.
-            ThreadPool pool(CurrentMetrics::StartupSystemTablesThreads, CurrentMetrics::StartupSystemTablesThreadsActive);
-            DatabaseCatalog::instance().getSystemDatabase()->startupTables(pool, LoadingStrictnessLevel::FORCE_RESTORE);
-        }
+        /// It's not quite correct to run DDL queries while database is not started up.
+        waitLoad(TablesLoaderForegroundPoolId, load_system_metadata_tasks);
 
         auto local_context = Context::createCopy(context);
 
@@ -409,7 +438,7 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
 
         /// Reload database just in case (and update logger name)
         String detach_query = fmt::format("DETACH DATABASE {}", backQuoteIfNeed(database_name));
-        auto res = executeQuery(detach_query, context, true);
+        auto res = executeQuery(detach_query, context, QueryFlags{ .internal = true }).second;
         executeTrivialBlockIO(res, context);
         res = {};
 
@@ -428,11 +457,8 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
             {database_name, DatabaseCatalog::instance().getDatabase(database_name)},
         };
         TablesLoader loader{context, databases, LoadingStrictnessLevel::FORCE_RESTORE};
-        loader.loadTables();
-
-        /// Startup tables if they were started before conversion and detach/attach
-        if (tables_started)
-            loader.startupTables();
+        waitLoad(TablesLoaderForegroundPoolId, loader.loadTablesAsync());
+        waitLoad(TablesLoaderForegroundPoolId, loader.startupTablesAsync());
     }
     catch (Exception & e)
     {
@@ -444,39 +470,36 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
     }
 }
 
-void maybeConvertSystemDatabase(ContextMutablePtr context)
+void maybeConvertSystemDatabase(ContextMutablePtr context, LoadTaskPtrs & load_system_metadata_tasks)
 {
     /// TODO remove this check, convert system database unconditionally
-    if (context->getSettingsRef().allow_deprecated_database_ordinary)
+    if (context->getSettingsRef()[Setting::allow_deprecated_database_ordinary])
         return;
 
-    maybeConvertOrdinaryDatabaseToAtomic(context, DatabaseCatalog::SYSTEM_DATABASE, /* tables_started */ false);
+    maybeConvertOrdinaryDatabaseToAtomic(context, DatabaseCatalog::SYSTEM_DATABASE, load_system_metadata_tasks);
 }
 
-void convertDatabasesEnginesIfNeed(ContextMutablePtr context)
+void convertDatabasesEnginesIfNeed(const LoadTaskPtrs & load_metadata, ContextMutablePtr context)
 {
     auto convert_flag_path = fs::path(context->getFlagsPath()) / "convert_ordinary_to_atomic";
     if (!fs::exists(convert_flag_path))
         return;
 
-    LOG_INFO(&Poco::Logger::get("loadMetadata"), "Found convert_ordinary_to_atomic file in flags directory, "
+    LOG_INFO(getLogger("loadMetadata"), "Found convert_ordinary_to_atomic file in flags directory, "
                                                  "will try to convert all Ordinary databases to Atomic");
+
+    // Wait for all table to be loaded and started
+    waitLoad(TablesLoaderForegroundPoolId, load_metadata);
 
     for (const auto & [name, _] : DatabaseCatalog::instance().getDatabases())
         if (name != DatabaseCatalog::SYSTEM_DATABASE)
-            maybeConvertOrdinaryDatabaseToAtomic(context, name, /* tables_started */ true);
+            maybeConvertOrdinaryDatabaseToAtomic(context, name);
 
-    LOG_INFO(&Poco::Logger::get("loadMetadata"), "Conversion finished, removing convert_ordinary_to_atomic flag");
+    LOG_INFO(getLogger("loadMetadata"), "Conversion finished, removing convert_ordinary_to_atomic flag");
     fs::remove(convert_flag_path);
 }
 
-void startupSystemTables()
-{
-    ThreadPool pool(CurrentMetrics::StartupSystemTablesThreads, CurrentMetrics::StartupSystemTablesThreadsActive);
-    DatabaseCatalog::instance().getSystemDatabase()->startupTables(pool, LoadingStrictnessLevel::FORCE_RESTORE);
-}
-
-void loadMetadataSystem(ContextMutablePtr context)
+LoadTaskPtrs loadMetadataSystem(ContextMutablePtr context, bool async_load_system_database)
 {
     loadSystemDatabaseImpl(context, DatabaseCatalog::SYSTEM_DATABASE, "Atomic");
     loadSystemDatabaseImpl(context, DatabaseCatalog::INFORMATION_SCHEMA, "Memory");
@@ -489,8 +512,28 @@ void loadMetadataSystem(ContextMutablePtr context)
         {DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE, DatabaseCatalog::instance().getDatabase(DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE)},
     };
     TablesLoader loader{context, databases, LoadingStrictnessLevel::FORCE_RESTORE};
-    loader.loadTables();
-    /// Will startup tables in system database after all databases are loaded.
+
+    auto load_tasks = loader.loadTablesAsync();
+    auto startup_tasks = loader.startupTablesAsync();
+
+    if (async_load_system_database)
+    {
+        scheduleLoad(load_tasks);
+        scheduleLoad(startup_tasks);
+
+        // Do NOT wait, just return tasks for continuation or later wait.
+        return joinTasks(load_tasks, startup_tasks);
+    }
+    else
+    {
+        waitLoad(TablesLoaderForegroundPoolId, load_tasks);
+
+        /// This has to be done before the initialization of system logs `initializeSystemLogs()`,
+        /// otherwise there is a race condition between the system database initialization
+        /// and creation of new tables in the database.
+        waitLoad(TablesLoaderForegroundPoolId, startup_tasks);
+        return {};
+    }
 }
 
 }

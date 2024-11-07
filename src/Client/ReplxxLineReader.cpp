@@ -6,6 +6,7 @@
 #include <IO/copyData.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <stdexcept>
 #include <chrono>
 #include <cerrno>
@@ -21,6 +22,7 @@
 #include <fstream>
 #include <filesystem>
 #include <fmt/format.h>
+#include <Common/quoteString.h>
 #include "config.h" // USE_SKIM
 
 #if USE_SKIM
@@ -94,7 +96,14 @@ int executeCommand(char * const argv[])
         throw std::runtime_error(fmt::format("Cannot waitpid {}: {}", pid, errnoToString()));
     } while (true);
 
-    return status;
+    if (WIFEXITED(status))
+        return WEXITSTATUS(status);
+    if (WIFSIGNALED(status))
+        throw std::runtime_error(fmt::format("Child process was terminated by signal {}", WTERMSIG(status)));
+    if (WIFSTOPPED(status))
+        throw std::runtime_error(fmt::format("Child process was stopped by signal {}", WSTOPSIG(status)));
+
+    throw std::runtime_error("Child process was not exited normally by unknown reason");
 }
 
 void writeRetry(int fd, const std::string & data)
@@ -284,17 +293,28 @@ void ReplxxLineReader::setLastIsDelimiter(bool flag)
 ReplxxLineReader::ReplxxLineReader(
     Suggest & suggest,
     const String & history_file_path_,
+    UInt32 history_max_entries_,
     bool multiline_,
+    bool ignore_shell_suspend,
     Patterns extenders_,
     Patterns delimiters_,
     const char word_break_characters_[],
-    replxx::Replxx::highlighter_callback_t highlighter_)
-    : LineReader(history_file_path_, multiline_, std::move(extenders_), std::move(delimiters_)), highlighter(std::move(highlighter_))
+    replxx::Replxx::highlighter_callback_t highlighter_,
+    std::istream & input_stream_,
+    std::ostream & output_stream_,
+    int in_fd_,
+    int out_fd_,
+    int err_fd_
+)
+    : LineReader(history_file_path_, multiline_, std::move(extenders_), std::move(delimiters_), input_stream_, output_stream_, in_fd_)
+    , rx(input_stream_, output_stream_, in_fd_, out_fd_, err_fd_)
+    , highlighter(std::move(highlighter_))
     , word_break_characters(word_break_characters_)
     , editor(getEditor())
 {
-    using namespace std::placeholders;
     using Replxx = replxx::Replxx;
+
+    rx.set_max_history_size(static_cast<int>(history_max_entries_));
 
     if (!history_file_path.empty())
     {
@@ -346,6 +366,10 @@ ReplxxLineReader::ReplxxLineReader(
     /// bind C-p/C-n to history-previous/history-next like readline.
     rx.bind_key(Replxx::KEY::control('N'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::HISTORY_NEXT, code); });
     rx.bind_key(Replxx::KEY::control('P'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::HISTORY_PREVIOUS, code); });
+
+    /// We don't want the default, "suspend" behavior, it confuses people.
+    if (ignore_shell_suspend)
+        rx.bind_key_internal(replxx::Replxx::KEY::control('Z'), "insert_character");
 
     auto commit_action = [this](char32_t code)
     {
@@ -448,11 +472,22 @@ ReplxxLineReader::ReplxxLineReader(
         uint32_t reverse_search = Replxx::KEY::control('R');
         return rx.invoke(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, reverse_search);
     });
+
+    /// Change cursor style for overwrite mode to blinking (see console_codes(5))
+    rx.bind_key(Replxx::KEY::INSERT, [this](char32_t)
+    {
+        overwrite_mode = !overwrite_mode;
+        if (overwrite_mode)
+            rx.print("%s", "\033[5 q");
+        else
+            rx.print("%s", "\033[0 q");
+        return rx.invoke(Replxx::ACTION::TOGGLE_OVERWRITE_MODE, 0);
+    });
 }
 
 ReplxxLineReader::~ReplxxLineReader()
 {
-    if (close(history_file_fd))
+    if (history_file_fd >= 0 && close(history_file_fd))
         rx.print("Close of history file failed: %s\n", errnoToString().c_str());
 }
 
@@ -477,7 +512,7 @@ void ReplxxLineReader::addToHistory(const String & line)
     // but replxx::Replxx::history_load() does not
     // and that is why flock() is added here.
     bool locked = false;
-    if (flock(history_file_fd, LOCK_EX))
+    if (history_file_fd >= 0 && flock(history_file_fd, LOCK_EX))
         rx.print("Lock of history file failed: %s\n", errnoToString().c_str());
     else
         locked = true;
@@ -485,31 +520,38 @@ void ReplxxLineReader::addToHistory(const String & line)
     rx.history_add(line);
 
     // flush changes to the disk
-    if (!rx.history_save(history_file_path))
+    if (history_file_fd >= 0 && !rx.history_save(history_file_path))
         rx.print("Saving history failed: %s\n", errnoToString().c_str());
 
-    if (locked && 0 != flock(history_file_fd, LOCK_UN))
+    if (history_file_fd >= 0 && locked && 0 != flock(history_file_fd, LOCK_UN))
         rx.print("Unlock of history file failed: %s\n", errnoToString().c_str());
 }
 
 void ReplxxLineReader::openEditor()
 {
-    TemporaryFile editor_file("clickhouse_client_editor_XXXXXX.sql");
-    editor_file.write(rx.get_state().text());
-    editor_file.close();
-
-    char * const argv[] = {editor.data(), editor_file.getPath().data(), nullptr};
     try
     {
-        if (executeCommand(argv) == 0)
+        TemporaryFile editor_file("clickhouse_client_editor_XXXXXX.sql");
+        editor_file.write(rx.get_state().text());
+        editor_file.close();
+
+        char * const argv[] = {editor.data(), editor_file.getPath().data(), nullptr};
+
+        int editor_exit_code = executeCommand(argv);
+        if (editor_exit_code == EXIT_SUCCESS)
         {
             const std::string & new_query = readFile(editor_file.getPath());
             rx.set_state(replxx::Replxx::State(new_query.c_str(), static_cast<int>(new_query.size())));
+        }
+        else
+        {
+            rx.print(fmt::format("Editor {} terminated unsuccessfully: {}\n", backQuoteIfNeed(editor), editor_exit_code).data());
         }
     }
     catch (const std::runtime_error & e)
     {
         rx.print(e.what());
+        rx.print("\n");
     }
 
     if (bracketed_paste_enabled)

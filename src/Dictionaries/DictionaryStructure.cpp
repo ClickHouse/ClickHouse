@@ -7,7 +7,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 
 #include <Formats/FormatSettings.h>
 #include <Columns/IColumn.h>
@@ -37,7 +37,7 @@ DictionaryTypedSpecialAttribute makeDictionaryTypedSpecialAttribute(
     auto expression = config.getString(config_prefix + ".expression", "");
 
     if (name.empty() && !expression.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Element {}.name is empty");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Element {}.name is empty", config_prefix);
 
     const auto type_name = config.getString(config_prefix + ".type", default_type);
     return DictionaryTypedSpecialAttribute{std::move(name), std::move(expression), DataTypeFactory::instance().get(type_name)};
@@ -58,15 +58,6 @@ std::optional<AttributeUnderlyingType> tryGetAttributeUnderlyingType(TypeIndex i
 
 }
 
-
-DictionarySpecialAttribute::DictionarySpecialAttribute(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
-    : name{config.getString(config_prefix + ".name", "")}, expression{config.getString(config_prefix + ".expression", "")}
-{
-    if (name.empty() && !expression.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Element {}.name is empty", config_prefix);
-}
-
-
 DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
 {
     std::string structure_prefix = config_prefix + ".structure";
@@ -79,7 +70,8 @@ DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration
 
     if (has_id)
     {
-        id.emplace(config, structure_prefix + ".id");
+        static constexpr auto id_default_type = "UInt64";
+        id.emplace(makeDictionaryTypedSpecialAttribute(config, structure_prefix + ".id", id_default_type));
     }
     else if (has_key)
     {
@@ -117,7 +109,7 @@ DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration
                 throw Exception(ErrorCodes::TYPE_MISMATCH,
                     "Hierarchical attribute type for dictionary with simple key must be UInt64. Actual {}",
                     attribute.underlying_type);
-            else if (key)
+            if (key)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary with complex key does not support hierarchy");
 
             hierarchical_attribute_index = i;
@@ -159,12 +151,12 @@ void DictionaryStructure::validateKeyTypes(const DataTypes & key_types) const
         const auto & expected_type = key_attributes_types[i];
         const auto & actual_type = key_types[i];
 
-        if (!areTypesEqual(expected_type, actual_type))
+        if (!expected_type->equals(*actual_type))
             throw Exception(ErrorCodes::TYPE_MISMATCH,
-            "Key type for complex key at position {} does not match, expected {}, found {}",
-            i,
-            expected_type->getName(),
-            actual_type->getName());
+                "Key type for complex key at position {} does not match, expected {}, found {}",
+                i,
+                expected_type->getName(),
+                actual_type->getName());
     }
 }
 
@@ -198,7 +190,7 @@ const DictionaryAttribute & DictionaryStructure::getAttribute(const std::string 
 {
     const auto & attribute = getAttribute(attribute_name);
 
-    if (!areTypesEqual(attribute.type, type))
+    if (!attribute.type->equals(*type))
         throw Exception(ErrorCodes::TYPE_MISMATCH,
             "Attribute type does not match, expected {}, found {}",
             attribute.type->getName(),
@@ -211,8 +203,7 @@ size_t DictionaryStructure::getKeysSize() const
 {
     if (id)
         return 1;
-    else
-        return key->size();
+    return key->size();
 }
 
 std::string DictionaryStructure::getKeyDescription() const

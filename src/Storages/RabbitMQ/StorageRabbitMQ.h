@@ -1,12 +1,12 @@
 #pragma once
 
 #include <Core/BackgroundSchedulePool.h>
+#include <Core/StreamingHandleErrorMode.h>
 #include <Storages/IStorage.h>
 #include <Poco/Semaphore.h>
 #include <mutex>
 #include <atomic>
 #include <Storages/RabbitMQ/RabbitMQConsumer.h>
-#include <Storages/RabbitMQ/RabbitMQSettings.h>
 #include <Storages/RabbitMQ/RabbitMQConnection.h>
 #include <Common/thread_local_rng.h>
 #include <amqpcpp/libuv.h>
@@ -16,7 +16,7 @@
 
 namespace DB
 {
-
+struct RabbitMQSettings;
 using RabbitMQConsumerPtr = std::shared_ptr<RabbitMQConsumer>;
 
 class StorageRabbitMQ final: public IStorage, WithContext
@@ -26,22 +26,25 @@ public:
             const StorageID & table_id_,
             ContextPtr context_,
             const ColumnsDescription & columns_,
+            const String & comment,
             std::unique_ptr<RabbitMQSettings> rabbitmq_settings_,
-            bool is_attach_);
+            LoadingStrictnessLevel mode);
+
+    ~StorageRabbitMQ() override;
 
     std::string getName() const override { return "RabbitMQ"; }
 
     bool noPushingToViews() const override { return true; }
 
     void startup() override;
-    void shutdown() override;
+    void shutdown(bool is_drop) override;
 
     /// This is a bad way to let storage know in shutdown() that table is going to be dropped. There are some actions which need
     /// to be done only when table is dropped (not when detached). Also connection must be closed only in shutdown, but those
     /// actions require an open connection. Therefore there needs to be a way inside shutdown() method to know whether it is called
     /// because of drop query. And drop() method is not suitable at all, because it will not only require to reopen connection, but also
     /// it can be called considerable time after table is dropped (for example, in case of Atomic database), which is not appropriate for the case.
-    void checkTableCanBeDropped() const override { drop_table = true; }
+    void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override { drop_table = true; }
 
     /// Always return virtual columns in addition to required columns
     void read(
@@ -68,7 +71,6 @@ public:
     RabbitMQConsumerPtr popConsumer(std::chrono::milliseconds timeout);
 
     const String & getFormatName() const { return format_name; }
-    NamesAndTypesList getVirtuals() const override;
 
     String getExchange() const { return exchange_name; }
     void unbindExchange();
@@ -92,6 +94,9 @@ private:
     String queue_base;
     Names queue_settings_list;
     size_t max_rows_per_message;
+    bool reject_unhandled_messages = false;
+
+    LoggerPtr log;
 
     /// For insert query. Mark messages as durable.
     const bool persistent;
@@ -102,7 +107,6 @@ private:
     bool use_user_setup;
 
     bool hash_exchange;
-    Poco::Logger * log;
 
     RabbitMQConnectionPtr connection; /// Connection for all consumers
     RabbitMQConfiguration configuration;
@@ -158,10 +162,9 @@ private:
 
     size_t read_attempts = 0;
     mutable bool drop_table = false;
-    bool is_attach;
 
     RabbitMQConsumerPtr createConsumer();
-    bool initialized = false;
+    std::atomic<bool> initialized = false;
 
     /// Functions working in the background
     void streamingToViewsFunc();
@@ -183,13 +186,15 @@ private:
     void initRabbitMQ();
     void cleanupRabbitMQ() const;
 
-    void initExchange(AMQP::TcpChannel & rabbit_channel);
     void bindExchange(AMQP::TcpChannel & rabbit_channel);
     void bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_channel);
 
+    void streamToViewsImpl();
     /// Return true on successful stream attempt.
     bool tryStreamToViews();
     bool hasDependencies(const StorageID & table_id);
+
+    static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
 
     static String getRandomName()
     {

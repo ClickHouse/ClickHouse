@@ -9,10 +9,8 @@
 #include <Parsers/SelectUnionMode.h>
 #include <Common/IntervalKind.h>
 
-#ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wc99-extensions"
-#endif
 
 namespace DB
 {
@@ -146,6 +144,16 @@ protected:
 };
 
 
+/** Similar to ParserFunction (and yields ASTFunction), but can also parse identifiers without braces.
+  */
+class ParserExpressionWithOptionalArguments : public IParserBase
+{
+protected:
+    const char * getName() const override { return "expression with optional parameters"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
 /** An expression with an infix binary left-associative operator.
   * For example, a + b - c + d.
   */
@@ -173,7 +181,7 @@ protected:
 class ParserExpression : public IParserBase
 {
 public:
-    ParserExpression(bool allow_trailing_commas_ = false) : allow_trailing_commas(allow_trailing_commas_) {}
+    explicit ParserExpression(bool allow_trailing_commas_ = false) : allow_trailing_commas(allow_trailing_commas_) {}
 
 protected:
     const char * getName() const override { return "lambda expression"; }
@@ -297,6 +305,4 @@ protected:
 
 }
 
-#ifdef __clang__
 #pragma clang diagnostic pop
-#endif

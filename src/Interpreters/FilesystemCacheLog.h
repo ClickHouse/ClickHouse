@@ -2,19 +2,19 @@
 
 #include <Core/NamesAndAliases.h>
 #include <Core/NamesAndTypes.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNumberBase.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/TransactionVersionMetadata.h>
+#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
 
 struct FilesystemCacheLogElement
 {
-    enum class CacheType
+    enum class CacheType : uint8_t
     {
         READ_FROM_CACHE,
         READ_FROM_FS_AND_DOWNLOADED_TO_CACHE,
@@ -30,20 +30,19 @@ struct FilesystemCacheLogElement
     std::pair<size_t, size_t> file_segment_range{};
     std::pair<size_t, size_t> requested_range{};
     CacheType cache_type{};
-    std::string file_segment_key;
-    size_t file_segment_offset;
-    size_t file_segment_size;
+    std::string file_segment_key{};
+    size_t file_segment_offset = 0;
+    size_t file_segment_size = 0;
     bool read_from_cache_attempted;
-    String read_buffer_id;
-    std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
+    String read_buffer_id{};
+    std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters = nullptr;
 
     static std::string name() { return "FilesystemCacheLog"; }
 
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }
 
     void appendToBlock(MutableColumns & columns) const;
-    static const char * getCustomColumnList() { return nullptr; }
 };
 
 class FilesystemCacheLog : public SystemLog<FilesystemCacheLogElement>

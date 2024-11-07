@@ -11,7 +11,6 @@
 #include <Common/Exception.h>
 #include <functional>
 #include <Coordination/KeeperServer.h>
-#include <Coordination/CoordinationSettings.h>
 #include <Coordination/Keeper4LWInfo.h>
 #include <Coordination/KeeperConnectionStats.h>
 #include <Coordination/KeeperSnapshotManagerS3.h>
@@ -20,14 +19,14 @@
 
 namespace DB
 {
-using ZooKeeperResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr & response)>;
+using ZooKeeperResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)>;
 
 /// Highlevel wrapper for ClickHouse Keeper.
 /// Process user requests via consensus and return responses.
 class KeeperDispatcher
 {
 private:
-    using RequestsQueue = ConcurrentBoundedQueue<KeeperStorage::RequestForSession>;
+    using RequestsQueue = ConcurrentBoundedQueue<KeeperStorageBase::RequestForSession>;
     using SessionToResponseCallback = std::unordered_map<int64_t, ZooKeeperResponseCallback>;
     using ClusterUpdateQueue = ConcurrentBoundedQueue<ClusterUpdateAction>;
 
@@ -38,8 +37,6 @@ private:
 
     /// More than 1k updates is definitely misconfiguration.
     ClusterUpdateQueue cluster_update_queue{1000};
-
-    std::atomic<bool> shutdown_called{false};
 
     mutable std::mutex session_to_response_callback_mutex;
     /// These two maps looks similar, but serves different purposes.
@@ -72,7 +69,7 @@ private:
 
     KeeperConfigurationAndSettingsPtr configuration_and_settings;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     /// Counter for new session_id requests.
     std::atomic<int64_t> internal_session_id_counter{0};
@@ -94,21 +91,22 @@ private:
     void clusterUpdateWithReconfigDisabledThread();
     void clusterUpdateThread();
 
-    void setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response);
+    void setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request = nullptr);
 
     /// Add error responses for requests to responses queue.
     /// Clears requests.
-    void addErrorResponses(const KeeperStorage::RequestsForSessions & requests_for_sessions, Coordination::Error error);
+    void addErrorResponses(const KeeperStorageBase::RequestsForSessions & requests_for_sessions, Coordination::Error error);
 
     /// Forcefully wait for result and sets errors if something when wrong.
     /// Clears both arguments
-    void forceWaitAndProcessResult(RaftAppendResult & result, KeeperStorage::RequestsForSessions & requests_for_sessions);
+    nuraft::ptr<nuraft::buffer> forceWaitAndProcessResult(
+        RaftAppendResult & result, KeeperStorageBase::RequestsForSessions & requests_for_sessions, bool clear_requests_on_success);
 
 public:
     std::mutex read_request_queue_mutex;
 
     /// queue of read requests that can be processed after a request with specific session ID and XID is committed
-    std::unordered_map<int64_t, std::unordered_map<Coordination::XID, KeeperStorage::RequestsForSessions>> read_request_queue;
+    std::unordered_map<int64_t, std::unordered_map<Coordination::XID, KeeperStorageBase::RequestsForSessions>> read_request_queue;
 
     /// Just allocate some objects, real initialization is done by `intialize method`
     KeeperDispatcher();
@@ -142,7 +140,7 @@ public:
     void forceRecovery();
 
     /// Put request to ClickHouse Keeper
-    bool putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id);
+    bool putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, bool use_xid_64);
 
     /// Get new session ID
     int64_t getSessionID(int64_t session_timeout_ms);
@@ -177,6 +175,11 @@ public:
         return server->isObserver();
     }
 
+    bool isExceedingMemorySoftLimit() const
+    {
+        return server->isExceedingMemorySoftLimit();
+    }
+
     uint64_t getLogDirSize() const;
 
     uint64_t getSnapDirSize() const;
@@ -189,7 +192,7 @@ public:
 
     Keeper4LWInfo getKeeper4LWInfo() const;
 
-    const KeeperStateMachine & getStateMachine() const
+    const IKeeperStateMachine & getStateMachine() const
     {
         return *server->getKeeperStateMachine();
     }
@@ -237,9 +240,15 @@ public:
         return server->requestLeader();
     }
 
+    /// Yield leadership and become follower.
+    void yieldLeadership()
+    {
+        server->yieldLeadership();
+    }
+
     void recalculateStorageStats()
     {
-        return server->recalculateStorageStats();
+        server->recalculateStorageStats();
     }
 
     static void cleanResources();

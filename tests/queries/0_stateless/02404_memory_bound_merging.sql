@@ -7,6 +7,7 @@ drop table if exists t_different_dbs;
 drop table if exists dist_t;
 drop table if exists t;
 
+set optimize_trivial_insert_select = 1;
 
 create table t(a UInt64, b UInt64) engine=MergeTree order by a;
 system stop merges t;
@@ -57,20 +58,22 @@ select a, count() from dist_t_different_dbs group by a, b order by a limit 5 off
 
 -- { echoOff } --
 
+drop table if exists pr_t;
+
 create table pr_t(a UInt64, b UInt64) engine=MergeTree order by a;
 insert into pr_t select number % 1000, number % 1000 from numbers_mt(1e6);
 
-set allow_experimental_parallel_reading_from_replicas = 1;
+set enable_parallel_replicas = 1;
 set parallel_replicas_for_non_replicated_merge_tree = 1;
 set max_parallel_replicas = 3;
-set use_hedged_requests = 0;
 set cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 set distributed_aggregation_memory_efficient=1;
 
 select count() from pr_t;
 
 -- { echoOn } --
-explain pipeline select a from pr_t group by a order by a limit 5 offset 500;
+explain pipeline select a from pr_t group by a order by a limit 5 offset 500 settings parallel_replicas_local_plan=0;
+explain pipeline select a from pr_t group by a order by a limit 5 offset 500 settings allow_experimental_analyzer=1, parallel_replicas_local_plan=1;
 
 select a, count() from pr_t group by a order by a limit 5 offset 500;
 select a, count() from pr_t group by a, b order by a limit 5 offset 500;

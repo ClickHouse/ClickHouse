@@ -1,91 +1,32 @@
-#include <Functions/IFunction.h>
-#include <Functions/FunctionFactory.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <Columns/ColumnTuple.h>
-#include <memory>
+#include <Functions/tuple.h>
 
+#include <Core/Settings.h>
 
 namespace DB
 {
-namespace ErrorCodes
+namespace Setting
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const SettingsBool enable_named_columns_in_function_tuple;
 }
 
-namespace
+FunctionPtr FunctionTuple::create(DB::ContextPtr context)
 {
-
-/** tuple(x, y, ...) is a function that allows you to group several columns
-  * tupleElement(tuple, n) is a function that allows you to retrieve a column from tuple.
-  */
-
-class FunctionTuple : public IFunction
-{
-public:
-    static constexpr auto name = "tuple";
-
-    static FunctionPtr create(ContextPtr)
-    {
-        return std::make_shared<FunctionTuple>();
-    }
-
-    String getName() const override
-    {
-        return name;
-    }
-
-    bool isVariadic() const override
-    {
-        return true;
-    }
-
-    size_t getNumberOfArguments() const override
-    {
-        return 0;
-    }
-
-    bool isInjective(const ColumnsWithTypeAndName &) const override
-    {
-        return true;
-    }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
-    bool useDefaultImplementationForNulls() const override { return false; }
-    /// tuple(..., Nothing, ...) -> Tuple(..., Nothing, ...)
-    bool useDefaultImplementationForNothing() const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (arguments.empty())
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument.", getName());
-
-        return std::make_shared<DataTypeTuple>(arguments);
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
-    {
-        size_t tuple_size = arguments.size();
-        Columns tuple_columns(tuple_size);
-        for (size_t i = 0; i < tuple_size; ++i)
-        {
-            /** If tuple is mixed of constant and not constant columns,
-              *  convert all to non-constant columns,
-              *  because many places in code expect all non-constant columns in non-constant tuple.
-              */
-            tuple_columns[i] = arguments[i].column->convertToFullColumnIfConst();
-        }
-        return ColumnTuple::create(tuple_columns);
-    }
-};
-
+    return std::make_shared<FunctionTuple>(context->getSettingsRef()[Setting::enable_named_columns_in_function_tuple]);
 }
 
 REGISTER_FUNCTION(Tuple)
 {
-    factory.registerFunction<FunctionTuple>();
+    factory.registerFunction<FunctionTuple>(FunctionDocumentation{
+        .description = R"(
+Returns a tuple by grouping input arguments.
+
+For columns C1, C2, ... with the types T1, T2, ..., it returns a named Tuple(C1 T1, C2 T2, ...) type tuple containing these columns if their names are unique and can be treated as unquoted identifiers, otherwise a Tuple(T1, T2, ...) is returned. There is no cost to execute the function.
+Tuples are normally used as intermediate values for an argument of IN operators, or for creating a list of formal parameters of lambda functions. Tuples can’t be written to a table.
+
+The function implements the operator `(x, y, ...)`.
+)",
+        .examples{{"typical", "SELECT tuple(1, 2)", "(1,2)"}},
+        .categories{"Miscellaneous"}});
 }
 
 }

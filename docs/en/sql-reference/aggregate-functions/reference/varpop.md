@@ -1,14 +1,52 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/varpop
-sidebar_position: 32
+title: "varPop"
+slug: "/en/sql-reference/aggregate-functions/reference/varPop"
+sidebar_position: 210
 ---
 
-# varPop(x)
+## varPop
 
-Calculates the amount `Σ((x - x̅)^2) / n`, where `n` is the sample size and `x̅`is the average value of `x`.
+Calculates the population variance.
 
-In other words, dispersion for a set of values. Returns `Float64`.
+**Syntax**
 
-:::note    
-This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `varPopStable` function. It works slower but provides a lower computational error.
-:::
+```sql
+varPop(x)
+```
+
+Alias: `VAR_POP`.
+
+**Parameters**
+
+- `x`: Population of values to find the population variance of. [(U)Int*](../../data-types/int-uint.md), [Float*](../../data-types/float.md), [Decimal*](../../data-types/decimal.md).
+
+**Returned value**
+
+- Returns the population variance of `x`. [`Float64`](../../data-types/float.md).
+
+**Example**
+
+Query:
+
+```sql
+DROP TABLE IF EXISTS test_data;
+CREATE TABLE test_data
+(
+    x UInt8,
+)
+ENGINE = Memory;
+
+INSERT INTO test_data VALUES (3), (3), (3), (4), (4), (5), (5), (7), (11), (15);
+
+SELECT
+    varPop(x) AS var_pop
+FROM test_data;
+```
+
+Result:
+
+```response
+┌─var_pop─┐
+│    14.4 │
+└─────────┘
+```

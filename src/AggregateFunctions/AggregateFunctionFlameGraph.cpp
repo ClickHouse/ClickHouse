@@ -17,6 +17,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_introspection_functions;
+}
+
+
 namespace ErrorCodes
 {
     extern const int FUNCTION_NOT_ALLOWED;
@@ -269,9 +275,9 @@ struct AggregateFunctionFlameGraphData
 
     using Entries = HashMap<UInt64, Pair>;
 
-    AggregateFunctionFlameGraphTree tree;
     Entries entries;
     Entry * free_list = nullptr;
+    AggregateFunctionFlameGraphTree tree;
 
     Entry * alloc(Arena * arena)
     {
@@ -322,21 +328,19 @@ struct AggregateFunctionFlameGraphData
             list = list->next;
             return entry;
         }
-        else
+
+        Entry * parent = list;
+        while (parent->next && parent->next->size != size)
+            parent = parent->next;
+
+        if (parent->next && parent->next->size == size)
         {
-            Entry * parent = list;
-            while (parent->next && parent->next->size != size)
-                parent = parent->next;
-
-            if (parent->next && parent->next->size == size)
-            {
-                Entry * entry = parent->next;
-                parent->next = entry->next;
-                return entry;
-            }
-
-            return nullptr;
+            Entry * entry = parent->next;
+            parent->next = entry->next;
+            return entry;
         }
+
+        return nullptr;
     }
 
     void add(UInt64 ptr, Int64 size, const UInt64 * stack, size_t stack_size, Arena * arena)
@@ -559,7 +563,7 @@ public:
             ptr = ptrs[row_num];
         }
 
-        this->data(place).add(ptr, allocated, trace_values.data() + prev_offset, trace_size, arena);
+        data(place).add(ptr, allocated, trace_values.data() + prev_offset, trace_size, arena);
     }
 
     void addManyDefaults(
@@ -572,7 +576,7 @@ public:
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
-        this->data(place).merge(this->data(rhs), arena);
+        data(place).merge(data(rhs), arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict, WriteBuffer &, std::optional<size_t> /* version */) const override
@@ -590,7 +594,7 @@ public:
         auto & array = assert_cast<ColumnArray &>(to);
         auto & str = assert_cast<ColumnString &>(array.getData());
 
-        this->data(place).dumpFlameGraph(str.getChars(), str.getOffsets(), 0, 0);
+        data(place).dumpFlameGraph(str.getChars(), str.getOffsets(), 0, 0);
 
         array.getOffsets().push_back(str.size());
     }
@@ -628,7 +632,7 @@ static void check(const std::string & name, const DataTypes & argument_types, co
 
 AggregateFunctionPtr createAggregateFunctionFlameGraph(const std::string & name, const DataTypes & argument_types, const Array & params, const Settings * settings)
 {
-    if (!settings->allow_introspection_functions)
+    if (!(*settings)[Setting::allow_introspection_functions])
         throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED,
         "Introspection functions are disabled, because setting 'allow_introspection_functions' is set to 0");
 

@@ -1,6 +1,13 @@
 # package sources should be placed in ${PWD}/root
 # nfpm should run from the same directory with a config
 name: "clickhouse-common-static"
+description: |
+  Common files for ClickHouse
+    ClickHouse is a column-oriented database management system
+    that allows generating analytical data reports in real time.
+    This package provides common files for both clickhouse server and client
+
+# Common packages config
 arch: "${DEB_ARCH}" # amd64, arm64
 platform: "linux"
 version: "${CLICKHOUSE_VERSION_STRING}"
@@ -9,7 +16,12 @@ homepage: "https://clickhouse.com"
 license: "Apache"
 section: "database"
 priority: "optional"
+maintainer: "ClickHouse Dev Team <packages+linux@clickhouse.com>"
+deb:
+  fields:
+    Source: clickhouse
 
+# Package specific content
 replaces:
 - clickhouse-common
 - clickhouse-server-base
@@ -19,30 +31,15 @@ provides:
 suggests:
 - clickhouse-common-static-dbg
 
-maintainer: "ClickHouse Dev Team <packages+linux@clickhouse.com>"
-description: |
-  Common files for ClickHouse
-    ClickHouse is a column-oriented database management system
-    that allows generating analytical data reports in real time.
-    This package provides common files for both clickhouse server and client
-
-deb:
-  fields:
-    Source: clickhouse
-
 contents:
 - src: root/usr/bin/clickhouse
   dst: /usr/bin/clickhouse
-- src: root/usr/bin/clickhouse-diagnostics
-  dst: /usr/bin/clickhouse-diagnostics
 - src: root/usr/bin/clickhouse-extract-from-config
   dst: /usr/bin/clickhouse-extract-from-config
-- src: root/usr/bin/clickhouse-library-bridge
-  dst: /usr/bin/clickhouse-library-bridge
-- src: root/usr/bin/clickhouse-odbc-bridge
-  dst: /usr/bin/clickhouse-odbc-bridge
 - src: root/usr/share/bash-completion/completions
   dst: /usr/share/bash-completion/completions
+- src: root/usr/share/clickhouse
+  dst: /usr/share/clickhouse
 # docs
 - src: ../AUTHORS
   dst: /usr/share/doc/clickhouse-common-static/AUTHORS

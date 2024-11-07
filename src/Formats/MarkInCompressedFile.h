@@ -10,6 +10,11 @@
 namespace DB
 {
 
+/// It's a bug in clang with three-way comparison operator
+/// https://github.com/llvm/llvm-project/issues/55919
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+
 /** Mark is the position in the compressed file. The compressed file consists of adjacent compressed blocks.
   * Mark is a tuple - the offset in the file to the start of the compressed block, the offset in the decompressed block to the start of the data.
   */
@@ -18,12 +23,7 @@ struct MarkInCompressedFile
     size_t offset_in_compressed_file;
     size_t offset_in_decompressed_block;
 
-    bool operator==(const MarkInCompressedFile & rhs) const
-    {
-        return std::tie(offset_in_compressed_file, offset_in_decompressed_block)
-            == std::tie(rhs.offset_in_compressed_file, rhs.offset_in_decompressed_block);
-    }
-    bool operator!=(const MarkInCompressedFile & rhs) const { return !(*this == rhs); }
+    auto operator<=>(const MarkInCompressedFile &) const = default;
 
     auto asTuple() const { return std::make_tuple(offset_in_compressed_file, offset_in_decompressed_block); }
 
@@ -38,6 +38,8 @@ struct MarkInCompressedFile
             + DB::toString(rows_num) + ")";
     }
 };
+
+#pragma clang diagnostic pop
 
 /**
  * In-memory representation of an array of marks.
@@ -57,7 +59,7 @@ class MarksInCompressedFile
 public:
     using PlainArray = PODArray<MarkInCompressedFile>;
 
-    MarksInCompressedFile(const PlainArray & marks);
+    explicit MarksInCompressedFile(const PlainArray & marks);
 
     MarkInCompressedFile get(size_t idx) const;
 
@@ -116,5 +118,7 @@ private:
     // Mark idx -> {block info, bit offset in `packed`}.
     std::tuple<const BlockInfo *, size_t> lookUpMark(size_t idx) const;
 };
+
+using PlainMarksByName = std::unordered_map<String, std::unique_ptr<MarksInCompressedFile::PlainArray>>;
 
 }

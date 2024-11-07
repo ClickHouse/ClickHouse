@@ -5,154 +5,150 @@
 # a) the new check is not controversial (this includes many checks in readability-* and google-*) or
 # b) too noisy (checks with > 100 new warnings are considered noisy, this includes e.g. cppcoreguidelines-*).
 
-# TODO Let clang-tidy check headers in further directories
-#      --> HeaderFilterRegex: '^.*/(src|base|programs|utils)/.*(h|hpp)$'
-HeaderFilterRegex: '^.*/(base)/.*(h|hpp)$'
+HeaderFilterRegex: '^.*/(base|src|programs|utils)/.*(h|hpp)$'
 
-Checks: '*,
-    -abseil-*,
+Checks: [
+  '*',
 
-    -altera-*,
+  '-abseil-*',
 
-    -android-*,
+  '-altera-*',
 
-    -bugprone-assignment-in-if-condition,
-    -bugprone-branch-clone,
-    -bugprone-easily-swappable-parameters,
-    -bugprone-exception-escape,
-    -bugprone-implicit-widening-of-multiplication-result,
-    -bugprone-narrowing-conversions,
-    -bugprone-not-null-terminated-result,
-    -bugprone-reserved-identifier, # useful but too slow, TODO retry when https://reviews.llvm.org/rG1c282052624f9d0bd273bde0b47b30c96699c6c7 is merged
-    -bugprone-unchecked-optional-access,
+  '-android-*',
 
-    -cert-dcl16-c,
-    -cert-dcl37-c,
-    -cert-dcl51-cpp,
-    -cert-err58-cpp,
-    -cert-msc32-c,
-    -cert-msc51-cpp,
-    -cert-oop54-cpp,
-    -cert-oop57-cpp,
+  '-bugprone-assignment-in-if-condition',
+  '-bugprone-branch-clone',
+  '-bugprone-easily-swappable-parameters',
+  '-bugprone-exception-escape',
+  '-bugprone-forward-declaration-namespace',
+  '-bugprone-implicit-widening-of-multiplication-result',
+  '-bugprone-multi-level-implicit-pointer-conversion',
+  '-bugprone-narrowing-conversions',
+  '-bugprone-not-null-terminated-result',
+  '-bugprone-reserved-identifier', # useful but too slow, TODO retry when https://reviews.llvm.org/rG1c282052624f9d0bd273bde0b47b30c96699c6c7 is merged
+  '-bugprone-unchecked-optional-access',
+  '-bugprone-crtp-constructor-accessibility',
+  '-bugprone-suspicious-stringview-data-usage',
 
-    -clang-analyzer-optin.performance.Padding,
-    -clang-analyzer-optin.portability.UnixAPI,
-    -clang-analyzer-security.insecureAPI.bzero,
-    -clang-analyzer-security.insecureAPI.strcpy,
+  '-cert-dcl16-c',
+  '-cert-dcl37-c',
+  '-cert-dcl51-cpp',
+  '-cert-err58-cpp',
+  '-cert-msc32-c',
+  '-cert-msc51-cpp',
+  '-cert-oop54-cpp',
+  '-cert-oop57-cpp',
+  '-cert-err33-c', # Misreports on clang-19: it warns about all functions containing 'remove' in the name, not only about the standard library.
 
-    -cppcoreguidelines-avoid-c-arrays,
-    -cppcoreguidelines-avoid-const-or-ref-data-members,
-    -cppcoreguidelines-avoid-do-while,
-    -cppcoreguidelines-avoid-goto,
-    -cppcoreguidelines-avoid-magic-numbers,
-    -cppcoreguidelines-avoid-non-const-global-variables,
-    -cppcoreguidelines-explicit-virtual-functions,
-    -cppcoreguidelines-init-variables,
-    -cppcoreguidelines-interfaces-global-init,
-    -cppcoreguidelines-macro-usage,
-    -cppcoreguidelines-narrowing-conversions,
-    -cppcoreguidelines-no-malloc,
-    -cppcoreguidelines-non-private-member-variables-in-classes,
-    -cppcoreguidelines-owning-memory,
-    -cppcoreguidelines-prefer-member-initializer,
-    -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
-    -cppcoreguidelines-pro-bounds-constant-array-index,
-    -cppcoreguidelines-pro-bounds-pointer-arithmetic,
-    -cppcoreguidelines-pro-type-const-cast,
-    -cppcoreguidelines-pro-type-cstyle-cast,
-    -cppcoreguidelines-pro-type-member-init,
-    -cppcoreguidelines-pro-type-reinterpret-cast,
-    -cppcoreguidelines-pro-type-static-cast-downcast,
-    -cppcoreguidelines-pro-type-union-access,
-    -cppcoreguidelines-pro-type-vararg,
-    -cppcoreguidelines-slicing,
-    -cppcoreguidelines-special-member-functions,
+  '-clang-analyzer-optin.performance.Padding',
 
-    -darwin-*,
+  '-clang-analyzer-unix.Malloc',
 
-    -fuchsia-*,
+  '-cppcoreguidelines-*', # impractical in a codebase as large as ClickHouse, also slow
 
-    -google-build-using-namespace,
-    -google-readability-braces-around-statements,
-    -google-readability-casting,
-    -google-readability-function-size,
-    -google-readability-namespace-comments,
-    -google-readability-todo,
-    -google-upgrade-googletest-case,
+  '-darwin-*',
 
-    -hicpp-avoid-c-arrays,
-    -hicpp-avoid-goto,
-    -hicpp-braces-around-statements,
-    -hicpp-explicit-conversions,
-    -hicpp-function-size,
-    -hicpp-member-init,
-    -hicpp-move-const-arg,
-    -hicpp-multiway-paths-covered,
-    -hicpp-named-parameter,
-    -hicpp-no-array-decay,
-    -hicpp-no-assembler,
-    -hicpp-no-malloc,
-    -hicpp-signed-bitwise,
-    -hicpp-special-member-functions,
-    -hicpp-uppercase-literal-suffix,
-    -hicpp-use-auto,
-    -hicpp-use-emplace,
-    -hicpp-vararg,
+  '-fuchsia-*',
 
-    -linuxkernel-*,
+  '-google-build-using-namespace',
+  '-google-readability-braces-around-statements',
+  '-google-readability-casting',
+  '-google-readability-function-size',
+  '-google-readability-namespace-comments',
+  '-google-readability-todo',
 
-    -llvm-*,
+  '-hicpp-avoid-c-arrays',
+  '-hicpp-avoid-goto',
+  '-hicpp-braces-around-statements',
+  '-hicpp-explicit-conversions',
+  '-hicpp-function-size',
+  '-hicpp-member-init',
+  '-hicpp-move-const-arg',
+  '-hicpp-multiway-paths-covered',
+  '-hicpp-named-parameter',
+  '-hicpp-no-array-decay',
+  '-hicpp-no-assembler',
+  '-hicpp-no-malloc',
+  '-hicpp-signed-bitwise',
+  '-hicpp-special-member-functions',
+  '-hicpp-uppercase-literal-suffix',
+  '-hicpp-use-auto',
+  '-hicpp-use-emplace',
+  '-hicpp-vararg',
 
-    -llvmlibc-*,
+  '-linuxkernel-*',
 
-    -openmp-*,
+  '-llvm-*',
 
-    -misc-const-correctness,
-    -misc-no-recursion,
-    -misc-non-private-member-variables-in-classes,
-    -misc-confusable-identifiers, # useful but slooow
-    -misc-use-anonymous-namespace,
+  '-llvmlibc-*',
 
-    -modernize-avoid-c-arrays,
-    -modernize-concat-nested-namespaces,
-    -modernize-macro-to-enum,
-    -modernize-pass-by-value,
-    -modernize-return-braced-init-list,
-    -modernize-use-auto,
-    -modernize-use-default-member-init,
-    -modernize-use-emplace,
-    -modernize-use-nodiscard,
-    -modernize-use-override,
-    -modernize-use-trailing-return-type,
+  '-openmp-*',
 
-    -performance-inefficient-string-concatenation,
-    -performance-no-int-to-ptr,
-    -performance-unnecessary-value-param,
+  '-misc-const-correctness',
+  '-misc-include-cleaner', # useful but far too many occurrences
+  '-misc-no-recursion',
+  '-misc-non-private-member-variables-in-classes',
+  '-misc-confusable-identifiers', # useful but slooo
+  '-misc-use-anonymous-namespace',
 
-    -portability-simd-intrinsics,
+  '-modernize-avoid-c-arrays',
+  '-modernize-concat-nested-namespaces',
+  '-modernize-macro-to-enum',
+  '-modernize-pass-by-value',
+  '-modernize-return-braced-init-list',
+  '-modernize-use-auto',
+  '-modernize-use-constraints', # This is a good check, but clang-tidy crashes, see https://github.com/llvm/llvm-project/issues/91872
+  '-modernize-use-default-member-init',
+  '-modernize-use-emplace',
+  '-modernize-use-nodiscard',
+  '-modernize-use-trailing-return-type',
+  '-modernize-use-designated-initializers',
 
-    -readability-braces-around-statements,
-    -readability-convert-member-functions-to-static,
-    -readability-else-after-return,
-    -readability-function-cognitive-complexity,
-    -readability-function-size,
-    -readability-identifier-length,
-    -readability-identifier-naming, # useful but too slow
-    -readability-implicit-bool-conversion,
-    -readability-isolate-declaration,
-    -readability-magic-numbers,
-    -readability-named-parameter,
-    -readability-redundant-declaration,
-    -readability-simplify-boolean-expr,
-    -readability-static-accessed-through-instance,
-    -readability-suspicious-call-argument,
-    -readability-uppercase-literal-suffix,
-    -readability-use-anyofallof,
+  '-performance-enum-size',
+  '-performance-inefficient-string-concatenation',
+  '-performance-no-int-to-ptr',
+  '-performance-avoid-endl',
+  '-performance-unnecessary-value-param',
 
-    -zircon-*,
-'
+  '-portability-simd-intrinsics',
+
+  '-readability-avoid-nested-conditional-operator',
+  '-readability-avoid-unconditional-preprocessor-if',
+  '-readability-braces-around-statements',
+  '-readability-convert-member-functions-to-static',
+  '-readability-else-after-return',
+  '-readability-function-cognitive-complexity',
+  '-readability-function-size',
+  '-readability-identifier-length',
+  '-readability-identifier-naming', # useful but too slow
+  '-readability-implicit-bool-conversion',
+  '-readability-isolate-declaration',
+  '-readability-magic-numbers',
+  '-readability-named-parameter',
+  '-readability-redundant-declaration',
+  '-readability-redundant-inline-specifier', # useful but incompatible with __attribute((always_inline))__ (aka. ALWAYS_INLINE, base/base/defines.h).
+        # ALWAYS_INLINE only has an effect if combined with `inline`: https://godbolt.org/z/Eefd74qdM
+  '-readability-redundant-member-init', # Useful but triggers another problem. Imagine a struct S with multiple String members. Structs are often instantiated via designated
+        # initializer S s{.s1 = [...], .s2 = [...], [...]}. In this case, compiler warning `missing-field-initializers` requires to specify all members which are not in-struct
+        # initialized (example: s1 in struct S { String s1; String s2{};}; is not in-struct initialized, therefore it must be specified at instantiation time). As explicitly
+        # specifying all members is tedious for large structs, `missing-field-initializers` makes programmers initialize as many members as possible in-struct. Clang-tidy
+        # warning `readability-redundant-member-init` does the opposite thing, both are not compatible with each other.
+  '-readability-simplify-boolean-expr',
+  '-readability-suspicious-call-argument',
+  '-readability-uppercase-literal-suffix',
+  '-readability-use-anyofallof',
+
+  '-zircon-*'
+]
 
 WarningsAsErrors: '*'
+
+ExtraArgs:
+# clang-tidy 17 started to complain (for unknown reasons) that various pragmas are unknown ("clang-diagnostic-unknown-pragmas").
+# This is technically a compiler error, not a clang-tidy error. We could litter the code base with more pragmas that suppress
+# this error but it is better to pass the following flag to the compiler:
+- '-Wno-unknown-pragmas'
+- '-Wno-unused-command-line-argument' # similar issue
 
 CheckOptions:
   readability-identifier-naming.ClassCase: CamelCase

@@ -46,8 +46,8 @@ class Elf;
  * can parse Debug Information Entries (DIEs), abbreviations, attributes (of
  * all forms), and we can interpret bytecode for the line number VM.
  *
- * We can interpret DWARF records of version 2, 3, or 4, although we don't
- * actually support many of the version 4 features (such as VLIW, multiple
+ * We can interpret DWARF records of version 2, 3, 4, or 5, although we don't
+ * actually support many of the features of versions 4 and 5 (such as VLIW, multiple
  * operations per instruction)
  *
  * Note that the DWARF record parser does not allocate heap memory at all.
@@ -126,7 +126,7 @@ public:
         std::string_view name;
     };
 
-    enum class LocationInfoMode
+    enum class LocationInfoMode : uint8_t
     {
         // Don't resolve location info.
         DISABLED,
@@ -283,7 +283,8 @@ private:
         LocationInfoMode mode,
         CompilationUnit & cu,
         LocationInfo & info,
-        std::vector<SymbolizedFrame> & inline_frames) const;
+        std::vector<SymbolizedFrame> & inline_frames,
+        bool assume_in_cu_range) const;
 
     /**
      * Finds a subprogram debugging info entry that contains a given address among
@@ -453,22 +454,11 @@ private:
     // Finds the Compilation Unit starting at offset.
     CompilationUnit findCompilationUnit(uint64_t targetOffset) const;
 
-
-    template <class T>
-    std::optional<T> getAttribute(const CompilationUnit & cu, const Die & die, uint64_t attr_name) const
-    {
-        std::optional<T> result;
-        forEachAttribute(cu, die, [&](const Attribute & attr)
-        {
-            if (attr.spec.name == attr_name)
-            {
-                result = std::get<T>(attr.attr_value);
-                return false;
-            }
-            return true;
-        });
-        return result;
-    }
+    // Parses an attribute of "reference" form class, i.e. a reference to another DIE.
+    // Returns the unit containing the target DIE (nullopt if it's in the same unit as the source DIE)
+    // and the offset of the target DIE (relative to .debug_info, not to unit).
+    std::optional<std::pair<std::optional<CompilationUnit>, uint64_t>> getReferenceAttribute(
+        const CompilationUnit & cu, const Die & die, uint64_t attr_name) const;
 
     // Check if the given address is in the range list at the given offset in .debug_ranges.
     bool isAddrInRangeList(

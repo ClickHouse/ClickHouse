@@ -6,6 +6,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
 }
@@ -21,17 +22,19 @@ struct BitShiftRightImpl
     static const constexpr bool allow_string_integer = true;
 
     template <typename Result = ResultType>
-    static inline NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
+    static NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
     {
         if constexpr (is_big_int_v<B>)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BitShiftRight is not implemented for big integers as second argument");
+        else if (b < 0 || static_cast<UInt256>(b) > 8 * sizeof(A))
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The number of shift positions needs to be a non-negative value and less or equal to the bit width of the value to shift");
         else if constexpr (is_big_int_v<A>)
             return static_cast<Result>(a) >> static_cast<UInt32>(b);
         else
             return static_cast<Result>(a) >> static_cast<Result>(b);
     }
 
-    static inline NO_SANITIZE_UNDEFINED void bitShiftRightForBytes(const UInt8 * op_pointer, const UInt8 * begin, UInt8 * out, const size_t shift_right_bits)
+    static NO_SANITIZE_UNDEFINED void bitShiftRightForBytes(const UInt8 * op_pointer, const UInt8 * begin, UInt8 * out, const size_t shift_right_bits)
     {
         while (op_pointer > begin)
         {
@@ -53,9 +56,12 @@ struct BitShiftRightImpl
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BitShiftRight is not implemented for big integers as second argument");
         else
         {
-            UInt8 word_size = 8;
-            /// To prevent overflow
-            if (static_cast<double>(b) >= (static_cast<double>(end - pos) * word_size) || b < 0)
+            const UInt8 word_size = 8;
+            size_t n = end - pos;
+            const UInt128 bit_limit = static_cast<UInt128>(word_size) * n;
+            if (b < 0 || static_cast<decltype(bit_limit)>(b) > bit_limit)
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The number of shift positions needs to be a non-negative value and less or equal to the bit width of the value to shift");
+            if (b == bit_limit)
             {
                 /// insert default value
                 out_vec.push_back(0);
@@ -90,10 +96,12 @@ struct BitShiftRightImpl
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BitShiftRight is not implemented for big integers as second argument");
         else
         {
-            UInt8 word_size = 8;
+            const UInt8 word_size = 8;
             size_t n = end - pos;
-            /// To prevent overflow
-            if (static_cast<double>(b) >= (static_cast<double>(n) * word_size) || b < 0)
+            const UInt128 bit_limit = static_cast<UInt128>(word_size) * n;
+            if (b < 0 || static_cast<decltype(bit_limit)>(b) > bit_limit)
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The number of shift positions needs to be a non-negative value and less or equal to the bit width of the value to shift");
+            if (b == bit_limit)
             {
                 // insert default value
                 out_vec.resize_fill(out_vec.size() + n);
@@ -123,7 +131,7 @@ struct BitShiftRightImpl
 #if USE_EMBEDDED_COMPILER
     static constexpr bool compilable = true;
 
-    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed)
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed)
     {
         if (!left->getType()->isIntegerTy())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "BitShiftRightImpl expected an integral type");

@@ -1,8 +1,10 @@
 #include <Common/Exception.h>
 #include <Common/TerminalSize.h>
+#include <Common/re2.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadSettings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromFile.h>
@@ -10,7 +12,6 @@
 #include <Disks/IO/createReadBufferFromFileBase.h>
 
 #include <boost/program_options.hpp>
-#include <re2/re2.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -65,7 +66,7 @@ void processFile(const fs::path & file_path, const fs::path & dst_path, bool tes
 
         /// test mode for integration tests.
         if (test_mode)
-            dst_buf = std::make_shared<WriteBufferFromHTTP>(Poco::URI(dst_file_path), Poco::Net::HTTPRequest::HTTP_PUT);
+            dst_buf = std::make_shared<WriteBufferFromHTTP>(HTTPConnectionGroupType::HTTP, Poco::URI(dst_file_path), Poco::Net::HTTPRequest::HTTP_PUT);
         else
             dst_buf = std::make_shared<WriteBufferFromFile>(dst_file_path);
 
@@ -88,7 +89,7 @@ void processTableFiles(const fs::path & data_path, fs::path dst_path, bool test_
     {
         dst_path /= "store";
         auto files_root = dst_path / prefix;
-        root_meta = std::make_shared<WriteBufferFromHTTP>(Poco::URI(files_root / ".index"), Poco::Net::HTTPRequest::HTTP_PUT);
+        root_meta = std::make_shared<WriteBufferFromHTTP>(HTTPConnectionGroupType::HTTP, Poco::URI(files_root / ".index"), Poco::Net::HTTPRequest::HTTP_PUT);
     }
     else
     {
@@ -111,13 +112,11 @@ void processTableFiles(const fs::path & data_path, fs::path dst_path, bool test_
             std::shared_ptr<WriteBuffer> directory_meta;
             if (test_mode)
             {
-                auto files_root = dst_path / prefix;
-                directory_meta = std::make_shared<WriteBufferFromHTTP>(Poco::URI(dst_path / directory_prefix / ".index"), Poco::Net::HTTPRequest::HTTP_PUT);
+                directory_meta = std::make_shared<WriteBufferFromHTTP>(HTTPConnectionGroupType::HTTP, Poco::URI(dst_path / directory_prefix / ".index"), Poco::Net::HTTPRequest::HTTP_PUT);
             }
             else
             {
                 dst_path = fs::canonical(dst_path);
-                auto files_root = dst_path / prefix;
                 fs::create_directories(dst_path / directory_prefix);
                 directory_meta = std::make_shared<WriteBufferFromFile>(dst_path / directory_prefix / ".index");
             }

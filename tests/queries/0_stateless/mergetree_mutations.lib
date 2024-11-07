@@ -29,14 +29,17 @@ function wait_for_all_mutations()
 
     for i in {1..200}
     do
-        sleep 1
         if [[ $(${CLICKHOUSE_CLIENT} --query="SELECT coalesce(minOrNull(is_done), 1) FROM system.mutations WHERE database='$database' AND table like '$table'") -eq 1 ]]; then
             break
         fi
 
         if [[ $i -eq 200 ]]; then
             echo "Timed out while waiting for mutation to execute!"
+            ${CLICKHOUSE_CLIENT} -q "SELECT * FROM system.mutations WHERE database='$database' AND table like '$table' AND is_done=0"
         fi
 
+        sleep 0.3
     done
 }
+
+# vi: ft=bash

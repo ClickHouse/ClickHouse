@@ -2,6 +2,7 @@
 # pylint: disable=redefined-outer-name
 
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -134,3 +135,66 @@ def test_jbod_load_balancing_least_used_next_disk(start_cluster):
         ]
     finally:
         node.query("DROP TABLE IF EXISTS data_least_used_next_disk SYNC")
+
+
+def test_jbod_load_balancing_least_used_detect_background_changes(start_cluster):
+    def get_parts_on_disks():
+        parts = node.query(
+            """
+        SELECT count(), disk_name
+        FROM system.parts
+        WHERE table = 'data_least_used_detect_background_changes'
+        GROUP BY disk_name
+        ORDER BY disk_name
+        """
+        )
+        parts = [l.split("\t") for l in parts.strip().split("\n")]
+        return parts
+
+    try:
+        node.query(
+            """
+            CREATE TABLE data_least_used_detect_background_changes (p UInt8)
+            ENGINE = MergeTree
+            ORDER BY tuple()
+            SETTINGS storage_policy = 'jbod_least_used';
+
+            SYSTEM STOP MERGES data_least_used_detect_background_changes;
+            """
+        )
+
+        node.exec_in_container(["fallocate", "-l200M", "/jbod3/.test"])
+        node.query(
+            """
+            INSERT INTO data_least_used_detect_background_changes SELECT * FROM numbers(10);
+            INSERT INTO data_least_used_detect_background_changes SELECT * FROM numbers(10);
+            INSERT INTO data_least_used_detect_background_changes SELECT * FROM numbers(10);
+            INSERT INTO data_least_used_detect_background_changes SELECT * FROM numbers(10);
+        """
+        )
+        parts = get_parts_on_disks()
+        assert parts == [
+            ["4", "jbod2"],
+        ]
+
+        node.exec_in_container(["rm", "/jbod3/.test"])
+        node.query(
+            """
+            INSERT INTO data_least_used_detect_background_changes SELECT * FROM numbers(10);
+            INSERT INTO data_least_used_detect_background_changes SELECT * FROM numbers(10);
+            INSERT INTO data_least_used_detect_background_changes SELECT * FROM numbers(10);
+            INSERT INTO data_least_used_detect_background_changes SELECT * FROM numbers(10);
+        """
+        )
+        parts = get_parts_on_disks()
+        assert parts == [
+            # previous INSERT
+            ["4", "jbod2"],
+            # this INSERT
+            ["4", "jbod3"],
+        ]
+    finally:
+        node.exec_in_container(["rm", "-f", "/jbod3/.test"])
+        node.query(
+            "DROP TABLE IF EXISTS data_least_used_detect_background_changes SYNC"
+        )

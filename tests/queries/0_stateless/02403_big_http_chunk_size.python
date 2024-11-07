@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
-from socket import socket, AF_INET, SOCK_STREAM
 import os
-
+from socket import AF_INET, SOCK_STREAM, socket
 
 EXCEPTION_CODE_HEADER = "X-ClickHouse-Exception-Code"
 TRANSFER_ENCODING_HEADER = "Transfer-Encoding"
@@ -14,9 +13,9 @@ def main():
     sock = socket(AF_INET, SOCK_STREAM)
     sock.connect((host, port))
     sock.settimeout(60)
-    s = "POST /play HTTP/1.1\r\n"
+    s = "POST / HTTP/1.1\r\n"
     s += "Host: %s\r\n" % host
-    s += "Content-type: multipart/form-data\r\n"
+    s += "Content-type: multipart/form-data; boundary=--b3f1zid8kqwy\r\n"
     s += "Transfer-encoding: chunked\r\n"
     s += "\r\n"
     s += "ffffffffffffffff"

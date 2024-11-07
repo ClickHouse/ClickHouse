@@ -1,5 +1,6 @@
 <!-- Config set into /etc/clickhouse-client/. It's used if no other configs are found. -->
 <config>
+    <!-- Shorthand for self-signed combination in openSSL section below: <accept-invalid-certificate>1</accept-invalid-certificate> -->
     <openSSL>
         <client> <!-- Used for connection to server's secure tcp port -->
             <loadDefaultCAFile>true</loadDefaultCAFile>
@@ -37,7 +38,25 @@
         <production>{display_name} \e[1;31m:)\e[0m </production> <!-- if it matched to the substring "production" in the server display name -->
     </prompt_by_server_display_name>
 
-    <!-- 
+    <!-- Chunked capabilities for native protocol by client.
+         Can be enabled separately for send and receive channels.
+         Supported modes:
+         - chunked - client will only work with server supporting chunked protocol;
+         - chunked_optional - client prefer server to enable chunked protocol, but can switch to notchunked if server does not support this;
+         - notchunked - client will only work with server supporting notchunked protocol (current default);
+         - notchunked_optional - client prefer server notchunked protocol, but can switch to chunked if server does not support this.
+     -->
+    <!--
+    <proto_caps>
+        <send>chunked_optional</send>
+        <recv>chunked_optional</recv>
+    </proto_caps>
+    -->
+
+    <!-- Do not send clickhouse-client to background on C-z -->
+    <!-- <ignore_shell_suspend>true</ignore_shell_suspend> -->
+
+    <!--
         Settings adjustable via command-line parameters
         can take their defaults from that config file, see examples:
 
@@ -58,6 +77,9 @@
         The same can be done on user-level configuration, just create & adjust: ~/.clickhouse-client/config.xml
     -->
 
+    <!-- Directory containing the proto files for the well-known Protobuf types.
+      -->
+    <google_protos_path>/usr/share/clickhouse/protos/</google_protos_path>
 
     <!-- Analog of .netrc -->
     <![CDATA[
@@ -69,6 +91,7 @@
 
                  Default: "hostname" will be used. -->
             <name>default</name>
+            <!-- For self-signed server certificate when connecting to secure tcp: <accept-invalid-certificate>1</accept-invalid-certificate> -->
             <!-- Host that will be used for connection. -->
             <hostname>127.0.0.1</hostname>
             <port>9000</port>

@@ -7,7 +7,6 @@
 namespace ProfileEvents
 {
     extern const Event HedgedRequestsChangeReplica;
-    extern const Event DistributedConnectionFailTry;
     extern const Event DistributedConnectionFailAtAll;
 }
 
@@ -23,19 +22,28 @@ namespace ErrorCodes
 
 HedgedConnectionsFactory::HedgedConnectionsFactory(
     const ConnectionPoolWithFailoverPtr & pool_,
-    const Settings * settings_,
+    const Settings & settings_,
     const ConnectionTimeouts & timeouts_,
-    std::shared_ptr<QualifiedTableName> table_to_check_)
-    : pool(pool_), settings(settings_), timeouts(timeouts_), table_to_check(table_to_check_), log(&Poco::Logger::get("HedgedConnectionsFactory"))
+    UInt64 max_tries_,
+    bool fallback_to_stale_replicas_,
+    UInt64 max_parallel_replicas_,
+    bool skip_unavailable_shards_,
+    std::shared_ptr<QualifiedTableName> table_to_check_,
+    GetPriorityForLoadBalancing::Func priority_func)
+    : pool(pool_)
+    , timeouts(timeouts_)
+    , table_to_check(table_to_check_)
+    , log(getLogger("HedgedConnectionsFactory"))
+    , max_tries(max_tries_)
+    , fallback_to_stale_replicas(fallback_to_stale_replicas_)
+    , max_parallel_replicas(max_parallel_replicas_)
+    , skip_unavailable_shards(skip_unavailable_shards_)
 {
-    shuffled_pools = pool->getShuffledPools(settings);
-    for (auto shuffled_pool : shuffled_pools)
-        replicas.emplace_back(std::make_unique<ConnectionEstablisherAsync>(shuffled_pool.pool, &timeouts, settings, log, table_to_check.get()));
+    shuffled_pools = pool->getShuffledPools(settings_, priority_func, /* use_slowdown_count */ true);
 
-    max_tries
-        = (settings ? size_t{settings->connections_with_failover_max_tries} : size_t{DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES});
-
-    fallback_to_stale_replicas = settings && settings->fallback_to_stale_replicas_for_distributed_queries;
+    for (const auto & shuffled_pool : shuffled_pools)
+        replicas.emplace_back(
+            std::make_unique<ConnectionEstablisherAsync>(shuffled_pool.pool, &timeouts, settings_, log, table_to_check.get()));
 }
 
 HedgedConnectionsFactory::~HedgedConnectionsFactory()
@@ -55,7 +63,7 @@ HedgedConnectionsFactory::~HedgedConnectionsFactory()
 
 std::vector<Connection *> HedgedConnectionsFactory::getManyConnections(PoolMode pool_mode, AsyncCallback async_callback)
 {
-    size_t min_entries = (settings && settings->skip_unavailable_shards) ? 0 : 1;
+    size_t min_entries = skip_unavailable_shards ? 0 : 1;
 
     size_t max_entries = 1;
     switch (pool_mode)
@@ -73,7 +81,7 @@ std::vector<Connection *> HedgedConnectionsFactory::getManyConnections(PoolMode 
         }
         case PoolMode::GET_MANY:
         {
-            max_entries = settings ? size_t(settings->max_parallel_replicas) : 1;
+            max_entries = std::min(max_parallel_replicas, shuffled_pools.size());
             break;
         }
     }
@@ -317,11 +325,9 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::processFinishedConnect
     else
     {
         ShuffledPool & shuffled_pool = shuffled_pools[index];
-        LOG_WARNING(
-            log, "Connection failed at try №{}, reason: {}", (shuffled_pool.error_count + 1), fail_message);
-        ProfileEvents::increment(ProfileEvents::DistributedConnectionFailTry);
+        LOG_INFO(log, "Connection failed at try №{}, reason: {}", (shuffled_pool.error_count + 1), fail_message);
 
-        shuffled_pool.error_count = std::min(pool->getMaxErrorCup(), shuffled_pool.error_count + 1);
+        shuffled_pool.error_count = std::min(pool->getMaxErrorCap(), shuffled_pool.error_count + 1);
         shuffled_pool.slowdown_count = 0;
 
         if (shuffled_pool.error_count >= max_tries)
@@ -407,7 +413,7 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::setBestUsableReplica(C
         indexes.end(),
         [&](size_t lhs, size_t rhs)
         {
-            return replicas[lhs].connection_establisher->getResult().staleness < replicas[rhs].connection_establisher->getResult().staleness;
+            return replicas[lhs].connection_establisher->getResult().delay < replicas[rhs].connection_establisher->getResult().delay;
         });
 
     replicas[indexes[0]].is_ready = true;

@@ -13,7 +13,7 @@ struct fmt::formatter<DB::RangesInDataPartDescription>
     static constexpr auto parse(format_parse_context & ctx) { return ctx.begin(); }
 
     template <typename FormatContext>
-    auto format(const DB::RangesInDataPartDescription & range, FormatContext & ctx)
+    auto format(const DB::RangesInDataPartDescription & range, FormatContext & ctx) const
     {
         return fmt::format_to(ctx.out(), "{}", range.describe());
     }
@@ -32,6 +32,7 @@ void RangesInDataPartDescription::serialize(WriteBuffer & out) const
 {
     info.serialize(out);
     ranges.serialize(out);
+    writeVarUInt(rows, out);
 }
 
 String RangesInDataPartDescription::describe() const
@@ -45,6 +46,7 @@ void RangesInDataPartDescription::deserialize(ReadBuffer & in)
 {
     info.deserialize(in);
     ranges.deserialize(in);
+    readVarUInt(rows, in);
 }
 
 void RangesInDataPartsDescription::serialize(WriteBuffer & out) const
@@ -82,6 +84,7 @@ RangesInDataPartDescription RangesInDataPart::getDescription() const
     return RangesInDataPartDescription{
         .info = data_part->info,
         .ranges = ranges,
+        .rows = getRowsCount(),
     };
 }
 

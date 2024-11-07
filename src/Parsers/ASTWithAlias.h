@@ -6,6 +6,7 @@
 namespace DB
 {
 
+class ASTQueryParameter;
 
 /** Base class for AST, which can contain an alias (identifiers, literals, functions).
   */
@@ -17,6 +18,9 @@ public:
     /// If is true, getColumnName returns alias. Uses for aliases in former WITH section of SELECT query.
     /// Example: 'WITH pow(2, 2) as a SELECT pow(a, 2)' returns 'pow(a, 2)' instead of 'pow(pow(2, 2), 2)'
     bool prefer_alias_to_column_name = false;
+    // An alias can be defined as a query parameter,
+    // in which case we can only resolve it during query execution.
+    std::optional<std::shared_ptr<ASTQueryParameter>> parametrised_alias;
 
     using IAST::IAST;
 
@@ -27,7 +31,9 @@ public:
     void setAlias(const String & to) override { alias = to; }
 
     /// Calls formatImplWithoutAlias, and also outputs an alias. If necessary, encloses the entire expression in brackets.
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override final;
+    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const final;
+
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
     virtual void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const = 0;
 

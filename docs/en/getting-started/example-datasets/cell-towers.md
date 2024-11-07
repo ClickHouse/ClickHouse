@@ -29,7 +29,7 @@ Here is a preview of the dashboard created in this guide:
 
 This dataset is from [OpenCelliD](https://www.opencellid.org/) - The world's largest Open Database of Cell Towers.
 
-As of 2021, it contains more than 40 million records about cell towers (GSM, LTE, UMTS, etc.) around the world with their geographical coordinates and metadata (country code, network, etc).
+As of 2021, it contains more than 40 million records about cell towers (GSM, LTE, UMTS, etc.) around the world with their geographical coordinates and metadata (country code, network, etc.).
 
 OpenCelliD Project is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License, and we redistribute a snapshot of this dataset under the terms of the same license. The up-to-date version of the dataset is available to download after sign in.
 
@@ -75,14 +75,14 @@ This is the output of `DESCRIBE`.  Down further in this guide the field type cho
 </TabItem>
 <TabItem value="selfmanaged" label="Self-managed">
 
-1. Download the snapshot of the dataset from February 2021: [cell_towers.csv.xz](https://datasets.clickhouse.com/cell_towers.csv.xz) (729 MB).
+1. Download the snapshot of the dataset from February 2021: [cell_towers.csv.xz](https://datasets.clickhouse.com/cell_towers.csv.xz) (686 MB).
 
 2. Validate the integrity (optional step):
 ```bash
 md5sum cell_towers.csv.xz
 ```
 ```response
-8cf986f4a0d9f12c6f384a0e9192c908  cell_towers.csv.xz
+8a797f7bdb55faba93f6cbc37d47b037  cell_towers.csv.xz
 ```
 
 3. Decompress it with the following command:
@@ -132,7 +132,7 @@ SELECT radio, count() AS c FROM cell_towers GROUP BY radio ORDER BY c DESC
 ┌─radio─┬────────c─┐
 │ UMTS  │ 20686487 │
 │ LTE   │ 12101148 │
-│ GSM   │  9931312 │
+│ GSM   │  9931304 │
 │ CDMA  │   556344 │
 │ NR    │      867 │
 └───────┴──────────┘
@@ -355,14 +355,14 @@ Click on **UPDATE CHART** to render the visualization.
 
 ### Add the charts to a **dashboard**
 
-This screenshot shows cell tower locations with LTE, UMTS, and GSM radios.  The charts are all created in the same way and they are added to a dashboard.
+This screenshot shows cell tower locations with LTE, UMTS, and GSM radios.  The charts are all created in the same way, and they are added to a dashboard.
 
   ![Dashboard of cell towers by radio type in mcc 204](@site/docs/en/getting-started/example-datasets/images/superset-cell-tower-dashboard.png)
 
 :::tip
-The data is also available for interactive queries in the [Playground](https://play.clickhouse.com/play?user=play).
+The data is also available for interactive queries in the [Playground](https://sql.clickhouse.com).
 
-This [example](https://play.clickhouse.com/play?user=play#U0VMRUNUIG1jYywgY291bnQoKSBGUk9NIGNlbGxfdG93ZXJzIEdST1VQIEJZIG1jYyBPUkRFUiBCWSBjb3VudCgpIERFU0M=) will populate the username and even the query for you.
+This [example](https://sql.clickhouse.com?query_id=UV8M4MAGS2PWAUOAYAAARM) will populate the username and even the query for you.
 
 Although you cannot create tables in the Playground, you can run all of the queries and even use Superset (adjust the host name and port number).
 :::

@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
-from argparse import ArgumentParser
+import itertools
 import os
+from argparse import ArgumentParser
+
 import jinja2
 
 
@@ -47,6 +49,7 @@ def main(args):
         loader=jinja2.FileSystemLoader(suite_dir),
         keep_trailing_newline=True,
     )
+    j2env.globals.update(product=itertools.product)
 
     test_names = os.listdir(suite_dir)
     for test_name in test_names:

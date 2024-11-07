@@ -1,3 +1,4 @@
+#include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/HiveTextRowInputFormat.h>
 #include <Common/assert_cast.h>
 
@@ -17,7 +18,9 @@ static FormatSettings updateFormatSettings(const FormatSettings & settings, cons
     updated.skip_unknown_fields = true;
     updated.with_names_use_header = true;
     updated.date_time_input_format = FormatSettings::DateTimeInputFormat::BestEffort;
+    updated.defaults_for_omitted_fields = true;
     updated.csv.delimiter = updated.hive_text.fields_delimiter;
+    updated.csv.allow_variable_number_of_columns = settings.hive_text.allow_variable_number_of_columns;
     if (settings.hive_text.input_field_names.empty())
         updated.hive_text.input_field_names = header.getNames();
     return updated;
@@ -43,9 +46,6 @@ HiveTextFormatReader::HiveTextFormatReader(PeekableReadBuffer & buf_, const Form
 
 std::vector<String> HiveTextFormatReader::readNames()
 {
-    PeekableReadBufferCheckpoint checkpoint{*buf, true};
-    auto values = readHeaderRow();
-    input_field_names.resize(values.size());
     return input_field_names;
 }
 
@@ -65,10 +65,13 @@ void registerInputFormatHiveText(FormatFactory & factory)
 
 void registerFileSegmentationEngineHiveText(FormatFactory & factory)
 {
-    factory.registerFileSegmentationEngine(
+    factory.registerFileSegmentationEngineCreator(
         "HiveText",
-        [](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows) -> std::pair<bool, size_t> {
-            return fileSegmentationEngineCSVImpl(in, memory, min_bytes, 0, max_rows);
+        [](const FormatSettings & settings) -> FormatFactory::FileSegmentationEngine {
+            return [settings] (ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
+            {
+                return fileSegmentationEngineCSVImpl(in, memory, min_bytes, 0, max_rows, settings);
+            };
         });
 }
 

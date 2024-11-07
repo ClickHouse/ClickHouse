@@ -27,6 +27,7 @@ public:
         const NamesAndTypesList & columns,
         const StorageSnapshotPtr & storage_snapshot,
         const MarkRanges & mark_ranges,
+        const VirtualFields & virtual_fields,
         UncompressedCache * uncompressed_cache,
         MarkCache * mark_cache,
         const AlterConversionsPtr & alter_conversions,
@@ -34,21 +35,15 @@ public:
         const ValueSizeMap & avg_value_size_hints,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback) const override;
 
-    MergeTreeWriterPtr getWriter(
-        const NamesAndTypesList & columns_list,
-        const StorageMetadataPtr & metadata_snapshot,
-        const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-        const CompressionCodecPtr & default_codec_,
-        const MergeTreeWriterSettings & writer_settings,
-        const MergeTreeIndexGranularity & computed_index_granularity) override;
-
     bool isStoredOnDisk() const override { return true; }
+
+    bool isStoredOnReadonlyDisk() const override;
 
     bool isStoredOnRemoteDisk() const override;
 
     bool isStoredOnRemoteDiskWithZeroCopySupport() const override;
 
-    String getFileNameForColumn(const NameAndTypePair & column) const override;
+    std::optional<String> getFileNameForColumn(const NameAndTypePair & column) const override;
 
     ~MergeTreeDataPartWide() override;
 
@@ -56,14 +51,16 @@ public:
 
     std::optional<time_t> getColumnModificationTime(const String & column_name) const override;
 
+    void loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const override;
+
 protected:
     static void loadIndexGranularityImpl(
         MergeTreeIndexGranularity & index_granularity_, MergeTreeIndexGranularityInfo & index_granularity_info_,
         const IDataPartStorage & data_part_storage_, const std::string & any_column_file_name);
 
-private:
-    void checkConsistency(bool require_part_metadata) const override;
+    void doCheckConsistency(bool require_part_metadata) const override;
 
+private:
     /// Loads marks index granularity into memory
     void loadIndexGranularity() override;
 

@@ -14,7 +14,7 @@ ClickHouse предоставляет собственный клиент ком
 $ clickhouse-client
 ClickHouse client version 20.13.1.5273 (official build).
 Connecting to localhost:9000 as user default.
-Connected to ClickHouse server version 20.13.1 revision 54442.
+Connected to ClickHouse server version 20.13.1.
 
 :)
 ```
@@ -128,7 +128,7 @@ $ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="numbe
 -   `--port` — порт для подключения, по умолчанию — 9000. Обратите внимание: для HTTP-интерфейса и нативного интерфейса используются разные порты.
 -   `--user, -u` — имя пользователя, по умолчанию — ‘default’.
 -   `--password` — пароль, по умолчанию — пустая строка.
--   `--query, -q` — запрос для выполнения, при использовании в неинтерактивном режиме.
+-   `--query, -q` — запрос для выполнения, при использовании в неинтерактивном режиме. Допускается указание `--query` несколько раз (`--query "SELECT 1;" --query "SELECT 2;"...`).
 -   `--queries-file` - путь к файлу с запросами для выполнения. Необходимо указать только одну из опций: `query` или `queries-file`.
 -   `--database, -d` — выбрать текущую БД. Без указания значение берется из настроек сервера (по умолчанию — БД ‘default’).
 -   `--multiline, -m` — если указано — разрешить многострочные запросы, не отправлять запрос по нажатию Enter.
@@ -141,6 +141,7 @@ $ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="numbe
 -   `--secure` — если указано, будет использован безопасный канал.
 -   `--history_file` - путь к файлу с историей команд.
 -   `--param_<name>` — значение параметра для [запроса с параметрами](#cli-queries-with-parameters).
+-   `--jwt` – авторизация с использованием JSON Web Token. Доступно только в ClickHouse Cloud.
 
 Вместо параметров `--host`, `--port`, `--user` и `--password` клиент ClickHouse также поддерживает строки подключения (смотри следующий раздел).
 
@@ -177,11 +178,11 @@ URI позволяет подключаться к нескольким хост
 
 
 
-Строка подключения должна быть указана в первом аргументе clickhouse-client. Строка подключения может комбинироваться с другими [параметрами командной строки] (#command-line-options) кроме `--host/-h` и `--port`.
+Строка подключения должна быть указана в первом аргументе clickhouse-client. Строка подключения может комбинироваться с другими [параметрами командной строки](#command-line-options) кроме `--host/-h` и `--port`.
 
 Для компонента `query_parameter` разрешены следующие ключи:
 
-- `secure` или сокращенно `s` - без значение. Если параметр указан, то соединение с сервером будет осуществляться по защищенному каналу (TLS). См. `secure` в [command-line-options](#command-line-options).
+- `secure` или сокращенно `s` - без значения. Если параметр указан, то соединение с сервером будет осуществляться по защищенному каналу (TLS). См. `secure` в [command-line-options](#command-line-options).
 
 ### Кодирование URI {#connection_string_uri_percent_encoding}
 
@@ -206,7 +207,7 @@ clickhouse-client clickhouse://john:secret@127.0.0.1:9000
 clickhouse-client clickhouse://[::1]:9000
 ```
 
-Подключиться к localhost через порт 9000  многострочном режиме.
+Подключиться к localhost через порт 9000 в многострочном режиме.
 
 ``` bash
 clickhouse-client clickhouse://localhost:9000 '-m'

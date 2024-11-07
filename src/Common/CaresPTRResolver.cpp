@@ -153,7 +153,7 @@ namespace DB
                 {
                     continue;
                 }
-                else if (poll_error)
+                if (poll_error)
                 {
                     return false;
                 }
@@ -171,11 +171,6 @@ namespace DB
         }
 
         return true;
-    }
-
-    void CaresPTRResolver::cancel_requests(ares_channel channel)
-    {
-        ares_cancel(channel);
     }
 
     std::span<pollfd> CaresPTRResolver::get_readable_sockets(int * sockets, pollfd * pollfd, ares_channel channel)
@@ -223,7 +218,7 @@ namespace DB
 
     void CaresPTRResolver::process_possible_timeout(ares_channel channel)
     {
-        /* Call ares_process() unconditonally here, even if we simply timed out
+        /* Call ares_process() unconditionally here, even if we simply timed out
         above, as otherwise the ares name resolve won't timeout! */
         ares_process_fd(channel, ARES_SOCKET_BAD, ARES_SOCKET_BAD);
     }

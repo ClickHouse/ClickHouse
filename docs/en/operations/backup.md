@@ -22,7 +22,7 @@ description: In order to effectively mitigate possible human errors, you should 
   TEMPORARY TABLE table_name [AS table_name_in_backup] |
   VIEW view_name [AS view_name_in_backup]
   ALL TEMPORARY TABLES [EXCEPT ...] |
-  ALL DATABASES [EXCEPT ...] } [,...]
+  ALL [EXCEPT ...] } [,...]
   [ON CLUSTER 'cluster_name']
   TO|FROM File('<path>/<filename>') | Disk('<disk_name>', '<path>/') | S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>')
   [SETTINGS base_backup = File('<path>/<filename>') | Disk(...) | S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>')]
@@ -80,12 +80,16 @@ The BACKUP and RESTORE statements take a list of DATABASE and TABLE names, a des
 - ASYNC: backup or restore asynchronously
 - PARTITIONS: a list of partitions to restore
 - SETTINGS:
+    - `id`: id of backup or restore operation, randomly generated UUID is used, if not specified manually. If there is already running operation with the same `id` exception is thrown.
     - [`compression_method`](/docs/en/sql-reference/statements/create/table.md/#column-compression-codecs) and compression_level
     - `password` for the file on disk
     - `base_backup`: the destination of the previous backup of this source.  For example, `Disk('backups', '1.zip')`
+    - `use_same_s3_credentials_for_base_backup`: whether base backup to S3 should inherit credentials from the query. Only works with `S3`.
+    - `use_same_password_for_base_backup`: whether base backup archive should inherit the password from the query.
     - `structure_only`: if enabled, allows to only backup or restore the CREATE statements without the data of tables
     - `storage_policy`: storage policy for the tables being restored. See [Using Multiple Block Devices for Data Storage](../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes). This setting is only applicable to the `RESTORE` command. The specified storage policy applies only to tables with an engine from the `MergeTree` family.
     - `s3_storage_class`: the storage class used for S3 backup. For example, `STANDARD`
+    - `azure_attempt_to_create_container`: when using Azure Blob Storage, whether the specified container will try to be created if it doesn't exist. Default: true.
 
 ### Usage examples
 
@@ -167,6 +171,28 @@ RESTORE TABLE test.table PARTITIONS '2', '3'
   FROM Disk('backups', 'filename.zip')
 ```
 
+### Backups as tar archives
+
+Backups can also be stored as tar archives. The functionality is the same as for zip, except that a password is not supported.
+
+Write a backup as a tar:
+```
+BACKUP TABLE test.table TO Disk('backups', '1.tar')
+```
+
+Corresponding restore:
+```
+RESTORE TABLE test.table FROM Disk('backups', '1.tar')
+```
+
+To change the compression method, the correct file suffix should be appended to the backup name. I.E to compress the tar archive using gzip:
+```
+BACKUP TABLE test.table TO Disk('backups', '1.tar.gz')
+```
+
+The supported compression file suffixes are `tar.gz`, `.tgz` `tar.bz2`, `tar.lzma`, `.tar.zst`, `.tzst` and `.tar.xz`.
+
+
 ### Check the status of backups
 
 The backup command returns an `id` and `status`, and that `id` can be used to get the status of the backup.  This is very useful to check the progress of long ASYNC backups.  The example below shows a failure that happened when trying to overwrite an existing backup file:
@@ -206,6 +232,55 @@ end_time:          2022-08-30 09:21:46
 1 row in set. Elapsed: 0.002 sec.
 ```
 
+Along with `system.backups` table, all backup and restore operations are also tracked in the system log table [backup_log](../operations/system-tables/backup_log.md):
+```
+SELECT *
+FROM system.backup_log
+WHERE id = '7678b0b3-f519-4e6e-811f-5a0781a4eb52'
+ORDER BY event_time_microseconds ASC
+FORMAT Vertical
+```
+```response
+Row 1:
+──────
+event_date:              2023-08-18
+event_time_microseconds: 2023-08-18 11:13:43.097414
+id:                      7678b0b3-f519-4e6e-811f-5a0781a4eb52
+name:                    Disk('backups', '1.zip')
+status:                  CREATING_BACKUP
+error:
+start_time:              2023-08-18 11:13:43
+end_time:                1970-01-01 03:00:00
+num_files:               0
+total_size:              0
+num_entries:             0
+uncompressed_size:       0
+compressed_size:         0
+files_read:              0
+bytes_read:              0
+
+Row 2:
+──────
+event_date:              2023-08-18
+event_time_microseconds: 2023-08-18 11:13:43.174782
+id:                      7678b0b3-f519-4e6e-811f-5a0781a4eb52
+name:                    Disk('backups', '1.zip')
+status:                  BACKUP_FAILED
+#highlight-next-line
+error:                   Code: 598. DB::Exception: Backup Disk('backups', '1.zip') already exists. (BACKUP_ALREADY_EXISTS) (version 23.8.1.1)
+start_time:              2023-08-18 11:13:43
+end_time:                2023-08-18 11:13:43
+num_files:               0
+total_size:              0
+num_entries:             0
+uncompressed_size:       0
+compressed_size:         0
+files_read:              0
+bytes_read:              0
+
+2 rows in set. Elapsed: 0.075 sec.
+```
+
 ## Configuring BACKUP/RESTORE to use an S3 Endpoint
 
 To write backups to an S3 bucket you need three pieces of information:
@@ -222,7 +297,7 @@ Creating an S3 bucket is covered in [Use S3 Object Storage as a ClickHouse disk]
 
 The destination for a backup will be specified like this:
 ```
-S3('<S3 endpoint>/<directory>', '<Access key ID>', '<Secret access key>)
+S3('<S3 endpoint>/<directory>', '<Access key ID>', '<Secret access key>')
 ```
 
 ```sql
@@ -357,7 +432,7 @@ RESTORE TABLE data AS data_restored FROM Disk('s3_plain', 'cloud_backup');
 :::note
 But keep in mind that:
 - This disk should not be used for `MergeTree` itself, only for `BACKUP`/`RESTORE`
-- It has excessive API calls
+- If your tables are backed by S3 storage and types of the disks are different, it doesn't use `CopyObject` calls to copy parts to the destination bucket, instead, it downloads and uploads them, which is very inefficient. Prefer to use `BACKUP ... TO S3(<endpoint>)` syntax for this use-case.
 :::
 
 ## Alternatives
@@ -371,10 +446,6 @@ Often data that is ingested into ClickHouse is delivered through some sort of pe
 ### Filesystem Snapshots {#filesystem-snapshots}
 
 Some local filesystems provide snapshot functionality (for example, [ZFS](https://en.wikipedia.org/wiki/ZFS)), but they might not be the best choice for serving live queries. A possible solution is to create additional replicas with this kind of filesystem and exclude them from the [Distributed](../engines/table-engines/special/distributed.md) tables that are used for `SELECT` queries. Snapshots on such replicas will be out of reach of any queries that modify data. As a bonus, these replicas might have special hardware configurations with more disks attached per server, which would be cost-effective.
-
-### clickhouse-copier {#clickhouse-copier}
-
-[clickhouse-copier](../operations/utilities/clickhouse-copier.md) is a versatile tool that was initially created to re-shard petabyte-sized tables. It can also be used for backup and restore purposes because it reliably copies data between ClickHouse tables and clusters.
 
 For smaller volumes of data, a simple `INSERT INTO ... SELECT ...` to remote tables might work as well.
 
@@ -402,3 +473,24 @@ To disallow concurrent backup/restore, you can use these settings respectively.
 
 The default value for both is true, so by default concurrent backup/restores are allowed.
 When these settings are false on a cluster, only 1 backup/restore is allowed to run on a cluster at a time.
+
+## Configuring BACKUP/RESTORE to use an AzureBlobStorage Endpoint
+
+To write backups to an AzureBlobStorage container you need the following pieces of information:
+- AzureBlobStorage endpoint connection string / url,
+- Container,
+- Path,
+- Account name (if url is specified)
+- Account Key (if url is specified)
+
+The destination for a backup will be specified like this:
+```
+AzureBlobStorage('<connection string>/<url>', '<container>', '<path>', '<account name>', '<account key>')
+```
+
+```sql
+BACKUP TABLE data TO AzureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1/;',
+    'test_container', 'data_backup');
+RESTORE TABLE data AS data_restored FROM AzureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1/;',
+    'test_container', 'data_backup');
+```

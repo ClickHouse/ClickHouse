@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/sparkbar
-sidebar_position: 311
+sidebar_position: 187
 sidebar_label: sparkbar
 ---
 
@@ -59,4 +59,6 @@ Result:
 │ ▂▅▂▃▇▆█                                                                  │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
+
+The alias for this function is sparkBar.
 

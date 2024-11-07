@@ -1,4 +1,6 @@
 <test>
 	<query>SELECT COUNT(DISTINCT Title) FROM test.hits SETTINGS max_threads = 24</query>
+	<query>SELECT COUNT(DISTINCT Title) FROM test.hits SETTINGS max_threads = 56</query>
+	<query>SELECT COUNT(DISTINCT Title) FROM test.hits SETTINGS max_threads = 64</query>
 	<query>SELECT COUNT(DISTINCT Referer) FROM test.hits SETTINGS max_threads = 22</query>
 </test>

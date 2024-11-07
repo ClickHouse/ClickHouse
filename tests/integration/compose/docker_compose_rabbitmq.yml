@@ -1,0 +1,19 @@
+services:
+    rabbitmq1:
+        image: rabbitmq:4.0.2-alpine
+        hostname: rabbitmq1
+        environment:
+            RABBITMQ_FEATURE_FLAGS: feature_flags_v2,message_containers
+        expose:
+            - ${RABBITMQ_PORT:-5672}
+            - ${RABBITMQ_SECURE_PORT:-5671}
+        volumes:
+            - type: ${RABBITMQ_LOGS_FS:-tmpfs}
+              source: ${RABBITMQ_LOGS:-}
+              target: /rabbitmq_logs/
+            - "${RABBITMQ_COOKIE_FILE}:/var/lib/rabbitmq/.erlang.cookie"
+            - /misc/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf
+            - /misc/rabbitmq/ca-cert.pem:/etc/rabbitmq/ca-cert.pem
+            - /misc/rabbitmq/server-cert.pem:/etc/rabbitmq/server-cert.pem
+            - /misc/rabbitmq/server-key.pem:/etc/rabbitmq/server-key.pem
+            - /misc/rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins

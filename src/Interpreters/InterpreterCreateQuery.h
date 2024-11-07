@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Core/NamesAndAliases.h>
-#include <Core/SettingsEnums.h>
 #include <Access/Common/AccessRightsElement.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/IInterpreter.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ConstraintsDescription.h>
@@ -14,6 +14,7 @@ namespace DB
 {
 
 class ASTCreateQuery;
+class ASTColumnDeclaration;
 class ASTExpressionList;
 class ASTConstraintDeclaration;
 class ASTStorage;
@@ -66,14 +67,26 @@ public:
         need_ddl_guard = false;
     }
 
+    void setIsRestoreFromBackup(bool is_restore_from_backup_)
+    {
+        is_restore_from_backup = is_restore_from_backup_;
+    }
+
+    static DataTypePtr getColumnType(const ASTColumnDeclaration & col_decl, LoadingStrictnessLevel mode, bool make_columns_nullable);
+
     /// Obtain information about columns, their types, default values and column comments,
     ///  for case when columns in CREATE query is specified explicitly.
-    static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, ContextPtr context, bool attach);
-    static ConstraintsDescription getConstraintsDescription(const ASTExpressionList * constraints);
+    static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, ContextPtr context, LoadingStrictnessLevel mode, bool is_restore_from_backup = false);
+    static ConstraintsDescription
+    getConstraintsDescription(const ASTExpressionList * constraints, const ColumnsDescription & columns, ContextPtr local_context);
 
     static void prepareOnClusterQuery(ASTCreateQuery & create, ContextPtr context, const String & cluster_name);
 
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr) const override;
+
+    /// Check access right, validate definer statement and replace `CURRENT USER` with actual name.
+    static void processSQLSecurityOption(
+        ContextPtr context_, ASTSQLSecurity & sql_security, bool is_materialized_view = false, bool skip_check_permissions = false);
 
 private:
     struct TableProperties
@@ -82,20 +95,22 @@ private:
         IndicesDescription indices;
         ConstraintsDescription constraints;
         ProjectionsDescription projections;
+        bool columns_inferred_from_select_query = false;
     };
 
     BlockIO createDatabase(ASTCreateQuery & create);
     BlockIO createTable(ASTCreateQuery & create);
 
     /// Calculate list of columns, constraints, indices, etc... of table. Rewrite query in canonical way.
-    TableProperties getTablePropertiesAndNormalizeCreateQuery(ASTCreateQuery & create) const;
+    TableProperties getTablePropertiesAndNormalizeCreateQuery(ASTCreateQuery & create, LoadingStrictnessLevel mode) const;
     void validateTableStructure(const ASTCreateQuery & create, const TableProperties & properties) const;
+    void validateMaterializedViewColumnsAndEngine(const ASTCreateQuery & create, const TableProperties & properties, const DatabasePtr & database);
     void setEngine(ASTCreateQuery & create) const;
     AccessRightsElements getRequiredAccess() const;
 
     /// Create IStorage and add it to database. If table already exists and IF NOT EXISTS specified, do nothing and return false.
-    bool doCreateTable(ASTCreateQuery & create, const TableProperties & properties, DDLGuardPtr & ddl_guard);
-    BlockIO doCreateOrReplaceTable(ASTCreateQuery & create, const InterpreterCreateQuery::TableProperties & properties);
+    bool doCreateTable(ASTCreateQuery & create, const TableProperties & properties, DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode);
+    BlockIO doCreateOrReplaceTable(ASTCreateQuery & create, const InterpreterCreateQuery::TableProperties & properties, LoadingStrictnessLevel mode);
     /// Inserts data in created table if it's CREATE ... SELECT
     BlockIO fillTableIfNeeded(const ASTCreateQuery & create);
 
@@ -116,6 +131,7 @@ private:
     bool force_attach = false;
     bool load_database_without_tables = false;
     bool need_ddl_guard = true;
+    bool is_restore_from_backup = false;
 
     mutable String as_database_saved;
     mutable String as_table_saved;

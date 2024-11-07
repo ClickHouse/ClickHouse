@@ -2,9 +2,11 @@
 #include <Storages/Distributed/DistributedAsyncInsertHelpers.h>
 #include <Storages/Distributed/DistributedAsyncInsertHeader.h>
 #include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
+#include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/StorageDistributed.h>
 #include <QueryPipeline/RemoteInserter.h>
 #include <Common/CurrentMetrics.h>
+#include <base/defines.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromFile.h>
 
@@ -15,6 +17,15 @@ namespace CurrentMetrics
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool distributed_insert_skip_read_only_replicas;
+}
+
+namespace DistributedSetting
+{
+    extern const DistributedSettingsBool fsync_after_insert;
+}
 
 namespace ErrorCodes
 {
@@ -48,7 +59,7 @@ bool isSplittableErrorCode(int code, bool remote)
 DistributedAsyncInsertBatch::DistributedAsyncInsertBatch(DistributedAsyncInsertDirectoryQueue & parent_)
     : parent(parent_)
     , split_batch_on_failure(parent.split_batch_on_failure)
-    , fsync(parent.storage.getDistributedSettingsRef().fsync_after_insert)
+    , fsync(parent.storage.getDistributedSettingsRef()[DistributedSetting::fsync_after_insert])
     , dir_fsync(parent.dir_fsync)
 {}
 
@@ -59,7 +70,7 @@ bool DistributedAsyncInsertBatch::isEnoughSize() const
         || (parent.min_batched_block_size_bytes && total_bytes >= parent.min_batched_block_size_bytes);
 }
 
-void DistributedAsyncInsertBatch::send()
+void DistributedAsyncInsertBatch::send(const SettingsChanges & settings_changes)
 {
     if (files.empty())
         return;
@@ -83,14 +94,14 @@ void DistributedAsyncInsertBatch::send()
     {
         try
         {
-            sendBatch();
+            sendBatch(settings_changes);
         }
         catch (const Exception & e)
         {
             if (split_batch_on_failure && files.size() > 1 && isSplittableErrorCode(e.code(), e.isRemoteException()))
             {
                 tryLogCurrentException(parent.log, "Trying to split batch due to");
-                sendSeparateFiles();
+                sendSeparateFiles(settings_changes);
             }
             else
                 throw;
@@ -163,6 +174,22 @@ void DistributedAsyncInsertBatch::deserialize()
     readText(in);
 }
 
+bool DistributedAsyncInsertBatch::valid()
+{
+    chassert(!files.empty());
+
+    bool res = true;
+    for (const auto & file : files)
+    {
+        if (!fs::exists(file))
+        {
+            LOG_WARNING(parent.log, "File {} does not exist, likely due abnormal shutdown", file);
+            res = false;
+        }
+    }
+    return res;
+}
+
 void DistributedAsyncInsertBatch::writeText(WriteBuffer & out)
 {
     for (const auto & file : files)
@@ -179,17 +206,26 @@ void DistributedAsyncInsertBatch::readText(ReadBuffer & in)
         UInt64 idx;
         in >> idx >> "\n";
         files.push_back(std::filesystem::absolute(fmt::format("{}/{}.bin", parent.path, idx)).string());
+
+        ReadBufferFromFile header_buffer(files.back());
+        const DistributedAsyncInsertHeader & header = DistributedAsyncInsertHeader::read(header_buffer, parent.log);
+        total_bytes += total_bytes;
+
+        if (header.rows)
+        {
+            total_rows += header.rows;
+            total_bytes += header.bytes;
+        }
     }
 
     recovered = true;
 }
 
-void DistributedAsyncInsertBatch::sendBatch()
+void DistributedAsyncInsertBatch::sendBatch(const SettingsChanges & settings_changes)
 {
+    IConnectionPool::Entry connection;
     std::unique_ptr<RemoteInserter> remote;
     bool compression_expected = false;
-
-    IConnectionPool::Entry connection;
 
     /// Since the batch is sent as a whole (in case of failure, the whole batch
     /// will be repeated), we need to mark the whole batch as failed in case of
@@ -201,14 +237,6 @@ void DistributedAsyncInsertBatch::sendBatch()
     {
         for (const auto & file : files)
         {
-            /// In case of recovery it is possible that some of files will be
-            /// missing, if server had been restarted abnormally
-            if (recovered && !fs::exists(file))
-            {
-                LOG_WARNING(parent.log, "File {} does not exists, likely due abnormal shutdown", file);
-                continue;
-            }
-
             ReadBufferFromFile in(file);
             const auto & distributed_header = DistributedAsyncInsertHeader::read(in, parent.log);
 
@@ -219,8 +247,13 @@ void DistributedAsyncInsertBatch::sendBatch()
 
             if (!remote)
             {
-                auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(distributed_header.insert_settings);
-                connection = parent.pool->get(timeouts);
+                Settings insert_settings = distributed_header.insert_settings;
+                insert_settings.applyChanges(settings_changes);
+
+                auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
+                auto results = parent.pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, parent.storage.remote_storage.getQualifiedName());
+                auto result = parent.pool->getValidTryResult(results, insert_settings[Setting::distributed_insert_skip_read_only_replicas]);
+                connection = std::move(result.entry);
                 compression_expected = connection->getCompression() == Protocol::Compression::Enable;
 
                 LOG_DEBUG(parent.log, "Sending a batch of {} files to {} ({} rows, {} bytes).",
@@ -231,7 +264,7 @@ void DistributedAsyncInsertBatch::sendBatch()
 
                 remote = std::make_unique<RemoteInserter>(*connection, timeouts,
                     distributed_header.insert_query,
-                    distributed_header.insert_settings,
+                    insert_settings,
                     distributed_header.client_info);
             }
             writeRemoteConvert(distributed_header, *remote, compression_expected, in, parent.log);
@@ -255,7 +288,7 @@ void DistributedAsyncInsertBatch::sendBatch()
     }
 }
 
-void DistributedAsyncInsertBatch::sendSeparateFiles()
+void DistributedAsyncInsertBatch::sendSeparateFiles(const SettingsChanges & settings_changes)
 {
     size_t broken_files = 0;
 
@@ -268,18 +301,23 @@ void DistributedAsyncInsertBatch::sendSeparateFiles()
             ReadBufferFromFile in(file);
             const auto & distributed_header = DistributedAsyncInsertHeader::read(in, parent.log);
 
+            Settings insert_settings = distributed_header.insert_settings;
+            insert_settings.applyChanges(settings_changes);
+
             // This function is called in a separated thread, so we set up the trace context from the file
             trace_context = distributed_header.createTracingContextHolder(
                 __PRETTY_FUNCTION__,
                 parent.storage.getContext()->getOpenTelemetrySpanLog());
 
-            auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(distributed_header.insert_settings);
-            auto connection = parent.pool->get(timeouts);
+            auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
+            auto results = parent.pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, parent.storage.remote_storage.getQualifiedName());
+            auto result = parent.pool->getValidTryResult(results, insert_settings[Setting::distributed_insert_skip_read_only_replicas]);
+            auto connection = std::move(result.entry);
             bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
 
             RemoteInserter remote(*connection, timeouts,
                 distributed_header.insert_query,
-                distributed_header.insert_settings,
+                insert_settings,
                 distributed_header.client_info);
 
             writeRemoteConvert(distributed_header, remote, compression_expected, in, parent.log);

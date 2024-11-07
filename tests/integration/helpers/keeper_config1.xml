@@ -9,10 +9,16 @@
         <errorlog>/var/log/clickhouse-keeper/clickhouse-keeper.err.log</errorlog>
     </logger>
 
+    <placement>
+        <use_imds>0</use_imds>
+        <availability_zone>az-zoo1</availability_zone>
+    </placement>
+
     <keeper_server>
         <tcp_port>2181</tcp_port>
         <server_id>1</server_id>
 
+        <digest_enabled>1</digest_enabled>
         <coordination_settings>
             <operation_timeout_ms>10000</operation_timeout_ms>
             <session_timeout_ms>15000</session_timeout_ms>
@@ -20,6 +26,9 @@
             <force_sync>false</force_sync>
             <election_timeout_lower_bound_ms>2000</election_timeout_lower_bound_ms>
             <election_timeout_upper_bound_ms>4000</election_timeout_upper_bound_ms>
+
+            <async_replication>1</async_replication>
+            <use_xid_64>1</use_xid_64>
         </coordination_settings>
 
         <raft_configuration>

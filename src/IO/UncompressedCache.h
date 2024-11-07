@@ -33,6 +33,7 @@ struct UncompressedSizeWeightFunction
     }
 };
 
+extern template class CacheBase<UInt128, UncompressedCacheCell, UInt128TrivialHash, UncompressedSizeWeightFunction>;
 
 /** Cache of decompressed blocks for implementation of CachedCompressedReadBuffer. thread-safe.
   */
@@ -42,8 +43,7 @@ private:
     using Base = CacheBase<UInt128, UncompressedCacheCell, UInt128TrivialHash, UncompressedSizeWeightFunction>;
 
 public:
-    UncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
-        : Base(cache_policy, max_size_in_bytes, 0, size_ratio) {}
+    UncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
 
     /// Calculate key from path to file and offset.
     static UInt128 hash(const String & path_to_file, size_t offset)

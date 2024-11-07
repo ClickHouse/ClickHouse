@@ -2,19 +2,20 @@
 
 #if USE_ODBC
 
+#include <Core/NamesAndTypes.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ParserQueryWithOutput.h>
-#include <Parsers/parseQuery.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/NumberParser.h>
+#include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
-#include <base/scope_guard.h>
 #include <Common/BridgeProtocolVersion.h>
 #include <Common/quoteString.h>
 #include "getIdentifierQuote.h"
@@ -27,6 +28,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 odbc_bridge_connection_pool_size;
+}
 
 namespace ErrorCodes
 {
@@ -69,7 +74,7 @@ namespace
 }
 
 
-void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
+void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
 {
     HTMLForm params(getContext()->getSettingsRef(), request, request.getStream());
     LOG_TRACE(log, "Request URI: {}", request.getURI());
@@ -78,7 +83,7 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
         if (!response.sent())
-            *response.send() << message << std::endl;
+            *response.send() << message << '\n';
         LOG_WARNING(log, fmt::runtime(message));
     };
 
@@ -129,8 +134,7 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
         const bool external_table_functions_use_nulls = Poco::NumberParser::parseBool(params.get("external_table_functions_use_nulls", "false"));
 
         auto connection_holder = ODBCPooledConnectionFactory::instance().get(
-                validateODBCConnectionString(connection_string),
-                getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
+            validateODBCConnectionString(connection_string), getContext()->getSettingsRef()[Setting::odbc_bridge_connection_pool_size]);
 
         /// In XDBC tables it is allowed to pass either database_name or schema_name in table definion, but not both of them.
         /// They both are passed as 'schema' parameter in request URL, so it is not clear whether it is database_name or schema_name passed.
@@ -145,6 +149,10 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
             if (tables.next())
             {
                 catalog_name = tables.table_catalog();
+                /// `tables.next()` call is mandatory to drain the iterator before next operation and avoid "Invalid cursor state"
+                if (tables.next())
+                    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Driver returned more than one table for '{}': '{}' and '{}'",
+                                    table_name, catalog_name, tables.table_schema());
                 LOG_TRACE(log, "Will fetch info for table '{}.{}'", catalog_name, table_name);
                 return catalog.find_columns(/* column = */ "", table_name, /* schema = */ "", catalog_name);
             }
@@ -153,6 +161,10 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
             if (tables.next())
             {
                 catalog_name = tables.table_catalog();
+                /// `tables.next()` call is mandatory to drain the iterator before next operation and avoid "Invalid cursor state"
+                if (tables.next())
+                    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Driver returned more than one table for '{}': '{}' and '{}'",
+                                    table_name, catalog_name, tables.table_schema());
                 LOG_TRACE(log, "Will fetch info for table '{}.{}.{}'", catalog_name, schema_name, table_name);
                 return catalog.find_columns(/* column = */ "", table_name, schema_name, catalog_name);
             }
@@ -194,10 +206,7 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
         if (columns.empty())
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "Columns definition was not returned");
 
-        WriteBufferFromHTTPServerResponse out(
-            response,
-            request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD,
-            keep_alive_timeout);
+        WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD);
         try
         {
             writeStringBinary(columns.toString(), out);

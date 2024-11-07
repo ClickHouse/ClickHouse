@@ -49,8 +49,13 @@ public:
                 throw Exception(
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Illegal type {} of argument {} of function {}. Must be Float64",
-                        arg->getName(), i, getName());
+                        arg->getName(), i + 1, getName());
         }
+        return std::make_shared<DataTypeFloat64>();
+    }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
         return std::make_shared<DataTypeFloat64>();
     }
 

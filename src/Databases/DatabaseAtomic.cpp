@@ -1,22 +1,34 @@
+#include <filesystem>
+#include <base/isSharedPtrUnique.h>
 #include <Databases/DatabaseAtomic.h>
+#include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseReplicated.h>
+#include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ReadBufferFromFile.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
 #include <Parsers/formatAST.h>
+#include <Storages/StorageMaterializedView.h>
+#include <Common/logger_useful.h>
+#include <Common/PoolId.h>
 #include <Common/atomicRename.h>
 #include <Common/filesystemHelpers.h>
-#include <Storages/StorageMaterializedView.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/ExternalDictionariesLoader.h>
-#include <filesystem>
-#include <Interpreters/DDLTask.h>
+#include <Core/Settings.h>
 
 namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool check_referential_table_dependencies;
+    extern const SettingsBool check_table_dependencies;
+}
+
 namespace ErrorCodes
 {
     extern const int UNKNOWN_TABLE;
@@ -28,13 +40,16 @@ namespace ErrorCodes
     extern const int FILE_ALREADY_EXISTS;
     extern const int INCORRECT_QUERY;
     extern const int ABORTED;
+    extern const int LOGICAL_ERROR;
 }
 
 class AtomicDatabaseTablesSnapshotIterator final : public DatabaseTablesSnapshotIterator
 {
 public:
-    explicit AtomicDatabaseTablesSnapshotIterator(DatabaseTablesSnapshotIterator && base)
-        : DatabaseTablesSnapshotIterator(std::move(base)) {}
+    explicit AtomicDatabaseTablesSnapshotIterator(DatabaseTablesSnapshotIterator && base) noexcept
+        : DatabaseTablesSnapshotIterator(std::move(base))
+    {
+    }
     UUID uuid() const override { return table()->getStorageID().uuid; }
 };
 
@@ -74,17 +89,18 @@ String DatabaseAtomic::getTableDataPath(const ASTCreateQuery & query) const
 
 void DatabaseAtomic::drop(ContextPtr)
 {
+    waitDatabaseStarted();
     assert(TSA_SUPPRESS_WARNING_FOR_READ(tables).empty());
     try
     {
-        fs::remove(path_to_metadata_symlink);
-        fs::remove_all(path_to_table_symlinks);
+        (void)fs::remove(path_to_metadata_symlink);
+        (void)fs::remove_all(path_to_table_symlinks);
     }
     catch (...)
     {
         LOG_WARNING(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true));
     }
-    fs::remove_all(getMetadataPath());
+    (void)fs::remove_all(getMetadataPath());
 }
 
 void DatabaseAtomic::attachTable(ContextPtr /* context_ */, const String & name, const StoragePtr & table, const String & relative_table_path)
@@ -101,17 +117,30 @@ void DatabaseAtomic::attachTable(ContextPtr /* context_ */, const String & name,
 
 StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & name)
 {
+    // it is important to call the destructors of not_in_use without
+    // locked mutex to avoid potential deadlock.
     DetachedTables not_in_use;
-    std::lock_guard lock(mutex);
-    auto table = DatabaseOrdinary::detachTableUnlocked(name);
-    table_name_to_path.erase(name);
-    detached_tables.emplace(table->getStorageID().uuid, table);
-    not_in_use = cleanupDetachedTables();
-    return table;
+    StoragePtr detached_table;
+    {
+        std::lock_guard lock(mutex);
+        detached_table = DatabaseOrdinary::detachTableUnlocked(name);
+        table_name_to_path.erase(name);
+        detached_tables.emplace(detached_table->getStorageID().uuid, detached_table);
+        not_in_use = cleanupDetachedTables();
+    }
+
+    if (!not_in_use.empty())
+    {
+        not_in_use.clear();
+        LOG_DEBUG(log, "Finished removing not used detached tables");
+    }
+
+    return detached_table;
 }
 
 void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_name, bool sync)
 {
+    waitDatabaseStarted();
     auto table = tryGetTable(table_name, local_context);
     /// Remove the inner table (if any) to avoid deadlock
     /// (due to attempt to execute DROP from the worker thread)
@@ -132,6 +161,9 @@ void DatabaseAtomic::dropTableImpl(ContextPtr local_context, const String & tabl
         std::lock_guard lock(mutex);
         table = getTableUnlocked(table_name);
         table_metadata_path_drop = DatabaseCatalog::instance().getPathForDroppedMetadata(table->getStorageID());
+
+        fs::create_directory(fs::path(table_metadata_path_drop).parent_path());
+
         auto txn = local_context->getZooKeeperMetadataTransaction();
         if (txn && !local_context->isInternalSubquery())
             txn->commit();      /// Commit point (a sort of) for Replicated database
@@ -172,8 +204,11 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Moving tables between databases of different engines is not supported");
     }
 
-    if (exchange && !supportsAtomicRename())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "RENAME EXCHANGE is not supported");
+    std::string message;
+    if (exchange && !supportsAtomicRename(&message))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "RENAME EXCHANGE is not supported because exchanging files is not supported by the OS ({})", message);
+
+    waitDatabaseStarted();
 
     auto & other_db = dynamic_cast<DatabaseAtomic &>(to_database);
     bool inside_database = this == &other_db;
@@ -203,7 +238,7 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
             return;
         db.table_name_to_path.emplace(table_name_, table_data_path_);
         if (table_->storesDataOnDisk())
-            db.tryCreateSymlink(table_name_, table_data_path_);
+            db.tryCreateSymlink(table_);
     };
 
     auto assert_can_move_mat_view = [inside_database](const StoragePtr & table_)
@@ -325,18 +360,22 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
     }
     catch (...)
     {
-        fs::remove(table_metadata_tmp_path);
+        (void)fs::remove(table_metadata_tmp_path);
         throw;
     }
     if (table->storesDataOnDisk())
-        tryCreateSymlink(query.getTable(), table_data_path);
+        tryCreateSymlink(table);
 }
 
 void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path,
                                       const String & /*statement*/, ContextPtr query_context)
 {
     bool check_file_exists = true;
-    SCOPE_EXIT({ std::error_code code; if (check_file_exists) std::filesystem::remove(table_metadata_tmp_path, code); });
+    SCOPE_EXIT({
+        std::error_code code;
+        if (check_file_exists)
+            (void)std::filesystem::remove(table_metadata_tmp_path, code);
+    });
 
     std::lock_guard lock{mutex};
     auto actual_table_id = getTableUnlocked(table_id.table_name)->getStorageID();
@@ -379,9 +418,10 @@ DatabaseAtomic::DetachedTables DatabaseAtomic::cleanupDetachedTables()
 {
     DetachedTables not_in_use;
     auto it = detached_tables.begin();
+    LOG_DEBUG(log, "There are {} detached tables. Start searching non used tables.", detached_tables.size());
     while (it != detached_tables.end())
     {
-        if (it->second.unique())
+        if (isSharedPtrUnique(it->second))
         {
             not_in_use.emplace(it->first, it->second);
             it = detached_tables.erase(it);
@@ -389,6 +429,7 @@ DatabaseAtomic::DetachedTables DatabaseAtomic::cleanupDetachedTables()
         else
             ++it;
     }
+    LOG_DEBUG(log, "Found {} non used tables in detached tables.", not_in_use.size());
     /// It should be destroyed in caller with released database mutex
     return not_in_use;
 }
@@ -410,9 +451,9 @@ void DatabaseAtomic::assertCanBeDetached(bool cleanup)
 }
 
 DatabaseTablesIteratorPtr
-DatabaseAtomic::getTablesIterator(ContextPtr local_context, const IDatabase::FilterByNameFunction & filter_by_table_name) const
+DatabaseAtomic::getTablesIterator(ContextPtr local_context, const IDatabase::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const
 {
-    auto base_iter = DatabaseWithOwnTablesBase::getTablesIterator(local_context, filter_by_table_name);
+    auto base_iter = DatabaseOrdinary::getTablesIterator(local_context, filter_by_table_name, skip_not_loaded);
     return std::make_unique<AtomicDatabaseTablesSnapshotIterator>(std::move(typeid_cast<DatabaseTablesSnapshotIterator &>(*base_iter)));
 }
 
@@ -437,40 +478,78 @@ void DatabaseAtomic::beforeLoadingMetadata(ContextMutablePtr /*context*/, Loadin
                 "'{}' is not a symlink. Atomic database should contains only symlinks.", std::string(table_path.path()));
         }
 
-        fs::remove(table_path);
+        (void)fs::remove(table_path);
     }
 }
 
-void DatabaseAtomic::loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel mode)
+LoadTaskPtr DatabaseAtomic::startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode)
 {
-    beforeLoadingMetadata(local_context, mode);
-    DatabaseOrdinary::loadStoredObjects(local_context, mode);
+    auto base = DatabaseOrdinary::startupDatabaseAsync(async_loader, std::move(startup_after), mode);
+    auto job = makeLoadJob(
+        base->goals(),
+        TablesLoaderBackgroundStartupPoolId,
+        fmt::format("startup Atomic database {}", getDatabaseName()),
+        [this, mode] (AsyncLoader &, const LoadJobPtr &)
+        {
+            if (mode < LoadingStrictnessLevel::FORCE_RESTORE)
+                return;
+            NameToPathMap table_names;
+            {
+                std::lock_guard lock{mutex};
+                table_names = table_name_to_path;
+            }
+
+            fs::create_directories(path_to_table_symlinks);
+            for (const auto & table : table_names)
+            {
+                /// All tables in database should be loaded at this point
+                StoragePtr table_ptr = tryGetTable(table.first, getContext());
+                if (table_ptr)
+                {
+                    if (table_ptr->storesDataOnDisk())
+                        tryCreateSymlink(table_ptr, true);
+                }
+                else
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} is not loaded before database startup", table.first);
+            }
+        });
+    std::scoped_lock lock(mutex);
+    return startup_atomic_database_task = makeLoadTask(async_loader, {job});
 }
 
-void DatabaseAtomic::startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel mode)
+void DatabaseAtomic::waitDatabaseStarted() const
 {
-    DatabaseOrdinary::startupTables(thread_pool, mode);
-
-    if (mode < LoadingStrictnessLevel::FORCE_RESTORE)
-        return;
-
-    NameToPathMap table_names;
+    LoadTaskPtr task;
     {
-        std::lock_guard lock{mutex};
-        table_names = table_name_to_path;
+        std::scoped_lock lock(mutex);
+        task = startup_atomic_database_task;
     }
-
-    fs::create_directories(path_to_table_symlinks);
-    for (const auto & table : table_names)
-        tryCreateSymlink(table.first, table.second, true);
+    if (task)
+        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), task, false);
 }
 
-void DatabaseAtomic::tryCreateSymlink(const String & table_name, const String & actual_data_path, bool if_data_path_exist)
+void DatabaseAtomic::stopLoading()
+{
+    LoadTaskPtr stop_atomic_database;
+    {
+        std::scoped_lock lock(mutex);
+        stop_atomic_database.swap(startup_atomic_database_task);
+    }
+    stop_atomic_database.reset();
+    DatabaseOrdinary::stopLoading();
+}
+
+void DatabaseAtomic::tryCreateSymlink(const StoragePtr & table, bool if_data_path_exist)
 {
     try
     {
+        String table_name = table->getStorageID().getTableName();
+
+        if (!table->storesDataOnDisk())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} doesn't have data path to create symlink", table_name);
+
         String link = path_to_table_symlinks + escapeForFileName(table_name);
-        fs::path data = fs::canonical(getContext()->getPath()) / actual_data_path;
+        fs::path data = fs::weakly_canonical(table->getDataPaths()[0]);
 
         /// If it already points where needed.
         std::error_code ec;
@@ -493,7 +572,7 @@ void DatabaseAtomic::tryRemoveSymlink(const String & table_name)
     try
     {
         String path = path_to_table_symlinks + escapeForFileName(table_name);
-        fs::remove(path);
+        (void)fs::remove(path);
     }
     catch (...)
     {
@@ -518,7 +597,7 @@ void DatabaseAtomic::tryCreateMetadataSymlink()
         {
             /// fs::exists could return false for broken symlink
             if (FS::isSymlinkNoThrow(metadata_symlink))
-                fs::remove(metadata_symlink);
+                (void)fs::remove(metadata_symlink);
             fs::create_directory_symlink(metadata_path, path_to_metadata_symlink);
         }
         catch (...)
@@ -532,8 +611,10 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
 {
     /// CREATE, ATTACH, DROP, DETACH and RENAME DATABASE must hold DDLGuard
 
-    bool check_ref_deps = query_context->getSettingsRef().check_referential_table_dependencies;
-    bool check_loading_deps = !check_ref_deps && query_context->getSettingsRef().check_table_dependencies;
+    waitDatabaseStarted();
+
+    bool check_ref_deps = query_context->getSettingsRef()[Setting::check_referential_table_dependencies];
+    bool check_loading_deps = !check_ref_deps && query_context->getSettingsRef()[Setting::check_table_dependencies];
     if (check_ref_deps || check_loading_deps)
     {
         std::lock_guard lock(mutex);
@@ -543,7 +624,7 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
 
     try
     {
-        fs::remove(path_to_metadata_symlink);
+        (void)fs::remove(path_to_metadata_symlink);
     }
     catch (...)
     {
@@ -609,4 +690,16 @@ void DatabaseAtomic::checkDetachedTableNotInUse(const UUID & uuid)
     assertDetachedTableNotInUse(uuid);
 }
 
+void registerDatabaseAtomic(DatabaseFactory & factory)
+{
+    auto create_fn = [](const DatabaseFactory::Arguments & args)
+    {
+        return make_shared<DatabaseAtomic>(
+            args.database_name,
+            args.metadata_path,
+            args.uuid,
+            args.context);
+    };
+    factory.registerDatabase("Atomic", create_fn);
+}
 }

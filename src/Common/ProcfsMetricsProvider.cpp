@@ -37,18 +37,15 @@ namespace
 {
 [[noreturn]] inline void throwWithFailedToOpenFile(const std::string & filename)
 {
-    throwFromErrno(
-            "Cannot open file " + filename,
-            errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
+    ErrnoException::throwFromPath(
+        errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE, filename, "Cannot open file {}", filename);
 }
 
 inline void emitErrorMsgWithFailedToCloseFile(const std::string & filename)
 {
     try
     {
-        throwFromErrno(
-                "File descriptor for \"" + filename + "\" could not be closed. "
-                "Something seems to have gone wrong. Inspect errno.", ErrorCodes::CANNOT_CLOSE_FILE);
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_CLOSE_FILE, filename, "File descriptor for {} could not be closed", filename);
     }
     catch (const ErrnoException &)
     {
@@ -69,9 +66,7 @@ ssize_t readFromFD(const int fd, const char * filename, char * buf, size_t buf_s
             if (errno == EINTR)
                 continue;
 
-            throwFromErrno(
-                    "Cannot read from file " + std::string(filename),
-                    ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, filename, "Cannot read from file {}", filename);
         }
 
         assert(res >= 0);
@@ -103,7 +98,7 @@ ProcfsMetricsProvider::ProcfsMetricsProvider(pid_t /*tid*/)
     thread_stat_fd = ::open(thread_stat, O_RDONLY | O_CLOEXEC);
     if (-1 == thread_stat_fd)
     {
-        int err = ::close(thread_schedstat_fd);
+        [[maybe_unused]] int err = ::close(thread_schedstat_fd);
         chassert(!err || errno == EINTR);
         throwWithFailedToOpenFile(thread_stat);
     }

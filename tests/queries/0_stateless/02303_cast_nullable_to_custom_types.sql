@@ -22,3 +22,9 @@ select toIPv6(number % 2 ? '0000:0000:0000:0000:0000:0000:0000:0000' : NULL) fro
 select toIPv6OrDefault(number % 2 ? '' : NULL) from numbers(2);
 select toIPv6OrNull(number % 2 ? '' : NULL) from numbers(2);
 select IPv6StringToNum(number % 2 ? '0000:0000:0000:0000:0000:0000:0000:0000' : NULL) from numbers(2);
+
+select 'fuzzer issue';
+SELECT CAST(if(number % 2, 'truetrue', NULL), 'Nullable(Bool)') FROM numbers(2); -- {serverError CANNOT_PARSE_BOOL}
+SELECT CAST(if(number % 2, 'falsefalse', NULL), 'Nullable(Bool)') FROM numbers(2); -- {serverError CANNOT_PARSE_BOOL}
+SELECT accurateCastOrNull(if(number % 2, NULL, 'truex'), 'Bool') FROM numbers(4);
+SELECT accurateCastOrNull(if(number % 2, 'truex', NULL), 'Bool') FROM numbers(4);

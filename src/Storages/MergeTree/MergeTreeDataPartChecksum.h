@@ -32,7 +32,7 @@ struct MergeTreeDataPartChecksum
         : file_size(file_size_), file_hash(file_hash_), is_compressed(true),
         uncompressed_size(uncompressed_size_), uncompressed_hash(uncompressed_hash_) {}
 
-    void checkEqual(const MergeTreeDataPartChecksum & rhs, bool have_uncompressed, const String & name) const;
+    void checkEqual(const MergeTreeDataPartChecksum & rhs, bool have_uncompressed, const String & name, const String & part_name) const;
     void checkSize(const IDataPartStorage & storage, const String & name) const;
 };
 
@@ -54,17 +54,16 @@ struct MergeTreeDataPartChecksums
 
     bool has(const String & file_name) const { return files.find(file_name) != files.end(); }
 
+    bool remove(const String & file_name) { return files.erase(file_name); }
+
     bool empty() const { return files.empty(); }
 
     /// Checks that the set of columns and their checksums are the same. If not, throws an exception.
     /// If have_uncompressed, for compressed files it compares the checksums of the decompressed data.
     /// Otherwise, it compares only the checksums of the files.
-    void checkEqual(const MergeTreeDataPartChecksums & rhs, bool have_uncompressed) const;
+    void checkEqual(const MergeTreeDataPartChecksums & rhs, bool have_uncompressed, const String & part_name) const;
 
     static bool isBadChecksumsErrorCode(int code);
-
-    /// Checks that the directory contains all the needed files of the correct size. Does not check the checksum.
-    void checkSizes(const IDataPartStorage & storage) const;
 
     /// Returns false if the checksum is too old.
     bool read(ReadBuffer & in);
@@ -88,8 +87,8 @@ struct MergeTreeDataPartChecksums
     static MergeTreeDataPartChecksums deserializeFrom(const String & s);
 
     UInt64 getTotalSizeOnDisk() const;
+    UInt64 getTotalSizeUncompressedOnDisk() const;
 };
-
 
 /// A kind of MergeTreeDataPartChecksums intended to be stored in ZooKeeper (to save its RAM)
 /// MinimalisticDataPartChecksums and MergeTreeDataPartChecksums have the same serialization format
@@ -130,8 +129,8 @@ struct MinimalisticDataPartChecksums
     String getSerializedString() const;
     static String getSerializedString(const MergeTreeDataPartChecksums & full_checksums, bool minimalistic);
 
-    void checkEqual(const MinimalisticDataPartChecksums & rhs, bool check_uncompressed_hash_in_compressed_files) const;
-    void checkEqual(const MergeTreeDataPartChecksums & rhs, bool check_uncompressed_hash_in_compressed_files) const;
+    void checkEqual(const MinimalisticDataPartChecksums & rhs, bool check_uncompressed_hash_in_compressed_files, const String & part_name) const;
+    void checkEqual(const MergeTreeDataPartChecksums & rhs, bool check_uncompressed_hash_in_compressed_files, const String & part_name) const;
     void checkEqualImpl(const MinimalisticDataPartChecksums & rhs, bool check_uncompressed_hash_in_compressed_files) const;
 };
 

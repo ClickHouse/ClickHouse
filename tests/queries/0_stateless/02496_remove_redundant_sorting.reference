@@ -7,7 +7,7 @@ Expression (Projection)
         Expression ((Before ORDER BY + Projection))
           Sorting (Sorting for ORDER BY)
             Expression (Before ORDER BY)
-              ReadFromStorage (SystemNumbers)
+              ReadFromSystemNumbers
 -- Enabled query_plan_remove_redundant_sorting
 -- ORDER BY removes ORDER BY clauses in subqueries
 -- query
@@ -28,7 +28,7 @@ ORDER BY number ASC
 Expression (Projection)
   Sorting (Sorting for ORDER BY)
     Expression ((Before ORDER BY + (Projection + (Before ORDER BY + (Projection + Before ORDER BY)))))
-      ReadFromStorage (SystemNumbers)
+      ReadFromSystemNumbers
 -- execute
 0
 1
@@ -55,7 +55,7 @@ Expression (Projection)
       Filling
         Sorting (Sorting for ORDER BY)
           Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
-            ReadFromStorage (SystemNumbers)
+            ReadFromSystemNumbers
 -- execute
 0
 1
@@ -84,7 +84,7 @@ Expression (Projection)
         Expression (Before LIMIT BY)
           Sorting (Sorting for ORDER BY)
             Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
-              ReadFromStorage (SystemNumbers)
+              ReadFromSystemNumbers
 -- execute
 0
 1
@@ -113,27 +113,26 @@ FROM
     )
     ORDER BY number DESC
 ) AS t2
+ORDER BY t1.number, t2.number
 -- explain
-Expression ((Projection + Before ORDER BY))
-  Join (JOIN FillRightFirst)
-    Expression ((Before JOIN + Projection))
-      Sorting (Sorting for ORDER BY)
-        Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
-          ReadFromStorage (SystemNumbers)
-    Expression ((Joined actions + (Rename joined columns + Projection)))
-      Sorting (Sorting for ORDER BY)
-        Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
-          ReadFromStorage (SystemNumbers)
+Expression (Projection)
+  Sorting (Sorting for ORDER BY)
+    Expression (Before ORDER BY)
+      Join (JOIN FillRightFirst)
+        Expression ((Before JOIN + (Projection + (Before ORDER BY + (Projection + Before ORDER BY)))))
+          ReadFromSystemNumbers
+        Expression ((Joined actions + (Rename joined columns + (Projection + (Before ORDER BY + (Projection + Before ORDER BY))))))
+          ReadFromSystemNumbers
 -- execute
-0	2
-0	1
 0	0
-1	2
-1	1
+0	1
+0	2
 1	0
-2	2
-2	1
+1	1
+1	2
 2	0
+2	1
+2	2
 -- CROSS JOIN with subqueries, ORDER BY in main query -> all ORDER BY clauses will be removed in subqueries
 -- query
 SELECT *
@@ -165,9 +164,9 @@ Expression (Projection)
     Expression (Before ORDER BY)
       Join (JOIN FillRightFirst)
         Expression ((Before JOIN + (Projection + (Before ORDER BY + (Projection + Before ORDER BY)))))
-          ReadFromStorage (SystemNumbers)
+          ReadFromSystemNumbers
         Expression ((Joined actions + (Rename joined columns + (Projection + (Before ORDER BY + (Projection + Before ORDER BY))))))
-          ReadFromStorage (SystemNumbers)
+          ReadFromSystemNumbers
 -- execute
 0	0
 0	1
@@ -193,15 +192,18 @@ FROM
     ORDER BY number DESC
 )
 GROUP BY number
+ORDER BY number
 -- explain
-Expression ((Projection + Before ORDER BY))
-  Aggregating
-    Expression ((Before GROUP BY + (Projection + (Before ORDER BY + (Projection + Before ORDER BY)))))
-      ReadFromStorage (SystemNumbers)
+Expression (Projection)
+  Sorting (Sorting for ORDER BY)
+    Expression (Before ORDER BY)
+      Aggregating
+        Expression ((Before GROUP BY + (Projection + (Before ORDER BY + (Projection + Before ORDER BY)))))
+          ReadFromSystemNumbers
 -- execute
 0
-2
 1
+2
 -- GROUP BY with aggregation function which depends on order -> keep ORDER BY in first subquery, and eliminate in second subquery
 -- query
 SELECT any(number)
@@ -217,15 +219,21 @@ FROM
     ORDER BY number DESC
 )
 GROUP BY number
+ORDER BY number
+SETTINGS optimize_aggregators_of_group_by_keys=0 -- avoid removing any() as it depends on order and we need it for the test
 -- explain
-Expression ((Projection + Before ORDER BY))
-  Aggregating
-    Expression ((Before GROUP BY + (Projection + (Before ORDER BY + (Projection + Before ORDER BY)))))
-      ReadFromStorage (SystemNumbers)
+Expression (Projection)
+  Sorting (Sorting for ORDER BY)
+    Expression (Before ORDER BY)
+      Aggregating
+        Expression ((Before GROUP BY + Projection))
+          Sorting (Sorting for ORDER BY)
+            Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
+              ReadFromSystemNumbers
 -- execute
 0
-2
 1
+2
 -- query with aggregation function but w/o GROUP BY -> remove sorting
 -- query
 SELECT sum(number)
@@ -239,7 +247,7 @@ FROM
 Expression ((Projection + Before ORDER BY))
   Aggregating
     Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
-      ReadFromStorage (SystemNumbers)
+      ReadFromSystemNumbers
 -- execute
 45
 -- check that optimization is applied recursively to subqueries as well
@@ -264,7 +272,7 @@ Expression (Projection)
     Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
       Aggregating
         Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
-          ReadFromStorage (SystemNumbers)
+          ReadFromSystemNumbers
 -- execute
 0
 1
@@ -284,13 +292,16 @@ FROM
     GROUP BY number
 )
 ORDER BY a ASC
+SETTINGS optimize_aggregators_of_group_by_keys=0 -- avoid removing any() as it depends on order and we need it for the test
 -- explain
 Expression (Projection)
   Sorting (Sorting for ORDER BY)
     Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
       Aggregating
-        Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
-          ReadFromStorage (SystemNumbers)
+        Expression ((Before GROUP BY + Projection))
+          Sorting (Sorting for ORDER BY)
+            Expression (Before ORDER BY)
+              ReadFromSystemNumbers
 -- execute
 0
 1
@@ -315,15 +326,22 @@ FROM
     GROUP BY number
 )
 WHERE a > 0
+ORDER BY a
+SETTINGS optimize_aggregators_of_group_by_keys=0 -- avoid removing any() as it depends on order and we need it for the test
 -- explain
-Expression ((Projection + (Before ORDER BY + )))
-  Aggregating
-    Filter
-      Filter (( + (Before GROUP BY + (Projection + (Before ORDER BY + (Projection + Before ORDER BY))))))
-        ReadFromStorage (SystemNumbers)
+Expression (Projection)
+  Sorting (Sorting for ORDER BY)
+    Expression (Before ORDER BY)
+      Filter ((WHERE + (Projection + Before ORDER BY)))
+        Filter (HAVING)
+          Aggregating
+            Expression ((Before GROUP BY + Projection))
+              Sorting (Sorting for ORDER BY)
+                Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
+                  ReadFromSystemNumbers
 -- execute
-2
 1
+2
 -- GROUP BY in most inner query makes execution parallelized, and removing inner sorting steps will keep it that way. But need to correctly update data streams sorting properties after removing sorting steps
 -- query
 SELECT *
@@ -346,7 +364,7 @@ Expression (Projection)
     Expression ((Before ORDER BY + (Projection + (Before ORDER BY + (Projection + Before ORDER BY)))))
       Aggregating
         Expression (Before GROUP BY)
-          ReadFromStorage (SystemNumbers)
+          ReadFromSystemNumbers
 -- execute
 0
 1
@@ -377,9 +395,9 @@ Expression ((Projection + Before ORDER BY))
         Union
           Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
             ReadFromStorage (SystemOne)
-          Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
+          Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
             ReadFromStorage (SystemOne)
-          Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
+          Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
             ReadFromStorage (SystemOne)
 -- execute
 Float64	9007199254740994
@@ -409,9 +427,9 @@ Expression ((Projection + Before ORDER BY))
         Union
           Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
             ReadFromStorage (SystemOne)
-          Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
+          Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
             ReadFromStorage (SystemOne)
-          Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
+          Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
             ReadFromStorage (SystemOne)
 -- execute
 Nullable(Float64)	9007199254740994
@@ -441,12 +459,43 @@ Expression ((Projection + Before ORDER BY))
         Union
           Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
             ReadFromStorage (SystemOne)
-          Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
+          Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
             ReadFromStorage (SystemOne)
-          Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
+          Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
             ReadFromStorage (SystemOne)
 -- execute
 Float64	9007199254740994
+-- presence of an inner OFFSET retains the ORDER BY
+-- query
+WITH
+  t1 AS (
+    SELECT a, b
+    FROM
+      VALUES (
+        'b UInt32, a Int32',
+        (1, 1),
+        (2, 0)
+      )
+  )
+SELECT
+  SUM(a)
+FROM (
+  SELECT a, b
+  FROM t1
+  ORDER BY 1 DESC, 2
+  OFFSET 1
+) t2
+-- explain
+Expression ((Projection + Before ORDER BY))
+  Aggregating
+    Expression (Before GROUP BY)
+      Offset
+        Expression (Projection)
+          Sorting (Sorting for ORDER BY)
+            Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
+              ReadFromStorage (Values)
+-- execute
+0
 -- disable common optimization to avoid functions to be lifted up (liftUpFunctions optimization), needed for testing with stateful function
 -- neighbor() as stateful function prevents removing inner ORDER BY since its result depends on order
 -- query
@@ -460,6 +509,7 @@ FROM
     ORDER BY number DESC
 )
 ORDER BY number ASC
+SETTINGS allow_deprecated_error_prone_window_functions = 1
 -- explain
 Expression (Projection)
   Sorting (Sorting for ORDER BY)
@@ -467,7 +517,7 @@ Expression (Projection)
       Expression (Projection)
         Sorting (Sorting for ORDER BY)
           Expression (Before ORDER BY)
-            ReadFromStorage (SystemNumbers)
+            ReadFromSystemNumbers
 -- execute
 0	0
 1	0
@@ -496,7 +546,7 @@ Expression (Projection)
     Expression (Projection)
       Sorting (Sorting for ORDER BY)
         Expression (Before ORDER BY)
-          ReadFromStorage (SystemNumbers)
+          ReadFromSystemNumbers
 -- execute
 9	11
 8	10

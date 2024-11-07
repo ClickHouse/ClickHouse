@@ -5,62 +5,39 @@ sidebar_label: Amazon customer reviews
 
 # Amazon customer reviews dataset
 
-[**Amazon Customer Reviews**](https://s3.amazonaws.com/amazon-reviews-pds/readme.html) (a.k.a. Product Reviews) is one of Amazon’s iconic products. In a period of over two decades since the first review in 1995, millions of Amazon customers have contributed over a hundred million reviews to express opinions and describe their experiences regarding products on the Amazon.com website. This makes Amazon Customer Reviews a rich source of information for academic researchers in the fields of Natural Language Processing (NLP), Information Retrieval (IR), and Machine Learning (ML), amongst others. By accessing the dataset, you agree to the [license terms](https://s3.amazonaws.com/amazon-reviews-pds/license.txt).
-
-The data is in a tab-separated format in gzipped files are up in AWS S3. Let's walk through the steps to insert it into ClickHouse.
+This dataset contains over 150M customer reviews of Amazon products. The data is in snappy-compressed Parquet files in AWS S3 that total 49GB in size (compressed). Let's walk through the steps to insert it into ClickHouse.
 
 :::note
 The queries below were executed on a **Production** instance of [ClickHouse Cloud](https://clickhouse.cloud).
 :::
 
 
-1. Without inserting the data into ClickHouse, we can query it in place. Let's grab some rows so we can see what they look like:
+1. Without inserting the data into ClickHouse, we can query it in place. Let's grab some rows, so we can see what they look like:
 
 ```sql
 SELECT *
-FROM s3('https://s3.amazonaws.com/amazon-reviews-pds/tsv/amazon_reviews_us_Wireless_v1_00.tsv.gz',
-    'TabSeparatedWithNames',
-    'marketplace String,
-    customer_id Int64,
-    review_id String,
-    product_id String,
-    product_parent Int64,
-    product_title String,
-    product_category String,
-    star_rating Int64,
-    helpful_votes Int64,
-    total_votes Int64,
-    vine Bool,
-    verified_purchase Bool,
-    review_headline String,
-    review_body String,
-    review_date Date'
-)
-LIMIT 10;
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_2015.snappy.parquet')
+LIMIT 10
 ```
 
 The rows look like:
 
 ```response
-┌─marketplace─┬─customer_id─┬─review_id──────┬─product_id─┬─product_parent─┬─product_title──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─product_category─┬─star_rating─┬─helpful_votes─┬─total_votes─┬─vine──┬─verified_purchase─┬─review_headline───────────┬─review_body────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─review_date─┐
-│ US          │    16414143 │ R3W4P9UBGNGH1U │ B00YL0EKWE │      852431543 │ LG G4 Case Hard Transparent Slim Clear Cover for LG G4                                                                                                                                                                                                     │ Wireless         │           2 │             1 │           3 │ false │ true              │ Looks good, functions meh │ 2 issues  - Once I turned on the circle apps and installed this case,  my battery drained twice as fast as usual.  I ended up turning off the circle apps, which kind of makes the case just a case...  with a hole in it.  Second,  the wireless charging doesn't work.  I have a Motorola 360 watch and a Qi charging pad. The watch charges fine but this case doesn't. But hey, it looks nice. │  2015-08-31 │
-│ US          │    50800750 │ R15V54KBMTQWAY │ B00XK95RPQ │      516894650 │ Selfie Stick Fiblastiq&trade; Extendable Wireless Bluetooth Selfie Stick with built-in Bluetooth Adjustable Phone Holder                                                                                                                                   │ Wireless         │           4 │             0 │           0 │ false │ false             │ A fun little gadget       │ I’m embarrassed to admit that until recently, I have had a very negative opinion about “selfie sticks” aka “monopods” aka “narcissticks.” But having reviewed a number of them recently, they’re growing on me. This one is pretty nice and simple to set up and with easy instructions illustrated on the back of the box (not sure why some reviewers have stated that there are no instructions when they are clearly printed on the box unless they received different packaging than I did). Once assembled, the pairing via bluetooth and use of the stick are easy and intuitive. Nothing to it.<br /><br />The stick comes with a USB charging cable but arrived with a charge so you can use it immediately, though it’s probably a good idea to charge it right away so that you have no interruption of use out of the box. Make sure the stick is switched to on (it will light up) and extend your stick to the length you desire up to about a yard’s length and snap away.<br /><br />The phone clamp held the phone sturdily so I wasn’t worried about it slipping out. But the longer you extend the stick, the harder it is to maneuver.  But that will happen with any stick and is not specific to this one in particular.<br /><br />Two things that could improve this: 1) add the option to clamp this in portrait orientation instead of having to try and hold the stick at the portrait angle, which makes it feel unstable; 2) add the opening for a tripod so that this can be used to sit upright on a table for skyping and facetime eliminating the need to hold the phone up with your hand, causing fatigue.<br /><br />But other than that, this is a nice quality monopod for a variety of picture taking opportunities.<br /><br />I received a sample in exchange for my honest opinion. │  2015-08-31 │
-│ US          │    15184378 │ RY8I449HNXSVF  │ B00SXRXUKO │      984297154 │ Tribe AB40 Water Resistant Sports Armband with Key Holder for 4.7-Inch iPhone 6S/6/5/5S/5C, Galaxy S4 + Screen Protector - Dark Pink                                                                                                                       │ Wireless         │           5 │             0 │           0 │ false │ true              │ Five Stars                │ Fits iPhone 6 well                                                                                                                                                                                                                                         │  2015-08-31 │
-│ US          │    10203548 │ R18TLJYCKJFLSR │ B009V5X1CE │      279912704 │ RAVPower® Element 10400mAh External Battery USB Portable Charger (Dual USB Outputs, Ultra Compact Design), Travel Charger for iPhone 6,iPhone 6 plus,iPhone 5, 5S, 5C, 4S, 4, iPad Air, 4, 3, 2, Mini 2 (Apple adapters not included); Samsung Galaxy S5, S4, S3, S2, Note 3, Note 2; HTC One, EVO, Thunderbolt, Incredible, Droid DNA, Motorola ATRIX, Droid, Moto X, Google Glass, Nexus 4, Nexus 5, Nexus 7, │ Wireless         │           5 │             0 │           0 │ false │ true              │ Great charger             │ Great charger.  I easily get 3+ charges on a Samsung Galaxy 3.  Works perfectly for camping trips or long days on the boat.                                                                                                                                │  2015-08-31 │
-│ US          │      488280 │ R1NK26SWS53B8Q │ B00D93OVF0 │      662791300 │ Fosmon Micro USB Value Pack Bundle for Samsung Galaxy Exhilarate - Includes Home / Travel Charger, Car / Vehicle Charger and USB Cable                                                                                                                     │ Wireless         │           5 │             0 │           0 │ false │ true              │ Five Stars                │ Great for the price :-)                                                                                                                                                                                                                                    │  2015-08-31 │
-│ US          │    13334021 │ R11LOHEDYJALTN │ B00XVGJMDQ │      421688488 │ iPhone 6 Case, Vofolen Impact Resistant Protective Shell iPhone 6S Wallet Cover Shockproof Rubber Bumper Case Anti-scratches Hard Cover Skin Card Slot Holder for iPhone 6 6S                                                                              │ Wireless         │           5 │             0 │           0 │ false │ true              │ Five Stars                │ Great Case, better customer service!                                                                                                                                                                                                                       │  2015-08-31 │
-│ US          │    27520697 │ R3ALQVQB2P9LA7 │ B00KQW1X1C │      554285554 │ Nokia Lumia 630 RM-978 White Factory Unlocked - International Version No Warranty                                                                                                                                                                          │ Wireless         │           4 │             0 │           0 │ false │ true              │ Four Stars                │ Easy to set up and use. Great functions for the price                                                                                                                                                                                                      │  2015-08-31 │
-│ US          │    48086021 │ R3MWLXLNO21PDQ │ B00IP1MQNK │      488006702 │ Lumsing 10400mah external battery                                                                                                                                                                                                                          │ Wireless         │           5 │             0 │           0 │ false │ true              │ Five Stars                │ Works great                                                                                                                                                                                                                                                │  2015-08-31 │
-│ US          │    12738196 │ R2L15IS24CX0LI │ B00HVORET8 │      389677711 │ iPhone 5S Battery Case - iPhone 5 Battery Case , Maxboost Atomic S [MFI Certified] External Protective Battery Charging Case Power Bank Charger All Versions of Apple iPhone 5/5S [Juice Battery Pack]                                                     │ Wireless         │           5 │             0 │           0 │ false │ true              │ So far so good            │ So far so good. It is essentially identical to the one it replaced from another company. That one stopped working after 7 months so I am a bit apprehensive about this one.                                                                                │  2015-08-31 │
-│ US          │    15867807 │ R1DJ8976WPWVZU │ B00HX3G6J6 │      299654876 │ HTC One M8 Screen Protector, Skinomi TechSkin Full Coverage Screen Protector for HTC One M8 Clear HD Anti-Bubble Film │ Wireless         │           3 │             0 │           0 │ false │ true              │ seems durable but these are always harder to get on ... │ seems durable but these are always harder to get on right than people make them out to be. also send to curl up at the edges after a while. with today's smartphones, you hardly need screen protectors anyway. │  2015-08-31 │
-└─────────────┴─────────────┴────────────────┴────────────┴────────────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────────┴─────────────┴───────────────┴─────────────┴───────┴───────────────────┴─────────────────────────────────────────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴─────────────┘
+┌─review_date─┬─marketplace─┬─customer_id─┬─review_id──────┬─product_id─┬─product_parent─┬─product_title────────────────────────────────────────────────┬─product_category───────┬─star_rating─┬─helpful_votes─┬─total_votes─┬─vine──┬─verified_purchase─┬─review_headline─────────────────────────────────────────────────────────────┬─review_body────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│       16452 │ US          │    21080196 │ R17NMVYCQXEEFW │ B00RSI5DJA │      904397429 │ Pilot                                                        │ Digital_Video_Download │           5 │             0 │           0 │ false │ false             │ yes indeed                                                                  │ OMG- i totally see myself get hook on that show if it happen- love it                                                                                                                                                                                      │
+│       16452 │ US          │    44158214 │ R3MAPJVO9D0ERG │ B00RSI61PU │      475013967 │ Salem Rogers: Model of the Year 1998                         │ Digital_Video_Download │           5 │             0 │           0 │ false │ false             │ Halarious show!!                                                            │ Loved this pilot episode!! Please pick this up Amazon!!!                                                                                                                                                                                                   │
+│       16452 │ US          │     1944630 │ R1Q5YPRE84OVB6 │ B009IU6BIS │      101502671 │ National Lampoon's Christmas Vacation                        │ Digital_Video_Download │           5 │             0 │           0 │ false │ false             │ Classic!                                                                    │ This is a holiday classic. How can you not love it!                                                                                                                                                                                                        │
+│       16452 │ US          │    49029010 │ RGDK35TBJJ2ZI  │ B00RSI68V2 │      639602030 │ Table 58                                                     │ Digital_Video_Download │           5 │             2 │           3 │ false │ false             │ Fun for the whole family!!                                                  │ This show is fun! Our family really enjoyed watching the show. I can see this being one of the shows that we watch on Friday nights with our pizza and ice cream. I hope to see more of the show and the great cast of characters.                         │
+│       16452 │ US          │    52257958 │ R1R2SEOJT8M14Y │ B00RSGIMUE │      196368495 │ Niko and the Sword of Light                                  │ Digital_Video_Download │           5 │             1 │           2 │ false │ false             │ it's a new kind of avatar. great show. make more.                           │ My 7 year old son and my husband both loved it! It's like avatar the last air bender but with different magical powers. The characters are adorably well developed. The story is interesting.  We hope amazon makes the whole season. We can't wait to see more! │
+│       16452 │ US          │    26927978 │ RN0JCPQ6Z4FUB  │ B009ITL7UG │      497741324 │ Lord of the Rings: The Return of the King (Extended Edition) │ Digital_Video_Download │           5 │             0 │           0 │ false │ true              │ Definite must-own for any Tolkien buff who has not yet upgraded to Blu-Ray! │ If you liked the theatrical release and are a fan of Middle-Earth then you should get this.                                                                                                                                                                │
+│       16452 │ US          │    19626887 │ R15LDVOU1S1DFB │ B00RSGHGB0 │      576999592 │ Just Add Magic - Season 1                                    │ Digital_Video_Download │           5 │             1 │           1 │ false │ false             │ Great story! So good even my teenage boys said ...                          │ Great story! So good even my teenage boys said this is actually pretty good!!! Can't wait for the next episode.                                                                                                                                            │
+│       16452 │ US          │     1439383 │ R2DJVLZM1MVFQH │ B002WEQJ3E │      733651019 │ Six: The Mark Unleashed                                      │ Digital_Video_Download │           1 │             0 │           4 │ false │ false             │ I am now less intelligent for having watched an entire 10 minutes of it     │ I am now less intelligent for having watched an entire 10 minutes of it.  God save my sole as I now must kick out the chair from which I am standing on so that the noose may do its job.  Watch the movie at your own risk.  The screen will suck your brain cells out of your body. │
+│       16452 │ US          │    46233181 │ R33W2NB9MCRUFV │ B00RSGFYQE │      464741068 │ Point of Honor                                               │ Digital_Video_Download │           4 │             0 │           0 │ false │ false             │ Give it a chance.                                                           │ Pilots are just what they are...pilots. A chance to see what works and what doesn't and a chance to smooth out the wrinkles. Point of Honor at least stands a fair chance.                                                                                 │
+│       16452 │ US          │    19537300 │ R2WGJYESHID0ZF │ B00RSGHQJM │      374287214 │ Down Dog                                                     │ Digital_Video_Download │           5 │             1 │           1 │ false │ false             │ Five Stars                                                                  │ great fun                                                                                                                                                                                                                                                  │
+└─────────────┴─────────────┴─────────────┴────────────────┴────────────┴────────────────┴──────────────────────────────────────────────────────────────┴────────────────────────┴─────────────┴───────────────┴─────────────┴───────┴───────────────────┴─────────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-:::note
-Normally you would not need to pass in the schema into the `s3` table function - ClickHouse can infer the names and data types of the columns. However, this particular dataset uses a non-standard tab-separated format, but the `s3` function seems to work fine with this non-standard format if you include the schema.
-:::
-
-2. Let's define a new table named `amazon_reviews`. We'll optimize some of the column data types - and choose a primary key (the `ORDER BY` clause):
+2. Let's define a new `MergeTree` table named `amazon_reviews` to store this data in ClickHouse:
 
 ```sql
 CREATE TABLE amazon_reviews
@@ -82,58 +59,38 @@ CREATE TABLE amazon_reviews
     review_body String
 )
 ENGINE = MergeTree
-ORDER BY (marketplace, review_date, product_category);
+ORDER BY (review_date, product_category);
 ```
 
-3. We are now ready to insert the data into ClickHouse. Before we do, check out the [list of files in the dataset](https://s3.amazonaws.com/amazon-reviews-pds/tsv/index.txt) and decide which ones you want to include.
-
-4. We will insert all of the US reviews - which is about 151M rows. The following `INSERT` command uses the `s3Cluster` table function, which allows the processing of multiple S3 files in parallel using all the nodes of your cluster. We also use a wildcard to insert any file that starts with the name `https://s3.amazonaws.com/amazon-reviews-pds/tsv/amazon_reviews_us_`:
+3. The following `INSERT` command uses the `s3Cluster` table function, which allows the processing of multiple S3 files in parallel using all the nodes of your cluster. We also use a wildcard to insert any file that starts with the name `https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_*.snappy.parquet`:
 
 ```sql
 INSERT INTO amazon_reviews
-WITH
-   transform(vine, ['Y','N'],[true, false]) AS vine,
-   transform(verified_purchase, ['Y','N'],[true, false]) AS verified_purchase
 SELECT
    *
 FROM s3Cluster(
     'default',
-    'https://s3.amazonaws.com/amazon-reviews-pds/tsv/amazon_reviews_us_*.tsv.gz',
-    'TSVWithNames',
-    'review_date Date,
-    marketplace LowCardinality(String),
-    customer_id UInt64,
-    review_id String,
-    product_id String,
-    product_parent UInt64,
-    product_title String,
-    product_category LowCardinality(String),
-    star_rating UInt8,
-    helpful_votes UInt32,
-    total_votes UInt32,
-    vine FixedString(1),
-    verified_purchase FixedString(1),
-    review_headline String,
-    review_body String'
-    )
-SETTINGS input_format_allow_errors_num = 1000000;
+    'https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_*.snappy.parquet'
+    );
 ```
 
 :::tip
-In ClickHouse Cloud, there is a cluster named `default`. Change `default` to the name of your cluster...or use the `s3` table function (instead of `s3Cluster`) if you do not have a cluster.
+In ClickHouse Cloud, the name of the cluster is `default`. Change `default` to the name of your cluster...or use the `s3` table function (instead of `s3Cluster`) if you do not have a cluster.
 :::
 
-5. That query doesn't take long - within 5 minutes or so you should see all the rows inserted:
+5. That query doesn't take long - averaging about 300,000 rows per second. within 5 minutes or so you should see all the rows inserted:
 
 ```sql
 SELECT formatReadableQuantity(count())
-FROM amazon_reviews
+FROM amazon_reviews;
 ```
 
 ```response
 ┌─formatReadableQuantity(count())─┐
 │ 150.96 million                  │
 └─────────────────────────────────┘
+
+1 row in set. Elapsed: 0.005 sec.
 ```
 
 6. Let's see how much space our data is using:
@@ -155,11 +112,11 @@ The original data was about 70G, but compressed in ClickHouse it takes up about 
 
 ```response
 ┌─disk_name─┬─compressed─┬─uncompressed─┬─compr_rate─┬──────rows─┬─part_count─┐
-│ s3disk    │ 30.00 GiB  │ 70.61 GiB    │       2.35 │ 150957260 │          9 │
+│ s3disk    │ 30.05 GiB  │ 70.47 GiB    │       2.35 │ 150957260 │         14 │
 └───────────┴────────────┴──────────────┴────────────┴───────────┴────────────┘
 ```
 
-7. Let's run some queries...here are the top 10 most-helpful reviews on Amazon:
+7. Let's run some queries...here are the top 10 most-helpful reviews in the dataset:
 
 ```sql
 SELECT
@@ -170,7 +127,7 @@ ORDER BY helpful_votes DESC
 LIMIT 10;
 ```
 
-Notice the query has to process all 151M rows, and it takes about 17 seconds:
+Notice the query has to process all 151M rows, but takes less than one second!
 
 ```response
 ┌─product_title────────────────────────────────────────────────────────────────────────────┬─review_headline───────────────────────────────────────────────────────┐
@@ -186,7 +143,7 @@ Notice the query has to process all 151M rows, and it takes about 17 seconds:
 │ Tuscan Dairy Whole Vitamin D Milk, Gallon, 128 oz                                        │ Make this your only stock and store                                   │
 └──────────────────────────────────────────────────────────────────────────────────────────┴───────────────────────────────────────────────────────────────────────┘
 
-10 rows in set. Elapsed: 17.595 sec. Processed 150.96 million rows, 15.36 GB (8.58 million rows/s., 872.89 MB/s.)
+10 rows in set. Elapsed: 0.897 sec. Processed 150.96 million rows, 15.36 GB (168.36 million rows/s., 17.13 GB/s.)
 ```
 
 8. Here are the top 10 products in Amazon with the most reviews:
@@ -215,7 +172,7 @@ LIMIT 10;
 │ Crossy Road                                   │   28111 │
 └───────────────────────────────────────────────┴─────────┘
 
-10 rows in set. Elapsed: 16.684 sec. Processed 195.05 million rows, 20.86 GB (11.69 million rows/s., 1.25 GB/s.)
+10 rows in set. Elapsed: 20.059 sec. Processed 150.96 million rows, 12.78 GB (7.53 million rows/s., 637.25 MB/s.)
 ```
 
 9. Here are the average review ratings per month for each product (an actual [Amazon job interview question](https://datalemur.com/questions/sql-avg-review-ratings)!):
@@ -261,7 +218,8 @@ It calculates all the monthly averages for each product, but we only returned 20
 │ 2015-08-01 │ The Birds of West Africa (Collins Field Guides)                                         │         4 │
 └────────────┴─────────────────────────────────────────────────────────────────────────────────────────┴───────────┘
 
-20 rows in set. Elapsed: 52.827 sec. Processed 251.46 million rows, 35.26 GB (4.76 million rows/s., 667.55 MB/s.)
+20 rows in set. Elapsed: 43.055 sec. Processed 150.96 million rows, 13.24 GB (3.51 million rows/s., 307.41 MB/s.)
+Peak memory usage: 41.73 GiB.
 ```
 
 10. Here are the total number of votes per product category. This query is fast because `product_category` is in the primary key:
@@ -272,7 +230,8 @@ SELECT
     product_category
 FROM amazon_reviews
 GROUP BY product_category
-ORDER BY 1 DESC;
+ORDER BY 1 DESC
+FORMAT PrettyCompactMonoBlock;
 ```
 
 ```response
@@ -322,7 +281,7 @@ ORDER BY 1 DESC;
 │            72970 │ Gift Card                │
 └──────────────────┴──────────────────────────┘
 
-43 rows in set. Elapsed: 0.423 sec. Processed 150.96 million rows, 756.20 MB (356.70 million rows/s., 1.79 GB/s.)
+43 rows in set. Elapsed: 0.201 sec. Processed 150.96 million rows, 754.79 MB (750.85 million rows/s., 3.75 GB/s.)
 ```
 
 11. Let's find the products with the word **"awful"** occurring most frequently in the review. This is a big task - over 151M strings have to be parsed looking for a single word:
@@ -340,7 +299,7 @@ ORDER BY count DESC
 LIMIT 50;
 ```
 
-The query takes a couple of minutes, but the results are a fun read:
+The query only takes 4 seconds - which is impressive - and the results are a fun read:
 
 ```response
 
@@ -363,41 +322,42 @@ The query takes a couple of minutes, but the results are a fun read:
 │ B00N28818A │ Amazon Prime Video                                                                       │ 1.4305555555555556 │    72 │
 │ B007FTE2VW │ SimCity - Limited Edition                                                                │ 1.2794117647058822 │    68 │
 │ 0439023513 │ Mockingjay (The Hunger Games)                                                            │ 2.6417910447761193 │    67 │
-│ B00178630A │ Diablo III - PC/Mac                                                                      │           1.671875 │    64 │
 │ B000OCEWGW │ Liquid Ass                                                                               │             4.8125 │    64 │
+│ B00178630A │ Diablo III - PC/Mac                                                                      │           1.671875 │    64 │
 │ B005ZOBNOI │ The Fault in Our Stars                                                                   │  4.316666666666666 │    60 │
 │ B00L9B7IKE │ The Girl on the Train: A Novel                                                           │ 2.0677966101694913 │    59 │
-│ B007S6Y6VS │ Garden of Life Raw Organic Meal                                                          │ 2.8793103448275863 │    58 │
-│ B0064X7B4A │ Words With Friends                                                                       │ 2.2413793103448274 │    58 │
 │ B003WUYPPG │ Unbroken: A World War II Story of Survival, Resilience, and Redemption                   │  4.620689655172414 │    58 │
-│ B00006HBUJ │ Star Wars: Episode II - Attack of the Clones (Widescreen Edition)                        │ 2.2982456140350878 │    57 │
+│ B0064X7B4A │ Words With Friends                                                                       │ 2.2413793103448274 │    58 │
+│ B007S6Y6VS │ Garden of Life Raw Organic Meal                                                          │ 2.8793103448275863 │    58 │
 │ B000XUBFE2 │ The Book Thief                                                                           │  4.526315789473684 │    57 │
+│ B00006HBUJ │ Star Wars: Episode II - Attack of the Clones (Widescreen Edition)                        │ 2.2982456140350878 │    57 │
 │ B0006399FS │ How to Dismantle an Atomic Bomb                                                          │ 1.9821428571428572 │    56 │
 │ B003ZSJ212 │ Star Wars: The Complete Saga (Episodes I-VI) (Packaging May Vary) [Blu-ray]              │  2.309090909090909 │    55 │
 │ 193700788X │ Dead Ever After (Sookie Stackhouse/True Blood)                                           │ 1.5185185185185186 │    54 │
 │ B004FYEZMQ │ Mass Effect 3                                                                            │  2.056603773584906 │    53 │
 │ B000CFYAMC │ The Room                                                                                 │ 3.9615384615384617 │    52 │
-│ B0031JK95S │ Garden of Life Raw Organic Meal                                                          │ 3.3137254901960786 │    51 │
 │ B0012JY4G4 │ Color Oops Hair Color Remover Extra Strength 1 Each                                      │ 3.9019607843137254 │    51 │
-│ B007VTVRFA │ SimCity - Limited Edition                                                                │ 1.2040816326530612 │    49 │
+│ B0031JK95S │ Garden of Life Raw Organic Meal                                                          │ 3.3137254901960786 │    51 │
 │ B00CE18P0K │ Pilot                                                                                    │ 1.7142857142857142 │    49 │
+│ B007VTVRFA │ SimCity - Limited Edition                                                                │ 1.2040816326530612 │    49 │
 │ 0316015849 │ Twilight (The Twilight Saga, Book 1)                                                     │ 1.8979591836734695 │    49 │
 │ B00DR0PDNE │ Google Chromecast HDMI Streaming Media Player                                            │ 2.5416666666666665 │    48 │
 │ B000056OWC │ The First Years: 4-Stage Bath System                                                     │ 1.2127659574468086 │    47 │
 │ B007IXWKUK │ Fifty Shades Darker (Fifty Shades, Book 2)                                               │ 1.6304347826086956 │    46 │
 │ 1892112000 │ To Train Up a Child                                                                      │ 1.4130434782608696 │    46 │
 │ 043935806X │ Harry Potter and the Order of the Phoenix (Book 5)                                       │  3.977272727272727 │    44 │
-│ B00BGO0Q9O │ Fitbit Flex Wireless Wristband with Sleep Function, Black                                │ 1.9318181818181819 │    44 │
 │ B003XF1XOQ │ Mockingjay (Hunger Games Trilogy, Book 3)                                                │  2.772727272727273 │    44 │
-│ B00DD2B52Y │ Spring Breakers                                                                          │ 1.2093023255813953 │    43 │
+│ B00BGO0Q9O │ Fitbit Flex Wireless Wristband with Sleep Function, Black                                │ 1.9318181818181819 │    44 │
 │ B0064X7FVE │ The Weather Channel: Forecast, Radar & Alerts                                            │ 1.5116279069767442 │    43 │
 │ B0083PWAPW │ Kindle Fire HD 7", Dolby Audio, Dual-Band Wi-Fi                                          │  2.627906976744186 │    43 │
+│ B00DD2B52Y │ Spring Breakers                                                                          │ 1.2093023255813953 │    43 │
 │ B00192KCQ0 │ Death Magnetic                                                                           │ 3.5714285714285716 │    42 │
-│ B007S6Y74O │ Garden of Life Raw Organic Meal                                                          │  3.292682926829268 │    41 │
+│ B004CFA9RS │ Divergent (Divergent Trilogy, Book 1)                                                    │ 3.1219512195121952 │    41 │
 │ B0052QYLUM │ Infant Optics DXR-5 Portable Video Baby Monitor                                          │ 2.1463414634146343 │    41 │
 └────────────┴──────────────────────────────────────────────────────────────────────────────────────────┴────────────────────┴───────┘
 
-50 rows in set. Elapsed: 60.052 sec. Processed 150.96 million rows, 68.93 GB (2.51 million rows/s., 1.15 GB/s.)
+50 rows in set. Elapsed: 4.072 sec. Processed 150.96 million rows, 68.93 GB (37.07 million rows/s., 16.93 GB/s.)
+Peak memory usage: 1.82 GiB.
 ```
 
 12. We can run the same query again, except this time we search for **awesome** in the reviews:
@@ -414,8 +374,6 @@ GROUP BY product_id
 ORDER BY count DESC
 LIMIT 50;
 ```
-
-It runs quite a bit faster - which means the cache is helping us out here:
 
 ```response
 
@@ -449,8 +407,8 @@ It runs quite a bit faster - which means the cache is helping us out here:
 │ B008JK6W5K │ Logo Quiz                                                             │  4.782106782106782 │   693 │
 │ B00EDTSKLU │ Geometry Dash                                                         │  4.942028985507246 │   690 │
 │ B00CSR2J9I │ Hill Climb Racing                                                     │  4.880059970014993 │   667 │
-│ B005ZXWMUS │ Netflix                                                               │  4.722306525037936 │   659 │
 │ B00CRFAAYC │ Fab Tattoo Artist FREE                                                │  4.907435508345979 │   659 │
+│ B005ZXWMUS │ Netflix                                                               │  4.722306525037936 │   659 │
 │ B00DHQHQCE │ Battle Beach                                                          │  4.863287250384024 │   651 │
 │ B00BGA9WK2 │ PlayStation 4 500GB Console [Old Model]                               │  4.688751926040061 │   649 │
 │ B008Y7SMQU │ Logo Quiz - Fun Plus Free                                             │             4.7888 │   625 │
@@ -472,5 +430,6 @@ It runs quite a bit faster - which means the cache is helping us out here:
 │ B00G6ZTM3Y │ Terraria                                                              │  4.728421052631579 │   475 │
 └────────────┴───────────────────────────────────────────────────────────────────────┴────────────────────┴───────┘
 
-50 rows in set. Elapsed: 33.954 sec. Processed 150.96 million rows, 68.95 GB (4.45 million rows/s., 2.03 GB/s.)
+50 rows in set. Elapsed: 4.079 sec. Processed 150.96 million rows, 68.95 GB (37.01 million rows/s., 16.90 GB/s.)
+Peak memory usage: 2.18 GiB.
 ```

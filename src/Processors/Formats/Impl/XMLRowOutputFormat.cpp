@@ -8,8 +8,9 @@ namespace DB
 {
 
 XMLRowOutputFormat::XMLRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
-    : RowOutputFormatWithUTF8ValidationAdaptor(true, header_, out_), fields(header_.getNamesAndTypes()), format_settings(format_settings_)
+    : RowOutputFormatWithExceptionHandlerAdaptor<RowOutputFormatWithUTF8ValidationAdaptor, bool>(header_, out_, format_settings_.xml.valid_output_on_exception, true), fields(header_.getNamesAndTypes()), format_settings(format_settings_)
 {
+    ostr = RowOutputFormatWithExceptionHandlerAdaptor::getWriteBufferPtr();
     const auto & sample = getPort(PortKind::Main).getHeader();
     field_tag_names.resize(sample.columns());
 
@@ -190,8 +191,11 @@ void XMLRowOutputFormat::finalizeImpl()
 
 
     writeRowsBeforeLimitAtLeast();
+    writeRowsBeforeAggregationAtLeast();
 
-    if (format_settings.write_statistics)
+    if (!exception_message.empty())
+        writeException();
+    else if (format_settings.write_statistics)
         writeStatistics();
 
     writeCString("</result>\n", *ostr);
@@ -200,7 +204,8 @@ void XMLRowOutputFormat::finalizeImpl()
 
 void XMLRowOutputFormat::resetFormatterImpl()
 {
-    RowOutputFormatWithUTF8ValidationAdaptor::resetFormatterImpl();
+    RowOutputFormatWithExceptionHandlerAdaptor::resetFormatterImpl();
+    ostr = RowOutputFormatWithExceptionHandlerAdaptor::getWriteBufferPtr();
     row_count = 0;
     statistics = Statistics();
 }
@@ -212,6 +217,16 @@ void XMLRowOutputFormat::writeRowsBeforeLimitAtLeast()
         writeCString("\t<rows_before_limit_at_least>", *ostr);
         writeIntText(statistics.rows_before_limit, *ostr);
         writeCString("</rows_before_limit_at_least>\n", *ostr);
+    }
+}
+
+void XMLRowOutputFormat::writeRowsBeforeAggregationAtLeast()
+{
+    if (statistics.applied_aggregation)
+    {
+        writeCString("\t<rows_before_aggregation>", *ostr);
+        writeIntText(statistics.rows_before_aggregation, *ostr);
+        writeCString("</rows_before_aggregation>\n", *ostr);
     }
 }
 
@@ -230,6 +245,12 @@ void XMLRowOutputFormat::writeStatistics()
     writeCString("\t</statistics>\n", *ostr);
 }
 
+void XMLRowOutputFormat::writeException()
+{
+    writeCString("\t<exception>", *ostr);
+    writeXMLStringForTextElement(exception_message, *ostr);
+    writeCString("</exception>\n", *ostr);
+}
 
 void registerOutputFormatXML(FormatFactory & factory)
 {

@@ -4,15 +4,15 @@
 namespace DB
 {
 
-class IMergeTreeSelectAlgorithm;
-using MergeTreeSelectAlgorithmPtr = std::unique_ptr<IMergeTreeSelectAlgorithm>;
+class MergeTreeSelectProcessor;
+using MergeTreeSelectProcessorPtr = std::unique_ptr<MergeTreeSelectProcessor>;
 
 struct ChunkAndProgress;
 
 class MergeTreeSource final : public ISource
 {
 public:
-    explicit MergeTreeSource(MergeTreeSelectAlgorithmPtr algorithm_);
+    explicit MergeTreeSource(MergeTreeSelectProcessorPtr processor_, const std::string & log_name_);
     ~MergeTreeSource() override;
 
     std::string getName() const override;
@@ -26,10 +26,11 @@ public:
 protected:
     std::optional<Chunk> tryGenerate() override;
 
-    void onCancel() override;
+    void onCancel() noexcept override;
 
 private:
-    MergeTreeSelectAlgorithmPtr algorithm;
+    MergeTreeSelectProcessorPtr processor;
+    const std::string log_name;
 
 #if defined(OS_LINUX)
     struct AsyncReadingState;

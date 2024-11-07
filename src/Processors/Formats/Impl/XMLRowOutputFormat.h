@@ -6,6 +6,7 @@
 #include <Common/Stopwatch.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/OutputFormatWithUTF8ValidationAdaptor.h>
+#include <Processors/Formats/RowOutputFormatWithExceptionHandlerAdaptor.h>
 
 
 namespace DB
@@ -13,7 +14,7 @@ namespace DB
 
 /** A stream for outputting data in XML format.
   */
-class XMLRowOutputFormat final : public RowOutputFormatWithUTF8ValidationAdaptor
+class XMLRowOutputFormat final : public RowOutputFormatWithExceptionHandlerAdaptor<RowOutputFormatWithUTF8ValidationAdaptor, bool>
 {
 public:
     XMLRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_);
@@ -47,6 +48,11 @@ private:
         statistics.rows_before_limit = rows_before_limit_;
     }
 
+    void setRowsBeforeAggregation(size_t rows_before_aggregation_) override
+    {
+        statistics.applied_aggregation = true;
+        statistics.rows_before_aggregation = rows_before_aggregation_;
+    }
     void onRowsReadBeforeUpdate() override { row_count = getRowsReadBefore(); }
 
     void onProgress(const Progress & value) override;
@@ -55,7 +61,9 @@ private:
 
     void writeExtremesElement(const char * title, const Columns & columns, size_t row_num);
     void writeRowsBeforeLimitAtLeast();
+    void writeRowsBeforeAggregationAtLeast();
     void writeStatistics();
+    void writeException();
 
     size_t field_number = 0;
     size_t row_count = 0;
@@ -63,6 +71,7 @@ private:
     Names field_tag_names;
 
     const FormatSettings format_settings;
+    WriteBuffer * ostr;
 };
 
 }

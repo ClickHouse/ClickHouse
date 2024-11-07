@@ -7,27 +7,19 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 export CLICKHOUSE_TERMINATE_ON_ANY_EXCEPTION=1
 
 # The environment variable works as expected:
-bash -c "
-  abort_handler()
-  {
-    exit 0
-  }
-  trap 'abort_handler' ABRT
-  $CLICKHOUSE_LOCAL --query 'this is wrong'
-" 2>&1 | grep -o 'Aborted'
-
+$CLICKHOUSE_LOCAL --query 'this is wrong' || echo "Failed"
 # No exceptions are thrown in simple cases:
-$CLICKHOUSE_LOCAL --query "SELECT 1"
-$CLICKHOUSE_LOCAL --query "SHOW TABLES"
-$CLICKHOUSE_LOCAL --query "SELECT * FROM system.tables WHERE database = currentDatabase() FORMAT Null"
+$CLICKHOUSE_LOCAL --query "SELECT 1" || echo "Failed"
+$CLICKHOUSE_LOCAL --query "SHOW TABLES" || echo "Failed"
+$CLICKHOUSE_LOCAL --query "SELECT * FROM system.tables WHERE database = currentDatabase() FORMAT Null" || echo "Failed"
 
 # The same for the client app:
-$CLICKHOUSE_CLIENT --query "SELECT 1"
-$CLICKHOUSE_CLIENT --query "SHOW TABLES"
-$CLICKHOUSE_CLIENT --query "SELECT * FROM system.tables WHERE database = currentDatabase() FORMAT Null"
+$CLICKHOUSE_CLIENT --query "SELECT 1" || echo "Failed"
+$CLICKHOUSE_CLIENT --query "SHOW TABLES" || echo "Failed"
+$CLICKHOUSE_CLIENT --query "SELECT * FROM system.tables WHERE database = currentDatabase() FORMAT Null" || echo "Failed"
 
 # Multi queries are ok:
-$CLICKHOUSE_LOCAL --multiquery "SELECT 1; SELECT 2;"
+$CLICKHOUSE_LOCAL "SELECT 1; SELECT 2;" || echo "Failed"
 
 # It can run in interactive mode:
 function run()

@@ -45,7 +45,7 @@ SELECT '--- key types';
 SELECT * FROM t2 INNER JOIN rdb ON rdb.key == t2.k ORDER BY rdb.key;
 
 -- can't promote right table type
-SELECT * FROM (SELECT toUInt64(k) as k FROM t2) as t2 INNER JOIN rdb ON rdb.key == t2.k; -- { serverError TYPE_MISMATCH }
+SELECT * FROM (SELECT toUInt64(k) as k FROM t2) as t2 INNER JOIN rdb ON rdb.key == t2.k; -- { serverError NOT_IMPLEMENTED,TYPE_MISMATCH }
 -- TODO: support fallcack when right table key type can't be changed
 -- SELECT * FROM (SELECT toUInt64(k) as k FROM t2) as t2 INNER JOIN rdb ON rdb.key == t2.k FORMAT Null SETTINGS join_algorithm = 'direct,hash';
 

@@ -19,11 +19,11 @@ INSERT INTO table_for_rename_pk SELECT toDate('2019-10-01') + number % 3, number
 
 SELECT key1, value1 FROM table_for_rename_pk WHERE key1 = 1 AND key2 = 1 AND key3 = 1;
 
-ALTER TABLE table_for_rename_pk RENAME COLUMN key1 TO renamed_key1; --{serverError 524}
+ALTER TABLE table_for_rename_pk RENAME COLUMN key1 TO renamed_key1; --{serverError ALTER_OF_COLUMN_IS_FORBIDDEN}
 
-ALTER TABLE table_for_rename_pk RENAME COLUMN key3 TO renamed_key3; --{serverError 524}
+ALTER TABLE table_for_rename_pk RENAME COLUMN key3 TO renamed_key3; --{serverError ALTER_OF_COLUMN_IS_FORBIDDEN}
 
-ALTER TABLE table_for_rename_pk RENAME COLUMN key2 TO renamed_key2; --{serverError 524}
+ALTER TABLE table_for_rename_pk RENAME COLUMN key2 TO renamed_key2; --{serverError ALTER_OF_COLUMN_IS_FORBIDDEN}
 
 DROP TABLE IF EXISTS table_for_rename_pk;
 
@@ -46,12 +46,10 @@ PRIMARY KEY (key1, key2);
 
 INSERT INTO table_for_rename_with_primary_key SELECT toDate('2019-10-01') + number % 3, number, number, number, toString(number), toString(number) from numbers(9);
 
-ALTER TABLE table_for_rename_with_primary_key RENAME COLUMN key1 TO renamed_key1; --{serverError 524}
+ALTER TABLE table_for_rename_with_primary_key RENAME COLUMN key1 TO renamed_key1; --{serverError ALTER_OF_COLUMN_IS_FORBIDDEN}
 
-ALTER TABLE table_for_rename_with_primary_key RENAME COLUMN key2 TO renamed_key2; --{serverError 524}
+ALTER TABLE table_for_rename_with_primary_key RENAME COLUMN key2 TO renamed_key2; --{serverError ALTER_OF_COLUMN_IS_FORBIDDEN}
 
-ALTER TABLE table_for_rename_with_primary_key RENAME COLUMN key3 TO renamed_key3; --{serverError 524}
-
-ALTER TABLE table_for_rename_with_primary_key RENAME COLUMN value1 TO renamed_value1; --{serverError 524}
+ALTER TABLE table_for_rename_with_primary_key RENAME COLUMN key3 TO renamed_key3; --{serverError ALTER_OF_COLUMN_IS_FORBIDDEN}
 
 DROP TABLE IF EXISTS table_for_rename_with_primary_key;

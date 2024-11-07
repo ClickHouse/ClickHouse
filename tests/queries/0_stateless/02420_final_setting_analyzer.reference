@@ -1,5 +1,5 @@
 -- { echoOn }
-set allow_experimental_analyzer=1;
+set enable_analyzer=1;
 SYSTEM STOP MERGES tbl;
 -- simple test case
 create table if not exists replacing_mt (x String) engine=ReplacingMergeTree() ORDER BY x;
@@ -67,7 +67,7 @@ explain syntax select left_table.id,val_left, val_middle, val_right from left_ta
                                                                              inner join right_table on middle_table.id = right_table.id
                ORDER BY left_table.id, val_left, val_middle, val_right;
 SELECT
-    `--left_table.id` AS `left_table.id`,
+    `_--left_table.id` AS `left_table.id`,
     val_left,
     val_middle,
     val_right
@@ -75,9 +75,9 @@ FROM
 (
     SELECT
         val_left,
-        id AS `--left_table.id`,
+        id AS `_--left_table.id`,
         val_middle,
-        middle_table.id AS `--middle_table.id`
+        middle_table.id AS `_--middle_table.id`
     FROM left_table
     FINAL
     ALL INNER JOIN
@@ -86,18 +86,18 @@ FROM
             id,
             val_middle
         FROM middle_table
-    ) AS middle_table ON `--left_table.id` = `--middle_table.id`
+    ) AS middle_table ON `_--left_table.id` = `_--middle_table.id`
 ) AS `--.s`
 ALL INNER JOIN
 (
     SELECT
-        id,
-        val_right
+        val_right,
+        id AS `_--right_table.id`
     FROM right_table
     FINAL
-) AS right_table ON `--middle_table.id` = id
+) AS `--.t` ON `_--middle_table.id` = `_--right_table.id`
 ORDER BY
-    `--left_table.id` ASC,
+    `_--left_table.id` ASC,
     val_left ASC,
     val_middle ASC,
     val_right ASC
@@ -132,3 +132,7 @@ SELECT * FROM merge_table ORDER BY id, val;
 2	a
 2	b
 3	c
+select sum(number) from numbers(10) settings final=1;
+45
+select sum(number) from remote('127.0.0.{1,2}', numbers(10)) settings final=1;
+90

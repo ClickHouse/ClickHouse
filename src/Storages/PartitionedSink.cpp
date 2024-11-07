@@ -1,17 +1,14 @@
+// NOLINTBEGIN(clang-analyzer-optin.core.EnumCastOutOfRange)
+
 #include "PartitionedSink.h"
 
 #include <Common/ArenaUtils.h>
 
-#include <Functions/FunctionsConversion.h>
-
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
-#include <Interpreters/evaluateConstantExpression.h>
 
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ASTLiteral.h>
 
 #include <Processors/ISource.h>
 
@@ -34,7 +31,7 @@ PartitionedSink::PartitionedSink(
     , sample_block(sample_block_)
 {
     ASTs arguments(1, partition_by);
-    ASTPtr partition_by_string = makeASTFunction(FunctionToString::name, std::move(arguments));
+    ASTPtr partition_by_string = makeASTFunction("toString", std::move(arguments));
 
     auto syntax_result = TreeRewriter(context).analyze(partition_by_string, sample_block.getNamesAndTypesList());
     partition_by_expr = ExpressionAnalyzer(partition_by_string, syntax_result, context).getActions(false);
@@ -54,7 +51,7 @@ SinkPtr PartitionedSink::getSinkForPartitionKey(StringRef partition_key)
     return it->second;
 }
 
-void PartitionedSink::consume(Chunk chunk)
+void PartitionedSink::consume(Chunk & chunk)
 {
     const auto & columns = chunk.getColumns();
 
@@ -107,7 +104,7 @@ void PartitionedSink::consume(Chunk chunk)
     for (const auto & [partition_key, partition_index] : partition_id_to_chunk_index)
     {
         auto sink = getSinkForPartitionKey(partition_key);
-        sink->consume(std::move(partition_index_to_chunk[partition_index]));
+        sink->consume(partition_index_to_chunk[partition_index]);
     }
 }
 
@@ -150,3 +147,5 @@ String PartitionedSink::replaceWildcards(const String & haystack, const String &
 }
 
 }
+
+// NOLINTEND(clang-analyzer-optin.core.EnumCastOutOfRange)

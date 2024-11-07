@@ -1,9 +1,13 @@
-from typing import Dict, Iterable
+import os
+import uuid
+from typing import Dict
+
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
-import uuid
 
+CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -12,18 +16,135 @@ node = cluster.add_instance(
         "configs/disk_s3.xml",
         "configs/named_collection_s3_backups.xml",
         "configs/s3_settings.xml",
+        "configs/blob_log.xml",
+        "configs/remote_servers.xml",
     ],
     user_configs=[
         "configs/zookeeper_retries.xml",
     ],
     with_minio=True,
+    with_zookeeper=True,
+    stay_alive=True,
 )
+
+
+def setup_minio_users():
+    # create 2 extra users with restricted access
+    # miniorestricted1 - full access to bucket 'root', no access to other buckets
+    # miniorestricted2 - full access to bucket 'root2', no access to other buckets
+    # storage policy 'policy_s3_restricted' defines a policy for storing files inside bucket 'root' using 'miniorestricted1' user
+    for user, bucket in [("miniorestricted1", "root"), ("miniorestricted2", "root2")]:
+        print(
+            cluster.exec_in_container(
+                cluster.minio_docker_id,
+                [
+                    "mc",
+                    "alias",
+                    "set",
+                    "root",
+                    "http://minio1:9001",
+                    "minio",
+                    "minio123",
+                ],
+            )
+        )
+        policy = f"""
+{{
+  "Version": "2012-10-17",
+  "Statement": [
+    {{
+      "Effect": "Allow",
+      "Principal": {{
+        "AWS": [
+          "*"
+        ]
+      }},
+      "Action": [
+        "s3:GetBucketLocation",
+        "s3:ListBucket",
+        "s3:ListBucketMultipartUploads"
+      ],
+      "Resource": [
+        "arn:aws:s3:::{bucket}"
+      ]
+    }},
+    {{
+      "Effect": "Allow",
+      "Principal": {{
+        "AWS": [
+          "*"
+        ]
+      }},
+      "Action": [
+        "s3:AbortMultipartUpload",
+        "s3:DeleteObject",
+        "s3:GetObject",
+        "s3:ListMultipartUploadParts",
+        "s3:PutObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::{bucket}/*"
+      ]
+    }}
+  ]
+}}"""
+
+        cluster.exec_in_container(
+            cluster.minio_docker_id,
+            ["bash", "-c", f"cat >/tmp/{bucket}_policy.json <<EOL{policy}"],
+        )
+        cluster.exec_in_container(
+            cluster.minio_docker_id, ["cat", f"/tmp/{bucket}_policy.json"]
+        )
+        print(
+            cluster.exec_in_container(
+                cluster.minio_docker_id,
+                ["mc", "admin", "user", "add", "root", user, "minio123"],
+            )
+        )
+        print(
+            cluster.exec_in_container(
+                cluster.minio_docker_id,
+                [
+                    "mc",
+                    "admin",
+                    "policy",
+                    "create",
+                    "root",
+                    f"{bucket}only",
+                    f"/tmp/{bucket}_policy.json",
+                ],
+            )
+        )
+        print(
+            cluster.exec_in_container(
+                cluster.minio_docker_id,
+                [
+                    "mc",
+                    "admin",
+                    "policy",
+                    "attach",
+                    "root",
+                    f"{bucket}only",
+                    "--user",
+                    user,
+                ],
+            )
+        )
+
+    node.stop_clickhouse()
+    node.copy_file_to_container(
+        os.path.join(CONFIG_DIR, "disk_s3_restricted_user.xml"),
+        "/etc/clickhouse-server/config.d/disk_s3_restricted_user.xml",
+    )
+    node.start_clickhouse()
 
 
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
     try:
         cluster.start()
+        setup_minio_users()
         yield
     finally:
         cluster.shutdown()
@@ -51,10 +172,12 @@ def get_events_for_query(query_id: str) -> Dict[str, int]:
             """
         )
     )
-    return {
+    result = {
         event: int(value)
         for event, value in [line.split("\t") for line in events.lines]
     }
+    result["query_id"] = query_id
+    return result
 
 
 def format_settings(settings):
@@ -118,23 +241,35 @@ def check_backup_and_restore(
         )
 
 
-def check_system_tables():
+def check_system_tables(backup_query_id=None):
     disks = [
         tuple(disk.split("\t"))
-        for disk in node.query("SELECT name, type FROM system.disks").split("\n")
+        for disk in node.query(
+            "SELECT name, type, object_storage_type, metadata_type FROM system.disks"
+        ).split("\n")
         if disk
     ]
     expected_disks = (
-        ("default", "local"),
-        ("disk_s3", "s3"),
-        ("disk_s3_cache", "s3"),
-        ("disk_s3_other_bucket", "s3"),
-        ("disk_s3_plain", "s3_plain"),
+        ("default", "Local", "None", "None"),
+        ("disk_s3", "ObjectStorage", "S3", "Local"),
+        ("disk_s3_cache", "ObjectStorage", "S3", "Local"),
+        ("disk_s3_other_bucket", "ObjectStorage", "S3", "Local"),
+        ("disk_s3_plain", "ObjectStorage", "S3", "Plain"),
+        ("disk_s3_plain_rewritable", "ObjectStorage", "S3", "PlainRewritable"),
+        ("disk_s3_restricted_user", "ObjectStorage", "S3", "Local"),
     )
     assert len(expected_disks) == len(disks)
     for expected_disk in expected_disks:
         if expected_disk not in disks:
             raise AssertionError(f"Missed {expected_disk} in {disks}")
+
+    if backup_query_id is not None:
+        blob_storage_log = node.query(
+            f"SELECT count() FROM system.blob_storage_log WHERE query_id = '{backup_query_id}' AND error = '' AND event_type = 'Upload'"
+        ).strip()
+        assert int(blob_storage_log) >= 1, node.query(
+            "SELECT * FROM system.blob_storage_log FORMAT PrettyCompactMonoBlock"
+        )
 
 
 @pytest.mark.parametrize(
@@ -173,14 +308,40 @@ def test_backup_to_disk(storage_policy, to_disk):
     check_backup_and_restore(storage_policy, backup_destination)
 
 
+@pytest.mark.parametrize(
+    "storage_policy, to_disk",
+    [
+        pytest.param(
+            "policy_s3",
+            "disk_s3_other_bucket",
+            id="from_s3_to_s3",
+        ),
+        pytest.param(
+            "policy_s3_other_bucket",
+            "disk_s3",
+            id="from_s3_to_s3_other_bucket",
+        ),
+    ],
+)
+def test_backup_from_s3_to_s3_disk_native_copy(storage_policy, to_disk):
+    backup_name = new_backup_name()
+    backup_destination = f"Disk('{to_disk}', '{backup_name}')"
+    (backup_events, restore_events) = check_backup_and_restore(
+        storage_policy, backup_destination
+    )
+
+    assert backup_events["S3CopyObject"] > 0
+    assert restore_events["S3CopyObject"] > 0
+
+
 def test_backup_to_s3():
     storage_policy = "default"
     backup_name = new_backup_name()
     backup_destination = (
         f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', 'minio123')"
     )
-    check_backup_and_restore(storage_policy, backup_destination)
-    check_system_tables()
+    (backup_events, _) = check_backup_and_restore(storage_policy, backup_destination)
+    check_system_tables(backup_events["query_id"])
 
 
 def test_backup_to_s3_named_collection():
@@ -201,6 +362,15 @@ def test_backup_to_s3_multipart():
     )
     assert node.contains_in_log(
         f"copyDataToS3File: Multipart upload has completed. Bucket: root, Key: data/backups/multipart/{backup_name}"
+    )
+
+    backup_query_id = backup_events["query_id"]
+    blob_storage_log = node.query(
+        f"SELECT countIf(event_type == 'MultiPartUploadCreate') * countIf(event_type == 'MultiPartUploadComplete') * countIf(event_type == 'MultiPartUploadWrite') "
+        f"FROM system.blob_storage_log WHERE query_id = '{backup_query_id}' AND error = ''"
+    ).strip()
+    assert int(blob_storage_log) >= 1, node.query(
+        "SELECT * FROM system.blob_storage_log FORMAT PrettyCompactMonoBlock"
     )
 
     s3_backup_events = (
@@ -251,25 +421,15 @@ def test_backup_to_s3_multipart():
     assert "ReadBufferFromS3RequestsErrors" not in restore_events
 
 
-def test_backup_to_s3_native_copy():
-    storage_policy = "policy_s3"
-    backup_name = new_backup_name()
-    backup_destination = (
-        f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', 'minio123')"
-    )
-    (backup_events, restore_events) = check_backup_and_restore(
-        storage_policy, backup_destination
-    )
-    # single part upload
-    assert backup_events["S3CopyObject"] > 0
-    assert restore_events["S3CopyObject"] > 0
-    assert node.contains_in_log(
-        f"copyS3File: Single operation copy has completed. Bucket: root, Key: data/backups/{backup_name}"
-    )
-
-
-def test_backup_to_s3_native_copy_other_bucket():
-    storage_policy = "policy_s3_other_bucket"
+@pytest.mark.parametrize(
+    "storage_policy",
+    [
+        "policy_s3",
+        "policy_s3_other_bucket",
+        "policy_s3_plain_rewritable",
+    ],
+)
+def test_backup_to_s3_native_copy(storage_policy):
     backup_name = new_backup_name()
     backup_destination = (
         f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', 'minio123')"
@@ -399,3 +559,220 @@ def test_backup_with_fs_cache(
     # see MergeTreeData::initializeDirectoriesAndFormatVersion()
     if "CachedWriteBufferCacheWriteBytes" in restore_events:
         assert restore_events["CachedWriteBufferCacheWriteBytes"] <= 1
+
+
+def test_backup_to_zip():
+    storage_policy = "default"
+    backup_name = new_backup_name()
+    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.zip', 'minio', 'minio123')"
+    check_backup_and_restore(storage_policy, backup_destination)
+
+
+def test_backup_to_tar():
+    storage_policy = "default"
+    backup_name = new_backup_name()
+    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.tar', 'minio', 'minio123')"
+    check_backup_and_restore(storage_policy, backup_destination)
+
+
+def test_backup_to_tar_gz():
+    storage_policy = "default"
+    backup_name = new_backup_name()
+    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.tar.gz', 'minio', 'minio123')"
+    check_backup_and_restore(storage_policy, backup_destination)
+
+
+def test_backup_to_tar_bz2():
+    storage_policy = "default"
+    backup_name = new_backup_name()
+    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.tar.bz2', 'minio', 'minio123')"
+    check_backup_and_restore(storage_policy, backup_destination)
+
+
+def test_backup_to_tar_lzma():
+    storage_policy = "default"
+    backup_name = new_backup_name()
+    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.tar.lzma', 'minio', 'minio123')"
+    check_backup_and_restore(storage_policy, backup_destination)
+
+
+def test_backup_to_tar_zst():
+    storage_policy = "default"
+    backup_name = new_backup_name()
+    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.tar.zst', 'minio', 'minio123')"
+    check_backup_and_restore(storage_policy, backup_destination)
+
+
+def test_backup_to_tar_xz():
+    storage_policy = "default"
+    backup_name = new_backup_name()
+    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.tar.xz', 'minio', 'minio123')"
+    check_backup_and_restore(storage_policy, backup_destination)
+
+
+def test_user_specific_auth(start_cluster):
+    def create_user(user):
+        node.query(f"CREATE USER {user}")
+        node.query(f"GRANT CURRENT GRANTS ON *.* TO {user}")
+
+    create_user("superuser1")
+    create_user("superuser2")
+    create_user("regularuser")
+
+    node.query("CREATE TABLE specific_auth (col UInt64) ENGINE=MergeTree ORDER BY col")
+    node.query("INSERT INTO specific_auth VALUES (1)")
+
+    def backup_restore(backup, user, should_fail, on_cluster=False, base_backup=None):
+        on_cluster_clause = "ON CLUSTER 'cluster'" if on_cluster else ""
+        base_backup = (
+            f" SETTINGS base_backup = {base_backup}" if base_backup is not None else ""
+        )
+        backup_query = (
+            f"BACKUP TABLE specific_auth {on_cluster_clause} TO {backup} {base_backup}"
+        )
+        restore_query = f"RESTORE TABLE specific_auth {on_cluster_clause} FROM {backup}"
+
+        if should_fail:
+            assert "Access" in node.query_and_get_error(backup_query, user=user)
+        else:
+            node.query(backup_query, user=user)
+            node.query("DROP TABLE specific_auth SYNC")
+            node.query(restore_query, user=user)
+
+    backup_restore(
+        "S3('http://minio1:9001/root/data/backups/limited/backup1/')",
+        user=None,
+        should_fail=True,
+    )
+
+    backup_restore(
+        "S3('http://minio1:9001/root/data/backups/limited/backup1/')",
+        user="regularuser",
+        should_fail=True,
+    )
+
+    backup_restore(
+        "S3('http://minio1:9001/root/data/backups/limited/backup1/')",
+        user="superuser1",
+        should_fail=False,
+    )
+
+    backup_restore(
+        "S3('http://minio1:9001/root/data/backups/limited/backup2/')",
+        user="superuser2",
+        should_fail=False,
+    )
+
+    assert "Access" in node.query_and_get_error(
+        "RESTORE TABLE specific_auth FROM S3('http://minio1:9001/root/data/backups/limited/backup1/')",
+        user="regularuser",
+    )
+
+    node.query("INSERT INTO specific_auth VALUES (2)")
+
+    backup_restore(
+        "S3('http://minio1:9001/root/data/backups/limited/backup1_inc/')",
+        user="regularuser",
+        should_fail=True,
+        base_backup="S3('http://minio1:9001/root/data/backups/limited/backup1/')",
+    )
+
+    backup_restore(
+        "S3('http://minio1:9001/root/data/backups/limited/backup1_inc/')",
+        user="superuser1",
+        should_fail=False,
+        base_backup="S3('http://minio1:9001/root/data/backups/limited/backup1/')",
+    )
+
+    assert "Access" in node.query_and_get_error(
+        "RESTORE TABLE specific_auth FROM S3('http://minio1:9001/root/data/backups/limited/backup1_inc/')",
+        user="regularuser",
+    )
+
+    assert "Access Denied" in node.query_and_get_error(
+        "SELECT * FROM s3('http://minio1:9001/root/data/backups/limited/backup1/*', 'RawBLOB')",
+        user="regularuser",
+    )
+
+    node.query(
+        "SELECT * FROM s3('http://minio1:9001/root/data/backups/limited/backup1/*', 'RawBLOB')",
+        user="superuser1",
+    )
+
+    backup_restore(
+        "S3('http://minio1:9001/root/data/backups/limited/backup3/')",
+        user="regularuser",
+        should_fail=True,
+        on_cluster=True,
+    )
+
+    backup_restore(
+        "S3('http://minio1:9001/root/data/backups/limited/backup3/')",
+        user="superuser1",
+        should_fail=False,
+        on_cluster=True,
+    )
+
+    assert "Access Denied" in node.query_and_get_error(
+        "RESTORE TABLE specific_auth ON CLUSTER 'cluster' FROM S3('http://minio1:9001/root/data/backups/limited/backup3/')",
+        user="regularuser",
+    )
+
+    node.query("INSERT INTO specific_auth VALUES (3)")
+
+    backup_restore(
+        "S3('http://minio1:9001/root/data/backups/limited/backup3_inc/')",
+        user="regularuser",
+        should_fail=True,
+        on_cluster=True,
+        base_backup="S3('http://minio1:9001/root/data/backups/limited/backup3/')",
+    )
+
+    backup_restore(
+        "S3('http://minio1:9001/root/data/backups/limited/backup3_inc/')",
+        user="superuser1",
+        should_fail=False,
+        on_cluster=True,
+        base_backup="S3('http://minio1:9001/root/data/backups/limited/backup3/')",
+    )
+
+    assert "Access Denied" in node.query_and_get_error(
+        "RESTORE TABLE specific_auth ON CLUSTER 'cluster' FROM S3('http://minio1:9001/root/data/backups/limited/backup3_inc/')",
+        user="regularuser",
+    )
+
+    assert "Access Denied" in node.query_and_get_error(
+        "SELECT * FROM s3('http://minio1:9001/root/data/backups/limited/backup3/*', 'RawBLOB')",
+        user="regularuser",
+    )
+
+    node.query(
+        "SELECT * FROM s3('http://minio1:9001/root/data/backups/limited/backup3/*', 'RawBLOB')",
+        user="superuser1",
+    )
+
+    assert "Access Denied" in node.query_and_get_error(
+        "SELECT * FROM s3Cluster(cluster, 'http://minio1:9001/root/data/backups/limited/backup3/*', 'RawBLOB')",
+        user="regularuser",
+    )
+
+    node.query("DROP TABLE IF EXISTS test.specific_auth")
+
+
+def test_backup_to_s3_different_credentials():
+    storage_policy = "policy_s3_restricted"
+
+    def check_backup_restore(allow_s3_native_copy):
+        backup_name = new_backup_name()
+        backup_destination = f"S3('http://minio1:9001/root2/data/backups/{backup_name}', 'miniorestricted2', 'minio123')"
+        settings = {"allow_s3_native_copy": allow_s3_native_copy}
+        (backup_events, _) = check_backup_and_restore(
+            storage_policy,
+            backup_destination,
+            backup_settings=settings,
+            restore_settings=settings,
+        )
+        check_system_tables(backup_events["query_id"])
+
+    check_backup_restore(False)
+    check_backup_restore(True)

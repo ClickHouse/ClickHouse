@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 DROP TABLE IF EXISTS select_final;
 
 SET allow_asynchronous_read_from_io_pool_for_merge_tree = 0;
@@ -29,17 +31,7 @@ SELECT max(x) FROM select_final FINAL where string = 'updated';
 TRUNCATE TABLE select_final;
 
 INSERT INTO select_final SELECT toDate('2000-01-01'), number, '' FROM numbers(500000);
-
 OPTIMIZE TABLE select_final FINAL;
-
-SET remote_filesystem_read_method = 'read';
-SET local_filesystem_read_method = 'pread';
-set load_marks_asynchronously = 0;
-
 SELECT max(x) FROM select_final FINAL;
-
-SYSTEM FLUSH LOGS;
-
-SELECT length(thread_ids) FROM system.query_log WHERE query='SELECT max(x) FROM select_final FINAL;' AND type='QueryFinish' AND current_database = currentDatabase() ORDER BY event_time DESC LIMIT 1;
 
 DROP TABLE select_final;

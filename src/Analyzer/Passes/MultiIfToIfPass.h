@@ -17,7 +17,7 @@ public:
 
     String getDescription() override { return "Optimize multiIf with single condition to if."; }
 
-    void run(QueryTreeNodePtr query_tree_node, ContextPtr context) override;
+    void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
 
 };
 

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: no-replicated-database, no-shared-merge-tree
+# Tag no-replicated-database: CREATE AS SELECT is disabled
+# Tag no-shared-merge-tree -- implemented separate test, just bad substituion here
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

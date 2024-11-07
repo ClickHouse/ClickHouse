@@ -1,11 +1,11 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/argmin
-sidebar_position: 105
+sidebar_position: 110
 ---
 
 # argMin
 
-Calculates the `arg` value for a minimum `val` value. If there are several different values of `arg` for minimum values of `val`, returns the first of these values encountered.
+Calculates the `arg` value for a minimum `val` value. If there are multiple rows with equal `val` being the maximum, which of the associated `arg` is returned is not deterministic.
 Both parts the `arg` and the `min` behave as [aggregate functions](/docs/en/sql-reference/aggregate-functions/index.md), they both [skip `Null`](/docs/en/sql-reference/aggregate-functions/index.md#null-processing) during processing and return not `Null` values if not `Null` values are available.
 
 **Syntax**
@@ -104,7 +104,7 @@ SELECT argMin((a, b), (b, a)), min(tuple(b, a)) FROM test;
 └──────────────────────────────────┴──────────────────┘
 
 SELECT argMin(a, tuple(b)) FROM test;
-┌─argMax(a, tuple(b))─┐
+┌─argMin(a, tuple(b))─┐
 │ d                   │ -- `Tuple` can be used in `min` to not skip rows with `NULL` values as b.
 └─────────────────────┘
 ```

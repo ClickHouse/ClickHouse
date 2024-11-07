@@ -7,18 +7,25 @@
 namespace DB
 {
 
-class ServerAsynchronousMetrics : public AsynchronousMetrics, WithContext
+class ServerAsynchronousMetrics : WithContext, public AsynchronousMetrics
 {
 public:
     ServerAsynchronousMetrics(
         ContextPtr global_context_,
-        int update_period_seconds,
-        int heavy_metrics_update_period_seconds,
-        const ProtocolServerMetricsFunc & protocol_server_metrics_func_);
+        unsigned update_period_seconds,
+        bool update_heavy_metrics_,
+        unsigned heavy_metrics_update_period_seconds,
+        const ProtocolServerMetricsFunc & protocol_server_metrics_func_,
+        bool update_jemalloc_epoch_,
+        bool update_rss_);
+
+    ~ServerAsynchronousMetrics() override;
+
 private:
-    void updateImpl(AsynchronousMetricValues & new_values, TimePoint update_time, TimePoint current_time) override;
+    void updateImpl(TimePoint update_time, TimePoint current_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values) override;
     void logImpl(AsynchronousMetricValues & new_values) override;
 
+    bool update_heavy_metrics;
     const Duration heavy_metric_update_period;
     TimePoint heavy_metric_previous_update_time;
     double heavy_update_interval = 0.;
@@ -32,7 +39,7 @@ private:
     DetachedPartsStats detached_parts_stats{};
 
     void updateDetachedPartsStats();
-    void updateHeavyMetricsIfNeeded(TimePoint current_time, TimePoint update_time, AsynchronousMetricValues & new_values);
+    void updateHeavyMetricsIfNeeded(TimePoint current_time, TimePoint update_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values);
 };
 
 }

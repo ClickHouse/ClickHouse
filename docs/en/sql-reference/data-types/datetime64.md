@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/data-types/datetime64
-sidebar_position: 49
+sidebar_position: 18
 sidebar_label: DateTime64
 ---
 
@@ -9,7 +9,7 @@ sidebar_label: DateTime64
 Allows to store an instant in time, that can be expressed as a calendar date and a time of a day, with defined sub-second precision
 
 Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ].
-Typically are used - 3 (milliseconds), 6 (microseconds), 9 (nanoseconds).
+Typically, are used - 3 (milliseconds), 6 (microseconds), 9 (nanoseconds).
 
 **Syntax:**
 
@@ -28,7 +28,7 @@ Note: The precision of the maximum value is 8. If the maximum precision of 9 dig
 1. Creating a table with `DateTime64`-type column and inserting data into it:
 
 ``` sql
-CREATE TABLE dt
+CREATE TABLE dt64
 (
     `timestamp` DateTime64(3, 'Asia/Istanbul'),
     `event_id` UInt8
@@ -37,11 +37,12 @@ ENGINE = TinyLog;
 ```
 
 ``` sql
-INSERT INTO dt Values (1546300800123, 1), (1546300800.123, 2), ('2019-01-01 00:00:00', 3);
-```
+-- Parse DateTime
+-- - from integer interpreted as number of seconds since 1970-01-01.
+-- - from string,
+INSERT INTO dt64 VALUES (1546300800123, 1), (1546300800.123, 2), ('2019-01-01 00:00:00', 3);
 
-``` sql
-SELECT * FROM dt;
+SELECT * FROM dt64;
 ```
 
 ``` text
@@ -58,7 +59,7 @@ SELECT * FROM dt;
 2. Filtering on `DateTime64` values
 
 ``` sql
-SELECT * FROM dt WHERE timestamp = toDateTime64('2019-01-01 00:00:00', 3, 'Asia/Istanbul');
+SELECT * FROM dt64 WHERE timestamp = toDateTime64('2019-01-01 00:00:00', 3, 'Asia/Istanbul');
 ```
 
 ``` text
@@ -70,7 +71,7 @@ SELECT * FROM dt WHERE timestamp = toDateTime64('2019-01-01 00:00:00', 3, 'Asia/
 Unlike `DateTime`, `DateTime64` values are not converted from `String` automatically.
 
 ``` sql
-SELECT * FROM dt WHERE timestamp = toDateTime64(1546300800.123, 3);
+SELECT * FROM dt64 WHERE timestamp = toDateTime64(1546300800.123, 3);
 ```
 
 ``` text
@@ -101,7 +102,7 @@ SELECT toDateTime64(now(), 3, 'Asia/Istanbul') AS column, toTypeName(column) AS 
 SELECT
 toDateTime64(timestamp, 3, 'Europe/London') as lon_time,
 toDateTime64(timestamp, 3, 'Asia/Istanbul') as istanbul_time
-FROM dt;
+FROM dt64;
 ```
 
 ``` text
@@ -118,7 +119,7 @@ FROM dt;
 - [Functions for working with dates and times](../../sql-reference/functions/date-time-functions.md)
 - [The `date_time_input_format` setting](../../operations/settings/settings-formats.md#date_time_input_format)
 - [The `date_time_output_format` setting](../../operations/settings/settings-formats.md#date_time_output_format)
-- [The `timezone` server configuration parameter](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
+- [The `timezone` server configuration parameter](../../operations/server-configuration-parameters/settings.md#timezone)
 - [The `session_timezone` setting](../../operations/settings/settings.md#session_timezone)
 - [Operators for working with dates and times](../../sql-reference/operators/index.md#operators-for-working-with-dates-and-times)
 - [`Date` data type](../../sql-reference/data-types/date.md)

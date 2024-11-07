@@ -1,33 +1,33 @@
 #pragma once
 
 #include <base/types.h>
-#include <base/EnumReflection.h>
 
 namespace DB
 {
 /// Kind of a temporal interval.
 struct IntervalKind
 {
-    enum Kind
+    /// note: The order and numbers are important and used in binary encoding, append new interval kinds to the end of list.
+    enum class Kind : uint8_t
     {
-        Nanosecond,
-        Microsecond,
-        Millisecond,
-        Second,
-        Minute,
-        Hour,
-        Day,
-        Week,
-        Month,
-        Quarter,
-        Year,
+        Nanosecond = 0x00,
+        Microsecond = 0x01,
+        Millisecond = 0x02,
+        Second = 0x03,
+        Minute = 0x04,
+        Hour = 0x05,
+        Day = 0x06,
+        Week = 0x07,
+        Month = 0x08,
+        Quarter = 0x09,
+        Year = 0x0A,
     };
-    Kind kind = Second;
+    Kind kind = Kind::Second;
 
-    IntervalKind(Kind kind_ = Second) : kind(kind_) {} /// NOLINT
+    IntervalKind(Kind kind_ = Kind::Second) : kind(kind_) {} /// NOLINT
     operator Kind() const { return kind; } /// NOLINT
 
-    constexpr std::string_view toString() const { return magic_enum::enum_name(kind); }
+    std::string_view toString() const;
 
     /// Returns number of nanoseconds in one interval.
     /// For `Month`, `Quarter` and `Year` the function returns an average number of nanoseconds.
@@ -71,6 +71,8 @@ struct IntervalKind
     /// Returns false if the conversion did not succeed.
     /// For example, `IntervalKind::tryParseString('second', result)` returns `result` equals `IntervalKind::Kind::Second`.
     static bool tryParseString(const std::string & kind, IntervalKind::Kind & result);
+
+    auto operator<=>(const IntervalKind & other) const { return kind <=> other.kind; }
 };
 
 /// NOLINTNEXTLINE

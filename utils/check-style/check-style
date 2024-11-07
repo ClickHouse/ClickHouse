@@ -14,7 +14,8 @@
 
 LC_ALL="en_US.UTF-8"
 ROOT_PATH=$(git rev-parse --show-toplevel)
-EXCLUDE_DIRS='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*.cpp|utils/keeper-bench/example.yaml'
+EXCLUDE='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*.cpp|utils/keeper-bench/example.yaml'
+EXCLUDE_DOCS='Settings\.cpp|FormatFactorySettings\.h'
 
 # From [1]:
 #     But since array_to_string_internal() in array.c still loops over array
@@ -31,7 +32,8 @@ function in_array()
 }
 
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/null |
-    grep -vP $EXCLUDE_DIRS |
+    grep -vP $EXCLUDE |
+    grep -vP $EXCLUDE_DOCS |
     xargs grep $@ -P '((class|struct|namespace|enum|if|for|while|else|throw|switch).*|\)(\s*const)?(\s*override)?\s*)\{$|\s$|^ {1,3}[^\* ]\S|\t|^\s*(if|else if|if constexpr|else if constexpr|for|while|catch|switch)\(|\( [^\s\\]|\S \)' |
 # a curly brace not in a new line, but not for the case of C++11 init or agg. initialization | trailing whitespace | number of ws not a multiple of 4, but not in the case of comment continuation | missing whitespace after for/if/while... before opening brace | whitespaces inside braces
     grep -v -P '(//|:\s+\*|\$\(\()| \)"'
@@ -39,21 +41,19 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/n
 
 # Tabs
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/null |
-    grep -vP $EXCLUDE_DIRS |
-    xargs grep $@ -F $'\t'
+    grep -vP $EXCLUDE |
+    xargs grep $@ -F $'\t' && echo '^ tabs are not allowed'
 
 # // namespace comments are unneeded
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/null |
-    grep -vP $EXCLUDE_DIRS |
+    grep -vP $EXCLUDE |
     xargs grep $@ -P '}\s*//+\s*namespace\s*'
 
 # Broken symlinks
 find -L $ROOT_PATH -type l 2>/dev/null | grep -v contrib && echo "^ Broken symlinks found"
 
-# Double whitespaces
-find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/null |
-    grep -vP $EXCLUDE_DIRS |
-    while read i; do $ROOT_PATH/utils/check-style/double-whitespaces.pl < $i || echo -e "^ File $i contains double whitespaces\n"; done
+# Duplicated or incorrect setting declarations
+bash $ROOT_PATH/utils/check-style/check-settings-style
 
 # Unused/Undefined/Duplicates ErrorCodes/ProfileEvents/CurrentMetrics
 declare -A EXTERN_TYPES
@@ -70,23 +70,31 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::increment
     ProfileEvents::incrementForLogMessage
     ProfileEvents::getName
+    ProfileEvents::Timer
     ProfileEvents::Type
     ProfileEvents::TypeEnum
+    ProfileEvents::ValueType
     ProfileEvents::dumpToMapColumn
     ProfileEvents::getProfileEvents
     ProfileEvents::ThreadIdToCountersSnapshot
     ProfileEvents::LOCAL_NAME
+    ProfileEvents::keeper_profile_events
     ProfileEvents::CountersIncrement
+    ProfileEvents::size
 
     CurrentMetrics::add
     CurrentMetrics::sub
     CurrentMetrics::get
+    CurrentMetrics::getDocumentation
+    CurrentMetrics::getName
     CurrentMetrics::set
     CurrentMetrics::end
     CurrentMetrics::Increment
     CurrentMetrics::Metric
     CurrentMetrics::values
     CurrentMetrics::Value
+    CurrentMetrics::keeper_metrics
+    CurrentMetrics::size
 
     ErrorCodes::ErrorCode
     ErrorCodes::getName
@@ -95,6 +103,7 @@ EXTERN_TYPES_EXCLUDES=(
     ErrorCodes::values
     ErrorCodes::values[i]
     ErrorCodes::getErrorCodeByName
+    ErrorCodes::Value
 )
 for extern_type in ${!EXTERN_TYPES[@]}; do
     type_of_extern=${EXTERN_TYPES[$extern_type]}
@@ -106,9 +115,9 @@ for extern_type in ${!EXTERN_TYPES[@]}; do
     find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | {
         # NOTE: the check is pretty dumb and distinguish only by the type_of_extern,
         # and this matches with zkutil::CreateMode
-        grep -v 'src/Common/ZooKeeper/Types.h'
+        grep -v -e 'src/Common/ZooKeeper/Types.h' -e 'src/Coordination/KeeperConstants.cpp'
     } | {
-        grep -vP $EXCLUDE_DIRS | xargs grep -l -P "extern const $type_of_extern $allowed_chars"
+        grep -vP $EXCLUDE | xargs grep -l -P "extern const $type_of_extern $allowed_chars"
     } | while read file; do
         grep -P "extern const $type_of_extern $allowed_chars;" $file | sed -r -e "s/^.*?extern const $type_of_extern ($allowed_chars);.*?$/\1/" | while read val; do
             if ! grep -q "$extern_type::$val" $file; then
@@ -126,7 +135,7 @@ for extern_type in ${!EXTERN_TYPES[@]}; do
     #   sed -i -r "0,/(\s*)extern const $type_of_extern [$allowed_chars]+/s//\1extern const $type_of_extern $val;\n&/" $file || \
     #     awk '{ print; if (ns == 1) { ns = 2 }; if (ns == 2) { ns = 0; print "namespace $extern_type\n{\n    extern const $type_of_extern '$val';\n}" } }; /namespace DB/ { ns = 1; };' < $file > ${file}.tmp && mv ${file}.tmp $file )
     find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | {
-        grep -vP $EXCLUDE_DIRS | xargs grep -l -P "$extern_type::$allowed_chars"
+        grep -vP $EXCLUDE | xargs grep -l -P "$extern_type::$allowed_chars"
     } | while read file; do
         grep -P "$extern_type::$allowed_chars" $file | grep -P -v '^\s*//' | sed -r -e "s/^.*?$extern_type::($allowed_chars).*?$/\1/" | while read val; do
             if ! grep -q "extern const $type_of_extern $val" $file; then
@@ -139,7 +148,7 @@ for extern_type in ${!EXTERN_TYPES[@]}; do
 
     # Duplicates
     find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | {
-        grep -vP $EXCLUDE_DIRS | xargs grep -l -P "$extern_type::$allowed_chars"
+        grep -vP $EXCLUDE | xargs grep -l -P "$extern_type::$allowed_chars"
     } | while read file; do
         grep -P "extern const $type_of_extern $allowed_chars;" $file | sort | uniq -c | grep -v -P ' +1 ' && echo "Duplicate $extern_type in file $file"
     done
@@ -147,19 +156,16 @@ done
 
 # Three or more consecutive empty lines
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE_DIRS |
+    grep -vP $EXCLUDE |
     while read file; do awk '/^$/ { ++i; if (i > 2) { print "More than two consecutive empty lines in file '$file'" } } /./ { i = 0 }' $file; done
 
 # Broken XML files (requires libxml2-utils)
 find $ROOT_PATH/{src,base,programs,utils} -name '*.xml' |
-    grep -vP $EXCLUDE_DIRS |
+    grep -vP $EXCLUDE |
     xargs xmllint --noout --nonet
 
-# FIXME: for now only clickhouse-test
-pylint --rcfile=$ROOT_PATH/.pylintrc --persistent=no --score=n $ROOT_PATH/tests/clickhouse-test $ROOT_PATH/tests/ci/*.py
-
 find $ROOT_PATH -not -path $ROOT_PATH'/contrib*' \( -name '*.yaml' -or -name '*.yml' \) -type f |
-    grep -vP $EXCLUDE_DIRS |
+    grep -vP $EXCLUDE |
     xargs yamllint --config-file=$ROOT_PATH/.yamllint
 
 # Tests should not be named with "fail" in their names. It makes looking at the results less convenient.
@@ -170,13 +176,15 @@ find $ROOT_PATH/tests/queries -iname '*fail*' |
 # NOTE: it is not that accurate, but at least something.
 tests_with_query_log=( $(
     find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
-        xargs grep --with-filename -e system.query_log -e system.query_thread_log | cut -d: -f1 | sort -u
+        xargs grep --with-filename -e 'system.query_log\b' -e 'system.query_thread_log\b' | cut -d: -f1 | sort -u
 ) )
 for test_case in "${tests_with_query_log[@]}"; do
     grep -qE current_database.*currentDatabase "$test_case" || {
         grep -qE 'current_database.*\$CLICKHOUSE_DATABASE' "$test_case"
     } || echo "Queries to system.query_log/system.query_thread_log does not have current_database = currentDatabase() condition in $test_case"
 done
+
+grep -iE 'SYSTEM STOP MERGES;?$' -R $ROOT_PATH/tests/queries && echo "Merges cannot be disabled globally in fast/stateful/stateless tests, because it will break concurrently running queries"
 
 # There shouldn't be large jumps between test numbers (since they should be consecutive)
 max_diff=$(
@@ -244,21 +252,32 @@ for test_case in "${tests_with_replicated_merge_tree[@]}"; do
     esac
 done
 
-# All the submodules should be from https://github.com/
-find $ROOT_PATH -name '.gitmodules' | while read i; do grep -F 'url = ' $i | grep -v -F 'https://github.com/' && echo 'All the submodules should be from https://github.com/'; done
+# All submodules should be from https://github.com/
+git config --file "$ROOT_PATH/.gitmodules" --get-regexp 'submodule\..+\.url' | \
+while read -r line; do
+    name=${line#submodule.}; name=${name%.url*}
+    url=${line#* }
+    [[ "$url" != 'https://github.com/'* ]] && echo "All submodules should be from https://github.com/, submodule '$name' has '$url'"
+done
+
+# All submodules should be of this form: [submodule "contrib/libxyz"] (for consistency, the submodule name does matter too much)
+# - restrict the check to top-level .gitmodules file
+git config --file "$ROOT_PATH/.gitmodules" --get-regexp 'submodule\..+\.path' | \
+while read -r line; do
+    name=${line#submodule.}; name=${name%.path*}
+    path=${line#* }
+    [ "$name" != "$path" ] && echo "Submodule name '$name' is not equal to it's path '$path'"
+done
 
 # There shouldn't be any code snippets under GPL or LGPL
 find $ROOT_PATH/{src,base,programs} -name '*.h' -or -name '*.cpp' 2>/dev/null | xargs grep -i -F 'General Public License' && echo "There shouldn't be any code snippets under GPL or LGPL"
 
-# There shouldn't be any docker containers outside docker directory
-find $ROOT_PATH -not -path $ROOT_PATH'/tests/ci*' -not -path $ROOT_PATH'/docker*' -not -path $ROOT_PATH'/contrib*' -name Dockerfile -type f 2>/dev/null | xargs --no-run-if-empty -n1 echo "Please move Dockerfile to docker directory:"
-
 # There shouldn't be any docker compose files outside docker directory
-find $ROOT_PATH -name '*compose*.yml' -type f -not -path $ROOT_PATH'/docker' -not -path $ROOT_PATH'/tests/integration*' -not -path $ROOT_PATH'/docker*' -not -path $ROOT_PATH'/contrib*' 2>/dev/null | grep -vP $EXCLUDE_DIRS | xargs --no-run-if-empty grep -l "version:" | xargs --no-run-if-empty -n1 echo "Please move docker compose to the 'docker' or 'tests' directory:"
+find $ROOT_PATH -name '*compose*.yml' -type f -not -path $ROOT_PATH'/docker' -not -path $ROOT_PATH'/tests/integration*' -not -path $ROOT_PATH'/docker*' -not -path $ROOT_PATH'/contrib*' 2>/dev/null | grep -vP $EXCLUDE | xargs --no-run-if-empty grep -l "version:" | xargs --no-run-if-empty -n1 echo "Please move docker compose to the 'docker' or 'tests' directory:"
 
 # Check that every header file has #pragma once in first line
 find $ROOT_PATH/{src,programs,utils} -name '*.h' |
-    grep -vP $EXCLUDE_DIRS |
+    grep -vP $EXCLUDE |
     while read file; do [[ $(head -n1 $file) != '#pragma once' ]] && echo "File $file must have '#pragma once' in first line"; done
 
 # Check for executable bit on non-executable files
@@ -271,17 +290,22 @@ find $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} -name '*.md' -or -nam
 
 # Too many exclamation marks
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE_DIRS |
+    grep -vP $EXCLUDE |
     xargs grep -F '!!!' | grep -P '.' && echo "Too many exclamation marks (looks dirty, unconfident)."
+
+# Exclamation mark in a message
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
+    grep -vP $EXCLUDE |
+    xargs grep -F '!",' | grep -P '.' && echo "No need for an exclamation mark (looks dirty, unconfident)."
 
 # Trailing whitespaces
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE_DIRS |
+    grep -vP $EXCLUDE |
     xargs grep -n -P ' $' | grep -n -P '.' && echo "^ Trailing whitespaces."
 
 # Forbid stringstream because it's easy to use them incorrectly and hard to debug possible issues
 find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE_DIRS |
+    grep -vP $EXCLUDE |
     xargs grep -P 'std::[io]?stringstream' | grep -v "STYLE_CHECK_ALLOW_STD_STRING_STREAM" && echo "Use WriteBufferFromOwnString or ReadBufferFromString instead of std::stringstream"
 
 # Forbid std::cerr/std::cout in src (fine in programs/utils)
@@ -289,10 +313,9 @@ std_cerr_cout_excludes=(
     /examples/
     /tests/
     _fuzzer
-    # DUMP()
-    base/base/iostream_debug_helpers.h
     # OK
     src/Common/ProgressIndication.cpp
+    src/Common/ProgressTable.cpp
     # only under #ifdef DBMS_HASH_MAP_DEBUG_RESIZES, that is used only in tests
     src/Common/HashTable/HashTable.h
     # SensitiveDataMasker::printStats()
@@ -303,17 +326,23 @@ std_cerr_cout_excludes=(
     src/Interpreters/Context.cpp
     # IProcessor::dump()
     src/Processors/IProcessor.cpp
+    src/Client/ClientApplicationBase.cpp
     src/Client/ClientBase.cpp
     src/Client/LineReader.cpp
     src/Client/QueryFuzzer.cpp
     src/Client/Suggest.cpp
+    src/Client/ClientBase.h
+    src/Client/LineReader.h
+    src/Client/ReplxxLineReader.h
     src/Bridge/IBridge.cpp
     src/Daemon/BaseDaemon.cpp
     src/Loggers/Loggers.cpp
+    src/Common/GWPAsan.cpp
+    src/Common/ProgressIndication.h
 )
 sources_with_std_cerr_cout=( $(
     find $ROOT_PATH/{src,base} -name '*.h' -or -name '*.cpp' | \
-        grep -vP $EXCLUDE_DIRS | \
+        grep -vP $EXCLUDE | \
         grep -F -v $(printf -- "-e %s " "${std_cerr_cout_excludes[@]}") | \
         xargs grep -F --with-filename -e std::cerr -e std::cout | cut -d: -f1 | sort -u
 ) )
@@ -330,7 +359,7 @@ done
 # NOTE: it is not that accuate, but at least something.
 tests_with_event_time_date=( $(
     find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
-        grep -vP $EXCLUDE_DIRS |
+        grep -vP $EXCLUDE |
         xargs grep --with-filename -e event_time -e event_date | cut -d: -f1 | sort -u
 ) )
 for test_case in "${tests_with_event_time_date[@]}"; do
@@ -341,7 +370,7 @@ done
 
 expect_tests=( $(find $ROOT_PATH/tests/queries -name '*.expect') )
 for test_case in "${expect_tests[@]}"; do
-    pattern="^exp_internal -f \$env(CLICKHOUSE_TMP)/\$basename.debuglog 0$"
+    pattern="^exp_internal -f \$CLICKHOUSE_TMP/\$basename.debuglog 0$"
     grep -q "$pattern" "$test_case" || echo "Missing '$pattern' in '$test_case'"
 
     if grep -q "^spawn.*CLICKHOUSE_CLIENT_BINARY$" "$test_case"; then
@@ -386,18 +415,23 @@ find $ROOT_PATH | sort -f | uniq -i -c | awk '{ if ($1 > 1) print }'
 
 # Forbid std::filesystem::is_symlink and std::filesystem::read_symlink, because it's easy to use them incorrectly
 find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE_DIRS |
+    grep -vP $EXCLUDE |
     xargs grep -P '::(is|read)_symlink' | grep -v "STYLE_CHECK_ALLOW_STD_FS_SYMLINK" && echo "Use DB::FS::isSymlink and DB::FS::readSymlink instead"
 
 # Forbid __builtin_unreachable(), because it's hard to debug when it becomes reachable
 find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE_DIRS |
+    grep -vP $EXCLUDE |
     xargs grep -P '__builtin_unreachable' && echo "Use UNREACHABLE() from defines.h instead"
+
+# Forbid mt19937() and random_device() which are outdated and slow
+find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
+    grep -vP $EXCLUDE |
+    xargs grep -P '(std::mt19937|std::mersenne_twister_engine|std::random_device)' && echo "Use pcg64_fast (from pcg_random.h) and randomSeed (from Common/randomSeed.h) instead"
 
 # Require checking return value of close(),
 # since it can hide fd misuse and break other places.
 find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE_DIRS |
+    grep -vP $EXCLUDE |
     xargs grep -e ' close(.*fd' -e ' ::close(' | grep -v = && echo "Return value of close() should be checked"
 
 # Check for existence of __init__.py files
@@ -415,5 +449,33 @@ find $ROOT_PATH/tests/queries/1_stateful -name '*.sql' -or -name '*.sh' | grep -
 # Check for bad punctuation: whitespace before comma.
 find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep -P --line-number '\w ,' | grep -v 'bad punctuation is ok here' && echo "^ There is bad punctuation: whitespace before comma. You should write it like this: 'Hello, world!'"
 
+# Check usage of std::regex which is too bloated and slow.
+find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep -P --line-number 'std::regex' | grep -P '.' && echo "^ Please use re2 instead of std::regex"
+
 # Cyrillic characters hiding inside Latin.
-find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep -P --line-number '[a-zA-Z][а-яА-ЯёЁ]|[а-яА-ЯёЁ][a-zA-Z]' && echo "^ Cyrillic characters found in unexpected place."
+find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | grep -v StorageSystemContributors.generated.cpp | xargs grep -P --line-number '[a-zA-Z][а-яА-ЯёЁ]|[а-яА-ЯёЁ][a-zA-Z]' && echo "^ Cyrillic characters found in unexpected place."
+
+# Orphaned header files.
+join -v1 <(find $ROOT_PATH/{src,programs,utils} -name '*.h' -printf '%f\n' | sort | uniq) <(find $ROOT_PATH/{src,programs,utils} -name '*.cpp' -or -name '*.c' -or -name '*.h' -or -name '*.S' | xargs grep --no-filename -o -P '[\w-]+\.h' | sort | uniq) |
+    grep . && echo '^ Found orphan header files.'
+
+# Don't allow dynamic compiler check with CMake, because we are using hermetic, reproducible, cross-compiled, static (TLDR, good) builds.
+ls -1d $ROOT_PATH/contrib/*-cmake | xargs -I@ find @ -name 'CMakeLists.txt' -or -name '*.cmake' | xargs grep --with-filename -i -P 'check_c_compiler_flag|check_cxx_compiler_flag|check_c_source_compiles|check_cxx_source_compiles|check_include_file|check_symbol_exists|cmake_push_check_state|cmake_pop_check_state|find_package|CMAKE_REQUIRED_FLAGS|CheckIncludeFile|CheckCCompilerFlag|CheckCXXCompilerFlag|CheckCSourceCompiles|CheckCXXSourceCompiles|CheckCSymbolExists|CheckCXXSymbolExists' | grep -v Rust && echo "^ It's not allowed to have dynamic compiler checks with CMake."
+
+# DOS/Windows newlines
+find $ROOT_PATH/{base,src,programs,utils,docs} -name '*.md' -or -name '*.h' -or -name '*.cpp' -or -name '*.js' -or -name '*.py' -or -name '*.html' | xargs grep -l -P '\r$' && echo "^ Files contain DOS/Windows newlines (\r\n instead of \n)."
+
+# Wrong spelling of abbreviations, e.g. SQL is right, Sql is wrong. XMLHttpRequest is very wrong.
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
+    grep -vP $EXCLUDE |
+    xargs grep -P 'Sql|Html|Xml|Cpu|Tcp|Udp|Http|Db|Json|Yaml' | grep -v -P 'RabbitMQ|Azure|Aws|aws|Avro|IO/S3' &&
+    echo "Abbreviations such as SQL, XML, HTTP, should be in all caps. For example, SQL is right, Sql is wrong. XMLHttpRequest is very wrong."
+
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
+    grep -vP $EXCLUDE |
+    xargs grep -F -i 'ErrorCodes::LOGICAL_ERROR, "Logical error:' &&
+    echo "If an exception has LOGICAL_ERROR code, there is no need to include the text 'Logical error' in the exception message, because then the phrase 'Logical error' will be printed twice."
+
+PATTERN="allow_";
+DIFF=$(comm -3 <(grep -o "\b$PATTERN\w*\b" $ROOT_PATH/src/Core/Settings.cpp | sort -u) <(grep -o -h "\b$PATTERN\w*\b" $ROOT_PATH/src/Databases/enableAllExperimentalSettings.cpp $ROOT_PATH/utils/check-style/experimental_settings_ignore.txt | sort -u));
+[ -n "$DIFF" ] && echo "$DIFF" && echo "^^ Detected 'allow_*' settings that might need to be included in src/Databases/enableAllExperimentalSettings.cpp" && echo "Alternatively, consider adding an exception to utils/check-style/experimental_settings_ignore.txt"

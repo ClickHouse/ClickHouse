@@ -16,15 +16,27 @@ namespace ErrorCodes
 }
 
 
-Elf::Elf(const std::string & path)
-    : in(path, 0)
+Elf::Elf(const std::string & path_)
 {
+    in.emplace(path_, 0);
+    init(in->buffer().begin(), in->buffer().size(), path_);
+}
+
+Elf::Elf(const char * data, size_t size, const std::string & path_)
+{
+    init(data, size, path_);
+}
+
+void Elf::init(const char * data, size_t size, const std::string & path_)
+{
+    path = path_;
+    mapped = data;
+    elf_size = size;
+
     /// Check if it's an elf.
-    elf_size = in.buffer().size();
     if (elf_size < sizeof(ElfEhdr))
         throw Exception(ErrorCodes::CANNOT_PARSE_ELF, "The size of supposedly ELF file '{}' is too small", path);
 
-    mapped = in.buffer().begin();
     header = reinterpret_cast<const ElfEhdr *>(mapped);
 
     if (memcmp(header->e_ident, "\x7F""ELF", 4) != 0)
@@ -180,8 +192,7 @@ String Elf::getStoredBinaryHash() const
 {
     if (auto section = findSectionByName(".clickhouse.hash"))
         return {section->begin(), section->end()};
-    else
-        return {};
+    return {};
 }
 
 

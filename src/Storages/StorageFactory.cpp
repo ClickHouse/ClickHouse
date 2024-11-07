@@ -3,12 +3,17 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
+#include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/StorageID.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool log_queries;
+}
 
 namespace ErrorCodes
 {
@@ -23,11 +28,11 @@ namespace ErrorCodes
 
 
 /// Some types are only for intermediate values of expressions and cannot be used in tables.
-static void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types)
+void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types)
 {
     for (const auto & elem : names_and_types)
         if (elem.type->cannotBeStoredInTables())
-            throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_TABLES, "Data type {} cannot be used in tables", elem.type->getName());
+            throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_TABLES, "Data type {} of column '{}' cannot be used in tables", elem.type->getName(), elem.name);
 }
 
 
@@ -62,7 +67,7 @@ StoragePtr StorageFactory::get(
     ContextMutablePtr context,
     const ColumnsDescription & columns,
     const ConstraintsDescription & constraints,
-    bool has_force_restore_data_flag) const
+    LoadingStrictnessLevel mode) const
 {
     String name, comment;
 
@@ -127,23 +132,26 @@ StoragePtr StorageFactory::get(
             {
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Direct creation of tables with ENGINE View is not supported, use CREATE VIEW statement");
             }
-            else if (name == "MaterializedView")
+            if (name == "MaterializedView")
             {
-                throw Exception(ErrorCodes::INCORRECT_QUERY,
-                                "Direct creation of tables with ENGINE MaterializedView "
-                                "is not supported, use CREATE MATERIALIZED VIEW statement");
+                throw Exception(
+                    ErrorCodes::INCORRECT_QUERY,
+                    "Direct creation of tables with ENGINE MaterializedView "
+                    "is not supported, use CREATE MATERIALIZED VIEW statement");
             }
-            else if (name == "LiveView")
+            if (name == "LiveView")
             {
-                throw Exception(ErrorCodes::INCORRECT_QUERY,
-                                "Direct creation of tables with ENGINE LiveView "
-                                "is not supported, use CREATE LIVE VIEW statement");
+                throw Exception(
+                    ErrorCodes::INCORRECT_QUERY,
+                    "Direct creation of tables with ENGINE LiveView "
+                    "is not supported, use CREATE LIVE VIEW statement");
             }
-            else if (name == "WindowView")
+            if (name == "WindowView")
             {
-                throw Exception(ErrorCodes::INCORRECT_QUERY,
-                                "Direct creation of tables with ENGINE WindowView "
-                                "is not supported, use CREATE WINDOW VIEW statement");
+                throw Exception(
+                    ErrorCodes::INCORRECT_QUERY,
+                    "Direct creation of tables with ENGINE WindowView "
+                    "is not supported, use CREATE WINDOW VIEW statement");
             }
 
             auto it = storages.find(name);
@@ -152,8 +160,7 @@ StoragePtr StorageFactory::get(
                 auto hints = getHints(name);
                 if (!hints.empty())
                     throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Unknown table engine {}. Maybe you meant: {}", name, toString(hints));
-                else
-                    throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Unknown table engine {}", name);
+                throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Unknown table engine {}", name);
             }
 
             auto check_feature = [&](String feature_description, FeatureMatcherFn feature_matcher_fn)
@@ -202,7 +209,7 @@ StoragePtr StorageFactory::get(
     }
 
     if (query.comment)
-        comment = query.comment->as<ASTLiteral &>().value.get<String>();
+        comment = query.comment->as<ASTLiteral &>().value.safeGet<String>();
 
     ASTs empty_engine_args;
     Arguments arguments{
@@ -216,8 +223,7 @@ StoragePtr StorageFactory::get(
         .context = context,
         .columns = columns,
         .constraints = constraints,
-        .attach = query.attach,
-        .has_force_restore_data_flag = has_force_restore_data_flag,
+        .mode = mode,
         .comment = comment};
 
     assert(arguments.getContext() == arguments.getContext()->getGlobalContext());
@@ -232,7 +238,7 @@ StoragePtr StorageFactory::get(
         storage_def->engine->arguments->children = empty_engine_args;
     }
 
-    if (local_context->hasQueryContext() && local_context->getSettingsRef().log_queries)
+    if (local_context->hasQueryContext() && local_context->getSettingsRef()[Setting::log_queries])
         local_context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Storage, name);
 
     return res;
@@ -251,6 +257,15 @@ AccessType StorageFactory::getSourceAccessType(const String & table_engine) cons
     if (it == storages.end())
         return AccessType::NONE;
     return it->second.features.source_access_type;
+}
+
+
+const StorageFactory::StorageFeatures & StorageFactory::getStorageFeatures(const String & storage_name) const
+{
+    auto it = storages.find(storage_name);
+    if (it == storages.end())
+        throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Unknown table engine {}", storage_name);
+    return it->second.features;
 }
 
 }

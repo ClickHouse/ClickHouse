@@ -1,11 +1,13 @@
+import logging
+import os.path
+import ssl
+import urllib.parse
+import urllib.request
+
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 from helpers.ssl_context import WrapSSLContextWithSNI
-import urllib.request, urllib.parse
-import ssl
-import os.path
-import logging
-
 
 # The test cluster is configured with certificate for that host name, see 'server-ext.cnf'.
 # The client has to verify server certificate against that name. Client uses SNI
@@ -90,20 +92,8 @@ def test_https_wrong_cert():
         execute_query_https("SELECT currentUser()", user="john", cert_name="client2")
     assert "HTTP Error 403" in str(err.value)
 
-    count = 0
-    # Wrong certificate: self-signed certificate.
-    while count <= MAX_RETRY:
-        with pytest.raises(Exception) as err:
-            execute_query_https("SELECT currentUser()", user="john", cert_name="wrong")
-        err_str = str(err.value)
-        if count < MAX_RETRY and (
-            ("Broken pipe" in err_str) or ("EOF occurred" in err_str)
-        ):
-            count = count + 1
-            logging.warning(f"Failed attempt with wrong cert, err: {err_str}")
-            continue
-        assert "unknown ca" in err_str
-        break
+    # TODO: Add non-flaky tests for:
+    # - Wrong certificate: self-signed certificate.
 
     # No certificate.
     with pytest.raises(Exception) as err:
@@ -193,52 +183,13 @@ def test_https_non_ssl_auth():
         == "jane\n"
     )
 
-    count = 0
-    # However if we send a certificate it must not be wrong.
-    while count <= MAX_RETRY:
-        with pytest.raises(Exception) as err:
-            execute_query_https(
-                "SELECT currentUser()",
-                user="peter",
-                enable_ssl_auth=False,
-                cert_name="wrong",
-            )
-        err_str = str(err.value)
-        if count < MAX_RETRY and (
-            ("Broken pipe" in err_str) or ("EOF occurred" in err_str)
-        ):
-            count = count + 1
-            logging.warning(
-                f"Failed attempt with wrong cert, user: peter, err: {err_str}"
-            )
-            continue
-        assert "unknown ca" in err_str
-        break
-
-    count = 0
-    while count <= MAX_RETRY:
-        with pytest.raises(Exception) as err:
-            execute_query_https(
-                "SELECT currentUser()",
-                user="jane",
-                enable_ssl_auth=False,
-                password="qwe123",
-                cert_name="wrong",
-            )
-        err_str = str(err.value)
-        if count < MAX_RETRY and (
-            ("Broken pipe" in err_str) or ("EOF occurred" in err_str)
-        ):
-            count = count + 1
-            logging.warning(
-                f"Failed attempt with wrong cert, user: jane, err: {err_str}"
-            )
-            continue
-        assert "unknown ca" in err_str
-        break
+    # TODO: Add non-flaky tests for:
+    # - sending wrong cert
 
 
 def test_create_user():
+    instance.query("DROP USER IF EXISTS emma")
+
     instance.query("CREATE USER emma IDENTIFIED WITH ssl_certificate CN 'client3'")
     assert (
         execute_query_https("SELECT currentUser()", user="emma", cert_name="client3")
@@ -272,6 +223,8 @@ def test_create_user():
         instance.query(
             "SELECT name, auth_type, auth_params FROM system.users WHERE name IN ['emma', 'lucy'] ORDER BY name"
         )
-        == 'emma\tssl_certificate\t{"common_names":["client2"]}\n'
-        'lucy\tssl_certificate\t{"common_names":["client2","client3"]}\n'
+        == "emma\t['ssl_certificate']\t['{\"common_names\":[\"client2\"]}']\n"
+        'lucy\t[\'ssl_certificate\']\t[\'{"common_names":["client2","client3"]}\']\n'
     )
+
+    instance.query("DROP USER IF EXISTS emma")

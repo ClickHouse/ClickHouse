@@ -7,8 +7,8 @@
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
 #include <IO/WriteBufferFromString.h>
-#include <Formats/FormatFactory.h>
 #include <Poco/Event.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBuffer.h>
@@ -21,10 +21,14 @@ namespace CurrentMetrics
 {
     extern const Metric ParallelFormattingOutputFormatThreads;
     extern const Metric ParallelFormattingOutputFormatThreadsActive;
+    extern const Metric ParallelFormattingOutputFormatThreadsScheduled;
 }
 
 namespace DB
 {
+
+class IOutputFormat;
+using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
 namespace ErrorCodes
 {
@@ -80,10 +84,10 @@ public:
     explicit ParallelFormattingOutputFormat(Params params)
         : IOutputFormat(params.header, params.out)
         , internal_formatter_creator(params.internal_formatter_creator)
-        , pool(CurrentMetrics::ParallelFormattingOutputFormatThreads, CurrentMetrics::ParallelFormattingOutputFormatThreadsActive, params.max_threads_for_parallel_formatting)
+        , pool(CurrentMetrics::ParallelFormattingOutputFormatThreads, CurrentMetrics::ParallelFormattingOutputFormatThreadsActive, CurrentMetrics::ParallelFormattingOutputFormatThreadsScheduled, params.max_threads_for_parallel_formatting)
 
     {
-        LOG_TEST(&Poco::Logger::get("ParallelFormattingOutputFormat"), "Parallel formatting is being used");
+        LOG_TEST(getLogger("ParallelFormattingOutputFormat"), "Parallel formatting is being used");
 
         NullWriteBuffer buf;
         save_totals_and_extremes_in_statistics = internal_formatter_creator(buf)->areTotalsAndExtremesUsedInFinalize();
@@ -91,7 +95,7 @@ public:
 
         /// Just heuristic. We need one thread for collecting, one thread for receiving chunks
         /// and n threads for formatting.
-        processing_units.resize(params.max_threads_for_parallel_formatting + 2);
+        processing_units.resize(std::min(params.max_threads_for_parallel_formatting + 2, size_t{1024}));
 
         /// Do not put any code that could throw an exception under this line.
         /// Because otherwise the destructor of this class won't be called and this thread won't be joined.
@@ -118,9 +122,10 @@ public:
     void writePrefix() override
     {
         addChunk(Chunk{}, ProcessingUnitType::START, /*can_throw_exception*/ true);
+        started_prefix = true;
     }
 
-    void onCancel() override
+    void onCancel() noexcept override
     {
         finishAndWait();
     }
@@ -134,6 +139,7 @@ public:
     void writeSuffix() override
     {
         addChunk(Chunk{}, ProcessingUnitType::PLAIN_FINISH, /*can_throw_exception*/ true);
+        started_suffix = true;
     }
 
     String getContentType() const override
@@ -142,8 +148,16 @@ public:
         return internal_formatter_creator(buffer)->getContentType();
     }
 
+    bool supportsWritingException() const override
+    {
+        WriteBufferFromOwnString buffer;
+        return internal_formatter_creator(buffer)->supportsWritingException();
+    }
+
+    void setException(const String & exception_message_) override { exception_message = exception_message_; }
+
 private:
-    void consume(Chunk chunk) override final
+    void consume(Chunk chunk) final
     {
         addChunk(std::move(chunk), ProcessingUnitType::PLAIN, /*can_throw_exception*/ true);
     }
@@ -194,7 +208,7 @@ private:
     };
 
     /// Some information about what methods to call from internal parser.
-    enum class ProcessingUnitType
+    enum class ProcessingUnitType : uint8_t
     {
         START,
         PLAIN,
@@ -214,6 +228,7 @@ private:
         Memory<> segment;
         size_t actual_memory_size{0};
         Statistics statistics;
+        size_t rows_num;
     };
 
     Poco::Event collector_finished{};
@@ -241,13 +256,22 @@ private:
     std::condition_variable writer_condvar;
 
     size_t rows_consumed = 0;
+    size_t rows_collected = 0;
     std::atomic_bool are_totals_written = false;
 
     /// We change statistics in onProgress() which can be called from different threads.
     std::mutex statistics_mutex;
     bool save_totals_and_extremes_in_statistics;
 
-    void finishAndWait();
+    String exception_message;
+    bool exception_is_rethrown = false;
+    bool started_prefix = false;
+    bool collected_prefix = false;
+    bool started_suffix = false;
+    bool collected_suffix = false;
+    bool collected_finalize = false;
+
+    void finishAndWait() noexcept;
 
     void onBackgroundException()
     {
@@ -259,6 +283,17 @@ private:
         emergency_stop = true;
         writer_condvar.notify_all();
         collector_condvar.notify_all();
+    }
+
+    void rethrowBackgroundException()
+    {
+        /// Rethrow background exception only once, because
+        /// OutputFormat can be used after it to write an exception.
+        if (!exception_is_rethrown)
+        {
+            exception_is_rethrown = true;
+            std::rethrow_exception(background_exception);
+        }
     }
 
     void scheduleFormatterThreadForUnitWithNumber(size_t ticket_number, size_t first_row_num)
@@ -280,6 +315,12 @@ private:
         std::lock_guard lock(statistics_mutex);
         statistics.rows_before_limit = rows_before_limit;
         statistics.applied_limit = true;
+    }
+    void setRowsBeforeAggregation(size_t rows_before_aggregation) override
+    {
+        std::lock_guard lock(statistics_mutex);
+        statistics.rows_before_aggregation = rows_before_aggregation;
+        statistics.applied_aggregation = true;
     }
 };
 

@@ -9,6 +9,7 @@
 #include <base/DayNum.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
+#include <Parsers/IAST_fwd.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 
 
@@ -25,7 +26,7 @@ struct MergeTreePartInfo
     UInt32 level = 0;
     Int64 mutation = 0;   /// If the part has been mutated or contains mutated parts, is equal to mutation version number.
 
-    bool use_leagcy_max_level = false;  /// For compatibility. TODO remove it
+    bool use_legacy_max_level = false;  /// For compatibility. TODO remove it
 
     MergeTreePartInfo() = default;
 
@@ -44,6 +45,13 @@ struct MergeTreePartInfo
         return std::forward_as_tuple(partition_id, min_block, max_block, level, mutation)
             < std::forward_as_tuple(rhs.partition_id, rhs.min_block, rhs.max_block, rhs.level, rhs.mutation);
     }
+
+    bool operator>(const MergeTreePartInfo & rhs) const
+    {
+        return std::forward_as_tuple(partition_id, min_block, max_block, level, mutation)
+            > std::forward_as_tuple(rhs.partition_id, rhs.min_block, rhs.max_block, rhs.level, rhs.mutation);
+    }
+
 
     bool operator==(const MergeTreePartInfo & rhs) const
     {
@@ -100,9 +108,8 @@ struct MergeTreePartInfo
 
     bool isFakeDropRangePart() const
     {
-        /// Another max level was previously used for REPLACE/MOVE PARTITION
-        auto another_max_level = std::numeric_limits<decltype(level)>::max();
-        return level == MergeTreePartInfo::MAX_LEVEL || level == another_max_level;
+        /// LEGACY_MAX_LEVEL was previously used for REPLACE/MOVE PARTITION
+        return level == MergeTreePartInfo::MAX_LEVEL || level == MergeTreePartInfo::LEGACY_MAX_LEVEL;
     }
 
     String getPartNameAndCheckFormat(MergeTreeDataFormatVersion format_version) const;
@@ -119,7 +126,7 @@ struct MergeTreePartInfo
     void deserialize(ReadBuffer & in);
 
     /// Simple sanity check for partition ID. Checking that it's not too long or too short, doesn't contain a lot of '_'.
-    static void validatePartitionID(const String & partition_id, MergeTreeDataFormatVersion format_version);
+    static void validatePartitionID(const ASTPtr & partition_id_ast, MergeTreeDataFormatVersion format_version);
 
     static MergeTreePartInfo fromPartName(const String & part_name, MergeTreeDataFormatVersion format_version);
 
@@ -129,6 +136,8 @@ struct MergeTreePartInfo
     static void parseMinMaxDatesFromPartName(const String & part_name, DayNum & min_date, DayNum & max_date);
 
     static bool contains(const String & outer_part_name, const String & inner_part_name, MergeTreeDataFormatVersion format_version);
+
+    static bool areAllBlockNumbersCovered(const MergeTreePartInfo & blocks_range, std::vector<MergeTreePartInfo> candidates);
 
     static constexpr UInt32 MAX_LEVEL = 999999999;
     static constexpr UInt32 MAX_BLOCK_NUMBER = 999999999;
@@ -163,7 +172,8 @@ struct DetachedPartInfo : public MergeTreePartInfo
         "tmp-fetch",
         "covered-by-broken",
         "merge-not-byte-identical",
-        "mutate-not-byte-identical"
+        "mutate-not-byte-identical",
+        "broken-from-backup",
     });
 
     static constexpr auto DETACHED_REASONS_REMOVABLE_BY_TIMEOUT = std::to_array<std::string_view>({
@@ -175,7 +185,8 @@ struct DetachedPartInfo : public MergeTreePartInfo
         "deleting",
         "clone",
         "merge-not-byte-identical",
-        "mutate-not-byte-identical"
+        "mutate-not-byte-identical",
+        "broken-from-backup",
     });
 
     /// NOTE: It may parse part info incorrectly.

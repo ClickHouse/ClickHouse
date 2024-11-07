@@ -1,6 +1,9 @@
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/queryToString.h>
 #include <Storages/transformQueryForExternalDatabaseAnalyzer.h>
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 
 #include <Columns/ColumnConst.h>
@@ -8,7 +11,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ConstantValue.h>
-
+#include <Analyzer/JoinNode.h>
 
 #include <DataTypes/DataTypesNumber.h>
 
@@ -18,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -53,7 +57,7 @@ public:
 
 }
 
-ASTPtr getASTForExternalDatabaseFromQueryTree(const QueryTreeNodePtr & query_tree)
+ASTPtr getASTForExternalDatabaseFromQueryTree(const QueryTreeNodePtr & query_tree, const QueryTreeNodePtr & table_expression)
 {
     auto new_tree = query_tree->clone();
 
@@ -61,16 +65,38 @@ ASTPtr getASTForExternalDatabaseFromQueryTree(const QueryTreeNodePtr & query_tre
     visitor.visit(new_tree);
     const auto * query_node = new_tree->as<QueryNode>();
 
-    const auto & query_node_ast = query_node->toAST({ .add_cast_for_constants = false, .fully_qualified_identifiers = false });
+    const auto & join_tree = query_node->getJoinTree();
+    bool allow_where = true;
+    if (const auto * join_node = join_tree->as<JoinNode>())
+    {
+        if (join_node->getKind() == JoinKind::Left)
+            allow_where = join_node->getLeftTableExpression()->isEqual(*table_expression);
+        else if (join_node->getKind() == JoinKind::Right)
+            allow_where = join_node->getRightTableExpression()->isEqual(*table_expression);
+        else
+            allow_where = (join_node->getKind() == JoinKind::Inner);
+    }
 
-    const auto * union_ast = query_node_ast->as<ASTSelectWithUnionQuery>();
+    auto query_node_ast = query_node->toAST({ .add_cast_for_constants = false, .fully_qualified_identifiers = false });
+    const IAST * ast = query_node_ast.get();
+
+    if (const auto * ast_subquery = ast->as<ASTSubquery>())
+        ast = ast_subquery->children.at(0).get();
+
+    const auto * union_ast = ast->as<ASTSelectWithUnionQuery>();
     if (!union_ast)
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "QueryNode AST is not a ASTSelectWithUnionQuery");
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "QueryNode AST ({}) is not a ASTSelectWithUnionQuery", query_node_ast->getID());
 
     if (union_ast->list_of_selects->children.size() != 1)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "QueryNode AST is not a single ASTSelectQuery, got {}", union_ast->list_of_selects->children.size());
 
-    return union_ast->list_of_selects->children.at(0);
+    ASTPtr select_query = union_ast->list_of_selects->children.at(0);
+    auto * select_query_typed = select_query->as<ASTSelectQuery>();
+    if (!select_query_typed)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ASTSelectQuery, got {}", select_query ? select_query->formatForErrorMessage() : "nullptr");
+    if (!allow_where)
+        select_query_typed->setExpression(ASTSelectQuery::Expression::WHERE, nullptr);
+    return select_query;
 }
 
 }

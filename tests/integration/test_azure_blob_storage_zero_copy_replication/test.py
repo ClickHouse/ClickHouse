@@ -1,7 +1,10 @@
 import logging
-import pytest
-from helpers.cluster import ClickHouseCluster
+import os
 
+import pytest
+
+from helpers.cluster import ClickHouseCluster
+from test_storage_azure_blob_storage.test import azure_query
 
 logging.getLogger().setLevel(logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler())
@@ -15,20 +18,65 @@ CLUSTER_NAME = "test_cluster"
 drop_table_statement = f"DROP TABLE {TABLE_NAME} ON CLUSTER {CLUSTER_NAME} SYNC"
 
 
+def generate_cluster_def(port):
+    path = os.path.join(
+        os.path.dirname(os.path.realpath(__file__)),
+        "./_gen/storage_conf.xml",
+    )
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        f.write(
+            f"""<clickhouse>
+    <storage_configuration>
+        <disks>
+            <blob_storage_disk>
+                <type>azure_blob_storage</type>
+                <storage_account_url>http://azurite1:{port}/devstoreaccount1</storage_account_url>
+                <container_name>cont</container_name>
+                <skip_access_check>false</skip_access_check>
+                <!-- default credentials for Azurite storage account -->
+                <account_name>devstoreaccount1</account_name>
+                <account_key>Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==</account_key>
+            </blob_storage_disk>
+        </disks>
+        <policies>
+            <blob_storage_policy>
+                <volumes>
+                    <main>
+                        <disk>blob_storage_disk</disk>
+                    </main>
+                </volumes>
+            </blob_storage_policy>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+"""
+        )
+    return path
+
+
 @pytest.fixture(scope="module")
 def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
+        port = cluster.azurite_port
+        path = generate_cluster_def(port)
         cluster.add_instance(
             NODE1,
-            main_configs=["configs/config.d/storage_conf.xml"],
+            main_configs=[
+                "configs/config.d/config.xml",
+                path,
+            ],
             macros={"replica": "1"},
             with_azurite=True,
             with_zookeeper=True,
         )
         cluster.add_instance(
             NODE2,
-            main_configs=["configs/config.d/storage_conf.xml"],
+            main_configs=[
+                "configs/config.d/config.xml",
+                path,
+            ],
             macros={"replica": "2"},
             with_azurite=True,
             with_zookeeper=True,
@@ -57,7 +105,7 @@ def create_table(node, table_name, replica, **additional_settings):
         ORDER BY id
         SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}"""
 
-    node.query(create_table_statement)
+    azure_query(node, create_table_statement)
     assert node.query(f"SELECT COUNT(*) FROM {table_name} FORMAT Values") == "(0)"
 
 
@@ -80,27 +128,29 @@ def test_zero_copy_replication(cluster):
     values1 = "(0,'data'),(1,'data')"
     values2 = "(2,'data'),(3,'data')"
 
-    node1.query(f"INSERT INTO {TABLE_NAME} VALUES {values1}")
+    azure_query(node1, f"INSERT INTO {TABLE_NAME} VALUES {values1}")
     node2.query(f"SYSTEM SYNC REPLICA {TABLE_NAME}")
     assert (
-        node1.query(f"SELECT * FROM {TABLE_NAME} order by id FORMAT Values") == values1
+        azure_query(node1, f"SELECT * FROM {TABLE_NAME} order by id FORMAT Values")
+        == values1
     )
     assert (
-        node2.query(f"SELECT * FROM {TABLE_NAME} order by id FORMAT Values") == values1
+        azure_query(node2, f"SELECT * FROM {TABLE_NAME} order by id FORMAT Values")
+        == values1
     )
 
     # Based on version 21.x - should be only one file with size 100+ (checksums.txt), used by both nodes
     assert get_large_objects_count(blob_container_client) == 1
 
-    node2.query(f"INSERT INTO {TABLE_NAME} VALUES {values2}")
+    azure_query(node2, f"INSERT INTO {TABLE_NAME} VALUES {values2}")
     node1.query(f"SYSTEM SYNC REPLICA {TABLE_NAME}")
 
     assert (
-        node2.query(f"SELECT * FROM {TABLE_NAME} order by id FORMAT Values")
+        azure_query(node2, f"SELECT * FROM {TABLE_NAME} order by id FORMAT Values")
         == values1 + "," + values2
     )
     assert (
-        node1.query(f"SELECT * FROM {TABLE_NAME} order by id FORMAT Values")
+        azure_query(node1, f"SELECT * FROM {TABLE_NAME} order by id FORMAT Values")
         == values1 + "," + values2
     )
 

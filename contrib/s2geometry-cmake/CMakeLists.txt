@@ -1,17 +1,11 @@
-option(ENABLE_S2_GEOMETRY "Enable S2 geometry library" ${ENABLE_LIBRARIES})
+option(ENABLE_S2_GEOMETRY "Enable S2 Geometry" ${ENABLE_LIBRARIES})
 
 if (NOT ENABLE_S2_GEOMETRY)
-    message(STATUS "Not using S2 geometry")
+    message(STATUS "Not using S2 Geometry")
     return()
 endif()
 
 set(S2_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/s2geometry/src")
-
-set(ABSL_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/abseil-cpp")
-if(NOT EXISTS "${ABSL_SOURCE_DIR}/CMakeLists.txt")
-    message(FATAL_ERROR " submodule contrib/abseil-cpp is missing. To fix try run: \n git submodule update --init --recursive")
-endif()
-
 
 set(S2_SRCS
     "${S2_SOURCE_DIR}/s2/encoded_s2cell_id_vector.cc"
@@ -44,6 +38,7 @@ set(S2_SRCS
     "${S2_SOURCE_DIR}/s2/s2cell_index.cc"
     "${S2_SOURCE_DIR}/s2/s2cell_union.cc"
     "${S2_SOURCE_DIR}/s2/s2centroids.cc"
+    "${S2_SOURCE_DIR}/s2/s2chain_interpolation_query.cc"
     "${S2_SOURCE_DIR}/s2/s2closest_cell_query.cc"
     "${S2_SOURCE_DIR}/s2/s2closest_edge_query.cc"
     "${S2_SOURCE_DIR}/s2/s2closest_point_query.cc"
@@ -52,13 +47,18 @@ set(S2_SRCS
     "${S2_SOURCE_DIR}/s2/s2coords.cc"
     "${S2_SOURCE_DIR}/s2/s2crossing_edge_query.cc"
     "${S2_SOURCE_DIR}/s2/s2debug.cc"
+    "${S2_SOURCE_DIR}/s2/s2density_tree.cc"
     "${S2_SOURCE_DIR}/s2/s2earth.cc"
     "${S2_SOURCE_DIR}/s2/s2edge_clipping.cc"
     "${S2_SOURCE_DIR}/s2/s2edge_crosser.cc"
     "${S2_SOURCE_DIR}/s2/s2edge_crossings.cc"
     "${S2_SOURCE_DIR}/s2/s2edge_distances.cc"
     "${S2_SOURCE_DIR}/s2/s2edge_tessellator.cc"
+    "${S2_SOURCE_DIR}/s2/s2error.cc"
+    "${S2_SOURCE_DIR}/s2/s2fractal.cc"
     "${S2_SOURCE_DIR}/s2/s2furthest_edge_query.cc"
+    "${S2_SOURCE_DIR}/s2/s2hausdorff_distance_query.cc"
+    "${S2_SOURCE_DIR}/s2/s2index_cell_data.cc"
     "${S2_SOURCE_DIR}/s2/s2latlng.cc"
     "${S2_SOURCE_DIR}/s2/s2latlng_rect.cc"
     "${S2_SOURCE_DIR}/s2/s2latlng_rect_bounder.cc"
@@ -67,10 +67,10 @@ set(S2_SRCS
     "${S2_SOURCE_DIR}/s2/s2lax_polyline_shape.cc"
     "${S2_SOURCE_DIR}/s2/s2loop.cc"
     "${S2_SOURCE_DIR}/s2/s2loop_measures.cc"
+    "${S2_SOURCE_DIR}/s2/s2max_distance_targets.cc"
     "${S2_SOURCE_DIR}/s2/s2measures.cc"
     "${S2_SOURCE_DIR}/s2/s2memory_tracker.cc"
     "${S2_SOURCE_DIR}/s2/s2metrics.cc"
-    "${S2_SOURCE_DIR}/s2/s2max_distance_targets.cc"
     "${S2_SOURCE_DIR}/s2/s2min_distance_targets.cc"
     "${S2_SOURCE_DIR}/s2/s2padded_cell.cc"
     "${S2_SOURCE_DIR}/s2/s2point_compression.cc"
@@ -84,41 +84,40 @@ set(S2_SRCS
     "${S2_SOURCE_DIR}/s2/s2predicates.cc"
     "${S2_SOURCE_DIR}/s2/s2projections.cc"
     "${S2_SOURCE_DIR}/s2/s2r2rect.cc"
-    "${S2_SOURCE_DIR}/s2/s2region.cc"
-    "${S2_SOURCE_DIR}/s2/s2region_term_indexer.cc"
+    "${S2_SOURCE_DIR}/s2/s2random.cc"
     "${S2_SOURCE_DIR}/s2/s2region_coverer.cc"
     "${S2_SOURCE_DIR}/s2/s2region_intersection.cc"
+    "${S2_SOURCE_DIR}/s2/s2region_sharder.cc"
+    "${S2_SOURCE_DIR}/s2/s2region_term_indexer.cc"
     "${S2_SOURCE_DIR}/s2/s2region_union.cc"
     "${S2_SOURCE_DIR}/s2/s2shape_index.cc"
     "${S2_SOURCE_DIR}/s2/s2shape_index_buffered_region.cc"
     "${S2_SOURCE_DIR}/s2/s2shape_index_measures.cc"
     "${S2_SOURCE_DIR}/s2/s2shape_measures.cc"
+    "${S2_SOURCE_DIR}/s2/s2shape_nesting_query.cc"
     "${S2_SOURCE_DIR}/s2/s2shapeutil_build_polygon_boundaries.cc"
     "${S2_SOURCE_DIR}/s2/s2shapeutil_coding.cc"
     "${S2_SOURCE_DIR}/s2/s2shapeutil_contains_brute_force.cc"
     "${S2_SOURCE_DIR}/s2/s2shapeutil_conversion.cc"
+    "${S2_SOURCE_DIR}/s2/s2shapeutil_count_vertices.cc"
     "${S2_SOURCE_DIR}/s2/s2shapeutil_edge_iterator.cc"
+    "${S2_SOURCE_DIR}/s2/s2shapeutil_edge_wrap.cc"
     "${S2_SOURCE_DIR}/s2/s2shapeutil_get_reference_point.cc"
-    "${S2_SOURCE_DIR}/s2/s2shapeutil_range_iterator.cc"
     "${S2_SOURCE_DIR}/s2/s2shapeutil_visit_crossing_edge_pairs.cc"
+    "${S2_SOURCE_DIR}/s2/s2testing.cc"
     "${S2_SOURCE_DIR}/s2/s2text_format.cc"
     "${S2_SOURCE_DIR}/s2/s2wedge_relations.cc"
     "${S2_SOURCE_DIR}/s2/s2winding_operation.cc"
-    "${S2_SOURCE_DIR}/s2/strings/serialize.cc"
     "${S2_SOURCE_DIR}/s2/util/bits/bit-interleave.cc"
-    "${S2_SOURCE_DIR}/s2/util/bits/bits.cc"
     "${S2_SOURCE_DIR}/s2/util/coding/coder.cc"
     "${S2_SOURCE_DIR}/s2/util/coding/varint.cc"
     "${S2_SOURCE_DIR}/s2/util/math/exactfloat/exactfloat.cc"
     "${S2_SOURCE_DIR}/s2/util/math/mathutil.cc"
     "${S2_SOURCE_DIR}/s2/util/units/length-units.cc"
-
 )
 
 add_library(_s2 ${S2_SRCS})
 add_library(ch_contrib::s2 ALIAS _s2)
-
-set_property(TARGET _s2 PROPERTY CXX_STANDARD 17)
 
 if (TARGET OpenSSL::SSL)
     target_link_libraries(_s2 PRIVATE OpenSSL::Crypto OpenSSL::SSL)
@@ -126,26 +125,31 @@ endif()
 
 # Copied from contrib/s2geometry/CMakeLists
 target_link_libraries(_s2 PRIVATE
-        absl::base
-        absl::btree
-        absl::config
-        absl::core_headers
-        absl::dynamic_annotations
-        absl::endian
-        absl::fixed_array
-        absl::flat_hash_map
-        absl::flat_hash_set
-        absl::hash
-        absl::inlined_vector
-        absl::int128
-        absl::log_severity
-        absl::memory
-        absl::span
-        absl::str_format
-        absl::strings
-        absl::type_traits
-        absl::utility
-        )
+    absl::base
+    absl::btree
+    absl::check
+    absl::config
+    absl::core_headers
+    absl::dynamic_annotations
+    absl::endian
+    absl::fixed_array
+    absl::flags
+    absl::flat_hash_map
+    absl::flat_hash_set
+    absl::hash
+    absl::inlined_vector
+    absl::int128
+    absl::log
+    absl::log_severity
+    absl::memory
+    absl::span
+    absl::status
+    absl::str_format
+    absl::strings
+    absl::type_traits
+    absl::utility
+    absl::vlog_is_on
+)
 
 target_include_directories(_s2 SYSTEM BEFORE PUBLIC "${S2_SOURCE_DIR}/")
 target_include_directories(_s2 SYSTEM PUBLIC "${ABSL_SOURCE_DIR}")

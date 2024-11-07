@@ -3,11 +3,12 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
-#include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Common/MultiVersion.h>
 #include <azure/storage/blobs.hpp>
+#include <azure/core/http/curl_transport.hpp>
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 
 namespace Poco
 {
@@ -17,64 +18,36 @@ class Logger;
 namespace DB
 {
 
-struct AzureObjectStorageSettings
-{
-    AzureObjectStorageSettings(
-        uint64_t max_single_part_upload_size_,
-        uint64_t min_bytes_for_seek_,
-        int max_single_read_retries_,
-        int max_single_download_retries_,
-        int list_object_keys_size_)
-        : max_single_part_upload_size(max_single_part_upload_size_)
-        , min_bytes_for_seek(min_bytes_for_seek_)
-        , max_single_read_retries(max_single_read_retries_)
-        , max_single_download_retries(max_single_download_retries_)
-        , list_object_keys_size(list_object_keys_size_)
-    {
-    }
-
-    AzureObjectStorageSettings() = default;
-
-    size_t max_single_part_upload_size = 100 * 1024 * 1024; /// NOTE: on 32-bit machines it will be at most 4GB, but size_t is also used in BufferBase for offset
-    uint64_t min_bytes_for_seek = 1024 * 1024;
-    size_t max_single_read_retries = 3;
-    size_t max_single_download_retries = 3;
-    int list_object_keys_size = 1000;
-};
-
-using AzureClient = Azure::Storage::Blobs::BlobContainerClient;
-using AzureClientPtr = std::unique_ptr<Azure::Storage::Blobs::BlobContainerClient>;
-
 class AzureObjectStorage : public IObjectStorage
 {
 public:
-
-    using SettingsPtr = std::unique_ptr<AzureObjectStorageSettings>;
+    using ClientPtr = std::unique_ptr<AzureBlobStorage::ContainerClient>;
+    using SettingsPtr = std::unique_ptr<AzureBlobStorage::RequestSettings>;
 
     AzureObjectStorage(
         const String & name_,
-        AzureClientPtr && client_,
-        SettingsPtr && settings_);
+        ClientPtr && client_,
+        SettingsPtr && settings_,
+        const String & object_namespace_,
+        const String & description_);
 
-    void listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const override;
+    void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
-    ObjectStorageIteratorPtr iterate(const std::string & path_prefix) const override;
-
-    DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
+    ObjectStorageIteratorPtr iterate(const std::string & path_prefix, size_t max_keys) const override;
 
     std::string getName() const override { return "AzureObjectStorage"; }
+
+    ObjectStorageType getType() const override { return ObjectStorageType::Azure; }
+
+    std::string getCommonKeyPrefix() const override { return ""; }
+
+    std::string getDescription() const override { return description; }
 
     bool exists(const StoredObject & object) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
-        const ReadSettings & read_settings = ReadSettings{},
-        std::optional<size_t> read_hint = {},
-        std::optional<size_t> file_size = {}) const override;
-
-    std::unique_ptr<ReadBufferFromFileBase> readObjects( /// NOLINT
-        const StoredObjects & objects,
-        const ReadSettings & read_settings = ReadSettings{},
+        const ReadSettings & read_settings,
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const override;
 
@@ -100,6 +73,8 @@ public:
     void copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
         std::optional<ObjectAttributes> object_to_attributes = {}) override;
 
     void shutdown() override {}
@@ -109,9 +84,10 @@ public:
     void applyNewSettings(
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        ContextPtr context) override;
+        ContextPtr context,
+        const ApplyNewSettingsOptions & options) override;
 
-    String getObjectsNamespace() const override { return ""; }
+    String getObjectsNamespace() const override { return object_namespace ; }
 
     std::unique_ptr<IObjectStorage> cloneObjectStorage(
         const std::string & new_namespace,
@@ -119,19 +95,29 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    std::string generateBlobNameForPath(const std::string & path) override;
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
 
     bool isRemote() const override { return true; }
 
+    std::shared_ptr<const AzureBlobStorage::RequestSettings> getSettings() const  { return settings.get(); }
+    std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const override { return client.get(); }
+
+    bool supportParallelWrite() const override { return true; }
+
 private:
+    using SharedAzureClientPtr = std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient>;
+    void removeObjectImpl(const StoredObject & object, const SharedAzureClientPtr & client_ptr, bool if_exists);
+
     const String name;
     /// client used to access the files in the Blob Storage cloud
-    MultiVersion<Azure::Storage::Blobs::BlobContainerClient> client;
-    MultiVersion<AzureObjectStorageSettings> settings;
+    MultiVersion<AzureBlobStorage::ContainerClient> client;
+    MultiVersion<AzureBlobStorage::RequestSettings> settings;
+    const String object_namespace; /// container + prefix
 
-    Poco::Logger * log;
+    /// We use source url without container and prefix as description, because in Azure there are no limitations for operations between different containers.
+    const String description;
 
-    DataSourceDescription data_source_description;
+    LoggerPtr log;
 };
 
 }

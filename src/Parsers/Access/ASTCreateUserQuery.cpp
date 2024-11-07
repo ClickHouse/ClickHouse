@@ -4,6 +4,7 @@
 #include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Parsers/Access/ASTAuthenticationData.h>
 #include <Common/quoteString.h>
+#include <Access/Common/SSLCertificateSubjects.h>
 #include <IO/Operators.h>
 
 
@@ -18,12 +19,32 @@ namespace
                       << quoteString(new_name);
     }
 
-
-    void formatAuthenticationData(const ASTAuthenticationData & auth_data, const IAST::FormatSettings & settings)
+    void formatAuthenticationData(const std::vector<std::shared_ptr<ASTAuthenticationData>> & authentication_methods, const IAST::FormatSettings & settings)
     {
-        auth_data.format(settings);
+        // safe because this method is only called if authentication_methods.size > 1
+        // if the first type is present, include the `WITH` keyword
+        if (authentication_methods[0]->type)
+        {
+            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " WITH" << (settings.hilite ? IAST::hilite_none : "");
+        }
+
+        for (std::size_t i = 0; i < authentication_methods.size(); i++)
+        {
+            authentication_methods[i]->format(settings);
+
+            bool is_last = i < authentication_methods.size() - 1;
+            if (is_last)
+            {
+                settings.ostr << (settings.hilite ? IAST::hilite_keyword : ",");
+            }
+        }
     }
 
+    void formatValidUntil(const IAST & valid_until, const IAST::FormatSettings & settings)
+    {
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " VALID UNTIL " << (settings.hilite ? IAST::hilite_none : "");
+        valid_until.format(settings);
+    }
 
     void formatHosts(const char * prefix, const AllowedClientHosts & hosts, const IAST::FormatSettings & settings)
     {
@@ -160,6 +181,7 @@ ASTPtr ASTCreateUserQuery::clone() const
 {
     auto res = std::make_shared<ASTCreateUserQuery>(*this);
     res->children.clear();
+    res->authentication_methods.clear();
 
     if (names)
         res->names = std::static_pointer_cast<ASTUserNamesWithHost>(names->clone());
@@ -176,10 +198,11 @@ ASTPtr ASTCreateUserQuery::clone() const
     if (settings)
         res->settings = std::static_pointer_cast<ASTSettingsProfileElements>(settings->clone());
 
-    if (auth_data)
+    for (const auto & authentication_method : authentication_methods)
     {
-        res->auth_data = std::static_pointer_cast<ASTAuthenticationData>(auth_data->clone());
-        res->children.push_back(res->auth_data);
+        auto ast_clone = std::static_pointer_cast<ASTAuthenticationData>(authentication_method->clone());
+        res->authentication_methods.push_back(ast_clone);
+        res->children.push_back(ast_clone);
     }
 
     return res;
@@ -218,8 +241,29 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
     if (new_name)
         formatRenameTo(*new_name, format);
 
-    if (auth_data)
-        formatAuthenticationData(*auth_data, format);
+    if (authentication_methods.empty())
+    {
+        // If identification (auth method) is missing from query, we should serialize it in the form of `NO_PASSWORD` unless it is alter query
+        if (!alter)
+        {
+            format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " IDENTIFIED WITH no_password" << (format.hilite ? IAST::hilite_none : "");
+        }
+    }
+    else
+    {
+        if (add_identified_with)
+        {
+            format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " ADD" << (format.hilite ? IAST::hilite_none : "");
+        }
+
+        format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " IDENTIFIED" << (format.hilite ? IAST::hilite_none : "");
+        formatAuthenticationData(authentication_methods, format);
+    }
+
+    if (global_valid_until)
+    {
+        formatValidUntil(*global_valid_until, format);
+    }
 
     if (hosts)
         formatHosts(nullptr, *hosts, format);
@@ -239,6 +283,9 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
 
     if (grantees)
         formatGrantees(*grantees, format);
+
+    if (reset_authentication_methods_to_new)
+        format.ostr << (format.hilite ? hilite_keyword : "") << " RESET AUTHENTICATION METHODS TO NEW" << (format.hilite ? hilite_none : "");
 }
 
 }

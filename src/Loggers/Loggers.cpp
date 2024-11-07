@@ -1,14 +1,19 @@
 #include "Loggers.h"
 
+#include <Loggers/OwnFilteringChannel.h>
+#include <Loggers/OwnFormattingChannel.h>
+#include <Loggers/OwnPatternFormatter.h>
+#include <Loggers/OwnSplitChannel.h>
+
 #include <iostream>
-#include <Poco/SyslogChannel.h>
-#include <Poco/Util/AbstractConfiguration.h>
-#include "OwnFormattingChannel.h"
-#include "OwnPatternFormatter.h"
-#include "OwnSplitChannel.h"
+#include <sstream>
+
+#include <Poco/AutoPtr.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Logger.h>
 #include <Poco/Net/RemoteSyslogChannel.h>
+#include <Poco/SyslogChannel.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 #ifndef WITHOUT_TEXT_LOG
     #include <Interpreters/TextLog.h>
@@ -46,9 +51,11 @@ static std::string renderFileNameTemplate(time_t now, const std::string & file_p
     std::tm buf;
     localtime_r(&now, &buf);
     std::ostringstream ss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    ss << std::put_time(&buf, file_path.c_str());
+    ss << std::put_time(&buf, path.filename().c_str());
     return path.replace_filename(ss.str());
 }
+
+/// NOLINTBEGIN(readability-static-accessed-through-instance)
 
 void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger /*_root*/, const std::string & cmd_name)
 {
@@ -85,10 +92,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         std::cerr << "Logging " << log_level_string << " to " << log_path << ext << std::endl;
 
         auto log_level = Poco::Logger::parseLevel(log_level_string);
-        if (log_level > max_log_level)
-        {
-            max_log_level = log_level;
-        }
+        max_log_level = std::max(log_level, max_log_level);
 
         // Set up two channel chains.
         log_file = new Poco::FileChannel;
@@ -123,10 +127,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         // NOTE: we don't use notice & critical in the code, so in practice error log collects fatal & error & warning.
         // (!) Warnings are important, they require attention and should never be silenced / ignored.
         auto errorlog_level = Poco::Logger::parseLevel(config.getString("logger.errorlog_level", "notice"));
-        if (errorlog_level > max_log_level)
-        {
-            max_log_level = errorlog_level;
-        }
+        max_log_level = std::max(errorlog_level, max_log_level);
 
         std::string ext;
         if (config.getRawString("logger.stream_compress", "false") == "true")
@@ -159,12 +160,8 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
     if (config.getBool("logger.use_syslog", false))
     {
-        //const std::string & cmd_name = commandName();
         auto syslog_level = Poco::Logger::parseLevel(config.getString("logger.syslog_level", log_level_string));
-        if (syslog_level > max_log_level)
-        {
-            max_log_level = syslog_level;
-        }
+        max_log_level = std::max(syslog_level, max_log_level);
 
         if (config.has("logger.syslog.address"))
         {
@@ -211,10 +208,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
         auto console_log_level_string = config.getString("logger.console_log_level", log_level_string);
         auto console_log_level = Poco::Logger::parseLevel(console_log_level_string);
-        if (console_log_level > max_log_level)
-        {
-            max_log_level = console_log_level;
-        }
+        max_log_level = std::max(console_log_level, max_log_level);
 
         Poco::AutoPtr<OwnPatternFormatter> pf;
         if (config.getString("logger.formatting.type", "") == "json")
@@ -228,21 +222,37 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
     split->open();
     logger.close();
+
     logger.setChannel(split);
 
-    // Global logging level (it can be overridden for specific loggers).
+    const std::string global_pos_pattern = config.getRawString("logger.message_regexp", "");
+    const std::string global_neg_pattern = config.getRawString("logger.message_regexp_negative", "");
+
+    Poco::AutoPtr<OwnPatternFormatter> pf;
+    if (config.getString("logger.formatting.type", "") == "json")
+        pf = new OwnJSONPatternFormatter(config);
+    else
+        pf = new OwnPatternFormatter;
+
+    DB::createOrUpdateFilterChannel(logger, global_pos_pattern, global_neg_pattern, pf, Poco::Logger::ROOT);
+
     logger.setLevel(max_log_level);
 
-    // Set level to all already created loggers
-    std::vector<std::string> names;
-    //logger_root = Logger::root();
-    logger.root().names(names);
-    for (const auto & name : names)
-        logger.root().get(name).setLevel(max_log_level);
-
-    // Attach to the root logger.
+    // Global logging level and channel (it can be overridden for specific loggers).
     logger.root().setLevel(max_log_level);
     logger.root().setChannel(logger.getChannel());
+
+    // Set level and channel to all already created loggers
+    std::vector<std::string> names;
+    logger.names(names);
+
+    for (const auto & name : names)
+    {
+        logger.get(name).setLevel(max_log_level);
+        logger.get(name).setChannel(split);
+
+        DB::createOrUpdateFilterChannel(logger.get(name), global_pos_pattern, global_neg_pattern, pf, name);
+    }
 
     // Explicitly specified log levels for specific loggers.
     {
@@ -268,8 +278,28 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             }
         }
     }
+    // Explicitly specified regexp patterns for filtering specific loggers
+    {
+        Poco::Util::AbstractConfiguration::Keys loggers_regexp;
+        config.keys("logger.message_regexps", loggers_regexp);
+
+        if (!loggers_regexp.empty())
+        {
+            for (const auto & key : loggers_regexp)
+            {
+                if (key == "logger" || key.starts_with("logger["))
+                {
+                    const std::string name = config.getString("logger.message_regexps." + key + ".name");
+                    const std::string pos_pattern = config.getRawString("logger.message_regexps." + key + ".message_regexp", global_pos_pattern);
+                    const std::string neg_pattern = config.getRawString("logger.message_regexps." + key + ".message_regexp_negative", global_neg_pattern);
+
+                    DB::createOrUpdateFilterChannel(logger.root().get(name), pos_pattern, neg_pattern, pf, name);
+                }
+            }
+        }
+    }
 #ifndef WITHOUT_TEXT_LOG
-    if (config.has("text_log"))
+    if (allowTextLog() && config.has("text_log"))
     {
         String text_log_level_str = config.getString("text_log.level", "trace");
         int text_log_level = Poco::Logger::parseLevel(text_log_level_str);
@@ -303,6 +333,9 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
         log_settings.turn_off_logger = DB::TextLog::shouldTurnOffLogger();
 
+        log_settings.database = config.getString("text_log.database", "system");
+        log_settings.table = config.getString("text_log.table", "text_log");
+
         split->addTextLog(DB::TextLog::getLogQueue(log_settings), text_log_level);
     }
 #endif
@@ -314,8 +347,7 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
 
     const auto log_level_string = config.getString("logger.level", "trace");
     int log_level = Poco::Logger::parseLevel(log_level_string);
-    if (log_level > max_log_level)
-        max_log_level = log_level;
+    max_log_level = std::max(log_level, max_log_level);
 
     if (log_file)
         split->setLevel("log", log_level);
@@ -325,7 +357,12 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
     bool should_log_to_console = isatty(STDIN_FILENO) || isatty(STDERR_FILENO);
     if (config.getBool("logger.console", false)
         || (!config.hasProperty("logger.console") && !is_daemon && should_log_to_console))
-        split->setLevel("console", log_level);
+    {
+        auto console_log_level_string = config.getString("logger.console_log_level", log_level_string);
+        auto console_log_level = Poco::Logger::parseLevel(console_log_level_string);
+        max_log_level = std::max(console_log_level, max_log_level);
+        split->setLevel("console", console_log_level);
+    }
     else
         split->setLevel("console", 0);
 
@@ -333,8 +370,7 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
     if (error_log_file)
     {
         int errorlog_level = Poco::Logger::parseLevel(config.getString("logger.errorlog_level", "notice"));
-        if (errorlog_level > max_log_level)
-            max_log_level = errorlog_level;
+        max_log_level = std::max(errorlog_level, max_log_level);
         split->setLevel("errorlog", errorlog_level);
     }
 
@@ -343,20 +379,35 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
     if (config.getBool("logger.use_syslog", false))
     {
         syslog_level = Poco::Logger::parseLevel(config.getString("logger.syslog_level", log_level_string));
-        if (syslog_level > max_log_level)
-            max_log_level = syslog_level;
+        max_log_level = std::max(syslog_level, max_log_level);
     }
     split->setLevel("syslog", syslog_level);
+
+    const std::string global_pos_pattern = config.getRawString("logger.message_regexp", "");
+    const std::string global_neg_pattern = config.getRawString("logger.message_regexp_negative", "");
+
+    Poco::AutoPtr<OwnPatternFormatter> pf;
+    if (config.getString("logger.formatting.type", "") == "json")
+        pf = new OwnJSONPatternFormatter(config);
+    else
+        pf = new OwnPatternFormatter;
+
+    DB::createOrUpdateFilterChannel(logger, global_pos_pattern, global_neg_pattern, pf, Poco::Logger::ROOT);
 
     // Global logging level (it can be overridden for specific loggers).
     logger.setLevel(max_log_level);
 
     // Set level to all already created loggers
     std::vector<std::string> names;
-
     logger.root().names(names);
+
+    // Set all to global in case logger.levels are not specified
     for (const auto & name : names)
+    {
         logger.root().get(name).setLevel(max_log_level);
+
+        DB::createOrUpdateFilterChannel(logger.root().get(name), global_pos_pattern, global_neg_pattern, pf, name);
+    }
 
     logger.root().setLevel(max_log_level);
 
@@ -384,7 +435,30 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
             }
         }
     }
+
+    // Explicitly specified regexp patterns for filtering specific loggers
+    {
+        Poco::Util::AbstractConfiguration::Keys loggers_regexp;
+        config.keys("logger.message_regexps", loggers_regexp);
+
+        if (!loggers_regexp.empty())
+        {
+            for (const auto & key : loggers_regexp)
+            {
+                if (key == "logger" || key.starts_with("logger["))
+                {
+                    const std::string name(config.getString("logger.message_regexps." + key + ".name"));
+                    const std::string pos_pattern(config.getRawString("logger.message_regexps." + key + ".message_regexp", global_pos_pattern));
+                    const std::string neg_pattern(config.getRawString("logger.message_regexps." + key + ".message_regexp_negative", global_neg_pattern));
+
+                    DB::createOrUpdateFilterChannel(logger.root().get(name), pos_pattern, neg_pattern, pf, name);
+                }
+            }
+        }
+    }
 }
+
+/// NOLINTEND(readability-static-accessed-through-instance)
 
 void Loggers::closeLogs(Poco::Logger & logger)
 {

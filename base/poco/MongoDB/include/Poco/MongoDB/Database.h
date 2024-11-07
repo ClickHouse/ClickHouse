@@ -70,7 +70,7 @@ namespace MongoDB
         Document::Ptr queryBuildInfo(Connection & connection) const;
         /// Queries server build info (all wire protocols)
 
-        Document::Ptr queryServerHello(Connection & connection) const;
+        Document::Ptr queryServerHello(Connection & connection, bool old = false) const;
         /// Queries hello response from server (all wire protocols)
 
         Int64 count(Connection & connection, const std::string & collectionName) const;

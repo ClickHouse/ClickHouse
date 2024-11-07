@@ -4,9 +4,9 @@ import string
 import struct
 
 import pytest
-from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
-from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
+
+from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
+from helpers.test_tools import TSV, assert_eq_with_retry, exec_query_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -332,7 +332,13 @@ def test_different_part_types_on_replicas(start_cluster, table, part_type):
     for _ in range(3):
         insert_random_data(table, leader, 100)
 
-    leader.query("OPTIMIZE TABLE {} FINAL".format(table))
+    exec_query_with_retry(
+        leader,
+        "OPTIMIZE TABLE {} FINAL".format(table),
+        settings={"optimize_throw_if_noop": 1},
+        silent=True,
+    )
+
     follower.query("SYSTEM SYNC REPLICA {}".format(table), timeout=20)
 
     expected = "{}\t1\n".format(part_type)
@@ -359,11 +365,10 @@ node7 = cluster.add_instance(
     "node7",
     user_configs=["configs_old/users.d/not_optimize_count.xml"],
     with_zookeeper=True,
-    image="yandex/clickhouse-server",
-    tag="19.17.8.54",
+    image="clickhouse/clickhouse-server",
+    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     stay_alive=True,
     with_installed_binary=True,
-    allow_analyzer=False,
 )
 node8 = cluster.add_instance(
     "node8",

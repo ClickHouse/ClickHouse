@@ -4,16 +4,16 @@
 #include <Columns/ColumnConst.h>
 
 #include <Formats/FormatSettings.h>
-#include <Formats/ProtobufReader.h>
-#include <Formats/ProtobufWriter.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/VarInt.h>
 
+#include "Common/PODArray.h"
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include "base/types.h"
 
 namespace DB
 {
@@ -28,7 +28,7 @@ static constexpr size_t MAX_STRINGS_SIZE = 1ULL << 30;
 
 void SerializationFixedString::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
 {
-    const String & s = field.get<const String &>();
+    const String & s = field.safeGet<const String &>();
     ostr.write(s.data(), std::min(s.size(), n));
     if (s.size() < n)
         for (size_t i = s.size(); i < n; ++i)
@@ -39,7 +39,7 @@ void SerializationFixedString::serializeBinary(const Field & field, WriteBuffer 
 void SerializationFixedString::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const
 {
     field = String();
-    String & s = field.get<String &>();
+    String & s = field.safeGet<String &>();
     s.resize(n);
     istr.readStrict(s.data(), n);
 }
@@ -152,10 +152,50 @@ static inline void read(const SerializationFixedString & self, IColumn & column,
     }
 }
 
-
-void SerializationFixedString::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+bool SerializationFixedString::tryAlignStringLength(size_t n, PaddedPODArray<UInt8> & data, size_t string_start)
 {
-    read(*this, column, [&istr](ColumnFixedString::Chars & data) { readEscapedStringInto(data, istr); });
+    size_t length = data.size() - string_start;
+    if (length < n)
+    {
+        data.resize_fill(string_start + n);
+    }
+    else if (length > n)
+    {
+        data.resize_assume_reserved(string_start);
+        return false;
+    }
+
+    return true;
+}
+
+template <typename Reader>
+static inline bool tryRead(const SerializationFixedString & self, IColumn & column, Reader && reader)
+{
+    ColumnFixedString::Chars & data = typeid_cast<ColumnFixedString &>(column).getChars();
+    size_t prev_size = data.size();
+    try
+    {
+        return reader(data) && SerializationFixedString::tryAlignStringLength(self.getN(), data, prev_size);
+    }
+    catch (...)
+    {
+        data.resize_assume_reserved(prev_size);
+        return false;
+    }
+}
+
+
+void SerializationFixedString::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    read(*this, column, [&istr, &settings](ColumnFixedString::Chars & data)
+    {
+        settings.tsv.crlf_end_of_line_input ? readEscapedStringInto<ColumnFixedString::Chars,true>(data, istr) : readEscapedStringInto<ColumnFixedString::Chars,false>(data, istr);
+    });
+}
+
+bool SerializationFixedString::tryDeserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    return tryRead(*this, column, [&istr](ColumnFixedString::Chars & data) { readEscapedStringInto<PaddedPODArray<UInt8>,false>(data, istr); return true; });
 }
 
 
@@ -171,10 +211,20 @@ void SerializationFixedString::deserializeTextQuoted(IColumn & column, ReadBuffe
     read(*this, column, [&istr](ColumnFixedString::Chars & data) { readQuotedStringInto<true>(data, istr); });
 }
 
+bool SerializationFixedString::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    return tryRead(*this, column, [&istr](ColumnFixedString::Chars & data) { return tryReadQuotedStringInto<true>(data, istr); });
+}
+
 
 void SerializationFixedString::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     read(*this, column, [&istr](ColumnFixedString::Chars & data) { readStringUntilEOFInto(data, istr); });
+}
+
+bool SerializationFixedString::tryDeserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    return tryRead(*this, column, [&istr](ColumnFixedString::Chars & data) { readStringUntilEOFInto(data, istr); return true; });
 }
 
 
@@ -185,11 +235,15 @@ void SerializationFixedString::serializeTextJSON(const IColumn & column, size_t 
 }
 
 
-void SerializationFixedString::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationFixedString::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    read(*this, column, [&istr](ColumnFixedString::Chars & data) { readJSONStringInto(data, istr); });
+    read(*this, column, [&istr, &settings](ColumnFixedString::Chars & data) { readJSONStringInto(data, istr, settings.json); });
 }
 
+bool SerializationFixedString::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    return tryRead(*this, column, [&istr, &settings](ColumnFixedString::Chars & data) { return tryReadJSONStringInto(data, istr, settings.json); });
+}
 
 void SerializationFixedString::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
@@ -210,5 +264,21 @@ void SerializationFixedString::deserializeTextCSV(IColumn & column, ReadBuffer &
     read(*this, column, [&istr, &csv = settings.csv](ColumnFixedString::Chars & data) { readCSVStringInto(data, istr, csv); });
 }
 
+bool SerializationFixedString::tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    return tryRead(*this, column, [&istr, &csv = settings.csv](ColumnFixedString::Chars & data) { readCSVStringInto<ColumnFixedString::Chars, false, false>(data, istr, csv); return true; });
+}
+
+void SerializationFixedString::serializeTextMarkdown(
+    const DB::IColumn & column, size_t row_num, DB::WriteBuffer & ostr, const DB::FormatSettings & settings) const
+{
+    if (settings.markdown.escape_special_characters)
+    {
+        writeMarkdownEscapedString(
+            reinterpret_cast<const char *>(&(assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num])), n, ostr);
+    }
+    else
+        serializeTextEscaped(column, row_num, ostr, settings);
+}
 
 }

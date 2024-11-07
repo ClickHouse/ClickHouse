@@ -39,7 +39,7 @@ class Context;
 class ITableFunction : public std::enable_shared_from_this<ITableFunction>
 {
 public:
-    static inline std::string getDatabaseName() { return "_table_function"; }
+    static std::string getDatabaseName() { return "_table_function"; }
 
     /// Get the main function name.
     virtual std::string getName() const = 0;
@@ -76,7 +76,7 @@ public:
     /// because we cannot determine which column from table correspond to this virtual column.
     virtual std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const { return {}; }
 
-    virtual bool supportsReadingSubsetOfColumns() { return true; }
+    virtual bool supportsReadingSubsetOfColumns(const ContextPtr &) { return true; }
 
     /// Create storage according to the query.
     StoragePtr

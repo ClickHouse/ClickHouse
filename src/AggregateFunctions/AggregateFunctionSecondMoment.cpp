@@ -15,10 +15,11 @@ void registerAggregateFunctionsStatisticsSecondMoment(AggregateFunctionFactory &
     factory.registerFunction("stddevPop", createAggregateFunctionStatisticsUnary<AggregateFunctionSecondMoment, StatisticsFunctionKind::stddevPop>);
 
     /// Synonyms for compatibility.
-    factory.registerAlias("VAR_SAMP", "varSamp", AggregateFunctionFactory::CaseInsensitive);
-    factory.registerAlias("VAR_POP", "varPop", AggregateFunctionFactory::CaseInsensitive);
-    factory.registerAlias("STDDEV_SAMP", "stddevSamp", AggregateFunctionFactory::CaseInsensitive);
-    factory.registerAlias("STDDEV_POP", "stddevPop", AggregateFunctionFactory::CaseInsensitive);
+    factory.registerAlias("VAR_SAMP", "varSamp", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("VAR_POP", "varPop", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("STDDEV_SAMP", "stddevSamp", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("STDDEV_POP", "stddevPop", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("STD", "stddevPop", AggregateFunctionFactory::Case::Insensitive);
 }
 
 }

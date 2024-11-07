@@ -3,19 +3,23 @@
 #include <Core/UUID.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/executeQuery.h>
 #include <Parsers/IAST_fwd.h>
+#include <QueryPipeline/BlockIO.h>
 #include <Storages/IStorage_fwd.h>
 #include <base/types.h>
+#include <Common/AsyncLoader.h>
 #include <Common/Exception.h>
+#include <Common/PoolId.h>
 #include <Common/ThreadPool_fwd.h>
-#include <QueryPipeline/BlockIO.h>
 
 #include <ctime>
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <vector>
-#include <map>
 
 
 namespace DB
@@ -107,6 +111,57 @@ public:
 
 using DatabaseTablesIteratorPtr = std::unique_ptr<IDatabaseTablesIterator>;
 
+struct SnapshotDetachedTable final
+{
+    String database;
+    String table;
+    UUID uuid = UUIDHelpers::Nil;
+    String metadata_path;
+    bool is_permanently{};
+};
+
+class DatabaseDetachedTablesSnapshotIterator
+{
+private:
+    SnapshotDetachedTables snapshot;
+    SnapshotDetachedTables::iterator it;
+
+protected:
+    DatabaseDetachedTablesSnapshotIterator(DatabaseDetachedTablesSnapshotIterator && other) noexcept
+    {
+        size_t idx = std::distance(other.snapshot.begin(), other.it);
+        std::swap(snapshot, other.snapshot);
+        other.it = other.snapshot.end();
+        it = snapshot.begin();
+        std::advance(it, idx);
+    }
+
+public:
+    explicit DatabaseDetachedTablesSnapshotIterator(const SnapshotDetachedTables & tables_) : snapshot(tables_), it(snapshot.begin())
+    {
+    }
+
+    explicit DatabaseDetachedTablesSnapshotIterator(SnapshotDetachedTables && tables_) : snapshot(std::move(tables_)), it(snapshot.begin())
+    {
+    }
+
+    void next() { ++it; }
+
+    bool isValid() const { return it != snapshot.end(); }
+
+    String database() const { return it->second.database; }
+
+    String table() const { return it->second.table; }
+
+    UUID uuid() const { return it->second.uuid; }
+
+    String metadataPath() const { return it->second.metadata_path; }
+
+    bool isPermanently() const { return it->second.is_permanently; }
+};
+
+using DatabaseDetachedTablesSnapshotIteratorPtr = std::unique_ptr<DatabaseDetachedTablesSnapshotIterator>;
+
 
 /** Database engine.
   * It is responsible for:
@@ -121,7 +176,7 @@ class IDatabase : public std::enable_shared_from_this<IDatabase>
 {
 public:
     IDatabase() = delete;
-    explicit IDatabase(String database_name_) : database_name(std::move(database_name_)) {}
+    explicit IDatabase(String database_name_);
 
     /// Get name of database engine.
     virtual String getEngineName() const = 0;
@@ -150,13 +205,62 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
     }
 
-    virtual void loadTableFromMetadata(ContextMutablePtr /*local_context*/, const String & /*file_path*/, const QualifiedTableName & /*name*/, const ASTPtr & /*ast*/,
+    virtual void loadTableFromMetadata(
+        ContextMutablePtr /*local_context*/,
+        const String & /*file_path*/,
+        const QualifiedTableName & /*name*/,
+        const ASTPtr & /*ast*/,
         LoadingStrictnessLevel /*mode*/)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
     }
 
-    virtual void startupTables(ThreadPool & /*thread_pool*/, LoadingStrictnessLevel /*mode*/) {}
+    /// Create a task to load table `name` after specified dependencies `startup_after` using `async_loader`.
+    /// `load_after` must contain the tasks returned by `loadTableFromMetadataAsync()` for dependent tables (see TablesLoader).
+    /// The returned task is also stored inside the database for cancellation on destruction.
+    virtual LoadTaskPtr loadTableFromMetadataAsync(
+        AsyncLoader & /*async_loader*/,
+        LoadJobSet /*load_after*/,
+        ContextMutablePtr /*local_context*/,
+        const String & /*file_path*/,
+        const QualifiedTableName & /*name*/,
+        const ASTPtr & /*ast*/,
+        LoadingStrictnessLevel /*mode*/)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
+    }
+
+    /// Create a task to startup table `name` after specified dependencies `startup_after` using `async_loader`.
+    /// The returned task is also stored inside the database for cancellation on destruction.
+    [[nodiscard]] virtual LoadTaskPtr startupTableAsync(
+        AsyncLoader & /*async_loader*/,
+        LoadJobSet /*startup_after*/,
+        const QualifiedTableName & /*name*/,
+        LoadingStrictnessLevel /*mode*/)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
+    }
+
+    /// Create a task to startup database after specified dependencies `startup_after` using `async_loader`.
+    /// `startup_after` must contain all the tasks returned by `startupTableAsync()` for every table (see TablesLoader).
+    /// The returned task is also stored inside the database for cancellation on destruction.
+    [[nodiscard]] virtual LoadTaskPtr startupDatabaseAsync(
+        AsyncLoader & /*async_loader*/,
+        LoadJobSet /*startup_after*/,
+        LoadingStrictnessLevel /*mode*/)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
+    }
+
+    /// Waits for specific table to be started up, i.e. task returned by `startupTableAsync()` is done
+    virtual void waitTableStarted(const String & /*name*/) const {}
+
+    /// Waits for the database to be started up, i.e. task returned by `startupDatabaseAsync()` is done
+    virtual void waitDatabaseStarted() const {}
+
+    /// Cancels all load and startup tasks and waits for currently running tasks to finish.
+    /// Should be used during shutdown to (1) prevent race with startup, (2) stop any not yet started task and (3) avoid exceptions if startup failed
+    virtual void stopLoading() {}
 
     /// Check the existence of the table in memory (attached).
     virtual bool isTableExist(const String & name, ContextPtr context) const = 0;
@@ -177,7 +281,24 @@ public:
 
     /// Get an iterator that allows you to pass through all the tables.
     /// It is possible to have "hidden" tables that are not visible when passing through, but are visible if you get them by name using the functions above.
-    virtual DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name = {}) const = 0; /// NOLINT
+    /// Wait for all tables to be loaded and started up. If `skip_not_loaded` is true, then not yet loaded or not yet started up (at the moment of iterator creation) tables are excluded.
+    virtual DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name = {}, bool skip_not_loaded = false) const = 0; /// NOLINT
+
+    virtual DatabaseDetachedTablesSnapshotIteratorPtr getDetachedTablesIterator(
+        ContextPtr /*context*/, const FilterByNameFunction & /*filter_by_table_name = {}*/, bool /*skip_not_loaded = false*/) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get detached tables for Database{}", getEngineName());
+    }
+
+    /// Returns list of table names.
+    virtual Strings getAllTableNames(ContextPtr context) const
+    {
+        // NOTE: This default implementation wait for all tables to be loaded and started up. It should be reimplemented for databases that support async loading.
+        Strings result;
+        for (auto table_it = getTablesIterator(context); table_it->isValid(); table_it->next())
+            result.emplace_back(table_it->name());
+        return result;
+    }
 
     /// Is the database empty.
     virtual bool empty() const = 0;
@@ -340,12 +461,12 @@ public:
 
     virtual void stopReplication()
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Database engine {} does not run a replication thread!", getEngineName());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Database engine {} does not run a replication thread", getEngineName());
     }
 
     virtual bool shouldReplicateQuery(const ContextPtr & /*query_context*/, const ASTPtr & /*query_ptr*/) const { return false; }
 
-    virtual BlockIO tryEnqueueReplicatedDDL(const ASTPtr & /*query*/, ContextPtr /*query_context*/, [[maybe_unused]] bool internal = false) /// NOLINT
+    virtual BlockIO tryEnqueueReplicatedDDL(const ASTPtr & /*query*/, ContextPtr /*query_context*/, [[maybe_unused]] QueryFlags flags = {}) /// NOLINT
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Database engine {} does not have replicated DDL queue", getEngineName());
     }
@@ -356,7 +477,7 @@ public:
     /// Creates a table restored from backup.
     virtual void createTableRestoredFromBackup(const ASTPtr & create_table_query, ContextMutablePtr context, std::shared_ptr<IRestoreCoordination> restore_coordination, UInt64 timeout_ms);
 
-    virtual ~IDatabase() = default;
+    virtual ~IDatabase();
 
 protected:
     virtual ASTPtr getCreateTableQueryImpl(const String & /*name*/, ContextPtr /*context*/, bool throw_on_error) const

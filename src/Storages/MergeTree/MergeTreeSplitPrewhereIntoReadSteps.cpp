@@ -1,11 +1,17 @@
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/FunctionsLogical.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
+#include <DataTypes/DataTypeString.h>
 #include <Interpreters/ExpressionActions.h>
+
 
 namespace DB
 {
+
+class ActionsDAG;
+using ActionsDAGPtr = std::unique_ptr<ActionsDAG>;
 
 namespace ErrorCodes
 {
@@ -47,15 +53,21 @@ void fillRequiredColumns(const ActionsDAG::Node * node, std::unordered_map<const
 /// This allows to avoid cloning the same sub-DAG into multiple step DAGs but reference previously cloned nodes from earlier steps.
 struct DAGNodeRef
 {
-    ActionsDAGPtr dag;
+    ActionsDAG * dag;
     const ActionsDAG::Node * node;
 };
 
 /// Result name -> DAGNodeRef
 using OriginalToNewNodeMap = std::unordered_map<String, DAGNodeRef>;
+using NodeNameToLastUsedStepMap = std::unordered_map<String, size_t>;
 
 /// Clones the part of original DAG responsible for computing the original_dag_node and adds it to the new DAG.
-const ActionsDAG::Node & addClonedDAGToDAG(const ActionsDAG::Node * original_dag_node, ActionsDAGPtr new_dag, OriginalToNewNodeMap & node_remap)
+const ActionsDAG::Node & addClonedDAGToDAG(
+    size_t step,
+    const ActionsDAG::Node * original_dag_node,
+    const ActionsDAGPtr & new_dag,
+    OriginalToNewNodeMap & node_remap,
+    NodeNameToLastUsedStepMap & node_to_step_map)
 {
     const String & node_name = original_dag_node->result_name;
     /// Look for the node in the map of already known nodes
@@ -63,7 +75,7 @@ const ActionsDAG::Node & addClonedDAGToDAG(const ActionsDAG::Node * original_dag
     {
         /// If the node is already in the new DAG, return it
         const auto & node_ref = node_remap.at(node_name);
-        if (node_ref.dag == new_dag)
+        if (node_ref.dag == new_dag.get())
             return *node_ref.node;
 
         /// If the node is known from the previous steps, add it as an input, except for constants
@@ -71,7 +83,11 @@ const ActionsDAG::Node & addClonedDAGToDAG(const ActionsDAG::Node * original_dag
         {
             node_ref.dag->addOrReplaceInOutputs(*node_ref.node);
             const auto & new_node = new_dag->addInput(node_ref.node->result_name, node_ref.node->result_type);
-            node_remap[node_name] = {new_dag, &new_node}; /// TODO: here we update the node reference. Is it always correct?
+            node_remap[node_name] = {new_dag.get(), &new_node}; /// TODO: here we update the node reference. Is it always correct?
+
+            /// Remember the index of the last step which reuses this node.
+            /// We cannot remove this node from the outputs before that step.
+            node_to_step_map[node_name] = step;
             return new_node;
         }
     }
@@ -80,7 +96,7 @@ const ActionsDAG::Node & addClonedDAGToDAG(const ActionsDAG::Node * original_dag
     if (original_dag_node->type == ActionsDAG::ActionType::INPUT)
     {
         const auto & new_node = new_dag->addInput(original_dag_node->result_name, original_dag_node->result_type);
-        node_remap[node_name] = {new_dag, &new_node};
+        node_remap[node_name] = {new_dag.get(), &new_node};
         return new_node;
     }
 
@@ -89,15 +105,15 @@ const ActionsDAG::Node & addClonedDAGToDAG(const ActionsDAG::Node * original_dag
     {
         const auto & new_node = new_dag->addColumn(
             ColumnWithTypeAndName(original_dag_node->column, original_dag_node->result_type, original_dag_node->result_name));
-        node_remap[node_name] = {new_dag, &new_node};
+        node_remap[node_name] = {new_dag.get(), &new_node};
         return new_node;
     }
 
     if (original_dag_node->type == ActionsDAG::ActionType::ALIAS)
     {
-        const auto & alias_child = addClonedDAGToDAG(original_dag_node->children[0], new_dag, node_remap);
+        const auto & alias_child = addClonedDAGToDAG(step, original_dag_node->children[0], new_dag, node_remap, node_to_step_map);
         const auto & new_node = new_dag->addAlias(alias_child, original_dag_node->result_name);
-        node_remap[node_name] = {new_dag, &new_node};
+        node_remap[node_name] = {new_dag.get(), &new_node};
         return new_node;
     }
 
@@ -107,12 +123,12 @@ const ActionsDAG::Node & addClonedDAGToDAG(const ActionsDAG::Node * original_dag
         ActionsDAG::NodeRawConstPtrs new_children;
         for (const auto & child : original_dag_node->children)
         {
-            const auto & new_child = addClonedDAGToDAG(child, new_dag, node_remap);
+            const auto & new_child = addClonedDAGToDAG(step, child, new_dag, node_remap, node_to_step_map);
             new_children.push_back(&new_child);
         }
 
         const auto & new_node = new_dag->addFunction(original_dag_node->function_base, new_children, original_dag_node->result_name);
-        node_remap[node_name] = {new_dag, &new_node};
+        node_remap[node_name] = {new_dag.get(), &new_node};
         return new_node;
     }
 
@@ -120,13 +136,13 @@ const ActionsDAG::Node & addClonedDAGToDAG(const ActionsDAG::Node * original_dag
 }
 
 const ActionsDAG::Node & addFunction(
-        ActionsDAGPtr new_dag,
+        const ActionsDAGPtr & new_dag,
         const FunctionOverloadResolverPtr & function,
         ActionsDAG::NodeRawConstPtrs children,
         OriginalToNewNodeMap & node_remap)
 {
     const auto & new_node = new_dag->addFunction(function, children, "");
-    node_remap[new_node.result_name] = {new_dag, &new_node};
+    node_remap[new_node.result_name] = {new_dag.get(), &new_node};
     return new_node;
 }
 
@@ -134,25 +150,17 @@ const ActionsDAG::Node & addFunction(
 /// This is different from ActionsDAG::addCast() because it set the name equal to the original name effectively hiding the value before cast,
 /// but it might be required for further steps with its original uncasted type.
 const ActionsDAG::Node & addCast(
-        ActionsDAGPtr dag,
+        const ActionsDAGPtr & dag,
         const ActionsDAG::Node & node_to_cast,
-        const String & type_name,
+        const DataTypePtr & to_type,
         OriginalToNewNodeMap & node_remap)
 {
-    if (node_to_cast.result_type->getName() == type_name)
+    if (!node_to_cast.result_type->equals(*to_type))
         return node_to_cast;
 
-    Field cast_type_constant_value(type_name);
-
-    ColumnWithTypeAndName column;
-    column.column = DataTypeString().createColumnConst(0, cast_type_constant_value);
-    column.type = std::make_shared<DataTypeString>();
-
-    const auto * cast_type_constant_node = &dag->addColumn(std::move(column));
-    ActionsDAG::NodeRawConstPtrs children = {&node_to_cast, cast_type_constant_node};
-    FunctionOverloadResolverPtr func_builder_cast = CastInternalOverloadResolver<CastType::nonAccurate>::createImpl();
-
-    return addFunction(dag, func_builder_cast, std::move(children), node_remap);
+    const auto & new_node = dag->addCast(node_to_cast, to_type, {});
+    node_remap[new_node.result_name] = {dag.get(), &new_node};
+    return new_node;
 }
 
 /// Normalizes the filter node by adding AND with a constant true.
@@ -160,7 +168,7 @@ const ActionsDAG::Node & addCast(
 /// 1. produces a result with the proper Nullable or non-Nullable UInt8 type and
 /// 2. makes sure that the result contains only 0 or 1 values even if the source column contains non-boolean values.
 const ActionsDAG::Node & addAndTrue(
-    ActionsDAGPtr dag,
+    const ActionsDAGPtr & dag,
     const ActionsDAG::Node & filter_node_to_normalize,
     OriginalToNewNodeMap & node_remap)
 {
@@ -200,11 +208,11 @@ const ActionsDAG::Node & addAndTrue(
 /// 8. Add computation of the remaining outputs to the last step with the procedure similar to 4
 bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionActionsSettings & actions_settings, PrewhereExprInfo & prewhere)
 {
-    if (!prewhere_info || !prewhere_info->prewhere_actions)
+    if (!prewhere_info)
         return true;
 
     /// 1. List all condition nodes that are combined with AND into PREWHERE condition
-    const auto & condition_root = prewhere_info->prewhere_actions->findInOutputs(prewhere_info->prewhere_column_name);
+    const auto & condition_root = prewhere_info->prewhere_actions.findInOutputs(prewhere_info->prewhere_column_name);
     const bool is_conjunction = (condition_root.type == ActionsDAG::ActionType::FUNCTION && condition_root.function_base->getName() == "and");
     if (!is_conjunction)
         return false;
@@ -240,16 +248,18 @@ bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionAction
     std::vector<Step> steps;
 
     OriginalToNewNodeMap node_remap;
+    NodeNameToLastUsedStepMap node_to_step;
 
-    for (const auto & condition_group : condition_groups)
+    for (size_t step_index = 0; step_index < condition_groups.size(); ++step_index)
     {
-        ActionsDAGPtr step_dag = std::make_shared<ActionsDAG>();
+        const auto & condition_group = condition_groups[step_index];
+        ActionsDAGPtr step_dag = std::make_unique<ActionsDAG>();
         String result_name;
 
         std::vector<const ActionsDAG::Node *> new_condition_nodes;
         for (const auto * node : condition_group)
         {
-            const auto & node_in_new_dag = addClonedDAGToDAG(node, step_dag, node_remap);
+            const auto & node_in_new_dag = addClonedDAGToDAG(step_index, node, step_dag, node_remap, node_to_step);
             new_condition_nodes.push_back(&node_in_new_dag);
         }
 
@@ -284,11 +294,11 @@ bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionAction
             }
         }
 
-        steps.push_back({step_dag, result_name});
+        steps.push_back({std::move(step_dag), result_name});
     }
 
     /// 6. Find all outputs of the original DAG
-    auto original_outputs = prewhere_info->prewhere_actions->getOutputs();
+    auto original_outputs = prewhere_info->prewhere_actions.getOutputs();
     /// 7. Find all outputs that were computed in the already built DAGs, mark these nodes as outputs in the steps where they were computed
     /// 8. Add computation of the remaining outputs to the last step with the procedure similar to 4
     NameSet all_output_names;
@@ -314,28 +324,31 @@ bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionAction
             /// Build AND(last_step_result_node, true)
             const auto & and_node = addAndTrue(last_step_dag, *last_step_result_node_info.node, node_remap);
             /// Build CAST(and_node, type of PREWHERE column)
-            const auto & cast_node = addCast(last_step_dag, and_node, output->result_type->getName(), node_remap);
+            const auto & cast_node = addCast(last_step_dag, and_node, output->result_type, node_remap);
             /// Add alias for the result with the name of the PREWHERE column
             const auto & prewhere_result_node = last_step_dag->addAlias(cast_node, output->result_name);
             last_step_dag->addOrReplaceInOutputs(prewhere_result_node);
         }
         else
         {
-            const auto & node_in_new_dag = addClonedDAGToDAG(output, steps.back().actions, node_remap);
+            const auto & node_in_new_dag = addClonedDAGToDAG(steps.size() - 1, output, steps.back().actions, node_remap, node_to_step);
             steps.back().actions->addOrReplaceInOutputs(node_in_new_dag);
         }
     }
 
     /// 9. Build PrewhereExprInfo
     {
-        for (const auto & step : steps)
+        for (size_t step_index = 0; step_index < steps.size(); ++step_index)
         {
+            auto & step = steps[step_index];
             PrewhereExprStep new_step
             {
                 .type = PrewhereExprStep::Filter,
-                .actions = std::make_shared<ExpressionActions>(step.actions, actions_settings),
+                .actions = std::make_shared<ExpressionActions>(std::move(*step.actions), actions_settings),
                 .filter_column_name = step.column_name,
-                .remove_filter_column = !all_output_names.contains(step.column_name), /// Don't remove if it's in the list of original outputs
+                /// Don't remove if it's in the list of original outputs
+                .remove_filter_column =
+                    !all_output_names.contains(step.column_name) && node_to_step[step.column_name] <= step_index,
                 .need_filter = false,
                 .perform_alter_conversions = true,
             };

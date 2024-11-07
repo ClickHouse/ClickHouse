@@ -34,22 +34,21 @@ public:
     bool exists(const UUID & id) const override;
 
     bool isBackupAllowed() const override { return backup_allowed; }
-    void restoreFromBackup(RestorerFromBackup & restorer) override;
 
 private:
     std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
     std::vector<UUID> findAllImpl(AccessEntityType type) const override;
     AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override;
-    bool insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) override;
+    bool insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id) override;
     bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
     bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override;
 
-    bool insertNoLock(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) TSA_REQUIRES(mutex);
-    bool removeNoLock(const UUID & id, bool throw_if_not_exists) TSA_REQUIRES(mutex);
-    bool updateNoLock(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) TSA_REQUIRES(mutex);
+    bool insertNoLock(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id);
+    bool removeNoLock(const UUID & id, bool throw_if_not_exists);
+    bool updateNoLock(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists);
 
-    void removeAllExceptNoLock(const std::vector<UUID> & ids_to_keep) TSA_REQUIRES(mutex);
-    void removeAllExceptNoLock(const boost::container::flat_set<UUID> & ids_to_keep) TSA_REQUIRES(mutex);
+    void removeAllExceptNoLock(const std::vector<UUID> & ids_to_keep);
+    void removeAllExceptNoLock(const boost::container::flat_set<UUID> & ids_to_keep);
 
     struct Entry
     {
@@ -57,9 +56,9 @@ private:
         AccessEntityPtr entity;
     };
 
-    mutable std::mutex mutex;
-    std::unordered_map<UUID, Entry> entries_by_id TSA_GUARDED_BY(mutex); /// We want to search entries both by ID and by the pair of name and type.
-    std::unordered_map<String, Entry *> entries_by_name_and_type[static_cast<size_t>(AccessEntityType::MAX)] TSA_GUARDED_BY(mutex);
+    mutable std::recursive_mutex mutex; // Note: Reentrace possible via LDAPAccessStorage
+    std::unordered_map<UUID, Entry> entries_by_id; /// We want to search entries both by ID and by the pair of name and type.
+    std::unordered_map<String, Entry *> entries_by_name_and_type[static_cast<size_t>(AccessEntityType::MAX)];
     AccessChangesNotifier & changes_notifier;
     const bool backup_allowed = false;
 };

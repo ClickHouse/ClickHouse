@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Tags: long, no-tsan
+# Tags: long, no-debug, no-tsan, no-msan, no-ubsan, no-asan, no-random-settings, no-random-merge-tree-settings
 
-# shellcheck disable=SC2154
+# shellcheck disable=SC2154,SC2162
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -35,7 +35,7 @@ prepare_table_with_sorting_key() {
 
 run_query() {
   query_id="${CLICKHOUSE_DATABASE}_hash_table_sizes_stats_$RANDOM$RANDOM"
-  $CLICKHOUSE_CLIENT --query_id="$query_id" --multiquery -q "
+  $CLICKHOUSE_CLIENT --query_id="$query_id" -q "
     SET max_block_size = $((table_size / 10));
     SET merge_tree_min_rows_for_concurrent_read = 1;
     SET max_untracked_memory = 0;
@@ -44,25 +44,17 @@ run_query() {
 }
 
 check_preallocated_elements() {
-  $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
   # rows may be distributed in any way including "everything goes to the one particular thread"
-  min=$1
-  if [ -z "$2" ]; then
-    max=$1
-  else
-    max=$2
-  fi
-  $CLICKHOUSE_CLIENT --param_query_id="$query_id" -q "
+  $CLICKHOUSE_CLIENT --param_query_id="$1" -q "
     SELECT COUNT(*)
       FROM system.query_log
      WHERE event_date >= yesterday() AND query_id = {query_id:String} AND current_database = currentDatabase()
-           AND ProfileEvents['AggregationPreallocatedElementsInHashTables'] BETWEEN $min AND $max"
+           AND ProfileEvents['AggregationPreallocatedElementsInHashTables'] BETWEEN $2 AND $3"
 }
 
 check_convertion_to_two_level() {
-  $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
   # rows may be distributed in any way including "everything goes to the one particular thread"
-  $CLICKHOUSE_CLIENT --param_query_id="$query_id" -q "
+  $CLICKHOUSE_CLIENT --param_query_id="$1" -q "
     SELECT SUM(ProfileEvents['AggregationHashTablesInitializedAsTwoLevel']) BETWEEN 1 AND $max_threads
       FROM system.query_log
      WHERE event_date >= yesterday() AND query_id = {query_id:String} AND current_database = currentDatabase()"
@@ -72,10 +64,24 @@ print_border() {
   echo "--"
 }
 
+# each test case appends to this array
+expected_results=()
+
+check_expectations() {
+  $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
+
+  for i in "${!expected_results[@]}"; do
+    read -a args <<< "${expected_results[$i]}"
+    if [ ${#args[@]} -eq 4 ]; then
+      check_convertion_to_two_level "${args[0]}"
+    fi
+    check_preallocated_elements "${args[@]}"
+    print_border
+  done
+}
 
 # shellcheck source=./02151_hash_table_sizes_stats.testcases
 source "$CURDIR"/02151_hash_table_sizes_stats.testcases
-
 
 test_one_thread_simple_group_by
 test_one_thread_simple_group_by_with_limit
@@ -86,3 +92,5 @@ test_several_threads_simple_group_by_with_limit_and_rollup_single_level_ht
 test_several_threads_simple_group_by_with_limit_and_rollup_two_level_ht
 test_several_threads_simple_group_by_with_limit_and_cube_single_level_ht
 test_several_threads_simple_group_by_with_limit_and_cube_two_level_ht
+
+check_expectations

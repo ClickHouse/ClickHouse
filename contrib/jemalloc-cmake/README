@@ -3,4 +3,15 @@ It allows to integrate JEMalloc into CMake project.
 - Remove JEMALLOC_HAVE_ATTR_FORMAT_GNU_PRINTF because it's non standard.
 - Added JEMALLOC_CONFIG_MALLOC_CONF substitution
 - Add musl support (USE_MUSL)
-- Also note, that darwin build requires JEMALLOC_PREFIX, while others don not
+- Also note, that darwin build requires JEMALLOC_PREFIX, while others do not
+- JEMALLOC_HAVE_CLOCK_MONOTONIC_COARSE should be disabled
+
+  CLOCK_MONOTONIC_COARSE can go backwards after clock_adjtime(ADJ_FREQUENCY)
+  Let's disable it for now, and this menas that CLOCK_MONOTONIC will be used,
+  and this, should not be a problem, since:
+  - jemalloc do not call clock_gettime() that frequently
+  - the difference is CLOCK_MONOTONIC 20ns and CLOCK_MONOTONIC_COARSE 4ns
+
+  This can be done with the following command:
+
+      gg JEMALLOC_HAVE_CLOCK_MONOTONIC_COARSE | cut -d: -f1 | xargs sed -i 's@#define JEMALLOC_HAVE_CLOCK_MONOTONIC_COARSE@/* #undef JEMALLOC_HAVE_CLOCK_MONOTONIC_COARSE */@'

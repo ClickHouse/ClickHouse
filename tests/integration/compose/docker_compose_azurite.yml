@@ -1,0 +1,11 @@
+services:
+  azurite1:
+    image: mcr.microsoft.com/azure-storage/azurite
+    ports:
+      - "${AZURITE_PORT}:${AZURITE_PORT}"
+    volumes:
+      - data1-1:/data1
+    command: azurite-blob --blobHost 0.0.0.0 --blobPort ${AZURITE_PORT} --debug /azurite_log
+
+volumes:
+  data1-1:

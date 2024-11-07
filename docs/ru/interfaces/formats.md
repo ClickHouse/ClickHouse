@@ -119,6 +119,7 @@ Hello\nworld
 Hello\
 world
 ```
+`\n\r` (CRLF) поддерживается с помощью настройки `input_format_tsv_crlf_end_of_line`. 
 
 Второй вариант поддерживается, так как его использует MySQL при записи tab-separated дампа.
 
@@ -201,7 +202,7 @@ SELECT * FROM nestedt FORMAT TSV
 
 Этот формат позволяет указать произвольную форматную строку, в которую подставляются значения, сериализованные выбранным способом.
 
-Для этого используются настройки `format_template_resultset`, `format_template_row`, `format_template_rows_between_delimiter` и настройки экранирования других форматов (например, `output_format_json_quote_64bit_integers` при экранировании как в `JSON`, см. далее)
+Для этого используются настройки `format_template_resultset`, `format_template_row` (`format_template_row_format`), `format_template_rows_between_delimiter` и настройки экранирования других форматов (например, `output_format_json_quote_64bit_integers` при экранировании как в `JSON`, см. далее)
 
 Настройка `format_template_row` задаёт путь к файлу, содержащему форматную строку для строк таблицы, которая должна иметь вид:
 
@@ -227,9 +228,11 @@ SELECT * FROM nestedt FORMAT TSV
 
     `Search phrase: 'bathroom interior design', count: 2166, ad price: $3;`
 
+В тех случаях, когда не удобно или не возможно указать произвольную форматную строку в файле, можно использовать `format_template_row_format` указать произвольную форматную строку в запросе.  
+
 Настройка `format_template_rows_between_delimiter` задаёт разделитель между строками, который выводится (или ожмдается при вводе) после каждой строки, кроме последней. По умолчанию `\n`.
 
-Настройка `format_template_resultset` задаёт путь к файлу, содержащему форматную строку для результата. Форматная строка для результата имеет синтаксис аналогичный форматной строке для строк таблицы и позволяет указать префикс, суффикс и способ вывода дополнительной информации. Вместо имён столбцов в ней указываются следующие имена подстановок:
+Настройка `format_template_resultset` задаёт путь к файлу, содержащему форматную строку для результата. Настройка `format_template_resultset_format` используется для установки форматной строки для результата непосредственно в запросе. Форматная строка для результата имеет синтаксис аналогичный форматной строке для строк таблицы и позволяет указать префикс, суффикс и способ вывода дополнительной информации. Вместо имён столбцов в ней указываются следующие имена подстановок:
 
 -   `data` - строки с данными в формате `format_template_row`, разделённые `format_template_rows_between_delimiter`. Эта подстановка должна быть первой подстановкой в форматной строке.
 -   `totals` - строка с тотальными значениями в формате `format_template_row` (при использовании WITH TOTALS)
@@ -772,9 +775,9 @@ CREATE TABLE IF NOT EXISTS example_table
 -   Если `input_format_defaults_for_omitted_fields = 0`, то значение по умолчанию для `x` и `a` равняется `0` (поскольку это значение по умолчанию для типа данных `UInt32`.)
 -   Если `input_format_defaults_for_omitted_fields = 1`, то значение по умолчанию для `x` равно `0`, а значение по умолчанию `a` равно `x * 2`.
 
-    :::note "Предупреждение"
-    При добавлении данных с помощью `input_format_defaults_for_omitted_fields = 1`, ClickHouse потребляет больше вычислительных ресурсов по сравнению с `input_format_defaults_for_omitted_fields = 0`.
-    :::
+:::note Предупреждение
+При добавлении данных с помощью `input_format_defaults_for_omitted_fields = 1`, ClickHouse потребляет больше вычислительных ресурсов по сравнению с `input_format_defaults_for_omitted_fields = 0`.
+:::
 ### Выборка данных {#vyborka-dannykh}
 
 Рассмотрим в качестве примера таблицу `UserActivity`:
@@ -795,9 +798,10 @@ CREATE TABLE IF NOT EXISTS example_table
 
 В отличие от формата [JSON](#json), для `JSONEachRow` ClickHouse не заменяет невалидные UTF-8 последовательности. Значения экранируются так же, как и для формата `JSON`.
 
-    :::note "Примечание"
-    В строках может выводиться произвольный набор байт. Используйте формат `JSONEachRow`, если вы уверены, что данные в таблице могут быть представлены в формате JSON без потери информации.
-    :::
+:::note Примечание
+В строках может выводиться произвольный набор байт. Используйте формат `JSONEachRow`, если вы уверены, что данные в таблице могут быть представлены в формате JSON без потери информации.
+:::
+
 ### Использование вложенных структур {#jsoneachrow-nested}
 
 Если у вас есть таблица со столбцами типа [Nested](../sql-reference/data-types/nested-data-structures/nested.md), то в неё можно вставить данные из JSON-документа с такой же структурой. Функциональность включается настройкой [input_format_import_nested_json](../operations/settings/settings.md#settings-input_format_import_nested_json).
@@ -1305,9 +1309,9 @@ SET format_avro_schema_registry_url = 'http://schema-registry';
 
 SELECT * FROM topic1_stream;
 ```
-    :::note "Внимание"
-    `format_avro_schema_registry_url` необходимо настроить в `users.xml`, чтобы сохранить значение после перезапуска. Также можно использовать настройку `format_avro_schema_registry_url` табличного движка `Kafka`.
-    :::
+:::note Внимание
+`format_avro_schema_registry_url` необходимо настроить в `users.xml`, чтобы сохранить значение после перезапуска. Также можно использовать настройку `format_avro_schema_registry_url` табличного движка `Kafka`.
+:::
 ## Parquet {#data-format-parquet}
 
 [Apache Parquet](https://parquet.apache.org/) — формат поколоночного хранения данных, который распространён в экосистеме Hadoop. Для формата `Parquet` ClickHouse поддерживает операции чтения и записи.

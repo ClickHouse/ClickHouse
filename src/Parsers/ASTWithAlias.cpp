@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <Parsers/ASTWithAlias.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -9,7 +10,7 @@ namespace DB
 static void writeAlias(const String & name, const ASTWithAlias::FormatSettings & settings)
 {
     settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " AS " << (settings.hilite ? IAST::hilite_alias : "");
-    settings.writeIdentifier(name);
+    settings.writeIdentifier(name, /*ambiguous=*/false);
     settings.ostr << (settings.hilite ? IAST::hilite_none : "");
 }
 
@@ -18,10 +19,10 @@ void ASTWithAlias::formatImpl(const FormatSettings & settings, FormatState & sta
 {
     /// If we have previously output this node elsewhere in the query, now it is enough to output only the alias.
     /// This is needed because the query can become extraordinary large after substitution of aliases.
-    if (!alias.empty() && !state.printed_asts_with_alias.emplace(frame.current_select, alias, getTreeHash()).second)
+    if (!alias.empty() && !state.printed_asts_with_alias.emplace(frame.current_select, alias, getTreeHash(/*ignore_aliases=*/ true)).second)
     {
         settings.ostr << (settings.hilite ? IAST::hilite_identifier : "");
-        settings.writeIdentifier(alias);
+        settings.writeIdentifier(alias, /*ambiguous=*/false);
         settings.ostr << (settings.hilite ? IAST::hilite_none : "");
     }
     else
@@ -40,6 +41,13 @@ void ASTWithAlias::formatImpl(const FormatSettings & settings, FormatState & sta
                 settings.ostr << ')';
         }
     }
+}
+
+void ASTWithAlias::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    if (!alias.empty() && !ignore_aliases)
+        hash_state.update(alias);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 void ASTWithAlias::appendColumnName(WriteBuffer & ostr) const

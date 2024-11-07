@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 
 import os
-import sys
-import random
 import queue
+import random
+import sys
 import time
 from threading import Thread
 
@@ -12,18 +12,21 @@ sys.path.insert(0, os.path.join(CURDIR, "helpers"))
 
 from pure_http_client import ClickHouseClient
 
+table_engine = sys.argv[1]
+
 client = ClickHouseClient()
 
 # test table without partition
 client.query("DROP TABLE IF EXISTS t_async_insert_dedup_no_part SYNC")
-client.query(
-    """
+create_query = f"""
 CREATE TABLE t_async_insert_dedup_no_part (
 KeyID     UInt32
-) Engine = ReplicatedMergeTree('/clickhouse/tables/{shard}/{database}/t_async_insert_dedup', '{replica}')
+) Engine = {table_engine}('/clickhouse/tables/{{shard}}/{{database}}/t_async_insert_dedup', '{{replica}}')
 ORDER BY (KeyID)
 """
-)
+
+client.query(create_query)
+
 
 client.query(
     "insert into t_async_insert_dedup_no_part values (1), (2), (3), (4), (5)",
@@ -45,9 +48,11 @@ def generate_data(q, total_number, use_token):
     partitions = ["2022-11-11 10:10:10", "2022-12-12 10:10:10"]
     last_number = 0
     while True:
-        dup_simulate = random.randint(0, 3)
+        # 0 to simulate duplication
+        # 1 to simulate empty
+        simulate_flag = random.randint(0, 4)
         # insert old data randomly. 25% of them are dup.
-        if dup_simulate == 0:
+        if simulate_flag == 0:
             last_idx = len(old_data) - 1
             if last_idx < 0:
                 continue
@@ -55,6 +60,11 @@ def generate_data(q, total_number, use_token):
             if idx < 0:
                 idx = 0
             q.put(old_data[idx])
+        if simulate_flag == 1:
+            empty_insert_stmt = (
+                "insert into t_async_insert_dedup values format JSONEachRow"
+            )
+            q.put((empty_insert_stmt, ""))
         else:
             # insert new data.
             chunk_size = random.randint(1, max_chunk_size)
@@ -101,22 +111,22 @@ def fetch_and_insert_data(q, client):
 
 # main process
 client.query("DROP TABLE IF EXISTS t_async_insert_dedup SYNC")
-client.query(
-    """
+create_query = f"""
 CREATE TABLE t_async_insert_dedup (
 EventDate DateTime,
 KeyID     UInt32
-) Engine = ReplicatedMergeTree('/clickhouse/tables/{shard}/{database}/t_async_insert_dedup', '{replica}')
+) Engine = {table_engine}('/clickhouse/tables/{{shard}}/{{database}}/t_async_insert_dedup', '{{replica}}')
 PARTITION BY toYYYYMM(EventDate)
 ORDER BY (KeyID, EventDate) SETTINGS use_async_block_ids_cache = 1
 """
-)
+
+client.query(create_query)
 
 q = queue.Queue(100)
 total_number = 10000
 
 use_token = False
-if sys.argv[-1] == "token":
+if len(sys.argv) >= 3 and sys.argv[2] == "token":
     use_token = True
 
 gen = Thread(target=generate_data, args=[q, total_number, use_token])
@@ -158,13 +168,14 @@ while True:
     break
 
 result = client.query(
-    "SELECT value FROM system.metrics  where metric = 'AsyncInsertCacheSize'"
+    "SELECT value FROM system.metrics where metric = 'AsyncInsertCacheSize'"
 )
 result = int(result.split()[0])
 if result <= 0:
     raise Exception(f"AsyncInsertCacheSize should > 0, but got {result}")
+
 result = client.query(
-    "SELECT value FROM system.events  where event = 'AsyncInsertCacheHits'"
+    "SELECT value FROM system.events where event = 'AsyncInsertCacheHits'"
 )
 result = int(result.split()[0])
 if result <= 0:

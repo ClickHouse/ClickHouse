@@ -1,3 +1,4 @@
+#include <Core/Settings.h>
 #include <Server/ProxyV1Handler.h>
 #include <Poco/Net/NetException.h>
 #include <Common/NetException.h>
@@ -7,6 +8,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsSeconds receive_timeout;
+}
 
 namespace ErrorCodes
 {
@@ -19,7 +24,7 @@ namespace ErrorCodes
 void ProxyV1Handler::run()
 {
     const auto & settings = server.context()->getSettingsRef();
-    socket().setReceiveTimeout(settings.receive_timeout);
+    socket().setReceiveTimeout(settings[Setting::receive_timeout]);
 
     std::string word;
     bool eol;
@@ -29,38 +34,38 @@ void ProxyV1Handler::run()
 
     // read "PROXY"
     if (!readWord(5, word, eol) || word != "PROXY" || eol)
-        throw ParsingException(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "PROXY protocol violation");
+        throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "PROXY protocol violation");
 
     // read "TCP4" or "TCP6" or "UNKNOWN"
     if (!readWord(7, word, eol))
-        throw ParsingException(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "PROXY protocol violation");
+        throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "PROXY protocol violation");
 
     if (word != "TCP4" && word != "TCP6" && word != "UNKNOWN")
-        throw ParsingException(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "PROXY protocol violation");
+        throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "PROXY protocol violation");
 
     if (word == "UNKNOWN" && eol)
         return;
 
     if (eol)
-        throw ParsingException(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "PROXY protocol violation");
+        throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "PROXY protocol violation");
 
     // read address
     if (!readWord(39, word, eol) || eol)
-        throw ParsingException(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "PROXY protocol violation");
+        throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "PROXY protocol violation");
 
     stack_data.forwarded_for = std::move(word);
 
     // read address
     if (!readWord(39, word, eol) || eol)
-        throw ParsingException(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "PROXY protocol violation");
+        throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "PROXY protocol violation");
 
     // read port
     if (!readWord(5, word, eol) || eol)
-        throw ParsingException(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "PROXY protocol violation");
+        throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "PROXY protocol violation");
 
     // read port and "\r\n"
     if (!readWord(5, word, eol) || !eol)
-        throw ParsingException(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "PROXY protocol violation");
+        throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "PROXY protocol violation");
 
     if (!stack_data.forwarded_for.empty())
         LOG_TRACE(log, "Forwarded client address from PROXY header: {}", stack_data.forwarded_for);

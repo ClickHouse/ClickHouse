@@ -14,7 +14,7 @@ ASTPtr ASTAlterNamedCollectionQuery::clone() const
 
 void ASTAlterNamedCollectionQuery::formatImpl(const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "Alter NAMED COLLECTION ";
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "ALTER NAMED COLLECTION ";
     if (if_exists)
         settings.ostr << "IF EXISTS ";
     settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(collection_name) << (settings.hilite ? hilite_none : "");
@@ -35,6 +35,9 @@ void ASTAlterNamedCollectionQuery::formatImpl(const IAST::FormatSettings & setti
                 settings.ostr << " = " << applyVisitor(FieldVisitorToString(), change.value);
             else
                 settings.ostr << " = '[HIDDEN]'";
+            auto override_value = overridability.find(change.name);
+            if (override_value != overridability.end())
+                settings.ostr << " " << (override_value->second ? "" : "NOT ") << "OVERRIDABLE";
         }
     }
     if (!delete_keys.empty())

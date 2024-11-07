@@ -6,7 +6,8 @@
 #include <Core/NamesAndTypes.h>
 #include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
-#include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Columns/ColumnConst.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -16,6 +17,7 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -69,8 +71,7 @@ bool injectRequiredColumnsRecursively(
 
     /// Column doesn't have default value and don't exist in part
     /// don't need to add to required set.
-    auto metadata_snapshot = storage_snapshot->getMetadataForQuery();
-    const auto column_default = metadata_snapshot->getColumns().getDefault(column_name);
+    const auto column_default = storage_snapshot->metadata->getColumns().getDefault(column_name);
     if (!column_default)
         return false;
 
@@ -105,16 +106,14 @@ NameSet injectRequiredColumns(
 
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
         .withExtendedObjects()
-        .withSystemColumns();
-
-    if (with_subcolumns)
-        options.withSubcolumns();
+        .withVirtuals()
+        .withSubcolumns(with_subcolumns);
 
     for (size_t i = 0; i < columns.size(); ++i)
     {
-        /// We are going to fetch only physical columns and system columns
+        /// We are going to fetch physical columns and system columns first
         if (!storage_snapshot->tryGetColumn(options, columns[i]))
-            throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no physical column or subcolumn {} in table", columns[i]);
+            throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column or subcolumn {} in table", columns[i]);
 
         have_at_least_one_physical_column |= injectRequiredColumnsRecursively(
             columns[i], storage_snapshot, alter_conversions,
@@ -127,50 +126,14 @@ NameSet injectRequiredColumns(
         */
     if (!have_at_least_one_physical_column)
     {
-        const auto minimum_size_column_name = data_part_info_for_reader.getColumnNameWithMinimumCompressedSize(with_subcolumns);
+        auto available_columns = storage_snapshot->metadata->getColumns().get(options);
+        const auto minimum_size_column_name = data_part_info_for_reader.getColumnNameWithMinimumCompressedSize(available_columns);
         columns.push_back(minimum_size_column_name);
         /// correctly report added column
         injected_columns.insert(columns.back());
     }
 
     return injected_columns;
-}
-
-
-MergeTreeReadTask::MergeTreeReadTask(
-    const DataPartPtr & data_part_,
-    const AlterConversionsPtr & alter_conversions_,
-    const MarkRanges & mark_ranges_,
-    size_t part_index_in_query_,
-    const NameSet & column_name_set_,
-    const MergeTreeReadTaskColumns & task_columns_,
-    MergeTreeBlockSizePredictorPtr size_predictor_,
-    Priority priority_,
-    std::future<MergeTreeReaderPtr> reader_,
-    std::vector<std::future<MergeTreeReaderPtr>> && pre_reader_for_step_)
-    : data_part{data_part_}
-    , alter_conversions{alter_conversions_}
-    , mark_ranges{mark_ranges_}
-    , part_index_in_query{part_index_in_query_}
-    , column_name_set{column_name_set_}
-    , task_columns{task_columns_}
-    , size_predictor{size_predictor_}
-    , reader(std::move(reader_))
-    , pre_reader_for_step(std::move(pre_reader_for_step_))
-    , priority(priority_)
-{
-}
-
-MergeTreeReadTask::~MergeTreeReadTask()
-{
-    if (reader.valid())
-        reader.wait();
-
-    for (const auto & pre_reader : pre_reader_for_step)
-    {
-        if (pre_reader.valid())
-            pre_reader.wait();
-    }
 }
 
 MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
@@ -195,9 +158,8 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const C
     for (size_t pos = 0; pos < num_columns; ++pos)
     {
         const auto & column_with_type_and_name = sample_block.getByPosition(pos);
-        const String & column_name = column_with_type_and_name.name;
-        const ColumnPtr & column_data = from_update ? columns[pos]
-                                                    : column_with_type_and_name.column;
+        const auto & column_name = column_with_type_and_name.name;
+        const auto & column_data = from_update ? columns[pos] : column_with_type_and_name.column;
 
         if (!from_update && !names_set.contains(column_name))
             continue;
@@ -210,7 +172,7 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const C
         {
             size_t size_of_value = column_data->sizeOfValueIfFixed();
             fixed_columns_bytes_per_row += column_data->sizeOfValueIfFixed();
-            max_size_per_row_fixed = std::max<size_t>(max_size_per_row_fixed, size_of_value);
+            max_size_per_row_fixed = std::max<double>(max_size_per_row_fixed, size_of_value);
         }
         else
         {
@@ -245,7 +207,6 @@ void MergeTreeBlockSizePredictor::startBlock()
     for (auto & info : dynamic_columns_infos)
         info.size_bytes = 0;
 }
-
 
 /// TODO: add last_read_row_in_part parameter to take into account gaps between adjacent ranges
 void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Columns & columns, size_t num_rows, double decay)
@@ -300,18 +261,12 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
     const Names & required_columns,
-    const Names & system_columns,
     const PrewhereInfoPtr & prewhere_info,
     const ExpressionActionsSettings & actions_settings,
     const MergeTreeReaderSettings & reader_settings,
     bool with_subcolumns)
 {
     Names column_to_read_after_prewhere = required_columns;
-
-    /// Read system columns such as lightweight delete mask "_row_exists" if it is persisted in the part
-    for (const auto & name : system_columns)
-        if (data_part_info_for_reader.getColumns().contains(name))
-            column_to_read_after_prewhere.push_back(name);
 
     /// Inject columns required for defaults evaluation
     injectRequiredColumns(
@@ -320,15 +275,22 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     MergeTreeReadTaskColumns result;
     auto options = GetColumnsOptions(GetColumnsOptions::All)
         .withExtendedObjects()
-        .withSystemColumns();
-
-    if (with_subcolumns)
-        options.withSubcolumns();
+        .withVirtuals()
+        .withSubcolumns(with_subcolumns);
 
     NameSet columns_from_previous_steps;
     auto add_step = [&](const PrewhereExprStep & step)
     {
         Names step_column_names;
+
+        /// Virtual columns that are filled by RangeReader
+        /// must be read in the first step before any filtering.
+        if (columns_from_previous_steps.empty())
+        {
+            for (const auto & required_column : required_columns)
+                if (MergeTreeRangeReader::virtuals_to_fill.contains(required_column))
+                    step_column_names.push_back(required_column);
+        }
 
         /// Computation results from previous steps might be used in the current step as well. In such a case these
         /// computed columns will be present in the current step inputs. They don't need to be read from the disk so
@@ -365,7 +327,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
 
     if (prewhere_info)
     {
-        auto prewhere_actions = IMergeTreeSelectAlgorithm::getPrewhereActions(
+        auto prewhere_actions = MergeTreeSelectProcessor::getPrewhereActions(
             prewhere_info,
             actions_settings,
             reader_settings.enable_multiple_prewhere_read_steps);
@@ -385,18 +347,6 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     /// Rest of the requested columns
     result.columns = storage_snapshot->getColumnsByNames(options, column_to_read_after_prewhere);
     return result;
-}
-
-
-std::string MergeTreeReadTaskColumns::dump() const
-{
-    WriteBufferFromOwnString s;
-    for (size_t i = 0; i < pre_columns.size(); ++i)
-    {
-        s << "STEP " << i << ": " << pre_columns[i].toString() << "\n";
-    }
-    s << "COLUMNS: " << columns.toString() << "\n";
-    return s.str();
 }
 
 }

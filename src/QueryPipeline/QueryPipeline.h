@@ -100,6 +100,9 @@ public:
     size_t getNumThreads() const { return num_threads; }
     void setNumThreads(size_t num_threads_) { num_threads = num_threads_; }
 
+    bool getConcurrencyControl() const { return concurrency_control; }
+    void setConcurrencyControl(bool concurrency_control_) { concurrency_control = concurrency_control_; }
+
     void setProcessListElement(QueryStatusPtr elem);
     void setProgressCallback(const ProgressCallback & callback);
     void setLimitsAndQuota(const StreamLocalLimits & limits, std::shared_ptr<const EnabledQuota> quota_);
@@ -157,12 +160,14 @@ private:
     IOutputFormat * output_format = nullptr;
 
     size_t num_threads = 0;
+    bool concurrency_control = false;
 
     friend class PushingPipelineExecutor;
     friend class PullingPipelineExecutor;
     friend class PushingAsyncPipelineExecutor;
     friend class PullingAsyncPipelineExecutor;
     friend class CompletedPipelineExecutor;
+    friend class RefreshTask;
     friend class QueryPipelineBuilder;
 };
 

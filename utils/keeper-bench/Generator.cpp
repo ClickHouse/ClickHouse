@@ -40,54 +40,6 @@ std::string generateRandomString(size_t length)
 }
 }
 
-void removeRecursive(Coordination::ZooKeeper & zookeeper, const std::string & path)
-{
-    namespace fs = std::filesystem;
-
-    auto promise = std::make_shared<std::promise<void>>();
-    auto future = promise->get_future();
-
-    Strings children;
-    auto list_callback = [promise, &children] (const ListResponse & response)
-    {
-        children = response.names;
-
-        promise->set_value();
-    };
-    zookeeper.list(path, ListRequestType::ALL, list_callback, nullptr);
-    future.get();
-
-    while (!children.empty())
-    {
-        Coordination::Requests ops;
-        for (size_t i = 0; i < MULTI_BATCH_SIZE && !children.empty(); ++i)
-        {
-            removeRecursive(zookeeper, fs::path(path) / children.back());
-            ops.emplace_back(makeRemoveRequest(fs::path(path) / children.back(), -1));
-            children.pop_back();
-        }
-        auto multi_promise = std::make_shared<std::promise<void>>();
-        auto multi_future = multi_promise->get_future();
-
-        auto multi_callback = [multi_promise] (const MultiResponse &)
-        {
-            multi_promise->set_value();
-        };
-        zookeeper.multi(ops, multi_callback);
-        multi_future.get();
-    }
-    auto remove_promise = std::make_shared<std::promise<void>>();
-    auto remove_future = remove_promise->get_future();
-
-    auto remove_callback = [remove_promise] (const RemoveResponse &)
-    {
-        remove_promise->set_value();
-    };
-
-    zookeeper.remove(path, -1, remove_callback);
-    remove_future.get();
-}
-
 NumberGetter
 NumberGetter::fromConfig(const std::string & key, const Poco::Util::AbstractConfiguration & config, std::optional<uint64_t> default_value)
 {
@@ -603,164 +555,20 @@ Generator::Generator(const Poco::Util::AbstractConfiguration & config)
     acl.id = "anyone";
     default_acls.emplace_back(std::move(acl));
 
-    static const std::string generator_key = "generator";
-
-    std::cerr << "---- Parsing setup ---- " << std::endl;
-    static const std::string setup_key = generator_key + ".setup";
-    Poco::Util::AbstractConfiguration::Keys keys;
-    config.keys(setup_key, keys);
-    for (const auto & key : keys)
-    {
-        if (key.starts_with("node"))
-        {
-            auto node_key = setup_key + "." + key;
-            auto parsed_root_node = parseNode(node_key, config);
-            const auto node = root_nodes.emplace_back(parsed_root_node);
-
-            if (config.has(node_key + ".repeat"))
-            {
-                if (!node->name.isRandom())
-                    throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Repeating node creation for key {}, but name is not randomly generated", node_key);
-
-                auto repeat_count = config.getUInt64(node_key + ".repeat");
-                node->repeat_count = repeat_count;
-                for (size_t i = 1; i < repeat_count; ++i)
-                    root_nodes.emplace_back(node->clone());
-            }
-
-            std::cerr << "Tree to create:" << std::endl;
-
-            node->dumpTree();
-            std::cerr << std::endl;
-        }
-    }
-    std::cerr << "---- Done parsing data setup ----\n" << std::endl;
-
     std::cerr << "---- Collecting request generators ----" << std::endl;
-    static const std::string requests_key = generator_key + ".requests";
+    static const std::string requests_key = "generator.requests";
     request_getter = RequestGetter::fromConfig(requests_key, config);
     std::cerr << request_getter.description() << std::endl;
     std::cerr << "---- Done collecting request generators ----\n" << std::endl;
 }
 
-std::shared_ptr<Generator::Node> Generator::parseNode(const std::string & key, const Poco::Util::AbstractConfiguration & config)
-{
-    auto node = std::make_shared<Generator::Node>();
-    node->name = StringGetter::fromConfig(key + ".name", config);
-
-    if (config.has(key + ".data"))
-        node->data = StringGetter::fromConfig(key + ".data", config);
-
-    Poco::Util::AbstractConfiguration::Keys node_keys;
-    config.keys(key, node_keys);
-
-    for (const auto & node_key : node_keys)
-    {
-        if (!node_key.starts_with("node"))
-            continue;
-
-        const auto node_key_string = key + "." + node_key;
-        auto child_node = parseNode(node_key_string, config);
-        node->children.push_back(child_node);
-
-        if (config.has(node_key_string + ".repeat"))
-        {
-            if (!child_node->name.isRandom())
-                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Repeating node creation for key {}, but name is not randomly generated", node_key_string);
-
-            auto repeat_count = config.getUInt64(node_key_string + ".repeat");
-            child_node->repeat_count = repeat_count;
-            for (size_t i = 1; i < repeat_count; ++i)
-                node->children.push_back(child_node);
-        }
-    }
-
-    return node;
-}
-
-void Generator::Node::dumpTree(int level) const
-{
-    std::string data_string
-        = data.has_value() ? fmt::format("{}", data->description()) : "no data";
-
-    std::string repeat_count_string = repeat_count != 0 ? fmt::format(", repeated {} times", repeat_count) : "";
-
-    std::cerr << fmt::format("{}name: {}, data: {}{}", std::string(level, '\t'), name.description(), data_string, repeat_count_string) << std::endl;
-
-    for (auto it = children.begin(); it != children.end();)
-    {
-        const auto & child = *it;
-        child->dumpTree(level + 1);
-        std::advance(it, child->repeat_count != 0 ? child->repeat_count : 1);
-    }
-}
-
-std::shared_ptr<Generator::Node> Generator::Node::clone() const
-{
-    auto new_node = std::make_shared<Node>();
-    new_node->name = name;
-    new_node->data = data;
-    new_node->repeat_count = repeat_count;
-
-    // don't do deep copy of children because we will do clone only for root nodes
-    new_node->children = children;
-
-    return new_node;
-}
-
-void Generator::Node::createNode(Coordination::ZooKeeper & zookeeper, const std::string & parent_path, const Coordination::ACLs & acls) const
-{
-    auto path = std::filesystem::path(parent_path) / name.getString();
-    auto promise = std::make_shared<std::promise<void>>();
-    auto future = promise->get_future();
-    auto create_callback = [promise] (const CreateResponse & response)
-    {
-        if (response.error != Coordination::Error::ZOK)
-            promise->set_exception(std::make_exception_ptr(zkutil::KeeperException(response.error)));
-        else
-            promise->set_value();
-    };
-    zookeeper.create(path, data ? data->getString() : "", false, false, acls, create_callback);
-    future.get();
-
-    for (const auto & child : children)
-        child->createNode(zookeeper, path, acls);
-}
-
 void Generator::startup(Coordination::ZooKeeper & zookeeper)
 {
-    std::cerr << "---- Creating test data ----" << std::endl;
-    for (const auto & node : root_nodes)
-    {
-        auto node_name = node->name.getString();
-        node->name.setString(node_name);
-
-        std::string root_path = std::filesystem::path("/") / node_name;
-        std::cerr << "Cleaning up " << root_path << std::endl;
-        removeRecursive(zookeeper, root_path);
-
-        node->createNode(zookeeper, "/", default_acls);
-    }
-    std::cerr << "---- Created test data ----\n" << std::endl;
-
     std::cerr << "---- Initializing generators ----" << std::endl;
-
     request_getter.startup(zookeeper);
 }
 
 Coordination::ZooKeeperRequestPtr Generator::generate()
 {
     return request_getter.getRequestGenerator()->generate(default_acls);
-}
-
-void Generator::cleanup(Coordination::ZooKeeper & zookeeper)
-{
-    std::cerr << "---- Cleaning up test data ----" << std::endl;
-    for (const auto & node : root_nodes)
-    {
-        auto node_name = node->name.getString();
-        std::string root_path = std::filesystem::path("/") / node_name;
-        std::cerr << "Cleaning up " << root_path << std::endl;
-        removeRecursive(zookeeper, root_path);
-    }
 }

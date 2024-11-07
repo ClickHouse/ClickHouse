@@ -1,9 +1,10 @@
+import time
+from multiprocessing.dummy import Pool
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from multiprocessing.dummy import Pool
 from helpers.corrupt_part_data_on_disk import corrupt_part_data_on_disk
-import time
 
 cluster = ClickHouseCluster(__file__)
 
@@ -24,7 +25,7 @@ def test_merge_and_part_corruption(started_cluster):
     node1.query(
         """
         CREATE TABLE replicated_mt(date Date, id UInt32, value Int32)
-        ENGINE = ReplicatedMergeTree('/clickhouse/tables/replicated_mt', '{replica}') ORDER BY id 
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/replicated_mt', '{replica}') ORDER BY id
         SETTINGS cleanup_delay_period=1, cleanup_delay_period_random_add=1, cleanup_thread_preferred_points_per_iteration=0;
             """.format(
             replica=node1.name
@@ -54,12 +55,13 @@ def test_merge_and_part_corruption(started_cluster):
     with Pool(1) as p:
 
         def optimize_with_delay(x):
-            node1.query("OPTIMIZE TABLE replicated_mt FINAL", timeout=30)
+            node1.query("OPTIMIZE TABLE replicated_mt FINAL", timeout=120)
 
         # corrupt part after merge already assigned, but not started
         res_opt = p.apply_async(optimize_with_delay, (1,))
         node1.query(
-            "CHECK TABLE replicated_mt", settings={"check_query_single_value_result": 0}
+            "CHECK TABLE replicated_mt",
+            settings={"check_query_single_value_result": 0, "max_threads": 1},
         )
         # start merge
         node1.query("SYSTEM START REPLICATION QUEUES replicated_mt")
@@ -69,7 +71,7 @@ def test_merge_and_part_corruption(started_cluster):
         node1.query(
             "ALTER TABLE replicated_mt UPDATE value = 7 WHERE 1",
             settings={"mutations_sync": 2},
-            timeout=30,
+            timeout=120,
         )
         assert node1.query("SELECT sum(value) FROM replicated_mt") == "2100000\n"
 

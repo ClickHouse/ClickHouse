@@ -1,15 +1,21 @@
-#include <cassert>
+#include <Parsers/CommonParsers.h>
 
 #include <Parsers/obfuscateQueries.h>
 #include <Parsers/Lexer.h>
 #include <Poco/String.h>
 #include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/BitHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromMemory.h>
+
+#include <algorithm>
+#include <cassert>
+#include <iterator>
+
+#include <boost/algorithm/string.hpp>
 
 
 namespace DB
@@ -24,412 +30,54 @@ namespace ErrorCodes
 namespace
 {
 
-const std::unordered_set<std::string_view> keywords
+const std::unordered_set<std::string> & getObfuscateKeywords()
 {
-    "!=",
-    "",
-    "%",
-    "*",
-    "+",
-    "-",
-    "->",
-    ".",
-    "/",
-    ":",
-    "::",
-    "<",
-    "<=",
-    "<>",
-    "=",
-    "==",
-    ">",
-    ">=",
-    "?",
-    "[",
-    "]+",
-    "]+|[",
-    "^[",
-    "||",
-    "]+$",
-    "ACCESS",
-    "ACTION",
-    "ADD",
-    "ADMIN",
-    "AFTER",
-    "ALGORITHM",
-    "ALIAS",
-    "ALL",
-    "ALLOWED_LATENESS",
-    "ALTER",
-    "AND",
-    "ANTI",
-    "ANY",
-    "APPLY",
-    "ARRAY",
-    "AS",
-    "ASC",
-    "ASCENDING",
-    "ASOF",
-    "ASSUME",
-    "AST",
-    "ASYNC",
-    "ATTACH",
-    "AUTO_INCREMENT",
-    "BACKUP",
-    "BASE_BACKUP",
-    "BEGIN",
-    "BETWEEN",
-    "BIDIRECTIONAL",
-    "BOTH",
-    "BY",
-    "CACHE",
-    "CACHES",
-    "CASCADE",
-    "CASE",
-    "CASEWITHEXPRESSION",
-    "CAST",
-    "CHANGE",
-    "CHANGEABLE_IN_READONLY",
-    "CHANGED",
-    "CHAR",
-    "CHARACTER",
-    "CHECK",
-    "CLEANUP",
-    "CLEAR",
-    "CLUSTER",
-    "CLUSTER_HOST_IDS",
-    "CLUSTERS",
-    "CN",
-    "CODEC",
-    "COLLATE",
-    "COLLECTION",
-    "COLUMN",
-    "COLUMNS",
-    "COMMENT",
-    "COMMIT",
-    "COMPRESSION",
-    "CONCAT",
-    "CONSTRAINT",
-    "CREATE",
-    "CROSS",
-    "CUBE",
-    "CURRENT",
-    "CURRENT_USER",
-    "DATABASE",
-    "DATABASES",
-    "DATE",
-    "DATE_ADD",
-    "DATEADD",
-    "DATE_DIFF",
-    "DATEDIFF",
-    "DATE_SUB",
-    "DATESUB",
-    "DAY",
-    "DD",
-    "DDL",
-    "DEDUPLICATE",
-    "DEFAULT",
-    "DELAY",
-    "DELETE",
-    "DESC",
-    "DESCENDING",
-    "DESCRIBE",
-    "DETACH",
-    "DETACHED",
-    "DICTIONARIES",
-    "DICTIONARY",
-    "DISK",
-    "DISTINCT",
-    "DIV",
-    "DOUBLE_SHA1_HASH",
-    "DROP",
-    "ELSE",
-    "EMPTY",
-    "ENABLED",
-    "END",
-    "ENFORCED",
-    "ENGINE",
-    "EPHEMERAL",
-    "EQUALS",
-    "ESTIMATE",
-    "EVENT",
-    "EVENTS",
-    "EXCEPT",
-    "EXCHANGE",
-    "EXISTS",
-    "EXPLAIN",
-    "EXPRESSION",
-    "EXTERNAL",
-    "EXTRACT",
-    "FALSE",
-    "FETCH",
-    "FILE",
-    "FILESYSTEM",
-    "FILL",
-    "FILTER",
-    "FINAL",
-    "FIRST",
-    "FOLLOWING",
-    "FOR",
-    "FOREIGN",
-    "FORMAT",
-    "FREEZE",
-    "FROM",
-    "FULL",
-    "FULLTEXT",
-    "FUNCTION",
-    "GLOBAL",
-    "GRANT",
-    "GRANTEES",
-    "GRANTS",
-    "GRANULARITY",
-    "GREATER",
-    "GREATEROREQUALS",
-    "GROUP",
-    "GROUPING",
-    "GROUPS",
-    "HASH",
-    "HAVING",
-    "HDFS",
-    "HH",
-    "HIERARCHICAL",
-    "HOST",
-    "HOUR",
-    "ID",
-    "IDENTIFIED",
-    "IF",
-    "ILIKE",
-    "IN",
-    "INDEX",
-    "INFILE",
-    "INHERIT",
-    "INJECTIVE",
-    "INNER",
-    "INSERT",
-    "INTERPOLATE",
-    "INTERSECT",
-    "INTERVAL",
-    "INTO",
-    "INVISIBLE",
-    "IP",
-    "IS",
-    "IS_OBJECT_ID",
-    "JOIN",
-    "KEY",
-    "KEYED",
-    "KILL",
-    "LAMBDA",
-    "LARGE",
-    "LAST",
-    "LAYOUT",
-    "LEADING",
-    "LEFT",
-    "LESS",
-    "LESSOREQUALS",
-    "LEVEL",
-    "LIFETIME",
-    "LIKE",
-    "LIMIT",
-    "LIMITS",
-    "LINEAR",
-    "LIST",
-    "LITERAL",
-    "LIVE",
-    "LOCAL",
-    "LTRIM",
-    "MATCH",
-    "MATERIALIZE",
-    "MATERIALIZED",
-    "MAX",
-    "MCS",
-    "MEMORY",
-    "MI",
-    "MICROSECOND",
-    "MILLISECOND",
-    "MIN",
-    "MINUS",
-    "MINUTE",
-    "MM",
-    "MOD",
-    "MODIFY",
-    "MONTH",
-    "MOVE",
-    "MS",
-    "MULTIIF",
-    "MUTATION",
-    "NAME",
-    "NAMED",
-    "NANOSECOND",
-    "NEXT",
-    "NO",
-    "NONE",
-    "NOT",
-    "NOTEQUALS",
-    "NOTIN",
-    "NS",
-    "NULL",
-    "NULLS",
-    "OBJECT",
-    "OFFSET",
-    "ON",
-    "ONLY",
-    "OPTIMIZE",
-    "OPTION",
-    "OR",
-    "ORDER",
-    "OUTER",
-    "OUTFILE",
-    "OVER",
-    "OVERRIDE",
-    "PART",
-    "PARTIAL",
-    "PARTITION",
-    "PARTITIONS",
-    "PART_MOVE_TO_SHARD",
-    "PERMANENTLY",
-    "PERMISSIVE",
-    "PIPELINE",
-    "PLAN",
-    "PLUS",
-    "POLICY",
-    "POPULATE",
-    "POSITION",
-    "PRECEDING",
-    "PRECISION",
-    "PREWHERE",
-    "PRIMARY",
-    "PRIVILEGES",
-    "PROCESSLIST",
-    "PROFILE",
-    "PROJECTION",
-    "QQ",
-    "QUARTER",
-    "QUERY",
-    "QUOTA",
-    "RANDOMIZED",
-    "RANGE",
-    "READONLY",
-    "REALM",
-    "RECOMPRESS",
-    "REFERENCES",
-    "REFRESH",
-    "REGEXP",
-    "REGEXPQUOTEMETA",
-    "REMOVE",
-    "RENAME",
-    "REPLACE",
-    "REPLACEREGEXPALL",
-    "REPLACEREGEXPONE",
-    "RESET",
-    "RESTORE",
-    "RESTRICT",
-    "RESTRICTIVE",
-    "RESUME",
-    "REVOKE",
-    "RIGHT",
-    "ROLE",
-    "ROLES",
-    "ROLLBACK",
-    "ROLLUP",
-    "ROW",
-    "ROWS",
-    "RTRIM",
-    "S3",
-    "SALT",
-    "SAMPLE",
-    "SECOND",
-    "SELECT",
-    "SEMI",
-    "SERVER",
-    "SET",
-    "SETS",
-    "SETTING",
-    "SETTINGS",
-    "SHA256_HASH",
-    "SHARD",
-    "SHOW",
-    "SIGNED",
-    "SIMPLE",
-    "SINGLEVALUEORNULL",
-    "SNAPSHOT",
-    "SOURCE",
-    "SPATIAL",
-    "SS",
-    "STDOUT",
-    "STEP",
-    "STORAGE",
-    "STRICT",
-    "STRICTLY_ASCENDING",
-    "SUBPARTITION",
-    "SUBPARTITIONS",
-    "SUBSTRING",
-    "SUSPEND",
-    "SYNC",
-    "SYNTAX",
-    "SYSTEM",
-    "TABLE",
-    "TABLES",
-    "TEMPORARY",
-    "TEST",
-    "THAN",
-    "THEN",
-    "TIES",
-    "TIMESTAMP",
-    "TIMESTAMP_ADD",
-    "TIMESTAMPADD",
-    "TIMESTAMP_DIFF",
-    "TIMESTAMPDIFF",
-    "TIMESTAMP_SUB",
-    "TIMESTAMPSUB",
-    "TO",
-    "TODATE",
-    "TODATETIME",
-    "TOP",
-    "TOTALS",
-    "TRACKING",
-    "TRAILING",
-    "TRANSACTION",
-    "TREE",
-    "TRIGGER",
-    "TRIM",
-    "TRIMBOTH",
-    "TRIMLEFT",
-    "TRIMRIGHT",
-    "TRUE",
-    "TRUNCATE",
-    "TTL",
-    "TUPLE",
-    "TYPE",
-    "UNBOUNDED",
-    "UNFREEZE",
-    "UNION",
-    "UNIQUE",
-    "UNSIGNED",
-    "UNTUPLE",
-    "UPDATE",
-    "URL",
-    "USE",
-    "USER",
-    "USING",
-    "UUID",
-    "VALUES",
-    "VARYING",
-    "VIEW",
-    "VIEWIFPERMITTED",
-    "VISIBLE",
-    "VOLUME",
-    "WATCH",
-    "WATERMARK",
-    "WEEK",
-    "WHEN",
-    "WHERE",
-    "WINDOW",
-    "WITH",
-    "WK",
-    "WRITABLE",
-    "YEAR",
-    "YYYY",
-    "ZKPATH"
+    auto initialize = []()
+    {
+        std::unordered_set<std::string> instance = {
+            "!=",
+            "",
+            "%",
+            "*",
+            "+",
+            "-",
+            "->",
+            ".",
+            "/",
+            ":",
+            "::",
+            "<",
+            "<=",
+            "<>",
+            "=",
+            "==",
+            "<=>",
+            ">",
+            ">=",
+            "?",
+            "[",
+            "]+",
+            "]+|[",
+            "^[",
+            "||",
+            "]+$"
+        };
+
+        for (const auto & keyword : getAllKeyWords())
+        {
+            /// The keyword may consist of several tokens (ORDER BY or GROUP BY)
+            /// We will split them and add separately.
+            std::vector<std::string> tokens;
+            boost::split(tokens, keyword, [](char c) { return c == ' '; });
+            for (const auto & token : tokens)
+                instance.insert(token);
+        }
+
+        return instance;
+    };
+
+    static std::unordered_set<std::string> instance = initialize();
+    return instance;
 };
 
 /// We want to keep some words inside quotes. For example we want to keep HOUR inside:
@@ -1094,7 +742,11 @@ void obfuscateIdentifier(std::string_view src, WriteBuffer & result, WordMap & o
 }
 
 
-void obfuscateLiteral(std::string_view src, WriteBuffer & result, SipHash hash_func)
+void obfuscateLiteral(
+    std::string_view src,
+    WriteBuffer & result,
+    SipHash hash_func,
+    KnownIdentifierFunc known_identifier_func)
 {
     const char * src_pos = src.data();
     const char * src_end = src_pos + src.size();
@@ -1207,15 +859,15 @@ void obfuscateLiteral(std::string_view src, WriteBuffer & result, SipHash hash_f
         }
         else if (isAlphaASCII(src_pos[0]))
         {
-            /// Alphabetial characters
+            /// Alphabetical characters
 
             const char * alpha_end = src_pos + 1;
             while (alpha_end < src_end && isAlphaASCII(*alpha_end))
                 ++alpha_end;
 
-            String wordcopy(src_pos, alpha_end);
-            Poco::toUpperInPlace(wordcopy);
-            if (keep_words.contains(wordcopy))
+            String word(src_pos, alpha_end);
+            String wordcopy = Poco::toUpper(word);
+            if (keep_words.contains(wordcopy) || known_identifier_func(word))
             {
                 result.write(src_pos, alpha_end - src_pos);
                 src_pos = alpha_end;
@@ -1304,11 +956,9 @@ void obfuscateQueries(
 
         if (token.type == TokenType::BareWord)
         {
-            std::string whole_token_uppercase(whole_token);
-            Poco::toUpperInPlace(whole_token_uppercase);
+            auto whole_token_uppercase = Poco::toUpper(toString(whole_token));
 
-            if (keywords.contains(whole_token_uppercase)
-                || known_identifier_func(whole_token))
+            if (getObfuscateKeywords().contains(whole_token_uppercase) || known_identifier_func(whole_token))
             {
                 /// Keep keywords as is.
                 result.write(token.begin, token.size());
@@ -1336,14 +986,14 @@ void obfuscateQueries(
         }
         else if (token.type == TokenType::Number)
         {
-            obfuscateLiteral(whole_token, result, hash_func);
+            obfuscateLiteral(whole_token, result, hash_func, known_identifier_func);
         }
         else if (token.type == TokenType::StringLiteral)
         {
             assert(token.size() >= 2);
 
             result.write(*token.begin);
-            obfuscateLiteral({token.begin + 1, token.size() - 2}, result, hash_func);
+            obfuscateLiteral({token.begin + 1, token.size() - 2}, result, hash_func, known_identifier_func);
             result.write(token.end[-1]);
         }
         else if (token.type == TokenType::Comment)
@@ -1359,4 +1009,3 @@ void obfuscateQueries(
 }
 
 }
-

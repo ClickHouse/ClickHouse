@@ -7,6 +7,8 @@
 #include <vector>
 #include <memory>
 
+#include <Common/Logger.h>
+
 #include <Poco/DOM/Document.h>
 #include <Poco/DOM/DOMParser.h>
 #include <Poco/DOM/DOMWriter.h>
@@ -44,8 +46,6 @@ public:
         bool log_to_console = false,
         const Substitutions & substitutions = Substitutions());
 
-    ~ConfigProcessor();
-
     /// Perform config includes and substitutions and return the resulting XML-document.
     ///
     /// Suppose path is "/path/file.xml"
@@ -63,7 +63,10 @@ public:
     XMLDocumentPtr processConfig(
         bool * has_zk_includes = nullptr,
         zkutil::ZooKeeperNodeCache * zk_node_cache = nullptr,
-        const zkutil::EventPtr & zk_changed_event = nullptr);
+        const zkutil::EventPtr & zk_changed_event = nullptr,
+        bool is_config_changed = true);
+
+    XMLDocumentPtr parseConfig(const std::string & config_path);
 
     /// These configurations will be used if there is no configuration file.
     static void registerEmbeddedConfig(std::string name, std::string_view content);
@@ -86,14 +89,15 @@ public:
     /// If allow_zk_includes is true, expect that the configuration XML can contain from_zk nodes.
     /// If it is the case, set has_zk_includes to true and don't write config-preprocessed.xml,
     /// expecting that config would be reloaded with zookeeper later.
-    LoadedConfig loadConfig(bool allow_zk_includes = false);
+    LoadedConfig loadConfig(bool allow_zk_includes = false, bool is_config_changed = true);
 
     /// If fallback_to_preprocessed is true, then if KeeperException is thrown during config
     /// processing, load the configuration from the preprocessed file.
     LoadedConfig loadConfigWithZooKeeperIncludes(
         zkutil::ZooKeeperNodeCache & zk_node_cache,
         const zkutil::EventPtr & zk_changed_event,
-        bool fallback_to_preprocessed = false);
+        bool fallback_to_preprocessed = false,
+        bool is_config_changed = true);
 
     /// Save preprocessed config to specified directory.
     /// If preprocessed_dir is empty - calculate from loaded_config.path + /preprocessed_configs/
@@ -125,7 +129,7 @@ private:
 
     bool throw_on_bad_incl;
 
-    Poco::Logger * log;
+    LoggerPtr log;
     Poco::AutoPtr<Poco::Channel> channel_ptr;
 
     Substitutions substitutions;
@@ -141,6 +145,9 @@ private:
     /// Decrypt elements in config with specified encryption attributes
     void decryptEncryptedElements(LoadedConfig & loaded_config);
 #endif
+
+    void hideRecursive(Poco::XML::Node * config_root);
+    XMLDocumentPtr hideElements(XMLDocumentPtr xml_tree);
 
     void mergeRecursive(XMLDocumentPtr config, Poco::XML::Node * config_root, const Poco::XML::Node * with_root);
 

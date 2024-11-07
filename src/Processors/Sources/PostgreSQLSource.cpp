@@ -35,9 +35,9 @@ PostgreSQLSource<T>::PostgreSQLSource(
     const Block & sample_block,
     UInt64 max_block_size_)
     : ISource(sample_block.cloneEmpty())
-    , query_str(query_str_)
     , max_block_size(max_block_size_)
     , connection_holder(std::move(connection_holder_))
+    , query_str(query_str_)
 {
     init(sample_block);
 }
@@ -51,14 +51,13 @@ PostgreSQLSource<T>::PostgreSQLSource(
     UInt64 max_block_size_,
     bool auto_commit_)
     : ISource(sample_block.cloneEmpty())
-    , query_str(query_str_)
-    , tx(std::move(tx_))
     , max_block_size(max_block_size_)
     , auto_commit(auto_commit_)
+    , query_str(query_str_)
+    , tx(std::move(tx_))
 {
     init(sample_block);
 }
-
 
 template<typename T>
 void PostgreSQLSource<T>::init(const Block & sample_block)
@@ -82,7 +81,8 @@ void PostgreSQLSource<T>::onStart()
     {
         try
         {
-            tx = std::make_shared<T>(connection_holder->get());
+            auto & conn = connection_holder->get();
+            tx = std::make_shared<T>(conn);
         }
         catch (const pqxx::broken_connection &)
         {
@@ -120,7 +120,7 @@ Chunk PostgreSQLSource<T>::generate()
     MutableColumns columns = description.sample_block.cloneEmptyColumns();
     size_t num_rows = 0;
 
-    while (true)
+    while (!isCancelled())
     {
         const std::vector<pqxx::zview> * row{stream->read_row()};
 
@@ -180,6 +180,42 @@ void PostgreSQLSource<T>::onFinish()
 
     if (tx && auto_commit)
         tx->commit();
+
+    is_completed = true;
+}
+
+template<typename T>
+PostgreSQLSource<T>::~PostgreSQLSource()
+{
+    if (!is_completed)
+    {
+        try
+        {
+            if (stream)
+            {
+                /** Internally libpqxx::stream_from runs PostgreSQL copy query `COPY query TO STDOUT`.
+                  * During transaction abort we try to execute PostgreSQL `ROLLBACK` command and if
+                  * copy query is not cancelled, we wait until it finishes.
+                  */
+                tx->conn().cancel_query();
+
+                /** If stream is not closed, libpqxx::stream_from closes stream in destructor, but that way
+                  * exception is added into transaction pending error and we can potentially ignore exception message.
+                  */
+                stream->close();
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+
+        stream.reset();
+        tx.reset();
+
+        if (connection_holder)
+            connection_holder->setBroken();
+    }
 }
 
 template

@@ -7,7 +7,7 @@
 #include <cassert>
 #include <cstring>
 #include <unistd.h>
-#include <sys/select.h>
+#include <poll.h>
 #include <sys/time.h>
 #include <sys/types.h>
 
@@ -21,17 +21,6 @@ namespace
 void trim(String & s)
 {
     s.erase(std::find_if(s.rbegin(), s.rend(), [](int ch) { return !std::isspace(ch); }).base(), s.end());
-}
-
-/// Check if multi-line query is inserted from the paste buffer.
-/// Allows delaying the start of query execution until the entirety of query is inserted.
-bool hasInputData()
-{
-    timeval timeout = {0, 0};
-    fd_set fds{};
-    FD_ZERO(&fds);
-    FD_SET(STDIN_FILENO, &fds);
-    return select(1, &fds, nullptr, nullptr, &timeout) == 1;
 }
 
 struct NoCaseCompare
@@ -65,6 +54,14 @@ void addNewWords(Words & to, const Words & from, Compare comp)
 
 namespace DB
 {
+
+/// Check if multi-line query is inserted from the paste buffer.
+/// Allows delaying the start of query execution until the entirety of query is inserted.
+bool LineReader::hasInputData() const
+{
+    pollfd fd{in_fd, POLLIN, 0};
+    return poll(&fd, 1, 0) == 1;
+}
 
 replxx::Replxx::completions_t LineReader::Suggest::getCompletions(const String & prefix, size_t prefix_length, const char * word_break_characters)
 {
@@ -115,7 +112,7 @@ replxx::Replxx::completions_t LineReader::Suggest::getCompletions(const String &
     return replxx::Replxx::completions_t(range.first, range.second);
 }
 
-void LineReader::Suggest::addWords(Words && new_words)
+void LineReader::Suggest::addWords(Words && new_words) // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
 {
     Words new_words_no_case = new_words;
     if (!new_words.empty())
@@ -134,11 +131,22 @@ void LineReader::Suggest::addWords(Words && new_words)
     }
 }
 
-LineReader::LineReader(const String & history_file_path_, bool multiline_, Patterns extenders_, Patterns delimiters_)
+LineReader::LineReader(
+    const String & history_file_path_,
+    bool multiline_,
+    Patterns extenders_,
+    Patterns delimiters_,
+    std::istream & input_stream_,
+    std::ostream & output_stream_,
+    int in_fd_
+)
     : history_file_path(history_file_path_)
     , multiline(multiline_)
     , extenders(std::move(extenders_))
     , delimiters(std::move(delimiters_))
+    , input_stream(input_stream_)
+    , output_stream(output_stream_)
+    , in_fd(in_fd_)
 {
     /// FIXME: check extender != delimiter
 }
@@ -161,8 +169,7 @@ String LineReader::readLine(const String & first_prompt, const String & second_p
         {
             if (!line.empty() && !multiline && !hasInputData())
                 break;
-            else
-                continue;
+            continue;
         }
 
         const char * has_extender = nullptr;
@@ -215,9 +222,9 @@ LineReader::InputStatus LineReader::readOneLine(const String & prompt)
     input.clear();
 
     {
-        std::cout << prompt;
-        std::getline(std::cin, input);
-        if (!std::cin.good())
+        output_stream << prompt;
+        std::getline(input_stream, input);
+        if (!input_stream.good())
             return ABORT;
     }
 

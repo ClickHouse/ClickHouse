@@ -20,7 +20,7 @@ For example:
 
 where path can be any other valid ZooKeeper path.
 
-## Creating a Table {#table_engine-KeeperMap-creating-a-table}
+## Creating a Table {#creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -35,7 +35,7 @@ Engine parameters:
 
 - `root_path` - ZooKeeper path where the `table_name` will be stored.  
 This path should not contain the prefix defined by `<keeper_map_path_prefix>` config because the prefix will be automatically appended to the `root_path`.  
-Additionally, format of `auxiliary_zookeper_cluster_name:/some/path` is also supported where `auxiliary_zookeper_cluster` is a ZooKeeper cluster defined inside `<auxiliary_zookeepers>` config.  
+Additionally, format of `auxiliary_zookeeper_cluster_name:/some/path` is also supported where `auxiliary_zookeeper_cluster` is a ZooKeeper cluster defined inside `<auxiliary_zookeepers>` config.  
 By default, ZooKeeper cluster defined inside `<zookeeper>` config is used.
 - `keys_limit` - number of keys allowed inside the table.  
 This limit is a soft limit and it can be possible that more keys will end up in the table for some edge cases.
@@ -54,7 +54,7 @@ CREATE TABLE keeper_map_table
     `v2` String,
     `v3` Float32
 )
-ENGINE = KeeperMap(/keeper_map_table, 4)
+ENGINE = KeeperMap('/keeper_map_table', 4)
 PRIMARY KEY key
 ```
 
@@ -74,7 +74,7 @@ If multiple tables are created on the same ZooKeeper path, the values are persis
 As a result, it is possible to use `ON CLUSTER` clause when creating the table and sharing the data from multiple ClickHouse instances.  
 Of course, it's possible to manually run `CREATE TABLE` with same path on unrelated ClickHouse instances to have same data sharing effect.
 
-## Supported operations {#table_engine-KeeperMap-supported-operations}
+## Supported operations {#supported-operations}
 
 ### Inserts
 

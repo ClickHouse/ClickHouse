@@ -182,7 +182,7 @@ INSTANTIATE_TEST_SUITE_P(Basic,
             DateLUT::instance("Europe/Minsk")
         },
         {
-            "When scale is 0, subsecond part (and separtor) is missing from string",
+            "When scale is 0, subsecond part (and separator) is missing from string",
             "2019-09-16 19:20:17",
             1568650817ULL,
             0,
@@ -197,4 +197,3 @@ INSTANTIATE_TEST_SUITE_P(Basic,
         }
     })
 );
-

@@ -55,7 +55,7 @@ logger:
 http_port: 8123
 
 # Port for interaction by native protocol with:
-# - clickhouse-client and other native ClickHouse tools (clickhouse-benchmark, clickhouse-copier);
+# - clickhouse-client and other native ClickHouse tools (clickhouse-benchmark);
 # - clickhouse-server with other clickhouse-servers for distributed query processing;
 # - ClickHouse drivers and applications supporting native protocol
 # (this protocol is also informally called as "the TCP protocol");
@@ -260,7 +260,10 @@ uncompressed_cache_size: 8589934592
 # Approximate size of mark cache, used in tables of MergeTree family.
 # In bytes. Cache is single for server. Memory is allocated only on demand.
 # You should not lower this value.
-mark_cache_size: 5368709120
+# mark_cache_size: 5368709120
+
+# For marks of secondary indices.
+# index_mark_cache_size: 5368709120
 
 # If you enable the `min_bytes_to_use_mmap_io` setting,
 # the data in MergeTree tables can be read with mmap to avoid copying from kernel to userspace.
@@ -277,13 +280,20 @@ mark_cache_size: 5368709120
 # in query or server memory usage - because this memory can be discarded similar to OS page cache.
 # The cache is dropped (the files are closed) automatically on removal of old parts in MergeTree,
 # also it can be dropped manually by the SYSTEM DROP MMAP CACHE query.
-mmap_cache_size: 1000
+# mmap_cache_size: 1024
 
 # Cache size in bytes for compiled expressions.
-compiled_expression_cache_size: 134217728
+# compiled_expression_cache_size: 134217728
 
 # Cache size in elements for compiled expressions.
-compiled_expression_cache_elements_size: 10000
+# compiled_expression_cache_elements_size: 10000
+
+# Configuration for the query cache
+# query_cache:
+#     max_size_in_bytes: 1073741824
+#     max_entries: 1024
+#     max_entry_size_in_bytes: 1048576
+#     max_entry_size_in_rows: 30000000
 
 # Path to data directory, with trailing slash.
 path: /var/lib/clickhouse/
@@ -639,7 +649,6 @@ default_session_timeout: 60
 # metrics - send data from table system.metrics
 # events - send data from table system.events
 # asynchronous_metrics - send data from table system.asynchronous_metrics
-# status_info - send data from different component from CH, ex: Dictionaries status
 
 # prometheus:
 #     endpoint: /metrics
@@ -648,7 +657,6 @@ default_session_timeout: 60
 #     metrics: true
 #     events: true
 #     asynchronous_metrics: true
-#     status_info: true
 
 # Query log. Used only for queries with setting log_queries = 1.
 query_log:
@@ -725,6 +733,20 @@ part_log:
 metric_log:
     database: system
     table: metric_log
+    flush_interval_milliseconds: 7500
+    collect_interval_milliseconds: 1000
+
+# Error log contains rows with current values of errors collected with "collect_interval_milliseconds" interval.
+error_log:
+    database: system
+    table: error_log
+    flush_interval_milliseconds: 7500
+    collect_interval_milliseconds: 1000
+
+# Query metric log contains history of memory and metric values from table system.events for individual queries, periodically flushed to disk.
+query_metric_log:
+    database: system
+    table: query_metric_log
     flush_interval_milliseconds: 7500
     collect_interval_milliseconds: 1000
 

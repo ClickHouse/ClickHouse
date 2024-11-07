@@ -21,7 +21,7 @@ EventFD::EventFD()
 {
     fd = eventfd(0 /* initval */, 0 /* flags */);
     if (fd == -1)
-        throwFromErrno("Cannot create eventfd", ErrorCodes::CANNOT_PIPE);
+        throw ErrnoException(ErrorCodes::CANNOT_PIPE, "Cannot create eventfd");
 }
 
 uint64_t EventFD::read() const
@@ -33,7 +33,7 @@ uint64_t EventFD::read() const
             break;
 
         if (errno != EINTR)
-            throwFromErrno("Cannot read from eventfd", ErrorCodes::CANNOT_READ_FROM_SOCKET);
+            throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_SOCKET, "Cannot read from eventfd");
     }
 
     return buf;
@@ -47,7 +47,7 @@ bool EventFD::write(uint64_t increase) const
             return false;
 
         if (errno != EINTR)
-            throwFromErrno("Cannot write to eventfd", ErrorCodes::CANNOT_WRITE_TO_SOCKET);
+            throw ErrnoException(ErrorCodes::CANNOT_WRITE_TO_SOCKET, "Cannot write to eventfd");
     }
 
     return true;
@@ -57,7 +57,7 @@ EventFD::~EventFD()
 {
     if (fd != -1)
     {
-        int err = close(fd);
+        [[maybe_unused]] int err = close(fd);
         chassert(!err || errno == EINTR);
     }
 }

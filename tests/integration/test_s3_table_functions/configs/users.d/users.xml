@@ -1,4 +1,9 @@
 <clickhouse>
+    <profiles>
+        <default>
+            <s3_retry_attempts>5</s3_retry_attempts>
+        </default>
+    </profiles>
     <users>
         <default>
             <password></password>

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/NamePrompter.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/ColumnsDescription.h>
@@ -22,7 +23,7 @@ struct StorageID;
   * In 'columns' Nested data structures must be flattened.
   * You should subsequently call IStorage::startup method to work with table.
   */
-class StorageFactory : private boost::noncopyable, public IHints<1, StorageFactory>
+class StorageFactory : private boost::noncopyable, public IHints<>
 {
 public:
 
@@ -31,6 +32,7 @@ public:
     struct Arguments
     {
         const String & engine_name;
+        /// Mutable to allow replacing constant expressions with literals, and other transformations.
         ASTs & engine_args;
         ASTStorage * storage_def;
         const ASTCreateQuery & query;
@@ -42,8 +44,7 @@ public:
         ContextWeakMutablePtr context;
         const ColumnsDescription & columns;
         const ConstraintsDescription & constraints;
-        bool attach;
-        bool has_force_restore_data_flag;
+        LoadingStrictnessLevel mode;
         const String & comment;
 
         ContextMutablePtr getContext() const;
@@ -86,7 +87,7 @@ public:
         ContextMutablePtr context,
         const ColumnsDescription & columns,
         const ConstraintsDescription & constraints,
-        bool has_force_restore_data_flag) const;
+        LoadingStrictnessLevel mode) const;
 
     /// Register a table engine by its name.
     /// No locking, you must register all engines before usage of get.
@@ -128,14 +129,12 @@ public:
 
     AccessType getSourceAccessType(const String & table_engine) const;
 
-    bool checkIfStorageSupportsSchemaInterface(const String & storage_name)
-    {
-        if (storages.contains(storage_name))
-            return storages[storage_name].features.supports_schema_inference;
-        return false;
-    }
+    const StorageFeatures & getStorageFeatures(const String & storage_name) const;
+
 private:
     Storages storages;
 };
+
+void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types);
 
 }

@@ -22,13 +22,8 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-template <typename Transform>
-class IFunctionDateOrDateTime : public IFunction
+class FunctionDateOrDateTimeBase : public IFunction
 {
-public:
-    static constexpr auto name = Transform::name;
-    String getName() const override { return name; }
-
     bool isVariadic() const override { return true; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
@@ -43,6 +38,46 @@ public:
     {
         return true;
     }
+
+protected:
+    void checkArguments(const ColumnsWithTypeAndName & arguments, bool is_result_type_date_or_date32) const
+    {
+        if (arguments.size() == 1)
+        {
+            if (!isDateOrDate32OrDateTimeOrDateTime64(arguments[0].type))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument of function {}. Should be Date, Date32, DateTime or DateTime64",
+                    arguments[0].type->getName(), getName());
+        }
+        else if (arguments.size() == 2)
+        {
+            if (!isDateOrDate32OrDateTimeOrDateTime64(arguments[0].type))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument of function {}. Should be Date, Date32, DateTime or DateTime64",
+                    arguments[0].type->getName(), getName());
+            if (!isString(arguments[1].type))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Function {} supports 1 or 2 arguments. The optional 2nd argument must be "
+                    "a constant string with a timezone name",
+                    getName());
+            if (isDateOrDate32(arguments[0].type) && is_result_type_date_or_date32)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "The timezone argument of function {} is allowed only when the 1st argument has the type DateTime or DateTime64",
+                    getName());
+        }
+        else
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2",
+                getName(), arguments.size());
+    }
+};
+
+template <typename Transform>
+class IFunctionDateOrDateTime : public FunctionDateOrDateTimeBase
+{
+public:
+    static constexpr auto name = Transform::name;
+    String getName() const override { return name; }
 
     Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
@@ -72,69 +107,38 @@ public:
 
             if (checkAndGetDataType<DataTypeDate>(type_ptr))
             {
-                return Transform::FactorTransform::execute(UInt16(left.get<UInt64>()), *date_lut)
-                    == Transform::FactorTransform::execute(UInt16(right.get<UInt64>()), *date_lut)
+                return Transform::FactorTransform::execute(UInt16(left.safeGet<UInt64>()), *date_lut)
+                    == Transform::FactorTransform::execute(UInt16(right.safeGet<UInt64>()), *date_lut)
                     ? is_monotonic : is_not_monotonic;
             }
-            else if (checkAndGetDataType<DataTypeDate32>(type_ptr))
+            if (checkAndGetDataType<DataTypeDate32>(type_ptr))
             {
-                return Transform::FactorTransform::execute(Int32(left.get<UInt64>()), *date_lut)
-                       == Transform::FactorTransform::execute(Int32(right.get<UInt64>()), *date_lut)
-                       ? is_monotonic : is_not_monotonic;
+                return Transform::FactorTransform::execute(Int32(left.safeGet<UInt64>()), *date_lut)
+                        == Transform::FactorTransform::execute(Int32(right.safeGet<UInt64>()), *date_lut)
+                    ? is_monotonic
+                    : is_not_monotonic;
             }
-            else if (checkAndGetDataType<DataTypeDateTime>(type_ptr))
+            if (checkAndGetDataType<DataTypeDateTime>(type_ptr))
             {
-                return Transform::FactorTransform::execute(UInt32(left.get<UInt64>()), *date_lut)
-                    == Transform::FactorTransform::execute(UInt32(right.get<UInt64>()), *date_lut)
-                    ? is_monotonic : is_not_monotonic;
+                return Transform::FactorTransform::execute(UInt32(left.safeGet<UInt64>()), *date_lut)
+                        == Transform::FactorTransform::execute(UInt32(right.safeGet<UInt64>()), *date_lut)
+                    ? is_monotonic
+                    : is_not_monotonic;
             }
-            else
-            {
-                assert(checkAndGetDataType<DataTypeDateTime64>(type_ptr));
 
-                const auto & left_date_time = left.get<DateTime64>();
-                TransformDateTime64<typename Transform::FactorTransform> transformer_left(left_date_time.getScale());
+            assert(checkAndGetDataType<DataTypeDateTime64>(type_ptr));
 
-                const auto & right_date_time = right.get<DateTime64>();
-                TransformDateTime64<typename Transform::FactorTransform> transformer_right(right_date_time.getScale());
+            const auto & left_date_time = left.safeGet<DateTime64>();
+            TransformDateTime64<typename Transform::FactorTransform> transformer_left(left_date_time.getScale());
 
-                return transformer_left.execute(left_date_time.getValue(), *date_lut)
+            const auto & right_date_time = right.safeGet<DateTime64>();
+            TransformDateTime64<typename Transform::FactorTransform> transformer_right(right_date_time.getScale());
+
+            return transformer_left.execute(left_date_time.getValue(), *date_lut)
                     == transformer_right.execute(right_date_time.getValue(), *date_lut)
-                    ? is_monotonic : is_not_monotonic;
-            }
+                ? is_monotonic
+                : is_not_monotonic;
         }
-    }
-
-protected:
-    void checkArguments(const ColumnsWithTypeAndName & arguments, bool is_result_type_date_or_date32) const
-    {
-        if (arguments.size() == 1)
-        {
-            if (!isDateOrDate32(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument of function {}. Should be Date, Date32, DateTime or DateTime64",
-                    arguments[0].type->getName(), getName());
-        }
-        else if (arguments.size() == 2)
-        {
-            if (!isDateOrDate32(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument of function {}. Should be Date, Date32, DateTime or DateTime64",
-                    arguments[0].type->getName(), getName());
-            if (!isString(arguments[1].type))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Function {} supports 1 or 2 arguments. The optional 2nd argument must be "
-                    "a constant string with a timezone name",
-                    getName());
-            if (isDateOrDate32(arguments[0].type) && is_result_type_date_or_date32)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "The timezone argument of function {} is allowed only when the 1st argument has the type DateTime or DateTime64",
-                    getName());
-        }
-        else
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2",
-                getName(), arguments.size());
     }
 };
 

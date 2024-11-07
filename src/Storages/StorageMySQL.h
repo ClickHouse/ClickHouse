@@ -5,7 +5,6 @@
 #if USE_MYSQL
 
 #include <Storages/IStorage.h>
-#include <Storages/MySQL/MySQLSettings.h>
 #include <mysqlxx/PoolWithFailover.h>
 
 namespace Poco
@@ -16,11 +15,11 @@ class Logger;
 namespace DB
 {
 
+struct MySQLSettings;
 class NamedCollection;
 
 /** Implements storage in the MySQL database.
   * Use ENGINE = mysql(host_port, database_name, table_name, user_name, password)
-  * Read only.
   */
 class StorageMySQL final : public IStorage, WithContext
 {
@@ -89,11 +88,11 @@ private:
     bool replace_query;
     std::string on_duplicate_clause;
 
-    MySQLSettings mysql_settings;
+    std::unique_ptr<MySQLSettings> mysql_settings;
 
     mysqlxx::PoolWithFailoverPtr pool;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 }

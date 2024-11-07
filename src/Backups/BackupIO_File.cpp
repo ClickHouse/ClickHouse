@@ -17,7 +17,7 @@ namespace ErrorCodes
 }
 
 BackupReaderFile::BackupReaderFile(const String & root_path_, const ReadSettings & read_settings_, const WriteSettings & write_settings_)
-    : BackupReaderDefault(read_settings_, write_settings_, &Poco::Logger::get("BackupReaderFile"))
+    : BackupReaderDefault(read_settings_, write_settings_, getLogger("BackupReaderFile"))
     , root_path(root_path_)
     , data_source_description(DiskLocal::getLocalDataSourceDescription(root_path))
 {
@@ -75,7 +75,7 @@ void BackupReaderFile::copyFileToDisk(const String & path_in_backup, size_t file
 
 
 BackupWriterFile::BackupWriterFile(const String & root_path_, const ReadSettings & read_settings_, const WriteSettings & write_settings_)
-    : BackupWriterDefault(read_settings_, write_settings_, &Poco::Logger::get("BackupWriterFile"))
+    : BackupWriterDefault(read_settings_, write_settings_, getLogger("BackupWriterFile"))
     , root_path(root_path_)
     , data_source_description(DiskLocal::getLocalDataSourceDescription(root_path))
 {
@@ -105,17 +105,37 @@ std::unique_ptr<WriteBuffer> BackupWriterFile::writeFile(const String & file_nam
 
 void BackupWriterFile::removeFile(const String & file_name)
 {
-    fs::remove(root_path / file_name);
-    if (fs::is_directory(root_path) && fs::is_empty(root_path))
-        fs::remove(root_path);
+    (void)fs::remove(root_path / file_name);
 }
 
 void BackupWriterFile::removeFiles(const Strings & file_names)
 {
     for (const auto & file_name : file_names)
-        fs::remove(root_path / file_name);
-    if (fs::is_directory(root_path) && fs::is_empty(root_path))
-        fs::remove(root_path);
+        (void)fs::remove(root_path / file_name);
+}
+
+void BackupWriterFile::removeEmptyDirectories()
+{
+    removeEmptyDirectoriesImpl(root_path);
+}
+
+void BackupWriterFile::removeEmptyDirectoriesImpl(const fs::path & current_dir)
+{
+    if (!fs::is_directory(current_dir))
+        return;
+
+    if (fs::is_empty(current_dir))
+    {
+        (void)fs::remove(current_dir);
+        return;
+    }
+
+    /// Backups are not too deep, so recursion is good enough here.
+    for (const auto & it : std::filesystem::directory_iterator{current_dir})
+        removeEmptyDirectoriesImpl(it.path());
+
+    if (fs::is_empty(current_dir))
+        (void)fs::remove(current_dir);
 }
 
 void BackupWriterFile::copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,
@@ -132,7 +152,7 @@ void BackupWriterFile::copyFileFromDisk(const String & path_in_backup, DiskPtr s
             /// std::filesystem::copy() can copy from a single file only.
             if (auto blob_path = src_disk->getBlobPath(src_path); blob_path.size() == 1)
             {
-                auto abs_source_path = blob_path[0];
+                const auto & abs_source_path = blob_path[0];
 
                 /// std::filesystem::copy() can copy a file as a whole only.
                 if ((start_pos == 0) && (length == fs::file_size(abs_source_path)))
@@ -150,6 +170,16 @@ void BackupWriterFile::copyFileFromDisk(const String & path_in_backup, DiskPtr s
 
     /// Fallback to copy through buffers.
     BackupWriterDefault::copyFileFromDisk(path_in_backup, src_disk, src_path, copy_encrypted, start_pos, length);
+}
+
+void BackupWriterFile::copyFile(const String & destination, const String & source, size_t /*size*/)
+{
+    LOG_TRACE(log, "Copying file inside backup from {} to {} ", source, destination);
+
+    auto abs_source_path = root_path / source;
+    auto abs_dest_path = root_path / destination;
+    fs::create_directories(abs_dest_path.parent_path());
+    fs::copy(abs_source_path, abs_dest_path, fs::copy_options::overwrite_existing);
 }
 
 }

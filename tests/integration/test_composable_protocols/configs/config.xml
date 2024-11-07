@@ -58,7 +58,29 @@
             <port>8444</port>
             <description>https protocol endpoint</description>
         </https_endpoint>
+        <https_tls1_2>
+            <type>tls</type>
+            <impl>http</impl>
+            <host>0.0.0.0</host>
+            <port>8445</port>
+            <description>https protocol with TLSv1_2 minimum version</description>
+            <disableProtocols>sslv2,sslv3,tlsv1,tlsv1_1</disableProtocols>
+            <certificateFile>/etc/clickhouse-server/config.d/server.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/config.d/server.key</privateKeyFile>
+        </https_tls1_2>
+        <https_tls1_3>
+            <type>tls</type>
+            <impl>http</impl>
+            <host>0.0.0.0</host>
+            <port>8446</port>
+            <description>https protocol with TLSv1_3 minimum version</description>
+            <disableProtocols>sslv2,sslv3,tlsv1,tlsv1_1,tlsv1_2</disableProtocols>
+            <certificateFile>/etc/clickhouse-server/config.d/server.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/config.d/server.key</privateKeyFile>
+        </https_tls1_3>
     </protocols>
 
     <!--tcp_port>9010</tcp_port--> 
+
+    <validate_tcp_client_information>true</validate_tcp_client_information>
 </clickhouse>

@@ -17,7 +17,7 @@ EphemeralLockInZooKeeper::EphemeralLockInZooKeeper(const String & path_prefix_, 
     : zookeeper(zookeeper_), path_prefix(path_prefix_), path(path_), conflict_path(conflict_path_)
 {
     if (conflict_path.empty() && path.size() <= path_prefix.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: name of the main node is shorter than prefix.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Name of the main node is shorter than prefix.");
 }
 
 template <typename T>
@@ -64,7 +64,7 @@ std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
                 {
                     const String & failed_op_path = ops[failed_idx]->getPath();
                     LOG_DEBUG(
-                        &Poco::Logger::get("createEphemeralLockInZooKeeper"),
+                        getLogger("createEphemeralLockInZooKeeper"),
                         "Deduplication path already exists: deduplication_path={}",
                         failed_op_path);
                     return EphemeralLockInZooKeeper{"", nullptr, "", failed_op_path};
@@ -73,7 +73,7 @@ std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
             else if (responses[0]->error == Coordination::Error::ZNODEEXISTS)
             {
                 LOG_DEBUG(
-                    &Poco::Logger::get("createEphemeralLockInZooKeeper"),
+                    getLogger("createEphemeralLockInZooKeeper"),
                     "Deduplication path already exists: deduplication_path={}",
                     deduplication_path);
                 return {};
@@ -119,7 +119,7 @@ EphemeralLockInZooKeeper::~EphemeralLockInZooKeeper()
     {
         if (Coordination::isHardwareError(e.code))
             LOG_DEBUG(
-                &Poco::Logger::get("EphemeralLockInZooKeeper"),
+                getLogger("EphemeralLockInZooKeeper"),
                 "ZooKeeper communication error during unlock: code={} message='{}'",
                 e.code,
                 e.message());
@@ -130,7 +130,7 @@ EphemeralLockInZooKeeper::~EphemeralLockInZooKeeper()
             /// But it's possible that the multi op request can be executed on server side, and client will not get response due to network issue.
             /// In such case, assumeUnlocked() will not be called, so we'll get ZNONODE error here since the noded is already deleted
             LOG_DEBUG(
-                &Poco::Logger::get("EphemeralLockInZooKeeper"),
+                getLogger("EphemeralLockInZooKeeper"),
                 "ZooKeeper node was already deleted: code={} message={}",
                 e.code,
                 e.message());
@@ -168,10 +168,10 @@ EphemeralLocksInAllPartitions::EphemeralLocksInAllPartitions(
         Coordination::Error rc = zookeeper->tryMulti(lock_ops, lock_responses);
         if (rc == Coordination::Error::ZBADVERSION)
         {
-            LOG_TRACE(&Poco::Logger::get("EphemeralLocksInAllPartitions"), "Someone has inserted a block in a new partition while we were creating locks. Retry.");
+            LOG_TRACE(getLogger("EphemeralLocksInAllPartitions"), "Someone has inserted a block in a new partition while we were creating locks. Retry.");
             continue;
         }
-        else if (rc != Coordination::Error::ZOK)
+        if (rc != Coordination::Error::ZOK)
             throw Coordination::Exception(rc);
 
         for (size_t i = 0; i < partitions.size(); ++i)
@@ -179,7 +179,7 @@ EphemeralLocksInAllPartitions::EphemeralLocksInAllPartitions(
             size_t prefix_size = block_numbers_path.size() + 1 + partitions[i].size() + 1 + path_prefix.size();
             const String & path = dynamic_cast<const Coordination::CreateResponse &>(*lock_responses[i]).path_created;
             if (path.size() <= prefix_size)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: name of the sequential node is shorter than prefix.");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Name of the sequential node is shorter than prefix.");
 
             UInt64 number = parse<UInt64>(path.c_str() + prefix_size, path.size() - prefix_size);
             locks.push_back(LockInfo{path, partitions[i], number});

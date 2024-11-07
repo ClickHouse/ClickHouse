@@ -6,6 +6,7 @@
 #include <thread>
 #include <atomic>
 #include <Common/logger_useful.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 
 
 namespace DB
@@ -24,16 +25,9 @@ class ReplicatedMergeTreeRestartingThread
 public:
     explicit ReplicatedMergeTreeRestartingThread(StorageReplicatedMergeTree & storage_);
 
-    void start(bool schedule = true)
-    {
-        LOG_TRACE(log, "Starting restating thread, schedule: {}", schedule);
-        if (schedule)
-            task->activateAndSchedule();
-        else
-            task->activate();
-    }
+    void start(bool schedule);
 
-    void wakeup() { task->schedule(); }
+    void wakeup();
 
     void shutdown(bool part_of_full_shutdown);
 
@@ -42,7 +36,7 @@ public:
 private:
     StorageReplicatedMergeTree & storage;
     String log_name;
-    Poco::Logger * log;
+    LoggerPtr log;
     std::atomic<bool> need_stop {false};
 
     /// The random data we wrote into `/replicas/me/is_active`.
@@ -75,6 +69,9 @@ private:
 
     /// Disable readonly mode for table
     void setNotReadonly();
+
+    /// Fix replica metadata_version if needed
+    Int32 fixReplicaMetadataVersionIfNeeded(zkutil::ZooKeeperPtr zookeeper);
 };
 
 

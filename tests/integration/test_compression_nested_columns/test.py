@@ -2,6 +2,7 @@ import random
 import string
 
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -48,7 +49,7 @@ def test_nested_compression_codec(start_cluster):
             column_array Array(Array(UInt64)) CODEC(T64, LZ4),
             column_bad LowCardinality(Int64) CODEC(Delta)
         ) ENGINE = ReplicatedMergeTree('/t', '{}') ORDER BY tuple() PARTITION BY key
-        SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
+        SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0, replace_long_file_name_to_hash = 0;
         """.format(
                 i
             ),

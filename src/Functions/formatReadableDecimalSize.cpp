@@ -1,5 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/formatReadable.h>
+#include <Common/formatReadable.h>
 
 
 namespace DB
@@ -28,8 +29,7 @@ Accepts the size (number of bytes). Returns a rounded size with a suffix (KB, MB
         .examples{
             {"formatReadableDecimalSize", "SELECT formatReadableDecimalSize(1000)", ""}},
         .categories{"OtherFunctions"}
-    },
-    FunctionFactory::CaseSensitive);
+    });
 }
 
 }

@@ -73,11 +73,11 @@ Calculates the product of two values `a` and `b`.
 multiply(a, b)
 ```
 
-Alias: `a \* b` (operator)
+Alias: `a * b` (operator)
 
 ## divide
 
-Calculates the quotient of two values `a` and `b`. The result type is always [Float64](../../sql-reference/data-types/float.md). Integer division is provided by the `intDiv` function.
+Calculates the quotient of two values `a` and `b`. The result type is always [Float64](../data-types/float.md). Integer division is provided by the `intDiv` function.
 
 Division by 0 returns `inf`, `-inf`, or `nan`.
 
@@ -140,11 +140,75 @@ Same as `intDiv` but returns zero when dividing by zero or when dividing a minim
 intDivOrZero(a, b)
 ```
 
+## isFinite
+
+Returns 1 if the Float32 or Float64 argument not infinite and not a NaN, otherwise this function returns 0.
+
+**Syntax**
+
+```sql
+isFinite(x)
+```
+
+## isInfinite
+
+Returns 1 if the Float32 or Float64 argument is infinite, otherwise this function returns 0. Note that 0 is returned for a NaN.
+
+**Syntax**
+
+```sql
+isInfinite(x)
+```
+
+## ifNotFinite
+
+Checks whether a floating point value is finite.
+
+**Syntax**
+
+```sql
+ifNotFinite(x,y)
+```
+
+**Arguments**
+
+- `x` — Value to check for infinity. [Float\*](../data-types/float.md).
+- `y` — Fallback value. [Float\*](../data-types/float.md).
+
+**Returned value**
+
+- `x` if `x` is finite.
+- `y` if `x` is not finite.
+
+**Example**
+
+Query:
+
+    SELECT 1/0 as infimum, ifNotFinite(infimum,42)
+
+Result:
+
+    ┌─infimum─┬─ifNotFinite(divide(1, 0), 42)─┐
+    │     inf │                            42 │
+    └─────────┴───────────────────────────────┘
+
+You can get similar result by using the [ternary operator](../../sql-reference/functions/conditional-functions.md#ternary-operator): `isFinite(x) ? x : y`.
+
+## isNaN
+
+Returns 1 if the Float32 and Float64 argument is NaN, otherwise this function 0.
+
+**Syntax**
+
+```sql
+isNaN(x)
+```
+
 ## modulo
 
 Calculates the remainder of the division of two values `a` by `b`.
 
-The result type is an integer if both inputs are integers. If one of the inputs is a floating-point number, the result type is [Float64](../../sql-reference/data-types/float.md).
+The result type is an integer if both inputs are integers. If one of the inputs is a floating-point number, the result type is [Float64](../data-types/float.md).
 
 The remainder is computed like in C++. Truncated division is used for negative numbers.
 
@@ -248,7 +312,7 @@ lcm(a, b)
 
 ## max2
 
-Returns the bigger of two values `a` and `b`. The returned value is of type [Float64](../../sql-reference/data-types/float.md).
+Returns the bigger of two values `a` and `b`. The returned value is of type [Float64](../data-types/float.md).
 
 **Syntax**
 
@@ -274,7 +338,7 @@ Result:
 
 ## min2
 
-Returns the smaller of two values `a` and `b`. The returned value is of type [Float64](../../sql-reference/data-types/float.md).
+Returns the smaller of two values `a` and `b`. The returned value is of type [Float64](../data-types/float.md).
 
 **Syntax**
 
@@ -300,7 +364,7 @@ Result:
 
 ## multiplyDecimal
 
-Multiplies two decimals `a` and `b`. The result value will be of type [Decimal256](../../sql-reference/data-types/decimal.md).
+Multiplies two decimals `a` and `b`. The result value will be of type [Decimal256](../data-types/decimal.md).
 
 The scale of the result can be explicitly specified by `result_scale`. If `result_scale` is not specified, it is assumed to be the maximum scale of the input values.
 
@@ -314,15 +378,13 @@ multiplyDecimal(a, b[, result_scale])
 
 **Arguments**
 
-- `a` — First value: [Decimal](../../sql-reference/data-types/decimal.md).
-- `b` — Second value: [Decimal](../../sql-reference/data-types/decimal.md).
-- `result_scale` — Scale of result: [Int/UInt](../../sql-reference/data-types/int-uint.md).
+- `a` — First value. [Decimal](../data-types/decimal.md).
+- `b` — Second value. [Decimal](../data-types/decimal.md).
+- `result_scale` — Scale of result. [Int/UInt](../data-types/int-uint.md).
 
 **Returned value**
 
-- The result of multiplication with given scale.
-
-Type: [Decimal256](../../sql-reference/data-types/decimal.md).
+- The result of multiplication with given scale. [Decimal256](../data-types/decimal.md).
 
 **Example**
 
@@ -345,9 +407,9 @@ Result:
 ┌─multiply(toDecimal64(-12.647, 3), toDecimal32(2.1239, 4))─┐
 │                                               -26.8609633 │
 └───────────────────────────────────────────────────────────┘
-┌─multiplyDecimal(toDecimal64(-12.647, 3), toDecimal32(2.1239, 4))─┐
-│                                                         -26.8609 │
-└──────────────────────────────────────────────────────────────────┘
+┌───────a─┬──────b─┬─multiplyDecimal(toDecimal64(-12.647, 3), toDecimal32(2.1239, 4))─┐
+│ -12.647 │ 2.1239 │                                                         -26.8609 │
+└─────────┴────────┴──────────────────────────────────────────────────────────────────┘
 ```
 
 ```sql
@@ -376,7 +438,7 @@ Code: 407. DB::Exception: Received from localhost:9000. DB::Exception: Decimal m
 ## divideDecimal
 
 
-Divides two decimals `a` and `b`. The result value will be of type [Decimal256](../../sql-reference/data-types/decimal.md).
+Divides two decimals `a` and `b`. The result value will be of type [Decimal256](../data-types/decimal.md).
 
 The scale of the result can be explicitly specified by `result_scale`. If `result_scale` is not specified, it is assumed to be the maximum scale of the input values.
 
@@ -390,15 +452,13 @@ divideDecimal(a, b[, result_scale])
 
 **Arguments**
 
-- `a` — First value: [Decimal](../../sql-reference/data-types/decimal.md).
-- `b` — Second value: [Decimal](../../sql-reference/data-types/decimal.md).
-- `result_scale` — Scale of result: [Int/UInt](../../sql-reference/data-types/int-uint.md).
+- `a` — First value: [Decimal](../data-types/decimal.md).
+- `b` — Second value: [Decimal](../data-types/decimal.md).
+- `result_scale` — Scale of result: [Int/UInt](../data-types/int-uint.md).
 
 **Returned value**
 
-- The result of division with given scale.
-
-Type: [Decimal256](../../sql-reference/data-types/decimal.md).
+- The result of division with given scale. [Decimal256](../data-types/decimal.md).
 
 **Example**
 
@@ -440,4 +500,41 @@ DB::Exception: Decimal result's scale is less than argument's one: While process
 ┌───a─┬───b─┬─divideDecimal(toDecimal64(-12, 0), toDecimal32(2.1, 1), 1)─┬─divideDecimal(toDecimal64(-12, 0), toDecimal32(2.1, 1), 5)─┐
 │ -12 │ 2.1 │                                                       -5.7 │                                                   -5.71428 │
 └─────┴─────┴────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────┘
+```
+
+## byteSwap
+
+Reverses the bytes of an integer, i.e. changes its [endianness](https://en.wikipedia.org/wiki/Endianness).
+
+**Syntax**
+
+```sql
+byteSwap(a)
+```
+
+**Example**
+
+```sql
+byteSwap(3351772109)
+```
+
+Result:
+
+```result
+┌─byteSwap(3351772109)─┐
+│           3455829959 │
+└──────────────────────┘
+```
+
+The above example can be worked out in the following manner:
+1. Convert the base-10 integer to its equivalent hexadecimal format in big-endian format, i.e. 3351772109 -> C7 C7 FB CD (4 bytes)
+2. Reverse the bytes, i.e. C7 C7 FB CD -> CD FB C7 C7
+3. Convert the result back to an integer assuming big-endian, i.e. CD FB C7 C7  -> 3455829959
+
+One use case of this function is reversing IPv4s:
+
+```result
+┌─toIPv4(byteSwap(toUInt32(toIPv4('205.251.199.199'))))─┐
+│ 199.199.251.205                                       │
+└───────────────────────────────────────────────────────┘
 ```

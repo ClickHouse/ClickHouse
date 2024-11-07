@@ -1,11 +1,10 @@
 #pragma once
 
-#include <Processors/Formats/IRowOutputFormat.h>
 #include <Core/Block.h>
-
 #include <Core/MySQL/PacketEndpoint.h>
+#include <Interpreters/Context_fwd.h>
 #include <Processors/Formats/IOutputFormat.h>
-
+#include <Processors/Formats/IRowOutputFormat.h>
 
 namespace DB
 {
@@ -39,6 +38,7 @@ private:
     MySQLProtocol::PacketEndpointPtr packet_endpoint;
     DataTypes data_types;
     Serializations serializations;
+    bool use_binary_result_set = false;
 };
 
 }

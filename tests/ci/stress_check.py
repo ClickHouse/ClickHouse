@@ -2,102 +2,107 @@
 
 import csv
 import logging
-import subprocess
 import os
+import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import List, Tuple
 
-from github import Github
-
 from build_download_helper import download_all_deb_packages
-from clickhouse_helper import (
-    ClickHouseHelper,
-    prepare_tests_results_for_clickhouse,
-    get_instance_type,
-)
-from commit_status_helper import RerunHelper, get_commit, post_commit_status
-from docker_pull_helper import get_image_with_version
-from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
-from get_robot_token import get_best_robot_token
+from clickhouse_helper import CiLogsCredentials
+from docker_images_helper import DockerImage, get_docker_image, pull_image
+from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
+from get_robot_token import get_parameter_from_ssm
 from pr_info import PRInfo
-from report import TestResults, read_test_results
-from s3_helper import S3Helper
+from report import ERROR, JobReport, TestResults, read_test_results
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
-from upload_result_helper import upload_results
+
+
+class SensitiveFormatter(logging.Formatter):
+    @staticmethod
+    def _filter(s):
+        return re.sub(
+            r"(.*)(AZURE_CONNECTION_STRING.*\')(.*)", r"\1AZURE_CONNECTION_STRING\3", s
+        )
+
+    def format(self, record):
+        original = logging.Formatter.format(self, record)
+        return self._filter(original)
+
+
+def get_additional_envs(check_name: str) -> List[str]:
+    result = []
+    azure_connection_string = get_parameter_from_ssm("azure_connection_string")
+    result.append(f"AZURE_CONNECTION_STRING='{azure_connection_string}'")
+    # some cloud-specific features require feature flags enabled
+    # so we need this ENV to be able to disable the randomization
+    # of feature flags
+    result.append("RANDOMIZE_KEEPER_FEATURE_FLAGS=1")
+    if "azure" in check_name:
+        result.append("USE_AZURE_STORAGE_FOR_MERGE_TREE=1")
+
+    if "s3" in check_name:
+        result.append("USE_S3_STORAGE_FOR_MERGE_TREE=1")
+
+    return result
 
 
 def get_run_command(
-    pr_info,
-    check_start_time,
-    check_name,
-    build_path,
-    result_folder,
-    repo_tests_path,
-    server_log_folder,
-    image,
-):
-    instance_type = get_instance_type()
-
-    envs = [
-        # a static link, don't use S3_URL or S3_DOWNLOAD
-        "-e S3_URL='https://s3.amazonaws.com/clickhouse-datasets'",
-        "-e CLICKHOUSE_CI_LOGS_HOST",
-        "-e CLICKHOUSE_CI_LOGS_PASSWORD",
-        f"-e PULL_REQUEST_NUMBER='{pr_info.number}'",
-        f"-e COMMIT_SHA='{pr_info.sha}'",
-        f"-e CHECK_START_TIME='{check_start_time}'",
-        f"-e CHECK_NAME='{check_name}'",
-        f"-e INSTANCE_TYPE='{instance_type}'",
-    ]
-
+    build_path: Path,
+    result_path: Path,
+    repo_tests_path: Path,
+    server_log_path: Path,
+    additional_envs: List[str],
+    ci_logs_args: str,
+    image: DockerImage,
+    upgrade_check: bool,
+) -> str:
+    envs = [f"-e {e}" for e in additional_envs]
     env_str = " ".join(envs)
+
+    if upgrade_check:
+        run_script = "/repo/tests/docker_scripts/upgrade_runner.sh"
+    else:
+        run_script = "/repo/tests/docker_scripts/stress_runner.sh"
 
     cmd = (
         "docker run --cap-add=SYS_PTRACE "
-        f"{env_str} "
         # For dmesg and sysctl
         "--privileged "
+        # a static link, don't use S3_URL or S3_DOWNLOAD
+        "-e S3_URL='https://s3.amazonaws.com/clickhouse-datasets' "
+        f"{ci_logs_args}"
         f"--volume={build_path}:/package_folder "
-        f"--volume={result_folder}:/test_output "
-        f"--volume={repo_tests_path}:/usr/share/clickhouse-test "
-        f"--volume={server_log_folder}:/var/log/clickhouse-server {image} "
+        f"--volume={result_path}:/test_output "
+        f"--volume={repo_tests_path}/..:/repo "
+        f"--volume={server_log_path}:/var/log/clickhouse-server {env_str} {image} {run_script}"
     )
 
     return cmd
 
 
 def process_results(
-    result_folder: str, server_log_path: str, run_log_path: str
-) -> Tuple[str, str, TestResults, List[str]]:
+    result_directory: Path, server_log_path: Path, run_log_path: Path
+) -> Tuple[str, str, TestResults, List[Path]]:
     test_results = []  # type: TestResults
     additional_files = []
     # Just upload all files from result_folder.
     # If task provides processed results, then it's responsible for content
     # of result_folder.
-    if os.path.exists(result_folder):
-        test_files = [
-            f
-            for f in os.listdir(result_folder)
-            if os.path.isfile(os.path.join(result_folder, f))
-        ]
-        additional_files = [os.path.join(result_folder, f) for f in test_files]
+    if result_directory.exists():
+        additional_files = [p for p in result_directory.iterdir() if p.is_file()]
 
-    if os.path.exists(server_log_path):
-        server_log_files = [
-            f
-            for f in os.listdir(server_log_path)
-            if os.path.isfile(os.path.join(server_log_path, f))
-        ]
+    if server_log_path.exists():
         additional_files = additional_files + [
-            os.path.join(server_log_path, f) for f in server_log_files
+            p for p in server_log_path.iterdir() if p.is_file()
         ]
 
     additional_files.append(run_log_path)
 
-    status_path = os.path.join(result_folder, "check_status.tsv")
-    if not os.path.exists(status_path):
+    status_path = result_directory / "check_status.tsv"
+    if not status_path.exists():
         return (
             "failure",
             "check_status.tsv doesn't exists",
@@ -110,17 +115,17 @@ def process_results(
         status = list(csv.reader(status_file, delimiter="\t"))
 
     if len(status) != 1 or len(status[0]) != 2:
-        return "error", "Invalid check_status.tsv", test_results, additional_files
+        return ERROR, "Invalid check_status.tsv", test_results, additional_files
     state, description = status[0][0], status[0][1]
 
     try:
-        results_path = Path(result_folder) / "test_results.tsv"
+        results_path = result_directory / "test_results.tsv"
         test_results = read_test_results(results_path, True)
         if len(test_results) == 0:
-            raise Exception("Empty results")
+            raise ValueError("Empty results")
     except Exception as e:
         return (
-            "error",
+            ERROR,
             f"Cannot parse test_results.tsv ({e})",
             test_results,
             additional_files,
@@ -129,61 +134,60 @@ def process_results(
     return state, description, test_results, additional_files
 
 
-def run_stress_test(docker_image_name):
+def run_stress_test(upgrade_check: bool = False) -> None:
     logging.basicConfig(level=logging.INFO)
+    for handler in logging.root.handlers:
+        # pylint: disable=protected-access
+        handler.setFormatter(SensitiveFormatter(handler.formatter._fmt))  # type: ignore
 
     stopwatch = Stopwatch()
-    temp_path = TEMP_PATH
-    repo_path = REPO_COPY
-    repo_tests_path = os.path.join(repo_path, "tests")
-    reports_path = REPORTS_PATH
+    temp_path = Path(TEMP_PATH)
+    reports_path = Path(REPORT_PATH)
+    temp_path.mkdir(parents=True, exist_ok=True)
+    repo_path = Path(REPO_COPY)
+    repo_tests_path = repo_path / "tests"
 
-    check_name = sys.argv[1]
-
-    if not os.path.exists(temp_path):
-        os.makedirs(temp_path)
+    check_name = sys.argv[1] if len(sys.argv) > 1 else os.getenv("CHECK_NAME")
+    assert (
+        check_name
+    ), "Check name must be provided as an input arg or in CHECK_NAME env"
 
     pr_info = PRInfo()
 
-    gh = Github(get_best_robot_token(), per_page=100)
-    commit = get_commit(gh, pr_info.sha)
+    docker_image = pull_image(get_docker_image("clickhouse/stress-test"))
 
-    rerun_helper = RerunHelper(commit, check_name)
-    if rerun_helper.is_already_finished_by_status():
-        logging.info("Check is already finished according to github status, exiting")
-        sys.exit(0)
-
-    docker_image = get_image_with_version(reports_path, docker_image_name)
-
-    packages_path = os.path.join(temp_path, "packages")
-    if not os.path.exists(packages_path):
-        os.makedirs(packages_path)
+    packages_path = temp_path / "packages"
+    packages_path.mkdir(parents=True, exist_ok=True)
 
     download_all_deb_packages(check_name, reports_path, packages_path)
 
-    server_log_path = os.path.join(temp_path, "server_log")
-    if not os.path.exists(server_log_path):
-        os.makedirs(server_log_path)
+    server_log_path = temp_path / "server_log"
+    server_log_path.mkdir(parents=True, exist_ok=True)
 
-    result_path = os.path.join(temp_path, "result_path")
-    if not os.path.exists(result_path):
-        os.makedirs(result_path)
+    result_path = temp_path / "result_path"
+    result_path.mkdir(parents=True, exist_ok=True)
 
-    run_log_path = os.path.join(temp_path, "run.log")
+    run_log_path = temp_path / "run.log"
+    ci_logs_credentials = CiLogsCredentials(temp_path / "export-logs-config.sh")
+    ci_logs_args = ci_logs_credentials.get_docker_arguments(
+        pr_info, stopwatch.start_time_str, check_name
+    )
+
+    additional_envs = get_additional_envs(check_name)
 
     run_command = get_run_command(
-        pr_info,
-        stopwatch.start_time_str,
-        check_name,
         packages_path,
         result_path,
         repo_tests_path,
         server_log_path,
+        additional_envs,
+        ci_logs_args,
         docker_image,
+        upgrade_check,
     )
     logging.info("Going to run stress test: %s", run_command)
 
-    with TeePopen(run_command, run_log_path, timeout=60 * 150) as process:
+    with TeePopen(run_command, run_log_path) as process:
         retcode = process.wait()
         if retcode == 0:
             logging.info("Run successfully")
@@ -191,56 +195,24 @@ def run_stress_test(docker_image_name):
             logging.info("Run failed")
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
+    ci_logs_credentials.clean_ci_logs_from_credentials(run_log_path)
 
-    s3_helper = S3Helper()
     state, description, test_results, additional_logs = process_results(
         result_path, server_log_path, run_log_path
     )
-    ch_helper = ClickHouseHelper()
 
-    # Cleanup run log from the credentials of CI logs database.
-    # Note: a malicious user can still print them by splitting the value into parts.
-    # But we will be warned when a malicious user modifies CI script.
-    # Although they can also print them from inside tests.
-    # Nevertheless, the credentials of the CI logs have limited scope
-    # and does not provide access to sensitive info.
-
-    ci_logs_host = os.getenv("CLICKHOUSE_CI_LOGS_HOST", "CLICKHOUSE_CI_LOGS_HOST")
-    ci_logs_password = os.getenv(
-        "CLICKHOUSE_CI_LOGS_PASSWORD", "CLICKHOUSE_CI_LOGS_PASSWORD"
-    )
-    if ci_logs_host not in ("CLICKHOUSE_CI_LOGS_HOST", ""):
-        subprocess.check_call(
-            f"sed -i -r -e 's!{ci_logs_host}!CLICKHOUSE_CI_LOGS_HOST!g; s!{ci_logs_password}!CLICKHOUSE_CI_LOGS_PASSWORD!g;' '{run_log_path}'",
-            shell=True,
-        )
-
-    report_url = upload_results(
-        s3_helper,
-        pr_info.number,
-        pr_info.sha,
-        test_results,
-        additional_logs,
-        check_name,
-    )
-    print(f"::notice ::Report url: {report_url}")
-
-    post_commit_status(commit, state, report_url, description, check_name, pr_info)
-
-    prepared_events = prepare_tests_results_for_clickhouse(
-        pr_info,
-        test_results,
-        state,
-        stopwatch.duration_seconds,
-        stopwatch.start_time_str,
-        report_url,
-        check_name,
-    )
-    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
+    JobReport(
+        description=description,
+        test_results=test_results,
+        status=state,
+        start_time=stopwatch.start_time_str,
+        duration=stopwatch.duration_seconds,
+        additional_files=additional_logs,
+    ).dump()
 
     if state == "failure":
         sys.exit(1)
 
 
 if __name__ == "__main__":
-    run_stress_test("clickhouse/stress-test")
+    run_stress_test()

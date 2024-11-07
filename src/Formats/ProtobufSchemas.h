@@ -28,7 +28,7 @@ class FormatSchemaInfo;
 class ProtobufSchemas : private boost::noncopyable
 {
 public:
-    enum class WithEnvelope
+    enum class WithEnvelope : uint8_t
     {
         // Return descriptor for a top-level message with a user-provided name.
         // Example: In protobuf schema
@@ -54,14 +54,34 @@ public:
     };
 
     static ProtobufSchemas & instance();
+    // Clear cached protobuf schemas
+    void clear();
 
-    /// Parses the format schema, then parses the corresponding proto file, and returns the descriptor of the message type.
-    /// The function never returns nullptr, it throws an exception if it cannot load or parse the file.
-    const google::protobuf::Descriptor * getMessageTypeForFormatSchema(const FormatSchemaInfo & info, WithEnvelope with_envelope);
+    class ImporterWithSourceTree;
+    struct DescriptorHolder
+    {
+        DescriptorHolder(std::shared_ptr<ImporterWithSourceTree> importer_, const google::protobuf::Descriptor * message_descriptor_)
+            : importer(std::move(importer_))
+            , message_descriptor(message_descriptor_)
+        {}
+    private:
+        std::shared_ptr<ImporterWithSourceTree> importer;
+    public:
+        const google::protobuf::Descriptor * message_descriptor;
+    };
+
+    /// Parses the format schema, then parses the corresponding proto file, and
+    /// returns holder (since the descriptor only valid if
+    /// ImporterWithSourceTree is valid):
+    ///
+    ///     {ImporterWithSourceTree, protobuf::Descriptor - descriptor of the message type}.
+    ///
+    /// The function always return valid message descriptor, it throws an exception if it cannot load or parse the file.
+    DescriptorHolder
+    getMessageTypeForFormatSchema(const FormatSchemaInfo & info, WithEnvelope with_envelope, const String & google_protos_path);
 
 private:
-    class ImporterWithSourceTree;
-    std::unordered_map<String, std::unique_ptr<ImporterWithSourceTree>> importers;
+    std::unordered_map<String, std::shared_ptr<ImporterWithSourceTree>> importers;
     std::mutex mutex;
 };
 

@@ -18,7 +18,7 @@ Columns:
     - `LOADED_AND_RELOADING` — Dictionary is loaded successfully, and is being reloaded right now (frequent reasons: [SYSTEM RELOAD DICTIONARY](../../sql-reference/statements/system.md#query_language-system-reload-dictionary) query, timeout, dictionary config has changed).
     - `FAILED_AND_RELOADING` — Could not load the dictionary as a result of an error and is loading now.
 - `origin` ([String](../../sql-reference/data-types/string.md)) — Path to the configuration file that describes the dictionary.
-- `type` ([String](../../sql-reference/data-types/string.md)) — Type of a dictionary allocation. [Storing Dictionaries in Memory](../../sql-reference/dictionaries/index.md#storig-dictionaries-in-memory).
+- `type` ([String](../../sql-reference/data-types/string.md)) — Type of dictionary allocation. [Storing Dictionaries in Memory](../../sql-reference/dictionaries/index.md#storig-dictionaries-in-memory).
 - `key.names` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Array of [key names](../../sql-reference/dictionaries/index.md#dictionary-key-and-fields#ext_dict_structure-key) provided by the dictionary.
 - `key.types` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Corresponding array of [key types](../../sql-reference/dictionaries/index.md#dictionary-key-and-fields#ext_dict_structure-key) provided by the dictionary.
 - `attribute.names` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Array of [attribute names](../../sql-reference/dictionaries/index.md#dictionary-key-and-fields#ext_dict_structure-attributes) provided by the dictionary.

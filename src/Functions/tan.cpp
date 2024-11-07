@@ -13,7 +13,7 @@ using FunctionTan = FunctionMathUnary<UnaryFunctionVectorized<TanName, tan>>;
 
 REGISTER_FUNCTION(Tan)
 {
-    factory.registerFunction<FunctionTan>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionTan>({}, FunctionFactory::Case::Insensitive);
 }
 
 }

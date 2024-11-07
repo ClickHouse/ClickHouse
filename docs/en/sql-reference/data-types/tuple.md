@@ -1,10 +1,10 @@
 ---
 slug: /en/sql-reference/data-types/tuple
-sidebar_position: 54
+sidebar_position: 34
 sidebar_label: Tuple(T1, T2, ...)
 ---
 
-# Tuple(T1, T2, …)
+# Tuple(T1, T2, ...)
 
 A tuple of elements, each having an individual [type](../../sql-reference/data-types/index.md#data_types). Tuple must contain at least one element.
 
@@ -12,7 +12,7 @@ Tuples are used for temporary column grouping. Columns can be grouped when an IN
 
 Tuples can be the result of a query. In this case, for text formats other than JSON, values are comma-separated in brackets. In JSON formats, tuples are output as arrays (in square brackets).
 
-## Creating a Tuple
+## Creating Tuples
 
 You can use a function to create a tuple:
 
@@ -23,7 +23,7 @@ tuple(T1, T2, ...)
 Example of creating a tuple:
 
 ``` sql
-SELECT tuple(1,'a') AS x, toTypeName(x)
+SELECT tuple(1, 'a') AS x, toTypeName(x)
 ```
 
 ``` text
@@ -32,7 +32,7 @@ SELECT tuple(1,'a') AS x, toTypeName(x)
 └─────────┴───────────────────────────┘
 ```
 
-Tuple can contain a single element
+A Tuple can contain a single element
 
 Example:
 
@@ -46,12 +46,12 @@ SELECT tuple('a') AS x;
 └───────┘
 ```
 
-There is a syntax sugar using parentheses `( tuple_element1, tuple_element2 )` to create a tuple of several elements without tuple function.
+Syntax `(tuple_element1, tuple_element2)` may be used to create a tuple of several elements without calling the `tuple()` function.
 
 Example:
 
 ``` sql
-SELECT (1, 'a') AS x, (today(), rand(), 'someString') y, ('a') not_a_tuple;
+SELECT (1, 'a') AS x, (today(), rand(), 'someString') AS y, ('a') AS not_a_tuple;
 ```
 
 ``` text
@@ -60,9 +60,9 @@ SELECT (1, 'a') AS x, (today(), rand(), 'someString') y, ('a') not_a_tuple;
 └─────────┴────────────────────────────────────────┴─────────────┘
 ```
 
-## Working with Data Types
+## Data Type Detection
 
-When creating a tuple on the fly, ClickHouse automatically detects the type of each argument as the minimum of the types which can store the argument value. If the argument is [NULL](../../sql-reference/syntax.md#null-literal), the type of the tuple element is [Nullable](../../sql-reference/data-types/nullable.md).
+When creating tuples on the fly, ClickHouse interferes the type of the tuples arguments as the smallest types which can hold the provided argument value. If the value is [NULL](../../sql-reference/syntax.md#null-literal), the interfered type is [Nullable](../../sql-reference/data-types/nullable.md).
 
 Example of automatic data type detection:
 
@@ -71,23 +71,21 @@ SELECT tuple(1, NULL) AS x, toTypeName(x)
 ```
 
 ``` text
-┌─x────────┬─toTypeName(tuple(1, NULL))──────┐
-│ (1,NULL) │ Tuple(UInt8, Nullable(Nothing)) │
-└──────────┴─────────────────────────────────┘
+┌─x─────────┬─toTypeName(tuple(1, NULL))──────┐
+│ (1, NULL) │ Tuple(UInt8, Nullable(Nothing)) │
+└───────────┴─────────────────────────────────┘
 ```
 
-## Addressing Tuple Elements
+## Referring to Tuple Elements
 
-It is possible to read elements of named tuples using indexes and names:
+Tuple elements can be referred to by name or by index:
 
 ``` sql
 CREATE TABLE named_tuples (`a` Tuple(s String, i Int64)) ENGINE = Memory;
-
 INSERT INTO named_tuples VALUES (('y', 10)), (('x',-10));
 
-SELECT a.s FROM named_tuples;
-
-SELECT a.2 FROM named_tuples;
+SELECT a.s FROM named_tuples; -- by name
+SELECT a.2 FROM named_tuples; -- by index
 ```
 
 Result:
@@ -106,7 +104,7 @@ Result:
 
 ## Comparison operations with Tuple
 
-The operation of comparing two tuples is performed sequentially element by element from left to right. If the element of the first tuple is greater than the corresponding element of the second tuple, then the first tuple is greater than the second, if the elements are equal, the next element is compared.
+Two tuples are compared by sequentially comparing their elements from the left to the right. If first tuples element is greater (smaller) than the second tuples corresponding element, then the first tuple is greater (smaller) than the second, otherwise (both elements are equal), the next element is compared.
 
 Example:
 

@@ -1,8 +1,9 @@
 #pragma once
 
 #include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/FileCacheKey.h>
 #include <Interpreters/Cache/FileCacheSettings.h>
+#include "config.h"
 
 namespace Poco
 {
@@ -20,21 +21,19 @@ class CachedObjectStorage final : public IObjectStorage
 public:
     CachedObjectStorage(ObjectStoragePtr object_storage_, FileCachePtr cache_, const FileCacheSettings & cache_settings_, const String & cache_config_name_);
 
-    DataSourceDescription getDataSourceDescription() const override;
-
     std::string getName() const override { return fmt::format("CachedObjectStorage-{}({})", cache_config_name, object_storage->getName()); }
+
+    ObjectStorageType getType() const override { return object_storage->getType(); }
+
+    std::string getCommonKeyPrefix() const override { return object_storage->getCommonKeyPrefix(); }
+
+    std::string getDescription() const override { return object_storage->getDescription(); }
 
     bool exists(const StoredObject & object) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
-        const ReadSettings & read_settings = ReadSettings{},
-        std::optional<size_t> read_hint = {},
-        std::optional<size_t> file_size = {}) const override;
-
-    std::unique_ptr<ReadBufferFromFileBase> readObjects( /// NOLINT
-        const StoredObjects & objects,
-        const ReadSettings & read_settings = ReadSettings{},
+        const ReadSettings & read_settings,
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const override;
 
@@ -57,11 +56,15 @@ public:
     void copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
         std::optional<ObjectAttributes> object_to_attributes = {}) override;
 
     void copyObjectToAnotherObjectStorage( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
         IObjectStorage & object_storage_to,
         std::optional<ObjectAttributes> object_to_attributes = {}) override;
 
@@ -71,7 +74,7 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    void listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const override;
+    void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
 
@@ -82,13 +85,21 @@ public:
     void applyNewSettings(
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        ContextPtr context) override;
+        ContextPtr context,
+        const ApplyNewSettingsOptions & options) override;
 
     String getObjectsNamespace() const override;
 
     const std::string & getCacheName() const override { return cache_config_name; }
 
-    std::string generateBlobNameForPath(const std::string & path) override;
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
+
+    ObjectStorageKey
+    generateObjectKeyPrefixForDirectoryPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
+
+    void setKeysGenerator(ObjectStorageKeysGeneratorPtr gen) override { object_storage->setKeysGenerator(gen); }
+
+    bool isPlain() const override { return object_storage->isPlain(); }
 
     bool isRemote() const override { return object_storage->isRemote(); }
 
@@ -110,10 +121,27 @@ public:
 
     const FileCacheSettings & getCacheSettings() const { return cache_settings; }
 
-    static bool canUseReadThroughCache(const ReadSettings & settings);
+#if USE_AZURE_BLOB_STORAGE
+    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> getAzureBlobStorageClient() const override
+    {
+        return object_storage->getAzureBlobStorageClient();
+    }
+#endif
+
+#if USE_AWS_S3
+    std::shared_ptr<const S3::Client> getS3StorageClient() override
+    {
+        return object_storage->getS3StorageClient();
+    }
+
+    std::shared_ptr<const S3::Client> tryGetS3StorageClient() override
+    {
+        return object_storage->tryGetS3StorageClient();
+    }
+#endif
 
 private:
-    FileCache::Key getCacheKey(const std::string & path) const;
+    FileCacheKey getCacheKey(const std::string & path) const;
 
     ReadSettings patchSettings(const ReadSettings & read_settings) const override;
 
@@ -121,7 +149,7 @@ private:
     FileCachePtr cache;
     FileCacheSettings cache_settings;
     std::string cache_config_name;
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 }

@@ -29,9 +29,9 @@ QUERY id: 0
       LEFT TABLE EXPRESSION
         JOIN id: 11, strictness: ALL, kind: INNER
           LEFT TABLE EXPRESSION
-            TABLE id: 3, table_name: default.t1
+            TABLE id: 3, alias: __table1, table_name: default.t1
           RIGHT TABLE EXPRESSION
-            TABLE id: 6, table_name: default.t2
+            TABLE id: 6, alias: __table2, table_name: default.t2
           JOIN EXPRESSION
             FUNCTION id: 12, function_name: equals, function_type: ordinary, result_type: UInt8
               ARGUMENTS
@@ -48,14 +48,14 @@ QUERY id: 0
                         COLUMN id: 21, column_name: a, result_type: UInt64, source_id: 6
                         CONSTANT id: 22, constant_value: UInt64_0, constant_value_type: UInt8
       RIGHT TABLE EXPRESSION
-        QUERY id: 9, alias: t3, is_subquery: 1
+        QUERY id: 9, alias: __table3, is_subquery: 1
           PROJECTION COLUMNS
             x UInt64
           PROJECTION
             LIST id: 23, nodes: 1
               COLUMN id: 24, column_name: a, result_type: UInt64, source_id: 25
           JOIN TREE
-            TABLE id: 25, table_name: default.t3
+            TABLE id: 25, alias: __table4, table_name: default.t3
           WHERE
             FUNCTION id: 26, function_name: equals, function_type: ordinary, result_type: UInt8
               ARGUMENTS
@@ -97,18 +97,18 @@ QUERY id: 0
       LEFT TABLE EXPRESSION
         JOIN id: 11, kind: COMMA
           LEFT TABLE EXPRESSION
-            TABLE id: 3, table_name: default.t1
+            TABLE id: 3, alias: __table1, table_name: default.t1
           RIGHT TABLE EXPRESSION
-            TABLE id: 6, table_name: default.t2
+            TABLE id: 6, alias: __table2, table_name: default.t2
       RIGHT TABLE EXPRESSION
-        QUERY id: 9, alias: t3, is_subquery: 1
+        QUERY id: 9, alias: __table3, is_subquery: 1
           PROJECTION COLUMNS
             x UInt64
           PROJECTION
             LIST id: 12, nodes: 1
               COLUMN id: 13, column_name: a, result_type: UInt64, source_id: 14
           JOIN TREE
-            TABLE id: 14, table_name: default.t3
+            TABLE id: 14, alias: __table4, table_name: default.t3
           WHERE
             FUNCTION id: 15, function_name: equals, function_type: ordinary, result_type: UInt8
               ARGUMENTS
@@ -166,9 +166,9 @@ QUERY id: 0
       LEFT TABLE EXPRESSION
         JOIN id: 11, strictness: ALL, kind: INNER
           LEFT TABLE EXPRESSION
-            TABLE id: 3, table_name: default.t1
+            TABLE id: 3, alias: __table1, table_name: default.t1
           RIGHT TABLE EXPRESSION
-            TABLE id: 6, table_name: default.t2
+            TABLE id: 6, alias: __table2, table_name: default.t2
           JOIN EXPRESSION
             FUNCTION id: 12, function_name: equals, function_type: ordinary, result_type: UInt8
               ARGUMENTS
@@ -185,14 +185,14 @@ QUERY id: 0
                         COLUMN id: 21, column_name: a, result_type: UInt64, source_id: 6
                         CONSTANT id: 22, constant_value: UInt64_0, constant_value_type: UInt8
       RIGHT TABLE EXPRESSION
-        QUERY id: 9, alias: t3, is_subquery: 1
+        QUERY id: 9, alias: __table3, is_subquery: 1
           PROJECTION COLUMNS
             x UInt64
           PROJECTION
             LIST id: 23, nodes: 1
               COLUMN id: 24, column_name: a, result_type: UInt64, source_id: 25
           JOIN TREE
-            TABLE id: 25, table_name: default.t3
+            TABLE id: 25, alias: __table4, table_name: default.t3
           WHERE
             FUNCTION id: 26, function_name: equals, function_type: ordinary, result_type: UInt8
               ARGUMENTS

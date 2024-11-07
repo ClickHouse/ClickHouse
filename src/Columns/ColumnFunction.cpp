@@ -72,7 +72,11 @@ ColumnPtr ColumnFunction::cut(size_t start, size_t length) const
     return ColumnFunction::create(length, function, capture, is_short_circuit_argument, is_function_compiled);
 }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnFunction::insertFrom(const IColumn & src, size_t n)
+#else
+void ColumnFunction::doInsertFrom(const IColumn & src, size_t n)
+#endif
 {
     const ColumnFunction & src_func = assert_cast<const ColumnFunction &>(src);
 
@@ -89,7 +93,11 @@ void ColumnFunction::insertFrom(const IColumn & src, size_t n)
     ++elements_size;
 }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnFunction::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+#else
+void ColumnFunction::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
+#endif
 {
     const ColumnFunction & src_func = assert_cast<const ColumnFunction &>(src);
 
@@ -248,7 +256,7 @@ void ColumnFunction::appendArguments(const ColumnsWithTypeAndName & columns)
     auto wanna_capture = columns.size();
 
     if (were_captured + wanna_capture > args)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot capture {} columns because function {} has {} arguments{}.",
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot capture {} column(s) because function {} has {} arguments{}.",
                         wanna_capture, function->getName(), args,
                         (were_captured ? " and " + toString(were_captured) + " columns have already been captured" : ""));
 
@@ -288,16 +296,28 @@ ColumnWithTypeAndName ColumnFunction::reduce() const
                         function->getName(), toString(args), toString(captured));
 
     ColumnsWithTypeAndName columns = captured_columns;
-    IFunction::ShortCircuitSettings settings;
     /// Arguments of lazy executed function can also be lazy executed.
-    /// But we shouldn't execute arguments if this function is short circuit,
-    /// because it will handle lazy executed arguments by itself.
-    if (is_short_circuit_argument && !function->isShortCircuit(settings, args))
+    if (is_short_circuit_argument)
     {
-        for (auto & col : columns)
+        IFunction::ShortCircuitSettings settings;
+        /// We shouldn't execute all arguments if this function is short circuit,
+        /// because it will handle lazy executed arguments by itself.
+        /// Execute only arguments with disabled lazy execution.
+        if (function->isShortCircuit(settings, args))
         {
-            if (const ColumnFunction * arg = checkAndGetShortCircuitArgument(col.column))
-                col = arg->reduce();
+            for (size_t i : settings.arguments_with_disabled_lazy_execution)
+            {
+                if (const ColumnFunction * arg = checkAndGetShortCircuitArgument(columns[i].column))
+                    columns[i] = arg->reduce();
+            }
+        }
+        else
+        {
+            for (auto & col : columns)
+            {
+                if (const ColumnFunction * arg = checkAndGetShortCircuitArgument(col.column))
+                    col = arg->reduce();
+            }
         }
     }
 
@@ -308,6 +328,13 @@ ColumnWithTypeAndName ColumnFunction::reduce() const
         ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
 
     res.column = function->execute(columns, res.type, elements_size);
+    if (res.column->getDataType() != res.type->getColumnType())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Unexpected return type from {}. Expected {}. Got {}",
+            function->getName(),
+            res.type->getColumnType(),
+            res.column->getDataType());
     if (recursively_convert_result_to_full_column_if_low_cardinality)
     {
         res.column = recursiveRemoveLowCardinality(res.column);

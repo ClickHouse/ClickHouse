@@ -1,5 +1,6 @@
 #include <Coordination/FourLetterCommand.h>
 
+#include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Server/KeeperTCPHandler.h>
 #include <Common/ZooKeeper/IKeeper.h>
@@ -8,7 +9,8 @@
 #include <Poco/Path.h>
 #include <Common/getCurrentProcessFDCount.h>
 #include <Common/getMaxFileDescriptorCount.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
+#include <Common/config_version.h>
 #include "Coordination/KeeperFeatureFlags.h"
 #include <Coordination/Keeper4LWInfo.h>
 #include <IO/WriteHelpers.h>
@@ -17,6 +19,11 @@
 
 #include <unistd.h>
 #include <bit>
+
+#if USE_JEMALLOC
+#include <Common/Jemalloc.h>
+#include <jemalloc/jemalloc.h>
+#endif
 
 namespace
 {
@@ -32,6 +39,12 @@ String formatZxid(int64_t zxid)
 
 }
 
+#if USE_NURAFT
+namespace ProfileEvents
+{
+    extern const std::vector<Event> keeper_profile_events;
+}
+#endif
 
 namespace DB
 {
@@ -172,6 +185,25 @@ void FourLetterCommandFactory::registerCommands(KeeperDispatcher & keeper_dispat
         FourLetterCommandPtr feature_flags_command = std::make_shared<FeatureFlagsCommand>(keeper_dispatcher);
         factory.registerCommand(feature_flags_command);
 
+        FourLetterCommandPtr yield_leadership_command = std::make_shared<YieldLeadershipCommand>(keeper_dispatcher);
+        factory.registerCommand(yield_leadership_command);
+
+#if USE_JEMALLOC
+        FourLetterCommandPtr jemalloc_dump_stats = std::make_shared<JemallocDumpStats>(keeper_dispatcher);
+        factory.registerCommand(jemalloc_dump_stats);
+
+        FourLetterCommandPtr jemalloc_flush_profile = std::make_shared<JemallocFlushProfile>(keeper_dispatcher);
+        factory.registerCommand(jemalloc_flush_profile);
+
+        FourLetterCommandPtr jemalloc_enable_profile = std::make_shared<JemallocEnableProfile>(keeper_dispatcher);
+        factory.registerCommand(jemalloc_enable_profile);
+
+        FourLetterCommandPtr jemalloc_disable_profile = std::make_shared<JemallocDisableProfile>(keeper_dispatcher);
+        factory.registerCommand(jemalloc_disable_profile);
+#endif
+        FourLetterCommandPtr profile_events_command = std::make_shared<ProfileEventsCommand>(keeper_dispatcher);
+        factory.registerCommand(profile_events_command);
+
         factory.initializeAllowList(keeper_dispatcher);
         factory.setInitialize(true);
     }
@@ -204,17 +236,15 @@ void FourLetterCommandFactory::initializeAllowList(KeeperDispatcher & keeper_dis
             allow_list.push_back(ALLOW_LIST_ALL);
             return;
         }
+
+        if (commands.contains(IFourLetterCommand::toCode(token)))
+        {
+            allow_list.push_back(IFourLetterCommand::toCode(token));
+        }
         else
         {
-            if (commands.contains(IFourLetterCommand::toCode(token)))
-            {
-                allow_list.push_back(IFourLetterCommand::toCode(token));
-            }
-            else
-            {
-                auto * log = &Poco::Logger::get("FourLetterCommandFactory");
-                LOG_WARNING(log, "Find invalid keeper 4lw command {} when initializing, ignore it.", token);
-            }
+            auto log = getLogger("FourLetterCommandFactory");
+            LOG_WARNING(log, "Find invalid keeper 4lw command {} when initializing, ignore it.", token);
         }
     }
 }
@@ -269,16 +299,22 @@ String MonitorCommand::run()
 
     print(ret, "server_state", keeper_info.getRole());
 
-    print(ret, "znode_count", state_machine.getNodesCount());
-    print(ret, "watch_count", state_machine.getTotalWatchesCount());
-    print(ret, "ephemerals_count", state_machine.getTotalEphemeralNodesCount());
-    print(ret, "approximate_data_size", state_machine.getApproximateDataSize());
-    print(ret, "key_arena_size", state_machine.getKeyArenaSize());
-    print(ret, "latest_snapshot_size", state_machine.getLatestSnapshotBufSize());
+    const auto & storage_stats = state_machine.getStorageStats();
+
+    print(ret, "znode_count", storage_stats.nodes_count.load(std::memory_order_relaxed));
+    print(ret, "watch_count", storage_stats.total_watches_count.load(std::memory_order_relaxed));
+    print(ret, "ephemerals_count", storage_stats.total_emphemeral_nodes_count.load(std::memory_order_relaxed));
+    print(ret, "approximate_data_size", storage_stats.approximate_data_size.load(std::memory_order_relaxed));
+    print(ret, "key_arena_size", 0);
+    print(ret, "latest_snapshot_size", state_machine.getLatestSnapshotSize());
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
     print(ret, "open_file_descriptor_count", getCurrentProcessFDCount());
-    print(ret, "max_file_descriptor_count", getMaxFileDescriptorCount());
+    auto max_file_descriptor_count = getMaxFileDescriptorCount();
+    if (max_file_descriptor_count.has_value())
+        print(ret, "max_file_descriptor_count", *max_file_descriptor_count);
+    else
+        print(ret, "max_file_descriptor_count", -1);
 #endif
 
     if (keeper_info.is_leader)
@@ -351,6 +387,7 @@ String ServerStatCommand::run()
 
     auto & stats = keeper_dispatcher.getKeeperConnectionStats();
     Keeper4LWInfo keeper_info = keeper_dispatcher.getKeeper4LWInfo();
+    const auto & storage_stats = keeper_dispatcher.getStateMachine().getStorageStats();
 
     write("ClickHouse Keeper version", String(VERSION_DESCRIBE) + "-" + VERSION_GITHASH);
 
@@ -362,9 +399,9 @@ String ServerStatCommand::run()
     write("Sent", toString(stats.getPacketsSent()));
     write("Connections", toString(keeper_info.alive_connections_count));
     write("Outstanding", toString(keeper_info.outstanding_requests_count));
-    write("Zxid", formatZxid(keeper_info.last_zxid));
+    write("Zxid", formatZxid(storage_stats.last_zxid.load(std::memory_order_relaxed)));
     write("Mode", keeper_info.getRole());
-    write("Node count", toString(keeper_info.total_nodes_count));
+    write("Node count", toString(storage_stats.nodes_count.load(std::memory_order_relaxed)));
 
     return buf.str();
 }
@@ -380,6 +417,7 @@ String StatCommand::run()
 
     auto & stats = keeper_dispatcher.getKeeperConnectionStats();
     Keeper4LWInfo keeper_info = keeper_dispatcher.getKeeper4LWInfo();
+    const auto & storage_stats = keeper_dispatcher.getStateMachine().getStorageStats();
 
     write("ClickHouse Keeper version", String(VERSION_DESCRIBE) + "-" + VERSION_GITHASH);
 
@@ -395,9 +433,9 @@ String StatCommand::run()
     write("Sent", toString(stats.getPacketsSent()));
     write("Connections", toString(keeper_info.alive_connections_count));
     write("Outstanding", toString(keeper_info.outstanding_requests_count));
-    write("Zxid", formatZxid(keeper_info.last_zxid));
+    write("Zxid", formatZxid(storage_stats.last_zxid.load(std::memory_order_relaxed)));
     write("Mode", keeper_info.getRole());
-    write("Node count", toString(keeper_info.total_nodes_count));
+    write("Node count", toString(storage_stats.nodes_count.load(std::memory_order_relaxed)));
 
     return buf.str();
 }
@@ -494,8 +532,7 @@ String IsReadOnlyCommand::run()
 {
     if (keeper_dispatcher.isObserver())
         return "ro";
-    else
-        return "rw";
+    return "rw";
 }
 
 String RecoveryCommand::run()
@@ -535,6 +572,12 @@ String LogInfoCommand::run()
     append("leader_committed_log_idx", log_info.leader_committed_log_idx);
     append("target_committed_log_idx", log_info.target_committed_log_idx);
     append("last_snapshot_idx", log_info.last_snapshot_idx);
+
+    append("latest_logs_cache_entries", log_info.latest_logs_cache_entries);
+    append("latest_logs_cache_size", log_info.latest_logs_cache_size);
+
+    append("commit_logs_cache_entries", log_info.commit_logs_cache_entries);
+    append("commit_logs_cache_size", log_info.commit_logs_cache_size);
     return ret.str();
 }
 
@@ -551,7 +594,7 @@ String RecalculateCommand::run()
 
 String CleanResourcesCommand::run()
 {
-    keeper_dispatcher.cleanResources();
+    KeeperDispatcher::cleanResources();
     return "ok";
 }
 
@@ -575,6 +618,72 @@ String FeatureFlagsCommand::run()
         boost::to_lower(feature_flag_string);
         append(feature_flag_string, feature_flags.isEnabled(feature_flag));
     }
+
+    return ret.str();
+}
+
+String YieldLeadershipCommand::run()
+{
+    keeper_dispatcher.yieldLeadership();
+    return "Sent yield leadership request to leader.";
+}
+
+#if USE_JEMALLOC
+
+void printToString(void * output, const char * data)
+{
+    std::string * output_data = reinterpret_cast<std::string *>(output);
+    *output_data += std::string(data);
+}
+
+String JemallocDumpStats::run()
+{
+    std::string output;
+    malloc_stats_print(printToString, &output, nullptr);
+    return output;
+}
+
+String JemallocFlushProfile::run()
+{
+    return flushJemallocProfile("/tmp/jemalloc_keeper");
+}
+
+String JemallocEnableProfile::run()
+{
+    setJemallocProfileActive(true);
+    return "ok";
+}
+
+String JemallocDisableProfile::run()
+{
+    setJemallocProfileActive(false);
+    return "ok";
+}
+#endif
+
+String ProfileEventsCommand::run()
+{
+    StringBuffer ret;
+
+#if USE_NURAFT
+    auto append = [&ret] (const String & metric, uint64_t value, const String & docs) -> void
+    {
+        writeText(metric, ret);
+        writeText('\t', ret);
+        writeText(std::to_string(value), ret);
+        writeText('\t', ret);
+        writeText(docs, ret);
+        writeText('\n', ret);
+    };
+
+    for (auto i : ProfileEvents::keeper_profile_events)
+    {
+        const auto counter = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
+        std::string metric_name{ProfileEvents::getName(static_cast<ProfileEvents::Event>(i))};
+        std::string metric_doc{ProfileEvents::getDocumentation(static_cast<ProfileEvents::Event>(i))};
+        append(metric_name, counter, metric_doc);
+    }
+#endif
 
     return ret.str();
 }

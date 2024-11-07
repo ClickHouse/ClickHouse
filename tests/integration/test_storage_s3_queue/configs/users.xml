@@ -2,6 +2,8 @@
     <profiles>
         <default>
             <stream_like_engine_allow_direct_select>1</stream_like_engine_allow_direct_select>
+            <s3queue_enable_logging_to_s3queue_log>1</s3queue_enable_logging_to_s3queue_log>
+            <s3queue_allow_experimental_sharded_mode>1</s3queue_allow_experimental_sharded_mode>
         </default>
     </profiles>
 </clickhouse>

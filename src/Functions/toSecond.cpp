@@ -13,8 +13,8 @@ REGISTER_FUNCTION(ToSecond)
 {
     factory.registerFunction<FunctionToSecond>();
 
-    /// MysQL compatibility alias.
-    factory.registerAlias("SECOND", "toSecond", FunctionFactory::CaseInsensitive);
+    /// MySQL compatibility alias.
+    factory.registerAlias("SECOND", "toSecond", FunctionFactory::Case::Insensitive);
 }
 
 }

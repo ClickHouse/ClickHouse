@@ -3,19 +3,16 @@
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Field.h>
-#include <Core/ValuesWithType.h>
-#include <Core/Names.h>
 #include <Core/IResolvedFunction.h>
-#include <Common/Exception.h>
+#include <Core/Names.h>
+#include <Core/ValuesWithType.h>
 #include <DataTypes/IDataType.h>
+#include <Functions/FunctionHelpers.h>
+#include <Common/Exception.h>
 
 #include "config.h"
 
 #include <memory>
-
-#if USE_EMBEDDED_COMPILER
-#    include <Core/ValuesWithType.h>
-#endif
 
 /// This file contains user interface for functions.
 
@@ -37,7 +34,8 @@ namespace ErrorCodes
 }
 
 /// A left-closed and right-open interval representing the preimage of a function.
-using RangeOrNull = std::optional<std::pair<Field, Field>>;
+using FieldInterval = std::pair<Field, Field>;
+using OptionalFieldInterval = std::optional<FieldInterval>;
 
 /// The simplest executable object.
 /// Motivation:
@@ -136,8 +134,12 @@ public:
     ~IFunctionBase() override = default;
 
     virtual ColumnPtr execute( /// NOLINT
-        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run = false) const
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
+        size_t input_rows_count,
+        bool dry_run = false) const
     {
+        checkFunctionArgumentSizes(arguments, input_rows_count);
         return prepare(arguments)->execute(arguments, result_type, input_rows_count, dry_run);
     }
 
@@ -228,6 +230,17 @@ public:
 
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
 
+    /** This is a special flags for functions which return constant value for the server,
+      * but the result could be different for different servers in distributed query.
+      *
+      * This functions can't support constant folding on the initiator, but can on the follower.
+      * We can't apply some optimizations as well (e.g. can't remove constant result from GROUP BY key).
+      * So, it is convenient to have a special flag for them.
+      *
+      * Examples are: "__getScalar" and every function from serverConstants.cpp
+      */
+    virtual bool isServerConstant() const { return false; }
+
     /** Lets you know if the function is monotonic in a range of values.
       * This is used to work with the index in a sorted chunk of data.
       * And allows to use the index not only when it is written, for example `date >= const`, but also, for example, `toMonth(date) >= 11`.
@@ -243,9 +256,11 @@ public:
 
     struct ShortCircuitSettings
     {
-        /// Should we enable lazy execution for the first argument of short-circuit function?
-        /// Example: if(cond, then, else), we don't need to execute cond lazily.
-        bool enable_lazy_execution_for_first_argument;
+        /// Should we enable lazy execution for the nth argument of short-circuit function?
+        /// Example 1st argument: if(cond, then, else), we don't need to execute cond lazily.
+        /// Example other arguments: 1st, 2nd, 3rd argument of dictGetOrDefault should always be calculated.
+        std::unordered_set<size_t> arguments_with_disabled_lazy_execution;
+
         /// Should we enable lazy execution for functions, that are common descendants of
         /// different short-circuit function arguments?
         /// Example 1: if (cond, expr1(..., expr, ...), expr2(..., expr, ...)), we don't need
@@ -297,7 +312,7 @@ public:
     /** Get the preimage of a function in the form of a left-closed and right-open interval. Call only if hasInformationAboutPreimage.
       * std::nullopt might be returned if the point (a single value) is invalid for this function.
       */
-    virtual RangeOrNull getPreimage(const IDataType & /*type*/, const Field & /*point*/) const
+    virtual OptionalFieldInterval getPreimage(const IDataType & /*type*/, const Field & /*point*/) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", getName());
     }
@@ -309,7 +324,7 @@ using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 
 /** Creates IFunctionBase from argument types list (chooses one function overload).
   */
-class IFunctionOverloadResolver
+class IFunctionOverloadResolver : public std::enable_shared_from_this<IFunctionOverloadResolver>
 {
 public:
     virtual ~IFunctionOverloadResolver() = default;
@@ -331,6 +346,8 @@ public:
     virtual bool isDeterministic() const { return true; }
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isInjective(const ColumnsWithTypeAndName &) const { return false; }
+    virtual bool isServerConstant() const { return false; }
+    virtual bool isShortCircuit(IFunctionBase::ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
 
     /// Override and return true if function needs to depend on the state of the data.
     virtual bool isStateful() const { return false; }
@@ -353,6 +370,10 @@ public:
     /// Returns indexes if arguments, that can be Nullable without making result of function Nullable
     /// (for functions like isNull(x))
     virtual ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t number_of_arguments [[maybe_unused]]) const { return {}; }
+
+    /// Returns type that should be used as the result type in default implementation for Dynamic.
+    /// Function should implement this method if its result type doesn't depend on the arguments types.
+    virtual DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const { return nullptr; }
 
 protected:
 
@@ -407,6 +428,17 @@ protected:
 
     /// If it isn't, will convert all ColumnLowCardinality arguments to full columns.
     virtual bool canBeExecutedOnLowCardinalityDictionary() const { return true; }
+
+    /** If useDefaultImplementationForDynamic() is true, then special FunctionBaseDynamicAdaptor will be used
+     *  if function arguments has Dynamic column. This adaptor will build and execute this function for all
+     *  internal types inside Dynamic column separately and construct result based on results for these types.
+     *  If getReturnTypeForDefaultImplementationForDynamic() returns T, then result of such function
+     *  will be Nullable(T), otherwise the result will be Dynamic.
+     *
+     *  We cannot use default implementation for Dynamic if function doesn't use default implementation for NULLs,
+     *  because Dynamic column can contain NULLs and we should know how to process them.
+      */
+    virtual bool useDefaultImplementationForDynamic() const { return useDefaultImplementationForNulls(); }
 
 private:
 
@@ -473,6 +505,9 @@ public:
     /// If it isn't, will convert all ColumnLowCardinality arguments to full columns.
     virtual bool canBeExecutedOnLowCardinalityDictionary() const { return true; }
 
+    virtual bool useDefaultImplementationForDynamic() const { return useDefaultImplementationForNulls(); }
+    virtual DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const { return nullptr; }
+
     /** True if function can be called on default arguments (include Nullable's) and won't throw.
       * Counterexample: modulo(0, 0)
       */
@@ -484,6 +519,7 @@ public:
     virtual bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const { return false; }
     virtual bool isDeterministic() const { return true; }
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
+    virtual bool isServerConstant() const { return false; }
     virtual bool isStateful() const { return false; }
 
     using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;
@@ -498,7 +534,7 @@ public:
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its monotonicity", getName());
     }
-    virtual RangeOrNull getPreimage(const IDataType & /*type*/, const Field & /*point*/) const
+    virtual OptionalFieldInterval getPreimage(const IDataType & /*type*/, const Field & /*point*/) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", getName());
     }

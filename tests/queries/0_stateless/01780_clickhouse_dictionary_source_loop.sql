@@ -10,10 +10,10 @@ CREATE DICTIONARY dict1
     value String
 )
 PRIMARY KEY id
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 TABLE 'dict1'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() TABLE 'dict1'))
 LAYOUT(DIRECT());
 
-SELECT * FROM dict1; --{serverError 36}
+SELECT * FROM dict1; --{serverError BAD_ARGUMENTS}
 
 DROP DICTIONARY dict1;
 
@@ -24,10 +24,10 @@ CREATE DICTIONARY 01780_db.dict2
     value String
 )
 PRIMARY KEY id
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 DATABASE '01780_db' TABLE 'dict2'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() DATABASE '01780_db' TABLE 'dict2'))
 LAYOUT(DIRECT());
 
-SELECT * FROM 01780_db.dict2; --{serverError 36}
+SELECT * FROM 01780_db.dict2; --{serverError BAD_ARGUMENTS}
 DROP DICTIONARY 01780_db.dict2;
 
 DROP TABLE IF EXISTS 01780_db.dict3_source;
@@ -45,7 +45,7 @@ CREATE DICTIONARY 01780_db.dict3
     value String
 )
 PRIMARY KEY id
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 TABLE 'dict3_source' DATABASE '01780_db'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() TABLE 'dict3_source' DATABASE '01780_db'))
 LAYOUT(DIRECT());
 
 SELECT * FROM 01780_db.dict3;

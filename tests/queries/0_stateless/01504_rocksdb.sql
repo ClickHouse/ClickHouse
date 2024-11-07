@@ -4,9 +4,9 @@
 
 DROP TABLE IF EXISTS 01504_test;
 
-CREATE TABLE 01504_test (key String, value UInt32) Engine=EmbeddedRocksDB; -- { serverError 36 }
-CREATE TABLE 01504_test (key String, value UInt32) Engine=EmbeddedRocksDB PRIMARY KEY(key2); -- { serverError 47 }
-CREATE TABLE 01504_test (key String, value UInt32) Engine=EmbeddedRocksDB PRIMARY KEY(key, value); -- { serverError 36 }
+CREATE TABLE 01504_test (key String, value UInt32) Engine=EmbeddedRocksDB; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE 01504_test (key String, value UInt32) Engine=EmbeddedRocksDB PRIMARY KEY(key2); -- { serverError UNKNOWN_IDENTIFIER }
+CREATE TABLE 01504_test (key String, value UInt32) Engine=EmbeddedRocksDB PRIMARY KEY(key, value); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE 01504_test (key Tuple(String, UInt32), value UInt64) Engine=EmbeddedRocksDB PRIMARY KEY(key);
 
 DROP TABLE IF EXISTS 01504_test;
@@ -40,8 +40,8 @@ SET max_rows_to_read = 2;
 SELECT dummy == (1,1.2) FROM 01504_test WHERE k IN (1, 3) OR k IN (1) OR k IN (3, 1) OR k IN [1] OR k IN [1, 3] ;
 SELECT k == 4 FROM 01504_test WHERE k = 4 OR k IN [4] OR k in (4, 10000001, 10000002) AND value > 0;
 SELECT k == 4 FROM 01504_test WHERE k IN (SELECT toUInt32(number) FROM keys WHERE number = 4);
-SELECT k, value FROM 01504_test WHERE k = 0 OR value > 0; -- { serverError 158 }
-SELECT k, value FROM 01504_test WHERE k = 0 AND k IN (1, 3) OR k > 8; -- { serverError 158 }
+SELECT k, value FROM 01504_test WHERE k = 0 OR value > 0; -- { serverError TOO_MANY_ROWS }
+SELECT k, value FROM 01504_test WHERE k = 0 AND k IN (1, 3) OR k > 8; -- { serverError TOO_MANY_ROWS }
 
 TRUNCATE TABLE 01504_test;
 SELECT 0 == COUNT(1) FROM 01504_test;

@@ -1,11 +1,13 @@
+#include <atomic>
 #include <IO/Operators.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <Interpreters/Context.h>
+#include <Common/FailPoint.h>
 #include <Common/ZooKeeper/KeeperException.h>
-#include <Common/randomSeed.h>
 #include <Core/ServerUUID.h>
 #include <boost/algorithm/string/replace.hpp>
 
@@ -19,10 +21,22 @@ namespace CurrentMetrics
 namespace DB
 {
 
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsSeconds zookeeper_session_expiration_check_period;
+}
+
 namespace ErrorCodes
 {
     extern const int REPLICA_IS_ALREADY_ACTIVE;
+    extern const int REPLICA_STATUS_CHANGED;
+    extern const int LOGICAL_ERROR;
 }
+
+namespace FailPoints
+{
+    extern const char finish_clean_quorum_failed_parts[];
+};
 
 /// Used to check whether it's us who set node `is_active`, or not.
 static String generateActiveNodeIdentifier()
@@ -33,13 +47,27 @@ static String generateActiveNodeIdentifier()
 ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(StorageReplicatedMergeTree & storage_)
     : storage(storage_)
     , log_name(storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreeRestartingThread)")
-    , log(&Poco::Logger::get(log_name))
+    , log(getLogger(log_name))
     , active_node_identifier(generateActiveNodeIdentifier())
 {
     const auto storage_settings = storage.getSettings();
-    check_period_ms = storage_settings->zookeeper_session_expiration_check_period.totalSeconds() * 1000;
+    check_period_ms = (*storage_settings)[MergeTreeSetting::zookeeper_session_expiration_check_period].totalSeconds() * 1000;
 
     task = storage.getContext()->getSchedulePool().createTask(log_name, [this]{ run(); });
+}
+
+void ReplicatedMergeTreeRestartingThread::start(bool schedule)
+{
+    LOG_TRACE(log, "Starting the restating thread, schedule: {}", schedule);
+    if (schedule)
+        task->activateAndSchedule();
+    else
+        task->activate();
+}
+
+void ReplicatedMergeTreeRestartingThread::wakeup()
+{
+    task->schedule();
 }
 
 void ReplicatedMergeTreeRestartingThread::run()
@@ -79,11 +107,10 @@ void ReplicatedMergeTreeRestartingThread::run()
 
     if (first_time)
     {
-        if (storage.is_readonly)
-        {
+        if (storage.is_readonly && !std::exchange(storage.is_readonly_metric_set, true))
             /// We failed to start replication, table is still readonly, so we should increment the metric. See also setNotReadonly().
             CurrentMetrics::add(CurrentMetrics::ReadonlyReplica);
-        }
+
         /// It does not matter if replication is actually started or not, just notify after the first attempt.
         storage.startup_event.set();
         first_time = false;
@@ -182,6 +209,36 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
             throw;
         }
 
+        const Int32 replica_metadata_version = fixReplicaMetadataVersionIfNeeded(zookeeper);
+        const bool replica_metadata_version_exists = replica_metadata_version != -1;
+        if (replica_metadata_version_exists)
+        {
+            storage.setInMemoryMetadata(storage.getInMemoryMetadataPtr()->withMetadataVersion(replica_metadata_version));
+        }
+        else
+        {
+            /// Table was created before 20.4 and was never altered,
+            /// let's initialize replica metadata version from global metadata version.
+
+            const String & zookeeper_path = storage.zookeeper_path, & replica_path = storage.replica_path;
+
+            Coordination::Stat table_metadata_version_stat;
+            zookeeper->get(zookeeper_path + "/metadata", &table_metadata_version_stat);
+
+            Coordination::Requests ops;
+            ops.emplace_back(zkutil::makeCheckRequest(zookeeper_path + "/metadata", table_metadata_version_stat.version));
+            ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/metadata_version", toString(table_metadata_version_stat.version), zkutil::CreateMode::Persistent));
+
+            Coordination::Responses res;
+            auto code = zookeeper->tryMulti(ops, res);
+
+            if (code == Coordination::Error::ZBADVERSION)
+                throw Exception(ErrorCodes::REPLICA_STATUS_CHANGED, "Failed to initialize metadata_version "
+                                                                    "because table was concurrently altered, will retry");
+
+            zkutil::KeeperMultiException::check(code, ops, res);
+        }
+
         storage.queue.removeCurrentPartsFromMutations();
         storage.last_queue_update_finish_time.store(time(nullptr));
 
@@ -242,6 +299,7 @@ void ReplicatedMergeTreeRestartingThread::removeFailedQuorumParts()
             storage.queue.removeFailedQuorumPart(part->info);
         }
     }
+    FailPointInjection::disableFailPoint(FailPoints::finish_clean_quorum_failed_parts);
 }
 
 
@@ -291,7 +349,7 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
     ReplicatedMergeTreeAddress address = storage.getReplicatedMergeTreeAddress();
 
     String is_active_path = fs::path(storage.replica_path) / "is_active";
-    zookeeper->handleEphemeralNodeExistence(is_active_path, active_node_identifier);
+    zookeeper->deleteEphemeralNodeIfContentMatches(is_active_path, active_node_identifier);
 
     /// Simultaneously declare that this replica is active, and update the host.
     Coordination::Requests ops;
@@ -337,7 +395,7 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown(bool part_of_full_shut
 void ReplicatedMergeTreeRestartingThread::shutdown(bool part_of_full_shutdown)
 {
     /// Stop restarting_thread before stopping other tasks - so that it won't restart them again.
-    need_stop = true;
+    need_stop = part_of_full_shutdown;
     task->deactivate();
 
     /// Explicitly set the event, because the restarting thread will not set it again
@@ -355,26 +413,31 @@ void ReplicatedMergeTreeRestartingThread::setReadonly(bool on_shutdown)
     bool old_val = false;
     bool became_readonly = storage.is_readonly.compare_exchange_strong(old_val, true);
 
+    if (became_readonly)
+    {
+        const UInt32 now = static_cast<UInt32>(
+            std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
+        storage.readonly_start_time.store(now, std::memory_order_relaxed);
+    }
+
     /// Do not increment the metric if replica became readonly due to shutdown.
     if (became_readonly && on_shutdown)
         return;
 
     if (became_readonly)
-        CurrentMetrics::add(CurrentMetrics::ReadonlyReplica);
-
-    /// Replica was already readonly, but we should decrement the metric, because we are detaching/dropping table.
-    /// if first pass wasn't done we don't have to decrement because it wasn't incremented in the first place
-    /// the task should be deactivated if it's full shutdown so no race is present
-    if (!first_time && on_shutdown)
     {
-        CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
-        assert(CurrentMetrics::get(CurrentMetrics::ReadonlyReplica) >= 0);
+        chassert(!storage.is_readonly_metric_set);
+        storage.is_readonly_metric_set = true;
+        CurrentMetrics::add(CurrentMetrics::ReadonlyReplica);
+        return;
     }
 
-    if (storage.since_metadata_err_incr_readonly_metric)
+    /// Replica was already readonly, but we should decrement the metric if it was set because we are detaching/dropping table.
+    /// the task should be deactivated if it's full shutdown so no race is present
+    if (on_shutdown && std::exchange(storage.is_readonly_metric_set, false))
     {
         CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
-        assert(CurrentMetrics::get(CurrentMetrics::ReadonlyReplica) >= 0);
+        chassert(CurrentMetrics::get(CurrentMetrics::ReadonlyReplica) >= 0);
     }
 }
 
@@ -384,11 +447,73 @@ void ReplicatedMergeTreeRestartingThread::setNotReadonly()
     /// is_readonly is true on startup, but ReadonlyReplica metric is not incremented,
     /// because we don't want to change this metric if replication is started successfully.
     /// So we should not decrement it when replica stopped being readonly on startup.
-    if (storage.is_readonly.compare_exchange_strong(old_val, false) && !first_time)
+    if (storage.is_readonly.compare_exchange_strong(old_val, false) && std::exchange(storage.is_readonly_metric_set, false))
     {
         CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
-        assert(CurrentMetrics::get(CurrentMetrics::ReadonlyReplica) >= 0);
+        chassert(CurrentMetrics::get(CurrentMetrics::ReadonlyReplica) >= 0);
     }
+
+    storage.readonly_start_time.store(0, std::memory_order_relaxed);
+}
+
+
+Int32 ReplicatedMergeTreeRestartingThread::fixReplicaMetadataVersionIfNeeded(zkutil::ZooKeeperPtr zookeeper)
+{
+    const String & zookeeper_path = storage.zookeeper_path;
+    const String & replica_path = storage.replica_path;
+
+    const size_t num_attempts = 2;
+    for (size_t attempt = 0; attempt != num_attempts; ++attempt)
+    {
+        String replica_metadata_version_str;
+        Coordination::Stat replica_stat;
+        const bool replica_metadata_version_exists = zookeeper->tryGet(replica_path + "/metadata_version", replica_metadata_version_str, &replica_stat);
+        if (!replica_metadata_version_exists)
+            return -1;
+
+        const Int32 metadata_version = parse<Int32>(replica_metadata_version_str);
+        if (metadata_version != 0)
+            return metadata_version;
+
+        Coordination::Stat table_stat;
+        zookeeper->get(fs::path(zookeeper_path) / "metadata", &table_stat);
+        if (table_stat.version == 0)
+            return metadata_version;
+
+        ReplicatedMergeTreeQueue & queue = storage.queue;
+        queue.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::FIX_METADATA_VERSION);
+        if (queue.getStatus().metadata_alters_in_queue != 0)
+        {
+            LOG_INFO(log, "Skipping updating metadata_version as there are ALTER_METADATA entries in the queue");
+            return metadata_version;
+        }
+
+        const Coordination::Requests ops = {
+            zkutil::makeSetRequest(fs::path(replica_path) / "metadata_version", std::to_string(table_stat.version), replica_stat.version),
+            zkutil::makeCheckRequest(fs::path(zookeeper_path) / "metadata", table_stat.version),
+        };
+        Coordination::Responses ops_responses;
+        const Coordination::Error code = zookeeper->tryMulti(ops, ops_responses);
+        if (code == Coordination::Error::ZOK)
+        {
+            LOG_DEBUG(log, "Successfully set metadata_version to {}", table_stat.version);
+            return table_stat.version;
+        }
+
+        if (code == Coordination::Error::ZBADVERSION)
+        {
+            LOG_WARNING(log, "Cannot fix metadata_version because either metadata.version or metadata_version.version changed, attempts left = {}", num_attempts - attempt - 1);
+            continue;
+        }
+
+        throw zkutil::KeeperException(code);
+    }
+
+    /// Second attempt is only possible if either metadata_version.version or metadata.version changed during the first attempt.
+    /// If metadata_version changed to non-zero value during the first attempt, on second attempt we will return the new metadata_version.
+    /// If metadata.version changed during first attempt, on second attempt we will either get metadata_version != 0 and return the new metadata_version or we will get metadata_alters_in_queue != 0 and return 0.
+    /// So either first or second attempt should return unless metadata_version was rewritten from 0 to 0 during the first attempt which is highly unlikely.
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to fix replica metadata_version in ZooKeeper after two attempts");
 }
 
 }

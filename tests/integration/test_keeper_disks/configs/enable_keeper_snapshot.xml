@@ -1,0 +1,57 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <disk_hdfs>
+                <type>hdfs</type>
+                <endpoint>hdfs://hdfs1:9000/</endpoint>
+            </disk_hdfs>
+            <log_local>
+                <type>local</type>
+                <path>/var/lib/clickhouse/coordination/logs/</path>
+            </log_local>
+            <log_s3_plain>
+                <type>s3_plain</type>
+                <endpoint>http://minio1:9001/root/logs/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+            </log_s3_plain>
+            <snapshot_local>
+                <type>local</type>
+                <path>/var/lib/clickhouse/coordination/snapshots/</path>
+            </snapshot_local>
+            <snapshot_s3_plain>
+                <type>s3_plain</type>
+                <endpoint>http://minio1:9001/root/snapshots/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+            </snapshot_s3_plain>
+        </disks>
+    </storage_configuration>
+
+    <keeper_server>
+        <use_cluster>false</use_cluster>
+        <tcp_port>9181</tcp_port>
+        <server_id>1</server_id>
+        <create_snapshot_on_exit>false</create_snapshot_on_exit>
+
+        <coordination_settings>
+            <operation_timeout_ms>5000</operation_timeout_ms>
+            <session_timeout_ms>10000</session_timeout_ms>
+            <raft_logs_level>trace</raft_logs_level>
+            <snapshot_distance>10000</snapshot_distance>
+            <stale_log_gap>10</stale_log_gap>
+            <reserved_log_items>1</reserved_log_items>
+            <rotate_log_storage_interval>3</rotate_log_storage_interval>
+        </coordination_settings>
+
+        <!-- DISK DEFINITION PLACEHOLDER -->
+
+        <raft_configuration>
+            <server>
+                <id>1</id>
+                <hostname>node</hostname>
+                <port>9234</port>
+            </server>
+        </raft_configuration>
+    </keeper_server>
+</clickhouse>

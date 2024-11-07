@@ -5,8 +5,8 @@
 #include <IO/HTTPCommon.h>
 #include <IO/Progress.h>
 #include <IO/WriteBuffer.h>
-#include <IO/WriteBufferFromOStream.h>
 #include <Server/HTTP/HTTPServerResponse.h>
+#include <Poco/Net/StreamSocket.h>
 #include <Common/NetException.h>
 #include <Common/Stopwatch.h>
 
@@ -17,47 +17,24 @@
 namespace DB
 {
 
-/// The difference from WriteBufferFromOStream is that this buffer gets the underlying std::ostream
-/// (using response.send()) only after data is flushed for the first time. This is needed in HTTP
-/// servers to change some HTTP headers (e.g. response code) before any data is sent to the client
-/// (headers can't be changed after response.send() is called).
-///
-/// In short, it allows delaying the call to response.send().
-///
-/// Additionally, supports HTTP response compression (in this case corresponding Content-Encoding
-/// header will be set).
+/// Postpone sending HTTP header until first data is flushed. This is needed in HTTP servers
+///  to change some HTTP headers (e.g. response code) before any data is sent to the client.
 ///
 /// Also this class write and flush special X-ClickHouse-Progress HTTP headers
 ///  if no data was sent at the time of progress notification.
 /// This allows to implement progress bar in HTTP clients.
-class WriteBufferFromHTTPServerResponse final : public BufferWithOwnMemory<WriteBuffer>
+class WriteBufferFromHTTPServerResponse final : public HTTPWriteBuffer
 {
 public:
     WriteBufferFromHTTPServerResponse(
         HTTPServerResponse & response_,
         bool is_http_method_head_,
-        size_t keep_alive_timeout_,
-        bool compress_ = false,        /// If true - set Content-Encoding header and compress the result.
-        CompressionMethod compression_method_ = CompressionMethod::None);
+        const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
     ~WriteBufferFromHTTPServerResponse() override;
 
     /// Writes progress in repeating HTTP headers.
-    void onProgress(const Progress & progress, Int64 peak_memory_usage_);
-
-    /// Turn compression on or off.
-    /// The setting has any effect only if HTTP headers haven't been sent yet.
-    void setCompression(bool enable_compression)
-    {
-        compress = enable_compression;
-    }
-
-    /// Set compression level if the compression is turned on.
-    /// The setting has any effect only if HTTP headers haven't been sent yet.
-    void setCompressionLevel(int level)
-    {
-        compression_level = level;
-    }
+    void onProgress(const Progress & progress);
 
     /// Turn CORS on or off.
     /// The setting has any effect only if HTTP headers haven't been sent yet.
@@ -75,7 +52,13 @@ public:
         send_progress_interval_ms = send_progress_interval_ms_;
     }
 
-    void setExceptionCode(int exception_code_) { exception_code = exception_code_; }
+    /// Content-Encoding header will be set on first data package
+    void setCompressionMethodHeader(const CompressionMethod & compression_method_)
+    {
+        compression_method = compression_method_;
+    }
+
+    void setExceptionCode(int exception_code_);
 
 private:
     /// Send at least HTTP headers if no data has been sent yet.
@@ -89,13 +72,13 @@ private:
     ///  but not finish them with \r\n, allowing to send more headers subsequently.
     void startSendHeaders();
 
-    //  Used for write the header X-ClickHouse-Progress / X-ClickHouse-Summary
+    /// Used to write the header X-ClickHouse-Progress / X-ClickHouse-Summary
     void writeHeaderProgressImpl(const char * header_name);
-    // Used for write the header X-ClickHouse-Progress
+    /// Used to write the header X-ClickHouse-Progress
     void writeHeaderProgress();
-    // Used for write the header X-ClickHouse-Summary
+    /// Used to write the header X-ClickHouse-Summary
     void writeHeaderSummary();
-    // Use to write the header X-ClickHouse-Exception-Code even when progress has been sent
+    /// Use to write the header X-ClickHouse-Exception-Code even when progress has been sent
     void writeExceptionCode();
 
     /// This method finish headers with \r\n, allowing to start to send body.
@@ -107,15 +90,7 @@ private:
 
     bool is_http_method_head;
     bool add_cors_header = false;
-    size_t keep_alive_timeout = 0;
-    bool compress = false;
-    CompressionMethod compression_method;
-    int compression_level = 1;
 
-    std::shared_ptr<std::ostream> response_body_ostr;
-    std::shared_ptr<std::ostream> response_header_ostr;
-
-    std::unique_ptr<WriteBuffer> out;
     bool initialized = false;
 
     bool headers_started_sending = false;
@@ -126,9 +101,9 @@ private:
     size_t send_progress_interval_ms = 100;
     Stopwatch progress_watch;
 
-    int exception_code = 0;
+    CompressionMethod compression_method = CompressionMethod::None;
 
-    Int64 peak_memory_usage = 0;
+    int exception_code = 0;
 
     std::mutex mutex;    /// progress callback could be called from different threads.
 };

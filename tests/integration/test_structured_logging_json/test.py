@@ -1,7 +1,9 @@
-import pytest
-from helpers.cluster import ClickHouseCluster
 import json
 from xml.etree import ElementTree as ET
+
+import pytest
+
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node_all_keys = cluster.add_instance(
@@ -29,6 +31,30 @@ def is_json(log_json):
         json.loads(log_json)
     except ValueError as e:
         return False
+    return True
+
+
+def validate_log_level(config, logs):
+    root = ET.fromstring(config)
+    key = root.findtext(".//names/level") or "level"
+
+    valid_level_values = {
+        "Fatal",
+        "Critical",
+        "Error",
+        "Warning",
+        "Notice",
+        "Information",
+        "Debug",
+        "Trace",
+        "Test",
+    }
+
+    length = min(10, len(logs))
+    for i in range(0, length):
+        json_log = json.loads(logs[i])
+        if json_log[key] not in valid_level_values:
+            return False
     return True
 
 
@@ -78,8 +104,10 @@ def validate_logs(logs):
 def valiade_everything(config, node, config_type):
     node.query("SELECT 1")
     logs = node.grep_in_log("").split("\n")
-    return validate_logs(logs) and validate_log_config_relation(
-        config, logs, config_type
+    return (
+        validate_logs(logs)
+        and validate_log_config_relation(config, logs, config_type)
+        and validate_log_level(config, logs)
     )
 
 

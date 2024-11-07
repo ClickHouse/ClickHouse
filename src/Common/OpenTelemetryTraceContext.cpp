@@ -2,6 +2,7 @@
 
 #include <random>
 #include <base/getThreadId.h>
+#include <Common/thread_local_rng.h>
 #include <Common/Exception.h>
 #include <base/hex.h>
 #include <Core/Settings.h>
@@ -13,6 +14,12 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsFloat opentelemetry_start_trace_probability;
+}
+
 namespace OpenTelemetry
 {
 
@@ -328,7 +335,7 @@ TracingContextHolder::TracingContextHolder(
                 return;
 
             // Start the trace with some configurable probability.
-            std::bernoulli_distribution should_start_trace{settings_ptr->opentelemetry_start_trace_probability};
+            std::bernoulli_distribution should_start_trace{(*settings_ptr)[Setting::opentelemetry_start_trace_probability]};
             if (!should_start_trace(thread_local_rng))
                 /// skip tracing context initialization on current thread
                 return;
@@ -385,7 +392,7 @@ TracingContextHolder::~TracingContextHolder()
                 /// it's helpful to record the thread_id so that we know the thread switching from the span log
                 this->root_span.addAttribute("clickhouse.thread_id", getThreadId());
             }
-            catch (...)
+            catch (...) // NOLINT(bugprone-empty-catch)
             {
                 /// It's acceptable that the attribute is not recorded in case of any exception,
                 /// so the exception is ignored to try to log the span.

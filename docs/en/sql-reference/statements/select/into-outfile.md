@@ -12,7 +12,7 @@ Compressed files are supported. Compression type is detected by the extension of
 **Syntax**
 
 ```sql
-SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND] [COMPRESSION type [LEVEL level]]
+SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMPRESSION type [LEVEL level]]
 ```
 
 `file_name` and `type` are string literals. Supported compression types are: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
@@ -26,6 +26,7 @@ SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND] [COMPRESSION typ
 - The default [output format](../../../interfaces/formats.md) is `TabSeparated` (like in the command-line client batch mode). Use [FORMAT](format.md) clause to change it.
 - If `AND STDOUT` is mentioned in the query then the output that is written to the file is also displayed on standard output. If used with compression, the plaintext is displayed on standard output.
 - If `APPEND` is mentioned in the query then the output is appended to an existing file. If compression is used, append cannot be used.
+- When writing to a file that already exists, `APPEND` or `TRUNCATE` must be used.
 
 **Example**
 

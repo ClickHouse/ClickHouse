@@ -13,7 +13,6 @@ BUILD_DIR=${BUILD_DIR:=./build}
 inc="-I. \
 -I./contrib/libdivide \
 -I./contrib/re2 \
--I${BUILD_DIR}/contrib/re2_st \
 -I./contrib/libfarmhash \
 -I./contrib/libmetrohash/src \
 -I./contrib/double-conversion \
@@ -51,7 +50,7 @@ inc="-I. \
 -I./base/daemon \
 -I./base/consistent-hashing \
 -I./contrib/libhdfs3/include \
--I./contrib/base64/include \
+-I./contrib/aklomp-base64/include \
 -I./contrib/protobuf/src \
 -I./contrib/cppkafka/include \
 -I./contrib/librdkafka-cmake/include \

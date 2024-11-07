@@ -8,61 +8,67 @@ on: # yamllint disable-line rule:truthy
   schedule:
     - cron: '0 */6 * * *'
   workflow_dispatch:
-  workflow_call:
+
 jobs:
-  KeeperJepsenRelease:
-    runs-on: [self-hosted, style-checker]
+  RunConfig:
+    runs-on: [self-hosted, style-checker-aarch64]
+    outputs:
+      data: ${{ steps.runconfig.outputs.CI_DATA }}
     steps:
-      - name: Set envs
-        run: |
-          cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/keeper_jepsen
-          REPO_COPY=${{runner.temp}}/keeper_jepsen/ClickHouse
-          EOF
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
         with:
-          clear-repository: true
-          fetch-depth: 0
-      - name: Jepsen Test
+          clear-repository: true # to ensure correct digests
+          fetch-depth: 0 # to get version
+          filter: tree:0
+      - name: Debug Info
+        uses: ./.github/actions/debug
+      - name: PrepareRunConfig
+        id: runconfig
         run: |
-          sudo rm -fr "$TEMP_PATH"
-          mkdir -p "$TEMP_PATH"
-          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci"
-          python3 jepsen_check.py keeper
-      - name: Cleanup
-        if: always()
+          echo "::group::configure CI run"
+          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --configure --workflow "$GITHUB_WORKFLOW" --outfile ${{ runner.temp }}/ci_run_data.json
+          echo "::endgroup::"
+
+          echo "::group::CI run configure results"
+          python3 -m json.tool ${{ runner.temp }}/ci_run_data.json
+          echo "::endgroup::"
+          {
+            echo 'CI_DATA<<EOF'
+            cat  ${{ runner.temp }}/ci_run_data.json
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+  KeeperJepsenRelease:
+    needs: [RunConfig]
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: ClickHouse Keeper Jepsen
+      runner_type: style-checker-aarch64
+      data: ${{ needs.RunConfig.outputs.data }}
+      run_command: |
+        python3 jepsen_check.py keeper
+  ServerJepsenRelease:
+    if: false  # skip for server
+    needs: [RunConfig]
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: ClickHouse Server Jepsen
+      runner_type: style-checker-aarch64
+      data: ${{ needs.RunConfig.outputs.data }}
+      run_command: |
+        python3 jepsen_check.py server
+  CheckWorkflow:
+    if: ${{ !cancelled() }}
+    needs: [RunConfig, ServerJepsenRelease, KeeperJepsenRelease]
+    runs-on: [self-hosted, style-checker-aarch64]
+    steps:
+      - name: Check out repository code
+        uses: ClickHouse/checkout@v1
+      - name: Check Workflow results
+        if: ${{ !cancelled() }}
         run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
-          sudo rm -fr "$TEMP_PATH"
-  # ServerJepsenRelease:
-  #   runs-on: [self-hosted, style-checker]
-  #   if: ${{ always() }}
-  #   needs: [KeeperJepsenRelease]
-  #   steps:
-  #     - name: Set envs
-  #       run: |
-  #         cat >> "$GITHUB_ENV" << 'EOF'
-  #         TEMP_PATH=${{runner.temp}}/server_jepsen
-  #         REPO_COPY=${{runner.temp}}/server_jepsen/ClickHouse
-  #         EOF
-  #     - name: Check out repository code
-  #       uses: ClickHouse/checkout@v1
-  #       with:
-  #         clear-repository: true
-  #         fetch-depth: 0
-  #     - name: Jepsen Test
-  #       run: |
-  #         sudo rm -fr "$TEMP_PATH"
-  #         mkdir -p "$TEMP_PATH"
-  #         cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-  #         cd "$REPO_COPY/tests/ci"
-  #         python3 jepsen_check.py server
-  #     - name: Cleanup
-  #       if: always()
-  #       run: |
-  #         docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-  #         docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
-  #         sudo rm -fr "$TEMP_PATH"
+          export WORKFLOW_RESULT_FILE="/tmp/workflow_results.json"
+          cat > "$WORKFLOW_RESULT_FILE" << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          python3 ./tests/ci/ci_buddy.py --check-wf-status

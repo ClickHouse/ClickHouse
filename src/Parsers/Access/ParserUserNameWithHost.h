@@ -5,6 +5,7 @@
 
 namespace DB
 {
+
 /** Parses a user name.
   * It can be a simple string or identifier or something like `name@host`.
   */

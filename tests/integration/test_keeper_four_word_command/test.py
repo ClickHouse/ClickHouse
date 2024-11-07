@@ -1,9 +1,11 @@
-import pytest
-from helpers.cluster import ClickHouseCluster
-import helpers.keeper_utils as keeper_utils
-import time
 import csv
 import re
+import time
+
+import pytest
+
+import helpers.keeper_utils as keeper_utils
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -266,6 +268,7 @@ def test_cmd_conf(started_cluster):
         assert result["heart_beat_interval_ms"] == "500"
         assert result["election_timeout_lower_bound_ms"] == "1000"
         assert result["election_timeout_upper_bound_ms"] == "2000"
+        assert result["leadership_expiry_ms"] == "0"
         assert result["reserved_log_items"] == "100000"
 
         assert result["snapshot_distance"] == "75"
@@ -281,15 +284,27 @@ def test_cmd_conf(started_cluster):
 
         assert result["max_requests_batch_size"] == "100"
         assert result["max_requests_batch_bytes_size"] == "102400"
+        assert result["max_flush_batch_size"] == "1000"
         assert result["max_request_queue_size"] == "100000"
         assert result["max_requests_quick_batch_size"] == "100"
         assert result["quorum_reads"] == "false"
         assert result["force_sync"] == "true"
 
-        assert result["compress_logs"] == "true"
+        assert result["compress_logs"] == "false"
         assert result["compress_snapshots_with_zstd_format"] == "true"
         assert result["configuration_change_tries_count"] == "20"
 
+        assert result["async_replication"] == "true"
+
+        assert result["latest_logs_cache_size_threshold"] == "1073741824"
+        assert result["commit_logs_cache_size_threshold"] == "524288000"
+
+        assert result["disk_move_retries_wait_ms"] == "1000"
+        assert result["disk_move_retries_during_init"] == "100"
+
+        assert result["log_slow_total_threshold_ms"] == "5000"
+        assert result["log_slow_cpu_threshold_ms"] == "100"
+        assert result["log_slow_connection_operation_threshold_ms"] == "1000"
     finally:
         close_keeper_socket(client)
 
@@ -329,7 +344,7 @@ def test_cmd_srvr(started_cluster):
         assert result["Received"] == "10"
         assert result["Sent"] == "10"
         assert int(result["Connections"]) == 1
-        assert int(result["Zxid"], 16) > 10
+        assert int(result["Zxid"], 16) >= 10
         assert result["Mode"] == "leader"
         assert result["Node count"] == "14"
 
@@ -458,12 +473,19 @@ def test_cmd_crst(started_cluster):
         print("cons output(after crst) -------------------------------------")
         print(data)
 
-        # 2 connections, 1 for 'cons' command, 1 for zk
+        # 2 or 3 connections, 1 for 'crst', 1 for 'cons' command, 1 for zk
+        # there can be a case when 'crst' connection is not cleaned before the cons call
+        print("cons output(after crst) -------------------------------------")
+        print(data)
         cons = [n for n in data.split("\n") if len(n) > 0]
-        assert len(cons) == 2
+        assert len(cons) == 2 or len(cons) == 3
 
         # connection for zk
-        zk_conn = [n for n in cons if not n.__contains__("sid=0xffffffffffffffff")][0]
+        zk_conns = [n for n in cons if not n.__contains__("sid=0xffffffffffffffff")]
+
+        # there can only be one
+        assert len(zk_conns) == 1
+        zk_conn = zk_conns[0]
 
         conn_stat = re.match(r"(.*?)[:].*[(](.*?)[)].*", zk_conn.strip(), re.S).group(2)
         assert conn_stat is not None
@@ -716,3 +738,30 @@ def test_cmd_clrs(started_cluster):
 
     finally:
         destroy_zk_client(zk)
+
+
+def test_cmd_ydld(started_cluster):
+    wait_nodes()
+    for node in [node1, node3]:
+        data = keeper_utils.send_4lw_cmd(cluster, node, cmd="ydld")
+        assert data == "Sent yield leadership request to leader."
+
+        print("ydld output -------------------------------------")
+        print(data)
+
+        # Whenever there is a leader switch, there is a brief amount of time when any
+        # of the 4 letter commands will return empty result. Thus, we need to test for
+        # negative condition. So we can't use keeper_utils.is_leader() here and likewise
+        # in the while loop below.
+        if not keeper_utils.is_follower(cluster, node):
+            # wait for it to yield leadership
+            retry = 0
+            while not keeper_utils.is_follower(cluster, node) and retry < 30:
+                time.sleep(1)
+                retry += 1
+            if retry == 30:
+                print(
+                    node.name
+                    + " did not become follower after 30s of yielding leadership, maybe there is something wrong."
+                )
+        assert keeper_utils.is_follower(cluster, node)

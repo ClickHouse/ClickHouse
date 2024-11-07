@@ -62,7 +62,7 @@ AccessEntityPtr deserializeAccessEntityImpl(const String & definition)
     const char * end = begin + definition.size();
     while (pos < end)
     {
-        queries.emplace_back(parseQueryAndMovePosition(parser, pos, end, "", true, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH));
+        queries.emplace_back(parseQueryAndMovePosition(parser, pos, end, "", true, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS));
         while (isWhitespaceASCII(*pos) || *pos == ';')
             ++pos;
     }
@@ -82,7 +82,7 @@ AccessEntityPtr deserializeAccessEntityImpl(const String & definition)
             if (res)
                 throw Exception(ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION, "Two access entities attached in the same file");
             res = user = std::make_unique<User>();
-            InterpreterCreateUserQuery::updateUserFromQuery(*user, *create_user_query, /* allow_no_password = */ true, /* allow_plaintext_password = */ true);
+            InterpreterCreateUserQuery::updateUserFromQuery(*user, *create_user_query, /* allow_no_password = */ true, /* allow_plaintext_password = */ true, /* max_number_of_authentication_methods = zero is unlimited*/ 0);
         }
         else if (auto * create_role_query = query->as<ASTCreateRoleQuery>())
         {
@@ -144,8 +144,7 @@ AccessEntityPtr deserializeAccessEntity(const String & definition, const String 
     catch (Exception & e)
     {
         e.addMessage("Could not parse " + file_path);
-        e.rethrow();
-        UNREACHABLE();
+        throw;
     }
 }
 

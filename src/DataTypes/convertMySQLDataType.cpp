@@ -10,13 +10,15 @@
 #include "DataTypeDate32.h"
 #include "DataTypeDateTime.h"
 #include "DataTypeDateTime64.h"
-#include "DataTypeEnum.h"
 #include "DataTypesDecimal.h"
 #include "DataTypeFixedString.h"
 #include "DataTypeNullable.h"
 #include "DataTypeString.h"
 #include "DataTypesNumber.h"
+#include "DataTypeCustomGeo.h"
+#include "DataTypeFactory.h"
 #include "IDataType.h"
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -117,6 +119,10 @@ DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support,
             res = std::make_shared<DataTypeDecimal<Decimal128>>(precision, scale);
         else if (precision <= DecimalUtils::max_precision<Decimal256>)
             res = std::make_shared<DataTypeDecimal<Decimal256>>(precision, scale);
+    }
+    else if (type_name == "point")
+    {
+        res = DataTypeFactory::instance().get("Point");
     }
 
     /// Also String is fallback for all unknown types.

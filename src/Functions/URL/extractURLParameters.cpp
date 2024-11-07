@@ -1,12 +1,14 @@
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsStringArray.h>
+#include <Functions/FunctionTokens.h>
+
 
 namespace DB
 {
-namespace ErrorCodes
+
+namespace
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-}
+
+using Pos = const char *;
 
 class ExtractURLParametersImpl
 {
@@ -17,31 +19,24 @@ private:
 
 public:
     static constexpr auto name = "extractURLParameters";
-    static String getName() { return name; }
 
     static bool isVariadic() { return false; }
     static size_t getNumberOfArguments() { return 1; }
 
-    static void checkArguments(const DataTypes & arguments)
+    static ColumnNumbers getArgumentsThatAreAlwaysConstant() { return {}; }
+
+    static void checkArguments(const IFunction & func, const ColumnsWithTypeAndName & arguments)
     {
-        if (!isString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}. "
-            "Must be String.", arguments[0]->getName(), getName());
+        FunctionArgumentDescriptors mandatory_args{
+            {"URL", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
+        };
+
+        validateFunctionArguments(func, arguments, mandatory_args);
     }
 
-    void init(const ColumnsWithTypeAndName & /*arguments*/) {}
+    void init(const ColumnsWithTypeAndName & /*arguments*/, bool /*max_substrings_includes_remaining_string*/) {}
 
-    /// Returns the position of the argument that is the column of rows
-    static size_t getStringsArgumentPosition()
-    {
-        return 0;
-    }
-
-    /// Returns the position of the possible max_substrings argument. std::nullopt means max_substrings argument is disabled in current function.
-    static std::optional<size_t> getMaxSubstringsArgumentPosition()
-    {
-        return std::nullopt;
-    }
+    static constexpr auto strings_argument_position = 0uz;
 
     /// Called for each next string.
     void set(Pos pos_, Pos end_)
@@ -100,8 +95,9 @@ public:
     }
 };
 
-struct NameExtractURLParameters { static constexpr auto name = "extractURLParameters"; };
 using FunctionExtractURLParameters = FunctionTokens<ExtractURLParametersImpl>;
+
+}
 
 REGISTER_FUNCTION(ExtractURLParameters)
 {

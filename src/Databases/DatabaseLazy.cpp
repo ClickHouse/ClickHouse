@@ -1,5 +1,15 @@
-#include <Core/Settings.h>
 #include <Databases/DatabaseLazy.h>
+
+#include <base/sort.h>
+#include <base/isSharedPtrUnique.h>
+#include <iomanip>
+#include <filesystem>
+#include <Common/CurrentMetrics.h>
+#include <Common/escapeForFileName.h>
+#include <Common/logger_useful.h>
+#include <Common/scope_guard_safe.h>
+#include <Core/Settings.h>
+#include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabasesCommon.h>
 #include <Interpreters/Context.h>
@@ -7,16 +17,18 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Storages/IStorage.h>
-#include <Common/escapeForFileName.h>
 
-#include <Common/logger_useful.h>
-#include <Common/scope_guard_safe.h>
-#include <base/sort.h>
-#include <iomanip>
-#include <filesystem>
 
 namespace fs = std::filesystem;
+
+
+namespace CurrentMetrics
+{
+    extern const Metric AttachedTable;
+}
+
 
 namespace DB
 {
@@ -27,11 +39,12 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int UNSUPPORTED_METHOD;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 
 DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, time_t expiration_time_, ContextPtr context_)
-    : DatabaseOnDisk(name_, metadata_path_, "data/" + escapeForFileName(name_) + "/", "DatabaseLazy (" + name_ + ")", context_)
+    : DatabaseOnDisk(name_, metadata_path_, std::filesystem::path("data") / escapeForFileName(name_) / "", "DatabaseLazy (" + name_ + ")", context_)
     , expiration_time(expiration_time_)
 {
 }
@@ -39,7 +52,7 @@ DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, 
 
 void DatabaseLazy::loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel /*mode*/)
 {
-    iterateMetadataFiles(local_context, [this, &local_context](const String & file_name)
+    iterateMetadataFiles([this, &local_context](const String & file_name)
     {
         const std::string table_name = unescapeForFileName(file_name.substr(0, file_name.size() - 4));
 
@@ -142,7 +155,7 @@ StoragePtr DatabaseLazy::tryGetTable(const String & table_name) const
     return loadTable(table_name);
 }
 
-DatabaseTablesIteratorPtr DatabaseLazy::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name) const
+DatabaseTablesIteratorPtr DatabaseLazy::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
 {
     std::lock_guard lock(mutex);
     Strings filtered_tables;
@@ -174,6 +187,15 @@ void DatabaseLazy::attachTable(ContextPtr /* context_ */, const String & table_n
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists.", backQuote(database_name), backQuote(table_name));
 
     it->second.expiration_iterator = cache_expiration_queue.emplace(cache_expiration_queue.end(), current_time, table_name);
+
+    LOG_DEBUG(log, "Add info for detached table {} to snapshot.", backQuote(table_name));
+    if (snapshot_detached_tables.contains(table_name))
+    {
+        LOG_DEBUG(log, "Clean info about detached table {} from snapshot.", backQuote(table_name));
+        snapshot_detached_tables.erase(table_name);
+    }
+
+    CurrentMetrics::add(CurrentMetrics::AttachedTable);
 }
 
 StoragePtr DatabaseLazy::detachTable(ContextPtr /* context */, const String & table_name)
@@ -189,6 +211,17 @@ StoragePtr DatabaseLazy::detachTable(ContextPtr /* context */, const String & ta
         if (it->second.expiration_iterator != cache_expiration_queue.end())
             cache_expiration_queue.erase(it->second.expiration_iterator);
         tables_cache.erase(it);
+        LOG_DEBUG(log, "Add info for detached table {} to snapshot.", backQuote(table_name));
+        snapshot_detached_tables.emplace(
+            table_name,
+            SnapshotDetachedTable{
+                .database = res->getStorageID().database_name,
+                .table = res->getStorageID().table_name,
+                .uuid = res->getStorageID().uuid,
+                .metadata_path = getObjectMetadataPath(table_name),
+                .is_permanently = false});
+
+        CurrentMetrics::sub(CurrentMetrics::AttachedTable);
     }
     return res;
 }
@@ -241,7 +274,7 @@ StoragePtr DatabaseLazy::loadTable(const String & table_name) const
         {
             const auto & ast_create = ast->as<const ASTCreateQuery &>();
             String table_data_path_relative = getTableDataPath(ast_create);
-            table = createTableFromAST(ast_create, getDatabaseName(), table_data_path_relative, context_copy, false).second;
+            table = createTableFromAST(ast_create, getDatabaseName(), table_data_path_relative, context_copy, LoadingStrictnessLevel::ATTACH).second;
         }
 
         if (!ast || !endsWith(table->getName(), "Log"))
@@ -289,7 +322,7 @@ try
         String table_name = expired_tables.front().table_name;
         auto it = tables_cache.find(table_name);
 
-        if (!it->second.table || it->second.table.unique())
+        if (!it->second.table || isSharedPtrUnique(it->second.table))
         {
             LOG_DEBUG(log, "Drop table {} from cache.", backQuote(it->first));
             it->second.table.reset();
@@ -345,4 +378,26 @@ const StoragePtr & DatabaseLazyIterator::table() const
     return current_storage;
 }
 
+void registerDatabaseLazy(DatabaseFactory & factory)
+{
+    auto create_fn = [](const DatabaseFactory::Arguments & args)
+    {
+        auto * engine_define = args.create_query.storage;
+        const ASTFunction * engine = engine_define->engine;
+
+        if (!engine->arguments || engine->arguments->children.size() != 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Lazy database require cache_expiration_time_seconds argument");
+
+        const auto & arguments = engine->arguments->children;
+
+        const auto cache_expiration_time_seconds = safeGetLiteralValue<UInt64>(arguments[0], "Lazy");
+
+        return make_shared<DatabaseLazy>(
+            args.database_name,
+            args.metadata_path,
+            cache_expiration_time_seconds,
+            args.context);
+    };
+    factory.registerDatabase("Lazy", create_fn, {.supports_arguments = true});
+}
 }

@@ -6,62 +6,35 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 class CommandMkDir final : public ICommand
 {
 public:
     CommandMkDir()
     {
         command_name = "mkdir";
-        command_option_description.emplace(createOptionsDescription("Allowed options", getTerminalWidth()));
-        description = "Create directory or directories recursively";
-        usage = "mkdir [OPTION]... <PATH>";
-        command_option_description->add_options()
-            ("recursive", "recursively create directories")
-            ;
+        description = "Creates a directory";
+        options_description.add_options()("parents", "recursively create directories")(
+            "path", po::value<String>(), "the path on which directory should be created (mandatory, positional)");
+        positional_options_description.add("path", 1);
     }
 
-    void processOptions(
-        Poco::Util::LayeredConfiguration & config,
-        po::variables_map & options) const override
+    void executeImpl(const CommandLineOptions & options, DisksClient & client) override
     {
-        if (options.count("recursive"))
-            config.setBool("recursive", true);
-    }
+        bool recursive = options.count("parents");
+        auto disk = client.getCurrentDiskWithPath();
 
-    void execute(
-        const std::vector<String> & command_arguments,
-        DB::ContextMutablePtr & global_context,
-        Poco::Util::LayeredConfiguration & config) override
-    {
-        if (command_arguments.size() != 1)
-        {
-            printHelpMessage();
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Bad Arguments");
-        }
-
-        String disk_name = config.getString("disk", "default");
-
-        const String & path = command_arguments[0];
-
-        DiskPtr disk = global_context->getDisk(disk_name);
-
-        String relative_path = validatePathAndGetAsRelative(path);
-        bool recursive = config.getBool("recursive", false);
+        String path = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path"));
 
         if (recursive)
-            disk->createDirectories(relative_path);
+            disk.getDisk()->createDirectories(path);
         else
-            disk->createDirectory(relative_path);
+            disk.getDisk()->createDirectory(path);
     }
 };
+
+CommandPtr makeCommandMkDir()
+{
+    return std::make_shared<DB::CommandMkDir>();
 }
 
-std::unique_ptr <DB::ICommand> makeCommandMkDir()
-{
-    return std::make_unique<DB::CommandMkDir>();
 }

@@ -1,8 +1,8 @@
 #pragma once
 
+#include <unordered_map>
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <base/types.h>
-
 
 namespace DB
 {
@@ -17,19 +17,20 @@ private:
     IServer & server;
 
     int status;
-    String content_type;
+    /// Overrides for response headers.
+    std::unordered_map<String, String> http_response_headers_override;
     String response_expression;
 
 public:
     StaticRequestHandler(
         IServer & server,
         const String & expression,
-        int status_ = 200,
-        const String & content_type_ = "text/html; charset=UTF-8");
+        const std::unordered_map<String, String> & http_response_headers_override_,
+        int status_ = 200);
 
     void writeResponse(WriteBuffer & out);
 
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 };
 
 }

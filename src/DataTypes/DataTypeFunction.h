@@ -24,7 +24,6 @@ public:
 
     std::string doGetName() const override;
     const char * getFamilyName() const override { return "Function"; }
-    String getSQLCompatibleName() const override { return "TEXT"; }
     TypeIndex getTypeId() const override { return TypeIndex::Function; }
 
     const DataTypes & getArgumentTypes() const
@@ -38,6 +37,8 @@ public:
     }
 
     bool equals(const IDataType & rhs) const override;
+
+    bool supportsSparseSerialization() const override { return false; }
 };
 
 }

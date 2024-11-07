@@ -32,6 +32,7 @@ public:
         const NamesAndTypesList & columns,
         const StorageSnapshotPtr & storage_snapshot,
         const MarkRanges & mark_ranges,
+        const VirtualFields & virtual_fields,
         UncompressedCache * uncompressed_cache,
         MarkCache * mark_cache,
         const AlterConversionsPtr & alter_conversions,
@@ -39,15 +40,9 @@ public:
         const ValueSizeMap & avg_value_size_hints,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback) const override;
 
-    MergeTreeWriterPtr getWriter(
-        const NamesAndTypesList & columns_list,
-        const StorageMetadataPtr & metadata_snapshot,
-        const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-        const CompressionCodecPtr & default_codec_,
-        const MergeTreeWriterSettings & writer_settings,
-        const MergeTreeIndexGranularity & computed_index_granularity) override;
-
     bool isStoredOnDisk() const override { return true; }
+
+    bool isStoredOnReadonlyDisk() const override;
 
     bool isStoredOnRemoteDisk() const override;
 
@@ -57,7 +52,9 @@ public:
 
     std::optional<time_t> getColumnModificationTime(const String & column_name) const override;
 
-    String getFileNameForColumn(const NameAndTypePair & /* column */) const override { return DATA_FILE_NAME; }
+    std::optional<String> getFileNameForColumn(const NameAndTypePair & /* column */) const override { return DATA_FILE_NAME; }
+
+    void loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const override;
 
     ~MergeTreeDataPartCompact() override;
 
@@ -66,14 +63,14 @@ protected:
          MergeTreeIndexGranularity & index_granularity_, const MergeTreeIndexGranularityInfo & index_granularity_info_,
          size_t columns_count, const IDataPartStorage & data_part_storage_);
 
+     void doCheckConsistency(bool require_part_metadata) const override;
+
 private:
-    void checkConsistency(bool require_part_metadata) const override;
+     /// Loads marks index granularity into memory
+     void loadIndexGranularity() override;
 
-    /// Loads marks index granularity into memory
-    void loadIndexGranularity() override;
-
-    /// Compact parts doesn't support per column size, only total size
-    void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
+     /// Compact parts don't support per column size, only total size
+     void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
 };
 
 }

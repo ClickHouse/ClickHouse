@@ -1,7 +1,9 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/registerInterpreters.h>
 #include "Processors/Executors/PullingPipelineExecutor.h"
 
+#include <Databases/registerDatabases.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -12,44 +14,46 @@
 
 using namespace DB;
 
-extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
-try
+
+ContextMutablePtr context;
+
+extern "C" int LLVMFuzzerInitialize(int *, char ***)
 {
-    std::string input = std::string(reinterpret_cast<const char*>(data), size);
-
-    static SharedContextHolder shared_context;
-    static ContextMutablePtr context;
-
-    auto initialize = [&]() mutable
-    {
-        shared_context = Context::createShared();
-        context = Context::createGlobal(shared_context.get());
-        context->makeGlobalContext();
-        context->setApplicationType(Context::ApplicationType::LOCAL);
-
-        registerFunctions();
-        registerAggregateFunctions();
-        registerTableFunctions();
-        registerStorages();
-        registerDictionaries();
-        registerDisks(/* global_skip_access_check= */ true);
-        registerFormats();
-
+    if (context)
         return true;
-    };
 
-    static bool initialized = initialize();
-    (void) initialized;
+    SharedContextHolder shared_context = Context::createShared();
+    context = Context::createGlobal(shared_context.get());
+    context->makeGlobalContext();
 
-    auto io = DB::executeQuery(input, context, true, QueryProcessingStage::Complete);
-
-    PullingPipelineExecutor executor(io.pipeline);
-    Block res;
-    while (!res && executor.pull(res));
+    registerInterpreters();
+    registerFunctions();
+    registerAggregateFunctions();
+    registerTableFunctions(false);
+    registerDatabases();
+    registerStorages(false);
+    registerDictionaries(false);
+    registerDisks(/* global_skip_access_check= */ true);
+    registerFormats();
 
     return 0;
 }
-catch (...)
+
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
 {
-    return 1;
+    try
+    {
+        std::string input = std::string(reinterpret_cast<const char*>(data), size);
+
+        auto io = DB::executeQuery(input, context, QueryFlags{ .internal = true }, QueryProcessingStage::Complete).second;
+
+        PullingPipelineExecutor executor(io.pipeline);
+        Block res;
+        while (!res && executor.pull(res));
+    }
+    catch (...)
+    {
+    }
+
+    return 0;
 }

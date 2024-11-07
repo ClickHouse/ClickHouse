@@ -37,7 +37,7 @@ void MergeTreeIndexGranuleHypothesis::deserializeBinary(ReadBuffer & istr, Merge
     Field field_met;
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt8>());
     size_type->getDefaultSerialization()->deserializeBinary(field_met, istr, {});
-    met = field_met.get<UInt8>();
+    met = field_met.safeGet<UInt8>();
     is_empty = false;
 }
 
@@ -73,13 +73,13 @@ MergeTreeIndexGranulePtr MergeTreeIndexHypothesis::createIndexGranule() const
     return std::make_shared<MergeTreeIndexGranuleHypothesis>(index.name);
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexHypothesis::createIndexAggregator() const
+MergeTreeIndexAggregatorPtr MergeTreeIndexHypothesis::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
 {
     return std::make_shared<MergeTreeIndexAggregatorHypothesis>(index.name, index.sample_block.getNames().front());
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexHypothesis::createIndexCondition(
-    const SelectQueryInfo &, ContextPtr) const
+    const ActionsDAG *, ContextPtr) const
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Not supported");
 }
@@ -89,11 +89,6 @@ MergeTreeIndexMergedConditionPtr MergeTreeIndexHypothesis::createIndexMergedCond
 {
     return std::make_shared<MergeTreeIndexhypothesisMergedCondition>(
         query_info, storage_metadata->getConstraints(), index.granularity);
-}
-
-bool MergeTreeIndexHypothesis::mayBenefitFromIndexForIn(const ASTPtr &) const
-{
-    return false;
 }
 
 MergeTreeIndexPtr hypothesisIndexCreator(const IndexDescription & index)

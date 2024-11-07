@@ -78,7 +78,7 @@ uint8_t CompressionCodecLZ4::getMethodByte() const
 
 void CompressionCodecLZ4::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash);
+    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
 }
 
 UInt32 CompressionCodecLZ4::getMaxCompressedDataSize(UInt32 uncompressed_size) const
@@ -96,7 +96,7 @@ void CompressionCodecLZ4::doDecompressData(const char * source, UInt32 source_si
     bool success = LZ4::decompress(source, dest, source_size, uncompressed_size, lz4_stat);
 
     if (!success)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress");
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress LZ4-encoded data");
 }
 
 void registerCodecLZ4(CompressionCodecFactory & factory)
@@ -112,7 +112,7 @@ UInt32 CompressionCodecLZ4HC::doCompressData(const char * source, UInt32 source_
     auto success = LZ4_compress_HC(source, dest, source_size, LZ4_COMPRESSBOUND(source_size), level);
 
     if (!success)
-        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot LZ4_compress_HC");
+        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with LZ4 codec");
 
     return success;
 }

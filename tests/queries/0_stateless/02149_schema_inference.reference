@@ -37,33 +37,33 @@ d	Array(Nullable(Int64))
 JSONCompactEachRow
 c1	Nullable(Float64)					
 c2	Array(Tuple(Nullable(Int64), Nullable(String)))					
-c3	Map(String, Nullable(Int64))					
+c3	Tuple(\n    key Nullable(Int64),\n    key2 Nullable(Int64))					
 c4	Nullable(Bool)					
-42.42	[(1,'String'),(2,'abcd')]	{'key':42,'key2':24}	true
+42.42	[(1,'String'),(2,'abcd')]	(42,24)	true
 c1	Nullable(Int64)					
 c2	Array(Tuple(Nullable(Int64), Nullable(String)))					
-c3	Map(String, Nullable(Int64))					
+c3	Tuple(\n    key1 Nullable(Int64),\n    key2 Nullable(Int64))					
 c4	Nullable(Bool)					
-\N	[(1,'String'),(2,NULL)]	{'key':NULL,'key2':24}	\N
-32	[(2,'String 2'),(3,'hello')]	{'key3':4242,'key4':2424}	true
+\N	[(1,'String'),(2,NULL)]	(NULL,24)	\N
+32	[(2,'String 2'),(3,'hello')]	(4242,2424)	true
 JSONCompactEachRowWithNames
 a	Nullable(Float64)					
 b	Array(Tuple(Nullable(Int64), Nullable(String)))					
-c	Map(String, Nullable(Int64))					
+c	Tuple(\n    key Nullable(Int64),\n    key2 Nullable(Int64))					
 d	Nullable(Bool)					
-42.42	[(1,'String'),(2,'abcd')]	{'key':42,'key2':24}	true
+42.42	[(1,'String'),(2,'abcd')]	(42,24)	true
 JSONEachRow
 a	Nullable(Float64)					
 b	Array(Tuple(Nullable(Int64), Nullable(String)))					
-c	Map(String, Nullable(Int64))					
+c	Tuple(\n    key Nullable(Int64),\n    key2 Nullable(Int64))					
 d	Nullable(Bool)					
-42.42	[(1,'String'),(2,'abcd')]	{'key':42,'key2':24}	true
+42.42	[(1,'String'),(2,'abcd')]	(42,24)	true
 a	Nullable(Int64)					
 b	Array(Tuple(Nullable(Int64), Nullable(String)))					
-c	Map(String, Nullable(Int64))					
+c	Tuple(\n    key1 Nullable(Int64),\n    key2 Nullable(Int64))					
 d	Nullable(Bool)					
-\N	[(1,'String'),(2,NULL)]	{'key':NULL,'key2':24}	\N
-32	[(2,'String 2'),(3,'hello')]	{'key3':4242,'key4':2424}	true
+\N	[(1,'String'),(2,NULL)]	(NULL,24)	\N
+32	[(2,'String 2'),(3,'hello')]	(4242,2424)	true
 a	Nullable(Int64)					
 b	Nullable(String)					
 c	Array(Nullable(Int64))					

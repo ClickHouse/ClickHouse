@@ -49,19 +49,24 @@ public:
 
 protected:
     void runInteractive();
+    void runInteractiveReplxx();
+    void runInteractiveInputStream();
+
     bool processQueryText(const String & text);
-    void executeQuery(const String & query);
 
     void loadCommands(std::vector<Command> && new_commands);
 
     std::vector<String> getCompletions(const String & prefix) const;
 
     String history_file;
+    UInt32 history_max_entries; /// Maximum number of entries in the history file.
+
     LineReader::Suggest suggest;
 
     zkutil::ZooKeeperArgs zk_args;
 
-    bool need_confirmation = false;
+    bool ask_confirmation = true;
+    bool waiting_confirmation = false;
 
     std::vector<String> registered_commands_and_four_letter_words;
 };

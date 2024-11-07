@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <unordered_map>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Macros.h>
 #include <Common/Exception.h>
@@ -36,6 +38,15 @@ Macros::Macros(const Poco::Util::AbstractConfiguration & config, const String & 
     }
 }
 
+Macros::Macros(const Poco::Util::AbstractConfiguration & config, const String & root_key, LoggerPtr log)
+    : Macros(config, root_key, log.get())
+{}
+
+Macros::Macros(std::map<String, String> map)
+{
+    macros = std::move(map);
+}
+
 String Macros::expand(const String & s,
                       MacroExpansionInfo & info) const
 {
@@ -66,10 +77,9 @@ String Macros::expand(const String & s,
             res.append(s, pos, String::npos);
             break;
         }
-        else
-        {
-            res.append(s, pos, begin - pos);
-        }
+
+        res.append(s, pos, begin - pos);
+
 
         ++begin;
         size_t end = s.find('}', begin);
@@ -113,7 +123,7 @@ String Macros::expand(const String & s,
             auto uuid = ServerUUID::get();
             if (UUIDHelpers::Nil == uuid)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Macro {server_uuid} expanded to zero, which means the UUID is not initialized (most likely it's not a server application)");
+                    "Macro {{server_uuid}} expanded to zero, which means the UUID is not initialized (most likely it's not a server application)");
             res += toString(uuid);
             info.expanded_other = true;
         }
@@ -161,15 +171,6 @@ String Macros::getValue(const String & key) const
 String Macros::expand(const String & s) const
 {
     MacroExpansionInfo info;
-    return expand(s, info);
-}
-
-String Macros::expand(const String & s, const StorageID & table_id, bool allow_uuid) const
-{
-    MacroExpansionInfo info;
-    info.table_id = table_id;
-    if (!allow_uuid)
-        info.table_id.uuid = UUIDHelpers::Nil;
     return expand(s, info);
 }
 

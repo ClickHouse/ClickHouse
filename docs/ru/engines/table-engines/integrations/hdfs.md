@@ -97,12 +97,13 @@ CREATE TABLE table_with_question_mark (name String, value UInt32) ENGINE = HDFS(
 CREATE TABLE table_with_asterisk (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/{some,another}_dir/*', 'TSV')
 ```
 
-:::danger "Warning"
-    Если список файлов содержит числовые интервалы с ведущими нулями, используйте конструкцию с фигурными скобочками для каждой цифры или используйте `?`.
+:::danger Предупреждение
+Если список файлов содержит числовые интервалы с ведущими нулями, используйте конструкцию с фигурными скобочками для каждой цифры или используйте `?`.
+:::
 
 **Example**
 
-Создадим таблицу с именами `file000`, `file001`, … , `file999`:
+Создадим таблицу с именами `file000`, `file001`, ... , `file999`:
 
 ``` sql
 CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV')

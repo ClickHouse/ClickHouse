@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/count
-sidebar_position: 1
+sidebar_position: 120
 ---
 
 # count
@@ -28,11 +28,15 @@ In both cases the type of the returned value is [UInt64](../../../sql-reference/
 
 **Details**
 
-ClickHouse supports the `COUNT(DISTINCT ...)` syntax. The behavior of this construction depends on the [count_distinct_implementation](../../../operations/settings/settings.md#settings-count_distinct_implementation) setting. It defines which of the [uniq\*](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq) functions is used to perform the operation. The default is the [uniqExact](../../../sql-reference/aggregate-functions/reference/uniqexact.md#agg_function-uniqexact) function.
+ClickHouse supports the `COUNT(DISTINCT ...)` syntax. The behavior of this construction depends on the [count_distinct_implementation](../../../operations/settings/settings.md#count_distinct_implementation) setting. It defines which of the [uniq\*](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq) functions is used to perform the operation. The default is the [uniqExact](../../../sql-reference/aggregate-functions/reference/uniqexact.md#agg_function-uniqexact) function.
 
 The `SELECT count() FROM table` query is optimized by default using metadata from MergeTree. If you need to use row-level security, disable optimization using the [optimize_trivial_count_query](../../../operations/settings/settings.md#optimize-trivial-count-query) setting.
 
 However `SELECT count(nullable_column) FROM table` query can be optimized by enabling the [optimize_functions_to_subcolumns](../../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [null](../../../sql-reference/data-types/nullable.md#finding-null) subcolumn instead of reading and processing the whole column data. The query `SELECT count(n) FROM table` transforms to `SELECT sum(NOT n.null) FROM table`.
+
+**Improving COUNT(DISTINCT expr) performance**
+
+If your `COUNT(DISTINCT expr)` query is slow, consider adding a [`GROUP BY`](../../../sql-reference/statements/select/group-by.md) clause as this improves parallelization. You can also use a [projection](../../../sql-reference/statements/alter/projection.md) to create an index on the target column used with `COUNT(DISTINCT target_col)`.
 
 **Examples**
 

@@ -13,9 +13,12 @@
 namespace DB::S3
 {
 std::shared_ptr<Aws::Http::HttpClient>
-PocoHTTPClientFactory::CreateHttpClient(const Aws::Client::ClientConfiguration & clientConfiguration) const
+PocoHTTPClientFactory::CreateHttpClient(const Aws::Client::ClientConfiguration & client_configuration) const
 {
-    return std::make_shared<PocoHTTPClient>(static_cast<const PocoHTTPClientConfiguration &>(clientConfiguration));
+    if (client_configuration.userAgent.starts_with("ClickHouse"))
+        return std::make_shared<PocoHTTPClient>(static_cast<const PocoHTTPClientConfiguration &>(client_configuration));
+    /// This client is created inside the AWS SDK with default settings to obtain ECS credentials from localhost.
+    return std::make_shared<PocoHTTPClient>(client_configuration);
 }
 
 std::shared_ptr<Aws::Http::HttpRequest> PocoHTTPClientFactory::CreateHttpRequest(

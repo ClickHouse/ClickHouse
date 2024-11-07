@@ -1,5 +1,6 @@
 <clickhouse>
     <s3>
+        <use_environment_credentials>0</use_environment_credentials>
         <multipart>
             <endpoint>http://minio1:9001/root/data/backups/multipart/</endpoint>
             <!-- We set max_single_part_upload_size and max_single_operation_copy_size to 1 here so
@@ -10,5 +11,14 @@
             <upload_part_size_multiply_parts_count_threshold>3</upload_part_size_multiply_parts_count_threshold>
             <upload_part_size_multiply_factor>2</upload_part_size_multiply_factor>
         </multipart>
+        <limited>
+            <endpoint>http://minio1:9001/root/data/backups/limited/</endpoint>
+            <access_key_id>minio</access_key_id>
+            <secret_access_key>minio123</secret_access_key>
+            <user>superuser1</user>
+            <user>superuser2</user>
+        </limited>
     </s3>
+    <backup_threads>1</backup_threads>
+    <restore_threads>1</restore_threads>
 </clickhouse>

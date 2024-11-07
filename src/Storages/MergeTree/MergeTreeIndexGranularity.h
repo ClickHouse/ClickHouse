@@ -9,7 +9,7 @@ namespace DB
 /// Inside it contains vector of partial sums of rows after mark:
 /// |-----|---|----|----|
 /// |  5  | 8 | 12 | 16 |
-/// If user doesn't specify setting adaptive_index_granularity_bytes for MergeTree* table
+/// If user doesn't specify setting index_granularity_bytes for MergeTree* table
 /// all values in inner vector would have constant stride (default 8192).
 class MergeTreeIndexGranularity
 {
@@ -28,13 +28,16 @@ public:
     /// Return sum of rows between all ranges
     size_t getRowsCountInRanges(const MarkRanges & ranges) const;
 
-    /// Return amount of marks that contains amount of `number_of_rows` starting from
-    /// `from_mark` and possible some offset_in_rows from `from_mark`
+    /// Return number of marks, starting from `from_marks` that contain `number_of_rows`
+    size_t countMarksForRows(size_t from_mark, size_t number_of_rows) const;
+
+    /// Return number of rows, starting from `from_mark`, that contains amount of `number_of_rows`
+    /// and possible some offset_in_rows from `from_mark`
     ///                                     1    2  <- answer
     /// |-----|---------------------------|----|----|
     ///       ^------------------------^-----------^
     ////  from_mark  offset_in_rows    number_of_rows
-    size_t countMarksForRows(size_t from_mark, size_t number_of_rows, size_t offset_in_rows, size_t min_marks_to_read) const;
+    size_t countRowsForRows(size_t from_mark, size_t number_of_rows, size_t offset_in_rows) const;
 
     /// Total marks
     size_t getMarksCount() const;
@@ -95,6 +98,8 @@ public:
 
     /// Add `size` of marks with `fixed_granularity` rows
     void resizeWithFixedGranularity(size_t size, size_t fixed_granularity);
+
+    std::string describe() const;
 };
 
 }

@@ -1,10 +1,20 @@
 Test 1: create filesystem database and check implicit calls
 0
-test1
+default_test1
 4
 4
+30
+10
+10
+4
+0
+2
+0
+OK
 4
 Test 2: check DatabaseFilesystem access rights and errors handling on server
+OK
+OK
 OK
 OK
 OK

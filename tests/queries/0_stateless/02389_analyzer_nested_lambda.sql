@@ -1,4 +1,4 @@
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 -- { echoOn }
 
@@ -122,8 +122,19 @@ FROM test_table WHERE concat(concat(concat(toString(id), '___\0_______\0____'), 
 
 SELECT '--';
 
-SELECT arrayMap(x -> concat(toString(id), arrayMap(x -> toString(1), [NULL])), [NULL]) FROM test_table; -- { serverError 44 };
+SELECT arrayMap(x -> splitByChar(toString(id), arrayMap(x -> toString(1), [NULL])), [NULL]) FROM test_table; -- { serverError ILLEGAL_COLUMN };
 
 DROP TABLE test_table;
 
 -- { echoOff }
+
+SELECT
+    groupArray(number) AS counts,
+    arraySum(arrayMap(x -> (x + 1), counts)) as hello,
+    arrayMap(x -> (x / hello), counts) AS res
+FROM numbers(1000000) FORMAT Null;
+
+SELECT
+  arrayWithConstant(pow(10,6), 1) AS nums,
+  arrayMap(x -> x, nums) AS m,
+  arrayMap(x -> x + arraySum(m), m) AS res FORMAT Null;

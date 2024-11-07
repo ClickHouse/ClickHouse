@@ -28,7 +28,7 @@ namespace
             if (pos_->type != TokenType::BareWord)
                 return false;
             std::string_view word{pos_->begin, pos_->size()};
-            return !(boost::iequals(word, "ON") || boost::iequals(word, "TO") || boost::iequals(word, "FROM"));
+            return !(boost::iequals(word, toStringView(Keyword::ON)) || boost::iequals(word, toStringView(Keyword::TO)) || boost::iequals(word, toStringView(Keyword::FROM)));
         };
 
         expected.add(pos, "access type");
@@ -123,7 +123,6 @@ namespace
                     return false;
 
                 String database_name, table_name, parameter;
-                bool any_database = false, any_table = false, any_parameter = false;
 
                 size_t is_global_with_parameter = 0;
                 for (const auto & elem : access_and_columns)
@@ -132,43 +131,41 @@ namespace
                         ++is_global_with_parameter;
                 }
 
-                if (!ParserKeyword{"ON"}.ignore(pos, expected))
+                if (!ParserKeyword{Keyword::ON}.ignore(pos, expected))
                     return false;
 
+                bool wildcard = false;
+                bool default_database = false;
                 if (is_global_with_parameter && is_global_with_parameter == access_and_columns.size())
                 {
                     ASTPtr parameter_ast;
-                    if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
+                    if (!ParserToken{TokenType::Asterisk}.ignore(pos, expected))
                     {
-                        any_parameter = true;
+                        if (ParserIdentifier{}.parse(pos, parameter_ast, expected))
+                            parameter = getIdentifierName(parameter_ast);
+                        else
+                            return false;
                     }
-                    else if (ParserIdentifier{}.parse(pos, parameter_ast, expected))
-                    {
-                        any_parameter = false;
-                        parameter = getIdentifierName(parameter_ast);
-                    }
-                    else
-                        return false;
 
-                    any_database = any_table = true;
+                    if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
+                        wildcard = true;
                 }
-                else if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, database_name, any_database, table_name, any_table))
-                {
+                else if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, database_name, table_name, wildcard, default_database))
                     return false;
-                }
 
                 for (auto & [access_flags, columns] : access_and_columns)
                 {
+                    if (wildcard && !columns.empty())
+                        return false;
+
                     AccessRightsElement element;
                     element.access_flags = access_flags;
-                    element.any_column = columns.empty();
                     element.columns = std::move(columns);
-                    element.any_database = any_database;
                     element.database = database_name;
-                    element.any_table = any_table;
-                    element.any_parameter = any_parameter;
                     element.table = table_name;
                     element.parameter = parameter;
+                    element.wildcard = wildcard;
+                    element.default_database = default_database;
                     res_elements.emplace_back(std::move(element));
                 }
 
@@ -197,18 +194,20 @@ namespace
         {
             AccessRightsElement default_element(AccessType::ALL);
 
-            if (!ParserKeyword{"ON"}.ignore(pos, expected))
+            if (!ParserKeyword{Keyword::ON}.ignore(pos, expected))
                 return false;
 
-            String database_name, table_name;
-            bool any_database = false, any_table = false;
-            if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, database_name, any_database, table_name, any_table))
+            String database_name;
+            String table_name;
+            bool wildcard = false;
+            bool default_database = false;
+            if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, database_name, table_name, wildcard, default_database))
                 return false;
 
-            default_element.any_database = any_database;
             default_element.database = database_name;
-            default_element.any_table = any_table;
             default_element.table = table_name;
+            default_element.wildcard = wildcard;
+            default_element.default_database = default_database;
             elements.push_back(std::move(default_element));
         }
 
@@ -217,7 +216,7 @@ namespace
 
     void throwIfNotGrantable(AccessRightsElements & elements)
     {
-        boost::range::remove_erase_if(elements, [](AccessRightsElement & element)
+        std::erase_if(elements, [](AccessRightsElement & element)
         {
             if (element.empty())
                 return true;
@@ -226,16 +225,16 @@ namespace
             if (!element.empty())
                 return false;
 
-            if (!element.any_column)
+            if (!element.anyColumn())
                 throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted on the column level", old_flags.toString());
-            else if (!element.any_table)
+            if (!element.anyTable())
                 throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted on the table level", old_flags.toString());
-            else if (!element.any_database)
+            if (!element.anyDatabase())
                 throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted on the database level", old_flags.toString());
-            else if (!element.any_parameter)
+            if (!element.anyParameter())
                 throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted on the global with parameter level", old_flags.toString());
-            else
-                throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted", old_flags.toString());
+
+            throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted", old_flags.toString());
         });
     }
 
@@ -263,7 +262,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{is_revoke ? "FROM" : "TO"}.ignore(pos, expected))
+            if (!ParserKeyword{is_revoke ? Keyword::FROM : Keyword::TO}.ignore(pos, expected))
                 return false;
 
             ASTPtr ast;
@@ -281,7 +280,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            return ParserKeyword{"ON"}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
+            return ParserKeyword{Keyword::ON}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
         });
     }
 }
@@ -289,14 +288,14 @@ namespace
 
 bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (attach_mode && !ParserKeyword{"ATTACH"}.ignore(pos, expected))
+    if (attach_mode && !ParserKeyword{Keyword::ATTACH}.ignore(pos, expected))
         return false;
 
     bool is_replace = false;
     bool is_revoke = false;
-    if (ParserKeyword{"REVOKE"}.ignore(pos, expected))
+    if (ParserKeyword{Keyword::REVOKE}.ignore(pos, expected))
         is_revoke = true;
-    else if (!ParserKeyword{"GRANT"}.ignore(pos, expected))
+    else if (!ParserKeyword{Keyword::GRANT}.ignore(pos, expected))
         return false;
 
     String cluster;
@@ -306,9 +305,9 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     bool admin_option = false;
     if (is_revoke)
     {
-        if (ParserKeyword{"GRANT OPTION FOR"}.ignore(pos, expected))
+        if (ParserKeyword{Keyword::GRANT_OPTION_FOR}.ignore(pos, expected))
             grant_option = true;
-        else if (ParserKeyword{"ADMIN OPTION FOR"}.ignore(pos, expected))
+        else if (ParserKeyword{Keyword::ADMIN_OPTION_FOR}.ignore(pos, expected))
             admin_option = true;
     }
 
@@ -316,7 +315,7 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     std::shared_ptr<ASTRolesOrUsersSet> roles;
 
     bool current_grants = false;
-    if (!is_revoke && ParserKeyword{"CURRENT GRANTS"}.ignore(pos, expected))
+    if (!is_revoke && ParserKeyword{Keyword::CURRENT_GRANTS}.ignore(pos, expected))
     {
         current_grants = true;
         if (!parseCurrentGrants(pos, expected, elements))
@@ -340,12 +339,12 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (!is_revoke)
     {
-        if (ParserKeyword{"WITH GRANT OPTION"}.ignore(pos, expected))
+        if (ParserKeyword{Keyword::WITH_GRANT_OPTION}.ignore(pos, expected))
             grant_option = true;
-        else if (ParserKeyword{"WITH ADMIN OPTION"}.ignore(pos, expected))
+        else if (ParserKeyword{Keyword::WITH_ADMIN_OPTION}.ignore(pos, expected))
             admin_option = true;
 
-        if (ParserKeyword{"WITH REPLACE OPTION"}.ignore(pos, expected))
+        if (ParserKeyword{Keyword::WITH_REPLACE_OPTION}.ignore(pos, expected))
             is_replace = true;
     }
 

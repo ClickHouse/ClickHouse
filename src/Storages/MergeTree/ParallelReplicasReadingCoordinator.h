@@ -6,10 +6,10 @@
 
 namespace DB
 {
+struct Progress;
+using ProgressCallback = std::function<void(const Progress & progress)>;
 
 /// The main class to spread mark ranges across replicas dynamically
-/// The reason why it uses pimpl - this header file is included in
-/// multiple other files like Context or RemoteQueryExecutor
 class ParallelReplicasReadingCoordinator
 {
 public:
@@ -27,14 +27,22 @@ public:
     /// "pending" state waiting for the unavailable replica to send the announcement.
     void markReplicaAsUnavailable(size_t replica_number);
 
+    /// needed to report total rows to read
+    void setProgressCallback(ProgressCallback callback);
+
 private:
-    void initialize();
+    void initialize(CoordinationMode mode);
 
     std::mutex mutex;
-    size_t replicas_count{0};
-    CoordinationMode mode{CoordinationMode::Default};
-    std::atomic<bool> initialized{false};
+    const size_t replicas_count{0};
     std::unique_ptr<ImplInterface> pimpl;
+    ProgressCallback progress_callback; // store the callback only to bypass it to coordinator implementation
+    std::set<size_t> replicas_used;
+
+    /// To initialize `pimpl` we need to know the coordinator mode. We can know it only from initial announcement or regular request.
+    /// The problem is `markReplicaAsUnavailable` might be called before any of these requests happened.
+    /// In this case we will remember the numbers of unavailable replicas and apply this knowledge later on initialization.
+    std::vector<size_t> unavailable_nodes_registered_before_initialization;
 };
 
 using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;

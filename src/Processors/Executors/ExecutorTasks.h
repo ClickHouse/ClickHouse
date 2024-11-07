@@ -28,7 +28,7 @@ class ExecutorTasks
     TaskQueue<ExecutingGraph::Node> task_queue;
 
     /// Queue which stores tasks where processors returned Async status after prepare.
-    /// If multiple threads are using, main thread will wait for async tasks.
+    /// If multiple threads are used, main thread will wait for async tasks.
     /// For single thread, will wait for async tasks only when task_queue is empty.
     PollingQueue async_task_queue;
 
@@ -47,7 +47,10 @@ class ExecutorTasks
 
 public:
     using Stack = std::stack<UInt64>;
-    using Queue = std::queue<ExecutingGraph::Node *>;
+    /// This queue can grow a lot and lead to OOM. That is why we use non-default
+    /// allocator for container which throws exceptions in operator new
+    using DequeWithMemoryTracker = std::deque<ExecutingGraph::Node *, AllocatorWithMemoryTracking<ExecutingGraph::Node *>>;
+    using Queue = std::queue<ExecutingGraph::Node *, DequeWithMemoryTracker>;
 
     void finish();
     bool isFinished() const { return finished; }
@@ -59,7 +62,7 @@ public:
     void pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context);
 
     void init(size_t num_threads_, size_t use_threads_, bool profile_processors, bool trace_processors, ReadProgressCallback * callback);
-    void fill(Queue & queue);
+    void fill(Queue & queue, Queue & async_queue);
     void upscale(size_t use_threads_);
 
     void processAsyncTasks();

@@ -1,10 +1,10 @@
 #pragma once
 #include <libnuraft/log_store.hxx>
-#include <map>
 #include <mutex>
 #include <Core/Types.h>
 #include <Coordination/Changelog.h>
 #include <Coordination/KeeperContext.h>
+#include <Coordination/Keeper4LWInfo.h>
 #include <base/defines.h>
 
 namespace DB
@@ -14,7 +14,7 @@ namespace DB
 class KeeperLogStore : public nuraft::log_store
 {
 public:
-    KeeperLogStore(LogFileSettings log_file_settings, KeeperContextPtr keeper_context);
+    KeeperLogStore(LogFileSettings log_file_settings, FlushSettings flush_settings, KeeperContextPtr keeper_context);
 
     /// Read log storage from filesystem starting from last_commited_log_index
     void init(uint64_t last_commited_log_index, uint64_t logs_to_keep);
@@ -37,6 +37,8 @@ public:
 
     /// Return entry at index
     nuraft::ptr<nuraft::log_entry> entry_at(uint64_t index) override;
+
+    bool is_conf(uint64_t index) override;
 
     /// Term if the index
     uint64_t term_at(uint64_t index) override;
@@ -72,9 +74,11 @@ public:
 
     void setRaftServer(const nuraft::ptr<nuraft::raft_server> & raft_server);
 
+    void getKeeperLogInfo(KeeperLogInfo & log_info) const;
+
 private:
     mutable std::mutex changelog_lock;
-    Poco::Logger * log;
+    LoggerPtr log;
     Changelog changelog TSA_GUARDED_BY(changelog_lock);
 };
 

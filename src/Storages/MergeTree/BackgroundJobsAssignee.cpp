@@ -60,24 +60,27 @@ bool BackgroundJobsAssignee::scheduleMergeMutateTask(ExecutableTaskPtr merge_tas
 }
 
 
-void BackgroundJobsAssignee::scheduleFetchTask(ExecutableTaskPtr fetch_task)
+bool BackgroundJobsAssignee::scheduleFetchTask(ExecutableTaskPtr fetch_task)
 {
     bool res = getContext()->getFetchesExecutor()->trySchedule(fetch_task);
     res ? trigger() : postpone();
+    return res;
 }
 
 
-void BackgroundJobsAssignee::scheduleMoveTask(ExecutableTaskPtr move_task)
+bool BackgroundJobsAssignee::scheduleMoveTask(ExecutableTaskPtr move_task)
 {
     bool res = getContext()->getMovesExecutor()->trySchedule(move_task);
     res ? trigger() : postpone();
+    return res;
 }
 
 
-void BackgroundJobsAssignee::scheduleCommonTask(ExecutableTaskPtr common_task, bool need_trigger)
+bool BackgroundJobsAssignee::scheduleCommonTask(ExecutableTaskPtr common_task, bool need_trigger)
 {
-    bool res = getContext()->getCommonExecutor()->trySchedule(common_task) && need_trigger;
-    res ? trigger() : postpone();
+    bool schedule_res = getContext()->getCommonExecutor()->trySchedule(common_task);
+    schedule_res && need_trigger ? trigger() : postpone();
+    return schedule_res;
 }
 
 
@@ -90,7 +93,6 @@ String BackgroundJobsAssignee::toString(Type type)
         case Type::Moving:
             return "Moving";
     }
-    UNREACHABLE();
 }
 
 void BackgroundJobsAssignee::start()

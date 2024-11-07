@@ -29,7 +29,9 @@ CREATE DICTIONARY 01760_db.dict_array
 PRIMARY KEY key
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'polygons' DB '01760_db'))
 LIFETIME(0)
-LAYOUT(POLYGON());
+LAYOUT(POLYGON())
+SETTINGS(dictionary_use_async_executor=1, max_threads=8)
+;
 
 SELECT 'dictGet';
 
@@ -59,10 +61,10 @@ FROM 01760_db.points
 ORDER BY x, y;
 
 SELECT 'check NaN or infinite point input';
-SELECT tuple(nan, inf) as key, dictGet('01760_db.dict_array', 'name', key); --{serverError 36}
-SELECT tuple(nan, nan) as key, dictGet('01760_db.dict_array', 'name', key); --{serverError 36}
-SELECT tuple(inf, nan) as key, dictGet('01760_db.dict_array', 'name', key); --{serverError 36}
-SELECT tuple(inf, inf) as key, dictGet('01760_db.dict_array', 'name', key); --{serverError 36}
+SELECT tuple(nan, inf) as key, dictGet('01760_db.dict_array', 'name', key); --{serverError BAD_ARGUMENTS}
+SELECT tuple(nan, nan) as key, dictGet('01760_db.dict_array', 'name', key); --{serverError BAD_ARGUMENTS}
+SELECT tuple(inf, nan) as key, dictGet('01760_db.dict_array', 'name', key); --{serverError BAD_ARGUMENTS}
+SELECT tuple(inf, inf) as key, dictGet('01760_db.dict_array', 'name', key); --{serverError BAD_ARGUMENTS}
 
 DROP DICTIONARY 01760_db.dict_array;
 DROP TABLE 01760_db.points;

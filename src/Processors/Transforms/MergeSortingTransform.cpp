@@ -30,7 +30,7 @@ namespace DB
 class BufferingToFileTransform : public IAccumulatingTransform
 {
 public:
-    BufferingToFileTransform(const Block & header, TemporaryFileStream & tmp_stream_, Poco::Logger * log_)
+    BufferingToFileTransform(const Block & header, TemporaryFileStream & tmp_stream_, LoggerPtr log_)
         : IAccumulatingTransform(header, header)
         , tmp_stream(tmp_stream_)
         , log(log_)
@@ -73,13 +73,14 @@ public:
 private:
     TemporaryFileStream & tmp_stream;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 MergeSortingTransform::MergeSortingTransform(
     const Block & header,
     const SortDescription & description_,
     size_t max_merged_block_size_,
+    size_t max_block_bytes_,
     UInt64 limit_,
     bool increase_sort_description_compile_attempts,
     size_t max_bytes_before_remerge_,
@@ -93,6 +94,7 @@ MergeSortingTransform::MergeSortingTransform(
     , max_bytes_before_external_sort(max_bytes_before_external_sort_)
     , tmp_data(std::move(tmp_data_))
     , min_free_disk_space(min_free_disk_space_)
+    , max_block_bytes(max_block_bytes_)
 {
 }
 
@@ -169,7 +171,13 @@ void MergeSortingTransform::consume(Chunk chunk)
         /// If there's less free disk space than reserve_size, an exception will be thrown
         size_t reserve_size = sum_bytes_in_blocks + min_free_disk_space;
         auto & tmp_stream = tmp_data->createStream(header_without_constants, reserve_size);
-
+        size_t max_merged_block_size = this->max_merged_block_size;
+        if (max_block_bytes > 0 && sum_rows_in_blocks > 0 && sum_bytes_in_blocks > 0)
+        {
+            auto avg_row_bytes = sum_bytes_in_blocks / sum_rows_in_blocks;
+            /// max_merged_block_size >= 128
+            max_merged_block_size = std::max(std::min(max_merged_block_size, max_block_bytes / avg_row_bytes), 128UL);
+        }
         merge_sorter = std::make_unique<MergeSorter>(header_without_constants, std::move(chunks), description, max_merged_block_size, limit);
         auto current_processor = std::make_shared<BufferingToFileTransform>(header_without_constants, tmp_stream, log);
 
@@ -177,7 +185,6 @@ void MergeSortingTransform::consume(Chunk chunk)
 
         if (!external_merging_sorted)
         {
-            bool quiet = false;
             bool have_all_inputs = false;
             bool use_average_block_sizes = false;
 
@@ -191,7 +198,6 @@ void MergeSortingTransform::consume(Chunk chunk)
                     limit,
                     /*always_read_till_end_=*/ false,
                     nullptr,
-                    quiet,
                     use_average_block_sizes,
                     have_all_inputs);
 

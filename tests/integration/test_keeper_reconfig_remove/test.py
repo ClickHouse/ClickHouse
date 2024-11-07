@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
+import os
+import subprocess
+import typing as tp
 
 import pytest
-from helpers.cluster import ClickHouseCluster
+
 import helpers.keeper_utils as ku
-import os
-from kazoo.client import KazooClient
-from kazoo.exceptions import BadVersionException, BadArgumentsException
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 
 cluster = ClickHouseCluster(__file__)
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
@@ -23,16 +24,18 @@ def started_cluster():
         cluster.start()
         yield cluster
     finally:
+        conn: tp.Optional[ku.KeeperClient]
         for conn in [zk1, zk2, zk3]:
             if conn:
                 conn.stop()
-                conn.close()
 
         cluster.shutdown()
 
 
-def get_fake_zk(node):
-    return ku.get_fake_zk(cluster, node)
+def create_client(node: ClickHouseInstance):
+    return ku.KeeperClient(
+        cluster.server_bin_path, cluster.get_instance_ip(node.name), 9181
+    )
 
 
 def test_reconfig_remove_followers_from_3(started_cluster):
@@ -42,9 +45,9 @@ def test_reconfig_remove_followers_from_3(started_cluster):
     Check that remaining node is in standalone mode.
     """
 
-    zk1 = get_fake_zk(node1)
-    config, _ = zk1.get("/keeper/config")
-    config = config.decode("utf-8")
+    global zk1, zk2, zk3
+    zk1 = create_client(node1)
+    config = zk1.get("/keeper/config")
     print("Initial config", config)
 
     assert len(config.split("\n")) == 3
@@ -52,36 +55,33 @@ def test_reconfig_remove_followers_from_3(started_cluster):
     assert "node2" in config
     assert "node3" in config
 
-    with pytest.raises(BadVersionException):
-        zk1.reconfig(joining=None, leaving="1", new_members=None, from_config=20)
-    with pytest.raises(BadArgumentsException):
+    with pytest.raises(ValueError):
         zk1.reconfig(joining=None, leaving=None, new_members=None)
-    with pytest.raises(BadArgumentsException):
+    with pytest.raises(ku.KeeperException):
         # bulk reconfiguration is not supported
         zk1.reconfig(joining=None, leaving=None, new_members="3")
-    with pytest.raises(BadArgumentsException):
+    with pytest.raises(ValueError):
         zk1.reconfig(joining="1", leaving="1", new_members="3")
-    with pytest.raises(BadArgumentsException):
+    with pytest.raises(ku.KeeperException):
         # at least one node must be left
         zk1.reconfig(joining=None, leaving="1,2,3", new_members=None)
 
     for i in range(100):
-        zk1.create(f"/test_two_{i}", b"somedata")
+        zk1.create(f"/test_two_{i}", "somedata")
 
-    zk2 = get_fake_zk(node2)
+    zk2 = create_client(node2)
     zk2.sync("/test_two_0")
     ku.wait_configs_equal(config, zk2)
 
-    zk3 = get_fake_zk(node3)
+    zk3 = create_client(node3)
     zk3.sync("/test_two_0")
     ku.wait_configs_equal(config, zk3)
 
     for i in range(100):
-        assert zk2.exists(f"test_two_{i}") is not None
-        assert zk3.exists(f"test_two_{i}") is not None
+        assert zk2.exists(f"test_two_{i}")
+        assert zk3.exists(f"test_two_{i}")
 
-    config, _ = zk1.reconfig(joining=None, leaving="3", new_members=None)
-    config = config.decode("utf-8")
+    config = zk1.reconfig(joining=None, leaving="3", new_members=None)
     print("After removing 3", config)
 
     assert len(config.split("\n")) == 2
@@ -90,35 +90,26 @@ def test_reconfig_remove_followers_from_3(started_cluster):
     assert "node3" not in config
 
     zk2.stop()
-    zk2.close()
-    zk2 = get_fake_zk(node2)
+    zk2 = create_client(node2)
     ku.wait_configs_equal(config, zk2)
 
     for i in range(100):
-        assert zk2.exists(f"test_two_{i}") is not None
-        zk2.create(f"/test_two_{100 + i}", b"otherdata")
+        assert zk2.exists(f"test_two_{i}")
+        zk2.create(f"/test_two_{100 + i}", "otherdata")
 
     zk1.stop()
-    zk1.close()
-    zk1 = get_fake_zk(node1)
+    zk1 = create_client(node1)
     zk1.sync("/test_two_0")
 
     for i in range(200):
-        assert zk1.exists(f"test_two_{i}") is not None
-
-    with pytest.raises(Exception):
-        zk3.stop()
-        zk3.close()
-        zk3 = get_fake_zk(node3)
-        zk3.sync("/test_two_0")
+        assert zk1.exists(f"test_two_{i}")
 
     assert node3.contains_in_log(log_msg_removed)
 
     for i in range(100):
-        zk2.create(f"/test_two_{200 + i}", b"otherdata")
+        zk2.create(f"/test_two_{200 + i}", "otherdata")
 
-    config, _ = zk1.reconfig(joining=None, leaving="2", new_members=None)
-    config = config.decode("utf-8")
+    config = zk1.reconfig(joining=None, leaving="2", new_members=None)
 
     print("After removing 2", config)
     assert len(config.split("\n")) == 1
@@ -127,19 +118,12 @@ def test_reconfig_remove_followers_from_3(started_cluster):
     assert "node3" not in config
 
     zk1.stop()
-    zk1.close()
-    zk1 = get_fake_zk(node1)
+    zk1 = create_client(node1)
     zk1.sync("/test_two_0")
 
     for i in range(300):
-        assert zk1.exists(f"test_two_{i}") is not None
-
-    with pytest.raises(Exception):
-        zk2.stop()
-        zk2.close()
-        zk2 = get_fake_zk(node2)
-        zk2.sync("/test_two_0")
+        assert zk1.exists(f"test_two_{i}")
 
     assert not node1.contains_in_log(log_msg_removed)
     assert node2.contains_in_log(log_msg_removed)
-    assert "Mode: standalone" in zk1.command(b"stat")
+    assert "Mode: standalone" in zk1.execute_query("stat")

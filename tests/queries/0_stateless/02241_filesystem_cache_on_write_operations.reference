@@ -1,60 +1,330 @@
 Using storage policy: s3_cache
+DROP TABLE IF EXISTS test_02241
+CREATE TABLE test_02241 (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3_cache', min_bytes_for_wide_part = 10485760, compress_marks=false, compress_primary_key=false, ratio_of_defaults_for_sparse_serialization = 1
+SYSTEM STOP MERGES test_02241
+SYSTEM DROP FILESYSTEM CACHE
+SELECT file_segment_range_begin, file_segment_range_end, size, state
+    FROM
+    (
+        SELECT file_segment_range_begin, file_segment_range_end, size, state, local_path
+        FROM
+        (
+            SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path
+            FROM system.remote_data_paths
+        ) AS data_paths
+        INNER JOIN
+            system.filesystem_cache AS caches
+        ON data_paths.cache_path = caches.cache_path
+    )
+    WHERE endsWith(local_path, 'data.bin')
+    FORMAT Vertical
+SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path
 0
+SELECT count(), sum(size) FROM system.filesystem_cache
 0	0
+INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(100)
+SELECT file_segment_range_begin, file_segment_range_end, size, state
+    FROM
+    (
+        SELECT file_segment_range_begin, file_segment_range_end, size, state, local_path
+        FROM
+        (
+            SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path
+            FROM system.remote_data_paths
+        ) AS data_paths
+        INNER JOIN
+            system.filesystem_cache AS caches
+        ON data_paths.cache_path = caches.cache_path
+    )
+    WHERE endsWith(local_path, 'data.bin')
+    FORMAT Vertical
 Row 1:
 ──────
 file_segment_range_begin: 0
 file_segment_range_end:   745
 size:                     746
 state:                    DOWNLOADED
+SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path
 8
+SELECT count(), sum(size) FROM system.filesystem_cache
 8	1100
+SELECT count() FROM system.filesystem_cache WHERE cache_hits > 0
 0
+SELECT * FROM test_02241 FORMAT Null
+SELECT count() FROM system.filesystem_cache WHERE cache_hits > 0
 2
+SELECT * FROM test_02241 FORMAT Null
+SELECT count() FROM system.filesystem_cache WHERE cache_hits > 0
 2
+SELECT count(), sum(size) size FROM system.filesystem_cache
 8	1100
+SYSTEM DROP FILESYSTEM CACHE
+INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(100, 200)
+SELECT file_segment_range_begin, file_segment_range_end, size, state
+    FROM
+    (
+        SELECT file_segment_range_begin, file_segment_range_end, size, state, local_path
+        FROM
+        (
+            SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path
+            FROM system.remote_data_paths
+        ) AS data_paths
+        INNER JOIN
+            system.filesystem_cache AS caches
+        ON data_paths.cache_path = caches.cache_path
+    )
+    WHERE endsWith(local_path, 'data.bin')
+    FORMAT Vertical;
 Row 1:
 ──────
 file_segment_range_begin: 0
 file_segment_range_end:   1659
 size:                     1660
 state:                    DOWNLOADED
+SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path
 8
+SELECT count(), sum(size) FROM system.filesystem_cache
 8	2014
+SELECT count(), sum(size) FROM system.filesystem_cache
 8	2014
+INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(100) SETTINGS enable_filesystem_cache_on_write_operations=0
+SELECT count(), sum(size) FROM system.filesystem_cache
 8	2014
+INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(100)
+INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(300, 10000)
+SELECT count(), sum(size) FROM system.filesystem_cache
 24	84045
+SYSTEM START MERGES test_02241
+OPTIMIZE TABLE test_02241 FINAL
+SELECT count(), sum(size) FROM system.filesystem_cache
 32	167243
+ALTER TABLE test_02241 UPDATE value = 'kek' WHERE key = 100
+SELECT count(), sum(size) FROM system.filesystem_cache
 41	250541
+INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(5000000)
+SYSTEM FLUSH LOGS
+INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(5000000)	0
+SELECT count() FROM test_02241
 5010500
+SELECT count() FROM test_02241 WHERE value LIKE '%010%'
 18816
 Using storage policy: local_cache
+DROP TABLE IF EXISTS test_02241
+CREATE TABLE test_02241 (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='local_cache', min_bytes_for_wide_part = 10485760, compress_marks=false, compress_primary_key=false, ratio_of_defaults_for_sparse_serialization = 1
+SYSTEM STOP MERGES test_02241
+SYSTEM DROP FILESYSTEM CACHE
+SELECT file_segment_range_begin, file_segment_range_end, size, state
+    FROM
+    (
+        SELECT file_segment_range_begin, file_segment_range_end, size, state, local_path
+        FROM
+        (
+            SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path
+            FROM system.remote_data_paths
+        ) AS data_paths
+        INNER JOIN
+            system.filesystem_cache AS caches
+        ON data_paths.cache_path = caches.cache_path
+    )
+    WHERE endsWith(local_path, 'data.bin')
+    FORMAT Vertical
+SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path
 0
+SELECT count(), sum(size) FROM system.filesystem_cache
 0	0
+INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(100)
+SELECT file_segment_range_begin, file_segment_range_end, size, state
+    FROM
+    (
+        SELECT file_segment_range_begin, file_segment_range_end, size, state, local_path
+        FROM
+        (
+            SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path
+            FROM system.remote_data_paths
+        ) AS data_paths
+        INNER JOIN
+            system.filesystem_cache AS caches
+        ON data_paths.cache_path = caches.cache_path
+    )
+    WHERE endsWith(local_path, 'data.bin')
+    FORMAT Vertical
 Row 1:
 ──────
 file_segment_range_begin: 0
 file_segment_range_end:   745
 size:                     746
 state:                    DOWNLOADED
+SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path
 8
+SELECT count(), sum(size) FROM system.filesystem_cache
 8	1100
+SELECT count() FROM system.filesystem_cache WHERE cache_hits > 0
 0
+SELECT * FROM test_02241 FORMAT Null
+SELECT count() FROM system.filesystem_cache WHERE cache_hits > 0
 2
+SELECT * FROM test_02241 FORMAT Null
+SELECT count() FROM system.filesystem_cache WHERE cache_hits > 0
 2
+SELECT count(), sum(size) size FROM system.filesystem_cache
 8	1100
+SYSTEM DROP FILESYSTEM CACHE
+INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(100, 200)
+SELECT file_segment_range_begin, file_segment_range_end, size, state
+    FROM
+    (
+        SELECT file_segment_range_begin, file_segment_range_end, size, state, local_path
+        FROM
+        (
+            SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path
+            FROM system.remote_data_paths
+        ) AS data_paths
+        INNER JOIN
+            system.filesystem_cache AS caches
+        ON data_paths.cache_path = caches.cache_path
+    )
+    WHERE endsWith(local_path, 'data.bin')
+    FORMAT Vertical;
 Row 1:
 ──────
 file_segment_range_begin: 0
 file_segment_range_end:   1659
 size:                     1660
 state:                    DOWNLOADED
+SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path
 8
+SELECT count(), sum(size) FROM system.filesystem_cache
 8	2014
+SELECT count(), sum(size) FROM system.filesystem_cache
 8	2014
+INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(100) SETTINGS enable_filesystem_cache_on_write_operations=0
+SELECT count(), sum(size) FROM system.filesystem_cache
 8	2014
+INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(100)
+INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(300, 10000)
+SELECT count(), sum(size) FROM system.filesystem_cache
 24	84045
+SYSTEM START MERGES test_02241
+OPTIMIZE TABLE test_02241 FINAL
+SELECT count(), sum(size) FROM system.filesystem_cache
 32	167243
+ALTER TABLE test_02241 UPDATE value = 'kek' WHERE key = 100
+SELECT count(), sum(size) FROM system.filesystem_cache
 41	250541
+INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(5000000)
+SYSTEM FLUSH LOGS
+INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(5000000)	0
+SELECT count() FROM test_02241
 5010500
+SELECT count() FROM test_02241 WHERE value LIKE '%010%'
+18816
+Using storage policy: azure_cache
+DROP TABLE IF EXISTS test_02241
+CREATE TABLE test_02241 (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='azure_cache', min_bytes_for_wide_part = 10485760, compress_marks=false, compress_primary_key=false, ratio_of_defaults_for_sparse_serialization = 1
+SYSTEM STOP MERGES test_02241
+SYSTEM DROP FILESYSTEM CACHE
+SELECT file_segment_range_begin, file_segment_range_end, size, state
+    FROM
+    (
+        SELECT file_segment_range_begin, file_segment_range_end, size, state, local_path
+        FROM
+        (
+            SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path
+            FROM system.remote_data_paths
+        ) AS data_paths
+        INNER JOIN
+            system.filesystem_cache AS caches
+        ON data_paths.cache_path = caches.cache_path
+    )
+    WHERE endsWith(local_path, 'data.bin')
+    FORMAT Vertical
+SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path
+0
+SELECT count(), sum(size) FROM system.filesystem_cache
+0	0
+INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(100)
+SELECT file_segment_range_begin, file_segment_range_end, size, state
+    FROM
+    (
+        SELECT file_segment_range_begin, file_segment_range_end, size, state, local_path
+        FROM
+        (
+            SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path
+            FROM system.remote_data_paths
+        ) AS data_paths
+        INNER JOIN
+            system.filesystem_cache AS caches
+        ON data_paths.cache_path = caches.cache_path
+    )
+    WHERE endsWith(local_path, 'data.bin')
+    FORMAT Vertical
+Row 1:
+──────
+file_segment_range_begin: 0
+file_segment_range_end:   745
+size:                     746
+state:                    DOWNLOADED
+SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path
+8
+SELECT count(), sum(size) FROM system.filesystem_cache
+8	1100
+SELECT count() FROM system.filesystem_cache WHERE cache_hits > 0
+0
+SELECT * FROM test_02241 FORMAT Null
+SELECT count() FROM system.filesystem_cache WHERE cache_hits > 0
+2
+SELECT * FROM test_02241 FORMAT Null
+SELECT count() FROM system.filesystem_cache WHERE cache_hits > 0
+2
+SELECT count(), sum(size) size FROM system.filesystem_cache
+8	1100
+SYSTEM DROP FILESYSTEM CACHE
+INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(100, 200)
+SELECT file_segment_range_begin, file_segment_range_end, size, state
+    FROM
+    (
+        SELECT file_segment_range_begin, file_segment_range_end, size, state, local_path
+        FROM
+        (
+            SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path
+            FROM system.remote_data_paths
+        ) AS data_paths
+        INNER JOIN
+            system.filesystem_cache AS caches
+        ON data_paths.cache_path = caches.cache_path
+    )
+    WHERE endsWith(local_path, 'data.bin')
+    FORMAT Vertical;
+Row 1:
+──────
+file_segment_range_begin: 0
+file_segment_range_end:   1659
+size:                     1660
+state:                    DOWNLOADED
+SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path
+8
+SELECT count(), sum(size) FROM system.filesystem_cache
+8	2014
+SELECT count(), sum(size) FROM system.filesystem_cache
+8	2014
+INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(100) SETTINGS enable_filesystem_cache_on_write_operations=0
+SELECT count(), sum(size) FROM system.filesystem_cache
+8	2014
+INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(100)
+INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(300, 10000)
+SELECT count(), sum(size) FROM system.filesystem_cache
+24	84045
+SYSTEM START MERGES test_02241
+OPTIMIZE TABLE test_02241 FINAL
+SELECT count(), sum(size) FROM system.filesystem_cache
+32	167243
+ALTER TABLE test_02241 UPDATE value = 'kek' WHERE key = 100
+SELECT count(), sum(size) FROM system.filesystem_cache
+41	250541
+INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(5000000)
+SYSTEM FLUSH LOGS
+INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(5000000)	0
+SELECT count() FROM test_02241
+5010500
+SELECT count() FROM test_02241 WHERE value LIKE '%010%'
 18816

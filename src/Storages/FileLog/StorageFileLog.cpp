@@ -1,4 +1,6 @@
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/StoragePolicy.h>
@@ -7,27 +9,51 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteIntText.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromStreamLikeEngine.h>
 #include <QueryPipeline/Pipe.h>
+#include <Storages/FileLog/FileLogSettings.h>
 #include <Storages/FileLog/FileLogSource.h>
 #include <Storages/FileLog/StorageFileLog.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/filesystemHelpers.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 
 #include <sys/stat.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_block_size;
+    extern const SettingsUInt64 max_insert_block_size;
+    extern const SettingsMilliseconds stream_poll_timeout_ms;
+    extern const SettingsBool use_concurrency_control;
+}
+
+namespace FileLogSetting
+{
+    extern const FileLogSettingsStreamingHandleErrorMode handle_error_mode;
+    extern const FileLogSettingsUInt64 max_block_size;
+    extern const FileLogSettingsMaxThreads max_threads;
+    extern const FileLogSettingsUInt64 poll_directory_watch_events_backoff_factor;
+    extern const FileLogSettingsMilliseconds poll_directory_watch_events_backoff_init;
+    extern const FileLogSettingsMilliseconds poll_directory_watch_events_backoff_max;
+    extern const FileLogSettingsUInt64 poll_max_batch_size;
+    extern const FileLogSettingsMilliseconds poll_timeout_ms;
+}
 
 namespace ErrorCodes
 {
@@ -49,6 +75,76 @@ namespace
 
 static constexpr auto TMP_SUFFIX = ".tmp";
 
+
+class ReadFromStorageFileLog final : public ReadFromStreamLikeEngine
+{
+public:
+    ReadFromStorageFileLog(
+        const Names & column_names_,
+        StoragePtr storage_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        SelectQueryInfo & query_info,
+        ContextPtr context_)
+        : ReadFromStreamLikeEngine{column_names_, storage_snapshot_, query_info.storage_limits, context_}
+        , column_names{column_names_}
+        , storage{storage_}
+        , storage_snapshot{storage_snapshot_}
+    {
+    }
+
+    String getName() const override { return "ReadFromStorageFileLog"; }
+
+private:
+    Pipe makePipe() final
+    {
+        auto & file_log = storage->as<StorageFileLog &>();
+        if (file_log.mv_attached)
+            throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageFileLog with attached materialized views");
+
+        std::lock_guard lock(file_log.file_infos_mutex);
+        if (file_log.running_streams)
+            throw Exception(ErrorCodes::CANNOT_SELECT, "Another select query is running on this table, need to wait it finish.");
+
+        file_log.updateFileInfos();
+
+        /// No files to parse
+        if (file_log.file_infos.file_names.empty())
+        {
+            LOG_WARNING(file_log.log, "There is a idle table named {}, no files need to parse.", getName());
+            return Pipe{};
+        }
+
+        auto modified_context = Context::createCopy(getContext());
+
+        auto max_streams_number = std::min<UInt64>((*file_log.filelog_settings)[FileLogSetting::max_threads], file_log.file_infos.file_names.size());
+
+        /// Each stream responsible for closing it's files and store meta
+        file_log.openFilesAndSetPos();
+
+        Pipes pipes;
+        pipes.reserve(max_streams_number);
+        for (size_t stream_number = 0; stream_number < max_streams_number; ++stream_number)
+        {
+            pipes.emplace_back(std::make_shared<FileLogSource>(
+                file_log,
+                storage_snapshot,
+                modified_context,
+                column_names,
+                file_log.getMaxBlockSize(),
+                file_log.getPollTimeoutMillisecond(),
+                stream_number,
+                max_streams_number,
+                (*file_log.filelog_settings)[FileLogSetting::handle_error_mode]));
+        }
+
+        return Pipe::unitePipes(std::move(pipes));
+    }
+
+    const Names column_names;
+    StoragePtr storage;
+    StorageSnapshotPtr storage_snapshot;
+};
+
 StorageFileLog::StorageFileLog(
     const StorageID & table_id_,
     ContextPtr context_,
@@ -58,42 +154,40 @@ StorageFileLog::StorageFileLog(
     const String & format_name_,
     std::unique_ptr<FileLogSettings> settings,
     const String & comment,
-    bool attach)
+    LoadingStrictnessLevel mode)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , filelog_settings(std::move(settings))
     , path(path_)
     , metadata_base_path(std::filesystem::path(metadata_base_path_) / "metadata")
     , format_name(format_name_)
-    , log(&Poco::Logger::get("StorageFileLog (" + table_id_.table_name + ")"))
+    , log(getLogger("StorageFileLog (" + table_id_.table_name + ")"))
     , disk(getContext()->getStoragePolicy("default")->getDisks().at(0))
-    , milliseconds_to_wait(filelog_settings->poll_directory_watch_events_backoff_init.totalMilliseconds())
+    , milliseconds_to_wait((*filelog_settings)[FileLogSetting::poll_directory_watch_events_backoff_init].totalMilliseconds())
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
+    setVirtuals(createVirtuals((*filelog_settings)[FileLogSetting::handle_error_mode]));
 
     if (!fileOrSymlinkPathStartsWith(path, getContext()->getUserFilesPath()))
     {
-        if (attach)
+        if (LoadingStrictnessLevel::SECONDARY_CREATE <= mode)
         {
             LOG_ERROR(log, "The absolute data path should be inside `user_files_path`({})", getContext()->getUserFilesPath());
             return;
         }
-        else
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "The absolute data path should be inside `user_files_path`({})",
-                getContext()->getUserFilesPath());
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "The absolute data path should be inside `user_files_path`({})", getContext()->getUserFilesPath());
     }
 
     bool created_metadata_directory = false;
     try
     {
-        if (!attach)
+        if (mode < LoadingStrictnessLevel::ATTACH)
         {
-            if (disk->exists(metadata_base_path))
+            if (disk->existsDirectory(metadata_base_path))
             {
                 throw Exception(
                     ErrorCodes::TABLE_METADATA_ALREADY_EXISTS,
@@ -104,7 +198,7 @@ StorageFileLog::StorageFileLog(
             created_metadata_directory = true;
         }
 
-        loadMetaFiles(attach);
+        loadMetaFiles(LoadingStrictnessLevel::ATTACH <= mode);
         loadFiles();
 
         assert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
@@ -118,7 +212,7 @@ StorageFileLog::StorageFileLog(
     }
     catch (...)
     {
-        if (!attach)
+        if (mode <= LoadingStrictnessLevel::ATTACH)
         {
             if (created_metadata_directory)
                 disk->removeRecursive(metadata_base_path);
@@ -129,13 +223,29 @@ StorageFileLog::StorageFileLog(
     }
 }
 
+VirtualColumnsDescription StorageFileLog::createVirtuals(StreamingHandleErrorMode handle_error_mode)
+{
+    VirtualColumnsDescription desc;
+
+    desc.addEphemeral("_filename", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
+    desc.addEphemeral("_offset", std::make_shared<DataTypeUInt64>(), "");
+
+    if (handle_error_mode == StreamingHandleErrorMode::STREAM)
+    {
+        desc.addEphemeral("_raw_record", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "");
+        desc.addEphemeral("_error", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "");
+    }
+
+    return desc;
+}
+
 void StorageFileLog::loadMetaFiles(bool attach)
 {
     /// Attach table
     if (attach)
     {
         /// Meta file may lost, log and create directory
-        if (!disk->exists(metadata_base_path))
+        if (!disk->existsDirectory(metadata_base_path))
         {
             /// Create metadata_base_path directory when store meta data
             LOG_ERROR(log, "Metadata files of table {} are lost.", getStorageID().getTableName());
@@ -232,7 +342,7 @@ void StorageFileLog::serialize() const
 void StorageFileLog::serialize(UInt64 inode, const FileMeta & file_meta) const
 {
     auto full_path = getFullMetaPath(file_meta.file_name);
-    if (disk->exists(full_path))
+    if (disk->existsFile(full_path))
     {
         checkOffsetIsValid(file_meta.file_name, file_meta.last_writen_position);
     }
@@ -258,7 +368,7 @@ void StorageFileLog::serialize(UInt64 inode, const FileMeta & file_meta) const
 
 void StorageFileLog::deserialize()
 {
-    if (!disk->exists(metadata_base_path))
+    if (!disk->existsDirectory(metadata_base_path))
         return;
 
     std::vector<std::string> files_to_remove;
@@ -295,61 +405,19 @@ UInt64 StorageFileLog::getInode(const String & file_name)
     return file_stat.st_ino;
 }
 
-Pipe StorageFileLog::read(
+void StorageFileLog::read(
+    QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & /* query_info */,
-    ContextPtr local_context,
+    SelectQueryInfo & query_info,
+    ContextPtr query_context,
     QueryProcessingStage::Enum /* processed_stage */,
     size_t /* max_block_size */,
     size_t /* num_streams */)
+
 {
-    /// If there are MVs depended on this table, we just forbid reading
-    if (!local_context->getSettingsRef().stream_like_engine_allow_direct_select)
-        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
-                        "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");
-
-    if (mv_attached)
-        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageFileLog with attached materialized views");
-
-    std::lock_guard lock(file_infos_mutex);
-    if (running_streams)
-    {
-        throw Exception(ErrorCodes::CANNOT_SELECT, "Another select query is running on this table, need to wait it finish.");
-    }
-
-    updateFileInfos();
-
-    /// No files to parse
-    if (file_infos.file_names.empty())
-    {
-        LOG_WARNING(log, "There is a idle table named {}, no files need to parse.", getName());
-        return Pipe{};
-    }
-
-    auto modified_context = Context::createCopy(local_context);
-
-    auto max_streams_number = std::min<UInt64>(filelog_settings->max_threads, file_infos.file_names.size());
-
-    /// Each stream responsible for closing it's files and store meta
-    openFilesAndSetPos();
-
-    Pipes pipes;
-    pipes.reserve(max_streams_number);
-    for (size_t stream_number = 0; stream_number < max_streams_number; ++stream_number)
-    {
-        pipes.emplace_back(std::make_shared<FileLogSource>(
-            *this,
-            storage_snapshot,
-            modified_context,
-            column_names,
-            getMaxBlockSize(),
-            getPollTimeoutMillisecond(),
-            stream_number,
-            max_streams_number));
-    }
-
-    return Pipe::unitePipes(std::move(pipes));
+    query_plan.addStep(
+        std::make_unique<ReadFromStorageFileLog>(column_names, shared_from_this(), storage_snapshot, query_info, std::move(query_context)));
 }
 
 void StorageFileLog::increaseStreams()
@@ -366,7 +434,7 @@ void StorageFileLog::drop()
 {
     try
     {
-        std::filesystem::remove_all(metadata_base_path);
+        (void)std::filesystem::remove_all(metadata_base_path);
     }
     catch (...)
     {
@@ -380,7 +448,7 @@ void StorageFileLog::startup()
         task->holder->activateAndSchedule();
 }
 
-void StorageFileLog::shutdown()
+void StorageFileLog::shutdown(bool)
 {
     if (task)
     {
@@ -417,7 +485,7 @@ void StorageFileLog::openFilesAndSetPos()
             auto & reader = file_ctx.reader.value();
             assertStreamGood(reader);
 
-            reader.seekg(0, reader.end);
+            reader.seekg(0, reader.end); /// NOLINT(readability-static-accessed-through-instance)
             assertStreamGood(reader);
 
             auto file_end = reader.tellg();
@@ -492,7 +560,7 @@ void StorageFileLog::checkOffsetIsValid(const String & filename, UInt64 offset) 
 StorageFileLog::ReadMetadataResult StorageFileLog::readMetadata(const String & filename) const
 {
     auto full_path = getFullMetaPath(filename);
-    if (!disk->isFile(full_path))
+    if (!disk->existsFile(full_path))
     {
         throw Exception(
             ErrorCodes::BAD_FILE_TYPE,
@@ -500,7 +568,9 @@ StorageFileLog::ReadMetadataResult StorageFileLog::readMetadata(const String & f
             filename, metadata_base_path);
     }
 
-    auto in = disk->readFile(full_path);
+    auto read_settings = getReadSettings();
+    read_settings.local_fs_method = LocalFSReadMethod::pread;
+    auto in = disk->readFile(full_path, read_settings);
     FileMeta metadata;
     UInt64 inode, last_written_pos;
 
@@ -526,21 +596,21 @@ StorageFileLog::ReadMetadataResult StorageFileLog::readMetadata(const String & f
 
 size_t StorageFileLog::getMaxBlockSize() const
 {
-    return filelog_settings->max_block_size.changed ? filelog_settings->max_block_size.value
-                                                    : getContext()->getSettingsRef().max_insert_block_size.value;
+    return (*filelog_settings)[FileLogSetting::max_block_size].changed ? (*filelog_settings)[FileLogSetting::max_block_size].value
+                                                    : getContext()->getSettingsRef()[Setting::max_insert_block_size].value;
 }
 
 size_t StorageFileLog::getPollMaxBatchSize() const
 {
-    size_t batch_size = filelog_settings->poll_max_batch_size.changed ? filelog_settings->poll_max_batch_size.value
-                                                                      : getContext()->getSettingsRef().max_block_size.value;
+    size_t batch_size = (*filelog_settings)[FileLogSetting::poll_max_batch_size].changed ? (*filelog_settings)[FileLogSetting::poll_max_batch_size].value
+                                                                      : getContext()->getSettingsRef()[Setting::max_block_size].value;
     return std::min(batch_size, getMaxBlockSize());
 }
 
 size_t StorageFileLog::getPollTimeoutMillisecond() const
 {
-    return filelog_settings->poll_timeout_ms.changed ? filelog_settings->poll_timeout_ms.totalMilliseconds()
-                                                     : getContext()->getSettingsRef().stream_poll_timeout_ms.totalMilliseconds();
+    return (*filelog_settings)[FileLogSetting::poll_timeout_ms].changed ? (*filelog_settings)[FileLogSetting::poll_timeout_ms].totalMilliseconds()
+                                                     : getContext()->getSettingsRef()[Setting::stream_poll_timeout_ms].totalMilliseconds();
 }
 
 bool StorageFileLog::checkDependencies(const StorageID & table_id)
@@ -606,14 +676,13 @@ void StorageFileLog::threadFunc()
                 {
                     LOG_TRACE(log, "Stream stalled. Reschedule.");
                     if (milliseconds_to_wait
-                        < static_cast<uint64_t>(filelog_settings->poll_directory_watch_events_backoff_max.totalMilliseconds()))
-                        milliseconds_to_wait *= filelog_settings->poll_directory_watch_events_backoff_factor.value;
+                        < static_cast<uint64_t>((*filelog_settings)[FileLogSetting::poll_directory_watch_events_backoff_max].totalMilliseconds()))
+                        milliseconds_to_wait *= (*filelog_settings)[FileLogSetting::poll_directory_watch_events_backoff_factor].value;
                     break;
                 }
-                else
-                {
-                    milliseconds_to_wait = filelog_settings->poll_directory_watch_events_backoff_init.totalMilliseconds();
-                }
+
+                milliseconds_to_wait = (*filelog_settings)[FileLogSetting::poll_directory_watch_events_backoff_init].totalMilliseconds();
+
 
                 auto ts = std::chrono::steady_clock::now();
                 auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(ts-start_time);
@@ -676,7 +745,7 @@ bool StorageFileLog::streamToViews()
     auto metadata_snapshot = getInMemoryMetadataPtr();
     auto storage_snapshot = getStorageSnapshot(metadata_snapshot, getContext());
 
-    auto max_streams_number = std::min<UInt64>(filelog_settings->max_threads.value, file_infos.file_names.size());
+    auto max_streams_number = std::min<UInt64>((*filelog_settings)[FileLogSetting::max_threads].value, file_infos.file_names.size());
     /// No files to parse
     if (max_streams_number == 0)
     {
@@ -690,7 +759,14 @@ bool StorageFileLog::streamToViews()
 
     auto new_context = Context::createCopy(getContext());
 
-    InterpreterInsertQuery interpreter(insert, new_context, false, true, true);
+    InterpreterInsertQuery interpreter(
+        insert,
+        new_context,
+        /* allow_materialized */ false,
+        /* no_squash */ true,
+        /* no_destination */ true,
+        /* async_isnert */ false);
+
     auto block_io = interpreter.execute();
 
     /// Each stream responsible for closing it's files and store meta
@@ -708,7 +784,8 @@ bool StorageFileLog::streamToViews()
             getPollMaxBatchSize(),
             getPollTimeoutMillisecond(),
             stream_number,
-            max_streams_number));
+            max_streams_number,
+            (*filelog_settings)[FileLogSetting::handle_error_mode]));
     }
 
     auto input= Pipe::unitePipes(std::move(pipes));
@@ -719,6 +796,7 @@ bool StorageFileLog::streamToViews()
     {
         block_io.pipeline.complete(std::move(input));
         block_io.pipeline.setNumThreads(max_streams_number);
+        block_io.pipeline.setConcurrencyControl(new_context->getSettingsRef()[Setting::use_concurrency_control]);
         block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
         CompletedPipelineExecutor executor(block_io.pipeline);
         executor.execute();
@@ -753,35 +831,35 @@ void registerStorageFileLog(StorageFactory & factory)
             filelog_settings->loadFromQuery(*args.storage_def);
         }
 
-        auto physical_cpu_cores = getNumberOfPhysicalCPUCores();
-        auto num_threads = filelog_settings->max_threads.value;
+        auto cpu_cores = getNumberOfCPUCoresToUse();
+        auto num_threads = (*filelog_settings)[FileLogSetting::max_threads];
 
-        if (!num_threads) /// Default
+        if ((*filelog_settings)[FileLogSetting::max_threads].is_auto) /// Default
         {
-            num_threads = std::max(1U, physical_cpu_cores / 4);
-            filelog_settings->set("max_threads", num_threads);
+            num_threads = std::max(1U, cpu_cores / 4);
+            (*filelog_settings)[FileLogSetting::max_threads] = num_threads;
         }
-        else if (num_threads > physical_cpu_cores)
+        else if (num_threads > cpu_cores)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Number of threads to parse files can not be bigger than {}", physical_cpu_cores);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Number of threads to parse files can not be bigger than {}", cpu_cores);
         }
         else if (num_threads < 1)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Number of threads to parse files can not be lower than 1");
         }
 
-        if (filelog_settings->max_block_size.changed && filelog_settings->max_block_size.value < 1)
+        if ((*filelog_settings)[FileLogSetting::max_block_size].changed && (*filelog_settings)[FileLogSetting::max_block_size].value < 1)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "filelog_max_block_size can not be lower than 1");
         }
 
-        if (filelog_settings->poll_max_batch_size.changed && filelog_settings->poll_max_batch_size.value < 1)
+        if ((*filelog_settings)[FileLogSetting::poll_max_batch_size].changed && (*filelog_settings)[FileLogSetting::poll_max_batch_size].value < 1)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "filelog_poll_max_batch_size can not be lower than 1");
         }
 
-        size_t init_sleep_time = filelog_settings->poll_directory_watch_events_backoff_init.totalMilliseconds();
-        size_t max_sleep_time = filelog_settings->poll_directory_watch_events_backoff_max.totalMilliseconds();
+        size_t init_sleep_time = (*filelog_settings)[FileLogSetting::poll_directory_watch_events_backoff_init].totalMilliseconds();
+        size_t max_sleep_time = (*filelog_settings)[FileLogSetting::poll_directory_watch_events_backoff_max].totalMilliseconds();
         if (init_sleep_time > max_sleep_time)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -789,8 +867,8 @@ void registerStorageFileLog(StorageFactory & factory)
                             "be greater than poll_directory_watch_events_backoff_max");
         }
 
-        if (filelog_settings->poll_directory_watch_events_backoff_factor.changed
-            && !filelog_settings->poll_directory_watch_events_backoff_factor.value)
+        if ((*filelog_settings)[FileLogSetting::poll_directory_watch_events_backoff_factor].changed
+            && !(*filelog_settings)[FileLogSetting::poll_directory_watch_events_backoff_factor].value)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "poll_directory_watch_events_backoff_factor can not be 0");
 
         if (args_count != 2)
@@ -811,7 +889,7 @@ void registerStorageFileLog(StorageFactory & factory)
             format,
             std::move(filelog_settings),
             args.comment,
-            args.attach);
+            args.mode);
     };
 
     factory.registerStorage(
@@ -957,7 +1035,7 @@ bool StorageFileLog::updateFileInfos()
                     file_infos.meta_by_inode.erase(meta);
 
                 if (std::filesystem::exists(getFullMetaPath(file_name)))
-                    std::filesystem::remove(getFullMetaPath(file_name));
+                    (void)std::filesystem::remove(getFullMetaPath(file_name));
                 file_infos.context_by_name.erase(it);
             }
             else
@@ -975,15 +1053,4 @@ bool StorageFileLog::updateFileInfos()
     return events.empty() || file_infos.file_names.empty();
 }
 
-NamesAndTypesList StorageFileLog::getVirtuals() const
-{
-    return NamesAndTypesList{
-        {"_filename", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"_offset", std::make_shared<DataTypeUInt64>()}};
-}
-
-Names StorageFileLog::getVirtualColumnNames()
-{
-    return {"_filename", "_offset"};
-}
 }

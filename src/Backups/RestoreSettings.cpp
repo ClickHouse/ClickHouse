@@ -31,7 +31,7 @@ namespace
         {
             if (field.getType() == Field::Types::String)
             {
-                const String & str = field.get<const String &>();
+                const String & str = field.safeGet<const String &>();
                 if (str == "1" || boost::iequals(str, "true") || boost::iequals(str, "create"))
                 {
                     value = RestoreTableCreationMode::kCreate;
@@ -54,7 +54,7 @@ namespace
 
             if (field.getType() == Field::Types::UInt64)
             {
-                UInt64 number = field.get<UInt64>();
+                UInt64 number = field.safeGet<UInt64>();
                 if (number == 1)
                 {
                     value = RestoreTableCreationMode::kCreate;
@@ -95,7 +95,7 @@ namespace
         {
             if (field.getType() == Field::Types::String)
             {
-                const String & str = field.get<const String &>();
+                const String & str = field.safeGet<const String &>();
                 if (str == "1" || boost::iequals(str, "true") || boost::iequals(str, "create"))
                 {
                     value = RestoreAccessCreationMode::kCreate;
@@ -118,7 +118,7 @@ namespace
 
             if (field.getType() == Field::Types::UInt64)
             {
-                UInt64 number = field.get<UInt64>();
+                UInt64 number = field.safeGet<UInt64>();
                 if (number == 1)
                 {
                     value = RestoreAccessCreationMode::kCreate;
@@ -160,9 +160,13 @@ namespace
     M(UInt64, replica_num_in_backup) \
     M(Bool, allow_non_empty_tables) \
     M(RestoreAccessCreationMode, create_access) \
-    M(Bool, allow_unresolved_access_dependencies) \
+    M(Bool, skip_unresolved_access_dependencies) \
+    M(Bool, update_access_entities_dependents) \
     M(RestoreUDFCreationMode, create_function) \
     M(Bool, allow_s3_native_copy) \
+    M(Bool, use_same_s3_credentials_for_base_backup) \
+    M(Bool, use_same_password_for_base_backup) \
+    M(Bool, restore_broken_parts_as_detached) \
     M(Bool, internal) \
     M(String, host_id) \
     M(OptionalString, storage_policy) \
@@ -184,7 +188,12 @@ RestoreSettings RestoreSettings::fromRestoreQuery(const ASTBackupQuery & query)
             else
 
             LIST_OF_RESTORE_SETTINGS(GET_SETTINGS_FROM_RESTORE_QUERY_HELPER)
-            throw Exception(ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS, "Unknown setting {}", setting.name);
+
+            /// `allow_unresolved_access_dependencies` is an obsolete name.
+            if (setting.name == "allow_unresolved_access_dependencies")
+                res.skip_unresolved_access_dependencies = SettingFieldBool{setting.value}.value;
+            else
+                throw Exception(ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS, "Unknown setting {}", setting.name);
         }
     }
 

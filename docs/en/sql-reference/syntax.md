@@ -16,7 +16,7 @@ INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 
 The `INSERT INTO t VALUES` fragment is parsed by the full parser, and the data `(1, 'Hello, world'), (2, 'abc'), (3, 'def')` is parsed by the fast stream parser. You can also turn on the full parser for the data by using the [input_format_values_interpret_expressions](../operations/settings/settings-formats.md#input_format_values_interpret_expressions) setting. When `input_format_values_interpret_expressions = 1`, ClickHouse first tries to parse values with the fast stream parser. If it fails, ClickHouse tries to use the full parser for the data, treating it like an SQL [expression](#expressions).
 
-Data can have any format. When a query is received, the server calculates no more than [max_query_size](../operations/settings/settings.md#settings-max_query_size) bytes of the request in RAM (by default, 1 MB), and the rest is stream parsed.
+Data can have any format. When a query is received, the server calculates no more than [max_query_size](../operations/settings/settings.md#max_query_size) bytes of the request in RAM (by default, 1 MB), and the rest is stream parsed.
 It allows for avoiding issues with large `INSERT` queries.
 
 When using the `Values` format in an `INSERT` query, it may seem that data is parsed the same as expressions in a `SELECT` query, but this is not true. The `Values` format is much more limited.
@@ -54,11 +54,11 @@ Identifiers are:
 - Cluster, database, table, partition, and column names.
 - Functions.
 - Data types.
-- [Expression aliases](#expression_aliases).
+- [Expression aliases](#expression-aliases).
 
 Identifiers can be quoted or non-quoted. The latter is preferred.
 
-Non-quoted identifiers must match the regex `^[a-zA-Z_][0-9a-zA-Z_]*$` and can not be equal to [keywords](#syntax-keywords). Examples: `x`, `_1`, `X_y__Z123_`.
+Non-quoted identifiers must match the regex `^[a-zA-Z_][0-9a-zA-Z_]*$` and can not be equal to [keywords](#keywords). Examples: `x`, `_1`, `X_y__Z123_`.
 
 If you want to use identifiers the same as keywords or you want to use other symbols in identifiers, quote it using double quotes or backticks, for example, `"id"`, `` `id` ``.
 
@@ -68,18 +68,31 @@ There are numeric, string, compound, and `NULL` literals.
 
 ### Numeric
 
-Numeric literal tries to be parsed:
+Numeric literals are parsed as follows:
 
 - First, as a 64-bit signed number, using the [strtoull](https://en.cppreference.com/w/cpp/string/byte/strtoul) function.
 - If unsuccessful, as a 64-bit unsigned number, using the [strtoll](https://en.cppreference.com/w/cpp/string/byte/strtol) function.
 - If unsuccessful, as a floating-point number using the [strtod](https://en.cppreference.com/w/cpp/string/byte/strtof) function.
 - Otherwise, it returns an error.
 
-Literal value has the smallest type that the value fits in.
+Literal values are cast to the smallest type that the value fits in.
 For example, 1 is parsed as `UInt8`, but 256 is parsed as `UInt16`. For more information, see [Data types](../sql-reference/data-types/index.md).
 Underscores `_` inside numeric literals are ignored and can be used for better readability.
 
-Examples: `1`, `10_000_000`, `0xffff_ffff`, `18446744073709551615`, `0xDEADBEEF`, `01`, `0.1`, `1e100`, `-1e-100`, `inf`, `nan`.
+The following Numeric literals are supported:
+
+**Integers** – `1`, `10_000_000`, `18446744073709551615`, `01`
+**Decimals** – `0.1`
+**Exponential notation** - `1e100`, `-1e-100`
+**Floating point numbers** – `123.456`, `inf`, `nan`
+
+**Hex** – `0xc0fe`
+**SQL Standard compatible hex string** – `x'c0fe'`
+
+**Binary** – `0b1101`
+**SQL Standard compatible binary string** - `b'1101'`
+
+Octal literals are not supported to avoid accidental errors in interpretation.
 
 ### String
 

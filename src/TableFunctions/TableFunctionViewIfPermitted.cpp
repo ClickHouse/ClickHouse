@@ -1,14 +1,16 @@
+#include <Core/Settings.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <base/types.h>
 #include <Storages/StorageNull.h>
 #include <Storages/StorageView.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <TableFunctions/TableFunctionViewIfPermitted.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include "registerTableFunctions.h"
@@ -16,6 +18,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+}
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -23,11 +30,37 @@ namespace ErrorCodes
     extern const int ACCESS_DENIED;
 }
 
-
-const ASTSelectWithUnionQuery & TableFunctionViewIfPermitted::getSelectQuery() const
+namespace
 {
-    return *create.select;
-}
+
+/* viewIfPermitted(query ELSE null('structure'))
+ * Works as "view(query)" if the current user has the permissions required to execute "query"; works as "null('structure')" otherwise.
+ */
+class TableFunctionViewIfPermitted : public ITableFunction
+{
+public:
+    static constexpr auto name = "viewIfPermitted";
+
+    std::string getName() const override { return name; }
+
+private:
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const String & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
+
+    const char * getStorageTypeName() const override { return "ViewIfPermitted"; }
+
+    std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
+
+    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+
+    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
+
+    bool isPermitted(const ContextPtr & context, const ColumnsDescription & else_columns) const;
+
+    ASTCreateQuery create;
+    ASTPtr else_ast;
+    TableFunctionPtr else_table_function;
+};
+
 
 std::vector<size_t> TableFunctionViewIfPermitted::skipAnalysisForArguments(const QueryTreeNodePtr &, ContextPtr) const
 {
@@ -85,7 +118,7 @@ bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const
 
     try
     {
-        if (context->getSettingsRef().allow_experimental_analyzer)
+        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
             sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.children[0], context);
         }
@@ -116,6 +149,8 @@ bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const
     }
 
     return true;
+}
+
 }
 
 void registerTableFunctionViewIfPermitted(TableFunctionFactory & factory)

@@ -1,13 +1,13 @@
 #pragma once
 
-#include <Core/BackgroundSchedulePool.h>
-#include <Common/ConcurrentBoundedQueue.h>
-#include <Client/ConnectionPool.h>
-#include <IO/ReadBufferFromFile.h>
-#include <Disks/IDisk.h>
-#include <atomic>
 #include <mutex>
-#include <condition_variable>
+#include <Client/ConnectionPool.h>
+#include <Core/BackgroundSchedulePool.h>
+#include <Disks/IDisk.h>
+#include <IO/ReadBufferFromFile.h>
+#include <Interpreters/Cluster.h>
+#include <Common/ConcurrentBoundedQueue.h>
+#include <Common/SettingsChanges.h>
 
 
 namespace CurrentMetrics { class Increment; }
@@ -21,13 +21,14 @@ using DiskPtr = std::shared_ptr<IDisk>;
 class StorageDistributed;
 class ActionBlocker;
 class BackgroundSchedulePool;
+class SettingsChanges;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
 
 class ISource;
 
-/** Queue for async INSERT Into Distributed engine (insert_distributed_sync=0).
+/** Queue for async INSERT Into Distributed engine (distributed_foreground_insert=0).
  *
  * Files are added from two places:
  * - from filesystem at startup (StorageDistributed::startup())
@@ -36,12 +37,10 @@ class ISource;
  * Later, in background, those files will be send to the remote nodes.
  *
  * The behaviour of this queue can be configured via the following settings:
- * - distributed_directory_monitor_batch_inserts
- * - distributed_directory_monitor_split_batch_on_failure
- * - distributed_directory_monitor_sleep_time_ms
- * - distributed_directory_monitor_max_sleep_time_ms
- * NOTE: It worth to rename the settings too
- * ("directory_monitor" in settings looks too internal).
+ * - distributed_background_insert_batch
+ * - distributed_background_insert_split_batch_on_failure
+ * - distributed_background_insert_sleep_time_ms
+ * - distributed_background_insert_max_sleep_time_ms
  */
 class DistributedAsyncInsertDirectoryQueue
 {
@@ -52,19 +51,21 @@ public:
         StorageDistributed & storage_,
         const DiskPtr & disk_,
         const std::string & relative_path_,
-        ConnectionPoolPtr pool_,
+        ConnectionPoolWithFailoverPtr pool_,
         ActionBlocker & monitor_blocker_,
         BackgroundSchedulePool & bg_pool);
 
     ~DistributedAsyncInsertDirectoryQueue();
 
-    static ConnectionPoolPtr createPool(const std::string & name, const StorageDistributed & storage);
+    static ConnectionPoolWithFailoverPtr createPool(const Cluster::Addresses & addresses, const StorageDistributed & storage);
 
     void updatePath(const std::string & new_relative_path);
 
-    void flushAllData();
+    void flushAllData(const SettingsChanges & settings_changes);
 
     void shutdownAndDropAllData();
+
+    void shutdownWithoutFlush();
 
     static std::shared_ptr<ISource> createSourceFromFile(const String & file_name);
 
@@ -99,9 +100,9 @@ private:
 
     void addFile(const std::string & file_path);
     void initializeFilesFromDisk();
-    void processFiles();
-    void processFile(std::string & file_path);
-    void processFilesWithBatching();
+    void processFiles(const SettingsChanges & settings_changes = {});
+    void processFile(std::string & file_path, const SettingsChanges & settings_changes);
+    void processFilesWithBatching(const SettingsChanges & settings_changes);
 
     void markAsBroken(const std::string & file_path);
     void markAsSend(const std::string & file_path);
@@ -111,7 +112,7 @@ private:
     std::string getLoggerName() const;
 
     StorageDistributed & storage;
-    const ConnectionPoolPtr pool;
+    const ConnectionPoolWithFailoverPtr pool;
 
     DiskPtr disk;
     std::string relative_path;
@@ -144,7 +145,7 @@ private:
     const std::chrono::milliseconds max_sleep_time;
     std::chrono::time_point<std::chrono::system_clock> last_decrease_time {std::chrono::system_clock::now()};
     std::mutex mutex;
-    Poco::Logger * log;
+    LoggerPtr log;
     ActionBlocker & monitor_blocker;
 
     BackgroundSchedulePoolTaskHolder task_handle;

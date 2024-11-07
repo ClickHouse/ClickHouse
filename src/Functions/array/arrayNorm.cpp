@@ -25,19 +25,19 @@ struct L1Norm
     struct ConstParams {};
 
     template <typename ResultType>
-    inline static ResultType accumulate(ResultType result, ResultType value, const ConstParams &)
+    static ResultType accumulate(ResultType result, ResultType value, const ConstParams &)
     {
         return result + fabs(value);
     }
 
     template <typename ResultType>
-    inline static ResultType combine(ResultType result, ResultType other_result, const ConstParams &)
+    static ResultType combine(ResultType result, ResultType other_result, const ConstParams &)
     {
         return result + other_result;
     }
 
     template <typename ResultType>
-    inline static ResultType finalize(ResultType result, const ConstParams &)
+    static ResultType finalize(ResultType result, const ConstParams &)
     {
         return result;
     }
@@ -50,19 +50,19 @@ struct L2Norm
     struct ConstParams {};
 
     template <typename ResultType>
-    inline static ResultType accumulate(ResultType result, ResultType value, const ConstParams &)
+    static ResultType accumulate(ResultType result, ResultType value, const ConstParams &)
     {
         return result + value * value;
     }
 
     template <typename ResultType>
-    inline static ResultType combine(ResultType result, ResultType other_result, const ConstParams &)
+    static ResultType combine(ResultType result, ResultType other_result, const ConstParams &)
     {
         return result + other_result;
     }
 
     template <typename ResultType>
-    inline static ResultType finalize(ResultType result, const ConstParams &)
+    static ResultType finalize(ResultType result, const ConstParams &)
     {
         return sqrt(result);
     }
@@ -73,7 +73,7 @@ struct L2SquaredNorm : L2Norm
     static constexpr auto name = "L2Squared";
 
     template <typename ResultType>
-    inline static ResultType finalize(ResultType result, const ConstParams &)
+    static ResultType finalize(ResultType result, const ConstParams &)
     {
         return result;
     }
@@ -91,19 +91,19 @@ struct LpNorm
     };
 
     template <typename ResultType>
-    inline static ResultType accumulate(ResultType result, ResultType value, const ConstParams & params)
+    static ResultType accumulate(ResultType result, ResultType value, const ConstParams & params)
     {
         return result + static_cast<ResultType>(std::pow(fabs(value), params.power));
     }
 
     template <typename ResultType>
-    inline static ResultType combine(ResultType result, ResultType other_result, const ConstParams &)
+    static ResultType combine(ResultType result, ResultType other_result, const ConstParams &)
     {
         return result + other_result;
     }
 
     template <typename ResultType>
-    inline static ResultType finalize(ResultType result, const ConstParams & params)
+    static ResultType finalize(ResultType result, const ConstParams & params)
     {
         return static_cast<ResultType>(std::pow(result, params.inverted_power));
     }
@@ -116,19 +116,19 @@ struct LinfNorm
     struct ConstParams {};
 
     template <typename ResultType>
-    inline static ResultType accumulate(ResultType result, ResultType value, const ConstParams &)
+    static ResultType accumulate(ResultType result, ResultType value, const ConstParams &)
     {
         return fmax(result, fabs(value));
     }
 
     template <typename ResultType>
-    inline static ResultType combine(ResultType result, ResultType other_result, const ConstParams &)
+    static ResultType combine(ResultType result, ResultType other_result, const ConstParams &)
     {
         return fmax(result, other_result);
     }
 
     template <typename ResultType>
-    inline static ResultType finalize(ResultType result, const ConstParams &)
+    static ResultType finalize(ResultType result, const ConstParams &)
     {
         return result;
     }
@@ -175,8 +175,7 @@ public:
         }
     }
 
-    ColumnPtr
-    executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         DataTypePtr type = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
         ColumnPtr column = arguments[0].column->convertToFullColumnIfConst();

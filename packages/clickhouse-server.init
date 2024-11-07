@@ -1,10 +1,11 @@
 #!/bin/sh
 ### BEGIN INIT INFO
 # Provides:          clickhouse-server
+# Required-Start:    $network
+# Required-Stop:     $network
+# Should-Start:      $time
 # Default-Start:     2 3 4 5
 # Default-Stop:      0 1 6
-# Should-Start:      $time $network
-# Should-Stop:       $network
 # Short-Description: clickhouse-server daemon
 ### END INIT INFO
 #

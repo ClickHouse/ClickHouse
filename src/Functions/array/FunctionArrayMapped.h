@@ -74,6 +74,8 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+
     /// Called if at least one function argument is a lambda expression.
     /// For argument-lambda expressions, it defines the types of arguments of these expressions.
     void getLambdaArgumentTypes(DataTypes & arguments) const override
@@ -204,49 +206,47 @@ public:
 
             return Impl::getReturnType(nested_type, nested_type);
         }
-        else
-        {
-            if (arguments.size() > 2 + num_fixed_params && Impl::needOneArray())
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} needs one argument with data", getName());
 
-            const auto * data_type_function = checkAndGetDataType<DataTypeFunction>(arguments[0].type.get());
+        if (arguments.size() > 2 + num_fixed_params && Impl::needOneArray())
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} needs one argument with data", getName());
 
-            if (!data_type_function)
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "First argument for function {} must be a function. Actual {}",
-                    getName(),
-                    arguments[0].type->getName());
+        const auto * data_type_function = checkAndGetDataType<DataTypeFunction>(arguments[0].type.get());
 
-            if constexpr (num_fixed_params)
-                Impl::checkArguments(getName(), arguments.data() + 1);
+        if (!data_type_function)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument for function {} must be a function. Actual {}",
+                getName(),
+                arguments[0].type->getName());
 
-            /// The types of the remaining arguments are already checked in getLambdaArgumentTypes.
+        if constexpr (num_fixed_params)
+            Impl::checkArguments(getName(), arguments.data() + 1);
 
-            DataTypePtr return_type = removeLowCardinality(data_type_function->getReturnType());
+        /// The types of the remaining arguments are already checked in getLambdaArgumentTypes.
 
-            /// Special cases when we need boolean lambda result:
-            ///  - lambda may return Nullable(UInt8) column, in this case after lambda execution we will
-            ///    replace all NULLs with 0 and return nested UInt8 column.
-            ///  - lambda may return Nothing or Nullable(Nothing) because of default implementation of functions
-            ///    for these types. In this case we will just create UInt8 const column full of 0.
-            if (Impl::needBoolean() && !isUInt8(removeNullable(return_type)) && !isNothing(removeNullable(return_type)))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Expression for function {} must return UInt8 or Nullable(UInt8), found {}",
-                    getName(),
-                    return_type->getName());
+        DataTypePtr return_type = removeLowCardinality(data_type_function->getReturnType());
 
-            if (arguments.size() < 2 + num_fixed_params)
-                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect number of arguments: {}", arguments.size());
+        /// Special cases when we need boolean lambda result:
+        ///  - lambda may return Nullable(UInt8) column, in this case after lambda execution we will
+        ///    replace all NULLs with 0 and return nested UInt8 column.
+        ///  - lambda may return Nothing or Nullable(Nothing) because of default implementation of functions
+        ///    for these types. In this case we will just create UInt8 const column full of 0.
+        if (Impl::needBoolean() && !isUInt8(removeNullable(return_type)) && !isNothing(removeNullable(return_type)))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Expression for function {} must return UInt8 or Nullable(UInt8), found {}",
+                getName(),
+                return_type->getName());
 
-            const auto * first_array_type = checkAndGetDataType<DataTypeArray>(arguments[1 + num_fixed_params].type.get());
-            if (!first_array_type)
-                throw DB::Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unsupported type {}", arguments[1 + num_fixed_params].type->getName());
+        if (arguments.size() < 2 + num_fixed_params)
+            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect number of arguments: {}", arguments.size());
 
-            return Impl::getReturnType(return_type, first_array_type->getNestedType());
-        }
+        const auto * first_array_type = checkAndGetDataType<DataTypeArray>(arguments[1 + num_fixed_params].type.get());
+        if (!first_array_type)
+            throw DB::Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unsupported type {}", arguments[1 + num_fixed_params].type->getName());
+
+        return Impl::getReturnType(return_type, first_array_type->getNestedType());
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
@@ -315,7 +315,7 @@ public:
                             ErrorCodes::ILLEGAL_COLUMN, "Expected Array column, found {}", column_array_ptr->getName());
 
                     column_array_ptr = recursiveRemoveLowCardinality(column_const_array->convertToFullColumn());
-                    column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
+                    column_array = &checkAndGetColumn<ColumnArray>(*column_array_ptr);
                 }
 
                 if (!array_type)
@@ -333,7 +333,11 @@ public:
                         && column_array->getOffsets() != typeid_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData())
                         throw Exception(
                             ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
-                                "Arrays passed to {} must have equal size", getName());
+                            "Arrays passed to {} must have equal size. Argument {} has size {} which differs with the size of another argument, {}",
+                            getName(),
+                            i + 1,
+                            column_array->getOffsets().back(),  /// By the way, PODArray supports addressing -1th element.
+                            typeid_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData().back());
                 }
 
                 const auto * column_tuple = checkAndGetColumn<ColumnTuple>(&column_array->getData());
@@ -349,7 +353,7 @@ public:
                     {
                         arrays.emplace_back(
                             column_tuple->getColumnPtr(j),
-                            recursiveRemoveLowCardinality(type_tuple.getElement(j)),
+                            type_tuple.getElement(j),
                             array_with_type_and_name.name + "." + tuple_names[j]);
                     }
                 }
@@ -357,7 +361,7 @@ public:
                 {
                     arrays.emplace_back(
                         column_array->getDataPtr(),
-                        recursiveRemoveLowCardinality(array_type->getNestedType()),
+                        array_type->getNestedType(),
                         array_with_type_and_name.name);
                 }
 
@@ -370,10 +374,10 @@ public:
 
             /// Put all the necessary columns multiplied by the sizes of arrays into the columns.
             auto replicated_column_function_ptr = IColumn::mutate(column_function->replicate(column_first_array->getOffsets()));
-            auto * replicated_column_function = typeid_cast<ColumnFunction *>(replicated_column_function_ptr.get());
-            replicated_column_function->appendArguments(arrays);
+            auto & replicated_column_function = typeid_cast<ColumnFunction &>(*replicated_column_function_ptr);
+            replicated_column_function.appendArguments(arrays);
 
-            auto lambda_result = replicated_column_function->reduce();
+            auto lambda_result = replicated_column_function.reduce();
 
             /// Convert LowCardinality(T) -> T and Const(LowCardinality(T)) -> Const(T),
             /// because we removed LowCardinality from return type of lambda expression.

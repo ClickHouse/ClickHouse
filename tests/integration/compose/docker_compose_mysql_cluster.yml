@@ -1,0 +1,70 @@
+services:
+    mysql2:
+        image: mysql:8.0
+        restart: always
+        environment:
+            MYSQL_ROOT_PASSWORD: clickhouse
+            MYSQL_ROOT_HOST: ${MYSQL_CLUSTER_ROOT_HOST}
+            DATADIR: /mysql/
+        expose:
+            - ${MYSQL_CLUSTER_PORT:-3306}
+        command: --server_id=100
+            --log-bin='mysql-bin-2.log'
+            --default-time-zone='+3:00'
+            --gtid-mode="ON"
+            --enforce-gtid-consistency
+            --log-error-verbosity=3
+            --log-error=/mysql/2_error.log
+            --general-log=ON
+            --general-log-file=/mysql/2_general.log
+        volumes:
+            - type: ${MYSQL_CLUSTER_LOGS_FS:-tmpfs}
+              source: ${MYSQL_CLUSTER_LOGS:-}
+              target: /mysql/
+        user: ${MYSQL_CLUSTER_DOCKER_USER}
+    mysql3:
+        image: mysql:8.0
+        restart: always
+        environment:
+            MYSQL_ROOT_PASSWORD: clickhouse
+            MYSQL_ROOT_HOST: ${MYSQL_CLUSTER_ROOT_HOST}
+            DATADIR: /mysql/
+        expose:
+            - ${MYSQL_CLUSTER_PORT:-3306}
+        command: --server_id=100
+            --log-bin='mysql-bin-3.log'
+            --default-time-zone='+3:00'
+            --gtid-mode="ON"
+            --enforce-gtid-consistency
+            --log-error-verbosity=3
+            --log-error=/mysql/3_error.log
+            --general-log=ON
+            --general-log-file=/mysql/3_general.log
+        volumes:
+            - type: ${MYSQL_CLUSTER_LOGS_FS:-tmpfs}
+              source: ${MYSQL_CLUSTER_LOGS:-}
+              target: /mysql/
+        user: ${MYSQL_CLUSTER_DOCKER_USER}
+    mysql4:
+        image: mysql:8.0
+        restart: always
+        environment:
+            MYSQL_ROOT_PASSWORD: clickhouse
+            MYSQL_ROOT_HOST: ${MYSQL_CLUSTER_ROOT_HOST}
+            DATADIR: /mysql/
+        expose:
+            - ${MYSQL_CLUSTER_PORT:-3306}
+        command: --server_id=100
+            --log-bin='mysql-bin-4.log'
+            --default-time-zone='+3:00'
+            --gtid-mode="ON"
+            --enforce-gtid-consistency
+            --log-error-verbosity=3
+            --log-error=/mysql/4_error.log
+            --general-log=ON
+            --general-log-file=/mysql/4_general.log
+        volumes:
+            - type: ${MYSQL_CLUSTER_LOGS_FS:-tmpfs}
+              source: ${MYSQL_CLUSTER_LOGS:-}
+              target: /mysql/
+        user: ${MYSQL_CLUSTER_DOCKER_USER}

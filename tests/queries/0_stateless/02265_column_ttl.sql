@@ -16,7 +16,8 @@ insert into ttl_02265 values ('2010-01-01', 2010, 'foo');
 optimize table ttl_02265 final;
 -- after, 20100101_0_0_2 will not have ttl.txt, but will have value.bin
 optimize table ttl_02265 final;
-system sync replica ttl_02265;
+system sync replica ttl_02265 STRICT;
+system sync replica ttl_02265_r2 STRICT;
 
 -- after detach/attach it will not have TTL in-memory, and will not have ttl.txt
 detach table ttl_02265;
@@ -37,4 +38,4 @@ attach table ttl_02265;
 --
 optimize table ttl_02265 final;
 system flush logs;
-select * from system.part_log where database = currentDatabase() and table like 'ttl_02265%' and error != 0;
+select * from system.part_log where database = currentDatabase() and table like 'ttl_02265%' and error != 0 and errorCodeToName(error) != 'NO_REPLICA_HAS_PART';

@@ -7,7 +7,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
-#include <Common/ThreadStatus.h>
 #include <Core/Protocol.h>
 #include <Core/QueryProcessingStage.h>
 #include <IO/Progress.h>
@@ -19,8 +18,12 @@
 #include <Interpreters/ProfileEventsExt.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
+#include <IO/ReadBufferFromPocoSocketChunked.h>
+#include <IO/WriteBufferFromPocoSocketChunked.h>
 
+#include "Core/Types.h"
 #include "IServer.h"
+#include "Interpreters/AsynchronousInsertQueue.h"
 #include "Server/TCPProtocolStackData.h"
 #include "Storages/MergeTree/RequestResponse.h"
 #include "base/types.h"
@@ -73,6 +76,8 @@ struct QueryState
 
     /// Query text.
     String query;
+    /// Parsed query
+    ASTPtr parsed_query;
     /// Streams of blocks, that are processing the query.
     BlockIO io;
 
@@ -144,8 +149,24 @@ public:
       *  because it allows to check the IP ranges of the trusted proxy.
       * Proxy-forwarded (original client) IP address is used for quota accounting if quota is keyed by forwarded IP.
       */
-    TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_);
-    TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, TCPProtocolStackData & stack_data, std::string server_display_name_);
+    TCPHandler(
+        IServer & server_,
+        TCPServer & tcp_server_,
+        const Poco::Net::StreamSocket & socket_,
+        bool parse_proxy_protocol_,
+        String server_display_name_,
+        String host_name_,
+        const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
+        const ProfileEvents::Event & write_event_ = ProfileEvents::end());
+    TCPHandler(
+        IServer & server_,
+        TCPServer & tcp_server_,
+        const Poco::Net::StreamSocket & socket_,
+        TCPProtocolStackData & stack_data,
+        String server_display_name_,
+        String host_name_,
+        const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
+        const ProfileEvents::Event & write_event_ = ProfileEvents::end());
     ~TCPHandler() override;
 
     void run() override;
@@ -157,7 +178,7 @@ private:
     IServer & server;
     TCPServer & tcp_server;
     bool parse_proxy_protocol = false;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     String forwarded_for;
     String certificate;
@@ -167,6 +188,9 @@ private:
     UInt64 client_version_minor = 0;
     UInt64 client_version_patch = 0;
     UInt32 client_tcp_protocol_version = 0;
+    UInt32 client_parallel_replicas_protocol_version = 0;
+    String proto_send_chunked_cl = "notchunked";
+    String proto_recv_chunked_cl = "notchunked";
     String quota_key;
 
     /// Connection settings, which are extracted from a context.
@@ -185,8 +209,11 @@ private:
     ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::NO_QUERY;
 
     /// Streams for reading/writing from/to client connection socket.
-    std::shared_ptr<ReadBuffer> in;
-    std::shared_ptr<WriteBuffer> out;
+    std::shared_ptr<ReadBufferFromPocoSocketChunked> in;
+    std::shared_ptr<WriteBufferFromPocoSocketChunked> out;
+
+    ProfileEvents::Event read_event;
+    ProfileEvents::Event write_event;
 
     /// Time after the last check to stop the request and send the progress.
     Stopwatch after_check_cancelled;
@@ -194,16 +221,23 @@ private:
 
     String default_database;
 
+    bool is_ssh_based_auth = false; /// authentication is via SSH pub-key challenge
     /// For inter-server secret (remote_server.*.secret)
     bool is_interserver_mode = false;
+    bool is_interserver_authenticated = false;
     /// For DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET
     String salt;
     /// For DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2
     std::optional<UInt64> nonce;
     String cluster;
 
+    /// `out_mutex` protects `out` (WriteBuffer).
+    /// So it is used for method sendData(), sendProgress(), sendLogs(), etc.
+    std::mutex out_mutex;
+    /// `task_callback_mutex` protects tasks callbacks.
+    /// Inside these callbacks we might also change cancellation status,
+    /// so it also protects cancellation status checks.
     std::mutex task_callback_mutex;
-    std::mutex fatal_error_mutex;
 
     /// At the moment, only one ongoing query in the connection is supported at a time.
     QueryState state;
@@ -217,6 +251,7 @@ private:
 
     /// It is the name of the server that will be sent to the client.
     String server_display_name;
+    String host_name;
 
     void runImpl();
 
@@ -245,12 +280,12 @@ private:
     [[noreturn]] void receiveUnexpectedTablesStatusRequest();
 
     /// Process INSERT query
+    void startInsertQuery();
     void processInsertQuery();
+    AsynchronousInsertQueue::PushResult processAsyncInsertQuery(AsynchronousInsertQueue & insert_queue);
 
     /// Process a request that does not require the receiving of data blocks from the client
     void processOrdinaryQuery();
-
-    void processOrdinaryQueryWithProcessors();
 
     void processTablesStatusRequest();
 
@@ -264,7 +299,7 @@ private:
     void sendEndOfStream();
     void sendPartUUIDs();
     void sendReadTaskRequestAssumeLocked();
-    void sendMergeTreeAllRangesAnnounecementAssumeLocked(InitialAllRangesAnnouncement announcement);
+    void sendMergeTreeAllRangesAnnouncementAssumeLocked(InitialAllRangesAnnouncement announcement);
     void sendMergeTreeReadTaskRequestAssumeLocked(ParallelReadRequest request);
     void sendProfileInfo(const ProfileInfo & info);
     void sendTotals(const Block & totals);

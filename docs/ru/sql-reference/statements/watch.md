@@ -6,10 +6,10 @@ sidebar_label: WATCH
 
 # Запрос WATCH {#watch}
 
-    :::note "Важно"
-    Это экспериментальная функция. Она может повлечь потерю совместимости в будущих версиях.
-    Чтобы использовать `LIVE VIEW` и запросы `WATCH`, включите настройку `set allow_experimental_live_view = 1`.
-    :::
+:::note Важно
+Это экспериментальная функция. Она может повлечь потерю совместимости в будущих версиях.
+Чтобы использовать `LIVE VIEW` и запросы `WATCH`, включите настройку `set allow_experimental_live_view = 1`.
+:::
 **Синтаксис**
 
 ``` sql
@@ -103,6 +103,6 @@ WATCH lv EVENTS LIMIT 1;
 
 Параметр `FORMAT` работает аналогично одноименному параметру запроса [SELECT](../../sql-reference/statements/select/format.md#format-clause).
 
-:::info "Примечание"
-    При отслеживании [LIVE VIEW](./create/view.md#live-view) через интерфейс HTTP следует использовать формат [JSONEachRowWithProgress](../../interfaces/formats.md#jsoneachrowwithprogress). Постоянные сообщения об изменениях будут добавлены в поток вывода для поддержания активности долговременного HTTP-соединения до тех пор, пока результат запроса изменяется. Проомежуток времени между сообщениями об изменениях управляется настройкой[live_view_heartbeat_interval](./create/view.md#live-view-settings).
+:::info Примечание
+При отслеживании [LIVE VIEW](./create/view.md#live-view) через интерфейс HTTP следует использовать формат [JSONEachRowWithProgress](../../interfaces/formats.md#jsoneachrowwithprogress). Постоянные сообщения об изменениях будут добавлены в поток вывода для поддержания активности долговременного HTTP-соединения до тех пор, пока результат запроса изменяется. Проомежуток времени между сообщениями об изменениях управляется настройкой[live_view_heartbeat_interval](./create/view.md#live-view-settings).
 :::

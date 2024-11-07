@@ -21,6 +21,7 @@ public:
 
     DiskLocal(const String & name_, const String & path_, UInt64 keep_free_space_bytes_,
               const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+
     DiskLocal(
         const String & name_,
         const String & path_,
@@ -41,11 +42,9 @@ public:
 
     UInt64 getKeepingFreeSpace() const override { return keep_free_space_bytes; }
 
-    bool exists(const String & path) const override;
-
-    bool isFile(const String & path) const override;
-
-    bool isDirectory(const String & path) const override;
+    bool existsFile(const String & path) const override;
+    bool existsDirectory(const String & path) const override;
+    bool existsFileOrDirectory(const String & path) const override;
 
     size_t getFileSize(const String & path) const override;
 
@@ -65,7 +64,13 @@ public:
 
     void replaceFile(const String & from_path, const String & to_path) override;
 
-    void copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir) override;
+    void copyDirectoryContent(
+        const String & from_dir,
+        const std::shared_ptr<IDisk> & to_disk,
+        const String & to_dir,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
+        const std::function<void()> & cancellation_hook) override;
 
     void listFiles(const String & path, std::vector<String> & file_names) const override;
 
@@ -147,7 +152,7 @@ private:
     const String disk_path;
     const String disk_checker_path = ".disk_checker_file";
     std::atomic<UInt64> keep_free_space_bytes;
-    Poco::Logger * logger;
+    LoggerPtr logger;
     DataSourceDescription data_source_description;
 
     UInt64 reserved_bytes = 0;

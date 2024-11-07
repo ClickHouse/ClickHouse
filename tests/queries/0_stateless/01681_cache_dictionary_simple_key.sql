@@ -24,7 +24,9 @@ CREATE DICTIONARY 01681_database_for_cache_dictionary.cache_dictionary_simple_ke
 PRIMARY KEY id
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'simple_key_simple_attributes_source_table'))
 LIFETIME(MIN 1 MAX 1000)
-LAYOUT(CACHE(SIZE_IN_CELLS 10));
+LAYOUT(CACHE(SIZE_IN_CELLS 10))
+SETTINGS(dictionary_use_async_executor=1, max_threads=8)
+;
 
 SELECT 'Dictionary cache_dictionary_simple_key_simple_attributes';
 SELECT 'dictGet existing value';

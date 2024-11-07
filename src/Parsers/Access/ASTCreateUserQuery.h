@@ -42,12 +42,15 @@ public:
     bool if_exists = false;
     bool if_not_exists = false;
     bool or_replace = false;
+    bool reset_authentication_methods_to_new = false;
+    bool add_identified_with = false;
+    bool replace_authentication_methods = false;
 
     std::shared_ptr<ASTUserNamesWithHost> names;
     std::optional<String> new_name;
     String storage_name;
 
-    std::shared_ptr<ASTAuthenticationData> auth_data;
+    std::vector<std::shared_ptr<ASTAuthenticationData>> authentication_methods;
 
     std::optional<AllowedClientHosts> hosts;
     std::optional<AllowedClientHosts> add_hosts;
@@ -58,6 +61,8 @@ public:
     std::shared_ptr<ASTRolesOrUsersSet> grantees;
 
     std::shared_ptr<ASTDatabaseOrNone> default_database;
+
+    ASTPtr global_valid_until;
 
     String getID(char) const override;
     ASTPtr clone() const override;

@@ -1,18 +1,16 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest
+# Tags: no-fasttest
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 
-USER_FILES_PATH=$(clickhouse-client --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
 FILE_NAME=test_$CLICKHOUSE_TEST_UNIQUE_NAME.data
-DATA_FILE=${USER_FILES_PATH:?}/$FILE_NAME
-
+DATA_FILE=${CLICKHOUSE_USER_FILES:?}/$FILE_NAME
 touch $DATA_FILE
 
-SCHEMADIR=$(clickhouse-client --query "select * from file('$FILE_NAME', 'Template', 'val1 char') settings format_template_row='nonexist'" 2>&1 | grep Exception | grep -oP "file \K.*(?=/nonexist)")
+SCHEMADIR=${CLICKHOUSE_SCHEMA_FILES}
 
 echo "TSV"
 
@@ -63,39 +61,39 @@ $CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'CSVWithNames')"
 echo "JSONCompactEachRow"
 
 echo -e "[42.42, [[1, \"String\"], [2, \"abcd\"]], {\"key\" : 42, \"key2\" : 24}, true]" > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONCompactEachRow')"
-$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONCompactEachRow')"
+$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONCompactEachRow') settings input_format_json_read_numbers_as_strings=0"
+$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONCompactEachRow') settings input_format_json_read_numbers_as_strings=0"
 
-echo -e "[null, [[1, \"String\"], [2, null]], {\"key\" : null, \"key2\" : 24}, null]
-[32, [[2, \"String 2\"], [3, \"hello\"]], {\"key3\" : 4242, \"key4\" : 2424}, true]"  > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONCompactEachRow')"
-$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONCompactEachRow')"
+echo -e "[null, [[1, \"String\"], [2, null]], {\"key1\" : null, \"key2\" : 24}, null]
+[32, [[2, \"String 2\"], [3, \"hello\"]], {\"key1\" : 4242, \"key2\" : 2424}, true]"  > $DATA_FILE
+$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONCompactEachRow') settings input_format_json_read_numbers_as_strings=0"
+$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONCompactEachRow') settings input_format_json_read_numbers_as_strings=0"
 
 echo "JSONCompactEachRowWithNames"
 
 echo -e "[\"a\", \"b\", \"c\", \"d\"]
 [42.42, [[1, \"String\"], [2, \"abcd\"]], {\"key\" : 42, \"key2\" : 24}, true]" > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONCompactEachRowWithNames')"
-$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONCompactEachRowWithNames')"
+$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONCompactEachRowWithNames') settings input_format_json_read_numbers_as_strings=0"
+$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONCompactEachRowWithNames') settings input_format_json_read_numbers_as_strings=0"
 
 
 echo "JSONEachRow"
 echo -e '{"a" : 42.42, "b" : [[1, "String"], [2, "abcd"]], "c" : {"key" : 42, "key2" : 24}, "d" : true}' > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONEachRow')"
-$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONEachRow')"
+$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONEachRow') settings input_format_json_read_numbers_as_strings=0"
+$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONEachRow') settings input_format_json_read_numbers_as_strings=0"
 
-echo -e '{"a" : null, "b" : [[1, "String"], [2, null]], "c" : {"key" : null, "key2" : 24}, "d" : null}
-{"a" : 32, "b" : [[2, "String 2"], [3, "hello"]], "c" : {"key3" : 4242, "key4" : 2424}, "d" : true}'  > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONEachRow')"
-$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONEachRow')"
+echo -e '{"a" : null, "b" : [[1, "String"], [2, null]], "c" : {"key1" : null, "key2" : 24}, "d" : null}
+{"a" : 32, "b" : [[2, "String 2"], [3, "hello"]], "c" : {"key1" : 4242, "key2" : 2424}, "d" : true}'  > $DATA_FILE
+$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONEachRow') settings input_format_json_read_numbers_as_strings=0"
+$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONEachRow') settings input_format_json_read_numbers_as_strings=0"
 
 echo -e '{"a" : 1, "b" : "s1", "c" : null}
 {"c" : [2], "a" : 2, "b" : null}
 {}
 {"a" : null}
 {"c" : [3], "a" : null}'  > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONEachRow')"
-$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONEachRow')"
+$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONEachRow') settings input_format_json_read_numbers_as_strings=0"
+$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONEachRow') settings input_format_json_read_numbers_as_strings=0"
 
 
 echo "TSKV"
@@ -248,4 +246,3 @@ $CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'MsgPack') settings inpu
 
 rm $SCHEMADIR/resultset_format_02149 $SCHEMADIR/row_format_02149
 rm $DATA_FILE
-

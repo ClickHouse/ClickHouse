@@ -12,8 +12,8 @@ REGISTER_FUNCTION(ToDayOfWeek)
 {
     factory.registerFunction<FunctionToDayOfWeek>();
 
-    /// MysQL compatibility alias.
-    factory.registerAlias("DAYOFWEEK", "toDayOfWeek", FunctionFactory::CaseInsensitive);
+    /// MySQL compatibility alias.
+    factory.registerAlias("DAYOFWEEK", "toDayOfWeek", FunctionFactory::Case::Insensitive);
 }
 
 }

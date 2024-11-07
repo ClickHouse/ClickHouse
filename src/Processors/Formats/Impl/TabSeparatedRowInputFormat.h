@@ -4,14 +4,17 @@
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
 #include <Processors/Formats/ISchemaReader.h>
+#include <IO/PeekableReadBuffer.h>
 
 
 namespace DB
 {
 
+class TabSeparatedFormatReader;
+
 /** A stream to input data in tsv format.
   */
-class TabSeparatedRowInputFormat final : public RowInputFormatWithNamesAndTypes
+class TabSeparatedRowInputFormat final : public RowInputFormatWithNamesAndTypes<TabSeparatedFormatReader>
 {
 public:
     /** with_names - the first line is the header with the names of the columns
@@ -23,7 +26,7 @@ public:
     String getName() const override { return "TabSeparatedRowInputFormat"; }
 
     void setReadBuffer(ReadBuffer & in_) override;
-    void resetParser() override;
+    void resetReadBuffer() override;
 
 private:
     TabSeparatedRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> in_, const Params & params_,

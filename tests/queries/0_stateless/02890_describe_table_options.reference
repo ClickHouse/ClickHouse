@@ -1,0 +1,190 @@
+-- { echoOn }
+
+SET describe_compact_output = 0, describe_include_virtual_columns = 0, describe_include_subcolumns = 0;
+DESCRIBE TABLE t_describe_options;
+id	UInt64			index column		
+arr	Array(UInt64)	DEFAULT	[10, 20]		ZSTD(1)	
+t	Tuple(a String, b UInt64)	DEFAULT	(\'foo\', 0)		ZSTD(1)	
+DESCRIBE remote(test_shard_localhost, currentDatabase(), t_describe_options);
+id	UInt64			index column		
+arr	Array(UInt64)	DEFAULT	[10, 20]		ZSTD(1)	
+t	Tuple(a String, b UInt64)	DEFAULT	(\'foo\', 0)		ZSTD(1)	
+SET describe_compact_output = 0, describe_include_virtual_columns = 0, describe_include_subcolumns = 1;
+DESCRIBE TABLE t_describe_options;
+id	UInt64			index column			0
+arr	Array(UInt64)	DEFAULT	[10, 20]		ZSTD(1)		0
+t	Tuple(a String, b UInt64)	DEFAULT	(\'foo\', 0)		ZSTD(1)		0
+arr.size0	UInt64						1
+t.a	String				ZSTD(1)		1
+t.b	UInt64				ZSTD(1)		1
+DESCRIBE remote(test_shard_localhost, currentDatabase(), t_describe_options);
+id	UInt64			index column			0
+arr	Array(UInt64)	DEFAULT	[10, 20]		ZSTD(1)		0
+t	Tuple(a String, b UInt64)	DEFAULT	(\'foo\', 0)		ZSTD(1)		0
+arr.size0	UInt64						1
+t.a	String				ZSTD(1)		1
+t.b	UInt64				ZSTD(1)		1
+SET describe_compact_output = 0, describe_include_virtual_columns = 1, describe_include_subcolumns = 0;
+DESCRIBE TABLE t_describe_options;
+id	UInt64			index column			0
+arr	Array(UInt64)	DEFAULT	[10, 20]		ZSTD(1)		0
+t	Tuple(a String, b UInt64)	DEFAULT	(\'foo\', 0)		ZSTD(1)		0
+_part	LowCardinality(String)			Name of part			1
+_part_index	UInt64			Sequential index of the part in the query result			1
+_part_uuid	UUID			Unique part identifier (if enabled MergeTree setting assign_part_uuids)			1
+_partition_id	LowCardinality(String)			Name of partition			1
+_sample_factor	Float64			Sample factor (from the query)			1
+_part_offset	UInt64			Number of row in the part			1
+_part_data_version	UInt64			Data version of part (either min block number or mutation version)			1
+_row_exists	UInt8			Persisted mask created by lightweight delete that show whether row exists or is deleted			1
+_block_number	UInt64			Persisted original number of block that was assigned at insert	Delta, LZ4		1
+_block_offset	UInt64			Persisted original number of row in block that was assigned at insert	Delta, LZ4		1
+DESCRIBE remote(test_shard_localhost, currentDatabase(), t_describe_options);
+id	UInt64			index column			0
+arr	Array(UInt64)	DEFAULT	[10, 20]		ZSTD(1)		0
+t	Tuple(a String, b UInt64)	DEFAULT	(\'foo\', 0)		ZSTD(1)		0
+_part	LowCardinality(String)			Name of part			1
+_part_index	UInt64			Sequential index of the part in the query result			1
+_part_uuid	UUID			Unique part identifier (if enabled MergeTree setting assign_part_uuids)			1
+_partition_id	LowCardinality(String)			Name of partition			1
+_sample_factor	Float64			Sample factor (from the query)			1
+_part_offset	UInt64			Number of row in the part			1
+_part_data_version	UInt64			Data version of part (either min block number or mutation version)			1
+_row_exists	UInt8			Persisted mask created by lightweight delete that show whether row exists or is deleted			1
+_block_number	UInt64			Persisted original number of block that was assigned at insert	Delta, LZ4		1
+_block_offset	UInt64			Persisted original number of row in block that was assigned at insert	Delta, LZ4		1
+_shard_num	UInt32			Deprecated. Use function shardNum instead			1
+_database	LowCardinality(String)			The name of database which the row comes from			1
+_table	LowCardinality(String)			The name of table which the row comes from			1
+SET describe_compact_output = 0, describe_include_virtual_columns = 1, describe_include_subcolumns = 1;
+DESCRIBE TABLE t_describe_options;
+id	UInt64			index column			0	0
+arr	Array(UInt64)	DEFAULT	[10, 20]		ZSTD(1)		0	0
+t	Tuple(a String, b UInt64)	DEFAULT	(\'foo\', 0)		ZSTD(1)		0	0
+_part	LowCardinality(String)			Name of part			0	1
+_part_index	UInt64			Sequential index of the part in the query result			0	1
+_part_uuid	UUID			Unique part identifier (if enabled MergeTree setting assign_part_uuids)			0	1
+_partition_id	LowCardinality(String)			Name of partition			0	1
+_sample_factor	Float64			Sample factor (from the query)			0	1
+_part_offset	UInt64			Number of row in the part			0	1
+_part_data_version	UInt64			Data version of part (either min block number or mutation version)			0	1
+_row_exists	UInt8			Persisted mask created by lightweight delete that show whether row exists or is deleted			0	1
+_block_number	UInt64			Persisted original number of block that was assigned at insert	Delta, LZ4		0	1
+_block_offset	UInt64			Persisted original number of row in block that was assigned at insert	Delta, LZ4		0	1
+arr.size0	UInt64						1	0
+t.a	String				ZSTD(1)		1	0
+t.b	UInt64				ZSTD(1)		1	0
+DESCRIBE remote(test_shard_localhost, currentDatabase(), t_describe_options);
+id	UInt64			index column			0	0
+arr	Array(UInt64)	DEFAULT	[10, 20]		ZSTD(1)		0	0
+t	Tuple(a String, b UInt64)	DEFAULT	(\'foo\', 0)		ZSTD(1)		0	0
+_part	LowCardinality(String)			Name of part			0	1
+_part_index	UInt64			Sequential index of the part in the query result			0	1
+_part_uuid	UUID			Unique part identifier (if enabled MergeTree setting assign_part_uuids)			0	1
+_partition_id	LowCardinality(String)			Name of partition			0	1
+_sample_factor	Float64			Sample factor (from the query)			0	1
+_part_offset	UInt64			Number of row in the part			0	1
+_part_data_version	UInt64			Data version of part (either min block number or mutation version)			0	1
+_row_exists	UInt8			Persisted mask created by lightweight delete that show whether row exists or is deleted			0	1
+_block_number	UInt64			Persisted original number of block that was assigned at insert	Delta, LZ4		0	1
+_block_offset	UInt64			Persisted original number of row in block that was assigned at insert	Delta, LZ4		0	1
+_shard_num	UInt32			Deprecated. Use function shardNum instead			0	1
+_database	LowCardinality(String)			The name of database which the row comes from			0	1
+_table	LowCardinality(String)			The name of table which the row comes from			0	1
+arr.size0	UInt64						1	0
+t.a	String				ZSTD(1)		1	0
+t.b	UInt64				ZSTD(1)		1	0
+SET describe_compact_output = 1, describe_include_virtual_columns = 0, describe_include_subcolumns = 0;
+DESCRIBE TABLE t_describe_options;
+id	UInt64
+arr	Array(UInt64)
+t	Tuple(a String, b UInt64)
+DESCRIBE remote(test_shard_localhost, currentDatabase(), t_describe_options);
+id	UInt64
+arr	Array(UInt64)
+t	Tuple(a String, b UInt64)
+SET describe_compact_output = 1, describe_include_virtual_columns = 0, describe_include_subcolumns = 1;
+DESCRIBE TABLE t_describe_options;
+id	UInt64	0
+arr	Array(UInt64)	0
+t	Tuple(a String, b UInt64)	0
+arr.size0	UInt64	1
+t.a	String	1
+t.b	UInt64	1
+DESCRIBE remote(test_shard_localhost, currentDatabase(), t_describe_options);
+id	UInt64	0
+arr	Array(UInt64)	0
+t	Tuple(a String, b UInt64)	0
+arr.size0	UInt64	1
+t.a	String	1
+t.b	UInt64	1
+SET describe_compact_output = 1, describe_include_virtual_columns = 1, describe_include_subcolumns = 0;
+DESCRIBE TABLE t_describe_options;
+id	UInt64	0
+arr	Array(UInt64)	0
+t	Tuple(a String, b UInt64)	0
+_part	LowCardinality(String)	1
+_part_index	UInt64	1
+_part_uuid	UUID	1
+_partition_id	LowCardinality(String)	1
+_sample_factor	Float64	1
+_part_offset	UInt64	1
+_part_data_version	UInt64	1
+_row_exists	UInt8	1
+_block_number	UInt64	1
+_block_offset	UInt64	1
+DESCRIBE remote(test_shard_localhost, currentDatabase(), t_describe_options);
+id	UInt64	0
+arr	Array(UInt64)	0
+t	Tuple(a String, b UInt64)	0
+_part	LowCardinality(String)	1
+_part_index	UInt64	1
+_part_uuid	UUID	1
+_partition_id	LowCardinality(String)	1
+_sample_factor	Float64	1
+_part_offset	UInt64	1
+_part_data_version	UInt64	1
+_row_exists	UInt8	1
+_block_number	UInt64	1
+_block_offset	UInt64	1
+_shard_num	UInt32	1
+_database	LowCardinality(String)	1
+_table	LowCardinality(String)	1
+SET describe_compact_output = 1, describe_include_virtual_columns = 1, describe_include_subcolumns = 1;
+DESCRIBE TABLE t_describe_options;
+id	UInt64	0	0
+arr	Array(UInt64)	0	0
+t	Tuple(a String, b UInt64)	0	0
+_part	LowCardinality(String)	0	1
+_part_index	UInt64	0	1
+_part_uuid	UUID	0	1
+_partition_id	LowCardinality(String)	0	1
+_sample_factor	Float64	0	1
+_part_offset	UInt64	0	1
+_part_data_version	UInt64	0	1
+_row_exists	UInt8	0	1
+_block_number	UInt64	0	1
+_block_offset	UInt64	0	1
+arr.size0	UInt64	1	0
+t.a	String	1	0
+t.b	UInt64	1	0
+DESCRIBE remote(test_shard_localhost, currentDatabase(), t_describe_options);
+id	UInt64	0	0
+arr	Array(UInt64)	0	0
+t	Tuple(a String, b UInt64)	0	0
+_part	LowCardinality(String)	0	1
+_part_index	UInt64	0	1
+_part_uuid	UUID	0	1
+_partition_id	LowCardinality(String)	0	1
+_sample_factor	Float64	0	1
+_part_offset	UInt64	0	1
+_part_data_version	UInt64	0	1
+_row_exists	UInt8	0	1
+_block_number	UInt64	0	1
+_block_offset	UInt64	0	1
+_shard_num	UInt32	0	1
+_database	LowCardinality(String)	0	1
+_table	LowCardinality(String)	0	1
+arr.size0	UInt64	1	0
+t.a	String	1	0
+t.b	UInt64	1	0

@@ -19,10 +19,10 @@ public:
     IStorageCluster(
         const String & cluster_name_,
         const StorageID & table_id_,
-        Poco::Logger * log_,
-        bool structure_argument_was_provided_);
+        LoggerPtr log_);
 
-    Pipe read(
+    void read(
+        QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
@@ -33,23 +33,22 @@ public:
 
     ClusterPtr getCluster(ContextPtr context) const;
     /// Query is needed for pruning by virtual columns (_file, _path)
-    virtual RemoteQueryExecutor::Extension getTaskIteratorExtension(ASTPtr query, const ContextPtr & context) const = 0;
+    virtual RemoteQueryExecutor::Extension getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const = 0;
 
     QueryProcessingStage::Enum getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
 
-    bool isRemote() const override { return true; }
+    bool isRemote() const final { return true; }
+    bool supportsSubcolumns() const override  { return true; }
+    bool supportsOptimizationToSubcolumns() const override { return false; }
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
 protected:
     virtual void updateBeforeRead(const ContextPtr &) {}
-
-    virtual void addColumnsStructureToQuery(ASTPtr & query, const String & structure, const ContextPtr & context) = 0;
+    virtual void updateQueryToSendIfNeeded(ASTPtr & /*query*/, const StorageSnapshotPtr & /*storage_snapshot*/, const ContextPtr & /*context*/) {}
 
 private:
-    ContextPtr updateSettings(ContextPtr context, const Settings & settings);
-
-    Poco::Logger * log;
+    LoggerPtr log;
     String cluster_name;
-    bool structure_argument_was_provided;
 };
 
 

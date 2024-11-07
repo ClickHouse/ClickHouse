@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/WriteHelpers.h>
@@ -31,6 +32,13 @@ extern const Event ScalarSubqueriesCacheMiss;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool enable_scalar_subquery_optimization;
+    extern const SettingsBool extremes;
+    extern const SettingsUInt64 max_result_rows;
+    extern const SettingsBool use_concurrency_control;
+}
 
 namespace ErrorCodes
 {
@@ -73,21 +81,24 @@ void ExecuteScalarSubqueriesMatcher::visit(ASTPtr & ast, Data & data)
 static auto getQueryInterpreter(const ASTSubquery & subquery, ExecuteScalarSubqueriesMatcher::Data & data)
 {
     auto subquery_context = Context::createCopy(data.getContext());
-    Settings subquery_settings = data.getContext()->getSettings();
-    subquery_settings.max_result_rows = 1;
-    subquery_settings.extremes = false;
+    Settings subquery_settings = data.getContext()->getSettingsCopy();
+    subquery_settings[Setting::max_result_rows] = 1;
+    subquery_settings[Setting::extremes] = false;
     subquery_context->setSettings(subquery_settings);
 
-    /// When execute `INSERT INTO t WITH ... SELECT ...`, it may lead to `Unknown columns`
-    /// exception with this settings enabled(https://github.com/ClickHouse/ClickHouse/issues/52494).
-    subquery_context->getQueryContext()->setSetting("use_structure_from_insertion_table_in_table_functions", false);
-    if (!data.only_analyze && subquery_context->hasQueryContext())
+    if (subquery_context->hasQueryContext())
     {
-        /// Save current cached scalars in the context before analyzing the query
-        /// This is specially helpful when analyzing CTE scalars
-        auto context = subquery_context->getQueryContext();
-        for (const auto & it : data.scalars)
-            context->addScalar(it.first, it.second);
+        /// When execute `INSERT INTO t WITH ... SELECT ...`, it may lead to `Unknown columns`
+        /// exception with this settings enabled(https://github.com/ClickHouse/ClickHouse/issues/52494).
+        subquery_context->getQueryContext()->setSetting("use_structure_from_insertion_table_in_table_functions", false);
+        if (!data.only_analyze)
+        {
+            /// Save current cached scalars in the context before analyzing the query
+            /// This is specially helpful when analyzing CTE scalars
+            auto context = subquery_context->getQueryContext();
+            for (const auto & it : data.scalars)
+                context->addScalar(it.first, it.second);
+        }
     }
 
     ASTPtr subquery_select = subquery.children.at(0);
@@ -101,10 +112,15 @@ static auto getQueryInterpreter(const ASTSubquery & subquery, ExecuteScalarSubqu
 
 void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr & ast, Data & data)
 {
-    auto hash = subquery.getTreeHash();
+    /// subquery and ast can be the same object and ast will be moved.
+    /// Save these fields to avoid use after move.
+    String subquery_alias = subquery.alias;
+    bool prefer_alias_to_column_name = subquery.prefer_alias_to_column_name;
+
+    auto hash = subquery.getTreeHash(/*ignore_aliases=*/ true);
     const auto scalar_query_hash_str = toString(hash);
 
-    std::unique_ptr<InterpreterSelectWithUnionQuery> interpreter = nullptr;
+    std::unique_ptr<InterpreterSelectWithUnionQuery> interpreter;
     bool hit = false;
     bool is_local = false;
 
@@ -184,7 +200,10 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
 
             PullingAsyncPipelineExecutor executor(io.pipeline);
             io.pipeline.setProgressCallback(data.getContext()->getProgressCallback());
-            while (block.rows() == 0 && executor.pull(block));
+            io.pipeline.setConcurrencyControl(data.getContext()->getSettingsRef()[Setting::use_concurrency_control]);
+            while (block.rows() == 0 && executor.pull(block))
+            {
+            }
 
             if (block.rows() == 0)
             {
@@ -208,7 +227,13 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
 
                 ast_new->setAlias(ast->tryGetAlias());
                 ast = std::move(ast_new);
-                return;
+
+                /// Empty subquery result is equivalent to NULL
+                block = interpreter->getSampleBlock().cloneEmpty();
+                String column_name = block.columns() > 0 ?  block.safeGetByPosition(0).name : "dummy";
+                block = Block({
+                    ColumnWithTypeAndName(type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst(), type, column_name)
+                });
             }
 
             if (block.rows() != 1)
@@ -216,7 +241,8 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
 
             Block tmp_block;
             while (tmp_block.rows() == 0 && executor.pull(tmp_block))
-                ;
+            {
+            }
 
             if (tmp_block.rows() != 0)
                 throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
@@ -250,18 +276,11 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
     const Settings & settings = data.getContext()->getSettingsRef();
 
     // Always convert to literals when there is no query context.
-    if (data.only_analyze
-        || !settings.enable_scalar_subquery_optimization
-        || worthConvertingScalarToLiteral(scalar, data.max_literal_size)
+    if (data.only_analyze || !settings[Setting::enable_scalar_subquery_optimization] || worthConvertingScalarToLiteral(scalar, data.max_literal_size)
         || !data.getContext()->hasQueryContext())
     {
-        /// subquery and ast can be the same object and ast will be moved.
-        /// Save these fields to avoid use after move.
-        auto alias = subquery.alias;
-        auto prefer_alias_to_column_name = subquery.prefer_alias_to_column_name;
-
         auto lit = std::make_unique<ASTLiteral>((*scalar.safeGetByPosition(0).column)[0]);
-        lit->alias = alias;
+        lit->alias = subquery_alias;
         lit->prefer_alias_to_column_name = prefer_alias_to_column_name;
         ast = addTypeConversionToAST(std::move(lit), scalar.safeGetByPosition(0).type->getName());
 
@@ -269,8 +288,8 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         if (data.only_analyze)
         {
             ast->as<ASTFunction>()->alias.clear();
-            auto func = makeASTFunction("identity", std::move(ast));
-            func->alias = alias;
+            auto func = makeASTFunction("__scalarSubqueryResult", std::move(ast));
+            func->alias = subquery_alias;
             func->prefer_alias_to_column_name = prefer_alias_to_column_name;
             ast = std::move(func);
         }
@@ -278,8 +297,8 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
     else if (!data.replace_only_to_literals)
     {
         auto func = makeASTFunction("__getScalar", std::make_shared<ASTLiteral>(scalar_query_hash_str));
-        func->alias = subquery.alias;
-        func->prefer_alias_to_column_name = subquery.prefer_alias_to_column_name;
+        func->alias = subquery_alias;
+        func->prefer_alias_to_column_name = prefer_alias_to_column_name;
         ast = std::move(func);
     }
 

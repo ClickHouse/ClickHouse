@@ -1,5 +1,4 @@
 #pragma once
-#include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <base/types.h>
@@ -12,10 +11,11 @@
 #include <optional>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Disks/IDiskTransaction.h>
+#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 
 namespace DB
 {
-
+struct ReadSettings;
 class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
 
@@ -54,8 +54,6 @@ struct MergeTreeDataPartChecksums;
 
 class IReservation;
 using ReservationPtr = std::unique_ptr<IReservation>;
-
-class IStoragePolicy;
 
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
@@ -97,11 +95,12 @@ public:
     virtual MergeTreeDataPartStorageType getType() const = 0;
 
     /// Methods to get path components of a data part.
-    virtual std::string getFullPath() const = 0;      /// '/var/lib/clickhouse/data/database/table/moving/all_1_5_1'
-    virtual std::string getRelativePath() const = 0;  ///                          'database/table/moving/all_1_5_1'
-    virtual std::string getPartDirectory() const = 0; ///                                                'all_1_5_1'
-    virtual std::string getFullRootPath() const = 0;  /// '/var/lib/clickhouse/data/database/table/moving'
-    /// Can add it if needed                          ///                          'database/table/moving'
+    virtual std::string getFullPath() const = 0;         /// '/var/lib/clickhouse/data/database/table/moving/all_1_5_1'
+    virtual std::string getRelativePath() const = 0;     ///                          'database/table/moving/all_1_5_1'
+    virtual std::string getPartDirectory() const = 0;    ///                                                'all_1_5_1'
+    virtual std::string getFullRootPath() const = 0;     /// '/var/lib/clickhouse/data/database/table/moving'
+    virtual std::string getParentDirectory() const = 0;  ///                                                '' (or 'detached' for 'detached/all_1_5_1')
+    /// Can add it if needed                             ///                          'database/table/moving'
     /// virtual std::string getRelativeRootPath() const = 0;
 
     /// Get a storage for projection.
@@ -112,8 +111,8 @@ public:
     virtual bool exists() const = 0;
 
     /// File inside part directory exists. Specified path is relative to the part path.
-    virtual bool exists(const std::string & name) const = 0;
-    virtual bool isDirectory(const std::string & name) const = 0;
+    virtual bool existsFile(const std::string & name) const = 0;
+    virtual bool existsDirectory(const std::string & name) const = 0;
 
     /// Modification time for part directory.
     virtual Poco::Timestamp getLastModified() const = 0;
@@ -127,7 +126,7 @@ public:
     virtual UInt32 getRefCount(const std::string & file_name) const = 0;
 
     /// Get path on remote filesystem from file name on local filesystem.
-    virtual std::string getRemotePath(const std::string & file_name) const = 0;
+    virtual std::vector<std::string> getRemotePaths(const std::string & file_name) const = 0;
 
     virtual UInt64 calculateTotalSizeOnDisk() const = 0;
 
@@ -137,6 +136,17 @@ public:
         const ReadSettings & settings,
         std::optional<size_t> read_hint,
         std::optional<size_t> file_size) const = 0;
+
+    virtual std::unique_ptr<ReadBufferFromFileBase> readFileIfExists(
+        const std::string & name,
+        const ReadSettings & settings,
+        std::optional<size_t> read_hint,
+        std::optional<size_t> file_size) const
+    {
+        if (existsFile(name))
+            return readFile(name, settings, read_hint, file_size);
+        return {};
+    }
 
     struct ProjectionChecksums
     {
@@ -152,12 +162,12 @@ public:
         const MergeTreeDataPartChecksums & checksums,
         std::list<ProjectionChecksums> projections,
         bool is_temp,
-        Poco::Logger * log) = 0;
+        LoggerPtr log) = 0;
 
     /// Get a name like 'prefix_partdir_tryN' which does not exist in a root dir.
     /// TODO: remove it.
     virtual std::optional<String> getRelativePathForPrefix(
-        Poco::Logger * log, const String & prefix, bool detached, bool broken) const = 0;
+        LoggerPtr log, const String & prefix, bool detached, bool broken) const = 0;
 
     /// Reset part directory, used for in-memory parts.
     /// TODO: remove it.
@@ -224,10 +234,11 @@ public:
         const ReadSettings & read_settings,
         bool make_temporary_hard_links,
         BackupEntries & backup_entries,
-        TemporaryFilesOnDisks * temp_dirs) const = 0;
+        TemporaryFilesOnDisks * temp_dirs,
+        bool is_projection_part,
+        bool allow_backup_broken_projection) const = 0;
 
     /// Creates hardlinks into 'to/dir_path' for every file in data part.
-    /// Callback is called after hardlinks are created, but before 'delete-on-destroy.txt' marker is removed.
     /// Some files can be copied instead of hardlinks. It's because of details of zero copy replication
     /// implementation which relies on paths of some blobs in S3. For example if we want to hardlink
     /// the whole part during mutation we shouldn't hardlink checksums.txt, because otherwise
@@ -242,7 +253,7 @@ public:
         MergeTreeTransactionPtr txn = NO_TRANSACTION_PTR;
         HardlinkedFiles * hardlinked_files = nullptr;
         bool copy_instead_of_hardlink = false;
-        NameSet files_to_copy_instead_of_hardlinks;
+        NameSet files_to_copy_instead_of_hardlinks = {};
         bool keep_metadata_version = false;
         bool make_source_readonly = false;
         DiskTransactionPtr external_transaction = nullptr;
@@ -252,15 +263,30 @@ public:
     virtual std::shared_ptr<IDataPartStorage> freeze(
         const std::string & to,
         const std::string & dir_path,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
         std::function<void(const DiskPtr &)> save_metadata_callback,
         const ClonePartParams & params) const = 0;
+
+    virtual std::shared_ptr<IDataPartStorage> freezeRemote(
+    const std::string & to,
+    const std::string & dir_path,
+    const DiskPtr & dst_disk,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
+    std::function<void(const DiskPtr &)> save_metadata_callback,
+    const ClonePartParams & params) const = 0;
 
     /// Make a full copy of a data part into 'to/dir_path' (possibly to a different disk).
     virtual std::shared_ptr<IDataPartStorage> clonePart(
         const std::string & to,
         const std::string & dir_path,
         const DiskPtr & disk,
-        Poco::Logger * log) const = 0;
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
+        LoggerPtr log,
+        const std::function<void()> & cancellation_hook
+        ) const = 0;
 
     /// Change part's root. from_root should be a prefix path of current root path.
     /// Right now, this is needed for rename table query.
@@ -300,6 +326,7 @@ public:
     virtual SyncGuardPtr getDirectorySyncGuard() const { return nullptr; }
 
     virtual void createHardLinkFrom(const IDataPartStorage & source, const std::string & from, const std::string & to) = 0;
+    virtual void copyFileFrom(const IDataPartStorage & source, const std::string & from, const std::string & to) = 0;
 
     /// Rename part.
     /// Ideally, new_root_path should be the same as current root (but it is not true).
@@ -308,7 +335,7 @@ public:
     virtual void rename(
         std::string new_root_path,
         std::string new_part_dir,
-        Poco::Logger * log,
+        LoggerPtr log,
         bool remove_new_dir_if_exists,
         bool fsync_part_dir) = 0;
 

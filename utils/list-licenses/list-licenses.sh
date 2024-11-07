@@ -1,41 +1,47 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-if [[ "$OSTYPE" == "darwin"* ]]; then
+if [[ "$OSTYPE" == "darwin"* ]]
+then
     # use GNU versions, their presence is ensured in cmake/tools.cmake
     GREP_CMD=ggrep
     FIND_CMD=gfind
 else
-    FIND_CMD=find
-    GREP_CMD=grep
+    FIND_CMD='find'
+    GREP_CMD='grep'
 fi
 
 ROOT_PATH="$(git rev-parse --show-toplevel)"
 LIBS_PATH="${ROOT_PATH}/contrib"
 
-ls -1 -d ${LIBS_PATH}/*/ "${ROOT_PATH}/base/poco" | ${GREP_CMD} -F -v -- '-cmake' | LC_ALL=C sort | while read LIB; do
-    LIB_NAME=$(basename $LIB)
+mapfile -t libs < <(echo "${ROOT_PATH}/base/poco"; find "${LIBS_PATH}" -maxdepth 1 -type d -not -name '*-cmake' -not -name 'rust_vendor' | LC_ALL=C sort)
+for LIB in "${libs[@]}"
+do
+    LIB_NAME=$(basename "$LIB")
 
     LIB_LICENSE=$(
-        LC_ALL=C ${FIND_CMD} "$LIB" -type f -and '(' -iname 'LICENSE*' -or -iname 'COPYING*' -or -iname 'COPYRIGHT*' ')' -and -not '(' -iname '*.html' -or -iname '*.htm' -or -iname '*.rtf' -or -name '*.cpp' -or -name '*.h' -or -iname '*.json' ')' -printf "%d\t%p\n" |
+        LC_ALL=C ${FIND_CMD} "$LIB" -type f -and '(' -iname 'LICENSE*' -or -iname 'COPYING*' -or -iname 'COPYRIGHT*' -or -iname 'NOTICE' ')' -and -not '(' -iname '*.html' -or -iname '*.htm' -or -iname '*.rtf' -or -name '*.cpp' -or -name '*.h' -or -iname '*.json' ')' -printf "%d\t%p\n" |
             LC_ALL=C sort | LC_ALL=C awk '
                 BEGIN { IGNORECASE=1; min_depth = 0 }
                 /LICENSE/ { if (!min_depth || $1 <= min_depth) { min_depth = $1; license = $2 } }
                 /COPY/    { if (!min_depth || $1 <= min_depth) { min_depth = $1; copying = $2 } }
-                END { if (license) { print license } else { print copying } }')
+                /NOTICE/  { if (!min_depth || $1 <= min_depth) { min_depth = $1; notice = $2 } }
+                END { if (license) { print license } else if (copying) { print copying } else { print notice } }')
 
-    if [ -n "$LIB_LICENSE" ]; then
-
+    if [ -n "$LIB_LICENSE" ]
+    then
         LICENSE_TYPE=$(
         (${GREP_CMD} -q -F 'Apache' "$LIB_LICENSE" &&
          echo "Apache") ||
         (${GREP_CMD} -q -F 'Boost' "$LIB_LICENSE" &&
          echo "Boost") ||
-        (${GREP_CMD} -q -i -P 'public\s*domain' "$LIB_LICENSE" &&
+        (${GREP_CMD} -q -i -P 'public\s*domain|CC0 1\.0 Universal' "$LIB_LICENSE" &&
          echo "Public Domain") ||
         (${GREP_CMD} -q -F 'BSD' "$LIB_LICENSE" &&
          echo "BSD") ||
         (${GREP_CMD} -q -F 'Lesser General Public License' "$LIB_LICENSE" &&
          echo "LGPL") ||
+        (${GREP_CMD} -q -F 'General Public License' "$LIB_LICENSE" &&
+         echo "GPL") ||
         (${GREP_CMD} -q -i -F 'The origin of this software must not be misrepresented' "$LIB_LICENSE" &&
          ${GREP_CMD} -q -i -F 'Altered source versions must be plainly marked as such' "$LIB_LICENSE" &&
          ${GREP_CMD} -q -i -F 'This notice may not be removed or altered' "$LIB_LICENSE" &&
@@ -72,8 +78,23 @@ ls -1 -d ${LIBS_PATH}/*/ "${ROOT_PATH}/base/poco" | ${GREP_CMD} -F -v -- '-cmake
          echo "HPND") ||
         echo "Unknown")
 
+        if [ "$LICENSE_TYPE" == "GPL" ]
+        then
+            echo "Fatal error: General Public License found in ${LIB_NAME}." >&2
+            exit 1
+        fi
+
+        if [ "$LICENSE_TYPE" == "Unknown" ]
+        then
+            echo "Fatal error: sources with unknown license found in ${LIB_NAME}." >&2
+            exit 1
+        fi
+
         RELATIVE_PATH=$(echo "$LIB_LICENSE" | sed -r -e 's!^.+/(contrib|base)/!/\1/!')
 
         echo -e "$LIB_NAME\t$LICENSE_TYPE\t$RELATIVE_PATH"
     fi
 done
+
+# Special care for Rust
+find "${LIBS_PATH}/rust_vendor/" -name 'Cargo.toml' | xargs grep 'license = ' | (grep -v -P 'MIT|Apache|MPL' && echo "Fatal error: unrecognized licenses in the Rust code" >&2 && exit 1 || true)

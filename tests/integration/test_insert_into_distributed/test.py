@@ -1,6 +1,7 @@
 import time
 
 import pytest
+
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
@@ -251,7 +252,7 @@ def test_inserts_single_replica_local_internal_replication(started_cluster):
         node1.query(
             "INSERT INTO distributed_one_replica_internal_replication VALUES ('2000-01-01', 1)",
             settings={
-                "insert_distributed_sync": "1",
+                "distributed_foreground_insert": "1",
                 "prefer_localhost_replica": "1",
                 # to make the test more deterministic
                 "load_balancing": "first_or_random",
@@ -265,7 +266,7 @@ def test_inserts_single_replica_internal_replication(started_cluster):
         node1.query(
             "INSERT INTO distributed_one_replica_internal_replication VALUES ('2000-01-01', 1)",
             settings={
-                "insert_distributed_sync": "1",
+                "distributed_foreground_insert": "1",
                 "prefer_localhost_replica": "0",
                 # to make the test more deterministic
                 "load_balancing": "first_or_random",
@@ -285,7 +286,7 @@ def test_inserts_single_replica_no_internal_replication(started_cluster):
             node1.query(
                 "INSERT INTO distributed_one_replica_no_internal_replication VALUES ('2000-01-01', 1)",
                 settings={
-                    "insert_distributed_sync": "1",
+                    "distributed_foreground_insert": "1",
                     "prefer_localhost_replica": "0",
                 },
             )

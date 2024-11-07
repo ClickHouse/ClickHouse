@@ -20,7 +20,7 @@ friend class TableFunctionDictionary;
 
 public:
     /// Specifies where the table is located relative to the dictionary.
-    enum class Location
+    enum class Location : uint8_t
     {
         /// Table was created automatically as an element of a database with the Dictionary engine.
         DictionaryDatabase,
@@ -62,7 +62,7 @@ public:
 
     ~StorageDictionary() override;
 
-    void checkTableCanBeDropped() const override;
+    void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override;
     void checkTableCanBeDetached() const override;
 
     Pipe read(
@@ -80,11 +80,10 @@ public:
 
     std::shared_ptr<const IDictionary> getDictionary() const;
 
-    static NamesAndTypesList getNamesAndTypes(const DictionaryStructure & dictionary_structure);
-    static String generateNamesAndTypesDescription(const NamesAndTypesList & list);
+    static NamesAndTypesList getNamesAndTypes(const DictionaryStructure & dictionary_structure, bool validate_id_type);
 
     bool isDictionary() const override { return true; }
-    void shutdown() override;
+    void shutdown(bool is_drop) override;
     void startup() override;
 
     void renameInMemory(const StorageID & new_table_id) override;
@@ -93,7 +92,6 @@ public:
 
     void alter(const AlterCommands & params, ContextPtr alter_context, AlterLockHolder &) override;
 
-    Poco::Timestamp getUpdateTime() const;
     LoadablesConfigurationPtr getConfiguration() const;
 
     String getDictionaryName() const { return dictionary_name; }
@@ -103,8 +101,7 @@ private:
     const Location location;
 
     mutable std::mutex dictionary_config_mutex;
-    Poco::Timestamp update_time;
-    LoadablesConfigurationPtr configuration;
+    LoadablesConfigurationPtr configuration TSA_GUARDED_BY(dictionary_config_mutex);
 
     scope_guard remove_repository_callback;
 

@@ -42,14 +42,15 @@ ASTPtr ASTSelectQuery::clone() const
 }
 
 
-void ASTSelectQuery::updateTreeHashImpl(SipHash & hash_state) const
+void ASTSelectQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
+    hash_state.update(recursive_with);
     hash_state.update(distinct);
     hash_state.update(group_by_with_totals);
     hash_state.update(group_by_with_rollup);
     hash_state.update(group_by_with_cube);
     hash_state.update(limit_with_ties);
-    IAST::updateTreeHashImpl(hash_state);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 
@@ -64,6 +65,10 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
     if (with())
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << indent_str << "WITH" << (s.hilite ? hilite_none : "");
+
+        if (recursive_with)
+            s.ostr << (s.hilite ? hilite_keyword : "") << " RECURSIVE" << (s.hilite ? hilite_none : "");
+
         s.one_line
             ? with()->formatImpl(s, state, frame)
             : with()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
@@ -108,12 +113,6 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
     if (group_by_all)
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "GROUP BY ALL" << (s.hilite ? hilite_none : "");
 
-    if (group_by_with_rollup)
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH ROLLUP" << (s.hilite ? hilite_none : "");
-
-    if (group_by_with_cube)
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH CUBE" << (s.hilite ? hilite_none : "");
-
     if (group_by_with_grouping_sets && groupBy())
     {
         auto nested_frame = frame;
@@ -127,6 +126,12 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         : groupBy()->as<ASTExpressionList &>().formatImplMultiline(s, state, nested_frame);
         s.ostr << ")";
     }
+
+    if (group_by_with_rollup)
+        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH ROLLUP" << (s.hilite ? hilite_none : "");
+
+    if (group_by_with_cube)
+        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH CUBE" << (s.hilite ? hilite_none : "");
 
     if (group_by_with_totals)
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH TOTALS" << (s.hilite ? hilite_none : "");
@@ -144,7 +149,13 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         window()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
     }
 
-    if (orderBy())
+    if (qualify())
+    {
+        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "QUALIFY " << (s.hilite ? hilite_none : "");
+        qualify()->formatImpl(s, state, frame);
+    }
+
+    if (!order_by_all && orderBy())
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "ORDER BY" << (s.hilite ? hilite_none : "");
         s.one_line
@@ -160,6 +171,24 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
                 interpolate()->formatImpl(s, state, frame);
                 s.ostr << " )";
             }
+        }
+    }
+
+    if (order_by_all)
+    {
+        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "ORDER BY ALL" << (s.hilite ? hilite_none : "");
+
+        auto * elem = orderBy()->children[0]->as<ASTOrderByElement>();
+        s.ostr << (s.hilite ? hilite_keyword : "")
+               << (elem->direction == -1 ? " DESC" : " ASC")
+               << (s.hilite ? hilite_none : "");
+
+        if (elem->nulls_direction_was_explicitly_specified)
+        {
+            s.ostr << (s.hilite ? hilite_keyword : "")
+                   << " NULLS "
+                   << (elem->nulls_direction == elem->direction ? "LAST" : "FIRST")
+                   << (s.hilite ? hilite_none : "");
         }
     }
 
@@ -371,9 +400,9 @@ static String getTableExpressionAlias(const ASTTableExpression * table_expressio
 {
     if (table_expression->subquery)
         return table_expression->subquery->tryGetAlias();
-    else if (table_expression->table_function)
+    if (table_expression->table_function)
         return table_expression->table_function->tryGetAlias();
-    else if (table_expression->database_and_table_name)
+    if (table_expression->database_and_table_name)
         return table_expression->database_and_table_name->tryGetAlias();
 
     return String();

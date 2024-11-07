@@ -5,9 +5,9 @@ from contextlib import contextmanager
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from helpers.test_tools import TSV
-from helpers.cluster import ClickHouseCluster
 from helpers.client import QueryRuntimeException, QueryTimeoutExceedException
+from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
 
@@ -41,7 +41,7 @@ CREATE TABLE distributed_table(date Date, val UInt64) ENGINE = Distributed(test_
 
 def test_insertion_sync(started_cluster):
     node1.query(
-        """SET insert_distributed_sync = 1, insert_distributed_timeout = 0;
+        """SET distributed_foreground_insert = 1, distributed_background_insert_timeout = 0;
     INSERT INTO distributed_table SELECT today() as date, number as val FROM system.numbers LIMIT 10000"""
     )
 
@@ -49,7 +49,7 @@ def test_insertion_sync(started_cluster):
 
     node1.query(
         """
-    SET insert_distributed_sync = 1, insert_distributed_timeout = 1;
+    SET distributed_foreground_insert = 1, distributed_background_insert_timeout = 1;
     INSERT INTO distributed_table SELECT today() - 1 as date, number as val FROM system.numbers LIMIT 10000"""
     )
 
@@ -58,21 +58,21 @@ def test_insertion_sync(started_cluster):
     # Insert with explicitly specified columns.
     node1.query(
         """
-    SET insert_distributed_sync = 1, insert_distributed_timeout = 1;
+    SET distributed_foreground_insert = 1, distributed_background_insert_timeout = 1;
     INSERT INTO distributed_table(date, val) VALUES ('2000-01-01', 100500)"""
     )
 
     # Insert with columns specified in different order.
     node1.query(
         """
-    SET insert_distributed_sync = 1, insert_distributed_timeout = 1;
+    SET distributed_foreground_insert = 1, distributed_background_insert_timeout = 1;
     INSERT INTO distributed_table(val, date) VALUES (100500, '2000-01-01')"""
     )
 
     # Insert with an incomplete list of columns.
     node1.query(
         """
-    SET insert_distributed_sync = 1, insert_distributed_timeout = 1;
+    SET distributed_foreground_insert = 1, distributed_background_insert_timeout = 1;
     INSERT INTO distributed_table(val) VALUES (100500)"""
     )
 
@@ -101,7 +101,7 @@ def test_insertion_sync_fails_on_error(started_cluster):
         pm.partition_instances(node2, node1, action='REJECT --reject-with tcp-reset')
         with pytest.raises(QueryRuntimeException):
             node1.query('''
-            SET insert_distributed_sync = 1, insert_distributed_timeout = 0;
+            SET distributed_foreground_insert = 1, distributed_background_insert_timeout = 0;
             INSERT INTO distributed_table SELECT today() as date, number as val FROM system.numbers''', timeout=2)
 """
 
@@ -110,7 +110,7 @@ def test_insertion_sync_fails_with_timeout(started_cluster):
     with pytest.raises(QueryRuntimeException):
         node1.query(
             """
-        SET insert_distributed_sync = 1, insert_distributed_timeout = 1;
+        SET distributed_foreground_insert = 1, distributed_background_insert_timeout = 1;
         INSERT INTO distributed_table SELECT today() as date, number as val FROM system.numbers"""
         )
 
@@ -119,7 +119,7 @@ def test_insertion_without_sync_ignores_timeout(started_cluster):
     with pytest.raises(QueryTimeoutExceedException):
         node1.query(
             """
-        SET insert_distributed_sync = 0, insert_distributed_timeout = 1;
+        SET distributed_foreground_insert = 0, distributed_background_insert_timeout = 1;
         INSERT INTO distributed_table SELECT today() as date, number as val FROM system.numbers""",
             timeout=1.5,
         )
@@ -129,7 +129,7 @@ def test_insertion_sync_with_disabled_timeout(started_cluster):
     with pytest.raises(QueryTimeoutExceedException):
         node1.query(
             """
-        SET insert_distributed_sync = 1, insert_distributed_timeout = 0;
+        SET distributed_foreground_insert = 1, distributed_background_insert_timeout = 0;
         INSERT INTO distributed_table SELECT today() as date, number as val FROM system.numbers""",
             timeout=1,
         )
@@ -142,7 +142,7 @@ def test_async_inserts_into_local_shard(started_cluster):
     )
     node1.query(
         """INSERT INTO shard_distributed VALUES (1)""",
-        settings={"insert_distributed_sync": 0},
+        settings={"distributed_foreground_insert": 0},
     )
 
     assert TSV(node1.query("""SELECT count() FROM shard_distributed""")) == TSV("1\n")

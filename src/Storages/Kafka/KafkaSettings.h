@@ -1,55 +1,74 @@
 #pragma once
 
-#include <Core/BaseSettings.h>
-#include <Core/Settings.h>
-
+#include <Core/BaseSettingsFwdMacros.h>
+#include <Core/SettingsEnums.h>
+#include <Core/SettingsFields.h>
+#include <Common/NamedCollections/NamedCollections_fwd.h>
+#include <Common/SettingsChanges.h>
 
 namespace DB
 {
 class ASTStorage;
+struct KafkaSettingsImpl;
 
+const auto KAFKA_RESCHEDULE_MS = 500;
+const auto KAFKA_CLEANUP_TIMEOUT_MS = 3000;
+// once per minute leave do reschedule (we can't lock threads in pool forever)
+const auto KAFKA_MAX_THREAD_WORK_DURATION_MS = 60000;
+// 10min
+const auto KAFKA_CONSUMERS_POOL_TTL_MS_MAX = 600'000;
 
-#define KAFKA_RELATED_SETTINGS(M, ALIAS) \
-    M(String, kafka_broker_list, "", "A comma-separated list of brokers for Kafka engine.", 0) \
-    M(String, kafka_topic_list, "", "A list of Kafka topics.", 0) \
-    M(String, kafka_group_name, "", "Client group id string. All Kafka consumers sharing the same group.id belong to the same group.", 0) \
-    /* those are mapped to format factory settings */ \
-    M(String, kafka_format, "", "The message format for Kafka engine.", 0) \
-    M(Char, kafka_row_delimiter, '\0', "The character to be considered as a delimiter in Kafka message.", 0) \
-    M(String, kafka_schema, "", "Schema identifier (used by schema-based formats) for Kafka engine", 0) \
-    M(UInt64, kafka_num_consumers, 1, "The number of consumers per table for Kafka engine.", 0) \
-    /* default is = max_insert_block_size / kafka_num_consumers  */ \
-    M(UInt64, kafka_max_block_size, 0, "Number of row collected by poll(s) for flushing data from Kafka.", 0) \
-    M(UInt64, kafka_skip_broken_messages, 0, "Skip at least this number of broken messages from Kafka topic per block", 0) \
-    M(Bool, kafka_commit_every_batch, false, "Commit every consumed and handled batch instead of a single commit after writing a whole block", 0) \
-    M(String, kafka_client_id, "", "Client identifier.", 0) \
-    /* default is stream_poll_timeout_ms */ \
-    M(Milliseconds, kafka_poll_timeout_ms, 0, "Timeout for single poll from Kafka.", 0) \
-    M(UInt64, kafka_poll_max_batch_size, 0, "Maximum amount of messages to be polled in a single Kafka poll.", 0) \
-    /* default is stream_flush_interval_ms */ \
-    M(Milliseconds, kafka_flush_interval_ms, 0, "Timeout for flushing data from Kafka.", 0) \
-    M(Bool, kafka_thread_per_consumer, false, "Provide independent thread for each consumer", 0) \
-    M(HandleKafkaErrorMode, kafka_handle_error_mode, HandleKafkaErrorMode::DEFAULT, "How to handle errors for Kafka engine. Possible values: default, stream.", 0) \
-    M(Bool, kafka_commit_on_select, false, "Commit messages when select query is made", 0) \
-    M(UInt64, kafka_max_rows_per_message, 1, "The maximum number of rows produced in one kafka message for row-based formats.", 0) \
+/// List of available types supported in RabbitMQSettings object
+#define KAFKA_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
+    M(CLASS_NAME, ArrowCompression) \
+    M(CLASS_NAME, Bool) \
+    M(CLASS_NAME, CapnProtoEnumComparingMode) \
+    M(CLASS_NAME, Char) \
+    M(CLASS_NAME, DateTimeInputFormat) \
+    M(CLASS_NAME, DateTimeOutputFormat) \
+    M(CLASS_NAME, DateTimeOverflowBehavior) \
+    M(CLASS_NAME, Double) \
+    M(CLASS_NAME, EscapingRule) \
+    M(CLASS_NAME, Float) \
+    M(CLASS_NAME, IdentifierQuotingRule) \
+    M(CLASS_NAME, IdentifierQuotingStyle) \
+    M(CLASS_NAME, Int64) \
+    M(CLASS_NAME, IntervalOutputFormat) \
+    M(CLASS_NAME, Milliseconds) \
+    M(CLASS_NAME, MsgPackUUIDRepresentation) \
+    M(CLASS_NAME, ORCCompression) \
+    M(CLASS_NAME, ParquetCompression) \
+    M(CLASS_NAME, ParquetVersion) \
+    M(CLASS_NAME, SchemaInferenceMode) \
+    M(CLASS_NAME, StreamingHandleErrorMode) \
+    M(CLASS_NAME, String) \
+    M(CLASS_NAME, UInt64) \
+    M(CLASS_NAME, UInt64Auto) \
+    M(CLASS_NAME, URI)
 
-    /** TODO: */
-    /* https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md */
-    /* https://github.com/edenhill/librdkafka/blob/v1.4.2/src/rdkafka_conf.c */
-
-#define LIST_OF_KAFKA_SETTINGS(M, ALIAS) \
-    KAFKA_RELATED_SETTINGS(M, ALIAS) \
-    FORMAT_FACTORY_SETTINGS(M, ALIAS)
-
-DECLARE_SETTINGS_TRAITS(KafkaSettingsTraits, LIST_OF_KAFKA_SETTINGS)
-
+KAFKA_SETTINGS_SUPPORTED_TYPES(KafkaSettings, DECLARE_SETTING_TRAIT)
 
 /** Settings for the Kafka engine.
   * Could be loaded from a CREATE TABLE query (SETTINGS clause).
   */
-struct KafkaSettings : public BaseSettings<KafkaSettingsTraits>
+struct KafkaSettings
 {
+    KafkaSettings();
+    KafkaSettings(const KafkaSettings & settings);
+    KafkaSettings(KafkaSettings && settings) noexcept;
+    ~KafkaSettings();
+
+    KAFKA_SETTINGS_SUPPORTED_TYPES(KafkaSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
+
     void loadFromQuery(ASTStorage & storage_def);
+    void loadFromNamedCollection(const MutableNamedCollectionPtr & named_collection);
+
+    SettingsChanges getFormatSettings() const;
+
+    void sanityCheck() const;
+
+private:
+    std::unique_ptr<KafkaSettingsImpl> impl;
 };
 
 }

@@ -65,7 +65,7 @@ struct RoundToExp2Impl
     using ResultType = T;
     static constexpr const bool allow_string_or_fixed_string = false;
 
-    static inline T apply(T x)
+    static T apply(T x)
     {
         return roundDownToPowerOfTwo<T>(x);
     }

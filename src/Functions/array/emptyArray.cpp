@@ -49,8 +49,7 @@ private:
 void registerFunction(FunctionFactory & factory, const String & element_type)
 {
     factory.registerFunction(FunctionEmptyArray::getNameImpl(element_type),
-        [element_type](ContextPtr){ return std::make_unique<FunctionToOverloadResolverAdaptor>(
-            std::make_shared<FunctionEmptyArray>(element_type)); });
+        [element_type](ContextPtr){ return std::make_shared<FunctionEmptyArray>(element_type); });
 }
 
 }

@@ -8,6 +8,7 @@
 #include <memory>
 #include <mutex>
 
+
 namespace DB
 {
 
@@ -17,7 +18,8 @@ public:
     StaticThreadPool(
         const String & name_,
         CurrentMetrics::Metric threads_metric_,
-        CurrentMetrics::Metric threads_active_metric_);
+        CurrentMetrics::Metric threads_active_metric_,
+        CurrentMetrics::Metric threads_scheduled_metric_);
 
     ThreadPool & get();
 
@@ -34,6 +36,7 @@ private:
     const String name;
     const CurrentMetrics::Metric threads_metric;
     const CurrentMetrics::Metric threads_active_metric;
+    const CurrentMetrics::Metric threads_scheduled_metric;
 
     std::unique_ptr<ThreadPool> instance;
     std::mutex mutex;
@@ -60,5 +63,13 @@ StaticThreadPool & getPartsCleaningThreadPool();
 /// case when we need to synchronously wait for the loading to be finished, we can increase
 /// the number of threads by calling enableTurboMode() :-)
 StaticThreadPool & getOutdatedPartsLoadingThreadPool();
+
+StaticThreadPool & getUnexpectedPartsLoadingThreadPool();
+
+/// ThreadPool used for creating tables in DatabaseReplicated.
+StaticThreadPool & getDatabaseReplicatedCreateTablesThreadPool();
+
+/// ThreadPool used for dropping tables.
+StaticThreadPool & getDatabaseCatalogDropTablesThreadPool();
 
 }

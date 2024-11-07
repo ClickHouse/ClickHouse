@@ -1,10 +1,5 @@
 # https://software.intel.com/sites/landingpage/IntrinsicsGuide/
 
-include (CheckCXXSourceCompiles)
-include (CMakePushCheckState)
-
-cmake_push_check_state ()
-
 # The variables HAVE_* determine if compiler has support for the flag to use the corresponding instruction set.
 # The options ENABLE_* determine if we will tell compiler to actually use the corresponding instruction set if compiler can do it.
 
@@ -15,6 +10,38 @@ option (ARCH_NATIVE "Add -march=native compiler flag. This makes your binaries n
 
 if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
+
+    # Populate the ENABLE_ option flags. This is required for the build of some third-party dependencies, specifically snappy, which
+    # (somewhat weirdly) expects the relative SNAPPY_HAVE_ preprocessor variables to be populated, in addition to the microarchitecture
+    # feature flags being enabled in the compiler. This fixes the ARCH_NATIVE flag by automatically populating the ENABLE_ option flags
+    # according to the current CPU's capabilities, detected using clang.
+    if (ARCH_AMD64)
+        execute_process(
+            COMMAND sh -c "clang -E - -march=native -###"
+            INPUT_FILE /dev/null
+            OUTPUT_QUIET
+            ERROR_VARIABLE TEST_FEATURE_RESULT)
+
+        macro(TEST_AMD64_FEATURE TEST_FEATURE_RESULT feat flag)
+            if (${TEST_FEATURE_RESULT} MATCHES "\"\\+${feat}\"")
+                set(${flag} ON)
+            else ()
+                set(${flag} OFF)
+            endif ()
+        endmacro()
+
+        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} ssse3 ENABLE_SSSE3)
+        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} sse4.1 ENABLE_SSE41)
+        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} sse4.2 ENABLE_SSE42)
+        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} vpclmulqdq ENABLE_PCLMULQDQ)
+        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} popcnt ENABLE_POPCNT)
+        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} avx ENABLE_AVX)
+        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} avx2 ENABLE_AVX2)
+        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} avx512f ENABLE_AVX512)
+        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} avx512vbmi ENABLE_AVX512_VBMI)
+        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} bmi ENABLE_BMI)
+        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} bmi2 ENABLE_BMI2)
+    endif ()
 
 elseif (ARCH_AARCH64)
     # ARM publishes almost every year a new revision of it's ISA [1]. Each version comes with new mandatory and optional features from
@@ -137,189 +164,54 @@ elseif (ARCH_AMD64)
     endif()
 
     # ClickHouse can be cross-compiled (e.g. on an ARM host for x86) but it is also possible to build ClickHouse on x86 w/o AVX for x86 w/
-    # AVX. We only check that the compiler can emit certain SIMD instructions, we don't care if the host system is able to run the binary.
-    # Therefore, use check_cxx_source_compiles (= does the code compile+link?) instead of check_cxx_source_runs (= does the code
-    # compile+link+run).
+    # AVX. We only assume that the compiler can emit certain SIMD instructions, we don't care if the host system is able to run the binary.
 
-    set (TEST_FLAG "-mssse3")
-    set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
-    check_cxx_source_compiles("
-        #include <tmmintrin.h>
-        int main() {
-            __m64 a = _mm_abs_pi8(__m64());
-            (void)a;
-            return 0;
-        }
-    " HAVE_SSSE3)
-    if (HAVE_SSSE3 AND ENABLE_SSSE3)
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
+    if (ENABLE_SSSE3)
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -mssse3")
     endif ()
 
-    set (TEST_FLAG "-msse4.1")
-    set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
-    check_cxx_source_compiles("
-        #include <smmintrin.h>
-        int main() {
-            auto a = _mm_insert_epi8(__m128i(), 0, 0);
-            (void)a;
-            return 0;
-        }
-    " HAVE_SSE41)
-    if (HAVE_SSE41 AND ENABLE_SSE41)
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
+    if (ENABLE_SSE41)
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -msse4.1")
     endif ()
 
-    set (TEST_FLAG "-msse4.2")
-    set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
-    check_cxx_source_compiles("
-        #include <nmmintrin.h>
-        int main() {
-            auto a = _mm_crc32_u64(0, 0);
-            (void)a;
-            return 0;
-        }
-    " HAVE_SSE42)
-    if (HAVE_SSE42 AND ENABLE_SSE42)
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
+    if (ENABLE_SSE42)
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -msse4.2")
     endif ()
 
-    set (TEST_FLAG "-mpclmul")
-    set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
-    check_cxx_source_compiles("
-        #include <wmmintrin.h>
-        int main() {
-            auto a = _mm_clmulepi64_si128(__m128i(), __m128i(), 0);
-            (void)a;
-            return 0;
-        }
-    " HAVE_PCLMULQDQ)
-    if (HAVE_PCLMULQDQ AND ENABLE_PCLMULQDQ)
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
+    if (ENABLE_PCLMULQDQ)
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -mpclmul")
     endif ()
 
-    set (TEST_FLAG "-mpopcnt")
-    set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
-    check_cxx_source_compiles("
-        int main() {
-            auto a = __builtin_popcountll(0);
-            (void)a;
-            return 0;
-        }
-    " HAVE_POPCNT)
-    if (HAVE_POPCNT AND ENABLE_POPCNT)
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
+    if (ENABLE_BMI)
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -mbmi")
     endif ()
 
-    set (TEST_FLAG "-mavx")
-    set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
-    check_cxx_source_compiles("
-        #include <immintrin.h>
-        int main() {
-            auto a = _mm256_insert_epi8(__m256i(), 0, 0);
-            (void)a;
-            return 0;
-        }
-    " HAVE_AVX)
-    if (HAVE_AVX AND ENABLE_AVX)
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
+    if (ENABLE_POPCNT)
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -mpopcnt")
     endif ()
 
-    set (TEST_FLAG "-mavx2")
-    set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
-    check_cxx_source_compiles("
-        #include <immintrin.h>
-        int main() {
-            auto a = _mm256_add_epi16(__m256i(), __m256i());
-            (void)a;
-            return 0;
-        }
-    " HAVE_AVX2)
-    if (HAVE_AVX2 AND ENABLE_AVX2)
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
+    if (ENABLE_AVX)
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -mavx")
     endif ()
 
-    set (TEST_FLAG "-mavx512f -mavx512bw -mavx512vl")
-    set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
-    check_cxx_source_compiles("
-        #include <immintrin.h>
-        int main() {
-            auto a = _mm512_setzero_epi32();
-            (void)a;
-            auto b = _mm512_add_epi16(__m512i(), __m512i());
-            (void)b;
-            auto c = _mm_cmp_epi8_mask(__m128i(), __m128i(), 0);
-            (void)c;
-            return 0;
-        }
-    " HAVE_AVX512)
-    if (HAVE_AVX512 AND ENABLE_AVX512)
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
-    endif ()
-
-    set (TEST_FLAG "-mavx512vbmi")
-    set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
-    check_cxx_source_compiles("
-        #include <immintrin.h>
-        int main() {
-            auto a = _mm512_permutexvar_epi8(__m512i(), __m512i());
-            (void)a;
-            return 0;
-        }
-    " HAVE_AVX512_VBMI)
-    if (HAVE_AVX512 AND ENABLE_AVX512 AND HAVE_AVX512_VBMI AND ENABLE_AVX512_VBMI)
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
-    endif ()
-
-    set (TEST_FLAG "-mbmi")
-    set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
-    check_cxx_source_compiles("
-        #include <immintrin.h>
-        int main() {
-            auto a = _blsr_u32(0);
-            (void)a;
-            return 0;
-        }
-    " HAVE_BMI)
-    if (HAVE_BMI AND ENABLE_BMI)
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
-    endif ()
-
-    set (TEST_FLAG "-mbmi2")
-    set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
-    check_cxx_source_compiles("
-        #include <immintrin.h>
-        int main() {
-            auto a = _pdep_u64(0, 0);
-            (void)a;
-            return 0;
-        }
-    " HAVE_BMI2)
-    if (HAVE_BMI2 AND HAVE_AVX2 AND ENABLE_AVX2 AND ENABLE_BMI2)
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
-    endif ()
-
-    # Limit avx2/avx512 flag for specific source build
-    set (X86_INTRINSICS_FLAGS "")
-    if (ENABLE_AVX2_FOR_SPEC_OP)
-        if (HAVE_BMI)
-            set (X86_INTRINSICS_FLAGS "${X86_INTRINSICS_FLAGS} -mbmi")
+    if (ENABLE_AVX2)
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -mavx2")
+        if (ENABLE_BMI2)
+            set (COMPILER_FLAGS "${COMPILER_FLAGS} -mbmi2")
         endif ()
-        if (HAVE_AVX AND HAVE_AVX2)
-            set (X86_INTRINSICS_FLAGS "${X86_INTRINSICS_FLAGS} -mavx -mavx2")
+    endif ()
+
+    if (ENABLE_AVX512)
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -mavx512f -mavx512bw -mavx512vl")
+        if (ENABLE_AVX512_VBMI)
+            set (COMPILER_FLAGS "${COMPILER_FLAGS} -mavx512vbmi")
         endif ()
     endif ()
 
     if (ENABLE_AVX512_FOR_SPEC_OP)
-        set (X86_INTRINSICS_FLAGS "")
-        if (HAVE_BMI)
-            set (X86_INTRINSICS_FLAGS "${X86_INTRINSICS_FLAGS} -mbmi")
-        endif ()
-        if (HAVE_AVX512)
-            set (X86_INTRINSICS_FLAGS "${X86_INTRINSICS_FLAGS} -mavx512f -mavx512bw -mavx512vl -mprefer-vector-width=256")
-        endif ()
+        set (X86_INTRINSICS_FLAGS "-mbmi -mavx512f -mavx512bw -mavx512vl -mprefer-vector-width=256")
     endif ()
+
 else ()
     # RISC-V + exotic platforms
 endif ()
-
-cmake_pop_check_state ()

@@ -1,0 +1,780 @@
+wait_end_of_query=0
+One block
+Parallel formatting: 0
+JSON
+{
+	"meta":
+	[
+		{
+			"name": "number",
+			"type": "UInt64"
+		},
+		{
+			"name": "res",
+			"type": "UInt8"
+		}
+	],
+
+	"data":
+	[
+
+	],
+
+	"rows": 0,
+
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
+}
+JSONEachRow
+{"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "}
+JSONCompact
+{
+	"meta":
+	[
+		{
+			"name": "number",
+			"type": "UInt64"
+		},
+		{
+			"name": "res",
+			"type": "UInt8"
+		}
+	],
+
+	"data":
+	[
+
+	],
+
+	"rows": 0,
+
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
+}
+JSONCompactEachRow
+["Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "]
+JSONObjectEachRow
+{
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
+}
+XML
+<?xml version='1.0' encoding='UTF-8' ?>
+<result>
+	<meta>
+		<columns>
+			<column>
+				<name>number</name>
+				<type>UInt64</type>
+			</column>
+			<column>
+				<name>res</name>
+				<type>UInt8</type>
+			</column>
+		</columns>
+	</meta>
+	<data>
+	</data>
+	<rows>0</rows>
+	<exception>Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) </exception>
+</result>
+Parallel formatting: 1
+JSON
+{
+	"meta":
+	[
+		{
+			"name": "number",
+			"type": "UInt64"
+		},
+		{
+			"name": "res",
+			"type": "UInt8"
+		}
+	],
+
+	"data":
+	[
+
+	],
+
+	"rows": 0,
+
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
+}
+JSONEachRow
+{"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "}
+JSONCompact
+{
+	"meta":
+	[
+		{
+			"name": "number",
+			"type": "UInt64"
+		},
+		{
+			"name": "res",
+			"type": "UInt8"
+		}
+	],
+
+	"data":
+	[
+
+	],
+
+	"rows": 0,
+
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
+}
+JSONCompactEachRow
+["Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "]
+JSONObjectEachRow
+{
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
+}
+XML
+<?xml version='1.0' encoding='UTF-8' ?>
+<result>
+	<meta>
+		<columns>
+			<column>
+				<name>number</name>
+				<type>UInt64</type>
+			</column>
+			<column>
+				<name>res</name>
+				<type>UInt8</type>
+			</column>
+		</columns>
+	</meta>
+	<data>
+	</data>
+	<rows>0</rows>
+	<exception>Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) </exception>
+</result>
+Several blocks
+Without parallel formatting
+JSON
+{
+	"meta":
+	[
+		{
+			"name": "number",
+			"type": "UInt64"
+		},
+		{
+			"name": "res",
+			"type": "UInt8"
+		}
+	],
+
+	"data":
+	[
+		{
+			"number": "0",
+			"res": 0
+		},
+		{
+			"number": "1",
+			"res": 0
+		},
+		{
+			"number": "2",
+			"res": 0
+		},
+		{
+			"number": "3",
+			"res": 0
+		}
+	],
+
+	"rows": 4,
+
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
+}
+JSONEachRow
+{"number":"0","res":0}
+{"number":"1","res":0}
+{"number":"2","res":0}
+{"number":"3","res":0}
+{"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "}
+JSONCompact
+{
+	"meta":
+	[
+		{
+			"name": "number",
+			"type": "UInt64"
+		},
+		{
+			"name": "res",
+			"type": "UInt8"
+		}
+	],
+
+	"data":
+	[
+		["0", 0],
+		["1", 0],
+		["2", 0],
+		["3", 0]
+	],
+
+	"rows": 4,
+
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
+}
+JSONCompactEachRow
+["0", 0]
+["1", 0]
+["2", 0]
+["3", 0]
+["Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "]
+JSONObjectEachRow
+{
+	"row_1": {"number":"0","res":0},
+	"row_2": {"number":"1","res":0},
+	"row_3": {"number":"2","res":0},
+	"row_4": {"number":"3","res":0},
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
+}
+XML
+<?xml version='1.0' encoding='UTF-8' ?>
+<result>
+	<meta>
+		<columns>
+			<column>
+				<name>number</name>
+				<type>UInt64</type>
+			</column>
+			<column>
+				<name>res</name>
+				<type>UInt8</type>
+			</column>
+		</columns>
+	</meta>
+	<data>
+		<row>
+			<number>0</number>
+			<res>0</res>
+		</row>
+		<row>
+			<number>1</number>
+			<res>0</res>
+		</row>
+		<row>
+			<number>2</number>
+			<res>0</res>
+		</row>
+		<row>
+			<number>3</number>
+			<res>0</res>
+		</row>
+	</data>
+	<rows>4</rows>
+	<exception>Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) </exception>
+</result>
+With parallel formatting
+JSON
+1
+JSONCompact
+1
+JSONObjectEachRow
+1
+JSONEachRow
+1
+JSONCompactEachRow
+1
+Formatting error
+Without parallel formatting
+JSON
+{
+	"meta":
+	[
+		{
+			"name": "x",
+			"type": "UInt32"
+		},
+		{
+			"name": "s",
+			"type": "String"
+		},
+		{
+			"name": "y",
+			"type": "Enum8('a' = 1)"
+		}
+	],
+
+	"data":
+	[
+		{
+			"x": 1,
+			"s": "str1",
+			"y": "a"
+		},
+		{
+			"x": 2,
+			"s": "str2",
+			"y": "a"
+		},
+		{
+			"x": 3,
+			"s": "str3",
+			"y": "a"
+		}
+	],
+
+	"rows": 3,
+
+	"exception": "Code: 36. : Unexpected value 99 in enum: While executing JSONRowOutputFormat. (BAD_ARGUMENTS) "
+}
+JSONEachRow
+{"x":1,"s":"str1","y":"a"}
+{"x":2,"s":"str2","y":"a"}
+{"x":3,"s":"str3","y":"a"}
+{"exception": "Code: 36. : Unexpected value 99 in enum: While executing JSONEachRowRowOutputFormat. (BAD_ARGUMENTS) "}
+JSONCompact
+{
+	"meta":
+	[
+		{
+			"name": "x",
+			"type": "UInt32"
+		},
+		{
+			"name": "s",
+			"type": "String"
+		},
+		{
+			"name": "y",
+			"type": "Enum8('a' = 1)"
+		}
+	],
+
+	"data":
+	[
+		[1, "str1", "a"],
+		[2, "str2", "a"],
+		[3, "str3", "a"]
+	],
+
+	"rows": 3,
+
+	"exception": "Code: 36. : Unexpected value 99 in enum: While executing JSONCompactRowOutputFormat. (BAD_ARGUMENTS) "
+}
+JSONCompactEachRow
+[1, "str1", "a"]
+[2, "str2", "a"]
+[3, "str3", "a"]
+["Code: 36. : Unexpected value 99 in enum: While executing JSONCompactEachRowRowOutputFormat. (BAD_ARGUMENTS) "]
+JSONObjectEachRow
+{
+	"row_1": {"x":1,"s":"str1","y":"a"},
+	"row_2": {"x":2,"s":"str2","y":"a"},
+	"row_3": {"x":3,"s":"str3","y":"a"},
+	"exception": "Code: 36. : Unexpected value 99 in enum: While executing JSONObjectEachRowRowOutputFormat. (BAD_ARGUMENTS) "
+}
+XML
+<?xml version='1.0' encoding='UTF-8' ?>
+<result>
+	<meta>
+		<columns>
+			<column>
+				<name>x</name>
+				<type>UInt32</type>
+			</column>
+			<column>
+				<name>s</name>
+				<type>String</type>
+			</column>
+			<column>
+				<name>y</name>
+				<type>Enum8('a' = 1)</type>
+			</column>
+		</columns>
+	</meta>
+	<data>
+		<row>
+			<x>1</x>
+			<s>str1</s>
+			<y>a</y>
+		</row>
+		<row>
+			<x>2</x>
+			<s>str2</s>
+			<y>a</y>
+		</row>
+		<row>
+			<x>3</x>
+			<s>str3</s>
+			<y>a</y>
+		</row>
+	</data>
+	<rows>3</rows>
+	<exception>Code: 36. : Unexpected value 99 in enum: While executing XMLRowOutputFormat. (BAD_ARGUMENTS) </exception>
+</result>
+With parallel formatting
+JSON
+1
+JSONCompact
+1
+JSONObjectEachRow
+1
+JSONEachRow
+1
+JSONCompactEachRow
+1
+Test 1
+1
+1
+Test 2
+1
+1
+Test 3
+1
+1
+wait_end_of_query=1
+One block
+Parallel formatting: 0
+JSON
+{
+	"meta":
+	[
+		{
+			"name": "number",
+			"type": "UInt64"
+		},
+		{
+			"name": "res",
+			"type": "UInt8"
+		}
+	],
+
+	"data":
+	[
+
+	],
+
+	"rows": 0,
+
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
+}
+JSONEachRow
+{"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "}
+JSONCompact
+{
+	"meta":
+	[
+		{
+			"name": "number",
+			"type": "UInt64"
+		},
+		{
+			"name": "res",
+			"type": "UInt8"
+		}
+	],
+
+	"data":
+	[
+
+	],
+
+	"rows": 0,
+
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
+}
+JSONCompactEachRow
+["Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "]
+JSONObjectEachRow
+{
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
+}
+XML
+<?xml version='1.0' encoding='UTF-8' ?>
+<result>
+	<meta>
+		<columns>
+			<column>
+				<name>number</name>
+				<type>UInt64</type>
+			</column>
+			<column>
+				<name>res</name>
+				<type>UInt8</type>
+			</column>
+		</columns>
+	</meta>
+	<data>
+	</data>
+	<rows>0</rows>
+	<exception>Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) </exception>
+</result>
+Parallel formatting: 1
+JSON
+{
+	"meta":
+	[
+		{
+			"name": "number",
+			"type": "UInt64"
+		},
+		{
+			"name": "res",
+			"type": "UInt8"
+		}
+	],
+
+	"data":
+	[
+
+	],
+
+	"rows": 0,
+
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
+}
+JSONEachRow
+{"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "}
+JSONCompact
+{
+	"meta":
+	[
+		{
+			"name": "number",
+			"type": "UInt64"
+		},
+		{
+			"name": "res",
+			"type": "UInt8"
+		}
+	],
+
+	"data":
+	[
+
+	],
+
+	"rows": 0,
+
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
+}
+JSONCompactEachRow
+["Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "]
+JSONObjectEachRow
+{
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
+}
+XML
+<?xml version='1.0' encoding='UTF-8' ?>
+<result>
+	<meta>
+		<columns>
+			<column>
+				<name>number</name>
+				<type>UInt64</type>
+			</column>
+			<column>
+				<name>res</name>
+				<type>UInt8</type>
+			</column>
+		</columns>
+	</meta>
+	<data>
+	</data>
+	<rows>0</rows>
+	<exception>Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) </exception>
+</result>
+Several blocks
+Without parallel formatting
+JSON
+{
+	"meta":
+	[
+		{
+			"name": "number",
+			"type": "UInt64"
+		},
+		{
+			"name": "res",
+			"type": "UInt8"
+		}
+	],
+
+	"data":
+	[
+
+	],
+
+	"rows": 0,
+
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
+}
+JSONEachRow
+{"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "}
+JSONCompact
+{
+	"meta":
+	[
+		{
+			"name": "number",
+			"type": "UInt64"
+		},
+		{
+			"name": "res",
+			"type": "UInt8"
+		}
+	],
+
+	"data":
+	[
+
+	],
+
+	"rows": 0,
+
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
+}
+JSONCompactEachRow
+["Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "]
+JSONObjectEachRow
+{
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
+}
+XML
+<?xml version='1.0' encoding='UTF-8' ?>
+<result>
+	<meta>
+		<columns>
+			<column>
+				<name>number</name>
+				<type>UInt64</type>
+			</column>
+			<column>
+				<name>res</name>
+				<type>UInt8</type>
+			</column>
+		</columns>
+	</meta>
+	<data>
+	</data>
+	<rows>0</rows>
+	<exception>Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) </exception>
+</result>
+With parallel formatting
+JSON
+1
+JSONCompact
+1
+JSONObjectEachRow
+1
+JSONEachRow
+1
+JSONCompactEachRow
+1
+Formatting error
+Without parallel formatting
+JSON
+{
+	"meta":
+	[
+		{
+			"name": "x",
+			"type": "UInt32"
+		},
+		{
+			"name": "s",
+			"type": "String"
+		},
+		{
+			"name": "y",
+			"type": "Enum8('a' = 1)"
+		}
+	],
+
+	"data":
+	[
+
+	],
+
+	"rows": 0,
+
+	"exception": "Code: 36. : Unexpected value 99 in enum: While executing JSONRowOutputFormat. (BAD_ARGUMENTS) "
+}
+JSONEachRow
+{"exception": "Code: 36. : Unexpected value 99 in enum: While executing JSONEachRowRowOutputFormat. (BAD_ARGUMENTS) "}
+JSONCompact
+{
+	"meta":
+	[
+		{
+			"name": "x",
+			"type": "UInt32"
+		},
+		{
+			"name": "s",
+			"type": "String"
+		},
+		{
+			"name": "y",
+			"type": "Enum8('a' = 1)"
+		}
+	],
+
+	"data":
+	[
+
+	],
+
+	"rows": 0,
+
+	"exception": "Code: 36. : Unexpected value 99 in enum: While executing JSONCompactRowOutputFormat. (BAD_ARGUMENTS) "
+}
+JSONCompactEachRow
+["Code: 36. : Unexpected value 99 in enum: While executing JSONCompactEachRowRowOutputFormat. (BAD_ARGUMENTS) "]
+JSONObjectEachRow
+{
+	"exception": "Code: 36. : Unexpected value 99 in enum: While executing JSONObjectEachRowRowOutputFormat. (BAD_ARGUMENTS) "
+}
+XML
+<?xml version='1.0' encoding='UTF-8' ?>
+<result>
+	<meta>
+		<columns>
+			<column>
+				<name>x</name>
+				<type>UInt32</type>
+			</column>
+			<column>
+				<name>s</name>
+				<type>String</type>
+			</column>
+			<column>
+				<name>y</name>
+				<type>Enum8('a' = 1)</type>
+			</column>
+		</columns>
+	</meta>
+	<data>
+	</data>
+	<rows>0</rows>
+	<exception>Code: 36. : Unexpected value 99 in enum: While executing XMLRowOutputFormat. (BAD_ARGUMENTS) </exception>
+</result>
+With parallel formatting
+JSON
+1
+JSONCompact
+1
+JSONObjectEachRow
+1
+JSONEachRow
+1
+JSONCompactEachRow
+1
+Test 1
+1
+1
+Test 2
+1
+1
+Test 3
+1
+1

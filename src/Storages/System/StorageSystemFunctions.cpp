@@ -1,5 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -15,7 +16,7 @@
 namespace DB
 {
 
-enum class FunctionOrigin : Int8
+enum class FunctionOrigin : int8_t
 {
     SYSTEM = 0,
     SQL_USER_DEFINED = 1,
@@ -97,38 +98,39 @@ std::vector<std::pair<String, Int8>> getOriginEnumsAndValues()
     };
 }
 
-NamesAndTypesList StorageSystemFunctions::getNamesAndTypes()
+ColumnsDescription StorageSystemFunctions::getColumnsDescription()
 {
-    return {
-        {"name", std::make_shared<DataTypeString>()},
-        {"is_aggregate", std::make_shared<DataTypeUInt8>()},
-        {"case_insensitive", std::make_shared<DataTypeUInt8>()},
-        {"alias_to", std::make_shared<DataTypeString>()},
-        {"create_query", std::make_shared<DataTypeString>()},
-        {"origin", std::make_shared<DataTypeEnum8>(getOriginEnumsAndValues())},
-        {"description", std::make_shared<DataTypeString>()},
-        {"syntax", std::make_shared<DataTypeString>()},
-        {"arguments", std::make_shared<DataTypeString>()},
-        {"returned_value", std::make_shared<DataTypeString>()},
-        {"examples", std::make_shared<DataTypeString>()},
-        {"categories", std::make_shared<DataTypeString>()}
+    return ColumnsDescription
+    {
+        {"name", std::make_shared<DataTypeString>(), "The name of the function."},
+        {"is_aggregate", std::make_shared<DataTypeUInt8>(), "Whether the function is an aggregate function."},
+        {"case_insensitive", std::make_shared<DataTypeUInt8>(), "Whether the function name can be used case-insensitively."},
+        {"alias_to", std::make_shared<DataTypeString>(), "The original function name, if the function name is an alias."},
+        {"create_query", std::make_shared<DataTypeString>(), "Obsolete."},
+        {"origin", std::make_shared<DataTypeEnum8>(getOriginEnumsAndValues()), "Obsolete."},
+        {"description", std::make_shared<DataTypeString>(), "A high-level description what the function does."},
+        {"syntax", std::make_shared<DataTypeString>(), "Signature of the function."},
+        {"arguments", std::make_shared<DataTypeString>(), "What arguments does the function take."},
+        {"returned_value", std::make_shared<DataTypeString>(), "What does the function return."},
+        {"examples", std::make_shared<DataTypeString>(), "Usage example."},
+        {"categories", std::make_shared<DataTypeString>(), "The category of the function."}
     };
 }
 
-void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     const auto & functions_factory = FunctionFactory::instance();
     const auto & function_names = functions_factory.getAllRegisteredNames();
     for (const auto & function_name : function_names)
     {
-        fillRow(res_columns, function_name, UInt64(0), "", FunctionOrigin::SYSTEM, functions_factory);
+        fillRow(res_columns, function_name, 0, "", FunctionOrigin::SYSTEM, functions_factory);
     }
 
     const auto & aggregate_functions_factory = AggregateFunctionFactory::instance();
     const auto & aggregate_function_names = aggregate_functions_factory.getAllRegisteredNames();
     for (const auto & function_name : aggregate_function_names)
     {
-        fillRow(res_columns, function_name, UInt64(1), "", FunctionOrigin::SYSTEM, aggregate_functions_factory);
+        fillRow(res_columns, function_name, 1, "", FunctionOrigin::SYSTEM, aggregate_functions_factory);
     }
 
     const auto & user_defined_sql_functions_factory = UserDefinedSQLFunctionFactory::instance();
@@ -136,14 +138,14 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
     for (const auto & function_name : user_defined_sql_functions_names)
     {
         auto create_query = queryToString(user_defined_sql_functions_factory.get(function_name));
-        fillRow(res_columns, function_name, UInt64(0), create_query, FunctionOrigin::SQL_USER_DEFINED, user_defined_sql_functions_factory);
+        fillRow(res_columns, function_name, 0, create_query, FunctionOrigin::SQL_USER_DEFINED, user_defined_sql_functions_factory);
     }
 
     const auto & user_defined_executable_functions_factory = UserDefinedExecutableFunctionFactory::instance();
-    const auto & user_defined_executable_functions_names = user_defined_executable_functions_factory.getRegisteredNames(context);
+    const auto & user_defined_executable_functions_names = user_defined_executable_functions_factory.getRegisteredNames(context); /// NOLINT(readability-static-accessed-through-instance)
     for (const auto & function_name : user_defined_executable_functions_names)
     {
-        fillRow(res_columns, function_name, UInt64(0), "", FunctionOrigin::EXECUTABLE_USER_DEFINED, user_defined_executable_functions_factory);
+        fillRow(res_columns, function_name, 0, "", FunctionOrigin::EXECUTABLE_USER_DEFINED, user_defined_executable_functions_factory);
     }
 }
 

@@ -5,21 +5,28 @@ set (DEFAULT_LIBS "-nodefaultlibs")
 
 # We need builtins from Clang's RT even without libcxx - for ubsan+int128.
 # See https://bugs.llvm.org/show_bug.cgi?id=16404
-if (COMPILER_CLANG)
-    execute_process (COMMAND ${CMAKE_CXX_COMPILER} --target=${CMAKE_CXX_COMPILER_TARGET} --print-libgcc-file-name --rtlib=compiler-rt OUTPUT_VARIABLE BUILTINS_LIBRARY OUTPUT_STRIP_TRAILING_WHITESPACE)
+execute_process (COMMAND
+    ${CMAKE_CXX_COMPILER} --target=${CMAKE_CXX_COMPILER_TARGET} --print-libgcc-file-name --rtlib=compiler-rt
+    OUTPUT_VARIABLE BUILTINS_LIBRARY
+    COMMAND_ERROR_IS_FATAL ANY
+    OUTPUT_STRIP_TRAILING_WHITESPACE)
 
-    if (NOT EXISTS "${BUILTINS_LIBRARY}")
-        set (BUILTINS_LIBRARY "-lgcc")
-    endif ()
+# Apparently, in clang-19, the UBSan support library for C++ was moved out into ubsan_standalone_cxx.a, so we have to include both.
+if (SANITIZE STREQUAL undefined)
+    string(REPLACE "builtins.a" "ubsan_standalone_cxx.a" EXTRA_BUILTINS_LIBRARY "${BUILTINS_LIBRARY}")
+endif ()
+
+if (NOT EXISTS "${BUILTINS_LIBRARY}")
+    set (BUILTINS_LIBRARY "-lgcc")
 endif ()
 
 if (OS_ANDROID)
     # pthread and rt are included in libc
-    set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${COVERAGE_OPTION} -lc -lm -ldl")
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${EXTRA_BUILTINS_LIBRARY} ${COVERAGE_OPTION} -lc -lm -ldl")
 elseif (USE_MUSL)
-    set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${COVERAGE_OPTION} -static -lc")
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${EXTRA_BUILTINS_LIBRARY} ${COVERAGE_OPTION} -static -lc")
 else ()
-    set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${COVERAGE_OPTION} -lc -lm -lrt -lpthread -ldl")
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${EXTRA_BUILTINS_LIBRARY} ${COVERAGE_OPTION} -lc -lm -lrt -lpthread -ldl")
 endif ()
 
 message(STATUS "Default libraries: ${DEFAULT_LIBS}")
@@ -35,10 +42,6 @@ find_package(Threads REQUIRED)
 include (cmake/unwind.cmake)
 include (cmake/cxx.cmake)
 
-# Delay the call to link the global interface after the libc++ libraries are included to avoid circular dependencies
-# which are ok with static libraries but not with dynamic ones
-link_libraries(global-group)
-
 if (NOT OS_ANDROID)
     if (NOT USE_MUSL)
         # Our compatibility layer doesn't build under Android, many errors in musl.
@@ -47,14 +50,10 @@ if (NOT OS_ANDROID)
     add_subdirectory(base/harmful)
 endif ()
 
+link_libraries(global-group)
+
 target_link_libraries(global-group INTERFACE
     -Wl,--start-group
     $<TARGET_PROPERTY:global-libs,INTERFACE_LINK_LIBRARIES>
     -Wl,--end-group
-)
-
-# FIXME: remove when all contribs will get custom cmake lists
-install(
-    TARGETS global-group global-libs
-    EXPORT global
 )

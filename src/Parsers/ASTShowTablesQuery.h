@@ -9,7 +9,7 @@ namespace DB
 {
 
 
-/** Query SHOW TABLES or SHOW DATABASES or SHOW CLUSTERS or SHOW CACHES
+/** Query SHOW TABLES or SHOW DATABASES or SHOW CLUSTERS or SHOW CACHES or SHOW MERGES
   */
 class ASTShowTablesQuery : public ASTQueryWithOutput
 {
@@ -19,6 +19,7 @@ public:
     bool cluster = false;
     bool dictionaries = false;
     bool m_settings = false;
+    bool merges = false;
     bool changed = false;
     bool temporary = false;
     bool caches = false;

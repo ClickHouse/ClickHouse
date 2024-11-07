@@ -1,30 +1,31 @@
+import logging
 import random
 import string
-import logging
-import pytest
 import time
+
+import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance(
     "node1",
-    main_configs=["configs/default_compression.xml", "configs/wide_parts_only.xml"],
+    main_configs=[
+        "configs/default_compression.xml",
+        "configs/wide_parts_only.xml",
+        "configs/long_names.xml",
+    ],
     with_zookeeper=True,
 )
 node2 = cluster.add_instance(
     "node2",
-    main_configs=["configs/default_compression.xml", "configs/wide_parts_only.xml"],
+    main_configs=[
+        "configs/default_compression.xml",
+        "configs/wide_parts_only.xml",
+        "configs/long_names.xml",
+    ],
     with_zookeeper=True,
-)
-node3 = cluster.add_instance(
-    "node3",
-    main_configs=["configs/default_compression.xml", "configs/wide_parts_only.xml"],
-    image="yandex/clickhouse-server",
-    tag="20.3.16",
-    stay_alive=True,
-    with_installed_binary=True,
-    allow_analyzer=False,
 )
 node4 = cluster.add_instance("node4")
 
@@ -403,88 +404,6 @@ def test_default_codec_multiple(start_cluster):
 
     node1.query("DROP TABLE compression_table_multiple SYNC")
     node2.query("DROP TABLE compression_table_multiple SYNC")
-
-
-def test_default_codec_version_update(start_cluster):
-    node3.query(
-        """
-    CREATE TABLE compression_table (
-        key UInt64 CODEC(LZ4HC(7)),
-        data1 String
-    ) ENGINE = MergeTree ORDER BY tuple() PARTITION BY key;
-    """
-    )
-
-    node3.query("INSERT INTO compression_table VALUES (1, 'x')")
-    node3.query(
-        "INSERT INTO compression_table VALUES (2, '{}')".format(get_random_string(2048))
-    )
-    node3.query(
-        "INSERT INTO compression_table VALUES (3, '{}')".format(
-            get_random_string(22048)
-        )
-    )
-
-    old_version = node3.query("SELECT version()")
-    node3.restart_with_latest_version(fix_metadata=True)
-    new_version = node3.query("SELECT version()")
-    logging.debug(f"Updated from {old_version} to {new_version}")
-    assert (
-        node3.query(
-            "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '1_1_1_0'"
-        )
-        == "ZSTD(1)\n"
-    )
-    assert (
-        node3.query(
-            "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '2_2_2_0'"
-        )
-        == "ZSTD(1)\n"
-    )
-    assert (
-        node3.query(
-            "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '3_3_3_0'"
-        )
-        == "ZSTD(1)\n"
-    )
-
-    node3.query("OPTIMIZE TABLE compression_table FINAL")
-
-    assert (
-        node3.query(
-            "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '1_1_1_1'"
-        )
-        == "ZSTD(10)\n"
-    )
-    assert (
-        node3.query(
-            "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '2_2_2_1'"
-        )
-        == "LZ4HC(5)\n"
-    )
-    assert (
-        node3.query(
-            "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '3_3_3_1'"
-        )
-        == "LZ4\n"
-    )
-
-    node3.query("DROP TABLE compression_table SYNC")
-
-    def callback(n):
-        n.exec_in_container(
-            [
-                "bash",
-                "-c",
-                "rm -rf /var/lib/clickhouse/metadata/system /var/lib/clickhouse/data/system ",
-            ],
-            user="root",
-        )
-
-    node3.restart_with_original_version(callback_onstop=callback)
-
-    cur_version = node3.query("SELECT version()")
-    logging.debug(f"End with {cur_version}")
 
 
 def test_default_codec_for_compact_parts(start_cluster):

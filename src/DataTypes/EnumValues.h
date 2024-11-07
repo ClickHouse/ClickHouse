@@ -4,6 +4,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/NamePrompter.h>
 
+
 namespace DB
 {
 
@@ -13,7 +14,7 @@ namespace ErrorCodes
 }
 
 template <typename T>
-class EnumValues : public IHints<1, EnumValues<T>>
+class EnumValues : public IHints<>
 {
 public:
     using Value = std::pair<std::string, T>;
@@ -35,11 +36,16 @@ public:
 
     auto findByValue(const T & value) const
     {
-        const auto it = value_to_name_map.find(value);
-        if (it == std::end(value_to_name_map))
+        auto it = value_to_name_map.find(value);
+        if (it == value_to_name_map.end())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected value {} in enum", toString(value));
 
         return it;
+    }
+
+    bool hasValue(const T & value) const
+    {
+        return value_to_name_map.contains(value);
     }
 
     /// throws exception if value is not valid
@@ -52,14 +58,15 @@ public:
     bool getNameForValue(const T & value, StringRef & result) const
     {
         const auto it = value_to_name_map.find(value);
-        if (it == std::end(value_to_name_map))
+        if (it == value_to_name_map.end())
             return false;
 
         result = it->second;
         return true;
     }
 
-    T getValue(StringRef field_name, bool try_treat_as_id = false) const;
+    T getValue(StringRef field_name) const;
+    bool tryGetValue(T & x, StringRef field_name) const;
 
     template <typename TValues>
     bool containsAll(const TValues & rhs_values) const
@@ -87,4 +94,3 @@ public:
 };
 
 }
-

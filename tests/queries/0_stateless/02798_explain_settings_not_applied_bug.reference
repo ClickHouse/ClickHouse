@@ -1,11 +1,11 @@
- [1mexplain[0m                        
+    [1mexplain[0m                                                                 
 
- (Expression)                    
- ExpressionTransform             
-   (Aggregating)                 
-   FinalizeAggregatedTransform   
-     AggregatingInOrderTransform 
-       (Expression)              
-       ExpressionTransform       
-         (ReadFromMergeTree)     
-         MergeTreeInOrder 0 → 1  
+[90m1. [0m (Expression)                                                             
+[90m2. [0m ExpressionTransform                                                      
+[90m3. [0m   (Aggregating)                                                          
+[90m4. [0m   FinalizeAggregatedTransform                                            
+[90m5. [0m     AggregatingInOrderTransform                                          
+[90m6. [0m       (Expression)                                                       
+[90m7. [0m       ExpressionTransform                                                
+[90m8. [0m         (ReadFromMergeTree)                                              
+[90m9. [0m         MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1 

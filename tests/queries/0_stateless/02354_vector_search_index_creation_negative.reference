@@ -1,0 +1,7 @@
+Two or five index arguments
+1st argument (method) must be String and hnsw
+2nd argument (distance function) must be String and L2Distance or cosineDistance
+3nd argument (quantization), if given, must be String and f32, f16, ...
+4nd argument (M), if given, must be UInt64 and > 1
+Must be created on single column
+Must be created on Array(Float32) columns

@@ -1,30 +1,24 @@
 #include <Backups/RestoreCoordinationLocal.h>
+
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/formatAST.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/logger_useful.h>
 
 
 namespace DB
 {
 
-RestoreCoordinationLocal::RestoreCoordinationLocal() : log(&Poco::Logger::get("RestoreCoordinationLocal"))
+RestoreCoordinationLocal::RestoreCoordinationLocal(
+    const UUID & restore_uuid, bool allow_concurrent_restore_, BackupConcurrencyCounters & concurrency_counters_)
+    : log(getLogger("RestoreCoordinationLocal"))
+    , concurrency_check(restore_uuid, /* is_restore = */ true, /* on_cluster = */ false, allow_concurrent_restore_, concurrency_counters_)
 {
 }
 
 RestoreCoordinationLocal::~RestoreCoordinationLocal() = default;
 
-void RestoreCoordinationLocal::setStage(const String &, const String &)
-{
-}
-
-void RestoreCoordinationLocal::setError(const Exception &)
-{
-}
-
-Strings RestoreCoordinationLocal::waitForStage(const String &)
-{
-    return {};
-}
-
-Strings RestoreCoordinationLocal::waitForStage(const String &, std::chrono::milliseconds)
+ZooKeeperRetriesInfo RestoreCoordinationLocal::getOnClusterInitializationKeeperRetriesInfo() const
 {
     return {};
 }
@@ -51,14 +45,42 @@ bool RestoreCoordinationLocal::acquireReplicatedSQLObjects(const String &, UserD
     return true;
 }
 
-bool RestoreCoordinationLocal::hasConcurrentRestores(const std::atomic<size_t> & num_active_restores) const
+bool RestoreCoordinationLocal::acquireInsertingDataForKeeperMap(const String & root_zk_path, const String & /*table_unique_id*/)
 {
-    if (num_active_restores > 1)
+    std::lock_guard lock{mutex};
+    return acquired_data_in_keeper_map_tables.emplace(root_zk_path).second;
+}
+
+void RestoreCoordinationLocal::generateUUIDForTable(ASTCreateQuery & create_query)
+{
+    String query_str = serializeAST(create_query);
+
+    auto find_in_map = [&]() TSA_REQUIRES(mutex)
     {
-        LOG_WARNING(log, "Found concurrent backups: num_active_restores={}", num_active_restores);
-        return true;
+        auto it = create_query_uuids.find(query_str);
+        if (it != create_query_uuids.end())
+        {
+            it->second.copyToQuery(create_query);
+            return true;
+        }
+        return false;
+    };
+
+    {
+        std::lock_guard lock{mutex};
+        if (find_in_map())
+            return;
     }
-    return false;
+
+    CreateQueryUUIDs new_uuids{create_query, /* generate_random= */ true, /* force_random= */ true};
+    new_uuids.copyToQuery(create_query);
+
+    {
+        std::lock_guard lock{mutex};
+        if (find_in_map())
+            return;
+        create_query_uuids[query_str] = new_uuids;
+    }
 }
 
 }

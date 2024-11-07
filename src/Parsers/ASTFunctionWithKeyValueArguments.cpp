@@ -2,6 +2,7 @@
 
 #include <Poco/String.h>
 #include <Common/SipHash.h>
+#include <Common/maskURIPassword.h>
 #include <IO/Operators.h>
 
 namespace DB
@@ -35,6 +36,17 @@ void ASTPair::formatImpl(const FormatSettings & settings, FormatState & state, F
         /// SOURCE(CLICKHOUSE(host 'example01-01-1' port 9000 user 'default' password '[HIDDEN]' db 'default' table 'ids'))
         settings.ostr << "'[HIDDEN]'";
     }
+    else if (!settings.show_secrets && (first == "uri"))
+    {
+        // Hide password from URI in the defention of a dictionary
+        WriteBufferFromOwnString temp_buf;
+        FormatSettings tmp_settings(temp_buf, settings.one_line);
+        FormatState tmp_state;
+        second->formatImpl(tmp_settings, tmp_state, frame);
+
+        maskURIPassword(&temp_buf.str());
+        settings.ostr << temp_buf.str();
+    }
     else
     {
         second->formatImpl(settings, state, frame);
@@ -53,12 +65,12 @@ bool ASTPair::hasSecretParts() const
 }
 
 
-void ASTPair::updateTreeHashImpl(SipHash & hash_state) const
+void ASTPair::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(first.size());
     hash_state.update(first);
     hash_state.update(second_with_brackets);
-    IAST::updateTreeHashImpl(hash_state);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 
@@ -92,12 +104,12 @@ void ASTFunctionWithKeyValueArguments::formatImpl(const FormatSettings & setting
 }
 
 
-void ASTFunctionWithKeyValueArguments::updateTreeHashImpl(SipHash & hash_state) const
+void ASTFunctionWithKeyValueArguments::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(name.size());
     hash_state.update(name);
     hash_state.update(has_brackets);
-    IAST::updateTreeHashImpl(hash_state);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 }

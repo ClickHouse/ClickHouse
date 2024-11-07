@@ -23,7 +23,7 @@ struct Interval
 
     Interval(IntervalStorageType left_, IntervalStorageType right_) : left(left_), right(right_) { }
 
-    inline bool contains(IntervalStorageType point) const { return left <= point && point <= right; }
+    bool contains(IntervalStorageType point) const { return left <= point && point <= right; }
 };
 
 template <typename IntervalStorageType>
@@ -119,7 +119,7 @@ public:
         return true;
     }
 
-    template <typename TValue = Value, bool = true, typename... Args>
+    template <typename TValue = Value, typename... Args>
     requires(!std::is_same_v<TValue, IntervalTreeVoidValue>)
     ALWAYS_INLINE bool emplace(Interval interval, Args &&... args)
     {
@@ -290,7 +290,7 @@ private:
 
         IntervalStorageType middle_element;
 
-        inline bool hasValue() const { return sorted_intervals_range_size != 0; }
+        bool hasValue() const { return sorted_intervals_range_size != 0; }
     };
 
     using IntervalWithEmptyValue = Interval;
@@ -585,7 +585,7 @@ private:
         }
     }
 
-    inline size_t findFirstIteratorNodeIndex() const
+    size_t findFirstIteratorNodeIndex() const
     {
         size_t nodes_size = nodes.size();
         size_t result_index = 0;
@@ -602,7 +602,7 @@ private:
         return result_index;
     }
 
-    inline size_t findLastIteratorNodeIndex() const
+    size_t findLastIteratorNodeIndex() const
     {
         if (unlikely(nodes.empty()))
             return 0;
@@ -618,7 +618,7 @@ private:
         return result_index;
     }
 
-    inline void increaseIntervalsSize()
+    void increaseIntervalsSize()
     {
         /// Before tree is build we store all intervals size in our first node to allow tree iteration.
         ++intervals_size;
@@ -630,7 +630,7 @@ private:
     size_t intervals_size = 0;
     bool tree_is_built = false;
 
-    static inline const Interval & getInterval(const IntervalWithValue & interval_with_value)
+    static const Interval & getInterval(const IntervalWithValue & interval_with_value)
     {
         if constexpr (is_empty_value)
             return interval_with_value;
@@ -639,7 +639,7 @@ private:
     }
 
     template <typename IntervalCallback>
-    static inline bool callCallback(const IntervalWithValue & interval, IntervalCallback && callback)
+    static bool callCallback(const IntervalWithValue & interval, IntervalCallback && callback)
     {
         if constexpr (is_empty_value)
             return callback(interval);
@@ -647,7 +647,7 @@ private:
             return callback(interval.first, interval.second);
     }
 
-    static inline void
+    static void
     intervalsToPoints(const std::vector<IntervalWithValue> & intervals, std::vector<IntervalStorageType> & temporary_points_storage)
     {
         for (const auto & interval_with_value : intervals)
@@ -658,7 +658,7 @@ private:
         }
     }
 
-    static inline IntervalStorageType pointsMedian(std::vector<IntervalStorageType> & points)
+    static IntervalStorageType pointsMedian(std::vector<IntervalStorageType> & points)
     {
         size_t size = points.size();
         size_t middle_element_index = size / 2;

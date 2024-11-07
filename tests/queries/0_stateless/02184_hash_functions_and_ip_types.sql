@@ -1,6 +1,6 @@
 -- Tags: no-fasttest
 
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 SELECT
     toIPv4('1.2.3.4') AS ipv4,
@@ -38,6 +38,7 @@ SELECT
     hex(SHA224(ipv6)),
     hex(SHA256(ipv6)),
     hex(SHA512(ipv6)),
+    hex(SHA512_256(ipv6)),
     farmFingerprint64(ipv6),
     javaHash(ipv6),
     xxh3(ipv6),

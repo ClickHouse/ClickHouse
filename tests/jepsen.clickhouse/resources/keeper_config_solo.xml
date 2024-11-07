@@ -11,6 +11,7 @@
     <keeper_server>
         <tcp_port>9181</tcp_port>
         <server_id>1</server_id>
+        <digest_enabled>1</digest_enabled>
 
         <coordination_settings>
             <operation_timeout_ms>10000</operation_timeout_ms>
@@ -21,6 +22,7 @@
             <heart_beat_interval_ms>1000</heart_beat_interval_ms>
             <election_timeout_lower_bound_ms>2000</election_timeout_lower_bound_ms>
             <election_timeout_upper_bound_ms>4000</election_timeout_upper_bound_ms>
+            <async_replication>1</async_replication>
         </coordination_settings>
 
         <raft_configuration>

@@ -17,7 +17,12 @@ Columns:
     - `0` — Current user can change the setting.
     - `1` — Current user can’t change the setting.
 - `type` ([String](../../sql-reference/data-types/string.md)) — Setting type (implementation specific string value).
-- `is_obsolete` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) _ Shows whether a setting is obsolete.
+- `is_obsolete` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) - Shows whether a setting is obsolete.
+- `tier` ([Enum8](../../sql-reference/data-types/enum.md)) — Support level for this feature. ClickHouse features are organized in tiers, varying depending on the current status of their development and the expectations one might have when using them. Values:
+    - `'Production'` — The feature is stable, safe to use and does not have issues interacting with other **production** features. .
+    - `'Beta'` — The feature is stable and safe. The outcome of using it together with other features is unknown and correctness is not guaranteed. Testing and reports are welcome.
+    - `'Experimental'` — The feature is under development. Only intended for developers and ClickHouse enthusiasts. The feature might or might not work and could be removed at any time.
+    - `'Obsolete'` — No longer supported. Either it is already removed or it will be removed in future releases.
 
 **Example**
 ```sql

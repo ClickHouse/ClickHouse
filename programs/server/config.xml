@@ -29,7 +29,14 @@
           -->
         <size>1000M</size>
         <count>10</count>
+
         <!-- <console>1</console> --> <!-- Default behavior is autodetection (log to console if not daemon mode and is tty) -->
+        <!-- <console_log_level>trace</console_log_level> -->
+
+        <!-- <use_syslog>0</use_syslog> -->
+        <!-- <syslog_level>trace</syslog_level> -->
+
+        <!-- <stream_compress>0</stream_compress> -->
 
         <!-- Per level overrides (legacy):
 
@@ -91,16 +98,27 @@
         </formatting> -->
     </logger>
 
+    <url_scheme_mappers>
+        <s3>
+            <to>https://{bucket}.s3.amazonaws.com</to>
+        </s3>
+        <gs>
+            <to>https://storage.googleapis.com/{bucket}</to>
+        </gs>
+        <oss>
+            <to>https://{bucket}.oss.aliyuncs.com</to>
+        </oss>
+    </url_scheme_mappers>
+
     <!-- Add headers to response in options request. OPTIONS method is used in CORS preflight requests. -->
-    <!-- It is off by default. Next headers are obligate for CORS.-->
-    <!-- http_options_response>
+    <http_options_response>
         <header>
             <name>Access-Control-Allow-Origin</name>
             <value>*</value>
         </header>
         <header>
             <name>Access-Control-Allow-Headers</name>
-            <value>origin, x-requested-with</value>
+            <value>origin, x-requested-with, x-clickhouse-format, x-clickhouse-user, x-clickhouse-key, Authorization</value>
         </header>
         <header>
             <name>Access-Control-Allow-Methods</name>
@@ -110,7 +128,7 @@
             <name>Access-Control-Max-Age</name>
             <value>86400</value>
         </header>
-    </http_options_response -->
+    </http_options_response>
 
     <!-- It is the name that will be shown in the clickhouse-client.
          By default, anything with "production" will be highlighted in red in query prompt.
@@ -124,13 +142,28 @@
     <http_port>8123</http_port>
 
     <!-- Port for interaction by native protocol with:
-         - clickhouse-client and other native ClickHouse tools (clickhouse-benchmark, clickhouse-copier);
+         - clickhouse-client and other native ClickHouse tools (clickhouse-benchmark);
          - clickhouse-server with other clickhouse-servers for distributed query processing;
          - ClickHouse drivers and applications supporting native protocol
          (this protocol is also informally called as "the TCP protocol");
          See also 'tcp_port_secure' for secure connections.
     -->
     <tcp_port>9000</tcp_port>
+
+    <!-- Chunked capabilities for native protocol by server.
+         Can be enabled separately for send and receive channels.
+         Supported modes:
+         - chunked - server requires from client to have chunked enabled;
+         - chunked_optional - server supports both chunked and notchunked protocol;
+         - notchunked - server requires from client notchunked protocol (current default);
+         - notchunked_optional - server supports both chunked and notchunked protocol.
+     -->
+    <!--
+    <proto_caps>
+        <send>notchunked_optional</send>
+        <recv>notchunked_optional</recv>
+    </proto_caps>
+    -->
 
     <!-- Compatibility with MySQL protocol.
          ClickHouse will pretend to be MySQL for applications connecting to this port.
@@ -233,7 +266,7 @@
     <max_connections>4096</max_connections>
 
     <!-- For 'Connection: keep-alive' in HTTP 1.1 -->
-    <keep_alive_timeout>3</keep_alive_timeout>
+    <keep_alive_timeout>10</keep_alive_timeout>
 
     <!-- gRPC protocol (see src/Server/grpc_protos/clickhouse_grpc.proto for the API) -->
     <!-- <grpc_port>9100</grpc_port> -->
@@ -314,7 +347,7 @@
          Query can upscale to desired number of threads during execution if more threads become available.
     -->
     <concurrent_threads_soft_limit_num>0</concurrent_threads_soft_limit_num>
-    <concurrent_threads_soft_limit_ratio_to_cores>0</concurrent_threads_soft_limit_ratio_to_cores>
+    <concurrent_threads_soft_limit_ratio_to_cores>2</concurrent_threads_soft_limit_ratio_to_cores>
 
     <!-- Maximum number of concurrent queries. -->
     <max_concurrent_queries>1000</max_concurrent_queries>
@@ -353,7 +386,14 @@
     <background_schedule_pool_size>128</background_schedule_pool_size>
     <background_message_broker_schedule_pool_size>16</background_message_broker_schedule_pool_size>
     <background_distributed_schedule_pool_size>16</background_distributed_schedule_pool_size>
+    <tables_loader_foreground_pool_size>0</tables_loader_foreground_pool_size>
+    <tables_loader_background_pool_size>0</tables_loader_background_pool_size>
     -->
+
+    <!-- Enables asynchronous loading of databases and tables to speedup server startup.
+         Queries to not yet loaded entity will be blocked until load is finished.
+      -->
+    <async_load_databases>true</async_load_databases>
 
     <!-- On memory constrained environments you may have to set this to value larger than 1.
       -->
@@ -390,10 +430,11 @@
 
     <!-- Approximate size of mark cache, used in tables of MergeTree family.
          In bytes. Cache is single for server. Memory is allocated only on demand.
-         You should not lower this value.
-      -->
-    <mark_cache_size>5368709120</mark_cache_size>
+         You should not lower this value. -->
+    <!-- <mark_cache_size>5368709120</mark_cache_size> -->
 
+    <!-- For marks of secondary indices. -->
+    <!-- <index_mark_cache_size>5368709120</index_mark_cache_size> -->
 
     <!-- If you enable the `min_bytes_to_use_mmap_io` setting,
          the data in MergeTree tables can be read with mmap to avoid copying from kernel to userspace.
@@ -411,13 +452,28 @@
          The cache is dropped (the files are closed) automatically on removal of old parts in MergeTree,
          also it can be dropped manually by the SYSTEM DROP MMAP CACHE query.
       -->
-    <mmap_cache_size>1000</mmap_cache_size>
+    <!-- <mmap_cache_size>1024</mmap_cache_size> -->
 
     <!-- Cache size in bytes for compiled expressions.-->
-    <compiled_expression_cache_size>134217728</compiled_expression_cache_size>
+    <!-- <compiled_expression_cache_size>134217728</compiled_expression_cache_size> -->
 
     <!-- Cache size in elements for compiled expressions.-->
-    <compiled_expression_cache_elements_size>10000</compiled_expression_cache_elements_size>
+    <!-- <compiled_expression_cache_elements_size>10000</compiled_expression_cache_elements_size> -->
+
+    <!-- Configuration for the query cache -->
+    <!--
+    <query_cache>
+        <max_size_in_bytes>1073741824</max_size_in_bytes>
+        <max_entries>1024</max_entries>
+        <max_entry_size_in_bytes>1048576</max_entry_size_in_bytes>
+        <max_entry_size_in_rows>30000000</max_entry_size_in_rows>
+    </query_cache>
+    -->
+
+    <!-- Cache path for custom (created from SQL) cached disks -->
+    <custom_cached_disks_base_directory>/var/lib/clickhouse/caches/</custom_cached_disks_base_directory>
+
+    <validate_tcp_client_information>false</validate_tcp_client_information>
 
     <!-- Path to data directory, with trailing slash. -->
     <path>/var/lib/clickhouse/</path>
@@ -446,8 +502,6 @@
                 <account_name>account</account_name>
                 <account_key>pass123</account_key>
                 <metadata_path>/var/lib/clickhouse/disks/blob_storage_disk/</metadata_path>
-                <cache_enabled>true</cache_enabled>
-                <cache_path>/var/lib/clickhouse/disks/blob_storage_disk/cache/</cache_path>
                 <skip_access_check>false</skip_access_check>
             </blob_storage_disk>
         </disks>
@@ -464,7 +518,6 @@
                         <max_data_part_size_bytes></max_data_part_size_bytes>
                         <max_data_part_size_ratio></max_data_part_size_ratio>
                         <perform_ttl_move_on_insert>true</perform_ttl_move_on_insert>
-                        <prefer_not_to_merge>false</prefer_not_to_merge>
                         <load_balancing>round_robin</load_balancing>
                     </main>
                 </volumes>
@@ -692,12 +745,12 @@
         <!-- Enables logic that users without permissive row policies can still read rows using a SELECT query.
              For example, if there two users A, B and a row policy is defined only for A, then
              if this setting is true the user B will see all rows, and if this setting is false the user B will see no rows.
-             By default this setting is false for compatibility with earlier access configurations. -->
-        <users_without_row_policies_can_read_rows>false</users_without_row_policies_can_read_rows>
+             By default this setting is true. -->
+        <users_without_row_policies_can_read_rows>true</users_without_row_policies_can_read_rows>
 
         <!-- By default, for backward compatibility ON CLUSTER queries ignore CLUSTER grant,
              however you can change this behaviour by setting this to true -->
-        <on_cluster_queries_require_cluster_grant>false</on_cluster_queries_require_cluster_grant>
+        <on_cluster_queries_require_cluster_grant>true</on_cluster_queries_require_cluster_grant>
 
         <!-- By default, for backward compatibility "SELECT * FROM system.<table>" doesn't require any grants and can be executed
              by any user. You can change this behaviour by setting this to true.
@@ -705,19 +758,23 @@
              Exceptions: a few system tables ("tables", "columns", "databases", and some constant tables like "one", "contributors")
              are still accessible for everyone; and if there is a SHOW privilege (e.g. "SHOW USERS") granted the corresponding system
              table (i.e. "system.users") will be accessible. -->
-        <select_from_system_db_requires_grant>false</select_from_system_db_requires_grant>
+        <select_from_system_db_requires_grant>true</select_from_system_db_requires_grant>
 
         <!-- By default, for backward compatibility "SELECT * FROM information_schema.<table>" doesn't require any grants and can be
              executed by any user. You can change this behaviour by setting this to true.
              If it's set to true then this query requires "GRANT SELECT ON information_schema.<table>" just like as for ordinary tables. -->
-        <select_from_information_schema_requires_grant>false</select_from_information_schema_requires_grant>
+        <select_from_information_schema_requires_grant>true</select_from_information_schema_requires_grant>
 
         <!-- By default, for backward compatibility a settings profile constraint for a specific setting inherit every not set field from
              previous profile. You can change this behaviour by setting this to true.
              If it's set to true then if settings profile has a constraint for a specific setting, then this constraint completely cancels all
              actions of previous constraint (defined in other profiles) for the same specific setting, including fields that are not set by new constraint.
              It also enables 'changeable_in_readonly' constraint type -->
-        <settings_constraints_replace_previous>false</settings_constraints_replace_previous>
+        <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
+
+        <!-- By default, for backward compatibility creating table with a specific table engine ignores grant,
+             however you can change this behaviour by setting this to true -->
+        <table_engines_require_grant>false</table_engines_require_grant>
 
         <!-- Number of seconds since last access a role is stored in the Role Cache -->
         <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
@@ -729,7 +786,7 @@
     <!-- Comma-separated list of prefixes for user-defined settings.
          The server will allow to set these settings, and retrieve them with the getSetting function.
          They are also logged in the query_log, similarly to other settings, but have no special effect.
-         The "SQL_" prefix is introduced for compatibility with MySQL - these settings are being set be Tableau.
+         The "SQL_" prefix is introduced for compatibility with MySQL - these settings are being set by Tableau.
     -->
     <custom_settings_prefixes>SQL_</custom_settings_prefixes>
 
@@ -816,13 +873,13 @@
                  And also (and which is more important), the initial_user will
                  be used as current user for the query.
 
-                 Right now the protocol is pretty simple and it only takes into account:
+                 Right now the protocol is pretty simple, and it only takes into account:
                  - cluster name
                  - query
 
-                 Also it will be nice if the following will be implemented:
-                 - source hostname (see interserver_http_host), but then it will depends from DNS,
-                   it can use IP address instead, but then the you need to get correct on the initiator node.
+                 Also, it will be nice if the following will be implemented:
+                 - source hostname (see interserver_http_host), but then it will depend on DNS,
+                   it can use IP address instead, but then you need to get correct on the initiator node.
                  - target hostname / ip address (same notes as for source hostname)
                  - time-based security tokens
             -->
@@ -914,6 +971,20 @@
     </macros>
     -->
 
+    <!--
+    <default_replica_path>/clickhouse/tables/{database}/{table}</default_replica_path>
+    <default_replica_name>{replica}</default_replica_name>
+    -->
+
+    <!-- Replica group name for database Replicated.
+          The cluster created by Replicated database will consist of replicas in the same group.
+          DDL queries will only wail for the replicas in the same group.
+          Empty by default.
+    -->
+    <!--
+    <replica_group_name><replica_group_name>
+    -->
+
 
     <!-- Reloading interval for embedded dictionaries, in seconds. Default: 3600. -->
     <builtin_dictionaries_reload_interval>3600</builtin_dictionaries_reload_interval>
@@ -969,7 +1040,6 @@
         metrics - send data from table system.metrics
         events - send data from table system.events
         asynchronous_metrics - send data from table system.asynchronous_metrics
-        status_info - send data from different component from CH, ex: Dictionaries status
     -->
     <!--
     <prometheus>
@@ -979,7 +1049,6 @@
         <metrics>true</metrics>
         <events>true</events>
         <asynchronous_metrics>true</asynchronous_metrics>
-        <status_info>true</status_info>
     </prometheus>
     -->
 
@@ -1076,8 +1145,7 @@
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </query_views_log>
 
-    <!-- Uncomment if use part log.
-         Part log contains information about all actions with parts in MergeTree tables (creation, deletion, merges, downloads).-->
+    <!-- Part log contains information about all actions with parts in MergeTree tables (creation, deletion, merges, downloads). -->
     <part_log>
         <database>system</database>
         <table>part_log</table>
@@ -1089,9 +1157,9 @@
         <flush_on_crash>false</flush_on_crash>
     </part_log>
 
-    <!-- Uncomment to write text log into table.
-         Text log contains all information from usual server log but stores it in structured and efficient way.
+    <!-- Text log contains all information from usual server log but stores it in structured and efficient way.
          The level of the messages that goes to the table can be limited (<level>), if not specified all messages will go to the table.
+    -->
     <text_log>
         <database>system</database>
         <table>text_log</table>
@@ -1100,9 +1168,8 @@
         <reserved_size_rows>8192</reserved_size_rows>
         <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
         <flush_on_crash>false</flush_on_crash>
-        <level></level>
+        <level>trace</level>
     </text_log>
-    -->
 
     <!-- Metric log contains rows with current values of ProfileEvents, CurrentMetrics collected with "collect_interval_milliseconds" interval. -->
     <metric_log>
@@ -1115,6 +1182,31 @@
         <collect_interval_milliseconds>1000</collect_interval_milliseconds>
         <flush_on_crash>false</flush_on_crash>
     </metric_log>
+
+    <!-- Error log contains rows with current values of errors collected with "collect_interval_milliseconds" interval. -->
+    <error_log>
+        <database>system</database>
+        <table>error_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <flush_on_crash>false</flush_on_crash>
+    </error_log>
+
+    <!-- Query metric log contains rows Contains history of memory and metric values from table system.events for individual queries, periodically flushed to disk
+    every "collect_interval_milliseconds" interval-->
+    <query_metric_log>
+        <database>system</database>
+        <table>query_metric_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <flush_on_crash>false</flush_on_crash>
+    </query_metric_log>
 
     <!--
         Asynchronous metric log contains values of metrics from
@@ -1218,6 +1310,59 @@
         <ttl>event_date + INTERVAL 3 DAY</ttl>
     </asynchronous_insert_log>
 
+    <!-- Backup/restore log.
+    -->
+    <backup_log>
+        <database>system</database>
+        <table>backup_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </backup_log>
+
+    <!-- Storage S3Queue log.
+    -->
+    <s3queue_log>
+        <database>system</database>
+        <table>s3queue_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </s3queue_log>
+
+    <!-- Blob storage object operations log.
+    -->
+    <blob_storage_log>
+        <database>system</database>
+        <table>blob_storage_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <ttl>event_date + INTERVAL 30 DAY</ttl>
+    </blob_storage_log>
+
+    <!-- Configure system.dashboards for dashboard.html.
+
+         Could have any query parameters, for which there will be an input on the page.
+         For instance an example from comments have the following:
+         - seconds
+         - rounding
+
+         NOTE: All default dashboards will be overwritten if it was set here. -->
+    <!-- Here is an example without merge() function, to make it work with readonly user -->
+    <!--
+    <dashboards>
+        <dashboard>
+            <dashboard>Overview</dashboard>
+            <title>Queries/second</title>
+            <query>
+                SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(ProfileEvent_Query)
+                FROM system.metric_log
+                WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+                GROUP BY t
+                ORDER BY t WITH FILL STEP {rounding:UInt32}
+            </query>
+        </dashboard>
+    </dashboards>
+    -->
+
     <!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
     <!-- Custom TLD lists.
          Format: <name>/path/to/file</name>
@@ -1236,12 +1381,27 @@
     -->
     <dictionaries_config>*_dictionary.*ml</dictionaries_config>
 
+    <!-- Load dictionaries lazily, i.e. a dictionary will be loaded when it's used for the first time.
+         "false" means ClickHouse will start loading dictionaries immediately at startup.
+    -->
+    <dictionaries_lazy_load>true</dictionaries_lazy_load>
+
+    <!-- Wait at startup until all the dictionaries finish their loading (successfully or not)
+         before receiving any connections. Affects dictionaries only if "dictionaries_lazy_load" is false.
+         Setting this to false can make ClickHouse start faster, however some queries can be executed slower.
+    -->
+    <wait_dictionaries_load_at_startup>true</wait_dictionaries_load_at_startup>
+
     <!-- Configuration of user defined executable functions -->
     <user_defined_executable_functions_config>*_function.*ml</user_defined_executable_functions_config>
 
     <!-- Path in ZooKeeper to store user-defined SQL functions created by the command CREATE FUNCTION.
      If not specified they will be stored locally. -->
     <!-- <user_defined_zookeeper_path>/clickhouse/user_defined</user_defined_zookeeper_path> -->
+
+    <!-- Path in ZooKeeper to store workload and resource created by the command CREATE WORKLOAD and CREATE REESOURCE.
+     If not specified they will be stored locally. -->
+    <!-- <workload_zookeeper_path>/clickhouse/workload/definitions.sql</workload_zookeeper_path> -->
 
     <!-- Uncomment if you want data to be compressed 30-100% better.
          Don't do that if you just started using ClickHouse.
@@ -1294,6 +1454,8 @@
     <distributed_ddl>
         <!-- Path in ZooKeeper to queue with DDL queries -->
         <path>/clickhouse/task_queue/ddl</path>
+        <!-- Path in ZooKeeper to store running DDL hosts -->
+        <replicas_path>/clickhouse/task_queue/replicas</replicas_path>
 
         <!-- Settings from this profile will be used to execute DDL queries -->
         <!-- <profile>default</profile> -->
@@ -1313,13 +1475,38 @@
 
         <!-- Controls how many tasks could be in the queue -->
         <!-- <max_tasks_in_queue>1000</max_tasks_in_queue> -->
+
+        <!-- Host name of the current node. If specified, will only compare and not resolve hostnames inside the DDL tasks -->
+        <!-- <host_name>replica</host_name> -->
     </distributed_ddl>
 
-    <!-- Settings to fine tune MergeTree tables. See documentation in source code, in MergeTreeSettings.h -->
+    <!-- Used to regulate how resources are utilized and shared between merges, mutations and other workloads.
+         Specified value is used as `workload` setting value for background merge or mutation.
+    -->
+    <!--
+    <merge_workload>merges_and_mutations</merge_workload>
+    <mutation_workload>merges_and_mutations</mutation_workload>
+    -->
+
+    <!-- Settings to fine-tune MergeTree tables. See documentation in source code, in MergeTreeSettings.h -->
     <!--
     <merge_tree>
         <max_suspicious_broken_parts>5</max_suspicious_broken_parts>
     </merge_tree>
+    -->
+
+    <!-- Settings to fine-tune ReplicatedMergeTree tables. See documentation in source code, in MergeTreeSettings.h -->
+    <!--
+    <replicated_merge_tree>
+        <max_replicated_fetches_network_bandwidth>1000000000</max_replicated_fetches_network_bandwidth>
+    </replicated_merge_tree>
+    -->
+
+    <!-- Settings to fine-tune Distributed tables. See documentation in source code, in DistributedSettings.h -->
+    <!--
+    <distributed>
+        <flush_on_detach>false</flush_on_detach>
+    </distributed>
     -->
 
     <!-- Protection from accidental DROP.
@@ -1368,6 +1555,10 @@
       -->
     <format_schema_path>/var/lib/clickhouse/format_schemas/</format_schema_path>
 
+    <!-- Directory containing the proto files for the well-known Protobuf types.
+      -->
+    <google_protos_path>/usr/share/clickhouse/protos/</google_protos_path>
+
     <!-- Default query masking rules, matching lines would be replaced with something else in the logs
         (both text logs and system.query_log).
         name - name for the rule (optional)
@@ -1382,17 +1573,23 @@
     </query_masking_rules> -->
 
     <!-- Uncomment to use custom http handlers.
+
         rules are checked from top to bottom, first match runs the handler
             url - to match request URL, you can use 'regex:' prefix to use regex match(optional)
+            empty_query_string - check that there is no query string in the URL
             methods - to match request method, you can use commas to separate multiple method matches(optional)
             headers - to match request headers, match each child element(child element name is header name), you can use 'regex:' prefix to use regex match(optional)
+
         handler is request handler
-            type - supported types: static, dynamic_query_handler, predefined_query_handler
+            type - supported types: static, dynamic_query_handler, predefined_query_handler, redirect
             query - use with predefined_query_handler type, executes query when the handler is called
             query_param_name - use with dynamic_query_handler type, extracts and executes the value corresponding to the <query_param_name> value in HTTP request params
             status - use with static type, response status code
             content_type - use with static type, response content-type
             response_content - use with static type, Response content sent to client, when using the prefix 'file://' or 'config://', find the content from the file or configuration send to client.
+            url - a location for redirect
+
+        Along with a list of rules, you can specify <defaults/> which means - enable all the default handlers.
 
     <http_handlers>
         <rule>
@@ -1435,20 +1632,35 @@
         <!-- Default endpoint should be changed to different Sentry DSN only if you have -->
         <!-- some in-house engineers or hired consultants who're going to debug ClickHouse issues for you -->
         <endpoint>https://6f33034cfe684dd7a3ab9875e57b1c8d@o388870.ingest.sentry.io/5226277</endpoint>
+        <!-- Send LOGICAL_ERRORs as well (default: false) -->
+        <send_logical_errors>false</send_logical_errors>
     </send_crash_reports>
 
     <!-- Uncomment to disable ClickHouse internal DNS caching. -->
     <!-- <disable_internal_dns_cache>1</disable_internal_dns_cache> -->
 
     <!-- You can also configure rocksdb like this: -->
+    <!-- Full list of options:
+         - options:
+           - https://github.com/facebook/rocksdb/blob/4b013dcbed2df84fde3901d7655b9b91c557454d/include/rocksdb/options.h#L1452
+         - column_family_options:
+           - https://github.com/facebook/rocksdb/blob/4b013dcbed2df84fde3901d7655b9b91c557454d/include/rocksdb/options.h#L66
+         - block_based_table_options:
+           - https://github.com/facebook/rocksdb/blob/4b013dcbed2df84fde3901d7655b9b91c557454d/table/block_based/block_based_table_factory.cc#L228
+           - https://github.com/facebook/rocksdb/blob/4b013dcbed2df84fde3901d7655b9b91c557454d/include/rocksdb/table.h#L129
+    -->
     <!--
     <rocksdb>
         <options>
             <max_background_jobs>8</max_background_jobs>
+            <info_log_level>DEBUG_LEVEL</info_log_level>
         </options>
         <column_family_options>
             <num_levels>2</num_levels>
         </column_family_options>
+        <block_based_table_options>
+            <block_size>1024</block_size>
+        </block_based_table_options>
         <tables>
             <table>
                 <name>TABLE</name>
@@ -1458,18 +1670,58 @@
                 <column_family_options>
                     <num_levels>2</num_levels>
                 </column_family_options>
+                <block_based_table_options>
+                    <block_size>1024</block_size>
+                </block_based_table_options>
             </table>
         </tables>
     </rocksdb>
     -->
 
-    <!-- Configuration for the query cache -->
-    <query_cache>
-        <max_size_in_bytes>1073741824</max_size_in_bytes>
-        <max_entries>1024</max_entries>
-        <max_entry_size_in_bytes>1048576</max_entry_size_in_bytes>
-        <max_entry_size_in_rows>30000000</max_entry_size_in_rows>
-    </query_cache>
+    <!-- <kafka> -->
+        <!-- Global configuration properties -->
+        <!--
+        NOTE: statistics should be consumed, otherwise it creates too much
+              entries in the queue, that leads to memory leak and slow shutdown.
+        default value: 0
+        <statistics_interval_ms>3000</statistics_interval_ms>
+        -->
+
+        <!-- Topic configuration properties -->
+        <!--
+        <kafka_topic>
+              <name>football</name>
+              <request_timeout_ms>6000</request_timeout_ms>
+        </kafka_topic>
+        -->
+
+        <!-- Producer configuration -->
+        <!--
+        <producer>
+            <compression_codec>gzip</compression_codec>
+            <kafka_topic>
+                <name>football</name>
+                <request_timeout_ms>6000</request_timeout_ms>
+            </kafka_topic>
+        </producer>
+        -->
+
+        <!-- Consumer configuration -->
+        <!--
+        <consumer>
+            <enable_auto_commit>true</enable_auto_commit>
+        </consumer>
+        -->
+    <!-- </kafka> -->
+
+    <backups>
+        <allowed_path>backups</allowed_path>
+
+        <!-- If the BACKUP command fails and this setting is true then the files
+             copied before the failure will be removed automatically.
+        -->
+        <remove_backup_files_after_failure>true</remove_backup_files_after_failure>
+    </backups>
 
     <!-- This allows to disable exposing addresses in stack traces for security reasons.
          Please be aware that it does not improve security much, but makes debugging much harder.
@@ -1483,4 +1735,10 @@
     <!-- On Linux systems this can control the behavior of OOM killer.
     <oom_score>-1000</oom_score>
     -->
+
+    <!-- Delay (in seconds) to wait for unfinished queries before force exit -->
+    <!-- <shutdown_wait_unfinished>5</shutdown_wait_unfinished> -->
+
+    <!-- If set true ClickHouse will wait for running queries finish before shutdown. -->
+    <!-- <shutdown_wait_unfinished_queries>false</shutdown_wait_unfinished_queries> -->
 </clickhouse>

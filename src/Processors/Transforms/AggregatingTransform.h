@@ -2,23 +2,27 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Aggregator.h>
+#include <Processors/Chunk.h>
 #include <Processors/IAccumulatingTransform.h>
-#include <Common/Stopwatch.h>
-#include <Common/setThreadName.h>
-#include <Common/scope_guard_safe.h>
+#include <Processors/RowsBeforeStepCounter.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
+#include <Common/Stopwatch.h>
+#include <Common/scope_guard_safe.h>
+#include <Common/setThreadName.h>
+
 
 namespace CurrentMetrics
 {
     extern const Metric DestroyAggregatesThreads;
     extern const Metric DestroyAggregatesThreadsActive;
+    extern const Metric DestroyAggregatesThreadsScheduled;
 }
 
 namespace DB
 {
 
-class AggregatedChunkInfo : public ChunkInfo
+class AggregatedChunkInfo : public ChunkInfoCloneable<AggregatedChunkInfo>
 {
 public:
     bool is_overflows = false;
@@ -70,16 +74,12 @@ struct AggregatingTransformParams
 struct ManyAggregatedData
 {
     ManyAggregatedDataVariants variants;
-    std::vector<std::unique_ptr<std::mutex>> mutexes;
     std::atomic<UInt32> num_finished = 0;
 
-    explicit ManyAggregatedData(size_t num_threads = 0) : variants(num_threads), mutexes(num_threads)
+    explicit ManyAggregatedData(size_t num_threads = 0) : variants(num_threads)
     {
         for (auto & elem : variants)
             elem = std::make_shared<AggregatedDataVariants>();
-
-        for (auto & mut : mutexes)
-            mut = std::make_unique<std::mutex>();
     }
 
     ~ManyAggregatedData()
@@ -95,6 +95,7 @@ struct ManyAggregatedData
             const auto pool = std::make_unique<ThreadPool>(
                 CurrentMetrics::DestroyAggregatesThreads,
                 CurrentMetrics::DestroyAggregatesThreadsActive,
+                CurrentMetrics::DestroyAggregatesThreadsScheduled,
                 variants.size());
 
             for (auto && variant : variants)
@@ -169,6 +170,7 @@ public:
     Status prepare() override;
     void work() override;
     Processors expandPipeline() override;
+    void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr counter) override { rows_before_aggregation.swap(counter); }
 
 protected:
     void consume(Chunk chunk);
@@ -178,7 +180,7 @@ private:
     Processors processors;
 
     AggregatingTransformParamsPtr params;
-    Poco::Logger * log = &Poco::Logger::get("AggregatingTransform");
+    LoggerPtr log = getLogger("AggregatingTransform");
 
     ColumnRawPtrs key_columns;
     Aggregator::AggregateColumns aggregate_columns;
@@ -203,7 +205,7 @@ private:
     UInt64 src_rows = 0;
     UInt64 src_bytes = 0;
 
-    bool is_generate_initialized = false;
+    std::atomic_flag is_generate_initialized;
     bool is_consume_finished = false;
     bool is_pipeline_created = false;
 
@@ -211,6 +213,8 @@ private:
     bool read_current_chunk = false;
 
     bool is_consume_started = false;
+
+    RowsBeforeStepCounterPtr rows_before_aggregation;
 
     void initGenerate();
 };

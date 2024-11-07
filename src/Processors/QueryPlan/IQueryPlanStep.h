@@ -16,48 +16,11 @@ using Processors = std::vector<ProcessorPtr>;
 
 namespace JSONBuilder { class JSONMap; }
 
-/// Description of data stream.
-/// Single logical data stream may relate to many ports of pipeline.
-class DataStream
-{
-public:
-    Block header;
+class QueryPlan;
+using QueryPlanRawPtrs = std::list<QueryPlan *>;
 
-    /// QueryPipeline has single port. Totals or extremes ports are not counted.
-    bool has_single_port = false;
-
-    /// Sorting scope. Please keep the mutual order (more strong mode should have greater value).
-    enum class SortScope
-    {
-        None   = 0,
-        Chunk  = 1, /// Separate chunks are sorted
-        Stream = 2, /// Each data steam is sorted
-        Global = 3, /// Data is globally sorted
-    };
-
-    /// It is not guaranteed that header has columns from sort_description.
-    SortDescription sort_description = {};
-    SortScope sort_scope = SortScope::None;
-
-    /// Things which may be added:
-    /// * limit
-    /// * estimated rows number
-    /// * memory allocation context
-
-    bool hasEqualPropertiesWith(const DataStream & other) const
-    {
-        return has_single_port == other.has_single_port
-            && sort_description == other.sort_description
-            && (sort_description.empty() || sort_scope == other.sort_scope);
-    }
-
-    bool hasEqualHeaderWith(const DataStream & other) const
-    {
-        return blocksHaveEqualStructure(header, other.header);
-    }
-};
-
-using DataStreams = std::vector<DataStream>;
+using Header = Block;
+using Headers = std::vector<Header>;
 
 /// Single step of query plan.
 class IQueryPlanStep
@@ -69,20 +32,22 @@ public:
 
     /// Add processors from current step to QueryPipeline.
     /// Calling this method, we assume and don't check that:
-    ///   * pipelines.size() == getInputStreams.size()
-    ///   * header from each pipeline is the same as header from corresponding input_streams
-    /// Result pipeline must contain any number of streams with compatible output header is hasOutputStream(),
+    ///   * pipelines.size() == getInputHeaders.size()
+    ///   * header from each pipeline is the same as header from corresponding input
+    /// Result pipeline must contain any number of ports with compatible output header if hasOutputHeader(),
     ///   or pipeline should be completed otherwise.
     virtual QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) = 0;
 
-    const DataStreams & getInputStreams() const { return input_streams; }
+    const Headers & getInputHeaders() const { return input_headers; }
 
-    bool hasOutputStream() const { return output_stream.has_value(); }
-    const DataStream & getOutputStream() const;
+    bool hasOutputHeader() const { return output_header.has_value(); }
+    const Header & getOutputHeader() const;
 
     /// Methods to describe what this step is needed for.
     const std::string & getStepDescription() const { return step_description; }
     void setStepDescription(std::string description) { step_description = std::move(description); }
+
+    virtual const SortDescription & getSortDescription() const;
 
     struct FormatSettings
     {
@@ -104,12 +69,23 @@ public:
     /// Get description of processors added in current step. Should be called after updatePipeline().
     virtual void describePipeline(FormatSettings & /*settings*/) const {}
 
+    /// Get child plans contained inside some steps (e.g ReadFromMerge) so that they are visible when doing EXPLAIN.
+    virtual QueryPlanRawPtrs getChildPlans() { return {}; }
+
     /// Append extra processors for this step.
     void appendExtraProcessors(const Processors & extra_processors);
 
+    /// Updates the input streams of the given step. Used during query plan optimizations.
+    /// It won't do any validation of new streams, so it is your responsibility to ensure that this update doesn't break anything
+    /// (e.g. you correctly remove / add columns).
+    void updateInputHeaders(Headers input_headers_);
+    void updateInputHeader(Header input_header, size_t idx = 0);
+
 protected:
-    DataStreams input_streams;
-    std::optional<DataStream> output_stream;
+    virtual void updateOutputHeader() = 0;
+
+    Headers input_headers;
+    std::optional<Header> output_header;
 
     /// Text description about what current step does.
     std::string step_description;

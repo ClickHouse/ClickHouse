@@ -5,6 +5,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsAES.h>
 
+namespace DB
+{
 namespace
 {
 
@@ -15,9 +17,6 @@ struct EncryptMySQLModeImpl
 };
 
 }
-
-namespace DB
-{
 
 REGISTER_FUNCTION(AESEncryptMysql)
 {

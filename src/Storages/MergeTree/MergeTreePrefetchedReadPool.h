@@ -1,9 +1,7 @@
 #pragma once
-
+#include <Storages/MergeTree/MergeTreeReadPoolBase.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Common/ThreadPool_fwd.h>
-#include <Interpreters/ExpressionActionsSettings.h>
-#include <Storages/MergeTree/MergeTreeReadPool.h>
-#include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <IO/AsyncReadCounters.h>
 #include <boost/heap/priority_queue.hpp>
 #include <queue>
@@ -16,99 +14,118 @@ using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
 /// A class which is responsible for creating read tasks
 /// which are later taken by readers via getTask method.
 /// Does prefetching for the read tasks it creates.
-class MergeTreePrefetchedReadPool : public IMergeTreeReadPool, private WithContext
+class MergeTreePrefetchedReadPool : public MergeTreeReadPoolBase
 {
 public:
     MergeTreePrefetchedReadPool(
-        size_t threads,
-        size_t sum_marks_,
-        size_t min_marks_for_concurrent_read_,
         RangesInDataParts && parts_,
+        MutationsSnapshotPtr mutations_snapshot_,
+        VirtualFields shared_virtual_fields_,
         const StorageSnapshotPtr & storage_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
         const ExpressionActionsSettings & actions_settings_,
-        const Names & column_names_,
-        const Names & virtual_column_names_,
-        size_t preferred_block_size_bytes_,
         const MergeTreeReaderSettings & reader_settings_,
-        ContextPtr context_,
-        bool use_uncompressed_cache_,
-        bool is_remote_read_,
-        const MergeTreeSettings & storage_settings_);
+        const Names & column_names_,
+        const PoolSettings & settings_,
+        const MergeTreeReadTask::BlockSizeParams & params_,
+        const ContextPtr & context_);
 
-    MergeTreeReadTaskPtr getTask(size_t thread) override;
+    String getName() const override { return "PrefetchedReadPool"; }
+    bool preservesOrderOfRanges() const override { return false; }
+    MergeTreeReadTaskPtr getTask(size_t task_idx, MergeTreeReadTask * previous_task) override;
 
     void profileFeedback(ReadBufferFromFileBase::ProfileInfo) override {}
-
-    Block getHeader() const override { return header; }
 
     static bool checkReadMethodAllowed(LocalFSReadMethod method);
     static bool checkReadMethodAllowed(RemoteFSReadMethod method);
 
 private:
-    struct PartInfo;
-    using PartInfoPtr = std::shared_ptr<PartInfo>;
-    using PartsInfos = std::vector<PartInfoPtr>;
-    using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;
-    using ThreadTasks = std::deque<MergeTreeReadTaskPtr>;
-    using ThreadsTasks = std::map<size_t, ThreadTasks>;
+    struct PartStatistic
+    {
+        size_t sum_marks = 0;
 
-    std::future<MergeTreeReaderPtr> createPrefetchedReader(
-        const IMergeTreeDataPart & data_part,
-        const NamesAndTypesList & columns,
-        const AlterConversionsPtr & alter_conversions,
-        const MarkRanges & required_ranges,
-        Priority priority) const;
+        size_t approx_size_of_mark = 0;
+        size_t prefetch_step_marks = 0;
 
-    void createPrefetchedReaderForTask(MergeTreeReadTask & task) const;
+        size_t estimated_memory_usage_for_single_prefetch = 0;
+        size_t required_readers_num = 0;
+    };
 
-    size_t getApproxSizeOfGranule(const IMergeTreeDataPart & part) const;
+    class PrefetchedReaders
+    {
+    public:
+        PrefetchedReaders(
+            ThreadPool & pool, MergeTreeReadTask::Readers readers_, Priority priority_, MergeTreePrefetchedReadPool & read_prefetch);
 
-    PartsInfos getPartsInfos(const RangesInDataParts & parts, size_t preferred_block_size_bytes) const;
+        void wait();
+        MergeTreeReadTask::Readers get();
+        bool valid() const { return is_valid; }
 
-    ThreadsTasks createThreadsTasks(
-        size_t threads,
-        size_t sum_marks,
-        size_t min_marks_for_concurrent_read) const;
+    private:
+        bool is_valid = false;
+        MergeTreeReadTask::Readers readers;
 
-    void startPrefetches() const;
+        ThreadPoolCallbackRunnerLocal<void> prefetch_runner;
+    };
 
-    static std::string dumpTasks(const ThreadsTasks & tasks);
+    struct ThreadTask
+    {
+        using InfoPtr = MergeTreeReadTaskInfoPtr;
 
-    Poco::Logger * log;
+        ThreadTask(InfoPtr read_info_, MarkRanges ranges_, Priority priority_)
+            : read_info(std::move(read_info_)), ranges(std::move(ranges_)), priority(priority_)
+        {
+        }
 
-    Block header;
-    MarkCache * mark_cache;
-    UncompressedCache * uncompressed_cache;
-    ReadBufferFromFileBase::ProfileCallback profile_callback;
-    size_t index_granularity_bytes;
-    size_t fixed_index_granularity;
+        ~ThreadTask()
+        {
+            if (readers_future && readers_future->valid())
+                readers_future->wait();
+        }
 
-    StorageSnapshotPtr storage_snapshot;
-    const Names column_names;
-    const Names virtual_column_names;
-    PrewhereInfoPtr prewhere_info;
-    const ExpressionActionsSettings actions_settings;
-    const MergeTreeReaderSettings reader_settings;
-    RangesInDataParts parts_ranges;
+        bool isValidReadersFuture() const
+        {
+            return readers_future && readers_future->valid();
+        }
 
-    [[ maybe_unused ]] const bool is_remote_read;
-    ThreadPool & prefetch_threadpool;
-
-    PartsInfos parts_infos;
-
-    ThreadsTasks threads_tasks;
-    std::mutex mutex;
+        InfoPtr read_info;
+        MarkRanges ranges;
+        Priority priority;
+        std::unique_ptr<PrefetchedReaders> readers_future;
+    };
 
     struct TaskHolder
     {
-        explicit TaskHolder(MergeTreeReadTask * task_, size_t thread_id_) : task(task_), thread_id(thread_id_) {}
-        MergeTreeReadTask * task;
-        size_t thread_id;
-        bool operator <(const TaskHolder & other) const;
+        ThreadTask * task = nullptr;
+        size_t thread_id = 0;
+        bool operator<(const TaskHolder & other) const;
     };
-    mutable std::priority_queue<TaskHolder> prefetch_queue; /// the smallest on top
+
+    using ThreadTaskPtr = std::unique_ptr<ThreadTask>;
+    using ThreadTasks = std::deque<ThreadTaskPtr>;
+    using TasksPerThread = std::map<size_t, ThreadTasks>;
+    using PartStatistics = std::vector<PartStatistic>;
+
+    void fillPerPartStatistics();
+    void fillPerThreadTasks(size_t threads, size_t sum_marks);
+
+    void startPrefetches();
+    void createPrefetchedReadersForTask(ThreadTask & task);
+    std::function<void()> createPrefetchedTask(IMergeTreeReader * reader, Priority priority);
+
+    MergeTreeReadTaskPtr stealTask(size_t thread, MergeTreeReadTask * previous_task);
+    MergeTreeReadTaskPtr createTask(ThreadTask & thread_task, MergeTreeReadTask * previous_task);
+
+    static std::string dumpTasks(const TasksPerThread & tasks);
+
+    mutable std::mutex mutex;
+    ThreadPool & prefetch_threadpool;
+
+    PartStatistics per_part_statistics;
+    TasksPerThread per_thread_tasks;
+    std::priority_queue<TaskHolder> prefetch_queue; /// the smallest on top
     bool started_prefetches = false;
+    LoggerPtr log;
 
     /// A struct which allows to track max number of tasks which were in the
     /// threadpool simultaneously (similar to CurrentMetrics, but the result

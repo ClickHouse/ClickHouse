@@ -67,6 +67,51 @@ This check means that the CI system started to process the pull request. When it
 Performs some simple regex-based checks of code style, using the [`utils/check-style/check-style`](https://github.com/ClickHouse/ClickHouse/blob/master/utils/check-style/check-style) binary (note that it can be run locally).
 If it fails, fix the style errors following the [code style guide](style.md).
 
+#### Running style check locally:
+```sh
+mkdir -p /tmp/test_output
+# running all checks
+python3 tests/ci/style_check.py --no-push
+
+# run specified check script (e.g.: ./check-mypy)
+docker run --rm --volume=.:/ClickHouse --volume=/tmp/test_output:/test_output -u $(id -u ${USER}):$(id -g ${USER}) --cap-add=SYS_PTRACE --entrypoint= -w/ClickHouse/utils/check-style clickhouse/style-test ./check-mypy
+
+# find all style check scripts under the directory:
+cd ./utils/check-style
+
+# Check duplicate includes
+./check-duplicate-includes.sh
+
+# Check c++ formatting
+./check-style
+
+# Check python formatting with black
+./check-black
+
+# Check python type hinting with mypy
+./check-mypy
+
+# Check python with flake8
+./check-flake8
+
+# Check code with codespell
+./check-typos
+
+# Check docs spelling
+./check-doc-aspell
+
+# Check whitespaces
+./check-whitespaces
+
+# Check github actions workflows
+./check-workflows
+
+# Check submodules
+./check-submodules
+
+# Check shell scripts with shellcheck
+./shellcheck-run.sh
+```
 
 ## Fast Test
 Normally this is the first check that is ran for a PR. It builds ClickHouse and
@@ -74,6 +119,15 @@ runs most of [stateless functional tests](tests.md#functional-tests), omitting
 some. If it fails, further checks are not started until it is fixed. Look at
 the report to see which tests fail, then reproduce the failure locally as
 described [here](tests.md#functional-test-locally).
+
+#### Running Fast Test locally:
+```sh
+mkdir -p /tmp/test_output
+mkdir -p /tmp/fasttest-workspace
+cd ClickHouse
+# this docker command performs minimal ClickHouse build and run FastTests against it
+docker run --rm --cap-add=SYS_PTRACE -u $(id -u ${USER}):$(id -g ${USER})  --network=host -e FASTTEST_WORKSPACE=/fasttest-workspace -e FASTTEST_OUTPUT=/test_output -e FASTTEST_SOURCE=/ClickHouse --cap-add=SYS_PTRACE -e stage=clone_submodules --volume=/tmp/fasttest-workspace:/fasttest-workspace --volume=.:/ClickHouse --volume=/tmp/test_output:/test_output clickhouse/fasttest
+```
 
 
 #### Status Page Files
@@ -102,7 +156,7 @@ Builds ClickHouse in various configurations for use in further steps. You have t
 
 ### Report Details
 
-- **Compiler**: `clang-16`, optionally with the name of a target platform
+- **Compiler**: `clang-18`, optionally with the name of a target platform
 - **Build type**: `Debug` or `RelWithDebInfo` (cmake).
 - **Sanitizer**: `none` (without sanitizers), `address` (ASan), `memory` (MSan), `undefined` (UBSan), or `thread` (TSan).
 - **Status**: `success` or `fail`
@@ -121,6 +175,13 @@ Builds ClickHouse in various configurations for use in further steps. You have t
 
 ## Special Build Check
 Performs static analysis and code style checks using `clang-tidy`. The report is similar to the [build check](#build-check). Fix the errors found in the build log.
+
+#### Running clang-tidy locally:
+There is a convenience `packager` script that runs the clang-tidy build in docker
+```sh
+mkdir build_tidy
+./docker/packager/packager --output-dir=./build_tidy --package-type=binary --compiler=clang-18 --debug-build --clang-tidy
+```
 
 
 ## Functional Stateless Tests

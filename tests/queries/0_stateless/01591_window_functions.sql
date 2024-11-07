@@ -1,6 +1,10 @@
 -- Tags: long
 
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
+
+-- Too slow
+SET max_bytes_before_external_sort = 0;
+SET max_bytes_before_external_group_by = 0;
 
 -- { echo }
 
@@ -11,7 +15,7 @@ select number, count() over (partition by intDiv(number, 3) order by number rows
 select number, max(number) over (partition by intDiv(number, 3) order by number desc rows unbounded preceding) from numbers(10) settings max_block_size = 2;
 
 -- not a window function
-select number, abs(number) over (partition by toString(intDiv(number, 3)) rows unbounded preceding) from numbers(10); -- { serverError 63 }
+select number, abs(number) over (partition by toString(intDiv(number, 3)) rows unbounded preceding) from numbers(10); -- { serverError UNKNOWN_AGGREGATE_FUNCTION }
 
 -- no partition by
 select number, avg(number) over (order by number rows unbounded preceding) from numbers(10);
@@ -379,7 +383,7 @@ settings max_block_size = 3;
 
 -- careful with auto-application of Null combinator
 select lagInFrame(toNullable(1)) over ();
-select lagInFrameOrNull(1) over (); -- { serverError 36 }
+select lagInFrameOrNull(1) over (); -- { serverError BAD_ARGUMENTS }
 -- this is the same as `select max(Null::Nullable(Nothing))`
 select intDiv(1, NULL) x, toTypeName(x), max(x) over ();
 -- to make lagInFrame return null for out-of-frame rows, cast the argument to
@@ -482,10 +486,10 @@ from numbers(7)
 ;
 
 -- negative offsets should not be allowed
-select count() over (order by toInt64(number) range between -1 preceding and unbounded following) from numbers(1); -- { serverError 36 }
-select count() over (order by toInt64(number) range between -1 following and unbounded following) from numbers(1); -- { serverError 36 }
-select count() over (order by toInt64(number) range between unbounded preceding and -1 preceding) from numbers(1); -- { serverError 36 }
-select count() over (order by toInt64(number) range between unbounded preceding and -1 following) from numbers(1); -- { serverError 36 }
+select count() over (order by toInt64(number) range between -1 preceding and unbounded following) from numbers(1); -- { serverError BAD_ARGUMENTS }
+select count() over (order by toInt64(number) range between -1 following and unbounded following) from numbers(1); -- { serverError BAD_ARGUMENTS }
+select count() over (order by toInt64(number) range between unbounded preceding and -1 preceding) from numbers(1); -- { serverError BAD_ARGUMENTS }
+select count() over (order by toInt64(number) range between unbounded preceding and -1 following) from numbers(1); -- { serverError BAD_ARGUMENTS }
 
 -- a test with aggregate function that allocates memory in arena
 select sum(a[length(a)])
@@ -517,7 +521,7 @@ from
 
 -- -INT_MIN row offset that can lead to problems with negation, found when fuzzing
 -- under UBSan. Should be limited to at most INT_MAX.
-select count() over (rows between 2147483648 preceding and 2147493648 following) from numbers(2); -- { serverError 36 }
+select count() over (rows between 2147483648 preceding and 2147493648 following) from numbers(2); -- { serverError BAD_ARGUMENTS }
 
 -- Somehow in this case WindowTransform gets empty input chunks not marked as
 -- input end, and then two (!) empty input chunks marked as input end. Whatever.
@@ -534,16 +538,16 @@ order by p, o, number
 ;
 
 -- can't redefine PARTITION BY
-select count() over (w partition by number) from numbers(1) window w as (partition by intDiv(number, 5)); -- { serverError 36 }
+select count() over (w partition by number) from numbers(1) window w as (partition by intDiv(number, 5)); -- { serverError BAD_ARGUMENTS }
 
 -- can't redefine existing ORDER BY
-select count() over (w order by number) from numbers(1) window w as (partition by intDiv(number, 5) order by mod(number, 3)); -- { serverError 36 }
+select count() over (w order by number) from numbers(1) window w as (partition by intDiv(number, 5) order by mod(number, 3)); -- { serverError BAD_ARGUMENTS }
 
 -- parent window can't have frame
-select count() over (w range unbounded preceding) from numbers(1) window w as (partition by intDiv(number, 5) order by mod(number, 3) rows unbounded preceding); -- { serverError 36 }
+select count() over (w range unbounded preceding) from numbers(1) window w as (partition by intDiv(number, 5) order by mod(number, 3) rows unbounded preceding); -- { serverError BAD_ARGUMENTS }
 
 -- looks weird but probably should work -- this is a window that inherits and changes nothing
 select count() over (w) from numbers(1) window w as ();
 
 -- nonexistent parent window
-select count() over (w2 rows unbounded preceding); -- { serverError 36 }
+select count() over (w2 rows unbounded preceding); -- { serverError BAD_ARGUMENTS }

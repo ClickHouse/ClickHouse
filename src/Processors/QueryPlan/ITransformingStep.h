@@ -46,25 +46,16 @@ public:
         TransformTraits transform_traits;
     };
 
-    ITransformingStep(DataStream input_stream, Block output_header, Traits traits, bool collect_processors_ = true);
+    ITransformingStep(Header input_header, Header output_header, Traits traits, bool collect_processors_ = true);
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
 
+    /// Append processors from the current step to the query pipeline.
+    /// Step always has a single input stream, so we implement updatePipeline over this function.
     virtual void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) = 0;
 
     const TransformTraits & getTransformTraits() const { return transform_traits; }
     const DataStreamTraits & getDataStreamTraits() const { return data_stream_traits; }
-
-    /// Updates the input stream of the given step. Used during query plan optimizations.
-    /// It won't do any validation of a new stream, so it is your responsibility to ensure that this update doesn't break anything
-    /// (e.g. you update data stream traits or correctly remove / add columns).
-    void updateInputStream(DataStream input_stream)
-    {
-        input_streams.clear();
-        input_streams.emplace_back(std::move(input_stream));
-
-        updateOutputStream();
-    }
 
     void describePipeline(FormatSettings & settings) const override;
 
@@ -76,17 +67,9 @@ public:
     }
 
 protected:
-    /// Create output stream from header and traits.
-    static DataStream createOutputStream(
-            const DataStream & input_stream,
-            Block output_header,
-            const DataStreamTraits & stream_traits);
-
     TransformTraits transform_traits;
 
 private:
-    virtual void updateOutputStream() = 0;
-
     /// If we should collect processors got after pipeline transformation.
     bool collect_processors;
 

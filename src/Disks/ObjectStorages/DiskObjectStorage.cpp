@@ -1,24 +1,25 @@
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
-#include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 
 #include <IO/ReadBufferFromString.h>
-#include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromEmptyFile.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
-#include <IO/WriteHelpers.h>
-#include <Common/createHardLink.h>
+#include <Common/formatReadable.h>
+#include <Common/CurrentThread.h>
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/Scheduler/IResourceManager.h>
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
+#include <IO/CachedInMemoryReadBufferFromFile.h>
+#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/FakeDiskTransaction.h>
-#include <Common/ThreadPool.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
-
+#include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
+#include <Parsers/ASTCreateResourceQuery.h>
 
 namespace DB
 {
@@ -26,10 +27,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DISK_INDEX;
-    extern const int FILE_DOESNT_EXIST;
-    extern const int ATTEMPT_TO_READ_AFTER_EOF;
-    extern const int CANNOT_READ_ALL_DATA;
-    extern const int DIRECTORY_DOESNT_EXIST;
 }
 
 
@@ -51,93 +48,155 @@ DiskTransactionPtr DiskObjectStorage::createObjectStorageTransaction()
         send_metadata ? metadata_helper.get() : nullptr);
 }
 
+DiskTransactionPtr DiskObjectStorage::createObjectStorageTransactionToAnotherDisk(DiskObjectStorage& to_disk)
+{
+    return std::make_shared<MultipleDisksObjectStorageTransaction>(
+        *object_storage,
+        *metadata_storage,
+        *to_disk.getObjectStorage(),
+        *to_disk.getMetadataStorage(),
+        send_metadata ? metadata_helper.get() : nullptr);
+}
+
+
 DiskObjectStorage::DiskObjectStorage(
     const String & name_,
-    const String & object_storage_root_path_,
-    const String & log_name,
+    const String & object_key_prefix_,
     MetadataStoragePtr metadata_storage_,
     ObjectStoragePtr object_storage_,
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix)
     : IDisk(name_, config, config_prefix)
-    , object_storage_root_path(object_storage_root_path_)
-    , log (&Poco::Logger::get("DiskObjectStorage(" + log_name + ")"))
+    , object_key_prefix(object_key_prefix_)
+    , log(getLogger("DiskObjectStorage(" + name + ")"))
     , metadata_storage(std::move(metadata_storage_))
     , object_storage(std::move(object_storage_))
     , send_metadata(config.getBool(config_prefix + ".send_metadata", false))
-    , metadata_helper(std::make_unique<DiskObjectStorageRemoteMetadataRestoreHelper>(this, ReadSettings{}))
-{}
+    , read_resource_name_from_config(config.getString(config_prefix + ".read_resource", ""))
+    , write_resource_name_from_config(config.getString(config_prefix + ".write_resource", ""))
+    , metadata_helper(std::make_unique<DiskObjectStorageRemoteMetadataRestoreHelper>(this, ReadSettings{}, WriteSettings{}))
+{
+    data_source_description = DataSourceDescription{
+        .type = DataSourceType::ObjectStorage,
+        .object_storage_type = object_storage->getType(),
+        .metadata_type = metadata_storage->getType(),
+        .description = object_storage->getDescription(),
+        .is_encrypted = false,
+        .is_cached = object_storage->supportsCache(),
+    };
+    resource_changes_subscription = Context::getGlobalContextInstance()->getWorkloadEntityStorage().getAllEntitiesAndSubscribe(
+        [this] (const std::vector<IWorkloadEntityStorage::Event> & events)
+        {
+            std::unique_lock lock{resource_mutex};
+
+            // Sets of matching resource names. Required to resolve possible conflicts in deterministic way
+            std::set<String> new_read_resource_name_from_sql;
+            std::set<String> new_write_resource_name_from_sql;
+            std::set<String> new_read_resource_name_from_sql_any;
+            std::set<String> new_write_resource_name_from_sql_any;
+
+            // Current state
+            if (!read_resource_name_from_sql.empty())
+                new_read_resource_name_from_sql.insert(read_resource_name_from_sql);
+            if (!write_resource_name_from_sql.empty())
+                new_write_resource_name_from_sql.insert(write_resource_name_from_sql);
+            if (!read_resource_name_from_sql_any.empty())
+                new_read_resource_name_from_sql_any.insert(read_resource_name_from_sql_any);
+            if (!write_resource_name_from_sql_any.empty())
+                new_write_resource_name_from_sql_any.insert(write_resource_name_from_sql_any);
+
+            // Process all updates in specified order
+            for (const auto & [entity_type, resource_name, resource] : events)
+            {
+                if (entity_type == WorkloadEntityType::Resource)
+                {
+                    if (resource) // CREATE RESOURCE
+                    {
+                        auto * create = typeid_cast<ASTCreateResourceQuery *>(resource.get());
+                        chassert(create);
+                        for (const auto & [mode, disk] : create->operations)
+                        {
+                            if (!disk)
+                            {
+                                switch (mode)
+                                {
+                                    case ASTCreateResourceQuery::AccessMode::Read: new_read_resource_name_from_sql_any.insert(resource_name); break;
+                                    case ASTCreateResourceQuery::AccessMode::Write: new_write_resource_name_from_sql_any.insert(resource_name); break;
+                                }
+                            }
+                            else if (*disk == name)
+                            {
+                                switch (mode)
+                                {
+                                    case ASTCreateResourceQuery::AccessMode::Read: new_read_resource_name_from_sql.insert(resource_name); break;
+                                    case ASTCreateResourceQuery::AccessMode::Write: new_write_resource_name_from_sql.insert(resource_name); break;
+                                }
+                            }
+                        }
+                    }
+                    else // DROP RESOURCE
+                    {
+                        new_read_resource_name_from_sql.erase(resource_name);
+                        new_write_resource_name_from_sql.erase(resource_name);
+                        new_read_resource_name_from_sql_any.erase(resource_name);
+                        new_write_resource_name_from_sql_any.erase(resource_name);
+                    }
+                }
+            }
+
+            String old_read_resource = getReadResourceNameNoLock();
+            String old_write_resource = getWriteResourceNameNoLock();
+
+            // Apply changes
+            if (!new_read_resource_name_from_sql_any.empty())
+                read_resource_name_from_sql_any = *new_read_resource_name_from_sql_any.begin();
+            else
+                read_resource_name_from_sql_any.clear();
+
+            if (!new_write_resource_name_from_sql_any.empty())
+                write_resource_name_from_sql_any = *new_write_resource_name_from_sql_any.begin();
+            else
+                write_resource_name_from_sql_any.clear();
+
+            if (!new_read_resource_name_from_sql.empty())
+                read_resource_name_from_sql = *new_read_resource_name_from_sql.begin();
+            else
+                read_resource_name_from_sql.clear();
+
+            if (!new_write_resource_name_from_sql.empty())
+                write_resource_name_from_sql = *new_write_resource_name_from_sql.begin();
+            else
+                write_resource_name_from_sql.clear();
+
+            String new_read_resource = getReadResourceNameNoLock();
+            String new_write_resource = getWriteResourceNameNoLock();
+
+            if (old_read_resource != new_read_resource)
+                LOG_INFO(log, "Using resource '{}' instead of '{}' for READ", new_read_resource, old_read_resource);
+            if (old_write_resource != new_write_resource)
+                LOG_INFO(log, "Using resource '{}' instead of '{}' for WRITE", new_write_resource, old_write_resource);
+        });
+}
 
 StoredObjects DiskObjectStorage::getStorageObjects(const String & local_path) const
 {
     return metadata_storage->getStorageObjects(local_path);
 }
 
-void DiskObjectStorage::getRemotePathsRecursive(const String & local_path, std::vector<LocalPathWithObjectStoragePaths> & paths_map)
+
+bool DiskObjectStorage::existsFile(const String & path) const
 {
-    if (!metadata_storage->exists(local_path))
-        return;
-
-    /// Protect against concurrent delition of files (for example because of a merge).
-    if (metadata_storage->isFile(local_path))
-    {
-        try
-        {
-            paths_map.emplace_back(local_path, metadata_storage->getObjectStorageRootPath(), getStorageObjects(local_path));
-        }
-        catch (const Exception & e)
-        {
-            /// Unfortunately in rare cases it can happen when files disappear
-            /// or can be empty in case of operation interruption (like cancelled metadata fetch)
-            if (e.code() == ErrorCodes::FILE_DOESNT_EXIST ||
-                e.code() == ErrorCodes::DIRECTORY_DOESNT_EXIST ||
-                e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF ||
-                e.code() == ErrorCodes::CANNOT_READ_ALL_DATA)
-                return;
-
-            throw;
-        }
-    }
-    else
-    {
-        DirectoryIteratorPtr it;
-        try
-        {
-            it = iterateDirectory(local_path);
-        }
-        catch (const Exception & e)
-        {
-            /// Unfortunately in rare cases it can happen when files disappear
-            /// or can be empty in case of operation interruption (like cancelled metadata fetch)
-            if (e.code() == ErrorCodes::FILE_DOESNT_EXIST ||
-                e.code() == ErrorCodes::DIRECTORY_DOESNT_EXIST ||
-                e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF ||
-                e.code() == ErrorCodes::CANNOT_READ_ALL_DATA)
-                return;
-
-            throw;
-        }
-        catch (const fs::filesystem_error & e)
-        {
-            if (e.code() == std::errc::no_such_file_or_directory)
-                return;
-            throw;
-        }
-
-        for (; it->isValid(); it->next())
-            DiskObjectStorage::getRemotePathsRecursive(fs::path(local_path) / it->name(), paths_map);
-    }
+    return metadata_storage->existsFile(path);
 }
 
-bool DiskObjectStorage::exists(const String & path) const
+bool DiskObjectStorage::existsDirectory(const String & path) const
 {
-    return metadata_storage->exists(path);
+    return metadata_storage->existsDirectory(path);
 }
 
-
-bool DiskObjectStorage::isFile(const String & path) const
+bool DiskObjectStorage::existsFileOrDirectory(const String & path) const
 {
-    return metadata_storage->isFile(path);
+    return metadata_storage->existsFileOrDirectory(path);
 }
 
 
@@ -153,23 +212,32 @@ size_t DiskObjectStorage::getFileSize(const String & path) const
     return metadata_storage->getFileSize(path);
 }
 
+void DiskObjectStorage::moveDirectory(const String & from_path, const String & to_path)
+{
+    if (send_metadata)
+        sendMoveMetadata(from_path, to_path);
+
+    auto transaction = createObjectStorageTransaction();
+    transaction->moveDirectory(from_path, to_path);
+    transaction->commit();
+}
+
 void DiskObjectStorage::moveFile(const String & from_path, const String & to_path, bool should_send_metadata)
 {
 
     if (should_send_metadata)
-    {
-        auto revision = metadata_helper->revision_counter + 1;
-        metadata_helper->revision_counter += 1;
-
-        const ObjectAttributes object_metadata {
-            {"from_path", from_path},
-            {"to_path", to_path}
-        };
-        metadata_helper->createFileOperationObject("rename", revision, object_metadata);
-    }
+        sendMoveMetadata(from_path, to_path);
 
     auto transaction = createObjectStorageTransaction();
     transaction->moveFile(from_path, to_path);
+    transaction->commit();
+}
+
+void DiskObjectStorage::truncateFile(const String & path, size_t size)
+{
+    LOG_TEST(log, "Truncate file operation {} to size : {}", path, size);
+    auto transaction = createObjectStorageTransaction();
+    transaction->truncateFile(path, size);
     transaction->commit();
 }
 
@@ -177,19 +245,23 @@ void DiskObjectStorage::copyFile( /// NOLINT
     const String & from_file_path,
     IDisk & to_disk,
     const String & to_file_path,
-    const WriteSettings & settings)
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
+    const std::function<void()> & cancellation_hook
+    )
 {
-    if (this == &to_disk)
+    if (getDataSourceDescription() == to_disk.getDataSourceDescription())
     {
-        /// It may use s3-server-side copy
-        auto transaction = createObjectStorageTransaction();
-        transaction->copyFile(from_file_path, to_file_path);
-        transaction->commit();
+            /// It may use s3-server-side copy
+            auto & to_disk_object_storage = dynamic_cast<DiskObjectStorage &>(to_disk);
+            auto transaction = createObjectStorageTransactionToAnotherDisk(to_disk_object_storage);
+            transaction->copyFile(from_file_path, to_file_path, /*read_settings*/ {}, /*write_settings*/ {});
+            transaction->commit();
     }
     else
     {
         /// Copy through buffers
-        IDisk::copyFile(from_file_path, to_disk, to_file_path, settings);
+        IDisk::copyFile(from_file_path, to_disk, to_file_path, read_settings, write_settings, cancellation_hook);
     }
 }
 
@@ -200,7 +272,7 @@ void DiskObjectStorage::moveFile(const String & from_path, const String & to_pat
 
 void DiskObjectStorage::replaceFile(const String & from_path, const String & to_path)
 {
-    if (exists(to_path))
+    if (existsFile(to_path))
     {
         auto transaction = createObjectStorageTransaction();
         transaction->replaceFile(from_path, to_path);
@@ -245,12 +317,6 @@ String DiskObjectStorage::getUniqueId(const String & path) const
 
 bool DiskObjectStorage::checkUniqueId(const String & id) const
 {
-    if (!id.starts_with(object_storage_root_path))
-    {
-        LOG_DEBUG(log, "Blob with id {} doesn't start with blob storage prefix {}, Stack {}", id, object_storage_root_path, StackTrace().toString());
-        return false;
-    }
-
     auto object = StoredObject(id);
     return object_storage->exists(object);
 }
@@ -286,12 +352,6 @@ void DiskObjectStorage::setReadOnly(const String & path)
     auto transaction = createObjectStorageTransaction();
     transaction->setReadOnly(path);
     transaction->commit();
-}
-
-
-bool DiskObjectStorage::isDirectory(const String & path) const
-{
-    return metadata_storage->isDirectory(path);
 }
 
 
@@ -374,6 +434,7 @@ void DiskObjectStorage::shutdown()
 {
     LOG_INFO(log, "Shutting down disk {}", name);
     object_storage->shutdown();
+    metadata_storage->shutdown();
     LOG_INFO(log, "Disk {} shut down", name);
 }
 
@@ -444,12 +505,20 @@ bool DiskObjectStorage::tryReserve(UInt64 bytes)
         reserved_bytes += bytes;
         return true;
     }
-    else
-    {
-        LOG_TRACE(log, "Could not reserve {} on remote disk {}. Not enough unreserved space", ReadableSize(bytes), backQuote(name));
-    }
+
+    LOG_TRACE(log, "Could not reserve {} on remote disk {}. Not enough unreserved space", ReadableSize(bytes), backQuote(name));
+
 
     return false;
+}
+void DiskObjectStorage::sendMoveMetadata(const String & from_path, const String & to_path)
+{
+    chassert(send_metadata);
+    auto revision = metadata_helper->revision_counter + 1;
+    metadata_helper->revision_counter += 1;
+
+    const ObjectAttributes object_metadata{{"from_path", from_path}, {"to_path", to_path}};
+    metadata_helper->createFileOperationObject("rename", revision, object_metadata);
 }
 
 bool DiskObjectStorage::supportsCache() const
@@ -467,17 +536,66 @@ bool DiskObjectStorage::isWriteOnce() const
     return object_storage->isWriteOnce();
 }
 
+bool DiskObjectStorage::supportsHardLinks() const
+{
+    return !isWriteOnce() && !object_storage->isPlain();
+}
+
 DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()
 {
     const auto config_prefix = "storage_configuration.disks." + name;
     return std::make_shared<DiskObjectStorage>(
         getName(),
-        object_storage_root_path,
-        getName(),
+        object_key_prefix,
         metadata_storage,
         object_storage,
         Context::getGlobalContextInstance()->getConfigRef(),
         config_prefix);
+}
+
+template <class Settings>
+static inline Settings updateIOSchedulingSettings(const Settings & settings, const String & read_resource_name, const String & write_resource_name)
+{
+    if (read_resource_name.empty() && write_resource_name.empty())
+        return settings;
+    if (auto query_context = CurrentThread::getQueryContext())
+    {
+        Settings result(settings);
+        if (!read_resource_name.empty())
+            result.io_scheduling.read_resource_link = query_context->getWorkloadClassifier()->get(read_resource_name);
+        if (!write_resource_name.empty())
+            result.io_scheduling.write_resource_link = query_context->getWorkloadClassifier()->get(write_resource_name);
+        return result;
+    }
+    return settings;
+}
+
+String DiskObjectStorage::getReadResourceName() const
+{
+    std::unique_lock lock(resource_mutex);
+    return getReadResourceNameNoLock();
+}
+
+String DiskObjectStorage::getWriteResourceName() const
+{
+    std::unique_lock lock(resource_mutex);
+    return getWriteResourceNameNoLock();
+}
+
+String DiskObjectStorage::getReadResourceNameNoLock() const
+{
+    if (read_resource_name_from_config.empty())
+        return read_resource_name_from_sql.empty() ? read_resource_name_from_sql_any : read_resource_name_from_sql;
+    else
+        return read_resource_name_from_config;
+}
+
+String DiskObjectStorage::getWriteResourceNameNoLock() const
+{
+    if (write_resource_name_from_config.empty())
+        return write_resource_name_from_sql.empty() ? write_resource_name_from_sql_any : write_resource_name_from_sql;
+    else
+        return write_resource_name_from_config;
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
@@ -486,18 +604,87 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
-    auto storage_objects = metadata_storage->getStorageObjects(path);
+    const auto storage_objects = metadata_storage->getStorageObjects(path);
+    auto global_context = Context::getGlobalContextInstance();
 
     const bool file_can_be_empty = !file_size.has_value() || *file_size == 0;
-
     if (storage_objects.empty() && file_can_be_empty)
         return std::make_unique<ReadBufferFromEmptyFile>();
 
-    return object_storage->readObjects(
+    auto read_settings = updateIOSchedulingSettings(settings, getReadResourceName(), getWriteResourceName());
+    /// We wrap read buffer from object storage (read_buf = object_storage->readObject())
+    /// inside ReadBufferFromRemoteFSGather, so add nested buffer setting.
+    read_settings = read_settings.withNestedBuffer();
+
+    auto read_buffer_creator =
+        [this, read_settings, read_hint, file_size]
+        (bool restricted_seek, const StoredObject & object_) mutable -> std::unique_ptr<ReadBufferFromFileBase>
+    {
+        read_settings.remote_read_buffer_restrict_seek = restricted_seek;
+        auto impl = object_storage->readObject(object_, read_settings, read_hint, file_size);
+
+        if ((!object_storage->supportsCache() || !read_settings.enable_filesystem_cache)
+            && read_settings.page_cache && read_settings.use_page_cache_for_disks_without_file_cache)
+        {
+            /// Can't wrap CachedOnDiskReadBufferFromFile in CachedInMemoryReadBufferFromFile because the
+            /// former doesn't support seeks.
+            auto cache_path_prefix = fmt::format("{}:", magic_enum::enum_name(object_storage->getType()));
+            const auto object_namespace = object_storage->getObjectsNamespace();
+            if (!object_namespace.empty())
+                cache_path_prefix += object_namespace + "/";
+
+            const auto cache_key = FileChunkAddress { .path = cache_path_prefix + object_.remote_path };
+
+            impl = std::make_unique<CachedInMemoryReadBufferFromFile>(
+                cache_key, read_settings.page_cache, std::move(impl), read_settings);
+        }
+        return impl;
+    };
+
+    /// Avoid cache fragmentation by choosing bigger buffer size.
+    bool prefer_bigger_buffer_size = object_storage->supportsCache() && read_settings.enable_filesystem_cache;
+    size_t buffer_size = prefer_bigger_buffer_size
+        ? std::max<size_t>(settings.remote_fs_buffer_size, DBMS_DEFAULT_BUFFER_SIZE)
+        : settings.remote_fs_buffer_size;
+
+    size_t total_objects_size = file_size ? *file_size : getTotalSize(storage_objects);
+    if (total_objects_size)
+        buffer_size = std::min(buffer_size, total_objects_size);
+
+    const bool use_async_buffer = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
+    auto impl = std::make_unique<ReadBufferFromRemoteFSGather>(
+        std::move(read_buffer_creator),
         storage_objects,
-        object_storage->getAdjustedSettingsFromMetadataFile(settings, path),
-        read_hint,
-        file_size);
+        read_settings,
+        global_context->getFilesystemCacheLog(),
+        /* use_external_buffer */use_async_buffer,
+        /* buffer_size */use_async_buffer ? 0 : buffer_size);
+
+    if (use_async_buffer)
+    {
+        auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
+        return std::make_unique<AsynchronousBoundedReadBuffer>(
+            std::move(impl),
+            reader,
+            read_settings,
+            buffer_size,
+            global_context->getAsyncReadCounters(),
+            global_context->getFilesystemReadPrefetchesLog());
+
+    }
+    return impl;
+}
+
+std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFileIfExists(
+    const String & path,
+    const ReadSettings & settings,
+    std::optional<size_t> read_hint,
+    std::optional<size_t> file_size) const
+{
+    if (auto storage_objects = metadata_storage->getStorageObjectsIfExist(path))
+        return readFile(path, settings, read_hint, file_size);
+    else
+        return {};
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
@@ -508,14 +695,9 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
 {
     LOG_TEST(log, "Write file: {}", path);
 
+    WriteSettings write_settings = updateIOSchedulingSettings(settings, getReadResourceName(), getWriteResourceName());
     auto transaction = createObjectStorageTransaction();
-    auto result = transaction->writeFile(
-        path,
-        buf_size,
-        mode,
-        object_storage->getAdjustedSettingsFromMetadataFile(settings, path));
-
-    return result;
+    return transaction->writeFile(path, buf_size, mode, write_settings);
 }
 
 Strings DiskObjectStorage::getBlobPath(const String & path) const
@@ -544,7 +726,16 @@ void DiskObjectStorage::applyNewSettings(
 {
     /// FIXME we cannot use config_prefix that was passed through arguments because the disk may be wrapped with cache and we need another name
     const auto config_prefix = "storage_configuration.disks." + name;
-    object_storage->applyNewSettings(config, config_prefix, context_);
+    object_storage->applyNewSettings(config, config_prefix, context_, IObjectStorage::ApplyNewSettingsOptions{ .allow_client_change = true });
+
+    {
+        std::unique_lock lock(resource_mutex);
+        if (String new_read_resource_name = config.getString(config_prefix + ".read_resource", ""); new_read_resource_name != read_resource_name_from_config)
+            read_resource_name_from_config = new_read_resource_name;
+        if (String new_write_resource_name = config.getString(config_prefix + ".write_resource", ""); new_write_resource_name != write_resource_name_from_config)
+            write_resource_name_from_config = new_write_resource_name;
+    }
+
     IDisk::applyNewSettings(config, context_, config_prefix, disk_map);
 }
 
@@ -555,7 +746,7 @@ void DiskObjectStorage::restoreMetadataIfNeeded(
     {
         metadata_helper->restore(config, config_prefix, context);
 
-        auto current_schema_version = metadata_helper->readSchemaVersion(object_storage.get(), object_storage_root_path);
+        auto current_schema_version = metadata_helper->readSchemaVersion(object_storage.get(), object_key_prefix);
         if (current_schema_version < DiskObjectStorageRemoteMetadataRestoreHelper::RESTORABLE_SCHEMA_VERSION)
             metadata_helper->migrateToRestorableSchema();
 
@@ -573,6 +764,17 @@ UInt64 DiskObjectStorage::getRevision() const
     return metadata_helper->getRevision();
 }
 
+#if USE_AWS_S3
+std::shared_ptr<const S3::Client> DiskObjectStorage::getS3StorageClient() const
+{
+    return object_storage->getS3StorageClient();
+}
+
+std::shared_ptr<const S3::Client> DiskObjectStorage::tryGetS3StorageClient() const
+{
+    return object_storage->tryGetS3StorageClient();
+}
+#endif
 
 DiskPtr DiskObjectStorageReservation::getDisk(size_t i) const
 {

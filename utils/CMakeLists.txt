@@ -9,11 +9,7 @@ if (ENABLE_CLICKHOUSE_SELF_EXTRACTING)
     add_subdirectory (self-extracting-executable)
 endif ()
 
-# Utils used in package
-add_subdirectory (config-processor)
-add_subdirectory (report)
-
-# Not used in package
+# Not used in packages
 if (ENABLE_UTILS)
     add_subdirectory (compressor)
     add_subdirectory (corrector_utf8)
@@ -26,4 +22,8 @@ if (ENABLE_UTILS)
     add_subdirectory (keeper-bench)
     add_subdirectory (keeper-data-dumper)
     add_subdirectory (memcpy-bench)
+endif ()
+
+if (ENABLE_FUZZING AND ENABLE_FUZZER_TEST)
+    add_subdirectory (libfuzzer-test)
 endif ()

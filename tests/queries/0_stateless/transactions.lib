@@ -11,7 +11,7 @@ function tx()
     session="${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}_tx$tx_num"
     query_id="${session}_${RANDOM}"
     url_without_session="https://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTPS}/?"
-    url="${url_without_session}session_id=$session&query_id=$query_id&database=$CLICKHOUSE_DATABASE"
+    url="${url_without_session}session_id=$session&query_id=$query_id&database=$CLICKHOUSE_DATABASE&apply_mutations_on_fly=0"
 
     ${CLICKHOUSE_CURL} -m 90 -sSk "$url" --data "$query" | sed "s/^/tx$tx_num\t/"
 }
@@ -56,7 +56,7 @@ function tx_async()
     session="${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}_tx$tx_num"
     query_id="${session}_${RANDOM}"
     url_without_session="https://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTPS}/?"
-    url="${url_without_session}session_id=$session&query_id=$query_id&database=$CLICKHOUSE_DATABASE"
+    url="${url_without_session}session_id=$session&query_id=$query_id&database=$CLICKHOUSE_DATABASE&apply_mutations_on_fly=0"
 
     # We cannot be sure that query will actually start execution and appear in system.processes before the next call to tx_wait
     # Also we cannot use global map in bash to store last query_id for each tx_num, so we use tmp file...
@@ -76,3 +76,5 @@ function tx_sync()
     tx_wait "$tx_num"
     tx "$tx_num" "$query"
 }
+
+# vi: ft=bash

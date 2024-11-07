@@ -53,10 +53,12 @@ class JoinClause
 {
 public:
     /// Add keys
-    void addKey(const ActionsDAG::Node * left_key_node, const ActionsDAG::Node * right_key_node)
+    void addKey(const ActionsDAG::Node * left_key_node, const ActionsDAG::Node * right_key_node, bool null_safe_comparison = false)
     {
         left_key_nodes.emplace_back(left_key_node);
         right_key_nodes.emplace_back(right_key_node);
+        if (null_safe_comparison)
+            nullsafe_compare_key_indexes.emplace(left_key_nodes.size() - 1);
     }
 
     void addASOFKey(const ActionsDAG::Node * left_key_node, const ActionsDAG::Node * right_key_node, ASOFJoinInequality asof_inequality)
@@ -97,6 +99,11 @@ public:
         return right_key_nodes;
     }
 
+    bool isNullsafeCompareKey(size_t idx) const
+    {
+        return nullsafe_compare_key_indexes.contains(idx);
+    }
+
     /// Returns true if JOIN clause has ASOF conditions, false otherwise
     bool hasASOF() const
     {
@@ -133,6 +140,21 @@ public:
         return right_filter_condition_nodes;
     }
 
+    ActionsDAG::NodeRawConstPtrs & getMixedFilterConditionNodes()
+    {
+        return mixed_filter_condition_nodes;
+    }
+
+    void addMixedCondition(const ActionsDAG::Node * condition_node)
+    {
+        mixed_filter_condition_nodes.push_back(condition_node);
+    }
+
+    const ActionsDAG::NodeRawConstPtrs & getMixedFilterConditionNodes() const
+    {
+        return mixed_filter_condition_nodes;
+    }
+
     /// Dump clause into buffer
     void dump(WriteBuffer & buffer) const;
 
@@ -147,6 +169,10 @@ private:
 
     ActionsDAG::NodeRawConstPtrs left_filter_condition_nodes;
     ActionsDAG::NodeRawConstPtrs right_filter_condition_nodes;
+    /// conditions which involve both left and right tables
+    ActionsDAG::NodeRawConstPtrs mixed_filter_condition_nodes;
+
+    std::unordered_set<size_t> nullsafe_compare_key_indexes;
 };
 
 using JoinClauses = std::vector<JoinClause>;
@@ -156,11 +182,15 @@ struct JoinClausesAndActions
     /// Join clauses. Actions dag nodes point into join_expression_actions.
     JoinClauses join_clauses;
     /// Whole JOIN ON section expressions
-    ActionsDAGPtr join_expression_actions;
+    ActionsDAG left_join_tmp_expression_actions;
+    ActionsDAG right_join_tmp_expression_actions;
     /// Left join expressions actions
-    ActionsDAGPtr left_join_expressions_actions;
+    ActionsDAG left_join_expressions_actions;
     /// Right join expressions actions
-    ActionsDAGPtr right_join_expressions_actions;
+    ActionsDAG right_join_expressions_actions;
+    /// Originally used for inequal join. it's the total join expression.
+    /// If there is no inequal join conditions, it's null.
+    std::optional<ActionsDAG> mixed_join_expressions_actions;
 };
 
 /** Calculate join clauses and actions for JOIN ON section.

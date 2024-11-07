@@ -92,8 +92,9 @@ static NamesAndTypesList getHeaderForParquetMetadata()
                                      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()),
                                      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
                                  Names{"num_values", "null_count", "distinct_count", "min", "max"}),
+                             DataTypeFactory::instance().get("Bool"),
                          },
-                         Names{"name", "path", "total_compressed_size", "total_uncompressed_size", "have_statistics", "statistics"}))},
+                         Names{"name", "path", "total_compressed_size", "total_uncompressed_size", "have_statistics", "statistics", "have_bloom_filter"}))},
              Names{"num_columns", "num_rows", "total_uncompressed_size", "total_compressed_size", "columns"}))},
     };
     return names_and_types;
@@ -130,7 +131,7 @@ static std::shared_ptr<parquet::FileMetaData> getFileMetadata(
     const FormatSettings & format_settings,
     std::atomic<int> & is_stopped)
 {
-    auto arrow_file = asArrowFile(in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES);
+    auto arrow_file = asArrowFile(in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true);
     return parquet::ReadMetaData(arrow_file);
 }
 
@@ -140,7 +141,7 @@ ParquetMetadataInputFormat::ParquetMetadataInputFormat(ReadBuffer & in_, Block h
     checkHeader(getPort().getHeader());
 }
 
-Chunk ParquetMetadataInputFormat::generate()
+Chunk ParquetMetadataInputFormat::read()
 {
     Chunk res;
     if (done)
@@ -350,6 +351,8 @@ void ParquetMetadataInputFormat::fillColumnChunksMetadata(const std::unique_ptr<
             fillColumnStatistics(column_chunk_metadata->statistics(), tuple_column.getColumn(5), row_group_metadata->schema()->Column(column_i)->type_length());
         else
             tuple_column.getColumn(5).insertDefault();
+        bool have_bloom_filter = column_chunk_metadata->bloom_filter_offset().has_value();
+        assert_cast<ColumnUInt8 &>(tuple_column.getColumn(6)).insertValue(have_bloom_filter);
     }
     array_column.getOffsets().push_back(tuple_column.size());
 }
@@ -495,12 +498,15 @@ NamesAndTypesList ParquetMetadataSchemaReader::readSchema()
 
 void registerInputFormatParquetMetadata(FormatFactory & factory)
 {
-    factory.registerInputFormat(
+    factory.registerRandomAccessInputFormat(
         "ParquetMetadata",
-        [](ReadBuffer &buf,
-           const Block &sample,
-           const RowInputFormatParams &,
-           const FormatSettings & settings)
+        [](ReadBuffer & buf,
+            const Block & sample,
+            const FormatSettings & settings,
+            const ReadSettings &,
+            bool /* is_remote_fs */,
+            size_t /* max_download_threads */,
+            size_t /* max_parsing_threads */)
         {
             return std::make_shared<ParquetMetadataInputFormat>(buf, sample, settings);
         });

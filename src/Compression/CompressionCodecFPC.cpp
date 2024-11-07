@@ -66,7 +66,7 @@ uint8_t CompressionCodecFPC::getMethodByte() const
 
 void CompressionCodecFPC::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash);
+    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
 }
 
 CompressionCodecFPC::CompressionCodecFPC(UInt8 float_size, UInt8 compression_level)
@@ -153,23 +153,23 @@ void registerCodecFPC(CompressionCodecFactory & factory)
 namespace
 {
 
-template <std::unsigned_integral TUint>
-requires (sizeof(TUint) >= 4)
+template <std::unsigned_integral TUInt>
+requires (sizeof(TUInt) >= 4)
 class DfcmPredictor
 {
 public:
-    explicit DfcmPredictor(std::size_t table_size)
+    explicit DfcmPredictor(size_t table_size)
         : table(table_size, 0), prev_value{0}, hash{0}
     {
     }
 
     [[nodiscard]]
-    TUint predict() const noexcept
+    TUInt predict() const noexcept
     {
         return table[hash] + prev_value;
     }
 
-    void add(TUint value) noexcept
+    void add(TUInt value) noexcept
     {
         table[hash] = value - prev_value;
         recalculateHash();
@@ -180,38 +180,38 @@ private:
     void recalculateHash() noexcept
     {
         auto value = table[hash];
-        if constexpr (sizeof(TUint) >= 8)
+        if constexpr (sizeof(TUInt) >= 8)
         {
-            hash = ((hash << 2) ^ static_cast<std::size_t>(value >> 40)) & (table.size() - 1);
+            hash = ((hash << 2) ^ static_cast<size_t>(value >> 40)) & (table.size() - 1);
         }
         else
         {
-            hash = ((hash << 4) ^ static_cast<std::size_t>(value >> 23)) & (table.size() - 1);
+            hash = ((hash << 4) ^ static_cast<size_t>(value >> 23)) & (table.size() - 1);
         }
     }
 
-    std::vector<TUint> table;
-    TUint prev_value;
-    std::size_t hash;
+    std::vector<TUInt> table;
+    TUInt prev_value;
+    size_t hash;
 };
 
-template <std::unsigned_integral TUint>
-requires (sizeof(TUint) >= 4)
+template <std::unsigned_integral TUInt>
+requires (sizeof(TUInt) >= 4)
 class FcmPredictor
 {
 public:
-    explicit FcmPredictor(std::size_t table_size)
+    explicit FcmPredictor(size_t table_size)
         : table(table_size, 0), hash{0}
     {
     }
 
     [[nodiscard]]
-    TUint predict() const noexcept
+    TUInt predict() const noexcept
     {
         return table[hash];
     }
 
-    void add(TUint value) noexcept
+    void add(TUInt value) noexcept
     {
         table[hash] = value;
         recalculateHash();
@@ -221,31 +221,31 @@ private:
     void recalculateHash() noexcept
     {
         auto value = table[hash];
-        if constexpr (sizeof(TUint) >= 8)
+        if constexpr (sizeof(TUInt) >= 8)
         {
-            hash = ((hash << 6) ^ static_cast<std::size_t>(value >> 48)) & (table.size() - 1);
+            hash = ((hash << 6) ^ static_cast<size_t>(value >> 48)) & (table.size() - 1);
         }
         else
         {
-            hash = ((hash << 1) ^ static_cast<std::size_t>(value >> 22)) & (table.size() - 1);
+            hash = ((hash << 1) ^ static_cast<size_t>(value >> 22)) & (table.size() - 1);
         }
     }
 
-    std::vector<TUint> table;
-    std::size_t hash;
+    std::vector<TUInt> table;
+    size_t hash;
 };
 
-template <std::unsigned_integral TUint>
+template <std::unsigned_integral TUInt>
 class FPCOperation
 {
-    static constexpr auto VALUE_SIZE = sizeof(TUint);
+    static constexpr size_t VALUE_SIZE = sizeof(TUInt);
     static constexpr std::byte FCM_BIT{0};
     static constexpr std::byte DFCM_BIT{1u << 3};
-    static constexpr auto DFCM_BIT_1 = DFCM_BIT << 4;
-    static constexpr auto DFCM_BIT_2 = DFCM_BIT;
-    static constexpr unsigned MAX_ZERO_BYTE_COUNT = 0b111u;
+    static constexpr std::byte DFCM_BIT_1 = DFCM_BIT << 4;
+    static constexpr std::byte DFCM_BIT_2 = DFCM_BIT;
+    static constexpr UInt32 MAX_ZERO_BYTE_COUNT = 0b111u;
     static constexpr std::endian ENDIAN = std::endian::little;
-    static constexpr std::size_t CHUNK_SIZE = 64;
+    static constexpr size_t CHUNK_SIZE = 64;
 
 public:
     FPCOperation(std::span<std::byte> destination, UInt8 compression_level)
@@ -253,12 +253,12 @@ public:
     {
     }
 
-    std::size_t encode(std::span<const std::byte> data) &&
+    size_t encode(std::span<const std::byte> data) &&
     {
         auto initial_size = result.size();
 
         std::span chunk_view(chunk);
-        for (std::size_t i = 0; i < data.size(); i += chunk_view.size_bytes())
+        for (size_t i = 0; i < data.size(); i += chunk_view.size_bytes())
         {
             auto written_values_count = importChunk(data.subspan(i), chunk_view);
             encodeChunk(chunk_view.subspan(0, written_values_count));
@@ -267,12 +267,12 @@ public:
         return initial_size - result.size();
     }
 
-    void decode(std::span<const std::byte> values, std::size_t decoded_size) &&
+    void decode(std::span<const std::byte> values, size_t decoded_size) &&
     {
-        std::size_t read_bytes = 0;
+        size_t read_bytes = 0;
 
-        std::span<TUint> chunk_view(chunk);
-        for (std::size_t i = 0; i < decoded_size; i += chunk_view.size_bytes())
+        std::span<TUInt> chunk_view(chunk);
+        for (size_t i = 0; i < decoded_size; i += chunk_view.size_bytes())
         {
             if (i + chunk_view.size_bytes() > decoded_size)
                 chunk_view = chunk_view.first(ceilBytesToEvenValues(decoded_size - i));
@@ -282,50 +282,49 @@ public:
     }
 
 private:
-    static std::size_t ceilBytesToEvenValues(std::size_t bytes_count)
+    static size_t ceilBytesToEvenValues(size_t bytes_count)
     {
-        auto values_count = (bytes_count + VALUE_SIZE - 1) / VALUE_SIZE;
+        size_t values_count = (bytes_count + VALUE_SIZE - 1) / VALUE_SIZE;
         return values_count % 2 == 0 ? values_count : values_count + 1;
     }
 
-    std::size_t importChunk(std::span<const std::byte> values, std::span<TUint> chnk)
+    size_t importChunk(std::span<const std::byte> values, std::span<TUInt> current_chunk)
     {
-        if (auto chunk_view = std::as_writable_bytes(chnk); chunk_view.size() <= values.size())
+        auto chunk_view = std::as_writable_bytes(current_chunk);
+        if (chunk_view.size() <= values.size())
         {
-            std::memcpy(chunk_view.data(), values.data(), chunk_view.size());
+            memcpy(chunk_view.data(), values.data(), chunk_view.size());
             return chunk_view.size() / VALUE_SIZE;
         }
-        else
-        {
-            std::memset(chunk_view.data(), 0, chunk_view.size());
-            std::memcpy(chunk_view.data(), values.data(), values.size());
-            return ceilBytesToEvenValues(values.size());
-        }
+
+        memset(chunk_view.data(), 0, chunk_view.size());
+        memcpy(chunk_view.data(), values.data(), values.size());
+        return ceilBytesToEvenValues(values.size());
     }
 
-    void exportChunk(std::span<const TUint> chnk)
+    void exportChunk(std::span<const TUInt> current_chunk)
     {
-        auto chunk_view = std::as_bytes(chnk).first(std::min(result.size(), chnk.size_bytes()));
-        std::memcpy(result.data(), chunk_view.data(), chunk_view.size());
+        auto chunk_view = std::as_bytes(current_chunk).first(std::min(result.size(), current_chunk.size_bytes()));
+        memcpy(result.data(), chunk_view.data(), chunk_view.size());
         result = result.subspan(chunk_view.size());
     }
 
-    void encodeChunk(std::span<const TUint> seq)
+    void encodeChunk(std::span<const TUInt> sequence)
     {
-        for (std::size_t i = 0; i < seq.size(); i += 2)
+        for (size_t i = 0; i < sequence.size(); i += 2)
         {
-            encodePair(seq[i], seq[i + 1]);
+            encodePair(sequence[i], sequence[i + 1]);
         }
     }
 
     struct CompressedValue
     {
-        TUint value;
-        unsigned compressed_size;
+        TUInt value;
+        UInt32 compressed_size;
         std::byte predictor;
     };
 
-    unsigned encodeCompressedZeroByteCount(unsigned compressed)
+    UInt32 encodeCompressedZeroByteCount(UInt32 compressed)
     {
         if constexpr (VALUE_SIZE == MAX_ZERO_BYTE_COUNT + 1)
         {
@@ -335,7 +334,7 @@ private:
         return std::min(compressed, MAX_ZERO_BYTE_COUNT);
     }
 
-    unsigned decodeCompressedZeroByteCount(unsigned encoded_size)
+    UInt32 decodeCompressedZeroByteCount(UInt32 encoded_size)
     {
         if constexpr (VALUE_SIZE == MAX_ZERO_BYTE_COUNT + 1)
         {
@@ -345,22 +344,22 @@ private:
         return encoded_size;
     }
 
-    CompressedValue compressValue(TUint value) noexcept
+    CompressedValue compressValue(TUInt value) noexcept
     {
         static constexpr auto BITS_PER_BYTE = std::numeric_limits<unsigned char>::digits;
 
-        TUint compressed_dfcm = dfcm_predictor.predict() ^ value;
-        TUint compressed_fcm = fcm_predictor.predict() ^ value;
+        TUInt compressed_dfcm = dfcm_predictor.predict() ^ value;
+        TUInt compressed_fcm = fcm_predictor.predict() ^ value;
         dfcm_predictor.add(value);
         fcm_predictor.add(value);
         auto zeroes_dfcm = std::countl_zero(compressed_dfcm);
         auto zeroes_fcm = std::countl_zero(compressed_fcm);
         if (zeroes_dfcm > zeroes_fcm)
-            return {compressed_dfcm, encodeCompressedZeroByteCount(static_cast<unsigned>(zeroes_dfcm) / BITS_PER_BYTE), DFCM_BIT};
-        return {compressed_fcm, encodeCompressedZeroByteCount(static_cast<unsigned>(zeroes_fcm) / BITS_PER_BYTE), FCM_BIT};
+            return {compressed_dfcm, encodeCompressedZeroByteCount(static_cast<UInt32>(zeroes_dfcm) / BITS_PER_BYTE), DFCM_BIT};
+        return {compressed_fcm, encodeCompressedZeroByteCount(static_cast<UInt32>(zeroes_fcm) / BITS_PER_BYTE), FCM_BIT};
     }
 
-    void encodePair(TUint first, TUint second)
+    void encodePair(TUInt first, TUInt second)
     {
         auto [compressed_value1, zero_byte_count1, predictor1] = compressValue(first);
         auto [compressed_value2, zero_byte_count2, predictor2] = compressValue(second);
@@ -374,24 +373,24 @@ private:
         auto tail_size1 = VALUE_SIZE - zero_byte_count1;
         auto tail_size2 = VALUE_SIZE - zero_byte_count2;
 
-        std::memcpy(result.data() + 1, valueTail(compressed_value1, zero_byte_count1), tail_size1);
-        std::memcpy(result.data() + 1 + tail_size1, valueTail(compressed_value2, zero_byte_count2), tail_size2);
+        memcpy(result.data() + 1, valueTail(compressed_value1, zero_byte_count1), tail_size1);
+        memcpy(result.data() + 1 + tail_size1, valueTail(compressed_value2, zero_byte_count2), tail_size2);
         result = result.subspan(1 + tail_size1 + tail_size2);
     }
 
-    std::size_t decodeChunk(std::span<const std::byte> values, std::span<TUint> seq)
+    size_t decodeChunk(std::span<const std::byte> values, std::span<TUInt> sequence)
     {
-        std::size_t read_bytes = 0;
-        for (std::size_t i = 0; i < seq.size(); i += 2)
+        size_t read_bytes = 0;
+        for (size_t i = 0; i < sequence.size(); i += 2)
         {
-            read_bytes += decodePair(values.subspan(read_bytes), seq[i], seq[i + 1]);
+            read_bytes += decodePair(values.subspan(read_bytes), sequence[i], sequence[i + 1]);
         }
         return read_bytes;
     }
 
-    TUint decompressValue(TUint value, bool isDfcmPredictor)
+    TUInt decompressValue(TUInt value, bool isDfcmPredictor)
     {
-        TUint decompressed;
+        TUInt decompressed;
         if (isDfcmPredictor)
         {
             decompressed = dfcm_predictor.predict() ^ value;
@@ -405,37 +404,45 @@ private:
         return decompressed;
     }
 
-    std::size_t decodePair(std::span<const std::byte> bytes, TUint& first, TUint& second)
+    size_t decodePair(std::span<const std::byte> bytes, TUInt & first, TUInt & second)
     {
         if (bytes.empty()) [[unlikely]]
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Unexpected end of encoded sequence");
 
-        auto zero_byte_count1 = decodeCompressedZeroByteCount(
-            std::to_integer<unsigned>(bytes.front() >> 4) & MAX_ZERO_BYTE_COUNT);
-        auto zero_byte_count2 = decodeCompressedZeroByteCount(
-            std::to_integer<unsigned>(bytes.front()) & MAX_ZERO_BYTE_COUNT);
+        UInt32 zero_byte_count1 = decodeCompressedZeroByteCount(
+            std::to_integer<UInt32>(bytes.front() >> 4) & MAX_ZERO_BYTE_COUNT);
+        UInt32 zero_byte_count2 = decodeCompressedZeroByteCount(
+            std::to_integer<UInt32>(bytes.front()) & MAX_ZERO_BYTE_COUNT);
 
-        auto tail_size1 = VALUE_SIZE - zero_byte_count1;
-        auto tail_size2 = VALUE_SIZE - zero_byte_count2;
+        if (zero_byte_count1 > VALUE_SIZE || zero_byte_count2 > VALUE_SIZE) [[unlikely]]
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Invalid zero byte count(s): {} and {}", zero_byte_count1, zero_byte_count2);
 
-        if (bytes.size() < 1 + tail_size1 + tail_size2) [[unlikely]]
+        size_t tail_size1 = VALUE_SIZE - zero_byte_count1;
+        size_t tail_size2 = VALUE_SIZE - zero_byte_count2;
+
+        size_t expected_size = 0;
+        if (__builtin_add_overflow(tail_size1, tail_size2, &expected_size)
+            || __builtin_add_overflow(expected_size, 1, &expected_size)) [[unlikely]]
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Overflow occurred while calculating expected size");
+
+        if (bytes.size() < expected_size) [[unlikely]]
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Unexpected end of encoded sequence");
 
-        TUint value1 = 0;
-        TUint value2 = 0;
+        TUInt value1 = 0;
+        TUInt value2 = 0;
 
-        std::memcpy(valueTail(value1, zero_byte_count1), bytes.data() + 1, tail_size1);
-        std::memcpy(valueTail(value2, zero_byte_count2), bytes.data() + 1 + tail_size1, tail_size2);
+        memcpy(valueTail(value1, zero_byte_count1), bytes.data() + 1, tail_size1);
+        memcpy(valueTail(value2, zero_byte_count2), bytes.data() + 1 + tail_size1, tail_size2);
 
         auto is_dfcm_predictor1 = std::to_integer<unsigned char>(bytes.front() & DFCM_BIT_1) != 0;
         auto is_dfcm_predictor2 = std::to_integer<unsigned char>(bytes.front() & DFCM_BIT_2) != 0;
         first = decompressValue(value1, is_dfcm_predictor1);
         second = decompressValue(value2, is_dfcm_predictor2);
 
-        return 1 + tail_size1 + tail_size2;
+        return expected_size;
     }
 
-    static void* valueTail(TUint& value, unsigned compressed_size)
+    static void* valueTail(TUInt& value, UInt32 compressed_size)
     {
         if constexpr (ENDIAN == std::endian::little)
         {
@@ -447,11 +454,11 @@ private:
         }
     }
 
-    DfcmPredictor<TUint> dfcm_predictor;
-    FcmPredictor<TUint> fcm_predictor;
+    DfcmPredictor<TUInt> dfcm_predictor;
+    FcmPredictor<TUInt> fcm_predictor;
 
     // memcpy the input into this buffer to align reads, this improves performance compared to unaligned reads (bit_cast) by ~10%
-    std::array<TUint, CHUNK_SIZE> chunk{};
+    std::array<TUInt, CHUNK_SIZE> chunk{};
 
     std::span<std::byte> result{};
 };
@@ -475,19 +482,19 @@ UInt32 CompressionCodecFPC::doCompressData(const char * source, UInt32 source_si
         default:
             break;
     }
-    throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress. File has incorrect float width");
+    throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with FPC codec. File has incorrect float width");
 }
 
 void CompressionCodecFPC::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
     if (source_size < HEADER_SIZE)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress. File has wrong header");
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress FPC-encoded data. File has wrong header");
 
     auto compressed_data = std::as_bytes(std::span(source, source_size));
     auto compressed_float_width = std::to_integer<UInt8>(compressed_data[0]);
     auto compressed_level = std::to_integer<UInt8>(compressed_data[1]);
     if (compressed_level == 0 || compressed_level > MAX_COMPRESSION_LEVEL)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress. File has incorrect level");
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress FPC-encoded data. File has incorrect level");
 
     auto destination = std::as_writable_bytes(std::span(dest, uncompressed_size));
     auto src = compressed_data.subspan(HEADER_SIZE);
@@ -500,7 +507,7 @@ void CompressionCodecFPC::doDecompressData(const char * source, UInt32 source_si
             FPCOperation<UInt32>(destination, compressed_level).decode(src, uncompressed_size);
             break;
         default:
-            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress. File has incorrect float width");
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress FPC-encoded data. File has incorrect float width");
     }
 }
 

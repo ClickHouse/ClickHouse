@@ -9,7 +9,7 @@ namespace DB
 {
 
 
-/** The SELECT subquery is in parenthesis.
+/** The SELECT subquery, in parentheses.
   */
 class ParserSubquery : public IParserBase
 {
@@ -25,12 +25,15 @@ protected:
 class ParserIdentifier : public IParserBase
 {
 public:
-    explicit ParserIdentifier(bool allow_query_parameter_ = false) : allow_query_parameter(allow_query_parameter_) {}
+    explicit ParserIdentifier(bool allow_query_parameter_ = false, Highlight highlight_type_ = Highlight::identifier)
+        : allow_query_parameter(allow_query_parameter_), highlight_type(highlight_type_) {}
+    Highlight highlight() const override { return highlight_type; }
 
 protected:
     const char * getName() const override { return "identifier"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
     bool allow_query_parameter;
+    Highlight highlight_type;
 };
 
 
@@ -39,22 +42,34 @@ protected:
 class ParserTableAsStringLiteralIdentifier : public IParserBase
 {
 public:
-    explicit ParserTableAsStringLiteralIdentifier() {}
+    explicit ParserTableAsStringLiteralIdentifier() = default;
 
 protected:
     const char * getName() const override { return "string literal table identifier"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    Highlight highlight() const override { return Highlight::identifier; }
 };
 
 
 /** An identifier, possibly containing a dot, for example, x_yz123 or `something special` or Hits.EventTime,
- *  possibly with UUID clause like `db name`.`table name` UUID 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+ *  possibly with UUID clause like `db name`.`table name` UUID 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'.
+ *  There is also special delimiters `.:` and `.^` for JSON type subcolumns. In case of special delimiter
+ *  the next identifier part after it will include special delimiter and be back quoted always: json.a.b.:UInt32 -> ['json', 'a', 'b', ':`UInt32`'].
+ *  It's needed to distinguish identifiers json.a.b.:UInt32 and json.a.b.`:UInt32`.
+ *  There is also a special syntax sugar for reading JSON subcolumns of type Array(JSON): json.a.b[][].c -> json.a.b.:Array(Array(JSON)).c
   */
 class ParserCompoundIdentifier : public IParserBase
 {
 public:
-    explicit ParserCompoundIdentifier(bool table_name_with_optional_uuid_ = false, bool allow_query_parameter_ = false)
-        : table_name_with_optional_uuid(table_name_with_optional_uuid_), allow_query_parameter(allow_query_parameter_)
+    enum class SpecialDelimiter : char
+    {
+        NONE = '\0',
+        JSON_PATH_DYNAMIC_TYPE = ':',
+        JSON_PATH_PREFIX = '^',
+    };
+
+    explicit ParserCompoundIdentifier(bool table_name_with_optional_uuid_ = false, bool allow_query_parameter_ = false, Highlight highlight_type_ = Highlight::identifier)
+        : table_name_with_optional_uuid(table_name_with_optional_uuid_), allow_query_parameter(allow_query_parameter_), highlight_type(highlight_type_)
     {
     }
 
@@ -63,6 +78,7 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
     bool table_name_with_optional_uuid;
     bool allow_query_parameter;
+    Highlight highlight_type;
 };
 
 /** *, t.*, db.table.*, COLUMNS('<regular expression>') APPLY(...) or EXCEPT(...) or REPLACE(...)
@@ -197,6 +213,14 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+/// STATISTICS(tdigest(200))
+class ParserStatisticsType : public IParserBase
+{
+protected:
+    const char * getName() const override { return "statistics"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
 /** Parse collation
   * COLLATE utf8_unicode_ci NOT NULL
   */
@@ -245,6 +269,7 @@ class ParserNumber : public IParserBase
 protected:
     const char * getName() const override { return "number"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    Highlight highlight() const override { return Highlight::number; }
 };
 
 /** Unsigned integer, used in right hand side of tuple access operator (x.1).
@@ -265,6 +290,7 @@ class ParserStringLiteral : public IParserBase
 protected:
     const char * getName() const override { return "string literal"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    Highlight highlight() const override { return Highlight::string; }
 };
 
 
@@ -377,21 +403,7 @@ class ParserSubstitution : public IParserBase
 protected:
     const char * getName() const override { return "substitution"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-
-/** MySQL comment:
-  *  CREATE TABLE t (
-  *  i INT PRIMARY KEY,
-  *  first_name VARCHAR(255) COMMENT 'FIRST_NAME',
-  *  last_name VARCHAR(255) COMMENT "LAST_NAME"
-  *  )
-  */
-class ParserMySQLComment : public IParserBase
-{
-protected:
-    const char * getName() const override { return "MySQL comment parser"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    Highlight highlight() const override { return Highlight::substitution; }
 };
 
 

@@ -66,7 +66,7 @@ ORDER BY expr
 
 - `PARTITION BY` — [分区键](custom-partitioning-key.md) ，可选项。
 
-     大多数情况下，不需要分使用区键。即使需要使用，也不需要使用比月更细粒度的分区键。分区不会加快查询（这与 ORDER BY 表达式不同）。永远也别使用过细粒度的分区键。不要使用客户端指定分区标识符或分区字段名称来对数据进行分区（而是将分区字段标识或名称作为 ORDER BY 表达式的第一列来指定分区）。
+     大多数情况下，不需要使用分区键。即使需要使用，也不需要使用比月更细粒度的分区键。分区不会加快查询（这与 ORDER BY 表达式不同）。永远也别使用过细粒度的分区键。不要使用客户端指定分区标识符或分区字段名称来对数据进行分区（而是将分区字段标识或名称作为 ORDER BY 表达式的第一列来指定分区）。
 
      要按月分区，可以使用表达式 `toYYYYMM(date_column)` ，这里的 `date_column` 是一个 [Date](../../../engines/table-engines/mergetree-family/mergetree.md) 类型的列。分区名的格式会是 `"YYYYMM"` 。
 
@@ -124,15 +124,18 @@ ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDa
 <details markdown="1">
 <summary>已弃用的建表方法</summary>
 
-    :::attention "注意"
-    不要在新版项目中使用该方法，可能的话，请将旧项目切换到上述方法。
+:::attention "注意"
+不要在新版项目中使用该方法，可能的话，请将旧项目切换到上述方法。
+:::
 
-    CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
-    (
-        name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
-        name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
-        ...
-    ) ENGINE [=] MergeTree(date-column [, sampling_expression], (primary, key), index_granularity)
+``` sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE [=] MergeTree(date-column [, sampling_expression], (primary, key), index_granularity)
+```
 
 **MergeTree() 参数**
 
@@ -198,18 +201,18 @@ ClickHouse 不要求主键唯一，所以您可以插入多条具有相同主键
 
 主键中列的数量并没有明确的限制。依据数据结构，您可以在主键包含多些或少些列。这样可以：
 
-  - 改善索引的性能。
+- 改善索引的性能。
 
-  - 如果当前主键是 `(a, b)` ，在下列情况下添加另一个 `c` 列会提升性能：
+    如果当前主键是 `(a, b)` ，在下列情况下添加另一个 `c` 列会提升性能：
 
-  - 查询会使用 `c` 列作为条件
-  - 很长的数据范围（ `index_granularity` 的数倍）里 `(a, b)` 都是相同的值，并且这样的情况很普遍。换言之，就是加入另一列后，可以让您的查询略过很长的数据范围。
+    - 查询会使用 `c` 列作为条件
+    - 很长的数据范围（ `index_granularity` 的数倍）里 `(a, b)` 都是相同的值，并且这样的情况很普遍。换言之，就是加入另一列后，可以让您的查询略过很长的数据范围。
 
-  - 改善数据压缩。
+- 改善数据压缩。
 
-    ClickHouse 以主键排序片段数据，所以，数据的一致性越高，压缩越好。
+   ClickHouse 以主键排序片段数据，所以，数据的一致性越高，压缩越好。
 
-  - 在[CollapsingMergeTree](collapsingmergetree.md#table_engine-collapsingmergetree) 和 [SummingMergeTree](summingmergetree.md) 引擎里进行数据合并时会提供额外的处理逻辑。
+- 在[CollapsingMergeTree](collapsingmergetree.md#table_engine-collapsingmergetree) 和 [SummingMergeTree](summingmergetree.md) 引擎里进行数据合并时会提供额外的处理逻辑。
 
     在这种情况下，指定与主键不同的 *排序键* 也是有意义的。
 
@@ -346,8 +349,8 @@ WHERE 子句中的条件可以包含对某列数据进行运算的函数表达�
 
 | 函数 (操作符) / 索引                                         | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter |
 | ------------------------------------------------------------ | ----------- | ------ | ---------- | ---------- | ------------ |
-| [equals (=, ==)](../../../sql-reference/functions/comparison-functions.md#function-equals) | ✔           | ✔      | ✔          | ✔          | ✔            |
-| [notEquals(!=, &lt;&gt;)](../../../sql-reference/functions/comparison-functions.md#function-notequals) | ✔           | ✔      | ✔          | ✔          | ✔            |
+| [equals (=, ==)](../../../sql-reference/functions/comparison-functions.md#equals) | ✔           | ✔      | ✔          | ✔          | ✔            |
+| [notEquals(!=, &lt;&gt;)](../../../sql-reference/functions/comparison-functions.md#notequals) | ✔           | ✔      | ✔          | ✔          | ✔            |
 | [like](../../../sql-reference/functions/string-search-functions.md#function-like) | ✔           | ✔      | ✔          | ✔          | ✔            |
 | [notLike](../../../sql-reference/functions/string-search-functions.md#function-notlike) | ✔           | ✔      | ✗          | ✗          | ✗            |
 | [startsWith](../../../sql-reference/functions/string-functions.md#startswith) | ✔           | ✔      | ✔          | ✔          | ✗            |
@@ -355,12 +358,15 @@ WHERE 子句中的条件可以包含对某列数据进行运算的函数表达�
 | [multiSearchAny](../../../sql-reference/functions/string-search-functions.md#function-multisearchany) | ✗           | ✗      | ✔          | ✗          | ✗            |
 | [in](../../../sql-reference/functions/in-functions.md#in-functions) | ✔           | ✔      | ✔          | ✔          | ✔            |
 | [notIn](../../../sql-reference/functions/in-functions.md#in-functions) | ✔           | ✔      | ✔          | ✔          | ✔            |
-| [less (\<)](../../../sql-reference/functions/comparison-functions.md#function-less) | ✔           | ✔      | ✗          | ✗          | ✗            |
-| [greater (\>)](../../../sql-reference/functions/comparison-functions.md#function-greater) | ✔           | ✔      | ✗          | ✗          | ✗            |
-| [lessOrEquals (\<=)](../../../sql-reference/functions/comparison-functions.md#function-lessorequals) | ✔           | ✔      | ✗          | ✗          | ✗            |
-| [greaterOrEquals (\>=)](../../../sql-reference/functions/comparison-functions.md#function-greaterorequals) | ✔           | ✔      | ✗          | ✗          | ✗            |
+| [less (\<)](../../../sql-reference/functions/comparison-functions.md#less) | ✔           | ✔      | ✗          | ✗          | ✗            |
+| [greater (\>)](../../../sql-reference/functions/comparison-functions.md#greater) | ✔           | ✔      | ✗          | ✗          | ✗            |
+| [lessOrEquals (\<=)](../../../sql-reference/functions/comparison-functions.md#lessorequals) | ✔           | ✔      | ✗          | ✗          | ✗            |
+| [greaterOrEquals (\>=)](../../../sql-reference/functions/comparison-functions.md#greaterorequals) | ✔           | ✔      | ✗          | ✗          | ✗            |
 | [empty](../../../sql-reference/functions/array-functions.md#function-empty) | ✔           | ✔      | ✗          | ✗          | ✗            |
 | [notEmpty](../../../sql-reference/functions/array-functions.md#function-notempty) | ✔           | ✔      | ✗          | ✗          | ✗            |
+| [has](../../../sql-reference/functions/array-functions.md#function-has)                                       | ✗           | ✗      | ✔          | ✔          | ✔            | ✔        |
+| [hasAny](../../../sql-reference/functions/array-functions.md#function-hasAny)                                 | ✗           | ✗      | ✔          | ✔          | ✔            | ✗        |
+| [hasAll](../../../sql-reference/functions/array-functions.md#function-hasAll)                                 | ✗           | ✗      | ✗          | ✗          | ✔            | ✗        |
 | hasToken                                                     | ✗           | ✗      | ✗          | ✔          | ✗            |
 
 常量参数小于 ngram 大小的函数不能使用 `ngrambf_v1` 进行查询优化。
@@ -620,7 +626,6 @@ MergeTree 系列表引擎可以将数据存储在多个块设备上。这对某�
 - `disk` — 卷中的磁盘。
 - `max_data_part_size_bytes` — 卷中的磁盘可以存储的数据片段的最大大小。
 - `move_factor` — 当可用空间少于这个因子时，数据将自动的向下一个卷（如果有的话）移动 (默认值为 0.1)。
-- `prefer_not_to_merge` - 禁止在这个卷中进行数据合并。该选项启用时，对该卷的数据不能进行合并。这个选项主要用于慢速磁盘。
 
 配置示例：
 
@@ -657,7 +662,6 @@ MergeTree 系列表引擎可以将数据存储在多个块设备上。这对某�
                 </main>
                 <external>
                     <disk>external</disk>
-                    <prefer_not_to_merge>true</prefer_not_to_merge>
                 </external>
             </volumes>
         </small_jbod_with_external_no_merges>
@@ -698,7 +702,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 - 插入（`INSERT`查询）
 - 后台合并和[数据变异](../../../sql-reference/statements/alter.md#alter-mutations)
 - 从另一个副本下载
-- [ALTER TABLE … FREEZE PARTITION](../../../sql-reference/statements/alter.md#alter_freeze-partition) 冻结分区
+- [ALTER TABLE ... FREEZE PARTITION](../../../sql-reference/statements/alter.md#alter_freeze-partition) 冻结分区
 
 除了数据变异和冻结分区以外的情况下，数据按照以下逻辑存储到卷或磁盘上：
 
@@ -709,7 +713,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 在后台，数据片段基于剩余空间（`move_factor`参数）根据卷在配置文件中定义的顺序进行转移。数据永远不会从最后一个移出也不会从第一个移入。可以通过系统表 [system.part_log](../../../operations/system-tables/part_log.md#system_tables-part-log) (字段 `type = MOVE_PART`) 和 [system.parts](../../../operations/system-tables/parts.md#system_tables-parts) (字段 `path` 和 `disk`) 来监控后台的移动情况。具体细节可以通过服务器日志查看。
 
-用户可以通过 [ALTER TABLE … MOVE PART\|PARTITION … TO VOLUME\|DISK …](../../../sql-reference/statements/alter.md#alter_move-partition) 强制移动一个数据片段或分区到另外一个卷，所有后台移动的限制都会被考虑在内。这个查询会自行启动，无需等待后台操作完成。如果没有足够的可用空间或任何必须条件没有被满足，用户会收到报错信息。
+用户可以通过 [ALTER TABLE ... MOVE PART\|PARTITION ... TO VOLUME\|DISK ...](../../../sql-reference/statements/alter.md#alter_move-partition) 强制移动一个数据片段或分区到另外一个卷，所有后台移动的限制都会被考虑在内。这个查询会自行启动，无需等待后台操作完成。如果没有足够的可用空间或任何必须条件没有被满足，用户会收到报错信息。
 
 数据移动不会妨碍到数据复制。也就是说，同一张表的不同副本可以指定不同的存储策略。
 
@@ -742,8 +746,6 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
             <single_read_retries>4</single_read_retries>
             <min_bytes_for_seek>1000</min_bytes_for_seek>
             <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
-            <cache_enabled>true</cache_enabled>
-            <cache_path>/var/lib/clickhouse/disks/s3/cache/</cache_path>
             <skip_access_check>false</skip_access_check>
         </s3>
     </disks>
@@ -769,8 +771,6 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 - `single_read_retries` - 读过程中连接丢失后重试次数，默认值为4。
 - `min_bytes_for_seek` - 使用查找操作，而不是顺序读操作的最小字节数，默认值为1000。
 - `metadata_path` - 本地存放S3元数据文件的路径，默认值为`/var/lib/clickhouse/disks/<disk_name>/`
-- `cache_enabled` - 是否允许缓存标记和索引文件。默认值为`true`。
-- `cache_path` - 本地缓存标记和索引文件的路径。默认值为`/var/lib/clickhouse/disks/<disk_name>/cache/`。
 - `skip_access_check` - 如果为`true`，Clickhouse启动时不检查磁盘是否可用。默认为`false`。
 - `server_side_encryption_customer_key_base64` - 如果指定该项的值，请求时会加上为了访问SSE-C加密数据而必须的头信息。
 
@@ -820,4 +820,3 @@ S3磁盘也可以设置冷热存储：
 -    `_part_uuid` - 唯一部分标识符（如果 MergeTree 设置`assign_part_uuids` 已启用）。
 -    `_partition_value` — `partition by` 表达式的值（元组）。
 -    `_sample_factor` - 采样因子（来自请求）。
-

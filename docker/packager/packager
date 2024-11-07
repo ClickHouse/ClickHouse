@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import subprocess
-import os
 import argparse
 import logging
+import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import List, Optional
 
 SCRIPT_PATH = Path(__file__).absolute()
-IMAGE_TYPE = "binary"
-IMAGE_NAME = f"clickhouse/{IMAGE_TYPE}-builder"
+IMAGE_TYPE = "binary-builder"
+IMAGE_NAME = f"clickhouse/{IMAGE_TYPE}"
 
 
 class BuildException(Exception):
@@ -105,7 +105,7 @@ def run_docker_image_with_env(
         ccache_mount = ""
 
     cmd = (
-        f"docker run --network=host --user={user} --rm {ccache_mount}"
+        f"docker run --network=host --user={user} --rm {ccache_mount} "
         f"--volume={output_dir}:/output --volume={ch_root}:/build {env_part} "
         f"--volume={cargo_cache_dir}:/rust/cargo/registry {interactive} {image_name}"
     )
@@ -115,12 +115,17 @@ def run_docker_image_with_env(
     subprocess.check_call(cmd, shell=True)
 
 
-def is_release_build(debug_build: bool, package_type: str, sanitizer: str) -> bool:
-    return not debug_build and package_type == "deb" and sanitizer == ""
+def is_release_build(
+    debug_build: bool, package_type: str, sanitizer: str, coverage: bool
+) -> bool:
+    return (
+        not debug_build and package_type == "deb" and sanitizer == "" and not coverage
+    )
 
 
 def parse_env_variables(
     debug_build: bool,
+    coverage: bool,
     compiler: str,
     sanitizer: str,
     package_type: str,
@@ -144,12 +149,17 @@ def parse_env_variables(
     PPC_SUFFIX = "-ppc64le"
     RISCV_SUFFIX = "-riscv64"
     S390X_SUFFIX = "-s390x"
+    LOONGARCH_SUFFIX = "-loongarch64"
     AMD64_COMPAT_SUFFIX = "-amd64-compat"
+    AMD64_MUSL_SUFFIX = "-amd64-musl"
 
     result = []
     result.append("OUTPUT_DIR=/output")
     cmake_flags = ["$CMAKE_FLAGS"]
-    build_target = "clickhouse-bundle"
+    if package_type == "fuzzers":
+        build_target = "fuzzers"
+    else:
+        build_target = "clickhouse-bundle"
 
     is_cross_darwin = compiler.endswith(DARWIN_SUFFIX)
     is_cross_darwin_arm = compiler.endswith(DARWIN_ARM_SUFFIX)
@@ -158,8 +168,10 @@ def parse_env_variables(
     is_cross_ppc = compiler.endswith(PPC_SUFFIX)
     is_cross_riscv = compiler.endswith(RISCV_SUFFIX)
     is_cross_s390x = compiler.endswith(S390X_SUFFIX)
+    is_cross_loongarch = compiler.endswith(LOONGARCH_SUFFIX)
     is_cross_freebsd = compiler.endswith(FREEBSD_SUFFIX)
     is_amd64_compat = compiler.endswith(AMD64_COMPAT_SUFFIX)
+    is_amd64_musl = compiler.endswith(AMD64_MUSL_SUFFIX)
 
     if is_cross_darwin:
         cc = compiler[: -len(DARWIN_SUFFIX)]
@@ -176,6 +188,7 @@ def parse_env_variables(
             "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/darwin/toolchain-x86_64.cmake"
         )
         result.append("EXTRACT_TOOLCHAIN_DARWIN=1")
+        result.append("EXPORT_SOURCES_WITH_SUBMODULES=1")
     elif is_cross_darwin_arm:
         cc = compiler[: -len(DARWIN_ARM_SUFFIX)]
         cmake_flags.append("-DCMAKE_AR:FILEPATH=/cctools/bin/aarch64-apple-darwin-ar")
@@ -224,24 +237,33 @@ def parse_env_variables(
         cmake_flags.append(
             "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-s390x.cmake"
         )
+    elif is_cross_loongarch:
+        cc = compiler[: -len(LOONGARCH_SUFFIX)]
+        cmake_flags.append(
+            "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-loongarch64.cmake"
+        )
     elif is_amd64_compat:
         cc = compiler[: -len(AMD64_COMPAT_SUFFIX)]
         result.append("DEB_ARCH=amd64")
         cmake_flags.append("-DNO_SSE3_OR_HIGHER=1")
+    elif is_amd64_musl:
+        cc = compiler[: -len(AMD64_MUSL_SUFFIX)]
+        result.append("DEB_ARCH=amd64")
+        cmake_flags.append(
+            "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-x86_64-musl.cmake"
+        )
     else:
         cc = compiler
         result.append("DEB_ARCH=amd64")
 
-    cxx = cc.replace("gcc", "g++").replace("clang", "clang++")
+    cxx = cc.replace("clang", "clang++")
 
     if package_type == "deb":
-        # NOTE: This are the env for packages/build script
+        # NOTE: This is the env for packages/build script
         result.append("MAKE_DEB=true")
         cmake_flags.append("-DENABLE_TESTS=0")
         cmake_flags.append("-DENABLE_UTILS=0")
-        cmake_flags.append("-DCMAKE_EXPORT_NO_PACKAGE_REGISTRY=ON")
         cmake_flags.append("-DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON")
-        cmake_flags.append("-DCMAKE_AUTOGEN_VERBOSE=ON")
         cmake_flags.append("-DCMAKE_INSTALL_PREFIX=/usr")
         cmake_flags.append("-DCMAKE_INSTALL_SYSCONFDIR=/etc")
         cmake_flags.append("-DCMAKE_INSTALL_LOCALSTATEDIR=/var")
@@ -251,13 +273,16 @@ def parse_env_variables(
         build_target = (
             f"{build_target} clickhouse-odbc-bridge clickhouse-library-bridge"
         )
-        if is_release_build(debug_build, package_type, sanitizer):
+        if is_release_build(debug_build, package_type, sanitizer, coverage):
             cmake_flags.append("-DSPLIT_DEBUG_SYMBOLS=ON")
             result.append("WITH_PERFORMANCE=1")
-            if is_cross_arm:
-                cmake_flags.append("-DBUILD_STANDALONE_KEEPER=1")
-            else:
-                result.append("BUILD_MUSL_KEEPER=1")
+            cmake_flags.append("-DBUILD_STANDALONE_KEEPER=1")
+    elif package_type == "fuzzers":
+        cmake_flags.append("-DENABLE_FUZZING=1")
+        cmake_flags.append("-DENABLE_PROTOBUF=1")
+        cmake_flags.append("-DWITH_COVERAGE=1")
+        # Reduce linking and building time by avoid *install/all dependencies
+        cmake_flags.append("-DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON")
 
     result.append(f"CC={cc}")
     result.append(f"CXX={cxx}")
@@ -270,6 +295,9 @@ def parse_env_variables(
         result.append("BUILD_TYPE=Debug")
     else:
         result.append("BUILD_TYPE=None")
+
+    if coverage:
+        cmake_flags.append("-DSANITIZE_COVERAGE=1 -DBUILD_STANDALONE_KEEPER=0")
 
     if not cache:
         cmake_flags.append("-DCOMPILER_CACHE=disabled")
@@ -311,7 +339,6 @@ def parse_env_variables(
 
     if additional_pkgs:
         # NOTE: This are the env for packages/build script
-        result.append("MAKE_APK=true")
         result.append("MAKE_RPM=true")
         result.append("MAKE_TGZ=true")
 
@@ -365,7 +392,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--package-type",
-        choices=["deb", "binary"],
+        choices=["deb", "binary", "fuzzers"],
         required=True,
     )
     parser.add_argument(
@@ -380,24 +407,31 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--compiler",
         choices=(
-            "clang-16",
-            "clang-16-darwin",
-            "clang-16-darwin-aarch64",
-            "clang-16-aarch64",
-            "clang-16-aarch64-v80compat",
-            "clang-16-ppc64le",
-            "clang-16-riscv64",
-            "clang-16-s390x",
-            "clang-16-amd64-compat",
-            "clang-16-freebsd",
+            "clang-18",
+            "clang-18-darwin",
+            "clang-18-darwin-aarch64",
+            "clang-18-aarch64",
+            "clang-18-aarch64-v80compat",
+            "clang-18-ppc64le",
+            "clang-18-riscv64",
+            "clang-18-s390x",
+            "clang-18-loongarch64",
+            "clang-18-amd64-compat",
+            "clang-18-amd64-musl",
+            "clang-18-freebsd",
         ),
-        default="clang-16",
+        default="clang-18",
         help="a compiler to use",
     )
     parser.add_argument(
         "--sanitizer",
         choices=("address", "thread", "memory", "undefined", ""),
         default="",
+    )
+    parser.add_argument(
+        "--coverage",
+        action="store_true",
+        help="enable granular coverage with introspection",
     )
 
     parser.add_argument("--clang-tidy", action="store_true")
@@ -491,6 +525,7 @@ def main() -> None:
 
     env_prepared = parse_env_variables(
         args.debug_build,
+        args.coverage,
         args.compiler,
         args.sanitizer,
         args.package_type,

@@ -29,13 +29,11 @@ public:
         return "Array(" + nested->getName() + ")";
     }
 
+    std::string doGetPrettyName(size_t indent) const override;
+
     const char * getFamilyName() const override
     {
         return "Array";
-    }
-    String getSQLCompatibleName() const override
-    {
-        return "TEXT";
     }
 
     bool canBeInsideNullable() const override
@@ -45,18 +43,24 @@ public:
 
     MutableColumnPtr createColumn() const override;
 
+    void forEachChild(const ChildCallback & callback) const override;
 
     Field getDefault() const override;
 
+    DataTypePtr getNormalizedType() const override { return std::make_shared<DataTypeArray>(nested->getNormalizedType()); }
     bool equals(const IDataType & rhs) const override;
-
     bool isParametric() const override { return true; }
     bool haveSubtypes() const override { return true; }
     bool cannotBeStoredInTables() const override { return nested->cannotBeStoredInTables(); }
     bool textCanContainOnlyValidUTF8() const override { return nested->textCanContainOnlyValidUTF8(); }
     bool isComparable() const override { return nested->isComparable(); }
     bool canBeComparedWithCollation() const override { return nested->canBeComparedWithCollation(); }
-    bool hasDynamicSubcolumns() const override { return nested->hasDynamicSubcolumns(); }
+    bool hasDynamicSubcolumnsDeprecated() const override { return nested->hasDynamicSubcolumnsDeprecated(); }
+
+    /// Array column doesn't have subcolumns by itself but allows to read subcolumns of nested column.
+    /// If nested column has dynamic subcolumns, Array of this type should also be able to read these dynamic subcolumns.
+    bool hasDynamicSubcolumnsData() const override { return nested->hasDynamicSubcolumnsData(); }
+    std::unique_ptr<SubstreamData> getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, bool throw_if_null) const override;
 
     bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override
     {

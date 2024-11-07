@@ -1,6 +1,9 @@
+-- Tags: no-parallel
+
 set log_queries=1;
 set log_query_threads=1;
 set max_threads=0;
+set use_concurrency_control=0;
 
 WITH 01091 AS id SELECT 1;
 SYSTEM FLUSH LOGS;

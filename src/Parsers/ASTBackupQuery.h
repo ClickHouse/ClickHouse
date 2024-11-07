@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Parsers/IAST.h>
+#include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 
 
@@ -40,7 +40,7 @@ class ASTFunction;
   * For the BACKUP command this clause allows to set the name which an object will have inside the backup.
   * And for the RESTORE command this clause allows to set the name which an object will have after RESTORE has finished.
   */
-class ASTBackupQuery : public IAST, public ASTQueryWithOnCluster
+class ASTBackupQuery : public ASTQueryWithOutput, public ASTQueryWithOnCluster
 {
 public:
     enum Kind
@@ -91,7 +91,7 @@ public:
 
     String getID(char) const override;
     ASTPtr clone() const override;
-    void formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const override;
+    void formatQueryImpl(const FormatSettings & fs, FormatState &, FormatStateStacked) const override;
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override;
     QueryKind getQueryKind() const override;
 

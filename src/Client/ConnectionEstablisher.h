@@ -1,11 +1,8 @@
 #pragma once
 
-#include <variant>
-
 #include <Common/AsyncTaskExecutor.h>
 #include <Common/Epoll.h>
 #include <Common/Fiber.h>
-#include <Common/FiberStack.h>
 #include <Common/TimerDescriptor.h>
 #include <Common/PoolWithFailoverBase.h>
 #include <Client/ConnectionPool.h>
@@ -20,30 +17,32 @@ class ConnectionEstablisher
 public:
     using TryResult = PoolWithFailoverBase<IConnectionPool>::TryResult;
 
-    ConnectionEstablisher(IConnectionPool * pool_,
+    ConnectionEstablisher(ConnectionPoolPtr pool_,
                           const ConnectionTimeouts * timeouts_,
-                          const Settings * settings_,
-                          Poco::Logger * log,
+                          const Settings & settings_,
+                          LoggerPtr log,
                           const QualifiedTableName * table_to_check = nullptr);
 
     /// Establish connection and save it in result, write possible exception message in fail_message.
-    void run(TryResult & result, std::string & fail_message);
+    /// The connection is returned from connection pool and it can be stale. Use force_connected flag to ensure that connection is working one.
+    /// NOTE: force_connected is false by default due to the following consideration ...
+    ///      When true, it implies sending a Ping packet to another peer and, if it fails - reestablishing the connection.
+    ///      Ping-Pong round trip can be unnecessary in case of connection is still alive.
+    ///      So, the optimistic approach is used by default. In this case, stale connections can be handled by retrying,
+    ///      - see ConnectionPoolWithFailover, as example
+    void run(TryResult & result, std::string & fail_message, bool force_connected = false);
 
     /// Set async callback that will be called when reading from socket blocks.
     void setAsyncCallback(AsyncCallback async_callback_) { async_callback = std::move(async_callback_); }
 
-    bool isFinished() const { return is_finished; }
-
 private:
-    IConnectionPool * pool;
+    ConnectionPoolPtr pool;
     const ConnectionTimeouts * timeouts;
-    const Settings * settings;
-    Poco::Logger * log;
+    const Settings & settings;
+    LoggerPtr log;
     const QualifiedTableName * table_to_check;
 
-    bool is_finished;
     AsyncCallback async_callback = {};
-
 };
 
 #if defined(OS_LINUX)
@@ -59,10 +58,10 @@ class ConnectionEstablisherAsync : public AsyncTaskExecutor
 public:
     using TryResult = PoolWithFailoverBase<IConnectionPool>::TryResult;
 
-    ConnectionEstablisherAsync(IConnectionPool * pool_,
+    ConnectionEstablisherAsync(ConnectionPoolPtr pool_,
                                const ConnectionTimeouts * timeouts_,
-                               const Settings * settings_,
-                               Poco::Logger * log_,
+                               const Settings & settings_,
+                               LoggerPtr log_,
                                const QualifiedTableName * table_to_check_ = nullptr);
 
     /// Get file descriptor that can be added in epoll and be polled,
@@ -72,7 +71,7 @@ public:
     /// Check if the process of connection establishing was finished.
     /// The process is considered finished if connection is ready,
     /// some exception occurred or timeout exceeded.
-    bool isFinished() { return is_finished; }
+    bool isFinished() const { return is_finished; }
     TryResult getResult() const { return result; }
 
     const std::string & getFailMessage() const { return fail_message; }
@@ -87,7 +86,10 @@ private:
 
     struct Task : public AsyncTask
     {
-        Task(ConnectionEstablisherAsync & connection_establisher_async_) : connection_establisher_async(connection_establisher_async_) {}
+        explicit Task(ConnectionEstablisherAsync & connection_establisher_async_)
+            : connection_establisher_async(connection_establisher_async_)
+        {
+        }
 
         ConnectionEstablisherAsync & connection_establisher_async;
 

@@ -2,17 +2,19 @@
 
 #include <string>
 #include <cstdint>
+#include <magic_enum.hpp>
 
 
 namespace Coordination
 {
 
-using XID = int32_t;
+using XID = int64_t;
 
 static constexpr XID WATCH_XID = -1;
 static constexpr XID PING_XID  = -2;
 static constexpr XID AUTH_XID  = -4;
-static constexpr XID CLOSE_XID = 0x7FFFFFFF;
+static constexpr XID CLOSE_XID = std::numeric_limits<int32_t>::max();
+static constexpr XID CLOSE_XID_64 = std::numeric_limits<int64_t>::max();
 
 enum class OpNum : int32_t
 {
@@ -38,6 +40,8 @@ enum class OpNum : int32_t
     // CH Keeper specific operations
     FilteredList = 500,
     CheckNotExists = 501,
+    CreateIfNotExists = 502,
+    RemoveRecursive = 503,
 
     SessionID = 997, /// Special internal request
 };
@@ -45,10 +49,13 @@ enum class OpNum : int32_t
 OpNum getOpNum(int32_t raw_op_num);
 
 static constexpr int32_t ZOOKEEPER_PROTOCOL_VERSION = 0;
+static constexpr int32_t ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION = 10;
+static constexpr int32_t ZOOKEEPER_PROTOCOL_VERSION_WITH_XID_64 = 11;
 static constexpr int32_t KEEPER_PROTOCOL_VERSION_CONNECTION_REJECT = 42;
 static constexpr int32_t CLIENT_HANDSHAKE_LENGTH = 44;
 static constexpr int32_t CLIENT_HANDSHAKE_LENGTH_WITH_READONLY = 45;
 static constexpr int32_t SERVER_HANDSHAKE_LENGTH = 36;
+static constexpr int32_t SERVER_HANDSHAKE_LENGTH_WITH_READONLY = 37;
 static constexpr int32_t PASSWORD_LENGTH = 16;
 
 /// ZooKeeper has 1 MB node size and serialization limit by default,
@@ -61,3 +68,12 @@ static constexpr int32_t DEFAULT_OPERATION_TIMEOUT_MS = 10000;
 static constexpr int32_t DEFAULT_CONNECTION_TIMEOUT_MS = 1000;
 
 }
+
+/// This is used by fmt::format to print OpNum as strings.
+/// All OpNum values should be in range [min, max] to be printed.
+template <>
+struct magic_enum::customize::enum_range<Coordination::OpNum>
+{
+    static constexpr int min = -100;
+    static constexpr int max = 1000;
+};

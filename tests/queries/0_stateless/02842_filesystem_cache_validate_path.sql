@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-replicated-database
 
 DROP TABLE IF EXISTS test;
 DROP TABLE IF EXISTS test_1;
@@ -41,5 +41,5 @@ ENGINE = MergeTree()
 ORDER BY tuple()
 SETTINGS disk = disk(type = cache,
                      max_size = '1Mi',
-                     path = 'kek',
+                     path = 'kek2',
                      disk = 'local_disk');

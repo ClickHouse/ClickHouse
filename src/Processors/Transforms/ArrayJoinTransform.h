@@ -1,5 +1,6 @@
 #pragma once
 #include <Processors/ISimpleTransform.h>
+#include <Processors/IInflatingTransform.h>
 
 namespace DB
 {
@@ -7,8 +8,11 @@ namespace DB
 class ArrayJoinAction;
 using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
 
+class ArrayJoinResultIterator;
+using ArrayJoinResultIteratorPtr = std::unique_ptr<ArrayJoinResultIterator>;
+
 /// Execute ARRAY JOIN
-class ArrayJoinTransform : public ISimpleTransform
+class ArrayJoinTransform : public IInflatingTransform
 {
 public:
     ArrayJoinTransform(
@@ -18,13 +22,16 @@ public:
 
     String getName() const override { return "ArrayJoinTransform"; }
 
-    static Block transformHeader(Block header, const ArrayJoinActionPtr & array_join);
+    static Block transformHeader(Block header, const Names & array_join_columns);
 
 protected:
-    void transform(Chunk & chunk) override;
+    void consume(Chunk chunk) override;
+    bool canGenerate() override;
+    Chunk generate() override;
 
 private:
     ArrayJoinActionPtr array_join;
+    ArrayJoinResultIteratorPtr result_iterator;
 };
 
 }

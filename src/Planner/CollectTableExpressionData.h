@@ -19,6 +19,6 @@ void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr
   *
   * ALIAS table column nodes are registered in table expression data and replaced in query tree with inner alias expression.
   */
-void collectSourceColumns(QueryTreeNodePtr & expression_node, PlannerContextPtr & planner_context);
+void collectSourceColumns(QueryTreeNodePtr & expression_node, PlannerContextPtr & planner_context, bool keep_alias_columns = true);
 
 }

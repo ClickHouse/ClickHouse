@@ -18,6 +18,7 @@ namespace CurrentMetrics
 {
     extern const Metric ParallelParsingInputFormatThreads;
     extern const Metric ParallelParsingInputFormatThreadsActive;
+    extern const Metric ParallelParsingInputFormatThreadsScheduled;
 }
 
 namespace DB
@@ -33,7 +34,7 @@ class Context;
 /**
  * ORDER-PRESERVING parallel parsing of data formats.
  * It splits original data into chunks. Then each chunk is parsed by different thread.
- * The number of chunks equals to the number or parser threads.
+ * The number of chunks equals to the number of parser threads.
  * The size of chunk is equal to min_chunk_bytes_for_parallel_parsing setting.
  *
  *                    Parsers
@@ -85,8 +86,9 @@ public:
         ReadBuffer & in;
         Block header;
         InternalParserCreator internal_parser_creator;
-        FormatFactory::FileSegmentationEngine file_segmentation_engine;
+        FormatFactory::FileSegmentationEngineCreator file_segmentation_engine_creator;
         String format_name;
+        FormatSettings format_settings;
         size_t max_threads;
         size_t min_chunk_bytes;
         size_t max_block_size;
@@ -96,19 +98,21 @@ public:
     explicit ParallelParsingInputFormat(Params params)
         : IInputFormat(std::move(params.header), &params.in)
         , internal_parser_creator(params.internal_parser_creator)
-        , file_segmentation_engine(params.file_segmentation_engine)
+        , file_segmentation_engine_creator(params.file_segmentation_engine_creator)
         , format_name(params.format_name)
+        , format_settings(params.format_settings)
         , min_chunk_bytes(params.min_chunk_bytes)
         , max_block_size(params.max_block_size)
+        , last_block_missing_values(getPort().getHeader().columns())
         , is_server(params.is_server)
-        , pool(CurrentMetrics::ParallelParsingInputFormatThreads, CurrentMetrics::ParallelParsingInputFormatThreadsActive, params.max_threads)
+        , pool(CurrentMetrics::ParallelParsingInputFormatThreads, CurrentMetrics::ParallelParsingInputFormatThreadsActive, CurrentMetrics::ParallelParsingInputFormatThreadsScheduled, params.max_threads)
     {
         // One unit for each thread, including segmentator and reader, plus a
         // couple more units so that the segmentation thread doesn't spuriously
         // bump into reader thread on wraparound.
         processing_units.resize(params.max_threads + 2);
 
-        LOG_TRACE(&Poco::Logger::get("ParallelParsingInputFormat"), "Parallel parsing is used");
+        LOG_TRACE(getLogger("ParallelParsingInputFormat"), "Parallel parsing is used");
     }
 
     ~ParallelParsingInputFormat() override
@@ -116,25 +120,30 @@ public:
         finishAndWait();
     }
 
-    void resetParser() override final
+    void resetParser() final
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "resetParser() is not allowed for {}", getName());
     }
 
-    const BlockMissingValues & getMissingValues() const override final
+    const BlockMissingValues * getMissingValues() const final
     {
-        return last_block_missing_values;
+        return &last_block_missing_values;
+    }
+
+    void setSerializationHints(const SerializationInfoByName & hints) override
+    {
+        serialization_hints = hints;
     }
 
     size_t getApproxBytesReadForChunk() const override { return last_approx_bytes_read_for_chunk; }
 
-    String getName() const override final { return "ParallelParsingBlockInputFormat"; }
+    String getName() const final { return "ParallelParsingBlockInputFormat"; }
 
 private:
 
-    Chunk generate() override final;
+    Chunk read() final;
 
-    void onCancel() override final
+    void onCancel() noexcept final
     {
         /*
          * The format parsers themselves are not being cancelled here, so we'll
@@ -187,7 +196,7 @@ private:
             }
         }
 
-        const BlockMissingValues & getMissingValues() const { return input_format->getMissingValues(); }
+        const BlockMissingValues * getMissingValues() const { return input_format->getMissingValues(); }
 
     private:
         const InputFormatPtr & input_format;
@@ -196,13 +205,15 @@ private:
 
     const InternalParserCreator internal_parser_creator;
     /// Function to segment the file. Then "parsers" will parse that segments.
-    FormatFactory::FileSegmentationEngine file_segmentation_engine;
+    FormatFactory::FileSegmentationEngineCreator file_segmentation_engine_creator;
     const String format_name;
+    const FormatSettings format_settings;
     const size_t min_chunk_bytes;
     const size_t max_block_size;
 
     BlockMissingValues last_block_missing_values;
     size_t last_approx_bytes_read_for_chunk = 0;
+    SerializationInfoByName serialization_hints;
 
     /// Non-atomic because it is used in one thread.
     std::optional<size_t> next_block_in_current_unit;
@@ -288,7 +299,7 @@ private:
             first_parser_finished.wait();
     }
 
-    void finishAndWait()
+    void finishAndWait() noexcept
     {
         /// Defending concurrent segmentator thread join
         std::lock_guard finish_and_wait_lock(finish_and_wait_mutex);
@@ -329,7 +340,7 @@ private:
     /// threads. This function is used by segmentator and parsed threads.
     /// readImpl() is called from the main thread, so the exception handling
     /// is different.
-    void onBackgroundException(size_t offset);
+    void onBackgroundException();
 };
 
 }

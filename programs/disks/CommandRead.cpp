@@ -1,17 +1,12 @@
-#include "ICommand.h"
-#include <Interpreters/Context.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/copyData.h>
+#include <Interpreters/Context.h>
 #include <Common/TerminalSize.h>
+#include "ICommand.h"
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
 
 class CommandRead final : public ICommand
 {
@@ -19,62 +14,39 @@ public:
     CommandRead()
     {
         command_name = "read";
-        command_option_description.emplace(createOptionsDescription("Allowed options", getTerminalWidth()));
-        description = "read File `from_path` to `to_path` or to stdout\nPath should be in format './' or './path' or 'path'";
-        usage = "read [OPTION]... <FROM_PATH> <TO_PATH>\nor\nread [OPTION]... <FROM_PATH>";
-        command_option_description->add_options()
-            ("output", po::value<String>(), "set path to file to which we are read")
-            ;
+        description = "Read a file from `path-from` to `path-to`";
+        options_description.add_options()("path-from", po::value<String>(), "file from which we are reading (mandatory, positional)")(
+            "path-to", po::value<String>(), "file to which we are writing, defaults to `stdout`");
+        positional_options_description.add("path-from", 1);
     }
 
-    void processOptions(
-        Poco::Util::LayeredConfiguration & config,
-        po::variables_map & options) const override
+    void executeImpl(const CommandLineOptions & options, DisksClient & client) override
     {
-        if (options.count("output"))
-            config.setString("output", options["output"].as<String>());
-    }
+        auto disk = client.getCurrentDiskWithPath();
+        String path_from = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path-from"));
+        std::optional<String> path_to = getValueFromCommandLineOptionsWithOptional<String>(options, "path-to");
 
-    void execute(
-        const std::vector<String> & command_arguments,
-        DB::ContextMutablePtr & global_context,
-        Poco::Util::LayeredConfiguration & config) override
-    {
-        if (command_arguments.size() != 1)
+        auto in = disk.getDisk()->readFile(path_from, getReadSettings());
+        std::unique_ptr<WriteBufferFromFileBase> out = {};
+        if (path_to.has_value())
         {
-            printHelpMessage();
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Bad Arguments");
-        }
-
-        String disk_name = config.getString("disk", "default");
-
-        DiskPtr disk = global_context->getDisk(disk_name);
-
-        String relative_path = validatePathAndGetAsRelative(command_arguments[0]);
-
-        String path_output = config.getString("output", "");
-
-        if (!path_output.empty())
-        {
-            String relative_path_output = validatePathAndGetAsRelative(path_output);
-
-            auto in = disk->readFile(relative_path);
-            auto out = disk->writeFile(relative_path_output);
+            String relative_path_to = disk.getRelativeFromRoot(path_to.value());
+            out = disk.getDisk()->writeFile(relative_path_to);
             copyData(*in, *out);
-            out->finalize();
-            return;
         }
         else
         {
-            auto in = disk->readFile(relative_path);
-            std::unique_ptr<WriteBufferFromFileBase> out = std::make_unique<WriteBufferFromFileDescriptor>(STDOUT_FILENO);
+            out = std::make_unique<WriteBufferFromFileDescriptor>(STDOUT_FILENO);
             copyData(*in, *out);
+            out->write('\n');
         }
+        out->finalize();
     }
 };
+
+CommandPtr makeCommandRead()
+{
+    return std::make_shared<DB::CommandRead>();
 }
 
-std::unique_ptr <DB::ICommand> makeCommandRead()
-{
-    return std::make_unique<DB::CommandRead>();
 }

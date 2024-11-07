@@ -1,21 +1,23 @@
 #pragma once
 
 #include <optional>
-#include <unordered_map>
 
 #include <Core/Block.h>
 #include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
+#include <IO/PeekableReadBuffer.h>
 
 
 namespace DB
 {
 
+class CSVFormatReader;
+
 /** A stream for inputting data in csv format.
   * Does not conform with https://tools.ietf.org/html/rfc4180 because it skips spaces and tabs between values.
   */
-class CSVRowInputFormat : public RowInputFormatWithNamesAndTypes
+class CSVRowInputFormat : public RowInputFormatWithNamesAndTypes<CSVFormatReader>
 {
 public:
     /** with_names - in the first line the header with column names
@@ -27,11 +29,11 @@ public:
     String getName() const override { return "CSVRowInputFormat"; }
 
     void setReadBuffer(ReadBuffer & in_) override;
-    void resetParser() override;
+    void resetReadBuffer() override;
 
 protected:
     CSVRowInputFormat(const Block & header_, std::shared_ptr<PeekableReadBuffer> in_, const Params & params_,
-                               bool with_names_, bool with_types_, const FormatSettings & format_settings_, std::unique_ptr<FormatWithNamesAndTypesReader> format_reader_);
+                               bool with_names_, bool with_types_, const FormatSettings & format_settings_, std::unique_ptr<CSVFormatReader> format_reader_);
 
     CSVRowInputFormat(const Block & header_, std::shared_ptr<PeekableReadBuffer> in_buf_, const Params & params_,
                       bool with_names_, bool with_types_, const FormatSettings & format_settings_);
@@ -116,6 +118,6 @@ private:
     DataTypes buffered_types;
 };
 
-std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows);
+std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows, const FormatSettings & settings);
 
 }

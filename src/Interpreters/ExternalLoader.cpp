@@ -1,27 +1,20 @@
 #include "ExternalLoader.h"
 
 #include <mutex>
-#include <pcg_random.hpp>
-#include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/Config/AbstractConfigurationComparison.h>
-#include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/ThreadPool.h>
-#include <Common/randomSeed.h>
-#include <Common/setThreadName.h>
-#include <Common/StatusInfo.h>
-#include <Common/scope_guard_safe.h>
-#include <Common/logger_useful.h>
+#include <unordered_set>
 #include <base/chrono_io.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
-#include <unordered_set>
-
-
-namespace CurrentStatusInfo
-{
-    extern const Status DictionaryStatus;
-}
+#include <Common/Config/AbstractConfigurationComparison.h>
+#include <Common/CurrentThread.h>
+#include <Common/Exception.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/StringUtils.h>
+#include <Common/ThreadPool.h>
+#include <Common/logger_useful.h>
+#include <Common/randomSeed.h>
+#include <Common/scope_guard_safe.h>
+#include <Common/setThreadName.h>
 
 
 namespace DB
@@ -103,10 +96,7 @@ namespace
 class ExternalLoader::LoadablesConfigReader : private boost::noncopyable
 {
 public:
-    LoadablesConfigReader(const String & type_name_, Poco::Logger * log_)
-        : type_name(type_name_), log(log_)
-    {
-    }
+    LoadablesConfigReader(const String & type_name_, LoggerPtr log_) : type_name(type_name_), log(log_) { }
     ~LoadablesConfigReader() = default;
 
     using Repository = IExternalLoaderConfigRepository;
@@ -175,7 +165,7 @@ public:
 private:
     struct FileInfo
     {
-        Poco::Timestamp last_update_time = 0;
+        std::optional<Poco::Timestamp> last_update_time;
         bool in_use = true; // Whether the `FileInfo` should be destroyed because the correspondent file is deleted.
         Poco::AutoPtr<Poco::Util::AbstractConfiguration> file_contents; // Parsed contents of the file.
         std::unordered_map<String /* object name */, String /* key in file_contents */> objects;
@@ -274,7 +264,7 @@ private:
             // is updated, but in the same second).
             // The solution to this is probably switching to std::filesystem
             // -- the work is underway to do so.
-            if (update_time_from_repository == file_info.last_update_time)
+            if (update_time_from_repository && (update_time_from_repository == file_info.last_update_time))
             {
                 file_info.in_use = true;
                 return false;
@@ -385,7 +375,7 @@ private:
     }
 
     const String type_name;
-    Poco::Logger * log;
+    const LoggerPtr log;
 
     std::mutex mutex;
     ExternalLoaderConfigSettings settings;
@@ -402,17 +392,8 @@ private:
 class ExternalLoader::LoadingDispatcher : private boost::noncopyable
 {
 public:
-    /// Called to load or reload an object.
-    using CreateObjectFunction = std::function<LoadablePtr(
-        const String & /* name */, const ObjectConfig & /* config */, const LoadablePtr & /* previous_version */)>;
-
-    LoadingDispatcher(
-        const CreateObjectFunction & create_object_function_,
-        const String & type_name_,
-        Poco::Logger * log_)
-        : create_object(create_object_function_)
-        , type_name(type_name_)
-        , log(log_)
+    LoadingDispatcher(const String & type_name_, LoggerPtr log_, const ExternalLoader & external_loader_)
+        : type_name(type_name_), log(log_), external_loader(external_loader_)
     {
     }
 
@@ -465,16 +446,25 @@ public:
             else
             {
                 const auto & new_config = new_config_it->second;
-                bool config_is_same = isSameConfiguration(*info.config->config, info.config->key_in_config, *new_config->config, new_config->key_in_config);
+                auto previous_config = info.config;
                 info.config = new_config;
-                if (!config_is_same)
+
+                bool config_changed = !isSameConfiguration(*previous_config->config, previous_config->key_in_config, *new_config->config, new_config->key_in_config);
+                if (config_changed)
                 {
+                    if (info.object)
+                        external_loader.updateObjectFromConfigWithoutReloading(*info.object, *new_config->config, new_config->key_in_config);
+
                     if (info.triedToLoad())
                     {
-                        /// The object has been tried to load before, so it is currently in use or was in use
-                        /// and we should try to reload it with the new config.
-                        LOG_TRACE(log, "Will reload '{}' because its configuration has been changed and there were attempts to load it before", name);
-                        startLoading(info, true);
+                        bool config_change_requires_reloading = external_loader.doesConfigChangeRequiresReloadingObject(*previous_config->config, previous_config->key_in_config, *new_config->config, new_config->key_in_config);
+                        if (config_change_requires_reloading)
+                        {
+                            /// The object has been tried to load before, so it is currently in use or was in use
+                            /// and we should try to reload it with the new config.
+                            LOG_TRACE(log, "Will reload '{}' because its configuration has been changed and there were attempts to load it before", name);
+                            startLoading(info, true);
+                        }
                     }
                 }
             }
@@ -741,10 +731,9 @@ private:
         {
             if (object)
                 return isLoading() ? Status::LOADED_AND_RELOADING : Status::LOADED;
-            else if (exception)
+            if (exception)
                 return isLoading() ? Status::FAILED_AND_RELOADING : Status::FAILED;
-            else
-                return isLoading() ? Status::LOADING : Status::NOT_LOADED;
+            return isLoading() ? Status::LOADING : Status::NOT_LOADED;
         }
 
         Duration loadingDuration() const
@@ -778,7 +767,7 @@ private:
         }
 
         String name;
-        LoadablePtr object;
+        LoadableMutablePtr object;
         std::shared_ptr<const ObjectConfig> config;
         TimePoint loading_start_time;
         TimePoint loading_end_time;
@@ -932,7 +921,16 @@ private:
         if (enable_async_loading)
         {
             /// Put a job to the thread pool for the loading.
-            auto thread = ThreadFromGlobalPool{&LoadingDispatcher::doLoading, this, info.name, loading_id, forced_to_reload, min_id_to_finish_loading_dependencies_, true, CurrentThread::getGroup()};
+            ThreadFromGlobalPool thread;
+            try
+            {
+                thread = ThreadFromGlobalPool{&LoadingDispatcher::doLoading, this, info.name, loading_id, forced_to_reload, min_id_to_finish_loading_dependencies_, true, CurrentThread::getGroup()};
+            }
+            catch (...)
+            {
+                cancelLoading(info);
+                throw;
+            }
             loading_threads.try_emplace(loading_id, std::move(thread));
         }
         else
@@ -1038,17 +1036,17 @@ private:
     }
 
     /// Load one object, returns object ptr or exception.
-    std::pair<LoadablePtr, std::exception_ptr>
+    std::pair<LoadableMutablePtr, std::exception_ptr>
     loadSingleObject(const String & name, const ObjectConfig & config, LoadablePtr previous_version)
     {
         /// Use `create_function` to perform the actual loading.
         /// It's much better to do it with `mutex` unlocked because the loading can take a lot of time
         /// and require access to other objects.
-        LoadablePtr new_object;
+        LoadableMutablePtr new_object;
         std::exception_ptr new_exception;
         try
         {
-            new_object = create_object(name, config, previous_version);
+            new_object = external_loader.createOrCloneObject(name, config, previous_version);
         }
         catch (...)
         {
@@ -1062,7 +1060,7 @@ private:
         const String & name,
         size_t loading_id,
         LoadablePtr previous_version,
-        LoadablePtr new_object,
+        LoadableMutablePtr new_object,
         std::exception_ptr new_exception,
         size_t error_count,
         const LoadingGuardForAsyncLoad &)
@@ -1125,7 +1123,10 @@ private:
         }
 
         if (new_object)
+        {
+            external_loader.updateObjectFromConfigWithoutReloading(*new_object, *info->config->config, info->config->key_in_config);
             info->object = new_object;
+        }
 
         info->exception = new_exception;
         info->error_count = error_count;
@@ -1145,7 +1146,6 @@ private:
         if (info && (info->loading_id == loading_id))
         {
             info->loading_id = info->state_id;
-            CurrentStatusInfo::set(CurrentStatusInfo::DictionaryStatus, name, static_cast<Int8>(info->status()));
         }
         min_id_to_finish_loading_dependencies.erase(std::this_thread::get_id());
 
@@ -1192,17 +1192,15 @@ private:
             LOG_TRACE(log, "Supposed update time for '{}' is {} (backoff, {} errors)", loaded_object->getLoadableName(), to_string(result), error_count);
             return result;
         }
-        else
-        {
-            auto result = std::chrono::system_clock::now() + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));
-            LOG_TRACE(log, "Supposed update time for unspecified object is {} (backoff, {} errors.", to_string(result), error_count);
-            return result;
-        }
+
+        auto result = std::chrono::system_clock::now() + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));
+        LOG_TRACE(log, "Supposed update time for unspecified object is {} (backoff, {} errors)", to_string(result), error_count);
+        return result;
     }
 
-    const CreateObjectFunction create_object;
     const String type_name;
-    Poco::Logger * log;
+    const LoggerPtr log;
+    const ExternalLoader & external_loader;
 
     mutable std::mutex mutex;
     std::condition_variable event;
@@ -1282,12 +1280,9 @@ private:
 };
 
 
-ExternalLoader::ExternalLoader(const String & type_name_, Poco::Logger * log_)
+ExternalLoader::ExternalLoader(const String & type_name_, LoggerPtr log_)
     : config_files_reader(std::make_unique<LoadablesConfigReader>(type_name_, log_))
-    , loading_dispatcher(std::make_unique<LoadingDispatcher>(
-          [this](auto && a, auto && b, auto && c) { return createObject(a, b, c); },
-          type_name_,
-          log_))
+    , loading_dispatcher(std::make_unique<LoadingDispatcher>(type_name_, log_, *this))
     , periodic_updater(std::make_unique<PeriodicUpdater>(*config_files_reader, *loading_dispatcher))
     , type_name(type_name_)
     , log(log_)
@@ -1307,7 +1302,6 @@ scope_guard ExternalLoader::addConfigRepository(std::unique_ptr<IExternalLoaderC
     return [this, ptr, name]()
     {
         config_files_reader->removeConfigRepository(ptr);
-        CurrentStatusInfo::unset(CurrentStatusInfo::DictionaryStatus, name);
         reloadConfig(name);
     };
 }
@@ -1515,13 +1509,13 @@ void ExternalLoader::reloadConfig(const String & repository_name, const String &
     loading_dispatcher->setConfiguration(config_files_reader->read(repository_name, path));
 }
 
-ExternalLoader::LoadablePtr ExternalLoader::createObject(
+ExternalLoader::LoadableMutablePtr ExternalLoader::createOrCloneObject(
     const String & name, const ObjectConfig & config, const LoadablePtr & previous_version) const
 {
     if (previous_version)
         return previous_version->clone();
 
-    return create(name, *config.config, config.key_in_config, config.repository_name);
+    return createObject(name, *config.config, config.key_in_config, config.repository_name);
 }
 
 template ExternalLoader::LoadablePtr ExternalLoader::getLoadResult<ExternalLoader::LoadablePtr>(const String &) const;

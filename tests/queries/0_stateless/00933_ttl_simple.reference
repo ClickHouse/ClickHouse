@@ -6,11 +6,11 @@
 2000-10-10 00:00:00	0
 2100-10-10 00:00:00	3
 2100-10-10	2
-CREATE TABLE default.ttl_00933_1\n(\n    `b` Int32,\n    `a` Int32 TTL now() - 1000\n)\nENGINE = MergeTree\nPARTITION BY tuple()\nORDER BY tuple()\nSETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192
+CREATE TABLE default.ttl_00933_1\n(\n    `b` Int32,\n    `a` Int32 TTL CAST(\'2000-10-10 00:00:00\', \'DateTime\')\n)\nENGINE = MergeTree\nPARTITION BY tuple()\nORDER BY tuple()\nSETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192
 1	0
-CREATE TABLE default.ttl_00933_1\n(\n    `b` Int32,\n    `a` Int32 TTL now() + 1000\n)\nENGINE = MergeTree\nPARTITION BY tuple()\nORDER BY tuple()\nSETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192
+CREATE TABLE default.ttl_00933_1\n(\n    `b` Int32,\n    `a` Int32 TTL CAST(\'2100-10-10 00:00:00\', \'DateTime\')\n)\nENGINE = MergeTree\nPARTITION BY tuple()\nORDER BY tuple()\nSETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192
 1	1
-CREATE TABLE default.ttl_00933_1\n(\n    `b` Int32,\n    `a` Int32 TTL today() - 1\n)\nENGINE = MergeTree\nPARTITION BY tuple()\nORDER BY tuple()\nSETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192
+CREATE TABLE default.ttl_00933_1\n(\n    `b` Int32,\n    `a` Int32 TTL CAST(\'2000-10-10\', \'Date\')\n)\nENGINE = MergeTree\nPARTITION BY tuple()\nORDER BY tuple()\nSETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192
 1	0
-CREATE TABLE default.ttl_00933_1\n(\n    `b` Int32,\n    `a` Int32 TTL today() + 1\n)\nENGINE = MergeTree\nPARTITION BY tuple()\nORDER BY tuple()\nSETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192
+CREATE TABLE default.ttl_00933_1\n(\n    `b` Int32,\n    `a` Int32 TTL CAST(\'2100-10-10\', \'Date\')\n)\nENGINE = MergeTree\nPARTITION BY tuple()\nORDER BY tuple()\nSETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192
 1	1
