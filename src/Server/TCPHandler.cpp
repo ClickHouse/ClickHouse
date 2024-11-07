@@ -910,7 +910,7 @@ bool TCPHandler::receivePacketsExpectQuery(std::optional<QueryState> & state)
             return false;
 
         case Protocol::Client::Cancel:
-            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet Data received from client");
+            return false;
 
         case Protocol::Client::TablesStatusRequest:
             processTablesStatusRequest();
@@ -2363,7 +2363,6 @@ void TCPHandler::processCancel(QueryState & state, bool throw_exception)
     if (throw_exception)
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Received 'Cancel' packet from the client, canceling the query.");
 }
-
 
 void TCPHandler::receivePacketsExpectCancel(QueryState & state)
 {
