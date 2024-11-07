@@ -155,9 +155,6 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
 
             while (token_iterator->type == TokenType::Semicolon)
                 ++token_iterator;
-
-            if (token_iterator->isEnd())
-                break;
         }
     }
     catch (...)
