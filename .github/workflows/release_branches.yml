@@ -81,7 +81,7 @@ jobs:
     secrets: inherit
     with:
       test_name: Compatibility check (release)
-      runner_type: style-checker
+      runner_type: self-hosted, altinity-on-demand, altinity-type-cpx41, altinity-in-ash, altinity-image-x86-app-docker-ce
       data: ${{ needs.RunConfig.outputs.data }}
   CompatibilityCheckAarch64:
     needs: [RunConfig, BuilderDebAarch64]
@@ -90,7 +90,7 @@ jobs:
     secrets: inherit
     with:
       test_name: Compatibility check (aarch64)
-      runner_type: style-checker
+      runner_type: self-hosted, altinity-on-demand, altinity-type-cpx41, altinity-in-ash, altinity-image-x86-app-docker-ce
       data: ${{ needs.RunConfig.outputs.data }}
 #########################################################################################
 #################################### ORDINARY BUILDS ####################################
@@ -208,7 +208,7 @@ jobs:
     # run report check for failed builds to indicate the CI error
     if: ${{ !cancelled() && needs.RunConfig.result == 'success' && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'Builds') }}
     needs: [RunConfig, BuilderDebRelease, BuilderDebAarch64, BuilderDebAsan, BuilderDebUBsan, BuilderDebMsan, BuilderDebTsan, BuilderDebDebug, BuilderBinDarwin, BuilderBinDarwinAarch64]
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, altinity-on-demand, altinity-type-cax41, altinity-in-hel1, altinity-image-arm-app-docker-ce]
     steps:
       - name: Check out repository code
         uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f
@@ -263,7 +263,7 @@ jobs:
     secrets: inherit
     with:
       test_name: Install packages (release)
-      runner_type: style-checker
+      runner_type: self-hosted, altinity-on-demand, altinity-type-cpx41, altinity-in-ash, altinity-image-x86-app-docker-ce
       data: ${{ needs.RunConfig.outputs.data }}
       run_command: |
         python3 install_check.py "$CHECK_NAME"

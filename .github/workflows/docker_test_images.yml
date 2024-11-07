@@ -14,7 +14,7 @@ name: Build docker images
 
 jobs:
   DockerBuildAarch64:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, altinity-on-demand, altinity-type-cax41, altinity-in-hel1, altinity-image-arm-app-docker-ce]
     if: |
       !failure() && !cancelled() && toJson(fromJson(inputs.data).docker_data.missing_aarch64) != '[]'
     steps:
