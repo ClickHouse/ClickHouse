@@ -1,3 +1,4 @@
+DROP TABLE IF EXISTS test_lc_pk;
 CREATE TABLE test_lc_pk (s String) engine = MergeTree ORDER BY s;
 
 INSERT INTO test_lc_pk SELECT toString(number) FROM numbers(1e6);
@@ -33,3 +34,5 @@ SELECT trimLeft(e2.explain) AS keys_value
 FROM explain_table AS e1
 INNER JOIN explain_table AS e2 ON e2.rn = (e1.rn + 1)
 WHERE e1.explain ILIKE '%Keys%';
+
+DROP TABLE test_lc_pk;
