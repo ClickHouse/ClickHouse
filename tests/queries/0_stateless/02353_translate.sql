@@ -9,7 +9,7 @@ SELECT translateUTF8(toString(number), '1234567890', 'ዩय𐑿𐐏নՅðй¿�
 SELECT translate('abc', '', '');
 SELECT translateUTF8('abc', '', '');
 
-SELECT translate('abc', 'Ááéíóúôè', 'aaeiouoe');
+SELECT translate('abc', 'Ááéíóúôè', 'aaeiouoe'); -- { serverError BAD_ARGUMENTS }
 SELECT translateUTF8('abc', 'efg', '');
 
 SELECT translateUTF8('中文内码', '中文', '');
