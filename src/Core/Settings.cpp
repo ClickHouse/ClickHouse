@@ -874,6 +874,12 @@ In CREATE TABLE statement allows specifying Variant type with similar variant ty
     DECLARE(Bool, allow_suspicious_primary_key, false, R"(
 Allow suspicious `PRIMARY KEY`/`ORDER BY` for MergeTree (i.e. SimpleAggregateFunction).
 )", 0) \
+    DECLARE(Bool, allow_suspicious_types_in_group_by, false, R"(
+Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) and [Dynamic](../../sql-reference/data-types/dynamic.md) types in GROUP BY keys.
+)", 0) \
+    DECLARE(Bool, allow_suspicious_types_in_order_by, false, R"(
+Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) and [Dynamic](../../sql-reference/data-types/dynamic.md) types in ORDER BY keys.
+)", 0) \
     DECLARE(Bool, compile_expressions, false, R"(
 Compile some scalar functions and operators to native code. Due to a bug in the LLVM compiler infrastructure, on AArch64 machines, it is known to lead to a nullptr dereference and, consequently, server crash. Do not enable this setting.
 )", 0) \
@@ -1912,9 +1918,6 @@ See also:
 For single JOIN in case of identifier ambiguity prefer left table
 )", IMPORTANT) \
     \
-    DECLARE(JoinInnerTableSelectionMode, query_plan_join_inner_table_selection, JoinInnerTableSelectionMode::Auto, R"(
-Select the side of the join to be the inner table in the query plan. Supported only for `ALL` join strictness with `JOIN ON` clause. Possible values: 'auto', 'left', 'right'.
-)", 0) \
     DECLARE(UInt64, preferred_block_size_bytes, 1000000, R"(
 This setting adjusts the data block size for query processing and represents additional fine-tuning to the more rough 'max_block_size' setting. If the columns are large and with 'max_block_size' rows the block size is likely to be larger than the specified amount of bytes, its size will be lowered for better CPU cache locality.
 )", 0) \
@@ -4244,7 +4247,7 @@ Rewrite aggregate functions with if expression as argument when logically equiva
 For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, col)`. It may improve performance.
 
 :::note
-Supported only with experimental analyzer (`enable_analyzer = 1`).
+Supported only with the analyzer (`enable_analyzer = 1`).
 :::
 )", 0) \
     DECLARE(Bool, optimize_rewrite_array_exists_to_has, false, R"(
@@ -5138,6 +5141,12 @@ Only in ClickHouse Cloud. A window for sending ACK for DataPacket sequence in a 
     DECLARE(Bool, distributed_cache_discard_connection_if_unread_data, true, R"(
 Only in ClickHouse Cloud. Discard connection if some data is unread.
 )", 0) \
+    DECLARE(Bool, filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage, true, R"(
+Only in ClickHouse Cloud. Wait time to lock cache for space reservation in filesystem cache
+)", 0) \
+    DECLARE(Bool, filesystem_cache_enable_background_download_during_fetch, true, R"(
+Only in ClickHouse Cloud. Wait time to lock cache for space reservation in filesystem cache
+)", 0) \
     \
     DECLARE(Bool, parallelize_output_from_storages, true, R"(
 Parallelize output for reading step from storage. It allows parallelization of  query processing right after reading from storage if possible
@@ -5146,6 +5155,7 @@ Parallelize output for reading step from storage. It allows parallelization of  
 The setting allows a user to provide own deduplication semantic in MergeTree/ReplicatedMergeTree
 For example, by providing a unique value for the setting in each INSERT statement,
 user can avoid the same inserted data being deduplicated.
+
 
 Possible values:
 
@@ -5621,7 +5631,7 @@ If true, and JOIN can be executed with parallel replicas algorithm, and all stor
     DECLARE(UInt64, parallel_replicas_mark_segment_size, 0, R"(
 Parts virtually divided into segments to be distributed between replicas for parallel reading. This setting controls the size of these segments. Not recommended to change until you're absolutely sure in what you're doing. Value should be in range [128; 16384]
 )", BETA) \
-    DECLARE(Bool, parallel_replicas_local_plan, false, R"(
+    DECLARE(Bool, parallel_replicas_local_plan, true, R"(
 Build local plan for local replica
 )", BETA) \
     \
