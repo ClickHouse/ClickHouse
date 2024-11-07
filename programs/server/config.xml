@@ -78,7 +78,7 @@
         a) You can modify key names by changing values under tag values inside <names> tag.
         For example, to change DATE_TIME to MY_DATE_TIME, you can do like:
             <date_time>MY_DATE_TIME</date_time>
-            <date_time_utc>date_time_utc</date_time_utc>
+            <date_time_utc>MY_UTC_DATE_TIME</date_time_utc>
         b) You can stop unwanted log properties to appear in logs. To do so, you can simply comment out (recommended)
         that property from this file.
         For example, if you do not want your log to print query_id, you can comment out only <query_id> tag.
