@@ -312,7 +312,7 @@ void SignalListener::run()
         {
             pid_t child_pid = 0;
             readBinary(child_pid, in);
-            Context::getGlobalContextInstance()->terminateBackgroundShellCommand(child_pid);
+            Context::getGlobalContextInstance()->removeBackgroundShellCommand(child_pid);
         }
         else
         {

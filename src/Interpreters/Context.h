@@ -1292,7 +1292,7 @@ public:
     void addBackgroundShellCommand(std::unique_ptr<ShellCommand> cmd) const;
 
     /// Terminate background shell command.
-    void terminateBackgroundShellCommand(pid_t pid) const;
+    void removeBackgroundShellCommand(pid_t pid) const;
 
     IHostContextPtr & getHostContext();
     const IHostContextPtr & getHostContext() const;

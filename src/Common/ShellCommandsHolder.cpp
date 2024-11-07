@@ -1,6 +1,6 @@
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
-#include <Common/BackgroundShellCommandHolder.h>
+#include <Common/ShellCommandsHolder.h>
 
 namespace DB
 {
@@ -10,25 +10,25 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-LoggerPtr BackgroundShellCommandHolder::getLogger()
+LoggerPtr ShellCommandsHolder::getLogger()
 {
-    return ::getLogger("BackgroundShellCommandHolder");
+    return ::getLogger("ShellCommandsHolder");
 }
 
 
-void BackgroundShellCommandHolder::removeCommand(pid_t pid)
+void ShellCommandsHolder::removeCommand(pid_t pid)
 {
     std::lock_guard lock(mutex);
-    bool is_erased = active_shell_commands.erase(pid);
+    bool is_erased = shell_commands.erase(pid);
     LOG_TRACE(getLogger(), "Try to erase command with the pid {}, is_erased: {}", pid, is_erased);
 }
 
-void BackgroundShellCommandHolder::addCommand(std::unique_ptr<ShellCommand> command)
+void ShellCommandsHolder::addCommand(std::unique_ptr<ShellCommand> command)
 {
     std::lock_guard lock(mutex);
     pid_t command_pid = command->getPid();
 
-    auto [iterator, is_inserted] = active_shell_commands.emplace(std::make_pair(command_pid, std::move(command)));
+    auto [iterator, is_inserted] = shell_commands.emplace(std::make_pair(command_pid, std::move(command)));
     if (!is_inserted)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't insert process PID {} into active shell commands, because there are running process with same PID", command_pid);
 

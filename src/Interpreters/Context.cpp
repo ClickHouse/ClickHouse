@@ -100,7 +100,7 @@
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ShellCommand.h>
-#include <Common/BackgroundShellCommandHolder.h>
+#include <Common/ShellCommandsHolder.h>
 #include <Common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/HTTPHeaderFilter.h>
@@ -543,7 +543,7 @@ struct ContextSharedPart : boost::noncopyable
 
     /// Manager of running background shell commands.
     /// They will be killed when Context will be destroyed or with SIGCHLD signal.
-    BackgroundShellCommandHolder background_active_shell_commands;
+    ShellCommandsHolder background_active_shell_commands;
 
     /// No lock required for config_reload_callback, start_servers_callback, stop_servers_callback modified only during initialization
     Context::ConfigReloadCallback config_reload_callback;
@@ -5074,7 +5074,7 @@ void Context::addBackgroundShellCommand(std::unique_ptr<ShellCommand> cmd) const
     shared->background_active_shell_commands.addCommand(std::move(cmd));
 }
 
-void Context::terminateBackgroundShellCommand(pid_t pid) const
+void Context::removeBackgroundShellCommand(pid_t pid) const
 {
     shared->background_active_shell_commands.removeCommand(pid);
 }
