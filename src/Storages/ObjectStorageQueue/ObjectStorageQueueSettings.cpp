@@ -23,15 +23,15 @@ namespace ErrorCodes
       0) \
     DECLARE(ObjectStorageQueueAction, after_processing, ObjectStorageQueueAction::KEEP, "Delete or keep file in after successful processing", 0) \
     DECLARE(String, keeper_path, "", "Zookeeper node path", 0) \
-    DECLARE(UInt32, loading_retries, 10, "Retry loading up to specified number of times", 0) \
-    DECLARE(UInt32, processing_threads_num, 1, "Number of processing threads", 0) \
+    DECLARE(UInt64, loading_retries, 10, "Retry loading up to specified number of times", 0) \
+    DECLARE(UInt64, processing_threads_num, 1, "Number of processing threads", 0) \
     DECLARE(UInt32, enable_logging_to_queue_log, 1, "Enable logging to system table system.(s3/azure_)queue_log", 0) \
     DECLARE(String, last_processed_path, "", "For Ordered mode. Files that have lexicographically smaller file name are considered already processed", 0) \
-    DECLARE(UInt32, tracked_file_ttl_sec, 0, "Maximum number of seconds to store processed files in ZooKeeper node (store forever by default)", 0) \
-    DECLARE(UInt32, polling_min_timeout_ms, 1000, "Minimal timeout before next polling", 0) \
-    DECLARE(UInt32, polling_max_timeout_ms, 10000, "Maximum timeout before next polling", 0) \
-    DECLARE(UInt32, polling_backoff_ms, 1000, "Polling backoff", 0) \
-    DECLARE(UInt32, tracked_files_limit, 1000, "For unordered mode. Max set size for tracking processed files in ZooKeeper", 0) \
+    DECLARE(UInt64, tracked_files_limit, 1000, "For unordered mode. Max set size for tracking processed files in ZooKeeper", 0) \
+    DECLARE(UInt64, tracked_file_ttl_sec, 0, "Maximum number of seconds to store processed files in ZooKeeper node (store forever by default)", 0) \
+    DECLARE(UInt64, polling_min_timeout_ms, 1000, "Minimal timeout before next polling", 0) \
+    DECLARE(UInt64, polling_max_timeout_ms, 10000, "Maximum timeout before next polling", 0) \
+    DECLARE(UInt64, polling_backoff_ms, 1000, "Polling backoff", 0) \
     DECLARE(UInt32, cleanup_interval_min_ms, 60000, "For unordered mode. Polling backoff min for cleanup", 0) \
     DECLARE(UInt32, cleanup_interval_max_ms, 60000, "For unordered mode. Polling backoff max for cleanup", 0) \
     DECLARE(UInt32, buckets, 0, "Number of buckets for Ordered mode parallel processing", 0) \
@@ -112,6 +112,11 @@ ObjectStorageQueueSettings::~ObjectStorageQueueSettings() = default;
 OBJECT_STORAGE_QUEUE_SETTINGS_SUPPORTED_TYPES(ObjectStorageQueueSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
 
 
+void ObjectStorageQueueSettings::applyChanges(const SettingsChanges & changes)
+{
+    impl->applyChanges(changes);
+}
+
 void ObjectStorageQueueSettings::loadFromQuery(ASTStorage & storage_def)
 {
     if (storage_def.settings)
@@ -154,6 +159,11 @@ void ObjectStorageQueueSettings::loadFromQuery(ASTStorage & storage_def)
         settings_ast->is_standalone = false;
         storage_def.set(storage_def.settings, settings_ast);
     }
+}
+
+Field ObjectStorageQueueSettings::get(const std::string & name)
+{
+    return impl->get(name);
 }
 
 }

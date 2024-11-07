@@ -95,7 +95,7 @@ sudo yum install -y clickhouse-server clickhouse-client
 sudo systemctl enable clickhouse-server
 sudo systemctl start clickhouse-server
 sudo systemctl status clickhouse-server
-clickhouse-client # илм "clickhouse-client --password" если установлен пароль
+clickhouse-client # или "clickhouse-client --password" если установлен пароль
 ```
 
 Для использования наиболее свежих версий нужно заменить `stable` на `testing` (рекомендуется для тестовых окружений). Также иногда доступен `prestable`.
