@@ -5916,7 +5916,6 @@ Experimental data deduplication for SELECT queries based on part UUIDs
     MAKE_OBSOLETE(M, UInt64, parallel_replicas_min_number_of_granules_to_enable, 0) \
     MAKE_OBSOLETE(M, ParallelReplicasCustomKeyFilterType, parallel_replicas_custom_key_filter_type, ParallelReplicasCustomKeyFilterType::DEFAULT) \
     MAKE_OBSOLETE(M, Bool, query_plan_optimize_projection, true) \
-    MAKE_OBSOLETE(M, Bool, query_cache_store_results_of_queries_with_nondeterministic_functions, false) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_annoy_index, false) \
     MAKE_OBSOLETE(M, UInt64, max_threads_for_annoy_index_creation, 4) \
     MAKE_OBSOLETE(M, Int64, annoy_index_search_k_nodes, -1) \
