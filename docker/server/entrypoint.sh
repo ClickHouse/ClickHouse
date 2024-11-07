@@ -8,13 +8,15 @@ if [ "${CLICKHOUSE_DO_NOT_CHOWN:-0}" = "1" ]; then
     DO_CHOWN=0
 fi
 
-CLICKHOUSE_UID="${CLICKHOUSE_UID:-"$(id -u clickhouse)"}"
-CLICKHOUSE_GID="${CLICKHOUSE_GID:-"$(id -g clickhouse)"}"
-
-# support --user
+# support `docker run --user=xxx:xxxx`
 if [ "$(id -u)" = "0" ]; then
-    USER=$CLICKHOUSE_UID
-    GROUP=$CLICKHOUSE_GID
+    # CLICKHOUSE_UID and CLICKHOUSE_GID are kept for backward compatibility
+    if [[ "${CLICKHOUSE_UID:-}" || "${CLICKHOUSE_GID:-}" ]]; then
+        echo 'WARNING: consider using a proper "--user=xxx:xxxx" running argument instead of CLICKHOUSE_UID/CLICKHOUSE_GID' >&2
+        echo 'Support for CLICKHOUSE_UID/CLICKHOUSE_GID will be removed in a couple of releases' >&2
+    fi
+    USER="${CLICKHOUSE_UID:-"$(id -u clickhouse)"}"
+    GROUP="${CLICKHOUSE_GID:-"$(id -g clickhouse)"}"
 else
     USER="$(id -u)"
     GROUP="$(id -g)"
