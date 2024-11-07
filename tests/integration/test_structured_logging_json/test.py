@@ -1,6 +1,6 @@
 import json
-from xml.etree import ElementTree as ET
 from datetime import datetime
+from xml.etree import ElementTree as ET
 
 import pytest
 
@@ -97,7 +97,9 @@ def validate_log_config_relation(config, logs, config_type):
                     return False
 
             # Validate the UTC datetime format in "date_time_utc" if it exists
-            if "date_time_utc" in json_log and not is_valid_utc_datetime(json_log["date_time_utc"]):
+            if "date_time_utc" in json_log and not is_valid_utc_datetime(
+                json_log["date_time_utc"]
+            ):
                 return False
     except ValueError as e:
         return False
