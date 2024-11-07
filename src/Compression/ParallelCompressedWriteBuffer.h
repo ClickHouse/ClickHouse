@@ -31,13 +31,6 @@ public:
 
     ~ParallelCompressedWriteBuffer() override;
 
-    /// This function will be called once after compressing the next data and sending it to the out.
-    /// It can be used to fill information about marks.
-    void setCompletionCallback(std::function<void()> callback_)
-    {
-        callback = callback_;
-    }
-
 private:
     void nextImpl() override;
     void finalizeImpl() override;
@@ -61,14 +54,11 @@ private:
         BufferPair * previous = nullptr;
         size_t sequence_num = 0;
         bool busy = false;
-        std::function<void()> out_callback;
     };
 
     std::mutex mutex;
     std::condition_variable cond;
     std::list<BufferPair> buffers;
-
-    std::function<void()> callback;
 
     using Iterator = std::list<BufferPair>::iterator;
     Iterator current_buffer;

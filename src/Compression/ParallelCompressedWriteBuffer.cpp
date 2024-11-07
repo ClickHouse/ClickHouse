@@ -44,8 +44,6 @@ void ParallelCompressedWriteBuffer::nextImpl()
     /// The buffer will be compressed and processed in the thread.
     current_buffer->busy = true;
     current_buffer->sequence_num = current_sequence_num;
-    current_buffer->out_callback = callback;
-    callback = {};
     ++current_sequence_num;
     current_buffer->uncompressed_size = offset();
     pool.scheduleOrThrowOnError([this, my_current_buffer = current_buffer, thread_group = CurrentThread::getGroup()]
@@ -155,8 +153,6 @@ void ParallelCompressedWriteBuffer::compress(Iterator buffer)
     }
 
     std::unique_lock lock(mutex);
-    if (buffer->out_callback)
-        buffer->out_callback();
     buffer->busy = false;
     cond.notify_all();
 }
