@@ -2501,7 +2501,7 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
 {
     const size_t total_mark = getMarksCount();
     /// If column doesn't have dynamic subcolumns or part has no data, just create column using it's type.
-    if (!column.type->hasDynamicSubcolumns() || !total_mark)
+    if (is_temp || !column.type->hasDynamicSubcolumns() || !total_mark)
         return column.type->createColumn();
 
     /// Otherwise, read sample column with 0 rows from the part, so it will load dynamic structure.
@@ -2510,22 +2510,24 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
 
     StorageMetadataPtr metadata_ptr = storage.getInMemoryMetadataPtr();
     StorageSnapshotPtr storage_snapshot_ptr = std::make_shared<StorageSnapshot>(storage, metadata_ptr);
+    MergeTreeReaderSettings settings;
+    settings.can_read_part_without_marks = true;
 
     MergeTreeReaderPtr reader = getReader(
         cols,
         storage_snapshot_ptr,
-        MarkRanges{MarkRange(0, 1)},
+        MarkRanges{MarkRange(0, total_mark)},
         /*virtual_fields=*/ {},
         /*uncompressed_cache=*/{},
         storage.getContext()->getMarkCache().get(),
         std::make_shared<AlterConversions>(),
-        MergeTreeReaderSettings{},
+        settings,
         ValueSizeMap{},
         ReadBufferFromFileBase::ProfileCallback{});
 
     Columns result;
     result.resize(1);
-    reader->readRows(0, 1, false, 0, result);
+    reader->readRows(0, total_mark, false, 0, result);
     return result[0];
 }
 
