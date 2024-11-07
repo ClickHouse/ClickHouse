@@ -81,6 +81,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit", 1, 1, "Rename of setting skip_download_if_exceeds_query_cache_limit"},
             {"filesystem_cache_prefer_bigger_buffer_size", true, true, "New setting"},
             {"read_in_order_use_virtual_row", false, false, "Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only relevant ones are touched."},
+            {"optimize_extract_common_expressions", false, true, "Optimize WHERE and ON expressions by extracting common expressions out from disjunction of conjunctions."},
         }
     },
     {"24.10",
