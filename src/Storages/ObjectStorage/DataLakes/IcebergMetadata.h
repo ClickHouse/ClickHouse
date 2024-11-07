@@ -1,5 +1,8 @@
 #pragma once
 
+#include <memory>
+#include "config.h"
+
 #if USE_AVRO /// StorageIceberg depending on Avro to parse metadata with Avro format.
 
 #include <Interpreters/Context_fwd.h>
@@ -150,13 +153,13 @@ private:
 class IcebergMetadata : public IDataLakeMetadata, private WithContext
 {
 public:
-    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
+    using ConfigurationObserverPtr = StorageObjectStorage::ConfigurationObserverPtr;
 
     static constexpr auto name = "Iceberg";
 
     IcebergMetadata(
         ObjectStoragePtr object_storage_,
-        ConfigurationPtr configuration_,
+        ConfigurationObserverPtr configuration_,
         ContextPtr context_,
         Int32 metadata_version_,
         Int32 format_version_,
@@ -166,7 +169,7 @@ public:
 
     /// Get data files. On first request it reads manifest_list file and iterates through manifest files to find all data files.
     /// All subsequent calls will return saved list of files (because it cannot be changed without changing metadata file)
-    DataFileInfos getDataFileInfos() const override;
+    Strings getDataFiles() const override;
 
     /// Get table schema parsed from metadata.
     NamesAndTypesList getTableSchema() const override { return schema; }
@@ -181,21 +184,37 @@ public:
         return iceberg_metadata && getVersion() == iceberg_metadata->getVersion();
     }
 
-    static DataLakeMetadataPtr create(
-        ObjectStoragePtr object_storage,
-        ConfigurationPtr configuration,
-        ContextPtr local_context);
+    static DataLakeMetadataPtr create(ObjectStoragePtr object_storage, ConfigurationObserverPtr configuration, ContextPtr local_context);
 
     size_t getVersion() const { return metadata_version; }
 
+    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String & data_path) const override
+    {
+        auto it = initial_schemas.find(data_path);
+        if (it != initial_schemas.end())
+            return it->second;
+        return {};
+    }
+
+    std::shared_ptr<const ActionsDAG> getSchemaTransformer(const String & data_path) const override
+    {
+        auto it = schema_transformers.find(data_path);
+        if (it != schema_transformers.end())
+            return it->second;
+        return {};
+    }
+
 private:
+    mutable std::unordered_map<String, std::shared_ptr<NamesAndTypesList>> initial_schemas;
+    mutable std::unordered_map<String, std::shared_ptr<const ActionsDAG>> schema_transformers;
+
     const ObjectStoragePtr object_storage;
-    const ConfigurationPtr configuration;
+    const ConfigurationObserverPtr configuration;
     Int32 metadata_version;
     Int32 format_version;
     String manifest_list_file;
     const Int32 current_schema_id;
-    mutable DataFileInfos data_file_infos;
+    mutable Strings data_files;
     std::unordered_map<String, String> column_name_to_physical_name;
     DataLakePartitionColumns partition_columns;
     mutable IcebergSchemaProcessor schema_processor;

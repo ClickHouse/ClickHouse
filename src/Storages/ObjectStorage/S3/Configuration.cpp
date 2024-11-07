@@ -186,7 +186,7 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
 
     static_configuration = !auth_settings[S3AuthSetting::access_key_id].value.empty() || auth_settings[S3AuthSetting::no_sign_request].changed;
 
-    keys = {DataFileInfo(url.key)};
+    keys = {url.key};
 }
 
 void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
@@ -391,7 +391,7 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
     static_configuration = !auth_settings[S3AuthSetting::access_key_id].value.empty() || auth_settings[S3AuthSetting::no_sign_request].changed;
     auth_settings[S3AuthSetting::no_sign_request] = no_sign_request;
 
-    keys = {DataFileInfo(url.key)};
+    keys = {url.key};
 }
 
 void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(

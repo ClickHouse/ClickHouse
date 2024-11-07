@@ -1894,7 +1894,9 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         expressions.join,
                         settings[Setting::max_block_size],
                         max_streams,
-                        analysis_result.optimize_read_in_order);
+                        /* required_output_ = */ NameSet{},
+                        analysis_result.optimize_read_in_order,
+                        /* use_new_analyzer_ = */ false);
 
                     join_step->setStepDescription(fmt::format("JOIN {}", expressions.join->pipelineType()));
                     std::vector<QueryPlanPtr> plans;

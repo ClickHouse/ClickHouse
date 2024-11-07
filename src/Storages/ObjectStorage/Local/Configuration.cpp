@@ -27,7 +27,7 @@ void StorageLocalConfiguration::fromNamedCollection(const NamedCollection & coll
     format = collection.getOrDefault<String>("format", "auto");
     compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
     structure = collection.getOrDefault<String>("structure", "auto");
-    paths = {DataFileInfo(path)};
+    paths = {path};
 }
 
 
@@ -64,7 +64,7 @@ void StorageLocalConfiguration::fromAST(ASTs & args, ContextPtr context, bool wi
     {
         compression_method = checkAndGetLiteralArgument<String>(args[2], "compression_method");
     }
-    paths = {DataFileInfo(path)};
+    paths = {path};
 }
 
 StorageObjectStorage::QuerySettings StorageLocalConfiguration::getQuerySettings(const ContextPtr & context) const

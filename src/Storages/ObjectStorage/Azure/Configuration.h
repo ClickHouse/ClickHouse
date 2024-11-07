@@ -60,8 +60,8 @@ public:
     Path getPath() const override { return blob_path; }
     void setPath(const Path & path) override { blob_path = path; }
 
-    const DataFileInfos & getPaths() const override { return blobs_paths; }
-    void setPaths(const DataFileInfos & paths) override { blobs_paths = paths; }
+    const Paths & getPaths() const override { return blobs_paths; }
+    void setPaths(const Paths & paths) override { blobs_paths = paths; }
 
     String getNamespace() const override { return connection_params.getContainer(); }
     String getDataSourceDescription() const override { return std::filesystem::path(connection_params.getConnectionURL()) / connection_params.getContainer(); }
@@ -83,7 +83,7 @@ protected:
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
 
     std::string blob_path;
-    DataFileInfos blobs_paths;
+    std::vector<String> blobs_paths;
     AzureBlobStorage::ConnectionParams connection_params;
 };
 

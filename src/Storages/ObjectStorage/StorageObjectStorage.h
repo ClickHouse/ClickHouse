@@ -1,4 +1,5 @@
 #pragma once
+#include <cstddef>
 #include <optional>
 #include <Core/SchemaInferenceMode.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
@@ -9,10 +10,10 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Common/threadPoolCallbackRunner.h>
 
-#include "Storages/ObjectStorage/DataFileInfo.h"
-
 #include <memory>
 
+#include "Interpreters/ActionsDAG.h"
+#include "Storages/ColumnsDescription.h"
 
 namespace DB
 {
@@ -32,26 +33,8 @@ class StorageObjectStorage : public IStorage
 public:
     class Configuration;
     using ConfigurationPtr = std::shared_ptr<Configuration>;
-
-    struct ObjectInfo : public RelativePathWithMetadata
-    {
-        explicit ObjectInfo(
-            String relative_path_,
-            std::optional<ObjectMetadata> metadata_ = std::nullopt,
-            std::shared_ptr<NamesAndTypesList> initial_schema_ = nullptr,
-            std::shared_ptr<const ActionsDAG> schema_transformer_ = nullptr)
-            : RelativePathWithMetadata(std::move(relative_path_), std::move(metadata_))
-            , initial_schema(std::move(initial_schema_))
-            , schema_transformer(std::move(schema_transformer_))
-        {
-        }
-
-        ObjectInfo() = default;
-
-    public:
-        std::shared_ptr<NamesAndTypesList> initial_schema;
-        std::shared_ptr<const ActionsDAG> schema_transformer;
-    };
+    using ConfigurationObserverPtr = std::weak_ptr<Configuration>;
+    using ObjectInfo = RelativePathWithMetadata;
     using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
     using ObjectInfos = std::vector<ObjectInfoPtr>;
 
@@ -81,6 +64,7 @@ public:
         const ConstraintsDescription & constraints_,
         const String & comment,
         std::optional<FormatSettings> format_settings_,
+        LoadingStrictnessLevel mode,
         bool distributed_processing_ = false,
         ASTPtr partition_by_ = nullptr);
 
@@ -146,15 +130,7 @@ public:
         const ContextPtr & context);
 
 protected:
-    virtual void updateConfiguration(ContextPtr local_context);
-
     String getPathSample(StorageInMemoryMetadata metadata, ContextPtr context);
-
-    virtual ReadFromFormatInfo prepareReadingFromFormat(
-        const Strings & requested_columns,
-        const StorageSnapshotPtr & storage_snapshot,
-        bool supports_subset_of_columns,
-        ContextPtr local_context);
 
     static std::unique_ptr<ReadBufferIterator> createReadBufferIterator(
         const ObjectStoragePtr & object_storage,
@@ -200,8 +176,8 @@ public:
     virtual Path getPath() const = 0;
     virtual void setPath(const Path & path) = 0;
 
-    virtual const DataFileInfos & getPaths() const = 0;
-    virtual void setPaths(const DataFileInfos & paths) = 0;
+    virtual const Paths & getPaths() const = 0;
+    virtual void setPaths(const Paths & paths) = 0;
 
     virtual String getDataSourceDescription() const = 0;
     virtual String getNamespace() const = 0;
@@ -233,13 +209,32 @@ public:
     void setPartitionColumns(const DataLakePartitionColumns & columns) { partition_columns = columns; }
     const DataLakePartitionColumns & getPartitionColumns() const { return partition_columns; }
 
+    virtual bool isDataLakeConfiguration() const { return false; }
+
+    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String&) const { return {}; }
+
+    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(const String&) const { return {}; }
+
+    virtual ReadFromFormatInfo prepareReadingFromFormat(
+        ObjectStoragePtr object_storage,
+        const Strings & requested_columns,
+        const StorageSnapshotPtr & storage_snapshot,
+        bool supports_subset_of_columns,
+        ContextPtr local_context);
+
+    virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const;
+
     String format = "auto";
     String compression_method = "auto";
     String structure = "auto";
 
+    virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
+
+
 protected:
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
     virtual void fromAST(ASTs & args, ContextPtr context, bool with_structure) = 0;
+
 
     void assertInitialized() const;
 

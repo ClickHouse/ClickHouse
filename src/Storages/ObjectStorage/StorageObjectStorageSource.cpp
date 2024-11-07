@@ -149,7 +149,7 @@ std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSourc
             std::vector<String> paths;
             paths.reserve(keys.size());
             for (const auto & key : keys)
-                paths.push_back(fs::path(configuration->getNamespace()) / key.data_path);
+                paths.push_back(fs::path(configuration->getNamespace()) / key);
 
             VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context);
             auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
@@ -373,10 +373,11 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         Block initial_header = read_from_format_info.format_header;
 
-        if (object_info->initial_schema)
+        auto relative_path = object_info->relative_path;
+        if (auto initial_schema = configuration->getInitialSchemaByPath(object_info->getPath()))
         {
             Block sample_header;
-            for (const auto & [name, type] : *object_info->initial_schema)
+            for (const auto & [name, type] : *initial_schema)
             {
                 sample_header.insert({type->createColumn(), type, name});
             }
@@ -407,9 +408,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         builder.init(Pipe(input_format));
 
-        if (object_info->schema_transformer)
+        if (auto transformer = configuration->getSchemaTransformer(object_info->getPath()))
         {
-            auto schema_modifying_actions = std::make_shared<ExpressionActions>(object_info->schema_transformer->clone());
+            auto schema_modifying_actions = std::make_shared<ExpressionActions>(transformer->clone());
             builder.addSimpleTransform([&](const Block & header)
             {
                 return std::make_shared<ExpressionTransform>(header, schema_modifying_actions);
@@ -543,9 +544,19 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
 
     LOG_TRACE(log, "Downloading object of size {} with initial prefetch", object_size);
 
+    bool prefer_bigger_buffer_size = impl->isCached();
+    size_t buffer_size = prefer_bigger_buffer_size
+        ? std::max<size_t>(read_settings.remote_fs_buffer_size, DBMS_DEFAULT_BUFFER_SIZE)
+        : read_settings.remote_fs_buffer_size;
+    if (object_size)
+        buffer_size = std::min<size_t>(object_size, buffer_size);
+
     auto & reader = context_->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
     impl = std::make_unique<AsynchronousBoundedReadBuffer>(
-        std::move(impl), reader, modified_read_settings,
+        std::move(impl),
+        reader,
+        modified_read_settings,
+        buffer_size,
         context_->getAsyncReadCounters(),
         context_->getFilesystemReadPrefetchesLog());
 
@@ -744,7 +755,7 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
         /// TODO: should we add metadata if we anyway fetch it if file_progress_callback is passed?
         for (auto && key : keys)
         {
-            auto object_info = std::make_shared<ObjectInfo>(key.data_path, std::nullopt, key.initial_schema, key.schema_transform);
+            auto object_info = std::make_shared<ObjectInfo>(key, std::nullopt);
             read_keys_->emplace_back(object_info);
         }
     }
@@ -763,17 +774,17 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::KeysIterator::ne
         ObjectMetadata object_metadata{};
         if (ignore_non_existent_files)
         {
-            auto metadata = object_storage->tryGetObjectMetadata(key.data_path);
+            auto metadata = object_storage->tryGetObjectMetadata(key);
             if (!metadata)
                 continue;
         }
         else
-            object_metadata = object_storage->getObjectMetadata(key.data_path);
+            object_metadata = object_storage->getObjectMetadata(key);
 
         if (file_progress_callback)
             file_progress_callback(FileProgress(0, object_metadata.size_bytes));
 
-        return std::make_shared<ObjectInfo>(key.data_path, object_metadata, key.initial_schema, key.schema_transform);
+        return std::make_shared<ObjectInfo>(key, object_metadata);
     }
 }
 

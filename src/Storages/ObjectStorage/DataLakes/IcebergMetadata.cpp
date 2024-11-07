@@ -33,8 +33,7 @@
 #include <Poco/JSON/Parser.h>
 
 #include <filesystem>
-#    include <sstream>
-
+#include <sstream>
 
 namespace DB
 {
@@ -54,7 +53,7 @@ extern const int LOGICAL_ERROR;
 
 IcebergMetadata::IcebergMetadata(
     ObjectStoragePtr object_storage_,
-    ConfigurationPtr configuration_,
+    ConfigurationObserverPtr configuration_,
     DB::ContextPtr context_,
     Int32 metadata_version_,
     Int32 format_version_,
@@ -91,7 +90,7 @@ enum class DataFileContent : uint8_t
     EQUALITY_DELETES = 2,
 };
 
-std::pair<size_t, size_t> parse_decimal(const String & type_name)
+std::pair<size_t, size_t> parseDecimal(const String & type_name)
 {
     ReadBufferFromString buf(std::string_view(type_name.begin() + 8, type_name.end() - 1));
     size_t precision;
@@ -158,7 +157,7 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name)
     if (type_name.starts_with("decimal(") && type_name.ends_with(')'))
     {
         ReadBufferFromString buf(std::string_view(type_name.begin() + 8, type_name.end() - 1));
-        auto [precision, scale] = parse_decimal(type_name);
+        auto [precision, scale] = parseDecimal(type_name);
         return createDecimal<DataTypeDecimal>(precision, scale);
     }
 
@@ -236,8 +235,8 @@ bool IcebergSchemaProcessor::allowPrimitiveTypeConversion(const String & old_typ
     allowed_type_conversion |= (old_type == "float") && (new_type == "double");
     if (old_type.starts_with("decimal(") && old_type.ends_with(')') && new_type.starts_with("decimal(") && new_type.ends_with(")"))
     {
-        auto [old_precision, old_scale] = parse_decimal(old_type);
-        auto [new_precision, new_scale] = parse_decimal(new_type);
+        auto [old_precision, old_scale] = parseDecimal(old_type);
+        auto [new_precision, new_scale] = parseDecimal(new_type);
         allowed_type_conversion |= (old_precision <= new_precision) && (old_scale == new_scale);
     }
     return allowed_type_conversion;
@@ -493,14 +492,19 @@ std::pair<Int32, String> getMetadataFileAndVersion(
 }
 
 
-DataLakeMetadataPtr IcebergMetadata::create(
-    ObjectStoragePtr object_storage,
-    ConfigurationPtr configuration,
-    ContextPtr local_context)
+DataLakeMetadataPtr
+IcebergMetadata::create(ObjectStoragePtr object_storage, ConfigurationObserverPtr configuration, ContextPtr local_context)
 {
-    const auto [metadata_version, metadata_file_path] = getMetadataFileAndVersion(object_storage, *configuration);
-    auto read_settings = local_context->getReadSettings();
-    auto buf = object_storage->readObject(StoredObject(metadata_file_path), read_settings);
+    auto configuration_ptr = configuration.lock();
+
+    const auto [metadata_version, metadata_file_path] = getMetadataFileAndVersion(object_storage, *configuration_ptr);
+
+    auto log = getLogger("IcebergMetadata");
+    LOG_DEBUG(log, "Parse metadata {}", metadata_file_path);
+
+    StorageObjectStorageSource::ObjectInfo object_info(metadata_file_path);
+    auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log);
+
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, *buf);
 
@@ -510,18 +514,27 @@ DataLakeMetadataPtr IcebergMetadata::create(
 
     IcebergSchemaProcessor schema_processor;
 
+    auto format_version = object->getValue<int>("format-version");
     auto schema_id = parseTableSchema(object, schema_processor);
 
     auto snapshots = object->get("snapshots").extract<Poco::JSON::Array::Ptr>();
 
     String manifest_list_file;
-    const auto path = object->getValue<String>("manifest-list");
-    manifest_list_file = std::filesystem::path(configuration->getPath()) / "metadata" / std::filesystem::path(path).filename();
+    auto current_snapshot_id = object->getValue<Int64>("current-snapshot-id");
 
-    Int32 format_version = object->getValue<Int32>("format-version");
+    for (size_t i = 0; i < snapshots->size(); ++i)
+    {
+        const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
+        if (snapshot->getValue<Int64>("snapshot-id") == current_snapshot_id)
+        {
+            const auto path = snapshot->getValue<String>("manifest-list");
+            manifest_list_file = std::filesystem::path(configuration_ptr->getPath()) / "metadata" / std::filesystem::path(path).filename();
+            break;
+        }
+    }
 
     return std::make_unique<IcebergMetadata>(
-        object_storage, configuration, local_context, metadata_version, format_version, manifest_list_file, schema_id, schema_processor);
+        object_storage, configuration_ptr, local_context, metadata_version, format_version, manifest_list_file, schema_id, schema_processor);
 }
 
 /**
@@ -549,14 +562,15 @@ DataLakeMetadataPtr IcebergMetadata::create(
  * │      1 │ 2252246380142525104 │ ('/iceberg_data/db/table_name/data/a=2/00000-1-c9535a00-2f4f-405c-bcfa-6d4f9f477235-00003.parquet','PARQUET',(2),1,631,67108864,[(1,46),(2,48)],[(1,1),(2,1)],[(1,0),(2,0)],[],[(1,'\0\0\0\0\0\0\0'),(2,'3')],[(1,'\0\0\0\0\0\0\0'),(2,'3')],NULL,[4],0) │
  * └────────┴─────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
  */
-DataFileInfos IcebergMetadata::getDataFileInfos() const
+Strings IcebergMetadata::getDataFiles() const
 {
-    if (!data_file_infos.empty())
-        return data_file_infos;
+    if (!data_files.empty())
+        return data_files;
 
+    auto configuration_ptr = configuration.lock();
     Strings manifest_files;
     if (manifest_list_file.empty())
-        return data_file_infos;
+        return data_files;
 
     LOG_TEST(log, "Collect manifest files from manifest list {}", manifest_list_file);
 
@@ -583,7 +597,7 @@ DataFileInfos IcebergMetadata::getDataFileInfos() const
     {
         const auto file_path = col_str->getDataAt(i).toView();
         const auto filename = std::filesystem::path(file_path).filename();
-        manifest_files.emplace_back(std::filesystem::path(configuration->getPath()) / "metadata" / filename);
+        manifest_files.emplace_back(std::filesystem::path(configuration_ptr->getPath()) / "metadata" / filename);
     }
 
     std::map<String, Int32> files;
@@ -711,9 +725,9 @@ DataFileInfos IcebergMetadata::getDataFileInfos() const
 
             const auto status = status_int_column->getInt(i);
             const auto data_path = std::string(file_path_string_column->getDataAt(i).toView());
-            const auto pos = data_path.find(configuration->getPath());
+            const auto pos = data_path.find(configuration_ptr->getPath());
             if (pos == std::string::npos)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected to find {} in data path: {}", configuration->getPath(), data_path);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected to find {} in data path: {}", configuration_ptr->getPath(), data_path);
 
             const auto file_path = data_path.substr(pos);
 
@@ -732,16 +746,13 @@ DataFileInfos IcebergMetadata::getDataFileInfos() const
         schema_processor.addIcebergTableSchema(schema_object);
     }
 
-
     for (const auto & [file_path, schema_object_id] : files)
     {
-        data_file_infos.emplace_back(
-            file_path,
-            schema_processor.getClickhouseTableSchemaById(schema_object_id),
-            schema_processor.getSchemaTransformationDagByIds(schema_object_id, current_schema_id));
+        data_files.emplace_back(file_path);
+        initial_schemas[file_path] = schema_processor.getClickhouseTableSchemaById(schema_object_id);
+        schema_transformers[file_path] = schema_processor.getSchemaTransformationDagByIds(schema_object_id, current_schema_id);
     }
-
-    return data_file_infos;
+    return data_files;
 }
 
 }

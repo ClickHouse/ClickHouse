@@ -1,11 +1,10 @@
-#include <Storages/ObjectStorage/DataLakes/HudiMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/Common.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Common/logger_useful.h>
+#include <IO/ReadHelpers.h>
+#include <Storages/ObjectStorage/DataLakes/Common.h>
+#include <Storages/ObjectStorage/DataLakes/HudiMetadata.h>
 #include <base/find_symbols.h>
 #include <Poco/String.h>
-#include "config.h"
-#include <IO/ReadHelpers.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -43,8 +42,9 @@ namespace ErrorCodes
     */
 Strings HudiMetadata::getDataFilesImpl() const
 {
+    auto configuration_ptr = configuration.lock();
     auto log = getLogger("HudiMetadata");
-    const auto keys = listFiles(*object_storage, *configuration, "", Poco::toLower(configuration->format));
+    const auto keys = listFiles(*object_storage, *configuration_ptr, "", Poco::toLower(configuration_ptr->format));
 
     using Partition = std::string;
     using FileID = std::string;
@@ -86,23 +86,18 @@ Strings HudiMetadata::getDataFilesImpl() const
     return result;
 }
 
-HudiMetadata::HudiMetadata(
-    ObjectStoragePtr object_storage_,
-    ConfigurationPtr configuration_,
-    ContextPtr context_)
-    : WithContext(context_)
-    , object_storage(object_storage_)
-    , configuration(configuration_)
+HudiMetadata::HudiMetadata(ObjectStoragePtr object_storage_, ConfigurationObserverPtr configuration_, ContextPtr context_)
+    : WithContext(context_), object_storage(object_storage_), configuration(configuration_)
 {
 }
 
-DataFileInfos HudiMetadata::getDataFileInfos() const
+Strings HudiMetadata::getDataFiles() const
 {
     if (data_files.empty())
     {
         for (const auto & data_file_name : getDataFilesImpl())
         {
-            data_files.push_back({DataFileInfo(data_file_name)});
+            data_files.push_back(data_file_name);
         }
     }
     return data_files;

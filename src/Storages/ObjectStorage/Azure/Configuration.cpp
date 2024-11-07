@@ -153,7 +153,7 @@ void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & coll
     format = collection.getOrDefault<String>("format", format);
     compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
 
-    blobs_paths = {DataFileInfo(blob_path)};
+    blobs_paths = {blob_path};
     connection_params = getConnectionParams(connection_url, container_name, account_name, account_key, context);
 }
 
@@ -278,7 +278,7 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
         structure = checkAndGetLiteralArgument<String>(engine_args[7], "structure");
     }
 
-    blobs_paths = {DataFileInfo(blob_path)};
+    blobs_paths = {blob_path};
     connection_params = getConnectionParams(connection_url, container_name, account_name, account_key, context);
 }
 
