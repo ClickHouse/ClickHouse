@@ -47,17 +47,12 @@ public:
         BaseStorageConfiguration::update(object_storage, local_context);
         auto new_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
 
+        //Metadata must have been updated to this moment in updateAndGetCurrentSchema method and should be the same here
         if (!current_metadata || (*current_metadata != *new_metadata))
         {
             throw Exception(
                 ErrorCodes::FORMAT_VERSION_TOO_OLD,
-                "Storage thinks that actual metadata version is {}, but actual metadata version is {}",
-                (dynamic_cast<IcebergMetadata *>(current_metadata.get()) != nullptr)
-                    ? std::to_string(dynamic_cast<IcebergMetadata *>(current_metadata.get())->getVersion())
-                    : "Absent",
-                (dynamic_cast<IcebergMetadata *>(new_metadata.get()) != nullptr)
-                    ? std::to_string(dynamic_cast<IcebergMetadata *>(new_metadata.get())->getVersion())
-                    : "Absent");
+                "Metadata is not consinsent with the one which was used to infer table schema. Please, retry the query.");
         }
     }
 

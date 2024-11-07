@@ -119,6 +119,27 @@ bool operator==(const Poco::JSON::Object & first, const Poco::JSON::Object & sec
     }
     return first_string_stream.str() == second_string_stream.str();
 }
+
+Int32 parseTableSchema(const Poco::JSON::Object::Ptr & metadata_object, IcebergSchemaProcessor & schema_processor)
+{
+    Int32 format_version = metadata_object->getValue<Int32>("format-version");
+    if (format_version == 2)
+    {
+        auto fields = metadata_object->get("schemas").extract<Poco::JSON::Array::Ptr>();
+        for (size_t i = 0; i != fields->size(); ++i)
+        {
+            auto field = fields->getObject(static_cast<UInt32>(i));
+            schema_processor.addIcebergTableSchema(field);
+        }
+        return metadata_object->getValue<int>("current-schema-id");
+    }
+    else
+    {
+        auto schema = metadata_object->getObject("schema");
+        schema_processor.addIcebergTableSchema(schema);
+        return schema->getValue<Int32>("schema-id");
+    }
+}
 }
 
 DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name)
@@ -242,27 +263,6 @@ bool IcebergSchemaProcessor::allowPrimitiveTypeConversion(const String & old_typ
     return allowed_type_conversion;
 }
 
-Int32 parseTableSchema(const Poco::JSON::Object::Ptr & metadata_object, IcebergSchemaProcessor & schema_processor)
-{
-    Int32 format_version = metadata_object->getValue<Int32>("format-version");
-    if (format_version == 2)
-    {
-        auto fields = metadata_object->get("schemas").extract<Poco::JSON::Array::Ptr>();
-        for (size_t i = 0; i != fields->size(); ++i)
-        {
-            auto field = fields->getObject(static_cast<UInt32>(i));
-            schema_processor.addIcebergTableSchema(field);
-        }
-        return metadata_object->getValue<int>("current-schema-id");
-    }
-    else
-    {
-        auto schema = metadata_object->getObject("schema");
-        schema_processor.addIcebergTableSchema(schema);
-        return schema->getValue<Int32>("schema-id");
-    }
-}
-
 std::shared_ptr<ActionsDAG>
 IcebergSchemaProcessor::getSchemaTransformationDag(const Poco::JSON::Object::Ptr & old_schema, const Poco::JSON::Object::Ptr & new_schema)
 {
@@ -372,31 +372,28 @@ std::shared_ptr<const ActionsDAG> IcebergSchemaProcessor::getSchemaTransformatio
         current_new_id = -1;
     });
     Poco::JSON::Object::Ptr old_schema, new_schema;
-    if (transform_dags_by_ids.contains({old_id, new_id}))
+    auto required_transform_dag_it = transform_dags_by_ids.find({old_id, new_id});
+    if (required_transform_dag_it != transform_dags_by_ids.end())
     {
-        return transform_dags_by_ids.at({old_id, new_id});
+        return required_transform_dag_it->second;
     }
-    try
-    {
-        old_schema = iceberg_table_schemas_by_ids.at(old_id);
-    }
-    catch (std::exception &)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema with schema-id {} is unknown", old_id);
-    }
+
     if (old_id == new_id)
     {
         return nullptr;
     }
-    try
+
+    auto old_schema_it = iceberg_table_schemas_by_ids.find(old_id);
+    if (old_schema_it == iceberg_table_schemas_by_ids.end())
     {
-        new_schema = iceberg_table_schemas_by_ids.at(new_id);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema with schema-id {} is unknown", old_id);
     }
-    catch (std::exception &)
+    auto new_schema_it = iceberg_table_schemas_by_ids.find(new_id);
+    if (new_schema_it == iceberg_table_schemas_by_ids.end())
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema with schema-id {} is unknown", new_id);
     }
-    return transform_dags_by_ids[{old_id, new_id}] = getSchemaTransformationDag(old_schema, new_schema);
+    return transform_dags_by_ids[{old_id, new_id}] = getSchemaTransformationDag(old_schema_it->second, new_schema_it->second);
 }
 
 void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schema_ptr)
@@ -425,14 +422,10 @@ void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schem
 
 std::shared_ptr<NamesAndTypesList> IcebergSchemaProcessor::getClickhouseTableSchemaById(Int32 id)
 {
-    try
-    {
-        return clickhouse_table_schemas_by_ids.at(id);
-    }
-    catch (std::exception &)
-    {
+    auto it = clickhouse_table_schemas_by_ids.find(id);
+    if (it == clickhouse_table_schemas_by_ids.end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema with id {} is unknown", id);
-    }
+    return it->second;
 }
 
 MutableColumns parseAvro(avro::DataFileReaderBase & file_reader, const Block & header, const FormatSettings & settings)

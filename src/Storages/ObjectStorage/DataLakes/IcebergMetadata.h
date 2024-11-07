@@ -1,7 +1,8 @@
 #pragma once
 
-#include <memory>
 #include "config.h"
+#include <memory>
+#include <unordered_map>
 
 #if USE_AVRO /// StorageIceberg depending on Avro to parse metadata with Avro format.
 
@@ -80,16 +81,20 @@ public:
     std::shared_ptr<const ActionsDAG> getSchemaTransformationDagByIds(Int32 old_id, Int32 new_id);
 
 private:
-    std::map<Int32, Poco::JSON::Object::Ptr> iceberg_table_schemas_by_ids;
-    std::map<Int32, std::shared_ptr<NamesAndTypesList>> clickhouse_table_schemas_by_ids;
-    std::map<std::pair<Int32, Int32>, std::shared_ptr<ActionsDAG>> transform_dags_by_ids;
+  std::unordered_map<Int32, Poco::JSON::Object::Ptr>
+      iceberg_table_schemas_by_ids;
+  std::unordered_map<Int32, std::shared_ptr<NamesAndTypesList>>
+      clickhouse_table_schemas_by_ids;
+  std::map<std::pair<Int32, Int32>, std::shared_ptr<ActionsDAG>>
+      transform_dags_by_ids;
 
-    NamesAndTypesList getSchemaType(const Poco::JSON::Object::Ptr & schema);
-    DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type);
-    DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool required);
-    DataTypePtr getSimpleType(const String & type_name);
+  NamesAndTypesList getSchemaType(const Poco::JSON::Object::Ptr &schema);
+  DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr &type);
+  DataTypePtr getFieldType(const Poco::JSON::Object::Ptr &field,
+                           const String &type_key, bool required);
+  DataTypePtr getSimpleType(const String &type_name);
     std::shared_ptr<ActionsDAG> getSchemaTransformationDag(
-        [[maybe_unused]] const Poco::JSON::Object::Ptr & old_schema, [[maybe_unused]] const Poco::JSON::Object::Ptr & new_schema);
+        const Poco::JSON::Object::Ptr & old_schema, [const Poco::JSON::Object::Ptr & new_schema);
 
     bool allowPrimitiveTypeConversion(const String & old_type, const String & new_type);
 
@@ -97,9 +102,6 @@ private:
 
     Int32 current_old_id = -1;
     Int32 current_new_id = -1;
-
-    // std::pair<const Node *, const Node *>
-    // getRemappingForStructField(const Poco::JSON::Array::Ptr & old_node, const Poco::JSON::Array::Ptr & new_node, const Node * input_node);
 };
 
 

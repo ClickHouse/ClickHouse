@@ -18,6 +18,11 @@ class ReadBufferIterator;
 class SchemaCache;
 class NamedCollection;
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 
 /**
  * A general class containing implementation for external table engines
