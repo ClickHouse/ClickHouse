@@ -22,7 +22,10 @@ SETTINGS index_granularity = 16
 INSERT INTO test_table_1 VALUES (1, 'Value_1'), (2, 'Value_2');
 INSERT INTO test_table_2 VALUES (2, 'Value_2'), (3, 'Value_3');
 
-EXPLAIN header = 1, actions = 1 SELECT * FROM test_table_1 AS lhs LEFT JOIN test_table_2 AS rhs ON lhs.id = rhs.id WHERE rhs.id != 0;
+
+EXPLAIN header = 1, actions = 1 SELECT * FROM test_table_1 AS lhs LEFT JOIN test_table_2 AS rhs ON lhs.id = rhs.id WHERE rhs.id != 0
+SETTINGS query_plan_join_inner_table_selection = 'right'
+;
 
 SELECT '--';
 
@@ -30,7 +33,9 @@ SELECT * FROM test_table_1 AS lhs LEFT JOIN test_table_2 AS rhs ON lhs.id = rhs.
 
 SELECT '--';
 
-EXPLAIN header = 1, actions = 1 SELECT * FROM test_table_1 AS lhs RIGHT JOIN test_table_2 AS rhs ON lhs.id = rhs.id WHERE lhs.id != 0;
+EXPLAIN header = 1, actions = 1 SELECT * FROM test_table_1 AS lhs RIGHT JOIN test_table_2 AS rhs ON lhs.id = rhs.id WHERE lhs.id != 0
+SETTINGS query_plan_join_inner_table_selection = 'right'
+;
 
 SELECT '--';
 
@@ -38,7 +43,9 @@ SELECT * FROM test_table_1 AS lhs RIGHT JOIN test_table_2 AS rhs ON lhs.id = rhs
 
 SELECT '--';
 
-EXPLAIN header = 1, actions = 1 SELECT * FROM test_table_1 AS lhs FULL JOIN test_table_2 AS rhs ON lhs.id = rhs.id WHERE lhs.id != 0 AND rhs.id != 0;
+EXPLAIN header = 1, actions = 1 SELECT * FROM test_table_1 AS lhs FULL JOIN test_table_2 AS rhs ON lhs.id = rhs.id WHERE lhs.id != 0 AND rhs.id != 0
+SETTINGS query_plan_join_inner_table_selection = 'right'
+;
 
 SELECT '--';
 
