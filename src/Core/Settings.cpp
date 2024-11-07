@@ -5859,7 +5859,7 @@ Experimental data deduplication for SELECT queries based on part UUIDs
 // Please add settings related to formats in Core/FormatFactorySettings.h, move obsolete settings to OBSOLETE_SETTINGS and obsolete format settings to OBSOLETE_FORMAT_SETTINGS.
 
 #define OBSOLETE_SETTINGS(M, ALIAS) \
-    /** Obsolete settings that do nothing but left for compatibility reasons. Remove each one after half a year of obsolescence. */ \
+    /** Obsolete settings which are kept around for compatibility reasons. They have no effect anymore. */ \
     MAKE_OBSOLETE(M, Bool, update_insert_deduplication_token_in_dependent_materialized_views, 0) \
     MAKE_OBSOLETE(M, UInt64, max_memory_usage_for_all_queries, 0) \
     MAKE_OBSOLETE(M, UInt64, multiple_joins_rewriter_version, 0) \
@@ -5916,6 +5916,7 @@ Experimental data deduplication for SELECT queries based on part UUIDs
     MAKE_OBSOLETE(M, UInt64, parallel_replicas_min_number_of_granules_to_enable, 0) \
     MAKE_OBSOLETE(M, ParallelReplicasCustomKeyFilterType, parallel_replicas_custom_key_filter_type, ParallelReplicasCustomKeyFilterType::DEFAULT) \
     MAKE_OBSOLETE(M, Bool, query_plan_optimize_projection, true) \
+    MAKE_OBSOLETE(M, Bool, query_cache_store_results_of_queries_with_nondeterministic_functions, false) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_annoy_index, false) \
     MAKE_OBSOLETE(M, UInt64, max_threads_for_annoy_index_creation, 4) \
     MAKE_OBSOLETE(M, Int64, annoy_index_search_k_nodes, -1) \
