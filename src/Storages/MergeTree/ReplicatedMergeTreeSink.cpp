@@ -341,7 +341,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk & chunk)
     using DelayedPartitions = std::vector<DelayedPartition>;
     DelayedPartitions partitions;
 
-    size_t streams = 0;
+    size_t total_streams = 0;
     bool support_parallel_write = false;
 
     for (auto & current_block : part_blocks)
@@ -418,15 +418,18 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk & chunk)
             max_insert_delayed_streams_for_parallel_write = 0;
 
         /// In case of too much columns/parts in block, flush explicitly.
-        streams += temp_part.streams.size();
-        if (streams > max_insert_delayed_streams_for_parallel_write)
+        size_t current_streams = 0;
+        for (const auto & stream : temp_part.streams)
+            current_streams += stream.stream->getNumberOfOpenStreams();
+
+        if (total_streams + current_streams > max_insert_delayed_streams_for_parallel_write)
         {
             finishDelayedChunk(zookeeper);
             delayed_chunk = std::make_unique<ReplicatedMergeTreeSinkImpl<async_insert>::DelayedChunk>(replicas_num);
             delayed_chunk->partitions = std::move(partitions);
             finishDelayedChunk(zookeeper);
 
-            streams = 0;
+            total_streams = 0;
             support_parallel_write = false;
             partitions = DelayedPartitions{};
         }
@@ -447,6 +450,8 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk & chunk)
             std::move(unmerged_block),
             std::move(part_counters) /// profile_events_scope must be reset here.
         ));
+
+        total_streams += current_streams;
     }
 
     if (need_to_define_dedup_token)
