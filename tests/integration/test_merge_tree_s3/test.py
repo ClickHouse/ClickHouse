@@ -744,6 +744,7 @@ def test_s3_disk_apply_new_settings(cluster, node_name):
 
     node.query("SYSTEM RELOAD CONFIG")
 
+
 @pytest.mark.parametrize("node_name", ["node"])
 def test_s3_no_delete_objects(cluster, node_name):
     node = cluster.instances[node_name]
@@ -1013,10 +1014,7 @@ def test_s3_disk_heavy_write_check_mem(cluster, broken_s3, node_name):
         " storage_policy='broken_s3'",
     )
 
-    uuid = node.query(
-        "SELECT uuid FROM system.tables"
-        "  WHERE name='s3_test'"
-    )
+    uuid = node.query("SELECT uuid FROM system.tables" "  WHERE name='s3_test'")
 
     node.query("SYSTEM STOP MERGES s3_test")
 
