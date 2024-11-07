@@ -65,7 +65,7 @@ namespace
 
     constexpr Int32 minYear = 1970;
     constexpr Int32 maxYear = 2106;
-    constexpr Int32 maxPrecisionOfDateTime64 = 6;
+    constexpr Int32 maxScaleOfDateTime64 = 6;
 
     const std::unordered_map<String, std::pair<String, Int32>> dayOfWeekMap{
         {"mon", {"day", 1}},
@@ -193,7 +193,7 @@ namespace
         Int32 minute = 0; /// range [0, 59]
         Int32 second = 0; /// range [0, 59]
         Int32 microsecond = 0; /// range [0, 999999]
-        UInt32 scale = 0; /// The microsecond scale of DateTime64.
+        UInt32 scale = 0; /// The scale of DateTime64, range [0, 6].
 
         bool is_am = true; /// If is_hour_of_half_day = true and is_am = false (i.e. pm) then add 12 hours to the result DateTime
         bool hour_starts_at_1 = false; /// Whether the hour is clockhour
@@ -646,8 +646,8 @@ namespace
                             scale = col_scale->getValue<UInt8>();
                         else
                             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "The input scale value may exceed the max value of `DateTime64`: {}.",
-                                maxPrecisionOfDateTime64);
+                                "The input scale value may exceed the max scale value of `DateTime64`: {}.",
+                                maxScaleOfDateTime64);
                     }
                     else
                     {
@@ -656,7 +656,7 @@ namespace
                     }
 
                     /// Construct the return type `DataTypDateTime64` with scale and time zone name. The scale value can be specified or be extracted
-                    /// from the format string by counting how many 'S' characters are contained in the format's micorsceond fragment.
+                    /// from the format string by counting how many 'S' characters are contained in the format's microsceond fragment.
                     String format = getFormat(arguments, scale);
                     std::vector<Instruction> instructions = parseFormat(format);
                     for (const auto & instruction : instructions)
@@ -683,11 +683,11 @@ namespace
                         else if (scale == 0 && val != 0)
                             scale = val;
                     }
-                    if (scale > maxPrecisionOfDateTime64)
+                    if (scale > maxScaleOfDateTime64)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "The scale of the input format string {} exceed the max scale value {}.",
                             format,
-                            maxPrecisionOfDateTime64);
+                            maxScaleOfDateTime64);
                 }
                 data_type = std::make_shared<DataTypeDateTime64>(scale, time_zone_name);
             }
@@ -1398,7 +1398,7 @@ namespace
                 if (date.scale != 6)
                     RETURN_ERROR(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
-                        "Unable to parse fragment {} from {} because of the microsecond's scale {} is not 6",
+                        "Unable to parse fragment {} from {} because of the datetime scale {} is not 6",
                         fragment,
                         std::string_view(cur, end - cur),
                         std::to_string(date.scale))

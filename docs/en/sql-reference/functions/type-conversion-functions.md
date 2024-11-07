@@ -6880,7 +6880,7 @@ parseDateTime64(str[, [scale, [format[, timezone]]]])
 **Arguments**
 
 - `str` — The String to be parsed
-- `scale` - The precision for [DateTime64](../data-types/datetime64.md). Optional, default is 6 if not specified.
+- `scale` - The precision for [DateTime64](../data-types/datetime64.md). Optional, default 6 if not specified.
 - `format` — The format string. Optional. `%Y-%m-%d %H:%i:%s` if not specified.
 - `timezone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md#timezone). Optional.
 
@@ -6892,7 +6892,7 @@ Returns [DateTime64](../data-types/datetime64.md) type values parsed from input 
 Same as for [parseDateTime64](#parsedatetime64) except that it returns zero date when it encounters a date format that cannot be processed.
 
 ## parseDateTime64OrNull
-Same as for [parseDateTime64](#parsedatetime64) except that it returns zero date when it encounters a date format that cannot be processed.
+Same as for [parseDateTime64](#parsedatetime64) except that it returns `NULL` when it encounters a date format that cannot be processed.
 
 ## parseDateTime64InJodaSyntax
 
@@ -6907,7 +6907,7 @@ parseDateTime64InJodaSyntax(str[, [scale, [format[, timezone]]]])
 **Arguments**
 
 - `str` — The String to be parsed
-- `scale` - The precision for [DateTime64](../data-types/datetime64.md). Optional, default is 6 if not specified.
+- `scale` - The precision for [DateTime64](../data-types/datetime64.md). Optional, default 0 if not specified.
 - `format` — The format string. Optional. `yyyy-MM-dd HH:mm:ss` if not specified.
 - `timezone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md#timezone). Optional.
 
