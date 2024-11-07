@@ -171,14 +171,11 @@ bool isTwoArgumentsFromDifferentSides(const FunctionNode & node_function, const 
            (first_src->isEqual(rhs_join) && second_src->isEqual(lhs_join));
 }
 
-void extractNodesFromSetInto(QueryTreeNodePtrWithHashSet && set, QueryTreeNodes & into)
+void insertIfNotPresentInSet(QueryTreeNodePtrWithHashSet& set, QueryTreeNodes &nodes, QueryTreeNodePtr node)
 {
-    for (auto it = set.begin(); it != set.end();)
-    {
-        auto it_to_extract = it++;
-        auto nh = set.extract(it_to_extract);
-        into.push_back(std::move(nh.value().node));
-    }
+    const auto [_, inserted] = set.emplace(node);
+    if (inserted)
+        nodes.push_back(std::move(node));
 }
 
 // Returns the flattened AND/OR node if the passed-in node can be flattened. Doesn't modify the passed-in node.
@@ -230,7 +227,8 @@ struct CommonExpressionExtractionResult
 {
     // new_node: if the new node is empty, then contain the new node, otherwise nullptr
     // common_expressions: the extracted common expressions. The new expressions can be created
-    // as the conjunction of new_node and the nodes in common_expressions.
+    // as the conjunction of new_node and the nodes in common_expressions. It is guaranteed that
+    // the common expressions are deduplicated.
     // Examples:
     //   Input: (A & B & C) | (A & D & E)
     //   Result: new_node = (B & C) | (D & E), common_expressions = {A}
@@ -244,7 +242,7 @@ struct CommonExpressionExtractionResult
     //   Input: (A & B) | (A & B & C)
     //   Result: new_node = nullptr, common_expressions = {A, B}
     QueryTreeNodePtr new_node;
-    QueryTreeNodePtrWithHashSet common_expressions;
+    QueryTreeNodes common_expressions;
 };
 
 std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressions(const QueryTreeNodePtr & node, const ContextPtr & context)
@@ -262,8 +260,14 @@ std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressions(cons
     chassert(or_argument_nodes.size() > 1);
 
     bool first_argument = true;
-    QueryTreeNodePtrWithHashSet common_exprs;
+    QueryTreeNodePtrWithHashSet common_exprs_set;
+    QueryTreeNodes common_exprs;
     QueryTreeNodePtrWithHashMap<QueryTreeNodePtr> flattened_ands;
+
+    auto insert_possible_new_common_expr = [&common_exprs_set, &common_exprs](QueryTreeNodePtr node_to_insert)
+    {
+        insertIfNotPresentInSet(common_exprs_set, common_exprs, std::move(node_to_insert));
+    };
 
     for (auto & maybe_and_node : or_argument_nodes)
     {
@@ -284,23 +288,26 @@ std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressions(cons
             common_exprs.reserve(current_arguments.size());
 
             for (auto & or_argument : current_arguments)
-            {
-                QueryTreeNodePtrWithHash ptr_with_hash{or_argument};
-                common_exprs.insert(ptr_with_hash);
-            }
+                insert_possible_new_common_expr(or_argument);
             first_argument = false;
         }
         else
         {
-            QueryTreeNodePtrWithHashSet new_common_expr_hashes;
+            QueryTreeNodePtrWithHashSet new_common_exprs_set;
+            QueryTreeNodes new_common_exprs;
+
 
             for (auto & or_argument : and_node->getArguments())
             {
-                if (auto ptr_with_hash = QueryTreeNodePtrWithHash{or_argument}; common_exprs.contains(ptr_with_hash))
-                    new_common_expr_hashes.insert(ptr_with_hash);
+                if (auto ptr_with_hash = QueryTreeNodePtrWithHash{or_argument}; common_exprs_set.contains(ptr_with_hash))
+                 {
+                    new_common_exprs.push_back(or_argument);
+                    new_common_exprs_set.insert(std::move(ptr_with_hash));
+                 }
             }
 
-            common_exprs = std::move(new_common_expr_hashes);
+            common_exprs_set = std::move(new_common_exprs_set);
+            common_exprs = std::move(new_common_exprs);
 
             if (common_exprs.empty())
                 return {}; // There are no common expressions
@@ -309,7 +316,8 @@ std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressions(cons
 
     chassert(!common_exprs.empty());
 
-    QueryTreeNodePtrWithHashSet new_or_arguments;
+    QueryTreeNodePtrWithHashSet new_or_arguments_set;
+    QueryTreeNodes new_or_arguments;
     bool has_completely_extracted_and_expression = false;
 
     for (auto & or_argument : or_argument_nodes)
@@ -323,10 +331,10 @@ std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressions(cons
             std::remove_if(
                 and_arguments.begin(),
                 and_arguments.end(),
-                [&common_exprs](const QueryTreeNodePtr & ptr)
+                [&common_exprs_set](const QueryTreeNodePtr & ptr)
                 {
                     QueryTreeNodeWithHash ptr_with_hash{ptr};
-                    return common_exprs.contains(ptr_with_hash);
+                    return common_exprs_set.contains(ptr_with_hash);
                 }),
             and_arguments.end());
 
@@ -338,13 +346,18 @@ std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressions(cons
         }
         else if (and_arguments.size() == 1)
         {
-            new_or_arguments.emplace(std::move(and_arguments.front()));
+            const auto [_, inserted] = new_or_arguments_set.insert(and_arguments.front());
+            if (inserted)
+                new_or_arguments.push_back(std::move(and_arguments.front()));
+
         }
         else
         {
             auto and_function_resolver = FunctionFactory::instance().get("and", context);
             and_node.resolveAsFunction(and_function_resolver);
-            new_or_arguments.emplace(or_argument);
+            const auto [_, inserted] = new_or_arguments_set.insert(or_argument);
+            if (inserted)
+                new_or_arguments.push_back(std::move(or_argument));
         }
     }
 
@@ -357,7 +370,7 @@ std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressions(cons
     chassert(new_or_arguments.size() >= 2);
 
     auto new_or_node = std::make_shared<FunctionNode>("or");
-    extractNodesFromSetInto(std::move(new_or_arguments), new_or_node->getArguments().getNodes());
+    new_or_node->getArguments().getNodes() = std::move(new_or_arguments);
 
     auto or_function_resolver = FunctionFactory::instance().get("or", context);
     new_or_node->resolveAsFunction(or_function_resolver);
@@ -374,10 +387,9 @@ void tryOptimizeCommonExpressionsInOr(QueryTreeNodePtr & node, const ContextPtr 
     {
         auto & result = *maybe_result;
         auto & root_arguments = root_node->getArguments().getNodes();
-        root_arguments.clear();
+        root_arguments = std::move(result.common_expressions);
         if (result.new_node != nullptr)
             root_arguments.push_back(std::move(result.new_node));
-        extractNodesFromSetInto(std::move(result.common_expressions), root_arguments);
 
         if (root_arguments.size() == 1)
         {
@@ -385,6 +397,8 @@ void tryOptimizeCommonExpressionsInOr(QueryTreeNodePtr & node, const ContextPtr 
             return;
         }
 
+        // The OR expression must be replaced by and AND expression that will contain the common expressions
+        // and the new_node, if it is not nullptr.
         auto and_function_resolver = FunctionFactory::instance().get("and", context);
         root_node->resolveAsFunction(and_function_resolver);
     }
@@ -395,7 +409,13 @@ void tryOptimizeCommonExpressionsInAnd(QueryTreeNodePtr & node, const ContextPtr
     auto * root_node = node->as<FunctionNode>();
     chassert(root_node && root_node->getFunctionName() == "and");
 
-    QueryTreeNodePtrWithHashSet new_top_level_arguments;
+    QueryTreeNodePtrWithHashSet new_top_level_arguments_set;
+    QueryTreeNodes new_top_level_arguments;
+
+    auto insert_possible_new_top_level_arg = [&new_top_level_arguments_set, &new_top_level_arguments](QueryTreeNodePtr node_to_insert)
+    {
+        insertIfNotPresentInSet(new_top_level_arguments_set, new_top_level_arguments, std::move(node_to_insert));
+    };
     auto extracted_something = false;
     auto & root_arguments = root_node->getArguments();
 
@@ -406,21 +426,20 @@ void tryOptimizeCommonExpressionsInAnd(QueryTreeNodePtr & node, const ContextPtr
             extracted_something = true;
             auto & result = *maybe_result;
             if (result.new_node != nullptr)
-                new_top_level_arguments.emplace(std::move(result.new_node));
-            new_top_level_arguments.merge(std::move(result.common_expressions));
+                insert_possible_new_top_level_arg(std::move(result.new_node));
+            for (auto& common_expr: result.common_expressions)
+                insert_possible_new_top_level_arg(std::move(common_expr));
         }
         else
         {
-            new_top_level_arguments.emplace(argument);
+            insert_possible_new_top_level_arg(argument);
         }
     }
 
     if (!extracted_something)
         return;
 
-    auto & root_argument_nodes = root_arguments.getNodes();
-    root_argument_nodes.clear();
-    extractNodesFromSetInto(std::move(new_top_level_arguments), root_argument_nodes);
+    root_arguments.getNodes() = std::move(new_top_level_arguments);
 
     auto and_function_resolver = FunctionFactory::instance().get("and", context);
     root_node->resolveAsFunction(and_function_resolver);

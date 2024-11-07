@@ -30,109 +30,223 @@ QUERY id: 0
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
         LIST id: 5, nodes: 3
+          COLUMN id: 6, column_name: A, result_type: UInt8, source_id: 3
+          COLUMN id: 7, column_name: B, result_type: UInt8, source_id: 3
+          COLUMN id: 8, column_name: C, result_type: UInt8, source_id: 3
+-1417696215412225994	1	1	1	0	0	1
+-7491222816216432223	1	1	1	0	0	1
+-7667054131998434193	1	1	1	0	0	1
+1150290670655138617	1	1	1	0	0	1
+-3651160188931679372	1	1	1	0	0	1
+7727375535152756381	1	1	1	0	0	1
+1248518317831711188	1	1	1	0	0	1
+-7224086688461492380	1	1	1	0	0	1
+9032006395921235708	1	1	1	0	0	1
+7044288989182144315	1	1	1	0	0	1
+-1417696215412225994	1	1	1	0	0	1
+-7491222816216432223	1	1	1	0	0	1
+-7667054131998434193	1	1	1	0	0	1
+1150290670655138617	1	1	1	0	0	1
+-3651160188931679372	1	1	1	0	0	1
+7727375535152756381	1	1	1	0	0	1
+1248518317831711188	1	1	1	0	0	1
+-7224086688461492380	1	1	1	0	0	1
+9032006395921235708	1	1	1	0	0	1
+7044288989182144315	1	1	1	0	0	1
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.x
+  WHERE
+    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 4
+          COLUMN id: 6, column_name: A, result_type: UInt8, source_id: 3
+          FUNCTION id: 7, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 8, nodes: 2
+                COLUMN id: 9, column_name: E, result_type: UInt8, source_id: 3
+                COLUMN id: 10, column_name: F, result_type: UInt8, source_id: 3
+          COLUMN id: 11, column_name: B, result_type: UInt8, source_id: 3
+          COLUMN id: 12, column_name: C, result_type: UInt8, source_id: 3
+-1417696215412225994	1	1	1	0	0	1
+-7491222816216432223	1	1	1	0	0	1
+-7667054131998434193	1	1	1	0	0	1
+1150290670655138617	1	1	1	0	0	1
+-3651160188931679372	1	1	1	0	0	1
+7727375535152756381	1	1	1	0	0	1
+1248518317831711188	1	1	1	0	0	1
+-7224086688461492380	1	1	1	0	0	1
+9032006395921235708	1	1	1	0	0	1
+7044288989182144315	1	1	1	0	0	1
+-1417696215412225994	1	1	1	0	0	1
+-7491222816216432223	1	1	1	0	0	1
+-7667054131998434193	1	1	1	0	0	1
+1150290670655138617	1	1	1	0	0	1
+-3651160188931679372	1	1	1	0	0	1
+7727375535152756381	1	1	1	0	0	1
+1248518317831711188	1	1	1	0	0	1
+-7224086688461492380	1	1	1	0	0	1
+9032006395921235708	1	1	1	0	0	1
+7044288989182144315	1	1	1	0	0	1
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.x
+  WHERE
+    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 4
+          COLUMN id: 6, column_name: A, result_type: UInt8, source_id: 3
+          FUNCTION id: 7, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 8, nodes: 2
+                COLUMN id: 9, column_name: E, result_type: UInt8, source_id: 3
+                COLUMN id: 10, column_name: F, result_type: UInt8, source_id: 3
+          COLUMN id: 11, column_name: B, result_type: UInt8, source_id: 3
+          COLUMN id: 12, column_name: C, result_type: UInt8, source_id: 3
+-7064227703501672459	1	1	0	0	1	0
+-5989383837337135212	1	1	0	0	1	0
+-2960971598243161531	1	1	0	0	1	0
+-2091785646518281290	1	1	0	0	1	0
+-2587761388937978501	1	1	0	0	1	0
+4189632917510416150	1	1	0	0	1	0
+329410740548269838	1	1	0	0	1	0
+-966942443397313698	1	1	0	0	1	0
+8454473642815416800	1	1	0	0	1	0
+8268045340657794461	1	1	0	0	1	0
+-7064227703501672459	1	1	0	0	1	0
+-5989383837337135212	1	1	0	0	1	0
+-2960971598243161531	1	1	0	0	1	0
+-2091785646518281290	1	1	0	0	1	0
+-2587761388937978501	1	1	0	0	1	0
+4189632917510416150	1	1	0	0	1	0
+329410740548269838	1	1	0	0	1	0
+-966942443397313698	1	1	0	0	1	0
+8454473642815416800	1	1	0	0	1	0
+8268045340657794461	1	1	0	0	1	0
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.x
+  WHERE
+    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 3
+          COLUMN id: 6, column_name: A, result_type: UInt8, source_id: 3
+          FUNCTION id: 7, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 8, nodes: 3
+                COLUMN id: 9, column_name: C, result_type: UInt8, source_id: 3
+                COLUMN id: 10, column_name: D, result_type: UInt8, source_id: 3
+                COLUMN id: 11, column_name: E, result_type: UInt8, source_id: 3
+          COLUMN id: 12, column_name: B, result_type: UInt8, source_id: 3
+-7064227703501672459	1	1	0	0	1	0
+-5989383837337135212	1	1	0	0	1	0
+-2960971598243161531	1	1	0	0	1	0
+-2091785646518281290	1	1	0	0	1	0
+-2587761388937978501	1	1	0	0	1	0
+4189632917510416150	1	1	0	0	1	0
+329410740548269838	1	1	0	0	1	0
+-966942443397313698	1	1	0	0	1	0
+8454473642815416800	1	1	0	0	1	0
+8268045340657794461	1	1	0	0	1	0
+-7064227703501672459	1	1	0	0	1	0
+-5989383837337135212	1	1	0	0	1	0
+-2960971598243161531	1	1	0	0	1	0
+-2091785646518281290	1	1	0	0	1	0
+-2587761388937978501	1	1	0	0	1	0
+4189632917510416150	1	1	0	0	1	0
+329410740548269838	1	1	0	0	1	0
+-966942443397313698	1	1	0	0	1	0
+8454473642815416800	1	1	0	0	1	0
+8268045340657794461	1	1	0	0	1	0
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.x
+  WHERE
+    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 3
+          COLUMN id: 6, column_name: A, result_type: UInt8, source_id: 3
+          FUNCTION id: 7, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 8, nodes: 3
+                COLUMN id: 9, column_name: C, result_type: UInt8, source_id: 3
+                COLUMN id: 10, column_name: D, result_type: UInt8, source_id: 3
+                COLUMN id: 11, column_name: E, result_type: UInt8, source_id: 3
+          COLUMN id: 12, column_name: B, result_type: UInt8, source_id: 3
+7046366705027993992	0	1	1	0	0	0
+5876398964123690873	0	1	1	0	0	0
+-4849840134697008981	0	1	1	0	0	0
+8219785106025342771	0	1	1	0	0	0
+7106055360641449065	0	1	1	0	0	0
+7782502397032484090	0	1	1	0	0	0
+1587022221789919998	0	1	1	0	0	0
+-5488510425784433218	0	1	1	0	0	0
+-3751993301879274716	0	1	1	0	0	0
+3995320070609749801	0	1	1	0	0	0
+7046366705027993992	0	1	1	0	0	0
+5876398964123690873	0	1	1	0	0	0
+-4849840134697008981	0	1	1	0	0	0
+8219785106025342771	0	1	1	0	0	0
+7106055360641449065	0	1	1	0	0	0
+7782502397032484090	0	1	1	0	0	0
+1587022221789919998	0	1	1	0	0	0
+-5488510425784433218	0	1	1	0	0	0
+-3751993301879274716	0	1	1	0	0	0
+3995320070609749801	0	1	1	0	0	0
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.x
+  WHERE
+    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 2
           COLUMN id: 6, column_name: B, result_type: UInt8, source_id: 3
           COLUMN id: 7, column_name: C, result_type: UInt8, source_id: 3
-          COLUMN id: 8, column_name: A, result_type: UInt8, source_id: 3
--1417696215412225994	1	1	1	0	0	1
--7491222816216432223	1	1	1	0	0	1
--7667054131998434193	1	1	1	0	0	1
-1150290670655138617	1	1	1	0	0	1
--3651160188931679372	1	1	1	0	0	1
-7727375535152756381	1	1	1	0	0	1
-1248518317831711188	1	1	1	0	0	1
--7224086688461492380	1	1	1	0	0	1
-9032006395921235708	1	1	1	0	0	1
-7044288989182144315	1	1	1	0	0	1
--1417696215412225994	1	1	1	0	0	1
--7491222816216432223	1	1	1	0	0	1
--7667054131998434193	1	1	1	0	0	1
-1150290670655138617	1	1	1	0	0	1
--3651160188931679372	1	1	1	0	0	1
-7727375535152756381	1	1	1	0	0	1
-1248518317831711188	1	1	1	0	0	1
--7224086688461492380	1	1	1	0	0	1
-9032006395921235708	1	1	1	0	0	1
-7044288989182144315	1	1	1	0	0	1
-QUERY id: 0
-  PROJECTION COLUMNS
-    count() UInt64
-  PROJECTION
-    LIST id: 1, nodes: 1
-      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
-  JOIN TREE
-    TABLE id: 3, alias: __table1, table_name: default.x
-  WHERE
-    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
-      ARGUMENTS
-        LIST id: 5, nodes: 4
-          COLUMN id: 6, column_name: C, result_type: UInt8, source_id: 3
-          COLUMN id: 7, column_name: B, result_type: UInt8, source_id: 3
-          FUNCTION id: 8, function_name: or, function_type: ordinary, result_type: UInt8
-            ARGUMENTS
-              LIST id: 9, nodes: 2
-                COLUMN id: 10, column_name: F, result_type: UInt8, source_id: 3
-                COLUMN id: 11, column_name: E, result_type: UInt8, source_id: 3
-          COLUMN id: 12, column_name: A, result_type: UInt8, source_id: 3
--1417696215412225994	1	1	1	0	0	1
--7491222816216432223	1	1	1	0	0	1
--7667054131998434193	1	1	1	0	0	1
-1150290670655138617	1	1	1	0	0	1
--3651160188931679372	1	1	1	0	0	1
-7727375535152756381	1	1	1	0	0	1
-1248518317831711188	1	1	1	0	0	1
--7224086688461492380	1	1	1	0	0	1
-9032006395921235708	1	1	1	0	0	1
-7044288989182144315	1	1	1	0	0	1
--1417696215412225994	1	1	1	0	0	1
--7491222816216432223	1	1	1	0	0	1
--7667054131998434193	1	1	1	0	0	1
-1150290670655138617	1	1	1	0	0	1
--3651160188931679372	1	1	1	0	0	1
-7727375535152756381	1	1	1	0	0	1
-1248518317831711188	1	1	1	0	0	1
--7224086688461492380	1	1	1	0	0	1
-9032006395921235708	1	1	1	0	0	1
-7044288989182144315	1	1	1	0	0	1
-QUERY id: 0
-  PROJECTION COLUMNS
-    count() UInt64
-  PROJECTION
-    LIST id: 1, nodes: 1
-      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
-  JOIN TREE
-    TABLE id: 3, alias: __table1, table_name: default.x
-  WHERE
-    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
-      ARGUMENTS
-        LIST id: 5, nodes: 4
-          COLUMN id: 6, column_name: C, result_type: UInt8, source_id: 3
-          COLUMN id: 7, column_name: B, result_type: UInt8, source_id: 3
-          FUNCTION id: 8, function_name: or, function_type: ordinary, result_type: UInt8
-            ARGUMENTS
-              LIST id: 9, nodes: 2
-                COLUMN id: 10, column_name: F, result_type: UInt8, source_id: 3
-                COLUMN id: 11, column_name: E, result_type: UInt8, source_id: 3
-          COLUMN id: 12, column_name: A, result_type: UInt8, source_id: 3
--7064227703501672459	1	1	0	0	1	0
--5989383837337135212	1	1	0	0	1	0
--2960971598243161531	1	1	0	0	1	0
--2091785646518281290	1	1	0	0	1	0
--2587761388937978501	1	1	0	0	1	0
-4189632917510416150	1	1	0	0	1	0
-329410740548269838	1	1	0	0	1	0
--966942443397313698	1	1	0	0	1	0
-8454473642815416800	1	1	0	0	1	0
-8268045340657794461	1	1	0	0	1	0
--7064227703501672459	1	1	0	0	1	0
--5989383837337135212	1	1	0	0	1	0
--2960971598243161531	1	1	0	0	1	0
--2091785646518281290	1	1	0	0	1	0
--2587761388937978501	1	1	0	0	1	0
-4189632917510416150	1	1	0	0	1	0
-329410740548269838	1	1	0	0	1	0
--966942443397313698	1	1	0	0	1	0
-8454473642815416800	1	1	0	0	1	0
-8268045340657794461	1	1	0	0	1	0
+331058316081182921	0	1	1	0	0	1
+-2878539180531591201	0	1	1	0	0	1
+5634271855584736521	0	1	1	0	0	1
+602708131544673121	0	1	1	0	0	1
+-7538506014351088906	0	1	1	0	0	1
+-7767907992783882398	0	1	1	0	0	1
+3427035445395945973	0	1	1	0	0	1
+1130846464892565445	0	1	1	0	0	1
+-7229259894257180861	0	1	1	0	0	1
+-9156504923995237243	0	1	1	0	0	1
+331058316081182921	0	1	1	0	0	1
+-2878539180531591201	0	1	1	0	0	1
+5634271855584736521	0	1	1	0	0	1
+602708131544673121	0	1	1	0	0	1
+-7538506014351088906	0	1	1	0	0	1
+-7767907992783882398	0	1	1	0	0	1
+3427035445395945973	0	1	1	0	0	1
+1130846464892565445	0	1	1	0	0	1
+-7229259894257180861	0	1	1	0	0	1
+-9156504923995237243	0	1	1	0	0	1
 QUERY id: 0
   PROJECTION COLUMNS
     count() UInt64
@@ -146,33 +260,32 @@ QUERY id: 0
       ARGUMENTS
         LIST id: 5, nodes: 3
           COLUMN id: 6, column_name: B, result_type: UInt8, source_id: 3
-          FUNCTION id: 7, function_name: or, function_type: ordinary, result_type: UInt8
+          COLUMN id: 7, column_name: C, result_type: UInt8, source_id: 3
+          FUNCTION id: 8, function_name: or, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 8, nodes: 3
-                COLUMN id: 9, column_name: E, result_type: UInt8, source_id: 3
-                COLUMN id: 10, column_name: D, result_type: UInt8, source_id: 3
-                COLUMN id: 11, column_name: C, result_type: UInt8, source_id: 3
-          COLUMN id: 12, column_name: A, result_type: UInt8, source_id: 3
--7064227703501672459	1	1	0	0	1	0
--5989383837337135212	1	1	0	0	1	0
--2960971598243161531	1	1	0	0	1	0
--2091785646518281290	1	1	0	0	1	0
--2587761388937978501	1	1	0	0	1	0
-4189632917510416150	1	1	0	0	1	0
-329410740548269838	1	1	0	0	1	0
--966942443397313698	1	1	0	0	1	0
-8454473642815416800	1	1	0	0	1	0
-8268045340657794461	1	1	0	0	1	0
--7064227703501672459	1	1	0	0	1	0
--5989383837337135212	1	1	0	0	1	0
--2960971598243161531	1	1	0	0	1	0
--2091785646518281290	1	1	0	0	1	0
--2587761388937978501	1	1	0	0	1	0
-4189632917510416150	1	1	0	0	1	0
-329410740548269838	1	1	0	0	1	0
--966942443397313698	1	1	0	0	1	0
-8454473642815416800	1	1	0	0	1	0
-8268045340657794461	1	1	0	0	1	0
+              LIST id: 9, nodes: 2
+                COLUMN id: 10, column_name: E, result_type: UInt8, source_id: 3
+                COLUMN id: 11, column_name: F, result_type: UInt8, source_id: 3
+331058316081182921	0	1	1	0	0	1
+-2878539180531591201	0	1	1	0	0	1
+5634271855584736521	0	1	1	0	0	1
+602708131544673121	0	1	1	0	0	1
+-7538506014351088906	0	1	1	0	0	1
+-7767907992783882398	0	1	1	0	0	1
+3427035445395945973	0	1	1	0	0	1
+1130846464892565445	0	1	1	0	0	1
+-7229259894257180861	0	1	1	0	0	1
+-9156504923995237243	0	1	1	0	0	1
+331058316081182921	0	1	1	0	0	1
+-2878539180531591201	0	1	1	0	0	1
+5634271855584736521	0	1	1	0	0	1
+602708131544673121	0	1	1	0	0	1
+-7538506014351088906	0	1	1	0	0	1
+-7767907992783882398	0	1	1	0	0	1
+3427035445395945973	0	1	1	0	0	1
+1130846464892565445	0	1	1	0	0	1
+-7229259894257180861	0	1	1	0	0	1
+-9156504923995237243	0	1	1	0	0	1
 QUERY id: 0
   PROJECTION COLUMNS
     count() UInt64
@@ -186,125 +299,51 @@ QUERY id: 0
       ARGUMENTS
         LIST id: 5, nodes: 3
           COLUMN id: 6, column_name: B, result_type: UInt8, source_id: 3
+          COLUMN id: 7, column_name: C, result_type: UInt8, source_id: 3
+          FUNCTION id: 8, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 9, nodes: 2
+                COLUMN id: 10, column_name: E, result_type: UInt8, source_id: 3
+                COLUMN id: 11, column_name: F, result_type: UInt8, source_id: 3
+-8350064335402276481	0	1	0	0	1	0
+2766908592531260293	0	1	0	0	1	0
+-8500464668406226757	0	1	0	0	1	0
+-4469615932557529717	0	1	0	0	1	0
+-2676464305117434926	0	1	0	0	1	0
+-3455317119139662830	0	1	0	0	1	0
+5588544998641306169	0	1	0	0	1	0
+-9173414302980908256	0	1	0	0	1	0
+7212851845568196641	0	1	0	0	1	0
+-3704547074519116929	0	1	0	0	1	0
+-8350064335402276481	0	1	0	0	1	0
+2766908592531260293	0	1	0	0	1	0
+-8500464668406226757	0	1	0	0	1	0
+-4469615932557529717	0	1	0	0	1	0
+-2676464305117434926	0	1	0	0	1	0
+-3455317119139662830	0	1	0	0	1	0
+5588544998641306169	0	1	0	0	1	0
+-9173414302980908256	0	1	0	0	1	0
+7212851845568196641	0	1	0	0	1	0
+-3704547074519116929	0	1	0	0	1	0
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.x
+  WHERE
+    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 2
+          COLUMN id: 6, column_name: B, result_type: UInt8, source_id: 3
           FUNCTION id: 7, function_name: or, function_type: ordinary, result_type: UInt8
             ARGUMENTS
               LIST id: 8, nodes: 3
-                COLUMN id: 9, column_name: E, result_type: UInt8, source_id: 3
+                COLUMN id: 9, column_name: C, result_type: UInt8, source_id: 3
                 COLUMN id: 10, column_name: D, result_type: UInt8, source_id: 3
-                COLUMN id: 11, column_name: C, result_type: UInt8, source_id: 3
-          COLUMN id: 12, column_name: A, result_type: UInt8, source_id: 3
-7046366705027993992	0	1	1	0	0	0
-5876398964123690873	0	1	1	0	0	0
--4849840134697008981	0	1	1	0	0	0
-8219785106025342771	0	1	1	0	0	0
-7106055360641449065	0	1	1	0	0	0
-7782502397032484090	0	1	1	0	0	0
-1587022221789919998	0	1	1	0	0	0
--5488510425784433218	0	1	1	0	0	0
--3751993301879274716	0	1	1	0	0	0
-3995320070609749801	0	1	1	0	0	0
-7046366705027993992	0	1	1	0	0	0
-5876398964123690873	0	1	1	0	0	0
--4849840134697008981	0	1	1	0	0	0
-8219785106025342771	0	1	1	0	0	0
-7106055360641449065	0	1	1	0	0	0
-7782502397032484090	0	1	1	0	0	0
-1587022221789919998	0	1	1	0	0	0
--5488510425784433218	0	1	1	0	0	0
--3751993301879274716	0	1	1	0	0	0
-3995320070609749801	0	1	1	0	0	0
-QUERY id: 0
-  PROJECTION COLUMNS
-    count() UInt64
-  PROJECTION
-    LIST id: 1, nodes: 1
-      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
-  JOIN TREE
-    TABLE id: 3, alias: __table1, table_name: default.x
-  WHERE
-    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
-      ARGUMENTS
-        LIST id: 5, nodes: 2
-          COLUMN id: 6, column_name: C, result_type: UInt8, source_id: 3
-          COLUMN id: 7, column_name: B, result_type: UInt8, source_id: 3
-331058316081182921	0	1	1	0	0	1
--2878539180531591201	0	1	1	0	0	1
-5634271855584736521	0	1	1	0	0	1
-602708131544673121	0	1	1	0	0	1
--7538506014351088906	0	1	1	0	0	1
--7767907992783882398	0	1	1	0	0	1
-3427035445395945973	0	1	1	0	0	1
-1130846464892565445	0	1	1	0	0	1
--7229259894257180861	0	1	1	0	0	1
--9156504923995237243	0	1	1	0	0	1
-331058316081182921	0	1	1	0	0	1
--2878539180531591201	0	1	1	0	0	1
-5634271855584736521	0	1	1	0	0	1
-602708131544673121	0	1	1	0	0	1
--7538506014351088906	0	1	1	0	0	1
--7767907992783882398	0	1	1	0	0	1
-3427035445395945973	0	1	1	0	0	1
-1130846464892565445	0	1	1	0	0	1
--7229259894257180861	0	1	1	0	0	1
--9156504923995237243	0	1	1	0	0	1
-QUERY id: 0
-  PROJECTION COLUMNS
-    count() UInt64
-  PROJECTION
-    LIST id: 1, nodes: 1
-      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
-  JOIN TREE
-    TABLE id: 3, alias: __table1, table_name: default.x
-  WHERE
-    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
-      ARGUMENTS
-        LIST id: 5, nodes: 3
-          FUNCTION id: 6, function_name: or, function_type: ordinary, result_type: UInt8
-            ARGUMENTS
-              LIST id: 7, nodes: 2
-                COLUMN id: 8, column_name: F, result_type: UInt8, source_id: 3
-                COLUMN id: 9, column_name: E, result_type: UInt8, source_id: 3
-          COLUMN id: 10, column_name: B, result_type: UInt8, source_id: 3
-          COLUMN id: 11, column_name: C, result_type: UInt8, source_id: 3
-331058316081182921	0	1	1	0	0	1
--2878539180531591201	0	1	1	0	0	1
-5634271855584736521	0	1	1	0	0	1
-602708131544673121	0	1	1	0	0	1
--7538506014351088906	0	1	1	0	0	1
--7767907992783882398	0	1	1	0	0	1
-3427035445395945973	0	1	1	0	0	1
-1130846464892565445	0	1	1	0	0	1
--7229259894257180861	0	1	1	0	0	1
--9156504923995237243	0	1	1	0	0	1
-331058316081182921	0	1	1	0	0	1
--2878539180531591201	0	1	1	0	0	1
-5634271855584736521	0	1	1	0	0	1
-602708131544673121	0	1	1	0	0	1
--7538506014351088906	0	1	1	0	0	1
--7767907992783882398	0	1	1	0	0	1
-3427035445395945973	0	1	1	0	0	1
-1130846464892565445	0	1	1	0	0	1
--7229259894257180861	0	1	1	0	0	1
--9156504923995237243	0	1	1	0	0	1
-QUERY id: 0
-  PROJECTION COLUMNS
-    count() UInt64
-  PROJECTION
-    LIST id: 1, nodes: 1
-      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
-  JOIN TREE
-    TABLE id: 3, alias: __table1, table_name: default.x
-  WHERE
-    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
-      ARGUMENTS
-        LIST id: 5, nodes: 3
-          FUNCTION id: 6, function_name: or, function_type: ordinary, result_type: UInt8
-            ARGUMENTS
-              LIST id: 7, nodes: 2
-                COLUMN id: 8, column_name: F, result_type: UInt8, source_id: 3
-                COLUMN id: 9, column_name: E, result_type: UInt8, source_id: 3
-          COLUMN id: 10, column_name: B, result_type: UInt8, source_id: 3
-          COLUMN id: 11, column_name: C, result_type: UInt8, source_id: 3
+                COLUMN id: 11, column_name: E, result_type: UInt8, source_id: 3
 -8350064335402276481	0	1	0	0	1	0
 2766908592531260293	0	1	0	0	1	0
 -8500464668406226757	0	1	0	0	1	0
@@ -337,52 +376,13 @@ QUERY id: 0
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
         LIST id: 5, nodes: 2
-          FUNCTION id: 6, function_name: or, function_type: ordinary, result_type: UInt8
+          COLUMN id: 6, column_name: B, result_type: UInt8, source_id: 3
+          FUNCTION id: 7, function_name: or, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 7, nodes: 3
-                COLUMN id: 8, column_name: E, result_type: UInt8, source_id: 3
-                COLUMN id: 9, column_name: D, result_type: UInt8, source_id: 3
-                COLUMN id: 10, column_name: C, result_type: UInt8, source_id: 3
-          COLUMN id: 11, column_name: B, result_type: UInt8, source_id: 3
--8350064335402276481	0	1	0	0	1	0
-2766908592531260293	0	1	0	0	1	0
--8500464668406226757	0	1	0	0	1	0
--4469615932557529717	0	1	0	0	1	0
--2676464305117434926	0	1	0	0	1	0
--3455317119139662830	0	1	0	0	1	0
-5588544998641306169	0	1	0	0	1	0
--9173414302980908256	0	1	0	0	1	0
-7212851845568196641	0	1	0	0	1	0
--3704547074519116929	0	1	0	0	1	0
--8350064335402276481	0	1	0	0	1	0
-2766908592531260293	0	1	0	0	1	0
--8500464668406226757	0	1	0	0	1	0
--4469615932557529717	0	1	0	0	1	0
--2676464305117434926	0	1	0	0	1	0
--3455317119139662830	0	1	0	0	1	0
-5588544998641306169	0	1	0	0	1	0
--9173414302980908256	0	1	0	0	1	0
-7212851845568196641	0	1	0	0	1	0
--3704547074519116929	0	1	0	0	1	0
-QUERY id: 0
-  PROJECTION COLUMNS
-    count() UInt64
-  PROJECTION
-    LIST id: 1, nodes: 1
-      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
-  JOIN TREE
-    TABLE id: 3, alias: __table1, table_name: default.x
-  WHERE
-    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
-      ARGUMENTS
-        LIST id: 5, nodes: 2
-          FUNCTION id: 6, function_name: or, function_type: ordinary, result_type: UInt8
-            ARGUMENTS
-              LIST id: 7, nodes: 3
-                COLUMN id: 8, column_name: E, result_type: UInt8, source_id: 3
-                COLUMN id: 9, column_name: D, result_type: UInt8, source_id: 3
-                COLUMN id: 10, column_name: C, result_type: UInt8, source_id: 3
-          COLUMN id: 11, column_name: B, result_type: UInt8, source_id: 3
+              LIST id: 8, nodes: 3
+                COLUMN id: 9, column_name: C, result_type: UInt8, source_id: 3
+                COLUMN id: 10, column_name: D, result_type: UInt8, source_id: 3
+                COLUMN id: 11, column_name: E, result_type: UInt8, source_id: 3
 7296788055532769937	0	1	0	0	0	0
 -8085083078325036349	0	1	0	0	0	0
 8056746393406743698	0	1	0	0	0	0
@@ -415,22 +415,22 @@ QUERY id: 0
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
         LIST id: 5, nodes: 2
-          FUNCTION id: 6, function_name: or, function_type: ordinary, result_type: UInt8
+          FUNCTION id: 6, function_name: equals, function_type: ordinary, result_type: UInt8
             ARGUMENTS
               LIST id: 7, nodes: 2
-                COLUMN id: 8, column_name: B, result_type: UInt8, source_id: 3
-                COLUMN id: 9, column_name: A, result_type: UInt8, source_id: 3
-          FUNCTION id: 10, function_name: equals, function_type: ordinary, result_type: UInt8
+                FUNCTION id: 8, function_name: sipHash64, function_type: ordinary, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 9, nodes: 1
+                      COLUMN id: 10, column_name: C, result_type: UInt8, source_id: 3
+                FUNCTION id: 11, function_name: sipHash64, function_type: ordinary, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 12, nodes: 1
+                      COLUMN id: 13, column_name: D, result_type: UInt8, source_id: 3
+          FUNCTION id: 14, function_name: or, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 11, nodes: 2
-                FUNCTION id: 12, function_name: sipHash64, function_type: ordinary, result_type: UInt64
-                  ARGUMENTS
-                    LIST id: 13, nodes: 1
-                      COLUMN id: 14, column_name: C, result_type: UInt8, source_id: 3
-                FUNCTION id: 15, function_name: sipHash64, function_type: ordinary, result_type: UInt64
-                  ARGUMENTS
-                    LIST id: 16, nodes: 1
-                      COLUMN id: 17, column_name: D, result_type: UInt8, source_id: 3
+              LIST id: 15, nodes: 2
+                COLUMN id: 16, column_name: A, result_type: UInt8, source_id: 3
+                COLUMN id: 17, column_name: B, result_type: UInt8, source_id: 3
 2589067852420946093	0	0	0	0	1	1
 566510304360553038	0	0	0	0	1	1
 4712156778925374545	0	0	0	0	1	1
@@ -562,23 +562,24 @@ QUERY id: 0
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
-        LIST id: 5, nodes: 3
-          FUNCTION id: 6, function_name: or, function_type: ordinary, result_type: UInt8
+        LIST id: 5, nodes: 4
+          COLUMN id: 6, column_name: A, result_type: UInt8, source_id: 3
+          COLUMN id: 7, column_name: B, result_type: UInt8, source_id: 3
+          COLUMN id: 7, column_name: B, result_type: UInt8, source_id: 3
+          FUNCTION id: 8, function_name: or, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 7, nodes: 3
-                FUNCTION id: 8, function_name: and, function_type: ordinary, result_type: UInt8
-                  ARGUMENTS
-                    LIST id: 9, nodes: 2
-                      COLUMN id: 10, column_name: F, result_type: UInt8, source_id: 3
-                      COLUMN id: 10, column_name: F, result_type: UInt8, source_id: 3
+              LIST id: 9, nodes: 3
+                COLUMN id: 10, column_name: C, result_type: UInt8, source_id: 3
                 FUNCTION id: 11, function_name: and, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
                     LIST id: 12, nodes: 2
                       COLUMN id: 13, column_name: E, result_type: UInt8, source_id: 3
                       COLUMN id: 13, column_name: E, result_type: UInt8, source_id: 3
-                COLUMN id: 14, column_name: C, result_type: UInt8, source_id: 3
-          COLUMN id: 15, column_name: A, result_type: UInt8, source_id: 3
-          COLUMN id: 16, column_name: B, result_type: UInt8, source_id: 3
+                FUNCTION id: 14, function_name: and, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 15, nodes: 2
+                      COLUMN id: 16, column_name: F, result_type: UInt8, source_id: 3
+                      COLUMN id: 16, column_name: F, result_type: UInt8, source_id: 3
 -9220342792229035180	1	1	0	1	0	1	-9218747728814747926	1	1	0	0	0	1
 -9220342792229035180	1	1	0	1	0	1	-9217081065560798881	1	0	0	1	0	1
 -9220342792229035180	1	1	0	1	0	1	-9211856624818647543	1	1	1	0	0	0
@@ -615,21 +616,21 @@ QUERY id: 0
         FUNCTION id: 6, function_name: and, function_type: ordinary, result_type: UInt8
           ARGUMENTS
             LIST id: 7, nodes: 2
-              FUNCTION id: 8, function_name: or, function_type: ordinary, result_type: UInt8
+              FUNCTION id: 8, function_name: equals, function_type: ordinary, result_type: UInt8
                 ARGUMENTS
                   LIST id: 9, nodes: 2
-                    FUNCTION id: 10, function_name: equals, function_type: ordinary, result_type: UInt8
-                      ARGUMENTS
-                        LIST id: 11, nodes: 2
-                          COLUMN id: 12, column_name: C, result_type: UInt8, source_id: 5
-                          CONSTANT id: 13, constant_value: UInt64_1, constant_value_type: UInt8
+                    COLUMN id: 10, column_name: A, result_type: UInt8, source_id: 4
+                    COLUMN id: 11, column_name: A, result_type: UInt8, source_id: 5
+              FUNCTION id: 12, function_name: or, function_type: ordinary, result_type: UInt8
+                ARGUMENTS
+                  LIST id: 13, nodes: 2
                     FUNCTION id: 14, function_name: equals, function_type: ordinary, result_type: UInt8
                       ARGUMENTS
                         LIST id: 15, nodes: 2
                           COLUMN id: 16, column_name: B, result_type: UInt8, source_id: 4
                           CONSTANT id: 17, constant_value: UInt64_1, constant_value_type: UInt8
-              FUNCTION id: 18, function_name: equals, function_type: ordinary, result_type: UInt8
-                ARGUMENTS
-                  LIST id: 19, nodes: 2
-                    COLUMN id: 20, column_name: A, result_type: UInt8, source_id: 4
-                    COLUMN id: 21, column_name: A, result_type: UInt8, source_id: 5
+                    FUNCTION id: 18, function_name: equals, function_type: ordinary, result_type: UInt8
+                      ARGUMENTS
+                        LIST id: 19, nodes: 2
+                          COLUMN id: 20, column_name: C, result_type: UInt8, source_id: 5
+                          CONSTANT id: 21, constant_value: UInt64_1, constant_value_type: UInt8
