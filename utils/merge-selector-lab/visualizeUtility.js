@@ -1,79 +1,6 @@
-////////////////////////////////////////////////////////////////////////////////
-// Helpers
-//
-function valueToColor(value, min, max)
-{
-    const hueMin = 120; // Start with
-    const hueMax = 360; // Finish with
-    const saturation = 70; // Constant saturation (same as steelblue)
-    const lightness = 50;  // Constant lightness (same as steelblue)
+import { valueToColor, formatBytesWithUnit, determineTickStep } from './visualizeHelpers.js';
 
-    // Ensure value is within the min/max range
-    if (value < min) value = min;
-    if (value > max) value = max;
-
-
-    // Normalize the value to range from 0 to 1
-    const normalizedValue = (value - min) / (max - min);
-
-    // Calculate hue based on the normalized value
-    const hue = hueMin + normalizedValue * (hueMax - hueMin);
-
-    // Return the HSL color string
-    return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
-}
-
-// Custom tick format function for displaying bytes with dynamic scaling (KB, MB, GB)
-function formatBytesWithUnit(bytes)
-{
-    if (bytes >= Math.pow(1024, 3))
-        return (bytes / Math.pow(1024, 3)).toFixed(1) + ' GB';
-    else if (bytes >= Math.pow(1024, 2))
-        return (bytes / Math.pow(1024, 2)).toFixed(1) + ' MB';
-    else if (bytes >= 1024)
-        return (bytes / 1024).toFixed(1) + ' KB';
-    else
-        return bytes + ' B';
-}
-
-// Dynamically determine appropriate tick step and unit based on the max value
-function determineTickStep(maxValue)
-{
-    let step;
-    let unit;
-
-    if (maxValue >= Math.pow(1024, 3)) // For GB range
-        unit = Math.pow(1024, 3); // 1 GB
-    else if (maxValue >= Math.pow(1024, 2)) // For MB range
-        unit = Math.pow(1024, 2); // 1 MB
-    else if (maxValue >= 1024) // For KB range
-        unit = 1024; // 1 KB
-    else
-        unit = 1; // Bytes range
-
-    // Determine appropriate tick step based on the range (1, 2, 5, 10, 20, 50, 100, 200...)
-    if (maxValue / unit > 500)
-        step = 100 * unit;
-    else if (maxValue / unit > 200)
-        step = 50 * unit;
-    else if (maxValue / unit > 100)
-        step = 20 * unit;
-    else if (maxValue / unit > 50)
-        step = 10 * unit;
-    else if (maxValue / unit > 20)
-        step = 5 * unit;
-    else if (maxValue / unit > 10)
-        step = 2 * unit;
-    else
-        step = 1 * unit;
-
-    return step;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Visualize with D3 and SVG
-//
-export function visualizeSimulation(sim, container)
+export function visualizeUtility(sim, container)
 {
     {
         // Cleanup previous visualization
@@ -84,8 +11,8 @@ export function visualizeSimulation(sim, container)
     }
 
     // Input visuals
-    const margin = { left: 60, right: 40, top: 40, bottom: 60 };
-    const width = 930;
+    const margin = { left: 50, right: 30, top: 60, bottom: 60 };
+    const width = 450;
     const height = 450;
     const part_dy = 4;
     const part_dx = 1;
@@ -157,23 +84,23 @@ export function visualizeSimulation(sim, container)
     svgContainer.append("g").selectAll("rect")
         .data(mt)
         .enter()
-        .filter(function(d) { return d.top !== undefined; })
+        .filter(d => d.top !== undefined)
         .append("rect")
-        .attr("x", function(d) { return pxl(xScale(d.left)); })
-        .attr("y", function(d) { return pxt(yScale(d.top)); })
-        .attr("width", function(d) { return pxr(xScale(d.left + d.bytes) - xScale(d.left)); })
-        .attr("height", function(d) { return pxb(yScale(d.bottom) - yScale(d.top)); })
-        .attr("fill", function(d) {return d.color} );
+        .attr("x", d => pxl(xScale(d.left)))
+        .attr("y", d => pxt(yScale(d.top)))
+        .attr("width", d => pxr(xScale(d.left + d.bytes) - xScale(d.left)))
+        .attr("height", d => pxb(yScale(d.bottom) - yScale(d.top)))
+        .attr("fill", d => d.color);
 
     // Append rectangles for parts
     svgContainer.append("g").selectAll("rect")
         .data(mt)
         .enter()
         .append("rect")
-        .attr("x", function(d) { return pxl(xScale(d.left)); })
-        .attr("y", function(d) { return pxt(yScale(d.bottom) - part_dy); })
-        .attr("width", function(d) { return pxr(xScale(d.left + d.bytes) - xScale(d.left)); })
-        .attr("height", function(d) { return pxb(part_dy); })
+        .attr("x", d => pxl(xScale(d.left)))
+        .attr("y", d => pxt(yScale(d.bottom) - part_dy))
+        .attr("width", d => pxr(xScale(d.left + d.bytes) - xScale(d.left)))
+        .attr("height", d => pxb(part_dy))
         .attr("fill", "black");
 
     // Append marks for parts begin
@@ -181,10 +108,10 @@ export function visualizeSimulation(sim, container)
         .data(mt)
         .enter()
         .append("rect")
-        .attr("x", function(d) { return pxl(xScale(d.left)); })
-        .attr("y", function(d) { return pxt(yScale(d.bottom) - part_dy); })
-        .attr("width", function(d) { return pxr(Math.min(part_dx, xScale(d.left + d.bytes) - xScale(d.left))); })
-        .attr("height", function(d) { return pxb(part_dy); })
+        .attr("x", d => pxl(xScale(d.left)))
+        .attr("y", d => pxt(yScale(d.bottom) - part_dy))
+        .attr("width", d => pxr(Math.min(part_dx, xScale(d.left + d.bytes) - xScale(d.left))))
+        .attr("height", d => pxb(part_dy))
         .attr("fill", "yellow");
 
     // Determine the tick step based on maxValue
@@ -211,7 +138,7 @@ export function visualizeSimulation(sim, container)
     const powersOfTwo = Array.from({ length: 50 }, (v, i) => Math.pow(2, i + 1));
     const yAxis = d3.axisLeft(yScale)
         .tickValues(powersOfTwo.filter(d => d >= minYValue && d <= maxYValue))
-        .tickFormat(function(d) { return `2^${Math.log2(d)}`; });
+        .tickFormat(d => `2^${Math.log2(d)}`);
     const yAxisGroup = svgContainer.append("g")
         .attr("transform", `translate(${margin.left}, 0)`) // Align with the left margin
         .call(yAxis);
@@ -220,7 +147,7 @@ export function visualizeSimulation(sim, container)
     svgContainer.append("text")
         .attr("transform", "rotate(-90)")
         .attr("x", -svgHeight / 2)
-        .attr("y", margin.left / 2 - 15)
+        .attr("y", margin.left / 2 - 10)
         .attr("text-anchor", "middle")
         .attr("font-size", "14px")
         .text("Log(PartSize)");
@@ -243,30 +170,10 @@ export function visualizeSimulation(sim, container)
                 .text(exponent);
         });
 
-    // Append text with metrics
-    svgContainer.append("text")
-        .attr("x", svgWidth - 50) // Position near the right edge of the SVG
-        .attr("y", 20) // Position near the top edge of the SVG
-        .attr("text-anchor", "end") // Align the text to the right
-        .attr("font-size", "14px") // Set font size
-        .attr("fill", "black") // Set text color
-        .text(`
-            ${sim.title === undefined ? "" : sim.title}
-            Total: ${sim.written_bytes / 1024 / 1024} MB,
-            Inserted: ${sim.inserted_bytes / 1024 / 1024} MB,
-            WA: ${sim.writeAmplification().toFixed(2)},
-            AvgPartCount: ${sim.avgActivePartCount().toFixed(2)}
-            Time: ${(sim.current_time).toFixed(2)}s
-        `);
-
     // Add description with an information circle icon using tippy.js for tooltips
     const infoGroup = svgContainer.append("g")
         .attr("class", "chart-description")
-        .attr("transform", `translate(30, 10)`);
-
-    infoGroup.append("circle")
-        .attr("r", 10)
-        .attr("fill", "#1f77b4");
+        .attr("transform", `translate(10, 60)`);
 
     infoGroup.append("text")
         .attr("text-anchor", "middle")
@@ -284,7 +191,9 @@ export function visualizeSimulation(sim, container)
             Every <b>merge</b> is represented by a number of rectangles that connect source parts at bottom to the resulting part at the top.
             Horizontal axis represent amount of inserted bytes: newly inserted parts appear on the right side.
             Width of a part represent its size.
-            Note that time is not present explicitly on this chart, but merges push data upwards and inserts expand chart to right.
+            <u>Area of a merge represents its utility.</u>
+            Total area does <i>not</i> depend on merge tree structure, it is a function of initial and final part sizes.
+            Note that time is not present explicitly on this chart, but merges push data upwards and inserts expand chart to the right.
             <b>Color</b> of a merge-related rectangles might represent on of selected metric: resulting size, order or time of merge, number of source parts, etc.
         `,
         allowHTML: true,

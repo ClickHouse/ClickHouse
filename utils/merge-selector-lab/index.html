@@ -2,12 +2,36 @@
 <html>
     <head>
         <title>Merge Selector Lab</title>
-        <script src="https://d3js.org/d3.v7.min.js"></script>
         <link rel="stylesheet" href="https://unpkg.com/tippy.js@6/themes/light.css">
+        <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+        <script src="https://d3js.org/d3.v7.min.js"></script>
         <script src="https://unpkg.com/@popperjs/core@2"></script>
         <script src="https://unpkg.com/tippy.js@6"></script>
         </head>
     <body>
+        <div class="container-fluid">
+            <div class="p-3" id="opt-container"></div>
+        </div>
+
+                <div class="container-fluid">
+            <div class="p-3" id="opt-container"></div>
+        </div>
+
+        <div class="container-fluid bg-primary text-white">
+            <div class="p-3" id="metrics-container"></div>
+        </div>
+
+        <div class="container-fluid">
+            <div class="row">
+                <div class="col-md-6" id="exec-container"></div>
+                <div class="col-md-6" id="util-container"></div>
+            </div>
+        </div>
+
+        <div class="container-fluid">
+            <div class="p-3" id="var-container"></div>
+        </div>
+
         <script type="module">
             import { main } from './main.js';
             main();

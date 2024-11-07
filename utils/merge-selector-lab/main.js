@@ -1,6 +1,7 @@
 import { Chart } from './Chart.js';
 import { Simulator } from './Simulator.js';
-import { visualizeSimulation } from './visualizeSimulation.js';
+import {  visualizeUtility } from './visualizeUtility.js';
+import {  visualizeExecutionTime } from './visualizeExecutionTime.js';
 import { runScenario, noArrivalsScenario } from './Scenarios.js';
 import { fixedBaseMerges } from './fixedBaseMerges.js';
 import { factorsAsBaseMerges } from './factorsAsBaseMerges.js';
@@ -97,8 +98,23 @@ async function iteratePartsFactors(selector, series, parts, total_time = 1.0)
 function showSimulation(data)
 {
     console.log("SHOW", data);
-    if (data.sim !== undefined)
-        visualizeSimulation(data.sim, d3.select("#viz-container"));
+    const {sim} = data;
+    if (sim !== undefined)
+    {
+        visualizeUtility(sim, d3.select("#util-container"), true);
+        visualizeExecutionTime(sim, d3.select("#exec-container"));
+
+        // Append text with metrics
+        d3.select("#metrics-container")
+            .text(`
+                ${sim.title === undefined ? "" : sim.title}
+                Total: ${sim.written_bytes / 1024 / 1024} MB,
+                Inserted: ${sim.inserted_bytes / 1024 / 1024} MB,
+                WA: ${sim.writeAmplification().toFixed(2)},
+                AvgPartCount: ${sim.avgActivePartCount().toFixed(2)}
+                Time: ${(sim.current_time).toFixed(2)}s
+            `);
+    }
 }
 
 function argMin(array, func)
@@ -154,7 +170,7 @@ async function minimizeAvgPartCount(parts, chart)
 export async function main()
 {
     const optimal_chart = new Chart(
-        d3.select("body").append("div").attr("id", "opt-container"),
+        d3.select("#opt-container"),
         "Initial number of parts to merge",
         "Avg Part Count",
         `This chart shows how different <i>Merge Selectors</i> are compared according to average count of parts over time.
@@ -163,16 +179,13 @@ export async function main()
         <br><b>Click a point to see corresponding tree of merges.</b>`
     );
 
-    // For optimal merge tree visualization
-    d3.select("body").append("div").attr("id", "viz-container");
-
     const variants_chart = new Chart(
-        d3.select("body").append("div").attr("id", "var-container"),
+        d3.select("#var-container"),
         "Base (Part count for 1st level merges)",
         "Avg Part Count",
         `This chart shows results of multiple simulations with <i>numerical algorithms</i> that explore possible merge tree structures.
-        Every simulation has different algorithms <i>parameters</i> values.
-        This is done in attempt to find the best approach to merging in given scenario.
+        Every simulation has different <i>parameters</i>.
+        This is done in attempt to find the best merging approach in given scenario.
         Best (lowest) point is then returned as a <u>numerical</u> result and is shown on another chart.
         It represents best guess we could hope for given optimization goal: minimize avg part count.
         <br><b>Click a point to see corresponding tree of merges.</b>`
@@ -182,7 +195,7 @@ export async function main()
     let analytical_series = optimal_chart.addSeries("Analytical", showSimulation);
     let numerical_series = optimal_chart.addSeries("Numerical", showSimulation);
     let simple_series = optimal_chart.addSeries("SimpleMergeSelector", showSimulation);
-    for (let parts = 4; parts <= 200; parts++)
+    for (let parts = 4; parts <= 120; parts++)
     {
         const {analytical, numerical, simple} = await minimizeAvgPartCount(parts, variants_chart);
 

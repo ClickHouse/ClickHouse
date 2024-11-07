@@ -87,11 +87,7 @@ export class Chart {
             // Add description with an information circle icon using tippy.js for tooltips
             const infoGroup = this.svg.append("g")
                 .attr("class", "chart-description")
-                .attr("transform", `translate(${this.innerWidth - 30}, -10)`);
-
-            infoGroup.append("circle")
-                .attr("r", 10)
-                .attr("fill", "#1f77b4");
+                .attr("transform", `translate(${-this.margin.left + 12}, 0)`);
 
             infoGroup.append("text")
                 .attr("text-anchor", "middle")
