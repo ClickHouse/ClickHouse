@@ -2252,18 +2252,18 @@ void IMergeTreeDataPart::checkConsistencyWithProjections(bool require_part_metad
         proj_part->checkConsistency(require_part_metadata);
 }
 
-void IMergeTreeDataPart::calculateColumnsAndSecondaryIndicesSizesOnDisk()
+void IMergeTreeDataPart::calculateColumnsAndSecondaryIndicesSizesOnDisk(std::optional<Block> columns_sample)
 {
-    calculateColumnsSizesOnDisk();
+    calculateColumnsSizesOnDisk(columns_sample);
     calculateSecondaryIndicesSizesOnDisk();
 }
 
-void IMergeTreeDataPart::calculateColumnsSizesOnDisk()
+void IMergeTreeDataPart::calculateColumnsSizesOnDisk(std::optional<Block> columns_sample)
 {
     if (getColumns().empty() || checksums.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot calculate columns sizes when columns or checksums are not initialized");
 
-    calculateEachColumnSizes(columns_sizes, total_columns_size);
+    calculateEachColumnSizes(columns_sizes, total_columns_size, columns_sample);
 }
 
 void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk()
@@ -2501,7 +2501,7 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
 {
     const size_t total_mark = getMarksCount();
     /// If column doesn't have dynamic subcolumns or part has no data, just create column using it's type.
-    if (is_temp || !column.type->hasDynamicSubcolumns() || !total_mark)
+    if (!column.type->hasDynamicSubcolumns() || !total_mark)
         return column.type->createColumn();
 
     /// Otherwise, read sample column with 0 rows from the part, so it will load dynamic structure.
@@ -2527,6 +2527,7 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
 
     Columns result;
     result.resize(1);
+    LOG_DEBUG(getLogger("IMergeTreeDataPart"), "getColumnSample");
     reader->readRows(0, total_mark, false, 0, result);
     return result[0];
 }
