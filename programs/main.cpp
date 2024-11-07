@@ -238,7 +238,7 @@ int main(int argc_, char ** argv_)
     std::error_code ec;
     if (main_func == printHelp && !argv.empty()
         && (argv.size() == 1 || argv[1][0] == '-' || std::string_view(argv[1]).contains(' ')
-            || std::filesystem::exists(std::filesystem::path{argv[1]}, ec)))
+            || std::filesystem::is_regular_file(std::filesystem::path{argv[1]}, ec)))
     {
         main_func = mainEntryClickHouseLocal;
     }

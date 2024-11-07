@@ -119,7 +119,7 @@ void ClientApplicationBase::parseAndCheckOptions(OptionsDescription & options_de
 
             const char * option;
             std::error_code ec;
-            if (std::filesystem::exists(std::filesystem::path{token}, ec))
+            if (std::filesystem::is_regular_file(std::filesystem::path{token}, ec))
                 option = "queries-file";
             else if (token.contains(' '))
                 option = "query";
