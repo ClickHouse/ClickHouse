@@ -724,7 +724,10 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 {
                     if (secret_arguments.are_named)
                     {
-                        assert_cast<const ASTFunction *>(argument.get())->arguments->children[0]->formatImpl(settings, state, nested_dont_need_parens);
+                        if (const auto * func_ast = typeid_cast<const ASTFunction *>(argument.get()))
+                            func_ast->arguments->children[0]->formatImpl(settings, state, nested_dont_need_parens);
+                        else
+                            argument->formatImpl(settings, state, nested_dont_need_parens);
                         settings.ostr << (settings.hilite ? hilite_operator : "") << " = " << (settings.hilite ? hilite_none : "");
                     }
                     if (!secret_arguments.replacement.empty())

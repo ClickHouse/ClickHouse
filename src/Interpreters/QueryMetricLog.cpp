@@ -15,6 +15,7 @@
 #include <Parsers/parseQuery.h>
 
 #include <chrono>
+#include <fmt/chrono.h>
 #include <mutex>
 
 
@@ -86,11 +87,11 @@ void QueryMetricLog::shutdown()
     Base::shutdown();
 }
 
-void QueryMetricLog::startQuery(const String & query_id, TimePoint query_start_time, UInt64 interval_milliseconds)
+void QueryMetricLog::startQuery(const String & query_id, TimePoint start_time, UInt64 interval_milliseconds)
 {
     QueryMetricLogStatus status;
     status.interval_milliseconds = interval_milliseconds;
-    status.next_collect_time = query_start_time + std::chrono::milliseconds(interval_milliseconds);
+    status.next_collect_time = start_time + std::chrono::milliseconds(interval_milliseconds);
 
     auto context = getContext();
     const auto & process_list = context->getProcessList();
@@ -99,24 +100,21 @@ void QueryMetricLog::startQuery(const String & query_id, TimePoint query_start_t
         const auto query_info = process_list.getQueryInfo(query_id, false, true, false);
         if (!query_info)
         {
-            LOG_TRACE(logger, "Query {} is not running anymore, so we couldn't get its QueryInfo", query_id);
+            LOG_TRACE(logger, "Query {} is not running anymore, so we couldn't get its QueryStatusInfo", query_id);
             return;
         }
 
         auto elem = createLogMetricElement(query_id, *query_info, current_time);
         if (elem)
             add(std::move(elem.value()));
-        else
-            LOG_TRACE(logger, "Query {} finished already while this collecting task was running", query_id);
     });
 
-    status.task->scheduleAfter(interval_milliseconds);
-
     std::lock_guard lock(queries_mutex);
+    status.task->scheduleAfter(interval_milliseconds);
     queries.emplace(query_id, std::move(status));
 }
 
-void QueryMetricLog::finishQuery(const String & query_id, QueryStatusInfoPtr query_info)
+void QueryMetricLog::finishQuery(const String & query_id, TimePoint finish_time, QueryStatusInfoPtr query_info)
 {
     std::unique_lock lock(queries_mutex);
     auto it = queries.find(query_id);
@@ -128,7 +126,7 @@ void QueryMetricLog::finishQuery(const String & query_id, QueryStatusInfoPtr que
 
     if (query_info)
     {
-        auto elem = createLogMetricElement(query_id, *query_info, std::chrono::system_clock::now(), false);
+        auto elem = createLogMetricElement(query_id, *query_info, finish_time, false);
         if (elem)
             add(std::move(elem.value()));
     }
@@ -137,57 +135,84 @@ void QueryMetricLog::finishQuery(const String & query_id, QueryStatusInfoPtr que
     /// deactivating the task, which happens automatically on its destructor. Thus, we cannot
     /// deactivate/destroy the task while it's running. Now, the task locks `queries_mutex` to
     /// prevent concurrent edition of the queries. In short, the mutex order is: exec_mutex ->
-    /// queries_mutex. Thus, to prevent a deadblock we need to make sure that we always lock them in
+    /// queries_mutex. So, to prevent a deadblock we need to make sure that we always lock them in
     /// that order.
     {
-        /// Take ownership of the task so that we can destroy it in this scope after unlocking `queries_lock`.
+        /// Take ownership of the task so that we can destroy it in this scope after unlocking `queries_mutex`.
         auto task = std::move(it->second.task);
 
         /// Build an empty task for the old task to make sure it does not lock any mutex on its destruction.
         it->second.task = {};
 
+        queries.erase(query_id);
+
         /// Ensure `queries_mutex` is unlocked before calling task's destructor at the end of this
         /// scope which will lock `exec_mutex`.
         lock.unlock();
     }
-
-    lock.lock();
-    queries.erase(query_id);
 }
 
-std::optional<QueryMetricLogElement> QueryMetricLog::createLogMetricElement(const String & query_id, const QueryStatusInfo & query_info, TimePoint current_time, bool schedule_next)
+std::optional<QueryMetricLogElement> QueryMetricLog::createLogMetricElement(const String & query_id, const QueryStatusInfo & query_info, TimePoint query_info_time, bool schedule_next)
 {
-    LOG_DEBUG(logger, "Collecting query_metric_log for query {}. Schedule next: {}", query_id, schedule_next);
-    std::lock_guard lock(queries_mutex);
+    /// fmtlib supports subsecond formatting in 10.0.0. We're in 9.1.0, so we need to add the milliseconds ourselves.
+    auto seconds = std::chrono::time_point_cast<std::chrono::seconds>(query_info_time);
+    auto microseconds = std::chrono::duration_cast<std::chrono::microseconds>(query_info_time - seconds).count();
+    LOG_DEBUG(logger, "Collecting query_metric_log for query {} with QueryStatusInfo from {:%Y.%m.%d %H:%M:%S}.{:06}. Schedule next: {}", query_id, seconds, microseconds, schedule_next);
+
+    std::unique_lock lock(queries_mutex);
     auto query_status_it = queries.find(query_id);
 
     /// The query might have finished while the scheduled task is running.
     if (query_status_it == queries.end())
+    {
+        lock.unlock();
+        LOG_TRACE(logger, "Query {} finished already while this collecting task was running", query_id);
         return {};
+    }
+
+    auto & query_status = query_status_it->second;
+    if (query_info_time <= query_status.last_collect_time)
+    {
+        lock.unlock();
+        LOG_TRACE(logger, "Query {} has a more recent metrics collected. Skipping this one", query_id);
+        return {};
+    }
+
+    query_status.last_collect_time = query_info_time;
 
     QueryMetricLogElement elem;
-    elem.event_time = timeInSeconds(current_time);
-    elem.event_time_microseconds = timeInMicroseconds(current_time);
+    elem.event_time = timeInSeconds(query_info_time);
+    elem.event_time_microseconds = timeInMicroseconds(query_info_time);
     elem.query_id = query_status_it->first;
     elem.memory_usage = query_info.memory_usage > 0 ? query_info.memory_usage : 0;
     elem.peak_memory_usage = query_info.peak_memory_usage > 0 ? query_info.peak_memory_usage : 0;
 
-    auto & query_status = query_status_it->second;
     if (query_info.profile_counters)
     {
         for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
         {
             const auto & new_value = (*(query_info.profile_counters))[i];
-            elem.profile_events[i] = new_value - query_status.last_profile_events[i];
-            query_status.last_profile_events[i] = new_value;
+            auto & old_value = query_status.last_profile_events[i];
+
+            /// Profile event counters are supposed to be monotonic. However, at least the `NetworkReceiveBytes` can be inaccurate.
+            /// So, since in the future the counter should always have a bigger value than in the past, we skip this event.
+            /// It can be reproduced with the following integration tests:
+            /// - test_hedged_requests/test.py::test_receive_timeout2
+            /// - test_secure_socket::test
+            if (new_value < old_value)
+                continue;
+
+            elem.profile_events[i] = new_value - old_value;
+            old_value = new_value;
         }
     }
     else
     {
-        elem.profile_events = query_status.last_profile_events;
+        LOG_TRACE(logger, "Query {} has no profile counters", query_id);
+        elem.profile_events = std::vector<ProfileEvents::Count>(ProfileEvents::end());
     }
 
-    if (query_status.task && schedule_next)
+    if (schedule_next)
     {
         query_status.next_collect_time += std::chrono::milliseconds(query_status.interval_milliseconds);
         const auto wait_time = std::chrono::duration_cast<std::chrono::milliseconds>(query_status.next_collect_time - std::chrono::system_clock::now()).count();
