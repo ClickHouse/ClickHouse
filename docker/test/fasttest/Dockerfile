@@ -1,4 +1,4 @@
-# docker build -t clickhouse/fasttest .
+# docker build -t altinityinfra/fasttest .
 ARG FROM_TAG=latest
 FROM altinityinfra/test-util:$FROM_TAG
 
