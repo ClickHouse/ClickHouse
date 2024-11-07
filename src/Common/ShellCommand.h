@@ -72,6 +72,16 @@ public:
         return pid;
     }
 
+    bool isWaitCalled() const
+    {
+        return wait_called;
+    }
+
+    void setManuallyTerminated()
+    {
+        is_manualy_terminated = true;
+    }
+
     /// Run the command using /bin/sh -c.
     /// If terminate_in_destructor is true, send terminate signal in destructor and don't wait process.
     static std::unique_ptr<ShellCommand> execute(const Config & config);
@@ -86,6 +96,10 @@ public:
     /// Wait for the process to finish, see the return code. To throw an exception if the process was not completed independently.
     int tryWait();
 
+    /// Returns if process terminated.
+    /// If process terminated, then handle return code.
+    bool waitIfProccesTerminated();
+
     WriteBufferFromFile in;        /// If the command reads from stdin, do not forget to call in.close() after writing all the data there.
     ReadBufferFromFile out;
     ReadBufferFromFile err;
@@ -97,10 +111,16 @@ private:
     pid_t pid;
     Config config;
     bool wait_called = false;
+    bool is_manualy_terminated = false;
 
     ShellCommand(pid_t pid_, int & in_fd_, int & out_fd_, int & err_fd_, const Config & config);
 
     bool tryWaitProcessWithTimeout(size_t timeout_in_seconds);
+    struct tryWaitResult;
+
+    tryWaitResult tryWaitImpl(bool blocking);
+
+    void handleProcessRetcode(int retcode) const;
 
     static LoggerPtr getLogger();
 
