@@ -874,6 +874,12 @@ In CREATE TABLE statement allows specifying Variant type with similar variant ty
     DECLARE(Bool, allow_suspicious_primary_key, false, R"(
 Allow suspicious `PRIMARY KEY`/`ORDER BY` for MergeTree (i.e. SimpleAggregateFunction).
 )", 0) \
+    DECLARE(Bool, allow_suspicious_types_in_group_by, false, R"(
+Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) and [Dynamic](../../sql-reference/data-types/dynamic.md) types in GROUP BY keys.
+)", 0) \
+    DECLARE(Bool, allow_suspicious_types_in_order_by, false, R"(
+Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) and [Dynamic](../../sql-reference/data-types/dynamic.md) types in ORDER BY keys.
+)", 0) \
     DECLARE(Bool, compile_expressions, false, R"(
 Compile some scalar functions and operators to native code. Due to a bug in the LLVM compiler infrastructure, on AArch64 machines, it is known to lead to a nullptr dereference and, consequently, server crash. Do not enable this setting.
 )", 0) \
@@ -1912,9 +1918,6 @@ See also:
 For single JOIN in case of identifier ambiguity prefer left table
 )", IMPORTANT) \
     \
-    DECLARE(JoinInnerTableSelectionMode, query_plan_join_inner_table_selection, JoinInnerTableSelectionMode::Auto, R"(
-Select the side of the join to be the inner table in the query plan. Supported only for `ALL` join strictness with `JOIN ON` clause. Possible values: 'auto', 'left', 'right'.
-)", 0) \
     DECLARE(UInt64, preferred_block_size_bytes, 1000000, R"(
 This setting adjusts the data block size for query processing and represents additional fine-tuning to the more rough 'max_block_size' setting. If the columns are large and with 'max_block_size' rows the block size is likely to be larger than the specified amount of bytes, its size will be lowered for better CPU cache locality.
 )", 0) \
@@ -2866,7 +2869,7 @@ Limit on size of multipart/form-data content. This setting cannot be parsed from
     DECLARE(Bool, calculate_text_stack_trace, true, R"(
 Calculate text stack trace in case of exceptions during query execution. This is the default. It requires symbol lookups that may slow down fuzzing tests when a huge amount of wrong queries are executed. In normal cases, you should not disable this option.
 )", 0) \
-    DECLARE(Bool, enable_job_stack_trace, false, R"(
+    DECLARE(Bool, enable_job_stack_trace, true, R"(
 Output stack trace of a job creator when job results in exception
 )", 0) \
     DECLARE(Bool, allow_ddl, true, R"(
@@ -4239,7 +4242,7 @@ Rewrite aggregate functions with if expression as argument when logically equiva
 For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, col)`. It may improve performance.
 
 :::note
-Supported only with experimental analyzer (`enable_analyzer = 1`).
+Supported only with the analyzer (`enable_analyzer = 1`).
 :::
 )", 0) \
     DECLARE(Bool, optimize_rewrite_array_exists_to_has, false, R"(
