@@ -1,6 +1,4 @@
 #pragma once
-#include <cstddef>
-#include <optional>
 #include <Core/SchemaInferenceMode.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Parsers/IAST_fwd.h>
@@ -9,12 +7,10 @@
 #include <Storages/ObjectStorage/DataLakes/PartitionColumns.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Common/threadPoolCallbackRunner.h>
-
-#include <memory>
-
 #include "Interpreters/ActionsDAG.h"
 #include "Storages/ColumnsDescription.h"
 
+#include <memory>
 namespace DB
 {
 
@@ -129,6 +125,10 @@ public:
         std::string & sample_path,
         const ContextPtr & context);
 
+    bool hasExternalDynamicMetadata() const override;
+
+    void updateExternalDynamicMetadata(ContextPtr) override;
+
 protected:
     String getPathSample(StorageInMemoryMetadata metadata, ContextPtr context);
 
@@ -214,6 +214,11 @@ public:
     virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String&) const { return {}; }
 
     virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(const String&) const { return {}; }
+
+    virtual ColumnsDescription updateAndGetCurrentSchema(ObjectStoragePtr, ContextPtr)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateAndGetCurrentSchema is not supported by storage {}", getEngineName());
+    }
 
     virtual ReadFromFormatInfo prepareReadingFromFormat(
         ObjectStoragePtr object_storage,

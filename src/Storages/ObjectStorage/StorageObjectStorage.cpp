@@ -91,6 +91,7 @@ StorageObjectStorage::StorageObjectStorage(
 {
     try
     {
+        configuration->updateAndGetCurrentSchema(object_storage, context);
         configuration->update(object_storage, context);
     }
     catch (...)
@@ -148,6 +149,24 @@ void StorageObjectStorage::Configuration::update(ObjectStoragePtr object_storage
     IObjectStorage::ApplyNewSettingsOptions options{.allow_client_change = !isStaticConfiguration()};
     object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);
 }
+
+bool StorageObjectStorage::hasExternalDynamicMetadata() const
+{
+    return configuration->isDataLakeConfiguration();
+}
+
+void StorageObjectStorage::updateExternalDynamicMetadata(ContextPtr context_ptr)
+{
+    if (configuration->isDataLakeConfiguration())
+    {
+        StorageInMemoryMetadata metadata;
+        metadata.setColumns(configuration->updateAndGetCurrentSchema(object_storage, context_ptr));
+        setInMemoryMetadata(metadata);
+        return;
+    }
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateExternalDynamicMetadata is not supported by storage {}", getName());
+}
+
 namespace
 {
 class ReadFromObjectStorageStep : public SourceStepWithFilter
@@ -363,7 +382,7 @@ SinkToStoragePtr StorageObjectStorage::write(
     auto paths = configuration->getPaths();
     if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(*object_storage, *configuration, settings, paths.front(), paths.size()))
     {
-        paths.emplace_back(*new_key);
+        paths.push_back(*new_key);
     }
     configuration->setPaths(paths);
 
@@ -434,6 +453,7 @@ ColumnsDescription StorageObjectStorage::resolveSchemaFromData(
 {
     if (configuration->isDataLakeConfiguration())
     {
+        configuration->updateAndGetCurrentSchema(object_storage, context);
         configuration->update(object_storage, context);
         auto table_structure = configuration->tryGetTableStructureFromMetadata();
         if (table_structure)

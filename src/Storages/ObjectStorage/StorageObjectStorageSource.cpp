@@ -35,7 +35,8 @@ namespace CurrentMetrics
     extern const Metric StorageObjectStorageThreads;
     extern const Metric StorageObjectStorageThreadsActive;
     extern const Metric StorageObjectStorageThreadsScheduled;
-    }
+}
+
 namespace DB
 {
 namespace Setting
@@ -682,10 +683,7 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::GlobIterator::ne
                 return {};
             }
 
-            for (const auto & relative_metadata : *result)
-            {
-                new_batch.emplace_back(std::make_shared<ObjectInfo>(relative_metadata->relative_path, relative_metadata->metadata));
-            }
+            new_batch = std::move(result.value());
             for (auto it = new_batch.begin(); it != new_batch.end();)
             {
                 if (!recursive && !re2::RE2::FullMatch((*it)->getPath(), *matcher))
@@ -755,7 +753,7 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
         /// TODO: should we add metadata if we anyway fetch it if file_progress_callback is passed?
         for (auto && key : keys)
         {
-            auto object_info = std::make_shared<ObjectInfo>(key, std::nullopt);
+            auto object_info = std::make_shared<ObjectInfo>(key);
             read_keys_->emplace_back(object_info);
         }
     }

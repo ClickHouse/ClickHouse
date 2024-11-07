@@ -15,11 +15,19 @@
 #include "Storages/ColumnsDescription.h"
 
 #include <memory>
+#include <string>
 #include <unordered_map>
+
+#include <Common/ErrorCodes.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int FORMAT_VERSION_TOO_OLD;
+}
 
 template <typename T>
 concept StorageConfiguration = std::derived_from<T, StorageObjectStorage::Configuration>;
@@ -38,12 +46,19 @@ public:
     {
         BaseStorageConfiguration::update(object_storage, local_context);
         auto new_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
-        if (current_metadata && *current_metadata == *new_metadata)
-            return;
 
-        current_metadata = std::move(new_metadata);
-        BaseStorageConfiguration::setPaths(current_metadata->getDataFiles());
-        BaseStorageConfiguration::setPartitionColumns(current_metadata->getPartitionColumns());
+        if (!current_metadata || (*current_metadata != *new_metadata))
+        {
+            throw Exception(
+                ErrorCodes::FORMAT_VERSION_TOO_OLD,
+                "Storage thinks that actual metadata version is {}, but actual metadata version is {}",
+                (dynamic_cast<IcebergMetadata *>(current_metadata.get()) != nullptr)
+                    ? std::to_string(dynamic_cast<IcebergMetadata *>(current_metadata.get())->getVersion())
+                    : "Absent",
+                (dynamic_cast<IcebergMetadata *>(new_metadata.get()) != nullptr)
+                    ? std::to_string(dynamic_cast<IcebergMetadata *>(new_metadata.get())->getVersion())
+                    : "Absent");
+        }
     }
 
     std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const override
@@ -70,6 +85,20 @@ public:
         if (!current_metadata)
             return {};
         return current_metadata->getSchemaTransformer(data_path);
+    }
+
+    ColumnsDescription updateAndGetCurrentSchema(ObjectStoragePtr object_storage, ContextPtr context) override
+    {
+        BaseStorageConfiguration::update(object_storage, context);
+        auto new_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), context);
+
+        if (!current_metadata || (*current_metadata != *new_metadata))
+        {
+            current_metadata = std::move(new_metadata);
+            BaseStorageConfiguration::setPaths(current_metadata->getDataFiles());
+            BaseStorageConfiguration::setPartitionColumns(current_metadata->getPartitionColumns());
+        }
+        return ColumnsDescription{current_metadata->getTableSchema()};
     }
 
 
