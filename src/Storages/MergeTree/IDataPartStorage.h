@@ -1,5 +1,4 @@
 #pragma once
-#include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <base/types.h>
@@ -16,7 +15,7 @@
 
 namespace DB
 {
-
+struct ReadSettings;
 class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
 

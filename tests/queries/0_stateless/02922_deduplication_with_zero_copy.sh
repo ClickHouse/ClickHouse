@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-replicated-database, no-fasttest
+# Tags: long, no-replicated-database, no-fasttest, no-shared-merge-tree
 
 set -e
 

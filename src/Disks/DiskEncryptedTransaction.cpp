@@ -1,6 +1,5 @@
 #include <Disks/DiskEncryptedTransaction.h>
 
-
 #if USE_SSL
 #include <IO/FileEncryptionCommon.h>
 #include <Common/Exception.h>

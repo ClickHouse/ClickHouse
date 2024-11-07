@@ -22,6 +22,7 @@ public:
         const MergeTreeIndices & indices_to_recalc_,
         const ColumnsStatistics & stats_to_recalc_,
         WrittenOffsetColumns * offset_columns_ = nullptr,
+        bool save_marks_in_cache = false,
         const MergeTreeIndexGranularity & index_granularity = {},
         const MergeTreeIndexGranularityInfo * index_granularity_info_ = nullptr);
 
