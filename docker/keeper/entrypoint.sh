@@ -84,11 +84,11 @@ if [[ $# -lt 1 ]] || [[ "$1" == "--"* ]]; then
 
     # There is a config file. It is already tested with gosu (if it is readably by keeper user)
     if [ -f "$KEEPER_CONFIG" ]; then
-        exec $gosu /usr/bin/clickhouse-keeper --config-file="$KEEPER_CONFIG" "$@"
+        exec $gosu clickhouse-keeper --config-file="$KEEPER_CONFIG" "$@"
     fi
 
     # There is no config file. Will use embedded one
-    exec $gosu /usr/bin/clickhouse-keeper --log-file="$LOG_PATH" --errorlog-file="$ERROR_LOG_PATH" "$@"
+    exec $gosu clickhouse-keeper --log-file="$LOG_PATH" --errorlog-file="$ERROR_LOG_PATH" "$@"
 fi
 
 # Otherwise, we assume the user want to run his own process, for example a `bash` shell to explore this image
