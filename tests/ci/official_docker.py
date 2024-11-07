@@ -21,7 +21,6 @@ from env_helper import GITHUB_REPOSITORY, IS_CI
 from git_helper import GIT_PREFIX, Git, git_runner
 from version_helper import (
     ClickHouseVersion,
-    VersionType,
     get_supported_versions,
     get_tagged_versions,
     get_version_from_string,
@@ -148,7 +147,7 @@ def get_versions_greater(minimal: ClickHouseVersion) -> Set[ClickHouseVersion]:
     supported = {}  # type: Dict[str, ClickHouseVersion]
     versions = get_tagged_versions()
     for v in versions:
-        if v < minimal:
+        if v < minimal or not v.is_supported:
             continue
         txt = f"{v.major}.{v.minor}"
         if txt in supported:
