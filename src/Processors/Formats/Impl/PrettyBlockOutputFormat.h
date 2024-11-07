@@ -38,7 +38,6 @@ protected:
     virtual void writeChunk(const Chunk & chunk, PortKind port_kind);
     void writeMonoChunkIfNeeded();
     void writeSuffix() override;
-    void writeReadableNumberTip(const Chunk & chunk);
 
     void onRowsReadBeforeUpdate() override { total_rows = getRowsReadBefore(); }
 
@@ -57,8 +56,10 @@ protected:
 
     bool color;
 
-private:
+protected:
     bool readable_number_tip = false;
+
+private:
     bool mono_block;
     /// For mono_block == true only
     Chunk mono_chunk;

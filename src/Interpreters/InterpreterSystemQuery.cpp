@@ -795,9 +795,9 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::WAIT_FAILPOINT:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
-            LOG_TRACE(log, "waiting for failpoint {}", query.fail_point_name);
+            LOG_TRACE(log, "Waiting for failpoint {}", query.fail_point_name);
             FailPointInjection::pauseFailPoint(query.fail_point_name);
-            LOG_TRACE(log, "finished failpoint {}", query.fail_point_name);
+            LOG_TRACE(log, "Finished waiting for failpoint {}", query.fail_point_name);
             break;
         }
         case Type::RESET_COVERAGE:
