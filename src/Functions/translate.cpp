@@ -32,24 +32,25 @@ struct TranslateImpl
         const std::string & map_from,
         const std::string & map_to)
     {
-        if (map_from.size() < map_to.size())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second arguments must be equal or longer than the third");
-
         iota(map.data(), map.size(), UInt8(0));
 
-        for (size_t i = 0; i < map_to.size(); ++i)
+        for (size_t i = 0; i < map_from.size(); ++i)
         {
-            if (!isASCII(map_from[i]) || !isASCII(map_to[i]))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second and third arguments must be ASCII strings");
+            if (i < map_to.size())
+            {
+                if (!isASCII(map_from[i]) || !isASCII(map_to[i]))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second and third arguments must be ASCII strings");
 
-            map[map_from[i]] = map_to[i];
+                map[map_from[i]] = map_to[i];
+            }
+            else
+                map[map_from[i]] = ascii_upper_bound + 1;
         }
-        for (size_t i = map_to.size(); i < map_from.size(); ++i)
+
+        for (size_t i = map_from.size(); i < map_to.size(); ++i)
         {
             if (!isASCII(map_from[i]))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second arguments must be ASCII strings");
-
-            map[map_from[i]] = ascii_upper_bound + 1;
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Third arguments must be ASCII strings");
         }
     }
 
@@ -66,10 +67,11 @@ struct TranslateImpl
         fillMapWithValues(map, map_from, map_to);
 
         res_data.resize(data.size());
-        res_offsets.assign(offsets);
+        res_offsets.resize(input_rows_count);
 
         UInt8 * dst = res_data.data();
 
+        UInt64 data_size = 0;
         for (UInt64 i = 0; i < input_rows_count; ++i)
         {
             const UInt8 * src = data.data() + offsets[i - 1];
@@ -81,11 +83,13 @@ struct TranslateImpl
                 {
                     *dst = map[*src];
                     ++dst;
+                    ++data_size;
                 }
                 else if (*src > ascii_upper_bound)
                 {
                     *dst = *src;
                     ++dst;
+                    ++data_size;
                 }
 
                 ++src;
@@ -94,6 +98,8 @@ struct TranslateImpl
             /// Technically '\0' can be mapped into other character,
             ///  so we need to process '\0' delimiter separately
             *dst++ = 0;
+            ++data_size;
+            res_offsets[i] = data_size;
         }
     }
 
@@ -104,6 +110,9 @@ struct TranslateImpl
         const std::string & map_to,
         ColumnString::Chars & res_data)
     {
+        if (map_from.size() != map_to.size())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second and third arguments must be the same length");
+
         std::array<UInt8, 128> map;
         fillMapWithValues(map, map_from, map_to);
 
@@ -115,18 +124,13 @@ struct TranslateImpl
 
         while (src < src_end)
         {
-            if (*src <= ascii_upper_bound && map[*src] != ascii_upper_bound + 1)
-            {
+            if (*src <= ascii_upper_bound)
                 *dst = map[*src];
-                ++dst;
-            }
-            else if (*src > ascii_upper_bound)
-            {
+            else
                 *dst = *src;
-                ++dst;
-            }
 
             ++src;
+            ++dst;
         }
     }
 
