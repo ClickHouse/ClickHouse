@@ -345,10 +345,11 @@ void MergeTreeIndexAggregatorVectorSimilarity::update(const Block & block, size_
         throw Exception(ErrorCodes::INCORRECT_DATA, "Index granularity is too big: more than {} rows per index granule.", std::numeric_limits<UInt32>::max());
 
     if (index_sample_block.columns() > 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected block with single column");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected that index is build over a single column");
 
-    const String & index_column_name = index_sample_block.getByPosition(0).name;
-    const ColumnPtr & index_column = block.getByName(index_column_name).column;
+    const auto & index_column_name = index_sample_block.getByPosition(0).name;
+
+    const auto & index_column = block.getByName(index_column_name).column;
     ColumnPtr column_cut = index_column->cut(*pos, rows_read);
 
     const auto * column_array = typeid_cast<const ColumnArray *>(column_cut.get());
@@ -382,8 +383,7 @@ void MergeTreeIndexAggregatorVectorSimilarity::update(const Block & block, size_
     if (index->size() + rows > std::numeric_limits<UInt32>::max())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Size of vector similarity index would exceed 4 billion entries");
 
-    DataTypePtr data_type = block.getDataTypes()[0];
-    const auto * data_type_array = typeid_cast<const DataTypeArray *>(data_type.get());
+    const auto * data_type_array = typeid_cast<const DataTypeArray *>(block.getByName(index_column_name).type.get());
     if (!data_type_array)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected data type Array(Float*)");
     const TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
