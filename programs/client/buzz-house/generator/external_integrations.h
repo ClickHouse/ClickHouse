@@ -8,6 +8,10 @@
 #else
 #    include <mysql/mysql.h>
 #endif
+#include <mongocxx/client.hpp>
+#include <mongocxx/collection.hpp>
+#include <mongocxx/cursor.hpp>
+#include <mongocxx/database.hpp>
 #include <pqxx/pqxx>
 #include <sqlite3.h>
 
@@ -21,7 +25,6 @@ class ClickHouseIntegration
 {
 public:
     std::string buf;
-    std::ofstream out_file;
 
     ClickHouseIntegration() { buf.reserve(4096); }
 
@@ -33,7 +36,11 @@ public:
 class ClickHouseIntegratedDatabase : public ClickHouseIntegration
 {
 public:
-    ClickHouseIntegratedDatabase() : ClickHouseIntegration() { }
+    std::ofstream out_file;
+    ClickHouseIntegratedDatabase(const std::filesystem::path & query_log_file)
+        : ClickHouseIntegration(), out_file(std::ofstream(query_log_file, std::ios::out | std::ios::trunc))
+    {
+    }
 
     virtual bool PerformQuery(const std::string & buf) = 0;
 
@@ -97,14 +104,21 @@ private:
     MYSQL * mysql_connection = nullptr;
 
 public:
-    MySQLIntegration(const FuzzConfig & fc) : ClickHouseIntegratedDatabase()
+    MySQLIntegration(const std::filesystem::path & query_log_file, MYSQL * mcon)
+        : ClickHouseIntegratedDatabase(query_log_file), mysql_connection(mcon)
     {
-        if (!(mysql_connection = mysql_init(nullptr)))
+    }
+
+    static MySQLIntegration * TestAndAddMySQLIntegration(const FuzzConfig & fc)
+    {
+        MYSQL * mcon = nullptr;
+
+        if (!(mcon = mysql_init(nullptr)))
         {
             std::cerr << "Could not initialize MySQL handle" << std::endl;
         }
         else if (!mysql_real_connect(
-                     mysql_connection,
+                     mcon,
                      fc.mysql_server.hostname == "" ? nullptr : fc.mysql_server.hostname.c_str(),
                      fc.mysql_server.user == "" ? nullptr : fc.mysql_server.user.c_str(),
                      fc.mysql_server.password == "" ? nullptr : fc.mysql_server.password.c_str(),
@@ -113,25 +127,26 @@ public:
                      fc.mysql_server.unix_socket == "" ? nullptr : fc.mysql_server.unix_socket.c_str(),
                      0))
         {
-            std::cerr << "MySQL connection error: " << mysql_error(mysql_connection) << std::endl;
-            mysql_close(mysql_connection);
-            mysql_connection = nullptr;
+            std::cerr << "MySQL connection error: " << mysql_error(mcon) << std::endl;
+            mysql_close(mcon);
         }
         else
         {
-            out_file = std::ofstream(fc.mysql_server.query_log_file, std::ios::out | std::ios::trunc);
+            MySQLIntegration * mysql = new MySQLIntegration(fc.mysql_server.query_log_file, mcon);
+
             if (fc.read_log
-                || (PerformQuery("DROP SCHEMA IF EXISTS " + fc.mysql_server.database + ";")
-                    && PerformQuery("CREATE SCHEMA " + fc.mysql_server.database + ";")))
+                || (mysql->PerformQuery("DROP SCHEMA IF EXISTS " + fc.mysql_server.database + ";")
+                    && mysql->PerformQuery("CREATE SCHEMA " + fc.mysql_server.database + ";")))
             {
                 std::cout << "Connected to MySQL" << std::endl;
+                return mysql;
             }
             else
             {
-                mysql_close(mysql_connection);
-                mysql_connection = nullptr;
+                delete mysql;
             }
         }
+        return nullptr;
     }
 
     std::string GetTableName(const uint32_t tname) override { return "test.t" + std::to_string(tname); }
@@ -169,10 +184,17 @@ private:
     pqxx::connection * postgres_connection = nullptr;
 
 public:
-    PostgreSQLIntegration(const FuzzConfig & fc) : ClickHouseIntegratedDatabase()
+    PostgreSQLIntegration(const std::filesystem::path & query_log_file, pqxx::connection * pcon)
+        : ClickHouseIntegratedDatabase(query_log_file), postgres_connection(pcon)
+    {
+    }
+
+    static PostgreSQLIntegration * TestAndAddPostgreSQLIntegration(const FuzzConfig & fc)
     {
         bool has_something = false;
         std::string connection_str = "";
+        pqxx::connection * pcon = nullptr;
+        PostgreSQLIntegration * psql = nullptr;
 
         if (fc.postgresql_server.unix_socket != "" || fc.postgresql_server.hostname != "")
         {
@@ -225,30 +247,33 @@ public:
         }
         try
         {
-            if (!(postgres_connection = new pqxx::connection(std::move(connection_str))))
+            if (!(pcon = new pqxx::connection(std::move(connection_str))))
             {
                 std::cerr << "Could not initialize PostgreSQL handle" << std::endl;
             }
             else
             {
-                out_file = std::ofstream(fc.postgresql_server.query_log_file, std::ios::out | std::ios::trunc);
-                if (fc.read_log || (PerformQuery("DROP SCHEMA IF EXISTS test CASCADE;") && PerformQuery("CREATE SCHEMA test;")))
+                psql = new PostgreSQLIntegration(fc.postgresql_server.query_log_file, pcon);
+                if (fc.read_log || (psql->PerformQuery("DROP SCHEMA IF EXISTS test CASCADE;") && psql->PerformQuery("CREATE SCHEMA test;")))
                 {
                     std::cout << "Connected to PostgreSQL" << std::endl;
-                }
-                else
-                {
-                    delete postgres_connection;
-                    postgres_connection = nullptr;
+                    return psql;
                 }
             }
         }
         catch (std::exception const & e)
         {
             std::cerr << "PostgreSQL connection error: " << e.what() << std::endl;
-            delete postgres_connection;
-            postgres_connection = nullptr;
         }
+        if (psql)
+        {
+            delete psql;
+        }
+        else
+        {
+            delete pcon;
+        }
+        return nullptr;
     }
 
     std::string GetTableName(const uint32_t tname) override { return "test.t" + std::to_string(tname); }
@@ -292,25 +317,33 @@ private:
 public:
     const std::filesystem::path sqlite_path;
 
-    SQLiteIntegration(const FuzzConfig & fc) : ClickHouseIntegratedDatabase(), sqlite_path(fc.db_file_path / "sqlite.db")
+    SQLiteIntegration(const std::filesystem::path & query_log_file, sqlite3 * scon, const std::filesystem::path & spath)
+        : ClickHouseIntegratedDatabase(query_log_file), sqlite_connection(scon), sqlite_path(spath)
     {
-        if (sqlite3_open(sqlite_path.generic_string().c_str(), &sqlite_connection) != SQLITE_OK)
+    }
+
+    static SQLiteIntegration * TestAndAddSQLiteIntegration(const FuzzConfig & fc)
+    {
+        sqlite3 * scon = nullptr;
+        const std::filesystem::path spath = fc.db_file_path / "sqlite.db";
+
+        if (sqlite3_open(spath.c_str(), &scon) != SQLITE_OK)
         {
-            if (sqlite_connection)
+            if (scon)
             {
-                std::cerr << "SQLite connection error: " << sqlite3_errmsg(sqlite_connection) << std::endl;
-                sqlite3_close(sqlite_connection);
-                sqlite_connection = nullptr;
+                std::cerr << "SQLite connection error: " << sqlite3_errmsg(scon) << std::endl;
+                sqlite3_close(scon);
             }
             else
             {
                 std::cerr << "Could not initialize SQLite handle" << std::endl;
             }
+            return nullptr;
         }
         else
         {
-            out_file = std::ofstream(fc.sqlite_server.query_log_file, std::ios::out | std::ios::trunc);
             std::cout << "Connected to SQLite" << std::endl;
+            return new SQLiteIntegration(fc.sqlite_server.query_log_file, scon, spath);
         }
     }
 
@@ -443,13 +476,13 @@ public:
     {
         if (fc.mysql_server.port || fc.mysql_server.unix_socket != "")
         {
-            mysql = new MySQLIntegration(fc);
+            mysql = MySQLIntegration::TestAndAddMySQLIntegration(fc);
         }
         if (fc.postgresql_server.port || fc.postgresql_server.unix_socket != "")
         {
-            postresql = new PostgreSQLIntegration(fc);
+            postresql = PostgreSQLIntegration::TestAndAddPostgreSQLIntegration(fc);
         }
-        sqlite = new SQLiteIntegration(fc);
+        sqlite = SQLiteIntegration::TestAndAddSQLiteIntegration(fc);
         if (fc.mongodb_server.port)
         {
             mongodb = new MongoDBIntegration(fc);
