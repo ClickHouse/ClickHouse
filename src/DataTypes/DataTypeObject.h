@@ -50,6 +50,8 @@ public:
 
     bool equals(const IDataType & rhs) const override;
 
+    void forEachChild(const ChildCallback &) const override;
+
     bool hasDynamicSubcolumnsData() const override { return true; }
     std::unique_ptr<SubstreamData> getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, bool throw_if_null) const override;
 
