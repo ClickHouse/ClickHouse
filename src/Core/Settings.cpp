@@ -5708,6 +5708,8 @@ If enabled, MongoDB tables will return an error when a MongoDB query cannot be b
 )", 0) \
     DECLARE(Bool, implicit_select, false, R"(
 Allow writing simple SELECT queries without the leading SELECT keyword, which makes it simple for calculator-style usage, e.g. `1 + 2` becomes a valid query.
+
+In `clickhouse-local` it is enabled by default and can be explicitly disabled.
 )", 0) \
     \
     \
