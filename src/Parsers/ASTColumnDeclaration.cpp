@@ -142,7 +142,6 @@ void ASTColumnDeclaration::forEachPointerToChild(std::function<void(void **)> f)
     f(reinterpret_cast<void **>(&default_expression));
     f(reinterpret_cast<void **>(&comment));
     f(reinterpret_cast<void **>(&codec));
-    f(reinterpret_cast<void **>(&statistics_desc));
     f(reinterpret_cast<void **>(&ttl));
     f(reinterpret_cast<void **>(&collation));
     f(reinterpret_cast<void **>(&settings));
