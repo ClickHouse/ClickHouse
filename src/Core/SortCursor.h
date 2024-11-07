@@ -35,6 +35,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
+
 /** Cursor allows to compare rows in different blocks (and parts).
   * Cursor moves inside single block.
   * It is used in priority queue.
@@ -83,21 +88,27 @@ struct SortCursorImpl
     SortCursorImpl(
         const Block & header,
         const Columns & columns,
+        size_t num_rows,
         const SortDescription & desc_,
         size_t order_ = 0,
         IColumn::Permutation * perm = nullptr)
         : desc(desc_), sort_columns_size(desc.size()), order(order_), need_collation(desc.size())
     {
-        reset(columns, header, perm);
+        reset(columns, header, num_rows, perm);
     }
 
     bool empty() const { return rows == 0; }
 
     /// Set the cursor to the beginning of the new block.
-    void reset(const Block & block, IColumn::Permutation * perm = nullptr) { reset(block.getColumns(), block, perm); }
+    void reset(const Block & block, IColumn::Permutation * perm = nullptr)
+    {
+        if (block.getColumns().empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty column list in block");
+        reset(block.getColumns(), block, block.getColumns()[0]->size(), perm);
+    }
 
     /// Set the cursor to the beginning of the new block.
-    void reset(const Columns & columns, const Block & block, IColumn::Permutation * perm = nullptr)
+    void reset(const Columns & columns, const Block & block, UInt64 num_rows, IColumn::Permutation * perm = nullptr)
     {
         all_columns.clear();
         sort_columns.clear();
@@ -125,7 +136,7 @@ struct SortCursorImpl
         }
 
         pos = 0;
-        rows = all_columns[0]->size();
+        rows = num_rows;
         permutation = perm;
     }
 
