@@ -391,6 +391,9 @@ public:
 
                     if (sort_node.hasFillStep())
                         buffer << " STEP " << calculateActionNodeName(sort_node.getFillStep());
+
+                    if (sort_node.hasFillStaleness())
+                        buffer << " STALENESS " << calculateActionNodeName(sort_node.getFillStaleness());
                 }
 
                 if (i + 1 != order_by_nodes_size)

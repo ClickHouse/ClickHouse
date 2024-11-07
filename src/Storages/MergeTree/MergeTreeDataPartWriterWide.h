@@ -43,6 +43,8 @@ public:
 
     void finish(bool sync) final;
 
+    size_t getNumberOfOpenStreams() const override { return column_streams.size(); }
+
 private:
     /// Finish serialization of data: write final mark if required and compute checksums
     /// Also validate written data in debug mode
