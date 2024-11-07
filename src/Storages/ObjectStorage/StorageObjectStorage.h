@@ -1,12 +1,13 @@
 #pragma once
-#include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Common/threadPoolCallbackRunner.h>
 #include <Core/SchemaInferenceMode.h>
-#include <Storages/IStorage.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Parsers/IAST_fwd.h>
-#include <Storages/prepareReadingFromFormat.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <Storages/IStorage.h>
 #include <Storages/ObjectStorage/DataLakes/PartitionColumns.h>
+#include <Storages/prepareReadingFromFormat.h>
+#include <Common/threadPoolCallbackRunner.h>
+#include "Storages/ColumnsDescription.h"
 
 namespace DB
 {
@@ -25,6 +26,7 @@ class StorageObjectStorage : public IStorage
 public:
     class Configuration;
     using ConfigurationPtr = std::shared_ptr<Configuration>;
+    using ConfigurationObserverPtr = std::weak_ptr<Configuration>;
     using ObjectInfo = RelativePathWithMetadata;
     using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
     using ObjectInfos = std::vector<ObjectInfoPtr>;
@@ -55,6 +57,7 @@ public:
         const ConstraintsDescription & constraints_,
         const String & comment,
         std::optional<FormatSettings> format_settings_,
+        LoadingStrictnessLevel mode,
         bool distributed_processing_ = false,
         ASTPtr partition_by_ = nullptr);
 
@@ -120,15 +123,7 @@ public:
         const ContextPtr & context);
 
 protected:
-    virtual void updateConfiguration(ContextPtr local_context);
-
     String getPathSample(StorageInMemoryMetadata metadata, ContextPtr context);
-
-    virtual ReadFromFormatInfo prepareReadingFromFormat(
-        const Strings & requested_columns,
-        const StorageSnapshotPtr & storage_snapshot,
-        bool supports_subset_of_columns,
-        ContextPtr local_context);
 
     static std::unique_ptr<ReadBufferIterator> createReadBufferIterator(
         const ObjectStoragePtr & object_storage,
@@ -163,6 +158,7 @@ public:
         bool with_table_structure);
 
     /// Storage type: s3, hdfs, azure, local.
+    virtual ObjectStorageType getType() const = 0;
     virtual std::string getTypeName() const = 0;
     /// Engine name: S3, HDFS, Azure.
     virtual std::string getEngineName() const = 0;
@@ -206,13 +202,28 @@ public:
     void setPartitionColumns(const DataLakePartitionColumns & columns) { partition_columns = columns; }
     const DataLakePartitionColumns & getPartitionColumns() const { return partition_columns; }
 
+    virtual bool isDataLakeConfiguration() const { return false; }
+
+    virtual ReadFromFormatInfo prepareReadingFromFormat(
+        ObjectStoragePtr object_storage,
+        const Strings & requested_columns,
+        const StorageSnapshotPtr & storage_snapshot,
+        bool supports_subset_of_columns,
+        ContextPtr local_context);
+
+    virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const;
+
     String format = "auto";
     String compression_method = "auto";
     String structure = "auto";
 
+    virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
+
+
 protected:
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
     virtual void fromAST(ASTs & args, ContextPtr context, bool with_structure) = 0;
+
 
     void assertInitialized() const;
 
