@@ -1,3 +1,45 @@
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.x
+  WHERE
+    FUNCTION id: 4, function_name: or, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 2
+          FUNCTION id: 6, function_name: and, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 7, nodes: 2
+                COLUMN id: 8, column_name: A, result_type: UInt8, source_id: 3
+                COLUMN id: 9, column_name: B, result_type: UInt8, source_id: 3
+          FUNCTION id: 10, function_name: and, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 11, nodes: 2
+                COLUMN id: 8, column_name: A, result_type: UInt8, source_id: 3
+                COLUMN id: 12, column_name: C, result_type: UInt8, source_id: 3
+  SETTINGS optimize_extract_common_expressions=0
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.x
+  WHERE
+    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 2
+          COLUMN id: 6, column_name: A, result_type: UInt8, source_id: 3
+          FUNCTION id: 7, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 8, nodes: 2
+                COLUMN id: 9, column_name: B, result_type: UInt8, source_id: 3
+                COLUMN id: 10, column_name: C, result_type: UInt8, source_id: 3
+  SETTINGS optimize_extract_common_expressions=1
 -4890149726841642150	1	1	1	0	0	0
 6142641079032712283	1	1	1	0	0	0
 -558050477524086008	1	1	1	0	0	0

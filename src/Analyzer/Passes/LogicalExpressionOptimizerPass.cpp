@@ -18,6 +18,7 @@ namespace Setting
 {
     extern const SettingsUInt64 optimize_min_equality_disjunction_chain_length;
     extern const SettingsUInt64 optimize_min_inequality_conjunction_chain_length;
+    extern const SettingsBool optimize_extract_common_expressions;
 }
 
 namespace ErrorCodes
@@ -445,6 +446,15 @@ void tryOptimizeCommonExpressionsInAnd(QueryTreeNodePtr & node, const ContextPtr
     root_node->resolveAsFunction(and_function_resolver);
 }
 
+void tryOptimizeCommonExpressions(QueryTreeNodePtr & node, FunctionNode& function_node, const ContextPtr & context)
+{
+    chassert(node.get() == &function_node);
+    if (function_node.getFunctionName() == "or")
+        tryOptimizeCommonExpressionsInOr(node, context);
+    else if (function_node.getFunctionName() == "and")
+        tryOptimizeCommonExpressionsInAnd(node, context);
+}
+
 
 /// Visitor that optimizes logical expressions _only_ in JOIN ON section
 class JoinOnLogicalExpressionOptimizerVisitor : public InDepthQueryTreeVisitorWithContext<JoinOnLogicalExpressionOptimizerVisitor>
@@ -504,10 +514,11 @@ public:
         if (need_rerun_resolve)
             rerunFunctionResolve(function_node, getContext());
 
-        if (function_node->getFunctionName() == "or")
-            tryOptimizeCommonExpressionsInOr(node, getContext());
-        else if (function_node->getFunctionName() == "and")
-            tryOptimizeCommonExpressionsInAnd(node, getContext());
+        // The optimization only makes sense on the top level
+        if (node != join_node->getJoinExpression() || !getSettings()[Setting::optimize_extract_common_expressions])
+            return;
+
+        tryOptimizeCommonExpressions(node, *function_node, getContext());
     }
 
 private:
@@ -741,6 +752,9 @@ public:
 
     void leaveImpl(QueryTreeNodePtr & node)
     {
+        if (!getSettings()[Setting::optimize_extract_common_expressions])
+            return;
+
         auto * query_node = node->as<QueryNode>();
         if (!query_node)
             return;
@@ -753,10 +767,7 @@ public:
         if (!function_node)
             return;
 
-        if (function_node->getFunctionName() == "or")
-            tryOptimizeCommonExpressionsInOr(where_node, getContext());
-        else if (function_node->getFunctionName() == "and")
-            tryOptimizeCommonExpressionsInAnd(where_node, getContext());
+        tryOptimizeCommonExpressions(where_node, *function_node, getContext());
     }
 
 private:
