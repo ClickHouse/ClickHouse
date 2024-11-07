@@ -26,7 +26,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString primary_key_compression_codec;
     extern const MergeTreeSettingsBool use_adaptive_write_buffer_for_dynamic_subcolumns;
     extern const MergeTreeSettingsBool use_compact_variant_discriminators_serialization;
-    extern const MergeTreeSettingsUInt64 max_compression_threads;
 }
 
 MergeTreeWriterSettings::MergeTreeWriterSettings(
@@ -35,6 +34,7 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     const MergeTreeSettingsPtr & storage_settings,
     bool can_use_adaptive_granularity_,
     bool rewrite_primary_key_,
+    bool save_marks_in_cache_,
     bool blocks_are_granules_size_)
     : min_compress_block_size(
           (*storage_settings)[MergeTreeSetting::min_compress_block_size] ? (*storage_settings)[MergeTreeSetting::min_compress_block_size] : global_settings[Setting::min_compress_block_size])
@@ -47,6 +47,7 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     , primary_key_compress_block_size((*storage_settings)[MergeTreeSetting::primary_key_compress_block_size])
     , can_use_adaptive_granularity(can_use_adaptive_granularity_)
     , rewrite_primary_key(rewrite_primary_key_)
+    , save_marks_in_cache(save_marks_in_cache_)
     , blocks_are_granules_size(blocks_are_granules_size_)
     , query_write_settings(query_write_settings_)
     , low_cardinality_max_dictionary_size(global_settings[Setting::low_cardinality_max_dictionary_size])
@@ -55,7 +56,6 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     , use_adaptive_write_buffer_for_dynamic_subcolumns((*storage_settings)[MergeTreeSetting::use_adaptive_write_buffer_for_dynamic_subcolumns])
     , adaptive_write_buffer_initial_size((*storage_settings)[MergeTreeSetting::adaptive_write_buffer_initial_size])
 {
-    query_write_settings.max_compression_threads = (*storage_settings)[MergeTreeSetting::max_compression_threads];
 }
 
 }

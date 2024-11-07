@@ -7,7 +7,6 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Common/Logger.h>
 
-
 namespace DB
 {
 
@@ -33,6 +32,16 @@ public:
     const MergeTreeIndexGranularity & getIndexGranularity() const
     {
         return writer->getIndexGranularity();
+    }
+
+    PlainMarksByName releaseCachedMarks()
+    {
+        return writer->releaseCachedMarks();
+    }
+
+    size_t getNumberOfOpenStreams() const
+    {
+        return writer->getNumberOfOpenStreams();
     }
 
 protected:

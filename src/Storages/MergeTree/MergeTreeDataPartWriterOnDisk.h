@@ -8,6 +8,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/Statistics/Statistics.h>
+#include <Storages/MarkCache.h>
 
 namespace DB
 {
@@ -27,7 +28,7 @@ struct Granule
     /// this granule can be continuation of the previous one.
     bool mark_on_start;
     /// if true: When this granule will be written to disk all rows for corresponding mark will
-    /// be written. It doesn't mean that rows_to_write == index_granularity.getMarkRows(mark_number),
+    /// be wrtten. It doesn't mean that rows_to_write == index_granularity.getMarkRows(mark_number),
     /// We may have a lot of small blocks between two marks and this may be the last one.
     bool is_complete;
 };
@@ -44,6 +45,7 @@ public:
 
     /// Helper class, which holds chain of buffers to write data file with marks.
     /// It is used to write: one column, skip index or all columns (in compact format).
+    template<bool only_plain_file>
     struct Stream
     {
         Stream(
@@ -74,32 +76,30 @@ public:
 
         /// compressed_hashing -> compressor -> plain_hashing -> plain_file
         std::unique_ptr<WriteBufferFromFileBase> plain_file;
-        std::optional<HashingWriteBuffer> plain_hashing;
-        /// This could be either CompressedWriteBuffer or ParallelCompressedWriteBuffer
-        bool is_compressor_parallel = false;
-        std::unique_ptr<WriteBuffer> compressor;
-        std::optional<HashingWriteBuffer> compressed_hashing;
+        HashingWriteBuffer plain_hashing;
+        CompressedWriteBuffer compressor;
+        HashingWriteBuffer compressed_hashing;
 
         /// marks_compressed_hashing -> marks_compressor -> marks_hashing -> marks_file
         std::unique_ptr<WriteBufferFromFileBase> marks_file;
-        std::optional<HashingWriteBuffer> marks_hashing;
-        std::optional<CompressedWriteBuffer> marks_compressor;
-        std::optional<HashingWriteBuffer> marks_compressed_hashing;
+        std::conditional_t<!only_plain_file, HashingWriteBuffer, void*> marks_hashing;
+        std::conditional_t<!only_plain_file, CompressedWriteBuffer, void*> marks_compressor;
+        std::conditional_t<!only_plain_file, HashingWriteBuffer, void*> marks_compressed_hashing;
         bool compress_marks;
 
         bool is_prefinalized = false;
 
-        /// Thread pool for parallel compression.
-        std::optional<ThreadPool> compression_thread_pool;
-
         void preFinalize();
+
         void finalize();
+
         void sync() const;
 
         void addToChecksums(MergeTreeDataPartChecksums & checksums);
     };
 
-    using StreamPtr = std::unique_ptr<Stream>;
+    using StreamPtr = std::unique_ptr<Stream<false>>;
+    using StatisticStreamPtr = std::unique_ptr<Stream<true>>;
 
     MergeTreeDataPartWriterOnDisk(
         const String & data_part_name_,
@@ -154,10 +154,18 @@ protected:
     /// Get unique non ordered skip indices column.
     Names getSkipIndicesColumns() const;
 
+    virtual void addStreams(const NameAndTypePair & name_and_type, const ColumnPtr & column, const ASTPtr & effective_codec_desc) = 0;
+
+    /// On first block create all required streams for columns with dynamic subcolumns and remember the block sample.
+    /// On each next block check if dynamic structure of the columns equals to the dynamic structure of the same
+    /// columns in the sample block. If for some column dynamic structure is different, adjust it so it matches
+    /// the structure from the sample.
+    void initOrAdjustDynamicStructureIfNeeded(Block & block);
+
     const MergeTreeIndices skip_indices;
 
     const ColumnsStatistics stats;
-    std::vector<StreamPtr> stats_streams;
+    std::vector<StatisticStreamPtr> stats_streams;
 
     const String marks_file_extension;
     const CompressionCodecPtr default_codec;
@@ -188,6 +196,10 @@ protected:
     size_t current_mark = 0;
 
     GinIndexStoreFactory::GinIndexStores gin_index_stores;
+
+    bool is_dynamic_streams_initialized = false;
+    Block block_sample;
+
 private:
     void initSkipIndices();
     void initPrimaryIndex();
