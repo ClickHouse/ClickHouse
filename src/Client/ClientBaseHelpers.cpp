@@ -141,7 +141,24 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
 
     try
     {
-        parse_res = parser.parse(token_iterator, ast, expected);
+        while (true)
+        {
+            parse_res = parser.parse(token_iterator, ast, expected);
+            if (!parse_res)
+                break;
+
+            if (!token_iterator->isEnd() && token_iterator->type != TokenType::Semicolon)
+            {
+                parse_res = false;
+                break;
+            }
+
+            while (token_iterator->type == TokenType::Semicolon)
+                ++token_iterator;
+
+            if (token_iterator->isEnd())
+                break;
+        }
     }
     catch (...)
     {
@@ -175,7 +192,7 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
 
     /// Highlight the last error in red. If the parser failed or the lexer found an invalid token,
     /// or if it didn't parse all the data (except, the data for INSERT query, which is legitimately unparsed)
-    if ((!parse_res || last_token.isError() || (!token_iterator->isEnd() && token_iterator->type != TokenType::Semicolon))
+    if ((!parse_res || last_token.isError())
         && !(insert_data && expected.max_parsed_pos >= insert_data)
         && expected.max_parsed_pos >= prev)
     {
