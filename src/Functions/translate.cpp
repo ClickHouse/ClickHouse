@@ -149,12 +149,6 @@ struct TranslateUTF8Impl
         const std::string & map_from,
         const std::string & map_to)
     {
-        auto map_from_size = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(map_from.data()), map_from.size());
-        auto map_to_size = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(map_to.data()), map_to.size());
-
-        if (map_from_size < map_to_size)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second arguments must be equal or longer than third");
-
         iota(map_ascii.data(), map_ascii.size(), UInt32(0));
 
         const UInt8 * map_from_ptr = reinterpret_cast<const UInt8 *>(map_from.data());
