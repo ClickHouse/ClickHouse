@@ -1,11 +1,9 @@
 import json
 from datetime import datetime
 from xml.etree import ElementTree as ET
+from helpers.cluster import ClickHouseCluster
 
 import pytest
-
-
-from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node_all_keys = cluster.add_instance(
