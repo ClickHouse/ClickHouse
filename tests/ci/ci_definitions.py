@@ -201,6 +201,12 @@ class JobNames(metaclass=WithIter):
     AST_FUZZER_TEST_TSAN = "AST fuzzer (tsan)"
     AST_FUZZER_TEST_UBSAN = "AST fuzzer (ubsan)"
 
+    BUZZHOUSE_TEST_DEBUG = "BuzzHouse (debug)"
+    BUZZHOUSE_TEST_ASAN = "BuzzHouse (asan)"
+    BUZZHOUSE_TEST_MSAN = "BuzzHouse (msan)"
+    BUZZHOUSE_TEST_TSAN = "BuzzHouse (tsan)"
+    BUZZHOUSE_TEST_UBSAN = "BuzzHouse (ubsan)"
+
     JEPSEN_KEEPER = "ClickHouse Keeper Jepsen"
     JEPSEN_SERVER = "ClickHouse Server Jepsen"
 
@@ -491,11 +497,23 @@ class CommonJobConfigs:
         job_name_keyword="ast",
         digest=DigestConfig(
             include_paths=[
-                "./tests/ci/ast_fuzzer_check.py",
+                "./tests/ci/ci_fuzzer_check.py",
             ],
             docker=["clickhouse/fuzzer"],
         ),
-        run_command="ast_fuzzer_check.py",
+        run_command='ci_fuzzer_check.py "AST Fuzzer"',
+        run_always=True,
+        runner_type=Runners.FUZZER_UNIT_TESTER,
+    )
+    BUZZHOUSE_TEST = JobConfig(
+        job_name_keyword="ast",
+        digest=DigestConfig(
+            include_paths=[
+                "./tests/ci/ci_fuzzer_check.py",
+            ],
+            docker=["clickhouse/fuzzer"],
+        ),
+        run_command='ci_fuzzer_check.py "BuzzHouse"',
         run_always=True,
         runner_type=Runners.FUZZER_UNIT_TESTER,
     )

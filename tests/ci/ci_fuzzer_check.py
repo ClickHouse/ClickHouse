@@ -30,6 +30,7 @@ def get_run_command(
         f"-e PR_TO_TEST={pr_info.number}",
         f"-e SHA_TO_TEST={pr_info.sha}",
         f"-e BINARY_URL_TO_DOWNLOAD='{build_url}'",
+        f"-e FUZZER_TO_RUN='{sys.argv[1]}'",
     ]
 
     env_str = " ".join(envs)
