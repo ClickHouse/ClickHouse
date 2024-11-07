@@ -735,6 +735,14 @@ def test_s3_disk_apply_new_settings(cluster, node_name):
 
     check_no_objects_after_drop(cluster)
 
+    # Restore
+    replace_config(
+        config_path,
+        "<s3_max_single_part_upload_size>0</s3_max_single_part_upload_size>",
+        "<s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>",
+    )
+
+    node.query("SYSTEM RELOAD CONFIG")
 
 @pytest.mark.parametrize("node_name", ["node"])
 def test_s3_no_delete_objects(cluster, node_name):
@@ -1004,12 +1012,18 @@ def test_s3_disk_heavy_write_check_mem(cluster, broken_s3, node_name):
         " SETTINGS"
         " storage_policy='broken_s3'",
     )
+
+    uuid = node.query(
+        "SELECT uuid FROM system.tables"
+        "  WHERE name='s3_test'"
+    )
+
     node.query("SYSTEM STOP MERGES s3_test")
 
     broken_s3.setup_fake_multpartuploads()
     broken_s3.setup_slow_answers(10 * 1024 * 1024, timeout=10, count=50)
 
-    query_id = f"INSERT_INTO_S3_DISK_QUERY_ID"
+    query_id = f"INSERT_INTO_S3_DISK_QUERY_ID_{uuid}"
     node.query(
         "INSERT INTO s3_test SELECT number, toString(number) FROM numbers(50000000)"
         f" SETTINGS max_memory_usage={2*memory}"
