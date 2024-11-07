@@ -1,3 +1,4 @@
+SET allow_experimental_map_type = 1;
 SET output_format_write_statistics = 0;
 
 DROP TABLE IF EXISTS map_formats;

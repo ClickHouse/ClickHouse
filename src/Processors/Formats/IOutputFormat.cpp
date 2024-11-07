@@ -69,10 +69,9 @@ void IOutputFormat::work()
 
     if (finished && !finalized)
     {
-        if (rows_before_limit_counter && rows_before_limit_counter->hasAppliedStep())
+        if (rows_before_limit_counter && rows_before_limit_counter->hasAppliedLimit())
             setRowsBeforeLimit(rows_before_limit_counter->get());
-        if (rows_before_aggregation_counter && rows_before_aggregation_counter->hasAppliedStep())
-            setRowsBeforeAggregation(rows_before_aggregation_counter->get());
+
         finalize();
         if (auto_flush)
             flush();

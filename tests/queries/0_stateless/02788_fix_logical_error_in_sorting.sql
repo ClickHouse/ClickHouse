@@ -1,5 +1,3 @@
-SET allow_deprecated_error_prone_window_functions = 1;
-
 DROP TABLE IF EXISTS session_events;
 DROP TABLE IF EXISTS event_types;
 

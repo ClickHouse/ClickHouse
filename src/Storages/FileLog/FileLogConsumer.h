@@ -33,7 +33,7 @@ public:
     const String & getCurrentRecord() const { return current[-1].data; }
 
 private:
-    enum class BufferStatus : uint8_t
+    enum class BufferStatus
     {
         INIT,
         NO_RECORD_RETURNED,
