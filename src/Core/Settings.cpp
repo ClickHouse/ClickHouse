@@ -5724,7 +5724,7 @@ In `clickhouse-local` it is enabled by default and can be explicitly disabled.
 )", 0) \
     DECLARE(Bool, optimize_extract_common_expressions, true, R"(
 Allow extracting common expressions from disjunctions in WHERE and ON expressions. A logical expression like `(A AND B) OR (A AND C)` can be rewritten to `A AND (B OR C)`, which might help to utilize:
-- indices in simple filtering expresssions
+- indices in simple filtering expressions
 - cross to inner join optimization
 )", 0) \
     \
