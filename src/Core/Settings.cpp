@@ -4852,7 +4852,7 @@ Allows to record the filesystem caching log for each query
     DECLARE(Bool, read_from_filesystem_cache_if_exists_otherwise_bypass_cache, false, R"(
 Allow to use the filesystem cache in passive mode - benefit from the existing cache entries, but don't put more entries into the cache. If you set this setting for heavy ad-hoc queries and leave it disabled for short real-time queries, this will allows to avoid cache threshing by too heavy queries and to improve the overall system efficiency.
 )", 0) \
-    DECLARE(Bool, skip_download_if_exceeds_query_cache, true, R"(
+    DECLARE(Bool, filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit, true, R"(
 Skip download from remote filesystem if exceeds query cache size
 )", 0) \
     DECLARE(UInt64, filesystem_cache_max_download_size, (128UL * 1024 * 1024 * 1024), R"(
@@ -5887,6 +5887,7 @@ Experimental data deduplication for SELECT queries based on part UUIDs
     MAKE_OBSOLETE(M, Bool, use_mysql_types_in_show_columns, false) \
     MAKE_OBSOLETE(M, Bool, s3queue_allow_experimental_sharded_mode, false) \
     MAKE_OBSOLETE(M, LightweightMutationProjectionMode, lightweight_mutation_projection_mode, LightweightMutationProjectionMode::THROW) \
+    MAKE_OBSOLETE(M, Bool, skip_download_if_exceeds_query_cache, true) \
     /* moved to config.xml: see also src/Core/ServerSettings.h */ \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_buffer_flush_schedule_pool_size, 16) \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_pool_size, 16) \
