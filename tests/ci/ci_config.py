@@ -411,7 +411,7 @@ class CI:
         JobNames.INTEGRATION_TEST_ARM: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
             num_batches=6,
-            #runner_type=Runners.FUNC_TESTER_ARM,
+            runner_type=Runners.FUNC_TESTER_ARM,
         ),
         JobNames.INTEGRATION_TEST: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE],
@@ -557,8 +557,8 @@ class CI:
             runner_type=Runners.STYLE_CHECKER
         ),
         JobNames.SIGN_AARCH64: JobConfig(
-            required_builds=[BuildNames.PACKAGE_RELEASE],
-            runner_type=Runners.STYLE_CHECKER
+            required_builds=[BuildNames.PACKAGE_AARCH64],
+            runner_type=Runners.STYLE_CHECKER_ARM
         ),
     }
 
