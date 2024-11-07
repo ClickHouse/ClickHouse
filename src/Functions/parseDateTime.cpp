@@ -613,15 +613,12 @@ namespace
 
             FunctionArgumentDescriptors optional_args;
             if constexpr (return_type == ReturnType::DateTime64)
-            {
-                optional_args = {
-                    {"scale/format", static_cast<FunctionArgumentDescriptor::TypeValidator>([](const IDataType & data_type) -> bool {
-                        return isUInt(data_type) || isString(data_type);
-                    }), nullptr, "UInt or String"},
+                optional_args = {{"scale/format", static_cast<FunctionArgumentDescriptor::TypeValidator>(
+                        [](const IDataType & data_type) -> bool { return isUInt(data_type) || isString(data_type); }
+                    ), nullptr, "UInt or String"},
                     {"format", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
                     {"timezone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"}
                 };
-            }
             else
                 optional_args = {
                     {"format", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
@@ -659,7 +656,7 @@ namespace
                     }
 
                     /// Construct the return type `DataTypDateTime64` with scale and time zone name. The scale value can be specified or be extracted
-                    /// from the format string by c how many 'S' characters are contained in the format's micorsceond fragment.
+                    /// from the format string by counting how many 'S' characters are contained in the format's micorsceond fragment.
                     String format = getFormat(arguments, scale);
                     std::vector<Instruction> instructions = parseFormat(format);
                     for (const auto & instruction : instructions)
@@ -676,7 +673,7 @@ namespace
                             else
                                 val++;
                         }
-                        /// If the scale is already specified by the second argument, but it not equals the value that extract from the format string, 
+                        /// If the scale is already specified by the second argument, but it not equals the value that extract from the format string,
                         /// then we should throw an exception; If the scale is not specified, then we should set its value as the extracted one.
                         if (val != 0 && scale != 0 && val != scale)
                             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -687,7 +684,7 @@ namespace
                             scale = val;
                     }
                     if (scale > maxPrecisionOfDateTime64)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, 
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "The scale of the input format string {} exceed the max scale value {}.",
                             format,
                             maxPrecisionOfDateTime64);
@@ -709,7 +706,7 @@ namespace
                 non_null_result_type = removeNullable(result_type);
             else
                 non_null_result_type = result_type;
-            
+
             if constexpr (return_type == ReturnType::DateTime64)
             {
                 const auto * datatime64_type = checkAndGetDataType<DataTypeDateTime64>(non_null_result_type.get());
@@ -726,7 +723,7 @@ namespace
         }
 
         template<typename T>
-        ColumnPtr executeImpl2(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, 
+        ColumnPtr executeImpl2(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count,
             MutableColumnPtr & col_res, PaddedPODArray<T> & res_data) const
         {
             const auto * col_str = checkAndGetColumn<ColumnString>(arguments[0].column.get());
@@ -736,7 +733,7 @@ namespace
                     "Illegal column {} of first ('str') argument of function {}. Must be string.",
                     arguments[0].column->getName(),
                     getName());
-            
+
             ColumnUInt8::MutablePtr col_null_map;
             if constexpr (error_handling == ErrorHandling::Null)
                 col_null_map = ColumnUInt8::create(input_rows_count, 0);
@@ -802,7 +799,7 @@ namespace
 
                 Int64OrError result = 0;
 
-                /// Ensure all input was consumed when the return type is `DateTime`.
+                /// Ensure all input was consumed.
                 if (cur < end)
                 {
                     result = tl::unexpected(ErrorCodeAndMessage(
@@ -2273,7 +2270,7 @@ namespace
             {
                 /// When parse `DateTime64` like `parseDateTime64[InJodaSyntax][OrZero/OrNull]('2024-11-05 12:22.22.123', 3), then the format is treated
                 /// as default value `yyyy-MM-dd HH:mm:ss`.
-                /// When parse `DateTime64` like `parseDateTime64[InJodaSyntax][OrZero/OrNull]('2024-11-05 12:22:22.123', 'yyyy-MM-dd HH:mm:ss.SSS')`, 
+                /// When parse `DateTime64` like `parseDateTime64[InJodaSyntax][OrZero/OrNull]('2024-11-05 12:22:22.123', 'yyyy-MM-dd HH:mm:ss.SSS')`,
                 /// then the second argument is the format.
                 /// When parse `DateTime64` like `parseDateTime64[InJodaSyntax][OrZero/OrNull]('2024-11-05 12:22:22.123', 3, 'yyyy-MM-dd HH:mm:ss.SSS')`,
                 /// then the third argument is the format.
@@ -2321,7 +2318,7 @@ namespace
                 /// If the return type is DateTime64, and the second argument is UInt type for scale, then it has 2 reasonable situations:
                 /// the first like parseDateTime64[InJodaSyntax][OrZero/OrNull]('2024-11-07 17:27.30.123456', 6, '%Y-%m-%d %H:%i:%s.%f', 'Etc/GMT+8')
                 /// the second like parseDateTime64[InJodaSyntax][OrZero/OrNull]('2024-11-07 17:27.30.123456', 6, '%Y-%m-%d %H:%i:%s.%f'). And for the
-                /// first one, we should return the last argument as its timezone, and for the second one, we should return the default time zone as 
+                /// first one, we should return the last argument as its timezone, and for the second one, we should return the default time zone as
                 /// `DateLUT::instance()`.
                 if (isUInt(arguments[1].type) && arguments.size() < 4)
                     return DateLUT::instance();
