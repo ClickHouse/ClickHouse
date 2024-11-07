@@ -1,26 +1,62 @@
 from typing import List
 
-from ci_v2.settings.definitions import (
+from praktika import Artifact, Job, Workflow
+from praktika.settings import Settings
+
+from ci.settings.definitions import (
     BASE_BRANCH,
     DOCKERS,
     SECRETS,
     JobNames,
     RunnerLabels,
 )
-from praktika import Job, Workflow
+
+
+class ArtifactNames:
+    ch_debug_binary = "clickhouse_debug_binary"
+
 
 style_check_job = Job.Config(
     name=JobNames.STYLE_CHECK,
     runs_on=[RunnerLabels.CI_SERVICES],
-    command="python3 ./ci_v2/jobs/check_style.py",
+    command="python3 ./ci/jobs/check_style.py",
     run_in_docker="clickhouse/style-test",
 )
 
 fast_test_job = Job.Config(
     name=JobNames.FAST_TEST,
     runs_on=[RunnerLabels.BUILDER],
-    command="python3 ./ci_v2/jobs/fast_test.py",
+    command="python3 ./ci/jobs/fast_test.py",
     run_in_docker="clickhouse/fasttest",
+    digest_config=Job.CacheDigestConfig(
+        include_paths=[
+            "./ci/jobs/fast_test.py",
+            "./tests/queries/0_stateless/",
+            "./src",
+        ],
+    ),
+)
+
+job_build_amd_debug = Job.Config(
+    name=JobNames.BUILD_AMD_DEBUG,
+    runs_on=[RunnerLabels.BUILDER],
+    command="python3 ./ci/jobs/build_clickhouse.py amd_debug",
+    run_in_docker="clickhouse/fasttest",
+    digest_config=Job.CacheDigestConfig(
+        include_paths=[
+            "./src",
+            "./contrib/",
+            "./CMakeLists.txt",
+            "./PreLoad.cmake",
+            "./cmake",
+            "./base",
+            "./programs",
+            "./docker/packager/packager",
+            "./rust",
+            "./tests/ci/version_helper.py",
+        ],
+    ),
+    provides=[ArtifactNames.ch_debug_binary],
 )
 
 workflow = Workflow.Config(
@@ -30,6 +66,14 @@ workflow = Workflow.Config(
     jobs=[
         style_check_job,
         fast_test_job,
+        job_build_amd_debug,
+    ],
+    artifacts=[
+        Artifact.Config(
+            name=ArtifactNames.ch_debug_binary,
+            type=Artifact.Type.S3,
+            path=f"{Settings.TEMP_DIR}/build/programs/clickhouse",
+        )
     ],
     dockers=DOCKERS,
     secrets=SECRETS,

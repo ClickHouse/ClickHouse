@@ -43,6 +43,8 @@ public:
 
     void finish(bool sync) final;
 
+    size_t getNumberOfOpenStreams() const override { return column_streams.size(); }
+
 private:
     /// Finish serialization of data: write final mark if required and compute checksums
     /// Also validate written data in debug mode
@@ -135,6 +137,9 @@ private:
     /// this marks will be written to disk.
     using MarksForColumns = std::unordered_map<String, StreamsWithMarks>;
     MarksForColumns last_non_written_marks;
+
+    /// Set of columns to put marks in cache during write.
+    NameSet columns_to_load_marks;
 
     /// How many rows we have already written in the current mark.
     /// More than zero when incoming blocks are smaller then their granularity.

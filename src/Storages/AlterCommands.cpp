@@ -1496,7 +1496,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 if (command.to_remove == AlterCommand::RemoveProperty::CODEC && column_from_table.codec == nullptr)
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
-                        "Column {} doesn't have TTL, cannot remove it",
+                        "Column {} doesn't have CODEC, cannot remove it",
                         backQuote(column_name));
                 if (command.to_remove == AlterCommand::RemoveProperty::COMMENT && column_from_table.comment.empty())
                     throw Exception(
