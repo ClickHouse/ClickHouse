@@ -1548,9 +1548,7 @@ struct WindowFunctionRank final : public StatelessWindowFunction
 
     RowNumber firstRequiredRowInFrame(const WindowTransform * transform) const override
     {
-        /// Current block is the only one required to be kept in memory.
-        auto [row, _] = transform->moveRowNumber(transform->current_row, -1);
-        return row;
+        return transform->peer_group_start;
     }
 };
 
@@ -1573,9 +1571,7 @@ struct WindowFunctionDenseRank final : public StatelessWindowFunction
 
     RowNumber firstRequiredRowInFrame(const WindowTransform * transform) const override
     {
-        /// Current block is the only one required to be kept in memory.
-        auto [row, _] = transform->moveRowNumber(transform->current_row, -1);
-        return row;
+        return transform->peer_group_start;
     }
 };
 
