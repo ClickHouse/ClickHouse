@@ -2971,7 +2971,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         break;
                 }
 
-                auto * table_expression_table_node = table_expression->as<TableNode>();
+                TableNode * table_expression_table_node = table_expression ? table_expression->as<TableNode>() : nullptr;
+
                 if (table_expression_table_node &&
                     table_expression_table_node->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
                 {
