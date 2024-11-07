@@ -908,7 +908,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     {
         part_storage_for_loading->commitTransaction();
 
-        MergeTreeDataPartBuilder builder(data, part_name, volume, part_relative_path, part_dir);
+        MergeTreeDataPartBuilder builder(data, part_name, volume, part_relative_path, part_dir, getReadSettings());
         new_data_part = builder.withPartFormatFromDisk().build();
 
         new_data_part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
