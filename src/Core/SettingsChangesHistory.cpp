@@ -75,6 +75,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"backup_restore_finish_timeout_after_error_sec", 0, 180, "New setting."},
             {"query_plan_join_inner_table_selection", "auto", "auto", "New setting."},
             {"parallel_replicas_local_plan", false, true, "Use local plan for local replica in a query with parallel replicas"},
+            {"query_metric_log_debug", false, false, "New setting."},
         }
     },
     {"24.10",

@@ -146,6 +146,7 @@ namespace Setting
     extern const SettingsQueryCacheSystemTableHandling query_cache_system_table_handling;
     extern const SettingsSeconds query_cache_ttl;
     extern const SettingsInt64 query_metric_log_interval;
+    extern const SettingsBool query_metric_log_debug;
     extern const SettingsOverflowMode read_overflow_mode;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
     extern const SettingsOverflowMode result_overflow_mode;
@@ -455,7 +456,7 @@ QueryLogElement logQueryStart(
     {
         auto interval_milliseconds = getQueryMetricLogInterval(context);
         if (interval_milliseconds > 0)
-            query_metric_log->startQuery(elem.client_info.current_query_id, query_start_time, interval_milliseconds);
+            query_metric_log->startQuery(elem.client_info.current_query_id, query_start_time, interval_milliseconds, settings[Setting::query_metric_log_debug]);
     }
 
     return elem;

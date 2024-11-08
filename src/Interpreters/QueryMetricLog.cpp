@@ -144,11 +144,12 @@ void QueryMetricLog::collectMetric(const ProcessList & process_list, String quer
 ///     lock-order-inversion (potential deadlock)
 /// which is not a real issue since QueryMetricLogStatus's mutex cannot be locked by anything else
 /// until we add it to the queries map.
-void QueryMetricLog::startQuery(const String & query_id, TimePoint start_time, UInt64 interval_milliseconds) TSA_NO_THREAD_SAFETY_ANALYSIS
+void QueryMetricLog::startQuery(const String & query_id, TimePoint start_time, UInt64 interval_milliseconds, bool debug_traces) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     QueryMetricLogStatus query_status;
     query_status.interval_milliseconds = interval_milliseconds;
     query_status.next_collect_time = start_time;
+    query_status.debug_traces = debug_traces;
 
     auto context = getContext();
     const auto & process_list = context->getProcessList();
@@ -222,21 +223,24 @@ void QueryMetricLogStatus::scheduleNext(String query_id)
     }
     else
     {
-        LOG_TRACE(logger, "The next collecting task for query {} should have already run at {}. Scheduling it right now",
-            query_id, timePointToString(next_collect_time));
+        if (debug_traces)
+            LOG_DEBUG(logger, "The next collecting task for query {} should have already run at {}. Scheduling it right now",
+                query_id, timePointToString(next_collect_time));
         task->schedule();
     }
 }
 
 std::optional<QueryMetricLogElement> QueryMetricLogStatus::createLogMetricElement(const String & query_id, const QueryStatusInfo & query_info, TimePoint query_info_time, bool schedule_next)
 {
-    LOG_TRACE(logger, "Collecting query_metric_log for query {} and interval {} ms with QueryStatusInfo from {}. Next collection time: {}",
-        query_id, interval_milliseconds, timePointToString(query_info_time),
-        schedule_next ? timePointToString(next_collect_time + std::chrono::milliseconds(interval_milliseconds)) : "finished");
+    if (debug_traces)
+        LOG_DEBUG(logger, "Collecting query_metric_log for query {} and interval {} ms with QueryStatusInfo from {}. Next collection time: {}",
+            query_id, interval_milliseconds, timePointToString(query_info_time),
+            schedule_next ? timePointToString(next_collect_time + std::chrono::milliseconds(interval_milliseconds)) : "finished");
 
     if (query_info_time <= last_collect_time)
     {
-        LOG_TRACE(logger, "Query {} has a more recent metrics collected. Skipping this one", query_id);
+        if (debug_traces)
+            LOG_DEBUG(logger, "Query {} has a more recent metrics collected. Skipping this one", query_id);
         return {};
     }
 
