@@ -735,7 +735,9 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
             loadUUID();
         loadColumns(require_columns_checksums);
         loadChecksums(require_columns_checksums);
+
         loadIndexGranularity();
+        index_granularity.shrinkToFitInMemory();
 
         if (!(*storage.getSettings())[MergeTreeSetting::primary_key_lazy_load])
             getIndex();
