@@ -4,6 +4,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/FileCacheUtils.h>
 #include <base/getThreadId.h>
 #include <base/hex.h>
 #include <Common/CurrentThread.h>
@@ -85,7 +86,6 @@ FileSegment::FileSegment(
             break;
         }
         /// DOWNLOADED is used either on initial cache metadata load into memory on server startup
-        /// or on shrinkFileSegmentToDownloadedSize() -- when file segment object is updated.
         case (State::DOWNLOADED):
         {
             reserved_size = downloaded_size = size_;
@@ -629,6 +629,46 @@ void FileSegment::completePartAndResetDownloader()
     LOG_TEST(log, "Complete batch. ({})", getInfoForLogUnlocked(lk));
 }
 
+void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key, const FileSegmentGuard::Lock & lock)
+{
+    if (downloaded_size == range().size())
+    {
+        /// Nothing to resize;
+        return;
+    }
+
+    if (!locked_key.isLastOwnerOfFileSegment(offset()))
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Shrinking of file segment can  be done only by the last holder: {}",
+            getInfoForLog());
+    }
+
+    const size_t aligned_downloaded_size = FileCacheUtils::roundUpToMultiple(downloaded_size, cache->getBoundaryAlignment());
+
+    chassert(aligned_downloaded_size <= range().size());
+    chassert(aligned_downloaded_size >= downloaded_size);
+
+    if (aligned_downloaded_size == range().size())
+    {
+        /// Nothing to resize;
+        return;
+    }
+
+    if (downloaded_size == aligned_downloaded_size)
+        setDownloadState(State::DOWNLOADED, lock);
+    else
+        setDownloadState(State::PARTIALLY_DOWNLOADED, lock);
+
+    segment_range.right = segment_range.left + aligned_downloaded_size - 1;
+
+    const size_t diff = reserved_size - downloaded_size;
+    chassert(reserved_size >= downloaded_size);
+    if (diff)
+        getQueueIterator()->decrementSize(diff);
+}
+
 void FileSegment::complete(bool allow_background_download)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentCompleteMicroseconds);
@@ -716,8 +756,7 @@ void FileSegment::complete(bool allow_background_download)
 
                 if (!added_to_download_queue)
                 {
-                    locked_key->shrinkFileSegmentToDownloadedSize(offset(), segment_lock);
-                    setDetachedState(segment_lock); /// See comment below.
+                    shrinkFileSegmentToDownloadedSize(*locked_key, segment_lock);
                 }
             }
             break;
@@ -747,11 +786,7 @@ void FileSegment::complete(bool allow_background_download)
                     /// but current file segment should remain PARRTIALLY_DOWNLOADED_NO_CONTINUATION and with detached state,
                     /// because otherwise an invariant that getOrSet() returns a contiguous range of file segments will be broken
                     /// (this will be crucial for other file segment holder, not for current one).
-                    locked_key->shrinkFileSegmentToDownloadedSize(offset(), segment_lock);
-
-                    /// We mark current file segment with state DETACHED, even though the data is still in cache
-                    /// (but a separate file segment) because is_last_holder is satisfied, so it does not matter.
-                    setDetachedState(segment_lock);
+                    shrinkFileSegmentToDownloadedSize(*locked_key, segment_lock);
                 }
             }
             break;
