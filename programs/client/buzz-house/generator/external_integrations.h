@@ -8,10 +8,15 @@
 #else
 #    include <mysql/mysql.h>
 #endif
+
+#include <bsoncxx/builder/stream/array.hpp>
+#include <bsoncxx/builder/stream/document.hpp>
+#include <bsoncxx/json.hpp>
+#include <bsoncxx/types.hpp>
 #include <mongocxx/client.hpp>
 #include <mongocxx/collection.hpp>
-#include <mongocxx/cursor.hpp>
 #include <mongocxx/database.hpp>
+
 #include <pqxx/pqxx>
 #include <sqlite3.h>
 
@@ -398,18 +403,129 @@ public:
 class MongoDBIntegration : public ClickHouseIntegration
 {
 private:
-    const ServerCredentials & sc;
+    std::string buf2;
+    std::ofstream out_file;
+    std::vector<char> binary_data;
+    std::vector<bsoncxx::document::value> documents;
+    mongocxx::client client;
+    mongocxx::database database;
+
+    template <typename T>
+    void DocumentAppendBottomType(RandomGenerator & rg, const std::string & cname, T & output, const SQLType * tp);
+
+    void DocumentAppendArray(
+        RandomGenerator & rg, const std::string & cname, bsoncxx::builder::stream::document & document, const ArrayType * tp);
+    void DocumentAppendAnyValue(
+        RandomGenerator & rg, const std::string & cname, bsoncxx::builder::stream::document & document, const SQLType * tp);
 
 public:
-    MongoDBIntegration(const FuzzConfig & fc) : ClickHouseIntegration(), sc(fc.mongodb_server) { }
+    MongoDBIntegration(const FuzzConfig & fc, mongocxx::client & mcon, mongocxx::database & db)
+        : ClickHouseIntegration()
+        , out_file(std::ofstream(fc.mongodb_server.query_log_file, std::ios::out | std::ios::trunc))
+        , client(std::move(mcon))
+        , database(std::move(db))
+    {
+        buf2.reserve(32);
+    }
+
+    static MongoDBIntegration * TestAndAddMongoDBIntegration(const FuzzConfig & fc)
+    {
+        std::string connection_str = "mongodb://";
+
+        if (fc.mongodb_server.user != "")
+        {
+            connection_str += fc.mongodb_server.user;
+            if (fc.mongodb_server.password != "")
+            {
+                connection_str += ":";
+                connection_str += fc.mongodb_server.password;
+            }
+            connection_str += "@";
+        }
+        connection_str += fc.mongodb_server.hostname;
+        connection_str += ":";
+        connection_str += std::to_string(fc.mongodb_server.port);
+
+        try
+        {
+            bool db_exists = false;
+            mongocxx::client client = mongocxx::client(mongocxx::uri(std::move(connection_str)));
+            auto databases = client.list_databases();
+
+            for (const auto & db : databases)
+            {
+                if (db["name"].get_utf8().value == fc.mongodb_server.database)
+                {
+                    db_exists = true;
+                    break;
+                }
+            }
+
+            if (db_exists)
+            {
+                client[fc.mongodb_server.database].drop();
+            }
+
+            mongocxx::database db = client[fc.mongodb_server.database];
+            db.create_collection("test");
+
+            return new MongoDBIntegration(fc, client, db);
+        }
+        catch (const std::exception & e)
+        {
+            std::cerr << "MongoDB connection error: " << e.what() << std::endl;
+            return nullptr;
+        }
+    }
 
     bool PerformIntegration(RandomGenerator & rg, const uint32_t tname, std::vector<InsertEntry> & entries) override
     {
-        (void)sc;
-        (void)rg;
-        (void)tname;
-        (void)entries;
-        //TODO
+        try
+        {
+            const uint32_t ndocuments = rg.NextMediumNumber();
+            const std::string str_tname = "t" + std::to_string(tname);
+            mongocxx::collection coll = database[str_tname];
+
+            for (uint32_t j = 0; j < ndocuments; j++)
+            {
+                bsoncxx::builder::stream::document document{};
+
+                if (rg.NextSmallNumber() < 3)
+                {
+                    std::shuffle(entries.begin(), entries.end(), rg.gen);
+                }
+                for (size_t i = 0; i < entries.size(); i++)
+                {
+                    if (rg.NextSmallNumber() < 10)
+                    { //sometimes the column is missing
+                        const InsertEntry & entry = entries[i];
+
+                        buf2.resize(0);
+                        buf2 += "c";
+                        buf2 += std::to_string(entry.cname1);
+                        if (entry.cname2.has_value())
+                        {
+                            buf2 += ".c";
+                            buf2 += std::to_string(entry.cname2.value());
+                        }
+                        DocumentAppendAnyValue(rg, buf2, document, entry.tp);
+                    }
+                }
+                documents.push_back(document << bsoncxx::builder::stream::finalize);
+            }
+            out_file << str_tname << std::endl; //collection name
+            for (const auto & doc : documents)
+            {
+                out_file << bsoncxx::to_json(doc.view()) << std::endl; // Write each JSON document on a new line
+            }
+            coll.insert_many(documents);
+            documents.clear();
+        }
+        catch (const std::exception & e)
+        {
+            std::cerr << "MongoDB connection error: " << e.what() << std::endl;
+            return false;
+        }
         return true;
     }
 
@@ -485,7 +601,7 @@ public:
         sqlite = SQLiteIntegration::TestAndAddSQLiteIntegration(fc);
         if (fc.mongodb_server.port)
         {
-            mongodb = new MongoDBIntegration(fc);
+            mongodb = MongoDBIntegration::TestAndAddMongoDBIntegration(fc);
         }
         if (fc.redis_server.port)
         {

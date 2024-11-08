@@ -218,7 +218,6 @@ public:
 
 private:
     void AddTableRelation(RandomGenerator & rg, const bool allow_internal_cols, const std::string & rel_name, const SQLTable & t);
-    void AppendDecimal(RandomGenerator & rg, std::string & ret, const uint32_t left, const uint32_t right);
 
     void StrAppendBottomValue(RandomGenerator & rg, std::string & ret, const SQLType * tp);
     void StrAppendMap(RandomGenerator & rg, std::string & ret, const MapType * mt);
@@ -227,10 +226,6 @@ private:
     void StrAppendVariant(RandomGenerator & rg, std::string & ret, const VariantType * vtp);
     void StrAppendAnyValueInternal(RandomGenerator & rg, std::string & ret, const SQLType * tp);
     void StrAppendAnyValue(RandomGenerator & rg, std::string & ret, const SQLType * tp);
-
-    void StrBuildJSONArray(RandomGenerator & rg, const int jdepth, const int jwidth, std::string & ret);
-    void StrBuildJSONElement(RandomGenerator & rg, std::string & ret);
-    void StrBuildJSON(RandomGenerator & rg, const int jdepth, const int jwidth, std::string & ret);
 
     int GenerateNextStatistics(RandomGenerator & rg, sql_query_grammar::ColumnStatistics * cstats);
     int PickUpNextCols(RandomGenerator & rg, const SQLTable & t, sql_query_grammar::ColumnList * clist);

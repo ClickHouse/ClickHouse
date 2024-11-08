@@ -884,4 +884,9 @@ bool HasType(const SQLType * tp)
     }
     return false;
 }
+
+void AppendDecimal(RandomGenerator & rg, std::string & ret, const uint32_t left, const uint32_t right);
+void StrBuildJSONArray(RandomGenerator & rg, const int jdepth, const int jwidth, std::string & ret);
+void StrBuildJSONElement(RandomGenerator & rg, std::string & ret);
+void StrBuildJSON(RandomGenerator & rg, const int jdepth, const int jwidth, std::string & ret);
 }

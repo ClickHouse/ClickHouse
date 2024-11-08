@@ -696,7 +696,7 @@ const SQLType * StatementGenerator::RandomNextType(RandomGenerator & rg, const u
     return RandomNextType(rg, allowed_types, col_counter, nullptr);
 }
 
-void StatementGenerator::AppendDecimal(RandomGenerator & rg, std::string & ret, const uint32_t left, const uint32_t right)
+void AppendDecimal(RandomGenerator & rg, std::string & ret, const uint32_t left, const uint32_t right)
 {
     ret += rg.NextBool() ? "-" : "";
     if (left > 0)
@@ -952,7 +952,7 @@ void StatementGenerator::StrAppendVariant(RandomGenerator & rg, std::string & re
     }
 }
 
-void StatementGenerator::StrBuildJSONArray(RandomGenerator & rg, const int jdepth, const int jwidth, std::string & ret)
+void StrBuildJSONArray(RandomGenerator & rg, const int jdepth, const int jwidth, std::string & ret)
 {
     std::uniform_int_distribution<int> jopt(1, 3);
     int nelems = 0, next_width = 0;
@@ -998,7 +998,7 @@ void StatementGenerator::StrBuildJSONArray(RandomGenerator & rg, const int jdept
     ret += "]";
 }
 
-void StatementGenerator::StrBuildJSONElement(RandomGenerator & rg, std::string & ret)
+void StrBuildJSONElement(RandomGenerator & rg, std::string & ret)
 {
     std::uniform_int_distribution<int> opts(1, 18);
     const int noption = opts(rg.gen);
@@ -1091,7 +1091,7 @@ void StatementGenerator::StrBuildJSONElement(RandomGenerator & rg, std::string &
     }
 }
 
-void StatementGenerator::StrBuildJSON(RandomGenerator & rg, const int jdepth, const int jwidth, std::string & ret)
+void StrBuildJSON(RandomGenerator & rg, const int jdepth, const int jwidth, std::string & ret)
 {
     ret += "{";
     if (jdepth && jwidth && rg.NextSmallNumber() < 9)

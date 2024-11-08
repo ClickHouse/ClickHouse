@@ -488,6 +488,17 @@ int StatementGenerator::GenerateEngineDetails(RandomGenerator & rg, SQLBase & b,
 
         connections.CreateExternalDatabaseTable(rg, IntegrationCall::SQLite, b.tname, entries);
     }
+    else if (b.IsMongoDBEngine())
+    {
+        const ServerCredentials & sc = fc.mongodb_server;
+
+        te->add_params()->set_svalue(sc.database);
+        te->add_params()->set_svalue("t" + std::to_string(b.tname));
+        te->add_params()->set_svalue(sc.user);
+        te->add_params()->set_svalue(sc.password);
+
+        connections.CreateExternalDatabaseTable(rg, IntegrationCall::MongoDB, b.tname, entries);
+    }
     else if (b.IsRedisEngine())
     {
         const ServerCredentials & sc = fc.redis_server;
@@ -594,6 +605,10 @@ int StatementGenerator::AddTableColumn(
             possible_types = ~(
                 allow_unsigned_int | allow_hugeint | allow_floating_points | allow_dates | allow_enum | allow_dynamic | allow_json
                 | allow_low_cardinality | allow_array | allow_map | allow_tuple | allow_variant | allow_nested | allow_ipv4 | allow_ipv6);
+        }
+        else if (t.IsMongoDBEngine())
+        {
+            possible_types = ~(allow_map | allow_tuple | allow_dynamic | allow_nested);
         }
 
         tp = RandomNextType(rg, possible_types, t.col_counter, cd->mutable_type()->mutable_type());
@@ -916,6 +931,10 @@ sql_query_grammar::TableEngineValues StatementGenerator::GetNextTableEngine(Rand
         if (connections.HasSQLiteConnection())
         {
             this->ids.push_back(sql_query_grammar::SQLite);
+        }
+        if (connections.HasMongoDBConnection())
+        {
+            this->ids.push_back(sql_query_grammar::MongoDB);
         }
         if (connections.HasRedisConnection())
         {
