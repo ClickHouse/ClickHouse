@@ -1089,6 +1089,9 @@ CONV_FN_QUOTE(TopTypeName, ttn)
             ret += "Variant";
             TupleWithOutColumnNamesToString(ret, quote, ttn.variant());
             break;
+        case TopTypeNameType::kGeo:
+            ret += GeoTypes_Name(ttn.geo());
+            break;
         default:
             ret += "Int";
     }

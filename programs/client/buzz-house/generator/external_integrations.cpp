@@ -156,6 +156,7 @@ void MongoDBIntegration::DocumentAppendBottomType(RandomGenerator & rg, const st
     const DecimalType * detp;
     const StringType * stp;
     const EnumType * etp;
+    const GeoType * gtp;
 
     (void)cname;
     if ((itp = dynamic_cast<const IntType *>(tp)))
@@ -253,7 +254,7 @@ void MongoDBIntegration::DocumentAppendBottomType(RandomGenerator & rg, const st
     else if ((dttp = dynamic_cast<const DateTimeType *>(tp)))
     {
         buf.resize(0);
-        if (dtp->extended)
+        if (dttp->extended)
         {
             rg.NextDateTime64(buf);
         }
@@ -416,6 +417,19 @@ void MongoDBIntegration::DocumentAppendBottomType(RandomGenerator & rg, const st
             output << buf;
         }
     }
+    else if ((gtp = dynamic_cast<const GeoType *>(tp)))
+    {
+        buf.resize(0);
+        AppendGeoValue(rg, buf, gtp->geo_type);
+        if constexpr (std::is_same<T, bsoncxx::v_noabi::builder::stream::document>::value)
+        {
+            output << cname << buf;
+        }
+        else
+        {
+            output << buf;
+        }
+    }
     else
     {
         assert(0);
@@ -457,7 +471,8 @@ void MongoDBIntegration::DocumentAppendArray(
             dynamic_cast<const IntType *>(tp) || dynamic_cast<const FloatType *>(tp) || dynamic_cast<const DateType *>(tp)
             || dynamic_cast<const DateTimeType *>(tp) || dynamic_cast<const DecimalType *>(tp) || dynamic_cast<const StringType *>(tp)
             || dynamic_cast<const BoolType *>(tp) || dynamic_cast<const EnumType *>(tp) || dynamic_cast<const UUIDType *>(tp)
-            || dynamic_cast<const IPv4Type *>(tp) || dynamic_cast<const IPv6Type *>(tp) || dynamic_cast<const JSONType *>(tp))
+            || dynamic_cast<const IPv4Type *>(tp) || dynamic_cast<const IPv6Type *>(tp) || dynamic_cast<const JSONType *>(tp)
+            || dynamic_cast<const GeoType *>(tp))
         {
             DocumentAppendBottomType<decltype(array)>(rg, "", array, at->subtype);
         }
@@ -524,7 +539,8 @@ void MongoDBIntegration::DocumentAppendAnyValue(
         dynamic_cast<const IntType *>(tp) || dynamic_cast<const FloatType *>(tp) || dynamic_cast<const DateType *>(tp)
         || dynamic_cast<const DateTimeType *>(tp) || dynamic_cast<const DecimalType *>(tp) || dynamic_cast<const StringType *>(tp)
         || dynamic_cast<const BoolType *>(tp) || dynamic_cast<const EnumType *>(tp) || dynamic_cast<const UUIDType *>(tp)
-        || dynamic_cast<const IPv4Type *>(tp) || dynamic_cast<const IPv6Type *>(tp) || dynamic_cast<const JSONType *>(tp))
+        || dynamic_cast<const IPv4Type *>(tp) || dynamic_cast<const IPv6Type *>(tp) || dynamic_cast<const JSONType *>(tp)
+        || dynamic_cast<const GeoType *>(tp))
     {
         DocumentAppendBottomType<bsoncxx::v_noabi::builder::stream::document>(rg, cname, document, tp);
     }

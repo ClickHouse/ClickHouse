@@ -2602,6 +2602,15 @@ message NestedType {
     repeated TypeColumnDef others = 2;
 }
 
+enum GeoTypes {
+    Point = 1;
+    Ring = 2;
+    LineString = 3;
+    MultiLineString = 4;
+    Polygon = 5;
+    MultiPolygon = 6;
+}
+
 message TopTypeName {
     oneof type_oneof {
         BottomTypeName non_nullable = 1;
@@ -2613,6 +2622,7 @@ message TopTypeName {
         TupleType tuple = 7;
         NestedType nested = 8;
         TupleWithOutColumnNames variant = 9;
+        GeoTypes geo = 10;
     }
 }
 

@@ -10,11 +10,12 @@ namespace buzzhouse
 {
 
 const constexpr uint32_t allow_bool = (1 << 0), allow_unsigned_int = (1 << 1), allow_int8 = (1 << 2), allow_hugeint = (1 << 3),
-                         allow_floating_points = (1 << 4), allow_dates = (1 << 5), allow_date32 = (1 << 6), allow_datetime64 = (1 << 7),
-                         allow_strings = (1 << 8), allow_decimals = (1 << 9), allow_uuid = (1 << 10), allow_enum = (1 << 11),
-                         allow_dynamic = (1 << 12), allow_json = (1 << 13), allow_nullable = (1 << 14), allow_low_cardinality = (1 << 15),
-                         allow_array = (1 << 16), allow_map = (1 << 17), allow_tuple = (1 << 18), allow_variant = (1 << 19),
-                         allow_nested = (1 << 20), allow_nullable_inside_array = (1 << 21), allow_ipv4 = (1 << 22), allow_ipv6 = (1 << 23);
+                         allow_floating_points = (1 << 4), allow_dates = (1 << 5), allow_date32 = (1 << 6), allow_datetimes = (1 << 7),
+                         allow_datetime64 = (1 << 8), allow_strings = (1 << 9), allow_decimals = (1 << 10), allow_uuid = (1 << 11),
+                         allow_enum = (1 << 12), allow_dynamic = (1 << 13), allow_json = (1 << 14), allow_nullable = (1 << 15),
+                         allow_low_cardinality = (1 << 16), allow_array = (1 << 17), allow_map = (1 << 18), allow_tuple = (1 << 19),
+                         allow_variant = (1 << 20), allow_nested = (1 << 21), allow_nullable_inside_array = (1 << 22),
+                         allow_ipv4 = (1 << 23), allow_ipv6 = (1 << 24), allow_geo = (1 << 25);
 
 class SQLType
 {
@@ -660,6 +661,42 @@ public:
     ~LowCardinality() override { delete subtype; }
 };
 
+class GeoType : public SQLType
+{
+public:
+    const sql_query_grammar::GeoTypes & geo_type;
+    GeoType(const sql_query_grammar::GeoTypes & gt) : geo_type(gt) { }
+
+    void TypeName(std::string & ret, const bool escape) const override
+    {
+        (void)escape;
+        ret += GeoTypes_Name(geo_type);
+    }
+    void MySQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
+    {
+        (void)rg;
+        (void)ret;
+        (void)escape;
+        assert(0);
+    }
+    void PostgreSQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
+    {
+        (void)rg;
+        (void)ret;
+        (void)escape;
+        assert(0);
+    }
+    void SQLiteTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
+    {
+        (void)rg;
+        (void)ret;
+        (void)escape;
+        assert(0);
+    }
+
+    ~GeoType() override = default;
+};
+
 class ArrayType : public SQLType
 {
 public:
@@ -951,4 +988,6 @@ void AppendDecimal(RandomGenerator & rg, std::string & ret, const uint32_t left,
 void StrBuildJSONArray(RandomGenerator & rg, const int jdepth, const int jwidth, std::string & ret);
 void StrBuildJSONElement(RandomGenerator & rg, std::string & ret);
 void StrBuildJSON(RandomGenerator & rg, const int jdepth, const int jwidth, std::string & ret);
+void AppendGeoValue(RandomGenerator & rg, std::string & ret, const sql_query_grammar::GeoTypes & geo_type);
+
 }

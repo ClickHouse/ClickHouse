@@ -282,26 +282,36 @@ int StatementGenerator::GenerateLiteralValue(RandomGenerator & rg, sql_query_gra
     }
     else if (noption < 601)
     {
-        const uint32_t nopt = rg.NextMediumNumber();
+        const uint32_t nopt = rg.NextLargeNumber();
 
         buf.resize(0);
-        if (nopt < 3)
+        if (nopt < 31)
         {
             buf += "'";
             rg.NextUUID(buf);
-            buf += "'";
+            buf += "'::UUID";
         }
-        else if (nopt < 5)
+        else if (nopt < 51)
         {
             buf += "'";
             rg.NextIPv4(buf);
-            buf += "'";
+            buf += "'::IPv4";
         }
-        else if (nopt < 7)
+        else if (nopt < 71)
         {
             buf += "'";
             rg.NextIPv6(buf);
+            buf += "'::IPv6";
+        }
+        else if (nopt < 101)
+        {
+            const sql_query_grammar::GeoTypes gt = static_cast<sql_query_grammar::GeoTypes>(
+                (rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::GeoTypes_MAX)) + 1);
+
             buf += "'";
+            AppendGeoValue(rg, buf, gt);
+            buf += "'";
+            buf += GeoTypes_Name(gt);
         }
         else
         {

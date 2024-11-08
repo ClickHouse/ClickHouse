@@ -20,6 +20,7 @@ const SQLType * TypeDeepCopy(const SQLType * tp)
     const JSONType * jt;
     const Nullable * nl;
     const LowCardinality * lc;
+    const GeoType * gt;
     const ArrayType * at;
     const MapType * mt;
     const TupleType * ttp;
@@ -85,6 +86,10 @@ const SQLType * TypeDeepCopy(const SQLType * tp)
     else if ((lc = dynamic_cast<const LowCardinality *>(tp)))
     {
         return new LowCardinality(TypeDeepCopy(lc->subtype));
+    }
+    else if ((gt = dynamic_cast<const GeoType *>(tp)))
+    {
+        return new GeoType(gt->geo_type);
     }
     else if ((at = dynamic_cast<const ArrayType *>(tp)))
     {
@@ -247,7 +252,8 @@ const SQLType * StatementGenerator::BottomType(
     const uint32_t int_type
         = 40,
         floating_point_type = 10 * static_cast<uint32_t>((allowed_types & allow_floating_points) != 0 && this->fc.fuzz_floating_points),
-        date_type = 15 * static_cast<uint32_t>((allowed_types & allow_dates) != 0), datetime_type = 15,
+        date_type = 15 * static_cast<uint32_t>((allowed_types & allow_dates) != 0),
+        datetime_type = 15 * static_cast<uint32_t>((allowed_types & allow_datetimes) != 0),
         string_type = 30 * static_cast<uint32_t>((allowed_types & allow_strings) != 0),
         decimal_type = 20 * static_cast<uint32_t>(!low_card && (allowed_types & allow_decimals) != 0),
         bool_type = 20 * static_cast<uint32_t>(!low_card && (allowed_types & allow_bool) != 0),
@@ -258,7 +264,7 @@ const SQLType * StatementGenerator::BottomType(
         json_type = 20 * static_cast<uint32_t>(!low_card && (allowed_types & allow_json) != 0),
         dynamic_type = 30 * static_cast<uint32_t>(!low_card && (allowed_types & allow_dynamic) != 0),
         prob_space = int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + enum_type
-        + uuid_type + ipv4_type + ipv6_type + json_type + dynamic_type;
+        + uuid_type + ipv4_type + ipv6_type + json_type + dynamic_type + geo_type;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.gen);
 
@@ -537,6 +543,16 @@ const SQLType * StatementGenerator::BottomType(
         }
         res = new DynamicType(ntypes);
     }
+    else if (
+        geo_type
+        && nopt
+            < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + enum_type + uuid_type
+               + ipv4_type + ipv6_type + json_type + dynamic_type + geo_type + 1))
+    {
+        //geo
+        res = new GeoType(
+            static_cast<sql_query_grammar::GeoTypes>((rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::GeoTypes_MAX)) + 1));
+    }
     else
     {
         assert(0);
@@ -590,7 +606,7 @@ const SQLType * StatementGenerator::RandomNextType(
         const bool lcard = (allowed_types & allow_low_cardinality) && rg.NextMediumNumber() < 18;
         const SQLType * res = new Nullable(BottomType(
             rg,
-            allowed_types & ~(allow_dynamic | allow_json),
+            allowed_types & ~(allow_dynamic | allow_json | allow_geo),
             lcard,
             tp ? (lcard ? tp->mutable_nullable_lcard() : tp->mutable_nullable()) : nullptr));
         return lcard ? new LowCardinality(res) : res;
@@ -740,6 +756,123 @@ void AppendDecimal(RandomGenerator & rg, std::string & ret, const uint32_t left,
     }
 }
 
+static inline void NextFloatingPoint(RandomGenerator & rg, std::string & ret)
+{
+    const uint32_t next_option = rg.NextLargeNumber();
+
+    if (next_option < 25)
+    {
+        if (next_option < 17)
+        {
+            ret += next_option < 9 ? "+" : "-";
+        }
+        ret += "nan";
+    }
+    else if (next_option < 49)
+    {
+        if (next_option < 41)
+        {
+            ret += next_option < 33 ? "+" : "-";
+        }
+        ret += "inf";
+    }
+    else if (next_option < 73)
+    {
+        if (next_option < 65)
+        {
+            ret += next_option < 57 ? "+" : "-";
+        }
+        ret += "0.0";
+    }
+    else if (next_option < 373)
+    {
+        ret += std::to_string(rg.NextRandomInt32());
+    }
+    else if (next_option < 673)
+    {
+        ret += std::to_string(rg.NextRandomInt64());
+    }
+    else
+    {
+        ret += std::to_string(rg.NextRandomDouble());
+    }
+}
+
+void AppendGeoValue(RandomGenerator & rg, std::string & ret, const sql_query_grammar::GeoTypes & geo_type)
+{
+    const uint32_t limit = rg.NextLargeNumber() % 10;
+
+    switch (geo_type)
+    {
+        case sql_query_grammar::GeoTypes::Point:
+            ret += "(";
+            NextFloatingPoint(rg, ret);
+            ret += ",";
+            NextFloatingPoint(rg, ret);
+            ret += ")";
+            break;
+        case sql_query_grammar::GeoTypes::Ring:
+        case sql_query_grammar::GeoTypes::LineString:
+            ret += "[";
+            for (uint32_t i = 0; i < limit; i++)
+            {
+                ret += "(";
+                NextFloatingPoint(rg, ret);
+                ret += ",";
+                NextFloatingPoint(rg, ret);
+                ret += ")";
+            }
+            ret += "]";
+            break;
+        case sql_query_grammar::GeoTypes::MultiLineString:
+        case sql_query_grammar::GeoTypes::Polygon:
+            ret += "[";
+            for (uint32_t i = 0; i < limit; i++)
+            {
+                const uint32_t nlines = rg.NextLargeNumber() % 10;
+
+                ret += "[";
+                for (uint32_t j = 0; j < nlines; j++)
+                {
+                    ret += "(";
+                    NextFloatingPoint(rg, ret);
+                    ret += ",";
+                    NextFloatingPoint(rg, ret);
+                    ret += ")";
+                }
+                ret += "]";
+            }
+            ret += "]";
+            break;
+        case sql_query_grammar::GeoTypes::MultiPolygon:
+            ret += "[";
+            for (uint32_t i = 0; i < limit; i++)
+            {
+                const uint32_t npoligons = rg.NextLargeNumber() % 10;
+
+                ret += "[";
+                for (uint32_t j = 0; j < npoligons; j++)
+                {
+                    const uint32_t nlines = rg.NextLargeNumber() % 10;
+
+                    ret += "[";
+                    for (uint32_t k = 0; k < nlines; k++)
+                    {
+                        ret += "(";
+                        NextFloatingPoint(rg, ret);
+                        ret += ",";
+                        NextFloatingPoint(rg, ret);
+                        ret += ")";
+                    }
+                    ret += "]";
+                }
+                ret += "]";
+            }
+            ret += "]";
+            break;
+    }
+}
+
 void StatementGenerator::StrAppendBottomValue(RandomGenerator & rg, std::string & ret, const SQLType * tp)
 {
     const IntType * itp;
@@ -798,36 +931,7 @@ void StatementGenerator::StrAppendBottomValue(RandomGenerator & rg, std::string 
     }
     else if (dynamic_cast<const FloatType *>(tp))
     {
-        const uint32_t next_option = rg.NextLargeNumber();
-
-        if (next_option < 25)
-        {
-            if (next_option < 17)
-            {
-                ret += next_option < 9 ? "+" : "-";
-            }
-            ret += "nan";
-        }
-        else if (next_option < 49)
-        {
-            if (next_option < 41)
-            {
-                ret += next_option < 33 ? "+" : "-";
-            }
-            ret += "inf";
-        }
-        else if (next_option < 73)
-        {
-            if (next_option < 65)
-            {
-                ret += next_option < 57 ? "+" : "-";
-            }
-            ret += "0.0";
-        }
-        else
-        {
-            ret += std::to_string(rg.NextRandomDouble());
-        }
+        NextFloatingPoint(rg, ret);
     }
     else if ((dtp = dynamic_cast<const DateType *>(tp)))
     {
@@ -845,7 +949,7 @@ void StatementGenerator::StrAppendBottomValue(RandomGenerator & rg, std::string 
     else if ((dttp = dynamic_cast<const DateTimeType *>(tp)))
     {
         ret += "'";
-        if (dtp->extended)
+        if (dttp->extended)
         {
             rg.NextDateTime64(ret);
         }
@@ -1085,6 +1189,15 @@ void StrBuildJSONElement(RandomGenerator & rg, std::string & ret)
         case 16: //double
             ret += std::to_string(rg.NextRandomDouble());
             break;
+        case 17: { //geo
+            const sql_query_grammar::GeoTypes gt = static_cast<sql_query_grammar::GeoTypes>(
+                (rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::GeoTypes_MAX)) + 1);
+
+            ret += "'";
+            AppendGeoValue(rg, ret, gt);
+            ret += "'";
+        }
+        break;
         default:
             assert(0);
     }
@@ -1137,6 +1250,7 @@ void StatementGenerator::StrAppendAnyValueInternal(RandomGenerator & rg, std::st
     const TupleType * ttp;
     const VariantType * vtp;
     const LowCardinality * lc;
+    const GeoType * gtp;
     const uint32_t ndefault = rg.NextMediumNumber();
 
     if (ndefault < 5)
@@ -1178,6 +1292,10 @@ void StatementGenerator::StrAppendAnyValueInternal(RandomGenerator & rg, std::st
 
         StrAppendAnyValueInternal(rg, ret, next);
         delete next;
+    }
+    else if ((gtp = dynamic_cast<const GeoType *>(tp)))
+    {
+        AppendGeoValue(rg, ret, gtp->geo_type);
     }
     else if (this->depth == this->fc.max_depth)
     {
