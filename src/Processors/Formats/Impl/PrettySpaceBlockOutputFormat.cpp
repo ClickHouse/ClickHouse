@@ -25,7 +25,7 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
     const auto & columns = chunk.getColumns();
 
     bool cut_to_width = !(
-        !format_settings.pretty.max_value_width_apply_for_single_value && chunk.getNumRows() == 1 && num_columns == 1 && total_rows == 0);
+        !format_settings.pretty.max_value_width_apply_for_single_value && num_rows == 1 && num_columns == 1 && total_rows == 0);
 
     WidthsPerColumn widths;
     Widths max_widths;
