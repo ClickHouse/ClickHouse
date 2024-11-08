@@ -8,8 +8,6 @@
 #include <Poco/String.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/SipHash.h>
-#include <Common/StringUtils.h>
-#include <algorithm>
 
 namespace DB
 {
@@ -19,7 +17,6 @@ namespace ErrorCodes
     extern const int TOO_BIG_AST;
     extern const int TOO_DEEP_AST;
     extern const int UNKNOWN_ELEMENT_IN_AST;
-    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -177,6 +174,7 @@ String IAST::formatWithPossiblyHidingSensitiveData(
     IdentifierQuotingRule identifier_quoting_rule,
     IdentifierQuotingStyle identifier_quoting_style) const
 {
+
     WriteBufferFromOwnString buf;
     FormatSettings settings(buf, one_line);
     settings.show_secrets = show_secrets;
@@ -222,7 +220,6 @@ String IAST::getColumnNameWithoutAlias() const
 
 void IAST::FormatSettings::writeIdentifier(const String & name, bool ambiguous) const
 {
-    checkIdentifier(name);
     bool must_quote
         = (identifier_quoting_rule == IdentifierQuotingRule::Always
            || (ambiguous && identifier_quoting_rule == IdentifierQuotingRule::WhenNecessary));
@@ -263,21 +260,6 @@ void IAST::FormatSettings::writeIdentifier(const String & name, bool ambiguous) 
     }
 }
 
-void IAST::FormatSettings::checkIdentifier(const String & name) const
-{
-    if (enforce_strict_identifier_format)
-    {
-        bool is_word_char_identifier = std::all_of(name.begin(), name.end(), isWordCharASCII);
-        if (!is_word_char_identifier)
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Identifier '{}' contains characters other than alphanumeric and cannot be when enforce_strict_identifier_format is enabled",
-                name);
-        }
-    }
-}
-
 void IAST::dumpTree(WriteBuffer & ostr, size_t indent) const
 {
     String indent_str(indent, '-');
@@ -286,8 +268,7 @@ void IAST::dumpTree(WriteBuffer & ostr, size_t indent) const
     writeChar('\n', ostr);
     for (const auto & child : children)
     {
-        if (!child)
-            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_AST, "Can't dump a nullptr child");
+        if (!child) throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_AST, "Can't dump nullptr child");
         child->dumpTree(ostr, indent + 1);
     }
 }

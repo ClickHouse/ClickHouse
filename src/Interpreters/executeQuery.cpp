@@ -5,7 +5,6 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/FailPoint.h>
-#include <Common/FieldVisitorToString.h>
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryCache.h>
@@ -61,7 +60,6 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryLog.h>
-#include <Interpreters/QueryMetricLog.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/SelectQueryOptions.h>
@@ -144,7 +142,6 @@ namespace Setting
     extern const SettingsBool query_cache_squash_partial_results;
     extern const SettingsQueryCacheSystemTableHandling query_cache_system_table_handling;
     extern const SettingsSeconds query_cache_ttl;
-    extern const SettingsInt64 query_metric_log_interval;
     extern const SettingsOverflowMode read_overflow_mode;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
     extern const SettingsOverflowMode result_overflow_mode;
@@ -158,8 +155,6 @@ namespace Setting
     extern const SettingsBool use_query_cache;
     extern const SettingsBool wait_for_async_insert;
     extern const SettingsSeconds wait_for_async_insert_timeout;
-    extern const SettingsBool implicit_select;
-    extern const SettingsBool enforce_strict_identifier_format;
 }
 
 namespace ErrorCodes
@@ -369,15 +364,6 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
     addPrivilegesInfoToQueryLogElement(element, context_ptr);
 }
 
-static UInt64 getQueryMetricLogInterval(ContextPtr context)
-{
-    const auto & settings = context->getSettingsRef();
-    auto interval_milliseconds = settings[Setting::query_metric_log_interval];
-    if (interval_milliseconds < 0)
-        interval_milliseconds = context->getConfigRef().getUInt64("query_metric_log.collect_interval_milliseconds", 1000);
-
-    return interval_milliseconds;
-}
 
 QueryLogElement logQueryStart(
     const std::chrono::time_point<std::chrono::system_clock> & query_start_time,
@@ -450,38 +436,7 @@ QueryLogElement logQueryStart(
         }
     }
 
-    if (auto query_metric_log = context->getQueryMetricLog(); query_metric_log && !internal)
-    {
-        auto interval_milliseconds = getQueryMetricLogInterval(context);
-        if (interval_milliseconds > 0)
-            query_metric_log->startQuery(elem.client_info.current_query_id, query_start_time, interval_milliseconds);
-    }
-
     return elem;
-}
-
-void logQueryMetricLogFinish(ContextPtr context, bool internal, String query_id, QueryStatusInfoPtr info)
-{
-    if (auto query_metric_log = context->getQueryMetricLog(); query_metric_log && !internal)
-    {
-        auto interval_milliseconds = getQueryMetricLogInterval(context);
-        if (info && interval_milliseconds > 0)
-        {
-            /// Only collect data on query finish if the elapsed time exceeds the interval to collect.
-            /// If we don't do this, it's counter-intuitive to have a single entry for every quick query
-            /// where the data is basically a subset of the query_log.
-            /// On the other hand, it's very convenient to have a new entry whenever the query finishes
-            /// so that we can get nice time-series querying only query_metric_log without the need
-            /// to query the final state in query_log.
-            auto collect_on_finish = info->elapsed_microseconds > interval_milliseconds * 1000;
-            auto query_info = collect_on_finish ? info : nullptr;
-            query_metric_log->finishQuery(query_id, query_info);
-        }
-        else
-        {
-            query_metric_log->finishQuery(query_id, nullptr);
-        }
-    }
 }
 
 void logQueryFinish(
@@ -596,8 +551,6 @@ void logQueryFinish(
                 }
             }
         }
-
-        logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, std::make_shared<QueryStatusInfo>(info));
     }
 
     if (query_span)
@@ -611,21 +564,6 @@ void logQueryFinish(
         query_span->addAttributeIfNotZero("clickhouse.written_rows", elem.written_rows);
         query_span->addAttributeIfNotZero("clickhouse.written_bytes", elem.written_bytes);
         query_span->addAttributeIfNotZero("clickhouse.memory_usage", elem.memory_usage);
-
-        if (context)
-        {
-            std::string user_name = context->getUserName();
-            query_span->addAttribute("clickhouse.user", user_name);
-        }
-
-        if (settings[Setting::log_query_settings])
-        {
-            auto changes = settings.changes();
-            for (const auto & change : changes)
-            {
-                query_span->addAttribute(fmt::format("clickhouse.setting.{}", change.name), convertFieldToString(change.value));
-            }
-        }
         query_span->finish();
     }
 }
@@ -657,11 +595,10 @@ void logQueryException(
     elem.event_time = timeInSeconds(time_now);
     elem.event_time_microseconds = timeInMicroseconds(time_now);
 
-    QueryStatusInfoPtr info;
     if (process_list_elem)
     {
-        info = std::make_shared<QueryStatusInfo>(process_list_elem->getInfo(true, settings[Setting::log_profile_events], false));
-        addStatusInfoToQueryLogElement(elem, *info, query_ast, context);
+        QueryStatusInfo info = process_list_elem->getInfo(true, settings[Setting::log_profile_events], false);
+        addStatusInfoToQueryLogElement(elem, info, query_ast, context);
     }
     else
     {
@@ -696,8 +633,6 @@ void logQueryException(
         query_span->addAttribute("clickhouse.exception_code", elem.exception_code);
         query_span->finish();
     }
-
-    logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, info);
 }
 
 void logExceptionBeforeStart(
@@ -795,8 +730,6 @@ void logExceptionBeforeStart(
             ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
         }
     }
-
-    logQueryMetricLogFinish(context, false, elem.client_info.current_query_id, nullptr);
 }
 
 void validateAnalyzerSettings(ASTPtr ast, bool context_value)
@@ -907,7 +840,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         }
         else
         {
-            ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+            ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert]);
             /// TODO: parser should fail early when max_query_size limit is reached.
             ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
@@ -944,8 +877,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Inconsistent AST formatting: the query:\n{}\ncannot parse query back from {}",
                         formatted1, std::string_view(begin, end-begin));
-
-                throw;
+                else
+                    throw;
             }
 
             chassert(ast2);
@@ -1064,14 +997,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// to allow settings to take effect.
         InterpreterSetQuery::applySettingsFromQuery(ast, context);
         validateAnalyzerSettings(ast, settings[Setting::allow_experimental_analyzer]);
-
-        if (settings[Setting::enforce_strict_identifier_format])
-        {
-            WriteBufferFromOwnString buf;
-            IAST::FormatSettings enforce_strict_identifier_format_settings(buf, true);
-            enforce_strict_identifier_format_settings.enforce_strict_identifier_format = true;
-            ast->format(enforce_strict_identifier_format_settings);
-        }
 
         if (auto * insert_query = ast->as<ASTInsertQuery>())
             insert_query->tail = istr;
@@ -1336,6 +1261,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 {
                     if (!interpreter->supportsTransactions())
                         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for this type of query ({})", ast->getID());
+
                 }
 
                 // InterpreterSelectQueryAnalyzer does not build QueryPlan in the constructor.

@@ -57,7 +57,7 @@ public:
     void shutdown() override;
 
     /// Initializes access storage (user directories).
-    void setupFromMainConfig(const Poco::Util::AbstractConfiguration & config_, const String & config_path_,
+    void setUpFromMainConfig(const Poco::Util::AbstractConfiguration & config_, const String & config_path_,
                              const zkutil::GetZooKeeper & get_zookeeper_function_);
 
     /// Parses access entities from a configuration loaded from users.xml.
@@ -237,9 +237,6 @@ public:
 
     /// Gets manager of notifications.
     AccessChangesNotifier & getChangesNotifier();
-
-    /// Allow all setting names - this can be used in clients to pass-through unknown settings to the server.
-    void allowAllSettings();
 
 private:
     class ContextAccessCache;

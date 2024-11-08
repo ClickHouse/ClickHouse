@@ -99,7 +99,7 @@ public:
     {
         if (!ISchedulerNode::equals(other))
             return false;
-        if (auto * _ = dynamic_cast<SchedulerRoot *>(other))
+        if (auto * o = dynamic_cast<SchedulerRoot *>(other))
             return true;
         return false;
     }
@@ -221,8 +221,8 @@ private:
                 busy_periods++;
                 return;
             }
-            // Just move current to next to avoid invalidation
-            current = current->next;
+            else // Just move current to next to avoid invalidation
+                current = current->next;
         }
         value->prev->next = value->next;
         value->next->prev = value->prev;

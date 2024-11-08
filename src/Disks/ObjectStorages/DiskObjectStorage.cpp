@@ -11,9 +11,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
-#include <IO/CachedInMemoryReadBufferFromFile.h>
-#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
-#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/FakeDiskTransaction.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -91,19 +88,15 @@ StoredObjects DiskObjectStorage::getStorageObjects(const String & local_path) co
 }
 
 
-bool DiskObjectStorage::existsFile(const String & path) const
+bool DiskObjectStorage::exists(const String & path) const
 {
-    return metadata_storage->existsFile(path);
+    return metadata_storage->exists(path);
 }
 
-bool DiskObjectStorage::existsDirectory(const String & path) const
-{
-    return metadata_storage->existsDirectory(path);
-}
 
-bool DiskObjectStorage::existsFileOrDirectory(const String & path) const
+bool DiskObjectStorage::isFile(const String & path) const
 {
-    return metadata_storage->existsFileOrDirectory(path);
+    return metadata_storage->isFile(path);
 }
 
 
@@ -179,7 +172,7 @@ void DiskObjectStorage::moveFile(const String & from_path, const String & to_pat
 
 void DiskObjectStorage::replaceFile(const String & from_path, const String & to_path)
 {
-    if (existsFile(to_path))
+    if (exists(to_path))
     {
         auto transaction = createObjectStorageTransaction();
         transaction->replaceFile(from_path, to_path);
@@ -259,6 +252,12 @@ void DiskObjectStorage::setReadOnly(const String & path)
     auto transaction = createObjectStorageTransaction();
     transaction->setReadOnly(path);
     transaction->commit();
+}
+
+
+bool DiskObjectStorage::isDirectory(const String & path) const
+{
+    return metadata_storage->isDirectory(path);
 }
 
 
@@ -412,9 +411,10 @@ bool DiskObjectStorage::tryReserve(UInt64 bytes)
         reserved_bytes += bytes;
         return true;
     }
-
-    LOG_TRACE(log, "Could not reserve {} on remote disk {}. Not enough unreserved space", ReadableSize(bytes), backQuote(name));
-
+    else
+    {
+        LOG_TRACE(log, "Could not reserve {} on remote disk {}. Not enough unreserved space", ReadableSize(bytes), backQuote(name));
+    }
 
     return false;
 }
@@ -496,72 +496,16 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     std::optional<size_t> file_size) const
 {
     const auto storage_objects = metadata_storage->getStorageObjects(path);
-    auto global_context = Context::getGlobalContextInstance();
 
     const bool file_can_be_empty = !file_size.has_value() || *file_size == 0;
     if (storage_objects.empty() && file_can_be_empty)
         return std::make_unique<ReadBufferFromEmptyFile>();
 
-    auto read_settings = updateIOSchedulingSettings(settings, getReadResourceName(), getWriteResourceName());
-    /// We wrap read buffer from object storage (read_buf = object_storage->readObject())
-    /// inside ReadBufferFromRemoteFSGather, so add nested buffer setting.
-    read_settings = read_settings.withNestedBuffer();
-
-    auto read_buffer_creator =
-        [this, read_settings, read_hint, file_size]
-        (bool restricted_seek, const StoredObject & object_) mutable -> std::unique_ptr<ReadBufferFromFileBase>
-    {
-        read_settings.remote_read_buffer_restrict_seek = restricted_seek;
-        auto impl = object_storage->readObject(object_, read_settings, read_hint, file_size);
-
-        if ((!object_storage->supportsCache() || !read_settings.enable_filesystem_cache)
-            && read_settings.page_cache && read_settings.use_page_cache_for_disks_without_file_cache)
-        {
-            /// Can't wrap CachedOnDiskReadBufferFromFile in CachedInMemoryReadBufferFromFile because the
-            /// former doesn't support seeks.
-            auto cache_path_prefix = fmt::format("{}:", magic_enum::enum_name(object_storage->getType()));
-            const auto object_namespace = object_storage->getObjectsNamespace();
-            if (!object_namespace.empty())
-                cache_path_prefix += object_namespace + "/";
-
-            const auto cache_key = FileChunkAddress { .path = cache_path_prefix + object_.remote_path };
-
-            impl = std::make_unique<CachedInMemoryReadBufferFromFile>(
-                cache_key, read_settings.page_cache, std::move(impl), read_settings);
-        }
-        return impl;
-    };
-
-    const bool use_async_buffer = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
-    auto impl = std::make_unique<ReadBufferFromRemoteFSGather>(
-        std::move(read_buffer_creator),
+    return object_storage->readObjects(
         storage_objects,
-        read_settings,
-        global_context->getFilesystemCacheLog(),
-        /* use_external_buffer */use_async_buffer);
-
-    if (use_async_buffer)
-    {
-        auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
-        return std::make_unique<AsynchronousBoundedReadBuffer>(
-            std::move(impl), reader, read_settings,
-            global_context->getAsyncReadCounters(),
-            global_context->getFilesystemReadPrefetchesLog());
-
-    }
-    return impl;
-}
-
-std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFileIfExists(
-    const String & path,
-    const ReadSettings & settings,
-    std::optional<size_t> read_hint,
-    std::optional<size_t> file_size) const
-{
-    if (auto storage_objects = metadata_storage->getStorageObjectsIfExist(path))
-        return readFile(path, settings, read_hint, file_size);
-    else
-        return {};
+        updateIOSchedulingSettings(settings, getReadResourceName(), getWriteResourceName()),
+        read_hint,
+        file_size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(

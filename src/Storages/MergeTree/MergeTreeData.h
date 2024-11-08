@@ -255,12 +255,7 @@ public:
 
         DataPartsVector commit(DataPartsLock * acquired_parts_lock = nullptr);
 
-        /// Rename should be done explicitly, before calling commit(), to
-        /// guarantee that no lock held during rename (since rename is IO
-        /// bound, while data parts lock is the bottleneck)
-        void renameParts();
-
-        void addPart(MutableDataPartPtr & part, bool need_rename);
+        void addPart(MutableDataPartPtr & part);
 
         void rollback(DataPartsLock * lock = nullptr);
 
@@ -291,9 +286,9 @@ public:
 
         MergeTreeData & data;
         MergeTreeTransaction * txn;
-
         MutableDataParts precommitted_parts;
-        MutableDataParts precommitted_parts_need_rename;
+        MutableDataParts locked_parts;
+
     };
 
     using TransactionUniquePtr = std::unique_ptr<Transaction>;
@@ -441,7 +436,6 @@ public:
 
     bool supportsDynamicSubcolumnsDeprecated() const override { return true; }
     bool supportsDynamicSubcolumns() const override { return true; }
-    bool supportsSparseSerialization() const override { return true; }
 
     bool supportsLightweightDelete() const override;
 
@@ -633,27 +627,25 @@ public:
     bool renameTempPartAndAdd(
         MutableDataPartPtr & part,
         Transaction & transaction,
-        DataPartsLock & lock,
-        bool rename_in_transaction);
+        DataPartsLock & lock);
 
     /// The same as renameTempPartAndAdd but the block range of the part can contain existing parts.
     /// Returns all parts covered by the added part (in ascending order).
     DataPartsVector renameTempPartAndReplace(
         MutableDataPartPtr & part,
-        Transaction & out_transaction,
-        bool rename_in_transaction);
+        Transaction & out_transaction);
 
     /// Unlocked version of previous one. Useful when added multiple parts with a single lock.
     bool renameTempPartAndReplaceUnlocked(
         MutableDataPartPtr & part,
         Transaction & out_transaction,
         DataPartsLock & lock,
-        bool rename_in_transaction);
+        DataPartsVector * out_covered_parts = nullptr);
 
     /// Remove parts from working set immediately (without wait for background
     /// process). Transfer part state to temporary. Have very limited usage only
     /// for new parts which aren't already present in table.
-    void removePartsFromWorkingSetImmediatelyAndSetTemporaryState(const DataPartsVector & remove, DataPartsLock * acquired_lock = nullptr);
+    void removePartsFromWorkingSetImmediatelyAndSetTemporaryState(const DataPartsVector & remove);
 
     /// Removes parts from the working set parts.
     /// Parts in add must already be in data_parts with PreActive, Active, or Outdated states.
@@ -1243,11 +1235,6 @@ protected:
     /// protected by @data_parts_mutex.
     ColumnsDescription object_columns;
 
-    /// Serialization info accumulated among all active parts.
-    /// It changes only when set of parts is changed and is
-    /// protected by @data_parts_mutex.
-    SerializationInfoByName serialization_hints;
-
     MergeTreePartsMover parts_mover;
 
     /// Executors are common for both ReplicatedMergeTree and plain MergeTree
@@ -1536,13 +1523,6 @@ protected:
     void resetObjectColumnsFromActiveParts(const DataPartsLock & lock);
     void updateObjectColumns(const DataPartPtr & part, const DataPartsLock & lock);
 
-    void resetSerializationHints(const DataPartsLock & lock);
-
-    template <typename AddedParts, typename RemovedParts>
-    void updateSerializationHints(const AddedParts & added_parts, const RemovedParts & removed_parts, const DataPartsLock & lock);
-
-    SerializationInfoByName getSerializationHints() const override;
-
     /** A structure that explicitly represents a "merge tree" of parts
      *  which is implicitly presented by min-max block numbers and levels of parts.
      *  The children of node are parts which are covered by parent part.
@@ -1666,10 +1646,7 @@ private:
 
     /// Preparing itself to be committed in memory: fill some fields inside part, add it to data_parts_indexes
     /// in precommitted state and to transaction
-    ///
-    /// @param need_rename - rename the part
-    /// @param rename_in_transaction - if set, the rename will be done as part of transaction (without holding DataPartsLock), otherwise inplace (when it does not make sense).
-    void preparePartForCommit(MutableDataPartPtr & part, Transaction & out_transaction, bool need_rename, bool rename_in_transaction = false);
+    void preparePartForCommit(MutableDataPartPtr & part, Transaction & out_transaction, bool need_rename);
 
     /// Low-level method for preparing parts for commit (in-memory).
     /// FIXME Merge MergeTreeTransaction and Transaction
@@ -1677,8 +1654,7 @@ private:
         MutableDataPartPtr & part,
         Transaction & out_transaction,
         DataPartsLock & lock,
-        DataPartsVector * out_covered_parts,
-        bool rename_in_transaction);
+        DataPartsVector * out_covered_parts);
 
     /// RAII Wrapper for atomic work with currently moving parts
     /// Acquire them in constructor and remove them in destructor

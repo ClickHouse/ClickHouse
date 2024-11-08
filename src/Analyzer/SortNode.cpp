@@ -81,9 +81,9 @@ bool SortNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 
     if (!collator && !rhs_typed.collator)
         return true;
-    if (collator && !rhs_typed.collator)
+    else if (collator && !rhs_typed.collator)
         return false;
-    if (!collator && rhs_typed.collator)
+    else if (!collator && rhs_typed.collator)
         return false;
 
     return collator->getLocale() == rhs_typed.collator->getLocale();

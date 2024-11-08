@@ -10,6 +10,7 @@
 #    include <DataTypes/DataTypesNumber.h>
 #    include <Databases/DatabaseOrdinary.h>
 #    include <Databases/IDatabase.h>
+#    include <Databases/MySQL/MaterializedMySQLSettings.h>
 #    include <Databases/MySQL/MySQLBinlogClient.h>
 #    include <Parsers/ASTCreateQuery.h>
 #    include <QueryPipeline/BlockIO.h>
@@ -20,7 +21,6 @@
 namespace DB
 {
 struct MaterializeMetadata;
-struct MaterializedMySQLSettings;
 
 /** MySQL table structure and data synchronization thread
  *

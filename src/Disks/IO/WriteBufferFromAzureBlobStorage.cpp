@@ -71,7 +71,7 @@ WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
           std::make_unique<TaskTracker>(
               std::move(schedule_),
               settings_->max_inflight_parts_for_one_file,
-              limited_log))
+              limitedLog))
 {
     allocateBuffer();
 }
@@ -79,7 +79,7 @@ WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
 
 WriteBufferFromAzureBlobStorage::~WriteBufferFromAzureBlobStorage()
 {
-    LOG_TRACE(limited_log, "Close WriteBufferFromAzureBlobStorage. {}.", blob_path);
+    LOG_TRACE(limitedLog, "Close WriteBufferFromAzureBlobStorage. {}.", blob_path);
 
     /// That destructor could be call with finalized=false in case of exceptions
     if (!finalized)
@@ -152,8 +152,10 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
         detached_part_data.pop_front();
         return;
     }
-
-    writeMultipartUpload();
+    else
+    {
+        writeMultipartUpload();
+    }
 }
 
 void WriteBufferFromAzureBlobStorage::finalizeImpl()

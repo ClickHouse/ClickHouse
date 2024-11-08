@@ -55,7 +55,7 @@ public:
         std::string name = node->getColumnName();
         if (block_with_constants.has(name))
         {
-            const auto & result = block_with_constants.getByName(name);
+            auto result = block_with_constants.getByName(name);
             if (!isColumnConst(*result.column))
                 return;
 

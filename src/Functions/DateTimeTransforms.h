@@ -1,6 +1,5 @@
 #pragma once
 
-#include <base/arithmeticOverflow.h>
 #include <base/types.h>
 #include <Core/DecimalFunctions.h>
 #include <Common/Exception.h>
@@ -106,7 +105,7 @@ struct ToDateImpl
         {
             if (t < 0)
                 return UInt16(0);
-            if (t > DATE_LUT_MAX_DAY_NUM)
+            else if (t > DATE_LUT_MAX_DAY_NUM)
                 return UInt16(DATE_LUT_MAX_DAY_NUM);
         }
         else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
@@ -179,7 +178,7 @@ struct ToStartOfDayImpl
     }
     static Int64 executeExtendedResult(Int32 d, const DateLUTImpl & time_zone)
     {
-        return common::mulIgnoreOverflow(time_zone.fromDayNum(ExtendedDayNum(d)), DecimalUtils::scaleMultiplier<DateTime64>(DataTypeDateTime64::default_scale));
+        return time_zone.fromDayNum(ExtendedDayNum(d)) * DecimalUtils::scaleMultiplier<DateTime64>(DataTypeDateTime64::default_scale);
     }
 
     using FactorTransform = ZeroTransform;
@@ -702,7 +701,9 @@ struct ToStartOfInterval<IntervalKind::Kind::Week>
     {
         if (origin == 0)
             return time_zone.toStartOfWeekInterval(time_zone.toDayNum(t / scale_multiplier), weeks);
-        return ToStartOfInterval<IntervalKind::Kind::Day>::execute(t, weeks * 7, time_zone, scale_multiplier, origin);
+        else
+            return ToStartOfInterval<IntervalKind::Kind::Day>::execute(t, weeks * 7, time_zone, scale_multiplier, origin);
+
     }
 };
 
@@ -726,16 +727,18 @@ struct ToStartOfInterval<IntervalKind::Kind::Month>
         const Int64 scaled_time = t / scale_multiplier;
         if (origin == 0)
             return time_zone.toStartOfMonthInterval(time_zone.toDayNum(scaled_time), months);
+        else
+        {
+            const Int64 scaled_origin = origin / scale_multiplier;
+            const Int64 days = time_zone.toDayOfMonth(scaled_time + scaled_origin) - time_zone.toDayOfMonth(scaled_origin);
+            Int64 months_to_add = time_zone.toMonth(scaled_time + scaled_origin) - time_zone.toMonth(scaled_origin);
+            const Int64 years = time_zone.toYear(scaled_time + scaled_origin) - time_zone.toYear(scaled_origin);
+            months_to_add = days < 0 ? months_to_add - 1 : months_to_add;
+            months_to_add += years * 12;
+            Int64 month_multiplier = (months_to_add / months) * months;
 
-        const Int64 scaled_origin = origin / scale_multiplier;
-        const Int64 days = time_zone.toDayOfMonth(scaled_time + scaled_origin) - time_zone.toDayOfMonth(scaled_origin);
-        Int64 months_to_add = time_zone.toMonth(scaled_time + scaled_origin) - time_zone.toMonth(scaled_origin);
-        const Int64 years = time_zone.toYear(scaled_time + scaled_origin) - time_zone.toYear(scaled_origin);
-        months_to_add = days < 0 ? months_to_add - 1 : months_to_add;
-        months_to_add += years * 12;
-        Int64 month_multiplier = (months_to_add / months) * months;
-
-        return (time_zone.addMonths(time_zone.toDate(scaled_origin), month_multiplier) - time_zone.toDate(scaled_origin));
+            return (time_zone.addMonths(time_zone.toDate(scaled_origin), month_multiplier) - time_zone.toDate(scaled_origin));
+        }
     }
 };
 
@@ -758,7 +761,8 @@ struct ToStartOfInterval<IntervalKind::Kind::Quarter>
     {
         if (origin == 0)
             return time_zone.toStartOfQuarterInterval(time_zone.toDayNum(t / scale_multiplier), quarters);
-        return ToStartOfInterval<IntervalKind::Kind::Month>::execute(t, quarters * 3, time_zone, scale_multiplier, origin);
+        else
+            return ToStartOfInterval<IntervalKind::Kind::Month>::execute(t, quarters * 3, time_zone, scale_multiplier, origin);
     }
 };
 
@@ -781,7 +785,8 @@ struct ToStartOfInterval<IntervalKind::Kind::Year>
     {
         if (origin == 0)
             return time_zone.toStartOfYearInterval(time_zone.toDayNum(t / scale_multiplier), years);
-        return ToStartOfInterval<IntervalKind::Kind::Month>::execute(t, years * 12, time_zone, scale_multiplier, origin);
+        else
+            return ToStartOfInterval<IntervalKind::Kind::Month>::execute(t, years * 12, time_zone, scale_multiplier, origin);
     }
 };
 
@@ -900,18 +905,19 @@ struct ToStartOfMillisecondImpl
         {
             return datetime64;
         }
-        if (scale_multiplier <= 1000)
+        else if (scale_multiplier <= 1000)
         {
             return datetime64 * (1000 / scale_multiplier);
         }
-
-        auto droppable_part_with_sign
-            = DecimalUtils::getFractionalPartWithScaleMultiplier<DateTime64, true>(datetime64, scale_multiplier / 1000);
+        else
+        {
+        auto droppable_part_with_sign = DecimalUtils::getFractionalPartWithScaleMultiplier<DateTime64, true>(datetime64, scale_multiplier / 1000);
 
         if (droppable_part_with_sign < 0)
             droppable_part_with_sign += scale_multiplier;
 
         return datetime64 - droppable_part_with_sign;
+        }
     }
 
     static UInt32 execute(UInt32, const DateLUTImpl &)
@@ -943,18 +949,19 @@ struct ToStartOfMicrosecondImpl
         {
             return datetime64;
         }
-        if (scale_multiplier <= 1000000)
+        else if (scale_multiplier <= 1000000)
         {
             return datetime64 * (1000000 / scale_multiplier);
         }
+        else
+        {
+            auto droppable_part_with_sign = DecimalUtils::getFractionalPartWithScaleMultiplier<DateTime64, true>(datetime64, scale_multiplier / 1000000);
 
-        auto droppable_part_with_sign
-            = DecimalUtils::getFractionalPartWithScaleMultiplier<DateTime64, true>(datetime64, scale_multiplier / 1000000);
+            if (droppable_part_with_sign < 0)
+                droppable_part_with_sign += scale_multiplier;
 
-        if (droppable_part_with_sign < 0)
-            droppable_part_with_sign += scale_multiplier;
-
-        return datetime64 - droppable_part_with_sign;
+            return datetime64 - droppable_part_with_sign;
+        }
     }
 
     static UInt32 execute(UInt32, const DateLUTImpl &)
@@ -985,12 +992,14 @@ struct ToStartOfNanosecondImpl
         {
             return datetime64;
         }
-        if (scale_multiplier <= 1000000000)
+        else if (scale_multiplier <= 1000000000)
         {
             return datetime64 * (1000000000 / scale_multiplier);
         }
-
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type of argument for function {}, DateTime64 expected", name);
+        else
+        {
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type of argument for function {}, DateTime64 expected", name);
+        }
     }
 
     static UInt32 execute(UInt32, const DateLUTImpl &)
@@ -1223,11 +1232,10 @@ struct ToYearImpl
 
         if (isDateOrDate32(type) || isDateTime(type) || isDateTime64(type))
             return {std::make_pair(Field(start_time), Field(end_time))};
-        throw Exception(
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Illegal type {} of argument of function {}. Should be Date, Date32, DateTime or DateTime64",
-            type.getName(),
-            name);
+        else
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument of function {}. Should be Date, Date32, DateTime or DateTime64",
+                type.getName(), name);
     }
 
     using FactorTransform = ZeroTransform;
@@ -1972,19 +1980,22 @@ struct ToRelativeSubsecondNumImpl
             return t.value;
         if (scale > scale_multiplier)
             return t.value / (scale / scale_multiplier);
-        return common::mulIgnoreOverflow(t.value, scale_multiplier / scale);
+        return static_cast<UInt128>(t.value) * static_cast<UInt128>((scale_multiplier / scale));
+        /// Casting ^^: All integers are Int64, yet if t.value is big enough the multiplication can still
+        /// overflow which is UB. This place is too low-level and generic to check if t.value is sane.
+        /// Therefore just let it overflow safely and don't bother further.
     }
     static Int64 execute(UInt32 t, const DateLUTImpl &)
     {
-        return common::mulIgnoreOverflow(static_cast<Int64>(t), scale_multiplier);
+        return t * scale_multiplier;
     }
     static Int64 execute(Int32 d, const DateLUTImpl & time_zone)
     {
-        return common::mulIgnoreOverflow(static_cast<Int64>(time_zone.fromDayNum(ExtendedDayNum(d))), scale_multiplier);
+        return static_cast<Int64>(time_zone.fromDayNum(ExtendedDayNum(d))) * scale_multiplier;
     }
     static Int64 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return common::mulIgnoreOverflow(static_cast<Int64>(time_zone.fromDayNum(DayNum(d))), scale_multiplier);
+        return static_cast<Int64>(time_zone.fromDayNum(DayNum(d)) * scale_multiplier);
     }
 
     using FactorTransform = ZeroTransform;
@@ -2030,11 +2041,10 @@ struct ToYYYYMMImpl
 
         if (isDateOrDate32(type) || isDateTime(type) || isDateTime64(type))
             return {std::make_pair(Field(start_time), Field(end_time))};
-        throw Exception(
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Illegal type {} of argument of function {}. Should be Date, Date32, DateTime or DateTime64",
-            type.getName(),
-            name);
+        else
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument of function {}. Should be Date, Date32, DateTime or DateTime64",
+                type.getName(), name);
     }
 
     using FactorTransform = ZeroTransform;
@@ -2238,12 +2248,12 @@ struct DateTimeTransformImpl
 
             return mutable_result_col;
         }
-
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN,
-            "Illegal column {} of first argument of function {}",
-            arguments[0].column->getName(),
-            Transform::name);
+        else
+        {
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column {} of first argument of function {}",
+                arguments[0].column->getName(), Transform::name);
+        }
     }
 };
 

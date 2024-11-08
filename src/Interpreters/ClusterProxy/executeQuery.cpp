@@ -55,7 +55,7 @@ namespace Setting
     extern const SettingsUInt64 optimize_skip_unused_shards_nesting;
     extern const SettingsBool optimize_skip_unused_shards_rewrite_in;
     extern const SettingsString parallel_replicas_custom_key;
-    extern const SettingsParallelReplicasMode parallel_replicas_mode;
+    extern const SettingsParallelReplicasCustomKeyFilterType parallel_replicas_custom_key_filter_type;
     extern const SettingsUInt64 parallel_replicas_custom_key_range_lower;
     extern const SettingsUInt64 parallel_replicas_custom_key_range_upper;
     extern const SettingsBool parallel_replicas_local_plan;
@@ -64,11 +64,6 @@ namespace Setting
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsOverflowMode timeout_overflow_mode_leaf;
     extern const SettingsBool use_hedged_requests;
-}
-
-namespace DistributedSetting
-{
-    extern const DistributedSettingsBool skip_unavailable_shards;
 }
 
 namespace ErrorCodes
@@ -160,7 +155,7 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
 
     if (!settings[Setting::skip_unavailable_shards].changed && distributed_settings)
     {
-        new_settings[Setting::skip_unavailable_shards] = (*distributed_settings)[DistributedSetting::skip_unavailable_shards].value;
+        new_settings[Setting::skip_unavailable_shards] = distributed_settings->skip_unavailable_shards.value;
         new_settings[Setting::skip_unavailable_shards].changed = true;
     }
 
@@ -280,7 +275,7 @@ getShardFilterGeneratorForCustomKey(const Cluster & cluster, ContextPtr context,
 
     return [my_custom_key_ast = std::move(custom_key_ast),
             column_description = columns,
-            custom_key_type = settings[Setting::parallel_replicas_mode].value,
+            custom_key_type = settings[Setting::parallel_replicas_custom_key_filter_type].value,
             custom_key_range_lower = settings[Setting::parallel_replicas_custom_key_range_lower].value,
             custom_key_range_upper = settings[Setting::parallel_replicas_custom_key_range_upper].value,
             query_context = context,
@@ -326,9 +321,9 @@ void executeQuery(
     auto cluster = query_info.getCluster();
     auto new_context = updateSettingsAndClientInfoForCluster(*cluster, is_remote_function, context,
         settings, main_table, query_info.additional_filter_ast, log, &distributed_settings);
-    if (context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas].value
+    if (context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas]
         && context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas].value
-           != new_context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas].value)
+            != new_context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas].value)
     {
         LOG_TRACE(
             log,
@@ -456,12 +451,12 @@ void executeQuery(
         return;
     }
 
-    Headers input_headers;
-    input_headers.reserve(plans.size());
+    DataStreams input_streams;
+    input_streams.reserve(plans.size());
     for (auto & plan : plans)
-        input_headers.emplace_back(plan->getCurrentHeader());
+        input_streams.emplace_back(plan->getCurrentDataStream());
 
-    auto union_step = std::make_unique<UnionStep>(std::move(input_headers));
+    auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
     query_plan.unitePlans(std::move(union_step), std::move(plans));
 }
 
@@ -494,14 +489,14 @@ void executeQueryWithParallelReplicas(
         {
             LOG_WARNING(
                 getLogger("executeQueryWithParallelReplicas"),
-                "Setting 'use_hedged_requests' explicitly with enabled 'enable_parallel_replicas' has no effect. "
+                "Setting 'use_hedged_requests' explicitly with enabled 'allow_experimental_parallel_reading_from_replicas' has no effect. "
                 "Hedged connections are not used for parallel reading from replicas");
         }
         else
         {
             LOG_INFO(
                 getLogger("executeQueryWithParallelReplicas"),
-                "Disabling 'use_hedged_requests' in favor of 'enable_parallel_replicas'. Hedged connections are "
+                "Disabling 'use_hedged_requests' in favor of 'allow_experimental_parallel_reading_from_replicas'. Hedged connections are "
                 "not used for parallel reading from replicas");
         }
 
@@ -658,16 +653,16 @@ void executeQueryWithParallelReplicas(
         auto remote_plan = std::make_unique<QueryPlan>();
         remote_plan->addStep(std::move(read_from_remote));
 
-        Headers input_headers;
-        input_headers.reserve(2);
-        input_headers.emplace_back(local_plan->getCurrentHeader());
-        input_headers.emplace_back(remote_plan->getCurrentHeader());
+        DataStreams input_streams;
+        input_streams.reserve(2);
+        input_streams.emplace_back(local_plan->getCurrentDataStream());
+        input_streams.emplace_back(remote_plan->getCurrentDataStream());
 
         std::vector<QueryPlanPtr> plans;
         plans.emplace_back(std::move(local_plan));
         plans.emplace_back(std::move(remote_plan));
 
-        auto union_step = std::make_unique<UnionStep>(std::move(input_headers));
+        auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
         query_plan.unitePlans(std::move(union_step), std::move(plans));
     }
     else

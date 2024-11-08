@@ -79,6 +79,7 @@ namespace Setting
     extern const SettingsBool optimize_trivial_count_query;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsString parallel_replicas_custom_key;
+    extern const SettingsParallelReplicasCustomKeyFilterType parallel_replicas_custom_key_filter_type;
     extern const SettingsUInt64 parallel_replicas_custom_key_range_lower;
     extern const SettingsUInt64 parallel_replica_offset;
 }
@@ -580,7 +581,7 @@ AsynchronousInsertQueue::Milliseconds AsynchronousInsertQueue::getBusyWaitTimeou
     /// that is, if the time since the last insert and the difference between the last two queue flushes were both
     /// long enough (exceeding the adjusted timeout).
     /// This ensures the timeout value converges to the minimum over time for non-frequent inserts.
-    if (last_insert_time + decreased_timeout_ms < now && t1 + decreased_timeout_ms < t2)
+    else if (last_insert_time + decreased_timeout_ms < now && t1 + decreased_timeout_ms < t2)
         return normalize(decreased_timeout_ms);
 
     return normalize(shard.busy_timeout_ms);
@@ -1121,6 +1122,13 @@ Chunk AsynchronousInsertQueue::processPreprocessedEntries(
                 "Expected entry with data kind Preprocessed. Got: {}", entry->chunk.getDataKind());
 
         Block block_to_insert = *block;
+        if (block_to_insert.rows() == 0)
+        {
+            add_to_async_insert_log(entry, /*parsing_exception=*/ "", block_to_insert.rows(), block_to_insert.bytes());
+            entry->resetChunk();
+            continue;
+        }
+
         if (!isCompatibleHeader(block_to_insert, header))
             convertBlockToHeader(block_to_insert, header);
 

@@ -16,7 +16,6 @@ RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
         libxml2-utils \
         locales \
         moreutils \
-        ripgrep \
         python3-pip \
         yamllint \
         zstd \

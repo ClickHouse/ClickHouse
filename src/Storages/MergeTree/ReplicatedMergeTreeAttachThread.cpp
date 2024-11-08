@@ -11,11 +11,6 @@ namespace CurrentMetrics
 namespace DB
 {
 
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsSeconds initialization_retry_period;
-}
-
 namespace ErrorCodes
 {
     extern const int SUPPORT_IS_DISABLED;
@@ -30,7 +25,7 @@ ReplicatedMergeTreeAttachThread::ReplicatedMergeTreeAttachThread(StorageReplicat
 {
     task = storage.getContext()->getSchedulePool().createTask(log_name, [this] { run(); });
     const auto storage_settings = storage.getSettings();
-    retry_period = (*storage_settings)[MergeTreeSetting::initialization_retry_period].totalSeconds();
+    retry_period = storage_settings->initialization_retry_period.totalSeconds();
 }
 
 ReplicatedMergeTreeAttachThread::~ReplicatedMergeTreeAttachThread()
