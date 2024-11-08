@@ -53,7 +53,7 @@ KafkaSource::KafkaSource(
     , commit_in_suffix(commit_in_suffix_)
     , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
     , virtual_header(storage.getVirtualsHeader())
-    , handle_error_mode(storage.getHandleErrorMode())
+    , handle_error_mode(storage.getStreamingHandleErrorMode())
 {
 }
 

@@ -32,8 +32,7 @@
     M(BackupLogElement) \
     M(BlobStorageLogElement) \
     M(QueryMetricLogElement) \
-    M(DeadLetterQueueElement) \
-    M(ErrorLogElement)  // ??
+    M(DeadLetterQueueElement)
 
 namespace Poco
 {

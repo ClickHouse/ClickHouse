@@ -79,7 +79,7 @@ namespace KafkaSetting
     extern const KafkaSettingsMilliseconds kafka_flush_interval_ms;
     extern const KafkaSettingsString kafka_format;
     extern const KafkaSettingsString kafka_group_name;
-    extern const KafkaSettingsStreamingHandleErrorMode kafka_handle_error_mode;
+    extern const KafkaSettingsExtStreamingHandleErrorMode kafka_handle_error_mode;
     extern const KafkaSettingsUInt64 kafka_max_block_size;
     extern const KafkaSettingsUInt64 kafka_max_rows_per_message;
     extern const KafkaSettingsUInt64 kafka_num_consumers;

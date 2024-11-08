@@ -58,7 +58,7 @@ namespace RabbitMQSetting
     extern const RabbitMQSettingsString rabbitmq_exchange_type;
     extern const RabbitMQSettingsUInt64 rabbitmq_flush_interval_ms;
     extern const RabbitMQSettingsString rabbitmq_format;
-    extern const RabbitMQSettingsStreamingHandleErrorMode rabbitmq_handle_error_mode;
+    extern const RabbitMQSettingsExtStreamingHandleErrorMode rabbitmq_handle_error_mode;
     extern const RabbitMQSettingsString rabbitmq_host_port;
     extern const RabbitMQSettingsUInt64 rabbitmq_max_block_size;
     extern const RabbitMQSettingsUInt64 rabbitmq_max_rows_per_message;
@@ -317,13 +317,8 @@ ContextMutablePtr StorageRabbitMQ::addSettings(ContextPtr local_context) const
     auto modified_context = Context::createCopy(local_context);
     modified_context->setSetting("input_format_skip_unknown_fields", true);
     modified_context->setSetting("input_format_allow_errors_ratio", 0.);
-<<<<<<< HEAD
-    if ((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_handle_error_mode] == StreamingHandleErrorMode::DEFAULT)
+    if ((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_handle_error_mode] == ExtStreamingHandleErrorMode::DEFAULT)
         modified_context->setSetting("input_format_allow_errors_num", (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_skip_broken_messages].value);
-=======
-    if (rabbitmq_settings->rabbitmq_handle_error_mode == ExtStreamingHandleErrorMode::DEFAULT)
-        modified_context->setSetting("input_format_allow_errors_num", rabbitmq_settings->rabbitmq_skip_broken_messages.value);
->>>>>>> 1cef0818bc6 (kafka_dead_letter_queue: RabbitMQ initial)
     else
         modified_context->setSetting("input_format_allow_errors_num", Field(0));
 
