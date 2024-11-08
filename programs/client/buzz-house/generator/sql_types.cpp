@@ -1000,7 +1000,7 @@ void StrBuildJSONArray(RandomGenerator & rg, const int jdepth, const int jwidth,
 
 void StrBuildJSONElement(RandomGenerator & rg, std::string & ret)
 {
-    std::uniform_int_distribution<int> opts(1, 18);
+    std::uniform_int_distribution<int> opts(1, 16);
     const int noption = opts(rg.gen);
 
     switch (noption)
@@ -1058,32 +1058,22 @@ void StrBuildJSONElement(RandomGenerator & rg, std::string & ret)
         case 12: //string
             rg.NextString(ret, "\"", false, (rg.NextRandomUInt32() % 10000) + 1);
             break;
-        case 13: { //128-bit signed number
-            hugeint_t val(rg.NextRandomInt64(), rg.NextRandomUInt64());
-            val.ToString(ret);
-        }
-        break;
-        case 14: { //128-bit unsigned number
-            uhugeint_t val(rg.NextRandomUInt64(), rg.NextRandomUInt64());
-            val.ToString(ret);
-        }
-        break;
-        case 15: //uuid
+        case 13: //uuid
             ret += '"';
             rg.NextUUID(ret);
             ret += '"';
             break;
-        case 16: //ipv4
+        case 14: //ipv4
             ret += '"';
             rg.NextIPv4(ret);
             ret += '"';
             break;
-        case 17: //ipv6
+        case 15: //ipv6
             ret += '"';
             rg.NextIPv6(ret);
             ret += '"';
             break;
-        case 18: //double
+        case 16: //double
             ret += std::to_string(rg.NextRandomDouble());
             break;
         default:

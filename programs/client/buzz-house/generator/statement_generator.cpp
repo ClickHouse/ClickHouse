@@ -492,6 +492,7 @@ int StatementGenerator::GenerateEngineDetails(RandomGenerator & rg, SQLBase & b,
     {
         const ServerCredentials & sc = fc.mongodb_server;
 
+        te->add_params()->set_svalue(sc.hostname + ":" + std::to_string(sc.port));
         te->add_params()->set_svalue(sc.database);
         te->add_params()->set_svalue("t" + std::to_string(b.tname));
         te->add_params()->set_svalue(sc.user);

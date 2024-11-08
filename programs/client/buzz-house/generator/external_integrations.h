@@ -469,6 +469,7 @@ public:
             mongocxx::database db = client[fc.mongodb_server.database];
             db.create_collection("test");
 
+            std::cout << "Connected to MongoDB" << std::endl;
             return new MongoDBIntegration(fc, client, db);
         }
         catch (const std::exception & e)
@@ -482,6 +483,7 @@ public:
     {
         try
         {
+            const bool permute = rg.NextBool(), miss_cols = rg.NextBool();
             const uint32_t ndocuments = rg.NextMediumNumber();
             const std::string str_tname = "t" + std::to_string(tname);
             mongocxx::collection coll = database[str_tname];
@@ -490,13 +492,13 @@ public:
             {
                 bsoncxx::builder::stream::document document{};
 
-                if (rg.NextSmallNumber() < 3)
+                if (permute && rg.NextSmallNumber() < 4)
                 {
                     std::shuffle(entries.begin(), entries.end(), rg.gen);
                 }
                 for (size_t i = 0; i < entries.size(); i++)
                 {
-                    if (rg.NextSmallNumber() < 10)
+                    if (miss_cols && rg.NextSmallNumber() < 4)
                     { //sometimes the column is missing
                         const InsertEntry & entry = entries[i];
 

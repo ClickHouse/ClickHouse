@@ -429,6 +429,11 @@ void MongoDBIntegration::DocumentAppendArray(
 {
     const uint32_t limit = rg.NextLargeNumber() % 100;
     auto array = document << cname << bsoncxx::builder::stream::open_array; // Array
+    const SQLType *tp = at->subtype;
+    const Nullable * nl;
+    const ArrayType * att;
+    const VariantType * vtp;
+    const LowCardinality * lc;
 
     for (uint32_t i = 0; i < limit; i++)
     {
@@ -450,9 +455,43 @@ void MongoDBIntegration::DocumentAppendArray(
         {
             array << bsoncxx::types::b_minkey{}; // Min-Key Value
         }
-        else
+        else if (
+            dynamic_cast<const IntType *>(tp) || dynamic_cast<const FloatType *>(tp) || dynamic_cast<const DateType *>(tp)
+            || dynamic_cast<const DecimalType *>(tp) || dynamic_cast<const StringType *>(tp) || dynamic_cast<const BoolType *>(tp)
+            || dynamic_cast<const EnumType *>(tp) || dynamic_cast<const UUIDType *>(tp) || dynamic_cast<const IPv4Type *>(tp)
+            || dynamic_cast<const IPv6Type *>(tp) || dynamic_cast<const JSONType *>(tp))
         {
-            DocumentAppendBottomType<decltype(array)>(rg, cname, array, at->subtype);
+            DocumentAppendBottomType<decltype(array)>(rg, "", array, at->subtype);
+        }
+        else if ((lc = dynamic_cast<const LowCardinality *>(tp)))
+        {
+            if ((nl = dynamic_cast<const Nullable *>(lc->subtype)))
+            {
+                DocumentAppendBottomType<decltype(array)>(rg, "", array, nl->subtype);
+            }
+            else
+            {
+                DocumentAppendBottomType<decltype(array)>(rg, "", array, lc->subtype);
+            }
+        }
+        else if ((nl = dynamic_cast<const Nullable *>(tp)))
+        {
+            DocumentAppendBottomType<decltype(array)>(rg, "", array, nl->subtype);
+        }
+        else if ((att = dynamic_cast<const ArrayType *>(tp)))
+        {
+            array << bsoncxx::builder::stream::open_array << 1 << bsoncxx::builder::stream::close_array;
+        }
+        else if ((vtp = dynamic_cast<const VariantType *>(tp)))
+        {
+            if (vtp->subtypes.empty())
+            {
+                array << bsoncxx::types::b_null{}; // Null Value
+            }
+            else
+            {
+                array << 1;
+            }
         }
     }
     array << bsoncxx::builder::stream::close_array;
