@@ -17,6 +17,10 @@ private:
     std::vector<size_t> marks_rows_partial_sums;
     bool initialized = false;
 
+    /// Last compressed mark
+    size_t compressed = 0;
+    std::vector<size_t> uncompressed_marks_partial_sums;
+
 public:
     MergeTreeIndexGranularity() = default;
     explicit MergeTreeIndexGranularity(const std::vector<size_t> & marks_rows_partial_sums_);
@@ -45,7 +49,7 @@ public:
     size_t getTotalRows() const;
 
     /// Total number marks without final mark if it exists
-    size_t getMarksCountWithoutFinal() const { return getMarksCount() - hasFinalMark(); }
+    size_t getMarksCountWithoutFinal() const;
 
     /// Rows after mark to next mark
     size_t getMarkRows(size_t mark_index) const;
@@ -54,39 +58,18 @@ public:
     size_t getMarkStartingRow(size_t mark_index) const;
 
     /// Amount of rows after last mark
-    size_t getLastMarkRows() const
-    {
-        size_t last = marks_rows_partial_sums.size() - 1;
-        return getMarkRows(last);
-    }
+    size_t getLastMarkRows() const;
 
-    size_t getLastNonFinalMarkRows() const
-    {
-        size_t last_mark_rows = getLastMarkRows();
-        if (last_mark_rows != 0)
-            return last_mark_rows;
-        return getMarkRows(marks_rows_partial_sums.size() - 2);
-    }
+    size_t getLastNonFinalMarkRows() const;
 
-    bool hasFinalMark() const
-    {
-        return getLastMarkRows() == 0;
-    }
+    bool hasFinalMark() const;
 
-    bool empty() const
-    {
-        return marks_rows_partial_sums.empty();
-    }
+    bool empty() const;
 
-    bool isInitialized() const
-    {
-        return initialized;
-    }
+    bool isInitialized() const;
 
-    void setInitialized()
-    {
-        initialized = true;
-    }
+    void setInitialized();
+
     /// Add new mark with rows_count
     void appendMark(size_t rows_count);
 
@@ -102,6 +85,11 @@ public:
     std::string describe() const;
 
     void shrinkToFitInMemory();
+
+    bool tryCompressInMemory();
+
+private:
+    size_t getMarkForRow(size_t row) const;
 };
 
 }
