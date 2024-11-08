@@ -45,7 +45,6 @@ struct ActionsAndName
 
 static ActionsAndName splitSingleAndFilter(ActionsDAG & dag, const ActionsDAG::Node * filter_node)
 {
-    auto name = filter_node->result_name;
     auto split_result = dag.split({filter_node}, true);
     dag = std::move(split_result.second);
 
@@ -57,10 +56,11 @@ static ActionsAndName splitSingleAndFilter(ActionsDAG & dag, const ActionsDAG::N
         if (filter_type->isNullable())
             cast_type = std::make_shared<DataTypeNullable>(std::move(cast_type));
 
-        split_result.first.addCast(*split_filter_node, cast_type, {});
+        split_filter_node = &split_result.first.addCast(*split_filter_node, cast_type, {});
     }
 
     split_result.first.getOutputs().emplace(split_result.first.getOutputs().begin(), split_filter_node);
+    auto name = split_filter_node->result_name;
     return ActionsAndName{std::move(split_result.first), std::move(name)};
 }
 
