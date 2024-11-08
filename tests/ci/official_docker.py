@@ -189,9 +189,9 @@ def generate_docker_directories(
             directory,
         )
         git_runner(
-            f"git archive {branch}:docker/{image_type} | " f"tar x -C {directory}"
+            f"git archive {branch}:docker/{image_type} | "
+            f"tar --exclude='README*' -x -C {directory}"
         )
-        (directory / "README.md").unlink(missing_ok=True)
         for df in directory.glob(dockerfile_glob):
             original_content = df.read_text().splitlines()
             content = []
