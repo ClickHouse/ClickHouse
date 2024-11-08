@@ -269,15 +269,15 @@ static ColumnWithTypeAndName readColumnWithDate32Data(const std::shared_ptr<arro
 {
     DataTypePtr internal_type;
     bool check_date_range = false;
-    /// Make result type Date32 when requested type is actually Date32 or when we use schema inference
 
-    if (!type_hint || (type_hint && isDate32(*type_hint)))
+    if (!type_hint || isDateOrDate32(type_hint) || isDateTime(type_hint) || isDateTime64(type_hint))
     {
         internal_type = std::make_shared<DataTypeDate32>();
         check_date_range = true;
     }
     else
     {
+        /// If requested type is raw number, read as raw number without checking if it's a valid date.
         internal_type = std::make_shared<DataTypeInt32>();
     }
 
