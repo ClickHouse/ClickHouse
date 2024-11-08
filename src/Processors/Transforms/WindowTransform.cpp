@@ -1095,10 +1095,10 @@ void WindowTransform::updateFirstRequiredRow()
         else
         {
             /// For aggregate functions, if the start bound is preceding unbounded, blocks before
-            /// the current row are no longer in use, just only need to add the current row to the
-            /// same aggregation state.
+            /// the current row are no longer in use. peer_group_start may be used by other
+            /// functions
             if (window_description.frame.begin_type == WindowFrame::BoundaryType::Unbounded)
-                row = current_row;
+                row = peer_group_start;
             else
                 row = prev_frame_start;
         }
@@ -1522,8 +1522,6 @@ void WindowTransform::work()
         first_block_number = first_used_block;
 
         assert(next_output_block_number >= first_block_number);
-        // assert(frame_start.block >= first_block_number);
-        // assert(prev_frame_start.block >= first_block_number);
         assert(current_row.block >= first_block_number);
         assert(peer_group_start.block >= first_block_number);
     }
