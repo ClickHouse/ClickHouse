@@ -4,7 +4,7 @@ set -eo pipefail
 shopt -s nullglob
 
 DO_CHOWN=1
-if [[ "${CLICKHOUSE_DO_NOT_CHOWN:-0}" = "1" || "${CLICKHOUSE_RUN_AS_ROOT:=0}" = "1" ]]; then
+if [[ "${CLICKHOUSE_RUN_AS_ROOT:=0}" = "1" || "${CLICKHOUSE_DO_NOT_CHOWN:-0}" = "1" ]]; then
     DO_CHOWN=0
 fi
 
