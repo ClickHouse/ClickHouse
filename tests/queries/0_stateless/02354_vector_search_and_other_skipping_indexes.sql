@@ -2,7 +2,7 @@
 
 SET allow_experimental_vector_similarity_index = 1;
 
--- Issue #71381: Usage of vector similarity index and further skipping indexes on the same table
+-- Usage of vector similarity index and further skipping indexes on the same table (issue #71381)
 
 DROP TABLE IF EXISTS tab;
 
