@@ -168,6 +168,12 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
             res |= show_databases;
         }
 
+        static const AccessFlags alter_delete = AccessType::ALTER_DELETE;
+        static const AccessFlags select = AccessType::SELECT;
+        static const AccessFlags move_partition = AccessType::ALTER_MOVE_PARTITION;
+        if ((res & alter_delete) && (res & select) && level <= 2)
+            res |= move_partition;
+
         max_flags |= res;
 
         return res;
