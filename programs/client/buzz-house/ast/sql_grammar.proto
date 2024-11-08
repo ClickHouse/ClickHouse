@@ -2436,10 +2436,23 @@ message GroupByStatement {
 }
 
 message LimitStatement {
-    required uint32 limit = 1;
-    optional uint32 offset = 2;
+    required Expr limit = 1;
+    optional Expr offset = 2;
     optional bool with_ties = 3;
     optional Expr limit_by = 4;
+}
+
+message FetchStatement {
+    required bool first = 1;
+    required Expr row_count = 2;
+    required bool rows = 3;
+    required bool only = 4;
+}
+
+message OffsetStatement {
+    required Expr row_count = 1;
+    required bool rows = 2;
+    optional FetchStatement fetch = 3;
 }
 
 enum AllOrDistinct {
@@ -2456,7 +2469,10 @@ message SelectStatementCore {
     optional GroupByStatement groupby = 6;
     //optional WindowStatement window = 6;
     optional OrderByStatement orderby = 7;
-    optional LimitStatement limit = 8;
+    oneof limit_oneof {
+        LimitStatement limit = 8;
+        OffsetStatement offset = 9;
+    }
 }
 
 message SetQuery {

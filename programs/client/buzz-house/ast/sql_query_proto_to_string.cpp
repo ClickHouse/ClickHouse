@@ -2051,11 +2051,11 @@ CONV_FN(GroupByStatement, gbs)
 CONV_FN(LimitStatement, ls)
 {
     ret += "LIMIT ";
-    ret += std::to_string(ls.limit());
+    ExprToString(ret, ls.limit());
     if (ls.has_offset())
     {
         ret += ", ";
-        ret += std::to_string(ls.offset());
+        ExprToString(ret, ls.offset());
     }
     if (ls.with_ties())
     {
@@ -2065,6 +2065,31 @@ CONV_FN(LimitStatement, ls)
     {
         ret += " BY ";
         ExprToString(ret, ls.limit_by());
+    }
+}
+
+CONV_FN(FetchStatement, fet)
+{
+    ret += "FETCH ";
+    ret += fet.first() ? "FIRST" : "NEXT";
+    ret += " ";
+    ExprToString(ret, fet.row_count());
+    ret += " ROW";
+    ret += fet.rows() ? "S" : "";
+    ret += " ";
+    ret += fet.only() ? "ONLY" : "WITH TIES";
+}
+
+CONV_FN(OffsetStatement, off)
+{
+    ret += "OFFSET ";
+    ExprToString(ret, off.row_count());
+    ret += " ROW";
+    ret += off.rows() ? "S" : "";
+    if (off.has_fetch())
+    {
+        ret += " ";
+        FetchStatementToString(ret, off.fetch());
     }
 }
 
@@ -2125,6 +2150,12 @@ ret += " ";
         ret += " ";
         LimitStatementToString(ret, ssc.limit());
     }
+    else if (ssc.has_offset())
+    {
+        ret += " ";
+        OffsetStatementToString(ret, ssc.offset());
+    }
+
 }
 
 CONV_FN(SetQuery, setq)

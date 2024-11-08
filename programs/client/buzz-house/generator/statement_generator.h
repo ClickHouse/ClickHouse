@@ -289,12 +289,16 @@ private:
     int GenerateFuncCall(RandomGenerator & rg, const bool allow_funcs, const bool allow_aggr, sql_query_grammar::SQLFuncCall * expr);
 
     int GenerateOrderBy(RandomGenerator & rg, const uint32_t ncols, const bool allow_settings, sql_query_grammar::OrderByStatement * ob);
+
+    int GenerateLimitExpr(RandomGenerator & rg, sql_query_grammar::Expr * expr);
     int GenerateLimit(
         RandomGenerator & rg,
         const bool has_order_by,
-        const bool has_distinct,
         const uint32_t ncols,
         sql_query_grammar::LimitStatement * ls);
+    int GenerateOffset(
+        RandomGenerator & rg,
+        sql_query_grammar::OffsetStatement * off);
     int GenerateGroupByExpr(
         RandomGenerator & rg,
         const bool enforce_having,

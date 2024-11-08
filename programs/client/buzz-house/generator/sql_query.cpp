@@ -908,68 +908,59 @@ int StatementGenerator::GenerateOrderBy(
     return 0;
 }
 
-int StatementGenerator::GenerateLimit(
-    RandomGenerator & rg, const bool has_order_by, const bool has_distinct, const uint32_t ncols, sql_query_grammar::LimitStatement * ls)
+int
+StatementGenerator::GenerateLimitExpr(RandomGenerator & rg, sql_query_grammar::Expr * expr)
 {
-    uint32_t nlimit = 0;
-    const int next_option = rg.NextSmallNumber();
+    if (this->depth >= this->fc.max_depth || rg.NextSmallNumber() < 8)
+    {
+        uint32_t nlimit = 0;
+        const int next_option = rg.NextSmallNumber();
 
-    this->depth++;
-    if (next_option < 3)
-    {
-        nlimit = 0;
-    }
-    else if (next_option < 5)
-    {
-        nlimit = 1;
-    }
-    else if (next_option < 7)
-    {
-        nlimit = 2;
-    }
-    else if (next_option < 9)
-    {
-        nlimit = 10;
-    }
-    else
-    {
-        nlimit = rg.NextRandomUInt32();
-    }
-    ls->set_limit(nlimit);
-    if (rg.NextSmallNumber() < 6)
-    {
-        uint32_t noffset = 0;
-        const int next_option2 = rg.NextSmallNumber();
-
-        if (next_option2 < 3)
+        if (next_option < 3)
         {
-            noffset = 0;
+            nlimit = 0;
         }
-        else if (next_option2 < 5)
+        else if (next_option < 5)
         {
-            noffset = 1;
+            nlimit = 1;
         }
-        else if (next_option2 < 7)
+        else if (next_option < 7)
         {
-            noffset = 2;
+            nlimit = 2;
         }
-        else if (next_option2 < 9)
+        else if (next_option < 9)
         {
-            noffset = 10;
+            nlimit = 10;
         }
         else
         {
-            noffset = rg.NextRandomUInt32();
+            nlimit = rg.NextRandomUInt32();
         }
-        ls->set_offset(noffset);
+        expr->mutable_lit_val()->mutable_int_lit()->set_uint_lit(nlimit);
     }
-    ls->set_with_ties(has_order_by && !has_distinct && rg.NextSmallNumber() < 7);
+    else
+    {
+        this->depth++;
+        GenerateExpression(rg, expr);
+        this->depth--;
+    }
+    return 0;
+}
+
+int StatementGenerator::GenerateLimit(
+    RandomGenerator & rg, const bool has_order_by, const uint32_t ncols, sql_query_grammar::LimitStatement * ls)
+{
+    GenerateLimitExpr(rg, ls->mutable_limit());
+    if (rg.NextBool())
+    {
+        GenerateLimitExpr(rg, ls->mutable_offset());
+    }
+    ls->set_with_ties(has_order_by && rg.NextSmallNumber() < 7);
     if (rg.NextSmallNumber() < 4)
     {
-        const int next_option3 = rg.NextSmallNumber();
         sql_query_grammar::Expr * expr = ls->mutable_limit_by();
 
-        if (this->depth >= this->fc.max_depth || next_option3 < 9)
+        if (this->depth >= this->fc.max_depth || rg.NextSmallNumber() < 8)
         {
             sql_query_grammar::LiteralValue * lv = expr->mutable_lit_val();
 
@@ -977,10 +968,27 @@ int StatementGenerator::GenerateLimit(
         }
         else
         {
+            this->depth++;
             GenerateExpression(rg, expr);
+            this->depth--;
         }
     }
-    this->depth--;
+    return 0;
+}
+
+int StatementGenerator::GenerateOffset(RandomGenerator & rg, sql_query_grammar::OffsetStatement * off)
+{
+    GenerateLimitExpr(rg, off->mutable_row_count());
+    off->set_rows(rg.NextBool());
+    if (rg.NextBool())
+    {
+        sql_query_grammar::FetchStatement *fst = off->mutable_fetch();
+
+        GenerateLimitExpr(rg, fst->mutable_row_count());
+        fst->set_rows(rg.NextBool());
+        fst->set_first(rg.NextBool());
+        fst->set_only(rg.NextBool());
+    }
     return 0;
 }
 
@@ -1107,7 +1115,14 @@ int StatementGenerator::GenerateSelect(
         }
         if ((allowed_clauses & allow_limit) && this->allow_not_deterministic && rg.NextSmallNumber() < 4)
         {
-            GenerateLimit(rg, ssc->has_orderby(), ssc->s_or_d() == sql_query_grammar::AllOrDistinct::DISTINCT, ncols, ssc->mutable_limit());
+            if (rg.NextBool())
+            {
+                GenerateLimit(rg, ssc->has_orderby(), ncols, ssc->mutable_limit());
+            }
+            else
+            {
+                GenerateOffset(rg, ssc->mutable_offset());
+            }
         }
     }
     this->levels.erase(this->current_level);
