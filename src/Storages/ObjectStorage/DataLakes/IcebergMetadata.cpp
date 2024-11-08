@@ -142,6 +142,7 @@ Int32 parseTableSchema(const Poco::JSON::Object::Ptr & metadata_object, IcebergS
 }
 }
 
+
 DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name)
 {
     if (type_name == "boolean")

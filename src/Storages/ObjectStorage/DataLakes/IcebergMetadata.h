@@ -81,27 +81,23 @@ public:
     std::shared_ptr<const ActionsDAG> getSchemaTransformationDagByIds(Int32 old_id, Int32 new_id);
 
 private:
-  std::unordered_map<Int32, Poco::JSON::Object::Ptr>
-      iceberg_table_schemas_by_ids;
-  std::unordered_map<Int32, std::shared_ptr<NamesAndTypesList>>
-      clickhouse_table_schemas_by_ids;
-  std::map<std::pair<Int32, Int32>, std::shared_ptr<ActionsDAG>>
-      transform_dags_by_ids;
+    std::unordered_map<Int32, Poco::JSON::Object::Ptr> iceberg_table_schemas_by_ids;
+    std::unordered_map<Int32, std::shared_ptr<NamesAndTypesList>> clickhouse_table_schemas_by_ids;
+    std::map<std::pair<Int32, Int32>, std::shared_ptr<ActionsDAG>> transform_dags_by_ids;
 
-  NamesAndTypesList getSchemaType(const Poco::JSON::Object::Ptr &schema);
-  DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr &type);
-  DataTypePtr getFieldType(const Poco::JSON::Object::Ptr &field,
-                           const String &type_key, bool required);
-  DataTypePtr getSimpleType(const String &type_name);
-  std::shared_ptr<ActionsDAG>
-  getSchemaTransformationDag(const Poco::JSON::Object::Ptr & old_schema, const Poco::JSON::Object::Ptr & new_schema);
+    NamesAndTypesList getSchemaType(const Poco::JSON::Object::Ptr & schema);
+    DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type);
+    DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool required);
+    DataTypePtr getSimpleType(const String & type_name);
+    std::shared_ptr<ActionsDAG>
+    getSchemaTransformationDag(const Poco::JSON::Object::Ptr & old_schema, const Poco::JSON::Object::Ptr & new_schema);
 
-  bool allowPrimitiveTypeConversion(const String & old_type, const String & new_type);
+    bool allowPrimitiveTypeConversion(const String & old_type, const String & new_type);
 
-  const Node * getDefaultNodeForField(const Poco::JSON::Object::Ptr & field);
+    const Node * getDefaultNodeForField(const Poco::JSON::Object::Ptr & field);
 
-  Int32 current_old_id = -1;
-  Int32 current_new_id = -1;
+    Int32 current_old_id = -1;
+    Int32 current_new_id = -1;
 };
 
 
@@ -205,6 +201,8 @@ public:
             return it->second;
         return {};
     }
+
+    bool supportsExternalMetadataChange() const override { return true; }
 
 private:
     mutable std::unordered_map<String, std::shared_ptr<NamesAndTypesList>> initial_schemas;

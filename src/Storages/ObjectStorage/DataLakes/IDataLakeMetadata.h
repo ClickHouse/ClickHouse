@@ -18,6 +18,7 @@ public:
     virtual const std::unordered_map<String, String> & getColumnNameToPhysicalNameMapping() const = 0;
     virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String &) const { return {}; }
     virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(const String &) const { return {}; }
+    virtual bool supportsExternalMetadataChange() const { return false; }
 };
 using DataLakeMetadataPtr = std::unique_ptr<IDataLakeMetadata>;
 

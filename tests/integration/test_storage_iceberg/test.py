@@ -1302,11 +1302,18 @@ def test_filesystem_cache(started_cluster, storage_type):
 
     instance.query("SYSTEM FLUSH LOGS")
 
-    count = int(
+    written_to_cache_first_select = int(
         instance.query(
             f"SELECT ProfileEvents['CachedReadBufferCacheWriteBytes'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
         )
     )
+
+    read_from_cache_first_select = int(
+        instance.query(
+            f"SELECT ProfileEvents['CachedReadBufferReadFromCacheBytes'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        )
+    )
+
     assert 0 < int(
         instance.query(
             f"SELECT ProfileEvents['S3GetObject'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
@@ -1321,11 +1328,17 @@ def test_filesystem_cache(started_cluster, storage_type):
 
     instance.query("SYSTEM FLUSH LOGS")
 
-    assert count == int(
+    read_from_cache_second_select = int(
         instance.query(
             f"SELECT ProfileEvents['CachedReadBufferReadFromCacheBytes'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
         )
     )
+
+    assert (
+        read_from_cache_second_select
+        == read_from_cache_first_select + written_to_cache_first_select
+    )
+
     assert 0 == int(
         instance.query(
             f"SELECT ProfileEvents['S3GetObject'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"

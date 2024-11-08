@@ -7,6 +7,8 @@
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/StorageFactory.h>
+#include <Poco/Logger.h>
+#include "Common/logger_useful.h"
 
 namespace DB
 {

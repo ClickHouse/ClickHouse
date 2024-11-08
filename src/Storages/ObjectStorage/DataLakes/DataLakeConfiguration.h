@@ -47,12 +47,20 @@ public:
         BaseStorageConfiguration::update(object_storage, local_context);
         auto new_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
 
-        //Metadata must have been updated to this moment in updateAndGetCurrentSchema method and should be the same here
         if (!current_metadata || (*current_metadata != *new_metadata))
         {
-            throw Exception(
-                ErrorCodes::FORMAT_VERSION_TOO_OLD,
-                "Metadata is not consinsent with the one which was used to infer table schema. Please, retry the query.");
+            if (hasExternalDynamicMetadata())
+            {
+                throw Exception(
+                    ErrorCodes::FORMAT_VERSION_TOO_OLD,
+                    "Metadata is not consinsent with the one which was used to infer table schema. Please, retry the query.");
+            }
+            else
+            {
+                current_metadata = std::move(new_metadata);
+                BaseStorageConfiguration::setPaths(current_metadata->getDataFiles());
+                BaseStorageConfiguration::setPartitionColumns(current_metadata->getPartitionColumns());
+            }
         }
     }
 
@@ -82,6 +90,8 @@ public:
         return current_metadata->getSchemaTransformer(data_path);
     }
 
+    bool hasExternalDynamicMetadata() override { return current_metadata && current_metadata->supportsExternalMetadataChange(); }
+
     ColumnsDescription updateAndGetCurrentSchema(ObjectStoragePtr object_storage, ContextPtr context) override
     {
         BaseStorageConfiguration::update(object_storage, context);
@@ -99,6 +109,7 @@ public:
 
 private:
     DataLakeMetadataPtr current_metadata;
+
     ReadFromFormatInfo prepareReadingFromFormat(
         ObjectStoragePtr object_storage,
         const Strings & requested_columns,

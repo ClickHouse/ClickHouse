@@ -25,6 +25,7 @@
 #include "Databases/LoadingStrictnessLevel.h"
 #include "Storages/ColumnsDescription.h"
 
+#include <Poco/Logger.h>
 
 namespace DB
 {
@@ -91,8 +92,10 @@ StorageObjectStorage::StorageObjectStorage(
 {
     try
     {
-        configuration->updateAndGetCurrentSchema(object_storage, context);
-        configuration->update(object_storage, context);
+        if (configuration->hasExternalDynamicMetadata())
+            configuration->updateAndGetCurrentSchema(object_storage, context);
+        else
+            configuration->update(object_storage, context);
     }
     catch (...)
     {
@@ -152,19 +155,14 @@ void StorageObjectStorage::Configuration::update(ObjectStoragePtr object_storage
 
 bool StorageObjectStorage::hasExternalDynamicMetadata() const
 {
-    return configuration->isDataLakeConfiguration();
+    return configuration->hasExternalDynamicMetadata();
 }
 
 void StorageObjectStorage::updateExternalDynamicMetadata(ContextPtr context_ptr)
 {
-    if (configuration->isDataLakeConfiguration())
-    {
-        StorageInMemoryMetadata metadata;
-        metadata.setColumns(configuration->updateAndGetCurrentSchema(object_storage, context_ptr));
-        setInMemoryMetadata(metadata);
-        return;
-    }
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateExternalDynamicMetadata is not supported by storage {}", getName());
+    StorageInMemoryMetadata metadata;
+    metadata.setColumns(configuration->updateAndGetCurrentSchema(object_storage, context_ptr));
+    setInMemoryMetadata(metadata);
 }
 
 namespace
@@ -453,8 +451,10 @@ ColumnsDescription StorageObjectStorage::resolveSchemaFromData(
 {
     if (configuration->isDataLakeConfiguration())
     {
-        configuration->updateAndGetCurrentSchema(object_storage, context);
-        configuration->update(object_storage, context);
+        if (configuration->hasExternalDynamicMetadata())
+            configuration->updateAndGetCurrentSchema(object_storage, context);
+        else
+            configuration->update(object_storage, context);
         auto table_structure = configuration->tryGetTableStructureFromMetadata();
         if (table_structure)
         {
