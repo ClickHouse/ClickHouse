@@ -17,8 +17,6 @@ from threading import Thread
 from types import SimpleNamespace
 from typing import Any, Dict, Iterator, List, Optional, Type, TypeVar, Union
 
-from praktika._settings import _Settings
-
 T = TypeVar("T", bound="Serializable")
 
 

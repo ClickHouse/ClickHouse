@@ -27,11 +27,12 @@ def parse_args():
         default="",
     )
     parser.add_argument("--param", help="Optional job start stage", default=None)
+    parser.add_argument("--test", help="Optional test name pattern", default="")
     return parser.parse_args()
 
 
 def run_stateless_test(
-    no_parallel: bool, no_sequiential: bool, batch_num: int, batch_total: int
+    no_parallel: bool, no_sequiential: bool, batch_num: int, batch_total: int, test=""
 ):
     assert not (no_parallel and no_sequiential)
     test_output_file = f"{Settings.OUTPUT_DIR}/test_result.txt"
@@ -43,7 +44,7 @@ def run_stateless_test(
                 --no-drop-if-fail --capture-client-stacktrace --queries /repo/tests/queries --test-runs 1 --hung-check \
                 {'--no-parallel' if no_parallel else ''}  {'--no-sequential' if no_sequiential else ''} \
                 --print-time --jobs {nproc} --report-coverage --report-logs-stats {aux} \
-                --queries ./tests/queries -- '' | ts '%Y-%m-%d %H:%M:%S' \
+                --queries ./tests/queries -- '{test}' | ts '%Y-%m-%d %H:%M:%S' \
                 | tee -a \"{test_output_file}\""
     if Path(test_output_file).exists():
         Path(test_output_file).unlink()
@@ -119,11 +120,14 @@ def main():
         stop_watch_ = Utils.Stopwatch()
         step_name = "Start ClickHouse Server"
         print(step_name)
+        hdfs_log = "/tmp/praktika/output/hdfs_mini.log"
         minio_log = "/tmp/praktika/output/minio.log"
+        res = res and CH.start_hdfs(log_file_path=hdfs_log)
         res = res and CH.start_minio(log_file_path=minio_log)
-        logs_to_attach += [minio_log]
+        logs_to_attach += [minio_log, hdfs_log]
         time.sleep(10)
         Shell.check("ps -ef | grep minio", verbose=True)
+        Shell.check("ps -ef | grep hdfs", verbose=True)
         res = res and Shell.check(
             "aws s3 ls s3://test --endpoint-url http://localhost:11111/", verbose=True
         )
@@ -153,6 +157,7 @@ def main():
             no_sequiential=no_sequential,
             batch_num=batch_num,
             batch_total=total_batches,
+            test=args.test,
         )
         results.append(FTResultsProcessor(wd=Settings.OUTPUT_DIR).run())
         results[-1].set_timing(stopwatch=stop_watch_)

@@ -10,9 +10,8 @@ from praktika.gh import GH
 from praktika.hook_cache import CacheRunnerHooks
 from praktika.hook_html import HtmlRunnerHooks
 from praktika.mangle import _get_workflows
-from praktika.result import Result, ResultInfo
+from praktika.result import Result, ResultInfo, _ResultS3
 from praktika.runtime import RunConfig
-from praktika.s3 import S3
 from praktika.settings import Settings
 from praktika.utils import Shell, Utils
 
@@ -225,6 +224,7 @@ def _config_workflow(workflow: Workflow.Config, job_name):
         cache_success=[],
         cache_success_base64=[],
         cache_artifacts={},
+        cache_jobs={},
     ).dump()
 
     # checks:
@@ -310,9 +310,8 @@ def _finish_workflow(workflow, job_name):
     print(env.get_needs_statuses())
 
     print("Check Workflow results")
-    S3.copy_result_from_s3(
+    _ResultS3.copy_result_from_s3(
         Result.file_name_static(workflow.name),
-        lock=False,
     )
     workflow_result = Result.from_fs(workflow.name)
 
@@ -345,7 +344,7 @@ def _finish_workflow(workflow, job_name):
             failed_results.append(result.name)
 
     if failed_results:
-        ready_for_merge_description = f"failed: {', '.join(failed_results)}"
+        ready_for_merge_description = f"Failed: {', '.join(failed_results)}"
 
     if not GH.post_commit_status(
         name=Settings.READY_FOR_MERGE_STATUS_NAME + f" [{workflow.name}]",
@@ -357,10 +356,9 @@ def _finish_workflow(workflow, job_name):
         env.add_info(ResultInfo.GH_STATUS_ERROR)
 
     if update_final_report:
-        S3.copy_result_to_s3(
+        _ResultS3.copy_result_to_s3(
             workflow_result,
-            unlock=False,
-        )  # no lock - no unlock
+        )
 
     Result.from_fs(job_name).set_status(Result.Status.SUCCESS)
 

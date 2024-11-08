@@ -23,7 +23,7 @@ class Digest:
         hash_string = hash_obj.hexdigest()
         return hash_string
 
-    def calc_job_digest(self, job_config: Job.Config):
+    def calc_job_digest(self, job_config: Job.Config, docker_digests):
         config = job_config.digest_config
         if not config:
             return "f" * Settings.CACHE_DIGEST_LEN
@@ -34,28 +34,28 @@ class Digest:
             print(
                 f"calc digest for job [{job_config.name}]: hash_key [{cache_key}] - from cache"
             )
-            return self.digest_cache[cache_key]
-
-        included_files = Utils.traverse_paths(
-            job_config.digest_config.include_paths,
-            job_config.digest_config.exclude_paths,
-            sorted=True,
-        )
-        print(
-            f"calc digest for job [{job_config.name}]: hash_key [{cache_key}], include [{len(included_files)}] files"
-        )
-
-        # Calculate MD5 hash
-        res = ""
-        if not included_files:
-            res = "f" * Settings.CACHE_DIGEST_LEN
-            print(f"NOTE: empty digest config [{config}] - return dummy digest")
+            digest = self.digest_cache[cache_key]
         else:
+            included_files = Utils.traverse_paths(
+                job_config.digest_config.include_paths,
+                job_config.digest_config.exclude_paths,
+                sorted=True,
+            )
+            print(
+                f"calc digest for job [{job_config.name}]: hash_key [{cache_key}], include [{len(included_files)}] files"
+            )
+
             hash_md5 = hashlib.md5()
             for i, file_path in enumerate(included_files):
                 hash_md5 = self._calc_file_digest(file_path, hash_md5)
-        digest = hash_md5.hexdigest()[: Settings.CACHE_DIGEST_LEN]
-        self.digest_cache[cache_key] = digest
+            digest = hash_md5.hexdigest()[: Settings.CACHE_DIGEST_LEN]
+            self.digest_cache[cache_key] = digest
+
+        if job_config.run_in_docker:
+            # respect docker digest in the job digest
+            docker_digest = docker_digests[job_config.run_in_docker.split("+")[0]]
+            digest = "-".join([docker_digest, digest])
+
         return digest
 
     def calc_docker_digest(

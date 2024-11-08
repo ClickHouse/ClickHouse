@@ -52,6 +52,7 @@ class Runner:
             cache_success=[],
             cache_success_base64=[],
             cache_artifacts={},
+            cache_jobs={},
         )
         for docker in workflow.dockers:
             workflow_config.digest_dockers[docker.name] = Digest().calc_docker_digest(
@@ -123,7 +124,7 @@ class Runner:
 
         return 0
 
-    def _run(self, workflow, job, docker="", no_docker=False, param=None):
+    def _run(self, workflow, job, docker="", no_docker=False, param=None, test=""):
         # re-set envs for local run
         env = _Environment.get()
         env.JOB_NAME = job.name
@@ -162,6 +163,9 @@ class Runner:
         if param:
             print(f"Custom --param [{param}] will be passed to job's script")
             cmd += f" --param {param}"
+        if test:
+            print(f"Custom --test [{test}] will be passed to job's script")
+            cmd += f" --test {test}"
         print(f"--- Run command [{cmd}]")
 
         with TeePopen(cmd, timeout=job.timeout) as process:
@@ -240,10 +244,6 @@ class Runner:
             result.set_files(files=[Settings.RUN_LOG])
         result.update_duration().dump()
 
-        if result.info and result.status != Result.Status.SUCCESS:
-            # provide job info to workflow level
-            info_errors.append(result.info)
-
         if run_exit_code == 0:
             providing_artifacts = []
             if job.provides and workflow.artifacts:
@@ -310,6 +310,7 @@ class Runner:
         local_run=False,
         no_docker=False,
         param=None,
+        test="",
         pr=None,
         sha=None,
         branch=None,
@@ -358,7 +359,12 @@ class Runner:
             print(f"=== Run script [{job.name}], workflow [{workflow.name}] ===")
             try:
                 run_code = self._run(
-                    workflow, job, docker=docker, no_docker=no_docker, param=param
+                    workflow,
+                    job,
+                    docker=docker,
+                    no_docker=no_docker,
+                    param=param,
+                    test=test,
                 )
                 res = run_code == 0
                 if not res:

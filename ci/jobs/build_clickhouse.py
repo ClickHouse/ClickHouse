@@ -127,7 +127,6 @@ def main():
         Shell.check(f"ls -l {build_dir}/programs/")
         res = results[-1].is_ok()
 
-
     Result.create_from(results=results, stopwatch=stop_watch).complete_job()
 
 

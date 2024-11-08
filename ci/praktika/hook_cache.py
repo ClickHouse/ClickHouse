@@ -1,6 +1,5 @@
 from praktika._environment import _Environment
 from praktika.cache import Cache
-from praktika.mangle import _get_workflows
 from praktika.runtime import RunConfig
 from praktika.settings import Settings
 from praktika.utils import Utils
@@ -10,6 +9,7 @@ class CacheRunnerHooks:
     @classmethod
     def configure(cls, workflow):
         workflow_config = RunConfig.from_fs(workflow.name)
+        docker_digests = workflow_config.digest_dockers
         cache = Cache()
         print(f"Workflow Configure, workflow [{workflow.name}]")
         assert (
@@ -18,11 +18,13 @@ class CacheRunnerHooks:
         artifact_digest_map = {}
         job_digest_map = {}
         for job in workflow.jobs:
+            digest = cache.digest.calc_job_digest(
+                job_config=job, docker_digests=docker_digests
+            )
             if not job.digest_config:
                 print(
                     f"NOTE: job [{job.name}] has no Config.digest_config - skip cache check, always run"
                 )
-            digest = cache.digest.calc_job_digest(job_config=job)
             job_digest_map[job.name] = digest
             if job.provides:
                 # assign the job digest also to the artifacts it provides
@@ -48,7 +50,6 @@ class CacheRunnerHooks:
         ), f"BUG, Workflow with enabled cache must have job digests after configuration, wf [{workflow.name}]"
 
         print("Check remote cache")
-        job_to_cache_record = {}
         for job_name, job_digest in workflow_config.digest_jobs.items():
             record = cache.fetch_success(job_name=job_name, job_digest=job_digest)
             if record:
@@ -58,7 +59,7 @@ class CacheRunnerHooks:
                 )
                 workflow_config.cache_success.append(job_name)
                 workflow_config.cache_success_base64.append(Utils.to_base64(job_name))
-                job_to_cache_record[job_name] = record
+                workflow_config.cache_jobs[job_name] = record
 
         print("Check artifacts to reuse")
         for job in workflow.jobs:
@@ -66,7 +67,7 @@ class CacheRunnerHooks:
                 if job.provides:
                     for artifact_name in job.provides:
                         workflow_config.cache_artifacts[artifact_name] = (
-                            job_to_cache_record[job.name]
+                            workflow_config.cache_jobs[job.name]
                         )
 
         print(f"Write config to GH's job output")

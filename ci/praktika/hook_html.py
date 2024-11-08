@@ -6,7 +6,7 @@ from typing import List
 from praktika._environment import _Environment
 from praktika.gh import GH
 from praktika.parser import WorkflowConfigParser
-from praktika.result import Result, ResultInfo
+from praktika.result import Result, ResultInfo, _ResultS3
 from praktika.runtime import RunConfig
 from praktika.s3 import S3
 from praktika.settings import Settings
@@ -119,6 +119,7 @@ class HtmlRunnerHooks:
         # generate pending Results for all jobs in the workflow
         if _workflow.enable_cache:
             skip_jobs = RunConfig.from_fs(_workflow.name).cache_success
+            job_cache_records = RunConfig.from_fs(_workflow.name).cache_jobs
         else:
             skip_jobs = []
 
@@ -128,21 +129,14 @@ class HtmlRunnerHooks:
             if job.name not in skip_jobs:
                 result = Result.generate_pending(job.name)
             else:
-                result = Result.generate_skipped(job.name)
+                result = Result.generate_skipped(job.name, job_cache_records[job.name])
             results.append(result)
         summary_result = Result.generate_pending(_workflow.name, results=results)
         summary_result.links.append(env.CHANGE_URL)
         summary_result.links.append(env.RUN_URL)
         summary_result.start_time = Utils.timestamp()
 
-        # clean the previous latest results in PR if any
-        if env.PR_NUMBER:
-            S3.clean_latest_result()
-        S3.copy_result_to_s3(
-            summary_result,
-            unlock=False,
-        )
-
+        assert _ResultS3.copy_result_to_s3_with_version(summary_result, version=0)
         page_url = env.get_report_url(settings=Settings)
         print(f"CI Status page url [{page_url}]")
 
@@ -150,7 +144,7 @@ class HtmlRunnerHooks:
             name=_workflow.name,
             status=Result.Status.PENDING,
             description="",
-            url=env.get_report_url(settings=Settings),
+            url=env.get_report_url(settings=Settings, latest=True),
         )
         res2 = GH.post_pr_comment(
             comment_body=f"Workflow [[{_workflow.name}]({page_url})], commit [{_Environment.get().SHA[:8]}]",
@@ -167,14 +161,8 @@ class HtmlRunnerHooks:
     @classmethod
     def pre_run(cls, _workflow, _job):
         result = Result.from_fs(_job.name)
-        S3.copy_result_from_s3(
-            Result.file_name_static(_workflow.name),
-        )
-        workflow_result = Result.from_fs(_workflow.name)
-        workflow_result.update_sub_result(result)
-        S3.copy_result_to_s3(
-            workflow_result,
-            unlock=True,
+        _ResultS3.update_workflow_results(
+            workflow_name=_workflow.name, new_sub_results=result
         )
 
     @classmethod
@@ -184,14 +172,13 @@ class HtmlRunnerHooks:
     @classmethod
     def post_run(cls, _workflow, _job, info_errors):
         result = Result.from_fs(_job.name)
-        env = _Environment.get()
-        S3.copy_result_from_s3(
-            Result.file_name_static(_workflow.name),
-            lock=True,
-        )
-        workflow_result = Result.from_fs(_workflow.name)
-        print(f"Workflow info [{workflow_result.info}], info_errors [{info_errors}]")
+        _ResultS3.upload_result_files_to_s3(result)
+        _ResultS3.copy_result_to_s3(result)
 
+        env = _Environment.get()
+
+        new_sub_results = [result]
+        new_result_info = ""
         env_info = env.REPORT_INFO
         if env_info:
             print(
@@ -203,14 +190,8 @@ class HtmlRunnerHooks:
             info_str = f"{_job.name}:\n"
             info_str += "\n".join(info_errors)
             print("Update workflow results with new info")
-            workflow_result.set_info(info_str)
+            new_result_info = info_str
 
-        old_status = workflow_result.status
-
-        S3.upload_result_files_to_s3(result)
-        workflow_result.update_sub_result(result)
-
-        skipped_job_results = []
         if not result.is_ok():
             print(
                 "Current job failed - find dependee jobs in the workflow and set their statuses to skipped"
@@ -223,7 +204,7 @@ class HtmlRunnerHooks:
                     print(
                         f"NOTE: Set job [{dependee_job.name}] status to [{Result.Status.SKIPPED}] due to current failure"
                     )
-                    skipped_job_results.append(
+                    new_sub_results.append(
                         Result(
                             name=dependee_job.name,
                             status=Result.Status.SKIPPED,
@@ -231,20 +212,18 @@ class HtmlRunnerHooks:
                             + f" [{_job.name}]",
                         )
                     )
-        for skipped_job_result in skipped_job_results:
-            workflow_result.update_sub_result(skipped_job_result)
 
-        S3.copy_result_to_s3(
-            workflow_result,
-            unlock=True,
+        updated_status = _ResultS3.update_workflow_results(
+            new_info=new_result_info,
+            new_sub_results=new_sub_results,
+            workflow_name=_workflow.name,
         )
-        if workflow_result.status != old_status:
-            print(
-                f"Update GH commit status [{result.name}]: [{old_status} -> {workflow_result.status}]"
-            )
+
+        if updated_status:
+            print(f"Update GH commit status [{result.name}]: [{updated_status}]")
             GH.post_commit_status(
-                name=workflow_result.name,
-                status=GH.convert_to_gh_status(workflow_result.status),
+                name=_workflow.name,
+                status=GH.convert_to_gh_status(updated_status),
                 description="",
-                url=env.get_report_url(settings=Settings),
+                url=env.get_report_url(settings=Settings, latest=True),
             )

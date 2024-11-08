@@ -4,10 +4,8 @@ from itertools import chain
 from pathlib import Path
 
 from praktika import Workflow
-from praktika._settings import GHRunners
 from praktika.mangle import _get_workflows
-from praktika.settings import Settings
-from praktika.utils import ContextManager
+from praktika.settings import GHRunners, Settings
 
 
 class Validator:
@@ -168,9 +166,7 @@ class Validator:
                             "\n      echo requests==2.32.3 >> ./ci/requirements.txt"
                         )
                         message += "\n      echo https://clickhouse-builds.s3.amazonaws.com/packages/praktika-0.1-py3-none-any.whl >> ./ci/requirements.txt"
-                    cls.evaluate_check(
-                        path.is_file(), message, job.name, workflow.name
-                    )
+                    cls.evaluate_check(path.is_file(), message, job.name, workflow.name)
 
     @classmethod
     def validate_dockers(cls, workflow: Workflow.Config):

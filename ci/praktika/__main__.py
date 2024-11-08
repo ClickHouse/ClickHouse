@@ -38,6 +38,12 @@ def create_parser():
         default=None,
     )
     run_parser.add_argument(
+        "--test",
+        help="Custom parameter to pass into a job script, it's up to job script how to use it, for local test",
+        type=str,
+        default="",
+    )
+    run_parser.add_argument(
         "--pr",
         help="PR number. Optional parameter for local run. Set if you want an required artifact to be uploaded from CI run in that PR",
         type=int,
@@ -106,6 +112,7 @@ if __name__ == "__main__":
                 local_run=not args.ci,
                 no_docker=args.no_docker,
                 param=args.param,
+                test=args.test,
                 pr=args.pr,
                 branch=args.branch,
                 sha=args.sha,

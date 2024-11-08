@@ -1,11 +1,10 @@
 import copy
 import importlib.util
 from pathlib import Path
-from typing import Any, Dict
 
 from praktika import Job
-from praktika._settings import _USER_DEFINED_SETTINGS, _Settings
-from praktika.utils import ContextManager, Utils
+from praktika.settings import Settings
+from praktika.utils import Utils
 
 
 def _get_workflows(name=None, file=None):
@@ -14,13 +13,13 @@ def _get_workflows(name=None, file=None):
     """
     res = []
 
-    directory = Path(_Settings.WORKFLOWS_DIRECTORY)
+    directory = Path(Settings.WORKFLOWS_DIRECTORY)
     for py_file in directory.glob("*.py"):
         if file and file not in str(py_file):
             continue
         module_name = py_file.name.removeprefix(".py")
         spec = importlib.util.spec_from_file_location(
-            module_name, f"{_Settings.WORKFLOWS_DIRECTORY}/{module_name}"
+            module_name, f"{Settings.WORKFLOWS_DIRECTORY}/{module_name}"
         )
         assert spec
         foo = importlib.util.module_from_spec(spec)
@@ -106,30 +105,3 @@ def _update_workflow_with_native_jobs(workflow):
         for job in workflow.jobs:
             aux_job.requires.append(job.name)
         workflow.jobs.append(aux_job)
-
-
-def _get_user_settings() -> Dict[str, Any]:
-    """
-    Gets user's settings
-    """
-    res = {}  # type: Dict[str, Any]
-
-    directory = Path(_Settings.SETTINGS_DIRECTORY)
-    for py_file in directory.glob("*.py"):
-        module_name = py_file.name.removeprefix(".py")
-        spec = importlib.util.spec_from_file_location(
-            module_name, f"{_Settings.SETTINGS_DIRECTORY}/{module_name}"
-        )
-        assert spec
-        foo = importlib.util.module_from_spec(spec)
-        assert spec.loader
-        spec.loader.exec_module(foo)
-        for setting in _USER_DEFINED_SETTINGS:
-            try:
-                value = getattr(foo, setting)
-                res[setting] = value
-                print(f"Apply user defined setting [{setting} = {value}]")
-            except Exception as e:
-                pass
-
-    return res

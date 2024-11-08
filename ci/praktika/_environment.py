@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from typing import Any, Dict, List, Type
 
 from praktika import Workflow
-from praktika._settings import _Settings
+from praktika.settings import Settings
 from praktika.utils import MetaClasses, T
 
 
@@ -35,7 +35,7 @@ class _Environment(MetaClasses.Serializable):
 
     @classmethod
     def file_name_static(cls, _name=""):
-        return f"{_Settings.TEMP_DIR}/{cls.name}.json"
+        return f"{Settings.TEMP_DIR}/{cls.name}.json"
 
     @classmethod
     def from_dict(cls: Type[T], obj: Dict[str, Any]) -> T:
@@ -66,12 +66,12 @@ class _Environment(MetaClasses.Serializable):
 
     @staticmethod
     def get_needs_statuses():
-        if Path(_Settings.WORKFLOW_STATUS_FILE).is_file():
-            with open(_Settings.WORKFLOW_STATUS_FILE, "r", encoding="utf8") as f:
+        if Path(Settings.WORKFLOW_STATUS_FILE).is_file():
+            with open(Settings.WORKFLOW_STATUS_FILE, "r", encoding="utf8") as f:
                 return json.load(f)
         else:
             print(
-                f"ERROR: Status file [{_Settings.WORKFLOW_STATUS_FILE}] does not exist"
+                f"ERROR: Status file [{Settings.WORKFLOW_STATUS_FILE}] does not exist"
             )
             raise RuntimeError()
 
@@ -171,7 +171,7 @@ class _Environment(MetaClasses.Serializable):
 
     # TODO: find a better place for the function. This file should not import praktika.settings
     #   as it's requires reading users config, that's why imports nested inside the function
-    def get_report_url(self, settings):
+    def get_report_url(self, settings, latest=False):
         import urllib
 
         path = settings.HTML_S3_PATH
@@ -179,7 +179,7 @@ class _Environment(MetaClasses.Serializable):
             if bucket in path:
                 path = path.replace(bucket, endpoint)
                 break
-        REPORT_URL = f"https://{path}/{Path(settings.HTML_PAGE_FILE).name}?PR={self.PR_NUMBER}&sha={self.SHA}&name_0={urllib.parse.quote(self.WORKFLOW_NAME, safe='')}&name_1={urllib.parse.quote(self.JOB_NAME, safe='')}"
+        REPORT_URL = f"https://{path}/{Path(settings.HTML_PAGE_FILE).name}?PR={self.PR_NUMBER}&sha={'latest' if latest else self.SHA}&name_0={urllib.parse.quote(self.WORKFLOW_NAME, safe='')}&name_1={urllib.parse.quote(self.JOB_NAME, safe='')}"
         return REPORT_URL
 
     def is_local_run(self):

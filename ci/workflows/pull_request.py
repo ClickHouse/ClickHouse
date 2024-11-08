@@ -68,6 +68,7 @@ stateless_tests_jobs = Job.Config(
     name=JobNames.STATELESS,
     runs_on=[RunnerLabels.BUILDER],
     command="python3 ./ci/jobs/functional_stateless_tests.py --test-options {PARAMETER}",
+    # many tests expect to see "/var/lib/clickhouse" in various output lines - add mount for now, consider creating this dir in docker file
     run_in_docker="clickhouse/stateless-test+--security-opt seccomp=unconfined+--volume=/tmp/praktika:/var/lib/clickhouse",
     digest_config=Job.CacheDigestConfig(
         include_paths=[

@@ -342,7 +342,7 @@
             const milliseconds = Math.floor((duration % 1) * 1000);
 
             const formattedSeconds = String(seconds);
-            const formattedMilliseconds = String(milliseconds).padStart(3, '0');
+            const formattedMilliseconds = String(milliseconds).padStart(2, '0').slice(-2);
 
             return `${formattedSeconds}.${formattedMilliseconds}`;
         }
@@ -600,8 +600,7 @@
                     td.classList.add('time-column');
                     td.textContent = value ? formatDuration(value) : '';
                 } else if (column === 'info') {
-                    // For info and other columns, just display the value
-                    td.textContent = value || '';
+                    td.textContent = value.includes('\n') ? '↵' : (value || '');
                     td.classList.add('info-column');
                 }
 
@@ -675,7 +674,8 @@
                 }
 
                 if (targetData) {
-                    infoElement.style.display = 'none';
+                    //infoElement.style.display = 'none';
+                    infoElement.innerHTML = (targetData.info || '').replace(/\n/g, '<br>');
 
                     addStatusToStatus(targetData.status, targetData.start_time, targetData.duration)
 
@@ -804,7 +804,8 @@
 
                 // Check if all required parameters are present to load JSON
                 if (PR && sha && root_name) {
-                    loadResultsJSON(PR, sha, nameParams);
+                    const shaToLoad = (sha === 'latest') ? commitsArray[commitsArray.length - 1] : sha;
+                    loadResultsJSON(PR, shaToLoad, nameParams);
                 } else {
                     document.getElementById('title').textContent = 'Error: Missing required URL parameters: PR, sha, or name_0';
                 }
