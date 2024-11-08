@@ -152,6 +152,7 @@ void MongoDBIntegration::DocumentAppendBottomType(RandomGenerator & rg, const st
 {
     const IntType * itp;
     const DateType * dtp;
+    const DateTimeType * dttp;
     const DecimalType * detp;
     const StringType * stp;
     const EnumType * etp;
@@ -237,39 +238,36 @@ void MongoDBIntegration::DocumentAppendBottomType(RandomGenerator & rg, const st
     }
     else if ((dtp = dynamic_cast<const DateType *>(tp)))
     {
-        if (dtp->has_time)
+        const bsoncxx::types::b_date val(
+            {std::chrono::milliseconds(rg.NextBool() ? static_cast<uint64_t>(rg.NextRandomUInt32()) : rg.NextRandomUInt64())});
+
+        if constexpr (std::is_same<T, bsoncxx::v_noabi::builder::stream::document>::value)
         {
-            buf.resize(0);
-            if (dtp->extended)
-            {
-                rg.NextDateTime64(buf);
-            }
-            else
-            {
-                rg.NextDateTime(buf);
-            }
-            if constexpr (std::is_same<T, bsoncxx::v_noabi::builder::stream::document>::value)
-            {
-                output << cname << buf;
-            }
-            else
-            {
-                output << buf;
-            }
+            output << cname << val;
         }
         else
         {
-            const bsoncxx::types::b_date val(
-                {std::chrono::milliseconds(rg.NextBool() ? static_cast<uint64_t>(rg.NextRandomUInt32()) : rg.NextRandomUInt64())});
-
-            if constexpr (std::is_same<T, bsoncxx::v_noabi::builder::stream::document>::value)
-            {
-                output << cname << val;
-            }
-            else
-            {
-                output << val;
-            }
+            output << val;
+        }
+    }
+    else if ((dttp = dynamic_cast<const DateTimeType *>(tp)))
+    {
+        buf.resize(0);
+        if (dtp->extended)
+        {
+            rg.NextDateTime64(buf);
+        }
+        else
+        {
+            rg.NextDateTime(buf);
+        }
+        if constexpr (std::is_same<T, bsoncxx::v_noabi::builder::stream::document>::value)
+        {
+            output << cname << buf;
+        }
+        else
+        {
+            output << buf;
         }
     }
     else if ((detp = dynamic_cast<const DecimalType *>(tp)))
@@ -429,7 +427,7 @@ void MongoDBIntegration::DocumentAppendArray(
 {
     const uint32_t limit = rg.NextLargeNumber() % 100;
     auto array = document << cname << bsoncxx::builder::stream::open_array; // Array
-    const SQLType *tp = at->subtype;
+    const SQLType * tp = at->subtype;
     const Nullable * nl;
     const ArrayType * att;
     const VariantType * vtp;
@@ -457,9 +455,9 @@ void MongoDBIntegration::DocumentAppendArray(
         }
         else if (
             dynamic_cast<const IntType *>(tp) || dynamic_cast<const FloatType *>(tp) || dynamic_cast<const DateType *>(tp)
-            || dynamic_cast<const DecimalType *>(tp) || dynamic_cast<const StringType *>(tp) || dynamic_cast<const BoolType *>(tp)
-            || dynamic_cast<const EnumType *>(tp) || dynamic_cast<const UUIDType *>(tp) || dynamic_cast<const IPv4Type *>(tp)
-            || dynamic_cast<const IPv6Type *>(tp) || dynamic_cast<const JSONType *>(tp))
+            || dynamic_cast<const DateTimeType *>(tp) || dynamic_cast<const DecimalType *>(tp) || dynamic_cast<const StringType *>(tp)
+            || dynamic_cast<const BoolType *>(tp) || dynamic_cast<const EnumType *>(tp) || dynamic_cast<const UUIDType *>(tp)
+            || dynamic_cast<const IPv4Type *>(tp) || dynamic_cast<const IPv6Type *>(tp) || dynamic_cast<const JSONType *>(tp))
         {
             DocumentAppendBottomType<decltype(array)>(rg, "", array, at->subtype);
         }
@@ -524,9 +522,9 @@ void MongoDBIntegration::DocumentAppendAnyValue(
     }
     else if (
         dynamic_cast<const IntType *>(tp) || dynamic_cast<const FloatType *>(tp) || dynamic_cast<const DateType *>(tp)
-        || dynamic_cast<const DecimalType *>(tp) || dynamic_cast<const StringType *>(tp) || dynamic_cast<const BoolType *>(tp)
-        || dynamic_cast<const EnumType *>(tp) || dynamic_cast<const UUIDType *>(tp) || dynamic_cast<const IPv4Type *>(tp)
-        || dynamic_cast<const IPv6Type *>(tp) || dynamic_cast<const JSONType *>(tp))
+        || dynamic_cast<const DateTimeType *>(tp) || dynamic_cast<const DecimalType *>(tp) || dynamic_cast<const StringType *>(tp)
+        || dynamic_cast<const BoolType *>(tp) || dynamic_cast<const EnumType *>(tp) || dynamic_cast<const UUIDType *>(tp)
+        || dynamic_cast<const IPv4Type *>(tp) || dynamic_cast<const IPv6Type *>(tp) || dynamic_cast<const JSONType *>(tp))
     {
         DocumentAppendBottomType<bsoncxx::v_noabi::builder::stream::document>(rg, cname, document, tp);
     }

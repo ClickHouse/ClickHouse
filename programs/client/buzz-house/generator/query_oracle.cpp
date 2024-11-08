@@ -343,7 +343,6 @@ static const std::vector<TestSetting> test_settings{
     TestSetting("fsync_metadata", {"0", "1"}),
     TestSetting("group_by_two_level_threshold", {"0", "1"}),
     TestSetting("group_by_two_level_threshold_bytes", {"0", "1"}),
-    TestSetting("group_by_use_nulls", {"0", "1"}),
     TestSetting("http_wait_end_of_query", {"0", "1"}),
     TestSetting("input_format_import_nested_json", {"0", "1"}),
     TestSetting("input_format_parallel_parsing", {"0", "1"}),

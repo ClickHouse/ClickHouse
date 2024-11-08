@@ -1627,8 +1627,17 @@ enum FloatingPoints {
 enum Dates {
     Date = 1;
     Date32 = 2;
-    DateTime = 3;
-    DateTime64 = 4;
+}
+
+enum DateTimes {
+    DateTime = 1;
+    DateTime64 = 2;
+}
+
+message DateTimeTp {
+    required DateTimes type = 1;
+    optional uint32 precision = 2;
+    optional string timezone = 3;
 }
 
 message HugeInt {
@@ -2551,14 +2560,15 @@ message BottomTypeName {
         bool sql_string = 3;
         uint32 fixed_string = 4;
         Dates dates = 5;
-        Decimal decimal = 6;
-        bool boolean = 7;
-        bool uuid = 8;
-        JsonDef json = 9;
-        Dynamic dynamic = 10;
-        EnumDef enum_def = 11;
-        bool IPv4 = 12;
-        bool IPv6 = 13;
+        DateTimeTp datetimes = 6;
+        Decimal decimal = 7;
+        bool boolean = 8;
+        bool uuid = 9;
+        JsonDef json = 10;
+        Dynamic dynamic = 11;
+        EnumDef enum_def = 12;
+        bool IPv4 = 13;
+        bool IPv6 = 14;
     }
 }
 

@@ -1,4 +1,5 @@
 #include "sql_types.h"
+#include "fuzz_timezones.h"
 #include "hugeint.h"
 #include "statement_generator.h"
 #include "uhugeint.h"
@@ -11,6 +12,7 @@ const SQLType * TypeDeepCopy(const SQLType * tp)
     const IntType * it;
     const FloatType * ft;
     const DateType * dt;
+    const DateTimeType * dtt;
     const DecimalType * decp;
     const StringType * st;
     const EnumType * et;
@@ -38,7 +40,11 @@ const SQLType * TypeDeepCopy(const SQLType * tp)
     }
     else if ((dt = dynamic_cast<const DateType *>(tp)))
     {
-        return new DateType(dt->has_time, dt->extended);
+        return new DateType(dt->extended);
+    }
+    else if ((dtt = dynamic_cast<const DateTimeType *>(tp)))
+    {
+        return new DateTimeType(dtt->extended, dtt->precision, dtt->timezone);
     }
     else if ((decp = dynamic_cast<const DecimalType *>(tp)))
     {
@@ -192,53 +198,45 @@ StatementGenerator::RandomIntType(RandomGenerator & rg, const uint32_t allowed_t
 
 std::tuple<const SQLType *, sql_query_grammar::FloatingPoints> StatementGenerator::RandomFloatType(RandomGenerator & rg)
 {
-    std::uniform_int_distribution<uint32_t> next_dist(1, 2);
-    const uint32_t nopt = next_dist(rg.gen);
-
-    switch (nopt)
-    {
-        case 1:
-            return std::make_tuple(new FloatType(32), sql_query_grammar::FloatingPoints::Float32);
-        case 2:
-            return std::make_tuple(new FloatType(64), sql_query_grammar::FloatingPoints::Float64);
-        default:
-            assert(0);
-    }
+    const bool use32 = rg.NextBool();
+    return std::make_tuple(
+        new FloatType(use32 ? 32 : 64), use32 ? sql_query_grammar::FloatingPoints::Float32 : sql_query_grammar::FloatingPoints::Float64);
 }
 
 std::tuple<const SQLType *, sql_query_grammar::Dates> StatementGenerator::RandomDateType(RandomGenerator & rg, const uint32_t allowed_types)
 {
-    assert(this->ids.empty());
+    const bool use32 = (allowed_types & allow_date32) && rg.NextBool();
+    return std::make_tuple(new DateType(use32), use32 ? sql_query_grammar::Dates::Date32 : sql_query_grammar::Dates::Date);
+}
 
-    if ((allowed_types & allow_dates))
+const SQLType *
+StatementGenerator::RandomDateTimeType(RandomGenerator & rg, const uint32_t allowed_types, sql_query_grammar::DateTimeTp * dt)
+{
+    const bool use64 = (allowed_types & allow_datetime64) && rg.NextBool();
+    std::optional<uint32_t> precision = std::nullopt;
+    std::optional<std::string> timezone = std::nullopt;
+
+    if (dt)
     {
-        this->ids.push_back(1);
-        if ((allowed_types & allow_date32))
+        dt->set_type(use64 ? sql_query_grammar::DateTimes::DateTime64 : sql_query_grammar::DateTimes::DateTime);
+    }
+    if (use64 && rg.NextSmallNumber() < 5)
+    {
+        precision = std::optional<uint32_t>(rg.NextSmallNumber() - 1);
+        if (dt)
         {
-            this->ids.push_back(2);
+            dt->set_precision(precision.value());
         }
     }
-    this->ids.push_back(3);
-    if ((allowed_types & allow_datetime64))
+    if (rg.NextSmallNumber() < 5)
     {
-        this->ids.push_back(4);
+        timezone = std::optional<std::string>(rg.PickRandomlyFromVector(timezones));
+        if (dt)
+        {
+            dt->set_timezone(timezone.value());
+        }
     }
-    const uint32_t nopt = rg.PickRandomlyFromVector(this->ids);
-    this->ids.clear();
-
-    switch (nopt)
-    {
-        case 1:
-            return std::make_tuple(new DateType(false, false), sql_query_grammar::Dates::Date);
-        case 2:
-            return std::make_tuple(new DateType(false, true), sql_query_grammar::Dates::Date32);
-        case 3:
-            return std::make_tuple(new DateType(true, false), sql_query_grammar::Dates::DateTime);
-        case 4:
-            return std::make_tuple(new DateType(true, true), sql_query_grammar::Dates::DateTime64);
-        default:
-            assert(0);
-    }
+    return new DateTimeType(use64, precision, timezone);
 }
 
 const SQLType * StatementGenerator::BottomType(
@@ -249,7 +247,7 @@ const SQLType * StatementGenerator::BottomType(
     const uint32_t int_type
         = 40,
         floating_point_type = 10 * static_cast<uint32_t>((allowed_types & allow_floating_points) != 0 && this->fc.fuzz_floating_points),
-        date_type = 30 * static_cast<uint32_t>((allowed_types & allow_dates) != 0),
+        date_type = 15 * static_cast<uint32_t>((allowed_types & allow_dates) != 0), datetime_type = 15,
         string_type = 30 * static_cast<uint32_t>((allowed_types & allow_strings) != 0),
         decimal_type = 20 * static_cast<uint32_t>(!low_card && (allowed_types & allow_decimals) != 0),
         bool_type = 20 * static_cast<uint32_t>(!low_card && (allowed_types & allow_bool) != 0),
@@ -259,8 +257,8 @@ const SQLType * StatementGenerator::BottomType(
         ipv6_type = 5 * static_cast<uint32_t>(!low_card && (allowed_types & allow_ipv6) != 0),
         json_type = 20 * static_cast<uint32_t>(!low_card && (allowed_types & allow_json) != 0),
         dynamic_type = 30 * static_cast<uint32_t>(!low_card && (allowed_types & allow_dynamic) != 0),
-        prob_space = int_type + floating_point_type + date_type + string_type + decimal_type + bool_type + enum_type + uuid_type + ipv4_type
-        + ipv6_type + json_type + dynamic_type;
+        prob_space = int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + enum_type
+        + uuid_type + ipv4_type + ipv6_type + json_type + dynamic_type;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.gen);
 
@@ -288,13 +286,19 @@ const SQLType * StatementGenerator::BottomType(
     {
         sql_query_grammar::Dates dd;
 
-        std::tie(res, dd) = RandomDateType(rg, low_card ? (allowed_types & ~(allow_datetime64)) : allowed_types);
+        std::tie(res, dd) = RandomDateType(rg, allowed_types);
         if (tp)
         {
             tp->set_dates(dd);
         }
     }
-    else if (string_type && nopt < (int_type + floating_point_type + date_type + string_type + 1))
+    else if (datetime_type && nopt < (int_type + floating_point_type + date_type + datetime_type + 1))
+    {
+        sql_query_grammar::DateTimeTp * dtp = tp ? tp->mutable_datetimes() : nullptr;
+
+        res = RandomDateTimeType(rg, low_card ? (allowed_types & ~(allow_datetime64)) : allowed_types, dtp);
+    }
+    else if (string_type && nopt < (int_type + floating_point_type + date_type + datetime_type + string_type + 1))
     {
         std::optional<uint32_t> swidth = std::nullopt;
 
@@ -315,7 +319,7 @@ const SQLType * StatementGenerator::BottomType(
         }
         res = new StringType(swidth);
     }
-    else if (decimal_type && nopt < (int_type + floating_point_type + date_type + string_type + decimal_type + 1))
+    else if (decimal_type && nopt < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + 1))
     {
         sql_query_grammar::Decimal * dec = tp ? tp->mutable_decimal() : nullptr;
         std::optional<uint32_t> precision = std::nullopt, scale = std::nullopt;
@@ -339,7 +343,7 @@ const SQLType * StatementGenerator::BottomType(
         }
         res = new DecimalType(precision, scale);
     }
-    else if (bool_type && nopt < (int_type + floating_point_type + date_type + string_type + decimal_type + bool_type + 1))
+    else if (bool_type && nopt < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + 1))
     {
         if (tp)
         {
@@ -347,7 +351,9 @@ const SQLType * StatementGenerator::BottomType(
         }
         res = new BoolType();
     }
-    else if (enum_type && nopt < (int_type + floating_point_type + date_type + string_type + decimal_type + bool_type + enum_type + 1))
+    else if (
+        enum_type
+        && nopt < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + enum_type + 1))
     {
         const bool bits = rg.NextBool();
         std::vector<const EnumValue> evs;
@@ -374,7 +380,9 @@ const SQLType * StatementGenerator::BottomType(
     }
     else if (
         uuid_type
-        && nopt < (int_type + floating_point_type + date_type + string_type + decimal_type + bool_type + enum_type + uuid_type + 1))
+        && nopt
+            < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + enum_type + uuid_type
+               + 1))
     {
         if (tp)
         {
@@ -385,7 +393,8 @@ const SQLType * StatementGenerator::BottomType(
     else if (
         ipv4_type
         && nopt
-            < (int_type + floating_point_type + date_type + string_type + decimal_type + bool_type + enum_type + uuid_type + ipv4_type + 1))
+            < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + enum_type + uuid_type
+               + ipv4_type + 1))
     {
         if (tp)
         {
@@ -396,8 +405,8 @@ const SQLType * StatementGenerator::BottomType(
     else if (
         ipv6_type
         && nopt
-            < (int_type + floating_point_type + date_type + string_type + decimal_type + bool_type + enum_type + uuid_type + ipv4_type
-               + ipv6_type + 1))
+            < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + enum_type + uuid_type
+               + ipv4_type + ipv6_type + 1))
     {
         if (tp)
         {
@@ -408,8 +417,8 @@ const SQLType * StatementGenerator::BottomType(
     else if (
         json_type
         && nopt
-            < (int_type + floating_point_type + date_type + string_type + decimal_type + bool_type + enum_type + uuid_type + ipv4_type
-               + ipv6_type + json_type + 1))
+            < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + enum_type + uuid_type
+               + ipv4_type + ipv6_type + json_type + 1))
     {
         std::string desc = "";
         sql_query_grammar::JsonDef * jdef = tp ? tp->mutable_json() : nullptr;
@@ -512,8 +521,8 @@ const SQLType * StatementGenerator::BottomType(
     else if (
         dynamic_type
         && nopt
-            < (int_type + floating_point_type + date_type + string_type + decimal_type + bool_type + enum_type + uuid_type + ipv4_type
-               + ipv6_type + json_type + dynamic_type + 1))
+            < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + enum_type + uuid_type
+               + ipv4_type + ipv6_type + json_type + dynamic_type + 1))
     {
         sql_query_grammar::Dynamic * dyn = tp ? tp->mutable_dynamic() : nullptr;
         std::optional<uint32_t> ntypes = std::nullopt;
@@ -735,6 +744,7 @@ void StatementGenerator::StrAppendBottomValue(RandomGenerator & rg, std::string 
 {
     const IntType * itp;
     const DateType * dtp;
+    const DateTimeType * dttp;
     const DecimalType * detp;
     const StringType * stp;
     const EnumType * etp;
@@ -822,27 +832,26 @@ void StatementGenerator::StrAppendBottomValue(RandomGenerator & rg, std::string 
     else if ((dtp = dynamic_cast<const DateType *>(tp)))
     {
         ret += "'";
-        if (dtp->has_time)
+        if (dtp->extended)
         {
-            if (dtp->extended)
-            {
-                rg.NextDateTime64(ret);
-            }
-            else
-            {
-                rg.NextDateTime(ret);
-            }
+            rg.NextDate32(ret);
         }
         else
         {
-            if (dtp->extended)
-            {
-                rg.NextDate32(ret);
-            }
-            else
-            {
-                rg.NextDate(ret);
-            }
+            rg.NextDate(ret);
+        }
+        ret += "'";
+    }
+    else if ((dttp = dynamic_cast<const DateTimeType *>(tp)))
+    {
+        ret += "'";
+        if (dtp->extended)
+        {
+            rg.NextDateTime64(ret);
+        }
+        else
+        {
+            rg.NextDateTime(ret);
         }
         ret += "'";
     }
@@ -1140,9 +1149,9 @@ void StatementGenerator::StrAppendAnyValueInternal(RandomGenerator & rg, std::st
     }
     else if (
         dynamic_cast<const IntType *>(tp) || dynamic_cast<const FloatType *>(tp) || dynamic_cast<const DateType *>(tp)
-        || dynamic_cast<const DecimalType *>(tp) || dynamic_cast<const StringType *>(tp) || dynamic_cast<const BoolType *>(tp)
-        || dynamic_cast<const EnumType *>(tp) || dynamic_cast<const UUIDType *>(tp) || dynamic_cast<const IPv4Type *>(tp)
-        || dynamic_cast<const IPv6Type *>(tp))
+        || dynamic_cast<const DateTimeType *>(tp) || dynamic_cast<const DecimalType *>(tp) || dynamic_cast<const StringType *>(tp)
+        || dynamic_cast<const BoolType *>(tp) || dynamic_cast<const EnumType *>(tp) || dynamic_cast<const UUIDType *>(tp)
+        || dynamic_cast<const IPv4Type *>(tp) || dynamic_cast<const IPv6Type *>(tp))
     {
         StrAppendBottomValue(rg, ret, tp);
     }

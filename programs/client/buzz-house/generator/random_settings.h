@@ -1,6 +1,7 @@
 #pragma once
 
 #include "buzz-house/ast/sql_grammar.pb.h"
+#include "fuzz_timezones.h"
 #include "random_generator.h"
 
 #include <cstdint>
@@ -442,10 +443,8 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
     {"session_timezone",
      [](RandomGenerator & rg, std::string & ret)
      {
-         const std::vector<std::string> & choices
-             = {"America/Mazatlan", "America/Hermosillo", "Mexico/BajaSur", "Africa/Khartoum", "Africa/Juba"};
          ret += "'";
-         ret += rg.PickRandomlyFromVector(choices);
+         ret += rg.PickRandomlyFromVector(timezones);
          ret += "'";
      }},
     /*{"set_overflow_mode",

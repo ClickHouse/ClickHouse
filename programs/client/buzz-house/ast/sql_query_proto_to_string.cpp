@@ -840,6 +840,32 @@ void BottomTypeNameToString(std::string & ret, const bool quote, const bool lcar
         case BottomTypeNameType::kDates:
             ret += Dates_Name(btn.dates());
             break;
+        case BottomTypeNameType::kDatetimes: {
+            const sql_query_grammar::DateTimeTp & dt = btn.datetimes();
+            const bool has_precision = dt.type() == sql_query_grammar::DateTimes::DateTime64 && dt.has_precision();
+
+            ret += DateTimes_Name(dt.type());
+            if (has_precision || dt.has_timezone())
+            {
+                ret += "(";
+                if (has_precision)
+                {
+                    ret += std::to_string(dt.precision() % UINT32_C(10));
+                }
+                if (dt.has_timezone())
+                {
+                    if (has_precision)
+                    {
+                        ret += ",";
+                    }
+                    ret += "'";
+                    ret += dt.timezone();
+                    ret += "'";
+                }
+                ret += ")";
+            }
+        }
+        break;
         default: {
             if (lcard)
             {

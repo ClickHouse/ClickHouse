@@ -164,29 +164,29 @@ public:
 class DateType : public SQLType
 {
 public:
-    const bool has_time, extended;
-    DateType(const bool ht, const bool ex) : has_time(ht), extended(ex) { }
+    const bool extended;
+    DateType(const bool ex) : extended(ex) { }
 
     void TypeName(std::string & ret, const bool escape) const override
     {
         (void)escape;
         ret += "Date";
-        ret += has_time ? "Time" : "";
         if (extended)
         {
-            ret += has_time ? "64" : "32";
+            ret += "32";
         }
     }
     void MySQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
+        (void)rg;
         (void)escape;
-        ret += has_time ? (rg.NextBool() ? "DATETIME" : "TIMESTAMP") : "DATE";
+        ret += "DATE";
     }
     void PostgreSQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
         (void)rg;
         (void)escape;
-        ret += has_time ? "TIMESTAMP" : "DATE";
+        ret += "DATE";
     }
     void SQLiteTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
@@ -197,6 +197,68 @@ public:
     }
 
     ~DateType() override = default;
+};
+
+class DateTimeType : public SQLType
+{
+public:
+    const bool extended;
+    const std::optional<const uint32_t> precision;
+    const std::optional<const std::string> timezone;
+
+    DateTimeType(const bool ex, const std::optional<const uint32_t> p, const std::optional<const std::string> t)
+        : extended(ex), precision(p), timezone(t)
+    {
+    }
+
+    void TypeName(std::string & ret, const bool escape) const override
+    {
+        (void)escape;
+        ret += "DateTime";
+        if (extended)
+        {
+            ret += "64";
+        }
+        if (precision.has_value() || timezone.has_value())
+        {
+            ret += "(";
+            if (precision.has_value())
+            {
+                ret += std::to_string(precision.value());
+            }
+            if (timezone.has_value())
+            {
+                if (precision.has_value())
+                {
+                    ret += ",";
+                }
+                ret += "'";
+                ret += timezone.value();
+                ret += "'";
+            }
+            ret += ")";
+        }
+    }
+    void MySQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
+    {
+        (void)escape;
+        ret += rg.NextBool() ? "DATETIME" : "TIMESTAMP";
+    }
+    void PostgreSQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
+    {
+        (void)rg;
+        (void)escape;
+        ret += "TIMESTAMP";
+    }
+    void SQLiteTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
+    {
+        (void)rg;
+        (void)ret;
+        (void)escape;
+        assert(0);
+    }
+
+    ~DateTimeType() override = default;
 };
 
 class DecimalType : public SQLType

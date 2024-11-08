@@ -580,10 +580,18 @@ int StatementGenerator::AddTableColumn(
     }
     else if (special == ColumnSpecial::VERSION)
     {
-        sql_query_grammar::Dates dd;
+        if (rg.NextBool())
+        {
+            sql_query_grammar::Dates dd;
 
-        std::tie(tp, dd) = RandomDateType(rg, std::numeric_limits<uint32_t>::max());
-        cd->mutable_type()->mutable_type()->mutable_non_nullable()->set_dates(dd);
+            std::tie(tp, dd) = RandomDateType(rg, std::numeric_limits<uint32_t>::max());
+            cd->mutable_type()->mutable_type()->mutable_non_nullable()->set_dates(dd);
+        }
+        else
+        {
+            tp = RandomDateTimeType(
+                rg, std::numeric_limits<uint32_t>::max(), cd->mutable_type()->mutable_type()->mutable_non_nullable()->mutable_datetimes());
+        }
     }
     else
     {
@@ -618,8 +626,9 @@ int StatementGenerator::AddTableColumn(
     col.special = special;
     if (!modify && col.special == ColumnSpecial::NONE
         && (dynamic_cast<const IntType *>(tp) || dynamic_cast<const FloatType *>(tp) || dynamic_cast<const DateType *>(tp)
-            || dynamic_cast<const DecimalType *>(tp) || dynamic_cast<const StringType *>(tp) || dynamic_cast<const BoolType *>(tp)
-            || dynamic_cast<const UUIDType *>(tp) || dynamic_cast<const IPv4Type *>(tp) || dynamic_cast<const IPv6Type *>(tp))
+            || dynamic_cast<const DateTimeType *>(tp) || dynamic_cast<const DecimalType *>(tp) || dynamic_cast<const StringType *>(tp)
+            || dynamic_cast<const BoolType *>(tp) || dynamic_cast<const UUIDType *>(tp) || dynamic_cast<const IPv4Type *>(tp)
+            || dynamic_cast<const IPv6Type *>(tp))
         && rg.NextSmallNumber() < 3)
     {
         cd->set_nullable(rg.NextBool());
