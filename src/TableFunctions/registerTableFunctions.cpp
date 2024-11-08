@@ -19,6 +19,7 @@ void registerTableFunctions(bool use_legacy_mongodb_integration [[maybe_unused]]
     registerTableFunctionFileCluster(factory);
     registerTableFunctionURL(factory);
     registerTableFunctionURLCluster(factory);
+    registerTableFunctionRSS(factory);
     registerTableFunctionValues(factory);
     registerTableFunctionInput(factory);
     registerTableFunctionGenerate(factory);

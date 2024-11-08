@@ -17,6 +17,7 @@ void registerTableFunctionFile(TableFunctionFactory & factory);
 void registerTableFunctionFileCluster(TableFunctionFactory & factory);
 void registerTableFunctionURL(TableFunctionFactory & factory);
 void registerTableFunctionURLCluster(TableFunctionFactory & factory);
+void registerTableFunctionRSS(TableFunctionFactory & factory);
 void registerTableFunctionValues(TableFunctionFactory & factory);
 void registerTableFunctionInput(TableFunctionFactory & factory);
 void registerTableFunctionGenerate(TableFunctionFactory & factory);
