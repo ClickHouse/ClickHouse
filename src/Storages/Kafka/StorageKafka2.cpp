@@ -854,7 +854,7 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
     size_t total_rows = 0;
     size_t failed_poll_attempts = 0;
 
-    auto on_error = [&, this](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
+    auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
     {
         ProfileEvents::increment(ProfileEvents::KafkaMessagesFailed);
 
@@ -1012,8 +1012,9 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
         else
         {
             // We came here in case of tombstone (or sometimes zero-length) messages, and it is not something abnormal
-            // TODO: it seems like in case of ExtStreamingHandleErrorMode::STREAM we may need to process those differently
-            // currently we just skip them with note in logs.
+            // TODO: it seems like in case of ExtStreamingHandleErrorMode::STREAM or DEAD_LETTER_QUEUE
+            //  we may need to process those differently
+            //  currently we just skip them with note in logs.
             LOG_DEBUG(
                 log,
                 "Parsing of message (topic: {}, partition: {}, offset: {}) return no rows.",

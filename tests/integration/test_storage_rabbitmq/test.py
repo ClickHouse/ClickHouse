@@ -3895,7 +3895,6 @@ def test_attach_broken_table(rabbitmq_cluster):
     error = instance.query_and_get_error("INSERT INTO rabbit_queue VALUES ('test')")
     assert "CANNOT_CONNECT_RABBITMQ" in error
 
-
 def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
     table_name = "nack_failed_insert"
     exchange = f"{table_name}_exchange"
