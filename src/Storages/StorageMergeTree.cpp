@@ -1132,6 +1132,8 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
             select_decision = merger_mutator.selectAllPartsToMergeWithinPartition(
                 future_part, can_merge, partition_id, final, metadata_snapshot, txn, out_disable_reason, optimize_skip_merged_partitions);
 
+            future_parts.push_back(future_part);
+
             /// If final - we will wait for currently processing merges to finish and continue.
             if (final
                 && select_decision != SelectPartsDecision::SELECTED
@@ -1148,7 +1150,6 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
             }
             else
             {
-                future_parts.push_back(future_part);
                 break;
             }
         }
