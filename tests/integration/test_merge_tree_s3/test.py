@@ -1014,7 +1014,7 @@ def test_s3_disk_heavy_write_check_mem(cluster, broken_s3, node_name):
         " storage_policy='broken_s3'",
     )
 
-    uuid = node.query("SELECT uuid FROM system.tables" "  WHERE name='s3_test'")
+    uuid = node.query("SELECT uuid FROM system.tables WHERE name='s3_test'")
 
     node.query("SYSTEM STOP MERGES s3_test")
 
