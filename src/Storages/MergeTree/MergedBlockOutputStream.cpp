@@ -207,6 +207,8 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
     new_part->setBytesUncompressedOnDisk(checksums.getTotalSizeUncompressedOnDisk());
     new_part->index_granularity = writer->getIndexGranularity();
+    /// Just in case
+    new_part->index_granularity.shrinkToFitInMemory();
     new_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
 
     /// In mutation, existing_rows_count is already calculated in PartMergerWriter
