@@ -18,7 +18,6 @@ class StorageLocalConfiguration : public StorageObjectStorage::Configuration
 public:
     using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
 
-    static constexpr auto type = ObjectStorageType::Local;
     static constexpr auto type_name = "local";
     /// All possible signatures for Local engine with structure argument (for example for local table function).
     static constexpr auto max_number_of_arguments_with_structure = 4;
@@ -38,7 +37,6 @@ public:
     StorageLocalConfiguration() = default;
     StorageLocalConfiguration(const StorageLocalConfiguration & other) = default;
 
-    ObjectStorageType getType() const override { return type; }
     std::string getTypeName() const override { return type_name; }
     std::string getEngineName() const override { return "Local"; }
 

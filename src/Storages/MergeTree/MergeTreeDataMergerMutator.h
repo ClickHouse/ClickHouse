@@ -7,7 +7,7 @@
 #include <Common/ActionBlocker.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MutationCommands.h>
-#include <Storages/MergeTree/MergeSelectors/TTLMergeSelector.h>
+#include <Storages/MergeTree/TTLMergeSelector.h>
 #include <Storages/MergeTree/MergeAlgorithm.h>
 #include <Storages/MergeTree/MergeType.h>
 #include <Storages/MergeTree/MergeTask.h>
@@ -106,11 +106,9 @@ public:
         PreformattedMessage & out_disable_reason,
         bool dry_run = false);
 
-    /// Actually the most fresh partition with biggest modification_time
     String getBestPartitionToOptimizeEntire(const PartitionsInfo & partitions_info) const;
 
     /// Useful to quickly get a list of partitions that contain parts that we may want to merge
-    /// The result is limited by top_number_of_partitions_to_consider_for_merge
     PartitionIdsHint getPartitionsThatMayBeMerged(
         size_t max_total_size_to_merge,
         const AllowedMergingPredicate & can_merge_callback,
@@ -209,7 +207,7 @@ public :
     /** Is used to cancel all merges and mutations. On cancel() call all currently running actions will throw exception soon.
       * All new attempts to start a merge or mutation will throw an exception until all 'LockHolder' objects will be destroyed.
       */
-    PartitionActionBlocker merges_blocker;
+    ActionBlocker merges_blocker;
     ActionBlocker ttl_merges_blocker;
 
 private:

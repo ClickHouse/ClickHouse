@@ -14,16 +14,14 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Transforms/ExtractColumnsTransform.h>
 
+#include <Storages/StorageFactory.h>
 #include <Storages/Cache/SchemaCache.h>
+#include <Storages/VirtualColumnUtils.h>
+#include <Storages/ObjectStorage/Utils.h>
 #include <Storages/NamedCollectionsHelpers.h>
-#include <Storages/ObjectStorage/ReadBufferIterator.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <Storages/ObjectStorage/Utils.h>
-#include <Storages/StorageFactory.h>
-#include <Storages/VirtualColumnUtils.h>
-#include "Databases/LoadingStrictnessLevel.h"
-#include "Storages/ColumnsDescription.h"
+#include <Storages/ObjectStorage/ReadBufferIterator.h>
 
 
 namespace DB
@@ -78,7 +76,6 @@ StorageObjectStorage::StorageObjectStorage(
     const ConstraintsDescription & constraints_,
     const String & comment,
     std::optional<FormatSettings> format_settings_,
-    LoadingStrictnessLevel mode,
     bool distributed_processing_,
     ASTPtr partition_by_)
     : IStorage(table_id_)
@@ -89,25 +86,9 @@ StorageObjectStorage::StorageObjectStorage(
     , distributed_processing(distributed_processing_)
     , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
 {
-    try
-    {
-        configuration->update(object_storage, context);
-    }
-    catch (...)
-    {
-        // If we don't have format or schema yet, we can't ignore failed configuration update, because relevant configuration is crucial for format and schema inference
-        if (mode <= LoadingStrictnessLevel::CREATE || columns_.empty() || (configuration->format == "auto"))
-        {
-            throw;
-        }
-        else
-        {
-            tryLogCurrentException(log);
-        }
-    }
+    ColumnsDescription columns{columns_};
 
     std::string sample_path;
-    ColumnsDescription columns{columns_};
     resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
     configuration->check(context);
 
@@ -143,11 +124,12 @@ bool StorageObjectStorage::supportsSubsetOfColumns(const ContextPtr & context) c
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context, format_settings);
 }
 
-void StorageObjectStorage::Configuration::update(ObjectStoragePtr object_storage_ptr, ContextPtr context)
+void StorageObjectStorage::updateConfiguration(ContextPtr context)
 {
-    IObjectStorage::ApplyNewSettingsOptions options{.allow_client_change = !isStaticConfiguration()};
-    object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);
+    IObjectStorage::ApplyNewSettingsOptions options{ .allow_client_change = !configuration->isStaticConfiguration() };
+    object_storage->applyNewSettings(context->getConfigRef(), configuration->getTypeName() + ".", context, options);
 }
+
 namespace
 {
 class ReadFromObjectStorageStep : public SourceStepWithFilter
@@ -170,7 +152,7 @@ public:
         ContextPtr context_,
         size_t max_block_size_,
         size_t num_streams_)
-        : SourceStepWithFilter(info_.source_header, columns_to_read, query_info_, storage_snapshot_, context_)
+        : SourceStepWithFilter(DataStream{.header = info_.source_header}, columns_to_read, query_info_, storage_snapshot_, context_)
         , object_storage(object_storage_)
         , configuration(configuration_)
         , info(std::move(info_))
@@ -261,19 +243,13 @@ private:
 };
 }
 
-ReadFromFormatInfo StorageObjectStorage::Configuration::prepareReadingFromFormat(
-    ObjectStoragePtr,
+ReadFromFormatInfo StorageObjectStorage::prepareReadingFromFormat(
     const Strings & requested_columns,
     const StorageSnapshotPtr & storage_snapshot,
     bool supports_subset_of_columns,
-    ContextPtr local_context)
+    ContextPtr /* local_context */)
 {
-    return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, local_context, supports_subset_of_columns);
-}
-
-std::optional<ColumnsDescription> StorageObjectStorage::Configuration::tryGetTableStructureFromMetadata() const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method tryGetTableStructureFromMetadata is not implemented for basic configuration");
+    return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, supports_subset_of_columns);
 }
 
 void StorageObjectStorage::read(
@@ -286,7 +262,7 @@ void StorageObjectStorage::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    configuration->update(object_storage, local_context);
+    updateConfiguration(local_context);
     if (partition_by && configuration->withPartitionWildcard())
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -294,8 +270,8 @@ void StorageObjectStorage::read(
                         getName());
     }
 
-    const auto read_from_format_info = configuration->prepareReadingFromFormat(
-        object_storage, column_names, storage_snapshot, supportsSubsetOfColumns(local_context), local_context);
+    const auto read_from_format_info = prepareReadingFromFormat(
+        column_names, storage_snapshot, supportsSubsetOfColumns(local_context), local_context);
     const bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef()[Setting::optimize_count_from_files];
 
@@ -324,7 +300,7 @@ SinkToStoragePtr StorageObjectStorage::write(
     ContextPtr local_context,
     bool /* async_insert */)
 {
-    configuration->update(object_storage, local_context);
+    updateConfiguration(local_context);
     const auto sample_block = metadata_snapshot->getSampleBlock();
     const auto & settings = configuration->getQuerySettings(local_context);
 
@@ -433,16 +409,6 @@ ColumnsDescription StorageObjectStorage::resolveSchemaFromData(
     std::string & sample_path,
     const ContextPtr & context)
 {
-    if (configuration->isDataLakeConfiguration())
-    {
-        configuration->update(object_storage, context);
-        auto table_structure = configuration->tryGetTableStructureFromMetadata();
-        if (table_structure)
-        {
-            return table_structure.value();
-        }
-    }
-
     ObjectInfos read_keys;
     auto iterator = createReadBufferIterator(object_storage, configuration, format_settings, read_keys, context);
     auto schema = readSchemaFromFormat(configuration->format, format_settings, *iterator, context);
@@ -489,25 +455,30 @@ SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, c
                 DEFAULT_SCHEMA_CACHE_ELEMENTS));
         return schema_cache;
     }
-    if (storage_type_name == "hdfs")
+    else if (storage_type_name == "hdfs")
     {
         static SchemaCache schema_cache(
-            context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_hdfs", DEFAULT_SCHEMA_CACHE_ELEMENTS));
+            context->getConfigRef().getUInt(
+                "schema_inference_cache_max_elements_for_hdfs",
+                DEFAULT_SCHEMA_CACHE_ELEMENTS));
         return schema_cache;
     }
-    if (storage_type_name == "azure")
+    else if (storage_type_name == "azure")
     {
         static SchemaCache schema_cache(
-            context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_azure", DEFAULT_SCHEMA_CACHE_ELEMENTS));
+            context->getConfigRef().getUInt(
+                "schema_inference_cache_max_elements_for_azure",
+                DEFAULT_SCHEMA_CACHE_ELEMENTS));
         return schema_cache;
     }
-    if (storage_type_name == "local")
+    else if (storage_type_name == "local")
     {
         static SchemaCache schema_cache(
             context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_local", DEFAULT_SCHEMA_CACHE_ELEMENTS));
         return schema_cache;
     }
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported storage type: {}", storage_type_name);
+    else
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported storage type: {}", storage_type_name);
 }
 
 void StorageObjectStorage::Configuration::initialize(
@@ -523,17 +494,10 @@ void StorageObjectStorage::Configuration::initialize(
 
     if (configuration.format == "auto")
     {
-        if (configuration.isDataLakeConfiguration())
-        {
-            configuration.format = "Parquet";
-        }
-        else
-        {
-            configuration.format
-                = FormatFactory::instance()
-                      .tryGetFormatFromFileName(configuration.isArchive() ? configuration.getPathInArchive() : configuration.getPath())
-                      .value_or("auto");
-        }
+        configuration.format = FormatFactory::instance().tryGetFormatFromFileName(
+            configuration.isArchive()
+            ? configuration.getPathInArchive()
+            : configuration.getPath()).value_or("auto");
     }
     else
         FormatFactory::instance().checkFormatName(configuration.format);
@@ -565,7 +529,8 @@ bool StorageObjectStorage::Configuration::withGlobsIgnorePartitionWildcard() con
 {
     if (!withPartitionWildcard())
         return withGlobs();
-    return PartitionedSink::replaceWildcards(getPath(), "").find_first_of("*?{") != std::string::npos;
+    else
+        return PartitionedSink::replaceWildcards(getPath(), "").find_first_of("*?{") != std::string::npos;
 }
 
 bool StorageObjectStorage::Configuration::isPathWithGlobs() const

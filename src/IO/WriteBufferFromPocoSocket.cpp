@@ -136,8 +136,6 @@ void WriteBufferFromPocoSocket::nextImpl()
     SCOPE_EXIT({
         ProfileEvents::increment(ProfileEvents::NetworkSendElapsedMicroseconds, watch.elapsedMicroseconds());
         ProfileEvents::increment(ProfileEvents::NetworkSendBytes, bytes_written);
-        if (write_event != ProfileEvents::end())
-            ProfileEvents::increment(write_event, bytes_written);
     });
 
     while (bytes_written < offset())
