@@ -328,7 +328,7 @@ bool MergeTreeIndexGranularity::tryCompressInMemory()
         }
     }
 
-    const size_t uncompressed = current_size - i - 1;
+    const size_t uncompressed = i == current_size ? 0 : current_size - i - 1;
     const size_t compressed_size = 1 + uncompressed; /* Store the fixed value */
 
     /// Threshold chosen without measurements, just to avoid copying values around for little benefit
