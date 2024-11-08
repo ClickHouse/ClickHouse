@@ -2718,13 +2718,22 @@ CONV_FN(LightDelete, del)
 CONV_FN(Truncate, trunc)
 {
     ret += "TRUNCATE ";
-    if (trunc.has_est())
+    using TruncateType = Truncate::TruncateOneofCase;
+    switch (trunc.truncate_oneof_case())
     {
-        ExprSchemaTableToString(ret, trunc.est());
-    }
-    else
-    {
-        ret += " ALL TABLES FROM s0";
+        case TruncateType::kEst:
+            ExprSchemaTableToString(ret, trunc.est());
+            break;
+        case TruncateType::kAllTables:
+            ret += "ALL TABLES FROM ";
+            DatabaseToString(ret, trunc.all_tables());
+            break;
+        case TruncateType::kDatabase:
+            ret += "DATABASE ";
+            DatabaseToString(ret, trunc.database());
+            break;
+        default:
+            ret += "t0";
     }
     if (trunc.sync())
     {

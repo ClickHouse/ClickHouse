@@ -214,7 +214,6 @@ public:
 
     void TypeName(std::string & ret, const bool escape) const override
     {
-        (void)escape;
         ret += "DateTime";
         if (extended)
         {
@@ -233,8 +232,16 @@ public:
                 {
                     ret += ",";
                 }
+                if (escape)
+                {
+                    ret += "\\";
+                }
                 ret += "'";
                 ret += timezone.value();
+                if (escape)
+                {
+                    ret += "\\";
+                }
                 ret += "'";
             }
             ret += ")";

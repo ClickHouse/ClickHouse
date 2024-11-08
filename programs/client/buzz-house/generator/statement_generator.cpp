@@ -1704,14 +1704,43 @@ int StatementGenerator::GenerateNextDelete(RandomGenerator & rg, sql_query_gramm
 
 int StatementGenerator::GenerateNextTruncate(RandomGenerator & rg, sql_query_grammar::Truncate * trunc)
 {
-    sql_query_grammar::ExprSchemaTable * est = trunc->mutable_est();
-    const SQLTable & t = rg.PickRandomlyFromVector(FilterCollection<SQLTable>(attached_tables));
+    const bool trunc_database = CollectionHas<std::shared_ptr<SQLDatabase>>(attached_databases);
+    const uint32_t trunc_table = 980 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables)),
+                   trunc_db_tables = 15 * static_cast<uint32_t>(trunc_database),
+                   trunc_db = 5 * static_cast<uint32_t>(trunc_database),
+                   prob_space = trunc_table + trunc_db_tables + trunc_db;
+    std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+    const uint32_t nopt = next_dist(rg.gen);
 
-    if (t.db)
+    if (trunc_table && nopt < (trunc_table + 1))
     {
-        est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
+        sql_query_grammar::ExprSchemaTable * est = trunc->mutable_est();
+        const SQLTable & t = rg.PickRandomlyFromVector(FilterCollection<SQLTable>(attached_tables));
+
+        if (t.db)
+        {
+            est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
+        }
+        est->mutable_table()->set_table("t" + std::to_string(t.tname));
     }
-    est->mutable_table()->set_table("t" + std::to_string(t.tname));
+    else if (trunc_db_tables && nopt < (trunc_table + trunc_db_tables + 1))
+    {
+        const std::shared_ptr<SQLDatabase> & d
+            = rg.PickRandomlyFromVector(FilterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
+
+        trunc->mutable_all_tables()->set_database("d" + std::to_string(d->dname));
+    }
+    else if (trunc_db && nopt < (trunc_table + trunc_db_tables + trunc_db + 1))
+    {
+        const std::shared_ptr<SQLDatabase> & d
+            = rg.PickRandomlyFromVector(FilterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
+
+        trunc->mutable_database()->set_database("d" + std::to_string(d->dname));
+    }
+    else
+    {
+        assert(0);
+    }
     trunc->set_sync(rg.NextSmallNumber() < 4);
     return 0;
 }
@@ -2444,7 +2473,7 @@ int StatementGenerator::GenerateNextQuery(RandomGenerator & rg, sql_query_gramma
                               || CollectionHas<std::shared_ptr<SQLDatabase>>(attached_databases) || !functions.empty()),
                    insert = 100 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables)),
                    light_delete = 6 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables)),
-                   truncate = 2 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables)),
+                   truncate = 2 * static_cast<uint32_t>(CollectionHas<std::shared_ptr<SQLDatabase>>(attached_databases) || CollectionHas<SQLTable>(attached_tables)),
                    optimize_table = 2
         * static_cast<uint32_t>(CollectionHas<SQLTable>(
             [](const SQLTable & t)
@@ -2688,6 +2717,33 @@ int StatementGenerator::GenerateNextStatement(RandomGenerator & rg, sql_query_gr
     }
 }
 
+void StatementGenerator::DropDatabase(const uint32_t dname)
+{
+    for (auto it = this->tables.cbegin(); it != this->tables.cend();)
+    {
+        if (it->second.db && it->second.db->dname == dname)
+        {
+            this->tables.erase(it++);
+        }
+        else
+        {
+            ++it;
+        }
+    }
+    for (auto it = this->views.cbegin(); it != this->views.cend();)
+    {
+        if (it->second.db && it->second.db->dname == dname)
+        {
+            this->views.erase(it++);
+        }
+        else
+        {
+            ++it;
+        }
+    }
+    this->databases.erase(dname);
+}
+
 void StatementGenerator::UpdateGenerator(const sql_query_grammar::SQLQuery & sq, ExternalIntegrations & ei, bool success)
 {
     const sql_query_grammar::SQLQueryInner & query = sq.has_inner_query() ? sq.inner_query() : sq.explain().inner_query();
@@ -2736,31 +2792,7 @@ void StatementGenerator::UpdateGenerator(const sql_query_grammar::SQLQuery & sq,
         }
         else if (drp.sobject() == sql_query_grammar::SQLObject::DATABASE)
         {
-            const uint32_t dname = static_cast<uint32_t>(std::stoul(drp.object().database().database().substr(1)));
-
-            for (auto it = this->tables.cbegin(); it != this->tables.cend();)
-            {
-                if (it->second.db && it->second.db->dname == dname)
-                {
-                    this->tables.erase(it++);
-                }
-                else
-                {
-                    ++it;
-                }
-            }
-            for (auto it = this->views.cbegin(); it != this->views.cend();)
-            {
-                if (it->second.db && it->second.db->dname == dname)
-                {
-                    this->views.erase(it++);
-                }
-                else
-                {
-                    ++it;
-                }
-            }
-            this->databases.erase(dname);
+            DropDatabase(std::stoul(drp.object().database().database().substr(1)));
         }
         else if (drp.sobject() == sql_query_grammar::SQLObject::FUNCTION)
         {
@@ -2981,6 +3013,10 @@ void StatementGenerator::UpdateGenerator(const sql_query_grammar::SQLQuery & sq,
             this->functions[fname] = std::move(this->staged_functions[fname]);
         }
         this->staged_functions.erase(fname);
+    }
+    else if (sq.has_inner_query() && query.has_trunc() && query.trunc().has_database())
+    {
+        DropDatabase(std::stoul(query.trunc().database().database().substr(1)));
     }
     else if (sq.has_start_trans() && success)
     {

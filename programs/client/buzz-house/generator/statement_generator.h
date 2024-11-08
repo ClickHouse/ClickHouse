@@ -340,6 +340,8 @@ private:
     const SQLType *
     RandomNextType(RandomGenerator & rg, const uint32_t allowed_types, uint32_t & col_counter, sql_query_grammar::TopTypeName * tp);
 
+    void DropDatabase(const uint32_t dname);
+
 public:
     const std::function<bool(const std::shared_ptr<SQLDatabase> &)> attached_databases
         = [](const std::shared_ptr<SQLDatabase> & d) { return d->attached == DetachStatus::ATTACHED; };

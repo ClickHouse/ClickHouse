@@ -1143,8 +1143,6 @@ const std::vector<const CHFunction> CHFuncs = {
     CHFunction(sql_query_grammar::SQLFunc::FUNCformatReadableSize, 0, 0, 1, 1),
     CHFunction(sql_query_grammar::SQLFunc::FUNCformatReadableQuantity, 0, 0, 1, 1),
     CHFunction(sql_query_grammar::SQLFunc::FUNCformatReadableTimeDelta, 0, 0, 1, 3),
-    CHFunction(sql_query_grammar::SQLFunc::FUNCleast, 0, 0, 2, 2),
-    CHFunction(sql_query_grammar::SQLFunc::FUNCgreatest, 0, 0, 2, 2),
     CHFunction(sql_query_grammar::SQLFunc::FUNCversion, 0, 0, 0, 0),
     CHFunction(sql_query_grammar::SQLFunc::FUNCbuildId, 0, 0, 0, 0),
     CHFunction(sql_query_grammar::SQLFunc::FUNCneighbor, 0, 0, 2, 3),

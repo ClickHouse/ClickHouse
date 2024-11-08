@@ -2901,9 +2901,10 @@ message LightDelete {
 message Truncate {
     oneof truncate_oneof {
         ExprSchemaTable est = 1;
-        bool all = 2;
+        Database all_tables = 2;
+        Database database = 3;
     }
-    optional bool sync = 3;
+    optional bool sync = 4;
 }
 
 enum ExpPlanOpt {
