@@ -717,7 +717,7 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
         if (downloaded_size >= max_file_segment_size)
             break;
 
-        if (download_max_file_segment_size + size > max_file_segment_size)
+        if (downloaded_size + size > max_file_segment_size)
         {
             /// Do not download more than download_max_file_segment_size
             /// because we want to leave right boundary of file segment aligned.
