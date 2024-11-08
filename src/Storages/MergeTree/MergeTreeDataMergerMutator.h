@@ -96,7 +96,7 @@ public:
 
     /// The third step of selecting parts to merge: takes ranges that we can merge, and selects parts that we want to merge
     SelectPartsDecision selectPartsToMergeFromRanges(
-        FutureMergedMutatedPartPtr future_part,
+        FutureParts & out_future_parts,
         bool aggressive,
         size_t max_total_size_to_merge,
         bool merge_with_ttl_allowed,
@@ -125,7 +125,7 @@ public:
       *  - A part that already merges with something in one place, you can not start to merge into something else in another place.
       */
     SelectPartsDecision selectPartsToMerge(
-        FutureMergedMutatedPartPtr future_part,
+        FutureParts & out_future_parts,
         bool aggressive,
         size_t max_total_size_to_merge,
         const AllowedMergingPredicate & can_merge,

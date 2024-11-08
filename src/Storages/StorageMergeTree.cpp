@@ -996,10 +996,12 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
 {
     auto data_settings = getSettings();
 
-    auto future_part = std::make_shared<FutureMergedMutatedPart>();
+    FutureParts future_parts;
+
+    UUID part_uuid = UUIDHelpers::Nil;
 
     if ((*storage_settings.get())[MergeTreeSetting::assign_part_uuids])
-        future_part->uuid = UUIDHelpers::generateV4();
+        part_uuid = UUIDHelpers::generateV4();
 
     /// You must call destructor with unlocked `currently_processing_in_background_mutex`.
     CurrentlyMergingPartsTaggerPtr merging_tagger;
@@ -1089,7 +1091,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
             if (max_source_parts_size > 0)
             {
                 select_decision = merger_mutator.selectPartsToMerge(
-                    future_part,
+                    future_parts,
                     aggressive,
                     max_source_parts_size,
                     can_merge,
@@ -1126,6 +1128,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
                     break;
             }
 
+            auto future_part = std::make_shared<FutureMergedMutatedPart>();
             select_decision = merger_mutator.selectAllPartsToMergeWithinPartition(
                 future_part, can_merge, partition_id, final, metadata_snapshot, txn, out_disable_reason, optimize_skip_merged_partitions);
 
@@ -1144,7 +1147,10 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
                 }
             }
             else
+            {
+                future_parts.push_back(future_part);
                 break;
+            }
         }
     }
 
@@ -1162,12 +1168,14 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
         return {};
     }
 
+    auto best_future_part = future_parts.front();
+    best_future_part->uuid = part_uuid;
     /// Account TTL merge here to avoid exceeding the max_number_of_merges_with_ttl_in_pool limit
-    if (isTTLMergeType(future_part->merge_type))
+    if (isTTLMergeType(best_future_part->merge_type))
         getContext()->getMergeList().bookMergeWithTTL();
 
-    merging_tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace(future_part->parts, true), *this, metadata_snapshot, false);
-    return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(merging_tagger), std::make_shared<MutationCommands>());
+    merging_tagger = std::make_unique<CurrentlyMergingPartsTagger>(best_future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace(best_future_part->parts, true), *this, metadata_snapshot, false);
+    return std::make_shared<MergeMutateSelectedEntry>(best_future_part, std::move(merging_tagger), std::make_shared<MutationCommands>());
 }
 
 bool StorageMergeTree::merge(

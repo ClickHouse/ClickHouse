@@ -58,6 +58,7 @@ namespace ErrorCodes
     /** Merge selector settings. */ \
     DECLARE(UInt64, merge_selector_blurry_base_scale_factor, 0, "Controls when the logic kicks in relatively to the number of parts in partition. The bigger the factor the more belated reaction will be.", 0) \
     DECLARE(UInt64, merge_selector_window_size, 1000, "How many parts to look at once.", 0) \
+    DECLARE(UInt64, merge_selector_max_ranges_to_select_at_once, 10, "How many ranges merge selector will return per one invocation. Work only for SimpleMergeSelector and StochasticSimpleMergeSelector.", 0) \
     \
     /** Merge settings. */ \
     DECLARE(UInt64, merge_max_block_size, 8192, "How many rows in blocks should be formed for merge operations. By default has the same value as `index_granularity`.", 0) \

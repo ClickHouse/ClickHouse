@@ -82,6 +82,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeSelectorAlgorithm merge_selector_algorithm;
     extern const MergeTreeSettingsBool merge_selector_enable_heuristic_to_remove_small_parts_at_right;
     extern const MergeTreeSettingsFloat merge_selector_base;
+    extern const MergeTreeSettingsUInt64 merge_selector_max_ranges_to_select_at_once;
 }
 
 namespace ErrorCodes
@@ -164,7 +165,7 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartSizeForMutation() const
 }
 
 SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
-    FutureMergedMutatedPartPtr future_part,
+    FutureParts & out_future_parts,
     bool aggressive,
     size_t max_total_size_to_merge,
     const AllowedMergingPredicate & can_merge_callback,
@@ -191,7 +192,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
         return SelectPartsDecision::CANNOT_SELECT;
     }
 
-    auto res = selectPartsToMergeFromRanges(future_part, aggressive, max_total_size_to_merge, merge_with_ttl_allowed,
+    auto res = selectPartsToMergeFromRanges(out_future_parts, aggressive, max_total_size_to_merge, merge_with_ttl_allowed,
                                             metadata_snapshot, info.parts_ranges, info.current_time, out_disable_reason);
 
     if (res == SelectPartsDecision::SELECTED)
@@ -200,7 +201,8 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
     String best_partition_id_to_optimize = getBestPartitionToOptimizeEntire(info.partitions_info);
     if (!best_partition_id_to_optimize.empty())
     {
-        return selectAllPartsToMergeWithinPartition(
+        auto future_part = std::make_shared<FutureMergedMutatedPart>();
+        res = selectAllPartsToMergeWithinPartition(
             future_part,
             can_merge_callback,
             best_partition_id_to_optimize,
@@ -209,6 +211,10 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
             txn,
             out_disable_reason,
             /*optimize_skip_merged_partitions=*/true);
+
+        out_future_parts.emplace_back(future_part);
+
+        return res;
     }
 
     if (!out_disable_reason.text.empty())
@@ -257,11 +263,11 @@ MergeTreeDataMergerMutator::PartitionIdsHint MergeTreeDataMergerMutator::getPart
 
     for (size_t i = 0; i < all_partition_ids.size(); ++i)
     {
-        auto future_part = std::make_shared<FutureMergedMutatedPart>();
+        FutureParts out_future_parts;
         PreformattedMessage out_disable_reason;
         /// This method should have been const, but something went wrong... it's const with dry_run = true
         auto status = const_cast<MergeTreeDataMergerMutator *>(this)->selectPartsToMergeFromRanges(
-                future_part, /*aggressive*/ false, max_total_size_to_merge, merge_with_ttl_allowed,
+                out_future_parts, /*aggressive*/ false, max_total_size_to_merge, merge_with_ttl_allowed,
                 metadata_snapshot, ranges_per_partition[i], info.current_time, out_disable_reason,
                 /* dry_run */ true);
         if (status == SelectPartsDecision::SELECTED)
@@ -482,7 +488,7 @@ MergeTreeDataMergerMutator::MergeSelectingInfo MergeTreeDataMergerMutator::getPo
 }
 
 SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
-    FutureMergedMutatedPartPtr future_part,
+    FutureParts & out_future_parts,
     bool aggressive,
     size_t max_total_size_to_merge,
     bool merge_with_ttl_allowed,
@@ -494,7 +500,18 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
 {
     Stopwatch select_parts_from_ranges_timer;
     const auto data_settings = data.getSettings();
-    IMergeSelector::PartsRange parts_to_merge;
+    auto get_parts_from_range = [] (const IMergeSelector::PartsRange & parts_to_merge)
+    {
+        MergeTreeData::DataPartsVector parts;
+        parts.reserve(parts_to_merge.size());
+        for (const IMergeSelector::Part & part_info : parts_to_merge)
+        {
+            const MergeTreeData::DataPartPtr & part = part_info.getDataPartPtr();
+            parts.push_back(part);
+        }
+        return parts;
+    };
+
 
     if (metadata_snapshot->hasAnyTTL() && merge_with_ttl_allowed && !ttl_merges_blocker.isCancelled())
     {
@@ -511,10 +528,13 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
         TTLDeleteMergeSelector drop_ttl_selector(params_drop);
 
         /// The size of the completely expired part of TTL drop is not affected by the merge pressure and the size of the storage space
-        parts_to_merge = drop_ttl_selector.selectBest(parts_ranges, (*data_settings)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool]);
+        auto parts_to_merge = drop_ttl_selector.selectBest(parts_ranges, (*data_settings)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool]);
         if (!parts_to_merge.empty())
         {
+            auto future_part = std::make_shared<FutureMergedMutatedPart>();
             future_part->merge_type = MergeType::TTLDelete;
+            future_part->assign(get_parts_from_range(parts_to_merge));
+            out_future_parts.emplace_back(future_part);
         }
         else if (!(*data_settings)[MergeTreeSetting::ttl_only_drop_parts])
         {
@@ -530,7 +550,12 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
 
             parts_to_merge = delete_ttl_selector.selectBest(parts_ranges, max_total_size_to_merge);
             if (!parts_to_merge.empty())
+            {
+                auto future_part = std::make_shared<FutureMergedMutatedPart>();
                 future_part->merge_type = MergeType::TTLDelete;
+                future_part->assign(get_parts_from_range(parts_to_merge));
+                out_future_parts.emplace_back(future_part);
+            }
         }
 
         if (parts_to_merge.empty() && metadata_snapshot->hasAnyRecompressionTTL())
@@ -548,11 +573,17 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
 
             parts_to_merge = recompress_ttl_selector.selectBest(parts_ranges, max_total_size_to_merge);
             if (!parts_to_merge.empty())
+            {
+                auto future_part = std::make_shared<FutureMergedMutatedPart>();
                 future_part->merge_type = MergeType::TTLRecompress;
+                future_part->assign(get_parts_from_range(parts_to_merge));
+                out_future_parts.emplace_back(future_part);
+            }
         }
     }
 
-    if (parts_to_merge.empty())
+    /// Nothing is selected with specialized selectors
+    if (out_future_parts.empty())
     {
         auto merge_selector_algorithm = (*data_settings)[MergeTreeSetting::merge_selector_algorithm];
 
@@ -584,32 +615,34 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
             merge_settings = simple_merge_settings;
         }
 
-        parts_to_merge = MergeSelectorFactory::instance().get(merge_selector_algorithm, merge_settings)->selectBest(parts_ranges, max_total_size_to_merge);
+        auto parts_to_merge_ranges = MergeSelectorFactory::instance().get(merge_selector_algorithm, merge_settings)->selectUpToTopN(parts_ranges, max_total_size_to_merge, (*data_settings)[MergeTreeSetting::merge_selector_max_ranges_to_select_at_once]);
 
-        /// Do not allow to "merge" part with itself for regular merges, unless it is a TTL-merge where it is ok to remove some values with expired ttl
-        if (parts_to_merge.size() == 1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Merge selector returned only one part to merge");
-
-        if (parts_to_merge.empty())
+        for (const auto & parts_to_merge : parts_to_merge_ranges)
         {
-            ProfileEvents::increment(ProfileEvents::MergerMutatorSelectPartsForMergeElapsedMicroseconds, select_parts_from_ranges_timer.elapsedMicroseconds());
-            out_disable_reason = PreformattedMessage::create("Did not find any parts to merge (with usual merge selectors) in {}ms", select_parts_from_ranges_timer.elapsedMicroseconds() / 1000);
-            return SelectPartsDecision::CANNOT_SELECT;
+            /// Do not allow to "merge" part with itself for regular merges, unless it is a TTL-merge where it is ok to remove some values with expired ttl
+            if (parts_to_merge.size() == 1)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Merge selector returned only one part to merge");
+
+            if (parts_to_merge.empty())
+            {
+                chassert(parts_to_merge_ranges.size() == 1);
+                ProfileEvents::increment(ProfileEvents::MergerMutatorSelectPartsForMergeElapsedMicroseconds, select_parts_from_ranges_timer.elapsedMicroseconds());
+                out_disable_reason = PreformattedMessage::create("Did not find any parts to merge (with usual merge selectors) in {}ms", select_parts_from_ranges_timer.elapsedMicroseconds() / 1000);
+                return SelectPartsDecision::CANNOT_SELECT;
+            }
+            else
+            {
+                auto future_part = std::make_shared<FutureMergedMutatedPart>();
+                future_part->merge_type = MergeType::Regular;
+                auto parts = get_parts_from_range(parts_to_merge);
+                ProfileEvents::increment(ProfileEvents::MergerMutatorSelectRangePartsCount, parts.size());
+                LOG_DEBUG(log, "Selected {} parts from {} to {}", parts.size(), parts.front()->name, parts.back()->name);
+                future_part->assign(std::move(parts));
+                out_future_parts.emplace_back(future_part);
+            }
         }
     }
-
-    MergeTreeData::DataPartsVector parts;
-    parts.reserve(parts_to_merge.size());
-    for (IMergeSelector::Part & part_info : parts_to_merge)
-    {
-        const MergeTreeData::DataPartPtr & part = part_info.getDataPartPtr();
-        parts.push_back(part);
-    }
-
-    LOG_DEBUG(log, "Selected {} parts from {} to {} in {}ms", parts.size(), parts.front()->name, parts.back()->name, select_parts_from_ranges_timer.elapsedMicroseconds() / 1000);
-    ProfileEvents::increment(ProfileEvents::MergerMutatorSelectRangePartsCount, parts.size());
-
-    future_part->assign(std::move(parts));
+    LOG_DEBUG(log, "Selected {} parts ranges in {}ms", out_future_parts.size(), select_parts_from_ranges_timer.elapsedMicroseconds() / 1000);
     ProfileEvents::increment(ProfileEvents::MergerMutatorSelectPartsForMergeElapsedMicroseconds, select_parts_from_ranges_timer.elapsedMicroseconds());
     return SelectPartsDecision::SELECTED;
 }
