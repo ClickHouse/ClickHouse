@@ -1910,6 +1910,9 @@ String TCPHandler::receiveReadTaskResponseAssumeLocked(QueryState & state)
 
 std::optional<ParallelReadResponse> TCPHandler::receivePartitionMergeTreeReadTaskResponseAssumeLocked(QueryState & state)
 {
+    if (state.stop_query)
+        return {};
+
     UInt64 packet_type = 0;
     readVarUInt(packet_type, *in);
 
@@ -1918,7 +1921,7 @@ std::optional<ParallelReadResponse> TCPHandler::receivePartitionMergeTreeReadTas
     switch (packet_type)
     {
         case Protocol::Client::Cancel:
-            processCancel(state);
+            processCancel(state, /* throw_exception */ false);
             return {};
 
         case Protocol::Client::MergeTreeReadTaskResponse:
@@ -2362,6 +2365,8 @@ void TCPHandler::processCancel(QueryState & state, bool throw_exception)
 
     if (throw_exception)
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Received 'Cancel' packet from the client, canceling the query.");
+    else
+        LOG_INFO(log, "Received 'Cancel' packet from the client. Queries callbacks return nothing.");
 }
 
 void TCPHandler::receivePacketsExpectCancel(QueryState & state)
