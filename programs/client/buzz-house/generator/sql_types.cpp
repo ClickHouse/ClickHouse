@@ -265,7 +265,7 @@ const SQLType * StatementGenerator::BottomType(
         dynamic_type = 30 * static_cast<uint32_t>(!low_card && (allowed_types & allow_dynamic) != 0),
         geo_type = 10 * static_cast<uint32_t>(!low_card && (allowed_types & allow_geo) != 0),
         prob_space = int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + enum_type
-        + uuid_type + ipv4_type + ipv6_type + json_type + dynamic_type + geo_type;
+        + uuid_type + ipv4_type + ipv6_type + json_type + dynamic_type;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.gen);
 
@@ -544,16 +544,6 @@ const SQLType * StatementGenerator::BottomType(
         }
         res = new DynamicType(ntypes);
     }
-    else if (
-        geo_type
-        && nopt
-            < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + enum_type + uuid_type
-               + ipv4_type + ipv6_type + json_type + dynamic_type + geo_type + 1))
-    {
-        //geo
-        res = new GeoType(
-            static_cast<sql_query_grammar::GeoTypes>((rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::GeoTypes_MAX)) + 1));
-    }
     else
     {
         assert(0);
@@ -580,7 +570,7 @@ const SQLType * StatementGenerator::GenerateArraytype(RandomGenerator & rg, cons
 const SQLType * StatementGenerator::RandomNextType(
     RandomGenerator & rg, const uint32_t allowed_types, uint32_t & col_counter, sql_query_grammar::TopTypeName * tp)
 {
-    const uint32_t non_nullable_type = 40, nullable_type = 20 * static_cast<uint32_t>((allowed_types & allow_nullable) != 0),
+    const uint32_t non_nullable_type = 50, nullable_type = 30 * static_cast<uint32_t>((allowed_types & allow_nullable) != 0),
                    array_type = 10 * static_cast<uint32_t>((allowed_types & allow_array) != 0 && this->depth < this->fc.max_depth),
                    map_type = 10
         * static_cast<uint32_t>((allowed_types & allow_map) != 0 && this->depth < this->fc.max_depth && this->width < this->fc.max_width),
@@ -589,7 +579,9 @@ const SQLType * StatementGenerator::RandomNextType(
                    nested_type = 10
         * static_cast<uint32_t>((allowed_types & allow_nested) != 0 && this->depth < this->fc.max_depth
                                 && this->width < this->fc.max_width),
-                   prob_space = nullable_type + non_nullable_type + array_type + map_type + tuple_type + variant_type + nested_type;
+                   geo_type = 10 * static_cast<uint32_t>((allowed_types & allow_geo) != 0),
+                   prob_space
+        = nullable_type + non_nullable_type + array_type + map_type + tuple_type + variant_type + nested_type + geo_type;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.gen);
 
@@ -607,7 +599,7 @@ const SQLType * StatementGenerator::RandomNextType(
         const bool lcard = (allowed_types & allow_low_cardinality) && rg.NextMediumNumber() < 18;
         const SQLType * res = new Nullable(BottomType(
             rg,
-            allowed_types & ~(allow_dynamic | allow_json | allow_geo),
+            allowed_types & ~(allow_dynamic | allow_json),
             lcard,
             tp ? (lcard ? tp->mutable_nullable_lcard() : tp->mutable_nullable()) : nullptr));
         return lcard ? new LowCardinality(res) : res;
@@ -707,6 +699,20 @@ const SQLType * StatementGenerator::RandomNextType(
         }
         this->depth--;
         return new NestedType(subtypes);
+    }
+    else if (
+        geo_type
+        && nopt < (nullable_type + non_nullable_type + array_type + map_type + tuple_type + variant_type + nested_type + geo_type + 1))
+    {
+        //geo
+        const sql_query_grammar::GeoTypes gt = static_cast<sql_query_grammar::GeoTypes>(
+            (rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::GeoTypes_MAX)) + 1);
+
+        if (tp)
+        {
+            tp->set_geo(gt);
+        }
+        return new GeoType(gt);
     }
     else
     {
