@@ -3,7 +3,7 @@ slug: /en/operations/system-tables/dead_letter_queue
 ---
 # dead_letter_queue
 
-Contains information about messages received via a stream engine and parsed with an errors. Currently implemented for Kafka.
+Contains information about messages received via a stream engine and parsed with an errors. Currently implemented for Kafka and RabbitMQ.
 
 Logging is controlled by `dead_letter_queue` of `kafka_handle_error_mode` setting.
 
