@@ -215,7 +215,9 @@ export function visualizeExecutionTime(sim, container)
             It can be computed as total area of all rectangles in the diagram plus "waiting" time $W$.
             The area of one merge rectangle equals its contribution to the integral.
             $$I = W + \\sum_{i} d_{i} \\cdot n_{i}$$
-            where $d_{i}$ – merge execution time of $i$-th part, $n_{i}$ – number of children of $i$-th part
+            where $d_{i}$ – merge execution time of $i$-th part, $n_{i}$ – number of children of $i$-th part.
+            </p>
+            <p>
             It is important to note that diagram does not show "waiting" time, while parts are active, but not merging.
             </p>
         `),
