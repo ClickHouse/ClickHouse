@@ -54,6 +54,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int QUERY_WAS_CANCELLED;
+    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
 }
 
 ParallelReadingExtension::ParallelReadingExtension(
@@ -180,7 +181,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
         }
         catch (const Exception & e)
         {
-            if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED)
+            if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED || e.code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
                 break;
             throw;
         }

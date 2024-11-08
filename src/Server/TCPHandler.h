@@ -260,25 +260,27 @@ private:
 
     std::unique_ptr<Session> makeSession();
 
+    void checkIfQueryCanceled(QueryState & state) TSA_REQUIRES(callback_mutex);
+
     bool receiveProxyHeader();
     void receiveHello();
     void receiveAddendum();
     bool receivePacketsExpectQuery(std::optional<QueryState> & state);
-    bool receivePacketsExpectData(QueryState & state);
+    bool receivePacketsExpectData(QueryState & state) TSA_REQUIRES(callback_mutex);
     bool receivePacketsExpectDataConcurrentWithExecutor(QueryState & state);
-    void receivePacketsExpectCancel(QueryState & state);
-    String receiveReadTaskResponseAssumeLocked(QueryState & state);
-    std::optional<ParallelReadResponse> receivePartitionMergeTreeReadTaskResponseAssumeLocked(QueryState & state);
+    void receivePacketsExpectCancel(QueryState & state) TSA_REQUIRES(callback_mutex);
+    String receiveReadTaskResponse(QueryState & state) TSA_REQUIRES(callback_mutex);
+    std::optional<ParallelReadResponse> receivePartitionMergeTreeReadTaskResponse(QueryState & state) TSA_REQUIRES(callback_mutex);
 
     //bool receivePacket(std::optional<QueryState> & state);
-    void processCancel(QueryState & state, bool throw_exception = true);
+    void processCancel(QueryState & state, bool throw_exception = true) TSA_REQUIRES(callback_mutex);
     void processQuery(std::optional<QueryState> & state);
     void processIgnoredPartUUIDs();
-    bool processData(QueryState & state, bool scalar);
+    bool processData(QueryState & state, bool scalar) TSA_REQUIRES(callback_mutex);
     void processClusterNameAndSalt();
 
-    void readData(QueryState & state);
-    void skipData(QueryState & state);
+    void readData(QueryState & state) TSA_REQUIRES(callback_mutex);
+    void skipData(QueryState & state) TSA_REQUIRES(callback_mutex);
 
     bool processUnexpectedData();
     [[noreturn]] void processUnexpectedQuery();
@@ -305,9 +307,9 @@ private:
     void sendLogs(QueryState & state);
     void sendEndOfStream(QueryState & state);
     void sendPartUUIDs(QueryState & state);
-    void sendReadTaskRequestAssumeLocked();
-    void sendMergeTreeAllRangesAnnouncementAssumeLocked(QueryState & state, InitialAllRangesAnnouncement announcement);
-    void sendMergeTreeReadTaskRequestAssumeLocked(ParallelReadRequest request);
+    void sendReadTaskRequest() TSA_REQUIRES(callback_mutex);
+    void sendMergeTreeAllRangesAnnouncement(QueryState & state, InitialAllRangesAnnouncement announcement) TSA_REQUIRES(callback_mutex);
+    void sendMergeTreeReadTaskRequest(ParallelReadRequest request) TSA_REQUIRES(callback_mutex);
     void sendProfileInfo(QueryState & state, const ProfileInfo & info);
     void sendTotals(QueryState & state, const Block & totals);
     void sendExtremes(QueryState & state, const Block & extremes);

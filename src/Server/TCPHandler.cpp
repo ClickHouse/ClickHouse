@@ -537,6 +537,8 @@ void TCPHandler::runImpl()
 
                 std::lock_guard lock(callback_mutex);
 
+                checkIfQueryCanceled(query_state.value());
+
                 /// Get blocks of temporary tables
                 readData(query_state.value());
 
@@ -556,6 +558,8 @@ void TCPHandler::runImpl()
                 auto metadata_snapshot = input_storage->getInMemoryMetadataPtr();
 
                 std::lock_guard lock(callback_mutex);
+
+                checkIfQueryCanceled(query_state.value());
 
                 query_state->need_receive_data_for_input = true;
 
@@ -579,6 +583,8 @@ void TCPHandler::runImpl()
 
                 std::lock_guard lock(callback_mutex);
 
+                checkIfQueryCanceled(query_state.value());
+
                 if (receivePacketsExpectData(query_state.value()))
                     return query_state->block_for_input;
 
@@ -598,10 +604,12 @@ void TCPHandler::runImpl()
 
                 std::lock_guard lock(callback_mutex);
 
-                sendReadTaskRequestAssumeLocked();
+                checkIfQueryCanceled(query_state.value());
+
+                sendReadTaskRequest();
 
                 ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSent);
-                auto res = receiveReadTaskResponseAssumeLocked(query_state.value());
+                auto res = receiveReadTaskResponse(query_state.value());
                 ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSentElapsedMicroseconds, watch.elapsedMicroseconds());
                 return res;
             });
@@ -613,22 +621,29 @@ void TCPHandler::runImpl()
 
                 std::lock_guard lock(callback_mutex);
 
-                sendMergeTreeAllRangesAnnouncementAssumeLocked(query_state.value(), announcement);
+                checkIfQueryCanceled(query_state.value());
+
+                sendMergeTreeAllRangesAnnouncement(query_state.value(), announcement);
                 ProfileEvents::increment(ProfileEvents::MergeTreeAllRangesAnnouncementsSent);
                 ProfileEvents::increment(ProfileEvents::MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds, watch.elapsedMicroseconds());
             });
 
             query_state->query_context->setMergeTreeReadTaskCallback([this, &query_state](ParallelReadRequest request) -> std::optional<ParallelReadResponse>
             {
+                LOG_DEBUG(log, "MergeTreeReadTaskCallback called");
+
                 Stopwatch watch;
                 CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::MergeTreeReadTaskRequestsSent);
 
                 std::lock_guard lock(callback_mutex);
 
-                sendMergeTreeReadTaskRequestAssumeLocked(std::move(request));
+                if (query_state->stop_query)
+                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Received 'Cancel' packet from the client, canceling the query.");
+
+                sendMergeTreeReadTaskRequest(std::move(request));
 
                 ProfileEvents::increment(ProfileEvents::MergeTreeReadTaskRequestsSent);
-                auto res = receivePartitionMergeTreeReadTaskResponseAssumeLocked(query_state.value());
+                auto res = receivePartitionMergeTreeReadTaskResponse(query_state.value());
                 ProfileEvents::increment(ProfileEvents::MergeTreeReadTaskRequestsSentElapsedMicroseconds, watch.elapsedMicroseconds());
                 return res;
             });
@@ -812,6 +827,8 @@ void TCPHandler::runImpl()
 
             try
             {
+                std::lock_guard lock(callback_mutex);
+
                 LOG_DEBUG(log, "try send logs");
                 /// Try to send logs to client, but it could be risky too
                 /// Assume that we can't break output here
@@ -1073,7 +1090,7 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
     startInsertQuery(state);
     Squashing squashing(state.input_header, 0, state.query_context->getSettingsRef()[Setting::async_insert_max_data_size]);
 
-    while (receivePacketsExpectData(state))
+    while (receivePacketsExpectDataConcurrentWithExecutor(state))
     {
         squashing.setHeader(state.block_for_insert.cloneEmpty());
         auto result_chunk = Squashing::squash(squashing.add({state.block_for_insert.getColumns(), state.block_for_insert.rows()}));
@@ -1281,6 +1298,8 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
           */
 
 
+        std::lock_guard lock(callback_mutex);
+
         receivePacketsExpectCancel(state);
 
         sendTotals(state, executor.getTotalsBlock());
@@ -1383,7 +1402,7 @@ void TCPHandler::sendPartUUIDs(QueryState & state)
 }
 
 
-void TCPHandler::sendReadTaskRequestAssumeLocked()
+void TCPHandler::sendReadTaskRequest()
 {
     writeVarUInt(Protocol::Server::ReadTaskRequest, *out);
 
@@ -1392,7 +1411,7 @@ void TCPHandler::sendReadTaskRequestAssumeLocked()
 }
 
 
-void TCPHandler::sendMergeTreeAllRangesAnnouncementAssumeLocked(QueryState &, InitialAllRangesAnnouncement announcement)
+void TCPHandler::sendMergeTreeAllRangesAnnouncement(QueryState &, InitialAllRangesAnnouncement announcement)
 {
     writeVarUInt(Protocol::Server::MergeTreeAllRangesAnnouncement, *out);
     announcement.serialize(*out, client_parallel_replicas_protocol_version);
@@ -1402,7 +1421,7 @@ void TCPHandler::sendMergeTreeAllRangesAnnouncementAssumeLocked(QueryState &, In
 }
 
 
-void TCPHandler::sendMergeTreeReadTaskRequestAssumeLocked(ParallelReadRequest request)
+void TCPHandler::sendMergeTreeReadTaskRequest(ParallelReadRequest request)
 {
     writeVarUInt(Protocol::Server::MergeTreeReadTaskRequest, *out);
     request.serialize(*out, client_parallel_replicas_protocol_version);
@@ -1874,11 +1893,8 @@ void TCPHandler::processUnexpectedIgnoredPartUUIDs()
 }
 
 
-String TCPHandler::receiveReadTaskResponseAssumeLocked(QueryState & state)
+String TCPHandler::receiveReadTaskResponse(QueryState & state)
 {
-    if (state.stop_query)
-        return {};
-
     UInt64 packet_type = 0;
     readVarUInt(packet_type, *in);
 
@@ -1887,7 +1903,7 @@ String TCPHandler::receiveReadTaskResponseAssumeLocked(QueryState & state)
     switch (packet_type)
     {
         case Protocol::Client::Cancel:
-            processCancel(state, /* throw_exception */ false);
+            processCancel(state, /* throw_exception */ true);
             return {};
 
         case Protocol::Client::ReadTaskResponse:
@@ -1908,11 +1924,8 @@ String TCPHandler::receiveReadTaskResponseAssumeLocked(QueryState & state)
 }
 
 
-std::optional<ParallelReadResponse> TCPHandler::receivePartitionMergeTreeReadTaskResponseAssumeLocked(QueryState & state)
+std::optional<ParallelReadResponse> TCPHandler::receivePartitionMergeTreeReadTaskResponse(QueryState & state)
 {
-    if (state.stop_query)
-        return {};
-
     UInt64 packet_type = 0;
     readVarUInt(packet_type, *in);
 
@@ -1921,7 +1934,7 @@ std::optional<ParallelReadResponse> TCPHandler::receivePartitionMergeTreeReadTas
     switch (packet_type)
     {
         case Protocol::Client::Cancel:
-            processCancel(state, /* throw_exception */ false);
+            processCancel(state, /* throw_exception */ true);
             return {};
 
         case Protocol::Client::MergeTreeReadTaskResponse:
@@ -2348,10 +2361,15 @@ void TCPHandler::initProfileEventsBlockOutput(QueryState & state, const Block & 
     }
 }
 
+void TCPHandler::checkIfQueryCanceled(QueryState & state)
+{
+    if (state.stop_query)
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Packet 'Cancel' has been received from the client, canceling the query.");
+}
 
 void TCPHandler::processCancel(QueryState & state, bool throw_exception)
 {
-    LOG_DEBUG(log, "processCancel");
+    LOG_DEBUG(log, "processCancel st: {}", StackTrace().toString());
 
     if (state.allow_partial_result_on_first_cancel && !state.stop_read_return_partial_result)
     {
@@ -2605,6 +2623,5 @@ Poco::Net::SocketAddress TCPHandler::getClientAddress(const ClientInfo & client_
         return Poco::Net::SocketAddress(forwarded_address, socket().peerAddress().port());
     return socket().peerAddress();
 }
-
 
 }
