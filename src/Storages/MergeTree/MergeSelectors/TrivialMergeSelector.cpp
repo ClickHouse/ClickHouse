@@ -18,7 +18,7 @@ void registerTrivialMergeSelector(MergeSelectorFactory & factory)
     });
 }
 
-TrivialMergeSelector::PartsRange TrivialMergeSelector::select(
+TrivialMergeSelector::PartsRange TrivialMergeSelector::selectBest(
     const PartsRanges & parts_ranges,
     size_t max_total_size_to_merge)
 {

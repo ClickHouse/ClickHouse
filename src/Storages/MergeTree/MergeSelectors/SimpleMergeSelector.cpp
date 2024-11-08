@@ -243,7 +243,7 @@ void selectWithinPartition(
 }
 
 
-SimpleMergeSelector::PartsRange SimpleMergeSelector::select(
+SimpleMergeSelector::PartsRange SimpleMergeSelector::selectBest(
     const PartsRanges & parts_ranges,
     size_t max_total_size_to_merge)
 {

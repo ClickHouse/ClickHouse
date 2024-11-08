@@ -21,7 +21,7 @@ public:
         size_t num_ranges_to_choose = 100;
     };
 
-    PartsRange select(
+    PartsRange selectBest(
         const PartsRanges & parts_ranges,
         size_t max_total_size_to_merge) override;
 

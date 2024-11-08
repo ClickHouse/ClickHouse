@@ -69,9 +69,16 @@ public:
     /** Function could be called at any frequency and it must decide, should you do any merge at all.
       * If better not to do any merge, it returns empty result.
       */
-    virtual PartsRange select(
+    virtual PartsRange selectBest(
         const PartsRanges & parts_ranges,
         size_t max_total_size_to_merge) = 0;
+
+    virtual PartsRanges selectUpToTopN(
+        const PartsRanges & parts_ranges,
+        size_t max_total_size_to_merge, size_t)
+    {
+        return {selectBest(parts_ranges, max_total_size_to_merge)};
+    }
 
     virtual ~IMergeSelector() = default;
 };

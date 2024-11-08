@@ -169,7 +169,7 @@ public:
 
     explicit SimpleMergeSelector(const Settings & settings_) : settings(settings_) {}
 
-    PartsRange select(
+    PartsRange selectBest(
         const PartsRanges & parts_ranges,
         size_t max_total_size_to_merge) override;
 

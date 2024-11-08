@@ -511,7 +511,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
         TTLDeleteMergeSelector drop_ttl_selector(params_drop);
 
         /// The size of the completely expired part of TTL drop is not affected by the merge pressure and the size of the storage space
-        parts_to_merge = drop_ttl_selector.select(parts_ranges, (*data_settings)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool]);
+        parts_to_merge = drop_ttl_selector.selectBest(parts_ranges, (*data_settings)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool]);
         if (!parts_to_merge.empty())
         {
             future_part->merge_type = MergeType::TTLDelete;
@@ -528,7 +528,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
             };
             TTLDeleteMergeSelector delete_ttl_selector(params_delete);
 
-            parts_to_merge = delete_ttl_selector.select(parts_ranges, max_total_size_to_merge);
+            parts_to_merge = delete_ttl_selector.selectBest(parts_ranges, max_total_size_to_merge);
             if (!parts_to_merge.empty())
                 future_part->merge_type = MergeType::TTLDelete;
         }
@@ -546,7 +546,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
 
             TTLRecompressMergeSelector recompress_ttl_selector(params);
 
-            parts_to_merge = recompress_ttl_selector.select(parts_ranges, max_total_size_to_merge);
+            parts_to_merge = recompress_ttl_selector.selectBest(parts_ranges, max_total_size_to_merge);
             if (!parts_to_merge.empty())
                 future_part->merge_type = MergeType::TTLRecompress;
         }
@@ -584,7 +584,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
             merge_settings = simple_merge_settings;
         }
 
-        parts_to_merge = MergeSelectorFactory::instance().get(merge_selector_algorithm, merge_settings)->select(parts_ranges, max_total_size_to_merge);
+        parts_to_merge = MergeSelectorFactory::instance().get(merge_selector_algorithm, merge_settings)->selectBest(parts_ranges, max_total_size_to_merge);
 
         /// Do not allow to "merge" part with itself for regular merges, unless it is a TTL-merge where it is ok to remove some values with expired ttl
         if (parts_to_merge.size() == 1)

@@ -12,7 +12,7 @@ void registerAllMergeSelector(MergeSelectorFactory & factory)
     });
 }
 
-AllMergeSelector::PartsRange AllMergeSelector::select(
+AllMergeSelector::PartsRange AllMergeSelector::selectBest(
     const PartsRanges & parts_ranges,
     size_t /*max_total_size_to_merge*/)
 {
