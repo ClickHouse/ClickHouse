@@ -5,6 +5,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 
+#include <list>
 #include <map>
 #include <mutex>
 #include <ostream>
@@ -47,7 +48,7 @@ private:
         void updateValue(Int64 new_value, double new_time);
         double calculateProgress(double time_now) const;
         double getValue() const;
-        bool isStale(double now) const;
+        bool isFresh(double now) const;
 
     private:
         const ProfileEvents::Type type;
@@ -79,7 +80,7 @@ private:
         double getSummaryValue();
         double getSummaryProgress(double time_now);
         double getMaxProgress() const;
-        bool isStale(double now) const;
+        bool isFresh(double now) const;
 
     private:
         std::unordered_map<HostName, MetricInfo> host_to_metric;
@@ -87,13 +88,17 @@ private:
     };
 
     size_t tableSize() const;
+    size_t getFreshMetricsCount(double time_now) const;
+
     size_t getColumnDocumentationWidth(size_t terminal_width) const;
 
     using MetricName = String;
+    using Metric = std::pair<MetricName, MetricInfoPerHost>;
 
     /// The server periodically sends Block with profile events.
     /// This information is stored here.
-    std::map<MetricName, MetricInfoPerHost> metrics;
+    std::list<Metric> metrics;
+    std::map<MetricName, std::list<Metric>::iterator> metrics_iterators;
 
     /// It is possible concurrent access to the metrics.
     std::mutex mutex;
