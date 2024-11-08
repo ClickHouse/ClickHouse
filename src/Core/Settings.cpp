@@ -874,6 +874,12 @@ In CREATE TABLE statement allows specifying Variant type with similar variant ty
     DECLARE(Bool, allow_suspicious_primary_key, false, R"(
 Allow suspicious `PRIMARY KEY`/`ORDER BY` for MergeTree (i.e. SimpleAggregateFunction).
 )", 0) \
+    DECLARE(Bool, allow_suspicious_types_in_group_by, false, R"(
+Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) and [Dynamic](../../sql-reference/data-types/dynamic.md) types in GROUP BY keys.
+)", 0) \
+    DECLARE(Bool, allow_suspicious_types_in_order_by, false, R"(
+Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) and [Dynamic](../../sql-reference/data-types/dynamic.md) types in ORDER BY keys.
+)", 0) \
     DECLARE(Bool, compile_expressions, false, R"(
 Compile some scalar functions and operators to native code. Due to a bug in the LLVM compiler infrastructure, on AArch64 machines, it is known to lead to a nullptr dereference and, consequently, server crash. Do not enable this setting.
 )", 0) \
@@ -5859,7 +5865,7 @@ Experimental data deduplication for SELECT queries based on part UUIDs
 // Please add settings related to formats in Core/FormatFactorySettings.h, move obsolete settings to OBSOLETE_SETTINGS and obsolete format settings to OBSOLETE_FORMAT_SETTINGS.
 
 #define OBSOLETE_SETTINGS(M, ALIAS) \
-    /** Obsolete settings that do nothing but left for compatibility reasons. Remove each one after half a year of obsolescence. */ \
+    /** Obsolete settings which are kept around for compatibility reasons. They have no effect anymore. */ \
     MAKE_OBSOLETE(M, Bool, update_insert_deduplication_token_in_dependent_materialized_views, 0) \
     MAKE_OBSOLETE(M, UInt64, max_memory_usage_for_all_queries, 0) \
     MAKE_OBSOLETE(M, UInt64, multiple_joins_rewriter_version, 0) \
