@@ -28,7 +28,6 @@ $CLICKHOUSE_CLIENT --query "INSERT INTO t VALUES (5)"
 
 counter=0 retries=60
 
-I=0
 while [[ $counter -lt $retries ]]; do
     result=$($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.parts WHERE active and database = currentDatabase() and table = 't'")
     if [ "$result" -eq "1" ];then
