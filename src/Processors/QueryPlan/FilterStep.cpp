@@ -5,6 +5,8 @@
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
 #include <stack>
 #include <ranges>
@@ -46,7 +48,19 @@ static ActionsAndName splitSingleAndFilter(ActionsDAG & dag, const ActionsDAG::N
     auto name = filter_node->result_name;
     auto split_result = dag.split({filter_node}, true);
     dag = std::move(split_result.second);
-    split_result.first.getOutputs().emplace(split_result.first.getOutputs().begin(), split_result.split_nodes_mapping[filter_node]);
+
+    const auto * split_filter_node = split_result.split_nodes_mapping[filter_node];
+    auto filter_type = removeLowCardinality(split_filter_node->result_type);
+    if (!filter_type->onlyNull() && !isUInt8(removeNullable(filter_type)))
+    {
+        DataTypePtr cast_type = std::make_shared<DataTypeUInt8>();
+        if (filter_type->isNullable())
+            cast_type = std::make_shared<DataTypeNullable>(std::move(cast_type));
+
+        split_result.first.addCast(*split_filter_node, cast_type, {});
+    }
+
+    split_result.first.getOutputs().emplace(split_result.first.getOutputs().begin(), split_filter_node);
     return ActionsAndName{std::move(split_result.first), std::move(name)};
 }
 
@@ -168,7 +182,7 @@ void FilterStep::describeActions(FormatSettings & settings) const
     for (auto & and_atom : and_atoms)
     {
         auto expression = std::make_shared<ExpressionActions>(std::move(and_atom.dag));
-        settings.out << prefix << "AND column: " << and_atom.name;
+        settings.out << prefix << "AND column: " << and_atom.name << '\n';
         expression->describeActions(settings.out, prefix);
     }
 
