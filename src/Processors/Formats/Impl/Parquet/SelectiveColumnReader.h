@@ -245,8 +245,14 @@ public:
     virtual MutableColumnPtr createColumn() = 0;
     const PaddedPODArray<Int16> & getDefinitionLevels()
     {
-        readPageIfNeeded();
+        readAndDecodePage();
         return state.def_levels;
+    }
+
+    const PaddedPODArray<Int16> & getRepetitionLevels()
+    {
+        readAndDecodePage();
+        return state.rep_levels;
     }
 
     virtual size_t currentRemainRows() const { return state.remain_rows; }
@@ -259,9 +265,9 @@ public:
     // skip values in current page, return the number of rows need to lazy skip
     virtual size_t skipValuesInCurrentPage(size_t rows_to_skip) = 0;
 
-    virtual int16_t max_definition_level() const { return scan_spec.column_desc->max_definition_level(); }
+    virtual int16_t maxDefinitionLevel() const { return scan_spec.column_desc->max_definition_level(); }
 
-    virtual int16_t max_repetition_level() const { return scan_spec.column_desc->max_repetition_level(); }
+    virtual int16_t maxRepetitionLevel() const { return scan_spec.column_desc->max_repetition_level(); }
 
 protected:
     void decodePage();
@@ -279,6 +285,7 @@ protected:
     ScanSpec scan_spec;
     std::unique_ptr<PlainDecoder> plain_decoder;
     bool plain = true;
+
 };
 
 template <typename DataType, typename SerializedType>
@@ -408,8 +415,8 @@ public:
     OptionalColumnReader(const ScanSpec & scanSpec, const SelectiveColumnReaderPtr child_)
         : SelectiveColumnReader(nullptr, scanSpec), child(child_)
     {
-        def_level = child->max_definition_level();
-        rep_level = child->max_repetition_level();
+        def_level = child->maxDefinitionLevel();
+        rep_level = child->maxRepetitionLevel();
     }
 
     ~OptionalColumnReader() override = default;
@@ -420,8 +427,8 @@ public:
     void computeRowSet(OptionalRowSet & row_set, size_t rows_to_read) override;
     void read(MutableColumnPtr & column, OptionalRowSet & row_set, size_t rows_to_read) override;
     size_t skipValuesInCurrentPage(size_t rows_to_skip) override;
-    int16_t max_definition_level() const override { return child->max_definition_level(); }
-    int16_t max_repetition_level() const override { return child->max_repetition_level(); }
+    int16_t maxDefinitionLevel() const override { return child->maxDefinitionLevel(); }
+    int16_t maxRepetitionLevel() const override { return child->maxRepetitionLevel(); }
     size_t availableRows() const override;
 
 private:
@@ -443,5 +450,29 @@ private:
     size_t cur_null_count = 0;
     int def_level = 0;
     int rep_level = 0;
+};
+
+class ListColumnReader : public SelectiveColumnReader
+{
+public:
+    ListColumnReader(int16_t rep_level_, int16_t def_level_, const SelectiveColumnReaderPtr child_)
+        : SelectiveColumnReader(nullptr, ScanSpec{}), child(child_), def_level(def_level_), rep_level(rep_level_)
+    {
+    }
+
+    ~ListColumnReader() override = default;
+
+    void read(MutableColumnPtr & column, OptionalRowSet & row_set, size_t rows_to_read) override;
+
+    int16_t maxDefinitionLevel() const override { return def_level; }
+    int16_t maxRepetitionLevel() const override { return rep_level; }
+    void computeRowSet(std::optional<RowSet> & row_set, size_t rows_to_read) override;
+    MutableColumnPtr createColumn() override;
+    size_t skipValuesInCurrentPage(size_t rows_to_skip) override;
+
+private:
+    SelectiveColumnReaderPtr child;
+    int16_t def_level = 0;
+    int16_t rep_level = 0;
 };
 }

@@ -6,6 +6,11 @@
 namespace parquet
 {
     class ColumnDescriptor;
+    namespace schema
+    {
+        class Node;
+        using NodePtr = std::shared_ptr<Node>;
+    }
 }
 
 namespace DB
@@ -13,6 +18,7 @@ namespace DB
 class SelectiveColumnReader;
 using SelectiveColumnReaderPtr = std::shared_ptr<SelectiveColumnReader>;
 class LazyPageReader;
+struct RowGroupContext;
 
 using PageReaderCreator = std::function<std::unique_ptr<LazyPageReader>()>;
 
@@ -42,6 +48,6 @@ public:
     static Builder builder();
 };
 
-
+SelectiveColumnReaderPtr createColumnReaderRecursive(const RowGroupContext& context, parquet::schema::NodePtr node, int def_level, int rep_level, bool condition_column, const ColumnFilterPtr & filter, const DataTypePtr & target_type);
 
 }

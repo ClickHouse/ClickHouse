@@ -54,6 +54,14 @@ public:
     void addExpressionFilter(std::shared_ptr<ExpressionFilter> filter);
     std::unique_ptr<RowGroupChunkReader> getRowGroupChunkReader(size_t row_group_idx, RowGroupPrefetchPtr conditions_prefetch, RowGroupPrefetchPtr prefetch);
     std::unique_ptr<SubRowGroupRangeReader> getSubRowGroupRangeReader(std::vector<Int32> row_group_indices);
+    const parquet::FileMetaData& metaData()
+    {
+        return *meta_data;
+    }
+    const parquet::ReaderProperties& readerProperties()
+    {
+        return properties;
+    }
 private:
     std::unique_ptr<parquet::ParquetFileReader> file_reader;
     std::mutex file_mutex;

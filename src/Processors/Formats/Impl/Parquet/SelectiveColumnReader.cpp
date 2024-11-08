@@ -521,7 +521,7 @@ void OptionalColumnReader::nextBatchNullMapIfNeeded(size_t rows_to_read)
     cur_null_count = 0;
     const auto & def_levels = child->getDefinitionLevels();
     size_t start = def_levels.size() - currentRemainRows();
-    int16_t max_def_level = max_definition_level();
+    int16_t max_def_level = maxDefinitionLevel();
     for (size_t i = 0; i < rows_to_read; i++)
     {
         if (def_levels[start + i] < max_def_level)
@@ -1289,5 +1289,86 @@ void PlainDecoder::decodeFixedValueSpace(
     }
     page_data.checkAndConsume(count * sizeof(S));
     remain_rows -= rows_to_read;
+}
+
+void ListColumnReader::read(MutableColumnPtr & column, OptionalRowSet & row_set, size_t rows_to_read)
+{
+    ColumnNullable* null_column = nullptr;
+    NullMap * null_map = nullptr;
+    if (column->isNullable())
+    {
+        null_column = static_cast<ColumnNullable *>(column.get());
+        null_map = &null_column->getNullMapData();
+        column = null_column->getNestedColumnPtr()->assumeMutable();
+    }
+    if (!checkColumn<ColumnArray>(*column))
+    {
+        throw DB::Exception(ErrorCodes::PARQUET_EXCEPTION, "column type should be array, but is {}", column->getName());
+    }
+    ColumnArray* array_column = static_cast<ColumnArray *>(column.get());
+    if (!row_set)
+    {
+        auto & offsets = array_column->getOffsets();
+        auto old_size = offsets.size();
+        offsets.reserve(old_size + rows_to_read);
+        size_t count = 0;
+        const auto & def_levels = child->getDefinitionLevels();
+        bool has_def_level = !def_levels.empty();
+        const auto & rep_levels = child->getRepetitionLevels();
+        size_t start = rep_levels.size() - child->currentRemainRows();
+        // generate offsets;
+        int array_size = 0;
+        while (offsets.size() - old_size < rows_to_read)
+        {
+            size_t idx = start + count;
+            if (idx >= rep_levels.size())
+                break;
+            if (rep_levels[idx] <= rep_level)
+            {
+                if (count)
+                {
+                    offsets.push_back(offsets.back() + array_size);
+                    array_size = 0;
+                }
+                if (has_def_level && def_levels[idx] < def_level)
+                {
+                    // value is null
+                    if (null_map)
+                    {
+                        null_map->data()[offsets.size()] = 1;
+                    }
+                    else
+                        throw Exception(ErrorCodes::PARQUET_EXCEPTION, "null value is not supported");
+                }
+                else
+                {
+                    array_size++;
+                }
+            }
+            else
+                array_size ++;
+            count++;
+        }
+        offsets.push_back(offsets.back() + array_size);
+        auto data_column = array_column->getDataPtr()->assumeMutable();
+        OptionalRowSet filter;
+        child->read(data_column, filter, offsets.back());
+    }
+    else
+    {
+        throw Exception(ErrorCodes::PARQUET_EXCEPTION, "filter is not supported");
+    }
+}
+void ListColumnReader::computeRowSet(std::optional<RowSet> & , size_t )
+{
+    throw Exception(ErrorCodes::PARQUET_EXCEPTION, "unsupported operation");
+}
+MutableColumnPtr ListColumnReader::createColumn()
+{
+    return ColumnArray::create(child->createColumn(), ColumnArray::ColumnOffsets::create());
+}
+size_t ListColumnReader::skipValuesInCurrentPage(size_t )
+{
+    throw Exception(ErrorCodes::PARQUET_EXCEPTION, "unimplemented operation");
 }
 }

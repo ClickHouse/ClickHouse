@@ -100,17 +100,17 @@ std::unique_ptr<SubRowGroupRangeReader> ParquetReader::getSubRowGroupRangeReader
         RowGroupPrefetchPtr prefetch = std::make_shared<RowGroupPrefetch>(file, file_mutex, arrow_properties);
         RowGroupPrefetchPtr condition_prefetch = std::make_unique<RowGroupPrefetch>(file, file_mutex, arrow_properties);
         auto row_group_meta = meta_data->RowGroup(row_group_idx);
-        for (const auto & name : header.getNames())
-        {
-            if (!parquet_columns.contains(name))
-                throw Exception(ErrorCodes::PARQUET_EXCEPTION, "no column with '{}' in parquet file", name);
-            auto idx = meta_data->schema()->ColumnIndex(*parquet_columns[name]);
-            auto range = getColumnRange(*row_group_meta->ColumnChunk(idx));
-            if (condition_columns.contains(name))
-                condition_prefetch->prefetchRange(range);
-            else
-                prefetch->prefetchRange(range);
-        }
+//        for (const auto & name : header.getNames())
+//        {
+//            if (!parquet_columns.contains(name))
+//                throw Exception(ErrorCodes::PARQUET_EXCEPTION, "no column with '{}' in parquet file", name);
+//            auto idx = meta_data->schema()->ColumnIndex(*parquet_columns[name]);
+//            auto range = getColumnRange(*row_group_meta->ColumnChunk(idx));
+//            if (condition_columns.contains(name))
+//                condition_prefetch->prefetchRange(range);
+//            else
+//                prefetch->prefetchRange(range);
+//        }
         row_group_prefetches.push_back(std::move(prefetch));
         if (!condition_prefetch->isEmpty())
             row_group_condition_prefetches.push_back(std::move(condition_prefetch));
@@ -154,22 +154,22 @@ bool SubRowGroupRangeReader::loadRowGroupChunkReaderIfNeeded()
         return false;
     if ((!row_group_chunk_reader || !row_group_chunk_reader->hasMoreRows()) && next_row_group_idx < row_group_indices.size())
     {
-        if (next_row_group_idx == 0)
-        {
-            if (row_group_condition_prefetches.empty())
-                row_group_prefetches.front()->startPrefetch();
-            else
-                row_group_condition_prefetches.front()->startPrefetch();
-        }
+//        if (next_row_group_idx == 0)
+//        {
+//            if (row_group_condition_prefetches.empty())
+//                row_group_prefetches.front()->startPrefetch();
+//            else
+//                row_group_condition_prefetches.front()->startPrefetch();
+//        }
         row_group_chunk_reader = row_group_reader_creator(row_group_indices[next_row_group_idx], row_group_condition_prefetches.empty()? nullptr : std::move(row_group_condition_prefetches[next_row_group_idx]), std::move(row_group_prefetches[next_row_group_idx]));
         next_row_group_idx++;
-        if (next_row_group_idx < row_group_indices.size())
-        {
-            if (row_group_condition_prefetches.empty())
-                row_group_prefetches[next_row_group_idx]->startPrefetch();
-            else
-                row_group_condition_prefetches[next_row_group_idx]->startPrefetch();
-        }
+//        if (next_row_group_idx < row_group_indices.size())
+//        {
+//            if (row_group_condition_prefetches.empty())
+//                row_group_prefetches[next_row_group_idx]->startPrefetch();
+//            else
+//                row_group_condition_prefetches[next_row_group_idx]->startPrefetch();
+//        }
     }
     return true;
 }

@@ -76,6 +76,17 @@ private:
 
 using RowGroupPrefetchPtr = std::shared_ptr<RowGroupPrefetch>;
 
+struct RowGroupContext
+{
+    ParquetReader * parquet_reader;
+    std::shared_ptr<parquet::RowGroupMetaData> row_group_meta;
+    std::vector<String> filter_columns;
+    RowGroupPrefetchPtr prefetch_conditions;
+    RowGroupPrefetchPtr prefetch;
+};
+
+arrow::io::ReadRange getColumnRange(const parquet::ColumnChunkMetaData & column_metadata);
+
 class RowGroupChunkReader
 {
 public:
@@ -113,5 +124,6 @@ private:
     size_t remain_rows = 0;
     ReadMetrics metrics;
     std::unique_ptr<SelectConditions> selectConditions;
+    RowGroupContext context;
 };
 }
