@@ -191,7 +191,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     entry.initial_query_id = context->getClientInfo().initial_query_id;
     entry.initiator_user = context->getUserName();
     entry.access_hash = sipHash64(context->getAccess()->getAccessRights()->toString());
-    String node_path = ddl_worker.enqueueQuery(entry);
+    String node_path = ddl_worker.enqueueQuery(entry, params.retries_info, context->getProcessListElement());
 
     return getDDLOnClusterStatus(node_path, ddl_worker.getReplicasDir(), entry, context);
 }
