@@ -220,7 +220,7 @@ export class Chart {
                 if (on_click && this.minY > newPoint.y)
                 {
                     this.minY = newPoint.y;
-                    on_click(newPoint);
+                    on_click(newPoint, true);
                 }
             }
         };

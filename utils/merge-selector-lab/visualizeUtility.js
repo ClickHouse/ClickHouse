@@ -1,4 +1,5 @@
 import { valueToColor, formatBytesWithUnit, determineTickStep } from './visualizeHelpers.js';
+import { renderMath } from './renderMath.js';
 
 export function visualizeUtility(sim, container)
 {
@@ -16,6 +17,7 @@ export function visualizeUtility(sim, container)
     const height = 450;
     const part_dy = 4;
     const part_dx = 1;
+    const max_entropy = 7; // It is a constant to get consistent colors on all diagrams, merging more than 128 parts is not common
 
     // Compute useful aggregates
     let log_min_bytes = Math.log2(d3.min(sim.parts, d => d.bytes));
@@ -28,15 +30,18 @@ export function visualizeUtility(sim, container)
     let insert_left = 0;
     for (const p of sim.parts)
     {
+        const parent = p.parent == undefined ? null : sim.parts[p.parent];
+        //console.log("ENTROPY", parent.entropy);
         mt.push({
             bytes: p.bytes,
             created: p.created,
             left: p.level == 0? insert_left : lefts[p.begin],
             top: p.parent == undefined ? undefined : sim.parts[p.parent].bytes,
             bottom: p.bytes,
-            /* height */ color: p.parent == undefined ? undefined : valueToColor(Math.log2(sim.parts[p.parent].bytes), log_min_bytes, log_max_bytes),
-            // /* order */ color: p.parent == undefined ? undefined : valueToColor(sim.parts[p.parent].idx, 0, sim.parts.length),
-            // /* source_part_count */ color: p.parent == undefined ? undefined : valueToColor(sim.parts[p.parent].source_part_count, 2, max_source_part_count),
+            /* entropy */ color: parent ? valueToColor(parent.entropy, 0, max_entropy) : undefined,
+            // /* height */ color: parent ? undefined : valueToColor(Math.log2(parent.bytes), log_min_bytes, log_max_bytes),
+            // /* order */ color: parent ? undefined : valueToColor(parent.idx, 0, sim.parts.length),
+            // /* source_part_count */ color: parent ? valueToColor(parent.source_part_count, 2, max_source_part_count) : undefined,
             part: p
         });
         if (p.level == 0)
@@ -184,21 +189,57 @@ export function visualizeUtility(sim, container)
 
     // Initialize tippy.js tooltip for description
     svgContainer.node().__tippy = tippy(infoGroup.node(), {
-        content: `
-            This visualization represents a resulting merge tree after simulation.
-            Evert <b>part</b> is represented by a black bar with yellow mark on left side.
-            Parts are positioned vertically according to logarithm of their size.
-            Every <b>merge</b> is represented by a number of rectangles that connect source parts at bottom to the resulting part at the top.
-            Horizontal axis represent amount of inserted bytes: newly inserted parts appear on the right side.
-            Width of a part represent its size.
-            <u>Area of a merge represents its utility.</u>
-            Total area does <i>not</i> depend on merge tree structure, it is a function of initial and final part sizes.
-            Note that time is not present explicitly on this chart, but merges push data upwards and inserts expand chart to the right.
-            <b>Color</b> of a merge-related rectangles might represent on of selected metric: resulting size, order or time of merge, number of source parts, etc.
-        `,
+        content: renderMath(`
+            <h5 align="center">Utility diagram</h5>
+
+            <h6>Parts</h6>
+            <p>
+            The diagram is constructed from the bottom upward.
+            Initial parts are at the bottom.
+            Part is a horizontal black bar with a yellow mark on the left side.
+            Bar width equals part size.
+            Parts are positioned on the X-axis in the insertion order: older part are on the left, newer are on the right.
+            The y-position of a part equals the logarithm of its size.
+            </p>
+
+            <h6>Merges</h6>
+            <p>
+            One merge is represented by shape that consists of adjacent rectangles of the same color.
+            One rectangle per every child (source part).
+            Every rectangle connects the child at the bottom to the parent (resulting) part at the top.
+            The area of a merge represents its <u>utility</u>.
+            Color represents average height of merge, <u>entropy</u>: its area divided by its width.
+            </p>
+
+            <h6>Utility</h6>
+            <p>
+            Note that total diagram area does not depend on merge tree structure: it is a function of initial and final part sizes.
+            So larger utility of a merge means "more" progress toward the "all parts are merged" state.
+            The utility is a measure that shows the overall "progress" of the merging process,
+            a total "distance" that all byte of data should travel upwards to be merged:
+
+            $$U = B \\log B - \\sum_{i} b_{i} \\log b_{i}$$
+
+            where $B$ – size of result, $b_{i}$ – size of $i$-th child.
+            </p>
+
+            <h6>Entropy</h6>
+            <p>
+            Consider a vertical line on the diagram.
+            It show a path of one single byte from the initial bottom part to the final top part.
+            Number of times this line intersects black bars is equal to the write amplification.
+            To lower write amplification it is important to have larger distance between bars.
+            Entropy of a merge is equal to average (per byte) distance between bars:
+
+            $$H = \\frac{U}{B} = - \\sum_{i} p_{i} \\log p_{i}$$
+            where $p_{i}$ – probability to randomly select a byte from $i$-th child.
+            </p>
+        `),
         allowHTML: true,
-        placement: 'right',
+        placement: 'bottom',
         theme: 'light',
+        trigger: 'click',
         arrow: true,
+        maxWidth: '600px'
     });
 }

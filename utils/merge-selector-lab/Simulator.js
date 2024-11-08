@@ -12,7 +12,7 @@ export class Simulator {
         this.inserted_parts_count = 0;
         this.inserted_bytes = 0;
         this.written_bytes = 0; // inserts + merges
-        this.inserted_area = 0; // area = size * log(size)
+        this.inserted_utility = 0; // utility = size * log(size)
         this.active_part_count = 0;
         this.integral_active_part_count = 0;
     }
@@ -47,11 +47,12 @@ export class Simulator {
     {
         this.advanceTime(now);
         let log_bytes = Math.log2(bytes);
-        let area = bytes * log_bytes;
+        let utility = bytes * log_bytes;
         let result = {
             bytes,
             log_bytes,
-            area,
+            utility,
+            entropy: 0,
             created: now,
             level: 0,
             begin: this.inserted_parts_count,
@@ -66,7 +67,7 @@ export class Simulator {
         this.inserted_parts_count++;
         this.inserted_bytes += bytes;
         this.written_bytes += bytes;
-        this.inserted_area += area;
+        this.inserted_utility += utility;
         return result;
     }
 
@@ -86,8 +87,10 @@ export class Simulator {
 
         const idx = this.parts.length;
         const bytes = d3.sum(parts_to_merge, d => d.bytes);
+        const utility0 = d3.sum(parts_to_merge, d => d.utility);
         const log_bytes = Math.log2(bytes);
-        const area = bytes * log_bytes;
+        const utility = bytes * log_bytes;
+        const entropy = (utility - utility0) / bytes;
 
         // Compute time required for merge
         const merge_duration = this.mergeDuration(bytes, parts_to_merge.length);
@@ -96,7 +99,8 @@ export class Simulator {
         let result = {
             bytes,
             log_bytes,
-            area,
+            utility,
+            entropy,
             created: this.current_time,
             level: 1 + d3.max(parts_to_merge, d => d.level),
             begin: d3.min(parts_to_merge, d => d.begin),
