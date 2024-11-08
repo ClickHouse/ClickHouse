@@ -2,11 +2,8 @@
 
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
-<<<<<<< HEAD
 #include <Core/Joins.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-=======
->>>>>>> master
 
 namespace DB
 {
@@ -50,8 +47,6 @@ public:
         ColumnSet * column_set_,
         ContextPtr context_,
         StorageMetadataPtr metdata_);
-
-    JoinInnerTableSelectionMode inner_table_selection_mode = JoinInnerTableSelectionMode::Right;
 
 private:
     void updateOutputHeader() override;

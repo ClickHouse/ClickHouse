@@ -186,7 +186,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         std::move(pipelines[1]),
         join,
         std::move(finish_callback),
-        join_algorithm_header,
+        *output_header,
         max_block_size,
         max_streams,
         keep_left_read_in_order,
