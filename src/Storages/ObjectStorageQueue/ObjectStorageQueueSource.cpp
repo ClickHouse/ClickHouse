@@ -26,10 +26,10 @@ namespace Setting
 namespace ObjectStorageQueueSetting
 {
     extern const ObjectStorageQueueSettingsObjectStorageQueueAction after_processing;
-    extern const ObjectStorageQueueSettingsUInt32 max_processed_bytes_before_commit;
-    extern const ObjectStorageQueueSettingsUInt32 max_processed_files_before_commit;
-    extern const ObjectStorageQueueSettingsUInt32 max_processed_rows_before_commit;
-    extern const ObjectStorageQueueSettingsUInt32 max_processing_time_sec_before_commit;
+    extern const ObjectStorageQueueSettingsUInt64 max_processed_bytes_before_commit;
+    extern const ObjectStorageQueueSettingsUInt64 max_processed_files_before_commit;
+    extern const ObjectStorageQueueSettingsUInt64 max_processed_rows_before_commit;
+    extern const ObjectStorageQueueSettingsUInt64 max_processing_time_sec_before_commit;
 }
 
 namespace ErrorCodes
@@ -657,7 +657,7 @@ void ObjectStorageQueueSource::commit(bool success, const std::string & exceptio
 
 void ObjectStorageQueueSource::applyActionAfterProcessing(const String & path)
 {
-    if (files_metadata->getTableMetadata().after_processing == "delete")
+    if (files_metadata->getTableMetadata().after_processing == ObjectStorageQueueAction::DELETE)
     {
         object_storage->removeObject(StoredObject(path));
     }

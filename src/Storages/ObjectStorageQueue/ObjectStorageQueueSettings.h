@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/BaseSettingsFwdMacros.h>
-#include <Core/FormatFactorySettingsDeclaration.h>
+#include <Core/FormatFactorySettings.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
 
@@ -10,6 +10,9 @@ namespace DB
 {
 class ASTStorage;
 struct ObjectStorageQueueSettingsImpl;
+struct MutableColumnsAndConstraints;
+class StorageObjectStorageQueue;
+class SettingsChanges;
 
 /// List of available types supported in ObjectStorageQueueSettings object
 #define OBJECT_STORAGE_QUEUE_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
@@ -51,7 +54,17 @@ struct ObjectStorageQueueSettings
 
     OBJECT_STORAGE_QUEUE_SETTINGS_SUPPORTED_TYPES(ObjectStorageQueueSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
+    void dumpToSystemEngineSettingsColumns(
+        MutableColumnsAndConstraints & params,
+        const std::string & table_name,
+        const std::string & database_name,
+        const StorageObjectStorageQueue & storage) const;
+
     void loadFromQuery(ASTStorage & storage_def);
+
+    void applyChanges(const SettingsChanges & changes);
+
+    Field get(const std::string & name);
 
 private:
     std::unique_ptr<ObjectStorageQueueSettingsImpl> impl;
