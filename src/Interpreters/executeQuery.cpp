@@ -506,6 +506,7 @@ void logQueryFinish(
 
         auto time_now = std::chrono::system_clock::now();
         QueryStatusInfo info = process_list_elem->getInfo(true, settings[Setting::log_profile_events]);
+        logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, time_now, std::make_shared<QueryStatusInfo>(info));
         elem.type = QueryLogElementType::QUERY_FINISH;
 
         addStatusInfoToQueryLogElement(elem, info, query_ast, context);
@@ -551,6 +552,7 @@ void logQueryFinish(
             if (auto query_log = context->getQueryLog())
                 query_log->add(elem);
         }
+
         if (settings[Setting::log_processors_profiles])
         {
             if (auto processors_profile_log = context->getProcessorsProfileLog())
@@ -598,8 +600,6 @@ void logQueryFinish(
                 }
             }
         }
-
-        logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, time_now, std::make_shared<QueryStatusInfo>(info));
     }
 
     if (query_span)
@@ -669,6 +669,7 @@ void logQueryException(
     {
         elem.query_duration_ms = start_watch.elapsedMilliseconds();
     }
+    logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, time_now, info);
 
     elem.query_cache_usage = QueryCache::Usage::None;
 
@@ -698,8 +699,6 @@ void logQueryException(
         query_span->addAttribute("clickhouse.exception_code", elem.exception_code);
         query_span->finish();
     }
-
-    logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, time_now, info);
 }
 
 void logExceptionBeforeStart(
@@ -753,6 +752,8 @@ void logExceptionBeforeStart(
 
     elem.client_info = context->getClientInfo();
 
+    logQueryMetricLogFinish(context, false, elem.client_info.current_query_id, std::chrono::system_clock::now(), nullptr);
+
     elem.log_comment = settings[Setting::log_comment];
     if (elem.log_comment.size() > settings[Setting::max_query_size])
         elem.log_comment.resize(settings[Setting::max_query_size]);
@@ -797,8 +798,6 @@ void logExceptionBeforeStart(
             ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
         }
     }
-
-    logQueryMetricLogFinish(context, false, elem.client_info.current_query_id, std::chrono::system_clock::now(), nullptr);
 }
 
 void validateAnalyzerSettings(ASTPtr ast, bool context_value)
