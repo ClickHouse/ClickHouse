@@ -624,6 +624,15 @@ UInt64 IMergeTreeDataPart::getIndexSizeInAllocatedBytes() const
     return res;
 }
 
+UInt64 IMergeTreeDataPart::getIndexGranularityBytes() const
+{
+    return index_granularity.getBytesSize();
+}
+UInt64 IMergeTreeDataPart::getIndexGranularityAllocatedBytes() const
+{
+    return index_granularity.getBytesAllocated();
+}
+
 void IMergeTreeDataPart::assertState(const std::initializer_list<MergeTreeDataPartState> & affordable_states) const
 {
     if (!checkState(affordable_states))

@@ -380,6 +380,8 @@ public:
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
     UInt64 getIndexSizeInAllocatedBytes() const;
+    UInt64 getIndexGranularityBytes() const;
+    UInt64 getIndexGranularityAllocatedBytes() const;
     UInt64 getMarksCount() const;
     UInt64 getIndexSizeFromFile() const;
 
