@@ -1,5 +1,5 @@
 import { valueToColor, formatBytesWithUnit, determineTickStep } from './visualizeHelpers.js';
-import { renderMath } from './renderMath.js';
+import { infoButton } from './infoButton.js';
 
 export function visualizeUtility(sim, container)
 {
@@ -176,70 +176,50 @@ export function visualizeUtility(sim, container)
         });
 
     // Add description with an information circle icon using tippy.js for tooltips
-    const infoGroup = svgContainer.append("g")
-        .attr("class", "chart-description")
-        .attr("transform", `translate(10, 60)`);
+    svgContainer.node().__tippy = infoButton(svgContainer, 10, 60, `
+        <h5 align="center">Utility diagram</h5>
 
-    infoGroup.append("text")
-        .attr("text-anchor", "middle")
-        .attr("y", 4)
-        .attr("fill", "white")
-        .style("font-size", "16px")
-        .text("ℹ");
+        <h6>Parts</h6>
+        <p>
+        The diagram is constructed from the bottom upward.
+        Initial parts are at the bottom.
+        Part is a horizontal black bar with a yellow mark on the left side.
+        Bar width equals part size.
+        Parts are positioned on the X-axis in the insertion order: older part are on the left, newer are on the right.
+        The y-position of a part equals the logarithm of its size.
+        </p>
 
-    // Initialize tippy.js tooltip for description
-    svgContainer.node().__tippy = tippy(infoGroup.node(), {
-        content: renderMath(`
-            <h5 align="center">Utility diagram</h5>
+        <h6>Merges</h6>
+        <p>
+        One merge is represented by shape that consists of adjacent rectangles of the same color.
+        One rectangle per every child (source part).
+        Every rectangle connects the child at the bottom to the parent (resulting) part at the top.
+        The area of a merge represents its <u>utility</u>.
+        Color represents average height of merge, <u>entropy</u>: its area divided by its width.
+        </p>
 
-            <h6>Parts</h6>
-            <p>
-            The diagram is constructed from the bottom upward.
-            Initial parts are at the bottom.
-            Part is a horizontal black bar with a yellow mark on the left side.
-            Bar width equals part size.
-            Parts are positioned on the X-axis in the insertion order: older part are on the left, newer are on the right.
-            The y-position of a part equals the logarithm of its size.
-            </p>
+        <h6>Utility</h6>
+        <p>
+        Note that total diagram area does not depend on merge tree structure: it is a function of initial and final part sizes.
+        So larger utility of a merge means "more" progress toward the "all parts are merged" state.
+        The utility is a measure that shows the overall "progress" of the merging process,
+        a total "distance" that all byte of data should travel upwards to be merged:
 
-            <h6>Merges</h6>
-            <p>
-            One merge is represented by shape that consists of adjacent rectangles of the same color.
-            One rectangle per every child (source part).
-            Every rectangle connects the child at the bottom to the parent (resulting) part at the top.
-            The area of a merge represents its <u>utility</u>.
-            Color represents average height of merge, <u>entropy</u>: its area divided by its width.
-            </p>
+        $$U = B \\log B - \\sum_{i} b_{i} \\log b_{i}$$
 
-            <h6>Utility</h6>
-            <p>
-            Note that total diagram area does not depend on merge tree structure: it is a function of initial and final part sizes.
-            So larger utility of a merge means "more" progress toward the "all parts are merged" state.
-            The utility is a measure that shows the overall "progress" of the merging process,
-            a total "distance" that all byte of data should travel upwards to be merged:
+        where $B$ – size of result, $b_{i}$ – size of $i$-th child.
+        </p>
 
-            $$U = B \\log B - \\sum_{i} b_{i} \\log b_{i}$$
+        <h6>Entropy</h6>
+        <p>
+        Consider a vertical line on the diagram.
+        It show a path of one single byte from the initial bottom part to the final top part.
+        Number of times this line intersects black bars is equal to the write amplification.
+        To lower write amplification it is important to have larger distance between bars.
+        Entropy of a merge is equal to average (per byte) distance between bars:
 
-            where $B$ – size of result, $b_{i}$ – size of $i$-th child.
-            </p>
-
-            <h6>Entropy</h6>
-            <p>
-            Consider a vertical line on the diagram.
-            It show a path of one single byte from the initial bottom part to the final top part.
-            Number of times this line intersects black bars is equal to the write amplification.
-            To lower write amplification it is important to have larger distance between bars.
-            Entropy of a merge is equal to average (per byte) distance between bars:
-
-            $$H = \\frac{U}{B} = - \\sum_{i} p_{i} \\log p_{i}$$
-            where $p_{i}$ – probability to randomly select a byte from $i$-th child.
-            </p>
-        `),
-        allowHTML: true,
-        placement: 'bottom',
-        theme: 'light',
-        trigger: 'click',
-        arrow: true,
-        maxWidth: '600px'
-    });
+        $$H = \\frac{U}{B} = - \\sum_{i} p_{i} \\log p_{i}$$
+        where $p_{i}$ – probability to randomly select a byte from $i$-th child.
+        </p>
+    `);
 }

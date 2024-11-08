@@ -1,4 +1,4 @@
-import { renderMath } from './renderMath.js';
+import { infoButton } from './infoButton.js';
 import { valueToColor, formatBytesWithUnit, determineTickStep } from './visualizeHelpers.js';
 
 export function visualizeExecutionTime(sim, container)
@@ -164,68 +164,48 @@ export function visualizeExecutionTime(sim, container)
         .text("Source parts count");
 
     // Add description with an information circle icon using tippy.js for tooltips
-    const infoGroup = svgContainer.append("g")
-        .attr("class", "chart-description")
-        .attr("transform", `translate(15, 60)`);
+    svgContainer.node().__tippy = infoButton(svgContainer, 15, 60, `
+        <h5 align="center">Execution time diagram</h5>
 
-    infoGroup.append("text")
-        .attr("text-anchor", "middle")
-        .attr("y", 4)
-        .attr("fill", "white")
-        .style("font-size", "16px")
-        .text("ℹ");
+        <h6>Parts</h6>
+        <p>
+        The diagram is constructed from the top downwards.
+        Final parts are at the top.
+        Part is a horizontal yellow bar with a black mark on the left side.
+        Bar width equals part size.
+        Parts are positioned on the X-axis in the insertion order: older part are on the left, newer are on the right.
+        The y-position of a part depends of history of merges (see below).
+        </p>
 
-    // Initialize tippy.js tooltip for description
-    svgContainer.node().__tippy = tippy(infoGroup.node(), {
-        content: renderMath(`
-            <h5 align="center">Execution time diagram</h5>
+        <h6>Merges</h6>
+        <p>
+        One merge is represented by one rectangle.
+        It connects the children at the bottom to the parent (resulting) part at the top.
+        The height of the rectangle equals the number of source parts.
+        It determines the y-position of all parts relative to their parents.
+        Color also represents the number of source parts in the merge.
+        </p>
 
-            <h6>Parts</h6>
-            <p>
-            The diagram is constructed from the top downwards.
-            Final parts are at the top.
-            Part is a horizontal yellow bar with a black mark on the left side.
-            Bar width equals part size.
-            Parts are positioned on the X-axis in the insertion order: older part are on the left, newer are on the right.
-            The y-position of a part depends of history of merges (see below).
-            </p>
+        <h6>Execution time</h6>
+        <p>
+        The X-axis is in bytes.
+        In model merge duration is proportional to number of bytes to be written.
+        So width of merges also represents duration (execution time) of a merge.
+        Such a model assumes there is no overhead for merges and speed of all merges expressed in bytes written per second is the same.
+        </p>
 
-            <h6>Merges</h6>
-            <p>
-            One merge is represented by one rectangle.
-            It connects the children at the bottom to the parent (resulting) part at the top.
-            The height of the rectangle equals the number of source parts.
-            It determines the y-position of all parts relative to their parents.
-            Color also represents the number of source parts in the merge.
-            </p>
-
-            <h6>Execution time</h6>
-            <p>
-            The X-axis is in bytes.
-            In model merge duration is proportional to number of bytes to be written.
-            So width of merges also represents duration (execution time) of a merge.
-            Such a model assumes there is no overhead for merges and speed of all merges expressed in bytes written per second is the same.
-            </p>
-
-            <h6>Part count time integral</h6>
-            <p>
-            Average active part count is computed as an integral of part count over time interval:
-            $$I = T \\cdot \\mathbb{E}[Active] = \\int_0^T Active(t) \\, dt$$
-            To minimize part count one should minimize the integral.
-            It can be computed as total area of all rectangles in the diagram plus "waiting" time $W$.
-            The area of one merge rectangle equals its contribution to the integral.
-            $$I = W + \\sum_{i} d_{i} \\cdot n_{i}$$
-            where $d_{i}$ – merge execution time of $i$-th part, $n_{i}$ – number of children of $i$-th part.
-            </p>
-            <p>
-            It is important to note that diagram does not show "waiting" time, while parts are active, but not merging.
-            </p>
-        `),
-        allowHTML: true,
-        placement: 'bottom',
-        theme: 'light',
-        trigger: 'click',
-        arrow: true,
-        maxWidth: '600px'
-    });
+        <h6>Part count time integral</h6>
+        <p>
+        Average active part count is computed as an integral of part count over time interval:
+        $$I = T \\cdot \\mathbb{E}[Active] = \\int_0^T Active(t) \\, dt$$
+        To minimize part count one should minimize the integral.
+        It can be computed as total area of all rectangles in the diagram plus "waiting" time $W$.
+        The area of one merge rectangle equals its contribution to the integral.
+        $$I = W + \\sum_{i} d_{i} \\cdot n_{i}$$
+        where $d_{i}$ – merge execution time of $i$-th part, $n_{i}$ – number of children of $i$-th part.
+        </p>
+        <p>
+        It is important to note that diagram does not show "waiting" time, while parts are active, but not merging.
+        </p>
+    `);
 }

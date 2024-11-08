@@ -1,3 +1,5 @@
+import { infoButton } from './infoButton.js';
+
 export class Chart {
     constructor(selection = d3.select("body"), xTitle = "", yTitle = "", description = "")
     {
@@ -83,29 +85,7 @@ export class Chart {
             .text(this.yTitleText);
 
         if (this.descriptionText)
-        {
-            // Add description with an information circle icon using tippy.js for tooltips
-            const infoGroup = this.svg.append("g")
-                .attr("class", "chart-description")
-                .attr("transform", `translate(${-this.margin.left + 12}, 0)`);
-
-            infoGroup.append("text")
-                .attr("text-anchor", "middle")
-                .attr("y", 4)
-                .attr("fill", "white")
-                .style("font-size", "16px")
-                .text("ℹ");
-
-            // Initialize tippy.js tooltip for description
-            this.tippy = tippy(infoGroup.node(), {
-                content: this.descriptionText,
-                allowHTML: true,
-                delay: [0, 500],
-                placement: 'right',
-                theme: 'light',
-                arrow: true,
-            });
-        }
+            infoButton(this.svg, -this.margin.left + 12, 0, this.descriptionText);
 
         // Add legend container inside the chart area (upper right corner)
         this.legend = this.svg.append("g")
