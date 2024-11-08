@@ -119,6 +119,8 @@ public:
 
     void resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, ContextPtr context);
 
+    void resolveConstantExpression(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, ContextPtr context);
+
 private:
     /// Utility functions
 
@@ -138,7 +140,8 @@ private:
         const ProjectionName & sort_expression_projection_name,
         const ProjectionName & fill_from_expression_projection_name,
         const ProjectionName & fill_to_expression_projection_name,
-        const ProjectionName & fill_step_expression_projection_name);
+        const ProjectionName & fill_step_expression_projection_name,
+        const ProjectionName & fill_staleness_expression_projection_name);
 
     QueryTreeNodePtr tryGetLambdaFromSQLUserDefinedFunctions(const std::string & function_name, ContextPtr context);
 

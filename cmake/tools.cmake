@@ -5,7 +5,11 @@ if (NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif ()
 
 # Print details to output
-execute_process(COMMAND ${CMAKE_CXX_COMPILER} --version OUTPUT_VARIABLE COMPILER_SELF_IDENTIFICATION OUTPUT_STRIP_TRAILING_WHITESPACE)
+execute_process(COMMAND ${CMAKE_CXX_COMPILER} --version
+    OUTPUT_VARIABLE COMPILER_SELF_IDENTIFICATION
+    COMMAND_ERROR_IS_FATAL ANY
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
 message (STATUS "Using compiler:\n${COMPILER_SELF_IDENTIFICATION}")
 
 # Require minimum compiler versions
@@ -44,6 +48,8 @@ if (NOT LINKER_NAME)
         find_program (LLD_PATH NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "ld.lld")
     elseif (OS_DARWIN)
         find_program (LLD_PATH NAMES "ld")
+        # Duplicate libraries passed to the linker is not a problem.
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-no_warn_duplicate_libraries")
     endif ()
     if (LLD_PATH)
         if (OS_LINUX OR OS_DARWIN)

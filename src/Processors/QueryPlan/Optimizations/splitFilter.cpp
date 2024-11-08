@@ -17,13 +17,13 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
     const std::string & filter_column_name = filter_step->getFilterColumnName();
 
     /// Do not split if there are function like runningDifference.
-    if (expr->hasStatefulFunctions())
+    if (expr.hasStatefulFunctions())
         return 0;
 
     bool filter_name_clashs_with_input = false;
     if (filter_step->removesFilterColumn())
     {
-        for (const auto * input : expr->getInputs())
+        for (const auto * input : expr.getInputs())
         {
             if (input->result_name == filter_column_name)
             {
@@ -33,14 +33,14 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
         }
     }
 
-    auto split = expr->splitActionsForFilter(filter_column_name);
+    auto split = expr.splitActionsForFilter(filter_column_name);
 
-    if (split.second->trivial())
+    if (split.second.trivial())
         return 0;
 
     bool remove_filter = false;
     if (filter_step->removesFilterColumn())
-        remove_filter = split.second->removeUnusedResult(filter_column_name);
+        remove_filter = split.second.removeUnusedResult(filter_column_name);
 
     auto description = filter_step->getStepDescription();
 
@@ -53,23 +53,23 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
     {
         split_filter_name = "__split_filter";
 
-        for (auto & filter_output : split.first->getOutputs())
+        for (auto & filter_output : split.first.getOutputs())
         {
             if (filter_output->result_name == filter_column_name)
             {
-                filter_output = &split.first->addAlias(*filter_output, split_filter_name);
+                filter_output = &split.first.addAlias(*filter_output, split_filter_name);
                 break;
             }
         }
     }
 
     filter_node.step = std::make_unique<FilterStep>(
-            filter_node.children.at(0)->step->getOutputStream(),
+            filter_node.children.at(0)->step->getOutputHeader(),
             std::move(split.first),
             std::move(split_filter_name),
             remove_filter);
 
-    node->step = std::make_unique<ExpressionStep>(filter_node.step->getOutputStream(), std::move(split.second));
+    node->step = std::make_unique<ExpressionStep>(filter_node.step->getOutputHeader(), std::move(split.second));
 
     filter_node.step->setStepDescription("(" + description + ")[split]");
     node->step->setStepDescription(description);

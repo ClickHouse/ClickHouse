@@ -15,8 +15,8 @@ ${CLICKHOUSE_CLIENT} --query "CREATE TABLE tab (a UInt64) ENGINE=MergeTree() ORD
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO tab VALUES (1) (2) (3)"
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO tab VALUES (3) (4) (5)"
 
-SETTINGS_NO_ANALYZER="SETTINGS use_query_cache=1, max_threads=1, allow_experimental_analyzer=0, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0.0"
-SETTINGS_ANALYZER="SETTINGS use_query_cache=1, max_threads=1, allow_experimental_analyzer=1, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0.0"
+SETTINGS_NO_ANALYZER="SETTINGS use_query_cache=1, max_threads=1, enable_analyzer=0, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0.0"
+SETTINGS_ANALYZER="SETTINGS use_query_cache=1, max_threads=1, enable_analyzer=1, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0.0"
 
 # Verify that the first query does two aggregations and the second query zero aggregations. Since query cache is currently not integrated
 # with EXPLAIN PLAN, we need to check the logs.

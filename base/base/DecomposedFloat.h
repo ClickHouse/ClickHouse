@@ -110,8 +110,7 @@ struct DecomposedFloat
         {
             if (!isNegative())
                 return rhs > 0 ? -1 : 1;
-            else
-                return rhs >= 0 ? -1 : 1;
+            return rhs >= 0 ? -1 : 1;
         }
 
         /// The case of the most negative integer
@@ -128,8 +127,7 @@ struct DecomposedFloat
 
                 if (mantissa() == 0)
                     return 0;
-                else
-                    return -1;
+                return -1;
             }
         }
 
@@ -169,9 +167,8 @@ struct DecomposedFloat
         /// Float has no fractional part means that the numbers are equal.
         if (large_and_always_integer || (mantissa() & ((1ULL << (Traits::mantissa_bits - normalizedExponent())) - 1)) == 0)
             return 0;
-        else
-            /// Float has fractional part means its abs value is larger.
-            return isNegative() ? -1 : 1;
+        /// Float has fractional part means its abs value is larger.
+        return isNegative() ? -1 : 1;
     }
 
 

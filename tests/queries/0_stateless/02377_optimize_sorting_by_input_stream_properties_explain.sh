@@ -8,21 +8,21 @@ DISABLE_OPTIMIZATION="set optimize_sorting_by_input_stream_properties=0;set quer
 ENABLE_OPTIMIZATION="set optimize_sorting_by_input_stream_properties=1;set query_plan_read_in_order=1;set optimize_read_in_order=1;set max_threads=3"
 MAKE_OUTPUT_STABLE="set optimize_read_in_order=1;set max_threads=3;set query_plan_remove_redundant_sorting=0"
 GREP_SORTING="grep 'PartialSortingTransform\|LimitsCheckingTransform\|MergeSortingTransform\|MergingSortedTransform'"
-GREP_SORTMODE="grep 'Sorting ('"
+GREP_SORTMODE="grep 'Sorting'"
 TRIM_LEADING_SPACES="sed -e 's/^[ \t]*//'"
 FIND_SORTING="$GREP_SORTING | $TRIM_LEADING_SPACES"
 FIND_SORTMODE="$GREP_SORTMODE | $TRIM_LEADING_SPACES"
 
 function explain_sorting {
     echo "-- QUERY: "$1
-    $CLICKHOUSE_CLIENT --merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0.0 -nq "$1" | eval $FIND_SORTING
+    $CLICKHOUSE_CLIENT --merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0.0 -q "$1" | eval $FIND_SORTING
 }
 
 function explain_sortmode {
     echo "-- QUERY: "$1
-    $CLICKHOUSE_CLIENT --allow_experimental_analyzer=0 --merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0.0 -nq "$1" | eval $FIND_SORTMODE
+    $CLICKHOUSE_CLIENT --enable_analyzer=0 --merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0.0 -q "$1" | eval $FIND_SORTMODE
     echo "-- QUERY (analyzer): "$1
-    $CLICKHOUSE_CLIENT --allow_experimental_analyzer=1 --merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0.0 -nq "$1" | eval $FIND_SORTMODE
+    $CLICKHOUSE_CLIENT --enable_analyzer=1 --merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0.0 -q "$1" | eval $FIND_SORTMODE
 }
 
 $CLICKHOUSE_CLIENT -q "drop table if exists optimize_sorting sync"

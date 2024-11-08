@@ -1,1 +1,1 @@
-Const(ColumnLowCardinality)
+Const(LowCardinality(UInt8))

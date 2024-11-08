@@ -7,13 +7,13 @@ keywords: [object, data type]
 
 # Object Data Type (deprecated)
 
-**This feature is not production-ready and is now deprecated.** If you need to work with JSON documents, consider using [this guide](/docs/en/integrations/data-ingestion/data-formats/json) instead. A new implementation to support JSON object is in progress and can be tracked [here](https://github.com/ClickHouse/ClickHouse/issues/54864).
+**This feature is not production-ready and is now deprecated.** If you need to work with JSON documents, consider using [this guide](/docs/en/integrations/data-formats/json/overview) instead. A new implementation to support JSON object is in progress and can be tracked [here](https://github.com/ClickHouse/ClickHouse/issues/54864).
 
 <hr />
 
 Stores JavaScript Object Notation (JSON) documents in a single column.
 
-`JSON` is an alias for `Object('json')`.
+`JSON` can be used as an alias to `Object('json')` when setting [use_json_alias_for_old_object_type](../../operations/settings/settings.md#usejsonaliasforoldobjecttype) is enabled.
 
 ## Example
 
@@ -79,5 +79,5 @@ SELECT * FROM json FORMAT JSONEachRow
 
 ## Related Content
 
-- [Using JSON in ClickHouse](/docs/en/integrations/data-formats/json)
+- [Using JSON in ClickHouse](/en/integrations/data-formats/json/overview)
 - [Getting Data Into ClickHouse - Part 2 - A JSON detour](https://clickhouse.com/blog/getting-data-into-clickhouse-part-2-json)

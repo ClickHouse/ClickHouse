@@ -15,6 +15,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+}
+
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
@@ -111,12 +117,22 @@ ASTPtr DatabaseDictionary::getCreateTableQueryImpl(const String & table_name, Co
         buffer << ") Engine = Dictionary(" << backQuoteIfNeed(table_name) << ")";
     }
 
-    auto settings = getContext()->getSettingsRef();
+    const auto & settings = getContext()->getSettingsRef();
     ParserCreateQuery parser;
     const char * pos = query.data();
     std::string error_message;
-    auto ast = tryParseQuery(parser, pos, pos + query.size(), error_message,
-        /* hilite = */ false, "", /* allow_multi_statements = */ false, 0, settings.max_parser_depth, settings.max_parser_backtracks, true);
+    auto ast = tryParseQuery(
+        parser,
+        pos,
+        pos + query.size(),
+        error_message,
+        /* hilite = */ false,
+        "",
+        /* allow_multi_statements = */ false,
+        0,
+        settings[Setting::max_parser_depth],
+        settings[Setting::max_parser_backtracks],
+        true);
 
     if (!ast && throw_on_error)
         throw Exception::createDeprecated(error_message, ErrorCodes::SYNTAX_ERROR);
@@ -133,9 +149,10 @@ ASTPtr DatabaseDictionary::getCreateDatabaseQuery() const
         if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
             buffer << " COMMENT " << backQuote(comment_value);
     }
-    auto settings = getContext()->getSettingsRef();
+    const auto & settings = getContext()->getSettingsRef();
     ParserCreateQuery parser;
-    return parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth, settings.max_parser_backtracks);
+    return parseQuery(
+        parser, query.data(), query.data() + query.size(), "", 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 }
 
 void DatabaseDictionary::shutdown()

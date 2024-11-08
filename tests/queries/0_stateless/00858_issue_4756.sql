@@ -1,4 +1,4 @@
-set allow_experimental_analyzer = 1;
+set enable_analyzer = 1;
 set distributed_product_mode = 'local';
 
 drop table if exists shard1;

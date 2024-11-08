@@ -72,7 +72,7 @@ bool shardContains(
     if (sharding_value.isNull())
         return false;
 
-    UInt64 value = sharding_value.get<UInt64>();
+    UInt64 value = sharding_value.safeGet<UInt64>();
     const auto shard_num = data.slots[value % data.slots.size()] + 1;
     return data.shard_info.shard_num == shard_num;
 }
@@ -120,11 +120,20 @@ void OptimizeShardingKeyRewriteInMatcher::visit(ASTFunction & function, Data & d
     else if (auto * tuple_literal = right->as<ASTLiteral>();
         tuple_literal && tuple_literal->value.getType() == Field::Types::Tuple)
     {
-        auto & tuple = tuple_literal->value.get<Tuple &>();
-        std::erase_if(tuple, [&](auto & child)
+        auto & tuple = tuple_literal->value.safeGet<Tuple>();
+        if (tuple.size() > 1)
         {
-            return tuple.size() > 1 && !shardContains(child, name, data);
-        });
+            Tuple new_tuple;
+
+            for (auto & child : tuple)
+                if (shardContains(child, name, data))
+                    new_tuple.emplace_back(std::move(child));
+
+            if (new_tuple.empty())
+                new_tuple.emplace_back(std::move(tuple.back()));
+
+            tuple_literal->value = std::move(new_tuple);
+        }
     }
 }
 
@@ -159,7 +168,7 @@ public:
         {
             if (isTuple(constant->getResultType()))
             {
-                const auto & tuple = constant->getValue().get<Tuple &>();
+                const auto & tuple = constant->getValue().safeGet<Tuple &>();
                 Tuple new_tuple;
                 new_tuple.reserve(tuple.size());
 

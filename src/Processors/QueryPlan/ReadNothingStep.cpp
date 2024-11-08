@@ -5,14 +5,14 @@
 namespace DB
 {
 
-ReadNothingStep::ReadNothingStep(Block output_header)
-    : ISourceStep(DataStream{.header = std::move(output_header), .has_single_port = true})
+ReadNothingStep::ReadNothingStep(Block output_header_)
+    : ISourceStep(std::move(output_header_))
 {
 }
 
 void ReadNothingStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    pipeline.init(Pipe(std::make_shared<NullSource>(getOutputStream().header)));
+    pipeline.init(Pipe(std::make_shared<NullSource>(getOutputHeader())));
 }
 
 }

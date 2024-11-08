@@ -8,6 +8,7 @@
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
+#include <Common/Logger.h>
 #include <Common/MemorySanitizer.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/config_version.h>
@@ -100,7 +101,7 @@ Exception::Exception(const MessageMasked & msg_masked, int code, bool remote_)
 {
     if (terminate_on_any_exception)
         std::_Exit(terminate_status_code);
-    capture_thread_frame_pointers = thread_frame_pointers;
+    capture_thread_frame_pointers = getThreadFramePointers();
     handle_error_code(msg_masked.msg, code, remote, getStackFramePointers());
 }
 
@@ -110,7 +111,7 @@ Exception::Exception(MessageMasked && msg_masked, int code, bool remote_)
 {
     if (terminate_on_any_exception)
         std::_Exit(terminate_status_code);
-    capture_thread_frame_pointers = thread_frame_pointers;
+    capture_thread_frame_pointers = getThreadFramePointers();
     handle_error_code(message(), code, remote, getStackFramePointers());
 }
 
@@ -119,7 +120,7 @@ Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
 {
     if (terminate_on_any_exception)
         std::_Exit(terminate_status_code);
-    capture_thread_frame_pointers = thread_frame_pointers;
+    capture_thread_frame_pointers = getThreadFramePointers();
 #ifdef STD_EXCEPTION_HAS_STACK_TRACE
     auto * stack_trace_frames = exc.get_stack_trace_frames();
     auto stack_trace_size = exc.get_stack_trace_size();
@@ -133,7 +134,7 @@ Exception::Exception(CreateFromSTDTag, const std::exception & exc)
 {
     if (terminate_on_any_exception)
         std::_Exit(terminate_status_code);
-    capture_thread_frame_pointers = thread_frame_pointers;
+    capture_thread_frame_pointers = getThreadFramePointers();
 #ifdef STD_EXCEPTION_HAS_STACK_TRACE
     auto * stack_trace_frames = exc.get_stack_trace_frames();
     auto stack_trace_size = exc.get_stack_trace_size();
@@ -223,25 +224,67 @@ Exception::FramePointers Exception::getStackFramePointers() const
 }
 
 thread_local bool Exception::enable_job_stack_trace = false;
-thread_local std::vector<StackTrace::FramePointers> Exception::thread_frame_pointers = {};
+thread_local bool Exception::can_use_thread_frame_pointers = false;
+thread_local Exception::ThreadFramePointers Exception::thread_frame_pointers;
 
-static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string & start_of_message)
+Exception::ThreadFramePointers::ThreadFramePointers()
 {
+    can_use_thread_frame_pointers = true;
+}
+
+Exception::ThreadFramePointers::~ThreadFramePointers()
+{
+    can_use_thread_frame_pointers = false;
+}
+
+Exception::ThreadFramePointersBase Exception::getThreadFramePointers()
+{
+    if (can_use_thread_frame_pointers)
+        return thread_frame_pointers.frame_pointers;
+
+    return {};
+}
+
+void Exception::setThreadFramePointers(ThreadFramePointersBase frame_pointers)
+{
+    if (can_use_thread_frame_pointers)
+        thread_frame_pointers.frame_pointers = std::move(frame_pointers);
+}
+
+static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string & start_of_message, LogsLevel level)
+{
+    if (!isLoggingEnabled())
+        return;
+
     try
     {
         PreformattedMessage message = getCurrentExceptionMessageAndPattern(true);
         if (!start_of_message.empty())
             message.text = fmt::format("{}: {}", start_of_message, message.text);
 
-        LOG_ERROR(logger, message);
+        switch (level)
+        {
+            case LogsLevel::none: break;
+            case LogsLevel::test: LOG_TEST(logger, message); break;
+            case LogsLevel::trace: LOG_TRACE(logger, message); break;
+            case LogsLevel::debug: LOG_DEBUG(logger, message); break;
+            case LogsLevel::information: LOG_INFO(logger, message); break;
+            case LogsLevel::warning: LOG_WARNING(logger, message); break;
+            case LogsLevel::error: LOG_ERROR(logger, message); break;
+            case LogsLevel::fatal: LOG_FATAL(logger, message); break;
+        }
+
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 }
 
-void tryLogCurrentException(const char * log_name, const std::string & start_of_message)
+void tryLogCurrentException(const char * log_name, const std::string & start_of_message, LogsLevel level)
 {
+    if (!isLoggingEnabled())
+        return;
+
     /// Under high memory pressure, new allocations throw a
     /// MEMORY_LIMIT_EXCEEDED exception.
     ///
@@ -251,10 +294,10 @@ void tryLogCurrentException(const char * log_name, const std::string & start_of_
 
     /// getLogger can allocate memory too
     auto logger = getLogger(log_name);
-    tryLogCurrentExceptionImpl(logger.get(), start_of_message);
+    tryLogCurrentExceptionImpl(logger.get(), start_of_message, level);
 }
 
-void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message)
+void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message, LogsLevel level)
 {
     /// Under high memory pressure, new allocations throw a
     /// MEMORY_LIMIT_EXCEEDED exception.
@@ -263,17 +306,17 @@ void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_
     /// MemoryTracker until the exception will be logged.
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
-    tryLogCurrentExceptionImpl(logger, start_of_message);
+    tryLogCurrentExceptionImpl(logger, start_of_message, level);
 }
 
-void tryLogCurrentException(LoggerPtr logger, const std::string & start_of_message)
+void tryLogCurrentException(LoggerPtr logger, const std::string & start_of_message, LogsLevel level)
 {
-    tryLogCurrentException(logger.get(), start_of_message);
+    tryLogCurrentException(logger.get(), start_of_message, level);
 }
 
-void tryLogCurrentException(const AtomicLogger & logger, const std::string & start_of_message)
+void tryLogCurrentException(const AtomicLogger & logger, const std::string & start_of_message, LogsLevel level)
 {
-    tryLogCurrentException(logger.load(), start_of_message);
+    tryLogCurrentException(logger.load(), start_of_message, level);
 }
 
 static void getNoSpaceLeftInfoMessage(std::filesystem::path path, String & msg)
@@ -595,7 +638,7 @@ PreformattedMessage getExceptionMessageAndPattern(const Exception & e, bool with
     return PreformattedMessage{stream.str(), e.tryGetMessageFormatString(), e.getMessageFormatStringArgs()};
 }
 
-std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace)
+std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace, bool check_embedded_stacktrace)
 {
     try
     {
@@ -603,7 +646,7 @@ std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace)
     }
     catch (...)
     {
-        return getCurrentExceptionMessage(with_stacktrace);
+        return getCurrentExceptionMessage(with_stacktrace, check_embedded_stacktrace);
     }
 }
 

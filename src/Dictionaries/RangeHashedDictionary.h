@@ -541,6 +541,7 @@ void RangeHashedDictionary<dictionary_key_type>::loadData()
     {
         QueryPipeline pipeline(source_ptr->loadAll());
         DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+        pipeline.setConcurrencyControl(false);
         Block block;
 
         while (executor.pull(block))
@@ -692,6 +693,7 @@ void RangeHashedDictionary<dictionary_key_type>::updateData()
     {
         QueryPipeline pipeline(source_ptr->loadUpdatedAll());
         DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+        pipeline.setConcurrencyControl(false);
         update_field_loaded_block.reset();
         Block block;
 
@@ -906,13 +908,13 @@ void RangeHashedDictionary<dictionary_key_type>::setAttributeValue(Attribute & a
 
         if constexpr (std::is_same_v<AttributeType, String>)
         {
-            const auto & string = value.get<String>();
+            const auto & string = value.safeGet<String>();
             StringRef string_ref = copyStringInArena(string_arena, string);
             value_to_insert = string_ref;
         }
         else
         {
-            value_to_insert = static_cast<ValueType>(value.get<ValueType>());
+            value_to_insert = static_cast<ValueType>(value.safeGet<ValueType>());
         }
 
         container.back() = value_to_insert;

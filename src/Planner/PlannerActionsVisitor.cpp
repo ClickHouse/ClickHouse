@@ -1,5 +1,6 @@
 #include <Planner/PlannerActionsVisitor.h>
 
+#include <AggregateFunctions/WindowFunction.h>
 #include <Analyzer/Utils.h>
 #include <Analyzer/SetUtils.h>
 #include <Analyzer/ConstantNode.h>
@@ -35,6 +36,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool enable_named_columns_in_function_tuple;
+    extern const SettingsBool transform_null_in;
+}
 
 namespace ErrorCodes
 {
@@ -177,6 +183,33 @@ public:
                     break;
                 }
 
+                if (planner_context.getQueryContext()->getSettingsRef()[Setting::enable_named_columns_in_function_tuple])
+                {
+                    /// Function "tuple" which generates named tuple should use argument aliases to construct its name.
+                    if (function_node.getFunctionName() == "tuple")
+                    {
+                        if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(function_node.getResultType().get()))
+                        {
+                            if (type_tuple->haveExplicitNames())
+                            {
+                                const auto & names = type_tuple->getElementNames();
+                                size_t size = names.size();
+                                WriteBufferFromOwnString s;
+                                s << "tuple(";
+                                for (size_t i = 0; i < size; ++i)
+                                {
+                                    if (i != 0)
+                                        s << ", ";
+                                    s << backQuoteIfNeed(names[i]);
+                                }
+                                s << ")";
+                                result = s.str();
+                                break;
+                            }
+                        }
+                    }
+                }
+
                 String in_function_second_argument_node_name;
 
                 if (isNameOfInFunction(function_node.getFunctionName()))
@@ -237,7 +270,7 @@ public:
                 if (function_node.isWindowFunction())
                 {
                     buffer << " OVER (";
-                    buffer << calculateWindowNodeActionName(function_node.getWindowNode());
+                    buffer << calculateWindowNodeActionName(node, function_node.getWindowNode());
                     buffer << ')';
                 }
 
@@ -298,21 +331,22 @@ public:
         return calculateConstantActionNodeName(constant_literal, applyVisitor(FieldToDataType(), constant_literal));
     }
 
-    String calculateWindowNodeActionName(const QueryTreeNodePtr & node)
+    String calculateWindowNodeActionName(const QueryTreeNodePtr & function_nodew_node_, const QueryTreeNodePtr & window_node_)
     {
-        auto & window_node = node->as<WindowNode &>();
+        const auto & function_node = function_nodew_node_->as<const FunctionNode&>();
+        const auto & window_node = window_node_->as<const WindowNode &>();
         WriteBufferFromOwnString buffer;
 
         if (window_node.hasPartitionBy())
         {
             buffer << "PARTITION BY ";
 
-            auto & partition_by_nodes = window_node.getPartitionBy().getNodes();
+            const auto & partition_by_nodes = window_node.getPartitionBy().getNodes();
             size_t partition_by_nodes_size = partition_by_nodes.size();
 
             for (size_t i = 0; i < partition_by_nodes_size; ++i)
             {
-                auto & partition_by_node = partition_by_nodes[i];
+                const auto & partition_by_node = partition_by_nodes[i];
                 buffer << calculateActionNodeName(partition_by_node);
                 if (i + 1 != partition_by_nodes_size)
                     buffer << ", ";
@@ -326,7 +360,7 @@ public:
 
             buffer << "ORDER BY ";
 
-            auto & order_by_nodes = window_node.getOrderBy().getNodes();
+            const auto & order_by_nodes = window_node.getOrderBy().getNodes();
             size_t order_by_nodes_size = order_by_nodes.size();
 
             for (size_t i = 0; i < order_by_nodes_size; ++i)
@@ -357,6 +391,9 @@ public:
 
                     if (sort_node.hasFillStep())
                         buffer << " STEP " << calculateActionNodeName(sort_node.getFillStep());
+
+                    if (sort_node.hasFillStaleness())
+                        buffer << " STALENESS " << calculateActionNodeName(sort_node.getFillStaleness());
                 }
 
                 if (i + 1 != order_by_nodes_size)
@@ -364,44 +401,14 @@ public:
             }
         }
 
-        auto & window_frame = window_node.getWindowFrame();
-        if (!window_frame.is_default)
+        auto window_frame_opt = extractWindowFrame(function_node);
+        if (window_frame_opt)
         {
+            auto & window_frame = *window_frame_opt;
             if (window_node.hasPartitionBy() || window_node.hasOrderBy())
                 buffer << ' ';
 
-            buffer << window_frame.type << " BETWEEN ";
-            if (window_frame.begin_type == WindowFrame::BoundaryType::Current)
-            {
-                buffer << "CURRENT ROW";
-            }
-            else if (window_frame.begin_type == WindowFrame::BoundaryType::Unbounded)
-            {
-                buffer << "UNBOUNDED";
-                buffer << " " << (window_frame.begin_preceding ? "PRECEDING" : "FOLLOWING");
-            }
-            else
-            {
-                buffer << calculateActionNodeName(window_node.getFrameBeginOffsetNode());
-                buffer << " " << (window_frame.begin_preceding ? "PRECEDING" : "FOLLOWING");
-            }
-
-            buffer << " AND ";
-
-            if (window_frame.end_type == WindowFrame::BoundaryType::Current)
-            {
-                buffer << "CURRENT ROW";
-            }
-            else if (window_frame.end_type == WindowFrame::BoundaryType::Unbounded)
-            {
-                buffer << "UNBOUNDED";
-                buffer << " " << (window_frame.end_preceding ? "PRECEDING" : "FOLLOWING");
-            }
-            else
-            {
-                buffer << calculateActionNodeName(window_node.getFrameEndOffsetNode());
-                buffer << " " << (window_frame.end_preceding ? "PRECEDING" : "FOLLOWING");
-            }
+            window_frame.toString(buffer);
         }
 
         return buffer.str();
@@ -487,33 +494,25 @@ public:
         return node;
     }
 
-    [[nodiscard]] String addConstantIfNecessary(
-        const std::string & node_name, const ColumnWithTypeAndName & column, bool always_use_const_column_for_constant_nodes)
+    const ActionsDAG::Node * addConstantIfNecessary(const std::string & node_name, const ColumnWithTypeAndName & column)
     {
-        chassert(column.column != nullptr);
         auto it = node_name_to_node.find(node_name);
-        if (it != node_name_to_node.end() && (!always_use_const_column_for_constant_nodes || it->second->column))
-            return {node_name};
-
         if (it != node_name_to_node.end())
         {
-            /// There is a node with this name, but it doesn't have a column
-            /// This likely happens because we executed the query until WithMergeableState with a const node in the
-            /// WHERE clause and, as the results of headers are materialized, the column was removed
-            /// Let's add a new column and keep this
-            String dupped_name{node_name + "_dupped"};
-            if (node_name_to_node.find(dupped_name) != node_name_to_node.end())
-                return dupped_name;
-
-            const auto * node = &actions_dag.addColumn(column);
-            node_name_to_node[dupped_name] = node;
-            return dupped_name;
+            /// It is possible that ActionsDAG already has an input with the same name as constant.
+            /// In this case, prefer constant to input.
+            /// Constatns affect function return type, which should be consistent with QueryTree.
+            /// Query example:
+            /// SELECT materialize(toLowCardinality('b')) || 'a' FROM remote('127.0.0.{1,2}', system, one) GROUP BY 'a'
+            bool materialized_input = it->second->type == ActionsDAG::ActionType::INPUT && !it->second->column;
+            if (!materialized_input)
+                return it->second;
         }
 
         const auto * node = &actions_dag.addColumn(column);
         node_name_to_node[node->result_name] = node;
 
-        return {node_name};
+        return node;
     }
 
     template <typename FunctionOrOverloadResolver>
@@ -542,7 +541,7 @@ public:
     }
 
 private:
-    std::unordered_map<String, const ActionsDAG::Node *> node_name_to_node;
+    std::unordered_map<std::string_view, const ActionsDAG::Node *> node_name_to_node;
     ActionsDAG & actions_dag;
     QueryTreeNodePtr scope_node;
 };
@@ -550,11 +549,9 @@ private:
 class PlannerActionsVisitorImpl
 {
 public:
-    PlannerActionsVisitorImpl(
-        ActionsDAG & actions_dag,
+    PlannerActionsVisitorImpl(ActionsDAG & actions_dag,
         const PlannerContextPtr & planner_context_,
-        bool use_column_identifier_as_action_node_name_,
-        bool always_use_const_column_for_constant_nodes_);
+        bool use_column_identifier_as_action_node_name_);
 
     ActionsDAG::NodeRawConstPtrs visit(QueryTreeNodePtr expression_node);
 
@@ -614,18 +611,14 @@ private:
     const PlannerContextPtr planner_context;
     ActionNodeNameHelper action_node_name_helper;
     bool use_column_identifier_as_action_node_name;
-    bool always_use_const_column_for_constant_nodes;
 };
 
-PlannerActionsVisitorImpl::PlannerActionsVisitorImpl(
-    ActionsDAG & actions_dag,
+PlannerActionsVisitorImpl::PlannerActionsVisitorImpl(ActionsDAG & actions_dag,
     const PlannerContextPtr & planner_context_,
-    bool use_column_identifier_as_action_node_name_,
-    bool always_use_const_column_for_constant_nodes_)
+    bool use_column_identifier_as_action_node_name_)
     : planner_context(planner_context_)
     , action_node_name_helper(node_to_node_name, *planner_context, use_column_identifier_as_action_node_name_)
     , use_column_identifier_as_action_node_name(use_column_identifier_as_action_node_name_)
-    , always_use_const_column_for_constant_nodes(always_use_const_column_for_constant_nodes_)
 {
     actions_stack.emplace_back(actions_dag, nullptr);
 }
@@ -657,9 +650,9 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
     if (node_type == QueryTreeNodeType::COLUMN)
         return visitColumn(node);
-    else if (node_type == QueryTreeNodeType::CONSTANT)
+    if (node_type == QueryTreeNodeType::CONSTANT)
         return visitConstant(node);
-    else if (node_type == QueryTreeNodeType::FUNCTION)
+    if (node_type == QueryTreeNodeType::FUNCTION)
         return visitFunction(node);
 
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
@@ -728,19 +721,15 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         {
             return calculateActionNodeNameWithCastIfNeeded(constant_node);
         }
-        else
+
+        // Need to check if constant folded from QueryNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
+        if (constant_node.hasSourceExpression() && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY)
         {
-            // Need to check if constant folded from QueryNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
-            if (constant_node.hasSourceExpression() && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY)
-            {
-                if (constant_node.receivedFromInitiatorServer())
-                    return calculateActionNodeNameWithCastIfNeeded(constant_node);
-                else
-                    return action_node_name_helper.calculateActionNodeName(constant_node.getSourceExpression());
-            }
-            else
-                return calculateConstantActionNodeName(constant_literal, constant_type);
+            if (constant_node.receivedFromInitiatorServer())
+                return calculateActionNodeNameWithCastIfNeeded(constant_node);
+            return action_node_name_helper.calculateActionNodeName(constant_node.getSourceExpression());
         }
+        return calculateConstantActionNodeName(constant_literal, constant_type);
     }();
 
     ColumnWithTypeAndName column;
@@ -748,16 +737,17 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     column.type = constant_type;
     column.column = column.type->createColumnConst(1, constant_literal);
 
-    String final_name = actions_stack[0].addConstantIfNecessary(constant_node_name, column, always_use_const_column_for_constant_nodes);
+    actions_stack[0].addConstantIfNecessary(constant_node_name, column);
 
     size_t actions_stack_size = actions_stack.size();
     for (size_t i = 1; i < actions_stack_size; ++i)
     {
         auto & actions_stack_node = actions_stack[i];
-        actions_stack_node.addInputConstantColumnIfNecessary(final_name, column);
+        actions_stack_node.addInputConstantColumnIfNecessary(constant_node_name, column);
     }
 
-    return {final_name, Levels(0)};
+    return {constant_node_name, Levels(0)};
+
 }
 
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitLambda(const QueryTreeNodePtr & node)
@@ -781,15 +771,15 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         lambda_arguments_names_and_types.emplace_back(lambda_argument_name, std::move(lambda_argument_type));
     }
 
-    auto lambda_actions_dag = std::make_shared<ActionsDAG>();
-    actions_stack.emplace_back(*lambda_actions_dag, node);
+    ActionsDAG lambda_actions_dag;
+    actions_stack.emplace_back(lambda_actions_dag, node);
 
     auto [lambda_expression_node_name, levels] = visitImpl(lambda_node.getExpression());
-    lambda_actions_dag->getOutputs().push_back(actions_stack.back().getNodeOrThrow(lambda_expression_node_name));
-    lambda_actions_dag->removeUnusedActions(Names(1, lambda_expression_node_name));
+    lambda_actions_dag.getOutputs().push_back(actions_stack.back().getNodeOrThrow(lambda_expression_node_name));
+    lambda_actions_dag.removeUnusedActions(Names(1, lambda_expression_node_name));
 
     auto expression_actions_settings = ExpressionActionsSettings::fromContext(planner_context->getQueryContext(), CompileExpressions::yes);
-    auto lambda_actions = std::make_shared<ExpressionActions>(lambda_actions_dag, expression_actions_settings);
+    auto lambda_actions = std::make_shared<ExpressionActions>(std::move(lambda_actions_dag), expression_actions_settings);
 
     Names captured_column_names;
     ActionsDAG::NodeRawConstPtrs lambda_children;
@@ -859,7 +849,8 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
         if (left_tuple_type && left_tuple_type->getElements().size() != 1)
             set_element_types = left_tuple_type->getElements();
 
-        set_element_types = Set::getElementTypes(std::move(set_element_types), planner_context->getQueryContext()->getSettingsRef().transform_null_in);
+        set_element_types
+            = Set::getElementTypes(std::move(set_element_types), planner_context->getQueryContext()->getSettingsRef()[Setting::transform_null_in]);
         set = planner_context->getPreparedSets().findTuple(set_key, set_element_types);
     }
     else
@@ -886,16 +877,16 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
     else
         column.column = std::move(column_set);
 
-    String final_name = actions_stack[0].addConstantIfNecessary(column.name, column, always_use_const_column_for_constant_nodes);
+    actions_stack[0].addConstantIfNecessary(column.name, column);
 
     size_t actions_stack_size = actions_stack.size();
     for (size_t i = 1; i < actions_stack_size; ++i)
     {
         auto & actions_stack_node = actions_stack[i];
-        actions_stack_node.addInputConstantColumnIfNecessary(final_name, column);
+        actions_stack_node.addInputConstantColumnIfNecessary(column.name, column);
     }
 
-    return {final_name, Levels(0)};
+    return {column.name, Levels(0)};
 }
 
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitIndexHintFunction(const QueryTreeNodePtr & node)
@@ -903,14 +894,14 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     const auto & function_node = node->as<FunctionNode &>();
     auto function_node_name = action_node_name_helper.calculateActionNodeName(node);
 
-    auto index_hint_actions_dag = std::make_shared<ActionsDAG>();
-    auto & index_hint_actions_dag_outputs = index_hint_actions_dag->getOutputs();
+    ActionsDAG index_hint_actions_dag;
+    auto & index_hint_actions_dag_outputs = index_hint_actions_dag.getOutputs();
     std::unordered_set<std::string_view> index_hint_actions_dag_output_node_names;
     PlannerActionsVisitor actions_visitor(planner_context);
 
     for (const auto & argument : function_node.getArguments())
     {
-        auto index_hint_argument_expression_dag_nodes = actions_visitor.visit(*index_hint_actions_dag, argument);
+        auto index_hint_argument_expression_dag_nodes = actions_visitor.visit(index_hint_actions_dag, argument);
 
         for (auto & expression_dag_node : index_hint_argument_expression_dag_nodes)
         {
@@ -1032,19 +1023,14 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
 }
 
-PlannerActionsVisitor::PlannerActionsVisitor(
-    const PlannerContextPtr & planner_context_,
-    bool use_column_identifier_as_action_node_name_,
-    bool always_use_const_column_for_constant_nodes_)
+PlannerActionsVisitor::PlannerActionsVisitor(const PlannerContextPtr & planner_context_, bool use_column_identifier_as_action_node_name_)
     : planner_context(planner_context_)
     , use_column_identifier_as_action_node_name(use_column_identifier_as_action_node_name_)
-    , always_use_const_column_for_constant_nodes(always_use_const_column_for_constant_nodes_)
 {}
 
 ActionsDAG::NodeRawConstPtrs PlannerActionsVisitor::visit(ActionsDAG & actions_dag, QueryTreeNodePtr expression_node)
 {
-    PlannerActionsVisitorImpl actions_visitor_impl(
-        actions_dag, planner_context, use_column_identifier_as_action_node_name, always_use_const_column_for_constant_nodes);
+    PlannerActionsVisitorImpl actions_visitor_impl(actions_dag, planner_context, use_column_identifier_as_action_node_name);
     return actions_visitor_impl.visit(expression_node);
 }
 
@@ -1074,20 +1060,11 @@ String calculateConstantActionNodeName(const Field & constant_literal)
     return ActionNodeNameHelper::calculateConstantActionNodeName(constant_literal);
 }
 
-String calculateWindowNodeActionName(const QueryTreeNodePtr & node,
-    const PlannerContext & planner_context,
-    QueryTreeNodeToName & node_to_name,
-    bool use_column_identifier_as_action_node_name)
-{
-    ActionNodeNameHelper helper(node_to_name, planner_context, use_column_identifier_as_action_node_name);
-    return helper.calculateWindowNodeActionName(node);
-}
-
-String calculateWindowNodeActionName(const QueryTreeNodePtr & node, const PlannerContext & planner_context, bool use_column_identifier_as_action_node_name)
+String calculateWindowNodeActionName(const QueryTreeNodePtr & function_node, const QueryTreeNodePtr & window_node, const PlannerContext & planner_context, bool use_column_identifier_as_action_node_name)
 {
     QueryTreeNodeToName empty_map;
     ActionNodeNameHelper helper(empty_map, planner_context, use_column_identifier_as_action_node_name);
-    return helper.calculateWindowNodeActionName(node);
+    return helper.calculateWindowNodeActionName(function_node, window_node);
 }
 
 }

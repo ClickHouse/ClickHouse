@@ -16,6 +16,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 optimize_min_equality_disjunction_chain_length;
+    extern const SettingsUInt64 optimize_min_inequality_conjunction_chain_length;
+}
 
 namespace ErrorCodes
 {
@@ -68,10 +73,13 @@ QueryTreeNodePtr findEqualsFunction(const QueryTreeNodes & nodes)
     return nullptr;
 }
 
-/// Checks if the node is combination of isNull and notEquals functions of two the same arguments
+/// Checks if the node is combination of isNull and notEquals functions of two the same arguments:
+/// [ (a <> b AND) ] (a IS NULL) AND (b IS NULL)
 bool matchIsNullOfTwoArgs(const QueryTreeNodes & nodes, QueryTreeNodePtr & lhs, QueryTreeNodePtr & rhs)
 {
     QueryTreeNodePtrWithHashSet all_arguments;
+    QueryTreeNodePtrWithHashSet is_null_arguments;
+
     for (const auto & node : nodes)
     {
         const auto * func_node = node->as<FunctionNode>();
@@ -80,7 +88,11 @@ bool matchIsNullOfTwoArgs(const QueryTreeNodes & nodes, QueryTreeNodePtr & lhs, 
 
         const auto & arguments = func_node->getArguments().getNodes();
         if (func_node->getFunctionName() == "isNull" && arguments.size() == 1)
+        {
             all_arguments.insert(QueryTreeNodePtrWithHash(arguments[0]));
+            is_null_arguments.insert(QueryTreeNodePtrWithHash(arguments[0]));
+        }
+
         else if (func_node->getFunctionName() == "notEquals" && arguments.size() == 2)
         {
             if (arguments[0]->isEqual(*arguments[1]))
@@ -95,7 +107,7 @@ bool matchIsNullOfTwoArgs(const QueryTreeNodes & nodes, QueryTreeNodePtr & lhs, 
             return false;
     }
 
-    if (all_arguments.size() != 2)
+    if (all_arguments.size() != 2 || is_null_arguments.size() != 2)
         return false;
 
     lhs = all_arguments.begin()->node;
@@ -171,6 +183,26 @@ public:
         : Base(std::move(context))
         , join_node(join_node_)
     {}
+
+    bool needChildVisit(const QueryTreeNodePtr & parent, const QueryTreeNodePtr &)
+    {
+        /** Optimization can change the value of some expression from NULL to FALSE.
+          * For example:
+          * when `a` is `NULL`, the expression `a = b AND a IS NOT NULL` returns `NULL`
+          * and it will be optimized to `a = b`, which returns `FALSE`.
+          * This is valid for JOIN ON condition and for the functions `AND`/`OR` inside it.
+          * (When we replace `AND`/`OR` operands from `NULL` to `FALSE`, the result value can also change only from `NULL` to `FALSE`)
+          * However, in the general case, the result can be wrong.
+          * For example, for NOT: `NOT NULL` is `NULL`, but `NOT FALSE` is `TRUE`.
+          * Therefore, optimize only top-level expression or expressions inside `AND`/`OR`.
+          */
+        if (const auto * function_node = parent->as<FunctionNode>())
+        {
+            const auto & func_name = function_node->getFunctionName();
+            return func_name == "or" || func_name == "and";
+        }
+        return parent->getNodeType() == QueryTreeNodeType::LIST;
+    }
 
     void enterImpl(QueryTreeNodePtr & node)
     {
@@ -524,7 +556,8 @@ private:
         for (auto & [expression, not_equals_functions] : node_to_not_equals_functions)
         {
             const auto & settings = getSettings();
-            if (not_equals_functions.size() < settings.optimize_min_inequality_conjunction_chain_length && !expression.node->getResultType()->lowCardinality())
+            if (not_equals_functions.size() < settings[Setting::optimize_min_inequality_conjunction_chain_length]
+                && !expression.node->getResultType()->lowCardinality())
             {
                 std::move(not_equals_functions.begin(), not_equals_functions.end(), std::back_inserter(and_operands));
                 continue;
@@ -646,7 +679,8 @@ private:
         for (auto & [expression, equals_functions] : node_to_equals_functions)
         {
             const auto & settings = getSettings();
-            if (equals_functions.size() < settings.optimize_min_equality_disjunction_chain_length && !expression.node->getResultType()->lowCardinality())
+            if (equals_functions.size() < settings[Setting::optimize_min_equality_disjunction_chain_length]
+                && !expression.node->getResultType()->lowCardinality())
             {
                 std::move(equals_functions.begin(), equals_functions.end(), std::back_inserter(or_operands));
                 continue;

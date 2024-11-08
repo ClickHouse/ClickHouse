@@ -65,7 +65,7 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             {
                 if (literal_ast->value.getType() == Field::Types::Tuple)
                 {
-                    fields_count = literal_ast->value.get<const Tuple &>().size();
+                    fields_count = literal_ast->value.safeGet<const Tuple &>().size();
                 }
                 else
                 {

@@ -8,6 +8,7 @@
 #include <Common/UTF8Helpers.h>
 #include <Common/iota.h>
 
+#include <algorithm>
 #include <numeric>
 
 #ifdef __SSE4_2__
@@ -37,12 +38,12 @@ struct FunctionStringDistanceImpl
         const ColumnString::Offsets & haystack_offsets,
         const ColumnString::Chars & needle_data,
         const ColumnString::Offsets & needle_offsets,
-        PaddedPODArray<ResultType> & res)
+        PaddedPODArray<ResultType> & res,
+        size_t input_rows_count)
     {
-        size_t size = res.size();
         const char * haystack = reinterpret_cast<const char *>(haystack_data.data());
         const char * needle = reinterpret_cast<const char *>(needle_data.data());
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             res[i] = Op::process(
                 haystack + haystack_offsets[i - 1],
@@ -56,13 +57,13 @@ struct FunctionStringDistanceImpl
         const String & haystack,
         const ColumnString::Chars & needle_data,
         const ColumnString::Offsets & needle_offsets,
-        PaddedPODArray<ResultType> & res)
+        PaddedPODArray<ResultType> & res,
+        size_t input_rows_count)
     {
         const char * haystack_data = haystack.data();
         size_t haystack_size = haystack.size();
         const char * needle = reinterpret_cast<const char *>(needle_data.data());
-        size_t size = res.size();
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             res[i] = Op::process(haystack_data, haystack_size,
                 needle + needle_offsets[i - 1], needle_offsets[i] - needle_offsets[i - 1] - 1);
@@ -73,9 +74,10 @@ struct FunctionStringDistanceImpl
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         const String & needle,
-        PaddedPODArray<ResultType> & res)
+        PaddedPODArray<ResultType> & res,
+        size_t input_rows_count)
     {
-        constantVector(needle, data, offsets, res);
+        constantVector(needle, data, offsets, res, input_rows_count);
     }
 
 };
@@ -283,7 +285,7 @@ struct ByteEditDistanceImpl
                     if (*(needle + pos_needle) != *(haystack + pos_haystack))
                         substitution += 1;
                 }
-                distances1[pos_haystack + 1] = std::min(deletion, std::min(substitution, insertion));
+                distances1[pos_haystack + 1] = std::min({deletion, substitution, insertion});
             }
             distances0.swap(distances1);
         }
@@ -342,10 +344,11 @@ struct ByteDamerauLevenshteinDistanceImpl
             for (size_t j = 1; j <= needle_size; ++j)
             {
                 int cost = (haystack[i - 1] == needle[j - 1]) ? 0 : 1;
-                starts[i][j] = std::min(starts[i - 1][j] + 1,                  /// deletion
-                                        std::min(starts[i][j - 1] + 1,         /// insertion
-                                                 starts[i - 1][j - 1] + cost)  /// substitution
-                               );
+                starts[i][j] = std::min(
+                    {starts[i - 1][j] + 1, /// deletion
+                     starts[i][j - 1] + 1, /// insertion
+                     starts[i - 1][j - 1] + cost} /// substitution
+                );
                 if (i > 1 && j > 1 && haystack[i - 1] == needle[j - 2] && haystack[i - 2] == needle[j - 1])
                     starts[i][j] = std::min(starts[i][j], starts[i - 2][j - 2] + 1); /// transposition
             }
@@ -455,7 +458,7 @@ struct ByteJaroWinklerSimilarityImpl
 
         if (jaro_winkler_similarity > boost_threshold)
         {
-            const int common_length = std::min(max_prefix_length, std::min(s1len, s2len));
+            const int common_length = std::min({max_prefix_length, s1len, s2len});
             int common_prefix = 0;
             while (common_prefix < common_length && haystack[common_prefix] == needle[common_prefix])
                 common_prefix++;

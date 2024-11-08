@@ -10,7 +10,6 @@
 #include <Core/CompareHelper.h>
 #include <Core/Defines.h>
 #include <Core/Types.h>
-#include <Core/UUID.h>
 #include <base/DayNum.h>
 #include <base/IPv4andIPv6.h>
 #include <Common/AllocatorWithMemoryTracking.h>
@@ -457,15 +456,6 @@ public:
     std::string_view getTypeName() const;
 
     bool isNull() const { return which == Types::Null; }
-    template <typename T>
-    NearestFieldType<std::decay_t<T>> & get();
-
-    template <typename T>
-    const auto & get() const
-    {
-        auto * mutable_this = const_cast<std::decay_t<decltype(*this)> *>(this);
-        return mutable_this->get<T>();
-    }
 
     bool isNegativeInfinity() const { return which == Types::Null && get<Null>().isNegativeInfinity(); }
     bool isPositiveInfinity() const { return which == Types::Null && get<Null>().isPositiveInfinity(); }
@@ -681,6 +671,25 @@ private:
 
     Types::Which which;
 
+    /// This function is prone to type punning and should never be used outside of Field class,
+    /// whenever it is used within this class the stored type should be checked in advance.
+    template <typename T>
+    NearestFieldType<std::decay_t<T>> & get()
+    {
+        // Before storing the value in the Field, we static_cast it to the field
+        // storage type, so here we return the value of storage type as well.
+        // Otherwise, it is easy to make a mistake of reinterpret_casting the stored
+        // value to a different and incompatible type.
+        // For example, a Float32 value is stored as Float64, and it is incorrect to
+        // return a reference to this value as Float32.
+        return *reinterpret_cast<NearestFieldType<std::decay_t<T>>*>(&storage);
+    }
+
+    template <typename T>
+    NearestFieldType<std::decay_t<T>> & get() const
+    {
+        return const_cast<Field *>(this)->get<T>();
+    }
 
     /// Assuming there was no allocated state or it was deallocated (see destroy).
     template <typename T>
@@ -866,47 +875,20 @@ constexpr bool isInt64OrUInt64orBoolFieldType(Field::Types::Which t)
         || t == Field::Types::Bool;
 }
 
-// Field value getter with type checking in debug builds.
-template <typename T>
-NearestFieldType<std::decay_t<T>> & Field::get()
-{
-    // Before storing the value in the Field, we static_cast it to the field
-    // storage type, so here we return the value of storage type as well.
-    // Otherwise, it is easy to make a mistake of reinterpret_casting the stored
-    // value to a different and incompatible type.
-    // For example, a Float32 value is stored as Float64, and it is incorrect to
-    // return a reference to this value as Float32.
-    using StoredType = NearestFieldType<std::decay_t<T>>;
-
-#ifndef NDEBUG
-    // Disregard signedness when converting between int64 types.
-    constexpr Field::Types::Which target = TypeToEnum<StoredType>::value;
-    if (target != which
-           && (!isInt64OrUInt64orBoolFieldType(target) || !isInt64OrUInt64orBoolFieldType(which)) && target != Field::Types::IPv4)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Invalid Field get from type {} to type {}", which, target);
-#endif
-
-    StoredType * MAY_ALIAS ptr = reinterpret_cast<StoredType *>(&storage);
-
-    return *ptr;
-}
-
-
 template <typename T>
 auto & Field::safeGet()
 {
     const Types::Which target = TypeToEnum<NearestFieldType<std::decay_t<T>>>::value;
 
-    /// We allow converting int64 <-> uint64, int64 <-> bool, uint64 <-> bool in safeGet().
-    if (target != which
-           && (!isInt64OrUInt64orBoolFieldType(target) || !isInt64OrUInt64orBoolFieldType(which)))
-        throw Exception(ErrorCodes::BAD_GET,
-            "Bad get: has {}, requested {}", getTypeName(), target);
+    /// bool is stored as uint64, will be returned as UInt64 when requested as bool or UInt64, as Int64 when requested as Int64
+    /// also allow UInt64 <-> Int64 conversion
+    if (target != which &&
+        !(which == Field::Types::Bool && (target == Field::Types::UInt64 || target == Field::Types::Int64)) &&
+        !(isInt64OrUInt64FieldType(which) && isInt64OrUInt64FieldType(target)))
+            throw Exception(ErrorCodes::BAD_GET, "Bad get: has {}, requested {}", getTypeName(), target);
 
     return get<T>();
 }
-
 
 template <typename T>
 requires not_field_or_bool_or_stringlike<T>
@@ -960,14 +942,15 @@ inline Field & Field::operator=(String && str)
 class ReadBuffer;
 class WriteBuffer;
 
-/// It is assumed that all elements of the array have the same type.
-void readBinary(Array & x, ReadBuffer & buf);
+/// Binary serialization of generic field.
+void writeFieldBinary(const Field & x, WriteBuffer & buf);
+Field readFieldBinary(ReadBuffer & buf);
+
+void readBinaryArray(Array & x, ReadBuffer & buf);
 [[noreturn]] inline void readText(Array &, ReadBuffer &) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot read Array."); }
 [[noreturn]] inline void readQuoted(Array &, ReadBuffer &) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot read Array."); }
 
-/// It is assumed that all elements of the array have the same type.
-/// Also write size and type into buf. UInt64 and Int64 is written in variadic size form
-void writeBinary(const Array & x, WriteBuffer & buf);
+void writeBinaryArray(const Array & x, WriteBuffer & buf);
 void writeText(const Array & x, WriteBuffer & buf);
 [[noreturn]] inline void writeQuoted(const Array &, WriteBuffer &) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot write Array quoted."); }
 

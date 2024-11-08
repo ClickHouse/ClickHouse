@@ -8,7 +8,7 @@ username="user_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 dictname="dict_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 dicttablename="dict_table_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
-${CLICKHOUSE_CLIENT} -nm --query "
+${CLICKHOUSE_CLIENT} -m --query "
     CREATE DICTIONARY IF NOT EXISTS ${dictname}
     (
         id UInt64,
@@ -26,15 +26,15 @@ ${CLICKHOUSE_CLIENT} -nm --query "
     SELECT * FROM ${dicttablename};
 "
 
-$CLICKHOUSE_CLIENT -nm --user="${username}" --query "
+$CLICKHOUSE_CLIENT -m --user="${username}" --query "
     SELECT * FROM ${dictname};
 " 2>&1 | grep -o ACCESS_DENIED | uniq
 
-$CLICKHOUSE_CLIENT -nm --user="${username}" --query "
+$CLICKHOUSE_CLIENT -m --user="${username}" --query "
     SELECT * FROM ${dicttablename};
 " 2>&1 | grep -o ACCESS_DENIED | uniq
 
-${CLICKHOUSE_CLIENT} -nm --query "
+${CLICKHOUSE_CLIENT} -m --query "
     DROP TABLE IF EXISTS ${dicttablename} SYNC;
     DROP DICTIONARY IF EXISTS ${dictname};
     DROP USER IF EXISTS ${username};

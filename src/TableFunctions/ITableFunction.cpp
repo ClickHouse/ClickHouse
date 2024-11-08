@@ -1,5 +1,4 @@
 #include <TableFunctions/ITableFunction.h>
-#include <Interpreters/Context.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageTableFunction.h>
 #include <Access/Common/AccessFlags.h>

@@ -3,6 +3,7 @@
 # pylint: disable=line-too-long
 
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -55,7 +56,7 @@ def test_single_file(started_cluster, cluster):
     path = get_dist_path(cluster, "distr_1", 1)
     query = f"select * from file('{path}/1.bin', 'Distributed')"
     out = node.exec_in_container(
-        ["/usr/bin/clickhouse", "local", "--multiquery", "--stacktrace", "-q", query]
+        ["/usr/bin/clickhouse", "local", "--stacktrace", "-q", query]
     )
 
     assert out == "1\ta\n2\tbb\n3\tccc\n"
@@ -65,7 +66,7 @@ def test_single_file(started_cluster, cluster):
     select * from t;
     """
     out = node.exec_in_container(
-        ["/usr/bin/clickhouse", "local", "--multiquery", "--stacktrace", "-q", query]
+        ["/usr/bin/clickhouse", "local", "--stacktrace", "-q", query]
     )
 
     assert out == "1\ta\n2\tbb\n3\tccc\n"
@@ -106,7 +107,7 @@ def test_two_files(started_cluster, cluster):
     select * from t order by x;
     """
     out = node.exec_in_container(
-        ["/usr/bin/clickhouse", "local", "--multiquery", "--stacktrace", "-q", query]
+        ["/usr/bin/clickhouse", "local", "--stacktrace", "-q", query]
     )
 
     assert out == "0\t_\n1\ta\n2\tbb\n3\tccc\n"
@@ -141,7 +142,7 @@ def test_single_file_old(started_cluster, cluster):
     select * from t;
     """
     out = node.exec_in_container(
-        ["/usr/bin/clickhouse", "local", "--multiquery", "--stacktrace", "-q", query]
+        ["/usr/bin/clickhouse", "local", "--stacktrace", "-q", query]
     )
 
     assert out == "1\ta\n2\tbb\n3\tccc\n"

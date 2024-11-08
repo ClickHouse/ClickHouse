@@ -1,4 +1,8 @@
-t1	this is a temtorary table
+t1	this is a temporary table
 t2	this is a MergeTree table
 t3	this is a Log table
-CREATE TABLE default.t1\n(\n    `n` Int8\n)\nENGINE = Memory\nCOMMENT \'this is a temtorary table\'
+t4	this is a Kafka table
+t5	this is a EmbeddedRocksDB table
+t6	this is a Executable table
+t7	this is a WindowView table
+CREATE TABLE default.t1\n(\n    `n` Int8\n)\nENGINE = Memory\nCOMMENT \'this is a temporary table\'

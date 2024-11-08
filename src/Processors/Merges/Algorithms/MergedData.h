@@ -183,6 +183,8 @@ public:
     UInt64 totalAllocatedBytes() const { return total_allocated_bytes; }
     UInt64 maxBlockSize() const { return max_block_size; }
 
+    IMergingAlgorithm::MergedStats getMergedStats() const { return {.bytes = total_allocated_bytes, .rows = total_merged_rows, .blocks = total_chunks}; }
+
     virtual ~MergedData() = default;
 
 protected:

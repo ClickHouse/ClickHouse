@@ -1,7 +1,7 @@
 ---
 slug: /en/sql-reference/window-functions/lagInFrame
 sidebar_label: lagInFrame
-sidebar_position: 8
+sidebar_position: 9
 ---
 
 # lagInFrame
@@ -23,7 +23,7 @@ For more detail on window function syntax see: [Window Functions - Syntax](./ind
 **Parameters**
 - `x` — Column name. 
 - `offset` — Offset to apply. [(U)Int*](../data-types/int-uint.md). (Optional - `1` by default).
-- `default` — Value to return if calculated row exceeds the boundaries of the window frame. (Optional - `null` by default).
+- `default` — Value to return if calculated row exceeds the boundaries of the window frame. (Optional - default value of column type when omitted).
 
 **Returned value**
 
