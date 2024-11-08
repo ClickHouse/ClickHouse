@@ -1,3 +1,4 @@
+-- Tags: no-random-settings, no-random-merge-tree-settings
 DROP TABLE IF EXISTS t;
 
 CREATE TABLE t (
