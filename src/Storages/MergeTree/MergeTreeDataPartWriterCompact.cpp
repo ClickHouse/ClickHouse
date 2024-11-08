@@ -63,23 +63,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     for (const auto & column : columns_list)
     {
         auto compression = getCodecDescOrDefault(column.name, default_codec);
-        addStreams(column, nullptr, compression);
-    }
-}
-
-void MergeTreeDataPartWriterCompact::initDynamicStreamsIfNeeded(const Block & block)
-{
-    if (is_dynamic_streams_initialized)
-        return;
-
-    is_dynamic_streams_initialized = true;
-    for (const auto & column : columns_list)
-    {
-        if (column.type->hasDynamicSubcolumns())
-        {
-            auto compression = getCodecDescOrDefault(column.name, default_codec);
-            addStreams(column, block.getByName(column.name).column, compression);
-        }
+        MergeTreeDataPartWriterCompact::addStreams(column, nullptr, compression);
     }
 }
 
@@ -181,20 +165,25 @@ void writeColumnSingleGranule(
 
 void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumn::Permutation * permutation)
 {
-    /// On first block of data initialize streams for dynamic subcolumns.
-    initDynamicStreamsIfNeeded(block);
+    Block result_block = block;
+
+    /// During serialization columns with dynamic subcolumns (like JSON/Dynamic) must have the same dynamic structure.
+    /// But it may happen that they don't (for example during ALTER MODIFY COLUMN from some type to JSON/Dynamic).
+    /// In this case we use dynamic structure of the column from the first written block and adjust columns from
+    /// the next blocks so they match this dynamic structure.
+    initOrAdjustDynamicStructureIfNeeded(result_block);
 
     /// Fill index granularity for this block
     /// if it's unknown (in case of insert data or horizontal merge,
     /// but not in case of vertical merge)
     if (compute_granularity)
     {
-        size_t index_granularity_for_block = computeIndexGranularity(block);
+        size_t index_granularity_for_block = computeIndexGranularity(result_block);
         assert(index_granularity_for_block >= 1);
-        fillIndexGranularity(index_granularity_for_block, block.rows());
+        fillIndexGranularity(index_granularity_for_block, result_block.rows());
     }
 
-    Block result_block = permuteBlockIfNeeded(block, permutation);
+    result_block = permuteBlockIfNeeded(result_block, permutation);
 
     if (!header)
         header = result_block.cloneEmpty();
