@@ -90,7 +90,7 @@ namespace KafkaSetting
     extern const KafkaSettingsMilliseconds kafka_flush_interval_ms;
     extern const KafkaSettingsString kafka_format;
     extern const KafkaSettingsString kafka_group_name;
-    extern const KafkaSettingsStreamingHandleErrorMode kafka_handle_error_mode;
+    extern const KafkaSettingsExtStreamingHandleErrorMode kafka_handle_error_mode;
     extern const KafkaSettingsString kafka_keeper_path;
     extern const KafkaSettingsUInt64 kafka_max_block_size;
     extern const KafkaSettingsUInt64 kafka_max_rows_per_message;
@@ -367,7 +367,7 @@ Pipe StorageKafka2::read(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Direct read from the new Kafka storage is not implemented");
 }
 
-StreamingHandleErrorMode StorageKafka2::getHandleKafkaErrorMode() const
+ExtStreamingHandleErrorMode StorageKafka2::getHandleKafkaErrorMode() const
 {
     return (*kafka_settings)[KafkaSetting::kafka_handle_error_mode];
 }

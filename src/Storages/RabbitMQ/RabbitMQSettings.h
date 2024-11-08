@@ -32,7 +32,7 @@ struct RabbitMQSettingsImpl;
     M(CLASS_NAME, ParquetCompression) \
     M(CLASS_NAME, ParquetVersion) \
     M(CLASS_NAME, SchemaInferenceMode) \
-    M(CLASS_NAME, StreamingHandleErrorMode) \
+    M(CLASS_NAME, ExtStreamingHandleErrorMode) \
     M(CLASS_NAME, String) \
     M(CLASS_NAME, UInt64) \
     M(CLASS_NAME, UInt64Auto) \
