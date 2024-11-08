@@ -161,6 +161,8 @@ public:
 
     size_t getMaxFileSegmentSize() const { return max_file_segment_size; }
 
+    size_t getBackgroundDownloadMaxFileSegmentSize() const { return metadata.getBackgroundDownloadMaxFileSegmentSize(); }
+
     bool tryReserve(
         FileSegment & file_segment,
         size_t size,

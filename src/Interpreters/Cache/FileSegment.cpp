@@ -708,7 +708,10 @@ void FileSegment::complete(bool allow_background_download)
             if (is_last_holder)
             {
                 bool added_to_download_queue = false;
-                if (allow_background_download && background_download_enabled && remote_file_reader)
+                if (allow_background_download
+                    && background_download_enabled
+                    && remote_file_reader
+                    && downloaded_size < cache->getBackgroundDownloadMaxFileSegmentSize())
                 {
                     ProfileEvents::increment(ProfileEvents::FilesystemCacheBackgroundDownloadQueuePush);
                     added_to_download_queue = locked_key->addToDownloadQueue(offset(), segment_lock); /// Finish download in background.

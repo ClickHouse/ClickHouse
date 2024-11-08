@@ -168,6 +168,7 @@ CacheMetadata::CacheMetadata(
     const std::string & path_,
     size_t background_download_queue_size_limit_,
     size_t background_download_threads_,
+    size_t background_download_max_file_segment_size_,
     bool write_cache_per_user_directory_)
     : path(path_)
     , cleanup_queue(std::make_shared<CleanupQueue>())
@@ -175,6 +176,7 @@ CacheMetadata::CacheMetadata(
     , write_cache_per_user_directory(write_cache_per_user_directory_)
     , log(getLogger("CacheMetadata"))
     , download_threads_num(background_download_threads_)
+    , download_max_file_segment_size(background_download_max_file_segment_size_)
 {
 }
 
@@ -630,6 +632,9 @@ void CacheMetadata::downloadThreadFunc(const bool & stop_flag)
 
                 auto & file_segment = holder->front();
 
+                if (file_segment.getDownloadedSize() >= download_max_file_segment_size)
+                    continue;
+
                 if (file_segment.getOrSetDownloader() != FileSegment::getCallerId())
                     continue;
 
@@ -701,9 +706,24 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
     if (offset != static_cast<size_t>(reader->getPosition()))
         reader->seek(offset, SEEK_SET);
 
-    while (!reader->eof())
+    bool stop = false;
+    const size_t max_file_segment_size = download_max_file_segment_size.load();
+
+    while (!stop && !reader->eof())
     {
         auto size = reader->available();
+
+        const size_t downloaded_size = file_segment.getDownloadedSize();
+        if (downloaded_size >= max_file_segment_size)
+            break;
+
+        if (download_max_file_segment_size + size > max_file_segment_size)
+        {
+            /// Do not download more than download_max_file_segment_size
+            /// because we want to leave right boundary of file segment aligned.
+            size = max_file_segment_size - downloaded_size;
+            stop = true;
+        }
 
         std::string failure_reason;
         if (!file_segment.reserve(size, reserve_space_lock_wait_timeout_milliseconds, failure_reason))

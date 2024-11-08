@@ -103,7 +103,11 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , keep_current_elements_to_max_ratio(1 - settings.keep_free_space_elements_ratio)
     , keep_up_free_space_remove_batch(settings.keep_free_space_remove_batch)
     , log(getLogger("FileCache(" + cache_name + ")"))
-    , metadata(settings.base_path, settings.background_download_queue_size_limit, settings.background_download_threads, write_cache_per_user_directory)
+    , metadata(settings.base_path,
+               settings.background_download_queue_size_limit,
+               settings.background_download_threads,
+               settings.background_download_max_file_segment_size,
+               write_cache_per_user_directory)
 {
     if (settings.cache_policy == "LRU")
     {
@@ -1598,6 +1602,17 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
 
             actual_settings.background_download_threads = new_settings.background_download_threads;
         }
+    }
+
+    if (new_settings.background_download_max_file_segment_size != actual_settings.background_download_max_file_segment_size)
+    {
+        metadata.setBackgroundDownloadMaxFileSegmentSize(new_settings.background_download_max_file_segment_size);
+
+        LOG_INFO(log, "Changed background_download_max_file_segment_size from {} to {}",
+                actual_settings.background_download_max_file_segment_size,
+                new_settings.background_download_max_file_segment_size);
+
+        actual_settings.background_download_max_file_segment_size = new_settings.background_download_max_file_segment_size;
     }
 
     if (new_settings.max_size != actual_settings.max_size
