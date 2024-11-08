@@ -83,6 +83,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool merge_selector_enable_heuristic_to_remove_small_parts_at_right;
     extern const MergeTreeSettingsFloat merge_selector_base;
     extern const MergeTreeSettingsUInt64 merge_selector_max_ranges_to_select_at_once;
+    extern const MergeTreeSettingsUInt64 min_parts_to_merge_at_once;
 }
 
 namespace ErrorCodes
@@ -597,6 +598,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
             simple_merge_settings.max_parts_to_merge_at_once = (*data_settings)[MergeTreeSetting::max_parts_to_merge_at_once];
             simple_merge_settings.enable_heuristic_to_remove_small_parts_at_right = (*data_settings)[MergeTreeSetting::merge_selector_enable_heuristic_to_remove_small_parts_at_right];
             simple_merge_settings.base = (*data_settings)[MergeTreeSetting::merge_selector_base];
+            simple_merge_settings.min_parts_to_merge_at_once = (*data_settings)[MergeTreeSetting::min_parts_to_merge_at_once];
 
             if (!(*data_settings)[MergeTreeSetting::min_age_to_force_merge_on_partition_only])
                 simple_merge_settings.min_age_to_force_merge = (*data_settings)[MergeTreeSetting::min_age_to_force_merge_seconds];
