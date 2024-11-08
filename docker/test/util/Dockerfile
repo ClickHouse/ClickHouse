@@ -58,5 +58,5 @@ RUN apt-get update \
 
 COPY process_functional_tests_result.py /
 
-COPY --from=altinityinfra/cctools:0d6b90a7a490 /opt/gdb /opt/gdb
+COPY --from=clickhouse/cctools:0d6b90a7a490 /opt/gdb /opt/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"
