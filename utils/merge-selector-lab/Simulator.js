@@ -63,7 +63,7 @@ export class Simulator {
         };
         this.parts.push(result);
         this.active_part_count++;
-        console.log("INSERT", result);
+        //console.log("INSERT", result);
         this.inserted_parts_count++;
         this.inserted_bytes += bytes;
         this.written_bytes += bytes;
@@ -119,7 +119,7 @@ export class Simulator {
             p.active = false;
             this.active_part_count--;
         }
-        console.log("MERGE", parts_to_merge, "INTO", result);
+        //console.log("MERGE", parts_to_merge, "INTO", result);
         this.written_bytes += bytes;
         return result;
     }

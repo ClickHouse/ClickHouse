@@ -69,11 +69,10 @@ async function iteratePartsFactors(selector, series, parts, total_time = 1.0)
     let best = null;
     // const permutations = [...allFactorPermutations(factorizeNumber(parts)), [parts]];
     const permutations = allFactorPermutations(factorizeNumber(parts));
-    console.log("ALL PERMUTATIONS", permutations);
+    //console.log("ALL PERMUTATIONS", permutations);
     for (const factors of permutations)
     {
-        console.log(`Permutation: ${factors.join(' x ')} = ${parts}`);
-
+        // console.log(`Permutation: ${factors.join(' x ')} = ${parts}`);
         let sim = noArrivalsScenario(selector, {factors, parts, total_time});
         sim.title = `${selector.name} ║ Parts: ${parts} = ${factors.join(' x ')} ║`;
         sim.selector = selector;
@@ -95,9 +94,12 @@ async function iteratePartsFactors(selector, series, parts, total_time = 1.0)
     return {y: min_y, sim: best};
 }
 
-function showSimulation(data)
+function showSimulation(data, automatic = false)
 {
-    console.log("SHOW", data);
+    if (automatic && window.__pause)
+        return;
+    if (!automatic)
+        console.log("SHOW", data);
     const {sim} = data;
     if (sim !== undefined)
     {
@@ -167,6 +169,11 @@ async function minimizeAvgPartCount(parts, chart)
     return {analytical, numerical, simple};
 }
 
+export async function main2()
+{
+    showSimulation({sim: runScenario()}, true);
+}
+
 export async function main()
 {
     const optimal_chart = new Chart(
@@ -200,7 +207,7 @@ export async function main()
         const {analytical, numerical, simple} = await minimizeAvgPartCount(parts, variants_chart);
 
         // Show what simple selector is doing
-        showSimulation(simple);
+        showSimulation(simple, true);
         await delayMs(100);
 
         analytical_series.addPoint({x: parts, y: analytical.y});
