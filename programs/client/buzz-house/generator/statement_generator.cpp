@@ -84,12 +84,19 @@ int StatementGenerator::GenerateNextCreateFunction(RandomGenerator & rg, sql_que
 
     next.fname = fname;
     next.nargs = std::min(this->fc.max_width - this->width, (rg.NextMediumNumber() % (rg.NextBool() ? 4 : 10)));
-    next.not_deterministic = rg.NextBool();
-    SetAllowNotDetermistic(next.not_deterministic); //if this function is later called by an oracle, then don't call it
+    if ((next.is_deterministic = rg.NextBool()))
+    {
+        //if this function is later called by an oracle, then don't call it
+        this->SetAllowNotDetermistic(false);
+        this->EnforceFinal(true);
+    }
     GenerateLambdaCall(rg, next.nargs, cf->mutable_lexpr());
     this->levels.clear();
-    SetAllowNotDetermistic(true);
-
+    if (next.is_deterministic)
+    {
+        this->SetAllowNotDetermistic(true);
+        this->EnforceFinal(false);
+    }
     cf->mutable_function()->set_function("f" + std::to_string(fname));
     this->staged_functions[fname] = std::move(next);
     return 0;
@@ -1308,7 +1315,7 @@ int StatementGenerator::GenerateNextCreateView(RandomGenerator & rg, sql_query_g
             cv->set_populate(rg.NextSmallNumber() < 4);
         }
     }
-    if ((next.is_deteriministic = rg.NextBool()))
+    if ((next.is_deterministic = rg.NextBool()))
     {
         this->SetAllowNotDetermistic(false);
         this->EnforceFinal(true);
@@ -1316,7 +1323,7 @@ int StatementGenerator::GenerateNextCreateView(RandomGenerator & rg, sql_query_g
     this->levels[this->current_level] = QueryLevel(this->current_level);
     GenerateSelect(
         rg, false, next.ncols, next.is_materialized ? (~allow_prewhere) : std::numeric_limits<uint32_t>::max(), cv->mutable_select());
-    if (next.is_deteriministic)
+    if (next.is_deterministic)
     {
         this->SetAllowNotDetermistic(true);
         this->EnforceFinal(false);
@@ -1771,7 +1778,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
             else
             {
                 v.staged_ncols = (rg.NextMediumNumber() % (rg.NextBool() ? 5 : 30)) + 1;
-                if (v.is_deteriministic)
+                if (v.is_deterministic)
                 {
                     this->SetAllowNotDetermistic(false);
                     this->EnforceFinal(true);
@@ -1783,7 +1790,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
                     v.staged_ncols,
                     v.is_materialized ? (~allow_prewhere) : std::numeric_limits<uint32_t>::max(),
                     ati->mutable_modify_query());
-                if (v.is_deteriministic)
+                if (v.is_deterministic)
                 {
                     this->SetAllowNotDetermistic(true);
                     this->EnforceFinal(false);

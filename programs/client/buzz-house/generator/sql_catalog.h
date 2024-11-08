@@ -177,14 +177,14 @@ public:
 struct SQLView : SQLBase
 {
 public:
-    bool is_materialized = false, is_refreshable = false, is_deteriministic = false;
+    bool is_materialized = false, is_refreshable = false, is_deterministic = false;
     uint32_t ncols = 1, staged_ncols = 1;
 };
 
 struct SQLFunction
 {
 public:
-    bool not_deterministic = false;
+    bool is_deterministic = false;
     uint32_t fname = 0, nargs = 0;
 };
 

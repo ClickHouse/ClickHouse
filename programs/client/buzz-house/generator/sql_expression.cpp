@@ -700,13 +700,13 @@ int StatementGenerator::GenerateFuncCall(
         sql_query_grammar::SQLFuncName * sfn = func_call->mutable_func();
 
         if (!this->functions.empty()
-            && (this->allow_not_deterministic || CollectionHas<SQLFunction>([](const SQLFunction & f) { return !f.not_deterministic; }))
+            && (this->allow_not_deterministic || CollectionHas<SQLFunction>([](const SQLFunction & f) { return f.is_deterministic; }))
             && rg.NextSmallNumber() < 3)
         {
             //use a function from the user
             const std::reference_wrapper<const SQLFunction> & func = this->allow_not_deterministic
                 ? std::ref<const SQLFunction>(rg.PickValueRandomlyFromMap(this->functions))
-                : rg.PickRandomlyFromVector(FilterCollection<SQLFunction>([](const SQLFunction & f) { return !f.not_deterministic; }));
+                : rg.PickRandomlyFromVector(FilterCollection<SQLFunction>([](const SQLFunction & f) { return f.is_deterministic; }));
 
             min_args = max_args = func.get().nargs;
             sfn->mutable_function()->set_function("f" + std::to_string(func.get().fname));

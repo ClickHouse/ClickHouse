@@ -263,6 +263,7 @@ const SQLType * StatementGenerator::BottomType(
         ipv6_type = 5 * static_cast<uint32_t>(!low_card && (allowed_types & allow_ipv6) != 0),
         json_type = 20 * static_cast<uint32_t>(!low_card && (allowed_types & allow_json) != 0),
         dynamic_type = 30 * static_cast<uint32_t>(!low_card && (allowed_types & allow_dynamic) != 0),
+        geo_type = 10 * static_cast<uint32_t>(!low_card && (allowed_types & allow_geo) != 0),
         prob_space = int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + enum_type
         + uuid_type + ipv4_type + ipv6_type + json_type + dynamic_type + geo_type;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);

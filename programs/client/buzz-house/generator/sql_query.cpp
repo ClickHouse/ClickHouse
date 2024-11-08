@@ -107,7 +107,7 @@ int StatementGenerator::GenerateFromElement(RandomGenerator & rg, const uint32_t
             [&](const SQLView & vv)
             {
                 return (!vv.db || vv.db->attached == DetachStatus::ATTACHED) && vv.attached == DetachStatus::ATTACHED
-                    && (vv.is_deteriministic || this->allow_not_deterministic);
+                    && (vv.is_deterministic || this->allow_not_deterministic);
             })),
                    tudf = 5, prob_space = derived_table + cte + table + view + tudf;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
@@ -165,7 +165,7 @@ int StatementGenerator::GenerateFromElement(RandomGenerator & rg, const uint32_t
             [&](const SQLView & vv)
             {
                 return (!vv.db || vv.db->attached == DetachStatus::ATTACHED) && vv.attached == DetachStatus::ATTACHED
-                    && (vv.is_deteriministic || this->allow_not_deterministic);
+                    && (vv.is_deterministic || this->allow_not_deterministic);
             }));
 
         if (v.db)
