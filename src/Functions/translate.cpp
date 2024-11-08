@@ -44,13 +44,18 @@ struct TranslateImpl
                 map[map_from[i]] = map_to[i];
             }
             else
+            {
+                if (!isASCII(map_from[i]))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument must be ASCII strings");
+
                 map[map_from[i]] = ascii_upper_bound + 1;
+            }
         }
 
         for (size_t i = map_from.size(); i < map_to.size(); ++i)
         {
-            if (!isASCII(map_from[i]))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Third arguments must be ASCII strings");
+            if (!isASCII(map_to[i]))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Third argument must be ASCII strings");
         }
     }
 
