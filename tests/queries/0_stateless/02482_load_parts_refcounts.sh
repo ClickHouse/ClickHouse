@@ -5,7 +5,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT --query "
+$CLICKHOUSE_CLIENT -n --query "
     DROP TABLE IF EXISTS load_parts_refcounts SYNC;
 
     CREATE TABLE load_parts_refcounts (id UInt32)

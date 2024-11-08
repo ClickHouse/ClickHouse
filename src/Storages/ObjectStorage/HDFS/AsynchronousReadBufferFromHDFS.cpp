@@ -91,9 +91,9 @@ void AsynchronousReadBufferFromHDFS::prefetch(Priority priority)
 }
 
 
-std::optional<size_t> AsynchronousReadBufferFromHDFS::tryGetFileSize()
+size_t AsynchronousReadBufferFromHDFS::getFileSize()
 {
-    return impl->tryGetFileSize();
+    return impl->getFileSize();
 }
 
 String AsynchronousReadBufferFromHDFS::getFileName() const
@@ -203,7 +203,7 @@ off_t AsynchronousReadBufferFromHDFS::seek(off_t offset, int whence)
             assert(pos <= working_buffer.end());
             return new_pos;
         }
-        if (prefetch_future.valid())
+        else if (prefetch_future.valid())
         {
             /// Read from prefetch buffer and recheck if the new position is valid inside.
             /// TODO we can judge quickly without waiting for prefetch

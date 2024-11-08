@@ -14,10 +14,7 @@ public:
     , re_gen(key_template)
     {
     }
-    DB::ObjectStorageKey generate(const String &, bool /* is_directory */, const std::optional<String> & /* key_prefix */) const override
-    {
-        return DB::ObjectStorageKey::createAsAbsolute(re_gen.generate());
-    }
+    DB::ObjectStorageKey generate(const String &, bool) const override { return DB::ObjectStorageKey::createAsAbsolute(re_gen.generate()); }
 
 private:
     String key_template;
@@ -32,7 +29,7 @@ public:
         : key_prefix(std::move(key_prefix_))
     {}
 
-    DB::ObjectStorageKey generate(const String &, bool /* is_directory */, const std::optional<String> & /* key_prefix */) const override
+    DB::ObjectStorageKey generate(const String &, bool) const override
     {
         /// Path to store the new S3 object.
 
@@ -63,8 +60,7 @@ public:
         : key_prefix(std::move(key_prefix_))
     {}
 
-    DB::ObjectStorageKey
-    generate(const String & path, bool /* is_directory */, const std::optional<String> & /* key_prefix */) const override
+    DB::ObjectStorageKey generate(const String & path, bool) const override
     {
         return DB::ObjectStorageKey::createAsRelative(key_prefix, path);
     }

@@ -22,16 +22,16 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int HDFS_ERROR;
-extern const int CANNOT_OPEN_FILE;
-extern const int CANNOT_SEEK_THROUGH_FILE;
-extern const int SEEK_POSITION_OUT_OF_BOUND;
-extern const int LOGICAL_ERROR;
-extern const int UNKNOWN_FILE_SIZE;
+    extern const int NETWORK_ERROR;
+    extern const int CANNOT_OPEN_FILE;
+    extern const int CANNOT_SEEK_THROUGH_FILE;
+    extern const int SEEK_POSITION_OUT_OF_BOUND;
+    extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_FILE_SIZE;
 }
 
 
-struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<SeekableReadBuffer>, public WithFileSize
+struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<SeekableReadBuffer>
 {
     String hdfs_uri;
     String hdfs_file_path;
@@ -90,7 +90,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         hdfsCloseFile(fs.get(), fin);
     }
 
-    std::optional<size_t> tryGetFileSize() override
+    size_t getFileSize() const
     {
         return file_size;
     }
@@ -119,19 +119,27 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
             return false;
         }
 
-        ResourceGuard rlock(ResourceGuard::Metrics::getIORead(), read_settings.io_scheduling.read_resource_link, num_bytes_to_read);
-        int bytes_read = hdfsRead(fs.get(), fin, internal_buffer.begin(), safe_cast<int>(num_bytes_to_read));
-        rlock.unlock(std::max(0, bytes_read));
+        ResourceGuard rlock(read_settings.resource_link, num_bytes_to_read);
+        int bytes_read;
+        try
+        {
+            bytes_read = hdfsRead(fs.get(), fin, internal_buffer.begin(), safe_cast<int>(num_bytes_to_read));
+        }
+        catch (...)
+        {
+            read_settings.resource_link.accumulate(num_bytes_to_read); // We assume no resource was used in case of failure
+            throw;
+        }
+        rlock.unlock();
 
         if (bytes_read < 0)
         {
-            throw Exception(
-                ErrorCodes::HDFS_ERROR,
+            read_settings.resource_link.accumulate(num_bytes_to_read); // We assume no resource was used in case of failure
+            throw Exception(ErrorCodes::NETWORK_ERROR,
                 "Fail to read from HDFS: {}, file path: {}. Error: {}",
-                hdfs_uri,
-                hdfs_file_path,
-                std::string(hdfsGetLastError()));
+                hdfs_uri, hdfs_file_path, std::string(hdfsGetLastError()));
         }
+        read_settings.resource_link.adjust(num_bytes_to_read, bytes_read);
 
         if (bytes_read)
         {
@@ -164,29 +172,6 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
     {
         return file_offset;
     }
-
-    size_t pread(char * buffer, size_t size, size_t offset)
-    {
-        ResourceGuard rlock(ResourceGuard::Metrics::getIORead(), read_settings.io_scheduling.read_resource_link, size);
-        auto bytes_read = hdfsPread(fs.get(), fin, buffer, safe_cast<int>(size), offset);
-        rlock.unlock(std::max(0, bytes_read));
-
-        if (bytes_read < 0)
-        {
-            throw Exception(
-                ErrorCodes::HDFS_ERROR,
-                "Fail to read from HDFS: {}, file path: {}. Error: {}",
-                hdfs_uri,
-                hdfs_file_path,
-                std::string(hdfsGetLastError()));
-        }
-        if (bytes_read && read_settings.remote_throttler)
-        {
-            read_settings.remote_throttler->add(
-                bytes_read, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
-        }
-        return bytes_read;
-    }
 };
 
 ReadBufferFromHDFS::ReadBufferFromHDFS(
@@ -206,9 +191,9 @@ ReadBufferFromHDFS::ReadBufferFromHDFS(
 
 ReadBufferFromHDFS::~ReadBufferFromHDFS() = default;
 
-std::optional<size_t> ReadBufferFromHDFS::tryGetFileSize()
+size_t ReadBufferFromHDFS::getFileSize()
 {
-    return impl->tryGetFileSize();
+    return impl->getFileSize();
 }
 
 bool ReadBufferFromHDFS::nextImpl()
@@ -272,16 +257,6 @@ size_t ReadBufferFromHDFS::getFileOffsetOfBufferEnd() const
 String ReadBufferFromHDFS::getFileName() const
 {
     return impl->hdfs_file_path;
-}
-
-size_t ReadBufferFromHDFS::readBigAt(char * buffer, size_t size, size_t offset, const std::function<bool(size_t)> &) const
-{
-    return impl->pread(buffer, size, offset);
-}
-
-bool ReadBufferFromHDFS::supportsReadAt()
-{
-    return true;
 }
 
 }

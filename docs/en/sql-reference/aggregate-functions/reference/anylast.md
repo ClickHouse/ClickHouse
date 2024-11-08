@@ -17,7 +17,7 @@ anyLast(column) [RESPECT NULLS]
 - `column`: The column name. 
 
 :::note
-Supports the `RESPECT NULLS` modifier after the function name. Using this modifier will ensure the function selects the last value passed, regardless of whether it is `NULL` or not.
+Supports the `RESPECT NULLS` modifier after the function name. Using this modifier will ensure the function selects the first value passed, regardless of whether it is `NULL` or not.
 :::
 
 **Returned value**

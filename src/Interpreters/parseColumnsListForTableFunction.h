@@ -23,7 +23,6 @@ struct DataTypeValidationSettings
     bool allow_suspicious_variant_types = true;
     bool validate_nested_types = true;
     bool allow_experimental_dynamic_type = true;
-    bool allow_experimental_json_type = true;
 };
 
 void validateDataType(const DataTypePtr & type, const DataTypeValidationSettings & settings);

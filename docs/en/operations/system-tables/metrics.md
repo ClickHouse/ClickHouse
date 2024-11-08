@@ -737,14 +737,6 @@ Number of sessions (connections) to ZooKeeper. Should be no more than one, becau
 
 Number of watches (event subscriptions) in ZooKeeper.
 
-### ConcurrencyControlAcquired
-
-Total number of acquired CPU slots.
-
-### ConcurrencyControlSoftLimit
-
-Value of soft limit on number of CPU slots.
-
 **See Also**
 
 - [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.

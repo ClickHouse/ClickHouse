@@ -178,7 +178,8 @@ DataTypePtr FieldToDataType<on_error>::operator() (const Map & map) const
 template <LeastSupertypeOnError on_error>
 DataTypePtr FieldToDataType<on_error>::operator() (const Object &) const
 {
-    return std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
+    /// TODO: Do we need different parameters for type Object?
+    return std::make_shared<DataTypeObject>("json", false);
 }
 
 template <LeastSupertypeOnError on_error>

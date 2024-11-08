@@ -26,7 +26,7 @@ public:
 protected:
     std::optional<Chunk> tryGenerate() override;
 
-    void onCancel() noexcept override;
+    void onCancel() override;
 
 private:
     MergeTreeSelectProcessorPtr processor;

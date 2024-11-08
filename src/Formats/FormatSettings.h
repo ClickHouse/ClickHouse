@@ -35,7 +35,6 @@ struct FormatSettings
     bool decimal_trailing_zeros = false;
     bool defaults_for_omitted_fields = true;
     bool is_writing_to_terminal = false;
-    bool try_infer_variant = false;
 
     bool seekable_read = true;
     UInt64 max_rows_to_read_for_schema_inference = 25000;
@@ -47,7 +46,6 @@ struct FormatSettings
     bool try_infer_integers = true;
     bool try_infer_dates = true;
     bool try_infer_datetimes = true;
-    bool try_infer_datetimes_only_datetime64 = false;
     bool try_infer_exponent_floats = false;
 
     enum class DateTimeInputFormat : uint8_t
@@ -99,8 +97,6 @@ struct FormatSettings
         Saturate
     };
 
-    bool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands = false;
-
     DateTimeOverflowBehavior date_time_overflow_behavior = DateTimeOverflowBehavior::Ignore;
 
     bool input_format_ipv4_default_on_conversion_error = false;
@@ -128,8 +124,6 @@ struct FormatSettings
         UInt64 max_binary_array_size = 1_GiB;
         bool encode_types_in_binary_format = false;
         bool decode_types_in_binary_format = false;
-        bool read_json_as_string = false;
-        bool write_json_as_string = false;
     } binary{};
 
     struct
@@ -211,7 +205,6 @@ struct FormatSettings
 
     struct JSON
     {
-        size_t max_depth = 1000;
         bool array_of_rows = false;
         bool quote_64bit_integers = true;
         bool quote_64bit_floats = false;
@@ -233,16 +226,14 @@ struct FormatSettings
         bool try_infer_numbers_from_strings = false;
         bool validate_types_from_metadata = true;
         bool validate_utf8 = false;
-        bool allow_deprecated_object_type = false;
-        bool allow_json_type = false;
+        bool allow_object_type = false;
         bool valid_output_on_exception = false;
         bool compact_allow_variable_number_of_columns = false;
         bool try_infer_objects_as_tuples = false;
         bool infer_incomplete_types_as_strings = true;
         bool throw_on_bad_escape_sequence = true;
         bool ignore_unnecessary_fields = true;
-        bool empty_as_default = false;
-        bool type_json_skip_duplicated_paths = false;
+        bool case_insensitive_column_matching = false;
     } json{};
 
     struct
@@ -276,7 +267,6 @@ struct FormatSettings
         bool skip_columns_with_unsupported_types_in_schema_inference = false;
         bool case_insensitive_column_matching = false;
         bool filter_push_down = true;
-        bool bloom_filter_push_down = true;
         bool use_native_reader = false;
         std::unordered_set<int> skip_row_groups = {};
         bool output_string_as_string = false;
@@ -293,7 +283,6 @@ struct FormatSettings
         size_t write_batch_size = 1024;
         bool write_page_index = false;
         size_t local_read_min_bytes_for_seek = 8192;
-        bool enable_row_group_prefetch = true;
     } parquet{};
 
     struct Pretty
@@ -421,8 +410,6 @@ struct FormatSettings
         bool filter_push_down = true;
         UInt64 output_row_index_stride = 10'000;
         String reader_time_zone_name = "GMT";
-        bool dictionary_as_low_cardinality = true;
-        double output_dictionary_key_size_threshold = 0.0;
     } orc{};
 
     /// For capnProto format we should determine how to
@@ -480,7 +467,6 @@ struct FormatSettings
         bool allow_types_conversion = true;
         bool encode_types_in_binary_format = false;
         bool decode_types_in_binary_format = false;
-        bool write_json_as_string = false;
     } native{};
 
     struct

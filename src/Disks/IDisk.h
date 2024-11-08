@@ -154,12 +154,14 @@ public:
     /// Amount of bytes which should be kept free on the disk.
     virtual UInt64 getKeepingFreeSpace() const { return 0; }
 
-    /// Return `true` if the specified file/directory exists.
-    virtual bool existsFile(const String & path) const = 0;
-    virtual bool existsDirectory(const String & path) const = 0;
+    /// Return `true` if the specified file exists.
+    virtual bool exists(const String & path) const = 0;
 
-    /// This method can be less efficient than the above.
-    virtual bool existsFileOrDirectory(const String & path) const = 0;
+    /// Return `true` if the specified file exists and it's a regular file (not a directory or special file type).
+    virtual bool isFile(const String & path) const = 0;
+
+    /// Return `true` if the specified file exists and it's a directory.
+    virtual bool isDirectory(const String & path) const = 0;
 
     /// Return size of the specified file.
     virtual size_t getFileSize(const String & path) const = 0;
@@ -207,7 +209,7 @@ public:
         const String & from_file_path,
         IDisk & to_disk,
         const String & to_file_path,
-        const ReadSettings & read_settings,
+        const ReadSettings & read_settings = {},
         const WriteSettings & write_settings = {},
         const std::function<void()> & cancellation_hook = {});
 
@@ -217,17 +219,9 @@ public:
     /// Open the file for read and return ReadBufferFromFileBase object.
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile( /// NOLINT
         const String & path,
-        const ReadSettings & settings,
-        std::optional<size_t> read_hint = {},
-        std::optional<size_t> file_size = {}) const = 0;
-
-    /// Returns nullptr if the file does not exist, otherwise opens it for reading.
-    /// This method can save a request. The default implementation will do a separate `exists` call.
-    virtual std::unique_ptr<ReadBufferFromFileBase> readFileIfExists( /// NOLINT
-        const String & path,
         const ReadSettings & settings = ReadSettings{},
         std::optional<size_t> read_hint = {},
-        std::optional<size_t> file_size = {}) const;
+        std::optional<size_t> file_size = {}) const = 0;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     virtual std::unique_ptr<WriteBufferFromFileBase> writeFile( /// NOLINT
@@ -314,13 +308,6 @@ public:
             getDataSourceDescription().toString());
     }
 
-    virtual std::optional<StoredObjects> getStorageObjectsIfExist(const String & path) const
-    {
-        if (existsFile(path))
-            return getStorageObjects(path);
-        return std::nullopt;
-    }
-
     /// For one local path there might be multiple remote paths in case of Log family engines.
     struct LocalPathWithObjectStoragePaths
     {
@@ -398,8 +385,8 @@ public:
 
     /// Check file exists and ClickHouse has an access to it
     /// Overrode in remote FS disks (s3/hdfs)
-    /// Required for remote disk to ensure that the replica has access to data written by other node
-    virtual bool checkUniqueId(const String & id) const { return existsFile(id); }
+    /// Required for remote disk to ensure that replica has access to data written by other node
+    virtual bool checkUniqueId(const String & id) const { return exists(id); }
 
     /// Invoked on partitions freeze query.
     virtual void onFreeze(const String &) { }
@@ -477,9 +464,9 @@ public:
     virtual void chmod(const String & /*path*/, mode_t /*mode*/) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk does not support chmod"); }
 
     /// Was disk created to be used without storage configuration?
-    bool isCustomDisk() const { return custom_disk_settings_hash != 0; }
-    UInt128 getCustomDiskSettings() const { return custom_disk_settings_hash; }
-    void markDiskAsCustom(UInt128 settings_hash) { custom_disk_settings_hash = settings_hash; }
+    bool isCustomDisk() const { return is_custom_disk; }
+
+    void markDiskAsCustom() { is_custom_disk = true; }
 
     virtual DiskPtr getDelegateDiskIfExists() const { return nullptr; }
 
@@ -497,7 +484,7 @@ public:
 
 
 protected:
-    friend class DiskReadOnlyWrapper;
+    friend class DiskDecorator;
 
     const String name;
 
@@ -517,8 +504,7 @@ protected:
 
 private:
     ThreadPool copying_thread_pool;
-    // 0 means the disk is not custom, the disk is predefined in the config
-    UInt128 custom_disk_settings_hash = 0;
+    bool is_custom_disk = false;
 
     /// Check access to the disk.
     void checkAccess();
@@ -579,7 +565,6 @@ inline String directoryPath(const String & path)
 {
     return fs::path(path).parent_path() / "";
 }
-
 
 }
 
