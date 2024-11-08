@@ -148,7 +148,7 @@ void QueryMetricLog::startQuery(const String & query_id, TimePoint start_time, U
 {
     QueryMetricLogStatus query_status;
     query_status.interval_milliseconds = interval_milliseconds;
-    query_status.next_collect_time = start_time + std::chrono::milliseconds(interval_milliseconds);
+    query_status.next_collect_time = start_time;
 
     auto context = getContext();
     const auto & process_list = context->getProcessList();
@@ -213,6 +213,7 @@ void QueryMetricLog::finishQuery(const String & query_id, TimePoint finish_time,
 
 void QueryMetricLogStatus::scheduleNext(String query_id)
 {
+    next_collect_time += std::chrono::milliseconds(interval_milliseconds);
     const auto now = std::chrono::system_clock::now();
     if (next_collect_time > now)
     {
@@ -229,8 +230,9 @@ void QueryMetricLogStatus::scheduleNext(String query_id)
 
 std::optional<QueryMetricLogElement> QueryMetricLogStatus::createLogMetricElement(const String & query_id, const QueryStatusInfo & query_info, TimePoint query_info_time, bool schedule_next)
 {
-    LOG_TRACE(logger, "Collecting query_metric_log for query {} and interval {} ms with QueryStatusInfo from {}. Schedule next: {}",
-        query_id, interval_milliseconds, timePointToString(query_info_time), schedule_next);
+    LOG_TRACE(logger, "Collecting query_metric_log for query {} and interval {} ms with QueryStatusInfo from {}. Next collection time: {}",
+        query_id, interval_milliseconds, timePointToString(query_info_time),
+        schedule_next ? timePointToString(next_collect_time + std::chrono::milliseconds(interval_milliseconds)) : "finished");
 
     if (query_info_time <= last_collect_time)
     {
@@ -276,15 +278,12 @@ std::optional<QueryMetricLogElement> QueryMetricLogStatus::createLogMetricElemen
     }
     else
     {
-        LOG_TRACE(logger, "Query {} has no profile counters", query_id);
+        LOG_WARNING(logger, "Query {} has no profile counters", query_id);
         elem.profile_events = std::vector<ProfileEvents::Count>(ProfileEvents::end());
     }
 
     if (schedule_next)
-    {
-        next_collect_time += std::chrono::milliseconds(interval_milliseconds);
         scheduleNext(query_id);
-    }
 
     return elem;
 }
