@@ -43,7 +43,8 @@ ${CLICKHOUSE_CLIENT} -q "create table ${CLICKHOUSE_DATABASE}_db.t_nh1w on cluste
 
 query="insert into ${CLICKHOUSE_DATABASE}_db.segfault_table (c_mpcnr33, c_v8s, c_l, c_jismi1, c_p37t64z75, c_uz, c_rp, c_d56dwp13jp, c_sf__xnd4) values (868701807, coalesce((select c_u3xs92nr4c from ${CLICKHOUSE_DATABASE}_db.t_nh1w order by c_u3xs92nr4c limit 1 offset 6), 'llwlzwb3'), 1824351772, coalesce(MACNumToString(lcm(-3, -6)), 'f'))"
 
-curl -d@- -sS "${CLICKHOUSE_URL}" <<< "$query"
+# This was triggering a crash in the previous versions. The query can produce an error but should not lead to a crash.
+curl -d@- -sS "${CLICKHOUSE_URL}" <<< "$query" >/dev/null 2>&1 ||:
 
 
 ${CLICKHOUSE_CLIENT} -q "drop table if exists ${CLICKHOUSE_DATABASE}_db.segfault_table on cluster test_shard_localhost"
