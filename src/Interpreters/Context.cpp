@@ -1563,7 +1563,7 @@ void Context::setCurrentRolesWithLock(const std::vector<UUID> & new_current_role
 
 void Context::setExternalRolesWithLock(const std::vector<UUID> & new_external_roles, const std::lock_guard<ContextSharedMutex> &)
 {
-    if (external_roles && !external_roles->empty())
+    if (!new_external_roles.empty())
     {
         if (current_roles)
             current_roles->insert(current_roles->end(), new_external_roles.begin(), new_external_roles.end());
