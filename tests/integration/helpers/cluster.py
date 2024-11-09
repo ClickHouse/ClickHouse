@@ -83,8 +83,6 @@ CLICKHOUSE_ERROR_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.err.lo
 # This means that this minimum need to be, at least, 1 year older than the current release
 CLICKHOUSE_CI_MIN_TESTED_VERSION = "23.3"
 
-ZOOKEEPER_CONTAINERS = ("zoo1", "zoo2", "zoo3")
-
 
 # to create docker-compose env file
 def _create_env_file(path, variables):
@@ -1653,7 +1651,6 @@ class ClickHouseCluster:
         copy_common_configs=True,
         config_root_name="clickhouse",
         extra_configs=[],
-        extra_args="",
         randomize_settings=True,
     ) -> "ClickHouseInstance":
         """Add an instance to the cluster.
@@ -1741,7 +1738,6 @@ class ClickHouseCluster:
             with_postgres_cluster=with_postgres_cluster,
             with_postgresql_java_client=with_postgresql_java_client,
             clickhouse_start_command=clickhouse_start_command,
-            clickhouse_start_extra_args=extra_args,
             main_config_name=main_config_name,
             users_config_name=users_config_name,
             copy_common_configs=copy_common_configs,
@@ -2065,11 +2061,6 @@ class ClickHouseCluster:
         container_id = self.get_container_id(instance_name)
         return self.docker_client.api.logs(container_id).decode()
 
-    def query_zookeeper(self, query, node=ZOOKEEPER_CONTAINERS[0], nothrow=False):
-        cmd = f'clickhouse keeper-client -p {self.zookeeper_port} -q "{query}"'
-        container_id = self.get_container_id(node)
-        return self.exec_in_container(container_id, cmd, nothrow=nothrow, use_cli=False)
-
     def exec_in_container(
         self,
         container_id: str,
@@ -2133,16 +2124,6 @@ class ClickHouseCluster:
                     "echo {} | base64 --decode > {}".format(encodedStr, dest_path),
                 ],
             )
-
-    def remove_file_from_container(self, container_id, path):
-        self.exec_in_container(
-            container_id,
-            [
-                "bash",
-                "-c",
-                "rm {}".format(path),
-            ],
-        )
 
     def wait_for_url(
         self, url="http://localhost:8123/ping", conn_timeout=2, interval=2, timeout=60
@@ -2371,7 +2352,7 @@ class ClickHouseCluster:
                 time.sleep(0.5)
         raise Exception("Cannot wait PostgreSQL Java Client container")
 
-    def wait_rabbitmq_to_start(self, timeout=120):
+    def wait_rabbitmq_to_start(self, timeout=60):
         self.print_all_docker_pieces()
         self.rabbitmq_ip = self.get_instance_ip(self.rabbitmq_host)
 
@@ -2410,16 +2391,16 @@ class ClickHouseCluster:
 
     def wait_zookeeper_secure_to_start(self, timeout=20):
         logging.debug("Wait ZooKeeper Secure to start")
-        self.wait_zookeeper_nodes_to_start(ZOOKEEPER_CONTAINERS, timeout)
+        nodes = ["zoo1", "zoo2", "zoo3"]
+        self.wait_zookeeper_nodes_to_start(nodes, timeout)
 
     def wait_zookeeper_to_start(self, timeout: float = 180) -> None:
         logging.debug("Wait ZooKeeper to start")
-        self.wait_zookeeper_nodes_to_start(ZOOKEEPER_CONTAINERS, timeout)
+        nodes = ["zoo1", "zoo2", "zoo3"]
+        self.wait_zookeeper_nodes_to_start(nodes, timeout)
 
     def wait_zookeeper_nodes_to_start(
-        self,
-        nodes: List[str],
-        timeout: float = 60,
+        self, nodes: List[str], timeout: float = 60
     ) -> None:
         start = time.time()
         err = Exception("")
@@ -3245,11 +3226,7 @@ class ClickHouseCluster:
         return zk
 
     def run_kazoo_commands_with_retries(
-        self,
-        kazoo_callback,
-        zoo_instance_name=ZOOKEEPER_CONTAINERS[0],
-        repeats=1,
-        sleep_for=1,
+        self, kazoo_callback, zoo_instance_name="zoo1", repeats=1, sleep_for=1
     ):
         zk = self.get_kazoo_client(zoo_instance_name)
         logging.debug(
@@ -3370,7 +3347,6 @@ class ClickHouseInstance:
         with_postgres_cluster,
         with_postgresql_java_client,
         clickhouse_start_command=CLICKHOUSE_START_COMMAND,
-        clickhouse_start_extra_args="",
         main_config_name="config.xml",
         users_config_name="users.xml",
         copy_common_configs=True,
@@ -3466,18 +3442,11 @@ class ClickHouseInstance:
         self.users_config_name = users_config_name
         self.copy_common_configs = copy_common_configs
 
-        clickhouse_start_command_with_conf = clickhouse_start_command.replace(
+        self.clickhouse_start_command = clickhouse_start_command.replace(
             "{main_config_file}", self.main_config_name
         )
-
-        self.clickhouse_start_command = "{} -- {}".format(
-            clickhouse_start_command_with_conf, clickhouse_start_extra_args
-        )
-        self.clickhouse_start_command_in_daemon = "{} --daemon -- {}".format(
-            clickhouse_start_command_with_conf, clickhouse_start_extra_args
-        )
-        self.clickhouse_stay_alive_command = "bash -c \"trap 'pkill tail' INT TERM; {}; coproc tail -f /dev/null; wait $$!\"".format(
-            self.clickhouse_start_command_in_daemon
+        self.clickhouse_stay_alive_command = "bash -c \"trap 'pkill tail' INT TERM; {} --daemon; coproc tail -f /dev/null; wait $$!\"".format(
+            clickhouse_start_command
         )
 
         self.path = p.join(self.cluster.instances_dir, name)
@@ -3920,7 +3889,7 @@ class ClickHouseInstance:
             if pid is None:
                 logging.debug("No clickhouse process running. Start new one.")
                 self.exec_in_container(
-                    ["bash", "-c", self.clickhouse_start_command_in_daemon],
+                    ["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)],
                     user=str(os.getuid()),
                 )
                 if expected_to_fail:
@@ -3975,11 +3944,11 @@ class ClickHouseInstance:
         )
         logging.info(f"PS RESULT:\n{ps_clickhouse}")
         pid = self.get_process_pid("clickhouse")
-        # if pid is not None:
-        #     self.exec_in_container(
-        #         ["bash", "-c", f"gdb -batch -ex 'thread apply all bt full' -p {pid}"],
-        #         user="root",
-        #     )
+        if pid is not None:
+            self.exec_in_container(
+                ["bash", "-c", f"gdb -batch -ex 'thread apply all bt full' -p {pid}"],
+                user="root",
+            )
         if last_err is not None:
             raise last_err
 
@@ -4159,9 +4128,6 @@ class ClickHouseInstance:
             self.docker_id, local_path, dest_path
         )
 
-    def remove_file_from_container(self, path):
-        return self.cluster.remove_file_from_container(self.docker_id, path)
-
     def get_process_pid(self, process_name):
         output = self.exec_in_container(
             [
@@ -4240,7 +4206,7 @@ class ClickHouseInstance:
             user="root",
         )
         self.exec_in_container(
-            ["bash", "-c", self.clickhouse_start_command_in_daemon],
+            ["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)],
             user=str(os.getuid()),
         )
 
@@ -4321,7 +4287,7 @@ class ClickHouseInstance:
                 ]
             )
         self.exec_in_container(
-            ["bash", "-c", self.clickhouse_start_command_in_daemon],
+            ["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)],
             user=str(os.getuid()),
         )
 
@@ -4682,7 +4648,9 @@ class ClickHouseInstance:
             depends_on.append("nats1")
 
         if self.with_zookeeper:
-            depends_on += list(ZOOKEEPER_CONTAINERS)
+            depends_on.append("zoo1")
+            depends_on.append("zoo2")
+            depends_on.append("zoo3")
 
         if self.with_minio:
             depends_on.append("minio1")
@@ -4709,7 +4677,9 @@ class ClickHouseInstance:
         entrypoint_cmd = self.clickhouse_start_command
 
         if self.stay_alive:
-            entrypoint_cmd = self.clickhouse_stay_alive_command
+            entrypoint_cmd = self.clickhouse_stay_alive_command.replace(
+                "{main_config_file}", self.main_config_name
+            )
         else:
             entrypoint_cmd = (
                 "["

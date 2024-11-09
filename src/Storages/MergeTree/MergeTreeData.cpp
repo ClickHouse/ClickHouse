@@ -22,7 +22,6 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
-#include <Core/ServerSettings.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Core/QueryProcessingStage.h>
@@ -155,7 +154,6 @@ namespace
 
 namespace DB
 {
-
 namespace Setting
 {
     extern const SettingsBool allow_drop_detached;
@@ -231,12 +229,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString storage_policy;
     extern const MergeTreeSettingsFloat zero_copy_concurrent_part_removal_max_postpone_ratio;
     extern const MergeTreeSettingsUInt64 zero_copy_concurrent_part_removal_max_split_times;
-    extern const MergeTreeSettingsBool prewarm_mark_cache;
-}
-
-namespace ServerSetting
-{
-    extern const ServerSettingsDouble mark_cache_prewarm_ratio;
 }
 
 namespace ErrorCodes
@@ -1442,7 +1434,7 @@ void MergeTreeData::loadUnexpectedDataPart(UnexpectedPartLoadState & state)
 
     try
     {
-        state.part = getDataPartBuilder(part_name, single_disk_volume, part_name, getReadSettings())
+        state.part = getDataPartBuilder(part_name, single_disk_volume, part_name)
             .withPartInfo(part_info)
             .withPartFormatFromDisk()
             .build();
@@ -1457,7 +1449,7 @@ void MergeTreeData::loadUnexpectedDataPart(UnexpectedPartLoadState & state)
             /// Build a fake part and mark it as broken in case of filesystem error.
             /// If the error impacts part directory instead of single files,
             /// an exception will be thrown during detach and silently ignored.
-            state.part = getDataPartBuilder(part_name, single_disk_volume, part_name, getReadSettings())
+            state.part = getDataPartBuilder(part_name, single_disk_volume, part_name)
                 .withPartStorageType(MergeTreeDataPartStorageType::Full)
                 .withPartType(MergeTreeDataPartType::Wide)
                 .build();
@@ -1491,7 +1483,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
             /// Build a fake part and mark it as broken in case of filesystem error.
             /// If the error impacts part directory instead of single files,
             /// an exception will be thrown during detach and silently ignored.
-            res.part = getDataPartBuilder(part_name, single_disk_volume, part_name, getReadSettings())
+            res.part = getDataPartBuilder(part_name, single_disk_volume, part_name)
                 .withPartStorageType(MergeTreeDataPartStorageType::Full)
                 .withPartType(MergeTreeDataPartType::Wide)
                 .build();
@@ -1512,7 +1504,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
 
     try
     {
-        res.part = getDataPartBuilder(part_name, single_disk_volume, part_name, getReadSettings())
+        res.part = getDataPartBuilder(part_name, single_disk_volume, part_name)
             .withPartInfo(part_info)
             .withPartFormatFromDisk()
             .build();
@@ -2341,60 +2333,6 @@ void MergeTreeData::stopOutdatedAndUnexpectedDataPartsLoadingTask()
         unexpected_data_parts_loading_task->deactivate();
         unexpected_data_parts_cv.notify_all();
     }
-}
-
-void MergeTreeData::prewarmMarkCacheIfNeeded(ThreadPool & pool)
-{
-    if (!(*getSettings())[MergeTreeSetting::prewarm_mark_cache])
-        return;
-
-    prewarmMarkCache(pool);
-}
-
-void MergeTreeData::prewarmMarkCache(ThreadPool & pool)
-{
-    auto * mark_cache = getContext()->getMarkCache().get();
-    if (!mark_cache)
-        return;
-
-    auto metadata_snaphost = getInMemoryMetadataPtr();
-    auto column_names = getColumnsToPrewarmMarks(*getSettings(), metadata_snaphost->getColumns().getAllPhysical());
-
-    if (column_names.empty())
-        return;
-
-    Stopwatch watch;
-    LOG_TRACE(log, "Prewarming mark cache");
-
-    auto data_parts = getDataPartsVectorForInternalUsage();
-
-    /// Prewarm mark cache firstly for the most fresh parts according
-    /// to time columns in partition key (if exists) and by modification time.
-
-    auto to_tuple = [](const auto & part)
-    {
-        return std::make_tuple(part->getMinMaxDate().second, part->getMinMaxTime().second, part->modification_time);
-    };
-
-    std::sort(data_parts.begin(), data_parts.end(), [&to_tuple](const auto & lhs, const auto & rhs)
-    {
-        return to_tuple(lhs) > to_tuple(rhs);
-    });
-
-    ThreadPoolCallbackRunnerLocal<void> runner(pool, "PrewarmMarks");
-    double ratio_to_prewarm = getContext()->getServerSettings()[ServerSetting::mark_cache_prewarm_ratio];
-
-    for (const auto & part : data_parts)
-    {
-        if (mark_cache->sizeInBytes() >= mark_cache->maxSizeInBytes() * ratio_to_prewarm)
-            break;
-
-        runner([&] { part->loadMarksToCache(column_names, mark_cache); });
-    }
-
-    runner.waitForAllToFinishAndRethrowFirstError();
-    watch.stop();
-    LOG_TRACE(log, "Prewarmed mark cache in {} seconds", watch.elapsedSeconds());
 }
 
 /// Is the part directory old.
@@ -3835,9 +3773,9 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormatOnDisk(size_t bytes_uncom
 }
 
 MergeTreeDataPartBuilder MergeTreeData::getDataPartBuilder(
-    const String & name, const VolumePtr & volume, const String & part_dir, const ReadSettings & read_settings_) const
+    const String & name, const VolumePtr & volume, const String & part_dir) const
 {
-    return MergeTreeDataPartBuilder(*this, name, volume, relative_data_path, part_dir, read_settings_);
+    return MergeTreeDataPartBuilder(*this, name, volume, relative_data_path, part_dir);
 }
 
 void MergeTreeData::changeSettings(
@@ -5919,7 +5857,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
     /// Load this part from the directory `temp_part_dir`.
     auto load_part = [&]
     {
-        MergeTreeDataPartBuilder builder(*this, part_name, single_disk_volume, parent_part_dir, part_dir_name, getReadSettings());
+        MergeTreeDataPartBuilder builder(*this, part_name, single_disk_volume, parent_part_dir, part_dir_name);
         builder.withPartFormatFromDisk();
         part = std::move(builder).build();
         part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
@@ -5934,7 +5872,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
         if (!part)
         {
             /// Make a fake data part only to copy its files to /detached/.
-            part = MergeTreeDataPartBuilder{*this, part_name, single_disk_volume, parent_part_dir, part_dir_name, getReadSettings()}
+            part = MergeTreeDataPartBuilder{*this, part_name, single_disk_volume, parent_part_dir, part_dir_name}
                        .withPartStorageType(MergeTreeDataPartStorageType::Full)
                        .withPartType(MergeTreeDataPartType::Wide)
                        .build();
@@ -6433,12 +6371,6 @@ DetachedPartsInfo MergeTreeData::getDetachedParts() const
 
     for (const auto & disk : getDisks())
     {
-        /// While it is possible to have detached parts on readonly/write-once disks
-        /// (if they were produced on another machine, where it wasn't readonly)
-        /// to avoid wasting resources for slow disks, avoid trying to enumerate them.
-        if (disk->isReadOnly() || disk->isWriteOnce())
-            continue;
-
         String detached_path = fs::path(relative_data_path) / DETACHED_DIR_NAME;
 
         /// Note: we don't care about TOCTOU issue here.
@@ -6586,7 +6518,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
         LOG_DEBUG(log, "Checking part {}", new_name);
 
         auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + old_name, disk);
-        auto part = getDataPartBuilder(old_name, single_disk_volume, source_dir / new_name, getReadSettings())
+        auto part = getDataPartBuilder(old_name, single_disk_volume, source_dir / new_name)
             .withPartFormatFromDisk()
             .build();
 
@@ -7641,7 +7573,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
               std::string(fs::path(dst_part_storage->getFullRootPath()) / tmp_dst_part_name),
               with_copy);
 
-    auto dst_data_part = MergeTreeDataPartBuilder(*this, dst_part_name, dst_part_storage, getReadSettings())
+    auto dst_data_part = MergeTreeDataPartBuilder(*this, dst_part_name, dst_part_storage)
         .withPartFormatFromDisk()
         .build();
 
@@ -8910,7 +8842,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     VolumePtr data_part_volume = createVolumeFromReservation(reservation, volume);
 
     auto tmp_dir_holder = getTemporaryPartDirectoryHolder(EMPTY_PART_TMP_PREFIX + new_part_name);
-    auto new_data_part = getDataPartBuilder(new_part_name, data_part_volume, EMPTY_PART_TMP_PREFIX + new_part_name, getReadSettings())
+    auto new_data_part = getDataPartBuilder(new_part_name, data_part_volume, EMPTY_PART_TMP_PREFIX + new_part_name)
         .withBytesAndRowsOnDisk(0, 0)
         .withPartInfo(new_part_info)
         .build();

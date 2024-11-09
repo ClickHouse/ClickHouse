@@ -3,8 +3,8 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include <Storages/MergeTree/InsertBlockInfo.h>
 #include <Interpreters/PartLog.h>
-#include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Common/Exception.h>
+#include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/SipHash.h>
@@ -341,7 +341,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk & chunk)
     using DelayedPartitions = std::vector<DelayedPartition>;
     DelayedPartitions partitions;
 
-    size_t total_streams = 0;
+    size_t streams = 0;
     bool support_parallel_write = false;
 
     for (auto & current_block : part_blocks)
@@ -418,18 +418,15 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk & chunk)
             max_insert_delayed_streams_for_parallel_write = 0;
 
         /// In case of too much columns/parts in block, flush explicitly.
-        size_t current_streams = 0;
-        for (const auto & stream : temp_part.streams)
-            current_streams += stream.stream->getNumberOfOpenStreams();
-
-        if (total_streams + current_streams > max_insert_delayed_streams_for_parallel_write)
+        streams += temp_part.streams.size();
+        if (streams > max_insert_delayed_streams_for_parallel_write)
         {
             finishDelayedChunk(zookeeper);
             delayed_chunk = std::make_unique<ReplicatedMergeTreeSinkImpl<async_insert>::DelayedChunk>(replicas_num);
             delayed_chunk->partitions = std::move(partitions);
             finishDelayedChunk(zookeeper);
 
-            total_streams = 0;
+            streams = 0;
             support_parallel_write = false;
             partitions = DelayedPartitions{};
         }
@@ -450,8 +447,6 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk & chunk)
             std::move(unmerged_block),
             std::move(part_counters) /// profile_events_scope must be reset here.
         ));
-
-        total_streams += current_streams;
     }
 
     if (need_to_define_dedup_token)
@@ -486,17 +481,6 @@ void ReplicatedMergeTreeSinkImpl<false>::finishDelayedChunk(const ZooKeeperWithF
 
             /// Set a special error code if the block is duplicate
             int error = (deduplicate && deduplicated) ? ErrorCodes::INSERT_WAS_DEDUPLICATED : 0;
-            auto * mark_cache = storage.getContext()->getMarkCache().get();
-
-            if (!error && mark_cache)
-            {
-                for (const auto & stream : partition.temp_part.streams)
-                {
-                    auto marks = stream.stream->releaseCachedMarks();
-                    addMarksToCache(*part, marks, mark_cache);
-                }
-            }
-
             auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
             PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot), ExecutionStatus(error));
             StorageReplicatedMergeTree::incrementInsertedPartsProfileEvent(part->getType());
@@ -537,18 +521,8 @@ void ReplicatedMergeTreeSinkImpl<true>::finishDelayedChunk(const ZooKeeperWithFa
         {
             partition.temp_part.finalize();
             auto conflict_block_ids = commitPart(zookeeper, partition.temp_part.part, partition.block_id, delayed_chunk->replicas_num).first;
-
             if (conflict_block_ids.empty())
             {
-                if (auto * mark_cache = storage.getContext()->getMarkCache().get())
-                {
-                    for (const auto & stream : partition.temp_part.streams)
-                    {
-                        auto marks = stream.stream->releaseCachedMarks();
-                        addMarksToCache(*partition.temp_part.part, marks, mark_cache);
-                    }
-                }
-
                 auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
                 PartLog::addNewPart(
                     storage.getContext(),

@@ -122,10 +122,4 @@ std::string MergeTreeIndexGranularity::describe() const
 {
     return fmt::format("initialized: {}, marks_rows_partial_sums: [{}]", initialized, fmt::join(marks_rows_partial_sums, ", "));
 }
-
-void MergeTreeIndexGranularity::shrinkToFitInMemory()
-{
-    marks_rows_partial_sums.shrink_to_fit();
-}
-
 }

@@ -50,8 +50,6 @@ public:
 
     bool equals(const IDataType & rhs) const override;
 
-    void forEachChild(const ChildCallback &) const override;
-
     bool hasDynamicSubcolumnsData() const override { return true; }
     std::unique_ptr<SubstreamData> getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, bool throw_if_null) const override;
 
@@ -64,9 +62,6 @@ public:
 
     size_t getMaxDynamicTypes() const { return max_dynamic_types; }
     size_t getMaxDynamicPaths() const { return max_dynamic_paths; }
-
-    /// Shared data has type Array(Tuple(String, String)).
-    static const DataTypePtr & getTypeOfSharedData();
 
 private:
     SchemaFormat schema_format;

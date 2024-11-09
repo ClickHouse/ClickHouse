@@ -940,16 +940,7 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(
     if (file_segment->queue_iterator && invalidate_queue_entry)
         file_segment->queue_iterator->invalidate();
 
-    try
-    {
-        file_segment->detach(segment_lock, *this);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        chassert(false);
-        /// Do not rethrow, we must delete the file below.
-    }
+    file_segment->detach(segment_lock, *this);
 
     try
     {
@@ -999,8 +990,8 @@ void LockedKey::shrinkFileSegmentToDownloadedSize(
      * because of no space left in cache, we need to be able to cut file segment's size to downloaded_size.
      */
 
-    auto file_segment_metadata = getByOffset(offset);
-    const auto & file_segment = file_segment_metadata->file_segment;
+    auto metadata = getByOffset(offset);
+    const auto & file_segment = metadata->file_segment;
     chassert(file_segment->assertCorrectnessUnlocked(segment_lock));
 
     const size_t downloaded_size = file_segment->getDownloadedSize();
@@ -1015,15 +1006,15 @@ void LockedKey::shrinkFileSegmentToDownloadedSize(
     chassert(file_segment->reserved_size >= downloaded_size);
     int64_t diff = file_segment->reserved_size - downloaded_size;
 
-    file_segment_metadata->file_segment = std::make_shared<FileSegment>(
+    metadata->file_segment = std::make_shared<FileSegment>(
         getKey(), offset, downloaded_size, FileSegment::State::DOWNLOADED,
         CreateFileSegmentSettings(file_segment->getKind()), false,
         file_segment->cache, key_metadata, file_segment->queue_iterator);
 
     if (diff)
-        file_segment_metadata->getQueueIterator()->decrementSize(diff);
+        metadata->getQueueIterator()->decrementSize(diff);
 
-    chassert(file_segment_metadata->file_segment->assertCorrectnessUnlocked(segment_lock));
+    chassert(file_segment->assertCorrectnessUnlocked(segment_lock));
 }
 
 bool LockedKey::addToDownloadQueue(size_t offset, const FileSegmentGuard::Lock &)

@@ -145,7 +145,7 @@ def wait_for_restore(node, restore_id):
 
 def check_backup_error(error):
     expected_errors = [
-        "Concurrent backups are not allowed",
+        "Concurrent backups not supported",
         "BACKUP_ALREADY_EXISTS",
     ]
     assert any([expected_error in error for expected_error in expected_errors])
@@ -153,7 +153,7 @@ def check_backup_error(error):
 
 def check_restore_error(error):
     expected_errors = [
-        "Concurrent restores are not allowed",
+        "Concurrent restores not supported",
         "Cannot restore the table default.tbl because it already contains some data",
     ]
     assert any([expected_error in error for expected_error in expected_errors])
