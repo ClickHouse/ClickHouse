@@ -113,6 +113,7 @@ public:
         NamesAndTypesList lambda_arguments;
         String return_name;
         DataTypePtr return_type;
+        bool allow_constant_folding;
     };
 
     using CapturePtr = std::shared_ptr<Capture>;
@@ -154,9 +155,11 @@ public:
         /// Consequently, it allows to treat higher order functions with constant arrays and constant captured columns
         /// as constant expressions.
         /// Consequently, it allows its usage in contexts requiring constants, such as the right hand side of IN.
-        bool all_arguments_are_constant = std::all_of(arguments.begin(), arguments.end(), [](const auto & arg) { return arg.column->isConst(); });
+        bool constant_folding = capture->allow_constant_folding
+            && std::all_of(arguments.begin(), arguments.end(),
+            [](const auto & arg) { return arg.column->isConst(); });
 
-        if (all_arguments_are_constant)
+        if (constant_folding)
         {
             ColumnsWithTypeAndName arguments_resized = arguments;
             for (auto & elem : arguments_resized)
@@ -222,7 +225,8 @@ public:
             const Names & captured_names,
             const NamesAndTypesList & lambda_arguments,
             const DataTypePtr & function_return_type,
-            const String & expression_return_name)
+            const String & expression_return_name,
+            bool allow_constant_folding)
         : expression_actions(std::move(expression_actions_))
     {
         /// Check that expression does not contain unusual actions that will break columns structure.
@@ -265,6 +269,7 @@ public:
                 .lambda_arguments = lambda_arguments,
                 .return_name = expression_return_name,
                 .return_type = function_return_type,
+                .allow_constant_folding = allow_constant_folding,
         });
     }
 
