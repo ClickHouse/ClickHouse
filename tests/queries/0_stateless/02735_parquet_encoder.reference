@@ -1,31 +1,31 @@
-u8	Nullable(UInt8)					
-u16	Nullable(UInt16)					
-u32	Nullable(UInt32)					
-u64	Nullable(UInt64)					
-i8	Nullable(Int8)					
-i16	Nullable(Int16)					
-i32	Nullable(Int32)					
-i64	Nullable(Int64)					
-date	Nullable(UInt16)					
-date32	Nullable(Date32)					
-datetime	Nullable(UInt32)					
-datetime64	Nullable(DateTime64(3, \'UTC\'))					
-enum8	Nullable(Int8)					
-enum16	Nullable(Int16)					
-float32	Nullable(Float32)					
-float64	Nullable(Float64)					
-str	Nullable(String)					
-fstr	Nullable(FixedString(12))					
-u128	Nullable(FixedString(16))					
-u256	Nullable(FixedString(32))					
-i128	Nullable(FixedString(16))					
-i256	Nullable(FixedString(32))					
-decimal32	Nullable(Decimal(9, 3))					
-decimal64	Nullable(Decimal(18, 10))					
-decimal128	Nullable(Decimal(38, 20))					
-decimal256	Nullable(Decimal(76, 40))					
-ipv4	Nullable(UInt32)					
-ipv6	Nullable(FixedString(16))					
+u8	UInt8					
+u16	UInt16					
+u32	UInt32					
+u64	UInt64					
+i8	Int8					
+i16	Int16					
+i32	Int32					
+i64	Int64					
+date	UInt16					
+date32	Date32					
+datetime	UInt32					
+datetime64	DateTime64(3, \'UTC\')					
+enum8	Int8					
+enum16	Int16					
+float32	Float32					
+float64	Float64					
+str	String					
+fstr	FixedString(12)					
+u128	FixedString(16)					
+u256	FixedString(32)					
+i128	FixedString(16)					
+i256	FixedString(32)					
+decimal32	Decimal(9, 3)					
+decimal64	Decimal(18, 10)					
+decimal128	Decimal(38, 20)					
+decimal256	Decimal(76, 40)					
+ipv4	UInt32					
+ipv6	FixedString(16)					
 0
 0
 0
@@ -54,10 +54,10 @@ BYTE_ARRAY	String
 never	gonna
 give	you
 up
-ms	Nullable(DateTime64(3, \'UTC\'))					
-us	Nullable(DateTime64(6, \'UTC\'))					
-ns	Nullable(DateTime64(9, \'UTC\'))					
-cs	Nullable(DateTime64(3, \'UTC\'))					
-s	Nullable(DateTime64(3, \'UTC\'))					
-dus	Nullable(DateTime64(9, \'UTC\'))					
+ms	DateTime64(3, \'UTC\')					
+us	DateTime64(6, \'UTC\')					
+ns	DateTime64(9, \'UTC\')					
+cs	DateTime64(3, \'UTC\')					
+s	DateTime64(3, \'UTC\')					
+dus	DateTime64(9, \'UTC\')					
 12670676506515577395
