@@ -1,3 +1,5 @@
+SET enable_analyzer = 1;
+
 SELECT arrayMap(x -> x, [1, 2, 3]) AS x, isConstant(x);
 SELECT arrayMap(x -> x + 1, [1, 2, 3]) AS x, isConstant(x);
 SELECT arrayMap(x -> x + x, [1, 2, 3]) AS x, isConstant(x);
