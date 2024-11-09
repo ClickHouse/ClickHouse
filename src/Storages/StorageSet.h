@@ -2,6 +2,7 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Storages/IStorage.h>
+#include <Storages/SetSettings.h>
 
 
 namespace DB

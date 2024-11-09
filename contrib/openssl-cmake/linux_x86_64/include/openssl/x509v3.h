@@ -25,9 +25,6 @@
 # include <openssl/x509.h>
 # include <openssl/conf.h>
 # include <openssl/x509v3err.h>
-# ifndef OPENSSL_NO_STDIO
-#  include <stdio.h>
-# endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -742,10 +739,9 @@ SKM_DEFINE_STACK_OF_INTERNAL(X509_PURPOSE, X509_PURPOSE, X509_PURPOSE)
 # define X509_PURPOSE_ANY                7
 # define X509_PURPOSE_OCSP_HELPER        8
 # define X509_PURPOSE_TIMESTAMP_SIGN     9
-# define X509_PURPOSE_CODE_SIGN         10
 
 # define X509_PURPOSE_MIN                1
-# define X509_PURPOSE_MAX               10
+# define X509_PURPOSE_MAX                9
 
 /* Flags for X509V3_EXT_print() */
 

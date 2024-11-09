@@ -29,10 +29,10 @@ Block MergingAggregatedTransform::appendGroupingIfNeeded(const Block & in_header
 /// Initiator creates a separate Aggregator for every group, so should we do here.
 /// Otherwise, two-level aggregation will split the data into different buckets,
 /// and the result may have duplicating rows.
-static ActionsDAG makeReorderingActions(const Block & in_header, const GroupingSetsParams & params)
+static ActionsDAGPtr makeReorderingActions(const Block & in_header, const GroupingSetsParams & params)
 {
-    ActionsDAG reordering(in_header.getColumnsWithTypeAndName());
-    auto & outputs = reordering.getOutputs();
+    auto reordering = std::make_shared<ActionsDAG>(in_header.getColumnsWithTypeAndName());
+    auto & outputs = reordering->getOutputs();
     ActionsDAG::NodeRawConstPtrs new_outputs;
     new_outputs.reserve(in_header.columns() + params.used_keys.size() - params.used_keys.size());
 
@@ -97,7 +97,7 @@ MergingAggregatedTransform::MergingAggregatedTransform(
                 params.max_block_size,
                 params.min_hit_rate_to_use_consecutive_keys_optimization);
 
-            auto transform_params = std::make_shared<AggregatingTransformParams>(reordering.updateHeader(in_header), std::move(set_params), final);
+            auto transform_params = std::make_shared<AggregatingTransformParams>(reordering->updateHeader(in_header), std::move(set_params), final);
 
             auto creating = AggregatingStep::makeCreatingMissingKeysForGroupingSetDAG(
                 transform_params->getHeader(),
@@ -216,23 +216,25 @@ void MergingAggregatedTransform::consume(Chunk chunk)
     total_input_rows += input_rows;
     ++total_input_blocks;
 
-    if (chunk.getChunkInfos().empty())
+    const auto & info = chunk.getChunkInfo();
+    if (!info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk info was not set for chunk in MergingAggregatedTransform.");
 
-    if (auto agg_info = chunk.getChunkInfos().get<AggregatedChunkInfo>())
+    if (const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get()))
     {
         /** If the remote servers used a two-level aggregation method,
-          * then blocks will contain information about the number of the bucket.
-          * Then the calculations can be parallelized by buckets.
-          * We decompose the blocks to the bucket numbers indicated in them.
-          */
+        *  then blocks will contain information about the number of the bucket.
+        * Then the calculations can be parallelized by buckets.
+        * We decompose the blocks to the bucket numbers indicated in them.
+        */
+
         auto block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
         block.info.is_overflows = agg_info->is_overflows;
         block.info.bucket_num = agg_info->bucket_num;
 
         addBlock(std::move(block));
     }
-    else if (chunk.getChunkInfos().get<ChunkInfoWithAllocatedBytes>())
+    else if (typeid_cast<const ChunkInfoWithAllocatedBytes *>(info.get()))
     {
         auto block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
         block.info.is_overflows = false;
@@ -261,7 +263,7 @@ Chunk MergingAggregatedTransform::generate()
             AggregatedDataVariants data_variants;
 
             /// TODO: this operation can be made async. Add async for IAccumulatingTransform.
-            params->aggregator.mergeBlocks(std::move(bucket_to_blocks), data_variants, max_threads, is_cancelled);
+            params->aggregator.mergeBlocks(std::move(bucket_to_blocks), data_variants, max_threads);
             auto merged_blocks = params->aggregator.convertToBlocks(data_variants, params->final, max_threads);
 
             if (grouping_set.creating_missing_keys_actions)
@@ -286,8 +288,7 @@ Chunk MergingAggregatedTransform::generate()
 
     UInt64 num_rows = block.rows();
     Chunk chunk(block.getColumns(), num_rows);
-
-    chunk.getChunkInfos().add(std::move(info));
+    chunk.setChunkInfo(std::move(info));
 
     return chunk;
 }

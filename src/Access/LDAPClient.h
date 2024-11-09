@@ -26,7 +26,7 @@ class LDAPClient
 public:
     struct SearchParams
     {
-        enum class Scope : uint8_t
+        enum class Scope
         {
             BASE,
             ONE_LEVEL,
@@ -57,20 +57,20 @@ public:
 
     struct Params
     {
-        enum class ProtocolVersion : uint8_t
+        enum class ProtocolVersion
         {
             V2,
             V3
         };
 
-        enum class TLSEnable : uint8_t
+        enum class TLSEnable
         {
             NO,
             YES_STARTTLS,
             YES
         };
 
-        enum class TLSProtocolVersion : uint8_t
+        enum class TLSProtocolVersion
         {
             SSL2,
             SSL3,
@@ -79,7 +79,7 @@ public:
             TLS1_2
         };
 
-        enum class TLSRequireCert : uint8_t
+        enum class TLSRequireCert
         {
             NEVER,
             ALLOW,
@@ -87,7 +87,7 @@ public:
             DEMAND
         };
 
-        enum class SASLMechanism : uint8_t
+        enum class SASLMechanism
         {
             UNKNOWN,
             SIMPLE

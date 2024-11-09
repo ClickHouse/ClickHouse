@@ -19,7 +19,7 @@ SHOW CREATE USER u3_01292;
 
 SELECT '-- rename';
 ALTER USER u2_01292 RENAME TO 'u2_01292_renamed';
-SHOW CREATE USER u2_01292; -- { serverError UNKNOWN_USER } -- User not found
+SHOW CREATE USER u2_01292; -- { serverError 192 } -- User not found
 SHOW CREATE USER u2_01292_renamed;
 DROP USER u1_01292, u2_01292_renamed, u3_01292;
 
@@ -233,11 +233,6 @@ SELECT * FROM system.settings_profile_elements WHERE user_name LIKE 'u%\_01292' 
 DROP USER u1_01292, u2_01292, u3_01292, u4_01292, u5_01292;
 
 DROP ROLE r1_01292, r2_01292;
-
-SELECT '-- multiple authentication methods';
-CREATE USER u1_01292 IDENTIFIED WITH plaintext_password by 'qwe123', kerberos REALM 'qwerty10', bcrypt_password by '123qwe', ldap SERVER 'abc';
-SELECT name, auth_type, auth_params FROM system.users WHERE name = 'u1_01292' ORDER BY name;
-DROP USER u1_01292;
 
 SELECT '-- no passwords or hashes in query_log';
 SYSTEM FLUSH LOGS;

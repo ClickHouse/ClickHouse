@@ -93,8 +93,7 @@ struct ExtractParamImpl
         std::string needle,
         const ColumnPtr & start_pos,
         PaddedPODArray<ResultType> & res,
-        [[maybe_unused]] ColumnUInt8 * res_null,
-        size_t /*input_rows_count*/)
+        [[maybe_unused]] ColumnUInt8 * res_null)
     {
         /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
         assert(!res_null);
@@ -169,12 +168,11 @@ struct ExtractParamToStringImpl
 {
     static void vector(const ColumnString::Chars & haystack_data, const ColumnString::Offsets & haystack_offsets,
                        std::string needle,
-                       ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets,
-                       size_t input_rows_count)
+                       ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets)
     {
         /// Constant 5 is taken from a function that performs a similar task FunctionsStringSearch.h::ExtractImpl
         res_data.reserve(haystack_data.size() / 5);
-        res_offsets.resize(input_rows_count);
+        res_offsets.resize(haystack_offsets.size());
 
         /// We are looking for a parameter simply as a substring of the form "name"
         needle = "\"" + needle + "\":";
