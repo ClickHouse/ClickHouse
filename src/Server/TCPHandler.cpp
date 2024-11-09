@@ -302,6 +302,9 @@ void TCPHandler::runImpl()
     {
         receiveHello();
 
+        if (!default_database.empty())
+            DatabaseCatalog::instance().assertDatabaseExists(default_database);
+
         /// In interserver mode queries are executed without a session context.
         if (!is_interserver_mode)
             session->makeSessionContext();
@@ -1612,7 +1615,8 @@ void TCPHandler::receiveHello()
                 if (e.code() != DB::ErrorCodes::AUTHENTICATION_FAILED)
                     throw;
 
-                tryLogCurrentException(log, "SSL authentication failed, falling back to password authentication");
+                tryLogCurrentException(log, "SSL authentication failed, falling back to password authentication", LogsLevel::information);
+                /// ^^ Log at debug level instead of default error level as authentication failures are not an unusual event.
             }
         }
     }

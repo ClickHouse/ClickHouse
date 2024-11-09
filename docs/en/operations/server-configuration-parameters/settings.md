@@ -131,16 +131,6 @@ Type: UInt64
 
 Default: 8
 
-## background_pool_size
-
-Sets the number of threads performing background merges and mutations for tables with MergeTree engines. You can only increase the number of threads at runtime. To lower the number of threads you have to restart the server. By adjusting this setting, you manage CPU and disk load. Smaller pool size utilizes less CPU and disk resources, but background processes advance slower which might eventually impact query performance.
-
-Before changing it, please also take a look at related MergeTree settings, such as `number_of_free_entries_in_pool_to_lower_max_size_of_merge` and `number_of_free_entries_in_pool_to_execute_mutation`.
-
-Type: UInt64
-
-Default: 16
-
 ## background_schedule_pool_size
 
 The maximum number of threads that will be used for constantly executing some lightweight periodic operations for replicated tables, Kafka streaming, and DNS cache updates.
@@ -3223,6 +3213,34 @@ Default value: "default"
 
 **See Also**
 - [Workload Scheduling](/docs/en/operations/workload-scheduling.md)
+
+## workload_path {#workload_path}
+
+The directory used as a storage for all `CREATE WORKLOAD` and `CREATE RESOURCE` queries. By default `/workload/` folder under server working directory is used.
+
+**Example**
+
+``` xml
+<workload_path>/var/lib/clickhouse/workload/</workload_path>
+```
+
+**See Also**
+- [Workload Hierarchy](/docs/en/operations/workload-scheduling.md#workloads)
+- [workload_zookeeper_path](#workload_zookeeper_path)
+
+## workload_zookeeper_path {#workload_zookeeper_path}
+
+The path to a ZooKeeper node, which is used as a storage for all `CREATE WORKLOAD` and `CREATE RESOURCE` queries. For consistency all SQL definitions are stored as a value of this single znode. By default ZooKeeper is not used and definitions are stored on [disk](#workload_path).
+
+**Example**
+
+``` xml
+<workload_zookeeper_path>/clickhouse/workload/definitions.sql</workload_zookeeper_path>
+```
+
+**See Also**
+- [Workload Hierarchy](/docs/en/operations/workload-scheduling.md#workloads)
+- [workload_path](#workload_path)
 
 ## max_authentication_methods_per_user {#max_authentication_methods_per_user}
 
