@@ -5,6 +5,7 @@
             <port>1389</port>
             <bind_dn>cn={user_name},ou=users,dc=example,dc=org</bind_dn>
             <enable_tls>no</enable_tls>
+            <tls_require_cert>never</tls_require_cert>
         </openldap>
     </ldap_servers>
     <user_directories>
