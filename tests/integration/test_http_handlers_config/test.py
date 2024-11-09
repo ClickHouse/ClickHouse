@@ -1,6 +1,8 @@
 import contextlib
 import os
-import urllib.request, urllib.parse, urllib.error
+import urllib.error
+import urllib.parse
+import urllib.request
 
 from helpers.cluster import ClickHouseCluster
 
@@ -15,9 +17,10 @@ class SimpleCluster:
         cluster.start()
 
     def add_instance(self, name, config_dir):
-        script_path = os.path.dirname(os.path.realpath(__file__))
         return self.cluster.add_instance(
-            name, main_configs=[os.path.join(script_path, config_dir, "config.xml")]
+            name,
+            main_configs=[os.path.join(config_dir, "config.xml")],
+            user_configs=["users.d/users.yaml"],
         )
 
 
@@ -88,6 +91,21 @@ def test_dynamic_query_handler():
             "application/whatever; charset=cp1337"
             == res_custom_ct.headers["content-type"]
         )
+        assert "it works" == res_custom_ct.headers["X-Test-Http-Response-Headers-Works"]
+        assert (
+            "also works"
+            == res_custom_ct.headers["X-Test-Http-Response-Headers-Even-Multiple"]
+        )
+
+        assert cluster.instance.http_request(
+            "test_dynamic_handler_auth_with_password?query=select+currentUser()"
+        ).content, "with_password"
+        assert cluster.instance.http_request(
+            "test_dynamic_handler_auth_with_password_fail?query=select+currentUser()"
+        ).status_code, 403
+        assert cluster.instance.http_request(
+            "test_dynamic_handler_auth_without_password?query=select+currentUser()"
+        ).content, "without_password"
 
 
 def test_predefined_query_handler():
@@ -146,6 +164,10 @@ def test_predefined_query_handler():
         )
         assert b"max_final_threads\t1\nmax_threads\t1\n" == res2.content
         assert "application/generic+one" == res2.headers["content-type"]
+        assert "it works" == res2.headers["X-Test-Http-Response-Headers-Works"]
+        assert (
+            "also works" == res2.headers["X-Test-Http-Response-Headers-Even-Multiple"]
+        )
 
         cluster.instance.query(
             "CREATE TABLE test_table (id UInt32, data String) Engine=TinyLog"
@@ -165,6 +187,16 @@ def test_predefined_query_handler():
             headers={"XXX": "xxx"},
         )
         assert b"max_threads\t1\n" == res1.content
+
+        assert cluster.instance.http_request(
+            "test_predefined_handler_auth_with_password"
+        ).content, "with_password"
+        assert cluster.instance.http_request(
+            "test_predefined_handler_auth_with_password_fail"
+        ).status_code, 403
+        assert cluster.instance.http_request(
+            "test_predefined_handler_auth_without_password"
+        ).content, "without_password"
 
 
 def test_fixed_static_handler():
@@ -211,6 +243,18 @@ def test_fixed_static_handler():
             == cluster.instance.http_request(
                 "test_get_fixed_static_handler", method="GET", headers={"XXX": "xxx"}
             ).content
+        )
+        assert (
+            "it works"
+            == cluster.instance.http_request(
+                "test_get_fixed_static_handler", method="GET", headers={"XXX": "xxx"}
+            ).headers["X-Test-Http-Response-Headers-Works"]
+        )
+        assert (
+            "also works"
+            == cluster.instance.http_request(
+                "test_get_fixed_static_handler", method="GET", headers={"XXX": "xxx"}
+            ).headers["X-Test-Http-Response-Headers-Even-Multiple"]
         )
 
 

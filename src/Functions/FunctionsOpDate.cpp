@@ -99,8 +99,8 @@ using FunctionSubDate = FunctionOpDate<SubDate>;
 
 REGISTER_FUNCTION(AddInterval)
 {
-    factory.registerFunction<FunctionAddDate>({}, FunctionFactory::CaseInsensitive);
-    factory.registerFunction<FunctionSubDate>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionAddDate>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionSubDate>({}, FunctionFactory::Case::Insensitive);
 }
 
 }

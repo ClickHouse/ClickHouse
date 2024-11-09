@@ -1,11 +1,15 @@
--- Tags: no-parallel, no-fasttest
+-- Tags: no-parallel, no-fasttest, no-ubsan, no-batch, no-flaky-check
 -- no-parallel because we want to run this test when most of the other tests already passed
+-- This is not a regular test. It is intended to run once after other tests to validate certain statistics about the whole test runs.
+-- TODO: I advise to put in inside clickhouse-test instead.
 
 -- If this test fails, see the "Top patterns of log messages" diagnostics in the end of run.log
 
 system flush logs;
 drop table if exists logs;
 create view logs as select * from system.text_log where now() - toIntervalMinute(120) < event_time;
+
+SET max_rows_to_read = 0; -- system.text_log can be really big
 
 -- Check that we don't have too many messages formatted with fmt::runtime or strings concatenation.
 -- 0.001 threshold should be always enough, the value was about 0.00025
@@ -163,7 +167,10 @@ create temporary table known_short_messages (s String) as select * from (select 
     '{} -> {}',
     '{} {}',
     '{}%',
-    '{}: {}'
+    '{}: {}',
+    'Unknown data type family: {}',
+    'Cannot load time zone {}',
+    'Unknown table engine {}'
     ] as arr) array join arr;
 
 -- Check that we don't have too many short meaningless message patterns.

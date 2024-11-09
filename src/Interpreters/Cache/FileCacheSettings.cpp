@@ -65,6 +65,9 @@ void FileCacheSettings::loadImpl(FuncHas has, FuncGetUInt get_uint, FuncGetStrin
     if (has("load_metadata_threads"))
         load_metadata_threads = get_uint("load_metadata_threads");
 
+    if (has("load_metadata_asynchronously"))
+        load_metadata_asynchronously = get_uint("load_metadata_asynchronously");
+
     if (boundary_alignment > max_file_segment_size)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `boundary_alignment` cannot exceed `max_file_segment_size`");
 

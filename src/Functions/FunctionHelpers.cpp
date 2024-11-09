@@ -59,12 +59,12 @@ ColumnWithTypeAndName columnGetNested(const ColumnWithTypeAndName & col)
         {
             return ColumnWithTypeAndName{nullptr, nested_type, col.name};
         }
-        else if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*col.column))
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*col.column))
         {
             const auto & nested_col = nullable->getNestedColumnPtr();
             return ColumnWithTypeAndName{nested_col, nested_type, col.name};
         }
-        else if (const auto * const_column = checkAndGetColumn<ColumnConst>(&*col.column))
+        if (const auto * const_column = checkAndGetColumn<ColumnConst>(&*col.column))
         {
             const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&const_column->getDataColumn());
 
@@ -78,10 +78,9 @@ ColumnWithTypeAndName columnGetNested(const ColumnWithTypeAndName & col)
             {
                 nullable_res = makeNullable(col.column);
             }
-            return ColumnWithTypeAndName{ nullable_res, nested_type, col.name };
+            return ColumnWithTypeAndName{nullable_res, nested_type, col.name};
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} for DataTypeNullable", col.dumpStructure());
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} for DataTypeNullable", col.dumpStructure());
     }
     return col;
 }
@@ -95,22 +94,21 @@ ColumnsWithTypeAndName createBlockWithNestedColumns(const ColumnsWithTypeAndName
     return res;
 }
 
-void validateArgumentType(const IFunction & func, const DataTypes & arguments,
-                          size_t argument_index, bool (* validator_func)(const IDataType &),
-                          const char * expected_type_description)
-{
-    if (arguments.size() <= argument_index)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Incorrect number of arguments of function {}",
-                        func.getName());
-
-    const auto & argument = arguments[argument_index];
-    if (!validator_func(*argument))
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of {} argument of function {}, expected {}",
-                        argument->getName(), std::to_string(argument_index), func.getName(), expected_type_description);
-}
-
 namespace
 {
+
+String withOrdinalEnding(size_t i)
+{
+    switch (i)
+    {
+        case 0: return "1st";
+        case 1: return "2nd";
+        case 2: return "3rd";
+        default: return std::to_string(i) + "th";
+    }
+
+}
+
 void validateArgumentsImpl(const IFunction & func,
                            const ColumnsWithTypeAndName & arguments,
                            size_t argument_offset,
@@ -120,20 +118,18 @@ void validateArgumentsImpl(const IFunction & func,
     {
         const auto argument_index = i + argument_offset;
         if (argument_index >= arguments.size())
-        {
             break;
-        }
 
         const auto & arg = arguments[i + argument_offset];
         const auto & descriptor = descriptors[i];
         if (int error_code = descriptor.isValid(arg.type, arg.column); error_code != 0)
             throw Exception(error_code,
-                            "Illegal type of argument #{}{} of function {}{}{}",
-                            argument_offset + i + 1,    // +1 is for human-friendly 1-based indexing
-                            (descriptor.argument_name ? " '" + std::string(descriptor.argument_name) + "'" : String{}),
+                            "A value of illegal type was provided as {} argument '{}' to function '{}'. Expected: {}, got: {}",
+                            withOrdinalEnding(argument_offset + i),
+                            descriptor.name,
                             func.getName(),
-                            (descriptor.expected_type_description ? String(", expected ") + descriptor.expected_type_description : String{}),
-                            (arg.type ? ", got " + arg.type->getName() : String{}));
+                            descriptor.type_name,
+                            arg.type ? arg.type->getName() : "<?>");
     }
 }
 
@@ -141,52 +137,42 @@ void validateArgumentsImpl(const IFunction & func,
 
 int FunctionArgumentDescriptor::isValid(const DataTypePtr & data_type, const ColumnPtr & column) const
 {
-    if (type_validator_func && (data_type == nullptr || !type_validator_func(*data_type)))
+    if (name.empty() || type_name.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "name or type_name are not set");
+
+    if (type_validator && (data_type == nullptr || !type_validator(*data_type)))
         return ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT;
 
-    if (column_validator_func && (column == nullptr || !column_validator_func(*column)))
+    if (column_validator && (column == nullptr || !column_validator(*column)))
         return ErrorCodes::ILLEGAL_COLUMN;
 
     return 0;
 }
 
-void validateFunctionArgumentTypes(const IFunction & func,
-                                   const ColumnsWithTypeAndName & arguments,
-                                   const FunctionArgumentDescriptors & mandatory_args,
-                                   const FunctionArgumentDescriptors & optional_args)
+void validateFunctionArguments(const IFunction & func,
+                               const ColumnsWithTypeAndName & arguments,
+                               const FunctionArgumentDescriptors & mandatory_args,
+                               const FunctionArgumentDescriptors & optional_args)
 {
     if (arguments.size() < mandatory_args.size() || arguments.size() > mandatory_args.size() + optional_args.size())
     {
-        auto join_argument_types = [](const auto & args, const String sep = ", ")
-        {
-            String result;
-            for (const auto & a : args)
-            {
-                using A = std::decay_t<decltype(a)>;
-                if constexpr (std::is_same_v<A, FunctionArgumentDescriptor>)
-                {
-                    if (a.argument_name)
-                        result += "'" + std::string(a.argument_name) + "' : ";
-                    if (a.expected_type_description)
-                        result += a.expected_type_description;
-                }
-                else if constexpr (std::is_same_v<A, ColumnWithTypeAndName>)
-                    result += a.type->getName();
+        auto argument_singular_or_plural = [](const auto & args) -> std::string_view { return args.size() == 1 ? "argument" : "arguments"; };
 
-                result += sep;
-            }
-
-            if (!args.empty())
-                result.erase(result.end() - sep.length(), result.end());
-
-            return result;
-        };
+        String expected_args_string;
+        if (!mandatory_args.empty() && !optional_args.empty())
+            expected_args_string = fmt::format("{} mandatory {} and {} optional {}", mandatory_args.size(), argument_singular_or_plural(mandatory_args), optional_args.size(), argument_singular_or_plural(optional_args));
+        else if (!mandatory_args.empty() && optional_args.empty())
+            expected_args_string = fmt::format("{} {}", mandatory_args.size(), argument_singular_or_plural(mandatory_args)); /// intentionally not "_mandatory_ arguments"
+        else if (mandatory_args.empty() && !optional_args.empty())
+            expected_args_string = fmt::format("{} optional {}", optional_args.size(), argument_singular_or_plural(optional_args));
+        else
+            expected_args_string = "0 arguments";
 
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Incorrect number of arguments for function {} provided {}{}, expected {}{} ({}{})",
-            func.getName(), arguments.size(), (!arguments.empty() ? " (" + join_argument_types(arguments) + ")" : String{}),
-            mandatory_args.size(), (!optional_args.empty() ? " to " + std::to_string(mandatory_args.size() + optional_args.size()) : ""),
-            join_argument_types(mandatory_args), (!optional_args.empty() ? ", [" + join_argument_types(optional_args) + "]" : ""));
+            "An incorrect number of arguments was specified for function '{}'. Expected {}, got {}",
+            func.getName(),
+            expected_args_string,
+            fmt::format("{} {}", arguments.size(), argument_singular_or_plural(arguments)));
     }
 
     validateArgumentsImpl(func, arguments, 0, mandatory_args);
@@ -227,7 +213,7 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & a
 
     if (src->onlyNull())
         return src;
-    else if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*src))
+    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*src))
     {
         src_not_nullable = nullable->getNestedColumnPtr();
         result_null_map_column = nullable->getNullMapColumnPtr();

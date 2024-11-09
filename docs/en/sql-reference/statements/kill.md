@@ -58,6 +58,10 @@ KILL QUERY WHERE query_id='2-857d-4a57-9ee0-327da5d60a90'
 KILL QUERY WHERE user='username' SYNC
 ```
 
+:::tip 
+If you are killing a query in ClickHouse Cloud or in a self-managed cluster, then be sure to use the ```ON CLUSTER [cluster-name]``` option, in order to ensure the query is killed on all replicas
+:::
+
 Read-only users can only stop their own queries.
 
 By default, the asynchronous version of queries is used (`ASYNC`), which does not wait for confirmation that queries have stopped.
@@ -79,7 +83,7 @@ The presence of long-running or incomplete mutations often indicates that a Clic
 - Or manually kill some of these mutations by sending a `KILL` command.
 
 ``` sql
-KILL MUTATION [ON CLUSTER cluster]
+KILL MUTATION
   WHERE <where expression to SELECT FROM system.mutations query>
   [TEST]
   [FORMAT format]

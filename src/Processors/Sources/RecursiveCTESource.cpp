@@ -5,7 +5,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
-#include <Processors/Transforms/SquashingChunksTransform.h>
+#include <Processors/Transforms/SquashingTransform.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -17,8 +17,14 @@
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/TableNode.h>
 
+#include <Core/Settings.h>
+
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_recursive_cte_evaluation_depth;
+}
 
 namespace ErrorCodes
 {
@@ -160,12 +166,12 @@ private:
     {
         const auto & recursive_subquery_settings = recursive_query_context->getSettingsRef();
 
-        if (recursive_step > recursive_subquery_settings.max_recursive_cte_evaluation_depth)
+        if (recursive_step > recursive_subquery_settings[Setting::max_recursive_cte_evaluation_depth])
             throw Exception(
                 ErrorCodes::TOO_DEEP_RECURSION,
                 "Maximum recursive CTE evaluation depth ({}) exceeded, during evaluation of {}. Consider raising "
                 "max_recursive_cte_evaluation_depth setting.",
-                recursive_subquery_settings.max_recursive_cte_evaluation_depth,
+                recursive_subquery_settings[Setting::max_recursive_cte_evaluation_depth],
                 recursive_cte_union_node->formatASTForErrorMessage());
 
         auto & query_to_execute = recursive_step > 0 ? recursive_query : non_recursive_query;

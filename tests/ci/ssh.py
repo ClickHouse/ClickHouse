@@ -37,9 +37,9 @@ class SSHAgent:
         ssh_options = (
             "," + os.environ["SSH_OPTIONS"] if os.environ.get("SSH_OPTIONS") else ""
         )
-        os.environ[
-            "SSH_OPTIONS"
-        ] = f"{ssh_options}UserKnownHostsFile=/dev/null,StrictHostKeyChecking=no"
+        os.environ["SSH_OPTIONS"] = (
+            f"{ssh_options}UserKnownHostsFile=/dev/null,StrictHostKeyChecking=no"
+        )
 
     def add(self, key):
         key_pub = self._key_pub(key)

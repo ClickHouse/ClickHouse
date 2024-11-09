@@ -3,6 +3,8 @@
 #include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
 
+#include <Core/ServerSettings.h>
+
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -46,7 +48,7 @@ WebObjectStorage::loadFiles(const String & path, const std::unique_lock<std::sha
 
         auto timeouts = ConnectionTimeouts::getHTTPTimeouts(
             getContext()->getSettingsRef(),
-            getContext()->getServerSettings().keep_alive_timeout);
+            getContext()->getServerSettings());
 
         auto metadata_buf = BuilderRWBufferFromHTTP(Poco::URI(fs::path(full_url) / ".index"))
                                 .withConnectionGroup(HTTPConnectionGroupType::DISK)
@@ -197,51 +199,30 @@ WebObjectStorage::FileDataPtr WebObjectStorage::tryGetFileInfo(const String & pa
 
         if (auto jt = files.find(path, is_file); jt != files.end())
             return jt->second;
-        else
-        {
-            return nullptr;
-        }
+
+        return nullptr;
     }
-    else
+
+    auto it = std::lower_bound(
+        files.begin(), files.end(), path, [](const auto & file, const std::string & path_) { return file.first < path_; });
+    if (it != files.end())
     {
-        auto it = std::lower_bound(
-            files.begin(), files.end(), path,
-            [](const auto & file, const std::string & path_) { return file.first < path_; }
-        );
-        if (it != files.end())
+        if (startsWith(it->first, path) || (it != files.begin() && startsWith(std::prev(it)->first, path)))
         {
-            if (startsWith(it->first, path)
-                || (it != files.begin() && startsWith(std::prev(it)->first, path)))
-            {
-                shared_lock.unlock();
-                std::unique_lock unique_lock(metadata_mutex);
+            shared_lock.unlock();
+            std::unique_lock unique_lock(metadata_mutex);
 
-                /// Add this directory path not files cache to simplify further checks for this path.
-                return files.add(path, FileData::createDirectoryInfo(false)).first->second;
-            }
+            /// Add this directory path not files cache to simplify further checks for this path.
+            return files.add(path, FileData::createDirectoryInfo(false)).first->second;
         }
-
-        shared_lock.unlock();
-        std::unique_lock unique_lock(metadata_mutex);
-
-        if (auto jt = files.find(path, is_file); jt != files.end())
-            return jt->second;
-        else
-            return loadFiles(path, unique_lock).first;
     }
-}
 
-std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObjects( /// NOLINT
-    const StoredObjects & objects,
-    const ReadSettings & read_settings,
-    std::optional<size_t> read_hint,
-    std::optional<size_t> file_size) const
-{
-    if (objects.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "WebObjectStorage support read only from single object");
+    shared_lock.unlock();
+    std::unique_lock unique_lock(metadata_mutex);
 
-    return readObject(objects[0], read_settings, read_hint, file_size);
-
+    if (auto jt = files.find(path, is_file); jt != files.end())
+        return jt->second;
+    return loadFiles(path, unique_lock).first;
 }
 
 std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
@@ -250,50 +231,12 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
     std::optional<size_t>,
     std::optional<size_t>) const
 {
-    size_t object_size = object.bytes_size;
-    auto read_buffer_creator =
-         [this, read_settings, object_size]
-         (bool /* restricted_seek */, const StoredObject & object_) -> std::unique_ptr<ReadBufferFromFileBase>
-     {
-        return std::make_unique<ReadBufferFromWebServer>(
-            fs::path(url) / object_.remote_path,
-            getContext(),
-            object_size,
-            read_settings,
-            /* use_external_buffer */true);
-     };
-
-    auto global_context = Context::getGlobalContextInstance();
-
-    switch (read_settings.remote_fs_method)
-    {
-        case RemoteFSReadMethod::read:
-        {
-            return std::make_unique<ReadBufferFromRemoteFSGather>(
-                std::move(read_buffer_creator),
-                StoredObjects{object},
-                "url:" + url + "/",
-                read_settings,
-                global_context->getFilesystemCacheLog(),
-                /* use_external_buffer */false);
-        }
-        case RemoteFSReadMethod::threadpool:
-        {
-            auto impl = std::make_unique<ReadBufferFromRemoteFSGather>(
-                std::move(read_buffer_creator),
-                StoredObjects{object},
-                "url:" + url + "/",
-                read_settings,
-                global_context->getFilesystemCacheLog(),
-                /* use_external_buffer */true);
-
-            auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
-            return std::make_unique<AsynchronousBoundedReadBuffer>(
-                std::move(impl), reader, read_settings,
-                global_context->getAsyncReadCounters(),
-                global_context->getFilesystemReadPrefetchesLog());
-        }
-    }
+    return std::make_unique<ReadBufferFromWebServer>(
+        fs::path(url) / object.remote_path,
+        getContext(),
+        object.bytes_size,
+        read_settings,
+        read_settings.remote_read_buffer_use_external_buffer);
 }
 
 void WebObjectStorage::throwNotAllowed()

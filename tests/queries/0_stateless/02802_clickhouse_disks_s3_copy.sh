@@ -14,14 +14,11 @@ function run_test_for_disk()
 
     echo "$disk"
 
-    clickhouse-disks -C "$config" --disk "$disk" write --input "$config" $CLICKHOUSE_DATABASE/test
-    clickhouse-disks -C "$config" --log-level test --disk "$disk" copy $CLICKHOUSE_DATABASE/test $CLICKHOUSE_DATABASE/test.copy |& {
+    clickhouse-disks -C "$config" --disk "$disk" --query "write --path-from $config $CLICKHOUSE_DATABASE/test"
+    clickhouse-disks -C "$config" --log-level test --disk "$disk" --query "copy -r $CLICKHOUSE_DATABASE/test $CLICKHOUSE_DATABASE/test.copy" |& {
         grep -o -e "Single part upload has completed." -e "Single operation copy has completed."
     }
-    clickhouse-disks -C "$config" --disk "$disk" remove $CLICKHOUSE_DATABASE/test
-    # NOTE: this is due to "copy" does works like "cp -R from to/" instead of "cp from to"
-    clickhouse-disks -C "$config" --disk "$disk" remove $CLICKHOUSE_DATABASE/test.copy/test
-    clickhouse-disks -C "$config" --disk "$disk" remove $CLICKHOUSE_DATABASE/test.copy
+    clickhouse-disks -C "$config" --disk "$disk" --query "remove -r $CLICKHOUSE_DATABASE/test"
 }
 
 function run_test_copy_from_s3_to_s3(){
@@ -29,13 +26,12 @@ function run_test_copy_from_s3_to_s3(){
     local disk_dest=$1 && shift
 
     echo "copy from $disk_src to $disk_dest"
-    clickhouse-disks -C "$config" --disk "$disk_src" write  --input "$config" $CLICKHOUSE_DATABASE/test
+    clickhouse-disks -C "$config" --disk "$disk_src" --query "write --path-from $config $CLICKHOUSE_DATABASE/test"
 
-    clickhouse-disks -C "$config" --log-level test copy --disk-from "$disk_src" --disk-to "$disk_dest"  $CLICKHOUSE_DATABASE/test $CLICKHOUSE_DATABASE/test.copy |& {
+    clickhouse-disks -C "$config" --log-level test --query "copy -r --disk-from $disk_src --disk-to $disk_dest $CLICKHOUSE_DATABASE/test $CLICKHOUSE_DATABASE/test.copy" |& {
         grep -o -e "Single part upload has completed." -e "Single operation copy has completed."
     }
-    clickhouse-disks -C "$config" --disk "$disk_dest" remove $CLICKHOUSE_DATABASE/test.copy/test
-    clickhouse-disks -C "$config" --disk "$disk_dest" remove $CLICKHOUSE_DATABASE/test.copy
+    clickhouse-disks -C "$config" --disk "$disk_dest" --query "remove -r $CLICKHOUSE_DATABASE/test.copy"
 }
 
 run_test_for_disk s3_plain_native_copy

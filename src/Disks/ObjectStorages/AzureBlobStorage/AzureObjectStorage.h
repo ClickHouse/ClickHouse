@@ -7,6 +7,8 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Common/MultiVersion.h>
 #include <azure/storage/blobs.hpp>
+#include <azure/core/http/curl_transport.hpp>
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 
 namespace Poco
 {
@@ -16,71 +18,15 @@ class Logger;
 namespace DB
 {
 
-struct AzureObjectStorageSettings
-{
-    AzureObjectStorageSettings(
-        uint64_t max_single_part_upload_size_,
-        uint64_t min_bytes_for_seek_,
-        int max_single_read_retries_,
-        int max_single_download_retries_,
-        int list_object_keys_size_,
-        size_t min_upload_part_size_,
-        size_t max_upload_part_size_,
-        size_t max_single_part_copy_size_,
-        bool use_native_copy_,
-        size_t max_unexpected_write_error_retries_,
-        size_t max_inflight_parts_for_one_file_,
-        size_t strict_upload_part_size_,
-        size_t upload_part_size_multiply_factor_,
-        size_t upload_part_size_multiply_parts_count_threshold_)
-        : max_single_part_upload_size(max_single_part_upload_size_)
-        , min_bytes_for_seek(min_bytes_for_seek_)
-        , max_single_read_retries(max_single_read_retries_)
-        , max_single_download_retries(max_single_download_retries_)
-        , list_object_keys_size(list_object_keys_size_)
-        , min_upload_part_size(min_upload_part_size_)
-        , max_upload_part_size(max_upload_part_size_)
-        , max_single_part_copy_size(max_single_part_copy_size_)
-        , use_native_copy(use_native_copy_)
-        , max_unexpected_write_error_retries(max_unexpected_write_error_retries_)
-        , max_inflight_parts_for_one_file(max_inflight_parts_for_one_file_)
-        , strict_upload_part_size(strict_upload_part_size_)
-        , upload_part_size_multiply_factor(upload_part_size_multiply_factor_)
-        , upload_part_size_multiply_parts_count_threshold(upload_part_size_multiply_parts_count_threshold_)
-    {
-    }
-
-    AzureObjectStorageSettings() = default;
-
-    size_t max_single_part_upload_size = 100 * 1024 * 1024; /// NOTE: on 32-bit machines it will be at most 4GB, but size_t is also used in BufferBase for offset
-    uint64_t min_bytes_for_seek = 1024 * 1024;
-    size_t max_single_read_retries = 3;
-    size_t max_single_download_retries = 3;
-    int list_object_keys_size = 1000;
-    size_t min_upload_part_size = 16 * 1024 * 1024;
-    size_t max_upload_part_size = 5ULL * 1024 * 1024 * 1024;
-    size_t max_single_part_copy_size = 256 * 1024 * 1024;
-    bool use_native_copy = false;
-    size_t max_unexpected_write_error_retries = 4;
-    size_t max_inflight_parts_for_one_file = 20;
-    size_t max_blocks_in_multipart_upload = 50000;
-    size_t strict_upload_part_size = 0;
-    size_t upload_part_size_multiply_factor = 2;
-    size_t upload_part_size_multiply_parts_count_threshold = 500;
-};
-
-using AzureClient = Azure::Storage::Blobs::BlobContainerClient;
-using AzureClientPtr = std::unique_ptr<Azure::Storage::Blobs::BlobContainerClient>;
-
 class AzureObjectStorage : public IObjectStorage
 {
 public:
-
-    using SettingsPtr = std::unique_ptr<AzureObjectStorageSettings>;
+    using ClientPtr = std::unique_ptr<AzureBlobStorage::ContainerClient>;
+    using SettingsPtr = std::unique_ptr<AzureBlobStorage::RequestSettings>;
 
     AzureObjectStorage(
         const String & name_,
-        AzureClientPtr && client_,
+        ClientPtr && client_,
         SettingsPtr && settings_,
         const String & object_namespace_,
         const String & description_);
@@ -101,13 +47,7 @@ public:
 
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
-        const ReadSettings & read_settings = ReadSettings{},
-        std::optional<size_t> read_hint = {},
-        std::optional<size_t> file_size = {}) const override;
-
-    std::unique_ptr<ReadBufferFromFileBase> readObjects( /// NOLINT
-        const StoredObjects & objects,
-        const ReadSettings & read_settings = ReadSettings{},
+        const ReadSettings & read_settings,
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const override;
 
@@ -155,16 +95,12 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override;
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
 
     bool isRemote() const override { return true; }
 
-    std::shared_ptr<const AzureObjectStorageSettings> getSettings() { return settings.get(); }
-
-    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> getAzureBlobStorageClient() override
-    {
-        return client.get();
-    }
+    std::shared_ptr<const AzureBlobStorage::RequestSettings> getSettings() const  { return settings.get(); }
+    std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const override { return client.get(); }
 
     bool supportParallelWrite() const override { return true; }
 
@@ -174,8 +110,8 @@ private:
 
     const String name;
     /// client used to access the files in the Blob Storage cloud
-    MultiVersion<Azure::Storage::Blobs::BlobContainerClient> client;
-    MultiVersion<AzureObjectStorageSettings> settings;
+    MultiVersion<AzureBlobStorage::ContainerClient> client;
+    MultiVersion<AzureBlobStorage::RequestSettings> settings;
     const String object_namespace; /// container + prefix
 
     /// We use source url without container and prefix as description, because in Azure there are no limitations for operations between different containers.

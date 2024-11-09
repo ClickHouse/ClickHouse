@@ -2,6 +2,7 @@
 
 #if USE_HDFS
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 #include <Parsers/IAST.h>
 #include <Formats/FormatFactory.h>
 #include <Disks/ObjectStorages/HDFS/HDFSObjectStorage.h>
@@ -19,10 +20,24 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool hdfs_create_new_file_on_insert;
+    extern const SettingsBool hdfs_ignore_file_doesnt_exist;
+    extern const SettingsUInt64 hdfs_replication;
+    extern const SettingsBool hdfs_skip_empty_files;
+    extern const SettingsBool hdfs_throw_on_zero_files_match;
+    extern const SettingsBool hdfs_truncate_on_insert;
+    extern const SettingsUInt64 remote_read_min_bytes_for_seek;
+    extern const SettingsSchemaInferenceMode schema_inference_mode;
+    extern const SettingsBool schema_inference_use_cache_for_hdfs;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int LOGICAL_ERROR;
 }
 
 StorageHDFSConfiguration::StorageHDFSConfiguration(const StorageHDFSConfiguration & other)
@@ -46,10 +61,7 @@ ObjectStoragePtr StorageHDFSConfiguration::createObjectStorage( /// NOLINT
 {
     assertInitialized();
     const auto & settings = context->getSettingsRef();
-    auto hdfs_settings = std::make_unique<HDFSObjectStorageSettings>(
-        settings.remote_read_min_bytes_for_seek,
-        settings.hdfs_replication
-    );
+    auto hdfs_settings = std::make_unique<HDFSObjectStorageSettings>(settings[Setting::remote_read_min_bytes_for_seek], settings[Setting::hdfs_replication]);
     return std::make_shared<HDFSObjectStorage>(
         url, std::move(hdfs_settings), context->getConfigRef(), /* lazy_initialize */true);
 }
@@ -69,25 +81,26 @@ StorageObjectStorage::QuerySettings StorageHDFSConfiguration::getQuerySettings(c
 {
     const auto & settings = context->getSettingsRef();
     return StorageObjectStorage::QuerySettings{
-        .truncate_on_insert = settings.hdfs_truncate_on_insert,
-        .create_new_file_on_insert = settings.hdfs_create_new_file_on_insert,
-        .schema_inference_use_cache = settings.schema_inference_use_cache_for_hdfs,
-        .schema_inference_mode = settings.schema_inference_mode,
-        .skip_empty_files = settings.hdfs_skip_empty_files,
+        .truncate_on_insert = settings[Setting::hdfs_truncate_on_insert],
+        .create_new_file_on_insert = settings[Setting::hdfs_create_new_file_on_insert],
+        .schema_inference_use_cache = settings[Setting::schema_inference_use_cache_for_hdfs],
+        .schema_inference_mode = settings[Setting::schema_inference_mode],
+        .skip_empty_files = settings[Setting::hdfs_skip_empty_files],
         .list_object_keys_size = 0, /// HDFS does not support listing in batches.
-        .throw_on_zero_files_match = settings.hdfs_throw_on_zero_files_match,
-        .ignore_non_existent_file = settings.hdfs_ignore_file_doesnt_exist,
+        .throw_on_zero_files_match = settings[Setting::hdfs_throw_on_zero_files_match],
+        .ignore_non_existent_file = settings[Setting::hdfs_ignore_file_doesnt_exist],
     };
 }
 
 void StorageHDFSConfiguration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
-    const size_t max_args_num = with_structure ? 4 : 3;
-    if (args.empty() || args.size() > max_args_num)
-    {
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                        "Expected not more than {} arguments", max_args_num);
-    }
+    if (args.empty() || args.size() > getMaxNumberOfArguments(with_structure))
+        throw Exception(
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Storage HDFS requires 1 to {} arguments. All supported signatures:\n{}",
+            getMaxNumberOfArguments(with_structure),
+            getSignatures(with_structure));
+
 
     std::string url_str;
     url_str = checkAndGetLiteralArgument<String>(args[0], "url");
@@ -141,11 +154,11 @@ void StorageHDFSConfiguration::setURL(const std::string & url_)
 {
     auto pos = url_.find("//");
     if (pos == std::string::npos)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad hdfs url: {}", url_);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad HDFS URL: {}. It should have the following structure 'hdfs://<host_name>:<port>/path'", url_);
 
     pos = url_.find('/', pos + 2);
     if (pos == std::string::npos)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad hdfs url: {}", url_);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad HDFS URL: {}. It should have the following structure 'hdfs://<host_name>:<port>/path'", url_);
 
     path = url_.substr(pos + 1);
     if (!path.starts_with('/'))
@@ -154,31 +167,37 @@ void StorageHDFSConfiguration::setURL(const std::string & url_)
     url = url_.substr(0, pos);
     paths = {path};
 
-    LOG_TRACE(getLogger("StorageHDFSConfiguration"), "Using url: {}, path: {}", url, path);
+    LOG_TRACE(getLogger("StorageHDFSConfiguration"), "Using URL: {}, path: {}", url, path);
 }
 
-void StorageHDFSConfiguration::addStructureAndFormatToArgs(
+void StorageHDFSConfiguration::addStructureAndFormatToArgsIfNeeded(
     ASTs & args,
     const String & structure_,
     const String & format_,
     ContextPtr context)
 {
-    if (tryGetNamedCollectionWithOverrides(args, context))
+    if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
     {
-        /// In case of named collection, just add key-value pair "structure='...'"
-        /// at the end of arguments to override existed structure.
-        ASTs equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure_)};
-        auto equal_func = makeASTFunction("equals", std::move(equal_func_args));
-        args.push_back(equal_func);
+        /// In case of named collection, just add key-value pairs "format='...', structure='...'"
+        /// at the end of arguments to override existed format and structure with "auto" values.
+        if (collection->getOrDefault<String>("format", "auto") == "auto")
+        {
+            ASTs format_equal_func_args = {std::make_shared<ASTIdentifier>("format"), std::make_shared<ASTLiteral>(format_)};
+            auto format_equal_func = makeASTFunction("equals", std::move(format_equal_func_args));
+            args.push_back(format_equal_func);
+        }
+        if (collection->getOrDefault<String>("structure", "auto") == "auto")
+        {
+            ASTs structure_equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure_)};
+            auto structure_equal_func = makeASTFunction("equals", std::move(structure_equal_func_args));
+            args.push_back(structure_equal_func);
+        }
     }
     else
     {
         size_t count = args.size();
-        if (count == 0 || count > 4)
-        {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Expected 1 to 4 arguments in table function, got {}", count);
-        }
+        if (count == 0 || count > getMaxNumberOfArguments())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 1 to {} arguments in table function hdfs, got {}", getMaxNumberOfArguments(), count);
 
         auto format_literal = std::make_shared<ASTLiteral>(format_);
         auto structure_literal = std::make_shared<ASTLiteral>(structure_);

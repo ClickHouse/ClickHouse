@@ -131,7 +131,7 @@ def main():
     check_name = args.check_name or os.getenv("CHECK_NAME")
     assert check_name
     check_glibc = True
-    # currently hardcoded to x86, don't enable for ARM
+    # currently hardcoded to x86, don't enable for AARCH64
     check_distributions = (
         "aarch64" not in check_name.lower() and "arm64" not in check_name.lower()
     )
@@ -196,7 +196,7 @@ def main():
 
     # See https://sourceware.org/glibc/wiki/Glibc%20Timeline
     max_glibc_version = ""
-    if "amd64" in check_name:
+    if "amd64" in check_name or "release" in check_name:
         max_glibc_version = "2.4"
     elif "aarch64" in check_name:
         max_glibc_version = "2.18"  # because of build with newer sysroot?

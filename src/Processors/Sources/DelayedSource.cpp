@@ -139,6 +139,12 @@ void DelayedSource::work()
             processor->setRowsBeforeLimitCounter(rows_before_limit);
     }
 
+    if (rows_before_aggregation)
+    {
+        for (auto & processor : processors)
+            processor->setRowsBeforeAggregationCounter(rows_before_aggregation);
+    }
+
     synchronizePorts(totals_output, totals, header, processors);
     synchronizePorts(extremes_output, extremes, header, processors);
 }

@@ -5,6 +5,7 @@
 #include <Parsers/Access/ASTShowGrantsQuery.h>
 #include <Parsers/formatAST.h>
 #include <Access/AccessControl.h>
+#include <Access/AccessRights.h>
 #include <Access/CachedAccessChecking.h>
 #include <Access/ContextAccess.h>
 #include <Access/EnabledRolesInfo.h>
@@ -28,20 +29,23 @@ namespace ErrorCodes
 
 namespace
 {
-    template <typename T>
-    ASTs getGrantQueriesImpl(
-        const T & grantee,
-        const AccessControl * access_control /* not used if attach_mode == true */,
-        bool attach_mode = false)
+    void getGrantsFromAccess(
+        ASTs & res,
+        const AccessRights & access,
+        const std::shared_ptr<ASTRolesOrUsersSet> grantees,
+        const AccessControl * access_control,
+        bool attach_mode = false,
+        bool with_implicit = false)
     {
-        ASTs res;
-
-        std::shared_ptr<ASTRolesOrUsersSet> grantees = std::make_shared<ASTRolesOrUsersSet>();
-        grantees->names.push_back(grantee.getName());
-
         std::shared_ptr<ASTGrantQuery> current_query = nullptr;
 
-        for (const auto & element : grantee.access.getElements())
+        AccessRightsElements elements;
+        if (with_implicit)
+            elements = ContextAccess::addImplicitAccessRights(access, *access_control).getElements();
+        else
+            elements = access.getElements();
+
+        for (auto & element : elements)
         {
             if (element.empty())
                 continue;
@@ -66,21 +70,54 @@ namespace
 
             current_query->access_rights_elements.emplace_back(std::move(element));
         }
+    }
 
-        for (const auto & element : grantee.granted_roles.getElements())
+    template <typename T>
+    void unionAccessFromRoles(AccessRights & res, const T & entity, const AccessControl * access_control)
+    {
+        std::vector granted_roles(entity.granted_roles.getGranted().begin(), entity.granted_roles.getGranted().end());
+        std::vector granted_roles_with_admin_option(entity.granted_roles.getGrantedWithAdminOption().begin(), entity.granted_roles.getGrantedWithAdminOption().end());
+        auto roles_info = access_control->getEnabledRolesInfo(granted_roles, granted_roles_with_admin_option);
+
+        res.makeUnion(roles_info->access);
+    }
+
+    template <typename T>
+    ASTs getGrantQueriesImpl(
+        const T & grantee,
+        const AccessControl * access_control /* not used if attach_mode == true */,
+        bool attach_mode = false,
+        bool with_implicit = false,
+        bool final = false)
+    {
+        ASTs res;
+
+        std::shared_ptr<ASTRolesOrUsersSet> grantees = std::make_shared<ASTRolesOrUsersSet>();
+        grantees->names.push_back(grantee.getName());
+
+        AccessRights access = grantee.access;
+        if (final)
+            unionAccessFromRoles(access, grantee, access_control);
+
+        getGrantsFromAccess(res, access, grantees, access_control, attach_mode, with_implicit);
+
+        if (!final)
         {
-            if (element.empty())
-                continue;
+            for (const auto & element : grantee.granted_roles.getElements())
+            {
+                if (element.empty())
+                    continue;
 
-            auto grant_query = std::make_shared<ASTGrantQuery>();
-            grant_query->grantees = grantees;
-            grant_query->admin_option = element.admin_option;
-            grant_query->attach_mode = attach_mode;
-            if (attach_mode)
-                grant_query->roles = RolesOrUsersSet{element.ids}.toAST();
-            else
-                grant_query->roles = RolesOrUsersSet{element.ids}.toASTWithNames(*access_control);
-            res.push_back(std::move(grant_query));
+                auto grant_query = std::make_shared<ASTGrantQuery>();
+                grant_query->grantees = grantees;
+                grant_query->admin_option = element.admin_option;
+                grant_query->attach_mode = attach_mode;
+                if (attach_mode)
+                    grant_query->roles = RolesOrUsersSet{element.ids}.toAST();
+                else
+                    grant_query->roles = RolesOrUsersSet{element.ids}.toASTWithNames(*access_control);
+                res.push_back(std::move(grant_query));
+            }
         }
 
         return res;
@@ -89,12 +126,14 @@ namespace
     ASTs getGrantQueriesImpl(
         const IAccessEntity & entity,
         const AccessControl * access_control /* not used if attach_mode == true */,
-        bool attach_mode = false)
+        bool attach_mode = false,
+        bool with_implicit = false,
+        bool final = false)
     {
         if (const User * user = typeid_cast<const User *>(&entity))
-            return getGrantQueriesImpl(*user, access_control, attach_mode);
+            return getGrantQueriesImpl(*user, access_control, attach_mode, with_implicit, final);
         if (const Role * role = typeid_cast<const Role *>(&entity))
-            return getGrantQueriesImpl(*role, access_control, attach_mode);
+            return getGrantQueriesImpl(*role, access_control, attach_mode, with_implicit, final);
         throw Exception(ErrorCodes::LOGICAL_ERROR, "{} is expected to be user or role", entity.formatTypeWithName());
     }
 
@@ -180,23 +219,24 @@ ASTs InterpreterShowGrantsQuery::getGrantQueries() const
     auto entities = getEntities();
     const auto & access_control = getContext()->getAccessControl();
 
+    const auto & show_query = query_ptr->as<const ASTShowGrantsQuery &>();
     ASTs grant_queries;
     for (const auto & entity : entities)
-        boost::range::push_back(grant_queries, getGrantQueries(*entity, access_control));
+        boost::range::push_back(grant_queries, getGrantQueries(*entity, access_control, show_query.with_implicit, show_query.final));
 
     return grant_queries;
 }
 
 
-ASTs InterpreterShowGrantsQuery::getGrantQueries(const IAccessEntity & user_or_role, const AccessControl & access_control)
+ASTs InterpreterShowGrantsQuery::getGrantQueries(const IAccessEntity & user_or_role, const AccessControl & access_control, bool with_implicit, bool final)
 {
-    return getGrantQueriesImpl(user_or_role, &access_control, false);
+    return getGrantQueriesImpl(user_or_role, &access_control, false, with_implicit, final);
 }
 
 
 ASTs InterpreterShowGrantsQuery::getAttachGrantQueries(const IAccessEntity & user_or_role)
 {
-    return getGrantQueriesImpl(user_or_role, nullptr, true);
+    return getGrantQueriesImpl(user_or_role, nullptr, true, false);
 }
 
 void registerInterpreterShowGrantsQuery(InterpreterFactory & factory)

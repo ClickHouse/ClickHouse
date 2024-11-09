@@ -39,9 +39,10 @@
 
 #include <Parsers/IAST_fwd.h>
 
-#include <Interpreters/AggregationMethod.h>
 #include <Interpreters/AggregatedData.h>
 #include <Interpreters/AggregatedDataVariants.h>
+#include <Interpreters/AggregationMethod.h>
+#include <Interpreters/HashTablesStatistics.h>
 
 namespace DB
 {
@@ -57,6 +58,18 @@ using ColumnsHashing::LastElementCacheStats;
 class CompiledAggregateFunctionsHolder;
 class NativeWriter;
 struct OutputBlockColumns;
+
+struct GroupingSetsParams
+{
+    GroupingSetsParams() = default;
+
+    GroupingSetsParams(Names used_keys_, Names missing_keys_) : used_keys(std::move(used_keys_)), missing_keys(std::move(missing_keys_)) { }
+
+    Names used_keys;
+    Names missing_keys;
+};
+
+using GroupingSetsParamsList = std::vector<GroupingSetsParams>;
 
 /** How are "total" values calculated with WITH TOTALS?
   * (For more details, see TotalsHavingTransform.)
@@ -127,24 +140,6 @@ public:
         bool optimize_group_by_constant_keys;
 
         const double min_hit_rate_to_use_consecutive_keys_optimization;
-
-        struct StatsCollectingParams
-        {
-            StatsCollectingParams();
-
-            StatsCollectingParams(
-                const ASTPtr & select_query_,
-                bool collect_hash_table_stats_during_aggregation_,
-                size_t max_entries_for_hash_table_stats_,
-                size_t max_size_to_preallocate_for_aggregation_);
-
-            bool isCollectionAndUseEnabled() const { return key != 0; }
-            void disable() { key = 0; }
-
-            UInt64 key = 0;
-            const size_t max_entries_for_hash_table_stats = 0;
-            const size_t max_size_to_preallocate_for_aggregation = 0;
-        };
 
         StatsCollectingParams stats_collecting_params;
 
@@ -472,7 +467,7 @@ private:
 
     /// Merge data from hash table `src` into `dst`.
     template <typename Method, typename Table>
-    void mergeDataImpl(Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions, bool prefetch) const;
+    void mergeDataImpl(Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions, bool prefetch, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const;
 
     /// Merge data from hash table `src` into `dst`, but only for keys that already exist in dst. In other cases, merge the data into `overflows`.
     template <typename Method, typename Table>
@@ -495,7 +490,7 @@ private:
 
     template <typename Method>
     void mergeSingleLevelDataImpl(
-        ManyAggregatedDataVariants & non_empty_data) const;
+        ManyAggregatedDataVariants & non_empty_data, std::atomic<bool> & is_cancelled) const;
 
     template <bool return_single_block>
     using ConvertToBlockRes = std::conditional_t<return_single_block, Block, BlocksList>;
@@ -674,6 +669,7 @@ private:
         Arena * arena);
 };
 
+UInt64 calculateCacheKey(const DB::ASTPtr & select_query);
 
 /** Get the aggregation variant by its type. */
 template <typename Method> Method & getDataVariant(AggregatedDataVariants & variants);
@@ -685,13 +681,4 @@ APPLY_FOR_AGGREGATED_VARIANTS(M)
 
 #undef M
 
-
-struct HashTablesCacheStatistics
-{
-    size_t entries = 0;
-    size_t hits = 0;
-    size_t misses = 0;
-};
-
-std::optional<HashTablesCacheStatistics> getHashTablesCacheStatistics();
 }

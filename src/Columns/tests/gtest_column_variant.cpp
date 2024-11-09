@@ -108,10 +108,10 @@ void checkColumnVariant1(ColumnVariant * column)
     ASSERT_EQ(offsets[1], 0);
     ASSERT_EQ(offsets[3], 1);
     ASSERT_TRUE(column->isDefaultAt(2) && column->isDefaultAt(4));
-    ASSERT_EQ((*column)[0].get<UInt32>(), 42);
-    ASSERT_EQ((*column)[1].get<String>(), "Hello");
+    ASSERT_EQ((*column)[0].safeGet<UInt32>(), 42);
+    ASSERT_EQ((*column)[1].safeGet<String>(), "Hello");
     ASSERT_TRUE((*column)[2].isNull());
-    ASSERT_EQ((*column)[3].get<String>(), "World");
+    ASSERT_EQ((*column)[3].safeGet<String>(), "World");
     ASSERT_TRUE((*column)[4].isNull());
 }
 
@@ -209,9 +209,9 @@ TEST(ColumnVariant, CreateFromDiscriminatorsAndOneFullColumnNoNulls)
     ASSERT_EQ(offsets[0], 0);
     ASSERT_EQ(offsets[1], 1);
     ASSERT_EQ(offsets[2], 2);
-    ASSERT_EQ((*column)[0].get<UInt64>(), 0);
-    ASSERT_EQ((*column)[1].get<UInt64>(), 1);
-    ASSERT_EQ((*column)[2].get<UInt64>(), 2);
+    ASSERT_EQ((*column)[0].safeGet<UInt64>(), 0);
+    ASSERT_EQ((*column)[1].safeGet<UInt64>(), 1);
+    ASSERT_EQ((*column)[2].safeGet<UInt64>(), 2);
 }
 
 TEST(ColumnVariant, CreateFromDiscriminatorsAndOneFullColumnNoNullsWithLocalOrder)
@@ -222,9 +222,9 @@ TEST(ColumnVariant, CreateFromDiscriminatorsAndOneFullColumnNoNullsWithLocalOrde
     ASSERT_EQ(offsets[0], 0);
     ASSERT_EQ(offsets[1], 1);
     ASSERT_EQ(offsets[2], 2);
-    ASSERT_EQ((*column)[0].get<UInt64>(), 0);
-    ASSERT_EQ((*column)[1].get<UInt64>(), 1);
-    ASSERT_EQ((*column)[2].get<UInt64>(), 2);
+    ASSERT_EQ((*column)[0].safeGet<UInt64>(), 0);
+    ASSERT_EQ((*column)[1].safeGet<UInt64>(), 1);
+    ASSERT_EQ((*column)[2].safeGet<UInt64>(), 2);
     ASSERT_EQ(column->localDiscriminatorAt(0), 2);
     ASSERT_EQ(column->localDiscriminatorAt(1), 2);
     ASSERT_EQ(column->localDiscriminatorAt(2), 2);
@@ -331,9 +331,9 @@ TEST(ColumnVariant, CloneResizedGeneral1)
     ASSERT_EQ(offsets[0], 0);
     ASSERT_EQ(offsets[1], 0);
     ASSERT_EQ(offsets[3], 1);
-    ASSERT_EQ((*resized_column_variant)[0].get<UInt64>(), 42);
-    ASSERT_EQ((*resized_column_variant)[1].get<String>(), "Hello");
-    ASSERT_EQ((*resized_column_variant)[3].get<UInt64>(), 43);
+    ASSERT_EQ((*resized_column_variant)[0].safeGet<UInt64>(), 42);
+    ASSERT_EQ((*resized_column_variant)[1].safeGet<String>(), "Hello");
+    ASSERT_EQ((*resized_column_variant)[3].safeGet<UInt64>(), 43);
 }
 
 TEST(ColumnVariant, CloneResizedGeneral2)
@@ -367,7 +367,7 @@ TEST(ColumnVariant, CloneResizedGeneral2)
     ASSERT_EQ(discriminators[2], ColumnVariant::NULL_DISCRIMINATOR);
     const auto & offsets = resized_column_variant->getOffsets();
     ASSERT_EQ(offsets[0], 0);
-    ASSERT_EQ((*resized_column_variant)[0].get<UInt64>(), 42);
+    ASSERT_EQ((*resized_column_variant)[0].safeGet<UInt64>(), 42);
 }
 
 TEST(ColumnVariant, CloneResizedGeneral3)
@@ -405,10 +405,10 @@ TEST(ColumnVariant, CloneResizedGeneral3)
     ASSERT_EQ(offsets[1], 0);
     ASSERT_EQ(offsets[2], 1);
     ASSERT_EQ(offsets[3], 1);
-    ASSERT_EQ((*resized_column_variant)[0].get<UInt64>(), 42);
-    ASSERT_EQ((*resized_column_variant)[1].get<String>(), "Hello");
-    ASSERT_EQ((*resized_column_variant)[2].get<String>(), "World");
-    ASSERT_EQ((*resized_column_variant)[3].get<UInt64>(), 43);
+    ASSERT_EQ((*resized_column_variant)[0].safeGet<UInt64>(), 42);
+    ASSERT_EQ((*resized_column_variant)[1].safeGet<String>(), "Hello");
+    ASSERT_EQ((*resized_column_variant)[2].safeGet<String>(), "World");
+    ASSERT_EQ((*resized_column_variant)[3].safeGet<UInt64>(), 43);
 }
 
 MutableColumnPtr createDiscriminators2()
@@ -465,7 +465,7 @@ TEST(ColumnVariant, InsertFrom)
         auto column_from = createVariantColumn2(change_order);
         column_to->insertFrom(*column_from, 3);
         ASSERT_EQ(column_to->globalDiscriminatorAt(5), 0);
-        ASSERT_EQ((*column_to)[5].get<UInt64>(), 43);
+        ASSERT_EQ((*column_to)[5].safeGet<UInt64>(), 43);
     }
 }
 
@@ -478,8 +478,8 @@ TEST(ColumnVariant, InsertRangeFromOneColumnNoNulls)
         column_to->insertRangeFrom(*column_from, 2, 2);
         ASSERT_EQ(column_to->globalDiscriminatorAt(7), 0);
         ASSERT_EQ(column_to->globalDiscriminatorAt(8), 0);
-        ASSERT_EQ((*column_to)[7].get<UInt64>(), 2);
-        ASSERT_EQ((*column_to)[8].get<UInt64>(), 3);
+        ASSERT_EQ((*column_to)[7].safeGet<UInt64>(), 2);
+        ASSERT_EQ((*column_to)[8].safeGet<UInt64>(), 3);
     }
 }
 
@@ -494,9 +494,9 @@ TEST(ColumnVariant, InsertRangeFromGeneral)
         ASSERT_EQ(column_to->globalDiscriminatorAt(6), ColumnVariant::NULL_DISCRIMINATOR);
         ASSERT_EQ(column_to->globalDiscriminatorAt(7), 0);
         ASSERT_EQ(column_to->globalDiscriminatorAt(8), 1);
-        ASSERT_EQ((*column_to)[5].get<String>(), "Hello");
-        ASSERT_EQ((*column_to)[7].get<UInt64>(), 43);
-        ASSERT_EQ((*column_to)[8].get<String>(), "World");
+        ASSERT_EQ((*column_to)[5].safeGet<String>(), "Hello");
+        ASSERT_EQ((*column_to)[7].safeGet<UInt64>(), 43);
+        ASSERT_EQ((*column_to)[8].safeGet<String>(), "World");
     }
 }
 
@@ -509,8 +509,8 @@ TEST(ColumnVariant, InsertManyFrom)
         column_to->insertManyFrom(*column_from, 3, 2);
         ASSERT_EQ(column_to->globalDiscriminatorAt(5), 0);
         ASSERT_EQ(column_to->globalDiscriminatorAt(6), 0);
-        ASSERT_EQ((*column_to)[5].get<UInt64>(), 43);
-        ASSERT_EQ((*column_to)[6].get<UInt64>(), 43);
+        ASSERT_EQ((*column_to)[5].safeGet<UInt64>(), 43);
+        ASSERT_EQ((*column_to)[6].safeGet<UInt64>(), 43);
     }
 }
 
@@ -520,8 +520,8 @@ TEST(ColumnVariant, PopBackOneColumnNoNulls)
     column->popBack(3);
     ASSERT_EQ(column->size(), 2);
     ASSERT_EQ(column->getVariantByLocalDiscriminator(0).size(), 2);
-    ASSERT_EQ((*column)[0].get<UInt64>(), 0);
-    ASSERT_EQ((*column)[1].get<UInt64>(), 1);
+    ASSERT_EQ((*column)[0].safeGet<UInt64>(), 0);
+    ASSERT_EQ((*column)[1].safeGet<UInt64>(), 1);
 }
 
 TEST(ColumnVariant, PopBackGeneral)
@@ -531,8 +531,8 @@ TEST(ColumnVariant, PopBackGeneral)
     ASSERT_EQ(column->size(), 3);
     ASSERT_EQ(column->getVariantByLocalDiscriminator(0).size(), 1);
     ASSERT_EQ(column->getVariantByLocalDiscriminator(1).size(), 1);
-    ASSERT_EQ((*column)[0].get<UInt64>(), 42);
-    ASSERT_EQ((*column)[1].get<String>(), "Hello");
+    ASSERT_EQ((*column)[0].safeGet<UInt64>(), 42);
+    ASSERT_EQ((*column)[1].safeGet<String>(), "Hello");
     ASSERT_TRUE((*column)[2].isNull());
 }
 
@@ -545,8 +545,8 @@ TEST(ColumnVariant, FilterOneColumnNoNulls)
     filter.push_back(1);
     auto filtered_column = column->filter(filter, -1);
     ASSERT_EQ(filtered_column->size(), 2);
-    ASSERT_EQ((*filtered_column)[0].get<UInt64>(), 0);
-    ASSERT_EQ((*filtered_column)[1].get<UInt64>(), 2);
+    ASSERT_EQ((*filtered_column)[0].safeGet<UInt64>(), 0);
+    ASSERT_EQ((*filtered_column)[1].safeGet<UInt64>(), 2);
 }
 
 TEST(ColumnVariant, FilterGeneral)
@@ -562,7 +562,7 @@ TEST(ColumnVariant, FilterGeneral)
     filter.push_back(0);
     auto filtered_column = column->filter(filter, -1);
     ASSERT_EQ(filtered_column->size(), 3);
-    ASSERT_EQ((*filtered_column)[0].get<String>(), "Hello");
+    ASSERT_EQ((*filtered_column)[0].safeGet<String>(), "Hello");
     ASSERT_TRUE((*filtered_column)[1].isNull());
     ASSERT_TRUE((*filtered_column)[2].isNull());
 }
@@ -577,9 +577,9 @@ TEST(ColumnVariant, PermuteAndIndexOneColumnNoNulls)
     permutation.push_back(0);
     auto permuted_column = column->permute(permutation, 3);
     ASSERT_EQ(permuted_column->size(), 3);
-    ASSERT_EQ((*permuted_column)[0].get<UInt64>(), 1);
-    ASSERT_EQ((*permuted_column)[1].get<UInt64>(), 3);
-    ASSERT_EQ((*permuted_column)[2].get<UInt64>(), 2);
+    ASSERT_EQ((*permuted_column)[0].safeGet<UInt64>(), 1);
+    ASSERT_EQ((*permuted_column)[1].safeGet<UInt64>(), 3);
+    ASSERT_EQ((*permuted_column)[2].safeGet<UInt64>(), 2);
 
     auto index = ColumnUInt64::create();
     index->getData().push_back(1);
@@ -588,9 +588,9 @@ TEST(ColumnVariant, PermuteAndIndexOneColumnNoNulls)
     index->getData().push_back(0);
     auto indexed_column = column->index(*index, 3);
     ASSERT_EQ(indexed_column->size(), 3);
-    ASSERT_EQ((*indexed_column)[0].get<UInt64>(), 1);
-    ASSERT_EQ((*indexed_column)[1].get<UInt64>(), 3);
-    ASSERT_EQ((*indexed_column)[2].get<UInt64>(), 2);
+    ASSERT_EQ((*indexed_column)[0].safeGet<UInt64>(), 1);
+    ASSERT_EQ((*indexed_column)[1].safeGet<UInt64>(), 3);
+    ASSERT_EQ((*indexed_column)[2].safeGet<UInt64>(), 2);
 }
 
 TEST(ColumnVariant, PermuteGeneral)
@@ -603,9 +603,9 @@ TEST(ColumnVariant, PermuteGeneral)
     permutation.push_back(5);
     auto permuted_column = column->permute(permutation, 4);
     ASSERT_EQ(permuted_column->size(), 4);
-    ASSERT_EQ((*permuted_column)[0].get<UInt64>(), 43);
-    ASSERT_EQ((*permuted_column)[1].get<String>(), "World");
-    ASSERT_EQ((*permuted_column)[2].get<String>(), "Hello");
+    ASSERT_EQ((*permuted_column)[0].safeGet<UInt64>(), 43);
+    ASSERT_EQ((*permuted_column)[1].safeGet<String>(), "World");
+    ASSERT_EQ((*permuted_column)[2].safeGet<String>(), "Hello");
     ASSERT_TRUE((*permuted_column)[3].isNull());
 }
 
@@ -618,12 +618,12 @@ TEST(ColumnVariant, ReplicateOneColumnNoNull)
     offsets.push_back(6);
     auto replicated_column = column->replicate(offsets);
     ASSERT_EQ(replicated_column->size(), 6);
-    ASSERT_EQ((*replicated_column)[0].get<UInt64>(), 1);
-    ASSERT_EQ((*replicated_column)[1].get<UInt64>(), 1);
-    ASSERT_EQ((*replicated_column)[2].get<UInt64>(), 1);
-    ASSERT_EQ((*replicated_column)[3].get<UInt64>(), 2);
-    ASSERT_EQ((*replicated_column)[4].get<UInt64>(), 2);
-    ASSERT_EQ((*replicated_column)[5].get<UInt64>(), 2);
+    ASSERT_EQ((*replicated_column)[0].safeGet<UInt64>(), 1);
+    ASSERT_EQ((*replicated_column)[1].safeGet<UInt64>(), 1);
+    ASSERT_EQ((*replicated_column)[2].safeGet<UInt64>(), 1);
+    ASSERT_EQ((*replicated_column)[3].safeGet<UInt64>(), 2);
+    ASSERT_EQ((*replicated_column)[4].safeGet<UInt64>(), 2);
+    ASSERT_EQ((*replicated_column)[5].safeGet<UInt64>(), 2);
 }
 
 TEST(ColumnVariant, ReplicateGeneral)
@@ -637,9 +637,9 @@ TEST(ColumnVariant, ReplicateGeneral)
     offsets.push_back(7);
     auto replicated_column = column->replicate(offsets);
     ASSERT_EQ(replicated_column->size(), 7);
-    ASSERT_EQ((*replicated_column)[0].get<UInt64>(), 42);
-    ASSERT_EQ((*replicated_column)[1].get<String>(), "Hello");
-    ASSERT_EQ((*replicated_column)[2].get<String>(), "Hello");
+    ASSERT_EQ((*replicated_column)[0].safeGet<UInt64>(), 42);
+    ASSERT_EQ((*replicated_column)[1].safeGet<String>(), "Hello");
+    ASSERT_EQ((*replicated_column)[2].safeGet<String>(), "Hello");
     ASSERT_TRUE((*replicated_column)[3].isNull());
     ASSERT_TRUE((*replicated_column)[4].isNull());
     ASSERT_TRUE((*replicated_column)[5].isNull());
@@ -657,13 +657,13 @@ TEST(ColumnVariant, ScatterOneColumnNoNulls)
     selector.push_back(1);
     auto columns = column->scatter(3, selector);
     ASSERT_EQ(columns[0]->size(), 2);
-    ASSERT_EQ((*columns[0])[0].get<UInt64>(), 0);
-    ASSERT_EQ((*columns[0])[1].get<UInt64>(), 3);
+    ASSERT_EQ((*columns[0])[0].safeGet<UInt64>(), 0);
+    ASSERT_EQ((*columns[0])[1].safeGet<UInt64>(), 3);
     ASSERT_EQ(columns[1]->size(), 2);
-    ASSERT_EQ((*columns[1])[0].get<UInt64>(), 1);
-    ASSERT_EQ((*columns[1])[1].get<UInt64>(), 4);
+    ASSERT_EQ((*columns[1])[0].safeGet<UInt64>(), 1);
+    ASSERT_EQ((*columns[1])[1].safeGet<UInt64>(), 4);
     ASSERT_EQ(columns[2]->size(), 1);
-    ASSERT_EQ((*columns[2])[0].get<UInt64>(), 2);
+    ASSERT_EQ((*columns[2])[0].safeGet<UInt64>(), 2);
 }
 
 TEST(ColumnVariant, ScatterGeneral)
@@ -680,12 +680,12 @@ TEST(ColumnVariant, ScatterGeneral)
 
     auto columns = column->scatter(3, selector);
     ASSERT_EQ(columns[0]->size(), 3);
-    ASSERT_EQ((*columns[0])[0].get<UInt64>(), 42);
-    ASSERT_EQ((*columns[0])[1].get<String>(), "Hello");
-    ASSERT_EQ((*columns[0])[2].get<UInt64>(), 43);
+    ASSERT_EQ((*columns[0])[0].safeGet<UInt64>(), 42);
+    ASSERT_EQ((*columns[0])[1].safeGet<String>(), "Hello");
+    ASSERT_EQ((*columns[0])[2].safeGet<UInt64>(), 43);
     ASSERT_EQ(columns[1]->size(), 2);
-    ASSERT_EQ((*columns[1])[0].get<String>(), "World");
-    ASSERT_EQ((*columns[1])[1].get<UInt64>(), 44);
+    ASSERT_EQ((*columns[1])[0].safeGet<String>(), "World");
+    ASSERT_EQ((*columns[1])[1].safeGet<UInt64>(), 44);
     ASSERT_EQ(columns[2]->size(), 2);
     ASSERT_TRUE((*columns[2])[0].isNull());
     ASSERT_TRUE((*columns[2])[1].isNull());

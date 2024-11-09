@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/avgweighted
-sidebar_position: 107
+sidebar_position: 113
 ---
 
 # avgWeighted
@@ -19,9 +19,7 @@ avgWeighted(x, weight)
 - `weight` — Weights of the values.
 
 `x` and `weight` must both be
-[Integer](../../../sql-reference/data-types/int-uint.md),
-[floating-point](../../../sql-reference/data-types/float.md), or
-[Decimal](../../../sql-reference/data-types/decimal.md),
+[Integer](../../../sql-reference/data-types/int-uint.md) or [floating-point](../../../sql-reference/data-types/float.md),
 but may have different types.
 
 **Returned value**

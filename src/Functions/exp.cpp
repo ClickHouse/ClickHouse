@@ -43,7 +43,7 @@ using FunctionExp = FunctionMathUnary<UnaryFunctionVectorized<ExpName, exp>>;
 
 REGISTER_FUNCTION(Exp)
 {
-    factory.registerFunction<FunctionExp>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionExp>({}, FunctionFactory::Case::Insensitive);
 }
 
 }

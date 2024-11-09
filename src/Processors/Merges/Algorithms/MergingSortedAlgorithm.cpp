@@ -59,7 +59,7 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
         if (!chunk)
             continue;
 
-        cursors[source_num] = SortCursorImpl(header, chunk.getColumns(), description, source_num);
+        cursors[source_num] = SortCursorImpl(header, chunk.getColumns(), chunk.getNumRows(), description, source_num);
     }
 
     if (sorting_queue_strategy == SortingQueueStrategy::Default)
@@ -84,7 +84,7 @@ void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
 {
     removeConstAndSparse(input);
     current_inputs[source_num].swap(input);
-    cursors[source_num].reset(current_inputs[source_num].chunk.getColumns(), header);
+    cursors[source_num].reset(current_inputs[source_num].chunk.getColumns(), header, current_inputs[source_num].chunk.getNumRows());
 
     if (sorting_queue_strategy == SortingQueueStrategy::Default)
     {

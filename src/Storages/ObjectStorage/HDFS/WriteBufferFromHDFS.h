@@ -22,7 +22,8 @@ class WriteBufferFromHDFS final : public WriteBufferFromFileBase
 
 public:
     WriteBufferFromHDFS(
-        const String & hdfs_name_,
+        const String & hdfs_uri_,
+        const String & hdfs_file_path_,
         const Poco::Util::AbstractConfiguration & config_,
         int replication_,
         const WriteSettings & write_settings_ = {},
@@ -38,8 +39,6 @@ public:
     std::string getFileName() const override { return filename; }
 
 private:
-    void finalizeImpl() override;
-
     struct WriteBufferFromHDFSImpl;
     std::unique_ptr<WriteBufferFromHDFSImpl> impl;
     const std::string filename;

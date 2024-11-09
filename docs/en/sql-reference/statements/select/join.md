@@ -186,7 +186,7 @@ Otherwise, you'll get `INVALID_JOIN_ON_EXPRESSION`.
 
 :::
 
-Clickhouse currently supports `ALL INNER/LEFT/RIGHT/FULL JOIN` with inequality conditions in addition to equality conditions. The inequality conditions are supported only for `hash` and `grace_hash` join algorithms. The inequality conditions are not supported with `join_use_nulls`.
+Clickhouse currently supports `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` with inequality conditions in addition to equality conditions. The inequality conditions are supported only for `hash` and `grace_hash` join algorithms. The inequality conditions are not supported with `join_use_nulls`.
 
 **Example**
 
@@ -297,7 +297,7 @@ Algorithm requires the special column in tables. This column:
 
 - Must contain an ordered sequence.
 - Can be one of the following types: [Int, UInt](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md), [Date](../../../sql-reference/data-types/date.md), [DateTime](../../../sql-reference/data-types/datetime.md), [Decimal](../../../sql-reference/data-types/decimal.md).
-- Can’t be the only column in the `JOIN` clause.
+- For `hash` join algorithm it can’t be the only column in the `JOIN` clause.
 
 Syntax `ASOF JOIN ... ON`:
 
@@ -337,7 +337,8 @@ For example, consider the following tables:
 `ASOF JOIN` can take the timestamp of a user event from `table_1` and find an event in `table_2` where the timestamp is closest to the timestamp of the event from `table_1` corresponding to the closest match condition. Equal timestamp values are the closest if available. Here, the `user_id` column can be used for joining on equality and the `ev_time` column can be used for joining on the closest match. In our example, `event_1_1` can be joined with `event_2_1` and `event_1_2` can be joined with `event_2_3`, but `event_2_2` can’t be joined.
 
 :::note
-`ASOF` join is **not** supported in the [Join](../../../engines/table-engines/special/join.md) table engine.
+`ASOF JOIN` is supported only by `hash` and `full_sorting_merge` join algorithms.
+It's **not** supported in the [Join](../../../engines/table-engines/special/join.md) table engine.
 :::
 
 ## PASTE JOIN Usage

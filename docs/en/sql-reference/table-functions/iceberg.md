@@ -6,35 +6,40 @@ sidebar_label: iceberg
 
 # iceberg Table Function
 
-Provides a read-only table-like interface to Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3.
+Provides a read-only table-like interface to Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3, Azure, HDFS or locally stored.
 
 ## Syntax
 
 ``` sql
-iceberg(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure])
+icebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
+icebergS3(named_collection[, option=value [,..]])
+
+icebergAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+icebergAzure(named_collection[, option=value [,..]])
+
+icebergHDFS(path_to_table, [,format] [,compression_method])
+icebergHDFS(named_collection[, option=value [,..]])
+
+icebergLocal(path_to_table, [,format] [,compression_method])
+icebergLocal(named_collection[, option=value [,..]])
 ```
 
 ## Arguments
 
-- `url` — Bucket url with the path to an existing Iceberg table in S3.
-- `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. These parameters are optional. If credentials are not specified, they are used from the ClickHouse configuration. For more information see [Using S3 for Data Storage](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-s3).
-- `format` — The [format](/docs/en/interfaces/formats.md/#formats) of the file. By default `Parquet` is used.
-- `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
-
-Engine parameters can be specified using [Named Collections](/docs/en/operations/named-collections.md).
+Description of the arguments coincides with description of arguments in table functions `s3`, `azureBlobStorage`, `HDFS` and `file` correspondingly.
+`format` stands for the format of data files in the Iceberg table.
 
 **Returned value**
-
-A table with the specified structure for reading data in the specified Iceberg table in S3.
+A table with the specified structure for reading data in the specified Iceberg table.
 
 **Example**
 
 ```sql
-SELECT * FROM iceberg('http://test.s3.amazonaws.com/clickhouse-bucket/test_table', 'test', 'test')
+SELECT * FROM icebergS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_table', 'test', 'test')
 ```
 
 :::important
-ClickHouse currently supports reading v1 (v2 support is coming soon!) of the Iceberg format via the `iceberg` table function and `Iceberg` table engine.
+ClickHouse currently supports reading v1 and v2 of the Iceberg format via the `icebergS3`, `icebergAzure`, `icebergHDFS` and `icebergLocal` table functions and `IcebergS3`, `icebergAzure`, `IcebergHDFS` and `IcebergLocal` table engines.
 :::
 
 ## Defining a named collection
@@ -56,9 +61,13 @@ Here is an example of configuring a named collection for storing the URL and cre
 ```
 
 ```sql
-SELECT * FROM iceberg(iceberg_conf, filename = 'test_table')
-DESCRIBE iceberg(iceberg_conf, filename = 'test_table')
+SELECT * FROM icebergS3(iceberg_conf, filename = 'test_table')
+DESCRIBE icebergS3(iceberg_conf, filename = 'test_table')
 ```
+
+**Aliases**
+
+Table function `iceberg` is an alias to `icebergS3` now.
 
 **See Also**
 

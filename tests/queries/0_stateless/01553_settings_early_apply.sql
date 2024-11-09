@@ -1,3 +1,4 @@
+set output_format_pretty_display_footer_column_names=0;
 set output_format_write_statistics=0;
 
 select * from numbers(100) settings max_result_rows = 1; -- { serverError TOO_MANY_ROWS_OR_BYTES }

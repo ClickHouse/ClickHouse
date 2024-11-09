@@ -80,7 +80,7 @@ For partitioning by month, use the `toYYYYMM(date_column)` expression, where `da
 `PRIMARY KEY` — The primary key if it [differs from the sorting key](#choosing-a-primary-key-that-differs-from-the-sorting-key). Optional.
 
 Specifying a sorting key (using `ORDER BY` clause) implicitly specifies a primary key.
-It is usually not necessary to specify the primary key in addition to the primary key.
+It is usually not necessary to specify the primary key in addition to the sorting key.
 
 #### SAMPLE BY
 
@@ -374,15 +374,15 @@ Users can create [UDF](/docs/en/sql-reference/statements/create/function.md) to 
 ```sql
 CREATE FUNCTION bfEstimateFunctions [ON CLUSTER cluster]
 AS
-(total_nubmer_of_all_grams, size_of_bloom_filter_in_bits) -> round((size_of_bloom_filter_in_bits / total_nubmer_of_all_grams) * log(2));
+(total_number_of_all_grams, size_of_bloom_filter_in_bits) -> round((size_of_bloom_filter_in_bits / total_number_of_all_grams) * log(2));
 
 CREATE FUNCTION bfEstimateBmSize [ON CLUSTER cluster]
 AS
-(total_nubmer_of_all_grams,  probability_of_false_positives) -> ceil((total_nubmer_of_all_grams * log(probability_of_false_positives)) / log(1 / pow(2, log(2))));
+(total_number_of_all_grams,  probability_of_false_positives) -> ceil((total_number_of_all_grams * log(probability_of_false_positives)) / log(1 / pow(2, log(2))));
 
 CREATE FUNCTION bfEstimateFalsePositive [ON CLUSTER cluster]
 AS
-(total_nubmer_of_all_grams, number_of_hash_functions, size_of_bloom_filter_in_bytes) -> pow(1 - exp(-number_of_hash_functions/ (size_of_bloom_filter_in_bytes / total_nubmer_of_all_grams)), number_of_hash_functions);
+(total_number_of_all_grams, number_of_hash_functions, size_of_bloom_filter_in_bytes) -> pow(1 - exp(-number_of_hash_functions/ (size_of_bloom_filter_in_bytes / total_number_of_all_grams)), number_of_hash_functions);
 
 CREATE FUNCTION bfEstimateGramNumber [ON CLUSTER cluster]
 AS
@@ -710,7 +710,7 @@ Data part is the minimum movable unit for `MergeTree`-engine tables. The data be
 ### Terms {#terms}
 
 - Disk — Block device mounted to the filesystem.
-- Default disk — Disk that stores the path specified in the [path](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-path) server setting.
+- Default disk — Disk that stores the path specified in the [path](/docs/en/operations/server-configuration-parameters/settings.md/#path) server setting.
 - Volume — Ordered set of equal disks (similar to [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures)).
 - Storage policy — Set of volumes and the rules for moving data between them.
 
@@ -989,19 +989,56 @@ ALTER TABLE tab DROP STATISTICS a;
 These lightweight statistics aggregate information about distribution of values in columns. Statistics are stored in every part and updated when every insert comes.
 They can be used for prewhere optimization only if we enable `set allow_statistics_optimize = 1`.
 
-#### Available Types of Column Statistics {#available-types-of-column-statistics}
+### Available Types of Column Statistics {#available-types-of-column-statistics}
+
+- `MinMax`
+
+    The minimum and maximum column value which allows to estimate the selectivity of range filters on numeric columns.
+
+    Syntax: `minmax`
 
 - `TDigest`
 
-    Stores distribution of values from numeric columns in [TDigest](https://github.com/tdunning/t-digest) sketch.
+    [TDigest](https://github.com/tdunning/t-digest) sketches which allow to compute approximate percentiles (e.g. the 90th percentile) for numeric columns.
+
+    Syntax: `tdigest`
 
 - `Uniq`
-    
-    Estimate the number of distinct values of a column by HyperLogLog.
+
+    [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) sketches which provide an estimation how many distinct values a column contains.
+
+    Syntax: `uniq`
+
+- `CountMin`
+
+    [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) sketches which provide an approximate count of the frequency of each value in a column.
+
+    Syntax `countmin`
+
+
+### Supported Data Types {#supported-data-types}
+
+|           | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | String or FixedString |
+|-----------|----------------------------------------------------|-----------------------|
+| CountMin  | ✔                                                  | ✔                     |
+| MinMax    | ✔                                                  | ✗                     |
+| TDigest   | ✔                                                  | ✗                     |
+| Uniq      | ✔                                                  | ✔                     |
+
+
+### Supported Operations {#supported-operations}
+
+|           | Equality filters (==) | Range filters (>, >=, <, <=) |
+|-----------|-----------------------|------------------------------|
+| CountMin  | ✔                     | ✗                            |
+| MinMax    | ✗                     | ✔                            |
+| TDigest   | ✗                     | ✔                            |
+| Uniq      | ✔                     | ✗                            |
+
 
 ## Column-level Settings {#column-level-settings}
 
-Certain MergeTree settings can be override at column level:
+Certain MergeTree settings can be overridden at column level:
 
 - `max_compress_block_size` — Maximum size of blocks of uncompressed data before compressing for writing to a table.
 - `min_compress_block_size` — Minimum size of blocks of uncompressed data required for compression when writing the next mark.

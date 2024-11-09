@@ -15,6 +15,8 @@
 #include <Storages/IStorage.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/re2.h>
+#include <Common/RemoteHostFilter.h>
+#include <Core/Settings.h>
 
 #include <Poco/URI.h>
 
@@ -24,6 +26,11 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+}
 
 namespace ErrorCodes
 {
@@ -50,7 +57,7 @@ DatabaseHDFS::DatabaseHDFS(const String & name_, const String & source_url, Cont
     if (!source.empty())
     {
         if (!re2::RE2::FullMatch(source, std::string(HDFS_HOST_REGEXP)))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad hdfs host: {}. "
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad HDFS host: {}. "
                             "It should have structure 'hdfs://<host_name>:<port>'", source);
 
         context_->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(source));
@@ -74,8 +81,8 @@ std::string DatabaseHDFS::getTablePath(const std::string & table_name) const
         return table_name;
 
     if (source.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad hdfs url: {}. "
-                        "It should have structure 'hdfs://<host_name>:<port>/path'", table_name);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad HDFS URL: {}. "
+            "It should have the following structure 'hdfs://<host_name>:<port>/path'", table_name);
 
     return fs::path(source) / table_name;
 }
@@ -183,7 +190,8 @@ ASTPtr DatabaseHDFS::getCreateDatabaseQuery() const
     ParserCreateQuery parser;
 
     const String query = fmt::format("CREATE DATABASE {} ENGINE = HDFS('{}')", backQuoteIfNeed(getDatabaseName()), source);
-    ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth, settings.max_parser_backtracks);
+    ASTPtr ast
+        = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
     if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
     {
@@ -252,7 +260,7 @@ void registerDatabaseHDFS(DatabaseFactory & factory)
 
         return std::make_shared<DatabaseHDFS>(args.database_name, source_url, args.context);
     };
-    factory.registerDatabase("HDFS", create_fn);
+    factory.registerDatabase("HDFS", create_fn, {.supports_arguments = true});
 }
 } // DB
 

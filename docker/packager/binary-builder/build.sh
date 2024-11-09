@@ -97,6 +97,10 @@ cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUI
 # shellcheck disable=SC2086 # No quotes because I want it to expand to nothing if empty.
 ninja $NINJA_FLAGS $BUILD_TARGET
 
+# We don't allow dirty files in the source directory after build
+git ls-files --others --exclude-standard | grep . && echo "^ Dirty files in the working copy after build" && exit 1
+git submodule foreach --quiet git ls-files --others --exclude-standard | grep . && echo "^ Dirty files in submodules after build" && exit 1
+
 ls -la ./programs
 
 ccache_status
@@ -108,9 +112,11 @@ if [ -n "$MAKE_DEB" ]; then
   bash -x /build/packages/build
 fi
 
-mv ./programs/clickhouse* /output || mv ./programs/*_fuzzer /output
+mv ./programs/clickhouse* /output ||:
+mv ./programs/*_fuzzer /output ||:
 [ -x ./programs/self-extracting/clickhouse ] && mv ./programs/self-extracting/clickhouse /output
 [ -x ./programs/self-extracting/clickhouse-stripped ] && mv ./programs/self-extracting/clickhouse-stripped /output
+[ -x ./programs/self-extracting/clickhouse-keeper ] && mv ./programs/self-extracting/clickhouse-keeper /output
 mv ./src/unit_tests_dbms /output ||: # may not exist for some binary builds
 mv ./programs/*.dict ./programs/*.options ./programs/*_seed_corpus.zip /output ||: # libFuzzer oss-fuzz compatible infrastructure
 

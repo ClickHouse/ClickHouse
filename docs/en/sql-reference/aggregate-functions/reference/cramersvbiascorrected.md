@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/cramersvbiascorrected
-sidebar_position: 352
+sidebar_position: 128
 ---
 
 # cramersVBiasCorrected

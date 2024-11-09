@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/approxtopsum
-sidebar_position: 212
+sidebar_position: 108
 ---
 
 # approx_top_sum

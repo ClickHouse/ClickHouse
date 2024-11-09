@@ -16,7 +16,15 @@
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
+#include <Poco/JSON/Array.h>
 #include <Poco/JSON/Stringifier.h>
+#include <Poco/JSONString.h>
+
+#include <Access/Common/SSLCertificateSubjects.h>
+
+#include <base/types.h>
+#include <base/range.h>
+
 #include <sstream>
 
 
@@ -41,13 +49,15 @@ ColumnsDescription StorageSystemUsers::getColumnsDescription()
         {"name", std::make_shared<DataTypeString>(), "User name."},
         {"id", std::make_shared<DataTypeUUID>(), "User ID."},
         {"storage", std::make_shared<DataTypeString>(), "Path to the storage of users. Configured in the access_control_path parameter."},
-        {"auth_type", std::make_shared<DataTypeEnum8>(getAuthenticationTypeEnumValues()),
-            "Shows the authentication type. "
+        {"auth_type", std::make_shared<DataTypeArray>(std::make_shared<DataTypeEnum8>(getAuthenticationTypeEnumValues())),
+            "Shows the authentication types. "
             "There are multiple ways of user identification: "
             "with no password, with plain text password, with SHA256-encoded password, "
             "with double SHA-1-encoded password or with bcrypt-encoded password."
         },
-        {"auth_params", std::make_shared<DataTypeString>(), "Authentication parameters in the JSON format depending on the auth_type."},
+        {"auth_params", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+            "Authentication parameters in the JSON format depending on the auth_type."
+        },
         {"host_ip", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
             "IP addresses of hosts that are allowed to connect to the ClickHouse server."
         },
@@ -90,8 +100,10 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
     auto & column_name = assert_cast<ColumnString &>(*res_columns[column_index++]);
     auto & column_id = assert_cast<ColumnUUID &>(*res_columns[column_index++]).getData();
     auto & column_storage = assert_cast<ColumnString &>(*res_columns[column_index++]);
-    auto & column_auth_type = assert_cast<ColumnInt8 &>(*res_columns[column_index++]).getData();
-    auto & column_auth_params = assert_cast<ColumnString &>(*res_columns[column_index++]);
+    auto & column_auth_type = assert_cast<ColumnInt8 &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
+    auto & column_auth_type_offsets =  assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
+    auto & column_auth_params = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
+    auto & column_auth_params_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
     auto & column_host_ip = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
     auto & column_host_ip_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
     auto & column_host_names = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
@@ -115,7 +127,7 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
     auto add_row = [&](const String & name,
                        const UUID & id,
                        const String & storage_name,
-                       const AuthenticationData & auth_data,
+                       const std::vector<AuthenticationData> & authentication_methods,
                        const AllowedClientHosts & allowed_hosts,
                        const RolesOrUsersSet & default_roles,
                        const RolesOrUsersSet & grantees,
@@ -124,11 +136,8 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
         column_name.insertData(name.data(), name.length());
         column_id.push_back(id.toUnderType());
         column_storage.insertData(storage_name.data(), storage_name.length());
-        column_auth_type.push_back(static_cast<Int8>(auth_data.getType()));
 
-        if (auth_data.getType() == AuthenticationType::LDAP ||
-            auth_data.getType() == AuthenticationType::KERBEROS ||
-            auth_data.getType() == AuthenticationType::SSL_CERTIFICATE)
+        for (const auto & auth_data : authentication_methods)
         {
             Poco::JSON::Object auth_params_json;
 
@@ -142,24 +151,32 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
             }
             else if (auth_data.getType() == AuthenticationType::SSL_CERTIFICATE)
             {
-                Poco::JSON::Array::Ptr arr = new Poco::JSON::Array();
-                for (const auto & common_name : auth_data.getSSLCertificateCommonNames())
-                    arr->add(common_name);
-                auth_params_json.set("common_names", arr);
+                Poco::JSON::Array::Ptr common_names = new Poco::JSON::Array();
+                Poco::JSON::Array::Ptr subject_alt_names = new Poco::JSON::Array();
+
+                const auto & subjects = auth_data.getSSLCertificateSubjects();
+                for (const String & subject : subjects.at(SSLCertificateSubjects::Type::CN))
+                    common_names->add(subject);
+                for (const String & subject : subjects.at(SSLCertificateSubjects::Type::SAN))
+                    subject_alt_names->add(subject);
+
+                if (common_names->size() > 0)
+                    auth_params_json.set("common_names", common_names);
+                if (subject_alt_names->size() > 0)
+                    auth_params_json.set("subject_alt_names", subject_alt_names);
             }
 
             std::ostringstream oss;         // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             oss.exceptions(std::ios::failbit);
             Poco::JSON::Stringifier::stringify(auth_params_json, oss);
-            const auto str = oss.str();
+            const auto authentication_params_str = oss.str();
 
-            column_auth_params.insertData(str.data(), str.size());
+            column_auth_params.insertData(authentication_params_str.data(), authentication_params_str.size());
+            column_auth_type.insertValue(static_cast<Int8>(auth_data.getType()));
         }
-        else
-        {
-            static constexpr std::string_view empty_json{"{}"};
-            column_auth_params.insertData(empty_json.data(), empty_json.length());
-        }
+
+        column_auth_params_offsets.push_back(column_auth_params.size());
+        column_auth_type_offsets.push_back(column_auth_type.size());
 
         if (allowed_hosts.containsAnyHost())
         {
@@ -231,7 +248,7 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
         if (!storage)
             continue;
 
-        add_row(user->getName(), id, storage->getStorageName(), user->auth_data, user->allowed_client_hosts,
+        add_row(user->getName(), id, storage->getStorageName(), user->authentication_methods, user->allowed_client_hosts,
                 user->default_roles, user->grantees, user->default_database);
     }
 }
@@ -244,10 +261,10 @@ void StorageSystemUsers::backupData(
 }
 
 void StorageSystemUsers::restoreDataFromBackup(
-    RestorerFromBackup & restorer, const String & /* data_path_in_backup */, const std::optional<ASTs> & /* partitions */)
+    RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
     auto & access_control = restorer.getContext()->getAccessControl();
-    access_control.restoreFromBackup(restorer);
+    access_control.restoreFromBackup(restorer, data_path_in_backup);
 }
 
 }

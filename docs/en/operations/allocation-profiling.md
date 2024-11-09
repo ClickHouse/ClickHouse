@@ -59,10 +59,10 @@ For that, we need to use `jemalloc`'s tool called [jeprof](https://github.com/je
 If that’s the case, we recommend installing an [alternative implementation](https://github.com/gimli-rs/addr2line) of the tool.
 
 ```
-git clone https://github.com/gimli-rs/addr2line
+git clone https://github.com/gimli-rs/addr2line.git --depth=1 --branch=0.23.0
 cd addr2line
-cargo b --examples -r
-cp ./target/release/examples/addr2line path/to/current/addr2line
+cargo build --features bin --release
+cp ./target/release/addr2line path/to/current/addr2line
 ```
 :::
 

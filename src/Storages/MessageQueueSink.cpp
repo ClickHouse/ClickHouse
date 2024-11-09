@@ -1,6 +1,7 @@
 #include <Storages/MessageQueueSink.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IRowOutputFormat.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -40,12 +41,14 @@ void MessageQueueSink::onFinish()
     producer->finish();
 }
 
-void MessageQueueSink::consume(Chunk chunk)
+void MessageQueueSink::consume(Chunk & chunk)
 {
     const auto & columns = chunk.getColumns();
     if (columns.empty())
         return;
 
+    /// The formatter might hold pointers to buffer (e.g. if PeekableWriteBuffer is used), which means the formatter
+    /// needs to be reset after buffer might reallocate its memory. In this exact case after restarting the buffer.
     if (row_format)
     {
         size_t row = 0;
@@ -60,12 +63,12 @@ void MessageQueueSink::consume(Chunk chunk)
                 row_format->writeRow(columns, row);
             }
             row_format->finalize();
-            row_format->resetFormatter();
             producer->produce(buffer->str(), i, columns, row - 1);
             /// Reallocate buffer if it's capacity is large then DBMS_DEFAULT_BUFFER_SIZE,
             /// because most likely in this case we serialized abnormally large row
             /// and won't need this large allocated buffer anymore.
             buffer->restart(DBMS_DEFAULT_BUFFER_SIZE);
+            row_format->resetFormatter();
         }
     }
     else
@@ -73,10 +76,21 @@ void MessageQueueSink::consume(Chunk chunk)
         format->write(getHeader().cloneWithColumns(chunk.detachColumns()));
         format->finalize();
         producer->produce(buffer->str(), chunk.getNumRows(), columns, chunk.getNumRows() - 1);
-        format->resetFormatter();
         buffer->restart();
+        format->resetFormatter();
     }
 }
 
+void MessageQueueSink::onCancel() noexcept
+{
+    try
+    {
+        onFinish();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger("MessageQueueSink"), "Error occurs on cancellation.");
+    }
+}
 
 }

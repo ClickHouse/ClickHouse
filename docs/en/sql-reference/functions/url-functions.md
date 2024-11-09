@@ -818,6 +818,40 @@ The same as above, but including query string and fragment.
 
 Example: `/top/news.html?page=2#comments`.
 
+### protocol
+
+Extracts the protocol from a URL. 
+
+**Syntax**
+
+```sql
+protocol(url)
+```
+
+**Arguments**
+
+- `url` — URL to extract protocol from. [String](../data-types/string.md).
+
+**Returned value**
+
+- Protocol, or an empty string if it cannot be determined. [String](../data-types/string.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT protocol('https://clickhouse.com/');
+```
+
+Result:
+
+```response
+┌─protocol('https://clickhouse.com/')─┐
+│ https                               │
+└─────────────────────────────────────┘
+```
+
 ### queryString
 
 Returns the query string without the initial question mark, `#` and everything after `#`.

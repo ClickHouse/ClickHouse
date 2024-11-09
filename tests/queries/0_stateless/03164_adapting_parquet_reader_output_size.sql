@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-parallel, no-random-settings
+-- Tags: no-fasttest, no-random-settings
 
 set max_insert_threads=1;
 

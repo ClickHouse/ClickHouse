@@ -3,6 +3,8 @@
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 
+#include <algorithm>
+
 
 namespace DB
 {
@@ -49,7 +51,8 @@ struct MergeTreeBlockSizePredictor
     /// Predicts what number of rows should be read to exhaust byte quota per column
     size_t estimateNumRowsForMaxSizeColumn(size_t bytes_quota) const
     {
-        double max_size_per_row = std::max<double>(std::max<size_t>(max_size_per_row_fixed, 1), max_size_per_row_dynamic);
+        double max_size_per_row
+            = std::max<double>({max_size_per_row_fixed, static_cast<double>(static_cast<UInt64>(1)), max_size_per_row_dynamic});
         return (bytes_quota > block_size_rows * max_size_per_row)
             ? static_cast<size_t>(bytes_quota / max_size_per_row) - block_size_rows
             : 0;
@@ -92,7 +95,7 @@ protected:
     std::vector<ColumnInfo> dynamic_columns_infos;
     size_t fixed_columns_bytes_per_row = 0;
 
-    size_t max_size_per_row_fixed = 0;
+    double max_size_per_row_fixed = 0;
     double max_size_per_row_dynamic = 0;
 
     size_t number_of_rows_in_part;

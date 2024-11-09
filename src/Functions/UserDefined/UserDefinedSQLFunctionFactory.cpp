@@ -2,6 +2,7 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Backups/RestorerFromBackup.h>
+#include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
@@ -9,6 +10,7 @@
 #include <Functions/UserDefined/UserDefinedSQLObjectsBackup.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
+#include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -17,6 +19,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsSetOperationMode union_default_mode;
+}
 
 namespace ErrorCodes
 {
@@ -80,13 +86,15 @@ namespace
         validateFunctionRecursiveness(*function_body, name);
     }
 
-    ASTPtr normalizeCreateFunctionQuery(const IAST & create_function_query)
+    ASTPtr normalizeCreateFunctionQuery(const IAST & create_function_query, const ContextPtr & context)
     {
         auto ptr = create_function_query.clone();
         auto & res = typeid_cast<ASTCreateFunctionQuery &>(*ptr);
         res.if_not_exists = false;
         res.or_replace = false;
         FunctionNameNormalizer::visit(res.function_core.get());
+        NormalizeSelectWithUnionQueryVisitor::Data data{context->getSettingsRef()[Setting::union_default_mode]};
+        NormalizeSelectWithUnionQueryVisitor{data}.visit(res.function_core);
         return ptr;
     }
 }
@@ -125,7 +133,7 @@ void UserDefinedSQLFunctionFactory::checkCanBeUnregistered(const ContextPtr & co
 bool UserDefinedSQLFunctionFactory::registerFunction(const ContextMutablePtr & context, const String & function_name, ASTPtr create_function_query, bool throw_if_exists, bool replace_if_exists)
 {
     checkCanBeRegistered(context, function_name, *create_function_query);
-    create_function_query = normalizeCreateFunctionQuery(*create_function_query);
+    create_function_query = normalizeCreateFunctionQuery(*create_function_query, context);
 
     try
     {

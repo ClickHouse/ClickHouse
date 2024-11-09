@@ -1,7 +1,9 @@
 import logging
-import time
-import pytest
 import os
+import time
+
+import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 

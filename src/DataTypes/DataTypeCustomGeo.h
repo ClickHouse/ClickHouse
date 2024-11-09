@@ -17,6 +17,12 @@ public:
     DataTypeLineStringName() : DataTypeCustomFixedName("LineString") {}
 };
 
+class DataTypeMultiLineStringName : public DataTypeCustomFixedName
+{
+public:
+    DataTypeMultiLineStringName() : DataTypeCustomFixedName("MultiLineString") {}
+};
+
 class DataTypeRingName : public DataTypeCustomFixedName
 {
 public:

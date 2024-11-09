@@ -1,16 +1,23 @@
-import pytest
 import logging
+
+import pytest
 
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance(
-    "node1", user_configs=["config/config.xml"], with_zookeeper=True
+    "node1",
+    user_configs=["config/config.xml"],
+    with_zookeeper=True,
+    macros={"replica": "a", "shard": "shard1"},
 )
 
 node2 = cluster.add_instance(
-    "node2", user_configs=["config/config.xml"], with_zookeeper=True
+    "node2",
+    user_configs=["config/config.xml"],
+    with_zookeeper=True,
+    macros={"replica": "b", "shard": "shard1"},
 )
 
 
@@ -129,8 +136,8 @@ def test_single_node_normal(started_cluster):
 
 
 def test_replicated_table_ddl(started_cluster):
-    node1.query("DROP TABLE IF EXISTS test_stat")
-    node2.query("DROP TABLE IF EXISTS test_stat")
+    node1.query("DROP TABLE IF EXISTS test_stat SYNC")
+    node2.query("DROP TABLE IF EXISTS test_stat SYNC")
 
     node1.query(
         """
@@ -167,7 +174,8 @@ def test_replicated_table_ddl(started_cluster):
     check_stat_file_on_disk(node2, "test_stat", "all_0_0_0_1", "c", False)
     check_stat_file_on_disk(node2, "test_stat", "all_0_0_0_1", "d", True)
     node1.query(
-        "ALTER TABLE test_stat CLEAR STATISTICS d", settings={"alter_sync": "2"}
+        "ALTER TABLE test_stat CLEAR STATISTICS d",
+        settings={"alter_sync": "2", "mutations_sync": 2},
     )
     node1.query(
         "ALTER TABLE test_stat ADD STATISTICS b type tdigest",
@@ -177,7 +185,24 @@ def test_replicated_table_ddl(started_cluster):
     check_stat_file_on_disk(node2, "test_stat", "all_0_0_0_2", "b", False)
     check_stat_file_on_disk(node2, "test_stat", "all_0_0_0_2", "d", False)
     node1.query(
-        "ALTER TABLE test_stat MATERIALIZE STATISTICS b", settings={"alter_sync": "2"}
+        "ALTER TABLE test_stat MATERIALIZE STATISTICS b",
+        settings={"alter_sync": "2", "mutations_sync": 2},
     )
     check_stat_file_on_disk(node2, "test_stat", "all_0_0_0_3", "a", True)
     check_stat_file_on_disk(node2, "test_stat", "all_0_0_0_3", "b", True)
+
+
+def test_replicated_db(started_cluster):
+    node1.query("DROP DATABASE IF EXISTS test SYNC")
+    node2.query("DROP DATABASE IF EXISTS test SYNC")
+    node1.query(
+        "CREATE DATABASE test ENGINE = Replicated('/test/shared_stats', '{shard}', '{replica}')"
+    )
+    node2.query(
+        "CREATE DATABASE test ENGINE = Replicated('/test/shared_stats', '{shard}', '{replica}')"
+    )
+    node1.query(
+        "CREATE TABLE test.test_stats (a Int64, b Int64) ENGINE = ReplicatedMergeTree() ORDER BY()"
+    )
+    node2.query("ALTER TABLE test.test_stats MODIFY COLUMN b Float64")
+    node2.query("ALTER TABLE test.test_stats MODIFY STATISTICS b TYPE tdigest")

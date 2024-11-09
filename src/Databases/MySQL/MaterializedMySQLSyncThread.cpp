@@ -3,6 +3,7 @@
 
 #if USE_MYSQL
 
+#include <Databases/MySQL/MaterializedMySQLSettings.h>
 #include <Databases/MySQL/MaterializedMySQLSyncThread.h>
 #include <Databases/MySQL/tryParseTableIDFromDDL.h>
 #include <Databases/MySQL/tryQuoteUnrecognizedTokens.h>
@@ -29,6 +30,7 @@
 #include <Common/randomNumber.h>
 #include <Common/setThreadName.h>
 #include <base/sleep.h>
+#include <base/scope_guard.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <Parsers/CommonParsers.h>
@@ -36,6 +38,24 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool enable_global_with_statement;
+    extern const SettingsBool insert_allow_materialized_columns;
+}
+
+namespace MaterializedMySQLSetting
+{
+    extern const MaterializedMySQLSettingsString materialized_mysql_tables_list;
+    extern const MaterializedMySQLSettingsUInt64 max_bytes_in_binlog_queue;
+    extern const MaterializedMySQLSettingsUInt64 max_bytes_in_buffer;
+    extern const MaterializedMySQLSettingsUInt64 max_bytes_in_buffers;
+    extern const MaterializedMySQLSettingsUInt64 max_flush_data_time;
+    extern const MaterializedMySQLSettingsUInt64 max_milliseconds_to_wait_in_binlog_queue;
+    extern const MaterializedMySQLSettingsUInt64 max_rows_in_buffer;
+    extern const MaterializedMySQLSettingsUInt64 max_rows_in_buffers;
+    extern const MaterializedMySQLSettingsInt64 max_wait_time_when_mysql_unavailable;
+}
 
 namespace ErrorCodes
 {
@@ -88,12 +108,12 @@ static constexpr auto MYSQL_BACKGROUND_THREAD_NAME = "MySQLDBSync";
 
 static ContextMutablePtr createQueryContext(ContextPtr context)
 {
-    Settings new_query_settings = context->getSettings();
-    new_query_settings.insert_allow_materialized_columns = true;
+    Settings new_query_settings = context->getSettingsCopy();
+    new_query_settings[Setting::insert_allow_materialized_columns] = true;
 
     /// To avoid call AST::format
     /// TODO: We need to implement the format function for MySQLAST
-    new_query_settings.enable_global_with_statement = false;
+    new_query_settings[Setting::enable_global_with_statement] = false;
 
     auto query_context = Context::createCopy(context);
     query_context->setSettings(new_query_settings);
@@ -264,10 +284,10 @@ MaterializedMySQLSyncThread::MaterializedMySQLSyncThread(
 {
     query_prefix = "EXTERNAL DDL FROM MySQL(" + backQuoteIfNeed(database_name) + ", " + backQuoteIfNeed(mysql_database_name) + ") ";
 
-    if (!settings->materialized_mysql_tables_list.value.empty())
+    if (!(*settings)[MaterializedMySQLSetting::materialized_mysql_tables_list].value.empty())
     {
         Names tables_list;
-        boost::split(tables_list, settings->materialized_mysql_tables_list.value, [](char c){ return c == ','; });
+        boost::split(tables_list, (*settings)[MaterializedMySQLSetting::materialized_mysql_tables_list].value, [](char c){ return c == ','; });
         for (String & table_name: tables_list)
         {
             boost::trim(table_name);
@@ -299,7 +319,7 @@ void MaterializedMySQLSyncThread::synchronization()
             }
 
             /// TODO: add gc task for `sign = -1`(use alter table delete, execute by interval. need final state)
-            UInt64 max_flush_time = settings->max_flush_data_time;
+            UInt64 max_flush_time = (*settings)[MaterializedMySQLSetting::max_flush_data_time];
 
             try
             {
@@ -318,7 +338,7 @@ void MaterializedMySQLSyncThread::synchronization()
             }
             catch (const Exception & e)
             {
-                if (settings->max_wait_time_when_mysql_unavailable < 0)
+                if ((*settings)[MaterializedMySQLSetting::max_wait_time_when_mysql_unavailable] < 0)
                     throw;
                 bool binlog_was_purged = e.code() == ER_MASTER_FATAL_ERROR_READING_BINLOG ||
                                          e.code() == ER_MASTER_HAS_PURGED_REQUIRED_GTIDS;
@@ -329,12 +349,12 @@ void MaterializedMySQLSyncThread::synchronization()
                 LOG_INFO(log, "Lost connection to MySQL");
                 need_reconnect = true;
                 setSynchronizationThreadException(std::current_exception());
-                sleepForMilliseconds(settings->max_wait_time_when_mysql_unavailable);
+                sleepForMilliseconds((*settings)[MaterializedMySQLSetting::max_wait_time_when_mysql_unavailable]);
                 continue;
             }
             if (watch.elapsedMilliseconds() > max_flush_time || buffers.checkThresholds(
-                    settings->max_rows_in_buffer, settings->max_bytes_in_buffer,
-                    settings->max_rows_in_buffers, settings->max_bytes_in_buffers)
+                    (*settings)[MaterializedMySQLSetting::max_rows_in_buffer], (*settings)[MaterializedMySQLSetting::max_bytes_in_buffer],
+                    (*settings)[MaterializedMySQLSetting::max_rows_in_buffers], (*settings)[MaterializedMySQLSetting::max_bytes_in_buffers])
                 )
             {
                 watch.restart();
@@ -381,10 +401,9 @@ void MaterializedMySQLSyncThread::assertMySQLAvailable()
             throw Exception(ErrorCodes::SYNC_MYSQL_USER_ACCESS_ERROR, "MySQL SYNC USER ACCESS ERR: "
                             "mysql sync user needs at least GLOBAL PRIVILEGES:'RELOAD, REPLICATION SLAVE, REPLICATION CLIENT' "
                             "and SELECT PRIVILEGE on Database {}", mysql_database_name);
-        else if (e.errnum() == ER_BAD_DB_ERROR)
+        if (e.errnum() == ER_BAD_DB_ERROR)
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Unknown database '{}' on MySQL", mysql_database_name);
-        else
-            throw;
+        throw;
     }
 }
 
@@ -532,18 +551,22 @@ static inline void dumpDataForTables(
 bool MaterializedMySQLSyncThread::prepareSynchronized(MaterializeMetadata & metadata)
 {
     bool opened_transaction = false;
-    mysqlxx::PoolWithFailover::Entry connection;
 
     while (!isCancelled())
     {
         try
         {
-            connection = pool.tryGet();
+            mysqlxx::PoolWithFailover::Entry connection = pool.tryGet();
+            SCOPE_EXIT({
+                if (opened_transaction)
+                    connection->query("ROLLBACK").execute();
+            });
+
             if (connection.isNull())
             {
-                if (settings->max_wait_time_when_mysql_unavailable < 0)
+                if ((*settings)[MaterializedMySQLSetting::max_wait_time_when_mysql_unavailable] < 0)
                     throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unable to connect to MySQL");
-                sleepForMilliseconds(settings->max_wait_time_when_mysql_unavailable);
+                sleepForMilliseconds((*settings)[MaterializedMySQLSetting::max_wait_time_when_mysql_unavailable]);
                 continue;
             }
 
@@ -586,8 +609,8 @@ bool MaterializedMySQLSyncThread::prepareSynchronized(MaterializeMetadata & meta
                 binlog = binlog_client->createBinlog(metadata.executed_gtid_set,
                                                      database_name,
                                                      {mysql_database_name},
-                                                     settings->max_bytes_in_binlog_queue,
-                                                     settings->max_milliseconds_to_wait_in_binlog_queue);
+                                                     (*settings)[MaterializedMySQLSetting::max_bytes_in_binlog_queue],
+                                                     (*settings)[MaterializedMySQLSetting::max_milliseconds_to_wait_in_binlog_queue]);
             }
             else
             {
@@ -602,10 +625,7 @@ bool MaterializedMySQLSyncThread::prepareSynchronized(MaterializeMetadata & meta
         {
             tryLogCurrentException(log);
 
-            if (opened_transaction)
-                connection->query("ROLLBACK").execute();
-
-            if (settings->max_wait_time_when_mysql_unavailable < 0)
+            if ((*settings)[MaterializedMySQLSetting::max_wait_time_when_mysql_unavailable] < 0)
                 throw;
 
             if (!shouldReconnectOnException(std::current_exception()))
@@ -613,7 +633,7 @@ bool MaterializedMySQLSyncThread::prepareSynchronized(MaterializeMetadata & meta
 
             setSynchronizationThreadException(std::current_exception());
             /// Avoid busy loop when MySQL is not available.
-            sleepForMilliseconds(settings->max_wait_time_when_mysql_unavailable);
+            sleepForMilliseconds((*settings)[MaterializedMySQLSetting::max_wait_time_when_mysql_unavailable]);
         }
     }
 
@@ -716,6 +736,16 @@ static void writeFieldsToColumn(
 
                 null_map_column->insertValue(0);
             }
+            else
+            {
+                // Column is not null but field is null. It's possible due to overrides
+                if (field.isNull())
+                {
+                    column_to.insertDefault();
+                    return false;
+                }
+            }
+
 
             return true;
         };
@@ -724,11 +754,11 @@ static void writeFieldsToColumn(
         {
             for (size_t index = 0; index < rows_data.size(); ++index)
             {
-                const Tuple & row_data = rows_data[index].get<const Tuple &>();
+                const Tuple & row_data = rows_data[index].safeGet<const Tuple &>();
                 const Field & value = row_data[column_index];
 
                 if (write_data_to_null_map(value, index))
-                    casted_column->insertValue(static_cast<decltype(to_type)>(value.template get<decltype(from_type)>()));
+                    casted_column->insertValue(static_cast<decltype(to_type)>(value.template safeGet<decltype(from_type)>()));
             }
         };
 
@@ -764,17 +794,17 @@ static void writeFieldsToColumn(
         {
             for (size_t index = 0; index < rows_data.size(); ++index)
             {
-                const Tuple & row_data = rows_data[index].get<const Tuple &>();
+                const Tuple & row_data = rows_data[index].safeGet<const Tuple &>();
                 const Field & value = row_data[column_index];
 
                 if (write_data_to_null_map(value, index))
                 {
                     if (value.getType() == Field::Types::UInt64)
-                        casted_int32_column->insertValue(static_cast<Int32>(value.get<Int32>()));
+                        casted_int32_column->insertValue(static_cast<Int32>(value.safeGet<Int32>()));
                     else if (value.getType() == Field::Types::Int64)
                     {
                         /// For MYSQL_TYPE_INT24
-                        const Int32 & num = static_cast<Int32>(value.get<Int32>());
+                        const Int32 & num = static_cast<Int32>(value.safeGet<Int32>());
                         casted_int32_column->insertValue(num & 0x800000 ? num | 0xFF000000 : num);
                     }
                     else
@@ -786,12 +816,12 @@ static void writeFieldsToColumn(
         {
             for (size_t index = 0; index < rows_data.size(); ++index)
             {
-                const Tuple & row_data = rows_data[index].get<const Tuple &>();
+                const Tuple & row_data = rows_data[index].safeGet<const Tuple &>();
                 const Field & value = row_data[column_index];
 
                 if (write_data_to_null_map(value, index))
                 {
-                    const String & data = value.get<const String &>();
+                    const String & data = value.safeGet<const String &>();
                     casted_string_column->insertData(data.data(), data.size());
                 }
             }
@@ -800,12 +830,12 @@ static void writeFieldsToColumn(
         {
             for (size_t index = 0; index < rows_data.size(); ++index)
             {
-                const Tuple & row_data = rows_data[index].get<const Tuple &>();
+                const Tuple & row_data = rows_data[index].safeGet<const Tuple &>();
                 const Field & value = row_data[column_index];
 
                 if (write_data_to_null_map(value, index))
                 {
-                    const String & data = value.get<const String &>();
+                    const String & data = value.safeGet<const String &>();
                     casted_fixed_string_column->insertData(data.data(), data.size());
                 }
             }
@@ -852,7 +882,7 @@ static inline size_t onUpdateData(const Row & rows_data, Block & buffer, size_t 
     {
         writeable_rows_mask[index + 1] = true;
         writeable_rows_mask[index] = differenceSortingKeys(
-            rows_data[index].get<const Tuple &>(), rows_data[index + 1].get<const Tuple &>(), sorting_columns_index);
+            rows_data[index].safeGet<const Tuple &>(), rows_data[index + 1].safeGet<const Tuple &>(), sorting_columns_index);
     }
 
     for (size_t column = 0; column < buffer.columns() - 2; ++column)

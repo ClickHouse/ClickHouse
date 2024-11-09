@@ -1,42 +1,39 @@
-import pytest
-
-import time
-import psycopg2
 import os.path as p
 import random
+import threading
+import time
+import uuid
+from random import randrange
+
+import psycopg2
+import pytest
+from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
-from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
-from helpers.test_tools import TSV
-
-from random import randrange
-import threading
-
-from helpers.postgres_utility import get_postgres_conn
-from helpers.postgres_utility import PostgresManager
-
-from helpers.postgres_utility import create_replication_slot, drop_replication_slot
-from helpers.postgres_utility import create_postgres_schema, drop_postgres_schema
-from helpers.postgres_utility import create_postgres_table, drop_postgres_table
 from helpers.postgres_utility import (
+    PostgresManager,
+    assert_nested_table_is_created,
+    assert_number_of_columns,
+    check_several_tables_are_synchronized,
+    check_tables_are_synchronized,
+    create_postgres_schema,
+    create_postgres_table,
     create_postgres_table_with_schema,
+    create_replication_slot,
+    drop_postgres_schema,
+    drop_postgres_table,
     drop_postgres_table_with_schema,
-)
-from helpers.postgres_utility import check_tables_are_synchronized
-from helpers.postgres_utility import check_several_tables_are_synchronized
-from helpers.postgres_utility import assert_nested_table_is_created
-from helpers.postgres_utility import assert_number_of_columns
-from helpers.postgres_utility import (
+    drop_replication_slot,
+    get_postgres_conn,
     postgres_table_template,
     postgres_table_template_2,
     postgres_table_template_3,
     postgres_table_template_4,
     postgres_table_template_5,
     postgres_table_template_6,
+    queries,
 )
-from helpers.postgres_utility import queries
-
+from helpers.test_tools import TSV, assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -59,7 +56,6 @@ instance2 = cluster.add_instance(
 pg_manager = PostgresManager()
 pg_manager2 = PostgresManager()
 pg_manager_instance2 = PostgresManager()
-pg_manager3 = PostgresManager()
 
 
 @pytest.fixture(scope="module")
@@ -81,12 +77,6 @@ def started_cluster():
         )
         pg_manager2.init(
             instance2, cluster.postgres_ip, cluster.postgres_port, "postgres_database2"
-        )
-        pg_manager3.init(
-            instance,
-            cluster.postgres_ip,
-            cluster.postgres_port,
-            default_database="postgres-postgres",
         )
 
         yield cluster
@@ -654,7 +644,7 @@ def test_table_override(started_cluster):
         instance.query(f"SELECT count() FROM {materialized_database}.{table_name}")
     )
 
-    expected = "CREATE TABLE test_database.table_override\\n(\\n    `key` Int32,\\n    `value` String,\\n    `_sign` Int8() MATERIALIZED 1,\\n    `_version` UInt64() MATERIALIZED 1\\n)\\nENGINE = ReplacingMergeTree(_version)\\nPARTITION BY key\\nORDER BY tuple(key)"
+    expected = "CREATE TABLE test_database.table_override\\n(\\n    `key` Int32,\\n    `value` String,\\n    `_sign` Int8 MATERIALIZED 1,\\n    `_version` UInt64 MATERIALIZED 1\\n)\\nENGINE = ReplacingMergeTree(_version)\\nPARTITION BY key\\nORDER BY tuple(key)"
     assert (
         expected
         == instance.query(
@@ -924,16 +914,27 @@ def test_failed_load_from_snapshot(started_cluster):
 
 
 def test_symbols_in_publication_name(started_cluster):
-    table = "test_symbols_in_publication_name"
+    id = uuid.uuid4()
+    db = f"test_{id}"
+    table = f"test_symbols_in_publication_name"
+
+    pg_manager3 = PostgresManager()
+    pg_manager3.init(
+        instance,
+        cluster.postgres_ip,
+        cluster.postgres_port,
+        default_database=db,
+    )
 
     pg_manager3.create_postgres_table(table)
     instance.query(
-        f"INSERT INTO `{pg_manager3.get_default_database()}`.`{table}` SELECT number, number from numbers(0, 50)"
+        f"INSERT INTO `{db}`.`{table}` SELECT number, number from numbers(0, 50)"
     )
 
     pg_manager3.create_materialized_db(
         ip=started_cluster.postgres_ip,
         port=started_cluster.postgres_port,
+        materialized_database=db,
         settings=[
             f"materialized_postgresql_tables_list = '{table}'",
             "materialized_postgresql_backoff_min_ms = 100",
@@ -941,8 +942,10 @@ def test_symbols_in_publication_name(started_cluster):
         ],
     )
     check_tables_are_synchronized(
-        instance, table, postgres_database=pg_manager3.get_default_database()
+        instance, table, materialized_database=db, postgres_database=db
     )
+    pg_manager3.drop_materialized_db(db)
+    pg_manager3.execute(f'drop table "{table}"')
 
 
 def test_generated_columns(started_cluster):
@@ -953,12 +956,14 @@ def test_generated_columns(started_cluster):
         "",
         f"""CREATE TABLE {table} (
              key integer PRIMARY KEY,
-             x integer,
+             x integer DEFAULT 0,
+             temp integer DEFAULT 0,
              y integer GENERATED ALWAYS AS (x*2) STORED,
-             z text);
+             z text DEFAULT 'z');
          """,
     )
 
+    pg_manager.execute(f"alter table {table} drop column temp;")
     pg_manager.execute(f"insert into {table} (key, x, z) values (1,1,'1');")
     pg_manager.execute(f"insert into {table} (key, x, z) values (2,2,'2');")
 
@@ -985,6 +990,44 @@ def test_generated_columns(started_cluster):
 
     pg_manager.execute(f"insert into {table} (key, x, z) values (5,5,'5');")
     pg_manager.execute(f"insert into {table} (key, x, z) values (6,6,'6');")
+
+    check_tables_are_synchronized(
+        instance, table, postgres_database=pg_manager.get_default_database()
+    )
+
+
+def test_generated_columns_with_sequence(started_cluster):
+    table = "test_generated_columns_with_sequence"
+
+    pg_manager.create_postgres_table(
+        table,
+        "",
+        f"""CREATE TABLE {table} (
+             key integer PRIMARY KEY,
+             x integer,
+             y integer GENERATED ALWAYS AS (x*2) STORED,
+             z text);
+         """,
+    )
+
+    pg_manager.execute(
+        f"create sequence {table}_id_seq increment by 1 minvalue 1 start 1;"
+    )
+    pg_manager.execute(
+        f"alter table {table} alter key set default nextval('{table}_id_seq');"
+    )
+    pg_manager.execute(f"insert into {table} (key, x, z) values (1,1,'1');")
+    pg_manager.execute(f"insert into {table} (key, x, z) values (2,2,'2');")
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
 
     check_tables_are_synchronized(
         instance, table, postgres_database=pg_manager.get_default_database()
@@ -1087,14 +1130,259 @@ def test_dependent_loading(started_cluster):
     nested_time = instance.query(
         f"SELECT event_time_microseconds FROM system.text_log WHERE message like 'Loading table default.{uuid}_nested' and message not like '%like%'"
     ).strip()
-    time = instance.query(
-        f"SELECT event_time_microseconds FROM system.text_log WHERE message like 'Loading table default.{table}' and message not like '%like%'"
-    ).strip()
+    time = (
+        instance.query(
+            f"SELECT event_time_microseconds FROM system.text_log WHERE message like 'Loading table default.{table}' and message not like '%like%'"
+        )
+        .strip()
+        .split("\n")[-1]
+    )
     instance.query(
         f"SELECT toDateTime64('{nested_time}', 6) < toDateTime64('{time}', 6)"
     )
 
     instance.query(f"DROP TABLE {table} SYNC")
+
+
+def test_partial_table(started_cluster):
+    table = "test_partial_table"
+
+    pg_manager.create_postgres_table(
+        table,
+        "",
+        f"""CREATE TABLE {table} (
+             key integer PRIMARY KEY,
+             x integer DEFAULT 0,
+             y integer,
+             z text DEFAULT 'z');
+         """,
+    )
+    pg_manager.execute(f"insert into {table} (key, x, z) values (1,1,'a');")
+    pg_manager.execute(f"insert into {table} (key, x, z) values (2,2,'b');")
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}(z, key)'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        columns=["key", "z"],
+    )
+
+    pg_manager.execute(f"insert into {table} (key, x, z) values (3,3,'c');")
+    pg_manager.execute(f"insert into {table} (key, x, z) values (4,4,'d');")
+
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        columns=["key", "z"],
+    )
+
+
+# it is important to check case when table name, with subset of columns, is substring of table with full set of columns
+@pytest.mark.parametrize(
+    "table_list",
+    [
+        "{}(key, x, z), {}_full, {}_full1",
+        "{}_full, {}(key, x, z), {}_full1",
+        "{}_full,{}(key, x, z),{}_full1",
+        "{}_full,{}_full1,{}(key, x, z)",
+    ],
+)
+def test_partial_and_full_table(started_cluster, table_list):
+    table = "test_partial_and_full_table"
+    table_list = table_list.format(table, table, table)
+    print(table_list)
+
+    pg_manager.create_postgres_table(
+        table,
+        "",
+        f"""CREATE TABLE {table} (
+             key integer PRIMARY KEY,
+             x integer DEFAULT 0,
+             y integer,
+             z text DEFAULT 'z');
+         """,
+    )
+    pg_manager.execute(f"insert into {table} (key, x, y, z) values (1,1,1,'1');")
+    pg_manager.execute(f"insert into {table} (key, x, y, z) values (2,2,2,'2');")
+
+    pg_manager.create_postgres_table(
+        table + "_full",
+        "",
+        f"""CREATE TABLE {table}_full (
+             key integer PRIMARY KEY,
+             x integer DEFAULT 0,
+             y integer,
+             z text DEFAULT 'z');
+         """,
+    )
+    pg_manager.execute(f"insert into {table}_full (key, x, y, z) values (3,3,3,'3');")
+    pg_manager.execute(f"insert into {table}_full (key, x, y, z) values (4,4,4,'4');")
+
+    pg_manager.create_postgres_table(
+        table + "_full1",
+        "",
+        f"""CREATE TABLE {table}_full1 (
+             key integer PRIMARY KEY,
+             x integer DEFAULT 0,
+             y integer,
+             z text DEFAULT 'z');
+         """,
+    )
+    pg_manager.execute(f"insert into {table}_full1 (key, x, y, z) values (5,5,5,'5');")
+    pg_manager.execute(f"insert into {table}_full1 (key, x, y, z) values (6,6,6,'6');")
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table_list}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(
+        instance,
+        f"{table}",
+        postgres_database=pg_manager.get_default_database(),
+        columns=["key", "x", "z"],
+    )
+    check_tables_are_synchronized(
+        instance, f"{table}_full", postgres_database=pg_manager.get_default_database()
+    )
+    check_tables_are_synchronized(
+        instance, f"{table}_full1", postgres_database=pg_manager.get_default_database()
+    )
+
+    pg_manager.execute(f"insert into {table} (key, x, z) values (7,7,'7');")
+    pg_manager.execute(f"insert into {table}_full (key, x, z) values (8,8,'8');")
+    pg_manager.execute(f"insert into {table}_full1 (key, x, z) values (9,9,'9');")
+
+    check_tables_are_synchronized(
+        instance,
+        f"{table}",
+        postgres_database=pg_manager.get_default_database(),
+        columns=["key", "x", "z"],
+    )
+    check_tables_are_synchronized(
+        instance, f"{table}_full", postgres_database=pg_manager.get_default_database()
+    )
+    check_tables_are_synchronized(
+        instance, f"{table}_full1", postgres_database=pg_manager.get_default_database()
+    )
+
+
+def test_quoting_publication(started_cluster):
+    postgres_database = "postgres-postgres"
+    pg_manager3 = PostgresManager()
+    pg_manager3.init(
+        instance,
+        cluster.postgres_ip,
+        cluster.postgres_port,
+        default_database=postgres_database,
+    )
+    NUM_TABLES = 5
+    materialized_database = "test-database"
+
+    pg_manager3.create_and_fill_postgres_tables(NUM_TABLES, 10000)
+
+    check_table_name_1 = "postgresql-replica-5"
+    pg_manager3.create_and_fill_postgres_table(check_table_name_1)
+
+    pg_manager3.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=materialized_database,
+    )
+    check_several_tables_are_synchronized(
+        instance,
+        NUM_TABLES,
+        materialized_database=materialized_database,
+        postgres_database=postgres_database,
+    )
+
+    result = instance.query(f"SHOW TABLES FROM `{materialized_database}`")
+    assert (
+        result
+        == "postgresql-replica-5\npostgresql_replica_0\npostgresql_replica_1\npostgresql_replica_2\npostgresql_replica_3\npostgresql_replica_4\n"
+    )
+
+    check_tables_are_synchronized(
+        instance,
+        check_table_name_1,
+        materialized_database=materialized_database,
+        postgres_database=postgres_database,
+    )
+    instance.query(
+        f"INSERT INTO `{postgres_database}`.`{check_table_name_1}` SELECT number, number from numbers(10000, 10000)"
+    )
+    check_tables_are_synchronized(
+        instance,
+        check_table_name_1,
+        materialized_database=materialized_database,
+        postgres_database=postgres_database,
+    )
+
+    check_table_name_2 = "postgresql-replica-6"
+    pg_manager3.create_and_fill_postgres_table(check_table_name_2)
+
+    instance.query(f"ATTACH TABLE `{materialized_database}`.`{check_table_name_2}`")
+
+    result = instance.query(f"SHOW TABLES FROM `{materialized_database}`")
+    assert (
+        result
+        == "postgresql-replica-5\npostgresql-replica-6\npostgresql_replica_0\npostgresql_replica_1\npostgresql_replica_2\npostgresql_replica_3\npostgresql_replica_4\n"
+    )
+
+    check_tables_are_synchronized(
+        instance,
+        check_table_name_2,
+        materialized_database=materialized_database,
+        postgres_database=postgres_database,
+    )
+    instance.query(
+        f"INSERT INTO `{postgres_database}`.`{check_table_name_2}` SELECT number, number from numbers(10000, 10000)"
+    )
+    check_tables_are_synchronized(
+        instance,
+        check_table_name_2,
+        materialized_database=materialized_database,
+        postgres_database=postgres_database,
+    )
+
+    instance.restart_clickhouse()
+    check_tables_are_synchronized(
+        instance,
+        check_table_name_1,
+        materialized_database=materialized_database,
+        postgres_database=postgres_database,
+    )
+    check_tables_are_synchronized(
+        instance,
+        check_table_name_2,
+        materialized_database=materialized_database,
+        postgres_database=postgres_database,
+    )
+
+    instance.query(
+        f"DETACH TABLE `{materialized_database}`.`{check_table_name_2}` PERMANENTLY"
+    )
+    time.sleep(5)
+
+    result = instance.query(f"SHOW TABLES FROM `{materialized_database}`")
+    assert (
+        result
+        == "postgresql-replica-5\npostgresql_replica_0\npostgresql_replica_1\npostgresql_replica_2\npostgresql_replica_3\npostgresql_replica_4\n"
+    )
 
 
 if __name__ == "__main__":

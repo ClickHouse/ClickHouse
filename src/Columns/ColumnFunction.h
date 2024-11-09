@@ -4,6 +4,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Columns/IColumn.h>
+#include <Common/WeakHash.h>
 
 
 namespace DB
@@ -94,8 +95,16 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot insert into {}", getName());
     }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn & src, size_t n) override;
+#else
+    void doInsertFrom(const IColumn & src, size_t n) override;
+#endif
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn &, size_t start, size_t length) override;
+#else
+    void doInsertRangeFrom(const IColumn &, size_t start, size_t length) override;
+#endif
 
     void insertData(const char *, size_t) override
     {
@@ -122,9 +131,9 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "updateHashWithValue is not implemented for {}", getName());
     }
 
-    void updateWeakHash32(WeakHash32 &) const override
+    WeakHash32 getWeakHash32() const override
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "updateWeakHash32 is not implemented for {}", getName());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getWeakHash32 is not implemented for {}", getName());
     }
 
     void updateHashFast(SipHash &) const override
@@ -137,7 +146,11 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "popBack is not implemented for {}", getName());
     }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t, size_t, const IColumn &, int) const override
+#else
+    int doCompareAt(size_t, size_t, const IColumn &, int) const override
+#endif
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "compareAt is not implemented for {}", getName());
     }

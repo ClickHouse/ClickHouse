@@ -51,6 +51,14 @@ function check_replication_consistency()
     table_name_prefix=$1
     check_query_part=$2
 
+    # Try to kill some mutations because sometimes tests run too much (it's not guarenteed to kill all mutations, see below)
+    # Try multiple replicas, because queries are not finished yet, and "global" KILL MUTATION may fail due to another query (like DROP TABLE)
+    readarray -t tables_arr < <(${CLICKHOUSE_CLIENT} -q "SELECT name FROM system.tables WHERE database=currentDatabase() AND name like '$table_name_prefix%'")
+    for t in "${tables_arr[@]}"
+    do
+        ${CLICKHOUSE_CLIENT} -q "KILL MUTATION WHERE database=currentDatabase() AND table='$t'" > /dev/null 2>/dev/null ||:
+    done
+
     # Wait for all queries to finish (query may still be running if thread is killed by timeout)
     num_tries=0
     while [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE current_database=currentDatabase() AND query LIKE '%$table_name_prefix%'") -ne 1 ]]; do
@@ -79,7 +87,9 @@ function check_replication_consistency()
     fi
 
     # Touch all data to check that it's readable (and trigger PartCheckThread if needed)
-    while ! $CLICKHOUSE_CLIENT -q "SELECT * FROM merge(currentDatabase(), '$table_name_prefix') FORMAT Null" 2>/dev/null; do
+    # it's important to disable prefer warmed unmerged parts because
+    # otherwise it can read non-syncrhonized state of replicas
+    while ! $CLICKHOUSE_CLIENT --prefer_warmed_unmerged_parts_seconds=0 --max_result_rows 0 --max_result_bytes 0 --max_rows_to_read 0 --max_bytes_to_read 0 -q "SELECT * FROM merge(currentDatabase(), '$table_name_prefix') FORMAT Null" 2>/dev/null; do
         sleep 1;
         num_tries=$((num_tries+1))
         if [ $num_tries -eq 250 ]; then
@@ -94,7 +104,7 @@ function check_replication_consistency()
     some_table=$($CLICKHOUSE_CLIENT -q "SELECT name FROM system.tables WHERE database=currentDatabase() AND name like '$table_name_prefix%' ORDER BY rand() LIMIT 1")
     $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA $some_table PULL" 1>/dev/null 2>/dev/null ||:
 
-    # Forcefully cancel mutations to avoid waiting for them to finish
+    # Forcefully cancel mutations to avoid waiting for them to finish. Kills the remaining mutations
     ${CLICKHOUSE_CLIENT} -q "KILL MUTATION WHERE database=currentDatabase() AND table like '$table_name_prefix%'" > /dev/null
 
     # SYNC REPLICA is not enough if some MUTATE_PARTs are not assigned yet
@@ -102,7 +112,10 @@ function check_replication_consistency()
 
     try_sync_replicas "$table_name_prefix" "$time_left" || exit 1
 
-    res=$($CLICKHOUSE_CLIENT -q \
+    # it's important to disable prefer warmed unmerged parts because
+    # otherwise it can read non-syncrhonized state of replicas
+    # also, disable the limit that is set for tests globally
+    res=$($CLICKHOUSE_CLIENT --prefer_warmed_unmerged_parts_seconds=0 --max_rows_to_read=0 -q \
     "SELECT
         if((countDistinct(data) as c) == 0, 1, c)
     FROM

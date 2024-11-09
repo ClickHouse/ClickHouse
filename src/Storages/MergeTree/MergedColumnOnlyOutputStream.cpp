@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteSettings.h>
 
@@ -18,18 +19,21 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     const MergeTreeIndices & indices_to_recalc,
     const ColumnsStatistics & stats_to_recalc_,
     WrittenOffsetColumns * offset_columns_,
+    bool save_marks_in_cache,
     const MergeTreeIndexGranularity & index_granularity,
     const MergeTreeIndexGranularityInfo * index_granularity_info)
     : IMergedBlockOutputStream(data_part->storage.getSettings(), data_part->getDataPartStoragePtr(), metadata_snapshot_, columns_list_, /*reset_columns=*/ true)
 {
-    const auto & global_settings = data_part->storage.getContext()->getSettings();
+    const auto & global_settings = data_part->storage.getContext()->getSettingsRef();
 
     MergeTreeWriterSettings writer_settings(
         global_settings,
         data_part->storage.getContext()->getWriteSettings(),
         storage_settings,
         index_granularity_info ? index_granularity_info->mark_type.adaptive : data_part->storage.canUseAdaptiveGranularity(),
-        /* rewrite_primary_key = */ false);
+        /* rewrite_primary_key = */ false,
+        save_marks_in_cache,
+        /* blocks_are_granules_size = */ false);
 
     writer = createMergeTreeDataPartWriter(
         data_part->getType(),

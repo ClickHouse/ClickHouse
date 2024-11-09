@@ -9,11 +9,11 @@ Contains information about executed queries, for example, start time, duration o
 This table does not contain the ingested data for `INSERT` queries.
 :::
 
-You can change settings of queries logging in the [query_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query-log) section of the server configuration.
+You can change settings of queries logging in the [query_log](../../operations/server-configuration-parameters/settings.md#query-log) section of the server configuration.
 
 You can disable queries logging by setting [log_queries = 0](../../operations/settings/settings.md#log-queries). We do not recommend to turn off logging because information in this table is important for solving issues.
 
-The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query-log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
+The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_log](../../operations/server-configuration-parameters/settings.md#query-log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
 
 ClickHouse does not delete data from the table automatically. See [Introduction](../../operations/system-tables/index.md#system-tables-introduction) for more details.
 
@@ -113,6 +113,8 @@ Columns:
 - `used_functions` ([Array(String)](../../sql-reference/data-types/array.md)) — Canonical names of `functions`, which were used during query execution.
 - `used_storages` ([Array(String)](../../sql-reference/data-types/array.md)) — Canonical names of `storages`, which were used during query execution.
 - `used_table_functions` ([Array(String)](../../sql-reference/data-types/array.md)) — Canonical names of `table functions`, which were used during query execution.
+- `used_privileges` ([Array(String)](../../sql-reference/data-types/array.md)) - Privileges which were successfully checked during query execution.
+- `missing_privileges` ([Array(String)](../../sql-reference/data-types/array.md)) - Privileges that are missing during query execution.
 - `query_cache_usage` ([Enum8](../../sql-reference/data-types/enum.md)) — Usage of the [query cache](../query-cache.md) during query execution. Values:
     - `'Unknown'` = Status unknown.
     - `'None'` = The query result was neither written into nor read from the query cache.
@@ -194,6 +196,8 @@ used_formats:                          []
 used_functions:                        []
 used_storages:                         []
 used_table_functions:                  []
+used_privileges:                       []
+missing_privileges:                    []
 query_cache_usage:                     None
 ```
 

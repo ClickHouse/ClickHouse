@@ -2,6 +2,7 @@
 import fileinput
 import json
 import logging
+import os
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -197,6 +198,10 @@ def get_instance_id():
     return _query_imds("latest/meta-data/instance-id")
 
 
+def get_instance_lifecycle():
+    return _query_imds("latest/meta-data/instance-life-cycle")
+
+
 def prepare_tests_results_for_clickhouse(
     pr_info: PRInfo,
     test_results: TestResults,
@@ -233,7 +238,7 @@ def prepare_tests_results_for_clickhouse(
         "head_ref": head_ref,
         "head_repo": head_repo,
         "task_url": pr_info.task_url,
-        "instance_type": get_instance_type(),
+        "instance_type": ",".join([get_instance_type(), get_instance_lifecycle()]),
         "instance_id": get_instance_id(),
     }
 
@@ -294,6 +299,11 @@ class CiLogsCredentials:
     def get_docker_arguments(
         self, pr_info: PRInfo, check_start_time: str, check_name: str
     ) -> str:
+        run_by_hash_total = int(os.getenv("RUN_BY_HASH_TOTAL", "0"))
+        if run_by_hash_total > 1:
+            run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM", "0"))
+            check_name = f"{check_name} [{run_by_hash_num + 1}/{run_by_hash_total}]"
+
         self.create_ci_logs_credentials()
         if not self.config_path.exists():
             logging.info("Do not use external logs pushing")
