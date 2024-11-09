@@ -327,7 +327,7 @@ static Block adaptBlockStructure(const Block & block, const Block & header)
                 /// TODO: check that column contains the same value.
                 /// TODO: serialize const columns.
                 auto col = block.getByName(elem.name);
-                col.column = block.getByName(elem.name).column->cloneResized(1);
+                col.column = block.getByName(elem.name).column->cut(0, 1);
 
                 column = castColumn(col, elem.type);
 

@@ -55,7 +55,7 @@ static Chunk prepareTotals(Chunk chunk)
         /// Skip rows except the first one.
         auto columns = chunk.detachColumns();
         for (auto & column : columns)
-            column = column->cloneResized(1);
+            column = column->cut(0, 1);
 
         chunk.setColumns(std::move(columns), 1);
     }

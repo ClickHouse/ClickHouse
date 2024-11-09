@@ -64,7 +64,7 @@ void DistinctTransform::transform(Chunk & chunk)
     if (unlikely(key_columns_pos.empty()))
     {
         for (auto & column : columns)
-            column = column->cloneResized(1);
+            column = column->cut(0, 1);
 
         chunk.setColumns(std::move(columns), 1);
         stopReading();
