@@ -135,7 +135,7 @@ IS_SANITIZED=$(clickhouse-local --query "SELECT value LIKE '%-fsanitize=%' FROM 
 if [ "${IS_SANITIZED}" -eq "0" ]
 then
   save_settings_clean 'new_settings.native'
-  clickhouse-local -nmq "
+  clickhouse-local --implicit-select 0 -nmq "
   CREATE TABLE old_settings AS file('old_settings.native');
   CREATE TABLE old_version AS file('old_version.native');
   CREATE TABLE new_settings AS file('new_settings.native');
@@ -147,7 +147,6 @@ then
   FROM new_settings
   LEFT JOIN old_settings ON new_settings.name = old_settings.name
   WHERE (new_value != old_value)
-      AND NOT (startsWith(new_value, 'auto(') AND old_value LIKE '%auto(%')
       AND (name NOT IN (
       SELECT arrayJoin(tupleElement(changes, 'name'))
       FROM
