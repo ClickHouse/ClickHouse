@@ -163,9 +163,7 @@ def test_push_role_to_other_nodes(ldap_cluster):
 
     instance1.query("CREATE TABLE IF NOT EXISTS local_table (id UInt32) ENGINE = MergeTree() ORDER BY id")
     instance2.query("CREATE TABLE IF NOT EXISTS local_table (id UInt32) ENGINE = MergeTree() ORDER BY id")
-
     instance2.query("INSERT INTO local_table VALUES (1), (2), (3)")
-
     instance1.query("CREATE TABLE IF NOT EXISTS distributed_table AS local_table ENGINE = Distributed(test_ldap_cluster, default, local_table)")
 
     result = instance1.query("SELECT sum(id) FROM distributed_table", user="johndoe", password="qwertz")
@@ -174,5 +172,4 @@ def test_push_role_to_other_nodes(ldap_cluster):
     instance1.query("DROP TABLE IF EXISTS distributed_table SYNC")
     instance1.query("DROP TABLE IF EXISTS local_table SYNC")
     instance2.query("DROP TABLE IF EXISTS local_table SYNC")
-
     instance2.query("DROP ROLE IF EXISTS role_read")
