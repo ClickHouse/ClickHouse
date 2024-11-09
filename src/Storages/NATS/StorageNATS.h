@@ -4,9 +4,9 @@
 #include <mutex>
 #include <uv.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Core/StreamingHandleErrorMode.h>
 #include <Storages/IStorage.h>
 #include <Storages/NATS/NATSConnection.h>
+#include <Storages/NATS/NATSSettings.h>
 #include <Poco/Semaphore.h>
 #include <Common/thread_local_rng.h>
 
@@ -15,7 +15,6 @@ namespace DB
 
 class NATSConsumer;
 using NATSConsumerPtr = std::shared_ptr<NATSConsumer>;
-struct NATSSettings;
 
 class StorageNATS final : public IStorage, WithContext
 {
@@ -27,8 +26,6 @@ public:
         const String & comment,
         std::unique_ptr<NATSSettings> nats_settings_,
         LoadingStrictnessLevel mode);
-
-    ~StorageNATS() override;
 
     std::string getName() const override { return "NATS"; }
 

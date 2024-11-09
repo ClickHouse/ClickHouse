@@ -1,5 +1,3 @@
-#include <IO/ReadBufferFromFile.h>
-#include <IO/ReadHelpers.h>
 #include <IO/S3/Credentials.h>
 #include <Common/Exception.h>
 
@@ -153,13 +151,10 @@ Aws::String AWSEC2MetadataClient::getDefaultCredentialsSecurely() const
         /// At least the host should be available and reply, otherwise neither IMDSv2 nor IMDSv1 are usable.
         return {};
     }
-    if (response_code != Aws::Http::HttpResponseCode::OK || new_token.empty())
+    else if (response_code != Aws::Http::HttpResponseCode::OK || new_token.empty())
     {
-        LOG_TRACE(
-            logger,
-            "Calling EC2MetadataService to get token failed, "
-            "falling back to a less secure way. HTTP response code: {}",
-            response_code);
+        LOG_TRACE(logger, "Calling EC2MetadataService to get token failed, "
+                  "falling back to a less secure way. HTTP response code: {}", response_code);
         return getDefaultCredentials();
     }
 
@@ -449,18 +444,20 @@ AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::AwsAuthSTSAssumeRoleWebIdent
         LOG_WARNING(logger, "Token file must be specified to use STS AssumeRole web identity creds provider.");
         return; // No need to do further constructing
     }
-
-    LOG_DEBUG(logger, "Resolved token_file from profile_config or environment variable to be {}", token_file);
-
+    else
+    {
+        LOG_DEBUG(logger, "Resolved token_file from profile_config or environment variable to be {}", token_file);
+    }
 
     if (role_arn.empty())
     {
         LOG_WARNING(logger, "RoleArn must be specified to use STS AssumeRole web identity creds provider.");
         return; // No need to do further constructing
     }
-
-    LOG_DEBUG(logger, "Resolved role_arn from profile_config or environment variable to be {}", role_arn);
-
+    else
+    {
+        LOG_DEBUG(logger, "Resolved role_arn from profile_config or environment variable to be {}", role_arn);
+    }
 
     if (tmp_region.empty())
     {
@@ -666,9 +663,11 @@ Aws::String SSOCredentialsProvider::loadAccessTokenFile(const Aws::String & sso_
         expires_at = expiration;
         return tmp_access_token;
     }
-
-    LOG_TEST(logger, "Unable to open token file on path: {}", sso_access_token_path);
-    return "";
+    else
+    {
+        LOG_TEST(logger, "Unable to open token file on path: {}", sso_access_token_path);
+        return "";
+    }
 }
 
 S3CredentialsProviderChain::S3CredentialsProviderChain(
@@ -695,7 +694,6 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
         static const char AWS_ECS_CONTAINER_CREDENTIALS_RELATIVE_URI[] = "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI";
         static const char AWS_ECS_CONTAINER_CREDENTIALS_FULL_URI[] = "AWS_CONTAINER_CREDENTIALS_FULL_URI";
         static const char AWS_ECS_CONTAINER_AUTHORIZATION_TOKEN[] = "AWS_CONTAINER_AUTHORIZATION_TOKEN";
-        static const char AWS_ECS_CONTAINER_AUTHORIZATION_TOKEN_PATH[] = "AWS_CONTAINER_AUTHORIZATION_TOKEN_PATH";
         static const char AWS_EC2_METADATA_DISABLED[] = "AWS_EC2_METADATA_DISABLED";
 
         /// The only difference from DefaultAWSCredentialsProviderChain::DefaultAWSCredentialsProviderChain()
@@ -753,22 +751,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
         }
         else if (!absolute_uri.empty())
         {
-            auto token = Aws::Environment::GetEnv(AWS_ECS_CONTAINER_AUTHORIZATION_TOKEN);
-            const auto token_path = Aws::Environment::GetEnv(AWS_ECS_CONTAINER_AUTHORIZATION_TOKEN_PATH);
-
-            if (!token_path.empty())
-            {
-                LOG_INFO(logger, "The environment variable value {} is {}", AWS_ECS_CONTAINER_AUTHORIZATION_TOKEN_PATH, token_path);
-
-                String token_from_file;
-
-                ReadBufferFromFile in(token_path);
-                readStringUntilEOF(token_from_file, in);
-                Poco::trimInPlace(token_from_file);
-
-                token = token_from_file;
-            }
-
+            const auto token = Aws::Environment::GetEnv(AWS_ECS_CONTAINER_AUTHORIZATION_TOKEN);
             AddProvider(std::make_shared<Aws::Auth::TaskRoleCredentialsProvider>(absolute_uri.c_str(), token.c_str()));
 
             /// DO NOT log the value of the authorization token for security purposes.

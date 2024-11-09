@@ -13,12 +13,13 @@
 # limitations under the License.
 import os
 import pty
-import re
-import sys
 import time
-from queue import Empty, Queue
+import sys
+import re
+
+from threading import Thread, Event
 from subprocess import Popen
-from threading import Event, Thread
+from queue import Queue, Empty
 
 
 class TimeoutError(Exception):

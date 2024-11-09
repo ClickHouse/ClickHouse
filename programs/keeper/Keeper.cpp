@@ -590,7 +590,6 @@ try
 
 #if USE_SSL
             CertificateReloader::instance().tryLoad(*config);
-            CertificateReloader::instance().tryLoadClient(*config);
 #endif
         });
 

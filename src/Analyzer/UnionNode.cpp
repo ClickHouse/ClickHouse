@@ -35,7 +35,6 @@ namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
     extern const int BAD_ARGUMENTS;
-    extern const int LOGICAL_ERROR;
 }
 
 UnionNode::UnionNode(ContextMutablePtr context_, SelectUnionMode union_mode_)
@@ -49,26 +48,6 @@ UnionNode::UnionNode(ContextMutablePtr context_, SelectUnionMode union_mode_)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "UNION mode {} must be normalized", toString(union_mode));
 
     children[queries_child_index] = std::make_shared<ListNode>();
-}
-
-bool UnionNode::isResolved() const
-{
-    for (const auto & query_node : getQueries().getNodes())
-    {
-        bool is_resolved = false;
-
-        if (auto * query_node_typed = query_node->as<QueryNode>())
-            is_resolved = query_node_typed->isResolved();
-        else if (auto * union_node_typed = query_node->as<UnionNode>())
-            is_resolved = union_node_typed->isResolved();
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected query tree node type in UNION node");
-
-        if (!is_resolved)
-            return false;
-    }
-
-    return true;
 }
 
 NamesAndTypes UnionNode::computeProjectionColumns() const
@@ -191,7 +170,7 @@ bool UnionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
     if (recursive_cte_table && rhs_typed.recursive_cte_table &&
         recursive_cte_table->getStorageID() != rhs_typed.recursive_cte_table->getStorageID())
         return false;
-    if ((recursive_cte_table && !rhs_typed.recursive_cte_table) || (!recursive_cte_table && rhs_typed.recursive_cte_table))
+    else if ((recursive_cte_table && !rhs_typed.recursive_cte_table) || (!recursive_cte_table && rhs_typed.recursive_cte_table))
         return false;
 
     return is_subquery == rhs_typed.is_subquery && is_cte == rhs_typed.is_cte && is_recursive_cte == rhs_typed.is_recursive_cte

@@ -255,9 +255,11 @@ size_t CompressedReadBufferBase::readCompressedDataBlockForAsynchronous(size_t &
         ProfileEvents::increment(ProfileEvents::ReadCompressedBytes, size_compressed_without_checksum + sizeof(Checksum));
         return size_compressed_without_checksum + sizeof(Checksum);
     }
-
-    compressed_in->position() -= (sizeof(Checksum) + header_size);
-    return 0;
+    else
+    {
+        compressed_in->position() -= (sizeof(Checksum) + header_size);
+        return 0;
+    }
 }
 
 static void readHeaderAndGetCodec(const char * compressed_buffer, size_t size_decompressed, CompressionCodecPtr & codec,
@@ -315,6 +317,18 @@ void CompressedReadBufferBase::decompress(BufferBase::Buffer & to, size_t size_d
     }
     else
         codec->decompress(compressed_buffer, static_cast<UInt32>(size_compressed_without_checksum), to.begin());
+}
+
+void CompressedReadBufferBase::flushAsynchronousDecompressRequests() const
+{
+    if (codec)
+        codec->flushAsynchronousDecompressRequests();
+}
+
+void CompressedReadBufferBase::setDecompressMode(ICompressionCodec::CodecMode mode) const
+{
+    if (codec)
+        codec->setDecompressMode(mode);
 }
 
 /// 'compressed_in' could be initialized lazily, but before first call of 'readCompressedData'.

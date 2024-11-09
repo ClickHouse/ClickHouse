@@ -196,13 +196,13 @@ bool ParserIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         ++pos;
         return true;
     }
-    if (pos->type == TokenType::BareWord)
+    else if (pos->type == TokenType::BareWord)
     {
         node = std::make_shared<ASTIdentifier>(String(pos->begin, pos->end));
         ++pos;
         return true;
     }
-    if (allow_query_parameter && pos->type == TokenType::OpeningCurlyBrace)
+    else if (allow_query_parameter && pos->type == TokenType::OpeningCurlyBrace)
     {
         ++pos;
         if (pos->type != TokenType::BareWord)
@@ -480,8 +480,10 @@ bool ParserWindowReference::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             function.window_name = getIdentifierName(window_name_ast);
             return true;
         }
-
-        return false;
+        else
+        {
+            return false;
+        }
     }
 
     // Variant 2:
@@ -947,10 +949,12 @@ bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             node = createFunctionCast(string_literal, type_ast);
             return true;
         }
-
-        auto literal = std::make_shared<ASTLiteral>(String(data_begin, data_size));
-        node = createFunctionCast(literal, type_ast);
-        return true;
+        else
+        {
+            auto literal = std::make_shared<ASTLiteral>(String(data_begin, data_size));
+            node = createFunctionCast(literal, type_ast);
+            return true;
+        }
     }
 
     return false;
@@ -965,7 +969,8 @@ bool ParserNull::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         node = std::make_shared<ASTLiteral>(Null());
         return true;
     }
-    return false;
+    else
+        return false;
 }
 
 
@@ -976,12 +981,13 @@ bool ParserBool::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         node = std::make_shared<ASTLiteral>(true);
         return true;
     }
-    if (ParserKeyword(Keyword::FALSE_KEYWORD).parse(pos, node, expected))
+    else if (ParserKeyword(Keyword::FALSE_KEYWORD).parse(pos, node, expected))
     {
         node = std::make_shared<ASTLiteral>(false);
         return true;
     }
-    return false;
+    else
+        return false;
 }
 
 static bool parseNumber(char * buffer, size_t size, bool negative, int base, Field & res)
@@ -1114,7 +1120,8 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
                 return true;
             }
-            return false;
+            else
+                return false;
         }
 
         /// hexadecimal
@@ -1331,7 +1338,7 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
                 layers.back().arr.push_back(literal->value);
                 continue;
             }
-            if (pos->type == TokenType::Comma)
+            else if (pos->type == TokenType::Comma)
             {
                 ++pos;
             }
@@ -1600,7 +1607,7 @@ const char * ParserAlias::restricted_keywords[] =
 bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_as(Keyword::AS);
-    ParserIdentifier id_p{true, Highlight::alias};
+    ParserIdentifier id_p(false, Highlight::alias);
 
     bool has_as_word = s_as.ignore(pos, expected);
     if (!allow_alias_without_as_keyword && !has_as_word)
@@ -1732,7 +1739,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         node = std::move(res);
         return true;
     }
-    if (allowed_transformers.isSet(ColumnTransformer::EXCEPT) && except.ignore(pos, expected))
+    else if (allowed_transformers.isSet(ColumnTransformer::EXCEPT) && except.ignore(pos, expected))
     {
         if (strict.ignore(pos, expected))
             is_strict = true;
@@ -1777,7 +1784,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         node = std::move(res);
         return true;
     }
-    if (allowed_transformers.isSet(ColumnTransformer::REPLACE) && replace.ignore(pos, expected))
+    else if (allowed_transformers.isSet(ColumnTransformer::REPLACE) && replace.ignore(pos, expected))
     {
         if (strict.ignore(pos, expected))
             is_strict = true;
@@ -2147,10 +2154,6 @@ bool ParserWithOptionalAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(node.get()))
         {
             tryGetIdentifierNameInto(alias_node, ast_with_alias->alias);
-
-            // the alias is parametrised and will be resolved later when the query context is known
-            if (!alias_node->children.empty() && alias_node->children.front()->as<ASTQueryParameter>())
-                ast_with_alias->parametrised_alias = std::dynamic_pointer_cast<ASTQueryParameter>(alias_node->children.front());
         }
         else
         {
@@ -2178,7 +2181,6 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     ParserKeyword from(Keyword::FROM);
     ParserKeyword to(Keyword::TO);
     ParserKeyword step(Keyword::STEP);
-    ParserKeyword staleness(Keyword::STALENESS);
     ParserStringLiteral collate_locale_parser;
     ParserExpressionWithOptionalAlias exp_parser(false);
 
@@ -2220,7 +2222,6 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     ASTPtr fill_from;
     ASTPtr fill_to;
     ASTPtr fill_step;
-    ASTPtr fill_staleness;
     if (with_fill.ignore(pos, expected))
     {
         has_with_fill = true;
@@ -2231,9 +2232,6 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
             return false;
 
         if (step.ignore(pos, expected) && !exp_parser.parse(pos, fill_step, expected))
-            return false;
-
-        if (staleness.ignore(pos, expected) && !exp_parser.parse(pos, fill_staleness, expected))
             return false;
     }
 
@@ -2249,7 +2247,6 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     elem->setFillFrom(fill_from);
     elem->setFillTo(fill_to);
     elem->setFillStep(fill_step);
-    elem->setFillStaleness(fill_staleness);
 
     node = elem;
 
