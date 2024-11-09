@@ -9,6 +9,8 @@
 
 #include <memory>
 
+#include "config.h"
+
 
 namespace Poco
 {
