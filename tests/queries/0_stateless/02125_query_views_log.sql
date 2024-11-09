@@ -1,4 +1,4 @@
-SET output_format_pretty_highlight_digit_groups = 0;
+SET output_format_pretty_single_large_number_tip_threshold = 0;
 
 drop table if exists src;
 drop table if exists dst;
