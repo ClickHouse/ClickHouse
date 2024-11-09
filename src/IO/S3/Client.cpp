@@ -24,7 +24,6 @@
 
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 
 #include <Core/Settings.h>
@@ -44,17 +43,8 @@ namespace ProfileEvents
     extern const Event TinyS3Clients;
 }
 
-namespace CurrentMetrics
-{
-    extern const Metric DiskS3NoSuchKeyErrors;
-}
-
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool s3_use_adaptive_timeouts;
-}
 
 namespace ErrorCodes
 {
@@ -391,7 +381,7 @@ Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
 
     /// The next call is NOT a recurcive call
     /// This is a virtuall call Aws::S3::S3Client::HeadObject(const Model::HeadObjectRequest&)
-    return processRequestResult(
+    return enrichErrorMessage(
         HeadObject(static_cast<const Model::HeadObjectRequest&>(request)));
 }
 
@@ -412,7 +402,7 @@ Model::ListObjectsOutcome Client::ListObjects(ListObjectsRequest & request) cons
 
 Model::GetObjectOutcome Client::GetObject(GetObjectRequest & request) const
 {
-    return processRequestResult(
+    return enrichErrorMessage(
         doRequest(request, [this](const Model::GetObjectRequest & req) { return GetObject(req); }));
 }
 
@@ -699,13 +689,10 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
 }
 
 template <typename RequestResult>
-RequestResult Client::processRequestResult(RequestResult && outcome) const
+RequestResult Client::enrichErrorMessage(RequestResult && outcome) const
 {
     if (outcome.IsSuccess() || !isClientForDisk())
         return std::forward<RequestResult>(outcome);
-
-    if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
-        CurrentMetrics::add(CurrentMetrics::DiskS3NoSuchKeyErrors);
 
     String enriched_message = fmt::format(
         "{} {}",
@@ -986,10 +973,10 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
 {
     auto context = Context::getGlobalContextInstance();
     chassert(context);
-    auto proxy_configuration_resolver = ProxyConfigurationResolverProvider::get(ProxyConfiguration::protocolFromString(protocol), context->getConfigRef());
+    auto proxy_configuration_resolver = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::protocolFromString(protocol), context->getConfigRef());
 
-    auto per_request_configuration = [=]{ return proxy_configuration_resolver->resolve(); };
-    auto error_report = [=](const ProxyConfiguration & req) { proxy_configuration_resolver->errorReport(req); };
+    auto per_request_configuration = [=] () { return proxy_configuration_resolver->resolve(); };
+    auto error_report = [=] (const DB::ProxyConfiguration & req) { proxy_configuration_resolver->errorReport(req); };
 
     auto config = PocoHTTPClientConfiguration(
         per_request_configuration,
@@ -999,7 +986,7 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
         s3_retry_attempts,
         enable_s3_requests_logging,
         for_disk_s3,
-        context->getGlobalContext()->getSettingsRef()[Setting::s3_use_adaptive_timeouts],
+        context->getGlobalContext()->getSettingsRef().s3_use_adaptive_timeouts,
         get_request_throttler,
         put_request_throttler,
         error_report);

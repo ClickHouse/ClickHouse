@@ -172,15 +172,23 @@ private:
                 value
             );
         }
-        if (std::isnan(base) || !std::isfinite(base))
+        else if (std::isnan(base) || !std::isfinite(base))
         {
             throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Invalid expression for function {} - Invalid numeric component: {}", getName(), base);
+                ErrorCodes::BAD_ARGUMENTS,
+                "Invalid expression for function {} - Invalid numeric component: {}",
+                getName(),
+                base
+            );
         }
-        if (base < 0)
+        else if (base < 0)
         {
             throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Invalid expression for function {} - Negative sizes are not allowed ({})", getName(), base);
+                ErrorCodes::BAD_ARGUMENTS,
+                "Invalid expression for function {} - Negative sizes are not allowed ({})",
+                getName(),
+                base
+            );
         }
 
         skipWhitespaceIfAny(buf);
@@ -198,20 +206,18 @@ private:
                 unit
             );
         }
-        if (!buf.eof())
+        else if (!buf.eof())
         {
             throw Exception(
                 ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE,
                 "Invalid expression for function {} - Found trailing characters after readable size string (\"{}\")",
                 getName(),
-                value);
+                value
+            );
         }
 
         Float64 num_bytes_with_decimals = base * iter->second;
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wimplicit-const-int-float-conversion"
         if (num_bytes_with_decimals > std::numeric_limits<UInt64>::max())
-#pragma clang diagnostic pop
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,

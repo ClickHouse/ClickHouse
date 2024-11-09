@@ -65,12 +65,12 @@ void MergeTreeDataPartChecksum::checkSize(const IDataPartStorage & storage, cons
     if (isGinFile(name))
         return;
 
-    // This is a projection, no need to check its size.
-    if (storage.existsDirectory(name))
-        return;
-
-    if (!storage.existsFile(name))
+    if (!storage.exists(name))
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "{} doesn't exist", fs::path(storage.getRelativePath()) / name);
+
+    // This is a projection, no need to check its size.
+    if (storage.isDirectory(name))
+        return;
 
     UInt64 size = storage.getFileSize(name);
     if (size != file_size)
@@ -98,6 +98,12 @@ void MergeTreeDataPartChecksums::checkEqual(const MergeTreeDataPartChecksums & r
 
         checksum.checkEqual(it->second, have_uncompressed, name, part_name);
     }
+}
+
+void MergeTreeDataPartChecksums::checkSizes(const IDataPartStorage & storage) const
+{
+    for (const auto & [name, checksum] : files)
+        checksum.checkSize(storage, name);
 }
 
 UInt64 MergeTreeDataPartChecksums::getTotalSizeOnDisk() const

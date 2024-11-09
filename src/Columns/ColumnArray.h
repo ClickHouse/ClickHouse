@@ -118,8 +118,6 @@ public:
     void updatePermutationWithCollation(const Collator & collator, PermutationSortDirection direction, PermutationSortStability stability,
                                     size_t limit, int nan_direction_hint, Permutation & res, EqualRanges& equal_ranges) const override;
     void reserve(size_t n) override;
-    size_t capacity() const override;
-    void prepareForSquashing(const Columns & source_columns) override;
     void shrinkToFit() override;
     void ensureOwnership() override;
     size_t byteSize() const override;
@@ -161,10 +159,6 @@ public:
 
     ColumnPtr compress() const override;
 
-    ColumnCheckpointPtr getCheckpoint() const override;
-    void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
-    void rollback(const ColumnCheckpoint & checkpoint) override;
-
     void forEachSubcolumn(MutableColumnCallback callback) override
     {
         callback(offsets);
@@ -195,13 +189,6 @@ public:
 
     bool hasDynamicStructure() const override { return getData().hasDynamicStructure(); }
     void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
-
-    bool dynamicStructureEquals(const IColumn & rhs) const override
-    {
-        if (const auto * rhs_concrete = typeid_cast<const ColumnArray *>(&rhs))
-            return data->dynamicStructureEquals(*rhs_concrete->data);
-        return false;
-    }
 
 private:
     WrappedPtr data;

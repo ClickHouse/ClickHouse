@@ -10,7 +10,6 @@
 #include "DictionaryStructure.h"
 #include "registerDictionaries.h"
 #include <Core/Settings.h>
-#include <Common/RemoteHostFilter.h>
 #include <Interpreters/Context.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
@@ -29,18 +28,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 external_storage_connect_timeout_sec;
-    extern const SettingsUInt64 external_storage_rw_timeout_sec;
-    extern const SettingsUInt64 glob_expansion_max_elements;
-}
-
-namespace MySQLSetting
-{
-    extern const MySQLSettingsUInt64 connect_timeout;
-    extern const MySQLSettingsUInt64 read_write_timeout;
-}
 
 [[maybe_unused]]
 static const size_t default_num_tries_on_connection_loss = 3;
@@ -88,9 +75,8 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
         if (named_collection)
         {
             auto allowed_arguments{dictionary_allowed_keys};
-            auto setting_names = mysql_settings.getAllRegisteredNames();
-            for (const auto & name : setting_names)
-                allowed_arguments.insert(name);
+            for (const auto & setting : mysql_settings.all())
+                allowed_arguments.insert(setting.getName());
             validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(*named_collection, {}, allowed_arguments);
 
             StorageMySQL::Configuration::Addresses addresses;
@@ -103,7 +89,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
             }
             else
             {
-                size_t max_addresses = global_context->getSettingsRef()[Setting::glob_expansion_max_elements];
+                size_t max_addresses = global_context->getSettingsRef().glob_expansion_max_elements;
                 addresses = parseRemoteDescriptionForExternalDatabase(addresses_expr, max_addresses, 3306);
             }
 
@@ -122,12 +108,17 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
             });
 
             const auto & settings = global_context->getSettingsRef();
-            if (!mysql_settings[MySQLSetting::connect_timeout].changed)
-                mysql_settings[MySQLSetting::connect_timeout] = settings[Setting::external_storage_connect_timeout_sec];
-            if (!mysql_settings[MySQLSetting::read_write_timeout].changed)
-                mysql_settings[MySQLSetting::read_write_timeout] = settings[Setting::external_storage_rw_timeout_sec];
+            if (!mysql_settings.isChanged("connect_timeout"))
+                mysql_settings.connect_timeout = settings.external_storage_connect_timeout_sec;
+            if (!mysql_settings.isChanged("read_write_timeout"))
+                mysql_settings.read_write_timeout = settings.external_storage_rw_timeout_sec;
 
-            mysql_settings.loadFromNamedCollection(*named_collection);
+            for (const auto & setting : mysql_settings.all())
+            {
+                const auto & setting_name = setting.getName();
+                if (named_collection->has(setting_name))
+                    mysql_settings.set(setting_name, named_collection->get<String>(setting_name));
+            }
 
             pool = std::make_shared<mysqlxx::PoolWithFailover>(
                 createMySQLPoolWithFailover(
@@ -219,9 +210,11 @@ std::string MySQLDictionarySource::getUpdateFieldAndDate()
         update_time = std::chrono::system_clock::now();
         return query_builder.composeUpdateQuery(configuration.update_field, str_time);
     }
-
-    update_time = std::chrono::system_clock::now();
-    return load_all_query;
+    else
+    {
+        update_time = std::chrono::system_clock::now();
+        return load_all_query;
+    }
 }
 
 QueryPipeline MySQLDictionarySource::loadFromQuery(const String & query)

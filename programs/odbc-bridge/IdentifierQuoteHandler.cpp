@@ -19,11 +19,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 odbc_bridge_connection_pool_size;
-}
-
 void IdentifierQuoteHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
 {
     HTMLForm params(getContext()->getSettingsRef(), request, request.getStream());
@@ -73,13 +68,13 @@ void IdentifierQuoteHandler::handleRequest(HTTPServerRequest & request, HTTPServ
         nanodbc::ConnectionHolderPtr connection;
         if (use_connection_pooling)
             connection = ODBCPooledConnectionFactory::instance().get(
-                validateODBCConnectionString(connection_string), getContext()->getSettingsRef()[Setting::odbc_bridge_connection_pool_size]);
+                validateODBCConnectionString(connection_string), getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
         else
             connection = std::make_shared<nanodbc::ConnectionHolder>(validateODBCConnectionString(connection_string));
 
         auto identifier = getIdentifierQuote(std::move(connection));
 
-        WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD);
+        WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
         try
         {
             writeStringBinary(identifier, out);

@@ -43,14 +43,6 @@ namespace CurrentMetrics
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool force_remove_data_recursively_on_drop;
-    extern const SettingsBool fsync_metadata;
-    extern const SettingsSeconds lock_acquire_timeout;
-    extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsUInt64 max_parser_depth;
-}
 
 static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 
@@ -123,7 +115,7 @@ std::pair<String, StoragePtr> createTableFromAST(
         else
         {
             columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, mode);
-            constraints = InterpreterCreateQuery::getConstraintsDescription(ast_create_query.columns_list->constraints, columns, context);
+            constraints = InterpreterCreateQuery::getConstraintsDescription(ast_create_query.columns_list->constraints);
         }
     }
 
@@ -259,7 +251,7 @@ void DatabaseOnDisk::createTable(
         WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
         writeString(statement, out);
         out.next();
-        if (settings[Setting::fsync_metadata])
+        if (settings.fsync_metadata)
             out.sync();
         out.close();
     }
@@ -319,13 +311,14 @@ void DatabaseOnDisk::detachTablePermanently(ContextPtr query_context, const Stri
         FS::createFile(detached_permanently_flag);
 
         std::lock_guard lock(mutex);
-        const auto it = snapshot_detached_tables.find(table_name);
-        if (it == snapshot_detached_tables.end())
+        if (const auto it = snapshot_detached_tables.find(table_name); it == snapshot_detached_tables.end())
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Snapshot doesn't contain info about detached table `{}`", table_name);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Snapshot doesn't contain info about detached table={}", table_name);
         }
-
-        it->second.is_permanently = true;
+        else
+        {
+            it->second.is_permanently = true;
+        }
     }
     catch (Exception & e)
     {
@@ -370,7 +363,7 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
 
     for (const auto & [disk_name, disk] : getContext()->getDisksMap())
     {
-        if (disk->isReadOnly() || !disk->existsDirectory(table_data_path_relative))
+        if (disk->isReadOnly() || !disk->exists(table_data_path_relative))
             continue;
 
         LOG_INFO(log, "Removing data directory from disk {} with path {} for dropped table {} ", disk_name, table_data_path_relative, table_name);
@@ -396,8 +389,9 @@ void DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked(const String & to
         if (fs::exists(detached_permanently_flag))
             throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists (detached permanently)",
                             backQuote(database_name), backQuote(to_table_name));
-        throw Exception(
-            ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists (detached)", backQuote(database_name), backQuote(to_table_name));
+        else
+            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists (detached)",
+                            backQuote(database_name), backQuote(to_table_name));
     }
 }
 
@@ -440,7 +434,7 @@ void DatabaseOnDisk::renameTable(
     /// We have to lock the table before detaching, because otherwise lockExclusively will throw. But the table may not exist.
     bool need_lock = table != nullptr;
     if (need_lock)
-        table_lock = table->lockExclusively(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+        table_lock = table->lockExclusively(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
 
     detachTable(local_context, table_name);
     if (!need_lock)
@@ -510,7 +504,7 @@ void DatabaseOnDisk::renameTable(
 }
 
 
-/// It returns the create table statement (even if table is detached)
+/// It returns create table statement (even if table is detached)
 ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const String & table_name, ContextPtr, bool throw_on_error) const
 {
     ASTPtr ast;
@@ -528,7 +522,7 @@ ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const String & table_name, Contex
     {
         if (!has_table && e.code() == ErrorCodes::FILE_DOESNT_EXIST && throw_on_error)
             throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "Table {} doesn't exist", backQuote(table_name));
-        if (!is_system_storage && throw_on_error)
+        else if (!is_system_storage && throw_on_error)
             throw;
     }
     if (!ast && is_system_storage)
@@ -540,7 +534,7 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
 {
     ASTPtr ast;
 
-    const auto & settings = getContext()->getSettingsRef();
+    auto settings = getContext()->getSettingsRef();
     {
         std::lock_guard lock(mutex);
         auto database_metadata_path = getContext()->getPath() + "metadata/" + escapeForFileName(database_name) + ".sql";
@@ -555,8 +549,7 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
         /// If database.sql doesn't exist, then engine is Ordinary
         String query = "CREATE DATABASE " + backQuoteIfNeed(getDatabaseName()) + " ENGINE = Ordinary";
         ParserCreateQuery parser;
-        ast = parseQuery(
-            parser, query.data(), query.data() + query.size(), "", 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+        ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth, settings.max_parser_backtracks);
     }
 
     if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
@@ -573,16 +566,16 @@ void DatabaseOnDisk::drop(ContextPtr local_context)
     waitDatabaseStarted();
 
     assert(TSA_SUPPRESS_WARNING_FOR_READ(tables).empty());
-    if (local_context->getSettingsRef()[Setting::force_remove_data_recursively_on_drop])
+    if (local_context->getSettingsRef().force_remove_data_recursively_on_drop)
     {
-        (void)fs::remove_all(std::filesystem::path(getContext()->getPath()) / data_path);
+        (void)fs::remove_all(local_context->getPath() + getDataPath());
         (void)fs::remove_all(getMetadataPath());
     }
     else
     {
         try
         {
-            (void)fs::remove(std::filesystem::path(getContext()->getPath()) / data_path);
+            (void)fs::remove(local_context->getPath() + getDataPath());
             (void)fs::remove(getMetadataPath());
         }
         catch (const fs::filesystem_error & e)
@@ -615,11 +608,12 @@ time_t DatabaseOnDisk::getObjectMetadataModificationTime(const String & object_n
         {
             return static_cast<time_t>(0);
         }
-        throw;
+        else
+            throw;
     }
 }
 
-void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_metadata_file) const
+void DatabaseOnDisk::iterateMetadataFiles(ContextPtr local_context, const IteratingFunction & process_metadata_file) const
 {
     auto process_tmp_drop_metadata_file = [&](const String & file_name)
     {
@@ -627,7 +621,7 @@ void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_meta
         static const char * tmp_drop_ext = ".sql.tmp_drop";
         const std::string object_name = file_name.substr(0, file_name.size() - strlen(tmp_drop_ext));
 
-        if (fs::exists(std::filesystem::path(getContext()->getPath()) / data_path / object_name))
+        if (fs::exists(local_context->getPath() + getDataPath() + '/' + object_name))
         {
             fs::rename(getMetadataPath() + file_name, getMetadataPath() + object_name + ".sql");
             LOG_WARNING(log, "Object {} was not dropped previously and will be restored", backQuote(object_name));
@@ -644,7 +638,7 @@ void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_meta
     std::vector<std::pair<String, bool>> metadata_files;
 
     fs::directory_iterator dir_end;
-    for (fs::directory_iterator dir_it(metadata_path); dir_it != dir_end; ++dir_it)
+    for (fs::directory_iterator dir_it(getMetadataPath()); dir_it != dir_end; ++dir_it)
     {
         String file_name = dir_it->path().filename();
         /// For '.svn', '.gitignore' directory and similar.
@@ -697,9 +691,7 @@ void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_meta
                         process_metadata_file(file.first);
                     else
                         process_tmp_drop_metadata_file(file.first);
-            },
-            Priority{},
-            getContext()->getSettingsRef()[Setting::lock_acquire_timeout].totalMicroseconds());
+            }, Priority{}, getContext()->getSettingsRef().lock_acquire_timeout.totalMicroseconds());
     }
     pool.wait();
 }
@@ -741,26 +733,16 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
         return nullptr;
     }
 
-    const auto & settings = local_context->getSettingsRef();
+    auto settings = local_context->getSettingsRef();
     ParserCreateQuery parser;
     const char * pos = query.data();
     std::string error_message;
-    auto ast = tryParseQuery(
-        parser,
-        pos,
-        pos + query.size(),
-        error_message,
-        /* hilite = */ false,
-        "in file " + metadata_file_path,
-        /* allow_multi_statements = */ false,
-        0,
-        settings[Setting::max_parser_depth],
-        settings[Setting::max_parser_backtracks],
-        true);
+    auto ast = tryParseQuery(parser, pos, pos + query.size(), error_message, /* hilite = */ false,
+        "in file " + metadata_file_path, /* allow_multi_statements = */ false, 0, settings.max_parser_depth, settings.max_parser_backtracks, true);
 
     if (!ast && throw_on_error)
         throw Exception::createDeprecated(error_message, ErrorCodes::SYNTAX_ERROR);
-    if (!ast)
+    else if (!ast)
         return nullptr;
 
     auto & create = ast->as<ASTCreateQuery &>();
@@ -803,7 +785,8 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
         if (throw_on_error)
             throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "Cannot get metadata of {}.{}",
                             backQuote(getDatabaseName()), backQuote(table_name));
-        return nullptr;
+        else
+            return nullptr;
     }
 
     /// setup create table query storage info.
@@ -818,8 +801,8 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
         storage,
         ast_storage,
         false,
-        static_cast<unsigned>(settings[Setting::max_parser_depth]),
-        static_cast<unsigned>(settings[Setting::max_parser_backtracks]),
+        static_cast<unsigned>(settings.max_parser_depth),
+        static_cast<unsigned>(settings.max_parser_backtracks),
         throw_on_error);
 
     create_table_query->set(create_table_query->as<ASTCreateQuery>()->comment,
@@ -871,7 +854,7 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
     writeString(statement, out);
 
     out.next();
-    if (getContext()->getSettingsRef()[Setting::fsync_metadata])
+    if (getContext()->getSettingsRef().fsync_metadata)
         out.sync();
     out.close();
 

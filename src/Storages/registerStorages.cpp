@@ -1,5 +1,5 @@
-#include <Storages/StorageFactory.h>
 #include <Storages/registerStorages.h>
+#include <Storages/StorageFactory.h>
 
 #include "config.h"
 
@@ -26,9 +26,6 @@ void registerStorageGenerateRandom(StorageFactory & factory);
 void registerStorageExecutable(StorageFactory & factory);
 void registerStorageWindowView(StorageFactory & factory);
 void registerStorageLoop(StorageFactory & factory);
-void registerStorageFuzzQuery(StorageFactory & factory);
-void registerStorageTimeSeries(StorageFactory & factory);
-
 #if USE_RAPIDJSON || USE_SIMDJSON
 void registerStorageFuzzJSON(StorageFactory & factory);
 #endif
@@ -41,10 +38,9 @@ void registerStorageS3Queue(StorageFactory & factory);
 #if USE_PARQUET
 void registerStorageDeltaLake(StorageFactory & factory);
 #endif
-#endif
-
 #if USE_AVRO
 void registerStorageIceberg(StorageFactory & factory);
+#endif
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
@@ -65,11 +61,7 @@ void registerStorageJDBC(StorageFactory & factory);
 void registerStorageMySQL(StorageFactory & factory);
 #endif
 
-#if USE_MONGODB
 void registerStorageMongoDB(StorageFactory & factory);
-void registerStorageMongoDBPocoLegacy(StorageFactory & factory);
-#endif
-
 void registerStorageRedis(StorageFactory & factory);
 
 
@@ -94,6 +86,10 @@ void registerStoragePostgreSQL(StorageFactory & factory);
 void registerStorageMaterializedPostgreSQL(StorageFactory & factory);
 #endif
 
+#if USE_MYSQL || USE_LIBPQXX
+void registerStorageExternalDistributed(StorageFactory & factory);
+#endif
+
 #if USE_FILELOG
 void registerStorageFileLog(StorageFactory & factory);
 #endif
@@ -106,7 +102,7 @@ void registerStorageKeeperMap(StorageFactory & factory);
 
 void registerStorageObjectStorage(StorageFactory & factory);
 
-void registerStorages(bool use_legacy_mongodb_integration [[maybe_unused]])
+void registerStorages()
 {
     auto & factory = StorageFactory::instance();
 
@@ -130,19 +126,12 @@ void registerStorages(bool use_legacy_mongodb_integration [[maybe_unused]])
     registerStorageExecutable(factory);
     registerStorageWindowView(factory);
     registerStorageLoop(factory);
-    registerStorageFuzzQuery(factory);
-    registerStorageTimeSeries(factory);
-
 #if USE_RAPIDJSON || USE_SIMDJSON
     registerStorageFuzzJSON(factory);
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
     registerStorageAzureQueue(factory);
-#endif
-
-#if USE_AVRO
-    registerStorageIceberg(factory);
 #endif
 
 #if USE_AWS_S3
@@ -153,10 +142,14 @@ void registerStorages(bool use_legacy_mongodb_integration [[maybe_unused]])
     registerStorageDeltaLake(factory);
     #endif
 
-#endif
+    #if USE_AVRO
+    registerStorageIceberg(factory);
+    #endif
 
-#if USE_HDFS
-#    if USE_HIVE
+    #endif
+
+    #if USE_HDFS
+    #if USE_HIVE
     registerStorageHive(factory);
     #endif
     #endif
@@ -168,13 +161,7 @@ void registerStorages(bool use_legacy_mongodb_integration [[maybe_unused]])
     registerStorageMySQL(factory);
     #endif
 
-    #if USE_MONGODB
-    if (use_legacy_mongodb_integration)
-        registerStorageMongoDBPocoLegacy(factory);
-    else
-        registerStorageMongoDB(factory);
-    #endif
-
+    registerStorageMongoDB(factory);
     registerStorageRedis(factory);
 
     #if USE_RDKAFKA
@@ -200,6 +187,10 @@ void registerStorages(bool use_legacy_mongodb_integration [[maybe_unused]])
     #if USE_LIBPQXX
     registerStoragePostgreSQL(factory);
     registerStorageMaterializedPostgreSQL(factory);
+    #endif
+
+    #if USE_MYSQL || USE_LIBPQXX
+    registerStorageExternalDistributed(factory);
     #endif
 
     #if USE_SQLITE

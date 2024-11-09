@@ -83,16 +83,16 @@ public:
         if (version == 1)
         {
             for (size_t i = 0; i < arr_size; ++i)
-                set.insert(static_cast<T>((*data_column)[offset + i].safeGet<T>()));
+                set.insert(static_cast<T>((*data_column)[offset + i].get<T>()));
         }
         else if (!set.empty())
         {
             typename State::Set new_set;
             for (size_t i = 0; i < arr_size; ++i)
             {
-                typename State::Set::LookupResult set_value = set.find(static_cast<T>((*data_column)[offset + i].safeGet<T>()));
+                typename State::Set::LookupResult set_value = set.find(static_cast<T>((*data_column)[offset + i].get<T>()));
                 if (set_value != nullptr)
-                    new_set.insert(static_cast<T>((*data_column)[offset + i].safeGet<T>()));
+                    new_set.insert(static_cast<T>((*data_column)[offset + i].get<T>()));
             }
             set = std::move(new_set);
         }
@@ -381,22 +381,23 @@ IAggregateFunction * createWithExtraTypes(const DataTypePtr & argument_type, con
 {
     WhichDataType which(argument_type);
     if (which.idx == TypeIndex::Date) return new AggregateFunctionGroupArrayIntersectDate(argument_type, parameters);
-    if (which.idx == TypeIndex::DateTime)
-        return new AggregateFunctionGroupArrayIntersectDateTime(argument_type, parameters);
-    if (which.idx == TypeIndex::Date32)
-        return new AggregateFunctionGroupArrayIntersectDate32(argument_type, parameters);
-    if (which.idx == TypeIndex::DateTime64)
+    else if (which.idx == TypeIndex::DateTime) return new AggregateFunctionGroupArrayIntersectDateTime(argument_type, parameters);
+    else if (which.idx == TypeIndex::Date32) return new AggregateFunctionGroupArrayIntersectDate32(argument_type, parameters);
+    else if (which.idx == TypeIndex::DateTime64)
     {
         const auto * datetime64_type = dynamic_cast<const DataTypeDateTime64 *>(argument_type.get());
         const auto return_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime64>(datetime64_type->getScale()));
 
         return new AggregateFunctionGroupArrayIntersectGeneric<true>(argument_type, parameters, return_type);
     }
-
-    /// Check that we can use plain version of AggregateFunctionGroupArrayIntersectGeneric
-    if (argument_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
-        return new AggregateFunctionGroupArrayIntersectGeneric<true>(argument_type, parameters);
-    return new AggregateFunctionGroupArrayIntersectGeneric<false>(argument_type, parameters);
+    else
+    {
+        /// Check that we can use plain version of AggregateFunctionGroupArrayIntersectGeneric
+        if (argument_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
+            return new AggregateFunctionGroupArrayIntersectGeneric<true>(argument_type, parameters);
+        else
+            return new AggregateFunctionGroupArrayIntersectGeneric<false>(argument_type, parameters);
+    }
 }
 
 inline AggregateFunctionPtr createAggregateFunctionGroupArrayIntersectImpl(const std::string & name, const DataTypePtr & argument_type, const Array & parameters)

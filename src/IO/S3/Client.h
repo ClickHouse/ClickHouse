@@ -271,7 +271,7 @@ private:
     void insertRegionOverride(const std::string & bucket, const std::string & region) const;
 
     template <typename RequestResult>
-    RequestResult processRequestResult(RequestResult && outcome) const;
+    RequestResult enrichErrorMessage(RequestResult && outcome) const;
 
     String initial_endpoint;
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;

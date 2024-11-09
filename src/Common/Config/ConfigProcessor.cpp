@@ -138,14 +138,9 @@ static Node * getRootNode(Document * document)
     return XMLUtils::getRootNode(document);
 }
 
-static size_t firstNonWhitespacePos(const std::string & s)
-{
-    return s.find_first_not_of(" \t\n\r");
-}
-
 static bool allWhitespace(const std::string & s)
 {
-    return firstNonWhitespacePos(s) == std::string::npos;
+    return s.find_first_not_of(" \t\n\r") == std::string::npos;
 }
 
 static void deleteAttributesRecursive(Node * root)
@@ -627,69 +622,41 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
     return files;
 }
 
-XMLDocumentPtr ConfigProcessor::parseConfig(const std::string & config_path)
-{
-    fs::path p(config_path);
-    std::string extension = p.extension();
-    boost::algorithm::to_lower(extension);
-
-    if (extension == ".xml")
-        return dom_parser.parse(config_path);
-    if (extension == ".yaml" || extension == ".yml")
-        return YAMLParser::parse(config_path);
-
-    /// Suppose non regular file parsed as XML, such as pipe: /dev/fd/X (regardless it has .xml extension or not)
-    if (!fs::is_regular_file(config_path))
-        return dom_parser.parse(config_path);
-
-    /// If the regular file begins with < it might be XML, otherwise it might be YAML.
-    bool maybe_xml = false;
-    {
-        std::ifstream file(config_path);
-        if (!file.is_open())
-            throw Exception(ErrorCodes::CANNOT_LOAD_CONFIG, "Unknown format of '{}' config", config_path);
-
-        std::string line;
-        while (std::getline(file, line))
-        {
-            const size_t pos = firstNonWhitespacePos(line);
-
-            if (pos < line.size() && '<' == line[pos])
-            {
-                maybe_xml = true;
-                break;
-            }
-            if (pos != std::string::npos)
-                break;
-        }
-    }
-    if (maybe_xml)
-        return dom_parser.parse(config_path);
-    return YAMLParser::parse(config_path);
-}
-
 XMLDocumentPtr ConfigProcessor::processConfig(
     bool * has_zk_includes,
     zkutil::ZooKeeperNodeCache * zk_node_cache,
-    const zkutil::EventPtr & zk_changed_event,
-    bool is_config_changed)
+    const zkutil::EventPtr & zk_changed_event)
 {
-    if (is_config_changed)
-        LOG_DEBUG(log, "Processing configuration file '{}'.", path);
+    LOG_DEBUG(log, "Processing configuration file '{}'.", path);
 
     XMLDocumentPtr config;
 
     if (fs::exists(path))
     {
-        config = parseConfig(path);
+        fs::path p(path);
+
+        std::string extension = p.extension();
+        boost::algorithm::to_lower(extension);
+
+        if (extension == ".yaml" || extension == ".yml")
+        {
+            config = YAMLParser::parse(path);
+        }
+        else if (extension == ".xml" || extension == ".conf" || extension.empty())
+        {
+            config = dom_parser.parse(path);
+        }
+        else
+        {
+            throw Exception(ErrorCodes::CANNOT_LOAD_CONFIG, "Unknown format of '{}' config", path);
+        }
     }
     else
     {
         /// When we can use a config embedded in the binary.
         if (auto it = embedded_configs.find(path); it != embedded_configs.end())
         {
-            if (is_config_changed)
-                LOG_DEBUG(log, "There is no file '{}', will use embedded config.", path);
+            LOG_DEBUG(log, "There is no file '{}', will use embedded config.", path);
             config = dom_parser.parseMemory(it->second.data(), it->second.size());
         }
         else
@@ -703,11 +670,23 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     {
         try
         {
-            if (is_config_changed)
-                LOG_DEBUG(log, "Merging configuration file '{}'.", merge_file);
+            LOG_DEBUG(log, "Merging configuration file '{}'.", merge_file);
 
             XMLDocumentPtr with;
-            with = parseConfig(merge_file);
+
+            fs::path p(merge_file);
+            std::string extension = p.extension();
+            boost::algorithm::to_lower(extension);
+
+            if (extension == ".yaml" || extension == ".yml")
+            {
+                with = YAMLParser::parse(merge_file);
+            }
+            else
+            {
+                with = dom_parser.parse(merge_file);
+            }
+
             if (!merge(config, with))
             {
                 LOG_DEBUG(log, "Merging bypassed - configuration file '{}' doesn't belong to configuration '{}' - merging root node name '{}' doesn't match '{}'",
@@ -751,7 +730,19 @@ XMLDocumentPtr ConfigProcessor::processConfig(
         {
             LOG_DEBUG(log, "Including configuration file '{}'.", include_from_path);
 
-            include_from = parseConfig(include_from_path);
+            fs::path p(include_from_path);
+            std::string extension = p.extension();
+            boost::algorithm::to_lower(extension);
+
+            if (extension == ".yaml" || extension == ".yml")
+            {
+                include_from = YAMLParser::parse(include_from_path);
+            }
+            else
+            {
+                include_from = dom_parser.parse(include_from_path);
+            }
+
             contributing_files.push_back(include_from_path);
         }
 
@@ -794,10 +785,10 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     return config;
 }
 
-ConfigProcessor::LoadedConfig ConfigProcessor::loadConfig(bool allow_zk_includes, bool is_config_changed)
+ConfigProcessor::LoadedConfig ConfigProcessor::loadConfig(bool allow_zk_includes)
 {
     bool has_zk_includes;
-    XMLDocumentPtr config_xml = processConfig(&has_zk_includes, nullptr, nullptr, is_config_changed);
+    XMLDocumentPtr config_xml = processConfig(&has_zk_includes);
 
     if (has_zk_includes && !allow_zk_includes)
         throw Poco::Exception("Error while loading config '" + path + "': from_zk includes are not allowed!");
@@ -810,15 +801,14 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfig(bool allow_zk_includes
 ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
     zkutil::ZooKeeperNodeCache & zk_node_cache,
     const zkutil::EventPtr & zk_changed_event,
-    bool fallback_to_preprocessed,
-    bool is_config_changed)
+    bool fallback_to_preprocessed)
 {
     XMLDocumentPtr config_xml;
     bool has_zk_includes;
     bool processed_successfully = false;
     try
     {
-        config_xml = processConfig(&has_zk_includes, &zk_node_cache, zk_changed_event, is_config_changed);
+        config_xml = processConfig(&has_zk_includes, &zk_node_cache, zk_changed_event);
         processed_successfully = true;
     }
     catch (const Poco::Exception & ex)

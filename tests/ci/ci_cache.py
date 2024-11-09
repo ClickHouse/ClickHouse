@@ -1,23 +1,24 @@
 import json
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass, asdict
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Set, Union
+from typing import Dict, Optional, Any, Union, Sequence, List, Set
 
 from ci_config import CI
-from ci_utils import GH, Utils
+
+from ci_utils import is_hex, GHActions
 from commit_status_helper import CommitStatusData
-from digest_helper import JobDigester
 from env_helper import (
+    TEMP_PATH,
     CI_CONFIG_PATH,
+    S3_BUILDS_BUCKET,
     GITHUB_RUN_URL,
     REPORT_PATH,
-    S3_BUILDS_BUCKET,
-    TEMP_PATH,
 )
 from report import BuildResult
 from s3_helper import S3Helper
+from digest_helper import JobDigester
 
 
 @dataclass
@@ -239,7 +240,7 @@ class CiCache:
             int(job_properties[-1]),
         )
 
-        if not Utils.is_hex(job_digest):
+        if not is_hex(job_digest):
             print("ERROR: wrong record job digest")
             return None
 
@@ -257,15 +258,15 @@ class CiCache:
     def print_status(self):
         print(f"Cache enabled: [{self.enabled}]")
         for record_type in self.RecordType:
-            GH.print_in_group(
+            GHActions.print_in_group(
                 f"Cache records: [{record_type}]", list(self.records[record_type])
             )
-        GH.print_in_group(
+        GHActions.print_in_group(
             "Jobs to do:",
             list(self.jobs_to_do.items()),
         )
-        GH.print_in_group("Jobs to skip:", self.jobs_to_skip)
-        GH.print_in_group(
+        GHActions.print_in_group("Jobs to skip:", self.jobs_to_skip)
+        GHActions.print_in_group(
             "Jobs to wait:",
             list(self.jobs_to_wait.items()),
         )
@@ -386,7 +387,8 @@ class CiCache:
         res = record_key in self.records[record_type]
         if release_branch:
             return res and self.records[record_type][record_key].release_branch
-        return res
+        else:
+            return res
 
     def push(
         self,
@@ -729,8 +731,7 @@ class CiCache:
                     job_config=reference_config,
                 ):
                     remove_from_workflow.append(job_name)
-                    if job_name != CI.JobNames.DOCS_CHECK:
-                        has_test_jobs_to_skip = True
+                    has_test_jobs_to_skip = True
                 else:
                     required_builds += (
                         job_config.required_builds if job_config.required_builds else []
@@ -787,7 +788,7 @@ class CiCache:
 
         while round_cnt < MAX_ROUNDS_TO_WAIT:
             round_cnt += 1
-            GH.print_in_group(
+            GHActions.print_in_group(
                 f"Wait pending jobs, round [{round_cnt}/{MAX_ROUNDS_TO_WAIT}]:",
                 list(self.jobs_to_wait),
             )
@@ -795,12 +796,11 @@ class CiCache:
             # start waiting for the next TIMEOUT seconds if there are more than X(=4) jobs to wait
             # wait TIMEOUT seconds in rounds. Y(=5) is the max number of rounds
             expired_sec = 0
-            start_at = time.time()
+            start_at = int(time.time())
             while expired_sec < TIMEOUT and self.jobs_to_wait:
                 await_finished: Set[str] = set()
                 if not dry_run:
-                    # Do not sleep longer than required
-                    time.sleep(min(poll_interval_sec, TIMEOUT - expired_sec))
+                    time.sleep(poll_interval_sec)
                 self.update()
                 for job_name, job_config in self.jobs_to_wait.items():
                     num_batches = job_config.num_batches
@@ -845,17 +845,15 @@ class CiCache:
                     del self.jobs_to_wait[job]
 
                 if not dry_run:
-                    expired_sec = int(time.time() - start_at)
-                    msg = f"...awaiting continues... seconds left [{TIMEOUT - expired_sec}]"
-                    if expired_sec >= TIMEOUT:
-                        # Avoid `seconds left [-3]`
-                        msg = f"awaiting for round {round_cnt} is finished"
-                    print(msg)
+                    expired_sec = int(time.time()) - start_at
+                    print(
+                        f"...awaiting continues... seconds left [{TIMEOUT - expired_sec}]"
+                    )
                 else:
                     # make up for 2 iterations in dry_run
                     expired_sec += int(TIMEOUT / 2) + 1
 
-        GH.print_in_group(
+        GHActions.print_in_group(
             "Remaining jobs:",
             [list(self.jobs_to_wait)],
         )

@@ -266,7 +266,7 @@ private:
         return storage->getName();
     }
 
-    void setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_) override;
+    void setKeyCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context_) override;
 
     bool tryGetCountFromCache(const struct stat & file_stat);
 
@@ -296,7 +296,6 @@ private:
     NamesAndTypesList requested_columns;
     NamesAndTypesList requested_virtual_columns;
     Block block_for_format;
-    SerializationInfoByName serialization_hints;
 
     UInt64 max_block_size;
 

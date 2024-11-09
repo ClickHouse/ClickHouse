@@ -112,7 +112,8 @@ public:
               */
             if (properties.returns_default_when_only_null)
                 return std::make_shared<AggregateFunctionNothingUInt64>(arguments, params);
-            return std::make_shared<AggregateFunctionNothingNull>(arguments, params);
+            else
+                return std::make_shared<AggregateFunctionNothingNull>(arguments, params);
         }
 
         assert(nested_function);
@@ -136,18 +137,23 @@ public:
             {
                 return std::make_shared<AggregateFunctionNullUnary<true, true>>(nested_function, arguments, params);
             }
-
-            if (serialize_flag)
-                return std::make_shared<AggregateFunctionNullUnary<false, true>>(nested_function, arguments, params);
-            return std::make_shared<AggregateFunctionNullUnary<false, false>>(nested_function, arguments, params);
+            else
+            {
+                if (serialize_flag)
+                    return std::make_shared<AggregateFunctionNullUnary<false, true>>(nested_function, arguments, params);
+                else
+                    return std::make_shared<AggregateFunctionNullUnary<false, false>>(nested_function, arguments, params);
+            }
         }
-
-        if (return_type_is_nullable)
+        else
         {
-            return std::make_shared<AggregateFunctionNullVariadic<true, true>>(nested_function, arguments, params);
-        }
-
-        return std::make_shared<AggregateFunctionNullVariadic<false, true>>(nested_function, arguments, params);
+            if (return_type_is_nullable)
+            {
+                return std::make_shared<AggregateFunctionNullVariadic<true, true>>(nested_function, arguments, params);
+            }
+            else
+            {
+                return std::make_shared<AggregateFunctionNullVariadic<false, true>>(nested_function, arguments, params);
 #if 0
                 if (serialize_flag)
                     return std::make_shared<AggregateFunctionNullVariadic<false, true>>(nested_function, arguments, params);
@@ -158,6 +164,8 @@ public:
                     return std::make_shared<AggregateFunctionNullVariadic<false, true>>(nested_function, arguments, params);
             }
 #endif
+            }
+        }
     }
 };
 
