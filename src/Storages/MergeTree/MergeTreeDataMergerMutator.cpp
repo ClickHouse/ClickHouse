@@ -82,6 +82,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeSelectorAlgorithm merge_selector_algorithm;
     extern const MergeTreeSettingsBool merge_selector_enable_heuristic_to_remove_small_parts_at_right;
     extern const MergeTreeSettingsFloat merge_selector_base;
+    extern const MergeTreeSettingsUInt64 min_parts_to_merge_at_once;
 }
 
 namespace ErrorCodes
@@ -267,7 +268,8 @@ MergeTreeDataMergerMutator::PartitionIdsHint MergeTreeDataMergerMutator::getPart
         if (status == SelectPartsDecision::SELECTED)
             res.insert(all_partition_ids[i]);
         else
-            LOG_TEST(log, "Nothing to merge in partition {}: {}", all_partition_ids[i], out_disable_reason.text);
+            LOG_TEST(log, "Nothing to merge in partition {} with max_total_size_to_merge = {} (looked up {} ranges): {}",
+                all_partition_ids[i], ReadableSize(max_total_size_to_merge), ranges_per_partition[i].size(), out_disable_reason.text);
     }
 
     String best_partition_id_to_optimize = getBestPartitionToOptimizeEntire(info.partitions_info);
@@ -565,6 +567,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
             simple_merge_settings.max_parts_to_merge_at_once = (*data_settings)[MergeTreeSetting::max_parts_to_merge_at_once];
             simple_merge_settings.enable_heuristic_to_remove_small_parts_at_right = (*data_settings)[MergeTreeSetting::merge_selector_enable_heuristic_to_remove_small_parts_at_right];
             simple_merge_settings.base = (*data_settings)[MergeTreeSetting::merge_selector_base];
+            simple_merge_settings.min_parts_to_merge_at_once = (*data_settings)[MergeTreeSetting::min_parts_to_merge_at_once];
 
             if (!(*data_settings)[MergeTreeSetting::min_age_to_force_merge_on_partition_only])
                 simple_merge_settings.min_age_to_force_merge = (*data_settings)[MergeTreeSetting::min_age_to_force_merge_seconds];

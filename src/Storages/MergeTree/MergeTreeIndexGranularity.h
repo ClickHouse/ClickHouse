@@ -100,6 +100,8 @@ public:
     void resizeWithFixedGranularity(size_t size, size_t fixed_granularity);
 
     std::string describe() const;
+
+    void shrinkToFitInMemory();
 };
 
 }
