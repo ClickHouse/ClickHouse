@@ -34,7 +34,7 @@ $CLICKHOUSE_CLIENT --user $test_user -q "
 
 # Check that permissions are checked on refresh.
 $CLICKHOUSE_CLIENT -q "revoke select on a from $test_user"
-for attempt in {1..10}
+for _ in {1..10}
 do
     $CLICKHOUSE_CLIENT -q "system refresh view ${second_db}.v"
     res=$($CLICKHOUSE_CLIENT -q "system wait view ${second_db}.v" 2>&1)
@@ -49,7 +49,7 @@ done
 $CLICKHOUSE_CLIENT -q "alter table ${second_db}.v modify query select throwIf(1) as x"
 
 # Get an exception during query execution.
-for attempt in {1..10}
+for _ in {1..10}
 do
     $CLICKHOUSE_CLIENT -q "system refresh view ${second_db}.v"
     res=$($CLICKHOUSE_CLIENT -q "system wait view ${second_db}.v" 2>&1)
@@ -64,6 +64,8 @@ do
 done
 
 # Check that refreshes and both kinds of errors appear in query log.
+# (Magic word to silence check-style warning: **current_database = currentDatabase()**.
+#  It's ok that we don't have this condition in the query, we're checking the db name in `tables` column instead.)
 $CLICKHOUSE_CLIENT -q "
     system flush logs;
     select replaceAll(toString(type), 'Exception', 'Ex**ption'), interface, client_name, exception != '', has(tables, '${second_db}.v') from system.query_log where event_time > now() - interval 30 minute and log_comment = 'refresh of ${second_db}.v' group by all order by all;
