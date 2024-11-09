@@ -141,7 +141,7 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
 
     try
     {
-        while (true)
+        while (!token_iterator->isEnd())
         {
             parse_res = parser.parse(token_iterator, ast, expected);
             if (!parse_res)
@@ -155,9 +155,6 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
 
             while (token_iterator->type == TokenType::Semicolon)
                 ++token_iterator;
-
-            if (token_iterator->isEnd())
-                break;
         }
     }
     catch (...)
