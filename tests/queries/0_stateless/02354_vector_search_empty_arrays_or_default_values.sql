@@ -2,7 +2,7 @@
 
 SET allow_experimental_vector_similarity_index = 1;
 
--- Issue #52258: Vector similarity indexes must reject empty Arrays or Arrays with default values
+-- Vector similarity indexes must reject empty Arrays or Arrays with default values (issue #52258)
 
 DROP TABLE IF EXISTS tab;
 
