@@ -546,16 +546,18 @@ int mainEntryClickHouseDisks(int argc, char ** argv)
     catch (const DB::Exception & e)
     {
         std::cerr << DB::getExceptionMessage(e, false) << std::endl;
-        return 0;
+        auto code = DB::getCurrentExceptionCode();
+        return static_cast<UInt8>(code) ? code : 1;
     }
     catch (const boost::program_options::error & e)
     {
         std::cerr << "Bad arguments: " << e.what() << std::endl;
-        return 0;
+        return DB::ErrorCodes::BAD_ARGUMENTS;
     }
     catch (...)
     {
         std::cerr << DB::getCurrentExceptionMessage(true) << std::endl;
-        return 0;
+        auto code = DB::getCurrentExceptionCode();
+        return static_cast<UInt8>(code) ? code : 1;
     }
 }
