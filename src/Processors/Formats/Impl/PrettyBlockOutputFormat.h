@@ -55,8 +55,6 @@ protected:
     }
 
     bool color;
-
-protected:
     bool readable_number_tip = false;
 
 private:
