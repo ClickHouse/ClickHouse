@@ -5,9 +5,7 @@
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
 #include <Core/SettingsWriteFormat.h>
-#include <Core/ParallelReplicasMode.h>
 #include <base/types.h>
-#include <Common/SettingConstraintWritability.h>
 #include <Common/SettingsChanges.h>
 
 #include <string_view>
@@ -134,7 +132,6 @@ struct Settings
     std::vector<std::string_view> getAllRegisteredNames() const;
     std::vector<std::string_view> getChangedAndObsoleteNames() const;
     std::vector<std::string_view> getUnchangedNames() const;
-    std::vector<std::string_view> getChangedNames() const;
 
     void dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params) const;
     void dumpToMapColumn(IColumn * column, bool changed_only = true) const;

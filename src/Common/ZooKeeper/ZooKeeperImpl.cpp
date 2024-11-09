@@ -440,7 +440,9 @@ void ZooKeeper::connect(
     if (nodes.empty())
         throw Exception::fromMessage(Error::ZBADARGUMENTS, "No nodes passed to ZooKeeper constructor");
 
-    static constexpr size_t num_tries = 3;
+    /// We always have at least one attempt to connect.
+    size_t num_tries = args.num_connection_retries + 1;
+
     bool connected = false;
     bool dns_error = false;
 
@@ -1226,6 +1228,9 @@ void ZooKeeper::pushRequest(RequestInfo && info)
         if (!info.request->xid)
         {
             info.request->xid = next_xid.fetch_add(1);
+            if (!use_xid_64)
+                info.request->xid = static_cast<int32_t>(info.request->xid);
+
             if (info.request->xid == close_xid)
                 throw Exception::fromMessage(Error::ZSESSIONEXPIRED, "xid equal to close_xid");
             if (info.request->xid < 0)

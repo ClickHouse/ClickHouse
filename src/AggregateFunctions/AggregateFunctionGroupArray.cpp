@@ -33,6 +33,12 @@ namespace DB
 {
 struct Settings;
 
+namespace ServerSetting
+{
+    extern const ServerSettingsGroupArrayActionWhenLimitReached aggregate_function_group_array_action_when_limit_is_reached;
+    extern const ServerSettingsUInt64 aggregate_function_group_array_max_element_size;
+}
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -746,7 +752,7 @@ inline AggregateFunctionPtr createAggregateFunctionGroupArrayImpl(const DataType
 size_t getMaxArraySize()
 {
     if (auto context = Context::getGlobalContextInstance())
-        return context->getServerSettings().aggregate_function_group_array_max_element_size;
+        return context->getServerSettings()[ServerSetting::aggregate_function_group_array_max_element_size];
 
     return 0xFFFFFF;
 }
@@ -754,7 +760,7 @@ size_t getMaxArraySize()
 bool discardOnLimitReached()
 {
     if (auto context = Context::getGlobalContextInstance())
-        return context->getServerSettings().aggregate_function_group_array_action_when_limit_is_reached
+        return context->getServerSettings()[ServerSetting::aggregate_function_group_array_action_when_limit_is_reached]
             == GroupArrayActionWhenLimitReached::DISCARD;
 
     return false;

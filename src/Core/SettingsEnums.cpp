@@ -277,6 +277,7 @@ IMPLEMENT_SETTING_ENUM(
     MergeSelectorAlgorithm,
     ErrorCodes::BAD_ARGUMENTS,
     {{"Simple", MergeSelectorAlgorithm::SIMPLE},
-     {"StochasticSimple", MergeSelectorAlgorithm::STOCHASTIC_SIMPLE}})
+     {"StochasticSimple", MergeSelectorAlgorithm::STOCHASTIC_SIMPLE},
+     {"Trivial", MergeSelectorAlgorithm::TRIVIAL}})
 
 }
