@@ -194,6 +194,8 @@ namespace Setting
     extern const SettingsUInt64 filesystem_cache_max_download_size;
     extern const SettingsUInt64 filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
     extern const SettingsUInt64 filesystem_cache_segments_batch_size;
+    extern const SettingsBool filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage;
+    extern const SettingsBool filesystem_cache_enable_background_download_during_fetch;
     extern const SettingsBool http_make_head_request;
     extern const SettingsUInt64 http_max_fields;
     extern const SettingsUInt64 http_max_field_name_size;
@@ -273,6 +275,13 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_replicated_sends_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 tables_loader_background_pool_size;
     extern const ServerSettingsUInt64 tables_loader_foreground_pool_size;
+    extern const ServerSettingsUInt64 prefetch_threadpool_pool_size;
+    extern const ServerSettingsUInt64 prefetch_threadpool_queue_size;
+    extern const ServerSettingsUInt64 load_marks_threadpool_pool_size;
+    extern const ServerSettingsUInt64 load_marks_threadpool_queue_size;
+    extern const ServerSettingsUInt64 threadpool_writer_pool_size;
+    extern const ServerSettingsUInt64 threadpool_writer_queue_size;
+
 }
 
 namespace ErrorCodes
@@ -3215,9 +3224,8 @@ void Context::clearMarkCache() const
 ThreadPool & Context::getLoadMarksThreadpool() const
 {
     callOnce(shared->load_marks_threadpool_initialized, [&] {
-        const auto & config = getConfigRef();
-        auto pool_size = config.getUInt(".load_marks_threadpool_pool_size", 50);
-        auto queue_size = config.getUInt(".load_marks_threadpool_queue_size", 1000000);
+        auto pool_size = shared->server_settings[ServerSetting::load_marks_threadpool_pool_size];
+        auto queue_size = shared->server_settings[ServerSetting::load_marks_threadpool_queue_size];
         shared->load_marks_threadpool = std::make_unique<ThreadPool>(
             CurrentMetrics::MarksLoaderThreads, CurrentMetrics::MarksLoaderThreadsActive, CurrentMetrics::MarksLoaderThreadsScheduled, pool_size, pool_size, queue_size);
     });
@@ -3410,9 +3418,9 @@ AsynchronousMetrics * Context::getAsynchronousMetrics() const
 ThreadPool & Context::getPrefetchThreadpool() const
 {
     callOnce(shared->prefetch_threadpool_initialized, [&] {
-        const auto & config = getConfigRef();
-        auto pool_size = config.getUInt(".prefetch_threadpool_pool_size", 100);
-        auto queue_size = config.getUInt(".prefetch_threadpool_queue_size", 1000000);
+        auto pool_size = shared->server_settings[ServerSetting::prefetch_threadpool_pool_size];
+        auto queue_size = shared->server_settings[ServerSetting::prefetch_threadpool_queue_size];
+
         shared->prefetch_threadpool = std::make_unique<ThreadPool>(
             CurrentMetrics::IOPrefetchThreads, CurrentMetrics::IOPrefetchThreadsActive, CurrentMetrics::IOPrefetchThreadsScheduled, pool_size, pool_size, queue_size);
     });
@@ -3422,8 +3430,7 @@ ThreadPool & Context::getPrefetchThreadpool() const
 
 size_t Context::getPrefetchThreadpoolSize() const
 {
-    const auto & config = getConfigRef();
-    return config.getUInt(".prefetch_threadpool_pool_size", 100);
+    return shared->server_settings[ServerSetting::prefetch_threadpool_pool_size];
 }
 
 ThreadPool & Context::getBuildVectorSimilarityIndexThreadPool() const
@@ -5696,9 +5703,8 @@ IOUringReader & Context::getIOUringReader() const
 ThreadPool & Context::getThreadPoolWriter() const
 {
     callOnce(shared->threadpool_writer_initialized, [&] {
-        const auto & config = getConfigRef();
-        auto pool_size = config.getUInt(".threadpool_writer_pool_size", 100);
-        auto queue_size = config.getUInt(".threadpool_writer_queue_size", 1000000);
+        auto pool_size = shared->server_settings[ServerSetting::threadpool_writer_pool_size];
+        auto queue_size = shared->server_settings[ServerSetting::threadpool_writer_queue_size];
 
         shared->threadpool_writer = std::make_unique<ThreadPool>(
             CurrentMetrics::IOWriterThreads, CurrentMetrics::IOWriterThreadsActive, CurrentMetrics::IOWriterThreadsScheduled, pool_size, pool_size, queue_size);
@@ -5742,6 +5748,9 @@ ReadSettings Context::getReadSettings() const
     res.filesystem_cache_segments_batch_size = settings_ref[Setting::filesystem_cache_segments_batch_size];
     res.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds
         = settings_ref[Setting::filesystem_cache_reserve_space_wait_lock_timeout_milliseconds];
+    res.filesystem_cache_allow_background_download_for_metadata_files_in_packed_storage
+        = settings_ref[Setting::filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage];
+    res.filesystem_cache_allow_background_download_during_fetch = settings_ref[Setting::filesystem_cache_enable_background_download_during_fetch];
 
     res.filesystem_cache_max_download_size = settings_ref[Setting::filesystem_cache_max_download_size];
     res.skip_download_if_exceeds_query_cache = settings_ref[Setting::skip_download_if_exceeds_query_cache];
