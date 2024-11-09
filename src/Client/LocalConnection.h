@@ -120,8 +120,6 @@ public:
 
     void sendData(const Block & block, const String & name/* = "" */, bool scalar/* = false */) override;
 
-    bool isSendDataNeeded() const override;
-
     void sendExternalTablesData(ExternalTablesData &) override;
 
     void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;

@@ -162,7 +162,7 @@ public:
         ExpandPipeline,
     };
 
-    static std::string statusToName(std::optional<Status> status);
+    static std::string statusToName(Status status);
 
     /** Method 'prepare' is responsible for all cheap ("instantaneous": O(1) of data volume, no wait) calculations.
       *
@@ -311,12 +311,14 @@ public:
     constexpr static size_t NO_STREAM = std::numeric_limits<size_t>::max();
 
     /// Step of QueryPlan from which processor was created.
-    void setQueryPlanStep(IQueryPlanStep * step, size_t group = 0);
+    void setQueryPlanStep(IQueryPlanStep * step, size_t group = 0)
+    {
+        query_plan_step = step;
+        query_plan_step_group = group;
+    }
 
     IQueryPlanStep * getQueryPlanStep() const { return query_plan_step; }
     size_t getQueryPlanStepGroup() const { return query_plan_step_group; }
-    const String & getPlanStepName() const { return plan_step_name; }
-    const String & getPlanStepDescription() const { return plan_step_description; }
 
     uint64_t getElapsedNs() const { return elapsed_ns; }
     uint64_t getInputWaitElapsedNs() const { return input_wait_elapsed_ns; }
@@ -365,11 +367,11 @@ public:
 
     /// Set limits for current storage.
     /// Different limits may be applied to different storages, we need to keep it per processor.
-    /// This method needs to be overridden only for sources.
+    /// This method is need to be override only for sources.
     virtual void setStorageLimits(const std::shared_ptr<const StorageLimitsList> & /*storage_limits*/) {}
 
     /// This method is called for every processor without input ports.
-    /// Processor can return new progress for the last read operation.
+    /// Processor can return a new progress for the last read operation.
     /// You should zero internal counters in the call, in order to make in idempotent.
     virtual std::optional<ReadProgress> getReadProgress() { return std::nullopt; }
 
@@ -408,8 +410,6 @@ private:
 
     IQueryPlanStep * query_plan_step = nullptr;
     size_t query_plan_step_group = 0;
-    String plan_step_name;
-    String plan_step_description;
 };
 
 

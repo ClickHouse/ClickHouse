@@ -952,8 +952,6 @@ private:
     static std::pair<LoggerMapIterator, bool> add(Logger * pLogger);
     static std::optional<LoggerMapIterator> find(const std::string & name);
     static Logger * findRawPtr(const std::string & name);
-    void unsafeSetChannel(Channel * pChannel);
-    Channel* unsafeGetChannel() const;
 
     Logger();
     Logger(const Logger &);

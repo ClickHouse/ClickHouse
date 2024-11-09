@@ -6,7 +6,6 @@
 #include <thread>
 #include <atomic>
 #include <Common/logger_useful.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
 
 
 namespace DB
@@ -25,9 +24,16 @@ class ReplicatedMergeTreeRestartingThread
 public:
     explicit ReplicatedMergeTreeRestartingThread(StorageReplicatedMergeTree & storage_);
 
-    void start(bool schedule);
+    void start(bool schedule = true)
+    {
+        LOG_TRACE(log, "Starting restating thread, schedule: {}", schedule);
+        if (schedule)
+            task->activateAndSchedule();
+        else
+            task->activate();
+    }
 
-    void wakeup();
+    void wakeup() { task->schedule(); }
 
     void shutdown(bool part_of_full_shutdown);
 
@@ -69,9 +75,6 @@ private:
 
     /// Disable readonly mode for table
     void setNotReadonly();
-
-    /// Fix replica metadata_version if needed
-    Int32 fixReplicaMetadataVersionIfNeeded(zkutil::ZooKeeperPtr zookeeper);
 };
 
 
