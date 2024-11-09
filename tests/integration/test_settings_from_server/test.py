@@ -16,6 +16,7 @@ node_no_send = cluster.add_instance(
     user_configs=["configs/users.d/users.xml"],
 )
 
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
