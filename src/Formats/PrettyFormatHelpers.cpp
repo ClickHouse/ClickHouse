@@ -5,6 +5,11 @@
 #include <Common/formatReadable.h>
 
 
+static constexpr const char * GRAY_COLOR = "\033[90m";
+static constexpr const char * UNDERSCORE = "\033[4m";
+static constexpr const char * RESET_COLOR = "\033[0m";
+
+
 namespace DB
 {
 
@@ -25,11 +30,11 @@ void writeReadableNumberTip(WriteBuffer & out, const IColumn & column, size_t ro
     if (threshold && isFinite(value) && abs(value) > threshold)
     {
         if (color)
-            writeCString("\033[90m", out);
+            writeCString(GRAY_COLOR, out);
         writeCString(" -- ", out);
         formatReadableQuantity(value, out, 2);
         if (color)
-            writeCString("\033[0m", out);
+            writeCString(RESET_COLOR, out);
     }
 }
 
@@ -76,9 +81,9 @@ String highlightDigitGroups(String source)
             size_t offset = num_digits_before_decimal - digit_num;
             if (offset && offset % 3 == 0)
             {
-                result += "\033[4m";
+                result += UNDERSCORE;
                 result += c;
-                result += "\033[0m";
+                result += RESET_COLOR;
             }
             else
             {
