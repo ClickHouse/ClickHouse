@@ -1,3 +1,5 @@
+SET output_format_pretty_highlight_digit_groups = 0;
+
 -- Appeared in https://github.com/ClickHouse/ClickHouse/pull/26978#issuecomment-890889362
 WITH toDateTime('1970-06-17 07:39:21', 'Africa/Monrovia') as t
 SELECT toUnixTimestamp(t),

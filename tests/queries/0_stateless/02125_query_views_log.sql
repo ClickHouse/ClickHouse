@@ -1,3 +1,5 @@
+SET output_format_pretty_highlight_digit_groups = 0;
+
 drop table if exists src;
 drop table if exists dst;
 drop table if exists mv1;
