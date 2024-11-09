@@ -157,9 +157,17 @@ public:
         bool all_arguments_are_constant = std::all_of(arguments.begin(), arguments.end(), [](const auto & arg) { return arg.column->isConst(); });
 
         if (all_arguments_are_constant)
-            return ColumnConst::create(ColumnFunction::create(1, std::move(function), arguments), input_rows_count);
+        {
+            ColumnsWithTypeAndName arguments_resized = arguments;
+            for (auto & elem : arguments_resized)
+                elem.column = elem.column->cloneResized(1);
+
+            return ColumnConst::create(ColumnFunction::create(1, std::move(function), arguments_resized), input_rows_count);
+        }
         else
+        {
             return ColumnFunction::create(input_rows_count, std::move(function), arguments);
+        }
     }
 
 private:
