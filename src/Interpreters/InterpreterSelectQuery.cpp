@@ -1708,7 +1708,8 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                     executeLimitBy(query_plan);
                 }
 
-                if (query.limitLength() && !query.limitBy())
+                /// WITH TIES simply not supported properly for preliminary steps, so let's disable it.
+                if (query.limitLength() && !query.limitBy() && !query.limit_with_ties)
                     executePreLimit(query_plan, true);
             }
         };
@@ -2083,7 +2084,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
             /// If we have 'WITH TIES', we need execute limit before projection,
             /// because in that case columns from 'ORDER BY' are used.
-            if (query.limit_with_ties && apply_offset)
+            if (query.limit_with_ties && apply_limit && apply_offset)
             {
                 executeLimit(query_plan);
             }
@@ -2212,10 +2213,13 @@ RowPolicyFilterPtr InterpreterSelectQuery::getRowPolicyFilter() const
 
 void InterpreterSelectQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context_*/) const
 {
-    for (const auto & row_policy : row_policy_filter->policies)
+    if (row_policy_filter)
     {
-        auto name = row_policy->getFullName().toString();
-        elem.used_row_policies.emplace(std::move(name));
+        for (const auto & row_policy : row_policy_filter->policies)
+        {
+            auto name = row_policy->getFullName().toString();
+            elem.used_row_policies.emplace(std::move(name));
+        }
     }
 }
 

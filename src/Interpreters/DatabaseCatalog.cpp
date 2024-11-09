@@ -13,6 +13,7 @@
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Disks/IDisk.h>
+#include <Storages/MemorySettings.h>
 #include <Storages/StorageMemory.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Parsers/formatAST.h>
@@ -141,7 +142,7 @@ TemporaryTableHolder::TemporaryTableHolder(
         context_,
         [&](const StorageID & table_id)
         {
-            auto storage = std::make_shared<StorageMemory>(table_id, ColumnsDescription{columns}, ConstraintsDescription{constraints}, String{});
+            auto storage = std::make_shared<StorageMemory>(table_id, ColumnsDescription{columns}, ConstraintsDescription{constraints}, String{}, MemorySettings{});
 
             if (create_for_global_subquery)
                 storage->delayReadForGlobalSubqueries();
@@ -1814,6 +1815,21 @@ void DatabaseCatalog::triggerReloadDisksTask(const Strings & new_added_disks)
     std::lock_guard lock{reload_disks_mutex};
     disks_to_reload.insert(new_added_disks.begin(), new_added_disks.end());
     (*reload_disks_task)->schedule();
+}
+
+void DatabaseCatalog::stopReplicatedDDLQueries()
+{
+    replicated_ddl_queries_enabled = false;
+}
+
+void DatabaseCatalog::startReplicatedDDLQueries()
+{
+    replicated_ddl_queries_enabled = true;
+}
+
+bool DatabaseCatalog::canPerformReplicatedDDLQueries() const
+{
+    return replicated_ddl_queries_enabled;
 }
 
 static void maybeUnlockUUID(UUID uuid)

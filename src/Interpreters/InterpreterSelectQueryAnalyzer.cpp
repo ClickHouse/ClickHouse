@@ -26,6 +26,8 @@
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/Utils.h>
 
+#include <Core/Settings.h>
+
 #include <Interpreters/Context.h>
 #include <Interpreters/QueryLog.h>
 
@@ -35,6 +37,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
+}
+
+namespace Setting
+{
+    extern const SettingsBool use_concurrency_control;
 }
 
 namespace
@@ -248,6 +255,8 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
 
     auto optimization_settings = QueryPlanOptimizationSettings::fromContext(context);
     auto build_pipeline_settings = BuildQueryPipelineSettings::fromContext(context);
+
+    query_plan.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
     return std::move(*query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings));
 }

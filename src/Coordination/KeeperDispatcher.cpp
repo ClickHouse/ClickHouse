@@ -417,7 +417,7 @@ void KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKe
     }
 }
 
-bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
+bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, bool use_xid_64)
 {
     {
         /// If session was already disconnected than we will ignore requests
@@ -427,6 +427,7 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
     }
 
     KeeperStorageBase::RequestForSession request_info;
+    request_info.use_xid_64 = use_xid_64;
     request_info.request = request;
     using namespace std::chrono;
     request_info.time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();

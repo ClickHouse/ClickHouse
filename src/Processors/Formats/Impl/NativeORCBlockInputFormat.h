@@ -8,6 +8,7 @@
 #    include <Processors/Formats/ISchemaReader.h>
 #    include <Storages/MergeTree/KeyCondition.h>
 #    include <boost/algorithm/string.hpp>
+#    include <orc/MemoryPool.hh>
 #    include <orc/OrcFile.hh>
 
 namespace DB
@@ -69,6 +70,8 @@ protected:
 private:
     void prepareFileReader();
     bool prepareStripeReader();
+
+    std::unique_ptr<orc::MemoryPool> memory_pool;
 
     std::unique_ptr<orc::Reader> file_reader;
     std::unique_ptr<orc::RowReader> stripe_reader;

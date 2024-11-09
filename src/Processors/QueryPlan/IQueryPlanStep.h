@@ -16,11 +16,6 @@ using Processors = std::vector<ProcessorPtr>;
 
 namespace JSONBuilder { class JSONMap; }
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 class QueryPlan;
 using QueryPlanRawPtrs = std::list<QueryPlan *>;
 
@@ -82,27 +77,12 @@ public:
 
     /// Updates the input streams of the given step. Used during query plan optimizations.
     /// It won't do any validation of new streams, so it is your responsibility to ensure that this update doesn't break anything
-    /// (e.g. you update data stream traits or correctly remove / add columns).
-    void updateInputHeaders(Headers input_headers_)
-    {
-        chassert(canUpdateInputHeader());
-        input_headers = std::move(input_headers_);
-        updateOutputHeader();
-    }
-
-    void updateInputHeader(Header input_header) { updateInputHeaders(Headers{input_header}); }
-
-    void updateInputHeader(Header input_header, size_t idx)
-    {
-        chassert(canUpdateInputHeader() && idx < input_headers.size());
-        input_headers[idx] = input_header;
-        updateOutputHeader();
-    }
-
-    virtual bool canUpdateInputHeader() const { return false; }
+    /// (e.g. you correctly remove / add columns).
+    void updateInputHeaders(Headers input_headers_);
+    void updateInputHeader(Header input_header, size_t idx = 0);
 
 protected:
-    virtual void updateOutputHeader() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); }
+    virtual void updateOutputHeader() = 0;
 
     Headers input_headers;
     std::optional<Header> output_header;
