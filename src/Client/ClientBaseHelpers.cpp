@@ -5,12 +5,19 @@
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Common/UTF8Helpers.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 
 #include <iostream>
 
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool implicit_select;
+}
 
 /// Should we celebrate a bit?
 bool isNewYearMode()
@@ -95,7 +102,7 @@ bool isChineseNewYearMode(const String & local_tz)
 }
 
 #if USE_REPLXX
-void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors)
+void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors, const Context & context)
 {
     using namespace replxx;
 
@@ -135,7 +142,7 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
 
     /// Currently we highlight only the first query in the multi-query mode.
 
-    ParserQuery parser(end);
+    ParserQuery parser(end, false, context.getSettingsRef()[Setting::implicit_select]);
     ASTPtr ast;
     bool parse_res = false;
 
