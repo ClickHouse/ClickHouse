@@ -63,7 +63,7 @@ install_packages previous_release_package_folder
 function save_settings_clean()
 {
   local out=$1 && shift
-  script -q -c "clickhouse-local -q \"select * from system.settings into outfile '$out'\"" --log-out /dev/null
+  script -q -c "clickhouse-local --implicit-select 0 -q \"select * from system.settings into outfile '$out'\"" --log-out /dev/null
 }
 
 # We save the (numeric) version of the old server to compare setting changes between the 2
@@ -135,7 +135,7 @@ IS_SANITIZED=$(clickhouse-local --query "SELECT value LIKE '%-fsanitize=%' FROM 
 if [ "${IS_SANITIZED}" -eq "0" ]
 then
   save_settings_clean 'new_settings.native'
-  clickhouse-local --implicit-select 0 -nmq "
+  clickhouse-local -nmq "
   CREATE TABLE old_settings AS file('old_settings.native');
   CREATE TABLE old_version AS file('old_version.native');
   CREATE TABLE new_settings AS file('new_settings.native');
