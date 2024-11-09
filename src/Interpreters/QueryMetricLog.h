@@ -51,7 +51,6 @@ struct QueryMetricLogStatus
     std::chrono::system_clock::time_point next_collect_time TSA_GUARDED_BY(getMutex());
     std::vector<ProfileEvents::Count> last_profile_events TSA_GUARDED_BY(getMutex()) = std::vector<ProfileEvents::Count>(ProfileEvents::end());
     BackgroundSchedulePool::TaskHolder task TSA_GUARDED_BY(getMutex());
-    bool debug_traces = false;
 
     /// We need to be able to move it for the hash map, so we need to add an indirection here.
     std::unique_ptr<Mutex> mutex = std::make_unique<Mutex>();
@@ -79,7 +78,7 @@ public:
     void shutdown() final;
 
     /// Both startQuery and finishQuery are called from the thread that executes the query.
-    void startQuery(const String & query_id, TimePoint start_time, UInt64 interval_milliseconds, bool debug_traces = false);
+    void startQuery(const String & query_id, TimePoint start_time, UInt64 interval_milliseconds);
     void finishQuery(const String & query_id, TimePoint finish_time, QueryStatusInfoPtr query_info = nullptr);
 
 private:
