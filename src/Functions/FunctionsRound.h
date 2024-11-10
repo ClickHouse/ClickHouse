@@ -298,7 +298,7 @@ public:
 
     static VectorType prepare(size_t scale)
     {
-        return load1(scale);
+        return load1(ScalarType(scale));
     }
 };
 

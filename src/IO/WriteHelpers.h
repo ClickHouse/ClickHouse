@@ -174,7 +174,7 @@ inline size_t writeFloatTextFastPath(T x, char * buffer)
     }
     else if constexpr (std::is_same_v<T, BFloat16>)
     {
-        Float32 f32 = BFloat16ToFloat32(x);
+        Float32 f32 = Float32(x);
 
         if (DecomposedFloat32(f32).isIntegerInRepresentableRange())
             result = itoa(Int32(f32), buffer) - buffer;

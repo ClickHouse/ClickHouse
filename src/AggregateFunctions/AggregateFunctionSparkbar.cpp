@@ -45,7 +45,7 @@ struct AggregateFunctionSparkbarData
     Y insert(const X & x, const Y & y)
     {
         if (isNaN(y) || y <= 0)
-            return 0;
+            return {};
 
         auto [it, inserted] = points.insert({x, y});
         if (!inserted)
@@ -173,13 +173,13 @@ private:
 
         if (from_x >= to_x)
         {
-            size_t sz = updateFrame(values, 8);
+            size_t sz = updateFrame(values, Y{8});
             values.push_back('\0');
             offsets.push_back(offsets.empty() ? sz + 1 : offsets.back() + sz + 1);
             return;
         }
 
-        PaddedPODArray<Y> histogram(width, 0);
+        PaddedPODArray<Y> histogram(width, Y{0});
         PaddedPODArray<UInt64> count_histogram(width, 0); /// The number of points in each bucket
 
         for (const auto & point : data.points)
@@ -218,10 +218,10 @@ private:
         for (size_t i = 0; i < histogram.size(); ++i)
         {
             if (count_histogram[i] > 0)
-                histogram[i] /= count_histogram[i];
+                histogram[i] = histogram[i] / count_histogram[i];
         }
 
-        Y y_max = 0;
+        Y y_max{};
         for (auto & y : histogram)
         {
             if (isNaN(y) || y <= 0)
@@ -245,7 +245,7 @@ private:
                 continue;
             }
 
-            constexpr auto levels_num = static_cast<Y>(BAR_LEVELS - 1);
+            constexpr auto levels_num = Y{BAR_LEVELS - 1};
             if constexpr (is_floating_point<Y>)
             {
                 y = y / (y_max / levels_num) + 1;

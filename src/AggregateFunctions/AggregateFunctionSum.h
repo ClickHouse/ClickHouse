@@ -83,7 +83,7 @@ struct AggregateFunctionSumData
             while (ptr < unrolled_end)
             {
                 for (size_t i = 0; i < unroll_count; ++i)
-                    Impl::add(partial_sums[i], ptr[i]);
+                    Impl::add(partial_sums[i], T(ptr[i]));
                 ptr += unroll_count;
             }
 
@@ -95,7 +95,7 @@ struct AggregateFunctionSumData
         T local_sum{};
         while (ptr < end_ptr)
         {
-            Impl::add(local_sum, *ptr);
+            Impl::add(local_sum, T(*ptr));
             ++ptr;
         }
         Impl::add(sum, local_sum);
@@ -227,7 +227,7 @@ struct AggregateFunctionSumData
         while (ptr < end_ptr)
         {
             if (!*condition_map == add_if_zero)
-                Impl::add(local_sum, *ptr);
+                Impl::add(local_sum, T(*ptr));
             ++ptr;
             ++condition_map;
         }
@@ -488,10 +488,7 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         const auto & column = assert_cast<const ColVecType &>(*columns[0]);
-        if constexpr (is_big_int_v<T>)
-            this->data(place).add(static_cast<TResult>(column.getData()[row_num]));
-        else
-            this->data(place).add(column.getData()[row_num]);
+        this->data(place).add(static_cast<TResult>(column.getData()[row_num]));
     }
 
     void addBatchSinglePlace(

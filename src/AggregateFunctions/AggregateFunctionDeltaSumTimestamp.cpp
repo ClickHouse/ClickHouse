@@ -25,11 +25,11 @@ namespace
 template <typename ValueType, typename TimestampType>
 struct AggregationFunctionDeltaSumTimestampData
 {
-    ValueType sum = 0;
-    ValueType first = 0;
-    ValueType last = 0;
-    TimestampType first_ts = 0;
-    TimestampType last_ts = 0;
+    ValueType sum{};
+    ValueType first{};
+    ValueType last{};
+    TimestampType first_ts{};
+    TimestampType last_ts{};
     bool seen = false;
 };
 

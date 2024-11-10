@@ -11,7 +11,7 @@
 template <typename T> struct FloatTraits;
 
 template <>
-struct FloatTraits<__bf16>
+struct FloatTraits<BFloat16>
 {
     using UInt = uint16_t;
     static constexpr size_t bits = 16;
