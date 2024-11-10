@@ -33,6 +33,21 @@ Then, generate the data. Parameter `-s` specifies the scale factor. For example,
 ./dbgen -s 100
 ```
 
+Detailed table sizes with scale factor 100:
+
+| Table    | size (in rows) | size (compressed in ClickHouse) |
+|----------|----------------|---------------------------------|
+| nation   | 25             | 2 kB                            |
+| region   | 5              | 1 kB                            |
+| part     | 20.000.000     | 895 MB                          |
+| supplier | 1.000.000      | 75 MB                           |
+| partsupp | 80.000.000     | 4.37 GB                         |
+| customer | 15.000.000     | 1.19 GB                         |
+| orders   | 150.000.000    | 6.15 GB                         |
+| lineitem | 600.00.00      | 26.69 GB                        |
+
+(The table sizes in ClickHouse are taken from `system.tables.total_bytes` and based on below table definitions.
+
 Now create tables in ClickHouse.
 
 We stick as closely as possible to the rules of the TPC-H specification:
