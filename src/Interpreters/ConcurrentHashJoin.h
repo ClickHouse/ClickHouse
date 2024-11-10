@@ -79,7 +79,7 @@ private:
     std::mutex totals_mutex;
     Block totals;
 
-    ScatteredBlocks dispatchBlock(const Strings & key_columns_names, Block & from_block);
+    ScatteredBlocks dispatchBlock(const Strings & key_columns_names, Block && from_block);
 };
 
 UInt64 calculateCacheKey(std::shared_ptr<TableJoin> & table_join, const QueryTreeNodePtr & right_table_expression);
