@@ -1862,11 +1862,6 @@ struct ConvertImpl
                         }
                     }
 
-                    if constexpr ((std::is_same_v<FromDataType, DataTypeBFloat16> || std::is_same_v<ToDataType, DataTypeBFloat16>)
-                        && !(std::is_same_v<FromDataType, DataTypeFloat32> || std::is_same_v<ToDataType, DataTypeFloat32>))
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Conversion from {} to {} is not supported",
-                                        TypeName<typename FromDataType::FieldType>, TypeName<typename ToDataType::FieldType>);
-
                     if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>
                             || std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
                     {
