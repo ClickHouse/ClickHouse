@@ -1,17 +1,18 @@
 (Expression)
 ExpressionTransform
   (Join)
-  JoiningTransform 2 → 1
-    (Expression)
-    ExpressionTransform
-      (Limit)
-      Limit
-        (ReadFromSystemNumbers)
-        NumbersRange 0 → 1
-    (Expression)
-    FillingRightJoinSide
+  SimpleSquashingTransform
+    JoiningTransform 2 → 1
+      (Expression)
       ExpressionTransform
         (Limit)
         Limit
           (ReadFromSystemNumbers)
           NumbersRange 0 → 1
+      (Expression)
+      FillingRightJoinSide
+        ExpressionTransform
+          (Limit)
+          Limit
+            (ReadFromSystemNumbers)
+            NumbersRange 0 → 1
