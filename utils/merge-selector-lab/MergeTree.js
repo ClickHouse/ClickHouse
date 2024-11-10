@@ -1,7 +1,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 // Simulation of a merge tree with INSERTs/MERGEs in time
 //
-export class Simulator {
+export class MergeTree {
     constructor()
     {
         // Append only array of all parts active and outdated

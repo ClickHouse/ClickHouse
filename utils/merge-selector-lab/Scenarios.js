@@ -1,4 +1,4 @@
-import { Simulator } from './Simulator.js';
+import { MergeTree as MergeTree } from './MergeTree.js';
 import { simpleMerges } from './simpleMerges.js';
 import { maxWaMerges } from './maxWaMerges.js';
 import { fixedBaseMerges } from './fixedBaseMerges.js';
@@ -33,7 +33,7 @@ function randomMerges(sim, {count, min_parts, max_parts})
 //
 function explainDemo()
 {
-    const sim = new Simulator();
+    const sim = new MergeTree();
     randomInserts(sim, {count: 20, min_size: 10, max_size: 100});
     maxWaMerges(sim, {count: 7, min_parts: 2, max_parts: 5, min_score: 1.5});
     return sim;
@@ -41,7 +41,7 @@ function explainDemo()
 
 function oneBigMerge()
 {
-    const sim = new Simulator();
+    const sim = new MergeTree();
     randomInserts(sim, {count: 16, min_size: 10, max_size: 100});
     sim.mergeParts(sim.parts.filter(d => d.active));
     return sim;
@@ -49,7 +49,7 @@ function oneBigMerge()
 
 function aggressiveMerging()
 {
-    const sim = new Simulator();
+    const sim = new MergeTree();
     sim.insertPart(1 << 20);
     for (let i = 0; i < 15; i++)
     {
@@ -61,7 +61,7 @@ function aggressiveMerging()
 
 function binaryTree()
 {
-    const sim = new Simulator();
+    const sim = new MergeTree();
     for (let i = 0; i < 16; i++)
         sim.insertPart(1 << 20);
     let i = sim.parts.length;
@@ -77,7 +77,7 @@ function binaryTree()
 
 function randomMess()
 {
-    const sim = new Simulator();
+    const sim = new MergeTree();
     randomInserts(sim, {count: 100, min_size: 10, max_size: 100});
     randomMerges(sim, {count: 30, min_parts: 2, max_parts: 6});
     return sim;
@@ -85,7 +85,7 @@ function randomMess()
 
 function maxWaDemo()
 {
-    const sim = new Simulator();
+    const sim = new MergeTree();
     for (let i = 0; i < 300; i++)
     {
         randomInserts(sim, {count: 10, min_size: 10, max_size: 100});
@@ -96,7 +96,7 @@ function maxWaDemo()
 
 function simple1000()
 {
-    const sim = new Simulator();
+    const sim = new MergeTree();
     for (let i = 0; i < 1; i++)
     {
         randomInserts(sim, {count: 1000, min_size: 10, max_size: 100});
@@ -108,7 +108,7 @@ function simple1000()
 
 function maxWa1000()
 {
-    const sim = new Simulator();
+    const sim = new MergeTree();
     const max_wa = 5;
     for (let i = 0; i < 1; i++)
     {
@@ -124,7 +124,7 @@ function maxWa1000()
 
 function simple10000Period()
 {
-    const sim = new Simulator();
+    const sim = new MergeTree();
     let dt = 0.1;
     for (let i = 0; i < 1000; i++)
     {
@@ -138,7 +138,7 @@ function simple10000Period()
 
 function maxWa10000Period()
 {
-    const sim = new Simulator();
+    const sim = new MergeTree();
     const max_wa = 5;
     for (let i = 0; i < 1000; i++)
     {
@@ -154,7 +154,7 @@ function maxWa10000Period()
 
 export function noArrivalsScenario(selector, opts)
 {
-    const sim = new Simulator();
+    const sim = new MergeTree();
     const {parts, total_time} = opts;
 
     randomInserts(sim, {count: parts, min_size: 1, max_size: 1});
@@ -172,12 +172,12 @@ export function runScenario()
     // return explainDemo();
     // return binaryTree();
     // return aggressiveMerging();
-    // return randomMess();
+    return randomMess();
     // return maxWaDemo();
     // return simple1000();
     // return maxWa1000();
     // return oneBigMerge();
     // return simple10000Period();
     // return maxWa10000Period();
-    return noArrivalsScenario(fixedBaseMerges, {base: 4, parts: 256});
+    // return noArrivalsScenario(fixedBaseMerges, {base: 4, parts: 256});
 }

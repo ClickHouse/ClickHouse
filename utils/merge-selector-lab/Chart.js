@@ -159,7 +159,7 @@ export class Chart {
                         this.svg.selectAll("circle").attr("stroke", null).attr("stroke-width", null); // Remove highlight from all points
                         d3.select(event.target).attr("stroke", "black").attr("stroke-width", 2); // Highlight clicked point
                         if (on_click)
-                            on_click(d);
+                            on_click(d, false);
                     });
             });
 

@@ -1,9 +1,11 @@
 import { Chart } from './Chart.js';
-import { Simulator } from './Simulator.js';
+import { MergeTree } from './MergeTree.js';
 import {  visualizeUtility } from './visualizeUtility.js';
 import {  visualizeExecutionTime } from './visualizeExecutionTime.js';
 import { runScenario, noArrivalsScenario } from './Scenarios.js';
+import { customScenario } from './customScenario.js';
 import { fixedBaseMerges } from './fixedBaseMerges.js';
+import { floatBaseMerges } from './floatBaseMerges.js';
 import { factorsAsBaseMerges } from './factorsAsBaseMerges.js';
 import { simpleMerges } from './simpleMerges.js';
 import { factorizeNumber, allFactorPermutations } from './factorization.js';
@@ -22,7 +24,7 @@ async function iterateAnalyticalSolution(series, parts, total_time = 1.0)
             + total_time
             ;
 
-        const y = time_integral / total_time * (new Simulator()).mergeDuration(1 << 20, 2);
+        const y = time_integral / total_time * (new MergeTreeSimulator()).mergeDuration(1 << 20, 2);
         series.addPoint({x: base, y});
 
         if (min_y > y)
@@ -135,11 +137,11 @@ function argMin(array, func)
     return result;
 }
 
-function runSimpleMergeSelector(parts, total_time)
+function runSelector(selector, opts)
 {
-    let selector = simpleMerges;
-    let sim = noArrivalsScenario(selector, {parts, total_time});
-    sim.title = `${selector.name} ║ Parts: ${parts} ║`;
+    let sim = noArrivalsScenario(selector, opts);
+    const { count, total_time, ...other_opts } = opts;
+    sim.title = `${selector.name} ║ ${JSON.stringify(other_opts)} ║`;
     sim.selector = selector;
     const time_integral = sim.integral_active_part_count;
     const y = time_integral / total_time;
@@ -148,25 +150,33 @@ function runSimpleMergeSelector(parts, total_time)
 
 async function minimizeAvgPartCount(parts, chart)
 {
-    const total_time = (new Simulator()).mergeDuration(1 << 20, 2) * parts * Math.log2(parts);
+    const total_time = (new MergeTree()).mergeDuration(1 << 20, 2) * parts * Math.log2(parts);
 
-    const analytical = await iterateAnalyticalSolution(chart.addSeries("Analytic"), parts, total_time);
-    const futures = [
-        iteratePartsFactors(factorsAsBaseMerges, chart.addSeries("FactorBases", showSimulation), parts, total_time),
-        iterateBaseLinear(fixedBaseMerges, chart.addSeries("FixedBase", showSimulation), parts, total_time),
+    let results = {};
+
+    // results.analytical = await iterateAnalyticalSolution(chart.addSeries("Analytic"), parts, total_time);
+    const numerical_futures = [
+        //iteratePartsFactors(factorsAsBaseMerges, chart.addSeries("FactorBases", showSimulation), parts, total_time),
+        // iterateBaseLinear(fixedBaseMerges, chart.addSeries("FixedBase", showSimulation), parts, total_time),
     ];
 
+    results.base_2 = runSelector(floatBaseMerges, {parts, total_time, base: 2});
+    results.base_2_5 = runSelector(floatBaseMerges, {parts, total_time, base: 2.5});
+    results.base_e = runSelector(floatBaseMerges, {parts, total_time, base: Math.E});
+    results.base_3 = runSelector(floatBaseMerges, {parts, total_time, base: 3});
+    results.base_3_5 = runSelector(floatBaseMerges, {parts, total_time, base: 3.5});
+
     // Simple merge selector for reference
-    const simple = runSimpleMergeSelector(parts, total_time);
+    results.simple = runSelector(simpleMerges, {parts, total_time});
 
     // Wait all simulations to finish before we select the best
-    let results = [];
-    for (let future of futures)
-        results.push(await future);
+    let numerical_results = [];
+    for (let future of numerical_futures)
+        numerical_results.push(await future);
 
     // Return best solutions
-    const numerical = argMin(results, d => d.y);
-    return {analytical, numerical, simple};
+    // results.numerical = argMin(numerical_results, d => d.y);
+    return results;
 }
 
 export async function main2()
@@ -199,22 +209,30 @@ export async function main()
     );
     variants_chart.trackMin();
 
-    let analytical_series = optimal_chart.addSeries("Analytical", showSimulation);
-    let numerical_series = optimal_chart.addSeries("Numerical", showSimulation);
-    let simple_series = optimal_chart.addSeries("SimpleMergeSelector", showSimulation);
-    for (let parts = 4; parts <= 120; parts++)
+    // let analytical_series = optimal_chart.addSeries("Analytical", showSimulation);
+    // let numerical_series = optimal_chart.addSeries("Numerical", showSimulation);
+    // let simple_series = optimal_chart.addSeries("SimpleMergeSelector", showSimulation);
+    let series = {};
+    for (let parts = 100; parts <= 1000; parts+=100)
     {
-        const {analytical, numerical, simple} = await minimizeAvgPartCount(parts, variants_chart);
+        const results = await minimizeAvgPartCount(parts, variants_chart);
+        for (let name in results)
+        {
+            if (!(name in series))
+                series[name] = optimal_chart.addSeries(name, showSimulation);
+            series[name].addPoint({x: parts, ...results[name]});
+        }
+        await delayMs(10);
 
         // Show what simple selector is doing
-        showSimulation(simple, true);
-        await delayMs(100);
+        // showSimulation(simple, true);
+        //await delayMs(100);
 
-        analytical_series.addPoint({x: parts, y: analytical.y});
+        // analytical_series.addPoint({x: parts, y: analytical.y});
         // analytical_series.addPoint({x: parts, y: analytical.base});
-        numerical_series.addPoint({x: parts, y: numerical.y, sim: numerical.sim});
+        // numerical_series.addPoint({x: parts, y: numerical.y, sim: numerical.sim});
         // numerical_series.addPoint({x: parts, y: numerical.sim.base, sim: numerical.sim});
-        simple_series.addPoint({x: parts, y: simple.y, sim: simple.sim});
+        // simple_series.addPoint({x: parts, y: simple.y, sim: simple.sim});
 
         variants_chart.clear();
     }

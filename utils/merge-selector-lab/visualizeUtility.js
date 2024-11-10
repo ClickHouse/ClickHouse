@@ -25,14 +25,14 @@ export function visualizeUtility(sim, container)
     let max_source_part_count = d3.max(sim.parts, d => d.source_part_count);
 
     // Data
-    let mt = [];
+    let data = [];
     let lefts = {}; // Maps inserted part.begin to its part.left
     let insert_left = 0;
     for (const p of sim.parts)
     {
         const parent = p.parent == undefined ? null : sim.parts[p.parent];
         //console.log("ENTROPY", parent.entropy);
-        mt.push({
+        data.push({
             bytes: p.bytes,
             created: p.created,
             left: p.level == 0? insert_left : lefts[p.begin],
@@ -51,9 +51,9 @@ export function visualizeUtility(sim, container)
         }
     }
 
-    const maxYValue = d3.max(mt, d => d.top);
-    const minYValue = d3.min(mt, d => d.bottom);
-    const maxXValue = d3.max(mt, d => d.bytes + d.left);
+    const maxYValue = d3.max(data, d => d.top);
+    const minYValue = d3.min(data, d => d.bottom);
+    const maxXValue = d3.max(data, d => d.bytes + d.left);
 
     const svgWidth = width + margin.left + margin.right;
     const svgHeight = height;
@@ -87,7 +87,7 @@ export function visualizeUtility(sim, container)
 
     // Append rectangles for merges
     svgContainer.append("g").selectAll("rect")
-        .data(mt)
+        .data(data)
         .enter()
         .filter(d => d.top !== undefined)
         .append("rect")
@@ -99,7 +99,7 @@ export function visualizeUtility(sim, container)
 
     // Append rectangles for parts
     svgContainer.append("g").selectAll("rect")
-        .data(mt)
+        .data(data)
         .enter()
         .append("rect")
         .attr("x", d => pxl(xScale(d.left)))
@@ -110,7 +110,7 @@ export function visualizeUtility(sim, container)
 
     // Append marks for parts begin
     svgContainer.append("g").selectAll("rect")
-        .data(mt)
+        .data(data)
         .enter()
         .append("rect")
         .attr("x", d => pxl(xScale(d.left)))
