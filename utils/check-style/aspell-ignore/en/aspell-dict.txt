@@ -3154,3 +3154,4 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
+BFloat
