@@ -1336,7 +1336,8 @@ QueryTreeNodePtr IdentifierResolver::tryResolveExpressionFromArrayJoinExpression
             size_t nested_function_arguments_size = nested_function_arguments.size();
 
             const auto & nested_keys_names_constant_node = nested_function_arguments[0]->as<ConstantNode & >();
-            const auto & nested_keys_names = nested_keys_names_constant_node.getValue().safeGet<Array &>();
+            auto field = nested_keys_names_constant_node.getValue();
+            const auto & nested_keys_names = field.safeGet<Array &>();
             size_t nested_keys_names_size = nested_keys_names.size();
 
             if (nested_keys_names_size == nested_function_arguments_size - 1)
