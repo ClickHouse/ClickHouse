@@ -7,10 +7,8 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
-#include <Columns/ColumnNothing.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnObjectDeprecated.h>
-#include <Columns/ColumnObject.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnStringHelpers.h>
 #include <Columns/ColumnTuple.h>
@@ -73,8 +71,10 @@
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 
+
 namespace DB
 {
+
 namespace Setting
 {
     extern const SettingsBool cast_ipv4_ipv6_default_on_conversion_error;
@@ -1862,6 +1862,11 @@ struct ConvertImpl
                         }
                     }
 
+                    if constexpr ((std::is_same_v<FromDataType, DataTypeBFloat16> || std::is_same_v<ToDataType, DataTypeBFloat16>)
+                        && !(std::is_same_v<FromDataType, DataTypeFloat32> || std::is_same_v<ToDataType, DataTypeFloat32>))
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Conversion from {} to {} is not supported",
+                                        TypeName<typename FromDataType::FieldType>, TypeName<typename ToDataType::FieldType>);
+
                     if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>
                             || std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
                     {
@@ -2875,6 +2880,7 @@ struct NameToInt32 { static constexpr auto name = "toInt32"; };
 struct NameToInt64 { static constexpr auto name = "toInt64"; };
 struct NameToInt128 { static constexpr auto name = "toInt128"; };
 struct NameToInt256 { static constexpr auto name = "toInt256"; };
+struct NameToBFloat16 { static constexpr auto name = "toBFloat16"; };
 struct NameToFloat32 { static constexpr auto name = "toFloat32"; };
 struct NameToFloat64 { static constexpr auto name = "toFloat64"; };
 struct NameToUUID { static constexpr auto name = "toUUID"; };
@@ -2893,6 +2899,7 @@ using FunctionToInt32 = FunctionConvert<DataTypeInt32, NameToInt32, ToNumberMono
 using FunctionToInt64 = FunctionConvert<DataTypeInt64, NameToInt64, ToNumberMonotonicity<Int64>>;
 using FunctionToInt128 = FunctionConvert<DataTypeInt128, NameToInt128, ToNumberMonotonicity<Int128>>;
 using FunctionToInt256 = FunctionConvert<DataTypeInt256, NameToInt256, ToNumberMonotonicity<Int256>>;
+using FunctionToBFloat16 = FunctionConvert<DataTypeBFloat16, NameToBFloat16, ToNumberMonotonicity<BFloat16>>;
 using FunctionToFloat32 = FunctionConvert<DataTypeFloat32, NameToFloat32, ToNumberMonotonicity<Float32>>;
 using FunctionToFloat64 = FunctionConvert<DataTypeFloat64, NameToFloat64, ToNumberMonotonicity<Float64>>;
 
@@ -2930,7 +2937,7 @@ template <> struct FunctionTo<DataTypeInt32> { using Type = FunctionToInt32; };
 template <> struct FunctionTo<DataTypeInt64> { using Type = FunctionToInt64; };
 template <> struct FunctionTo<DataTypeInt128> { using Type = FunctionToInt128; };
 template <> struct FunctionTo<DataTypeInt256> { using Type = FunctionToInt256; };
-//template <> struct FunctionTo<DataTypeBFloat16> { using Type = FunctionToBFloat16; };
+template <> struct FunctionTo<DataTypeBFloat16> { using Type = FunctionToBFloat16; };
 template <> struct FunctionTo<DataTypeFloat32> { using Type = FunctionToFloat32; };
 template <> struct FunctionTo<DataTypeFloat64> { using Type = FunctionToFloat64; };
 
@@ -2973,6 +2980,7 @@ struct NameToInt32OrZero { static constexpr auto name = "toInt32OrZero"; };
 struct NameToInt64OrZero { static constexpr auto name = "toInt64OrZero"; };
 struct NameToInt128OrZero { static constexpr auto name = "toInt128OrZero"; };
 struct NameToInt256OrZero { static constexpr auto name = "toInt256OrZero"; };
+struct NameToBFloat16OrZero { static constexpr auto name = "toBFloat16OrZero"; };
 struct NameToFloat32OrZero { static constexpr auto name = "toFloat32OrZero"; };
 struct NameToFloat64OrZero { static constexpr auto name = "toFloat64OrZero"; };
 struct NameToDateOrZero { static constexpr auto name = "toDateOrZero"; };
@@ -2999,6 +3007,7 @@ using FunctionToInt32OrZero = FunctionConvertFromString<DataTypeInt32, NameToInt
 using FunctionToInt64OrZero = FunctionConvertFromString<DataTypeInt64, NameToInt64OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToInt128OrZero = FunctionConvertFromString<DataTypeInt128, NameToInt128OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToInt256OrZero = FunctionConvertFromString<DataTypeInt256, NameToInt256OrZero, ConvertFromStringExceptionMode::Zero>;
+using FunctionToBFloat16OrZero = FunctionConvertFromString<DataTypeBFloat16, NameToBFloat16OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToFloat32OrZero = FunctionConvertFromString<DataTypeFloat32, NameToFloat32OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToFloat64OrZero = FunctionConvertFromString<DataTypeFloat64, NameToFloat64OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToDateOrZero = FunctionConvertFromString<DataTypeDate, NameToDateOrZero, ConvertFromStringExceptionMode::Zero>;
@@ -3025,6 +3034,7 @@ struct NameToInt32OrNull { static constexpr auto name = "toInt32OrNull"; };
 struct NameToInt64OrNull { static constexpr auto name = "toInt64OrNull"; };
 struct NameToInt128OrNull { static constexpr auto name = "toInt128OrNull"; };
 struct NameToInt256OrNull { static constexpr auto name = "toInt256OrNull"; };
+struct NameToBFloat16OrNull { static constexpr auto name = "toBFloat16OrNull"; };
 struct NameToFloat32OrNull { static constexpr auto name = "toFloat32OrNull"; };
 struct NameToFloat64OrNull { static constexpr auto name = "toFloat64OrNull"; };
 struct NameToDateOrNull { static constexpr auto name = "toDateOrNull"; };
@@ -3051,6 +3061,7 @@ using FunctionToInt32OrNull = FunctionConvertFromString<DataTypeInt32, NameToInt
 using FunctionToInt64OrNull = FunctionConvertFromString<DataTypeInt64, NameToInt64OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToInt128OrNull = FunctionConvertFromString<DataTypeInt128, NameToInt128OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToInt256OrNull = FunctionConvertFromString<DataTypeInt256, NameToInt256OrNull, ConvertFromStringExceptionMode::Null>;
+using FunctionToBFloat16OrNull = FunctionConvertFromString<DataTypeBFloat16, NameToBFloat16OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToFloat32OrNull = FunctionConvertFromString<DataTypeFloat32, NameToFloat32OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToFloat64OrNull = FunctionConvertFromString<DataTypeFloat64, NameToFloat64OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToDateOrNull = FunctionConvertFromString<DataTypeDate, NameToDateOrNull, ConvertFromStringExceptionMode::Null>;
@@ -5194,7 +5205,7 @@ private:
             if constexpr (is_any_of<ToDataType,
                 DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256,
                 DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256,
-                DataTypeFloat32, DataTypeFloat64,
+                DataTypeBFloat16, DataTypeFloat32, DataTypeFloat64,
                 DataTypeDate, DataTypeDate32, DataTypeDateTime,
                 DataTypeUUID, DataTypeIPv4, DataTypeIPv6>)
             {
@@ -5447,6 +5458,7 @@ REGISTER_FUNCTION(Conversion)
     factory.registerFunction<FunctionToInt64>();
     factory.registerFunction<FunctionToInt128>();
     factory.registerFunction<FunctionToInt256>();
+    factory.registerFunction<FunctionToBFloat16>();
     factory.registerFunction<FunctionToFloat32>();
     factory.registerFunction<FunctionToFloat64>();
 
@@ -5485,6 +5497,7 @@ REGISTER_FUNCTION(Conversion)
     factory.registerFunction<FunctionToInt64OrZero>();
     factory.registerFunction<FunctionToInt128OrZero>();
     factory.registerFunction<FunctionToInt256OrZero>();
+    factory.registerFunction<FunctionToBFloat16OrZero>();
     factory.registerFunction<FunctionToFloat32OrZero>();
     factory.registerFunction<FunctionToFloat64OrZero>();
     factory.registerFunction<FunctionToDateOrZero>();
@@ -5513,6 +5526,7 @@ REGISTER_FUNCTION(Conversion)
     factory.registerFunction<FunctionToInt64OrNull>();
     factory.registerFunction<FunctionToInt128OrNull>();
     factory.registerFunction<FunctionToInt256OrNull>();
+    factory.registerFunction<FunctionToBFloat16OrNull>();
     factory.registerFunction<FunctionToFloat32OrNull>();
     factory.registerFunction<FunctionToFloat64OrNull>();
     factory.registerFunction<FunctionToDateOrNull>();
