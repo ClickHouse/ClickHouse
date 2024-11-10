@@ -5458,7 +5458,17 @@ REGISTER_FUNCTION(Conversion)
     factory.registerFunction<FunctionToInt64>();
     factory.registerFunction<FunctionToInt128>();
     factory.registerFunction<FunctionToInt256>();
-    factory.registerFunction<FunctionToBFloat16>();
+
+    factory.registerFunction<FunctionToBFloat16>(FunctionDocumentation{.description=R"(
+Converts Float32 to BFloat16 with losing the precision.
+
+Example:
+[example:typical]
+)",
+        .examples{
+            {"typical", "SELECT toBFloat16(12.3::Float32);", "12.3125"}},
+        .categories{"Conversion"}});
+
     factory.registerFunction<FunctionToFloat32>();
     factory.registerFunction<FunctionToFloat64>();
 
@@ -5497,7 +5507,31 @@ REGISTER_FUNCTION(Conversion)
     factory.registerFunction<FunctionToInt64OrZero>();
     factory.registerFunction<FunctionToInt128OrZero>();
     factory.registerFunction<FunctionToInt256OrZero>();
-    factory.registerFunction<FunctionToBFloat16OrZero>();
+
+    factory.registerFunction<FunctionToBFloat16OrZero>(FunctionDocumentation{.description=R"(
+Converts String to BFloat16.
+
+If the string does not represent a floating point value, the function returns zero.
+
+The function allows a silent loss of precision while converting from the string representation. In that case, it will return the truncated result.
+
+Example of successful conversion:
+[example:typical]
+
+Examples of not successful conversion:
+[example:invalid1]
+[example:invalid2]
+
+Example of a loss of precision:
+[example:precision]
+)",
+        .examples{
+            {"typical", "SELECT toBFloat16OrZero('12.3');", "12.3125"}},
+            {"invalid1", "SELECT toBFloat16OrZero('abc');", "0"}},
+            {"invalid2", "SELECT toBFloat16OrZero(' 1');", "0"}},
+            {"precision", "SELECT toBFloat16OrZero('12.3456789');", "12.375"}},
+        .categories{"Conversion"}});
+
     factory.registerFunction<FunctionToFloat32OrZero>();
     factory.registerFunction<FunctionToFloat64OrZero>();
     factory.registerFunction<FunctionToDateOrZero>();
@@ -5526,7 +5560,31 @@ REGISTER_FUNCTION(Conversion)
     factory.registerFunction<FunctionToInt64OrNull>();
     factory.registerFunction<FunctionToInt128OrNull>();
     factory.registerFunction<FunctionToInt256OrNull>();
-    factory.registerFunction<FunctionToBFloat16OrNull>();
+
+    factory.registerFunction<FunctionToBFloat16OrNull>(FunctionDocumentation{.description=R"(
+Converts String to Nullable(BFloat16).
+
+If the string does not represent a floating point value, the function returns NULL.
+
+The function allows a silent loss of precision while converting from the string representation. In that case, it will return the truncated result.
+
+Example of successful conversion:
+[example:typical]
+
+Examples of not successful conversion:
+[example:invalid1]
+[example:invalid2]
+
+Example of a loss of precision:
+[example:precision]
+)",
+    .examples{
+        {"typical", "SELECT toBFloat16OrNull('12.3');", "12.3125"}},
+        {"invalid1", "SELECT toBFloat16OrNull('abc');", "NULL"}},
+        {"invalid2", "SELECT toBFloat16OrNull(' 1');", "NULL"}},
+        {"precision", "SELECT toBFloat16OrNull('12.3456789');", "12.375"}},
+    .categories{"Conversion"}});
+
     factory.registerFunction<FunctionToFloat32OrNull>();
     factory.registerFunction<FunctionToFloat64OrNull>();
     factory.registerFunction<FunctionToDateOrNull>();
