@@ -24,17 +24,17 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
-namespace ErrorCodes
+namespace SetSetting
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const SetSettingsString disk;
+    extern const SetSettingsBool persistent;
 }
-
 
 namespace ErrorCodes
 {
     extern const int INCORRECT_FILE_NAME;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
-
 
 class SetOrJoinSink : public SinkToStorage, WithContext
 {
@@ -322,9 +322,9 @@ void registerStorageSet(StorageFactory & factory)
         if (has_settings)
             set_settings.loadFromQuery(*args.storage_def);
 
-        DiskPtr disk = args.getContext()->getDisk(set_settings.disk);
+        DiskPtr disk = args.getContext()->getDisk(set_settings[SetSetting::disk]);
         return std::make_shared<StorageSet>(
-            disk, args.relative_data_path, args.table_id, args.columns, args.constraints, args.comment, set_settings.persistent);
+            disk, args.relative_data_path, args.table_id, args.columns, args.constraints, args.comment, set_settings[SetSetting::persistent]);
     }, StorageFactory::StorageFeatures{ .supports_settings = true, });
 }
 
