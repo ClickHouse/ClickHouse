@@ -5526,9 +5526,9 @@ Example of a loss of precision:
 [example:precision]
 )",
         .examples{
-            {"typical", "SELECT toBFloat16OrZero('12.3');", "12.3125"}},
-            {"invalid1", "SELECT toBFloat16OrZero('abc');", "0"}},
-            {"invalid2", "SELECT toBFloat16OrZero(' 1');", "0"}},
+            {"typical", "SELECT toBFloat16OrZero('12.3');", "12.3125"},
+            {"invalid1", "SELECT toBFloat16OrZero('abc');", "0"},
+            {"invalid2", "SELECT toBFloat16OrZero(' 1');", "0"},
             {"precision", "SELECT toBFloat16OrZero('12.3456789');", "12.375"}},
         .categories{"Conversion"}});
 
@@ -5579,9 +5579,9 @@ Example of a loss of precision:
 [example:precision]
 )",
     .examples{
-        {"typical", "SELECT toBFloat16OrNull('12.3');", "12.3125"}},
-        {"invalid1", "SELECT toBFloat16OrNull('abc');", "NULL"}},
-        {"invalid2", "SELECT toBFloat16OrNull(' 1');", "NULL"}},
+        {"typical", "SELECT toBFloat16OrNull('12.3');", "12.3125"},
+        {"invalid1", "SELECT toBFloat16OrNull('abc');", "NULL"},
+        {"invalid2", "SELECT toBFloat16OrNull(' 1');", "NULL"},
         {"precision", "SELECT toBFloat16OrNull('12.3456789');", "12.375"}},
     .categories{"Conversion"}});
 
