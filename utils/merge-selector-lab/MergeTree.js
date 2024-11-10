@@ -1,6 +1,4 @@
-////////////////////////////////////////////////////////////////////////////////
 // Simulation of a merge tree with INSERTs/MERGEs in time
-//
 export class MergeTree {
     constructor()
     {
@@ -8,7 +6,7 @@ export class MergeTree {
         this.parts = [];
 
         // Metrics
-        this.current_time = 0;
+        this.time = 0;
         this.inserted_parts_count = 0;
         this.inserted_bytes = 0;
         this.written_bytes = 0; // inserts + merges
@@ -24,7 +22,7 @@ export class MergeTree {
 
     avgActivePartCount()
     {
-        return this.integral_active_part_count / this.current_time;
+        return this.integral_active_part_count / this.time;
     }
 
     mergeDuration(bytes, parts)
@@ -35,15 +33,16 @@ export class MergeTree {
 
     advanceTime(now)
     {
-        if (this.current_time > now)
-            throw { message: "Times go backwards", from: this.current_time, to: now};
-        const time_delta = now - this.current_time;
+        if (this.time > now)
+            throw { message: "Times go backwards", from: this.time, to: now};
+        const time_delta = now - this.time;
         this.integral_active_part_count += this.active_part_count * time_delta;
-        this.current_time = now;
+        // console.log("ADVANCE TIME", this.time, "TO", now);
+        this.time = now;
     }
 
     // Inserts a new part
-    insertPart(bytes, now = this.current_time)
+    insertPart(bytes, now = this.time)
     {
         this.advanceTime(now);
         let log_bytes = Math.log2(bytes);
@@ -64,11 +63,11 @@ export class MergeTree {
         };
         this.parts.push(result);
         this.active_part_count++;
-        //console.log("INSERT", result);
         this.inserted_parts_count++;
         this.inserted_bytes += bytes;
         this.written_bytes += bytes;
         this.inserted_utility += utility;
+        //console.log("INSERT", result);
         return result;
     }
 
@@ -79,7 +78,7 @@ export class MergeTree {
         const bytes = parts_to_merge.reduce((sum, part) => sum + part.bytes, 0);
         const merge_duration = this.mergeDuration(bytes, parts_to_merge.length);
         this.beginMergeParts(parts_to_merge);
-        this.advanceTime(this.current_time + merge_duration);
+        this.advanceTime(this.time + merge_duration);
         return this.finishMergeParts(parts_to_merge);
     }
 
@@ -94,6 +93,7 @@ export class MergeTree {
                 throw { message: "Attempt to begin merge of part that already participates in another merge", part: p};
             p.merging = true;
         }
+        // console.log("BEGIN MERGE", this.time, parts_to_merge);
     }
 
     finishMergeParts(parts_to_merge)
@@ -121,7 +121,7 @@ export class MergeTree {
             log_bytes,
             utility,
             entropy,
-            created: this.current_time,
+            created: this.time,
             level: 1 + Math.max(...parts_to_merge.map(d => d.level)),
             begin: Math.min(...parts_to_merge.map(d => d.begin)),
             end: Math.max(...parts_to_merge.map(d => d.end)),
@@ -141,7 +141,7 @@ export class MergeTree {
             p.merging = false;
             this.active_part_count--;
         }
-        //console.log("MERGE", parts_to_merge, "INTO", result);
+        // console.log("END MERGE", this.time, parts_to_merge, "INTO", result);
         this.written_bytes += bytes;
         return result;
     }

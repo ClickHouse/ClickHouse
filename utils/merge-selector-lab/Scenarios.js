@@ -129,9 +129,9 @@ function simple10000Period()
     for (let i = 0; i < 1000; i++)
     {
         randomInserts(mt, {count: 10, min_size: 1, max_size: 100});
-        mt.advanceTime(mt.current_time + dt);
+        mt.advanceTime(mt.time + dt);
         simpleMerges(mt, {count: 10});
-        mt.advanceTime(mt.current_time + dt);
+        mt.advanceTime(mt.time + dt);
     }
     return mt;
 }
@@ -160,7 +160,7 @@ export function noArrivalsScenario(selector, opts)
     randomInserts(mt, {count: parts, min_size: 1, max_size: 1});
     opts.count = mt.active_part_count;
     selector(mt, opts);
-    if (mt.current_time < total_time)
+    if (mt.time < total_time)
         mt.advanceTime(total_time);
     return mt;
 }
