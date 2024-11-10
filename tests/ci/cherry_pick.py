@@ -97,7 +97,7 @@ close it.
         self.pr = pr
         self.repo = repo
 
-        self.cherrypick_branch = f"cherrypick/{name}/{pr.merge_commit_sha}"
+        self.cherrypick_branch = f"cherrypick/{name}/{pr.number}"
         self.backport_branch = f"backport/{name}/{pr.number}"
         self.cherrypick_pr = None  # type: Optional[PullRequest]
         self.backport_pr = None  # type: Optional[PullRequest]
