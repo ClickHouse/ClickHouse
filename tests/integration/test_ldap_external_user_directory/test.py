@@ -181,3 +181,5 @@ def test_push_role_to_other_nodes(ldap_cluster):
     instance1.query("DROP TABLE IF EXISTS local_table SYNC")
     instance2.query("DROP TABLE IF EXISTS local_table SYNC")
     instance2.query("DROP ROLE IF EXISTS role_read")
+
+    delete_ldap_group(ldap_cluster, group_cn="clickhouse-role_read")
