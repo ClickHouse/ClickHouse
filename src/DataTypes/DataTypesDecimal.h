@@ -3,9 +3,7 @@
 #include <base/arithmeticOverflow.h>
 #include <base/extended_types.h>
 #include <Common/typeid_cast.h>
-#include <Common/NaNUtils.h>
 #include <base/Decimal.h>
-#include <base/Decimal_fwd.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
