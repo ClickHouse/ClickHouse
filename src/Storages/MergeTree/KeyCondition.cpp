@@ -597,12 +597,15 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
         case (ActionsDAG::ActionType::COLUMN):
         {
             String name;
-            if (const auto * column_const = typeid_cast<const ColumnConst *>(node.column.get()))
+            if (const auto * column_const = typeid_cast<const ColumnConst *>(node.column.get());
+                column_const && column_const->getDataType() != TypeIndex::Function)
+            {
                 /// Re-generate column name for constant.
-                /// DAG form query (with enabled analyzer) uses suffixes for constants, like 1_UInt8.
-                /// DAG from PK does not use it. This breaks matching by column name sometimes.
+                /// DAG from the query (with enabled analyzer) uses suffixes for constants, like 1_UInt8.
+                /// DAG from the PK does not use it. This breaks matching by column name sometimes.
                 /// Ideally, we should not compare names, but DAG subtrees instead.
-                name = ASTLiteral(column_const->getDataColumn()[0]).getColumnName();
+                name = ASTLiteral(column_const->getField()).getColumnName();
+            }
             else
                 name = node.result_name;
 
