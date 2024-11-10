@@ -16,9 +16,6 @@ ObjectStorageKeysGeneratorPtr getKeyGenerator(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix);
 
-class S3ObjectStorage;
-bool checkBatchRemove(S3ObjectStorage & storage);
-
 }
 
 #endif

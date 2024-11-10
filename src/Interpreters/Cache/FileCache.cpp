@@ -37,6 +37,11 @@ namespace ProfileEvents
     extern const Event FilesystemCacheFailToReserveSpaceBecauseOfCacheResize;
 }
 
+namespace CurrentMetrics
+{
+    extern const Metric FilesystemCacheDownloadQueueElements;
+}
+
 namespace DB
 {
 
@@ -120,11 +125,6 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
 
     if (settings.enable_filesystem_query_cache_limit)
         query_limit = std::make_unique<FileCacheQueryLimit>();
-}
-
-FileCache::Key FileCache::createKeyForPath(const String & path)
-{
-    return Key(path);
 }
 
 const FileCache::UserInfo & FileCache::getCommonUser()
@@ -923,7 +923,13 @@ bool FileCache::tryReserve(
         if (!query_priority->collectCandidatesForEviction(
                 size, required_elements_num, reserve_stat, eviction_candidates, {}, user.user_id, cache_lock))
         {
-            failure_reason = "cannot evict enough space for query limit";
+            const auto & stat = reserve_stat.total_stat;
+            failure_reason = fmt::format(
+                "cannot evict enough space for query limit "
+                "(non-releasable count: {}, non-releasable size: {}, "
+                "releasable count: {}, releasable size: {}, background download elements: {})",
+                stat.non_releasable_count, stat.non_releasable_size, stat.releasable_count, stat.releasable_size,
+                CurrentMetrics::get(CurrentMetrics::FilesystemCacheDownloadQueueElements));
             return false;
         }
 
@@ -938,7 +944,13 @@ bool FileCache::tryReserve(
     if (!main_priority->collectCandidatesForEviction(
             size, required_elements_num, reserve_stat, eviction_candidates, queue_iterator, user.user_id, cache_lock))
     {
-        failure_reason = "cannot evict enough space";
+        const auto & stat = reserve_stat.total_stat;
+        failure_reason = fmt::format(
+            "cannot evict enough space "
+            "(non-releasable count: {}, non-releasable size: {}, "
+            "releasable count: {}, releasable size: {}, background download elements: {})",
+            stat.non_releasable_count, stat.non_releasable_size, stat.releasable_count, stat.releasable_size,
+            CurrentMetrics::get(CurrentMetrics::FilesystemCacheDownloadQueueElements));
         return false;
     }
 
@@ -1083,7 +1095,7 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
         if (eviction_candidates.size() > 0)
         {
             LOG_TRACE(log, "Current usage {}/{} in size, {}/{} in elements count "
-                    "(trying to keep size ration at {} and elements ratio at {}). "
+                    "(trying to keep size ratio at {} and elements ratio at {}). "
                     "Collected {} eviction candidates, "
                     "skipped {} candidates while iterating",
                     main_priority->getSize(lock), size_limit,
@@ -1168,7 +1180,7 @@ void FileCache::removeFileSegment(const Key & key, size_t offset, const UserID &
 
 void FileCache::removePathIfExists(const String & path, const UserID & user_id)
 {
-    removeKeyIfExists(createKeyForPath(path), user_id);
+    removeKeyIfExists(Key::fromPath(path), user_id);
 }
 
 void FileCache::removeAllReleasable(const UserID & user_id)

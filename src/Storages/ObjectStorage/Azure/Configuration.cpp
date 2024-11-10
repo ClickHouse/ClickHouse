@@ -163,7 +163,7 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
     {
         throw Exception(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Storage AzureBlobStorage requires 1 to {} arguments. All supported signatures:\n{}",
+            "Storage AzureBlobStorage requires 3 to {} arguments. All supported signatures:\n{}",
             getMaxNumberOfArguments(with_structure),
             getSignatures(with_structure));
     }
@@ -256,16 +256,14 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Format and compression must be last arguments");
         }
-        else
-        {
-            account_name = fourth_arg;
-            account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
-            auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/account_name");
-            if (!is_format_arg(sixth_arg))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
-            format = sixth_arg;
-            compression_method = checkAndGetLiteralArgument<String>(engine_args[6], "compression");
-        }
+
+        account_name = fourth_arg;
+        account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
+        auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/account_name");
+        if (!is_format_arg(sixth_arg))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
+        format = sixth_arg;
+        compression_method = checkAndGetLiteralArgument<String>(engine_args[6], "compression");
     }
     else if (with_structure && engine_args.size() == 8)
     {

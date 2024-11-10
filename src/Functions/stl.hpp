@@ -55,38 +55,44 @@ inline bool est(const float* y, size_t n, size_t len, int ideg, float xs, float*
 
     if (a <= 0.0) {
         return false;
-    } else { // weighted least squares
-        for (auto j = nleft; j <= nright; j++) { // make sum of w(j) == 1
-            w[j - 1] /= a;
-        }
-
-        if (h > 0.0 && ideg > 0) { // use linear fit
-            auto a = 0.0;
-            for (auto j = nleft; j <= nright; j++) { // weighted center of x values
-                a += w[j - 1] * ((float) j);
-            }
-            auto b = xs - a;
-            auto c = 0.0;
-            for (auto j = nleft; j <= nright; j++) {
-                c += w[j - 1] * pow(((float) j) - a, 2);
-            }
-            if (sqrt(c) > 0.001 * range) {
-                b /= c;
-
-                // points are spread out enough to compute slope
-                for (auto j = nleft; j <= nright; j++) {
-                    w[j - 1] *= b * (((float) j) - a) + 1.0;
-                }
-            }
-        }
-
-        *ys = 0.0;
-        for (auto j = nleft; j <= nright; j++) {
-            *ys += w[j - 1] * y[j - 1];
-        }
-
-        return true;
+    } // weighted least squares
+    for (auto j = nleft; j <= nright; j++)
+    { // make sum of w(j) == 1
+        w[j - 1] /= a;
     }
+
+    if (h > 0.0 && ideg > 0)
+    { // use linear fit
+        auto a = 0.0;
+        for (auto j = nleft; j <= nright; j++)
+        { // weighted center of x values
+            a += w[j - 1] * ((float)j);
+        }
+        auto b = xs - a;
+        auto c = 0.0;
+        for (auto j = nleft; j <= nright; j++)
+        {
+            c += w[j - 1] * pow(((float)j) - a, 2);
+        }
+        if (sqrt(c) > 0.001 * range)
+        {
+            b /= c;
+
+            // points are spread out enough to compute slope
+            for (auto j = nleft; j <= nright; j++)
+            {
+                w[j - 1] *= b * (((float)j) - a) + 1.0;
+            }
+        }
+    }
+
+    *ys = 0.0;
+    for (auto j = nleft; j <= nright; j++)
+    {
+        *ys += w[j - 1] * y[j - 1];
+    }
+
+    return true;
 }
 
 inline void ess(const float* y, size_t n, size_t len, int ideg, size_t njump, bool userw, const float* rw, float* ys, float* res) {

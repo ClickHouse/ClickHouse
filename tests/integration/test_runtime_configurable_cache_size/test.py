@@ -1,6 +1,8 @@
 import os
 import time
+
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 # Tests that sizes of in-memory caches (mark / uncompressed / index mark / index uncompressed / mmapped file / query cache) can be changed

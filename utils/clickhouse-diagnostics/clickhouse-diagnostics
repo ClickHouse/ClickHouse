@@ -12,12 +12,12 @@ from datetime import datetime
 from typing import MutableMapping
 
 import jinja2
-from pandas import describe_option
 import requests
 import sqlparse
 import tenacity
 import xmltodict
 import yaml
+from pandas import describe_option
 
 SELECT_VERSION = r"SELECT version()"
 

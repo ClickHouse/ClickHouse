@@ -97,8 +97,8 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
+extern const int LOGICAL_ERROR;
+extern const int BAD_ARGUMENTS;
 }
 
 MergeTreeReadPoolParallelReplicas::MergeTreeReadPoolParallelReplicas(
@@ -112,6 +112,7 @@ MergeTreeReadPoolParallelReplicas::MergeTreeReadPoolParallelReplicas(
     const MergeTreeReaderSettings & reader_settings_,
     const Names & column_names_,
     const PoolSettings & settings_,
+    const MergeTreeReadTask::BlockSizeParams & params_,
     const ContextPtr & context_)
     : MergeTreeReadPoolBase(
         std::move(parts_),
@@ -123,6 +124,7 @@ MergeTreeReadPoolParallelReplicas::MergeTreeReadPoolParallelReplicas(
         reader_settings_,
         column_names_,
         settings_,
+        params_,
         context_)
     , extension(std::move(extension_))
     , coordination_mode(CoordinationMode::Default)
@@ -133,10 +135,9 @@ MergeTreeReadPoolParallelReplicas::MergeTreeReadPoolParallelReplicas(
           min_marks_per_task,
           pool_settings.threads,
           pool_settings.sum_marks,
-          extension.total_nodes_count))
+          extension.getTotalNodesCount()))
 {
-    extension.all_callback(InitialAllRangesAnnouncement(
-        coordination_mode, parts_ranges.getDescriptions(), extension.number_of_current_replica, mark_segment_size));
+    extension.sendInitialRequest(coordination_mode, parts_ranges, mark_segment_size);
 }
 
 MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_idx*/, MergeTreeReadTask * previous_task)
@@ -148,12 +149,11 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_id
 
     if (buffered_ranges.empty())
     {
-        auto result = extension.callback(ParallelReadRequest(
+        auto result = extension.sendReadRequest(
             coordination_mode,
-            extension.number_of_current_replica,
             min_marks_per_task * pool_settings.threads,
             /// For Default coordination mode we don't need to pass part names.
-            RangesInDataPartsDescription{}));
+            RangesInDataPartsDescription{});
 
         if (!result || result->finish)
         {

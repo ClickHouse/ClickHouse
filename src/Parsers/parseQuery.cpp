@@ -68,7 +68,7 @@ WriteBuffer & operator<< (WriteBuffer & out, const Expected & expected)
 }
 
 
-/// Hilite place of syntax error.
+/// Highlight the place of syntax error.
 void writeQueryWithHighlightedErrorPositions(
     WriteBuffer & out,
     const char * begin,
@@ -91,16 +91,14 @@ void writeQueryWithHighlightedErrorPositions(
             out << "\033[41;1m \033[0m";
             return;
         }
-        else
-        {
-            ssize_t bytes_to_hilite = std::min<ssize_t>(UTF8::seqLength(*current_position_to_hilite), end - current_position_to_hilite);
 
-            /// Bright on red background.
-            out << "\033[41;1m";
-            out.write(current_position_to_hilite, bytes_to_hilite);
-            out << "\033[0m";
-            pos = current_position_to_hilite + bytes_to_hilite;
-        }
+        ssize_t bytes_to_hilite = std::min<ssize_t>(UTF8::seqLength(*current_position_to_hilite), end - current_position_to_hilite);
+
+        /// Bright on red background.
+        out << "\033[41;1m";
+        out.write(current_position_to_hilite, bytes_to_hilite);
+        out << "\033[0m";
+        pos = current_position_to_hilite + bytes_to_hilite;
     }
     out.write(pos, end - pos);
 }
@@ -450,7 +448,8 @@ std::pair<const char *, bool> splitMultipartQuery(
     size_t max_query_size,
     size_t max_parser_depth,
     size_t max_parser_backtracks,
-    bool allow_settings_after_format_in_insert)
+    bool allow_settings_after_format_in_insert,
+    bool implicit_select)
 {
     ASTPtr ast;
 
@@ -458,7 +457,7 @@ std::pair<const char *, bool> splitMultipartQuery(
     const char * pos = begin; /// parser moves pos from begin to the end of current query
     const char * end = begin + queries.size();
 
-    ParserQuery parser(end, allow_settings_after_format_in_insert);
+    ParserQuery parser(end, allow_settings_after_format_in_insert, implicit_select);
 
     queries_list.clear();
 

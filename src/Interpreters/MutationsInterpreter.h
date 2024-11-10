@@ -40,7 +40,6 @@ class MutationsInterpreter
 {
 private:
     struct Stage;
-
 public:
     struct Settings
     {

@@ -42,7 +42,7 @@ MergeSorter::MergeSorter(const Block & header, Chunks chunks_, SortDescription &
         /// Convert to full column, because some cursors expect non-contant columns
         convertToFullIfConst(chunk);
 
-        cursors.emplace_back(header, chunk.getColumns(), description, chunk_index);
+        cursors.emplace_back(header, chunk.getColumns(), chunk.getNumRows(), description, chunk_index);
         has_collation |= cursors.back().has_collation;
 
         nonempty_chunks.emplace_back(std::move(chunk));
@@ -319,29 +319,27 @@ IProcessor::Status SortingTransform::prepareGenerate()
         output.push(std::move(generated_chunk));
         return Status::PortFull;
     }
-    else
+
+    auto & input = inputs.back();
+
+    if (generated_chunk)
+        output.push(std::move(generated_chunk));
+
+    if (input.isFinished())
     {
-        auto & input = inputs.back();
-
-        if (generated_chunk)
-            output.push(std::move(generated_chunk));
-
-        if (input.isFinished())
-        {
-            output.finish();
-            return Status::Finished;
-        }
-
-        input.setNeeded();
-
-        if (!input.hasData())
-            return Status::NeedData;
-
-        auto chunk = input.pull();
-        enrichChunkWithConstants(chunk);
-        output.push(std::move(chunk));
-        return Status::PortFull;
+        output.finish();
+        return Status::Finished;
     }
+
+    input.setNeeded();
+
+    if (!input.hasData())
+        return Status::NeedData;
+
+    auto chunk = input.pull();
+    enrichChunkWithConstants(chunk);
+    output.push(std::move(chunk));
+    return Status::PortFull;
 }
 
 void SortingTransform::work()

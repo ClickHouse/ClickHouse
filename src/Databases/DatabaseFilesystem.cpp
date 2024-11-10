@@ -97,16 +97,14 @@ bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, Cont
         {
             if (throw_on_error)
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", table_path);
-            else
-                return false;
+            return false;
         }
 
         if (!fs::is_regular_file(table_path))
         {
             if (throw_on_error)
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File is directory, but expected a file: {}", table_path);
-            else
-                return false;
+            return false;
         }
     }
 

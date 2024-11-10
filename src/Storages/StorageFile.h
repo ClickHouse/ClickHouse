@@ -296,6 +296,7 @@ private:
     NamesAndTypesList requested_columns;
     NamesAndTypesList requested_virtual_columns;
     Block block_for_format;
+    SerializationInfoByName serialization_hints;
 
     UInt64 max_block_size;
 

@@ -1,6 +1,7 @@
 #include <Client/ConnectionEstablisher.h>
 #include <Common/quoteString.h>
 #include <Common/ProfileEvents.h>
+#include <Common/FailPoint.h>
 #include <Core/Settings.h>
 
 namespace ProfileEvents
@@ -25,6 +26,11 @@ namespace ErrorCodes
     extern const int DNS_ERROR;
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
+}
+
+namespace FailPoints
+{
+    extern const char replicated_merge_tree_all_replicas_stale[];
 }
 
 ConnectionEstablisher::ConnectionEstablisher(
@@ -91,7 +97,15 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
 
         const UInt32 delay = table_status_it->second.absolute_delay;
         if (delay < max_allowed_delay)
+        {
             result.is_up_to_date = true;
+
+            fiu_do_on(FailPoints::replicated_merge_tree_all_replicas_stale,
+            {
+                result.delay = 1;
+                result.is_up_to_date = false;
+            });
+        }
         else
         {
             result.is_up_to_date = false;

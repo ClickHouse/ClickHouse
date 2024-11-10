@@ -62,7 +62,7 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
                     throw Exception(
                         ErrorCodes::SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY,
                         "Creating columns of type {} is prohibited by default due to expected negative impact on performance. "
-                        "It can be enabled with the \"allow_suspicious_low_cardinality_types\" setting.",
+                        "It can be enabled with the \"allow_suspicious_low_cardinality_types\" setting",
                         lc_type->getName());
             }
         }

@@ -69,6 +69,7 @@ static void writeData(const ISerialization & serialization, const ColumnPtr & co
     settings.position_independent_encoding = false;
     settings.low_cardinality_max_dictionary_size = 0;
     settings.data_types_binary_encoding = format_settings && format_settings->native.encode_types_in_binary_format;
+    settings.write_json_as_string = format_settings && format_settings->native.write_json_as_string;
 
     ISerialization::SerializeBinaryBulkStatePtr state;
     serialization.serializeBinaryBulkStatePrefix(*full_column, settings, state);
