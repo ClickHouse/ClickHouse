@@ -129,6 +129,7 @@ extern template class FieldVisitorConvertToNumber<Int128>;
 extern template class FieldVisitorConvertToNumber<UInt128>;
 extern template class FieldVisitorConvertToNumber<Int256>;
 extern template class FieldVisitorConvertToNumber<UInt256>;
+//extern template class FieldVisitorConvertToNumber<BFloat16>;
 extern template class FieldVisitorConvertToNumber<Float32>;
 extern template class FieldVisitorConvertToNumber<Float64>;
 

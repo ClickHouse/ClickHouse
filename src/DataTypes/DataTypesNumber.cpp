@@ -112,6 +112,7 @@ template class DataTypeNumber<Int8>;
 template class DataTypeNumber<Int16>;
 template class DataTypeNumber<Int32>;
 template class DataTypeNumber<Int64>;
+template class DataTypeNumber<BFloat16>;
 template class DataTypeNumber<Float32>;
 template class DataTypeNumber<Float64>;
 

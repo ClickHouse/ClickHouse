@@ -694,7 +694,7 @@ public:
                 if (arguments.size() > 1)
                 {
                     const ColumnWithTypeAndName & scale_column = arguments[1];
-                    res = Dispatcher<DataType, rounding_mode, tie_breaking_mode>::template apply<ScaleType>(value_arg.column.get(), scale_column.column.get());
+                    res = Dispatcher<DataType, rounding_mode, tie_breaking_mode>::template apply<int>(value_arg.column.get(), scale_column.column.get());
                     return true;
                 }
                 res = Dispatcher<DataType, rounding_mode, tie_breaking_mode>::template apply<int>(value_arg.column.get());

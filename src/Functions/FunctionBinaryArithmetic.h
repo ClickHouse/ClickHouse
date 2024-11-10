@@ -110,6 +110,7 @@ template <typename DataType> constexpr bool IsIntegralOrExtendedOrDecimal =
     IsDataTypeDecimal<DataType>;
 
 template <typename DataType> constexpr bool IsFloatingPoint = false;
+template <> inline constexpr bool IsFloatingPoint<DataTypeBFloat16> = true;
 template <> inline constexpr bool IsFloatingPoint<DataTypeFloat32> = true;
 template <> inline constexpr bool IsFloatingPoint<DataTypeFloat64> = true;
 
