@@ -1,7 +1,7 @@
 import { infoButton } from './infoButton.js';
 import { valueToColor, formatBytesWithUnit, determineTickStep } from './visualizeHelpers.js';
 
-export function visualizeExecutionTime(sim, container)
+export function visualizeExecutionTime(mt, container)
 {
     {
         // Cleanup previous visualization
@@ -19,14 +19,14 @@ export function visualizeExecutionTime(sim, container)
     const part_dx = 1;
 
     // Compute useful aggregates
-    let log_min_bytes = Math.log2(d3.min(sim.parts, d => d.bytes));
-    let log_max_bytes = Math.log2(d3.max(sim.parts, d => d.bytes));
-    let max_source_part_count = d3.max(sim.parts, d => d.source_part_count);
+    let log_min_bytes = Math.log2(d3.min(mt.parts, d => d.bytes));
+    let log_max_bytes = Math.log2(d3.max(mt.parts, d => d.bytes));
+    let max_source_part_count = d3.max(mt.parts, d => d.source_part_count);
 
     // Prepare
     let lefts = {}; // Maps inserted part.begin to its part.left
     let insert_left = 0;
-    for (const p of sim.parts)
+    for (const p of mt.parts)
     {
         if (p.level == 0)
         {
@@ -37,10 +37,10 @@ export function visualizeExecutionTime(sim, container)
 
     // Construct data
     let data = [];
-    for (let i = sim.parts.length - 1; i >= 0; i--)
+    for (let i = mt.parts.length - 1; i >= 0; i--)
     {
-        const child = sim.parts[i];
-        const parent = child.parent == undefined ? null : sim.parts[child.parent];
+        const child = mt.parts[i];
+        const parent = child.parent == undefined ? null : mt.parts[child.parent];
         const top = parent ? data[child.parent].bottom : 0;
         const bottom = parent ? top + parent.source_part_count : 0;
         data[i] = {
@@ -52,7 +52,7 @@ export function visualizeExecutionTime(sim, container)
             top,
             bottom,
             // /* height */ color: parent ? undefined : valueToColor(Math.log2(parent.bytes), log_min_bytes, log_max_bytes),
-            // /* order */ color: parent ? undefined : valueToColor(parent.idx, 0, sim.parts.length),
+            // /* order */ color: parent ? undefined : valueToColor(parent.idx, 0, mt.parts.length),
             /* source_part_count */ color: parent ? valueToColor(parent.source_part_count, 2, max_source_part_count, 90, 70, 270, 180) : undefined,
             part: child
         };

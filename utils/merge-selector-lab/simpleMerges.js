@@ -1,4 +1,4 @@
-export function simpleMerges(sim, {count})
+export function simpleMerges(mt, {count})
 {
     let settings =
     {
@@ -116,7 +116,7 @@ export function simpleMerges(sim, {count})
 
     for (let i = 0; i < count; i++)
     {
-        const active_parts = sim.parts.filter(d => d.active).sort((a, b) => a.begin - b.begin);
+        const active_parts = mt.parts.filter(d => d.active).sort((a, b) => a.begin - b.begin);
         let best_begin = -1;
         let best_end = -1;
         let best_score = 0;
@@ -134,7 +134,7 @@ export function simpleMerges(sim, {count})
                 let allowed = allow({
                     sum_size: sum_bytes,
                     max_size: d3.max(range, d => d.bytes),
-                    min_age: d3.min(range, d => sim.current_time - d.created),
+                    min_age: d3.min(range, d => mt.current_time - d.created),
                     range_size: count,
                     partition_size: active_parts.length,
                     min_size_to_lower_base_log,
@@ -152,7 +152,7 @@ export function simpleMerges(sim, {count})
             }
         }
         if (best_score != 0)
-            sim.mergeParts(active_parts.slice(best_begin, best_end));
+            mt.mergeParts(active_parts.slice(best_begin, best_end));
         else
             break; // Better not to merge
     }

@@ -1,4 +1,4 @@
-export function groupingMerges(sim, {count})
+export function groupingMerges(mt, {count})
 {
     let settings =
     {
@@ -65,7 +65,7 @@ export function groupingMerges(sim, {count})
 
     for (let merge_num = 0; merge_num < count; merge_num++)
     {
-        const active_parts = sim.parts.filter(d => d.active).sort((a, b) => a.begin - b.begin);
+        const active_parts = mt.parts.filter(d => d.active).sort((a, b) => a.begin - b.begin);
         if (active_parts.length < 2)
             return;
         const total_bytes = sumBytes(active_parts);
@@ -73,8 +73,8 @@ export function groupingMerges(sim, {count})
         let root = makeNode(0, active_parts.length, total_bytes, total_utility);
         partitionNodeMax(root, active_parts, settings.max_part_size);
         const utility_zero = d3.sum(root.children, d => d.total_bytes * Math.log2(d.total_bytes));
-        const avg_height = (utility_zero - inserted_utility) / (sim.inserted_bytes * (target_wa - 1));
-        let height = Math.log2(sim.inserted_bytes);
+        const avg_height = (utility_zero - inserted_utility) / (mt.inserted_bytes * (target_wa - 1));
+        let height = Math.log2(mt.inserted_bytes);
         let layer_nodes = root.children;
         while (true) {
             const min_child_size = Math.pow(2, height);

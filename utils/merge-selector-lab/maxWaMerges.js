@@ -1,8 +1,8 @@
-export function maxWaMerges(sim, {count, min_parts, max_parts, min_score})
+export function maxWaMerges(mt, {count, min_parts, max_parts, min_score})
 {
     for (let i = 0; i < count; i++)
     {
-        const active_parts = sim.parts.filter(d => d.active).sort((a, b) => a.begin - b.begin);
+        const active_parts = mt.parts.filter(d => d.active).sort((a, b) => a.begin - b.begin);
         let best_begin = -1;
         let best_end = -1;
         let best_score = 0;
@@ -25,7 +25,7 @@ export function maxWaMerges(sim, {count, min_parts, max_parts, min_score})
             }
         }
         if (best_score > min_score)
-            sim.mergeParts(active_parts.slice(best_begin, best_end));
+            mt.mergeParts(active_parts.slice(best_begin, best_end));
         else
             break; // Better not to merge
     }

@@ -44,25 +44,25 @@ async function iterateBaseLinear(selector, series, parts, total_time = 1.0)
     let best = null;
     for (let base = 2; base <= parts / 2; base++)
     {
-        let sim = noArrivalsScenario(selector, {base, parts, total_time});
-        sim.title = `${selector.name} ║ Parts: ${parts}, Base: ${base} ║`;
-        sim.selector = selector;
-        sim.base = base;
-        const time_integral = sim.integral_active_part_count;
+        let mt = noArrivalsScenario(selector, {base, parts, total_time});
+        mt.title = `${selector.name} ║ Parts: ${parts}, Base: ${base} ║`;
+        mt.selector = selector;
+        mt.base = base;
+        const time_integral = mt.integral_active_part_count;
 
         const y = time_integral / total_time;
         if (series)
-            series.addPoint({x: base, y, sim});
+            series.addPoint({x: base, y, mt});
 
         if (min_y > y)
         {
             min_y = y;
-            best = sim;
+            best = mt;
         }
 
         await delayMs(1);
     }
-    return {y: min_y, sim: best};
+    return {y: min_y, mt: best};
 }
 
 async function iteratePartsFactors(selector, series, parts, total_time = 1.0)
@@ -75,25 +75,25 @@ async function iteratePartsFactors(selector, series, parts, total_time = 1.0)
     for (const factors of permutations)
     {
         // console.log(`Permutation: ${factors.join(' x ')} = ${parts}`);
-        let sim = noArrivalsScenario(selector, {factors, parts, total_time});
-        sim.title = `${selector.name} ║ Parts: ${parts} = ${factors.join(' x ')} ║`;
-        sim.selector = selector;
-        sim.base = factors[0];
-        const time_integral = sim.integral_active_part_count;
+        let mt = noArrivalsScenario(selector, {factors, parts, total_time});
+        mt.title = `${selector.name} ║ Parts: ${parts} = ${factors.join(' x ')} ║`;
+        mt.selector = selector;
+        mt.base = factors[0];
+        const time_integral = mt.integral_active_part_count;
 
         const y = time_integral / total_time;
         if (series)
-            series.addPoint({x: factors[0], y, sim});
+            series.addPoint({x: factors[0], y, mt});
 
         if (min_y > y)
         {
             min_y = y;
-            best = sim;
+            best = mt;
         }
 
         await delayMs(1);
     }
-    return {y: min_y, sim: best};
+    return {y: min_y, mt: best};
 }
 
 function showSimulation(data, automatic = false)
@@ -102,21 +102,21 @@ function showSimulation(data, automatic = false)
         return;
     if (!automatic)
         console.log("SHOW", data);
-    const {sim} = data;
-    if (sim !== undefined)
+    const {mt} = data;
+    if (mt !== undefined)
     {
-        visualizeUtility(sim, d3.select("#util-container"), true);
-        visualizeExecutionTime(sim, d3.select("#exec-container"));
+        visualizeUtility(mt, d3.select("#util-container"), true);
+        visualizeExecutionTime(mt, d3.select("#exec-container"));
 
         // Append text with metrics
         d3.select("#metrics-container")
             .text(`
-                ${sim.title === undefined ? "" : sim.title}
-                Total: ${sim.written_bytes / 1024 / 1024} MB,
-                Inserted: ${sim.inserted_bytes / 1024 / 1024} MB,
-                WA: ${sim.writeAmplification().toFixed(2)},
-                AvgPartCount: ${sim.avgActivePartCount().toFixed(2)}
-                Time: ${(sim.current_time).toFixed(2)}s
+                ${mt.title === undefined ? "" : mt.title}
+                Total: ${mt.written_bytes / 1024 / 1024} MB,
+                Inserted: ${mt.inserted_bytes / 1024 / 1024} MB,
+                WA: ${mt.writeAmplification().toFixed(2)},
+                AvgPartCount: ${mt.avgActivePartCount().toFixed(2)}
+                Time: ${(mt.current_time).toFixed(2)}s
             `);
     }
 }
@@ -139,13 +139,13 @@ function argMin(array, func)
 
 function runSelector(selector, opts)
 {
-    let sim = noArrivalsScenario(selector, opts);
+    let mt = noArrivalsScenario(selector, opts);
     const { count, total_time, ...other_opts } = opts;
-    sim.title = `${selector.name} ║ ${JSON.stringify(other_opts)} ║`;
-    sim.selector = selector;
-    const time_integral = sim.integral_active_part_count;
+    mt.title = `${selector.name} ║ ${JSON.stringify(other_opts)} ║`;
+    mt.selector = selector;
+    const time_integral = mt.integral_active_part_count;
     const y = time_integral / total_time;
-    return {y: y, sim};
+    return {y: y, mt};
 }
 
 async function minimizeAvgPartCount(parts, chart)
@@ -181,7 +181,7 @@ async function minimizeAvgPartCount(parts, chart)
 
 export async function main2()
 {
-    showSimulation({sim: runScenario()}, true);
+    showSimulation({mt: runScenario()}, true);
 }
 
 export async function main()
@@ -230,9 +230,9 @@ export async function main()
 
         // analytical_series.addPoint({x: parts, y: analytical.y});
         // analytical_series.addPoint({x: parts, y: analytical.base});
-        // numerical_series.addPoint({x: parts, y: numerical.y, sim: numerical.sim});
-        // numerical_series.addPoint({x: parts, y: numerical.sim.base, sim: numerical.sim});
-        // simple_series.addPoint({x: parts, y: simple.y, sim: simple.sim});
+        // numerical_series.addPoint({x: parts, y: numerical.y, mt: numerical.mt});
+        // numerical_series.addPoint({x: parts, y: numerical.mt.base, mt: numerical.mt});
+        // simple_series.addPoint({x: parts, y: simple.y, mt: simple.mt});
 
         variants_chart.clear();
     }
