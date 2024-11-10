@@ -9,12 +9,9 @@ from os import getenv
 from pprint import pformat
 from typing import Dict, List
 
-# isort: off
 from github.PaginatedList import PaginatedList
 from github.PullRequestReview import PullRequestReview
 from github.WorkflowRun import WorkflowRun
-
-# isort: on
 
 from commit_status_helper import get_commit_filtered_statuses
 from get_robot_token import get_best_robot_token

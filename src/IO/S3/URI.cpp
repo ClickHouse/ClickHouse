@@ -33,17 +33,12 @@ namespace S3
 URI::URI(const std::string & uri_)
 {
     /// Case when bucket name represented in domain name of S3 URL.
-    /// E.g. (https://bucket-name.s3.region.amazonaws.com/key)
+    /// E.g. (https://bucket-name.s3.Region.amazonaws.com/key)
     /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#virtual-hosted-style-access
     static const RE2 virtual_hosted_style_pattern(R"((.+)\.(s3express[\-a-z0-9]+|s3|cos|obs|oss|eos)([.\-][a-z0-9\-.:]+))");
 
-    /// Case when AWS Private Link Interface is being used
-    /// E.g. (bucket.vpce-07a1cd78f1bd55c5f-j3a3vg6w.s3.us-east-1.vpce.amazonaws.com/bucket-name/key)
-    /// https://docs.aws.amazon.com/AmazonS3/latest/userguide/privatelink-interface-endpoints.html
-    static const RE2 aws_private_link_style_pattern(R"(bucket\.vpce\-([a-z0-9\-.]+)\.vpce.amazonaws.com(:\d{1,5})?)");
-
     /// Case when bucket name and key represented in path of S3 URL.
-    /// E.g. (https://s3.region.amazonaws.com/bucket-name/key)
+    /// E.g. (https://s3.Region.amazonaws.com/bucket-name/key)
     /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#path-style-access
     static const RE2 path_style_pattern("^/([^/]*)/(.*)");
 
@@ -72,7 +67,7 @@ URI::URI(const std::string & uri_)
         else
         {
             mapper["s3"] = "https://{bucket}.s3.amazonaws.com";
-            mapper["gs"] = "https://storage.googleapis.com/{bucket}";
+            mapper["gs"] = "https://{bucket}.storage.googleapis.com";
             mapper["oss"] = "https://{bucket}.oss.aliyuncs.com";
         }
 
@@ -108,10 +103,7 @@ URI::URI(const std::string & uri_)
     String name;
     String endpoint_authority_from_uri;
 
-    bool is_using_aws_private_link_interface = re2::RE2::FullMatch(uri.getAuthority(), aws_private_link_style_pattern);
-
-    if (!is_using_aws_private_link_interface
-        && re2::RE2::FullMatch(uri.getAuthority(), virtual_hosted_style_pattern, &bucket, &name, &endpoint_authority_from_uri))
+    if (re2::RE2::FullMatch(uri.getAuthority(), virtual_hosted_style_pattern, &bucket, &name, &endpoint_authority_from_uri))
     {
         is_virtual_hosted_style = true;
         endpoint = uri.getScheme() + "://" + name + endpoint_authority_from_uri;

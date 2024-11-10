@@ -91,15 +91,10 @@ StorageMaterializedView::StorageMaterializedView(
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
-    auto * storage_def = query.storage;
-    if (storage_def && storage_def->primary_key)
-        storage_metadata.primary_key = KeyDescription::getKeyFromAST(storage_def->primary_key->ptr(),
-                                                                     storage_metadata.columns,
-                                                                     local_context->getGlobalContext());
-
     if (query.sql_security)
         storage_metadata.setSQLSecurity(query.sql_security->as<ASTSQLSecurity &>());
 
+    /// Materialized view doesn't support SQL SECURITY INVOKER.
     if (storage_metadata.sql_security_type == SQLSecurityType::INVOKER)
         throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW, "SQL SECURITY INVOKER can't be specified for MATERIALIZED VIEW");
 
@@ -219,8 +214,10 @@ void StorageMaterializedView::read(
         context->checkAccess(AccessType::SELECT, getInMemoryMetadataPtr()->select.select_table_id, column_names);
 
     auto storage_id = storage->getStorageID();
+
+    /// TODO: remove sql_security_type check after we turn `ignore_empty_sql_security_in_create_view_query=false`
     /// We don't need to check access if the inner table was created automatically.
-    if (!has_inner_table && !storage_id.empty())
+    if (!has_inner_table && !storage_id.empty() && getInMemoryMetadataPtr()->sql_security_type)
         context->checkAccess(AccessType::SELECT, storage_id, column_names);
 
     storage->read(query_plan, column_names, target_storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
@@ -268,8 +265,10 @@ SinkToStoragePtr StorageMaterializedView::write(const ASTPtr & query, const Stor
     auto metadata_snapshot = storage->getInMemoryMetadataPtr();
 
     auto storage_id = storage->getStorageID();
+
+    /// TODO: remove sql_security_type check after we turn `ignore_empty_sql_security_in_create_view_query=false`
     /// We don't need to check access if the inner table was created automatically.
-    if (!has_inner_table && !storage_id.empty())
+    if (!has_inner_table && !storage_id.empty() && getInMemoryMetadataPtr()->sql_security_type)
     {
         auto query_sample_block = InterpreterInsertQuery::getSampleBlock(query->as<ASTInsertQuery &>(), storage, metadata_snapshot, context);
         context->checkAccess(AccessType::INSERT, storage_id, query_sample_block.getNames());
@@ -425,6 +424,10 @@ void StorageMaterializedView::alter(
         checkTargetTableHasQueryOutputColumns(target_table_metadata->columns, select_query_output_columns);
         /// We need to copy the target table's columns (after checkTargetTableHasQueryOutputColumns() they can be still different - e.g. the data types of those columns can differ).
         new_metadata.columns = target_table_metadata->columns;
+    }
+    else
+    {
+        checkAllTypesAreAllowedInTable(new_metadata.getColumns().getAll());
     }
 
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);

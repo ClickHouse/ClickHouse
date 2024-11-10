@@ -85,7 +85,7 @@ void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule esca
             readCSVStringInto(out, buf, format_settings.csv);
             break;
         case FormatSettings::EscapingRule::JSON:
-            skipJSONField(buf, StringRef(field_name, field_name_len), format_settings.json);
+            skipJSONField(buf, StringRef(field_name, field_name_len));
             break;
         case FormatSettings::EscapingRule::Raw:
             readStringInto(out, buf);
@@ -219,9 +219,9 @@ String readByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escapin
             break;
         case FormatSettings::EscapingRule::JSON:
             if constexpr (read_string)
-                readJSONString(result, buf, format_settings.json);
+                readJSONString(result, buf);
             else
-                readJSONField(result, buf, format_settings.json);
+                readJSONField(result, buf);
             break;
         case FormatSettings::EscapingRule::Raw:
             readString(result, buf);
@@ -304,7 +304,7 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
                 auto type = tryInferDataTypeForSingleField(data, format_settings);
 
                 /// If we couldn't infer any type or it's a number and csv.try_infer_numbers_from_strings = 0, we determine it as a string.
-                if (!type || (isNumber(type) && !format_settings.csv.try_infer_numbers_from_strings))
+                if (!type || (format_settings.csv.try_infer_strings_from_quoted_tuples && isTuple(type)) || (!format_settings.csv.try_infer_numbers_from_strings && isNumber(type)))
                     return std::make_shared<DataTypeString>();
 
                 return type;
@@ -440,13 +440,15 @@ String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, Fo
         case FormatSettings::EscapingRule::CSV:
             result += fmt::format(
                 ", use_best_effort_in_schema_inference={}, bool_true_representation={}, bool_false_representation={},"
-                " null_representation={}, delimiter={}, tuple_delimiter={}",
+                " null_representation={}, delimiter={}, tuple_delimiter={}, try_infer_numbers_from_strings={}, try_infer_strings_from_quoted_tuples={}",
                 settings.csv.use_best_effort_in_schema_inference,
                 settings.bool_true_representation,
                 settings.bool_false_representation,
                 settings.csv.null_representation,
                 settings.csv.delimiter,
-                settings.csv.tuple_delimiter);
+                settings.csv.tuple_delimiter,
+                settings.csv.try_infer_numbers_from_strings,
+                settings.csv.try_infer_strings_from_quoted_tuples);
             break;
         case FormatSettings::EscapingRule::JSON:
             result += fmt::format(

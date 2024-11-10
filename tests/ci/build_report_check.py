@@ -139,7 +139,8 @@ def main():
         additional_files=[report_path],
     ).dump()
 
-    if summary_status == ERROR:
+    # We should fail the report job to rerun it in the following attempts
+    if summary_status != SUCCESS:
         sys.exit(1)
 
 

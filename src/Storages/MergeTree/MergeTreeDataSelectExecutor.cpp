@@ -473,7 +473,6 @@ void MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(
 }
 
 std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(
-    const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeData & data,
     const MergeTreeData::DataPartsVector & parts,
     const ActionsDAGPtr & filter_dag,
@@ -482,12 +481,12 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
     if (!filter_dag)
         return {};
 
-    auto sample = data.getHeaderWithVirtualsForFilter(metadata_snapshot);
+    auto sample = data.getHeaderWithVirtualsForFilter();
     auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_dag->getOutputs().at(0), &sample);
     if (!dag)
         return {};
 
-    auto virtual_columns_block = data.getBlockWithVirtualsForFilter(metadata_snapshot, parts);
+    auto virtual_columns_block = data.getBlockWithVirtualsForFilter(parts);
     VirtualColumnUtils::filterBlockWithDAG(dag, virtual_columns_block, context);
     return VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
 }
@@ -514,11 +513,11 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
     {
         chassert(minmax_idx_condition && partition_pruner);
         const auto & partition_key = metadata_snapshot->getPartitionKey();
-        minmax_columns_types = MergeTreeData::getMinMaxColumnsTypes(partition_key);
+        minmax_columns_types = data.getMinMaxColumnsTypes(partition_key);
 
         if (settings.force_index_by_date && (minmax_idx_condition->alwaysUnknownOrTrue() && partition_pruner->isUseless()))
         {
-            auto minmax_columns_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
+            auto minmax_columns_names = data.getMinMaxColumnsNames(partition_key);
             throw Exception(ErrorCodes::INDEX_NOT_USED,
                 "Neither MinMax index by columns ({}) nor partition expr is used and setting 'force_index_by_date' is set",
                 fmt::join(minmax_columns_names, ", "));

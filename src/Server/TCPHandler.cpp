@@ -1371,6 +1371,17 @@ std::string formatHTTPErrorResponseWhenUserIsConnectedToWrongPort(const Poco::Ut
     return result;
 }
 
+[[ maybe_unused ]] String createChallenge()
+{
+#if USE_SSL
+    pcg64_fast rng(randomSeed());
+    UInt64 rand = rng();
+    return encodeSHA256(&rand, sizeof(rand));
+#else
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Can't generate challenge, because ClickHouse was built without OpenSSL");
+#endif
+}
+
 }
 
 std::unique_ptr<Session> TCPHandler::makeSession()
@@ -1386,6 +1397,16 @@ std::unique_ptr<Session> TCPHandler::makeSession()
     res->setClientInterface(interface);
 
     return res;
+}
+
+String TCPHandler::prepareStringForSshValidation(String username, String challenge)
+{
+    String output;
+    output.append(std::to_string(client_tcp_protocol_version));
+    output.append(default_database);
+    output.append(username);
+    output.append(challenge);
+    return output;
 }
 
 void TCPHandler::receiveHello()
@@ -1445,9 +1466,11 @@ void TCPHandler::receiveHello()
         return;
     }
 
-    is_ssh_based_auth = user.starts_with(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER) && password.empty();
+    is_ssh_based_auth = startsWith(user, EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER) && password.empty();
     if (is_ssh_based_auth)
-        user.erase(0, std::string_view(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER).size());
+    {
+        user.erase(0, String(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER).size());
+    }
 
     session = makeSession();
     const auto & client_info = session->getClientInfo();
@@ -1475,9 +1498,7 @@ void TCPHandler::receiveHello()
             }
         }
     }
-#endif
 
-#if USE_SSH
     /// Perform handshake for SSH authentication
     if (is_ssh_based_auth)
     {
@@ -1491,14 +1512,7 @@ void TCPHandler::receiveHello()
         if (packet_type != Protocol::Client::SSHChallengeRequest)
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Server expected to receive a packet for requesting a challenge string");
 
-        auto create_challenge = []()
-        {
-            pcg64_fast rng(randomSeed());
-            UInt64 rand = rng();
-            return encodeSHA256(&rand, sizeof(rand));
-        };
-
-        String challenge = create_challenge();
+        auto challenge = createChallenge();
         writeVarUInt(Protocol::Server::SSHChallenge, *out);
         writeStringBinary(challenge, *out);
         out->next();
@@ -1509,17 +1523,7 @@ void TCPHandler::receiveHello()
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Server expected to receive a packet with a response for a challenge");
         readStringBinary(signature, *in);
 
-        auto prepare_string_for_ssh_validation = [&](const String & username, const String & challenge_)
-        {
-            String output;
-            output.append(std::to_string(client_tcp_protocol_version));
-            output.append(default_database);
-            output.append(username);
-            output.append(challenge_);
-            return output;
-        };
-
-        auto cred = SshCredentials(user, signature, prepare_string_for_ssh_validation(user, challenge));
+        auto cred = SshCredentials(user, signature, prepareStringForSshValidation(user, challenge));
         session->authenticate(cred, getClientAddress(client_info));
         return;
     }
@@ -1847,7 +1851,7 @@ void TCPHandler::receiveQuery()
 #endif
     }
 
-    query_context = session->makeQueryContext(std::move(client_info));
+    query_context = session->makeQueryContext(client_info);
 
     /// Sets the default database if it wasn't set earlier for the session context.
     if (is_interserver_mode && !default_database.empty())
@@ -1862,6 +1866,16 @@ void TCPHandler::receiveQuery()
     ///
     /// Settings
     ///
+
+    /// FIXME: Remove when allow_experimental_analyzer will become obsolete.
+    /// Analyzer became Beta in 24.3 and started to be enabled by default.
+    /// We have to disable it for ourselves to make sure we don't have different settings on
+    /// different servers.
+    if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        && client_info.getVersionNumber() < VersionNumber(23, 3, 0)
+        && !passed_settings.allow_experimental_analyzer.changed)
+        passed_settings.set("allow_experimental_analyzer", false);
+
     auto settings_changes = passed_settings.changes();
     query_kind = query_context->getClientInfo().query_kind;
     if (query_kind == ClientInfo::QueryKind::INITIAL_QUERY)

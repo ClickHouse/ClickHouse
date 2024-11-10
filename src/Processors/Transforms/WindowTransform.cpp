@@ -1,23 +1,23 @@
-#include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <Columns/ColumnAggregateFunction.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnLowCardinality.h>
-#include <Columns/ColumnNullable.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeInterval.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/getLeastSupertype.h>
-#include <Functions/FunctionHelpers.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/convertFieldToType.h>
 #include <Processors/Transforms/WindowTransform.h>
-#include <base/arithmeticOverflow.h>
+
+#include <limits>
+
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Common/Arena.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
-
-#include <limits>
+#include <Columns/ColumnLowCardinality.h>
+#include <base/arithmeticOverflow.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnNullable.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/getLeastSupertype.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeInterval.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/convertFieldToType.h>
+#include <DataTypes/DataTypeDateTime64.h>
 
 
 /// See https://fmt.dev/latest/api.html#formatting-user-defined-types
@@ -1621,7 +1621,7 @@ struct StatefulWindowFunction : public WindowFunction
     }
 
     size_t sizeOfData() const override { return sizeof(State); }
-    size_t alignOfData() const override { return 1; }
+    size_t alignOfData() const override { return alignof(State); }
 
     void create(AggregateDataPtr __restrict place) const override
     {

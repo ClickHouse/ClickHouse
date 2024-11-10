@@ -266,6 +266,9 @@ void validateAggregates(const QueryTreeNodePtr & query_node, AggregatesValidatio
         if (query_node_typed.hasOrderBy())
             validate_group_by_columns_visitor.visit(query_node_typed.getOrderByNode());
 
+        if (query_node_typed.hasInterpolate())
+            validate_group_by_columns_visitor.visit(query_node_typed.getInterpolate());
+
         validate_group_by_columns_visitor.visit(query_node_typed.getProjectionNode());
     }
 
@@ -344,7 +347,21 @@ void validateTreeSize(const QueryTreeNodePtr & node,
         if (processed_children)
         {
             ++tree_size;
-            node_to_tree_size.emplace(node_to_process, tree_size);
+
+            size_t subtree_size = 1;
+            for (const auto & node_to_process_child : node_to_process->getChildren())
+            {
+                if (!node_to_process_child)
+                    continue;
+
+                subtree_size += node_to_tree_size[node_to_process_child];
+            }
+
+            auto * constant_node = node_to_process->as<ConstantNode>();
+            if (constant_node && constant_node->hasSourceExpression())
+                subtree_size += node_to_tree_size[constant_node->getSourceExpression()];
+
+            node_to_tree_size.emplace(node_to_process, subtree_size);
             continue;
         }
 

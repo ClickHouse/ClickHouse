@@ -15,6 +15,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/FunctionNameNormalizer.h>
+#include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -160,7 +161,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
     size_t prev_tables_count = metadata.parsed_tables.size();
     size_t prev_total_dictionaries = metadata.total_dictionaries;
 
-    auto process_metadata = [&metadata, is_startup, this](const String & file_name)
+    auto process_metadata = [&metadata, is_startup, local_context, this](const String & file_name)
     {
         fs::path path(getMetadataPath());
         fs::path file_path(file_name);
@@ -171,7 +172,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
             auto ast = parseQueryFromMetadata(log, getContext(), full_path.string(), /*throw_on_error*/ true, /*remove_empty*/ false);
             if (ast)
             {
-                FunctionNameNormalizer::visit(ast.get());
+                FunctionNameNormalizer().visit(ast.get());
                 auto * create_query = ast->as<ASTCreateQuery>();
                 /// NOTE No concurrent writes are possible during database loading
                 create_query->setDatabase(TSA_SUPPRESS_WARNING_FOR_READ(database_name));
@@ -206,6 +207,8 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
 
                 convertMergeTreeToReplicatedIfNeeded(ast, qualified_name, file_name);
 
+                NormalizeSelectWithUnionQueryVisitor::Data data{local_context->getSettingsRef().union_default_mode};
+                NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
                 std::lock_guard lock{metadata.mutex};
                 metadata.parsed_tables[qualified_name] = ParsedTableMetadata{full_path.string(), ast};
                 metadata.total_dictionaries += create_query->is_dictionary;
@@ -438,40 +441,24 @@ void DatabaseOrdinary::stopLoading()
     stop_load_table.clear();
 }
 
-DatabaseTablesIteratorPtr DatabaseOrdinary::getTablesIterator(ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const
+DatabaseTablesIteratorPtr DatabaseOrdinary::getTablesIterator(ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const
 {
-    if (!skip_not_loaded)
-    {
-        // Wait for every table (matching the filter) to be loaded and started up before we make the snapshot.
-        // It is important, because otherwise table might be:
-        //  - not attached and thus will be missed in the snapshot;
-        //  - not started, which is not good for DDL operations.
-        LoadTaskPtrs tasks_to_wait;
-        {
-            std::lock_guard lock(mutex);
-            if (!filter_by_table_name)
-                tasks_to_wait.reserve(startup_table.size());
-            for (const auto & [table_name, task] : startup_table)
-                if (!filter_by_table_name || filter_by_table_name(table_name))
-                    tasks_to_wait.emplace_back(task);
-        }
-        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), tasks_to_wait);
-    }
-    return DatabaseWithOwnTablesBase::getTablesIterator(local_context, filter_by_table_name, skip_not_loaded);
-}
-
-Strings DatabaseOrdinary::getAllTableNames(ContextPtr) const
-{
-    std::set<String> unique_names;
+    // Wait for every table (matching the filter) to be loaded and started up before we make the snapshot.
+    // It is important, because otherwise table might be:
+    //  - not attached and thus will be missed in the snapshot;
+    //  - not started, which is not good for DDL operations.
+    LoadTaskPtrs tasks_to_wait;
     {
         std::lock_guard lock(mutex);
-        for (const auto & [table_name, _] : tables)
-            unique_names.emplace(table_name);
-        // Not yet loaded table are not listed in `tables`, so we have to add table names from tasks
-        for (const auto & [table_name, _] : startup_table)
-            unique_names.emplace(table_name);
+        if (!filter_by_table_name)
+            tasks_to_wait.reserve(startup_table.size());
+        for (const auto & [table_name, task] : startup_table)
+            if (!filter_by_table_name || filter_by_table_name(table_name))
+                tasks_to_wait.emplace_back(task);
     }
-    return {unique_names.begin(), unique_names.end()};
+    waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), tasks_to_wait);
+
+    return DatabaseWithOwnTablesBase::getTablesIterator(local_context, filter_by_table_name);
 }
 
 void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)

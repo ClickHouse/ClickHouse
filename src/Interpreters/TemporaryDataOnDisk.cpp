@@ -111,7 +111,7 @@ FileSegmentsHolderPtr TemporaryDataOnDisk::createCacheFile(size_t max_file_size)
         CreateFileSegmentSettings(FileSegmentKind::Temporary, /* unbounded */ true), FileCache::getCommonUser());
 
     chassert(holder->size() == 1);
-    holder->back().getKeyMetadata()->createBaseDirectory();
+    holder->back().getKeyMetadata()->createBaseDirectory(/* throw_if_failed */true);
 
     return holder;
 }

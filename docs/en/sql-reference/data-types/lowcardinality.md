@@ -1,10 +1,10 @@
 ---
 slug: /en/sql-reference/data-types/lowcardinality
-sidebar_position: 42
-sidebar_label: LowCardinality(T)
+sidebar_position: 51
+sidebar_label: LowCardinality
 ---
 
-# LowCardinality(T)
+# LowCardinality
 
 Changes the internal representation of other data types to be dictionary-encoded.
 

@@ -301,6 +301,7 @@ public:
     struct FailedMultiDelta
     {
         std::vector<Coordination::Error> error_codes;
+        Coordination::Error global_error{Coordination::Error::ZOK};
     };
 
     // Denotes end of a subrequest in multi request
@@ -314,8 +315,13 @@ public:
         AuthID auth_id;
     };
 
+    struct CloseSessionDelta
+    {
+        int64_t session_id;
+    };
+
     using Operation = std::
-        variant<CreateNodeDelta, RemoveNodeDelta, UpdateNodeDelta, SetACLDelta, AddAuthDelta, ErrorDelta, SubDeltaEnd, FailedMultiDelta>;
+        variant<CreateNodeDelta, RemoveNodeDelta, UpdateNodeDelta, SetACLDelta, AddAuthDelta, ErrorDelta, SubDeltaEnd, FailedMultiDelta, CloseSessionDelta>;
 
     struct Delta
     {
@@ -351,6 +357,7 @@ public:
         std::shared_ptr<Node> tryGetNodeFromStorage(StringRef path) const;
 
         std::unordered_map<int64_t, std::list<const AuthID *>> session_and_auth;
+        std::unordered_set<int64_t> closed_sessions;
 
         struct UncommittedNode
         {

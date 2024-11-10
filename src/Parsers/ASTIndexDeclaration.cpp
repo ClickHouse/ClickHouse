@@ -8,63 +8,24 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-
-ASTIndexDeclaration::ASTIndexDeclaration(ASTPtr expression, ASTPtr type, const String & name_)
-    : name(name_)
-{
-    if (!expression)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index declaration must have an expression");
-    children.push_back(expression);
-
-    if (type)
-    {
-        if (!dynamic_cast<const ASTFunction *>(type.get()))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Index declaration type must be a function");
-        children.push_back(type);
-    }
-}
-
 ASTPtr ASTIndexDeclaration::clone() const
 {
-    ASTPtr expr = getExpression();
+    auto res = std::make_shared<ASTIndexDeclaration>();
+
+    res->name = name;
+    if (granularity)
+        res->granularity = granularity;
     if (expr)
-        expr = expr->clone();
-
-    ASTPtr type = getType();
+        res->set(res->expr, expr->clone());
     if (type)
-        type = type->clone();
-
-    auto res = std::make_shared<ASTIndexDeclaration>(expr, type, name);
-    res->granularity = granularity;
-
+        res->set(res->type, type->clone());
     return res;
 }
 
-ASTPtr ASTIndexDeclaration::getExpression() const
-{
-    if (children.size() <= expression_idx)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index declaration must have an expression");
-    return children[expression_idx];
-}
-
-std::shared_ptr<ASTFunction> ASTIndexDeclaration::getType() const
-{
-    if (children.size() <= type_idx)
-        return nullptr;
-    auto func_ast = std::dynamic_pointer_cast<ASTFunction>(children[type_idx]);
-    if (!func_ast)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index declaration type must be a function");
-    return func_ast;
-}
 
 void ASTIndexDeclaration::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
-    if (auto expr = getExpression())
+    if (expr)
     {
         if (part_of_create_index_query)
         {
@@ -85,12 +46,11 @@ void ASTIndexDeclaration::formatImpl(const FormatSettings & s, FormatState & sta
         }
     }
 
-    if (auto type = getType())
+    if (type)
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << " TYPE " << (s.hilite ? hilite_none : "");
         type->formatImpl(s, state, frame);
     }
-
     if (granularity)
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << " GRANULARITY " << (s.hilite ? hilite_none : "");

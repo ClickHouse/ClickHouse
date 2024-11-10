@@ -28,6 +28,10 @@ from pyspark.sql.functions import monotonically_increasing_id, row_number
 from pyspark.sql.window import Window
 from minio.deleteobjects import DeleteObject
 
+import helpers.client
+from helpers.cluster import ClickHouseCluster
+from helpers.network import PartitionManager
+
 from helpers.s3_tools import (
     prepare_s3_bucket,
     upload_directory,
@@ -58,10 +62,13 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__, with_spark=True)
         cluster.add_instance(
             "node1",
-            main_configs=["configs/config.d/named_collections.xml"],
+            main_configs=[
+                "configs/config.d/named_collections.xml",
+            ],
             user_configs=["configs/users.d/users.xml"],
             with_minio=True,
             stay_alive=True,
+            with_zookeeper=True,
         )
 
         logging.info("Starting cluster...")
@@ -511,3 +518,4 @@ def test_restart_broken_table_function(started_cluster):
     upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+

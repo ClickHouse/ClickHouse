@@ -53,6 +53,9 @@ public:
     AccessControl();
     ~AccessControl() override;
 
+    /// Shutdown the access control and stops all background activity.
+    void shutdown() override;
+
     /// Initializes access storage (user directories).
     void setUpFromMainConfig(const Poco::Util::AbstractConfiguration & config_, const String & config_path_,
                              const zkutil::GetZooKeeper & get_zookeeper_function_);

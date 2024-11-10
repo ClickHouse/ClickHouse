@@ -36,7 +36,7 @@ E.g. configuration option
 <s3>
     <type>s3</type>
     <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
-    <use_environment_credentials>1</use_environment_credentials>
+    <use_invironment_credentials>1</use_invironment_credentials>
 </s3>
 ```
 
@@ -47,7 +47,7 @@ is equal to configuration (from `24.1`):
     <object_storage_type>s3</object_storage_type>
     <metadata_type>local</metadata_type>
     <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
-    <use_environment_credentials>1</use_environment_credentials>
+    <use_invironment_credentials>1</use_invironment_credentials>
 </s3>
 ```
 
@@ -56,7 +56,7 @@ Configuration
 <s3_plain>
     <type>s3_plain</type>
     <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
-    <use_environment_credentials>1</use_environment_credentials>
+    <use_invironment_credentials>1</use_invironment_credentials>
 </s3_plain>
 ```
 
@@ -67,7 +67,7 @@ is equal to
     <object_storage_type>s3</object_storage_type>
     <metadata_type>plain</metadata_type>
     <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
-    <use_environment_credentials>1</use_environment_credentials>
+    <use_invironment_credentials>1</use_invironment_credentials>
 </s3_plain>
 ```
 
@@ -79,7 +79,7 @@ Example of full storage configuration will look like:
             <s3>
                 <type>s3</type>
                 <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
-                <use_environment_credentials>1</use_environment_credentials>
+                <use_invironment_credentials>1</use_invironment_credentials>
             </s3>
         </disks>
         <policies>
@@ -105,7 +105,7 @@ Starting with 24.1 clickhouse version, it can also look like:
                 <object_storage_type>s3</object_storage_type>
                 <metadata_type>local</metadata_type>
                 <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
-                <use_environment_credentials>1</use_environment_credentials>
+                <use_invironment_credentials>1</use_invironment_credentials>
             </s3>
         </disks>
         <policies>
@@ -324,7 +324,7 @@ Configuration:
 <s3_plain>
     <type>s3_plain</type>
     <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
-    <use_environment_credentials>1</use_environment_credentials>
+    <use_invironment_credentials>1</use_invironment_credentials>
 </s3_plain>
 ```
 
@@ -337,7 +337,7 @@ Configuration:
     <object_storage_type>azure</object_storage_type>
     <metadata_type>plain</metadata_type>
     <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
-    <use_environment_credentials>1</use_environment_credentials>
+    <use_invironment_credentials>1</use_invironment_credentials>
 </s3_plain>
 ```
 
@@ -520,13 +520,13 @@ Example of configuration for versions later or equal to 22.8:
             </cache>
         </disks>
         <policies>
-            <s3_cache>
+            <s3-cache>
                 <volumes>
                     <main>
                         <disk>cache</disk>
                     </main>
                 </volumes>
-            </s3_cache>
+            </s3-cache>
         <policies>
     </storage_configuration>
 ```
@@ -546,13 +546,13 @@ Example of configuration for versions earlier than 22.8:
             </s3>
         </disks>
         <policies>
-            <s3_cache>
+            <s3-cache>
                 <volumes>
                     <main>
                         <disk>s3</disk>
                     </main>
                 </volumes>
-            </s3_cache>
+            </s3-cache>
         <policies>
     </storage_configuration>
 ```

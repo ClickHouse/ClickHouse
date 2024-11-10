@@ -126,12 +126,11 @@ BackupReaderS3::BackupReaderS3(
     bool allow_s3_native_copy,
     const ReadSettings & read_settings_,
     const WriteSettings & write_settings_,
-    const ContextPtr & context_,
-    bool is_internal_backup)
+    const ContextPtr & context_)
     : BackupReaderDefault(read_settings_, write_settings_, getLogger("BackupReaderS3"))
     , s3_uri(s3_uri_)
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false}
-    , s3_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString(), context_->getUserName(), /*ignore_user=*/is_internal_backup))
+    , s3_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString(), context_->getUserName()))
 {
     auto & request_settings = s3_settings.request_settings;
     request_settings.updateFromSettings(context_->getSettingsRef());
@@ -188,13 +187,14 @@ void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_s
                 fs::path(s3_uri.key) / path_in_backup,
                 0,
                 file_size,
+                /* dest_s3_client= */ destination_disk->getS3StorageClient(),
                 /* dest_bucket= */ blob_path[1],
                 /* dest_key= */ blob_path[0],
                 s3_settings.request_settings,
                 read_settings,
                 blob_storage_log,
                 object_attributes,
-                threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupReaderS3"),
+                threadPoolCallbackRunner<void>(getBackupsIOThreadPool().get(), "BackupReaderS3"),
                 /* for_disk_s3= */ true);
 
             return file_size;
@@ -217,12 +217,11 @@ BackupWriterS3::BackupWriterS3(
     const String & storage_class_name,
     const ReadSettings & read_settings_,
     const WriteSettings & write_settings_,
-    const ContextPtr & context_,
-    bool is_internal_backup)
+    const ContextPtr & context_)
     : BackupWriterDefault(read_settings_, write_settings_, getLogger("BackupWriterS3"))
     , s3_uri(s3_uri_)
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false}
-    , s3_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString(), context_->getUserName(), /*ignore_user=*/is_internal_backup))
+    , s3_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString(), context_->getUserName()))
 {
     auto & request_settings = s3_settings.request_settings;
     request_settings.updateFromSettings(context_->getSettingsRef());
@@ -252,18 +251,19 @@ void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src
         {
             LOG_TRACE(log, "Copying file {} from disk {} to S3", src_path, src_disk->getName());
             copyS3File(
-                client,
+                src_disk->getS3StorageClient(),
                 /* src_bucket */ blob_path[1],
                 /* src_key= */ blob_path[0],
                 start_pos,
                 length,
-                s3_uri.bucket,
-                fs::path(s3_uri.key) / path_in_backup,
+                /* dest_s3_client= */ client,
+                /* dest_bucket= */ s3_uri.bucket,
+                /* dest_key= */ fs::path(s3_uri.key) / path_in_backup,
                 s3_settings.request_settings,
                 read_settings,
                 blob_storage_log,
                 {},
-                threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"));
+                threadPoolCallbackRunner<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"));
             return; /// copied!
         }
     }
@@ -281,20 +281,21 @@ void BackupWriterS3::copyFile(const String & destination, const String & source,
         /* src_key= */ fs::path(s3_uri.key) / source,
         0,
         size,
-        s3_uri.bucket,
-        fs::path(s3_uri.key) / destination,
+        /* dest_s3_client= */ client,
+        /* dest_bucket= */ s3_uri.bucket,
+        /* dest_key= */ fs::path(s3_uri.key) / destination,
         s3_settings.request_settings,
         read_settings,
         blob_storage_log,
         {},
-        threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"));
+        threadPoolCallbackRunner<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"));
 }
 
 void BackupWriterS3::copyDataToFile(const String & path_in_backup, const CreateReadBufferFunction & create_read_buffer, UInt64 start_pos, UInt64 length)
 {
     copyDataToS3File(create_read_buffer, start_pos, length, client, s3_uri.bucket, fs::path(s3_uri.key) / path_in_backup,
                      s3_settings.request_settings, blob_storage_log, {},
-                     threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"));
+                     threadPoolCallbackRunner<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"));
 }
 
 BackupWriterS3::~BackupWriterS3() = default;
@@ -329,7 +330,7 @@ std::unique_ptr<WriteBuffer> BackupWriterS3::writeFile(const String & file_name)
         s3_settings.request_settings,
         blob_storage_log,
         std::nullopt,
-        threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"),
+        threadPoolCallbackRunner<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"),
         write_settings);
 }
 

@@ -581,7 +581,7 @@ try
         auto disk_ptr = std::static_pointer_cast<DiskLocal>(shared_from_this());
         auto tmp_file = std::make_unique<TemporaryFileOnDisk>(disk_ptr);
         auto buf = std::make_unique<WriteBufferFromTemporaryFile>(std::move(tmp_file));
-        buf->write(data.data, DiskWriteCheckData::PAGE_SIZE_IN_BYTES);
+        buf->write(data.data, data.PAGE_SIZE_IN_BYTES);
         buf->finalize();
         buf->sync();
     }

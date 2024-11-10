@@ -1,7 +1,6 @@
 #pragma once
 
 #include <filesystem>
-#include <string>
 
 #if defined(OS_LINUX)
 /// I think it is possible to mount the cgroups hierarchy somewhere else (e.g. when in containers).
@@ -16,7 +15,7 @@ bool cgroupsV2Enabled();
 /// Assumes that cgroupsV2Enabled() is enabled.
 bool cgroupsV2MemoryControllerEnabled();
 
-/// Which cgroup does the process belong to?
-/// Returns an empty string if the cgroup cannot be determined.
+/// Detects which cgroup v2 the process belongs to and returns the filesystem path to the cgroup.
+/// Returns an empty path the cgroup cannot be determined.
 /// Assumes that cgroupsV2Enabled() is enabled.
-std::string cgroupV2OfProcess();
+std::filesystem::path cgroupV2PathOfProcess();

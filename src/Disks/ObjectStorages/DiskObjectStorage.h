@@ -7,6 +7,8 @@
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Common/re2.h>
 
+#include "config.h"
+
 namespace CurrentMetrics
 {
     extern const Metric DiskSpaceReservedForMerge;
@@ -47,6 +49,11 @@ public:
     const String & getPath() const override { return metadata_storage->getPath(); }
 
     StoredObjects getStorageObjects(const String & local_path) const override;
+
+    void getRemotePathsRecursive(
+        const String & local_path,
+        std::vector<LocalPathWithObjectStoragePaths> & paths_map,
+        const std::function<bool(const String &)> & skip_predicate) override;
 
     const std::string & getCacheName() const override { return object_storage->getCacheName(); }
 
@@ -205,6 +212,10 @@ public:
 
     bool supportsChmod() const override { return metadata_storage->supportsChmod(); }
     void chmod(const String & path, mode_t mode) override;
+
+#if USE_AWS_S3
+    std::shared_ptr<const S3::Client> getS3StorageClient() const override;
+#endif
 
 private:
 

@@ -8,6 +8,7 @@
 #include <functional>
 
 #include <Core/CompareHelper.h>
+#include <Core/DecimalFunctions.h>
 #include <Core/Defines.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
@@ -150,7 +151,7 @@ public:
 
     operator T() const { return dec; } /// NOLINT
     T getValue() const { return dec; }
-    T getScaleMultiplier() const;
+    T getScaleMultiplier() const { return DecimalUtils::scaleMultiplier<T>(scale); }
     UInt32 getScale() const { return scale; }
 
     template <typename U>
@@ -198,12 +199,6 @@ private:
     T dec;
     UInt32 scale;
 };
-
-extern template class DecimalField<Decimal32>;
-extern template class DecimalField<Decimal64>;
-extern template class DecimalField<Decimal128>;
-extern template class DecimalField<Decimal256>;
-extern template class DecimalField<DateTime64>;
 
 template <typename T> constexpr bool is_decimal_field = false;
 template <> constexpr inline bool is_decimal_field<DecimalField<Decimal32>> = true;

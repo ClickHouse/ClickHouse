@@ -66,6 +66,15 @@ public:
     void addPartLevelToChunk(bool add_part_level_) { add_part_level = add_part_level_; }
 
 private:
+    /// This struct allow to return block with no columns but with non-zero number of rows similar to Chunk
+    struct BlockAndProgress
+    {
+        Block block;
+        size_t row_count = 0;
+        size_t num_read_rows = 0;
+        size_t num_read_bytes = 0;
+    };
+
     /// Sets up range readers corresponding to data readers
     void initializeRangeReaders();
 

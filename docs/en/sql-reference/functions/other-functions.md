@@ -543,63 +543,11 @@ You can get similar result by using the [ternary operator](../../sql-reference/f
 
 Returns 1 if the Float32 and Float64 argument is NaN, otherwise this function 0.
 
-## hasColumnInTable
+## hasColumnInTable(\[‘hostname’\[, ‘username’\[, ‘password’\]\],\] ‘database’, ‘table’, ‘column’)
 
-Given the database name, the table name, and the column name as constant strings, returns 1 if the given column exists, otherwise 0.
-
-**Syntax**
-
-```sql
-hasColumnInTable(\[‘hostname’\[, ‘username’\[, ‘password’\]\],\] ‘database’, ‘table’, ‘column’)
-```
-
-**Parameters**
-
-- `database` : name of the database. [String literal](../syntax#syntax-string-literal)
-- `table` : name of the table. [String literal](../syntax#syntax-string-literal) 
-- `column` : name of the column. [String literal](../syntax#syntax-string-literal)
-- `hostname` : remote server name to perform the check on. [String literal](../syntax#syntax-string-literal)
-- `username` : username for remote server. [String literal](../syntax#syntax-string-literal)
-- `password` : password for remote server. [String literal](../syntax#syntax-string-literal)
-
-**Returned value**
-
-- `1` if the given column exists.
-- `0`, otherwise. 
-
-**Implementation details**
-
+Given the database name, the table name, and the column name as constant strings, returns 1 if the given column exists, otherwise 0. If parameter `hostname` is given, the check is performed on a remote server.
+If the table does not exist, an exception is thrown.
 For elements in a nested data structure, the function checks for the existence of a column. For the nested data structure itself, the function returns 0.
-
-**Example**
-
-Query:
-
-```sql
-SELECT hasColumnInTable('system','metrics','metric')
-```
-
-```response
-1
-```
-
-```sql
-SELECT hasColumnInTable('system','metrics','non-existing_column')
-```
-
-```response
-0
-```
-
-## hasThreadFuzzer
-
-Returns whether Thread Fuzzer is effective. It can be used in tests to prevent runs from being too long.
-
-**Syntax**
-
-```sql
-hasThreadFuzzer();
-```
 
 ## bar
 
@@ -675,7 +623,7 @@ There are two variations of this function:
 
 Signature:
 
-For `x` equal to one of the elements in `array_from`, the function returns the corresponding element in `array_to`, i.e. the one at the same array index. Otherwise, it returns `default`. If multiple matching elements exist `array_from`, it returns the element corresponding to the first of them.
+For `x` equal to one of the elements in `array_from`, the function returns the corresponding element in `array_to`, i.e. the one at the same array index. Otherwise, it returns `default`. If multiple matching elements exist `array_from`, an arbitrary corresponding element from `array_to` is returned.
 
 `transform(T, Array(T), Array(U), U) -> U`
 
@@ -915,34 +863,6 @@ Returns the larger value of a and b.
 
 Returns the server’s uptime in seconds.
 If executed in the context of a distributed table, this function generates a normal column with values relevant to each shard. Otherwise it produces a constant value.
-
-**Syntax**
-
-``` sql
-uptime()
-```
-
-**Returned value**
-
-- Time value of seconds.
-
-Type: [UInt32](/docs/en/sql-reference/data-types/int-uint.md).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT uptime() as Uptime;
-```
-
-Result:
-
-``` response
-┌─Uptime─┐
-│  55867 │
-└────────┘
-```
 
 ## version()
 

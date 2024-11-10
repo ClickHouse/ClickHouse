@@ -21,14 +21,14 @@ jobs:
     outputs:
       data: ${{ steps.runconfig.outputs.CI_DATA }}
     steps:
-      - name: DebugInfo
-        uses: hmarr/debug-action@a701ed95a46e6f2fb0df25e1a558c16356fae35a
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
         with:
           clear-repository: true # to ensure correct digests
           fetch-depth: 0 # to get version
           filter: tree:0
+      - name: Debug Info
+        uses: ./.github/actions/debug
       - name: Labels check
         if: ${{ github.event_name != 'merge_group' }}
         run: |
@@ -158,24 +158,15 @@ jobs:
   #
   FinishCheck:
     if: ${{ !failure() && !cancelled() }}
-    needs: [Tests_1, Tests_2, Builds_1_Report, Builds_2_Report]
+    needs: [Tests_1, Tests_2]
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
-      - name: Check sync status
-        if: ${{ github.event_name == 'merge_group' }}
-        run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 sync_pr.py --status
       - name: Finish label
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 finish_check.py
-      - name: Auto merge if approved
-        if: ${{ github.event_name != 'merge_group' }}
-        run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
           python3 merge_pr.py --check-approved
 
 

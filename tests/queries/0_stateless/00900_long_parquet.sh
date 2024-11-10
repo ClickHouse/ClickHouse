@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest
+# Tags: long, no-fasttest, no-debug, no-asan, no-msan, no-tsan
 
 set -e
 

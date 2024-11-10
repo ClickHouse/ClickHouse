@@ -143,7 +143,6 @@ ColumnDependencies getAllColumnDependencies(
 
 
 bool isStorageTouchedByMutations(
-    MergeTreeData & storage,
     MergeTreeData::DataPartPtr source_part,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
@@ -152,7 +151,9 @@ bool isStorageTouchedByMutations(
     if (commands.empty())
         return false;
 
+    auto storage_from_part = std::make_shared<StorageFromMergeTreeDataPart>(source_part);
     bool all_commands_can_be_skipped = true;
+
     for (const auto & command : commands)
     {
         if (command.type == MutationCommand::APPLY_DELETED_MASK)
@@ -167,7 +168,7 @@ bool isStorageTouchedByMutations(
 
             if (command.partition)
             {
-                const String partition_id = storage.getPartitionIDFromQuery(command.partition, context);
+                const String partition_id = storage_from_part->getPartitionIDFromQuery(command.partition, context);
                 if (partition_id == source_part->info.partition_id)
                     all_commands_can_be_skipped = false;
             }
@@ -181,20 +182,18 @@ bool isStorageTouchedByMutations(
     if (all_commands_can_be_skipped)
         return false;
 
-    auto storage_from_part = std::make_shared<StorageFromMergeTreeDataPart>(source_part);
-
     std::optional<InterpreterSelectQuery> interpreter_select_query;
     BlockIO io;
 
     if (context->getSettingsRef().allow_experimental_analyzer)
     {
-        auto select_query_tree = prepareQueryAffectedQueryTree(commands, storage.shared_from_this(), context);
+        auto select_query_tree = prepareQueryAffectedQueryTree(commands, storage_from_part, context);
         InterpreterSelectQueryAnalyzer interpreter(select_query_tree, context, SelectQueryOptions().ignoreLimits());
         io = interpreter.execute();
     }
     else
     {
-        ASTPtr select_query = prepareQueryAffectedAST(commands, storage.shared_from_this(), context);
+        ASTPtr select_query = prepareQueryAffectedAST(commands, storage_from_part, context);
         /// Interpreter must be alive, when we use result of execute() method.
         /// For some reason it may copy context and give it into ExpressionTransform
         /// after that we will use context from destroyed stack frame in our stream.
@@ -409,13 +408,12 @@ MutationsInterpreter::MutationsInterpreter(
     , available_columns(std::move(available_columns_))
     , settings(std::move(settings_))
     , select_limits(SelectQueryOptions().analyze(!settings.can_execute).ignoreLimits())
-    , logger(getLogger("MutationsInterpreter(" + source.getStorage()->getStorageID().getFullTableName() + ")"))
 {
     auto new_context = Context::createCopy(context_);
     if (new_context->getSettingsRef().allow_experimental_analyzer)
     {
         new_context->setSetting("allow_experimental_analyzer", false);
-        LOG_DEBUG(logger, "Will use old analyzer to prepare mutation");
+        LOG_DEBUG(&Poco::Logger::get("MutationsInterpreter"), "Will use old analyzer to prepare mutation");
     }
     context = std::move(new_context);
 
@@ -508,6 +506,7 @@ static void validateUpdateColumns(
 /// because their sizes couldn't change, since sizes of all nested subcolumns must be consistent.
 static std::optional<std::vector<ASTPtr>> getExpressionsOfUpdatedNestedSubcolumns(
     const String & column_name,
+    NameSet affected_materialized,
     const NamesAndTypesList & all_columns,
     const std::unordered_map<String, ASTPtr> & column_to_update_expression)
 {
@@ -520,6 +519,10 @@ static std::optional<std::vector<ASTPtr>> getExpressionsOfUpdatedNestedSubcolumn
         auto split = Nested::splitName(column.name);
         if (isArray(column.type) && split.first == source_name && !split.second.empty())
         {
+            // Materialized nested columns shall never be part of the update expression
+            if (affected_materialized.contains(column.name))
+                continue;
+
             auto it = column_to_update_expression.find(column.name);
             if (it == column_to_update_expression.end())
                 return {};
@@ -655,7 +658,10 @@ void MutationsInterpreter::prepare(bool dry_run)
                 if (materialized_it != column_to_affected_materialized.end())
                     for (const auto & mat_column : materialized_it->second)
                         affected_materialized.emplace(mat_column);
+            }
 
+            for (const auto & [column_name, update_expr] : command.column_to_update_expression)
+            {
                 /// When doing UPDATE column = expression WHERE condition
                 /// we will replace column to the result of the following expression:
                 ///
@@ -689,7 +695,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                 {
                     std::shared_ptr<ASTFunction> function = nullptr;
 
-                    auto nested_update_exprs = getExpressionsOfUpdatedNestedSubcolumns(column_name, all_columns, command.column_to_update_expression);
+                    auto nested_update_exprs = getExpressionsOfUpdatedNestedSubcolumns(column_name, affected_materialized, all_columns, command.column_to_update_expression);
                     if (!nested_update_exprs)
                     {
                         function = makeASTFunction("validateNestedArraySizes",
@@ -998,7 +1004,6 @@ void MutationsInterpreter::prepare(bool dry_run)
         /// Always rebuild broken projections.
         if (source.hasBrokenProjection(projection.name))
         {
-            LOG_DEBUG(logger, "Will rebuild broken projection {}", projection.name);
             materialized_projections.insert(projection.name);
             continue;
         }

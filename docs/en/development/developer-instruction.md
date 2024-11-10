@@ -83,17 +83,11 @@ ClickHouse uses CMake and Ninja for building.
 
 - Ninja - a smaller build system with a focus on the speed used to execute those cmake generated tasks.
 
-- ccache - a compiler cache. It speeds up recompilation by caching previous compilations and detecting when the same compilation is being done again.
+To install on Ubuntu, Debian or Mint run `sudo apt install cmake ninja-build`.
 
-:::tip
-As an alternative for ccache a distributed [sccache](https://github.com/mozilla/sccache) could be used. To prefer it, `-DCOMPILER_CACHE=sccache` CMake flag should be used.
-:::
+On CentOS, RedHat run `sudo yum install cmake ninja-build`.
 
-To install on Ubuntu, Debian or Mint run `sudo apt install cmake ninja-build ccache`.
-
-On CentOS, RedHat run `sudo yum install cmake ninja-build ccache`.
-
-If you use Arch or Gentoo, you probably know it yourself how to install CMake and others.
+If you use Arch or Gentoo, you probably know it yourself how to install CMake.
 
 ## C++ Compiler {#c-compiler}
 

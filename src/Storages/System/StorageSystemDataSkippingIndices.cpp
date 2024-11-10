@@ -131,10 +131,8 @@ protected:
                     // 'type_full' column
                     if (column_mask[src_index++])
                     {
-                        auto * expression = index.definition_ast->as<ASTIndexDeclaration>();
-                        auto index_type = expression ? expression->getType() : nullptr;
-                        if (index_type)
-                            res_columns[res_index++]->insert(queryToString(*index_type));
+                        if (auto * expression = index.definition_ast->as<ASTIndexDeclaration>(); expression && expression->type)
+                            res_columns[res_index++]->insert(queryToString(*expression->type));
                         else
                             res_columns[res_index++]->insertDefault();
                     }

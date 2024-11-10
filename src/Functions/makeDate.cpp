@@ -13,7 +13,6 @@
 #include <Interpreters/castColumn.h>
 
 #include <Common/DateLUT.h>
-#include <Common/DateLUTImpl.h>
 #include <Common/typeid_cast.h>
 
 #include <array>

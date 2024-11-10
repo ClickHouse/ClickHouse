@@ -235,7 +235,6 @@ void DatabasesOverlay::createTableRestoredFromBackup(
     /// Creates a tables by executing a "CREATE TABLE" query.
     InterpreterCreateQuery interpreter{create_table_query, local_context};
     interpreter.setInternal(true);
-    interpreter.setIsRestoreFromBackup(true);
     interpreter.execute();
 }
 
@@ -255,7 +254,7 @@ void DatabasesOverlay::shutdown()
         db->shutdown();
 }
 
-DatabaseTablesIteratorPtr DatabasesOverlay::getTablesIterator(ContextPtr context_, const FilterByNameFunction & filter_by_table_name, bool /*skip_not_loaded*/) const
+DatabaseTablesIteratorPtr DatabasesOverlay::getTablesIterator(ContextPtr context_, const FilterByNameFunction & filter_by_table_name) const
 {
     Tables tables;
     for (const auto & db : databases)

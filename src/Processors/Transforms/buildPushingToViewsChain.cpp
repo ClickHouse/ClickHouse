@@ -361,7 +361,10 @@ std::optional<Chain> generateViewChain(
         }
 
         InterpreterInsertQuery interpreter(nullptr, insert_context, false, false, false);
-        out = interpreter.buildChain(inner_table, inner_metadata_snapshot, insert_columns, thread_status_holder, view_counter_ms, !materialized_view->hasInnerTable());
+
+        /// TODO: remove sql_security_type check after we turn `ignore_empty_sql_security_in_create_view_query=false`
+        bool check_access = !materialized_view->hasInnerTable() && materialized_view->getInMemoryMetadataPtr()->sql_security_type;
+        out = interpreter.buildChain(inner_table, inner_metadata_snapshot, insert_columns, thread_status_holder, view_counter_ms, check_access);
 
         if (interpreter.shouldAddSquashingFroStorage(inner_table))
         {
@@ -411,7 +414,8 @@ std::optional<Chain> generateViewChain(
         out.getInputHeader(),
         view_id,
         nullptr,
-        std::move(runtime_stats)});
+        std::move(runtime_stats),
+        insert_context});
 
     if (type == QueryViewsLogElement::ViewType::MATERIALIZED)
     {
@@ -587,7 +591,7 @@ Chain buildPushingToViewsChain(
 
 static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsData & views_data)
 {
-    const auto & context = views_data.context;
+    const auto & context = view.context;
 
     /// We create a table with the same name as original table and the same alias columns,
     ///  but it will contain single block (that is INSERT-ed into main table).

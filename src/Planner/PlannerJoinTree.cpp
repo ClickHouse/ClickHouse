@@ -225,8 +225,7 @@ bool applyTrivialCountIfPossible(
         return false;
 
     const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
-    if (!storage->supportsTrivialCountOptimization(
-            table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot(), query_context))
+    if (!storage->supportsTrivialCountOptimization())
         return false;
 
     auto storage_id = storage->getStorageID();
@@ -263,6 +262,9 @@ bool applyTrivialCountIfPossible(
     if (main_query_node.hasGroupBy() || main_query_node.hasPrewhere() || main_query_node.hasWhere())
         return false;
 
+    if (storage->hasLightweightDeletedMask())
+        return false;
+
     if (settings.allow_experimental_query_deduplication
         || settings.empty_result_for_aggregation_by_empty_set)
         return false;
@@ -294,7 +296,7 @@ bool applyTrivialCountIfPossible(
 
         /// The query could use trivial count if it didn't use parallel replicas, so let's disable it
         query_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-        query_context->setSetting("max_parallel_replicas", UInt64{1});
+        query_context->setSetting("max_parallel_replicas", UInt64{0});
         LOG_TRACE(getLogger("Planner"), "Disabling parallel replicas to be able to use a trivial count optimization");
 
     }
@@ -305,7 +307,7 @@ bool applyTrivialCountIfPossible(
     AggregateDataPtr place = state.data();
     agg_count.create(place);
     SCOPE_EXIT_MEMORY_SAFE(agg_count.destroy(place));
-    AggregateFunctionCount::set(place, num_rows.value());
+    agg_count.set(place, num_rows.value());
 
     auto column = ColumnAggregateFunction::create(function_node.getAggregateFunction());
     column->insertFrom(place);
@@ -643,7 +645,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         auto table_expression_query_info = select_query_info;
         table_expression_query_info.table_expression = table_expression;
         table_expression_query_info.filter_actions_dag = table_expression_data.getFilterActions();
-        table_expression_query_info.optimized_prewhere_info = table_expression_data.getPrewhereInfo();
         table_expression_query_info.analyzer_can_use_parallel_replicas_on_follower = table_node == planner_context->getGlobalPlannerContext()->parallel_replicas_table;
 
         size_t max_streams = settings.max_threads;
@@ -777,7 +778,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     {
                         planner_context->getMutableQueryContext()->setSetting(
                             "allow_experimental_parallel_reading_from_replicas", Field(0));
-                        planner_context->getMutableQueryContext()->setSetting("max_parallel_replicas", UInt64{1});
+                        planner_context->getMutableQueryContext()->setSetting("max_parallel_replicas", UInt64{0});
                         LOG_DEBUG(getLogger("Planner"), "Disabling parallel replicas because there aren't enough rows to read");
                     }
                     else if (number_of_replicas_to_use < settings.max_parallel_replicas)

@@ -261,7 +261,24 @@ AccessControl::AccessControl()
 }
 
 
-AccessControl::~AccessControl() = default;
+AccessControl::~AccessControl()
+{
+    try
+    {
+        AccessControl::shutdown();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+
+void AccessControl::shutdown()
+{
+    MultipleAccessStorage::shutdown();
+    removeAllStorages();
+}
 
 
 void AccessControl::setUpFromMainConfig(const Poco::Util::AbstractConfiguration & config_, const String & config_path_,

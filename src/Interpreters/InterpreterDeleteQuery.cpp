@@ -35,7 +35,7 @@ InterpreterDeleteQuery::InterpreterDeleteQuery(const ASTPtr & query_ptr_, Contex
 
 BlockIO InterpreterDeleteQuery::execute()
 {
-    FunctionNameNormalizer::visit(query_ptr.get());
+    FunctionNameNormalizer().visit(query_ptr.get());
     const ASTDeleteQuery & delete_query = query_ptr->as<ASTDeleteQuery &>();
     auto table_id = getContext()->resolveStorageID(delete_query, Context::ResolveOrdinary);
 
@@ -101,7 +101,7 @@ BlockIO InterpreterDeleteQuery::execute()
             DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
         auto context = Context::createCopy(getContext());
-        context->setSetting("mutations_sync", Field(context->getSettingsRef().lightweight_deletes_sync));
+        context->setSetting("mutations_sync", 2);   /// Lightweight delete is always synchronous
         InterpreterAlterQuery alter_interpreter(alter_ast, context);
         return alter_interpreter.execute();
     }

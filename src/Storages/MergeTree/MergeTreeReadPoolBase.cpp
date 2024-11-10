@@ -6,6 +6,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     RangesInDataParts && parts_,
     VirtualFields shared_virtual_fields_,
@@ -48,6 +53,19 @@ void MergeTreeReadPoolBase::fillPerPartInfos()
         MergeTreeReadTaskInfo read_task_info;
 
         read_task_info.data_part = part_with_ranges.data_part;
+
+        const auto & data_part = read_task_info.data_part;
+        if (data_part->isProjectionPart())
+        {
+            read_task_info.parent_part = data_part->storage.getPartIfExists(
+                data_part->getParentPartName(),
+                {MergeTreeDataPartState::PreActive, MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
+
+            if (!read_task_info.parent_part)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Did not find parent part {} for projection part {}",
+                            data_part->getParentPartName(), data_part->getDataPartStorage().getFullPath());
+        }
+
         read_task_info.part_index_in_query = part_with_ranges.part_index_in_query;
         read_task_info.alter_conversions = part_with_ranges.alter_conversions;
 
@@ -113,9 +131,25 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
         ? std::make_unique<MergeTreeBlockSizePredictor>(*read_info->shared_size_predictor)
         : nullptr; /// make a copy
 
-    auto get_part_name = [](const auto & task_info) -> const String &
+    auto get_part_name = [](const auto & task_info) -> String
     {
-        return task_info.data_part->isProjectionPart() ? task_info.data_part->getParentPart()->name : task_info.data_part->name;
+        const auto & data_part = task_info.data_part;
+
+        if (data_part->isProjectionPart())
+        {
+            auto parent_part_name = data_part->getParentPartName();
+
+            auto parent_part = data_part->storage.getPartIfExists(
+                parent_part_name, {MergeTreeDataPartState::PreActive, MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
+
+            if (!parent_part)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Did not find parent part {} for projection part {}",
+                            parent_part_name, data_part->getDataPartStorage().getFullPath());
+
+            return parent_part_name;
+        }
+
+        return data_part->name;
     };
 
     auto extras = getExtras();

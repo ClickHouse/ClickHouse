@@ -485,7 +485,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
     else if (is_create_empty)
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " EMPTY" << (settings.hilite ? hilite_none : "");
 
-    if (sql_security && sql_security->as<ASTSQLSecurity &>().type.has_value())
+    if (sql_security && supportSQLSecurity() && sql_security->as<ASTSQLSecurity &>().type.has_value())
     {
         settings.ostr << settings.nl_or_ws;
         sql_security->formatImpl(settings, state, frame);

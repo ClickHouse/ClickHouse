@@ -96,7 +96,7 @@ ThreadStatus::ThreadStatus(bool check_current_thread_on_destruction_)
         stack_t altstack_description{};
         altstack_description.ss_sp = alt_stack.getData();
         altstack_description.ss_flags = 0;
-        altstack_description.ss_size = ThreadStack::getSize();
+        altstack_description.ss_size = alt_stack.getSize();
 
         if (0 != sigaltstack(&altstack_description, nullptr))
         {
@@ -120,26 +120,6 @@ ThreadStatus::ThreadStatus(bool check_current_thread_on_destruction_)
                 }
             }
         }
-    }
-#endif
-}
-
-void ThreadStatus::initGlobalProfiler([[maybe_unused]] UInt64 global_profiler_real_time_period, [[maybe_unused]] UInt64 global_profiler_cpu_time_period)
-{
-#if !defined(SANITIZER) && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD) && !defined(__APPLE__)
-    try
-    {
-        if (global_profiler_real_time_period > 0)
-            query_profiler_real = std::make_unique<QueryProfilerReal>(thread_id,
-                /* period= */ static_cast<UInt32>(global_profiler_real_time_period));
-
-        if (global_profiler_cpu_time_period > 0)
-            query_profiler_cpu = std::make_unique<QueryProfilerCPU>(thread_id,
-                /* period= */ static_cast<UInt32>(global_profiler_cpu_time_period));
-    }
-    catch (...)
-    {
-        tryLogCurrentException("ThreadStatus", "Cannot initialize GlobalProfiler");
     }
 #endif
 }

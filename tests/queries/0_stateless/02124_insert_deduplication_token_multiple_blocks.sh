@@ -9,6 +9,7 @@ INSERT_BLOCK_SETTINGS="max_insert_block_size=1&min_insert_block_size_rows=0&min_
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS block_dedup_token SYNC"
 $CLICKHOUSE_CLIENT --query="CREATE TABLE block_dedup_token (id Int32) ENGINE=MergeTree() ORDER BY id SETTINGS non_replicated_deduplication_window=0xFFFFFFFF;"
+$CLICKHOUSE_CLIENT --query="SYSTEM STOP MERGES block_dedup_token;"
 
 $CLICKHOUSE_CLIENT --query="SELECT 'insert 2 blocks with dedup token, 1 row per block'"
 DEDUP_TOKEN='dedup1'

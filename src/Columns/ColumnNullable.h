@@ -114,7 +114,7 @@ public:
     void protect() override;
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
-    void updateWeakHash32(WeakHash32 & hash) const override;
+    WeakHash32 getWeakHash32() const override;
     void updateHashFast(SipHash & hash) const override;
     void getExtremes(Field & min, Field & max) const override;
     // Special function for nullable minmax index

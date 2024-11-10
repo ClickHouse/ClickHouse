@@ -271,15 +271,12 @@ void ColumnArray::updateHashWithValue(size_t n, SipHash & hash) const
         getData().updateHashWithValue(offset + i, hash);
 }
 
-void ColumnArray::updateWeakHash32(WeakHash32 & hash) const
+WeakHash32 ColumnArray::getWeakHash32() const
 {
     auto s = offsets->size();
-    if (hash.getData().size() != s)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
-                        "column size is {}, hash size is {}", s, hash.getData().size());
+    WeakHash32 hash(s);
 
-    WeakHash32 internal_hash(data->size());
-    data->updateWeakHash32(internal_hash);
+    WeakHash32 internal_hash = data->getWeakHash32();
 
     Offset prev_offset = 0;
     const auto & offsets_data = getOffsets();
@@ -300,6 +297,8 @@ void ColumnArray::updateWeakHash32(WeakHash32 & hash) const
 
         prev_offset = offsets_data[i];
     }
+
+    return hash;
 }
 
 void ColumnArray::updateHashFast(SipHash & hash) const

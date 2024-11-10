@@ -122,7 +122,7 @@ void LocalServer::initialize(Poco::Util::Application & self)
     {
         const auto config_path = config().getString("config-file", "config.xml");
         ConfigProcessor config_processor(config_path, false, true);
-        ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
+        config_processor.setConfigPath(fs::path(config_path).parent_path());
         auto loaded_config = config_processor.loadConfig();
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
@@ -160,6 +160,14 @@ void LocalServer::initialize(Poco::Util::Application & self)
         outdated_parts_loading_threads);
 
     getOutdatedPartsLoadingThreadPool().setMaxTurboThreads(active_parts_loading_threads);
+
+    const size_t unexpected_parts_loading_threads = config().getUInt("max_unexpected_parts_loading_thread_pool_size", 32);
+    getUnexpectedPartsLoadingThreadPool().initialize(
+        unexpected_parts_loading_threads,
+        0, // We don't need any threads one all the parts will be loaded
+        unexpected_parts_loading_threads);
+
+    getUnexpectedPartsLoadingThreadPool().setMaxTurboThreads(active_parts_loading_threads);
 
     const size_t cleanup_threads = config().getUInt("max_parts_cleaning_thread_pool_size", 128);
     getPartsCleaningThreadPool().initialize(
@@ -413,20 +421,8 @@ void LocalServer::setupUsers()
 void LocalServer::connect()
 {
     connection_parameters = ConnectionParameters(config(), "localhost");
-
-    ReadBuffer * in;
-    auto table_file = config().getString("table-file", "-");
-    if (table_file == "-" || table_file == "stdin")
-    {
-        in = &std_in;
-    }
-    else
-    {
-        input = std::make_unique<ReadBufferFromFile>(table_file);
-        in = input.get();
-    }
     connection = LocalConnection::createConnection(
-        connection_parameters, global_context, in, need_render_progress, need_render_profile_events, server_display_name);
+        connection_parameters, global_context, need_render_progress, need_render_profile_events, server_display_name);
 }
 
 
@@ -572,7 +568,6 @@ void LocalServer::processConfig()
     const std::string clickhouse_dialect{"clickhouse"};
     load_suggestions = (is_interactive || delayed_interactive) && !config().getBool("disable_suggestion", false)
         && config().getString("dialect", clickhouse_dialect) == clickhouse_dialect;
-    wait_for_suggestions_to_load = config().getBool("wait_for_suggestions_to_load", false);
 
     auto logging = (config().has("logger.console")
                     || config().has("logger.level")
@@ -848,8 +843,6 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
         config().setString("logger.level", options["logger.level"].as<std::string>());
     if (options.count("send_logs_level"))
         config().setString("send_logs_level", options["send_logs_level"].as<std::string>());
-    if (options.count("wait_for_suggestions_to_load"))
-        config().setBool("wait_for_suggestions_to_load", true);
 }
 
 void LocalServer::readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> &, std::vector<Arguments> &)

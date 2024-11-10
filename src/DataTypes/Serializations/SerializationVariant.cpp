@@ -800,7 +800,7 @@ void SerializationVariant::serializeTextJSON(const IColumn & column, size_t row_
 bool SerializationVariant::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String field;
-    if (!tryReadJSONField(field, istr, settings.json))
+    if (!tryReadJSONField(field, istr))
         return false;
     return tryDeserializeTextJSONImpl(column, field, settings);
 }
@@ -808,7 +808,7 @@ bool SerializationVariant::tryDeserializeTextJSON(IColumn & column, ReadBuffer &
 void SerializationVariant::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String field;
-    readJSONField(field, istr, settings.json);
+    readJSONField(field, istr);
     if (!tryDeserializeTextJSONImpl(column, field, settings))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse JSON value of type {} here: {}", variant_name, field);
 }

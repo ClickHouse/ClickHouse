@@ -190,7 +190,7 @@ public:
         data->updateHashWithValue(0, hash);
     }
 
-    void updateWeakHash32(WeakHash32 & hash) const override;
+    WeakHash32 getWeakHash32() const override;
 
     void updateHashFast(SipHash & hash) const override
     {

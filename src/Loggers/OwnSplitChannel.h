@@ -1,7 +1,6 @@
 #pragma once
 
 #include <atomic>
-#include <vector>
 #include <map>
 #include <Poco/AutoPtr.h>
 #include <Poco/Channel.h>

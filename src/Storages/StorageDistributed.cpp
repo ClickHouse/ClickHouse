@@ -283,6 +283,17 @@ size_t getClusterQueriedNodes(const Settings & settings, const ClusterPtr & clus
     return (num_remote_shards + num_local_shards) * settings.max_parallel_replicas;
 }
 
+template <class F>
+void waitFutures(F & futures)
+{
+    for (auto & future : futures)
+        future.wait();
+    /// Make sure there is no exception.
+    for (auto & future : futures)
+        future.get();
+    futures.clear();
+}
+
 }
 
 /// For destruction of std::unique_ptr of type that is incomplete in class definition.
@@ -298,6 +309,10 @@ VirtualColumnsDescription StorageDistributed::createVirtuals()
     auto desc = MergeTreeData::createVirtuals(metadata);
 
     desc.addEphemeral("_shard_num", std::make_shared<DataTypeUInt32>(), "Deprecated. Use function shardNum instead");
+
+    /// Add virtual columns from table with Merge engine.
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "The name of database which the row comes from");
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "The name of table which the row comes from");
 
     return desc;
 }
@@ -1285,27 +1300,31 @@ void StorageDistributed::initializeFromDisk()
 
     /// Make initialization for large number of disks parallel.
     ThreadPool pool(CurrentMetrics::StorageDistributedThreads, CurrentMetrics::StorageDistributedThreadsActive, CurrentMetrics::StorageDistributedThreadsScheduled, disks.size());
-    ThreadPoolCallbackRunnerLocal<void> runner(pool, "DistInit");
+    std::vector<std::future<void>> futures;
 
     for (const DiskPtr & disk : disks)
     {
-        runner([this, disk_to_init = disk]
+        auto future = scheduleFromThreadPool<void>([this, disk_to_init = disk]
         {
             initializeDirectoryQueuesForDisk(disk_to_init);
-        });
+        }, pool, "DistInit");
+        futures.push_back(std::move(future));
     }
-    runner.waitForAllToFinishAndRethrowFirstError();
+    waitFutures(futures);
+    pool.wait();
 
     const auto & paths = getDataPaths();
     std::vector<UInt64> last_increment(paths.size());
     for (size_t i = 0; i < paths.size(); ++i)
     {
-        runner([&paths, &last_increment, i]
+        auto future = scheduleFromThreadPool<void>([&paths, &last_increment, i]
         {
             last_increment[i] = getMaximumFileNumber(paths[i]);
-        });
+        }, pool, "DistInit");
+        futures.push_back(std::move(future));
     }
-    runner.waitForAllToFinishAndRethrowFirstError();
+    waitFutures(futures);
+    pool.wait();
 
     for (const auto inc : last_increment)
     {
@@ -1745,17 +1764,19 @@ void StorageDistributed::flushClusterNodesAllDataImpl(ContextPtr local_context, 
 
         Stopwatch watch;
         ThreadPool pool(CurrentMetrics::StorageDistributedThreads, CurrentMetrics::StorageDistributedThreadsActive, CurrentMetrics::StorageDistributedThreadsScheduled, directory_queues.size());
-        ThreadPoolCallbackRunnerLocal<void> runner(pool, "DistFlush");
+        std::vector<std::future<void>> futures;
 
         for (const auto & node : directory_queues)
         {
-            runner([node_to_flush = node, &settings_changes]
+            auto future = scheduleFromThreadPool<void>([node_to_flush = node, &settings_changes]
             {
                 node_to_flush->flushAllData(settings_changes);
-            });
+            }, pool, "DistFlush");
+            futures.push_back(std::move(future));
         }
 
-        runner.waitForAllToFinishAndRethrowFirstError();
+        waitFutures(futures);
+        pool.wait();
 
         LOG_INFO(log, "Pending INSERT blocks flushed, took {} ms.", watch.elapsedMilliseconds());
     }

@@ -11,6 +11,7 @@ name: Build docker images
         required: false
         type: boolean
         default: false
+
 jobs:
   DockerBuildAarch64:
     runs-on: [self-hosted, style-checker-aarch64]

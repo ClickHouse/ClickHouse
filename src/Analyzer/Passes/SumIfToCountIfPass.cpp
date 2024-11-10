@@ -32,7 +32,7 @@ public:
             return;
 
         auto * function_node = node->as<FunctionNode>();
-        if (!function_node || !function_node->isAggregateFunction())
+        if (!function_node || !function_node->isAggregateFunction() || !function_node->getResultType()->equals(DataTypeUInt64()))
             return;
 
         auto function_name = function_node->getFunctionName();

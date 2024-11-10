@@ -82,7 +82,7 @@ std::vector<Connection *> HedgedConnectionsFactory::getManyConnections(PoolMode 
         }
         case PoolMode::GET_MANY:
         {
-            max_entries = std::min(max_parallel_replicas, shuffled_pools.size());
+            max_entries = max_parallel_replicas;
             break;
         }
     }
@@ -329,7 +329,7 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::processFinishedConnect
         LOG_INFO(log, "Connection failed at try №{}, reason: {}", (shuffled_pool.error_count + 1), fail_message);
         ProfileEvents::increment(ProfileEvents::DistributedConnectionFailTry);
 
-        shuffled_pool.error_count = std::min(pool->getMaxErrorCup(), shuffled_pool.error_count + 1);
+        shuffled_pool.error_count = std::min(pool->getMaxErrorCap(), shuffled_pool.error_count + 1);
         shuffled_pool.slowdown_count = 0;
 
         if (shuffled_pool.error_count >= max_tries)

@@ -114,7 +114,7 @@ StringRef JSONEachRowRowInputFormat::readColumnName(ReadBuffer & buf)
     }
 
     current_column_name.resize(nested_prefix_length);
-    readJSONStringInto(current_column_name, buf, format_settings.json);
+    readJSONStringInto(current_column_name, buf);
     return current_column_name;
 }
 
@@ -123,7 +123,7 @@ void JSONEachRowRowInputFormat::skipUnknownField(StringRef name_ref)
     if (!format_settings.skip_unknown_fields)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field found while parsing JSONEachRow format: {}", name_ref.toString());
 
-    skipJSONField(*in, name_ref, format_settings.json);
+    skipJSONField(*in, name_ref);
 }
 
 void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns)

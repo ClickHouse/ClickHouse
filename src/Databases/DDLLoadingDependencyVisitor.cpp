@@ -11,6 +11,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Poco/String.h>
@@ -199,6 +200,13 @@ void DDLLoadingDependencyVisitor::extractTableNameFromArgument(const ASTFunction
 
         qualified_name.database = table_identifier->getDatabaseName();
         qualified_name.table = table_identifier->shortName();
+    }
+    else if (arg->as<ASTSubquery>())
+    {
+        /// Allow IN subquery.
+        /// Do not add tables from the subquery into dependencies,
+        /// because CREATE will succeed anyway.
+        return;
     }
     else
     {

@@ -861,9 +861,9 @@ size_t HashedArrayDictionary<dictionary_key_type, sharded>::getItemsShortCircuit
             const auto & element = attribute_container[element_index];
 
             if constexpr (is_nullable)
-                set_value(key_index, element, (*attribute.is_index_null)[shard][element_index]);
+                set_value(keys_found, element, (*attribute.is_index_null)[shard][element_index]);
             else
-                set_value(key_index, element, false);
+                set_value(keys_found, element, false);
 
             default_mask[key_index] = 0;
 
@@ -962,9 +962,9 @@ size_t HashedArrayDictionary<dictionary_key_type, sharded>::getItemsShortCircuit
             const auto & element = attribute_container[found_element_index];
 
             if constexpr (is_nullable)
-                set_value(key_index, element, (*attribute.is_index_null)[shard][found_element_index]);
+                set_value(keys_found, element, (*attribute.is_index_null)[shard][found_element_index]);
             else
-                set_value(key_index, element, false);
+                set_value(keys_found, element, false);
         }
     }
 

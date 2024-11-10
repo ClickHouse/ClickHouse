@@ -116,7 +116,7 @@ StorageDictionary::StorageDictionary(
     : StorageDictionary(
         table_id,
         table_id.getFullNameNotQuoted(),
-        context_->getExternalDictionariesLoader().getDictionaryStructure(*dictionary_configuration), /// NOLINT(readability-static-accessed-through-instance)
+        context_->getExternalDictionariesLoader().getDictionaryStructure(*dictionary_configuration),
         dictionary_configuration->getString("dictionary.comment", ""),
         Location::SameDatabaseAndNameAsDictionary,
         context_)

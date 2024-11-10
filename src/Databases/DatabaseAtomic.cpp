@@ -417,9 +417,9 @@ void DatabaseAtomic::assertCanBeDetached(bool cleanup)
 }
 
 DatabaseTablesIteratorPtr
-DatabaseAtomic::getTablesIterator(ContextPtr local_context, const IDatabase::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const
+DatabaseAtomic::getTablesIterator(ContextPtr local_context, const IDatabase::FilterByNameFunction & filter_by_table_name) const
 {
-    auto base_iter = DatabaseOrdinary::getTablesIterator(local_context, filter_by_table_name, skip_not_loaded);
+    auto base_iter = DatabaseOrdinary::getTablesIterator(local_context, filter_by_table_name);
     return std::make_unique<AtomicDatabaseTablesSnapshotIterator>(std::move(typeid_cast<DatabaseTablesSnapshotIterator &>(*base_iter)));
 }
 

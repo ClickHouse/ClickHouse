@@ -89,10 +89,10 @@ struct GroupArraySamplerData
         chassert(lim != 0);
 
         /// With a large number of values, we will generate random numbers several times slower.
-        if (lim <= static_cast<UInt64>(pcg32_fast::max()))
+        if (lim <= static_cast<UInt64>(rng.max()))
             return rng() % lim;
         else
-            return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(pcg32::max()) + 1ULL) + static_cast<UInt64>(rng())) % lim;
+            return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(rng.max()) + 1ULL) + static_cast<UInt64>(rng())) % lim;
     }
 
     void randomShuffle()

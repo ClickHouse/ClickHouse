@@ -590,7 +590,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
                 for (const auto & f : value_field.get<Array>())
                 {
-                    if ((f.isNull() && !is_nullable) || f.isDecimal(f.getType())) /// NOLINT(readability-static-accessed-through-instance)
+                    if ((f.isNull() && !is_nullable) || f.isDecimal(f.getType()))
                         return false;
 
                     auto converted = convertFieldToType(f, *actual_type);
