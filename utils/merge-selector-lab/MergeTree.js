@@ -76,11 +76,11 @@ export class MergeTree {
     mergeParts(parts_to_merge)
     {
         // Compute time required for merge
-        const bytes = d3.sum(parts_to_merge, d => d.bytes);
+        const bytes = parts_to_merge.reduce((sum, part) => sum + part.bytes, 0);
         const merge_duration = this.mergeDuration(bytes, parts_to_merge.length);
         this.beginMergeParts(parts_to_merge);
         this.advanceTime(this.current_time + merge_duration);
-        return finishMergeParts(parts_to_merge);
+        return this.finishMergeParts(parts_to_merge);
     }
 
     beginMergeParts(parts_to_merge)
@@ -110,8 +110,8 @@ export class MergeTree {
         }
 
         const idx = this.parts.length;
-        const bytes = d3.sum(parts_to_merge, d => d.bytes);
-        const utility0 = d3.sum(parts_to_merge, d => d.utility);
+        const bytes = parts_to_merge.reduce((sum, part) => sum + part.bytes, 0);
+        const utility0 = parts_to_merge.reduce((sum, part) => sum + part.utility, 0);
         const log_bytes = Math.log2(bytes);
         const utility = bytes * log_bytes;
         const entropy = (utility - utility0) / bytes;
@@ -122,9 +122,9 @@ export class MergeTree {
             utility,
             entropy,
             created: this.current_time,
-            level: 1 + d3.max(parts_to_merge, d => d.level),
-            begin: d3.min(parts_to_merge, d => d.begin),
-            end: d3.max(parts_to_merge, d => d.end),
+            level: 1 + Math.max(...parts_to_merge.map(d => d.level)),
+            begin: Math.min(...parts_to_merge.map(d => d.begin)),
+            end: Math.max(...parts_to_merge.map(d => d.end)),
             active: true,
             merging: false,
             idx: this.parts.length,
