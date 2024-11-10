@@ -606,7 +606,6 @@ template <typename T> inline constexpr bool IsDataTypeEnum<DataTypeEnum<T>> = tr
     M(Int16) \
     M(Int32) \
     M(Int64) \
-    M(BFloat16) \
     M(Float32) \
     M(Float64)
 
