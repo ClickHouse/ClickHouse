@@ -401,7 +401,9 @@ def generate_ldf(args: argparse.Namespace) -> None:
         Path(git_runner.cwd) / args.directory / DOCKER_LIBRARY_NAME[args.image_type]
     )
     ldf_file.write_text("\n".join(lines))
+    logging.info("The content of LDF file:\n%s", "\n".join(lines))
     if args.commit and path_is_changed(ldf_file):
+        logging.info("Starting committing or %s file", ldf_file)
         ldf_dir = ldf_file.parent
         git_runner(f"git -C {ldf_dir} add {ldf_file}")
         commit_message = (
@@ -409,7 +411,6 @@ def generate_ldf(args: argparse.Namespace) -> None:
             f"The file is generated and committed as following:\n{get_cmdline()}"
         )
         git_runner(f"{GIT_PREFIX} -C {ldf_dir} commit -F -", input=commit_message)
-    print("\n".join(lines))
 
 
 def main() -> None:
