@@ -80,6 +80,13 @@ public:
         return x & 0b1000000000000000;
     }
 
+    constexpr BFloat16 abs() const
+    {
+        BFloat16 res;
+        res.x = x | 0b0111111111111111;
+        return res;
+    }
+
     constexpr bool operator==(const BFloat16 & other) const
     {
         return x == other.x;

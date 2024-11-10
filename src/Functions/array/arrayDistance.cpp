@@ -14,6 +14,31 @@
 #include <immintrin.h>
 #endif
 
+
+namespace
+{
+    inline BFloat16 fabs(BFloat16 x)
+    {
+        return x.abs();
+    }
+
+    inline BFloat16 sqrt(BFloat16 x)
+    {
+        return BFloat16(::sqrtf(Float32(x)));
+    }
+
+    template <typename T>
+    inline BFloat16 pow(BFloat16 x, T p)
+    {
+        return BFloat16(::powf(Float32(x), Float32(p)));
+    }
+
+    inline BFloat16 fmax(BFloat16 x, BFloat16 y)
+    {
+        return BFloat16(::fmaxf(Float32(x), Float32(y)));
+    }
+}
+
 namespace DB
 {
 namespace ErrorCodes
@@ -34,7 +59,7 @@ struct L1Distance
     template <typename FloatType>
     struct State
     {
-        FloatType sum = 0;
+        FloatType sum{};
     };
 
     template <typename ResultType>
@@ -65,7 +90,7 @@ struct L2Distance
     template <typename FloatType>
     struct State
     {
-        FloatType sum = 0;
+        FloatType sum{};
     };
 
     template <typename ResultType>
@@ -82,7 +107,7 @@ struct L2Distance
 
 #if USE_MULTITARGET_CODE
     template <typename ResultType>
-    AVX512_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombine(
+    AVX512BF16_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombine(
         const ResultType * __restrict data_x,
         const ResultType * __restrict data_y,
         size_t i_max,
@@ -90,19 +115,29 @@ struct L2Distance
         size_t & i_y,
         State<ResultType> & state)
     {
-        static constexpr bool is_float32 = std::is_same_v<ResultType, Float32>;
-
         __m512 sums;
-        if constexpr (is_float32)
+        if constexpr (sizeof(ResultType) <= 4)
             sums = _mm512_setzero_ps();
         else
             sums = _mm512_setzero_pd();
 
-        constexpr size_t n = is_float32 ? 16 : 8;
+        constexpr size_t n = sizeof(__m512) / sizeof(ResultType);
 
         for (; i_x + n < i_max; i_x += n, i_y += n)
         {
-            if constexpr (is_float32)
+            if constexpr (sizeof(ResultType) == 2)
+            {
+                __m512 x_1 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_x + i_x)));
+                __m512 x_2 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_x + i_x + n / 2)));
+                __m512 y_1 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_y + i_y)));
+                __m512 y_2 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_y + i_y + n / 2)));
+
+                __m512 differences_1 = _mm512_sub_ps(x_1, y_1);
+                __m512 differences_2 = _mm512_sub_ps(x_2, y_2);
+                sums = _mm512_fmadd_ps(differences_1, differences_1, sums);
+                sums = _mm512_fmadd_ps(differences_2, differences_2, sums);
+            }
+            else if constexpr (sizeof(ResultType) == 4)
             {
                 __m512 x = _mm512_loadu_ps(data_x + i_x);
                 __m512 y = _mm512_loadu_ps(data_y + i_y);
@@ -118,7 +153,7 @@ struct L2Distance
             }
         }
 
-        if constexpr (is_float32)
+        if constexpr (sizeof(ResultType) <= 4)
             state.sum = _mm512_reduce_add_ps(sums);
         else
             state.sum = _mm512_reduce_add_pd(sums);
@@ -128,7 +163,7 @@ struct L2Distance
     template <typename ResultType>
     static ResultType finalize(const State<ResultType> & state, const ConstParams &)
     {
-        return sqrt(state.sum);
+        return sqrt(ResultType(state.sum));
     }
 };
 
@@ -156,13 +191,13 @@ struct LpDistance
     template <typename FloatType>
     struct State
     {
-        FloatType sum = 0;
+        FloatType sum{};
     };
 
     template <typename ResultType>
     static void accumulate(State<ResultType> & state, ResultType x, ResultType y, const ConstParams & params)
     {
-        state.sum += static_cast<ResultType>(std::pow(fabs(x - y), params.power));
+        state.sum += static_cast<ResultType>(pow(fabs(x - y), params.power));
     }
 
     template <typename ResultType>
@@ -174,7 +209,7 @@ struct LpDistance
     template <typename ResultType>
     static ResultType finalize(const State<ResultType> & state, const ConstParams & params)
     {
-        return static_cast<ResultType>(std::pow(state.sum, params.inverted_power));
+        return static_cast<ResultType>(pow(state.sum, params.inverted_power));
     }
 };
 
@@ -187,7 +222,7 @@ struct LinfDistance
     template <typename FloatType>
     struct State
     {
-        FloatType dist = 0;
+        FloatType dist{};
     };
 
     template <typename ResultType>
@@ -218,9 +253,9 @@ struct CosineDistance
     template <typename FloatType>
     struct State
     {
-        FloatType dot_prod = 0;
-        FloatType x_squared = 0;
-        FloatType y_squared = 0;
+        FloatType dot_prod{};
+        FloatType x_squared{};
+        FloatType y_squared{};
     };
 
     template <typename ResultType>
@@ -241,7 +276,7 @@ struct CosineDistance
 
 #if USE_MULTITARGET_CODE
     template <typename ResultType>
-    AVX512_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombine(
+    AVX512BF16_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombine(
         const ResultType * __restrict data_x,
         const ResultType * __restrict data_y,
         size_t i_max,
@@ -249,13 +284,11 @@ struct CosineDistance
         size_t & i_y,
         State<ResultType> & state)
     {
-        static constexpr bool is_float32 = std::is_same_v<ResultType, Float32>;
-
         __m512 dot_products;
         __m512 x_squareds;
         __m512 y_squareds;
 
-        if constexpr (is_float32)
+        if constexpr (sizeof(ResultType) <= 4)
         {
             dot_products = _mm512_setzero_ps();
             x_squareds = _mm512_setzero_ps();
@@ -268,11 +301,19 @@ struct CosineDistance
             y_squareds = _mm512_setzero_pd();
         }
 
-        constexpr size_t n = is_float32 ? 16 : 8;
+        constexpr size_t n = sizeof(__m512) / sizeof(ResultType);
 
         for (; i_x + n < i_max; i_x += n, i_y += n)
         {
-            if constexpr (is_float32)
+            if constexpr (sizeof(ResultType) == 2)
+            {
+                __m512 x = _mm512_loadu_ps(data_x + i_x);
+                __m512 y = _mm512_loadu_ps(data_y + i_y);
+                dot_products = _mm512_dpbf16_ps(dot_products, x, y);
+                x_squareds = _mm512_dpbf16_ps(x_squareds, x, x);
+                y_squareds = _mm512_dpbf16_ps(y_squareds, y, y);
+            }
+            if constexpr (sizeof(ResultType) == 4)
             {
                 __m512 x = _mm512_loadu_ps(data_x + i_x);
                 __m512 y = _mm512_loadu_ps(data_y + i_y);
@@ -290,7 +331,7 @@ struct CosineDistance
             }
         }
 
-        if constexpr (is_float32)
+        if constexpr (sizeof(ResultType) == 2 || sizeof(ResultType) == 4)
         {
             state.dot_prod = _mm512_reduce_add_ps(dot_products);
             state.x_squared = _mm512_reduce_add_ps(x_squareds);
@@ -308,7 +349,7 @@ struct CosineDistance
     template <typename ResultType>
     static ResultType finalize(const State<ResultType> & state, const ConstParams &)
     {
-        return 1 - state.dot_prod / sqrt(state.x_squared * state.y_squared);
+        return ResultType(1) - state.dot_prod / sqrt(state.x_squared * state.y_squared);
     }
 };
 
@@ -353,11 +394,13 @@ public:
                 return std::make_shared<DataTypeFloat64>();
             case TypeIndex::Float32:
                 return std::make_shared<DataTypeFloat32>();
+            case TypeIndex::BFloat16:
+                return std::make_shared<DataTypeBFloat16>();
             default:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Arguments of function {} has nested type {}. "
-                    "Supported types: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
+                    "Supported types: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, BFloat16, Float32, Float64.",
                     getName(),
                     common_type->getName());
         }
@@ -367,6 +410,9 @@ public:
     {
         switch (result_type->getTypeId())
         {
+            case TypeIndex::BFloat16:
+                return executeWithResultType<BFloat16>(arguments, input_rows_count);
+                break;
             case TypeIndex::Float32:
                 return executeWithResultType<Float32>(arguments, input_rows_count);
                 break;
@@ -388,6 +434,7 @@ public:
     ACTION(Int16)   \
     ACTION(Int32)   \
     ACTION(Int64)   \
+    ACTION(BFloat16) \
     ACTION(Float32) \
     ACTION(Float64)
 
@@ -412,7 +459,7 @@ private:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Arguments of function {} has nested type {}. "
-                    "Supported types: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
+                    "Supported types: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, BFloat16, Float32, Float64.",
                     getName(),
                     type_x->getName());
         }
@@ -437,7 +484,7 @@ private:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Arguments of function {} has nested type {}. "
-                    "Supported types: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
+                    "Supported types: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, BFloat16, Float32, Float64.",
                     getName(),
                     type_y->getName());
         }
@@ -548,13 +595,15 @@ private:
 
             /// SIMD optimization: process multiple elements in both input arrays at once.
             /// To avoid combinatorial explosion of SIMD kernels, focus on
-            /// - the two most common input/output types (Float32 x Float32) --> Float32 and (Float64 x Float64) --> Float64 instead of 10 x
-            ///   10 input types x 2 output types,
+            /// - the three most common input/output types (BFloat16 x BFloat16) --> BFloat16,
+            ///   (Float32 x Float32) --> Float32 and (Float64 x Float64) --> Float64
+            ///   instead of 10 x 10 input types x 2 output types,
             /// - const/non-const inputs instead of non-const/non-const inputs
             /// - the two most common metrics L2 and cosine distance,
             /// - the most powerful SIMD instruction set (AVX-512F).
 #if USE_MULTITARGET_CODE
-            if constexpr (std::is_same_v<ResultType, LeftType> && std::is_same_v<ResultType, RightType>) /// ResultType is Float32 or Float64
+            /// ResultType is BFloat16, Float32 or Float64
+            if constexpr (std::is_same_v<ResultType, LeftType> && std::is_same_v<ResultType, RightType>)
             {
                 if constexpr (std::is_same_v<Kernel, L2Distance>
                            || std::is_same_v<Kernel, CosineDistance>)
@@ -638,4 +687,5 @@ FunctionPtr createFunctionArrayL2SquaredDistance(ContextPtr context_) { return F
 FunctionPtr createFunctionArrayLpDistance(ContextPtr context_) { return FunctionArrayDistance<LpDistance>::create(context_); }
 FunctionPtr createFunctionArrayLinfDistance(ContextPtr context_) { return FunctionArrayDistance<LinfDistance>::create(context_); }
 FunctionPtr createFunctionArrayCosineDistance(ContextPtr context_) { return FunctionArrayDistance<CosineDistance>::create(context_); }
+
 }
