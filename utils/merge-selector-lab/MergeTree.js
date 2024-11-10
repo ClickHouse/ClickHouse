@@ -58,6 +58,7 @@ export class MergeTree {
             begin: this.inserted_parts_count,
             end: this.inserted_parts_count + 1,
             active: true,
+            merging: false,
             idx: this.parts.length,
             source_part_count: 1
         };
@@ -73,6 +74,29 @@ export class MergeTree {
 
     // Execute merge
     mergeParts(parts_to_merge)
+    {
+        // Compute time required for merge
+        const bytes = d3.sum(parts_to_merge, d => d.bytes);
+        const merge_duration = this.mergeDuration(bytes, parts_to_merge.length);
+        this.beginMergeParts(parts_to_merge);
+        this.advanceTime(this.current_time + merge_duration);
+        return finishMergeParts(parts_to_merge);
+    }
+
+    beginMergeParts(parts_to_merge)
+    {
+        // Mark parts as participating in a merge
+        for (let p of parts_to_merge)
+        {
+            if (p.active == false)
+                throw { message: "Attempt to begin merge of inactive part", part: p};
+            if (p.merging == true)
+                throw { message: "Attempt to begin merge of part that already participates in another merge", part: p};
+            p.merging = true;
+        }
+    }
+
+    finishMergeParts(parts_to_merge)
     {
         // Validation
         if (parts_to_merge.length < 2)
@@ -92,10 +116,6 @@ export class MergeTree {
         const utility = bytes * log_bytes;
         const entropy = (utility - utility0) / bytes;
 
-        // Compute time required for merge
-        const merge_duration = this.mergeDuration(bytes, parts_to_merge.length);
-        this.advanceTime(this.current_time + merge_duration);
-
         let result = {
             bytes,
             log_bytes,
@@ -106,6 +126,7 @@ export class MergeTree {
             begin: d3.min(parts_to_merge, d => d.begin),
             end: d3.max(parts_to_merge, d => d.end),
             active: true,
+            merging: false,
             idx: this.parts.length,
             source_part_count: parts_to_merge.length,
         };
@@ -117,6 +138,7 @@ export class MergeTree {
             if (p.active == false)
                 throw { message: "Merging inactive part", part: p};
             p.active = false;
+            p.merging = false;
             this.active_part_count--;
         }
         //console.log("MERGE", parts_to_merge, "INTO", result);
