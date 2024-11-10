@@ -4,8 +4,28 @@
 #include <base/types.h>
 
 
-//using BFloat16 = __bf16;
+/** BFloat16 is a 16-bit floating point type, which has the same number (8) of exponent bits as Float32.
+  * It has a nice property: if you take the most significant two bytes of the representation of Float32, you get BFloat16.
+  * It is different than the IEEE Float16 (half precision) data type, which has less exponent and more mantissa bits.
+  *
+  * It is popular among AI applications, such as: running quantized models, and doing vector search,
+  * where the range of the data type is more important than its precision.
+  *
+  * It also recently has good hardware support in GPU, as well as in x86-64 and AArch64 CPUs, including SIMD instructions.
+  * But it is rarely utilized by compilers.
+  *
+  * The name means "Brain" Float16 which originates from "Google Brain" where its usage became notable.
+  * It is also known under the name "bf16". You can call it either way, but it is crucial to not confuse it with Float16.
 
+  * Here is a manual implementation of this data type. Only required operations are implemented.
+  * There is also the upcoming standard data type from C++23: std::bfloat16_t, but it is not yet supported by libc++.
+  * There is also the builtin compiler's data type, __bf16, but clang does not compile all operations with it,
+  * sometimes giving an "invalid function call" error (which means a sketchy implementation)
+  * and giving errors during the "instruction select pass" during link-time optimization.
+  *
+  * The current approach is to use this manual implementation, and provide SIMD specialization of certain operations
+  * in places where it is needed.
+  */
 class BFloat16
 {
 private:
