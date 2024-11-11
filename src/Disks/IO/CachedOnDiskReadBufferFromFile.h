@@ -64,14 +64,46 @@ public:
         CACHED,
         REMOTE_FS_READ_BYPASS_CACHE,
         REMOTE_FS_READ_AND_PUT_IN_CACHE,
+        NONE,
     };
 
     bool isSeekCheap() override;
 
     bool isContentCached(size_t offset, size_t size) override;
 
-private:
+    bool supportsReadAt() override { return true; }
+
+    size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const override;
+
     using ImplementationBufferPtr = std::shared_ptr<ReadBufferFromFileBase>;
+    struct ReadInfo
+    {
+        ImplementationBufferPtr remote_file_reader;
+        ImplementationBufferPtr cache_file_reader;
+
+        const ImplementationBufferCreator implementation_buffer_creator;
+        const bool use_external_buffer;
+        const ReadSettings settings;
+
+        size_t read_until_position = 0;
+        FileSegmentsHolderPtr file_segments;
+
+        ReadInfo(ImplementationBufferCreator impl_creator_, bool use_external_buffer_, const ReadSettings & read_settings_, size_t read_until_position_)
+            : implementation_buffer_creator(impl_creator_), use_external_buffer(use_external_buffer_), settings(read_settings_), read_until_position(read_until_position_)
+        {
+        }
+
+    };
+
+private:
+
+    struct ReadFromFileSegmentState
+    {
+        ReadType read_type = ReadType::NONE;
+        ImplementationBufferPtr buf;
+        size_t bytes_to_predownload = 0;
+    };
+    using ReadFromFileSegmentStatePtr = std::unique_ptr<ReadFromFileSegmentState>;
 
     void initialize();
 
@@ -81,17 +113,35 @@ private:
      */
     FileSegmentsHolderPtr getFileSegments(size_t offset, size_t size) const;
 
-    ImplementationBufferPtr getImplementationBuffer(FileSegment & file_segment);
-
-    ImplementationBufferPtr getReadBufferForFileSegment(FileSegment & file_segment);
-
-    ImplementationBufferPtr getCacheReadBuffer(const FileSegment & file_segment);
-
-    ImplementationBufferPtr getRemoteReadBuffer(FileSegment & file_segment, ReadType read_type_);
-
     bool updateImplementationBufferIfNeeded();
 
-    void predownload(FileSegment & file_segment);
+    static ReadFromFileSegmentStatePtr prepareReadFromFileSegmentState(
+        FileSegment & file_segment,
+        size_t offset,
+        ReadInfo & info,
+        LoggerPtr log);
+
+    static ReadFromFileSegmentStatePtr getReadBufferForFileSegment(
+        FileSegment & file_segment,
+        size_t offset,
+        ReadInfo & info,
+        LoggerPtr log);
+
+    static void predownloadForFileSegment(
+        FileSegment & file_segment,
+        size_t offset,
+        ReadFromFileSegmentState & state,
+        ReadInfo & info,
+        LoggerPtr log);
+
+    static size_t readFromFileSegment(
+        FileSegment & file_segment,
+        size_t & offset,
+        ReadFromFileSegmentState & state,
+        ReadInfo & info,
+        bool reset_downloader_after_read,
+        bool & implementation_buffer_can_be_reused,
+        LoggerPtr log);
 
     bool nextImplStep();
 
@@ -101,35 +151,28 @@ private:
 
     void appendFilesystemCacheLog(const FileSegment & file_segment, ReadType read_type);
 
-    bool writeCache(char * data, size_t size, size_t offset, FileSegment & file_segment);
+    static bool writeCache(
+        char * data,
+        size_t size,
+        size_t offset,
+        FileSegment & file_segment,
+        LoggerPtr log);
 
     static bool canStartFromCache(size_t current_offset, const FileSegment & file_segment);
 
     bool nextFileSegmentsBatch();
 
-    LoggerPtr log;
-    FileCacheKey cache_key;
-    String source_file_path;
+    const LoggerPtr log;
+    const FileCacheKey cache_key;
+    const String source_file_path;
+    const FileCachePtr cache;
 
-    FileCachePtr cache;
-    ReadSettings settings;
-
-    size_t read_until_position;
     size_t file_offset_of_buffer_end = 0;
-    size_t bytes_to_predownload = 0;
 
-    ImplementationBufferCreator implementation_buffer_creator;
+    ReadFromFileSegmentStatePtr state;
+    ReadInfo info;
 
-    /// Remote read buffer, which can only be owned by current buffer.
-    ImplementationBufferPtr remote_file_reader;
-    ImplementationBufferPtr cache_file_reader;
-
-    FileSegmentsHolderPtr file_segments;
-
-    ImplementationBufferPtr implementation_buffer;
     bool initialized = false;
-
-    ReadType read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
 
     static String toString(ReadType type);
 

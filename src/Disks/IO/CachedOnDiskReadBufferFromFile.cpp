@@ -68,9 +68,7 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     , cache_key(cache_key_)
     , source_file_path(source_file_path_)
     , cache(cache_)
-    , settings(settings_)
-    , read_until_position(read_until_position_ ? *read_until_position_ : file_size_)
-    , implementation_buffer_creator(implementation_buffer_creator_)
+    , info(implementation_buffer_creator_, use_external_buffer_, settings_, read_until_position_ ? read_until_position_.value() : file_size_)
     , query_id(query_id_)
     , current_buffer_id(getRandomASCIIString(8))
     , user(user_)
@@ -94,7 +92,7 @@ void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
         .query_id = query_id,
         .source_file_path = source_file_path,
         .file_segment_range = { range.left, range.right },
-        .requested_range = { first_offset, read_until_position },
+        .requested_range = { first_offset, info.read_until_position },
         .file_segment_key = file_segment.key().toString(),
         .file_segment_offset = file_segment.offset(),
         .file_segment_size = range.size(),
@@ -108,6 +106,8 @@ void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
 
     switch (type)
     {
+        case CachedOnDiskReadBufferFromFile::ReadType::NONE:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Read type not set");
         case CachedOnDiskReadBufferFromFile::ReadType::CACHED:
             elem.cache_type = FilesystemCacheLogElement::CacheType::READ_FROM_CACHE;
             break;
@@ -124,24 +124,34 @@ void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
 
 bool CachedOnDiskReadBufferFromFile::nextFileSegmentsBatch()
 {
-    chassert(!file_segments || file_segments->empty());
+    chassert(!info.file_segments || info.file_segments->empty());
     size_t size = getRemainingSizeToRead();
     if (!size)
         return false;
 
-    if (settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
+    if (info.settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
     {
-        file_segments = cache->get(cache_key, file_offset_of_buffer_end, size, settings.filesystem_cache_segments_batch_size, user.user_id);
+        info.file_segments = cache->get(
+            cache_key,
+            file_offset_of_buffer_end,
+            size,
+            info.settings.filesystem_cache_segments_batch_size,
+            user.user_id);
     }
     else
     {
         CreateFileSegmentSettings create_settings(FileSegmentKind::Regular);
-        file_segments = cache->getOrSet(
-            cache_key, file_offset_of_buffer_end, size, file_size.value(),
-            create_settings, settings.filesystem_cache_segments_batch_size, user);
+        info.file_segments = cache->getOrSet(
+            cache_key,
+            file_offset_of_buffer_end,
+            size,
+            file_size.value(),
+            create_settings,
+            info.settings.filesystem_cache_segments_batch_size,
+            user);
     }
 
-    return !file_segments->empty();
+    return !info.file_segments->empty();
 }
 
 void CachedOnDiskReadBufferFromFile::initialize()
@@ -149,7 +159,7 @@ void CachedOnDiskReadBufferFromFile::initialize()
     if (initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Caching buffer already initialized");
 
-    implementation_buffer.reset();
+    state.reset();
 
     /**
      * Segments in returned list are ordered in ascending order and represent a full contiguous
@@ -158,52 +168,62 @@ void CachedOnDiskReadBufferFromFile::initialize()
     if (!nextFileSegmentsBatch())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "List of file segments cannot be empty");
 
-    chassert(!file_segments->empty());
+    chassert(!info.file_segments->empty());
 
     LOG_TEST(
         log,
         "Having {} file segments to read: {}, current read range: [{}, {})",
-        file_segments->size(), file_segments->toString(), file_offset_of_buffer_end, read_until_position);
+        info.file_segments->size(), info.file_segments->toString(), file_offset_of_buffer_end, info.read_until_position);
 
     initialized = true;
 }
 
-CachedOnDiskReadBufferFromFile::ImplementationBufferPtr
-CachedOnDiskReadBufferFromFile::getCacheReadBuffer(const FileSegment & file_segment)
+namespace
+{
+
+using ReadType = CachedOnDiskReadBufferFromFile::ReadType;
+using ReadInfo = CachedOnDiskReadBufferFromFile::ReadInfo;
+
+std::shared_ptr<ReadBufferFromFileBase> getCacheReadBuffer(
+    const FileSegment & file_segment,
+    ReadInfo & info)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::CachedReadBufferCreateBufferMicroseconds);
 
     auto path = file_segment.getPath();
-    if (cache_file_reader)
+    if (info.cache_file_reader)
     {
-        chassert(cache_file_reader->getFileName() == path);
-        if (cache_file_reader->getFileName() == path)
-            return cache_file_reader;
+        chassert(info.cache_file_reader->getFileName() == path);
+        if (info.cache_file_reader->getFileName() == path)
+            return info.cache_file_reader;
 
-        cache_file_reader.reset();
+        info.cache_file_reader.reset();
     }
 
-    ReadSettings local_read_settings{settings};
+    ReadSettings local_read_settings{info.settings};
     local_read_settings.local_fs_method = LocalFSReadMethod::pread;
 
-    if (use_external_buffer)
+    if (info.use_external_buffer)
         local_read_settings.local_fs_buffer_size = 0;
 
-    cache_file_reader
+    info.cache_file_reader
         = createReadBufferFromFileBase(path, local_read_settings, std::nullopt, std::nullopt, file_segment.getFlagsForLocalRead());
 
-    if (getFileSizeFromReadBuffer(*cache_file_reader) == 0)
+    if (getFileSizeFromReadBuffer(*info.cache_file_reader) == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read from an empty cache file: {}", path);
 
-    return cache_file_reader;
+    return info.cache_file_reader;
 }
 
-CachedOnDiskReadBufferFromFile::ImplementationBufferPtr
-CachedOnDiskReadBufferFromFile::getRemoteReadBuffer(FileSegment & file_segment, ReadType read_type_)
+std::shared_ptr<ReadBufferFromFileBase> getRemoteReadBuffer(
+    FileSegment & file_segment,
+    size_t offset,
+    ReadType read_type,
+    ReadInfo & info)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::CachedReadBufferCreateBufferMicroseconds);
 
-    switch (read_type_)
+    switch (read_type)
     {
         case ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE:
         {
@@ -227,7 +247,7 @@ CachedOnDiskReadBufferFromFile::getRemoteReadBuffer(FileSegment & file_segment, 
 
             if (!remote_fs_segment_reader)
             {
-                auto impl = implementation_buffer_creator();
+                auto impl = info.implementation_buffer_creator();
                 if (impl->supportsRightBoundedReads())
                     remote_fs_segment_reader = std::move(impl);
                 else
@@ -246,16 +266,17 @@ CachedOnDiskReadBufferFromFile::getRemoteReadBuffer(FileSegment & file_segment, 
         {
             /// Result buffer is owned only by current buffer -- not shareable like in the case above.
 
-            if (remote_file_reader && remote_file_reader->getFileOffsetOfBufferEnd() == file_offset_of_buffer_end)
-                return remote_file_reader;
+            if (info.remote_file_reader
+                && info.remote_file_reader->getFileOffsetOfBufferEnd() == offset)
+                return info.remote_file_reader;
 
-            auto remote_fs_segment_reader = file_segment.extractRemoteFileReader();
-            if (remote_fs_segment_reader && file_offset_of_buffer_end == remote_fs_segment_reader->getFileOffsetOfBufferEnd())
-                remote_file_reader = remote_fs_segment_reader;
+            auto reader = file_segment.extractRemoteFileReader();
+            if (reader && offset == reader->getFileOffsetOfBufferEnd())
+                info.remote_file_reader = reader;
             else
-                remote_file_reader = implementation_buffer_creator();
+                info.remote_file_reader = info.implementation_buffer_creator();
 
-            return remote_file_reader;
+            return info.remote_file_reader;
         }
         default:
             throw Exception(
@@ -263,6 +284,8 @@ CachedOnDiskReadBufferFromFile::getRemoteReadBuffer(FileSegment & file_segment, 
                 "Cannot use remote filesystem reader with read type: {}",
                 toString(read_type));
     }
+}
+
 }
 
 bool CachedOnDiskReadBufferFromFile::canStartFromCache(size_t current_offset, const FileSegment & file_segment)
@@ -283,22 +306,29 @@ String CachedOnDiskReadBufferFromFile::toString(ReadType type)
     return String(magic_enum::enum_name(type));
 }
 
-CachedOnDiskReadBufferFromFile::ImplementationBufferPtr
-CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegment & file_segment)
+CachedOnDiskReadBufferFromFile::ReadFromFileSegmentStatePtr CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(
+    FileSegment & file_segment,
+    size_t offset,
+    ReadInfo & info_,
+    LoggerPtr log)
 {
+    auto result = std::make_unique<ReadFromFileSegmentState>();
     auto download_state = file_segment.state();
 
-    if (settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
+    if (info_.settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
     {
         if (download_state == FileSegment::State::DOWNLOADED)
         {
-            read_type = ReadType::CACHED;
-            return getCacheReadBuffer(file_segment);
+            result->read_type = ReadType::CACHED;
+            result->buf = getCacheReadBuffer(file_segment, info_);
+            return result;
         }
 
         LOG_TEST(log, "Bypassing cache because `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` option is used");
-        read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
-        return getRemoteReadBuffer(file_segment, read_type);
+
+        result->read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
+        result->buf = getRemoteReadBuffer(file_segment, offset, result->read_type, info_);
+        return result;
     }
 
     while (true)
@@ -308,12 +338,14 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegment & file_s
             case FileSegment::State::DETACHED:
             {
                 LOG_TRACE(log, "Bypassing cache because file segment state is `DETACHED`");
-                read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
-                return getRemoteReadBuffer(file_segment, read_type);
+
+                result->read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
+                result->buf = getRemoteReadBuffer(file_segment, offset, result->read_type, info_);
+                return result;
             }
             case FileSegment::State::DOWNLOADING:
             {
-                if (canStartFromCache(file_offset_of_buffer_end, file_segment))
+                if (canStartFromCache(offset, file_segment))
                 {
                     ///                      segment{k} state: DOWNLOADING
                     /// cache:           [______|___________
@@ -321,24 +353,26 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegment & file_s
                     ///                         current_write_offset (in progress)
                     /// requested_range:    [__________]
                     ///                     ^
-                    ///                     file_offset_of_buffer_end
+                    ///                     offset
 
-                    read_type = ReadType::CACHED;
-                    return getCacheReadBuffer(file_segment);
+                    result->read_type = ReadType::CACHED;
+                    result->buf = getCacheReadBuffer(file_segment, info_);
+                    return result;
                 }
 
-                download_state = file_segment.wait(file_offset_of_buffer_end);
+                download_state = file_segment.wait(offset);
                 continue;
             }
             case FileSegment::State::DOWNLOADED:
             {
-                read_type = ReadType::CACHED;
-                return getCacheReadBuffer(file_segment);
+                result->read_type = ReadType::CACHED;
+                result->buf = getCacheReadBuffer(file_segment, info_);
+                return result;
             }
             case FileSegment::State::EMPTY:
             case FileSegment::State::PARTIALLY_DOWNLOADED:
             {
-                if (canStartFromCache(file_offset_of_buffer_end, file_segment))
+                if (canStartFromCache(offset, file_segment))
                 {
                     ///                      segment{k} state: PARTIALLY_DOWNLOADED
                     /// cache:           [______|___________
@@ -346,16 +380,17 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegment & file_s
                     ///                         current_write_offset (in progress)
                     /// requested_range:    [__________]
                     ///                     ^
-                    ///                     file_offset_of_buffer_end
+                    ///                     offset
 
-                    read_type = ReadType::CACHED;
-                    return getCacheReadBuffer(file_segment);
+                    result->read_type = ReadType::CACHED;
+                    result->buf = getCacheReadBuffer(file_segment, info_);
+                    return result;
                 }
 
                 auto downloader_id = file_segment.getOrSetDownloader();
                 if (downloader_id == FileSegment::getCallerId())
                 {
-                    if (canStartFromCache(file_offset_of_buffer_end, file_segment))
+                    if (canStartFromCache(offset, file_segment))
                     {
                         ///                      segment{k}
                         /// cache:           [______|___________
@@ -363,15 +398,17 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegment & file_s
                         ///                         current_write_offset
                         /// requested_range:    [__________]
                         ///                     ^
-                        ///                     file_offset_of_buffer_end
+                        ///                     offset
 
-                        read_type = ReadType::CACHED;
                         file_segment.resetDownloader();
-                        return getCacheReadBuffer(file_segment);
+
+                        result->read_type = ReadType::CACHED;
+                        result->buf = getCacheReadBuffer(file_segment, info_);
+                        return result;
                     }
 
                     auto current_write_offset = file_segment.getCurrentWriteOffset();
-                    if (current_write_offset < file_offset_of_buffer_end)
+                    if (current_write_offset < offset)
                     {
                         ///                   segment{1}
                         /// cache:         [_____|___________
@@ -379,16 +416,18 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegment & file_s
                         ///                      current_write_offset
                         /// requested_range:          [__________]
                         ///                           ^
-                        ///                           file_offset_of_buffer_end
+                        ///                           offset
 
                         LOG_TEST(log, "Predownload. File segment info: {}", file_segment.getInfoForLog());
-                        chassert(file_offset_of_buffer_end > current_write_offset);
-                        bytes_to_predownload = file_offset_of_buffer_end - current_write_offset;
-                        chassert(bytes_to_predownload < file_segment.range().size());
+                        chassert(offset > current_write_offset);
+
+                        result->bytes_to_predownload = offset - current_write_offset;
+                        chassert(result->bytes_to_predownload < file_segment.range().size());
                     }
 
-                    read_type = ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE;
-                    return getRemoteReadBuffer(file_segment, read_type);
+                    result->read_type = ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE;
+                    result->buf = getRemoteReadBuffer(file_segment, offset, result->read_type, info_);
+                    return result;
                 }
 
                 download_state = file_segment.state();
@@ -396,66 +435,75 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegment & file_s
             }
             case FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION:
             {
-                if (canStartFromCache(file_offset_of_buffer_end, file_segment))
+                if (canStartFromCache(offset, file_segment))
                 {
-                    read_type = ReadType::CACHED;
-                    return getCacheReadBuffer(file_segment);
+                    result->read_type = ReadType::CACHED;
+                    result->buf = getCacheReadBuffer(file_segment, info_);
+                    return result;
                 }
 
                 LOG_TRACE(
                     log,
                     "Bypassing cache because file segment state is "
                     "`PARTIALLY_DOWNLOADED_NO_CONTINUATION` and downloaded part already used");
-                read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
-                return getRemoteReadBuffer(file_segment, read_type);
+
+                result->read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
+                result->buf = getRemoteReadBuffer(file_segment, offset, result->read_type, info_);
+                return result;
             }
         }
     }
 }
 
-CachedOnDiskReadBufferFromFile::ImplementationBufferPtr
-CachedOnDiskReadBufferFromFile::getImplementationBuffer(FileSegment & file_segment)
+CachedOnDiskReadBufferFromFile::ReadFromFileSegmentStatePtr CachedOnDiskReadBufferFromFile::prepareReadFromFileSegmentState(
+    FileSegment & file_segment,
+    size_t offset,
+    ReadInfo & info,
+    LoggerPtr log)
 {
     chassert(!file_segment.isDownloader());
-    chassert(file_offset_of_buffer_end >= file_segment.range().left);
+    chassert(offset >= file_segment.range().left);
 
     auto range = file_segment.range();
-    bytes_to_predownload = 0;
 
     Stopwatch watch(CLOCK_MONOTONIC);
 
-    auto read_buffer_for_file_segment = getReadBufferForFileSegment(file_segment);
+    auto state = getReadBufferForFileSegment(file_segment, offset, info, log);
 
     watch.stop();
 
     LOG_TEST(
         log,
         "Current read type: {}, read offset: {}, impl read range: {}, file segment: {}",
-        toString(read_type),
-        file_offset_of_buffer_end,
-        read_buffer_for_file_segment->getFileOffsetOfBufferEnd(),
+        toString(state->read_type),
+        offset,
+        state->buf->getFileOffsetOfBufferEnd(),
         file_segment.getInfoForLog());
 
-    current_file_segment_counters.increment(
-        ProfileEvents::FileSegmentWaitReadBufferMicroseconds, watch.elapsedMicroseconds());
+    // current_file_segment_counters.increment(
+    //     ProfileEvents::FileSegmentWaitReadBufferMicroseconds, watch.elapsedMicroseconds());
 
     ProfileEvents::increment(ProfileEvents::FileSegmentWaitReadBufferMicroseconds, watch.elapsedMicroseconds());
 
-    [[maybe_unused]] auto download_current_segment = read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE;
+    [[maybe_unused]] auto download_current_segment = state->read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE;
     chassert(download_current_segment == file_segment.isDownloader());
 
     chassert(file_segment.range() == range);
-    chassert(file_offset_of_buffer_end >= range.left && file_offset_of_buffer_end <= range.right);
+    chassert(offset >= range.left && offset <= range.right);
 
-    read_buffer_for_file_segment->setReadUntilPosition(range.right + 1); /// [..., range.right]
+    state->buf->setReadUntilPosition(range.right + 1); /// [..., range.right]
 
-    switch (read_type)
+    switch (state->read_type)
     {
+        case ReadType::NONE:
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Read type not set");
+        }
         case ReadType::CACHED:
         {
 #ifdef DEBUG_OR_SANITIZER_BUILD
-            size_t file_size = getFileSizeFromReadBuffer(*read_buffer_for_file_segment);
-            if (file_size == 0 || range.left + file_size <= file_offset_of_buffer_end)
+            size_t file_size = getFileSizeFromReadBuffer(*state->buf);
+            if (file_size == 0 || range.left + file_size <= offset)
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Unexpected state of cache file. Cache file size: {}, cache file offset: {}, "
@@ -464,54 +512,54 @@ CachedOnDiskReadBufferFromFile::getImplementationBuffer(FileSegment & file_segme
                     file_size,
                     range.left,
                     range.left + file_size,
-                    file_offset_of_buffer_end);
+                    offset);
 #endif
 
-            size_t seek_offset = file_offset_of_buffer_end - range.left;
+            size_t seek_offset = offset - range.left;
 
-            if (file_offset_of_buffer_end < range.left)
+            if (offset < range.left)
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Invariant failed. Expected {} > {} (current offset > file segment's start offset)",
-                    file_offset_of_buffer_end,
+                    offset,
                     range.left);
 
-            read_buffer_for_file_segment->seek(seek_offset, SEEK_SET);
+            state->buf->seek(seek_offset, SEEK_SET);
 
             break;
         }
         case ReadType::REMOTE_FS_READ_BYPASS_CACHE:
         {
-            read_buffer_for_file_segment->seek(file_offset_of_buffer_end, SEEK_SET);
+            state->buf->seek(offset, SEEK_SET);
             break;
         }
         case ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE:
         {
             chassert(file_segment.isDownloader());
 
-            if (bytes_to_predownload)
+            if (state->bytes_to_predownload)
             {
                 const size_t current_write_offset = file_segment.getCurrentWriteOffset();
-                read_buffer_for_file_segment->seek(current_write_offset, SEEK_SET);
+                state->buf->seek(current_write_offset, SEEK_SET);
             }
             else
             {
-                read_buffer_for_file_segment->seek(file_offset_of_buffer_end, SEEK_SET);
+                state->buf->seek(offset, SEEK_SET);
 
-                chassert(read_buffer_for_file_segment->getFileOffsetOfBufferEnd() == file_offset_of_buffer_end);
+                chassert(state->buf->getFileOffsetOfBufferEnd() == offset);
             }
 
             const auto current_write_offset = file_segment.getCurrentWriteOffset();
-            if (current_write_offset != static_cast<size_t>(read_buffer_for_file_segment->getPosition()))
+            if (current_write_offset != static_cast<size_t>(state->buf->getPosition()))
             {
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Buffer's offsets mismatch. Cached buffer offset: {}, current_write_offset: {}, "
                     "implementation buffer position: {}, implementation buffer end position: {}, file segment info: {}",
-                    file_offset_of_buffer_end,
+                    offset,
                     current_write_offset,
-                    read_buffer_for_file_segment->getPosition(),
-                    read_buffer_for_file_segment->getFileOffsetOfBufferEnd(),
+                    state->buf->getPosition(),
+                    state->buf->getFileOffsetOfBufferEnd(),
                     file_segment.getInfoForLog());
             }
 
@@ -519,29 +567,29 @@ CachedOnDiskReadBufferFromFile::getImplementationBuffer(FileSegment & file_segme
         }
     }
 
-    chassert(!read_buffer_for_file_segment->hasPendingData());
-
-    return read_buffer_for_file_segment;
+    chassert(!state->buf->hasPendingData());
+    return state;
 }
 
 bool CachedOnDiskReadBufferFromFile::completeFileSegmentAndGetNext()
 {
-    auto * current_file_segment = &file_segments->front();
+    auto * current_file_segment = &info.file_segments->front();
     auto completed_range = current_file_segment->range();
 
-    if (cache_log)
-        appendFilesystemCacheLog(*current_file_segment, read_type);
+    if (cache_log && state)
+        appendFilesystemCacheLog(*current_file_segment, state->read_type);
 
     chassert(file_offset_of_buffer_end > completed_range.right);
-    cache_file_reader.reset();
+    info.cache_file_reader.reset();
 
-    file_segments->completeAndPopFront(settings.filesystem_cache_allow_background_download);
-    if (file_segments->empty() && !nextFileSegmentsBatch())
+    info.file_segments->completeAndPopFront(info.settings.filesystem_cache_allow_background_download);
+    if (info.file_segments->empty() && !nextFileSegmentsBatch())
         return false;
 
-    current_file_segment = &file_segments->front();
+    current_file_segment = &info.file_segments->front();
     current_file_segment->increasePriority();
-    implementation_buffer = getImplementationBuffer(*current_file_segment);
+
+    state = prepareReadFromFileSegmentState(*current_file_segment, file_offset_of_buffer_end, info, log);
 
     LOG_TEST(
         log, "New segment range: {}, old range: {}",
@@ -552,32 +600,37 @@ bool CachedOnDiskReadBufferFromFile::completeFileSegmentAndGetNext()
 
 CachedOnDiskReadBufferFromFile::~CachedOnDiskReadBufferFromFile()
 {
-    if (cache_log && file_segments && !file_segments->empty())
+    if (cache_log && info.file_segments && !info.file_segments->empty() && state)
     {
-        appendFilesystemCacheLog(file_segments->front(), read_type);
+        appendFilesystemCacheLog(info.file_segments->front(), state->read_type);
     }
 
-    if (file_segments && !file_segments->empty() && !file_segments->front().isCompleted())
+    if (info.file_segments && !info.file_segments->empty() && !info.file_segments->front().isCompleted())
     {
-        file_segments->completeAndPopFront(settings.filesystem_cache_allow_background_download);
-        file_segments = {};
+        info.file_segments->completeAndPopFront(info.settings.filesystem_cache_allow_background_download);
+        info.file_segments = {};
     }
 }
 
-void CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
+void CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
+    FileSegment & file_segment,
+    size_t offset,
+    ReadFromFileSegmentState & state,
+    ReadInfo & info,
+    LoggerPtr log)
 {
     Stopwatch predownload_watch(CLOCK_MONOTONIC);
     SCOPE_EXIT({
         predownload_watch.stop();
-        current_file_segment_counters.increment(
-            ProfileEvents::FileSegmentPredownloadMicroseconds, predownload_watch.elapsedMicroseconds());
+        // current_file_segment_counters.increment(
+        //     ProfileEvents::FileSegmentPredownloadMicroseconds, predownload_watch.elapsedMicroseconds());
     });
 
     OpenTelemetry::SpanHolder span("CachedOnDiskReadBufferFromFile::predownload");
     span.addAttribute("clickhouse.key", file_segment.key().toString());
-    span.addAttribute("clickhouse.size", bytes_to_predownload);
+    span.addAttribute("clickhouse.size", state.bytes_to_predownload);
 
-    if (bytes_to_predownload)
+    if (state.bytes_to_predownload)
     {
         /// Consider this case. Some user needed segment [a, b] and downloaded it partially.
         /// But before he called complete(state) or his holder called complete(),
@@ -585,49 +638,58 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
         /// downloaded because it intersects with the range he needs.
         /// But then first downloader fails and second must continue. In this case we need to
         /// download from offset a'' < a', but return buffer from offset a'.
-        LOG_TEST(log, "Bytes to predownload: {}, caller_id: {}", bytes_to_predownload, FileSegment::getCallerId());
+        LOG_TEST(log, "Bytes to predownload: {}, caller_id: {}, buffer size: {}",
+                 state.bytes_to_predownload, FileSegment::getCallerId(), state.buf->internalBuffer().size());
 
-        /// chassert(implementation_buffer->getFileOffsetOfBufferEnd() == file_segment.getCurrentWriteOffset());
+        /// chassert(state.buf->getFileOffsetOfBufferEnd() == file_segment.getCurrentWriteOffset());
         size_t current_offset = file_segment.getCurrentWriteOffset();
-        chassert(static_cast<size_t>(implementation_buffer->getPosition()) == current_offset);
+        chassert(static_cast<size_t>(state.buf->getPosition()) == current_offset);
         const auto & current_range = file_segment.range();
 
+        size_t initial_buffer_size = state.buf->internalBuffer().size();
+        bool resized = false;
         while (true)
         {
-            bool has_more_data;
+            bool has_more_data = false;
+            if (state.bytes_to_predownload)
             {
                 Stopwatch watch(CLOCK_MONOTONIC);
 
-                has_more_data = !implementation_buffer->eof();
+                if (state.bytes_to_predownload < state.buf->internalBuffer().size())
+                {
+                    state.buf->set(state.buf->internalBuffer().begin(), state.bytes_to_predownload);
+                    resized = true;
+                }
+                has_more_data = !state.buf->eof();
+                if (resized)
+                    chassert(state.buf->available() == state.bytes_to_predownload);
 
                 watch.stop();
                 auto elapsed = watch.elapsedMicroseconds();
-                current_file_segment_counters.increment(ProfileEvents::FileSegmentReadMicroseconds, elapsed);
+                // current_file_segment_counters.increment(ProfileEvents::FileSegmentReadMicroseconds, elapsed);
                 ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromSourceMicroseconds, elapsed);
             }
 
-            if (!bytes_to_predownload || !has_more_data)
+            if (!state.bytes_to_predownload || !has_more_data)
             {
-                if (bytes_to_predownload)
+                if (state.bytes_to_predownload)
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Failed to predownload remaining {} bytes. Current file segment: {}, "
                         "current download offset: {}, expected: {}, eof: {}",
-                        bytes_to_predownload,
+                        state.bytes_to_predownload,
                         current_range.toString(),
                         file_segment.getCurrentWriteOffset(),
-                        file_offset_of_buffer_end,
-                        implementation_buffer->eof());
+                        offset,
+                        state.buf->eof());
 
-                auto result = implementation_buffer->hasPendingData();
+                auto result = state.buf->hasPendingData();
 
                 if (result)
                 {
-                    nextimpl_working_buffer_offset = implementation_buffer->offset();
-
                     auto current_write_offset = file_segment.getCurrentWriteOffset();
-                    if (current_write_offset != static_cast<size_t>(implementation_buffer->getPosition())
-                        || current_write_offset != file_offset_of_buffer_end)
+                    if (current_write_offset != static_cast<size_t>(state.buf->getPosition())
+                        || current_write_offset != offset)
                     {
                         throw Exception(
                             ErrorCodes::LOGICAL_ERROR,
@@ -635,8 +697,8 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
                             "cached buffer offset: {}, implementation buffer offset: {}, "
                             "file segment info: {}",
                             current_write_offset,
-                            file_offset_of_buffer_end,
-                            implementation_buffer->getPosition(),
+                            offset,
+                            state.buf->getPosition(),
                             file_segment.getInfoForLog());
                     }
                 }
@@ -644,34 +706,47 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
                 break;
             }
 
-            size_t current_impl_buffer_size = implementation_buffer->buffer().size();
-            size_t current_predownload_size = std::min(current_impl_buffer_size, bytes_to_predownload);
+            size_t current_impl_buffer_size = state.buf->buffer().size();
+            size_t current_predownload_size = std::min(current_impl_buffer_size, state.bytes_to_predownload);
+            chassert(current_predownload_size > 0);
 
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromSourceBytes, current_impl_buffer_size);
             ProfileEvents::increment(ProfileEvents::CachedReadBufferPredownloadedBytes, current_impl_buffer_size);
 
             std::string failure_reason;
             bool continue_predownload = file_segment.reserve(
-                current_predownload_size, settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds, failure_reason);
+                current_predownload_size,
+                info.settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds,
+                failure_reason);
+
             if (continue_predownload)
             {
-                LOG_TEST(log, "Left to predownload: {}, buffer size: {}", bytes_to_predownload, current_impl_buffer_size);
+                LOG_TEST(log, "Left to predownload: {}, buffer size: {}", state.bytes_to_predownload, current_impl_buffer_size);
 
-                chassert(file_segment.getCurrentWriteOffset() == static_cast<size_t>(implementation_buffer->getPosition()));
+                chassert(file_segment.getCurrentWriteOffset() == static_cast<size_t>(state.buf->getPosition()));
 
-                continue_predownload = writeCache(implementation_buffer->buffer().begin(), current_predownload_size, current_offset, file_segment);
+                continue_predownload = writeCache(
+                    state.buf->buffer().begin(),
+                    current_predownload_size,
+                    current_offset,
+                    file_segment,
+                    log);
+
                 if (continue_predownload)
                 {
                     current_offset += current_predownload_size;
 
-                    bytes_to_predownload -= current_predownload_size;
-                    implementation_buffer->position() += current_predownload_size;
+                    chassert(state.bytes_to_predownload >= current_predownload_size);
+                    state.bytes_to_predownload -= current_predownload_size;
+                    state.buf->position() += current_predownload_size;
                 }
                 else
                 {
                     LOG_TEST(log, "Bypassing cache because writeCache (in predownload) method failed");
                 }
             }
+            if (resized)
+                state.buf->set(state.buf->internalBuffer().begin(), initial_buffer_size);
 
             if (!continue_predownload)
             {
@@ -690,29 +765,28 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
                 /// seek is only allowed once for ReadBufferForS3 - before call to nextImpl.
                 /// TODO: allow seek more than once with seek avoiding.
 
-                bytes_to_predownload = 0;
+                state.bytes_to_predownload = 0;
                 file_segment.completePartAndResetDownloader();
                 chassert(file_segment.state() == FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
 
                 LOG_TEST(log, "Bypassing cache because for {}", file_segment.getInfoForLog());
 
-                read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
+                state.read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
+                /// Reset working buffer.
+                state.buf->set(state.buf->internalBuffer().begin(), state.buf->internalBuffer().size());
 
-                swap(*implementation_buffer);
-                resetWorkingBuffer();
+                auto buf = getRemoteReadBuffer(file_segment, offset, state.read_type, info);
+                buf.swap(state.buf);
+                state.buf = buf;
 
-                implementation_buffer = getRemoteReadBuffer(file_segment, read_type);
-
-                swap(*implementation_buffer);
-
-                implementation_buffer->setReadUntilPosition(file_segment.range().right + 1); /// [..., range.right]
-                implementation_buffer->seek(file_offset_of_buffer_end, SEEK_SET);
+                state.buf->setReadUntilPosition(file_segment.range().right + 1); /// [..., range.right]
+                state.buf->seek(offset, SEEK_SET);
 
                 LOG_TRACE(
                     log,
                     "Predownload failed because of space limit. "
                     "Will read from remote filesystem starting from offset: {}",
-                    file_offset_of_buffer_end);
+                    offset);
 
                 break;
             }
@@ -722,8 +796,8 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
 
 bool CachedOnDiskReadBufferFromFile::updateImplementationBufferIfNeeded()
 {
-    chassert(!file_segments->empty());
-    auto & file_segment = file_segments->front();
+    chassert(!info.file_segments->empty());
+    auto & file_segment = info.file_segments->front();
     const auto & current_read_range = file_segment.range();
     auto current_state = file_segment.state();
 
@@ -735,7 +809,7 @@ bool CachedOnDiskReadBufferFromFile::updateImplementationBufferIfNeeded()
         return completeFileSegmentAndGetNext();
     }
 
-    if (read_type == ReadType::CACHED && current_state != FileSegment::State::DOWNLOADED)
+    if (state->read_type == ReadType::CACHED && current_state != FileSegment::State::DOWNLOADED)
     {
         /// If current read_type is ReadType::CACHED and file segment is not DOWNLOADED,
         /// it means the following case, e.g. we started from CacheReadBuffer and continue with RemoteFSReadBuffer.
@@ -749,14 +823,14 @@ bool CachedOnDiskReadBufferFromFile::updateImplementationBufferIfNeeded()
 
         if (file_offset_of_buffer_end >= file_segment.getCurrentWriteOffset())
         {
-            implementation_buffer = getImplementationBuffer(file_segment);
+            state = prepareReadFromFileSegmentState(file_segment, file_offset_of_buffer_end, info, log);
             return true;
         }
     }
-    else if (read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE)
+    else if (state->read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE)
     {
         /**
-        * ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE means that on previous getImplementationBuffer() call
+        * ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE means that on previous prepareReadFromFileSegmentState() call
         * current buffer successfully called file_segment->getOrSetDownloader() and became a downloader
         * for this file segment. However, the downloader's term has a lifespan of 1 nextImpl() call,
         * e.g. downloader reads buffer_size byte and calls completePartAndResetDownloader() and some other
@@ -768,13 +842,18 @@ bool CachedOnDiskReadBufferFromFile::updateImplementationBufferIfNeeded()
         * to read by marks range given to him. Therefore, each nextImpl() call, in case of
         * READ_AND_PUT_IN_CACHE, starts with getOrSetDownloader().
         */
-        implementation_buffer = getImplementationBuffer(file_segment);
+        state = prepareReadFromFileSegmentState(file_segment, file_offset_of_buffer_end, info, log);
     }
 
     return true;
 }
 
-bool CachedOnDiskReadBufferFromFile::writeCache(char * data, size_t size, size_t offset, FileSegment & file_segment)
+bool CachedOnDiskReadBufferFromFile::writeCache(
+    char * data,
+    size_t size,
+    size_t offset,
+    FileSegment & file_segment,
+    LoggerPtr log)
 {
     Stopwatch watch(CLOCK_MONOTONIC);
 
@@ -796,7 +875,7 @@ bool CachedOnDiskReadBufferFromFile::writeCache(char * data, size_t size, size_t
 
     watch.stop();
     auto elapsed = watch.elapsedMicroseconds();
-    current_file_segment_counters.increment(ProfileEvents::FileSegmentCacheWriteMicroseconds, elapsed);
+    // current_file_segment_counters.increment(ProfileEvents::FileSegmentCacheWriteMicroseconds, elapsed);
     ProfileEvents::increment(ProfileEvents::CachedReadBufferCacheWriteMicroseconds, elapsed);
     ProfileEvents::increment(ProfileEvents::CachedReadBufferCacheWriteBytes, size);
 
@@ -820,14 +899,14 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 {
     last_caller_id = FileSegment::getCallerId();
 
-    chassert(file_offset_of_buffer_end <= read_until_position);
-    if (file_offset_of_buffer_end == read_until_position)
+    chassert(file_offset_of_buffer_end <= info.read_until_position);
+    if (file_offset_of_buffer_end == info.read_until_position)
         return false;
 
     if (!initialized)
         initialize();
 
-    if (file_segments->empty() && !nextFileSegmentsBatch())
+    if (info.file_segments->empty() && !nextFileSegmentsBatch())
         return false;
 
     const size_t original_buffer_size = internal_buffer.size();
@@ -840,12 +919,12 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
             if (std::uncaught_exceptions() > 0)
                 nextimpl_step_log_info = getInfoForLog();
 
-            if (file_segments->empty())
+            if (info.file_segments->empty())
                 return;
 
-            auto & file_segment = file_segments->front();
+            auto & file_segment = info.file_segments->front();
 
-            bool download_current_segment = read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE;
+            bool download_current_segment = state ? state->read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE : false;
             if (download_current_segment)
             {
                 bool need_complete_file_segment = file_segment.isDownloader();
@@ -869,9 +948,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         }
     });
 
-    bytes_to_predownload = 0;
-
-    if (implementation_buffer)
+    if (state && state->buf)
     {
         bool can_read_further = updateImplementationBufferIfNeeded();
         if (!can_read_further)
@@ -879,28 +956,33 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     }
     else
     {
-        implementation_buffer = getImplementationBuffer(file_segments->front());
-        file_segments->front().increasePriority();
+        state = prepareReadFromFileSegmentState(info.file_segments->front(), file_offset_of_buffer_end, info, log);
+        info.file_segments->front().increasePriority();
     }
 
     chassert(!internal_buffer.empty());
 
-    auto & file_segment = file_segments->front();
+    auto & file_segment = info.file_segments->front();
     const auto & current_read_range = file_segment.range();
 
-    if (use_external_buffer && read_type == ReadType::CACHED)
+    if (use_external_buffer && state->read_type == ReadType::CACHED)
     {
-        /// We allocate buffers not less than 1M so that s3 requests will not be too small. But the same buffers (members of AsynchronousReadIndirectBufferFromRemoteFS)
-        /// are used for reading from files. Some of these readings are fairly small and their performance degrade when we use big buffers (up to ~20% for queries like Q23 from ClickBench).
-        if (settings.local_fs_buffer_size < internal_buffer.size())
-            internal_buffer.resize(settings.local_fs_buffer_size);
+        /// We allocate buffers not less than 1M so that s3 requests will not be too small.
+        /// But the same buffers (members of AsynchronousReadIndirectBufferFromRemoteFS)
+        /// are used for reading from files.
+        /// Some of these readings are fairly small and their performance degrade when we use big buffers
+        /// (up to ~20% for queries like Q23 from ClickBench).
+        if (info.settings.local_fs_buffer_size < internal_buffer.size())
+            internal_buffer.resize(info.settings.local_fs_buffer_size);
 
-        /// It would make sense to reduce buffer size to what is left to read (when we read the last segment) regardless of the read_type.
-        /// But we have to use big enough buffers when we [pre]download segments to amortize netw and FileCache overhead (space reservation and relevant locks).
-        if (file_segments->size() == 1)
+        /// It would make sense to reduce buffer size to what is left to read
+        /// (when we read the last segment) regardless of the read_type.
+        /// But we have to use big enough buffers when we [pre]download segments
+        /// to amortize netw and FileCache overhead (space reservation and relevant locks).
+        if (info.file_segments->size() == 1)
         {
             const size_t remaining_size_to_read
-                = std::min(current_read_range.right, read_until_position - 1) - file_offset_of_buffer_end + 1;
+                = std::min(current_read_range.right, info.read_until_position - 1) - file_offset_of_buffer_end + 1;
             const size_t new_buf_size = std::min(internal_buffer.size(), remaining_size_to_read);
             chassert((internal_buffer.size() >= nextimpl_working_buffer_offset + new_buf_size) && (new_buf_size > 0));
             internal_buffer.resize(nextimpl_working_buffer_offset + new_buf_size);
@@ -909,49 +991,80 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
     // Pass a valid external buffer for implementation_buffer to read into.
     // We then take it back with another swap() after reading is done.
-    // (If we get an exception in between, we'll be left with an invalid internal_buffer. That's ok, as long as
-    // the caller doesn't try to use this CachedOnDiskReadBufferFromFile after it threw an exception.)
-    swap(*implementation_buffer);
+    // (If we get an exception in between, we'll be left with an invalid internal_buffer.
+    // That's ok, as long as the caller doesn't try to use this CachedOnDiskReadBufferFromFile
+    // after it threw an exception.)
+    swap(*state->buf);
+
+    const auto size = readFromFileSegment(
+        file_segment,
+        file_offset_of_buffer_end,
+        *state,
+        info,
+        /* reset_downloader_after_read */true,
+        implementation_buffer_can_be_reused,
+        log);
+
+    if (size)
+    {
+        nextimpl_working_buffer_offset = state->buf->offset();
+        current_file_segment_counters.increment(ProfileEvents::FileSegmentUsedBytes, size);
+    }
+
+    swap(*state->buf);
+    if (file_offset_of_buffer_end > current_read_range.right)
+        completeFileSegmentAndGetNext();
+
+    return size;
+}
+
+size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
+    FileSegment & file_segment,
+    size_t & offset,
+    ReadFromFileSegmentState & state,
+    ReadInfo & info,
+    bool reset_downloader_after_read,
+    bool & implementation_buffer_can_be_reused,
+    LoggerPtr log)
+{
+    const auto & current_read_range = file_segment.range();
 
     LOG_TEST(
         log,
-        "Current read type: {}, read offset: {}, impl offset: {}, impl position: {}, file segment: {}",
-        toString(read_type),
-        file_offset_of_buffer_end,
-        implementation_buffer->getFileOffsetOfBufferEnd(),
-        implementation_buffer->getPosition(),
+        "Current read type: {}, offset: {}, impl offset: {}, impl position: {}, impl size: {}, file segment: {}",
+        toString(state.read_type),
+        offset,
+        state.buf->getFileOffsetOfBufferEnd(),
+        state.buf->getPosition(),
+        state.buf->internalBuffer().size(),
         file_segment.getInfoForLog());
 
-    chassert(current_read_range.left <= file_offset_of_buffer_end);
-    chassert(current_read_range.right >= file_offset_of_buffer_end);
+    chassert(file_segment.range().contains(offset));
 
-    bool result = false;
     size_t size = 0;
-
-    size_t needed_to_predownload = bytes_to_predownload;
-    if (needed_to_predownload)
+    if (state.bytes_to_predownload)
     {
-        predownload(file_segment);
-
-        result = implementation_buffer->hasPendingData();
-        size = implementation_buffer->available();
+        predownloadForFileSegment(file_segment, offset, state, info, log);
+        size = state.buf->available();
+        if (size)
+            chassert(!state.buf->offset());
     }
 
-    auto download_current_segment = read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE;
-    if (download_current_segment != file_segment.isDownloader())
+    auto do_download = state.read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE;
+    if (do_download != file_segment.isDownloader())
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Incorrect segment state. Having read type: {}, file segment info: {}",
-            toString(read_type), file_segment.getInfoForLog());
+            toString(state.read_type), file_segment.getInfoForLog());
     }
 
-    if (!result)
+    if (!size)
     {
 #ifdef DEBUG_OR_SANITIZER_BUILD
-        if (read_type == ReadType::CACHED)
+        if (state.read_type == ReadType::CACHED)
         {
-            size_t cache_file_size = getFileSizeFromReadBuffer(*implementation_buffer);
+            size_t cache_file_size = getFileSizeFromReadBuffer(*state.buf);
             if (cache_file_size == 0)
             {
                 throw Exception(
@@ -962,33 +1075,35 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         }
         else
         {
-            chassert(file_offset_of_buffer_end == static_cast<size_t>(implementation_buffer->getFileOffsetOfBufferEnd()));
+            chassert(offset == static_cast<size_t>(state.buf->getFileOffsetOfBufferEnd()));
         }
-        chassert(!implementation_buffer->hasPendingData());
+        chassert(!state.buf->hasPendingData());
 #endif
 
         Stopwatch watch(CLOCK_MONOTONIC);
 
-        result = implementation_buffer->next();
+        state.buf->position() = state.buf->buffer().end();
+        auto result = state.buf->next();
+        chassert(!state.buf->offset());
 
         watch.stop();
         auto elapsed = watch.elapsedMicroseconds();
-        current_file_segment_counters.increment(ProfileEvents::FileSegmentReadMicroseconds, elapsed);
+        // current_file_segment_counters.increment(ProfileEvents::FileSegmentReadMicroseconds, elapsed);
 
-        // We don't support implementation_buffer implementations that use nextimpl_working_buffer_offset.
-        chassert(implementation_buffer->position() == implementation_buffer->buffer().begin());
+        // We don't support state.buf implementations that use nextimpl_working_buffer_offset.
+        chassert(state.buf->position() == state.buf->buffer().begin());
 
         if (result)
-            size = implementation_buffer->buffer().size();
+            size = state.buf->buffer().size();
 
         LOG_TEST(
             log,
             "Read {} bytes, read type {}, file offset: {}, impl offset: {}/{}, impl position: {}, segment: {}",
-            size, toString(read_type), file_offset_of_buffer_end,
-            implementation_buffer->getFileOffsetOfBufferEnd(), read_until_position,
-            implementation_buffer->getPosition(), file_segment.range().toString());
+            size, toString(state.read_type), offset,
+            state.buf->getFileOffsetOfBufferEnd(), info.read_until_position,
+            state.buf->getPosition(), file_segment.range().toString());
 
-        if (read_type == ReadType::CACHED)
+        if (state.read_type == ReadType::CACHED)
         {
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromCacheHits);
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromCacheBytes, size);
@@ -1002,34 +1117,38 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         }
     }
 
-    if (result)
+    if (size)
     {
         bool download_current_segment_succeeded = false;
-        if (download_current_segment)
+        if (do_download)
         {
-            chassert(file_offset_of_buffer_end + size - 1 <= file_segment.range().right);
+            chassert(offset + size - 1 <= file_segment.range().right);
 
             std::string failure_reason;
-            bool success = file_segment.reserve(size, settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds, failure_reason);
+            bool success = file_segment.reserve(
+                size,
+                info.settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds,
+                failure_reason);
+
             if (success)
             {
-                chassert(file_segment.getCurrentWriteOffset() == static_cast<size_t>(implementation_buffer->getPosition()));
+                chassert(file_segment.getCurrentWriteOffset() == static_cast<size_t>(state.buf->getPosition()));
 
-                success = writeCache(implementation_buffer->position(), size, file_offset_of_buffer_end, file_segment);
+                success = writeCache(state.buf->position(), size, offset, file_segment, log);
                 if (success)
                 {
                     chassert(file_segment.getCurrentWriteOffset() <= file_segment.range().right + 1);
                     chassert(
-                        /* last_file_segment */file_segments->size() == 1
-                        || file_segment.getCurrentWriteOffset() == implementation_buffer->getFileOffsetOfBufferEnd());
+                        /* last_file_segment */info.file_segments->size() == 1
+                        || file_segment.getCurrentWriteOffset() == state.buf->getFileOffsetOfBufferEnd());
 
                     LOG_TEST(log, "Successfully written {} bytes", size);
                     download_current_segment_succeeded = true;
 
-                    // The implementation_buffer is valid and positioned correctly (at file_segment->getCurrentWriteOffset()).
+                    // The state.buf is valid and positioned correctly (at file_segment->getCurrentWriteOffset()).
                     // Later reads for this file segment can reuse it.
-                    // (It's reusable even if we don't reach the swap(*implementation_buffer) below,
-                    // because the reuser must assign implementation_buffer's buffer anyway.)
+                    // (It's reusable even if we don't reach the swap(*state.buf) below,
+                    // because the reuser must assign state.buf's buffer anyway.)
                     implementation_buffer_can_be_reused = true;
                 }
                 else
@@ -1041,7 +1160,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
             if (!success)
             {
-                read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
+                state.read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
                 chassert(file_segment.state() == FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
             }
         }
@@ -1052,87 +1171,179 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         /// Therefore need to resize to a smaller size. And resize must be done after write into cache.
         /// - If last file segment was read from local fs, then we could read more than
         /// file_segemnt->range().right, so resize is also needed.
-        if (file_segments->size() == 1)
+        if (info.file_segments->size() == 1)
         {
-            size_t remaining_size_to_read = std::min(current_read_range.right, read_until_position - 1) - file_offset_of_buffer_end + 1;
+            size_t remaining_size_to_read = std::min(current_read_range.right, info.read_until_position - 1) - offset + 1;
 
             LOG_TEST(log, "Remaining size to read: {}, read: {}. Resizing buffer to {}",
-                     remaining_size_to_read, size, nextimpl_working_buffer_offset + std::min(size, remaining_size_to_read));
+                     remaining_size_to_read, size, state.buf->offset() + std::min(size, remaining_size_to_read));
 
             size = std::min(size, remaining_size_to_read);
-            chassert(implementation_buffer->buffer().size() >= nextimpl_working_buffer_offset + size);
-            implementation_buffer->buffer().resize(nextimpl_working_buffer_offset + size);
+            chassert(state.buf->buffer().size() >= state.buf->offset() + size);
+            state.buf->buffer().resize(state.buf->offset() + size);
         }
 
-        file_offset_of_buffer_end += size;
+        offset += size;
+        if (do_download && download_current_segment_succeeded)
+            chassert(file_segment.getCurrentWriteOffset() >= offset);
 
-        if (download_current_segment && download_current_segment_succeeded)
-            chassert(file_segment.getCurrentWriteOffset() >= file_offset_of_buffer_end);
-
-        chassert(
-            file_offset_of_buffer_end <= read_until_position,
-            fmt::format("Expected {} <= {} (size: {}, read range: {}, hold file segments: {} ({}))",
-                        file_offset_of_buffer_end, read_until_position, size, current_read_range.toString(), file_segments->size(), file_segments->toString(true)));
+        // chassert(
+        //     offset <= info.read_until_position,
+        //     fmt::format("Expected {} <= {} (size: {}, read range: {}, hold file segments: {} ({}))",
+        //                 offset, info.read_until_position, size, current_read_range.toString(),
+        //                 info.file_segments->size(), info.file_segments->toString(true)));
     }
 
-    swap(*implementation_buffer);
-
-    current_file_segment_counters.increment(ProfileEvents::FileSegmentUsedBytes, available());
-
-    if (size == 0 && file_offset_of_buffer_end < read_until_position)
+    if (size == 0 && offset < info.read_until_position)
     {
-        size_t cache_file_size = getFileSizeFromReadBuffer(*implementation_buffer);
-        auto cache_file_path = getFileNameFromReadBuffer(*implementation_buffer);
+        size_t cache_file_size = getFileSizeFromReadBuffer(*state.buf);
+        auto cache_file_path = getFileNameFromReadBuffer(*state.buf);
 
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Having zero bytes, but range is not finished: file offset: {}, starting offset: {}, "
+            "Having zero bytes, but range is not finished: file offset: {}, "
             "reading until: {}, read type: {}, cache file size: {}, cache file path: {}, "
             "cache file offset: {}, current file segment: {}",
-            file_offset_of_buffer_end,
-            first_offset,
-            read_until_position,
-            toString(read_type),
+            offset,
+            info.read_until_position,
+            toString(state.read_type),
             cache_file_size ? std::to_string(cache_file_size) : "None",
             cache_file_path,
-            implementation_buffer->getFileOffsetOfBufferEnd(),
+            state.buf->getFileOffsetOfBufferEnd(),
             file_segment.getInfoForLog());
     }
+    const auto key = file_segment.key();
 
     // No necessary because of the SCOPE_EXIT above, but useful for logging below.
-    if (download_current_segment)
+    if (do_download && reset_downloader_after_read)
+    {
         file_segment.completePartAndResetDownloader();
-
-    chassert(!file_segment.isDownloader());
+        chassert(!file_segment.isDownloader());
+    }
 
     LOG_TEST(
         log,
         "Key: {}. Returning with {} bytes, buffer position: {} (offset: {}, predownloaded: {}), "
         "buffer available: {}, current range: {}, file offset of buffer end: {}, file segment state: {}, "
-        "current write offset: {}, read_type: {}, reading until position: {}, started with offset: {}, "
+        "current write offset: {}, read_type: {}, reading until position: {}, "
         "remaining ranges: {}",
-        cache_key.toString(),
-        working_buffer.size(),
-        getPosition(),
-        offset(),
-        needed_to_predownload,
-        available(),
+        key.toString(),
+        state.buf->buffer().size(),
+        state.buf->getPosition(),
+        state.buf->offset(),
+        state.bytes_to_predownload,
+        state.buf->available(),
         current_read_range.toString(),
-        file_offset_of_buffer_end,
+        offset,
         FileSegment::stateToString(file_segment.state()),
         file_segment.getCurrentWriteOffset(),
-        toString(read_type),
-        read_until_position,
-        first_offset,
-        file_segments->toString());
+        toString(state.read_type),
+        info.read_until_position,
+        info.file_segments->toString());
 
     /// Release buffer a little bit earlier.
-    if (read_until_position == file_offset_of_buffer_end)
-        implementation_buffer.reset();
-    else if (file_offset_of_buffer_end > current_read_range.right)
-        completeFileSegmentAndGetNext();
+    if (offset > current_read_range.right)
+        file_segment.complete(info.settings.filesystem_cache_allow_background_download);
 
-    return result;
+    return size;
+}
+
+size_t CachedOnDiskReadBufferFromFile::readBigAt(
+    char * to,
+    size_t n,
+    size_t range_begin,
+    const std::function<bool(size_t)> & progress_callback) const
+{
+    ReadInfo current_info(info.implementation_buffer_creator, info.use_external_buffer, info.settings, info.read_until_position);
+    current_info.read_until_position = range_begin + n;
+
+    if (info.settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
+    {
+        current_info.file_segments = cache->get(
+            cache_key,
+            /* offset */range_begin,
+            /* size */n,
+            /* batch_size */0,
+            user.user_id);
+    }
+    else
+    {
+        CreateFileSegmentSettings create_settings(FileSegmentKind::Regular);
+        current_info.file_segments = cache->getOrSet(
+            cache_key,
+            /* offset */range_begin,
+            /* size */n,
+            file_size.value(),
+            create_settings,
+            /* batch_size */0,
+            user);
+    }
+
+    if (current_info.file_segments->empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No file segments");
+
+    size_t read_bytes = 0;
+    bool cancelled = false;
+
+    ReadFromFileSegmentStatePtr current_state;
+    const size_t initial_range_begin = range_begin;
+
+    bool implementation_buffer_can_be_resused = false;
+    while (!cancelled && read_bytes < n)
+    {
+        if (!current_state)
+        {
+            if (current_info.file_segments->empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected end of file segments. Offset: {}, read: {}/{}",
+                                range_begin, read_bytes, n);
+
+            current_state = prepareReadFromFileSegmentState(current_info.file_segments->front(), range_begin, current_info, log);
+        }
+        else if (range_begin == current_info.file_segments->front().range().right + 1)
+        {
+            current_info.cache_file_reader.reset();
+            current_info.file_segments->front().increasePriority();
+            current_info.file_segments->completeAndPopFront(info.settings.filesystem_cache_allow_background_download);
+            current_state.reset();
+            continue;
+        }
+
+        current_state->buf->set(to + read_bytes, n - read_bytes);
+        auto size = readFromFileSegment(
+            current_info.file_segments->front(),
+            /* offset */range_begin,
+            *current_state,
+            current_info,
+            /* reset_downloader_after_read */false,
+            implementation_buffer_can_be_resused,
+            log);
+
+        LOG_TEST(log, "ReadBigAt() read {} bytes at offset: {}. Total: {}/{}", size, initial_range_begin, read_bytes + size, n);
+
+        if (!size)
+        {
+            auto & file_segment = current_info.file_segments->front();
+
+            chassert(range_begin == file_segment.range().right + 1,
+                     fmt::format("Offset: {}, {}", range_begin, file_segment.getInfoForLog()));
+
+            file_segment.increasePriority();
+
+            current_info.cache_file_reader.reset();
+            current_info.file_segments->completeAndPopFront(info.settings.filesystem_cache_allow_background_download);
+            current_state.reset();
+            continue;
+        }
+
+        chassert(n - read_bytes >= size, fmt::format("{} >= {}", n, size));
+        read_bytes += size;
+        current_state->buf->position() += size;
+
+        if (progress_callback)
+            cancelled = progress_callback(size);
+    }
+
+    return read_bytes;
 }
 
 off_t CachedOnDiskReadBufferFromFile::seek(off_t offset, int whence)
@@ -1203,9 +1414,9 @@ off_t CachedOnDiskReadBufferFromFile::seek(off_t offset, int whence)
     //          assert(file_offset_of_buffer_end >= file_segment->range().left);
 
     //          resetWorkingBuffer();
-    //          swap(*implementation_buffer);
-    //          implementation_buffer->seek(file_offset_of_buffer_end, SEEK_SET);
-    //          swap(*implementation_buffer);
+    //          swap(*state->buf);
+    //          state->buf->seek(file_offset_of_buffer_end, SEEK_SET);
+    //          swap(*state->buf);
 
     //          LOG_TRACE(log, "Found suitable file segment: {}", file_segment->range().toString());
 
@@ -1214,10 +1425,10 @@ off_t CachedOnDiskReadBufferFromFile::seek(off_t offset, int whence)
     //      }
     // }
 
-    file_segments.reset();
-    implementation_buffer.reset();
+    info.file_segments.reset();
+    state.reset();
     initialized = false;
-    cache_file_reader.reset();
+    info.cache_file_reader.reset();
 
     LOG_TEST(log, "Reset state for seek to position {}", new_pos);
 
@@ -1227,17 +1438,17 @@ off_t CachedOnDiskReadBufferFromFile::seek(off_t offset, int whence)
 size_t CachedOnDiskReadBufferFromFile::getRemainingSizeToRead()
 {
     /// Last position should be guaranteed to be set, as at least we always know file size.
-    if (!read_until_position)
+    if (!info.read_until_position)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Last position was not set");
 
     /// On this level should be guaranteed that read size is non-zero.
-    if (file_offset_of_buffer_end >= read_until_position)
+    if (file_offset_of_buffer_end > info.read_until_position)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Read boundaries mismatch. Expected {} < {}",
-            file_offset_of_buffer_end, read_until_position);
+            file_offset_of_buffer_end, info.read_until_position);
 
-    return read_until_position - file_offset_of_buffer_end;
+    return info.read_until_position - file_offset_of_buffer_end;
 }
 
 void CachedOnDiskReadBufferFromFile::setReadUntilPosition(size_t position)
@@ -1245,19 +1456,19 @@ void CachedOnDiskReadBufferFromFile::setReadUntilPosition(size_t position)
     if (initialized && !allow_seeks_after_first_read)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Method `setReadUntilPosition()` not allowed");
 
-    if (read_until_position == position)
+    if (info.read_until_position == position)
         return;
 
     file_offset_of_buffer_end = getPosition();
     resetWorkingBuffer();
-    file_segments.reset();
-    implementation_buffer.reset();
+    info.file_segments.reset();
+    state.reset();
     initialized = false;
-    cache_file_reader.reset();
+    info.cache_file_reader.reset();
 
-    read_until_position = position;
+    info.read_until_position = position;
 
-    LOG_TEST(log, "Set read_until_position to {}", read_until_position);
+    LOG_TEST(log, "Set read_until_position to {}", info.read_until_position);
 }
 
 void CachedOnDiskReadBufferFromFile::setReadUntilEnd()
@@ -1273,10 +1484,10 @@ off_t CachedOnDiskReadBufferFromFile::getPosition()
 String CachedOnDiskReadBufferFromFile::getInfoForLog()
 {
     String current_file_segment_info;
-    if (file_segments->empty())
+    if (info.file_segments->empty())
         current_file_segment_info = "None";
     else
-        current_file_segment_info = file_segments->front().getInfoForLog();
+        current_file_segment_info = info.file_segments->front().getInfoForLog();
 
     return fmt::format(
         "Buffer path: {}, hash key: {}, file_offset_of_buffer_end: {}, read_until_position: {}, "
@@ -1284,16 +1495,16 @@ String CachedOnDiskReadBufferFromFile::getInfoForLog()
         source_file_path,
         cache_key.toString(),
         file_offset_of_buffer_end,
-        read_until_position,
-        implementation_buffer ? std::to_string(implementation_buffer->getFileOffsetOfBufferEnd()) : "None",
-        toString(read_type),
+        info.read_until_position,
+        state && state->buf ? std::to_string(state->buf->getFileOffsetOfBufferEnd()) : "None",
+        toString(state ? state->read_type : ReadType::NONE),
         last_caller_id,
         current_file_segment_info);
 }
 
 bool CachedOnDiskReadBufferFromFile::isSeekCheap()
 {
-    return !initialized || read_type == ReadType::CACHED;
+    return !initialized || state->read_type == ReadType::CACHED;
 }
 
 static bool isRangeContainedInSegments(size_t left, size_t right, const FileSegmentsHolderPtr & file_segments)
@@ -1331,13 +1542,14 @@ bool CachedOnDiskReadBufferFromFile::isContentCached(size_t offset, size_t size)
     if (!initialized)
         initialize();
 
-    if (file_segments->empty())
+    if (info.file_segments->empty())
         return false;
 
     /// We don't hold all the segments simultaneously, if there are more than `filesystem_cache_segments_batch_size` of them.
     /// So we need to take minimum of the following two values to determine the intersection between [offset, offset + size - 1]
     /// and the range covered by this segment currently.
-    const auto right_boundary = std::min(file_segments->back().range().right, read_until_position - 1);
-    return isRangeContainedInSegments(offset, std::min(offset + size - 1, right_boundary), file_segments);
+    const auto right_boundary = std::min(info.file_segments->back().range().right, info.read_until_position - 1);
+    return isRangeContainedInSegments(offset, std::min(offset + size - 1, right_boundary), info.file_segments);
 }
+
 }

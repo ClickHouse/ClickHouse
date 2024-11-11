@@ -463,9 +463,9 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
 
     /// FIXME: Use async buffer if use_cache,
     /// because CachedOnDiskReadBufferFromFile does not work as an independent buffer currently.
-    const bool use_async_buffer = use_prefetch || use_cache;
+    const bool use_async_buffer = use_prefetch;
 
-    if (use_async_buffer)
+    if (use_async_buffer || use_cache)
         modified_read_settings.remote_read_buffer_use_external_buffer = true;
 
     std::unique_ptr<ReadBufferFromFileBase> impl;
@@ -499,7 +499,7 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
                 std::string(CurrentThread::getQueryId()),
                 object_size,
                 /* allow_seeks */true,
-                /* use_external_buffer */true,
+                /* use_external_buffer */use_async_buffer,
                 /* read_until_position */std::nullopt,
                 context_->getFilesystemCacheLog());
 
