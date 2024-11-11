@@ -192,6 +192,10 @@ void Client::parseConnectionsCredentials(Poco::Util::AbstractConfiguration & con
                 history_file = home_path + "/" + history_file.substr(1);
             config.setString("history_file", history_file);
         }
+        if (config.has(prefix + ".history_max_entries"))
+        {
+            config.setUInt("history_max_entries", history_max_entries);
+        }
         if (config.has(prefix + ".accept-invalid-certificate"))
             config.setBool("accept-invalid-certificate", config.getBool(prefix + ".accept-invalid-certificate"));
     }
@@ -427,7 +431,7 @@ catch (const Exception & e)
     bool need_print_stack_trace = config().getBool("stacktrace", false) && e.code() != ErrorCodes::NETWORK_ERROR;
     std::cerr << getExceptionMessage(e, need_print_stack_trace, true) << std::endl << std::endl;
     /// If exception code isn't zero, we should return non-zero return code anyway.
-    return e.code() ? e.code() : -1;
+    return static_cast<UInt8>(e.code()) ? e.code() : -1;
 }
 catch (...)
 {
@@ -1160,6 +1164,9 @@ void Client::processOptions(const OptionsDescription & options_description,
     /// (There is no need to copy the context because clickhouse-client has no background tasks so it won't use that context in parallel.)
     client_context = global_context;
     initClientContext();
+
+    /// Allow to pass-through unknown settings to the server.
+    client_context->getAccessControl().allowAllSettings();
 }
 
 
@@ -1383,7 +1390,8 @@ int mainEntryClickHouseClient(int argc, char ** argv)
     catch (const DB::Exception & e)
     {
         std::cerr << DB::getExceptionMessage(e, false) << std::endl;
-        return 1;
+        auto code = DB::getCurrentExceptionCode();
+        return static_cast<UInt8>(code) ? code : 1;
     }
     catch (const boost::program_options::error & e)
     {
@@ -1392,7 +1400,8 @@ int mainEntryClickHouseClient(int argc, char ** argv)
     }
     catch (...)
     {
-        std::cerr << DB::getCurrentExceptionMessage(true) << std::endl;
-        return 1;
+        std::cerr << DB::getCurrentExceptionMessage(true) << '\n';
+        auto code = DB::getCurrentExceptionCode();
+        return static_cast<UInt8>(code) ? code : 1;
     }
 }

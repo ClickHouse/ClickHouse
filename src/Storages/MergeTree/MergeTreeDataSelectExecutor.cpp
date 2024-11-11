@@ -71,10 +71,7 @@ namespace Setting
     extern const SettingsString force_data_skipping_indices;
     extern const SettingsBool force_index_by_date;
     extern const SettingsSeconds lock_acquire_timeout;
-    extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsUInt64 max_parser_depth;
     extern const SettingsInt64 max_partitions_to_read;
-    extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 max_threads_for_indexes;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 merge_tree_coarse_index_granularity;
@@ -640,20 +637,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
     if (use_skip_indexes && settings[Setting::force_data_skipping_indices].changed)
     {
-        const auto & indices = settings[Setting::force_data_skipping_indices].toString();
-
-        Strings forced_indices;
-        {
-            Tokens tokens(indices.data(), indices.data() + indices.size(), settings[Setting::max_query_size]);
-            IParser::Pos pos(
-                tokens, static_cast<unsigned>(settings[Setting::max_parser_depth]), static_cast<unsigned>(settings[Setting::max_parser_backtracks]));
-            Expected expected;
-            if (!parseIdentifiersOrStringLiterals(pos, expected, forced_indices))
-                throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse force_data_skipping_indices ('{}')", indices);
-        }
+        const auto & indices_str = settings[Setting::force_data_skipping_indices].toString();
+        auto forced_indices = parseIdentifiersOrStringLiterals(indices_str, settings);
 
         if (forced_indices.empty())
-            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "No indices parsed from force_data_skipping_indices ('{}')", indices);
+            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "No indices parsed from force_data_skipping_indices ('{}')", indices_str);
 
         std::unordered_set<std::string> useful_indices_names;
         for (const auto & useful_index : skip_indexes.useful_indices)
@@ -1022,11 +1010,7 @@ size_t MergeTreeDataSelectExecutor::roundRowsOrBytesToMarks(
 
 /// Same as roundRowsOrBytesToMarks() but do not return more then max_marks
 size_t MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
-    size_t rows_setting,
-    size_t bytes_setting,
-    size_t rows_granularity,
-    size_t bytes_granularity,
-    size_t max_marks)
+    size_t rows_setting, size_t bytes_setting, size_t rows_granularity, size_t bytes_granularity, size_t min_marks, size_t max_marks)
 {
     size_t marks = 1;
 
@@ -1035,17 +1019,16 @@ size_t MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
     else if (rows_setting)
         marks = (rows_setting + rows_granularity - 1) / rows_granularity;
 
-    if (bytes_granularity == 0)
-        return marks;
-
-    /// Overflow
-    if (bytes_setting + bytes_granularity <= bytes_setting) /// overflow
-        return max_marks;
-    if (bytes_setting)
-        return std::max(marks, (bytes_setting + bytes_granularity - 1) / bytes_granularity);
-    return marks;
+    if (bytes_granularity)
+    {
+        /// Overflow
+        if (bytes_setting + bytes_granularity <= bytes_setting) /// overflow
+            marks = max_marks;
+        else if (bytes_setting)
+            marks = std::max(marks, (bytes_setting + bytes_granularity - 1) / bytes_granularity);
+    }
+    return std::max(marks, min_marks);
 }
-
 
 /// Calculates a set of mark ranges, that could possibly contain keys, required by condition.
 /// In other words, it removes subranges from whole range, that definitely could not contain required keys.

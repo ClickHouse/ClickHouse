@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>praktika report</title>
+    <link rel="icon" href="https://w4z3pajszlbkfcw2wcylfei5km0xmwag.lambda-url.us-east-1.on.aws/" type="image/x-icon">
+    <style>
+
+        /* Default (Day Theme) */
+        :root {
+            --background-color: white;
+            --text-color: #000;
+            --tile-background: #f9f9f9;
+            --footer-background: #f1f1f1;
+            --footer-text-color: #000;
+            --status-width: 300px;
+        }
+
+        body {
+            background-color: var(--background-color);
+            color: var(--text-color);
+            height: 100%;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            font-family: 'IBM Plex Mono Condensed', monospace, sans-serif;
+            --header-background-color: #f4f4f4;
+        }
+
+        body.night-theme {
+            --background-color: #1F1F1C;
+            --text-color: #fff;
+            --tile-background: black;
+            --header-background-color: #1F1F1C;
+        }
+
+        #info-container {
+            margin-left: calc(var(--status-width) + 20px);
+            margin-bottom: 10px;
+            background-color: var(--tile-background);
+            padding: 10px;
+            text-align: left;
+        }
+
+        #status-container {
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            width: var(--status-width);
+            background-color: var(--tile-background);
+            padding: 20px;
+            box-sizing: border-box;
+            font-size: 18px;
+            margin: 0;
+        }
+
+        #status-container a {
+            color: #007bff;
+            text-decoration: underline;
+            font-weight: bold;
+            cursor: pointer;
+            display: inline-block;
+            margin-top: 5px;
+            margin-left: 20px;
+            padding: 2px 0;
+            font-size: 0.8em;
+        }
+
+        #status-container a:hover {
+            color: #0056b3;
+            text-decoration: none;
+        }
+
+        .key-value-pair {
+            display: flex;               /* Enable Flexbox for alignment */
+            justify-content: space-between; /* Distribute space between key and value */
+            margin-bottom: 20px;         /* Add space between each pair */
+        }
+
+        .json-key {
+            font-weight: bold;
+        }
+
+        .json-value {
+            font-weight: normal;
+            font-family: 'Source Code Pro', monospace, sans-serif;
+            letter-spacing: -0.5px;
+        }
+
+        #result-container {
+            background-color: var(--tile-background);
+            margin-left: calc(var(--status-width) + 20px);
+            padding: 20px;
+            box-sizing: border-box;
+            text-align: center;
+            font-size: 18px;
+            font-weight: normal;
+            flex-grow: 1;
+        }
+
+        #footer {
+            padding: 10px;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background-color: #1F1F1C;
+            color: white;
+            font-size: 14px;
+            display: flex;
+            justify-content: space-between; /* Ensure the .left expands, and .right and .settings are aligned to the right */
+            align-items: center;
+        }
+
+        #footer a {
+            color: white;
+            text-decoration: none;
+        }
+
+        #footer .left {
+            flex-grow: 1; /* Takes up all the available space */
+        }
+
+        /* make some space around '/' in the navigation line */
+        #footer .left span.separator {
+            margin-left: 5px;
+            margin-right: 5px;
+        }
+
+        #footer .right, #footer .settings {
+            display: flex;
+            align-items: center;
+        }
+
+        #footer .right a::before {
+            content: "#";
+            margin-left: 10px;
+            color: #e0e0e0;
+        }
+
+        #footer .right::before, #footer .settings::before {
+            content: "|"; /* Add separator before right and settings sections */
+            margin-left: 10px;
+            margin-right: 10px;
+            color: #e0e0e0;
+        }
+
+        #theme-toggle {
+            cursor: pointer;
+            font-size: 20px;
+            color: white;
+        }
+
+        #theme-toggle:hover {
+            color: #e0e0e0;
+        }
+
+        #footer a:hover {
+            text-decoration: underline;
+        }
+
+        #links {
+            margin-top: 10px;
+            padding: 15px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+
+        #links a {
+            display: block;
+            margin-bottom: 5px;
+            padding: 5px 10px;
+            background-color: #D5D5D5;
+            color: black;
+            text-decoration: none;
+            border-radius: 5px;
+        }
+
+        #links a:hover {
+            background-color: #D5D5D5;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th.name-column, td.name-column {
+            max-width: 400px; /* Set the maximum width for the column */
+            white-space: nowrap; /* Prevent text from wrapping */
+            overflow: hidden; /* Hide the overflowed text */
+            text-overflow: ellipsis; /* Show ellipsis (...) for overflowed text */
+        }
+
+        th.status-column, td.status-column {
+            max-width: 100px; /* Set the maximum width for the column */
+            white-space: nowrap; /* Prevent text from wrapping */
+            overflow: hidden; /* Hide the overflowed text */
+            text-overflow: ellipsis; /* Show ellipsis (...) for overflowed text */
+        }
+
+        th.time-column, td.time-column {
+            max-width: 120px; /* Set the maximum width for the column */
+            white-space: nowrap; /* Prevent text from wrapping */
+            text-align: right;
+        }
+
+        th.info-column, td.info-column {
+            width: 100%; /* Allow the column to take all the remaining space */
+        }
+
+        th, td {
+            padding: 8px;
+            border: 1px solid #ddd;
+            text-align: left;
+        }
+
+        th {
+            background-color: var(--header-background-color);
+        }
+
+        .status-success {
+            color: green;
+            font-weight: bold;
+        }
+
+        .status-fail {
+            color: red;
+            font-weight: bold;
+        }
+
+        .status-pending {
+            color: #d4a017;
+            font-weight: bold;
+        }
+
+        .status-broken {
+            color: purple;
+            font-weight: bold;
+        }
+
+        .status-run {
+            color: blue;
+            font-weight: bold;
+        }
+
+        .status-error {
+            color: darkred;
+            font-weight: bold;
+        }
+
+        .status-other {
+            color: grey;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+<div id="info-container"></div>
+<div id="status-container"></div>
+<div id="result-container"></div>
+
+<footer id="footer">
+    <div class="left"></div>
+    <div class="right"></div>
+    <div class="settings">
+        <span id="theme-toggle">☀️</span>
+    </div>
+</footer>
+
+<script>
+    function toggleTheme() {
+        document.body.classList.toggle('night-theme');
+        const toggleIcon = document.getElementById('theme-toggle');
+        if (document.body.classList.contains('night-theme')) {
+            toggleIcon.textContent = '☾'; // Moon for night mode
+        } else {
+            toggleIcon.textContent = '☀️'; // Sun for day mode
+        }
+    }
+
+    // Attach the toggle function to the click event of the icon
+    document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
+
+    function formatTimestamp(timestamp, showDate = true) {
+        const date = new Date(timestamp * 1000);
+        const day = String(date.getDate()).padStart(2, '0');
+        const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        const month = monthNames[date.getMonth()];
+        const year = date.getFullYear();
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        const seconds = String(date.getSeconds()).padStart(2, '0');
+        //const milliseconds = String(date.getMilliseconds()).padStart(2, '0');
+
+        return showDate
+            ? `${day}-${month}-${year} ${hours}:${minutes}:${seconds}`
+            : `${hours}:${minutes}:${seconds}`;
+    }
+
+    function formatDuration(durationInSeconds, detailed = false) {
+        // Check if the duration is empty, null, or not a number
+        if (!durationInSeconds || isNaN(durationInSeconds)) {
+            return '';
+        }
+
+        // Ensure duration is a floating-point number
+        const duration = parseFloat(durationInSeconds);
+
+        if (detailed) {
+            // Format in the detailed format with hours, minutes, and seconds
+            const hours = Math.floor(duration / 3600);
+            const minutes = Math.floor((duration % 3600) / 60);
+            const seconds = Math.floor(duration % 60);
+
+            const formattedHours = hours > 0 ? `${hours}h ` : '';
+            const formattedMinutes = minutes > 0 ? `${minutes}m ` : '';
+            const formattedSeconds = `${String(seconds).padStart(2, '0')}s`;
+
+            return `${formattedHours}${formattedMinutes}${formattedSeconds}`.trim();
+        } else {
+            // Format in the default format with seconds and milliseconds
+            const seconds = Math.floor(duration);
+            const milliseconds = Math.floor((duration % 1) * 1000);
+
+            const formattedSeconds = String(seconds);
+            const formattedMilliseconds = String(milliseconds).padStart(3, '0');
+
+            return `${formattedSeconds}.${formattedMilliseconds}`;
+        }
+    }
+
+    // Function to determine status class based on value
+    function getStatusClass(status) {
+        const lowerStatus = status.toLowerCase();
+        if (lowerStatus.includes('success') || lowerStatus === 'ok') return 'status-success';
+        if (lowerStatus.includes('fail')) return 'status-fail';
+        if (lowerStatus.includes('pending')) return 'status-pending';
+        if (lowerStatus.includes('broken')) return 'status-broken';
+        if (lowerStatus.includes('run')) return 'status-run';
+        if (lowerStatus.includes('error')) return 'status-error';
+        return 'status-other';
+    }
+
+    function addKeyValueToStatus(key, value) {
+
+        const statusContainer = document.getElementById('status-container');
+
+        let keyValuePair = document.createElement('div');
+        keyValuePair.className = 'key-value-pair';
+
+        const keyElement = document.createElement('div');
+        keyElement.className = 'json-key';
+        keyElement.textContent = key + ':';
+
+        const valueElement = document.createElement('div');
+        valueElement.className = 'json-value';
+        valueElement.textContent = value;
+
+        keyValuePair.appendChild(keyElement)
+        keyValuePair.appendChild(valueElement)
+        statusContainer.appendChild(keyValuePair);
+    }
+
+    function addFileButtonToStatus(key, links) {
+
+        if (links == null) {
+            return
+        }
+
+        const statusContainer = document.getElementById('status-container');
+
+        const keyElement = document.createElement('div');
+        keyElement.className = 'json-key';
+        keyElement.textContent = columnSymbols[key] + ':' || key;
+        statusContainer.appendChild(keyElement);
+
+        if (Array.isArray(links) && links.length > 0) {
+            links.forEach(link => {
+                const textLink = document.createElement('a');
+                textLink.href = link;
+                textLink.textContent = link.split('/').pop();
+                textLink.target = '_blank';
+                statusContainer.appendChild(textLink);
+                statusContainer.appendChild(document.createElement('br'));
+            });
+        }
+    }
+
+    function addStatusToStatus(status, start_time, duration) {
+        const statusContainer = document.getElementById('status-container')
+
+        let keyValuePair = document.createElement('div');
+        keyValuePair.className = 'key-value-pair';
+        let keyElement = document.createElement('div');
+        let valueElement = document.createElement('div');
+        keyElement.className = 'json-key';
+        valueElement.className = 'json-value';
+        keyElement.textContent = columnSymbols['status'] + ':' || 'status:';
+        valueElement.classList.add('status-value');
+        valueElement.classList.add(getStatusClass(status));
+        valueElement.textContent = status;
+        keyValuePair.appendChild(keyElement);
+        keyValuePair.appendChild(valueElement);
+        statusContainer.appendChild(keyValuePair);
+
+        keyValuePair = document.createElement('div');
+        keyValuePair.className = 'key-value-pair';
+        keyElement = document.createElement('div');
+        valueElement = document.createElement('div');
+        keyElement.className = 'json-key';
+        valueElement.className = 'json-value';
+        keyElement.textContent = columnSymbols['start_time'] + ':' || 'start_time:';
+        valueElement.textContent = formatTimestamp(start_time);
+        keyValuePair.appendChild(keyElement);
+        keyValuePair.appendChild(valueElement);
+        statusContainer.appendChild(keyValuePair);
+
+        keyValuePair = document.createElement('div');
+        keyValuePair.className = 'key-value-pair';
+        keyElement = document.createElement('div');
+        valueElement = document.createElement('div');
+        keyElement.className = 'json-key';
+        valueElement.className = 'json-value';
+        keyElement.textContent = columnSymbols['duration'] + ':' || 'duration:';
+        if (duration === null) {
+            // Set initial value to 0 and add a unique ID or data attribute to identify the duration element
+            valueElement.textContent = '00:00:00';
+            valueElement.setAttribute('id', 'duration-value');
+        } else {
+            // Format the duration if it's a valid number
+            valueElement.textContent = formatDuration(duration, true);
+        }
+        keyValuePair.appendChild(keyElement);
+        keyValuePair.appendChild(valueElement);
+        statusContainer.appendChild(keyValuePair);
+    }
+
+    function navigatePath(jsonObj, nameArray) {
+        let baseParams = new URLSearchParams(window.location.search);
+        let keysToDelete = [];
+        baseParams.forEach((value, key) => {
+            if (key.startsWith('name_')) {
+                keysToDelete.push(key); // Collect the keys to delete
+            }
+        });
+        keysToDelete.forEach((key) => baseParams.delete(key));
+        let pathNames = [];
+        let pathLinks = [];
+        let currentObj = jsonObj;
+
+        // Add the first entry (root level)
+        baseParams.set(`name_0`, currentObj.name);
+        pathNames.push(currentObj.name);
+        pathLinks.push(`<span class="separator">/</span><a href="${window.location.pathname}?${baseParams.toString()}">${currentObj.name}</a>`);
+        // Iterate through the nameArray starting at index 0
+        for (const [index, name] of nameArray.entries()) {
+            if (index === 0) continue;
+            if (currentObj && Array.isArray(currentObj.results)) {
+                const nextResult = currentObj.results.find(result => result.name === name);
+                if (nextResult) {
+                    baseParams.set(`name_${index}`, nextResult.name);
+                    pathNames.push(nextResult.name);  // Correctly push nextResult name, not currentObj.name
+                    pathLinks.push(`<span class="separator">/</span><a href="${window.location.pathname}?${baseParams.toString()}">${nextResult.name}</a>`);
+                    currentObj = nextResult; // Move to the next object in the hierarchy
+                } else {
+                    console.error(`Name "${name}" not found in results array.`);
+                    return null; // Name not found in results array
+                }
+            } else {
+                console.error(`Current object is not structured as expected.`);
+                return null; // Current object is not structured as expected
+            }
+        }
+        const footerLeft = document.querySelector('#footer .left');
+        footerLeft.innerHTML = pathLinks.join('');
+
+        return currentObj;
+    }
+
+    // Define the fixed columns globally, so both functions can use it
+    const columns = ['name', 'status', 'start_time', 'duration', 'info'];
+
+    const columnSymbols = {
+        name: '📂',
+        status: '✔️',
+        start_time: '🕒',
+        duration: '⏳',
+        info: 'ℹ️',
+        files: '📄'
+    };
+
+    function createResultsTable(results, nest_level) {
+        if (results && Array.isArray(results) && results.length > 0) {
+            const table = document.createElement('table');
+            const thead = document.createElement('thead');
+            const tbody = document.createElement('tbody');
+
+            // Get the current URL parameters
+            const currentUrl = new URL(window.location.href);
+
+            // Create table headers based on the fixed columns
+            const headerRow = document.createElement('tr');
+            columns.forEach(column => {
+                const th = document.createElement('th');
+                th.textContent = th.textContent = columnSymbols[column] || column;
+                th.style.cursor = 'pointer'; // Make headers clickable
+                th.addEventListener('click', () => sortTable(results, column, tbody, nest_level)); // Add click event to sort the table
+                headerRow.appendChild(th);
+            });
+            thead.appendChild(headerRow);
+
+            // Create table rows
+            populateTableRows(tbody, results, columns, nest_level);
+
+            table.appendChild(thead);
+            table.appendChild(tbody);
+
+            return table;
+        }
+        return null;
+    }
+
+    function populateTableRows(tbody, results, columns, nest_level) {
+        const currentUrl = new URL(window.location.href);  // Get the current URL
+
+        // Clear existing rows if re-rendering (used in sorting)
+        tbody.innerHTML = '';
+
+        results.forEach((result, index) => {
+            const row = document.createElement('tr');
+
+            columns.forEach(column => {
+                const td = document.createElement('td');
+                const value = result[column];
+
+                if (column === 'name') {
+                    // Create a link for the name field, using name_X
+                    const link = document.createElement('a');
+                    const newUrl = new URL(currentUrl); // Create a fresh copy of the URL for each row
+                    newUrl.searchParams.set(`name_${nest_level}`, value); // Use backticks for string interpolation
+                    link.href = newUrl.toString();
+                    link.textContent = value;
+                    td.classList.add('name-column');
+                    td.appendChild(link);
+                } else if (column === 'status') {
+                    // Apply status formatting
+                    const span = document.createElement('span');
+                    span.className = getStatusClass(value);
+                    span.textContent = value;
+                    td.classList.add('status-column');
+                    td.appendChild(span);
+                } else if (column === 'start_time') {
+                    td.classList.add('time-column');
+                    td.textContent = value ? formatTimestamp(value, false) : '';
+                } else if (column === 'duration') {
+                    td.classList.add('time-column');
+                    td.textContent = value ? formatDuration(value) : '';
+                } else if (column === 'info') {
+                    // For info and other columns, just display the value
+                    td.textContent = value || '';
+                    td.classList.add('info-column');
+                }
+
+                row.appendChild(td);
+            });
+
+            tbody.appendChild(row);
+        });
+    }
+
+    function sortTable(results, key, tbody, nest_level) {
+        // Find the table header element for the given key
+        let th = null;
+        const tableHeaders = document.querySelectorAll('th'); // Select all table headers
+        tableHeaders.forEach(header => {
+            if (header.textContent.trim().toLowerCase() === key.toLowerCase()) {
+                th = header;
+            }
+        });
+
+        if (!th) {
+            console.error(`No table header found for key: ${key}`);
+            return;
+        }
+
+        // Determine the current sort direction
+        let ascending = th.getAttribute('data-sort-direction') === 'asc' ? false : true;
+
+        // Toggle the sort direction for the next click
+        th.setAttribute('data-sort-direction', ascending ? 'asc' : 'desc');
+
+        // Sort the results array by the given key
+        results.sort((a, b) => {
+            if (a[key] < b[key]) return ascending ? -1 : 1;
+            if (a[key] > b[key]) return ascending ? 1 : -1;
+            return 0;
+        });
+
+        // Re-populate the table with sorted data
+        populateTableRows(tbody, results, columns, nest_level);
+    }
+
+    function loadJSON(PR, sha, nameParams) {
+        const infoElement = document.getElementById('info-container');
+        let lastModifiedTime = null;
+        const task = nameParams[0].toLowerCase();
+
+        // Construct the URL dynamically based on PR, sha, and name_X
+        const baseUrl = window.location.origin + window.location.pathname.replace('/json.html', '');
+        const path = `${baseUrl}/${encodeURIComponent(PR)}/${encodeURIComponent(sha)}/result_${task}.json`;
+
+        fetch(path, {cache: "no-cache"})
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                lastModifiedTime = response.headers.get('Last-Modified');
+                return response.json();
+            })
+            .then(data => {
+                const linksDiv = document.getElementById('links');
+                const resultsDiv = document.getElementById('result-container');
+                const footerRight = document.querySelector('#footer .right');
+
+                let targetData = navigatePath(data, nameParams);
+                let nest_level = nameParams.length;
+
+                if (targetData) {
+                    infoElement.style.display = 'none';
+
+                    // Handle footer links if present
+                    if (Array.isArray(data.aux_links) && data.aux_links.length > 0) {
+                        data.aux_links.forEach(link => {
+                            const a = document.createElement('a');
+                            a.href = link;
+                            a.textContent = link.split('/').pop();
+                            a.target = '_blank';
+                            footerRight.appendChild(a);
+                        });
+                    }
+
+                    addStatusToStatus(targetData.status, targetData.start_time, targetData.duration)
+
+                    // Handle links
+                    addFileButtonToStatus('files', targetData.links)
+
+
+                    // Handle duration update if duration is null and start_time exists
+                    if (targetData.duration === null && targetData.start_time) {
+                        let duration = Math.floor(Date.now() / 1000 - targetData.start_time);
+                        const durationElement = document.getElementById('duration-value');
+
+                        const intervalId = setInterval(() => {
+                            duration++;
+                            durationElement.textContent = formatDuration(duration, true);
+                        }, 1000);
+                    }
+
+                    // If 'results' exists and is non-empty, create the table
+                    const resultsData = targetData.results;
+                    if (Array.isArray(resultsData) && resultsData.length > 0) {
+                        const table = createResultsTable(resultsData, nest_level);
+                        if (table) {
+                            resultsDiv.appendChild(table);
+                        }
+                    }
+                } else {
+                    infoElement.textContent = 'Object Not Found';
+                    infoElement.style.display = 'block';
+                }
+
+                // Set up auto-reload if Last-Modified header is present
+                if (lastModifiedTime) {
+                    setInterval(() => {
+                        checkForUpdate(path, lastModifiedTime);
+                    }, 30000); // 30000 milliseconds = 30 seconds
+                }
+            })
+            .catch(error => {
+                console.error('Error loading JSON:', error);
+                infoElement.textContent = 'Error loading data';
+                infoElement.style.display = 'block';
+            });
+    }
+
+    // Function to check if the JSON file is updated
+    function checkForUpdate(path, lastModifiedTime) {
+        fetch(path, {method: 'HEAD'})
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const newLastModifiedTime = response.headers.get('Last-Modified');
+                if (newLastModifiedTime && new Date(newLastModifiedTime) > new Date(lastModifiedTime)) {
+                    // If the JSON file has been updated, reload the page
+                    window.location.reload();
+                }
+            })
+            .catch(error => {
+                console.error('Error checking for update:', error);
+            });
+    }
+
+    // Initialize the page and load JSON from URL parameter
+    function init() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const PR = urlParams.get('PR');
+        const sha = urlParams.get('sha');
+        const root_name = urlParams.get('name_0');
+        const nameParams = [];
+
+        urlParams.forEach((value, key) => {
+            if (key.startsWith('name_')) {
+                const index = parseInt(key.split('_')[1], 10);
+                nameParams[index] = value;
+            }
+        });
+
+        if (PR) {
+            addKeyValueToStatus("PR", PR)
+        } else {
+            console.error("TODO")
+        }
+        addKeyValueToStatus("sha", sha);
+        if (nameParams[1]) {
+            addKeyValueToStatus("job", nameParams[1]);
+        }
+        addKeyValueToStatus("workflow", nameParams[0]);
+
+        if (PR && sha && root_name) {
+            loadJSON(PR, sha, nameParams);
+        } else {
+            document.getElementById('title').textContent = 'Error: Missing required URL parameters: PR, sha, or name_0';
+        }
+    }
+
+    window.onload = init;
+</script>
+</body>
+</html>
