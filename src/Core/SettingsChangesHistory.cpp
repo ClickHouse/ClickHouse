@@ -64,6 +64,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     },
     {"24.11",
         {
+            {"enable_http_compression", false, true, "Improvement for read-only clients since they can't change settings"},
             {"distributed_cache_discard_connection_if_unread_data", true, true, "New setting"},
             {"filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage", true, true, "New setting"},
             {"filesystem_cache_enable_background_download_during_fetch", true, true, "New setting"},
