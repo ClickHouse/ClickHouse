@@ -139,7 +139,11 @@ FilterStep::FilterStep(
 
 void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
-    auto and_atoms = splitAndChainIntoMultipleFilters(actions_dag, filter_column_name);
+    std::vector<ActionsAndName> and_atoms;
+
+    if (settings.enable_multiple_filters_transforms_for_and_chain && !actions_dag.hasStatefulFunctions())
+        and_atoms = splitAndChainIntoMultipleFilters(actions_dag, filter_column_name);
+
     for (auto & and_atom : and_atoms)
     {
         auto expression = std::make_shared<ExpressionActions>(std::move(and_atom.dag), settings.getActionsSettings());
@@ -178,7 +182,11 @@ void FilterStep::describeActions(FormatSettings & settings) const
     String prefix(settings.offset, settings.indent_char);
 
     auto cloned_dag = actions_dag.clone();
-    auto and_atoms = splitAndChainIntoMultipleFilters(cloned_dag, filter_column_name);
+
+    std::vector<ActionsAndName> and_atoms;
+    if (!actions_dag.hasStatefulFunctions())
+        and_atoms = splitAndChainIntoMultipleFilters(cloned_dag, filter_column_name);
+
     for (auto & and_atom : and_atoms)
     {
         auto expression = std::make_shared<ExpressionActions>(std::move(and_atom.dag));

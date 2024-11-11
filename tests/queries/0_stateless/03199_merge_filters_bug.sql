@@ -49,7 +49,7 @@ tmp1 AS
         fs1
     FROM t2
     LEFT JOIN tmp1 USING (fs1)
-    WHERE (fs1 IN ('test')) SETTINGS enable_multiple_prewhere_read_steps = 0;
+    WHERE (fs1 IN ('test')) SETTINGS enable_multiple_prewhere_read_steps = 0, query_plan_merge_filters=0;
 
 optimize table t1 final;
 
