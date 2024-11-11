@@ -4390,7 +4390,7 @@ private:
                     variant_column = IColumn::mutate(column);
                 /// Otherwise we should filter column.
                 else
-                    variant_column = column->filter(filter, variant_size_hint)->assumeMutable();
+                    variant_column = IColumn::mutate(column->filter(filter, variant_size_hint));
 
                 assert_cast<ColumnLowCardinality &>(*variant_column).nestedRemoveNullable();
                 return createVariantFromDescriptorsAndOneNonEmptyVariant(variant_types, std::move(discriminators), std::move(variant_column), variant_discr);
