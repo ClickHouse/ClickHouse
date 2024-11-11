@@ -37,8 +37,6 @@ public:
 
     bool isStoredOnDisk() const override { return true; }
 
-    bool isStoredOnReadonlyDisk() const override;
-
     bool isStoredOnRemoteDisk() const override;
 
     bool isStoredOnRemoteDiskWithZeroCopySupport() const override;
@@ -50,8 +48,6 @@ public:
     bool hasColumnFiles(const NameAndTypePair & column) const override;
 
     std::optional<time_t> getColumnModificationTime(const String & column_name) const override;
-
-    void loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const override;
 
 protected:
     static void loadIndexGranularityImpl(

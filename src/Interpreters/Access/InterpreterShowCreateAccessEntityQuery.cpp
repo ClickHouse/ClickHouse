@@ -64,9 +64,14 @@ namespace
                 query->default_roles = user.default_roles.toASTWithNames(*access_control);
         }
 
-        for (const auto & authentication_method : user.authentication_methods)
+        if (user.auth_data.getType() != AuthenticationType::NO_PASSWORD)
+            query->auth_data = user.auth_data.toAST();
+
+        if (user.valid_until)
         {
-            query->authentication_methods.push_back(authentication_method.toAST());
+            WriteBufferFromOwnString out;
+            writeDateTimeText(user.valid_until, out);
+            query->valid_until = std::make_shared<ASTLiteral>(out.str());
         }
 
         if (!user.settings.empty())

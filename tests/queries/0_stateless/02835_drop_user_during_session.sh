@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-debug, no-random-settings, no-random-merge-tree-settings, no-fasttest
-# no-fasttest: Busy slow wait
+# Tags: no-debug
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

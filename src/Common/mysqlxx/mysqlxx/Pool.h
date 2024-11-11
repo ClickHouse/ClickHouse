@@ -103,7 +103,8 @@ public:
         {
             if (pool)
                 return pool->getDescription();
-            return "pool is null";
+            else
+                return "pool is null";
         }
 
         void disconnect();
