@@ -37,6 +37,11 @@ namespace ProfileEvents
     extern const Event FilesystemCacheFailToReserveSpaceBecauseOfCacheResize;
 }
 
+namespace CurrentMetrics
+{
+    extern const Metric FilesystemCacheDownloadQueueElements;
+}
+
 namespace DB
 {
 
@@ -918,7 +923,13 @@ bool FileCache::tryReserve(
         if (!query_priority->collectCandidatesForEviction(
                 size, required_elements_num, reserve_stat, eviction_candidates, {}, user.user_id, cache_lock))
         {
-            failure_reason = "cannot evict enough space for query limit";
+            const auto & stat = reserve_stat.total_stat;
+            failure_reason = fmt::format(
+                "cannot evict enough space for query limit "
+                "(non-releasable count: {}, non-releasable size: {}, "
+                "releasable count: {}, releasable size: {}, background download elements: {})",
+                stat.non_releasable_count, stat.non_releasable_size, stat.releasable_count, stat.releasable_size,
+                CurrentMetrics::get(CurrentMetrics::FilesystemCacheDownloadQueueElements));
             return false;
         }
 
@@ -933,7 +944,13 @@ bool FileCache::tryReserve(
     if (!main_priority->collectCandidatesForEviction(
             size, required_elements_num, reserve_stat, eviction_candidates, queue_iterator, user.user_id, cache_lock))
     {
-        failure_reason = "cannot evict enough space";
+        const auto & stat = reserve_stat.total_stat;
+        failure_reason = fmt::format(
+            "cannot evict enough space "
+            "(non-releasable count: {}, non-releasable size: {}, "
+            "releasable count: {}, releasable size: {}, background download elements: {})",
+            stat.non_releasable_count, stat.non_releasable_size, stat.releasable_count, stat.releasable_size,
+            CurrentMetrics::get(CurrentMetrics::FilesystemCacheDownloadQueueElements));
         return false;
     }
 

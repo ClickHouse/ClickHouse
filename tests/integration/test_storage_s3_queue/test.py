@@ -1000,6 +1000,9 @@ def test_max_set_age(started_cluster):
     assert "Cannot parse input" in node.query(
         f"SELECT exception FROM system.s3queue WHERE file_name ilike '%{file_with_error}'"
     )
+    assert "Cannot parse input" in node.query(
+        f"SELECT exception FROM system.s3queue_log WHERE file_name ilike '%{file_with_error}' ORDER BY processing_end_time DESC LIMIT 1"
+    )
 
     assert 1 == int(
         node.query(
@@ -1403,8 +1406,8 @@ def test_shards_distributed(started_cluster, mode, processing_threads):
     # A unique path is necessary for repeatable tests
     keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"
-    files_to_generate = 300
-    row_num = 300
+    files_to_generate = 600
+    row_num = 1000
     total_rows = row_num * files_to_generate
     shards_num = 2
 
