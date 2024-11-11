@@ -34,7 +34,7 @@ export class MergeTreeMerger
                 case 'wait':
                     break loop; // No need to do anything iterateSelector() will be called on the end of any merge
                 default:
-                    throw { message: "Unknown merge selector yield type", type, value};
+                    throw { message: "Unknown merge selector yield type", value};
             }
         }
         if (this.merges_running == 0)

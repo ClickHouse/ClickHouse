@@ -39,12 +39,21 @@ export async function testMergeTreeMerger()
     const mt = new MergeTree();
     const merger = new MergeTreeMerger(sim, mt, pool, testSelector);
 
+    let expected_bytes = 0;
     for (let i = 1; i <= 8; i++)
-        mt.insertPart(i * (100 << 20));
+    {
+        const bytes = i * (100 << 20);
+        mt.insertPart(bytes);
+        expected_bytes += bytes;
+    }
 
     merger.start();
 
     await sim.run();
+
+    assert.deepEqual(mt.parts.filter(d => d.active).map(d => d.bytes), [expected_bytes]);
+
+    console.log('Test 1 passed: MergeTreeMerger');
 
     // Show result
     d3.select("body")
