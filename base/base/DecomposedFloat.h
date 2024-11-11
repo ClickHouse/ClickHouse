@@ -230,4 +230,4 @@ struct DecomposedFloat
 
 using DecomposedFloat64 = DecomposedFloat<double>;
 using DecomposedFloat32 = DecomposedFloat<float>;
-using DecomposedFloat16 = DecomposedFloat<__bf16>;
+using DecomposedFloat16 = DecomposedFloat<BFloat16>;
