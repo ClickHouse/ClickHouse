@@ -703,7 +703,17 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
             ret += "'";
         }}};
 
-const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> S3TableSettings = {{"s3_skip_empty_files", TrueOrFalse}};
+const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> S3TableSettings
+    = {{"enable_filesystem_cache", TrueOrFalse},
+       {"filesystem_cache_name",
+        [](RandomGenerator & rg, std::string & ret)
+        {
+            const std::vector<std::string> & choices = {"cache_for_s3"};
+            ret += "'";
+            ret += rg.PickRandomlyFromVector(choices);
+            ret += "'";
+        }},
+       {"s3_skip_empty_files", TrueOrFalse}};
 
 const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> S3QueueTableSettings
     = {{"after_processing",

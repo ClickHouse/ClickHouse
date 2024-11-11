@@ -246,7 +246,8 @@ int StatementGenerator::GenerateTableKey(RandomGenerator & rg, sql_query_grammar
 
                     InsertEntryRef(entry, bexpr->mutable_lhs());
                     bexpr->set_op(sql_query_grammar::BinaryOperator::BINOP_PERCENT);
-                    bexpr->mutable_rhs()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rg.NextRandomUInt32() % (rg.NextBool() ? 1024 : 65536));
+                    bexpr->mutable_rhs()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(
+                        rg.NextRandomUInt32() % (rg.NextBool() ? 1024 : 65536));
                 }
                 else
                 {
