@@ -908,8 +908,7 @@ int StatementGenerator::GenerateOrderBy(
     return 0;
 }
 
-int
-StatementGenerator::GenerateLimitExpr(RandomGenerator & rg, sql_query_grammar::Expr * expr)
+int StatementGenerator::GenerateLimitExpr(RandomGenerator & rg, sql_query_grammar::Expr * expr)
 {
     if (this->depth >= this->fc.max_depth || rg.NextSmallNumber() < 8)
     {
@@ -982,7 +981,7 @@ int StatementGenerator::GenerateOffset(RandomGenerator & rg, sql_query_grammar::
     off->set_rows(rg.NextBool());
     if (rg.NextBool())
     {
-        sql_query_grammar::FetchStatement *fst = off->mutable_fetch();
+        sql_query_grammar::FetchStatement * fst = off->mutable_fetch();
 
         GenerateLimitExpr(rg, fst->mutable_row_count());
         fst->set_rows(rg.NextBool());

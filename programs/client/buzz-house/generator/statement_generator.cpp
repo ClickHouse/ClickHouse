@@ -440,13 +440,7 @@ int StatementGenerator::GenerateNextInsert(RandomGenerator & rg, sql_query_gramm
 
     for (const auto & entry : this->entries)
     {
-        sql_query_grammar::ColumnPath * cp = iit->add_cols();
-
-        cp->mutable_col()->set_column("c" + std::to_string(entry.cname1));
-        if (entry.cname2.has_value())
-        {
-            cp->add_sub_cols()->set_column("c" + std::to_string(entry.cname2.value()));
-        }
+        InsertEntryRefCP(entry, iit->add_cols());
     }
 
     if (noption < 901)
@@ -578,8 +572,7 @@ int StatementGenerator::GenerateNextTruncate(RandomGenerator & rg, sql_query_gra
 {
     const bool trunc_database = CollectionHas<std::shared_ptr<SQLDatabase>>(attached_databases);
     const uint32_t trunc_table = 980 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables)),
-                   trunc_db_tables = 15 * static_cast<uint32_t>(trunc_database),
-                   trunc_db = 5 * static_cast<uint32_t>(trunc_database),
+                   trunc_db_tables = 15 * static_cast<uint32_t>(trunc_database), trunc_db = 5 * static_cast<uint32_t>(trunc_database),
                    prob_space = trunc_table + trunc_db_tables + trunc_db;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.gen);
@@ -933,15 +926,8 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
                     std::shuffle(this->entries.begin(), this->entries.end(), rg.gen);
                     for (uint32_t j = 0; j < nupdates; j++)
                     {
-                        const InsertEntry & entry = this->entries[j];
-                        sql_query_grammar::ColumnPath * cp
-                            = j == 0 ? upt->mutable_update()->mutable_col() : upt->add_other_updates()->mutable_col();
-
-                        cp->mutable_col()->set_column("c" + std::to_string(entry.cname1));
-                        if (entry.cname2.has_value())
-                        {
-                            cp->add_sub_cols()->set_column("c" + std::to_string(entry.cname2.value()));
-                        }
+                        InsertEntryRefCP(
+                            this->entries[j], j == 0 ? upt->mutable_update()->mutable_col() : upt->add_other_updates()->mutable_col());
                     }
                     AddTableRelation(rg, true, "", t);
                     this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = false;
@@ -1345,7 +1331,9 @@ int StatementGenerator::GenerateNextQuery(RandomGenerator & rg, sql_query_gramma
                               || CollectionHas<std::shared_ptr<SQLDatabase>>(attached_databases) || !functions.empty()),
                    insert = 100 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables)),
                    light_delete = 6 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables)),
-                   truncate = 2 * static_cast<uint32_t>(CollectionHas<std::shared_ptr<SQLDatabase>>(attached_databases) || CollectionHas<SQLTable>(attached_tables)),
+                   truncate = 2
+        * static_cast<uint32_t>(CollectionHas<std::shared_ptr<SQLDatabase>>(attached_databases)
+                                || CollectionHas<SQLTable>(attached_tables)),
                    optimize_table = 2
         * static_cast<uint32_t>(CollectionHas<SQLTable>(
             [](const SQLTable & t)

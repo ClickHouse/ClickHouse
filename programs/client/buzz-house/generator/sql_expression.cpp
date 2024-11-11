@@ -310,7 +310,7 @@ int StatementGenerator::GenerateLiteralValue(RandomGenerator & rg, sql_query_gra
 
             buf += "'";
             AppendGeoValue(rg, buf, gt);
-            buf += "'";
+            buf += "'::";
             buf += GeoTypes_Name(gt);
         }
         else

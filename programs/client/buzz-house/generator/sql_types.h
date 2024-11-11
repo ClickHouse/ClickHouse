@@ -671,7 +671,7 @@ public:
 class GeoType : public SQLType
 {
 public:
-    const sql_query_grammar::GeoTypes & geo_type;
+    const sql_query_grammar::GeoTypes geo_type;
     GeoType(const sql_query_grammar::GeoTypes & gt) : geo_type(gt) { }
 
     void TypeName(std::string & ret, const bool escape) const override
@@ -965,7 +965,7 @@ public:
     }
 };
 
-template <typename T>
+template <typename T, bool SArray>
 bool HasType(const SQLType * tp)
 {
     const Nullable * nl;
@@ -976,17 +976,20 @@ bool HasType(const SQLType * tp)
     {
         return true;
     }
-    else if ((nl = dynamic_cast<const Nullable *>(tp)))
+    if ((nl = dynamic_cast<const Nullable *>(tp)))
     {
-        return HasType<T>(nl->subtype);
+        return HasType<T, SArray>(nl->subtype);
     }
-    else if ((lc = dynamic_cast<const LowCardinality *>(tp)))
+    if ((lc = dynamic_cast<const LowCardinality *>(tp)))
     {
-        return HasType<T>(lc->subtype);
+        return HasType<T, SArray>(lc->subtype);
     }
-    else if ((at = dynamic_cast<const ArrayType *>(tp)))
+    if constexpr (SArray)
     {
-        return HasType<T>(at->subtype);
+        if ((at = dynamic_cast<const ArrayType *>(tp)))
+        {
+            return HasType<T, SArray>(at->subtype);
+        }
     }
     return false;
 }

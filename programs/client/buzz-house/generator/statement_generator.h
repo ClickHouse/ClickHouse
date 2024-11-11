@@ -217,6 +217,8 @@ public:
     }
 
 private:
+    void InsertEntryRef(const InsertEntry & entry, sql_query_grammar::Expr * expr);
+    void InsertEntryRefCP(const InsertEntry & entry, sql_query_grammar::ColumnPath * cp);
     void AddTableRelation(RandomGenerator & rg, const bool allow_internal_cols, const std::string & rel_name, const SQLTable & t);
 
     void StrAppendBottomValue(RandomGenerator & rg, std::string & ret, const SQLType * tp);
@@ -291,14 +293,8 @@ private:
     int GenerateOrderBy(RandomGenerator & rg, const uint32_t ncols, const bool allow_settings, sql_query_grammar::OrderByStatement * ob);
 
     int GenerateLimitExpr(RandomGenerator & rg, sql_query_grammar::Expr * expr);
-    int GenerateLimit(
-        RandomGenerator & rg,
-        const bool has_order_by,
-        const uint32_t ncols,
-        sql_query_grammar::LimitStatement * ls);
-    int GenerateOffset(
-        RandomGenerator & rg,
-        sql_query_grammar::OffsetStatement * off);
+    int GenerateLimit(RandomGenerator & rg, const bool has_order_by, const uint32_t ncols, sql_query_grammar::LimitStatement * ls);
+    int GenerateOffset(RandomGenerator & rg, sql_query_grammar::OffsetStatement * off);
     int GenerateGroupByExpr(
         RandomGenerator & rg,
         const bool enforce_having,

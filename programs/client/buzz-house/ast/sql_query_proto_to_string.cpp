@@ -2155,7 +2155,6 @@ ret += " ";
         ret += " ";
         OffsetStatementToString(ret, ssc.offset());
     }
-
 }
 
 CONV_FN(SetQuery, setq)

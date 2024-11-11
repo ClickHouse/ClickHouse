@@ -115,6 +115,98 @@ int StatementGenerator::PickUpNextCols(RandomGenerator & rg, const SQLTable & t,
     return 0;
 }
 
+const std::vector<sql_query_grammar::SQLFunc> multicol_hash
+    = {sql_query_grammar::SQLFunc::FUNChalfMD5,
+       sql_query_grammar::SQLFunc::FUNCsipHash64,
+       sql_query_grammar::SQLFunc::FUNCsipHash128,
+       sql_query_grammar::SQLFunc::FUNCsipHash128Reference,
+       sql_query_grammar::SQLFunc::FUNCcityHash64,
+       sql_query_grammar::SQLFunc::FUNCfarmFingerprint64,
+       sql_query_grammar::SQLFunc::FUNCfarmHash64,
+       sql_query_grammar::SQLFunc::FUNCmetroHash64,
+       sql_query_grammar::SQLFunc::FUNCmurmurHash2_32,
+       sql_query_grammar::SQLFunc::FUNCmurmurHash2_64,
+       sql_query_grammar::SQLFunc::FUNCgccMurmurHash,
+       sql_query_grammar::SQLFunc::FUNCkafkaMurmurHash,
+       sql_query_grammar::SQLFunc::FUNCmurmurHash3_32,
+       sql_query_grammar::SQLFunc::FUNCmurmurHash3_64,
+       sql_query_grammar::SQLFunc::FUNCmurmurHash3_128};
+
+const std::vector<sql_query_grammar::SQLFunc> dates_hash
+    = {sql_query_grammar::SQLFunc::FUNCtoYear,
+       sql_query_grammar::SQLFunc::FUNCtoQuarter,
+       sql_query_grammar::SQLFunc::FUNCtoMonth,
+       sql_query_grammar::SQLFunc::FUNCtoDayOfYear,
+       sql_query_grammar::SQLFunc::FUNCtoDayOfMonth,
+       sql_query_grammar::SQLFunc::FUNCtoDayOfWeek,
+       sql_query_grammar::SQLFunc::FUNCtoHour,
+       sql_query_grammar::SQLFunc::FUNCtoMinute,
+       sql_query_grammar::SQLFunc::FUNCtoSecond,
+       sql_query_grammar::SQLFunc::FUNCtoMillisecond,
+       sql_query_grammar::SQLFunc::FUNCtoUnixTimestamp,
+       sql_query_grammar::SQLFunc::FUNCtoStartOfYear,
+       sql_query_grammar::SQLFunc::FUNCtoStartOfISOYear,
+       sql_query_grammar::SQLFunc::FUNCtoStartOfQuarter,
+       sql_query_grammar::SQLFunc::FUNCtoStartOfMonth,
+       sql_query_grammar::SQLFunc::FUNCtoLastDayOfMonth,
+       sql_query_grammar::SQLFunc::FUNCtoMonday,
+       sql_query_grammar::SQLFunc::FUNCtoStartOfWeek,
+       sql_query_grammar::SQLFunc::FUNCtoLastDayOfWeek,
+       sql_query_grammar::SQLFunc::FUNCtoStartOfDay,
+       sql_query_grammar::SQLFunc::FUNCtoStartOfHour,
+       sql_query_grammar::SQLFunc::FUNCtoStartOfMinute,
+       sql_query_grammar::SQLFunc::FUNCtoStartOfSecond,
+       sql_query_grammar::SQLFunc::FUNCtoStartOfMillisecond,
+       sql_query_grammar::SQLFunc::FUNCtoStartOfMicrosecond,
+       sql_query_grammar::SQLFunc::FUNCtoStartOfNanosecond,
+       sql_query_grammar::SQLFunc::FUNCtoStartOfFiveMinutes,
+       sql_query_grammar::SQLFunc::FUNCtoStartOfTenMinutes,
+       sql_query_grammar::SQLFunc::FUNCtoStartOfFifteenMinutes,
+       sql_query_grammar::SQLFunc::FUNCtoTime,
+       sql_query_grammar::SQLFunc::FUNCtoRelativeYearNum,
+       sql_query_grammar::SQLFunc::FUNCtoRelativeQuarterNum,
+       sql_query_grammar::SQLFunc::FUNCtoRelativeMonthNum,
+       sql_query_grammar::SQLFunc::FUNCtoRelativeWeekNum,
+       sql_query_grammar::SQLFunc::FUNCtoRelativeDayNum,
+       sql_query_grammar::SQLFunc::FUNCtoRelativeHourNum,
+       sql_query_grammar::SQLFunc::FUNCtoRelativeMinuteNum,
+       sql_query_grammar::SQLFunc::FUNCtoRelativeSecondNum,
+       sql_query_grammar::SQLFunc::FUNCtoISOYear,
+       sql_query_grammar::SQLFunc::FUNCtoISOWeek,
+       sql_query_grammar::SQLFunc::FUNCtoWeek,
+       sql_query_grammar::SQLFunc::FUNCtoYearWeek,
+       sql_query_grammar::SQLFunc::FUNCtoDaysSinceYearZero,
+       sql_query_grammar::SQLFunc::FUNCtoday,
+       sql_query_grammar::SQLFunc::FUNCyesterday,
+       sql_query_grammar::SQLFunc::FUNCtimeSlot,
+       sql_query_grammar::SQLFunc::FUNCtoYYYYMM,
+       sql_query_grammar::SQLFunc::FUNCtoYYYYMMDD,
+       sql_query_grammar::SQLFunc::FUNCtoYYYYMMDDhhmmss,
+       sql_query_grammar::SQLFunc::FUNCmonthName,
+       sql_query_grammar::SQLFunc::FUNCtoModifiedJulianDay,
+       sql_query_grammar::SQLFunc::FUNCtoModifiedJulianDayOrNull,
+       sql_query_grammar::SQLFunc::FUNCtoUTCTimestamp};
+
+void StatementGenerator::InsertEntryRef(const InsertEntry & entry, sql_query_grammar::Expr * expr)
+{
+    sql_query_grammar::ExprColumn * ecol = expr->mutable_comp_expr()->mutable_expr_stc()->mutable_col();
+
+    ecol->mutable_col()->set_column("c" + std::to_string(entry.cname1));
+    if (entry.cname2.has_value())
+    {
+        ecol->mutable_subcol()->set_column("c" + std::to_string(entry.cname2.value()));
+    }
+}
+
+void StatementGenerator::InsertEntryRefCP(const InsertEntry & entry, sql_query_grammar::ColumnPath * cp)
+{
+    cp->mutable_col()->set_column("c" + std::to_string(entry.cname1));
+    if (entry.cname2.has_value())
+    {
+        cp->add_sub_cols()->set_column("c" + std::to_string(entry.cname2.value()));
+    }
+}
+
 int StatementGenerator::GenerateTableKey(RandomGenerator & rg, sql_query_grammar::TableKey * tkey)
 {
     if (!entries.empty() && rg.NextSmallNumber() < 7)
@@ -122,15 +214,34 @@ int StatementGenerator::GenerateTableKey(RandomGenerator & rg, sql_query_grammar
         const size_t ocols = (rg.NextMediumNumber() % std::min<size_t>(entries.size(), UINT32_C(3))) + 1;
 
         std::shuffle(entries.begin(), entries.end(), rg.gen);
-        for (size_t i = 0; i < ocols; i++)
+        if (rg.NextSmallNumber() < 3)
         {
-            const InsertEntry & entry = this->entries[i];
-            sql_query_grammar::ExprColumn * ecol = tkey->add_exprs()->mutable_comp_expr()->mutable_expr_stc()->mutable_col();
+            //Use a single expression for the entire table
+            sql_query_grammar::SQLFuncCall * func_call = tkey->add_exprs()->mutable_comp_expr()->mutable_func_call();
 
-            ecol->mutable_col()->set_column("c" + std::to_string(entry.cname1));
-            if (entry.cname2.has_value())
+            func_call->mutable_func()->set_catalog_func(rg.PickRandomlyFromVector(multicol_hash));
+            for (size_t i = 0; i < ocols; i++)
             {
-                ecol->mutable_subcol()->set_column("c" + std::to_string(entry.cname2.value()));
+                InsertEntryRef(this->entries[i], func_call->add_args()->mutable_expr());
+            }
+        }
+        else
+        {
+            for (size_t i = 0; i < ocols; i++)
+            {
+                const InsertEntry & entry = this->entries[i];
+
+                if ((HasType<DateType, false>(entry.tp) || HasType<DateTimeType, false>(entry.tp)) && rg.NextBool())
+                {
+                    sql_query_grammar::SQLFuncCall * func_call = tkey->add_exprs()->mutable_comp_expr()->mutable_func_call();
+
+                    func_call->mutable_func()->set_catalog_func(rg.PickRandomlyFromVector(dates_hash));
+                    InsertEntryRef(entry, func_call->add_args()->mutable_expr());
+                }
+                else
+                {
+                    InsertEntryRef(entry, tkey->add_exprs());
+                }
             }
         }
     }
@@ -153,14 +264,7 @@ int StatementGenerator::GenerateMergeTreeEngineDetails(
 
         for (uint32_t i = 0; i < pkey_size; i++)
         {
-            const sql_query_grammar::ExprColumn & oecol = te->order().exprs(i).comp_expr().expr_stc().col();
-            sql_query_grammar::ExprColumn * necol = tkey->add_exprs()->mutable_comp_expr()->mutable_expr_stc()->mutable_col();
-
-            necol->mutable_col()->set_column(oecol.col().column());
-            if (oecol.has_subcol())
-            {
-                necol->mutable_subcol()->set_column(oecol.subcol().column());
-            }
+            tkey->add_exprs()->CopyFrom(te->order().exprs(i));
         }
     }
     else if (!te->order().exprs_size() && add_pkey)
@@ -184,15 +288,20 @@ int StatementGenerator::GenerateMergeTreeEngineDetails(
 
             if (!entry.cname2.has_value() && (itp = dynamic_cast<const IntType *>(entry.tp)) && itp->is_unsigned)
             {
+                const sql_query_grammar::TableKey & tpk = te->primary_key();
+
                 //must be in pkey
                 for (size_t j = 0; j < npkey; j++)
                 {
-                    const sql_query_grammar::ExprColumn & oecol = te->primary_key().exprs(j).comp_expr().expr_stc().col();
-
-                    if (!oecol.has_subcol() && std::stoul(oecol.col().column().substr(1)) == entry.cname1)
+                    if (tpk.exprs(j).has_comp_expr() && tpk.exprs(j).comp_expr().has_expr_stc())
                     {
-                        this->ids.push_back(entry.cname1);
-                        break;
+                        const sql_query_grammar::ExprColumn & oecol = tpk.exprs(j).comp_expr().expr_stc().col();
+
+                        if (!oecol.has_subcol() && std::stoul(oecol.col().column().substr(1)) == entry.cname1)
+                        {
+                            this->ids.push_back(entry.cname1);
+                            break;
+                        }
                     }
                 }
             }
@@ -219,14 +328,7 @@ int StatementGenerator::GenerateMergeTreeEngineDetails(
         std::shuffle(entries.begin(), entries.end(), rg.gen);
         for (size_t i = 0; i < ncols; i++)
         {
-            const InsertEntry & ie = entries[i];
-            sql_query_grammar::ColumnPath * cp = te->add_params()->mutable_cols();
-
-            cp->mutable_col()->set_column("c" + std::to_string(ie.cname1));
-            if (ie.cname2.has_value())
-            {
-                cp->add_sub_cols()->set_column("c" + std::to_string(ie.cname2.value()));
-            }
+            InsertEntryRefCP(entries[i], te->add_params()->mutable_cols());
         }
     }
     return 0;
@@ -301,14 +403,7 @@ int StatementGenerator::GenerateEngineDetails(RandomGenerator & rg, SQLBase & b,
         std::shuffle(entries.begin(), entries.end(), rg.gen);
         for (size_t i = 0; i < ncols; i++)
         {
-            const InsertEntry & ie = entries[i];
-            sql_query_grammar::ColumnPath * cp = te->add_params()->mutable_cols();
-
-            cp->mutable_col()->set_column("c" + std::to_string(ie.cname1));
-            if (ie.cname2.has_value())
-            {
-                cp->add_sub_cols()->set_column("c" + std::to_string(ie.cname2.value()));
-            }
+            InsertEntryRefCP(entries[i], te->add_params()->mutable_cols());
         }
     }
     else if (b.IsBufferEngine())
@@ -445,15 +540,7 @@ int StatementGenerator::GenerateEngineDetails(RandomGenerator & rg, SQLBase & b,
     }
     if ((b.IsRocksEngine() || b.IsRedisEngine()) && add_pkey && !entries.empty())
     {
-        const InsertEntry & entry = rg.PickRandomlyFromVector(entries);
-        sql_query_grammar::ExprColumn * ecol
-            = te->mutable_primary_key()->add_exprs()->mutable_comp_expr()->mutable_expr_stc()->mutable_col();
-
-        ecol->mutable_col()->set_column("c" + std::to_string(entry.cname1));
-        if (entry.cname2.has_value())
-        {
-            ecol->mutable_subcol()->set_column("c" + std::to_string(entry.cname2.value()));
-        }
+        InsertEntryRef(rg.PickRandomlyFromVector(entries), te->mutable_primary_key()->add_exprs());
     }
     return 0;
 }
@@ -652,7 +739,7 @@ int StatementGenerator::AddTableIndex(RandomGenerator & rg, SQLTable & t, const 
             {
                 for (const auto & entry2 : ntp->subtypes)
                 {
-                    if (itpe < sql_query_grammar::IndexType::IDX_ngrambf_v1 || HasType<StringType>(entry2.subtype))
+                    if (itpe < sql_query_grammar::IndexType::IDX_ngrambf_v1 || HasType<StringType, true>(entry2.subtype))
                     {
                         entries.push_back(InsertEntry(
                             entry.second.nullable,
@@ -664,7 +751,7 @@ int StatementGenerator::AddTableIndex(RandomGenerator & rg, SQLTable & t, const 
                     }
                 }
             }
-            else if (itpe < sql_query_grammar::IndexType::IDX_ngrambf_v1 || HasType<StringType>(entry.second.tp))
+            else if (itpe < sql_query_grammar::IndexType::IDX_ngrambf_v1 || HasType<StringType, true>(entry.second.tp))
             {
                 entries.push_back(InsertEntry(
                     entry.second.nullable, entry.second.special, entry.second.cname, std::nullopt, entry.second.tp, entry.second.dmod));
@@ -706,14 +793,7 @@ int StatementGenerator::AddTableIndex(RandomGenerator & rg, SQLTable & t, const 
         }
         else
         {
-            const InsertEntry & entry1 = this->entries[0];
-            sql_query_grammar::ExprColumn * ecol = expr->mutable_comp_expr()->mutable_expr_stc()->mutable_col();
-
-            ecol->mutable_col()->set_column("c" + std::to_string(entry1.cname1));
-            if (entry1.cname2.has_value())
-            {
-                ecol->mutable_subcol()->set_column("c" + std::to_string(entry1.cname2.value()));
-            }
+            InsertEntryRef(this->entries[0], expr);
         }
         entries.clear();
     }
