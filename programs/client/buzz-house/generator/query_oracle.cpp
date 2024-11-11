@@ -312,6 +312,7 @@ Run query with different settings oracle
 static const std::vector<TestSetting> test_settings{
     TestSetting("aggregate_functions_null_for_empty", {"0", "1"}),
     TestSetting("aggregation_in_order_max_block_bytes", {"0", "1"}),
+    TestSetting("allow_introspection_functions", {"0", "1"}),
     TestSetting("allow_reorder_prewhere_conditions", {"0", "1"}),
     TestSetting("any_join_distinct_right_table_keys", {"0", "1"}),
     TestSetting("async_insert", {"0", "1"}),
@@ -363,6 +364,7 @@ static const std::vector<TestSetting> test_settings{
     TestSetting("join_use_nulls", {"0", "1"}),
     TestSetting("local_filesystem_read_method", {"'read'", "'pread'", "'mmap'", "'pread_threadpool'", "'io_uring'"}),
     TestSetting("local_filesystem_read_prefetch", {"0", "1"}),
+    TestSetting("log_queries", {"0", "1"}),
     TestSetting("log_query_threads", {"0", "1"}),
     TestSetting("low_cardinality_use_single_dictionary_for_part", {"0", "1"}),
     TestSetting("max_bytes_before_external_group_by", {"0", "100000000"}),

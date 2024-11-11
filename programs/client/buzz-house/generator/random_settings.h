@@ -26,6 +26,7 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
      [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
     {"allow_experimental_parallel_reading_from_replicas", ZeroOneTwo},
     {"allow_experimental_shared_set_join", TrueOrFalse},
+    {"allow_introspection_functions", TrueOrFalse},
     {"allow_nullable_key", TrueOrFalse},
     {"allow_prefetched_read_pool_for_remote_filesystem", TrueOrFalse},
     {"allow_reorder_prewhere_conditions", TrueOrFalse},
@@ -190,6 +191,7 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
          ret += "'";
      }},
     {"local_filesystem_read_prefetch", TrueOrFalse},
+    {"log_queries", TrueOrFalse},
     {"log_query_threads", TrueOrFalse},
     {"low_cardinality_allow_in_native_format", TrueOrFalse},
     {"low_cardinality_max_dictionary_size",
@@ -440,6 +442,14 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
     {"remote_filesystem_read_prefetch", TrueOrFalse},
     {"rows_before_aggregation", TrueOrFalse},
     {"select_sequential_consistency", TrueOrFalse},
+    {"send_logs_level",
+     [](RandomGenerator & rg, std::string & ret)
+     {
+         const std::vector<std::string> & choices = {"debug", "information", "trace", "error", "test", "warning", "fatal", "none"};
+         ret += "'";
+         ret += rg.PickRandomlyFromVector(choices);
+         ret += "'";
+     }},
     {"session_timezone",
      [](RandomGenerator & rg, std::string & ret)
      {
