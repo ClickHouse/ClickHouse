@@ -93,3 +93,8 @@ SELECT 1.1::BFloat16 AS x,
     hex(x), bin(x),
     byteSize(x),
     reinterpretAsUInt16(x), hex(reinterpretAsString(x));
+
+-- Rounding (this could be not towards the nearest)
+
+SELECT 1.1::BFloat16 AS x,
+    round(x), round(x, 1), round(x, 2), round(x, -1);
