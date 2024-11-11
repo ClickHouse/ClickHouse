@@ -397,7 +397,7 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
 
     /** The `readonly` value is understood as follows:
       * 0 - no read-only restrictions.
-      * 1 - only read requests, as well as changing settings with `changable_in_readonly` flag.
+      * 1 - only read requests, as well as changing settings with `changeable_in_readonly` flag.
       * 2 - only read requests, as well as changing settings, except for the `readonly` setting.
       */
 
