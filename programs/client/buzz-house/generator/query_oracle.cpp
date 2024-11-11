@@ -526,7 +526,7 @@ int QueryOracle::GenerateSettingQuery(RandomGenerator & rg, StatementGenerator &
     sql_query_grammar::SelectIntoFile * sif = ts->mutable_intofile();
 
     gen.SetAllowNotDetermistic(false);
-    gen.GenerateTopSelect(rg, (~allow_limit), ts);
+    gen.GenerateTopSelect(rg, std::numeric_limits<uint32_t>::max(), ts);
     gen.SetAllowNotDetermistic(true);
 
     sql_query_grammar::Select * osel = ts->release_sel();

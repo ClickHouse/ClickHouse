@@ -954,7 +954,7 @@ int StatementGenerator::GenerateLimit(
     {
         GenerateLimitExpr(rg, ls->mutable_offset());
     }
-    ls->set_with_ties(has_order_by && rg.NextSmallNumber() < 7);
+    ls->set_with_ties(has_order_by && (!this->allow_not_deterministic || rg.NextSmallNumber() < 7));
     if (rg.NextSmallNumber() < 4)
     {
         sql_query_grammar::Expr * expr = ls->mutable_limit_by();
@@ -979,14 +979,14 @@ int StatementGenerator::GenerateOffset(RandomGenerator & rg, sql_query_grammar::
 {
     GenerateLimitExpr(rg, off->mutable_row_count());
     off->set_rows(rg.NextBool());
-    if (rg.NextBool())
+    if (!this->allow_not_deterministic || rg.NextBool())
     {
         sql_query_grammar::FetchStatement * fst = off->mutable_fetch();
 
         GenerateLimitExpr(rg, fst->mutable_row_count());
         fst->set_rows(rg.NextBool());
         fst->set_first(rg.NextBool());
-        fst->set_only(rg.NextBool());
+        fst->set_only(!this->allow_not_deterministic || rg.NextBool());
     }
     return 0;
 }
@@ -1106,13 +1106,13 @@ int StatementGenerator::GenerateSelect(
         this->width -= ncols;
 
         if ((allowed_clauses & allow_orderby) && this->depth < this->fc.max_depth && this->width < this->fc.max_width
-            && rg.NextSmallNumber() < 4)
+            && (!this->allow_not_deterministic || rg.NextSmallNumber() < 4))
         {
             this->depth++;
             GenerateOrderBy(rg, ncols, (allowed_clauses & allow_orderby_settings), ssc->mutable_orderby());
             this->depth--;
         }
-        if ((allowed_clauses & allow_limit) && this->allow_not_deterministic && rg.NextSmallNumber() < 4)
+        if ((allowed_clauses & allow_limit) && (this->allow_not_deterministic || ssc->has_orderby()) && rg.NextSmallNumber() < 4)
         {
             if (rg.NextBool())
             {
