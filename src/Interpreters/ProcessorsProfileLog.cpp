@@ -1,16 +1,15 @@
 #include <Interpreters/ProcessorsProfileLog.h>
 
-#include <DataTypes/DataTypeArray.h>
+#include <base/getFQDNOrHostName.h>
+#include <Common/ClickHouseRevision.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <base/getFQDNOrHostName.h>
-#include <Common/ClickHouseRevision.h>
-#include <Common/DateLUTImpl.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeArray.h>
 #include <Common/logger_useful.h>
 
 #include <array>
@@ -30,8 +29,6 @@ ColumnsDescription ProcessorProfileLogElement::getColumnsDescription()
         {"id", std::make_shared<DataTypeUInt64>(), "ID of processor."},
         {"parent_ids", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Parent processors IDs."},
         {"plan_step", std::make_shared<DataTypeUInt64>(), "ID of the query plan step which created this processor. The value is zero if the processor was not added from any step."},
-        {"plan_step_name", std::make_shared<DataTypeString>(), "Name of the query plan step which created this processor. The value is empty if the processor was not added from any step."},
-        {"plan_step_description", std::make_shared<DataTypeString>(), "Description of the query plan step which created this processor. The value is empty if the processor was not added from any step."},
         {"plan_group", std::make_shared<DataTypeUInt64>(), "Group of the processor if it was created by query plan step. A group is a logical partitioning of processors added from the same query plan step. Group is used only for beautifying the result of EXPLAIN PIPELINE result."},
 
         {"initial_query_id", std::make_shared<DataTypeString>(), "ID of the initial query (for distributed query execution)."},
@@ -66,8 +63,6 @@ void ProcessorProfileLogElement::appendToBlock(MutableColumns & columns) const
     }
 
     columns[i++]->insert(plan_step);
-    columns[i++]->insert(plan_step_name);
-    columns[i++]->insert(plan_step_description);
     columns[i++]->insert(plan_group);
     columns[i++]->insertData(initial_query_id.data(), initial_query_id.size());
     columns[i++]->insertData(query_id.data(), query_id.size());

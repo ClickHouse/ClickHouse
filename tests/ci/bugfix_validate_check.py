@@ -7,7 +7,8 @@ import sys
 from pathlib import Path
 from typing import List, Sequence, Tuple
 
-from ci_config import CI
+from ci_config import JobNames
+from ci_utils import normalize_string
 from env_helper import TEMP_PATH
 from functional_test_check import NO_CHANGES_MSG
 from report import (
@@ -91,19 +92,16 @@ def main():
     logging.basicConfig(level=logging.INFO)
     # args = parse_args()
     stopwatch = Stopwatch()
-    jobs_to_validate = [
-        CI.JobNames.STATELESS_TEST_RELEASE,
-        CI.JobNames.INTEGRATION_TEST,
-    ]
+    jobs_to_validate = [JobNames.STATELESS_TEST_RELEASE, JobNames.INTEGRATION_TEST]
     functional_job_report_file = Path(TEMP_PATH) / "functional_test_job_report.json"
     integration_job_report_file = Path(TEMP_PATH) / "integration_test_job_report.json"
     jobs_report_files = {
-        CI.JobNames.STATELESS_TEST_RELEASE: functional_job_report_file,
-        CI.JobNames.INTEGRATION_TEST: integration_job_report_file,
+        JobNames.STATELESS_TEST_RELEASE: functional_job_report_file,
+        JobNames.INTEGRATION_TEST: integration_job_report_file,
     }
     jobs_scripts = {
-        CI.JobNames.STATELESS_TEST_RELEASE: "functional_test_check.py",
-        CI.JobNames.INTEGRATION_TEST: "integration_test_check.py",
+        JobNames.STATELESS_TEST_RELEASE: "functional_test_check.py",
+        JobNames.INTEGRATION_TEST: "integration_test_check.py",
     }
 
     for test_job in jobs_to_validate:
@@ -111,12 +109,12 @@ def main():
         test_script = jobs_scripts[test_job]
         if report_file.exists():
             report_file.unlink()
+        extra_timeout_option = ""
+        if test_job == JobNames.STATELESS_TEST_RELEASE:
+            extra_timeout_option = str(3600)
         # "bugfix" must be present in checkname, as integration test runner checks this
         check_name = f"Validate bugfix: {test_job}"
-        command = (
-            f"python3 {test_script} '{check_name}' "
-            f"--validate-bugfix --report-to-file {report_file}"
-        )
+        command = f"python3 {test_script} '{check_name}' {extra_timeout_option} --validate-bugfix --report-to-file {report_file}"
         print(f"Going to validate job [{test_job}], command [{command}]")
         _ = subprocess.run(
             command,
@@ -139,20 +137,11 @@ def main():
         jr = JobReport.load(from_file=report_file)
         additional_files.append(report_file)
         for file in set(jr.additional_files):
-            orig_file = Path(file)
-            file_name = orig_file.name
-            file_name = file_name.replace(
-                ".", "__" + CI.Utils.normalize_string(job_id) + ".", 1
-            )
-            new_file = orig_file.rename(orig_file.parent / file_name)
-            for tr in test_results:
-                if tr.log_files is None:
-                    continue
-                tr.log_files = [
-                    new_file if (Path(log_file) == orig_file) else Path(log_file)
-                    for log_file in tr.log_files
-                ]
-            additional_files.append(new_file)
+            file_ = Path(file)
+            file_name = file_.name
+            file_name = file_name.replace(".", "__" + normalize_string(job_id) + ".", 1)
+            file_ = file_.rename(file_.parent / file_name)
+            additional_files.append(file_)
 
     JobReport(
         description=description,

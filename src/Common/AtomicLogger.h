@@ -1,16 +1,11 @@
 #pragma once
 
-#include <atomic>
-#include <mutex>
 #include <memory>
 
-#include <base/types.h>
 #include <Common/Logger.h>
-#include <Common/SharedLockGuard.h>
 #include <Common/SharedMutex.h>
+#include <Common/SharedLockGuard.h>
 
-namespace DB
-{
 
 /** AtomicLogger allows to atomically change logger.
   * Standard library does not have atomic_shared_ptr, and we do not use std::atomic* operations,
@@ -54,5 +49,3 @@ private:
     mutable DB::SharedMutex log_mutex;
     LoggerPtr logger;
 };
-
-}

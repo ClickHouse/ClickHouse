@@ -180,7 +180,8 @@ An optional second argument can be passed to specify a timezone for the timestam
                 {"ulid", "SELECT ULIDStringToDateTime(generateULID())", ""},
                 {"timezone", "SELECT ULIDStringToDateTime(generateULID(), 'Asia/Istanbul')", ""}},
             .categories{"ULID"}
-        });
+        },
+        FunctionFactory::CaseSensitive);
 }
 
 }

@@ -13,17 +13,16 @@ Here is a complete list of available database engines. Follow the links for more
 
 - [Atomic](../../engines/database-engines/atomic.md)
 
-- [Lazy](../../engines/database-engines/lazy.md)
-
-- [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md)
+- [MySQL](../../engines/database-engines/mysql.md)
 
 - [MaterializedMySQL](../../engines/database-engines/materialized-mysql.md)
 
-- [MySQL](../../engines/database-engines/mysql.md)
+- [Lazy](../../engines/database-engines/lazy.md)
 
 - [PostgreSQL](../../engines/database-engines/postgresql.md)
+
+- [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md)
 
 - [Replicated](../../engines/database-engines/replicated.md)
 
 - [SQLite](../../engines/database-engines/sqlite.md)
-

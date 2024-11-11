@@ -23,6 +23,10 @@ select t1.* from t1_all t1 join t2_all t2 on t1.a = t2.a ORDER BY t1.a;
 
 SELECT '-';
 
+-- make sure data is fully written when reading from distributed
+optimize table t1_local final;
+optimize table t2_local final;
+
 set distributed_product_mode = 'global';
 select * from t1_all t1 where t1.a in (select t2.a from t2_all t2);
 explain syntax select t1.* from t1_all t1 join t2_all t2 on t1.a = t2.a;
