@@ -1,5 +1,8 @@
+import dataclasses
+import json
 import urllib.parse
 from pathlib import Path
+from typing import List
 
 from praktika._environment import _Environment
 from praktika.gh import GH
@@ -8,12 +11,50 @@ from praktika.result import Result, ResultInfo
 from praktika.runtime import RunConfig
 from praktika.s3 import S3
 from praktika.settings import Settings
-from praktika.utils import Utils
+from praktika.utils import Shell, Utils
+
+
+@dataclasses.dataclass
+class GitCommit:
+    date: str
+    message: str
+    sha: str
+
+    @staticmethod
+    def from_json(json_data: str) -> List["GitCommit"]:
+        commits = []
+        try:
+            data = json.loads(json_data)
+
+            commits = [
+                GitCommit(
+                    message=commit["messageHeadline"],
+                    sha=commit["oid"],
+                    date=commit["committedDate"],
+                )
+                for commit in data.get("commits", [])
+            ]
+        except Exception as e:
+            print(
+                f"ERROR: Failed to deserialize commit's data: [{json_data}], ex: [{e}]"
+            )
+
+        return commits
 
 
 class HtmlRunnerHooks:
     @classmethod
     def configure(cls, _workflow):
+
+        def _get_pr_commits(pr_number):
+            res = []
+            if not pr_number:
+                return res
+            output = Shell.get_output(f"gh pr view {pr_number}  --json commits")
+            if output:
+                res = GitCommit.from_json(output)
+            return res
+
         # generate pending Results for all jobs in the workflow
         if _workflow.enable_cache:
             skip_jobs = RunConfig.from_fs(_workflow.name).cache_success
@@ -62,10 +103,14 @@ class HtmlRunnerHooks:
             or_update_comment_with_substring=f"Workflow [",
         )
         if not (res1 or res2):
-            print(
-                "ERROR: Failed to set both GH commit status and PR comment with Workflow Status, cannot proceed"
+            Utils.raise_with_error(
+                "Failed to set both GH commit status and PR comment with Workflow Status, cannot proceed"
             )
-            raise
+
+        if env.PR_NUMBER:
+            commits = _get_pr_commits(env.PR_NUMBER)
+            # TODO: upload commits data to s3 to visualise it on a report page
+            print(commits)
 
     @classmethod
     def pre_run(cls, _workflow, _job):

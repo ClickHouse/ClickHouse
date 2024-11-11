@@ -8,11 +8,7 @@ class _Settings:
     ######################################
     #    Pipeline generation settings    #
     ######################################
-    if Path("./ci_v2").is_dir():
-        # TODO: hack for CH, remove
-        CI_PATH = "./ci_v2"
-    else:
-        CI_PATH = "./ci"
+    CI_PATH = "./ci"
     WORKFLOW_PATH_PREFIX: str = "./.github/workflows"
     WORKFLOWS_DIRECTORY: str = f"{CI_PATH}/workflows"
     SETTINGS_DIRECTORY: str = f"{CI_PATH}/settings"
