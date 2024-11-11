@@ -192,6 +192,7 @@ const std::vector<const CHFunction> CHFuncs = {
     CHFunction(sql_query_grammar::SQLFunc::FUNCdivideDecimal, 0, 0, 2, 3),
     CHFunction(sql_query_grammar::SQLFunc::FUNCbyteSwap, 0, 0, 1, 1),
     //arrays
+    CHFunction(sql_query_grammar::SQLFunc::FUNCarray, 0, 0, 0, ulimited_params),
     CHFunction(sql_query_grammar::SQLFunc::FUNCempty, 0, 0, 1, 1),
     CHFunction(sql_query_grammar::SQLFunc::FUNCnotEmpty, 0, 0, 1, 1),
     CHFunction(sql_query_grammar::SQLFunc::FUNClength, 0, 0, 1, 1),
@@ -568,7 +569,7 @@ const std::vector<const CHFunction> CHFuncs = {
     CHFunction(sql_query_grammar::SQLFunc::FUNCnot, 0, 0, 1, 1),
     CHFunction(sql_query_grammar::SQLFunc::FUNCxor, 0, 0, 2, ulimited_params),
     //map
-    CHFunction(sql_query_grammar::SQLFunc::FUNCmap, 0, 0, 2, ulimited_params),
+    CHFunction(sql_query_grammar::SQLFunc::FUNCmap, 0, 0, 0, ulimited_params),
     CHFunction(sql_query_grammar::SQLFunc::FUNCmapFromArrays, 0, 0, 2, 2),
     CHFunction(sql_query_grammar::SQLFunc::FUNCextractKeyValuePairs, 0, 0, 1, 4),
     CHFunction(sql_query_grammar::SQLFunc::FUNCextractKeyValuePairsWithEscaping, 0, 0, 1, 4),

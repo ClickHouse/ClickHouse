@@ -618,6 +618,12 @@ CONV_FN(LiteralValue, lit_val)
                 case SpecialVal::VAL_EMPTY_TUPLE:
                     ret += "()";
                     break;
+                case SpecialVal::VAL_EMPTY_MAP:
+                    ret += "map()";
+                    break;
+                case SpecialVal::VAL_EMPTY_JSON:
+                    ret += "'{}'::JSON";
+                    break;
                 case SpecialVal::VAL_MINUS_ZERO_FP:
                     ret += "(-0.0)";
                     break;
