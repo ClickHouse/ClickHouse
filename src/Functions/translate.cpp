@@ -103,8 +103,7 @@ struct TranslateImpl
             /// Technically '\0' can be mapped into other character,
             ///  so we need to process '\0' delimiter separately
             *dst++ = 0;
-            ++data_size;
-            res_offsets[i] = data_size;
+            res_offsets[i] = ++data_size;
         }
     }
 
