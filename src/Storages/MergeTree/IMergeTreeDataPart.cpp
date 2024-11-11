@@ -624,6 +624,15 @@ UInt64 IMergeTreeDataPart::getIndexSizeInAllocatedBytes() const
     return res;
 }
 
+UInt64 IMergeTreeDataPart::getIndexGranularityBytes() const
+{
+    return index_granularity.getBytesSize();
+}
+UInt64 IMergeTreeDataPart::getIndexGranularityAllocatedBytes() const
+{
+    return index_granularity.getBytesAllocated();
+}
+
 void IMergeTreeDataPart::assertState(const std::initializer_list<MergeTreeDataPartState> & affordable_states) const
 {
     if (!checkState(affordable_states))
@@ -735,7 +744,9 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
             loadUUID();
         loadColumns(require_columns_checksums);
         loadChecksums(require_columns_checksums);
+
         loadIndexGranularity();
+        index_granularity.shrinkToFitInMemory();
 
         if (!(*storage.getSettings())[MergeTreeSetting::primary_key_lazy_load])
             getIndex();
