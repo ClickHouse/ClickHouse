@@ -54,7 +54,7 @@ public:
 
     String getName() const override { return "LiveViewEventsSource"; }
 
-    void onCancel() noexcept override
+    void onCancel() override
     {
         if (storage->shutdown_called)
             return;
@@ -185,10 +185,12 @@ protected:
                         {
                             break;
                         }
-
-                        // repeat the event block as a heartbeat
-                        last_event_timestamp_usec = static_cast<UInt64>(timestamp.epochMicroseconds());
-                        return {getPort().getHeader(), true};
+                        else
+                        {
+                            // repeat the event block as a heartbeat
+                            last_event_timestamp_usec = static_cast<UInt64>(timestamp.epochMicroseconds());
+                            return { getPort().getHeader(), true };
+                        }
                     }
                 }
             }

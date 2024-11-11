@@ -1,12 +1,6 @@
 #pragma once
 
 #include <Interpreters/Context.h>
-#include <Core/Settings.h>
-
-namespace DB::Setting
-{
-    extern const SettingsString local_filesystem_read_method;
-}
 
 struct ContextHolder
 {
@@ -19,7 +13,6 @@ struct ContextHolder
     {
         context->makeGlobalContext();
         context->setPath("./");
-        const_cast<DB::Settings &>(context->getSettingsRef())[DB::Setting::local_filesystem_read_method] = "pread";
     }
 
     ContextHolder(ContextHolder &&) = default;

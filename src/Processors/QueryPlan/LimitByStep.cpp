@@ -23,9 +23,9 @@ static ITransformingStep::Traits getTraits()
 }
 
 LimitByStep::LimitByStep(
-    const Header & input_header_,
+    const DataStream & input_stream_,
     size_t group_length_, size_t group_offset_, const Names & columns_)
-    : ITransformingStep(input_header_, input_header_, getTraits())
+    : ITransformingStep(input_stream_, input_stream_.header, getTraits())
     , group_length(group_length_)
     , group_offset(group_offset_)
     , columns(columns_)

@@ -53,7 +53,7 @@ public:
     void onFinish() override;
 
 private:
-    void onCancel() noexcept override;
+    void onCancel() override;
 
     IColumn::Selector createSelector(const Block & source_block) const;
 

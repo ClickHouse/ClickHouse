@@ -29,10 +29,10 @@ Block MergingAggregatedTransform::appendGroupingIfNeeded(const Block & in_header
 /// Initiator creates a separate Aggregator for every group, so should we do here.
 /// Otherwise, two-level aggregation will split the data into different buckets,
 /// and the result may have duplicating rows.
-static ActionsDAG makeReorderingActions(const Block & in_header, const GroupingSetsParams & params)
+static ActionsDAGPtr makeReorderingActions(const Block & in_header, const GroupingSetsParams & params)
 {
-    ActionsDAG reordering(in_header.getColumnsWithTypeAndName());
-    auto & outputs = reordering.getOutputs();
+    auto reordering = std::make_shared<ActionsDAG>(in_header.getColumnsWithTypeAndName());
+    auto & outputs = reordering->getOutputs();
     ActionsDAG::NodeRawConstPtrs new_outputs;
     new_outputs.reserve(in_header.columns() + params.used_keys.size() - params.used_keys.size());
 
@@ -97,7 +97,7 @@ MergingAggregatedTransform::MergingAggregatedTransform(
                 params.max_block_size,
                 params.min_hit_rate_to_use_consecutive_keys_optimization);
 
-            auto transform_params = std::make_shared<AggregatingTransformParams>(reordering.updateHeader(in_header), std::move(set_params), final);
+            auto transform_params = std::make_shared<AggregatingTransformParams>(reordering->updateHeader(in_header), std::move(set_params), final);
 
             auto creating = AggregatingStep::makeCreatingMissingKeysForGroupingSetDAG(
                 transform_params->getHeader(),

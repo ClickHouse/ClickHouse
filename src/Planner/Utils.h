@@ -3,7 +3,7 @@
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
 
-#include <Parsers/IAST_fwd.h>
+#include <Parsers/IAST.h>
 #include <Parsers/SelectUnionMode.h>
 
 #include <Interpreters/SelectQueryOptions.h>
@@ -25,10 +25,10 @@ namespace DB
 {
 
 /// Dump query plan
-String dumpQueryPlan(const QueryPlan & query_plan);
+String dumpQueryPlan(QueryPlan & query_plan);
 
 /// Dump query plan result pipeline
-String dumpQueryPipeline(const QueryPlan & query_plan);
+String dumpQueryPipeline(QueryPlan & query_plan);
 
 /// Build common header for UNION query
 Block buildCommonHeaderForUnion(const Blocks & queries_headers, SelectUnionMode union_mode);
@@ -89,9 +89,6 @@ FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
         NameSet table_expression_required_names_without_filter = {});
 
 ASTPtr parseAdditionalResultFilter(const Settings & settings);
-
-using UsefulSets = std::unordered_set<FutureSetPtr>;
-void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets);
 
 /// If the window frame is not set in sql, try to use the default frame from window function
 /// if it have any one. Otherwise return empty.

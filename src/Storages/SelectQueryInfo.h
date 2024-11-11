@@ -18,6 +18,9 @@ namespace DB
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
+class ActionsDAG;
+using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
+
 struct PrewhereInfo;
 using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
 
@@ -43,9 +46,9 @@ struct PrewhereInfo
 {
     /// Actions for row level security filter. Applied separately before prewhere_actions.
     /// This actions are separate because prewhere condition should not be executed over filtered rows.
-    std::optional<ActionsDAG> row_level_filter;
+    ActionsDAGPtr row_level_filter;
     /// Actions which are executed on block in order to get filter column for prewhere step.
-    ActionsDAG prewhere_actions;
+    ActionsDAGPtr prewhere_actions;
     String row_level_column_name;
     String prewhere_column_name;
     bool remove_prewhere_column = false;
@@ -53,7 +56,7 @@ struct PrewhereInfo
     bool generated_by_optimizer = false;
 
     PrewhereInfo() = default;
-    explicit PrewhereInfo(ActionsDAG prewhere_actions_, String prewhere_column_name_)
+    explicit PrewhereInfo(ActionsDAGPtr prewhere_actions_, String prewhere_column_name_)
             : prewhere_actions(std::move(prewhere_actions_)), prewhere_column_name(std::move(prewhere_column_name_)) {}
 
     std::string dump() const;
@@ -65,7 +68,8 @@ struct PrewhereInfo
         if (row_level_filter)
             prewhere_info->row_level_filter = row_level_filter->clone();
 
-        prewhere_info->prewhere_actions = prewhere_actions.clone();
+        if (prewhere_actions)
+            prewhere_info->prewhere_actions = prewhere_actions->clone();
 
         prewhere_info->row_level_column_name = row_level_column_name;
         prewhere_info->prewhere_column_name = prewhere_column_name;
@@ -89,7 +93,7 @@ struct FilterInfo
 /// Same as FilterInfo, but with ActionsDAG.
 struct FilterDAGInfo
 {
-    ActionsDAG actions;
+    ActionsDAGPtr actions;
     String column_name;
     bool do_remove_column = false;
 
@@ -198,7 +202,7 @@ struct SelectQueryInfo
     ASTPtr parallel_replica_custom_key_ast;
 
     /// Filter actions dag for current storage
-    std::shared_ptr<const ActionsDAG> filter_actions_dag;
+    ActionsDAGPtr filter_actions_dag;
 
     ReadInOrderOptimizerPtr order_optimizer;
     /// Can be modified while reading from storage

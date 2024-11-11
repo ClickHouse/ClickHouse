@@ -3,11 +3,11 @@
 import json
 import logging
 import os
+import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from ci_utils import Shell
-from env_helper import DOCKER_TAG, ROOT_DIR
+from env_helper import ROOT_DIR, DOCKER_TAG
 from get_robot_token import get_parameter_from_ssm
 
 IMAGES_FILE_PATH = Path("docker/images.json")
@@ -16,14 +16,20 @@ ImagesDict = Dict[str, dict]
 
 
 def docker_login(relogin: bool = True) -> None:
-    if relogin or not Shell.check(
-        "docker system info | grep --quiet -E 'Username|Registry'"
+    if (
+        relogin
+        or subprocess.run(  # pylint: disable=unexpected-keyword-arg
+            "docker system info | grep --quiet -E 'Username|Registry'",
+            shell=True,
+            check=False,
+        ).returncode
+        == 1
     ):
-        Shell.check(  # pylint: disable=unexpected-keyword-arg
+        subprocess.check_output(  # pylint: disable=unexpected-keyword-arg
             "docker login --username 'robotclickhouse' --password-stdin",
-            strict=True,
-            stdin_str=get_parameter_from_ssm("dockerhub_robot_password"),
+            input=get_parameter_from_ssm("dockerhub_robot_password"),
             encoding="utf-8",
+            shell=True,
         )
 
 
@@ -42,10 +48,14 @@ class DockerImage:
 def pull_image(image: DockerImage) -> DockerImage:
     try:
         logging.info("Pulling image %s - start", image)
-        Shell.check(f"docker pull {image}", strict=True)
+        subprocess.check_output(
+            f"docker pull {image}",
+            stderr=subprocess.STDOUT,
+            shell=True,
+        )
         logging.info("Pulling image %s - done", image)
     except Exception as ex:
-        logging.info("Got exception pulling docker %s", ex)
+        logging.info("Got execption pulling docker %s", ex)
         raise ex
     return image
 
@@ -58,8 +68,9 @@ def get_docker_image(image_name: str) -> DockerImage:
             image_name in tags_map
         ), "Image name does not exist in provided DOCKER_TAG json string"
         return DockerImage(image_name, tags_map[image_name])
-    # DOCKER_TAG is a tag itself
-    return DockerImage(image_name, DOCKER_TAG)
+    else:
+        # DOCKER_TAG is a tag itself
+        return DockerImage(image_name, DOCKER_TAG)
 
 
 class DockerImageData:

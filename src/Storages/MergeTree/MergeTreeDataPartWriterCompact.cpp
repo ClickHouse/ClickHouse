@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
-#include "Formats/MarkInCompressedFile.h"
 
 namespace DB
 {
@@ -55,15 +54,26 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
         marks_source_hashing = std::make_unique<HashingWriteBuffer>(*marks_compressor);
     }
 
-    if (settings.save_marks_in_cache)
-    {
-        cached_marks[MergeTreeDataPartCompact::DATA_FILE_NAME] = std::make_unique<MarksInCompressedFile::PlainArray>();
-    }
-
     for (const auto & column : columns_list)
     {
         auto compression = getCodecDescOrDefault(column.name, default_codec);
-        MergeTreeDataPartWriterCompact::addStreams(column, nullptr, compression);
+        addStreams(column, nullptr, compression);
+    }
+}
+
+void MergeTreeDataPartWriterCompact::initDynamicStreamsIfNeeded(const Block & block)
+{
+    if (is_dynamic_streams_initialized)
+        return;
+
+    is_dynamic_streams_initialized = true;
+    for (const auto & column : columns_list)
+    {
+        if (column.type->hasDynamicSubcolumns())
+        {
+            auto compression = getCodecDescOrDefault(column.name, default_codec);
+            addStreams(column, block.getByName(column.name).column, compression);
+        }
     }
 }
 
@@ -154,7 +164,7 @@ void writeColumnSingleGranule(
     serialize_settings.position_independent_encoding = true;
     serialize_settings.low_cardinality_max_dictionary_size = 0;
     serialize_settings.use_compact_variant_discriminators_serialization = settings.use_compact_variant_discriminators_serialization;
-    serialize_settings.object_and_dynamic_write_statistics = ISerialization::SerializeBinaryBulkSettings::ObjectAndDynamicStatisticsMode::PREFIX;
+    serialize_settings.dynamic_write_statistics = ISerialization::SerializeBinaryBulkSettings::DynamicStatisticsMode::PREFIX;
 
     serialization->serializeBinaryBulkStatePrefix(*column.column, serialize_settings, state);
     serialization->serializeBinaryBulkWithMultipleStreams(*column.column, from_row, number_of_rows, serialize_settings, state);
@@ -165,25 +175,20 @@ void writeColumnSingleGranule(
 
 void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumn::Permutation * permutation)
 {
-    Block result_block = block;
-
-    /// During serialization columns with dynamic subcolumns (like JSON/Dynamic) must have the same dynamic structure.
-    /// But it may happen that they don't (for example during ALTER MODIFY COLUMN from some type to JSON/Dynamic).
-    /// In this case we use dynamic structure of the column from the first written block and adjust columns from
-    /// the next blocks so they match this dynamic structure.
-    initOrAdjustDynamicStructureIfNeeded(result_block);
+    /// On first block of data initialize streams for dynamic subcolumns.
+    initDynamicStreamsIfNeeded(block);
 
     /// Fill index granularity for this block
     /// if it's unknown (in case of insert data or horizontal merge,
     /// but not in case of vertical merge)
     if (compute_granularity)
     {
-        size_t index_granularity_for_block = computeIndexGranularity(result_block);
+        size_t index_granularity_for_block = computeIndexGranularity(block);
         assert(index_granularity_for_block >= 1);
-        fillIndexGranularity(index_granularity_for_block, result_block.rows());
+        fillIndexGranularity(index_granularity_for_block, block.rows());
     }
 
-    result_block = permuteBlockIfNeeded(result_block, permutation);
+    Block result_block = permuteBlockIfNeeded(block, permutation);
 
     if (!header)
         header = result_block.cloneEmpty();
@@ -208,11 +213,11 @@ void MergeTreeDataPartWriterCompact::writeDataBlockPrimaryIndexAndSkipIndices(co
 
     if (settings.rewrite_primary_key)
     {
-        Block primary_key_block = getIndexBlockAndPermute(block, metadata_snapshot->getPrimaryKeyColumns(), nullptr);
+        Block primary_key_block = getBlockAndPermute(block, metadata_snapshot->getPrimaryKeyColumns(), nullptr);
         calculateAndSerializePrimaryIndex(primary_key_block, granules_to_write);
     }
 
-    Block skip_indices_block = getIndexBlockAndPermute(block, getSkipIndicesColumns(), nullptr);
+    Block skip_indices_block = getBlockAndPermute(block, getSkipIndicesColumns(), nullptr);
     calculateAndSerializeSkipIndices(skip_indices_block, granules_to_write);
 }
 
@@ -250,12 +255,9 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                 return &result_stream->hashing_buf;
             };
 
-            MarkInCompressedFile mark{plain_hashing.count(), static_cast<UInt64>(0)};
-            writeBinaryLittleEndian(mark.offset_in_compressed_file, marks_out);
-            writeBinaryLittleEndian(mark.offset_in_decompressed_block, marks_out);
 
-             if (!cached_marks.empty())
-                cached_marks.begin()->second->push_back(mark);
+            writeBinaryLittleEndian(plain_hashing.count(), marks_out);
+            writeBinaryLittleEndian(static_cast<UInt64>(0), marks_out);
 
             writeColumnSingleGranule(
                 block.getByName(name_and_type->name), getSerialization(name_and_type->name),
@@ -294,17 +296,11 @@ void MergeTreeDataPartWriterCompact::fillDataChecksums(MergeTreeDataPartChecksum
 
     if (with_final_mark && data_written)
     {
-        MarkInCompressedFile mark{plain_hashing.count(), 0};
-
         for (size_t i = 0; i < columns_list.size(); ++i)
         {
-            writeBinaryLittleEndian(mark.offset_in_compressed_file, marks_out);
-            writeBinaryLittleEndian(mark.offset_in_decompressed_block, marks_out);
-
-            if (!cached_marks.empty())
-                cached_marks.begin()->second->push_back(mark);
+            writeBinaryLittleEndian(plain_hashing.count(), marks_out);
+            writeBinaryLittleEndian(static_cast<UInt64>(0), marks_out);
         }
-
         writeBinaryLittleEndian(static_cast<UInt64>(0), marks_out);
     }
 

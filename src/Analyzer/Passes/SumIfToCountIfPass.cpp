@@ -14,11 +14,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool aggregate_functions_null_for_empty;
-    extern const SettingsBool optimize_rewrite_sum_if_to_count_if;
-}
 
 namespace
 {
@@ -31,7 +26,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings()[Setting::optimize_rewrite_sum_if_to_count_if])
+        if (!getSettings().optimize_rewrite_sum_if_to_count_if)
             return;
 
         auto * function_node = node->as<FunctionNode>();
@@ -61,7 +56,7 @@ public:
                 return;
 
             const auto & constant_value_literal = constant_node->getValue();
-            if (getSettings()[Setting::aggregate_functions_null_for_empty])
+            if (getSettings().aggregate_functions_null_for_empty)
                 return;
 
             /// Rewrite `sumIf(1, cond)` into `countIf(cond)`
@@ -71,7 +66,7 @@ public:
 
             resolveAggregateFunctionNodeByName(*function_node, "countIf");
 
-            if (constant_value_literal.safeGet<UInt64>() != 1)
+            if (constant_value_literal.get<UInt64>() != 1)
             {
                 /// Rewrite `sumIf(123, cond)` into `123 * countIf(cond)`
                 node = getMultiplyFunction(std::move(multiplier_node), node);
@@ -110,8 +105,8 @@ public:
         const auto & if_true_condition_constant_value_literal = if_true_condition_constant_node->getValue();
         const auto & if_false_condition_constant_value_literal = if_false_condition_constant_node->getValue();
 
-        auto if_true_condition_value = if_true_condition_constant_value_literal.safeGet<UInt64>();
-        auto if_false_condition_value = if_false_condition_constant_value_literal.safeGet<UInt64>();
+        auto if_true_condition_value = if_true_condition_constant_value_literal.get<UInt64>();
+        auto if_false_condition_value = if_false_condition_constant_value_literal.get<UInt64>();
 
         if (if_false_condition_value == 0)
         {

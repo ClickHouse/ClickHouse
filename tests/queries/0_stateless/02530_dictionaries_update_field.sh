@@ -35,7 +35,7 @@ for layout in "${layouts[@]}"; do
             echo "$layout"
         fi
 
-        $CLICKHOUSE_CLIENT "
+        $CLICKHOUSE_CLIENT --multiquery "
             TRUNCATE TABLE table_for_update_field_dictionary;
 
             CREATE DICTIONARY $dictionary_name

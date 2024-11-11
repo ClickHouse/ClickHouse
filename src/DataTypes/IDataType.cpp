@@ -8,6 +8,7 @@
 #include <Common/quoteString.h>
 
 #include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
 
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeCustom.h>
@@ -149,8 +150,6 @@ std::unique_ptr<IDataType::SubstreamData> IDataType::getSubcolumnData(
 
     ISerialization::EnumerateStreamsSettings settings;
     settings.position_independent_encoding = false;
-    /// Don't enumerate dynamic subcolumns, they are handled separately.
-    settings.enumerate_dynamic_streams = false;
     data.serialization->enumerateStreams(settings, callback_with_data, data);
 
     if (!res && data.type->hasDynamicSubcolumnsData())
@@ -321,8 +320,6 @@ bool isUInt8(TYPE data_type) { return WhichDataType(data_type).isUInt8(); } \
 bool isUInt16(TYPE data_type) { return WhichDataType(data_type).isUInt16(); } \
 bool isUInt32(TYPE data_type) { return WhichDataType(data_type).isUInt32(); } \
 bool isUInt64(TYPE data_type) { return WhichDataType(data_type).isUInt64(); } \
-bool isUInt128(TYPE data_type) { return WhichDataType(data_type).isUInt128(); } \
-bool isUInt256(TYPE data_type) { return WhichDataType(data_type).isUInt256(); } \
 bool isNativeUInt(TYPE data_type) { return WhichDataType(data_type).isNativeUInt(); } \
 bool isUInt(TYPE data_type) { return WhichDataType(data_type).isUInt(); } \
 \
@@ -330,8 +327,6 @@ bool isInt8(TYPE data_type) { return WhichDataType(data_type).isInt8(); } \
 bool isInt16(TYPE data_type) { return WhichDataType(data_type).isInt16(); } \
 bool isInt32(TYPE data_type) { return WhichDataType(data_type).isInt32(); } \
 bool isInt64(TYPE data_type) { return WhichDataType(data_type).isInt64(); } \
-bool isInt128(TYPE data_type) { return WhichDataType(data_type).isInt128(); } \
-bool isInt256(TYPE data_type) { return WhichDataType(data_type).isInt256(); } \
 bool isNativeInt(TYPE data_type) { return WhichDataType(data_type).isNativeInt(); } \
 bool isInt(TYPE data_type) { return WhichDataType(data_type).isInt(); } \
 \
@@ -368,10 +363,9 @@ bool isArray(TYPE data_type) { return WhichDataType(data_type).isArray(); } \
 bool isTuple(TYPE data_type) { return WhichDataType(data_type).isTuple(); } \
 bool isMap(TYPE data_type) {return WhichDataType(data_type).isMap(); } \
 bool isInterval(TYPE data_type) {return WhichDataType(data_type).isInterval(); } \
-bool isObjectDeprecated(TYPE data_type) { return WhichDataType(data_type).isObjectDeprecated(); } \
+bool isObject(TYPE data_type) { return WhichDataType(data_type).isObject(); } \
 bool isVariant(TYPE data_type) { return WhichDataType(data_type).isVariant(); } \
 bool isDynamic(TYPE data_type) { return WhichDataType(data_type).isDynamic(); } \
-bool isObject(TYPE data_type) { return WhichDataType(data_type).isObject(); } \
 bool isNothing(TYPE data_type) { return WhichDataType(data_type).isNothing(); } \
 \
 bool isColumnedAsNumber(TYPE data_type) \

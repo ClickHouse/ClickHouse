@@ -5,15 +5,12 @@ import csv
 import logging
 import os
 import re
-import signal
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 from build_download_helper import download_all_deb_packages
-from ci_config import CI
-from ci_utils import Shell, Utils
 from clickhouse_helper import CiLogsCredentials
 from docker_images_helper import DockerImage, get_docker_image, pull_image
 from download_release_packages import download_last_release
@@ -22,16 +19,17 @@ from get_robot_token import get_parameter_from_ssm
 from pr_info import PRInfo
 from report import (
     ERROR,
-    FAILURE,
     SUCCESS,
     JobReport,
     StatusType,
-    TestResult,
     TestResults,
     read_test_results,
+    FAILURE,
 )
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
+from ci_config import CI
+from ci_utils import Utils
 
 NO_CHANGES_MSG = "Nothing to run"
 
@@ -115,28 +113,29 @@ def get_run_command(
 
     if flaky_check:
         envs.append("-e NUM_TRIES=50")
+        envs.append("-e MAX_RUN_TIME=2800")
 
     envs += [f"-e {e}" for e in additional_envs]
 
     env_str = " ".join(envs)
-
-    if "stateful" in check_name.lower():
-        run_script = "/repo/tests/docker_scripts/stateful_runner.sh"
-    elif "stateless" in check_name.lower():
-        run_script = "/repo/tests/docker_scripts/stateless_runner.sh"
-    else:
-        assert False
+    volume_with_broken_test = (
+        f"--volume={repo_path}/tests/analyzer_tech_debt.txt:/analyzer_tech_debt.txt "
+        if "analyzer" not in check_name
+        else ""
+    )
 
     return (
-        f"docker run --rm --name func-tester --volume={builds_path}:/package_folder "
+        f"docker run --volume={builds_path}:/package_folder "
         # For dmesg and sysctl
         "--privileged "
-        f"{ci_logs_args} "
-        f"--volume={repo_path}:/repo "
+        f"{ci_logs_args}"
+        f"--volume={repo_path}/tests:/usr/share/clickhouse-test "
+        f"--volume={repo_path}/utils/grpc-client:/usr/share/clickhouse-utils/grpc-client "
+        f"{volume_with_broken_test}"
         f"--volume={result_path}:/test_output "
         f"--volume={server_log_path}:/var/log/clickhouse-server "
         "--security-opt seccomp=unconfined "  # required to issue io_uring sys-calls
-        f"--cap-add=SYS_PTRACE {env_str} {additional_options_str} {image} {run_script}"
+        f"--cap-add=SYS_PTRACE {env_str} {additional_options_str} {image}"
     )
 
 
@@ -167,7 +166,6 @@ def _get_statless_tests_to_run(pr_info: PRInfo) -> List[str]:
 
 
 def process_results(
-    ret_code: int,
     result_directory: Path,
     server_log_path: Path,
 ) -> Tuple[StatusType, str, TestResults, List[Path]]:
@@ -194,9 +192,6 @@ def process_results(
         logging.info("Files in result folder %s", os.listdir(result_directory))
         return ERROR, "Invalid check_status.tsv", test_results, additional_files
     state, description = status[0][0], status[0][1]
-    if ret_code != 0:
-        state = ERROR
-        description = f"Job failed, exit code: {ret_code}. " + description
 
     try:
         results_path = result_directory / "test_results.tsv"
@@ -238,20 +233,7 @@ def parse_args():
     return parser.parse_args()
 
 
-test_process = None  # type: Optional[TeePopen]
-timeout_expired = False
-
-
-def handle_sigterm(signum, _frame):
-    # TODO: think on how to process it without globals
-    print(f"WARNING: Received signal {signum}")
-    global timeout_expired  # pylint:disable=global-statement
-    timeout_expired = True
-    Shell.check("docker exec func-tester pkill -f clickhouse-test", verbose=True)
-
-
 def main():
-    signal.signal(signal.SIGTERM, handle_sigterm)
     logging.basicConfig(level=logging.INFO)
     for handler in logging.root.handlers:
         # pylint: disable=protected-access
@@ -339,13 +321,11 @@ def main():
         logging.info("Going to run func tests: %s", run_command)
 
         with TeePopen(run_command, run_log_path) as process:
-            global test_process  # pylint:disable=global-statement
-            test_process = process
             retcode = process.wait()
             if retcode == 0:
                 logging.info("Run successfully")
             else:
-                logging.info("Run failed, exit code %s", retcode)
+                logging.info("Run failed")
 
         try:
             subprocess.check_call(
@@ -359,15 +339,8 @@ def main():
         ci_logs_credentials.clean_ci_logs_from_credentials(run_log_path)
 
         state, description, test_results, additional_logs = process_results(
-            retcode, result_path, server_log_path
+            result_path, server_log_path
         )
-        if timeout_expired:
-            description = "Timeout expired"
-            state = FAILURE
-            test_results.insert(
-                0, TestResult.create_check_timeout_expired(stopwatch.duration_seconds)
-            )
-
     else:
         print(
             "This is validate bugfix or flaky check run, but no changes test to run - skip with success"
@@ -401,7 +374,7 @@ def main():
             failed_cnt
             and failed_cnt <= CI.MAX_TOTAL_FAILURES_PER_JOB_BEFORE_BLOCKING_CI
         ):
-            print("Won't block the CI workflow")
+            print(f"Won't block the CI workflow")
             should_block_ci = False
 
     if should_block_ci:

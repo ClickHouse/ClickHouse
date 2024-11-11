@@ -52,7 +52,7 @@ public:
         bool fully_moved_to_prewhere = false;
     };
 
-    FilterActionsOptimizeResult optimize(const ActionsDAG & filter_dag,
+    FilterActionsOptimizeResult optimize(const ActionsDAGPtr & filter_dag,
         const std::string & filter_column_name,
         const ContextPtr & context,
         bool is_final);
@@ -103,7 +103,6 @@ private:
         NameSet array_joined_names;
         bool move_all_conditions_to_prewhere = false;
         bool move_primary_key_columns_to_end_of_prewhere = false;
-        bool allow_reorder_prewhere_conditions = false;
         bool is_final = false;
         bool use_statistics = false;
     };

@@ -141,7 +141,7 @@ void ColumnArray::get(size_t n, Field & res) const
             size, max_array_size_as_field);
 
     res = Array();
-    Array & res_arr = res.safeGet<Array &>();
+    Array & res_arr = res.get<Array &>();
     res_arr.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
@@ -309,7 +309,7 @@ void ColumnArray::updateHashFast(SipHash & hash) const
 
 void ColumnArray::insert(const Field & x)
 {
-    const Array & array = x.safeGet<const Array &>();
+    const Array & array = x.get<const Array &>();
     size_t size = array.size();
     for (size_t i = 0; i < size; ++i)
         getData().insert(array[i]);
@@ -321,7 +321,7 @@ bool ColumnArray::tryInsert(const Field & x)
     if (x.getType() != Field::Types::Which::Array)
         return false;
 
-    const Array & array = x.safeGet<const Array &>();
+    const Array & array = x.get<const Array &>();
     size_t size = array.size();
     for (size_t i = 0; i < size; ++i)
     {
@@ -367,23 +367,6 @@ void ColumnArray::popBack(size_t n)
     if (nested_n)
         getData().popBack(nested_n);
     offsets_data.resize_assume_reserved(offsets_data.size() - n);
-}
-
-ColumnCheckpointPtr ColumnArray::getCheckpoint() const
-{
-    return std::make_shared<ColumnCheckpointWithNested>(size(), getData().getCheckpoint());
-}
-
-void ColumnArray::updateCheckpoint(ColumnCheckpoint & checkpoint) const
-{
-    checkpoint.size = size();
-    getData().updateCheckpoint(*assert_cast<ColumnCheckpointWithNested &>(checkpoint).nested);
-}
-
-void ColumnArray::rollback(const ColumnCheckpoint & checkpoint)
-{
-    getOffsets().resize_assume_reserved(checkpoint.size);
-    getData().rollback(*assert_cast<const ColumnCheckpointWithNested &>(checkpoint).nested);
 }
 
 int ColumnArray::compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint, const Collator * collator) const
@@ -467,27 +450,6 @@ void ColumnArray::reserve(size_t n)
 {
     getOffsets().reserve_exact(n);
     getData().reserve(n); /// The average size of arrays is not taken into account here. Or it is considered to be no more than 1.
-}
-
-size_t ColumnArray::capacity() const
-{
-    return getOffsets().capacity();
-}
-
-void ColumnArray::prepareForSquashing(const Columns & source_columns)
-{
-    size_t new_size = size();
-    Columns source_data_columns;
-    source_data_columns.reserve(source_columns.size());
-    for (const auto & source_column : source_columns)
-    {
-        const auto & source_array_column = assert_cast<const ColumnArray &>(*source_column);
-        new_size += source_array_column.size();
-        source_data_columns.push_back(source_array_column.getDataPtr());
-    }
-
-    getOffsets().reserve_exact(new_size);
-    data->prepareForSquashing(source_data_columns);
 }
 
 void ColumnArray::shrinkToFit()

@@ -1,7 +1,7 @@
 #include <Core/SettingsFields.h>
 #include <Core/Field.h>
 #include <Core/AccurateComparison.h>
-#include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
@@ -53,31 +53,29 @@ namespace
     {
         if (f.getType() == Field::Types::String)
         {
-            return stringToNumber<T>(f.safeGet<const String &>());
+            return stringToNumber<T>(f.get<const String &>());
         }
-        if (f.getType() == Field::Types::UInt64)
+        else if (f.getType() == Field::Types::UInt64)
         {
             T result;
-            if (!accurate::convertNumeric(f.safeGet<UInt64>(), result))
-                throw Exception(
-                    ErrorCodes::CANNOT_CONVERT_TYPE, "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
+            if (!accurate::convertNumeric(f.get<UInt64>(), result))
+                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
             return result;
         }
-        if (f.getType() == Field::Types::Int64)
+        else if (f.getType() == Field::Types::Int64)
         {
             T result;
-            if (!accurate::convertNumeric(f.safeGet<Int64>(), result))
-                throw Exception(
-                    ErrorCodes::CANNOT_CONVERT_TYPE, "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
+            if (!accurate::convertNumeric(f.get<Int64>(), result))
+                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
             return result;
         }
-        if (f.getType() == Field::Types::Bool)
+        else if (f.getType() == Field::Types::Bool)
         {
-            return T(f.safeGet<bool>());
+            return T(f.get<bool>());
         }
-        if (f.getType() == Field::Types::Float64)
+        else if (f.getType() == Field::Types::Float64)
         {
-            Float64 x = f.safeGet<Float64>();
+            Float64 x = f.get<Float64>();
             if constexpr (std::is_floating_point_v<T>)
             {
                 return T(x);
@@ -89,16 +87,16 @@ namespace
                     /// Conversion of infinite values to integer is undefined.
                     throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert infinite value to integer type");
                 }
-                if (x > Float64(std::numeric_limits<T>::max()) || x < Float64(std::numeric_limits<T>::lowest()))
+                else if (x > Float64(std::numeric_limits<T>::max()) || x < Float64(std::numeric_limits<T>::lowest()))
                 {
                     throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert out of range floating point value to integer type");
                 }
-                return T(x);
+                else
+                    return T(x);
             }
         }
         else
-            throw Exception(
-                ErrorCodes::CANNOT_CONVERT_TYPE, "Invalid value {} of the setting, which needs {}", f, demangle(typeid(T).name()));
+            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Invalid value {} of the setting, which needs {}", f, demangle(typeid(T).name()));
     }
 
     Map stringToMap(const String & str)
@@ -122,7 +120,7 @@ namespace
         if (f.getType() == Field::Types::String)
         {
             /// Allow to parse Map from string field. For the convenience.
-            const auto & str = f.safeGet<const String &>();
+            const auto & str = f.get<const String &>();
             return stringToMap(str);
         }
 
@@ -212,7 +210,7 @@ namespace
 {
     UInt64 stringToMaxThreads(const String & str)
     {
-        if (startsWith(str, "auto") || startsWith(str, "'auto"))
+        if (startsWith(str, "auto"))
             return 0;
         return parseFromString<UInt64>(str);
     }
@@ -220,8 +218,9 @@ namespace
     UInt64 fieldToMaxThreads(const Field & f)
     {
         if (f.getType() == Field::Types::String)
-            return stringToMaxThreads(f.safeGet<const String &>());
-        return fieldToNumber<UInt64>(f);
+            return stringToMaxThreads(f.get<const String &>());
+        else
+            return fieldToNumber<UInt64>(f);
     }
 }
 
@@ -238,9 +237,9 @@ SettingFieldMaxThreads & SettingFieldMaxThreads::operator=(const Field & f)
 String SettingFieldMaxThreads::toString() const
 {
     if (is_auto)
-        /// Removing quotes here will introduce an incompatibility between replicas with different versions.
         return "'auto(" + ::DB::toString(value) + ")'";
-    return ::DB::toString(value);
+    else
+        return ::DB::toString(value);
 }
 
 void SettingFieldMaxThreads::parseFromString(const String & str)
@@ -262,7 +261,7 @@ void SettingFieldMaxThreads::readBinary(ReadBuffer & in)
 
 UInt64 SettingFieldMaxThreads::getAuto()
 {
-    return getNumberOfCPUCoresToUse();
+    return getNumberOfPhysicalCPUCores();
 }
 
 namespace
@@ -272,12 +271,9 @@ namespace
         if (d != 0.0 && !std::isnormal(d))
             throw Exception(
                 ErrorCodes::CANNOT_PARSE_NUMBER, "A setting's value in seconds must be a normal floating point number or zero. Got {}", d);
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wimplicit-const-int-float-conversion"
         if (d * 1000000 > std::numeric_limits<Poco::Timespan::TimeDiff>::max() || d * 1000000 < std::numeric_limits<Poco::Timespan::TimeDiff>::min())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS, "Cannot convert seconds to microseconds: the setting's value in seconds is too big: {}", d);
-#pragma clang diagnostic pop
 
         return static_cast<Poco::Timespan::TimeDiff>(d * 1000000);
     }

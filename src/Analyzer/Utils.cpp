@@ -36,12 +36,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool extremes;
-    extern const SettingsUInt64 max_result_bytes;
-    extern const SettingsUInt64 max_result_rows;
-}
 
 namespace ErrorCodes
 {
@@ -156,19 +150,19 @@ std::string getGlobalInFunctionNameForLocalInFunctionName(const std::string & fu
 {
     if (function_name == "in")
         return "globalIn";
-    if (function_name == "notIn")
+    else if (function_name == "notIn")
         return "globalNotIn";
-    if (function_name == "nullIn")
+    else if (function_name == "nullIn")
         return "globalNullIn";
-    if (function_name == "notNullIn")
+    else if (function_name == "notNullIn")
         return "globalNotNullIn";
-    if (function_name == "inIgnoreSet")
+    else if (function_name == "inIgnoreSet")
         return "globalInIgnoreSet";
-    if (function_name == "notInIgnoreSet")
+    else if (function_name == "notInIgnoreSet")
         return "globalNotInIgnoreSet";
-    if (function_name == "nullInIgnoreSet")
+    else if (function_name == "nullInIgnoreSet")
         return "globalNullInIgnoreSet";
-    if (function_name == "notNullInIgnoreSet")
+    else if (function_name == "notNullInIgnoreSet")
         return "globalNotNullInIgnoreSet";
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid local IN function name {}", function_name);
@@ -873,11 +867,11 @@ void updateContextForSubqueryExecution(ContextMutablePtr & mutable_context)
       *  max_rows_in_join, max_bytes_in_join, join_overflow_mode,
       *  which are checked separately (in the Set, Join objects).
       */
-    Settings subquery_settings = mutable_context->getSettingsCopy();
-    subquery_settings[Setting::max_result_rows] = 0;
-    subquery_settings[Setting::max_result_bytes] = 0;
+    Settings subquery_settings = mutable_context->getSettings();
+    subquery_settings.max_result_rows = 0;
+    subquery_settings.max_result_bytes = 0;
     /// The calculation of extremes does not make sense and is not necessary (if you do it, then the extremes of the subquery can be taken for whole query).
-    subquery_settings[Setting::extremes] = false;
+    subquery_settings.extremes = false;
     mutable_context->setSettings(subquery_settings);
 }
 

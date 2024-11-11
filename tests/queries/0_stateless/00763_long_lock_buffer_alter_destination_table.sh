@@ -23,7 +23,7 @@ function thread_alter()
     while [ $SECONDS -lt "$TIMELIMIT" ] && [ $it -lt 300 ];
     do
         it=$((it+1))
-        $CLICKHOUSE_CLIENT --ignore-error -q "
+        $CLICKHOUSE_CLIENT --multiquery --ignore-error -q "
             ALTER TABLE mt_00763_1 MODIFY column s UInt32;
             ALTER TABLE mt_00763_1 MODIFY column s String;
         " ||:
@@ -37,7 +37,7 @@ function thread_query()
     while [ $SECONDS -lt "$TIMELIMIT" ] && [ $it -lt 2000 ];
     do
         it=$((it+1))
-        $CLICKHOUSE_CLIENT --ignore-error -q "
+        $CLICKHOUSE_CLIENT --multiquery --ignore-error -q "
             SELECT sum(length(s)) FROM buffer_00763_1;
         " 2>&1 | grep -vP '(^3$|^Received exception from server|^Code: 473)'
     done

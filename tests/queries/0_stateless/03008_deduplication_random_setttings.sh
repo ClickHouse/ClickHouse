@@ -35,7 +35,7 @@ THIS_RUN+=" deduplicate_src_table=$deduplicate_src_table"
 THIS_RUN+=" deduplicate_dst_table=$deduplicate_dst_table"
 THIS_RUN+=" insert_unique_blocks=$insert_unique_blocks"
 
-$CLICKHOUSE_CLIENT --max_insert_block_size 1  -mq "
+$CLICKHOUSE_CLIENT --max_insert_block_size 1  -nmq "
     $(python3 $CURDIR/03008_deduplication.python insert_several_blocks_into_table \
         --insert-method $insert_method \
         --table-engine $engine \
@@ -48,7 +48,7 @@ $CLICKHOUSE_CLIENT --max_insert_block_size 1  -mq "
     )
 " 1>/dev/null 2>&1 && echo 'insert_several_blocks_into_table OK'  || echo "FAIL: insert_several_blocks_into_table ${THIS_RUN}"
 
-$CLICKHOUSE_CLIENT --max_insert_block_size 1  -mq "
+$CLICKHOUSE_CLIENT --max_insert_block_size 1  -nmq "
     $(python3 $CURDIR/03008_deduplication.python mv_generates_several_blocks \
         --insert-method $insert_method \
         --table-engine $engine \
@@ -61,7 +61,7 @@ $CLICKHOUSE_CLIENT --max_insert_block_size 1  -mq "
     )
 " 1>/dev/null 2>&1 && echo 'mv_generates_several_blocks OK'  || echo "FAIL: mv_generates_several_blocks ${THIS_RUN}"
 
-$CLICKHOUSE_CLIENT  --max_insert_block_size 1 -mq "
+$CLICKHOUSE_CLIENT  --max_insert_block_size 1 -nmq "
     $(python3 $CURDIR/03008_deduplication.python several_mv_into_one_table \
         --insert-method $insert_method \
         --table-engine $engine \

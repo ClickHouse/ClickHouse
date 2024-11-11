@@ -150,14 +150,8 @@ public:
     /// Collect eviction candidates sufficient to have `desired_size`
     /// and `desired_elements_num` as current cache state.
     /// Collect no more than `max_candidates_to_evict` elements.
-    /// Return SUCCESS status if the first condition is satisfied.
-    enum class CollectStatus
-    {
-        SUCCESS,
-        CANNOT_EVICT,
-        REACHED_MAX_CANDIDATES_LIMIT,
-    };
-    virtual CollectStatus collectCandidatesForEviction(
+    /// Return `true` if the first condition is satisfied.
+    virtual bool collectCandidatesForEviction(
         size_t desired_size,
         size_t desired_elements_count,
         size_t max_candidates_to_evict,

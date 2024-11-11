@@ -1,5 +1,4 @@
 #include <Poco/Timespan.h>
-#include <Common/config_version.h>
 #include "config.h"
 
 #if USE_AWS_S3
@@ -18,7 +17,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/S3/ProviderType.h>
-#include <Interpreters/Context.h>
 
 #include <aws/core/http/HttpRequest.h>
 #include <aws/core/http/HttpResponse.h>
@@ -30,7 +28,6 @@
 #include <Poco/Net/HTTPResponse.h>
 
 #include <boost/algorithm/string.hpp>
-
 
 static const int SUCCESS_RESPONSE_MIN = 200;
 static const int SUCCESS_RESPONSE_MAX = 299;
@@ -87,7 +84,7 @@ namespace DB::S3
 {
 
 PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
-        std::function<ProxyConfiguration()> per_request_configuration_,
+        std::function<DB::ProxyConfiguration()> per_request_configuration_,
         const String & force_region_,
         const RemoteHostFilter & remote_host_filter_,
         unsigned int s3_max_redirects_,
@@ -97,7 +94,7 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
         bool s3_use_adaptive_timeouts_,
         const ThrottlerPtr & get_request_throttler_,
         const ThrottlerPtr & put_request_throttler_,
-        std::function<void(const ProxyConfiguration &)> error_report_)
+        std::function<void(const DB::ProxyConfiguration &)> error_report_)
     : per_request_configuration(per_request_configuration_)
     , force_region(force_region_)
     , remote_host_filter(remote_host_filter_)
@@ -110,8 +107,6 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
     , s3_use_adaptive_timeouts(s3_use_adaptive_timeouts_)
     , error_report(error_report_)
 {
-    /// This is used to identify configurations created by us.
-    userAgent = std::string(VERSION_FULL) + VERSION_OFFICIAL;
 }
 
 void PocoHTTPClientConfiguration::updateSchemeAndRegion()
@@ -133,7 +128,7 @@ void PocoHTTPClientConfiguration::updateSchemeAndRegion()
             }
             else
             {
-                /// In global mode AWS C++ SDK sends `us-east-1` but accepts switching to another one if being suggested.
+                /// In global mode AWS C++ SDK send `us-east-1` but accept switching to another one if being suggested.
                 region = Aws::Region::AWS_GLOBAL;
             }
         }
@@ -168,17 +163,6 @@ PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & client_config
     , get_request_throttler(client_configuration.get_request_throttler)
     , put_request_throttler(client_configuration.put_request_throttler)
     , extra_headers(client_configuration.extra_headers)
-{
-}
-
-PocoHTTPClient::PocoHTTPClient(const Aws::Client::ClientConfiguration & client_configuration)
-    : timeouts(ConnectionTimeouts()
-       .withConnectionTimeout(Poco::Timespan(client_configuration.connectTimeoutMs * 1000))
-       .withSendTimeout(Poco::Timespan(client_configuration.requestTimeoutMs * 1000))
-       .withReceiveTimeout(Poco::Timespan(client_configuration.requestTimeoutMs * 1000))
-       .withTCPKeepAliveTimeout(Poco::Timespan(
-           client_configuration.enableTcpKeepAlive ? client_configuration.tcpKeepAliveIntervalMs * 1000 : 0))),
-    remote_host_filter(Context::getGlobalContextInstance()->getRemoteHostFilter())
 {
 }
 
@@ -397,11 +381,8 @@ void PocoHTTPClient::makeRequestInternalImpl(
 
     try
     {
-        ProxyConfiguration proxy_configuration;
-        if (per_request_configuration)
-            proxy_configuration = per_request_configuration();
-
-        for (size_t attempt = 0; attempt <= s3_max_redirects; ++attempt)
+        const auto proxy_configuration = per_request_configuration();
+        for (unsigned int attempt = 0; attempt <= s3_max_redirects; ++attempt)
         {
             Poco::URI target_uri(uri);
 
@@ -519,6 +500,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
                     LOG_TEST(log, "Redirecting request to new location: {}", location);
 
                 addMetric(request, S3MetricType::Redirects);
+
                 continue;
             }
 
@@ -566,9 +548,9 @@ void PocoHTTPClient::makeRequestInternalImpl(
             }
             else
             {
+
                 if (status_code == 429 || status_code == 503)
-                {
-                    /// API throttling
+                { // API throttling
                     addMetric(request, S3MetricType::Throttling);
                 }
                 else if (status_code >= 300)

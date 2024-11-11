@@ -1,8 +1,7 @@
+import pytest
 import random
 import string
 import threading
-
-import pytest
 
 from helpers.cluster import ClickHouseCluster
 
@@ -45,14 +44,13 @@ def start_cluster():
 
 
 @pytest.mark.parametrize(
-    "storage_policy,key_prefix",
+    "storage_policy",
     [
-        pytest.param("s3_plain_rewritable", "data/"),
-        pytest.param("cache_s3_plain_rewritable", "data/"),
-        pytest.param("s3_plain_rewritable_with_metadata_cache", "data_with_cache/"),
+        pytest.param("s3_plain_rewritable"),
+        pytest.param("cache_s3_plain_rewritable"),
     ],
 )
-def test(storage_policy, key_prefix):
+def test(storage_policy):
     def create_insert(node, insert_values):
         node.query(
             """
@@ -141,25 +139,12 @@ def test(storage_policy, key_prefix):
             == insert_values_arr[i]
         )
 
-    metadata_it = cluster.minio_client.list_objects(
-        cluster.minio_bucket, key_prefix, recursive=True
-    )
-    metadata_count = 0
-    for obj in list(metadata_it):
-        if "/__meta/" in obj.object_name:
-            assert obj.object_name.endswith("/prefix.path")
-            metadata_count += 1
-        else:
-            assert not obj.object_name.endswith("/prefix.path")
-
-    assert metadata_count > 0
-
     for i in range(NUM_WORKERS):
         node = cluster.instances[f"node{i + 1}"]
         node.query("DROP TABLE IF EXISTS test SYNC")
 
     it = cluster.minio_client.list_objects(
-        cluster.minio_bucket, key_prefix, recursive=True
+        cluster.minio_bucket, "data/", recursive=True
     )
 
     assert len(list(it)) == 0
