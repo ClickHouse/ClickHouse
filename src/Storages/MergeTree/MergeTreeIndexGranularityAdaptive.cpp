@@ -126,6 +126,15 @@ void MergeTreeIndexGranularityAdaptive::shrinkToFitInMemory()
     marks_rows_partial_sums.shrink_to_fit();
 }
 
+uint64_t MergeTreeIndexGranularityAdaptive::getBytesSize() const
+{
+    return marks_rows_partial_sums.size() * sizeof(size_t);
+}
+uint64_t MergeTreeIndexGranularityAdaptive::getBytesAllocated() const
+{
+    return marks_rows_partial_sums.capacity() * sizeof(size_t);
+}
+
 std::shared_ptr<MergeTreeIndexGranularity> MergeTreeIndexGranularityAdaptive::optimize() const
 {
     size_t marks_count = getMarksCountWithoutFinal();

@@ -23,9 +23,12 @@ public:
 
     void appendMark(size_t rows_count) override;
     void adjustLastMark(size_t rows_count) override;
-    void shrinkToFitInMemory() override;
-    std::shared_ptr<MergeTreeIndexGranularity> optimize() const override;
 
+    void shrinkToFitInMemory() override;
+    uint64_t getBytesSize() const override;
+    uint64_t getBytesAllocated() const override;
+
+    std::shared_ptr<MergeTreeIndexGranularity> optimize() const override;
     std::string describe() const override;
 
 private:

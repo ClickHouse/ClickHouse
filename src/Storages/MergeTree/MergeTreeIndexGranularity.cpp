@@ -142,4 +142,5 @@ MergeTreeIndexGranularityPtr createMergeTreeIndexGranularity(
     return std::make_shared<MergeTreeIndexGranularityConstant>(computed_granularity);
 }
 
+
 }

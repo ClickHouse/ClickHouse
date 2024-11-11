@@ -232,6 +232,9 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
             new_part->index_granularity = std::move(new_index_granularity);
     }
 
+    /// Just in case
+    new_part->index_granularity->shrinkToFitInMemory();
+
     /// In mutation, existing_rows_count is already calculated in PartMergerWriter
     /// In merge situation, lightweight deleted rows was physically deleted, existing_rows_count equals rows_count
     if (!new_part->existing_rows_count.has_value())

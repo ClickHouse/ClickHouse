@@ -68,6 +68,8 @@ public:
     void addRowsToLastMark(size_t rows_count);
 
     virtual void shrinkToFitInMemory() = 0;
+    virtual uint64_t getBytesSize() const = 0;
+    virtual uint64_t getBytesAllocated() const = 0;
 
     virtual std::shared_ptr<MergeTreeIndexGranularity> optimize() const = 0;
 

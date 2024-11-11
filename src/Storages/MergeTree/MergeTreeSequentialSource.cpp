@@ -14,8 +14,9 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Common/logger_useful.h>
-#include <Processors/Merges/Algorithms/MergeTreePartLevelInfo.h>
+#include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Storages/MergeTree/checkDataPart.h>
+
 
 namespace DB
 {
@@ -271,7 +272,7 @@ try
 
             auto result = Chunk(std::move(res_columns), rows_read);
             if (add_part_level)
-                result.getChunkInfos().add(std::make_shared<MergeTreePartLevelInfo>(data_part->info.level));
+                result.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(data_part->info.level));
             return result;
         }
     }

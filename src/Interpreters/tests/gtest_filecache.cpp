@@ -253,7 +253,7 @@ void download(FileSegment & file_segment)
     download(cache_base_path, file_segment);
     ASSERT_EQ(file_segment.state(), State::DOWNLOADING);
 
-    file_segment.complete();
+    file_segment.complete(false);
     ASSERT_EQ(file_segment.state(), State::DOWNLOADED);
 }
 
@@ -263,7 +263,7 @@ void assertDownloadFails(FileSegment & file_segment)
     ASSERT_EQ(file_segment.getDownloadedSize(), 0);
     std::string failure_reason;
     ASSERT_FALSE(file_segment.reserve(file_segment.range().size(), 1000, failure_reason));
-    file_segment.complete();
+    file_segment.complete(false);
 }
 
 void download(const HolderPtr & holder)
@@ -971,7 +971,7 @@ TEST_F(FileCacheTest, temporaryData)
             ASSERT_TRUE(segment->getOrSetDownloader() == DB::FileSegment::getCallerId());
             ASSERT_TRUE(segment->reserve(segment->range().size(), 1000, failure_reason));
             download(*segment);
-            segment->complete();
+            segment->complete(false);
         }
     }
 
