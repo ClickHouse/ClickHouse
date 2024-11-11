@@ -86,3 +86,10 @@ SELECT a32, a16, a32_1, a16_1,
     LinfDistance(a32, a32_1), LinfDistance(a16, a16_1),
     LpDistance(a32, a32_1, 5), LpDistance(a16, a16_1, 5)
 FORMAT Vertical;
+
+-- Introspection
+
+SELECT 1.1::BFloat16 AS x,
+    hex(x), bin(x),
+    byteSize(x),
+    reinterpretAsUInt16(x), hex(reinterpretAsString(x));
