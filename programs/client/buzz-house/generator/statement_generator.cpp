@@ -283,7 +283,7 @@ int StatementGenerator::GenerateNextOptimizeTable(RandomGenerator & rg, sql_quer
     {
         if (rg.NextBool())
         {
-            ot->mutable_partition();
+            ot->mutable_partition()->set_all(true);
         }
         if (rg.NextSmallNumber() < 3)
         {
@@ -359,7 +359,7 @@ int StatementGenerator::GenerateNextCheckTable(RandomGenerator & rg, sql_query_g
     est->mutable_table()->set_table("t" + std::to_string(t.tname));
     if (t.IsMergeTreeFamily() && rg.NextBool())
     {
-        ct->mutable_partition();
+        ct->mutable_partition()->set_all(true);
     }
     ct->set_single_result(rg.NextSmallNumber() < 4);
     return 0;
@@ -562,7 +562,7 @@ int StatementGenerator::GenerateNextDelete(RandomGenerator & rg, sql_query_gramm
     est->mutable_table()->set_table("t" + std::to_string(t.tname));
     if (t.IsMergeTreeFamily() && rg.NextBool())
     {
-        del->mutable_partition();
+        del->mutable_partition()->set_all(true);
     }
     GenerateUptDelWhere(rg, t, del->mutable_where()->mutable_expr()->mutable_expr());
     return 0;
@@ -789,7 +789,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
 
                 if (t.IsMergeTreeFamily() && rg.NextBool())
                 {
-                    hdel->mutable_partition();
+                    hdel->mutable_partition()->set_all(true);
                 }
                 GenerateUptDelWhere(rg, t, hdel->mutable_del()->mutable_expr()->mutable_expr());
             }
@@ -818,7 +818,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
                 mcol->mutable_col()->set_column("c" + std::to_string(col.cname));
                 if (t.IsMergeTreeFamily() && rg.NextBool())
                 {
-                    mcol->mutable_partition();
+                    mcol->mutable_partition()->set_all(true);
                 }
             }
             else if (drop_column && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + 1))
@@ -848,7 +848,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
                 ccol->mutable_col()->set_column("c" + std::to_string(col.cname));
                 if (t.IsMergeTreeFamily() && rg.NextBool())
                 {
-                    ccol->mutable_partition();
+                    ccol->mutable_partition()->set_all(true);
                 }
             }
             else if (
@@ -882,7 +882,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
 
                 if (rg.NextBool())
                 {
-                    adm->mutable_partition();
+                    adm->mutable_partition()->set_all(true);
                 }
             }
             else if (
@@ -895,7 +895,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
 
                 if (t.IsMergeTreeFamily() && rg.NextBool())
                 {
-                    upt->mutable_partition();
+                    upt->mutable_partition()->set_all(true);
                 }
                 assert(this->entries.empty());
                 for (const auto & entry : t.cols)
@@ -1054,7 +1054,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
                 iip->mutable_idx()->set_index("i" + std::to_string(idx.iname));
                 if (t.IsMergeTreeFamily() && rg.NextBool())
                 {
-                    iip->mutable_partition();
+                    iip->mutable_partition()->set_all(true);
                 }
             }
             else if (
@@ -1070,7 +1070,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
                 iip->mutable_idx()->set_index("i" + std::to_string(idx.iname));
                 if (t.IsMergeTreeFamily() && rg.NextBool())
                 {
-                    iip->mutable_partition();
+                    iip->mutable_partition()->set_all(true);
                 }
             }
             else if (

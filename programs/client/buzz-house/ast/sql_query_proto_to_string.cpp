@@ -2738,6 +2738,30 @@ CONV_FN(Insert, insert)
     }
 }
 
+CONV_FN(PartitionExpr, pexpr)
+{
+    using PartitionType = PartitionExpr::PartitionOneofCase;
+    switch (pexpr.partition_oneof_case())
+    {
+        case PartitionType::kSvalue:
+            ret += "'";
+            ret += pexpr.svalue();
+            ret += "'";
+            break;
+        case PartitionType::kNum:
+            ret += std::to_string(pexpr.num());
+            break;
+        case PartitionType::kExpr:
+            ExprToString(ret, pexpr.expr());
+            break;
+        case PartitionType::kAll:
+            ret += "ALL";
+            break;
+        default:
+            ret += "tuple()";
+    }
+}
+
 CONV_FN(LightDelete, del)
 {
     ret += "DELETE FROM ";
@@ -2745,7 +2769,7 @@ CONV_FN(LightDelete, del)
     if (del.has_partition())
     {
         ret += " IN PARTITION ";
-        TableKeyToString(ret, del.partition());
+        PartitionExprToString(ret, del.partition());
     }
     ret += " WHERE ";
     WhereStatementToString(ret, del.where());
@@ -2784,7 +2808,7 @@ CONV_FN(CheckTable, ct)
     if (ct.has_partition())
     {
         ret += " PARTITION ";
-        TableKeyToString(ret, ct.partition());
+        PartitionExprToString(ret, ct.partition());
     }
     if (ct.has_single_result())
     {
@@ -2831,7 +2855,7 @@ CONV_FN(OptimizeTable, ot)
     if (ot.has_partition())
     {
         ret += " PARTITION ";
-        TableKeyToString(ret, ot.partition());
+        PartitionExprToString(ret, ot.partition());
     }
     if (ot.final())
     {
@@ -2873,7 +2897,7 @@ CONV_FN(Update, upt)
     if (upt.has_partition())
     {
         ret += " IN PARTITION ";
-        TableKeyToString(ret, upt.partition());
+        PartitionExprToString(ret, upt.partition());
     }
     ret += " WHERE ";
     WhereStatementToString(ret, upt.where());
@@ -3019,7 +3043,7 @@ CONV_FN(HeavyDelete, hdel)
     if (hdel.has_partition())
     {
         ret += "IN PARTITION ";
-        TableKeyToString(ret, hdel.partition());
+        PartitionExprToString(ret, hdel.partition());
         ret += " ";
     }
     ret += "WHERE ";
@@ -3050,7 +3074,7 @@ CONV_FN(AlterTableItem, alter)
             if (alter.materialize_column().has_partition())
             {
                 ret += " IN PARTITION ";
-                TableKeyToString(ret, alter.materialize_column().partition());
+                PartitionExprToString(ret, alter.materialize_column().partition());
             }
             break;
         case AlterType::kAddColumn:
@@ -3073,7 +3097,7 @@ CONV_FN(AlterTableItem, alter)
             if (alter.clear_column().has_partition())
             {
                 ret += " IN PARTITION ";
-                TableKeyToString(ret, alter.clear_column().partition());
+                PartitionExprToString(ret, alter.clear_column().partition());
             }
             break;
         case AlterType::kModifyColumn:
@@ -3085,7 +3109,7 @@ CONV_FN(AlterTableItem, alter)
             if (alter.delete_mask().has_partition())
             {
                 ret += " IN PARTITION ";
-                TableKeyToString(ret, alter.delete_mask().partition());
+                PartitionExprToString(ret, alter.delete_mask().partition());
             }
             break;
         case AlterType::kAddStats:
@@ -3114,7 +3138,7 @@ CONV_FN(AlterTableItem, alter)
             if (alter.materialize_index().has_partition())
             {
                 ret += " IN PARTITION ";
-                TableKeyToString(ret, alter.materialize_index().partition());
+                PartitionExprToString(ret, alter.materialize_index().partition());
             }
             break;
         case AlterType::kAddIndex:
@@ -3131,7 +3155,7 @@ CONV_FN(AlterTableItem, alter)
             if (alter.clear_index().has_partition())
             {
                 ret += " IN PARTITION ";
-                TableKeyToString(ret, alter.clear_index().partition());
+                PartitionExprToString(ret, alter.clear_index().partition());
             }
             break;
         case AlterType::kColumnRemoveProperty:
@@ -3177,6 +3201,71 @@ CONV_FN(AlterTableItem, alter)
         case AlterType::kRemoveConstraint:
             ret += "DROP CONSTRAINT ";
             ConstraintToString(ret, alter.remove_constraint());
+            break;
+        case AlterType::kDetachPartition:
+            ret += "DETACH PARTITION ";
+            PartitionExprToString(ret, alter.detach_partition());
+            break;
+        case AlterType::kDropPartition:
+            ret += "DROP PARTITION ";
+            PartitionExprToString(ret, alter.drop_partition());
+            break;
+        case AlterType::kDropDetachedPartition:
+            ret += "DROP DETACHED PARTITION ";
+            PartitionExprToString(ret, alter.drop_detached_partition());
+            break;
+        case AlterType::kForgetPartition:
+            ret += "FORGET PARTITION ";
+            PartitionExprToString(ret, alter.forget_partition());
+            break;
+        case AlterType::kAttachPartition:
+            ret += "ATTACH PARTITION ";
+            PartitionExprToString(ret, alter.attach_partition());
+            break;
+        case AlterType::kAttachPartitionFrom:
+            ret += "ATTACH PARTITION ";
+            PartitionExprToString(ret, alter.attach_partition_from().partition());
+            ret += " FROM ";
+            ExprSchemaTableToString(ret, alter.attach_partition_from().est());
+            break;
+        case AlterType::kReplacePartitionFrom:
+            ret += "REPLACE PARTITION ";
+            PartitionExprToString(ret, alter.replace_partition_from().partition());
+            ret += " FROM ";
+            ExprSchemaTableToString(ret, alter.replace_partition_from().est());
+            break;
+        case AlterType::kMovePartitionTo:
+            ret += "MOVE PARTITION ";
+            PartitionExprToString(ret, alter.move_partition_to().partition());
+            ret += " FROM ";
+            ExprSchemaTableToString(ret, alter.move_partition_to().est());
+            break;
+        case AlterType::kClearColumnPartition:
+            ret += "CLEAR COLUMN ";
+            ColumnToString(ret, true, alter.clear_column_partition().col());
+            ret += " IN PARTITION ";
+            PartitionExprToString(ret, alter.clear_column_partition().partition());
+            break;
+        case AlterType::kFreezePartition:
+            ret += "FREEZE PARTITION ";
+            PartitionExprToString(ret, alter.freeze_partition().partition());
+            ret += " WITH NAME 'p";
+            ret += std::to_string(alter.freeze_partition().pname());
+            ret += "'";
+            break;
+        case AlterType::kUnfreezePartition:
+            ret += "FREEZE PARTITION ";
+            PartitionExprToString(ret, alter.unfreeze_partition().partition());
+            ret += " WITH NAME 'p";
+            ret += std::to_string(alter.unfreeze_partition().pname());
+            ret += "'";
+            break;
+        case AlterType::kMovePartition:
+            ret += "MOVE PARTITION ";
+            PartitionExprToString(ret, alter.move_partition().partition());
+            ret += " TO VOLUME 'v";
+            ret += std::to_string(alter.move_partition().vname());
+            ret += "'";
             break;
         case AlterType::kModifyQuery:
             ret += "MODIFY QUERY ";

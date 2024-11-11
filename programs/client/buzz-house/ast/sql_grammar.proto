@@ -2911,9 +2911,19 @@ message Insert {
     }
 }
 
+message PartitionExpr {
+    oneof partition_oneof {
+        string svalue = 1;
+        uint32 num = 2;
+        Expr expr = 3;
+        bool all = 4;
+        bool tuple = 5;
+    }
+}
+
 message LightDelete {
     required ExprSchemaTable est = 1;
-    optional TableKey partition = 2;
+    optional PartitionExpr partition = 2;
     required WhereStatement where = 3;
 }
 
@@ -2971,7 +2981,7 @@ message TopSelect {
 
 message CheckTable {
     required ExprSchemaTable est = 1;
-    optional TableKey partition = 2;
+    optional PartitionExpr partition = 2;
     optional bool single_result = 3;
 }
 
@@ -2990,7 +3000,7 @@ message DeduplicateExpr {
 
 message OptimizeTable {
     required ExprSchemaTable est = 1;
-    optional TableKey partition = 2;
+    optional PartitionExpr partition = 2;
     optional bool final = 3;
     optional DeduplicateExpr dedup = 4;
     optional bool cleanup = 5;
@@ -3009,12 +3019,12 @@ message UpdateSet {
 message Update {
     required UpdateSet update = 1;
     repeated UpdateSet other_updates = 2;
-    optional TableKey partition = 3;
+    optional PartitionExpr partition = 3;
     required WhereStatement where = 4;
 }
 
 message HeavyDelete {
-    optional TableKey partition = 1;
+    optional PartitionExpr partition = 1;
     required WhereStatement del = 2;
 }
 
@@ -3038,7 +3048,7 @@ message RenameCol {
 
 message ColInPartition {
     required Column col = 1;
-    optional TableKey partition = 2;
+    optional PartitionExpr partition = 2;
 }
 
 message AddStatistics {
@@ -3053,7 +3063,7 @@ message AddIndex {
 
 message IdxInPartition {
     required Index idx = 1;
-    optional TableKey partition = 2;
+    optional PartitionExpr partition = 2;
 }
 
 message RemoveColumnProperty {
@@ -3124,13 +3134,39 @@ message CreateView {
 }
 
 message ApplyDeleteMask {
-    optional TableKey partition = 1;
+    optional PartitionExpr partition = 1;
+}
+
+message AttachPartitionFrom {
+    required PartitionExpr partition = 1;
+    required ExprSchemaTable est = 2;
+}
+
+message ClearColumnInPartition {
+    required Column col = 1;
+    required PartitionExpr partition = 2;
+}
+
+message FreezePartition {
+    required PartitionExpr partition = 1;
+    required uint32 pname = 2;
+}
+
+message ClearIndexInPartition {
+    required Index idx = 1;
+    required PartitionExpr partition = 2;
+}
+
+message MovePartition {
+    required PartitionExpr partition = 1;
+    required uint32 vname = 2;
 }
 
 message AlterTableItem {
     oneof alter_oneof {
+        //for tables
         HeavyDelete del = 1;
-        Update update = 2;
+        Update update = 2;  
         TableKey order = 3;
         ColInPartition materialize_column = 4;
         AddColumn add_column = 5;
@@ -3159,8 +3195,22 @@ message AlterTableItem {
         Projection clear_projection = 28;
         ConstraintDef add_constraint = 29;
         Constraint remove_constraint = 30;
-        Select modify_query = 31;
-        RefreshableView refresh = 32;
+        PartitionExpr detach_partition = 31;
+        PartitionExpr drop_partition = 32;
+        PartitionExpr drop_detached_partition = 33;
+        PartitionExpr forget_partition = 34;
+        PartitionExpr attach_partition = 35;
+        AttachPartitionFrom attach_partition_from = 36;
+        AttachPartitionFrom replace_partition_from = 37;
+        AttachPartitionFrom move_partition_to = 38;
+        ClearColumnInPartition clear_column_partition = 39;
+        FreezePartition freeze_partition = 40;
+        FreezePartition unfreeze_partition = 41;
+        ClearIndexInPartition clear_index_partition = 42;
+        MovePartition move_partition = 43;
+        //for views
+        Select modify_query = 44;
+        RefreshableView refresh = 45;
     }
 }
 
