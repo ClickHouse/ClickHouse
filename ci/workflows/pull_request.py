@@ -15,6 +15,8 @@ from ci.settings.definitions import (
 class ArtifactNames:
     CH_AMD_DEBUG = "CH_AMD_DEBUG"
     CH_AMD_RELEASE = "CH_AMD_RELEASE"
+    CH_ARM_RELEASE = "CH_ARM_RELEASE"
+    CH_ARM_ASAN = "CH_ARM_ASAN"
 
 
 style_check_job = Job.Config(
@@ -26,7 +28,7 @@ style_check_job = Job.Config(
 
 fast_test_job = Job.Config(
     name=JobNames.FAST_TEST,
-    runs_on=[RunnerLabels.BUILDER],
+    runs_on=[RunnerLabels.BUILDER_AMD],
     command="python3 ./ci/jobs/fast_test.py",
     run_in_docker="clickhouse/fasttest",
     digest_config=Job.CacheDigestConfig(
@@ -38,9 +40,10 @@ fast_test_job = Job.Config(
     ),
 )
 
-amd_build_jobs = Job.Config(
+build_jobs = Job.Config(
     name=JobNames.BUILD,
-    runs_on=[RunnerLabels.BUILDER],
+    runs_on=["...from params..."],
+    requires=[JobNames.FAST_TEST],
     command="python3 ./ci/jobs/build_clickhouse.py --build-type {PARAMETER}",
     run_in_docker="clickhouse/fasttest",
     timeout=3600 * 2,
@@ -60,13 +63,24 @@ amd_build_jobs = Job.Config(
         ],
     ),
 ).parametrize(
-    parameter=["amd_debug", "amd_release"],
-    provides=[[ArtifactNames.CH_AMD_DEBUG], [ArtifactNames.CH_AMD_RELEASE]],
+    parameter=["amd_debug", "amd_release", "arm_release", "arm_asan"],
+    provides=[
+        [ArtifactNames.CH_AMD_DEBUG],
+        [ArtifactNames.CH_AMD_RELEASE],
+        [ArtifactNames.CH_ARM_RELEASE],
+        [ArtifactNames.CH_ARM_ASAN],
+    ],
+    runs_on=[
+        [RunnerLabels.BUILDER_AMD],
+        [RunnerLabels.BUILDER_AMD],
+        [RunnerLabels.BUILDER_ARM],
+        [RunnerLabels.BUILDER_ARM],
+    ],
 )
 
 stateless_tests_jobs = Job.Config(
     name=JobNames.STATELESS,
-    runs_on=[RunnerLabels.BUILDER],
+    runs_on=[RunnerLabels.BUILDER_AMD],
     command="python3 ./ci/jobs/functional_stateless_tests.py --test-options {PARAMETER}",
     # many tests expect to see "/var/lib/clickhouse" in various output lines - add mount for now, consider creating this dir in docker file
     run_in_docker="clickhouse/stateless-test+--security-opt seccomp=unconfined+--volume=/tmp/praktika:/var/lib/clickhouse",
@@ -81,36 +95,26 @@ stateless_tests_jobs = Job.Config(
         "amd_debug,non-parallel",
         "amd_release,parallel",
         "amd_release,non-parallel",
+        "arm_asan,parallel",
+        "arm_asan,non-parallel",
     ],
     runs_on=[
-        [RunnerLabels.BUILDER],
+        [RunnerLabels.BUILDER_AMD],
         [RunnerLabels.FUNC_TESTER_AMD],
-        [RunnerLabels.BUILDER],
+        [RunnerLabels.BUILDER_AMD],
         [RunnerLabels.FUNC_TESTER_AMD],
+        [RunnerLabels.BUILDER_ARM],
+        [RunnerLabels.FUNC_TESTER_ARM],
     ],
     requires=[
         [ArtifactNames.CH_AMD_DEBUG],
         [ArtifactNames.CH_AMD_DEBUG],
         [ArtifactNames.CH_AMD_RELEASE],
         [ArtifactNames.CH_AMD_RELEASE],
+        [ArtifactNames.CH_ARM_ASAN],
+        [ArtifactNames.CH_ARM_ASAN],
     ],
 )
-
-# stateless_tests_amd_release_jobs = Job.Config(
-#     name=JobNames.STATELESS_AMD_RELEASE,
-#     runs_on=[RunnerLabels.BUILDER],
-#     command="python3 ./ci/jobs/functional_stateless_tests.py --test-options {PARAMETER}",
-#     run_in_docker="clickhouse/stateless-test+--security-opt seccomp=unconfined+--volume=/tmp/praktika:/var/lib/clickhouse",
-#     digest_config=Job.CacheDigestConfig(
-#         include_paths=[
-#             "./ci/jobs/functional_stateless_tests.py",
-#         ],
-#     ),
-#     requires=[ArtifactNames.CH_AMD_RELEASE],
-# ).parametrize(
-#     parameter=["parallel", "non-parallel"],
-#     runs_on=[[RunnerLabels.BUILDER], [RunnerLabels.FUNC_TESTER_AMD]],
-# )
 
 workflow = Workflow.Config(
     name="PR",
@@ -119,7 +123,7 @@ workflow = Workflow.Config(
     jobs=[
         style_check_job,
         fast_test_job,
-        *amd_build_jobs,
+        *build_jobs,
         *stateless_tests_jobs,
     ],
     artifacts=[
@@ -130,6 +134,16 @@ workflow = Workflow.Config(
         ),
         Artifact.Config(
             name=ArtifactNames.CH_AMD_RELEASE,
+            type=Artifact.Type.S3,
+            path=f"{Settings.TEMP_DIR}/build/programs/clickhouse",
+        ),
+        Artifact.Config(
+            name=ArtifactNames.CH_ARM_RELEASE,
+            type=Artifact.Type.S3,
+            path=f"{Settings.TEMP_DIR}/build/programs/clickhouse",
+        ),
+        Artifact.Config(
+            name=ArtifactNames.CH_ARM_ASAN,
             type=Artifact.Type.S3,
             path=f"{Settings.TEMP_DIR}/build/programs/clickhouse",
         ),

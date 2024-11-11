@@ -60,24 +60,24 @@ def main():
 
     CACHE_TYPE = "sccache"
 
+    BUILD_TYPE = "RelWithDebInfo"
+    SANITIZER = ""
+    AUX_DEFS = " -DENABLE_TESTS=0 "
+
     if "debug" in build_type:
         print("Build type set: debug")
         BUILD_TYPE = "Debug"
-        AUX_DEFS = (
-            " -DENABLE_TESTS=1 -DSPLIT_DEBUG_SYMBOLS=ON -DBUILD_STANDALONE_KEEPER=1 "
-        )
+        AUX_DEFS = " -DENABLE_TESTS=1 "
     elif "release" in build_type:
         print("Build type set: release")
-        BUILD_TYPE = "RelWithDebInfo"
-        AUX_DEFS = " -DENABLE_TESTS=0 "
-    else:
-        assert False
-
-    if "asan" in build_type:
+        AUX_DEFS = (
+            " -DENABLE_TESTS=0 -DSPLIT_DEBUG_SYMBOLS=ON -DBUILD_STANDALONE_KEEPER=1 "
+        )
+    elif "asan" in build_type:
         print("Sanitizer set: address")
         SANITIZER = "address"
     else:
-        SANITIZER = ""
+        assert False
 
     cmake_cmd = CMAKE_CMD.format(
         BUILD_TYPE=BUILD_TYPE,

@@ -1,4 +1,5 @@
 import argparse
+import os
 import time
 from pathlib import Path
 
@@ -94,12 +95,15 @@ def main():
 
     if res and JobStages.INSTALL_CLICKHOUSE in stages:
         commands = [
+            f"rm -rf /tmp/praktika/var/log/clickhouse-server/clickhouse-server.*",
             f"chmod +x {ch_path}/clickhouse",
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-server",
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-client",
             f"rm -rf {Settings.TEMP_DIR}/etc/ && mkdir -p {Settings.TEMP_DIR}/etc/clickhouse-client {Settings.TEMP_DIR}/etc/clickhouse-server",
             f"cp programs/server/config.xml programs/server/users.xml {Settings.TEMP_DIR}/etc/clickhouse-server/",
             f"./tests/config/install.sh {Settings.TEMP_DIR}/etc/clickhouse-server {Settings.TEMP_DIR}/etc/clickhouse-client --s3-storage",
+            # clickhouse benchmark segfaults with --config-path, so provide client config by its default location
+            f"cp {Settings.TEMP_DIR}/etc/clickhouse-client/* /etc/clickhouse-client/",
             # update_path_ch_config,
             # f"sed -i 's|>/var/|>{Settings.TEMP_DIR}/var/|g; s|>/etc/|>{Settings.TEMP_DIR}/etc/|g' {Settings.TEMP_DIR}/etc/clickhouse-server/config.xml",
             # f"sed -i 's|>/etc/|>{Settings.TEMP_DIR}/etc/|g' {Settings.TEMP_DIR}/etc/clickhouse-server/config.d/ssl_certs.xml",
