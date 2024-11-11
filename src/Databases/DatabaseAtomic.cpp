@@ -76,7 +76,8 @@ void DatabaseAtomic::createDirectories()
 void DatabaseAtomic::createDirectoriesUnlocked()
 {
     DatabaseOnDisk::createDirectoriesUnlocked();
-    fs::create_directories(fs::path(getContext()->getPath()) / "metadata");
+    fs::path catalog_path = fs::path(getContext()->getPath()) / "metadata";
+    fs::create_directories(catalog_path);
     fs::create_directories(path_to_table_symlinks);
     tryCreateMetadataSymlink();
 }
@@ -604,12 +605,12 @@ void DatabaseAtomic::tryCreateMetadataSymlink()
 {
     /// Symlinks in data/db_name/ directory and metadata/db_name/ are not used by ClickHouse,
     /// it's needed only for convenient introspection.
-    assert(path_to_metadata_symlink != metadata_path);
+    chassert(path_to_metadata_symlink != metadata_path);
     fs::path metadata_symlink(path_to_metadata_symlink);
     if (fs::exists(metadata_symlink))
     {
         if (!FS::isSymlink(metadata_symlink))
-            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Directory {} exists", path_to_metadata_symlink);
+            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Directory {} already exists", path_to_metadata_symlink);
     }
     else
     {
