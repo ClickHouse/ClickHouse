@@ -165,7 +165,6 @@ public:
         const std::string & path_,
         size_t background_download_queue_size_limit_,
         size_t background_download_threads_,
-        size_t background_download_max_file_segment_size_,
         bool write_cache_per_user_directory_);
 
     void startup();
@@ -212,9 +211,6 @@ public:
     bool setBackgroundDownloadThreads(size_t threads_num);
     size_t getBackgroundDownloadThreads() const { return download_threads.size(); }
 
-    void setBackgroundDownloadMaxFileSegmentSize(size_t max_file_segment_size) { download_max_file_segment_size = max_file_segment_size; }
-    size_t getBackgroundDownloadMaxFileSegmentSize() const { return download_max_file_segment_size; }
-
     bool setBackgroundDownloadQueueSizeLimit(size_t size);
 
     bool isBackgroundDownloadEnabled();
@@ -246,7 +242,6 @@ private:
     };
 
     std::atomic<size_t> download_threads_num;
-    std::atomic<size_t> download_max_file_segment_size;
     std::vector<std::shared_ptr<DownloadThread>> download_threads;
     std::unique_ptr<ThreadFromGlobalPool> cleanup_thread;
 

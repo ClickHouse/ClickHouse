@@ -161,7 +161,7 @@ public:
 
     size_t getMaxFileSegmentSize() const { return max_file_segment_size; }
 
-    size_t getBackgroundDownloadMaxFileSegmentSize() const { return metadata.getBackgroundDownloadMaxFileSegmentSize(); }
+    size_t getBackgroundDownloadMaxFileSegmentSize() const { return background_download_max_file_segment_size.load(); }
 
     size_t getBoundaryAlignment() const { return boundary_alignment; }
 
@@ -203,6 +203,7 @@ private:
     std::atomic<size_t> max_file_segment_size;
     const size_t bypass_cache_threshold;
     const size_t boundary_alignment;
+    std::atomic<size_t> background_download_max_file_segment_size;
     size_t load_metadata_threads;
     const bool load_metadata_asynchronously;
     std::atomic<bool> stop_loading_metadata = false;

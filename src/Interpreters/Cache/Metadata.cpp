@@ -168,7 +168,6 @@ CacheMetadata::CacheMetadata(
     const std::string & path_,
     size_t background_download_queue_size_limit_,
     size_t background_download_threads_,
-    size_t background_download_max_file_segment_size_,
     bool write_cache_per_user_directory_)
     : path(path_)
     , cleanup_queue(std::make_shared<CleanupQueue>())
@@ -176,7 +175,6 @@ CacheMetadata::CacheMetadata(
     , write_cache_per_user_directory(write_cache_per_user_directory_)
     , log(getLogger("CacheMetadata"))
     , download_threads_num(background_download_threads_)
-    , download_max_file_segment_size(background_download_max_file_segment_size_)
 {
 }
 
