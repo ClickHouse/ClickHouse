@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>ClickHouse Merges Visualizer</title>
+    <title>ClickHouse Parts Visualizer</title>
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <style>
         * {
@@ -113,8 +113,7 @@ function formatBlockNumber(block_number)
         return block_number;
 }
 
-function visualizeMergeTree(raw_data, container)
-{
+function visualizeMergeTree(raw_data, container) {
     // Input visuals
     const margin = { left: 50, right: 30, top: 60, bottom: 60 };
     const width = 800;
@@ -130,9 +129,8 @@ function visualizeMergeTree(raw_data, container)
     let data = [];
     let lefts = {}; // Maps inserted part.begin to its part.left
     let insert_left = 0;
-    for (const row of raw_data)
-    {
-        const {name, min_block_number, max_block_number, bytes_on_disk} = row;
+    for (const row of raw_data) {
+        const { name, min_block_number, max_block_number, bytes_on_disk } = row;
         data.push({
             bytes: +bytes_on_disk,
             left: +min_block_number,
@@ -145,21 +143,19 @@ function visualizeMergeTree(raw_data, container)
     const minXValue = d3.min(data, d => d.left);
     const maxXValue = d3.max(data, d => d.right);
 
-    console.log([minXValue, maxXValue], [minYValue, maxYValue]);
-
     const svgWidth = width + margin.left + margin.right;
     const svgHeight = height;
 
     // Set up the horizontal scale (x-axis) — linear scale
     const xScale = d3.scaleLinear()
         .domain([minXValue, maxXValue])
-        .range([margin.left, svgWidth - margin.right]); // Apply left and right margins
+        .range([margin.left, svgWidth - margin.right]);
 
     // Set up the vertical scale (y-axis) — logarithmic scale
     const yScale = d3.scaleLog()
         .base(2) // Use base 2 for the logarithmic scale
-        .domain([Math.max(1, minYValue), Math.pow(2, Math.ceil(Math.log2(maxYValue)))]) // Fit the data into powers of 2
-        .range([svgHeight - margin.bottom, margin.top]); // Page coordinates (bottom to top)
+        .domain([Math.max(1, minYValue), Math.pow(2, Math.ceil(Math.log2(maxYValue)))])
+        .range([svgHeight - margin.bottom, margin.top]);
 
     // Create the SVG container
     const svgContainer = container
@@ -173,11 +169,25 @@ function visualizeMergeTree(raw_data, container)
     function pxt(value) { return value; }
     function pxb(value) { return Math.max(1, value); }
 
+    // Clip path to avoid drawing outside the chart area
+    svgContainer.append("defs").append("clipPath")
+        .attr("id", "clip")
+        .append("rect")
+        .attr("x", margin.left)
+        .attr("y", margin.top)
+        .attr("width", width)
+        .attr("height", height - margin.bottom);
+
+    // Create a group for the chart content
+    const chartGroup = svgContainer.append("g")
+        .attr("clip-path", "url(#clip)");
+
     // Append rectangles for parts
-    svgContainer.append("g").selectAll("rect")
+    const parts = chartGroup.selectAll("rect.part")
         .data(data)
         .enter()
         .append("rect")
+        .attr("class", "part")
         .attr("x", d => pxl(xScale(d.left)))
         .attr("y", d => pxt(yScale(d.bytes) - part_dy))
         .attr("width", d => pxr(xScale(d.right) - xScale(d.left)))
@@ -185,10 +195,11 @@ function visualizeMergeTree(raw_data, container)
         .attr("fill", "black");
 
     // Append marks for parts begin
-    svgContainer.append("g").selectAll("rect")
+    const marks = chartGroup.selectAll("rect.mark")
         .data(data)
         .enter()
         .append("rect")
+        .attr("class", "mark")
         .attr("x", d => pxl(xScale(d.left)))
         .attr("y", d => pxt(yScale(d.bytes) - part_dy))
         .attr("width", d => pxr(Math.min(part_dx, xScale(d.right) - xScale(d.left))))
@@ -200,11 +211,10 @@ function visualizeMergeTree(raw_data, container)
 
     // Add the x-axis at the bottom of the SVG
     const xAxis = d3.axisBottom(xScale)
-        //.ticks(Math.ceil(maxXValue / tickStep)) // Dynamically set the number of ticks
-        .tickValues(d3.range(minXValue, maxXValue, tickStep)) // Generate ticks based on the calculated tick step
+        .tickValues(d3.range(minXValue, maxXValue, tickStep))
         .tickFormat(formatBlockNumber);
-    svgContainer.append("g")
-        .attr("transform", `translate(0, ${svgHeight - margin.bottom})`) // Position at the bottom
+    const xAxisGroup = svgContainer.append("g")
+        .attr("transform", `translate(0, ${svgHeight - margin.bottom})`)
         .call(xAxis);
 
     // Add label for the x-axis
@@ -250,6 +260,27 @@ function visualizeMergeTree(raw_data, container)
                 .attr("font-size", "70%")  // Reduce font size for the exponent
                 .text(exponent);
         });
+
+    // Zoom functionality
+    const zoom = d3.zoom()
+        .scaleExtent([1, 10000]) // Limit the zoom scale
+        .translateExtent([[margin.left, 0], [svgWidth - margin.right, svgHeight]]) // Limit panning
+        .on("zoom", zoomed);
+
+    svgContainer.call(zoom);
+
+    function zoomed(event) {
+        // Update x-scale with the zoom transform
+        const transform = event.transform;
+        const newXScale = transform.rescaleX(xScale);
+
+        // Update axes and rectangles with the new scale
+        xAxisGroup.call(xAxis.scale(newXScale));
+        parts.attr("x", d => newXScale(d.left))
+            .attr("width", d => Math.max(1, newXScale(d.right) - newXScale(d.left)));
+        marks.attr("x", d => newXScale(d.left))
+            .attr("width", d => Math.min(part_dx, newXScale(d.right) - newXScale(d.left)));
+    }
 }
 
 let add_http_cors_header = (location.protocol != 'file:');
