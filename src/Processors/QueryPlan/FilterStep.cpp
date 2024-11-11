@@ -143,7 +143,7 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
 {
     std::vector<ActionsAndName> and_atoms;
 
-    /// Spliting AND filter condition to steps under the setting, which is enabled with merge_filters optimization.
+    /// Splitting AND filter condition to steps under the setting, which is enabled with merge_filters optimization.
     /// This is needed to support short-circuit properly.
     if (settings.enable_multiple_filters_transforms_for_and_chain && !actions_dag.hasStatefulFunctions())
         and_atoms = splitAndChainIntoMultipleFilters(actions_dag, filter_column_name);
