@@ -155,7 +155,7 @@ StorageMergeTree::StorageMergeTree(
 
     loadMutations();
     loadDeduplicationLog();
-    prewarmMarkCache(getActivePartsLoadingThreadPool().get());
+    prewarmMarkCacheIfNeeded(getActivePartsLoadingThreadPool().get());
 }
 
 
