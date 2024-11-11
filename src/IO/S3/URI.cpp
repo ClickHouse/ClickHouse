@@ -117,7 +117,7 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
         is_virtual_hosted_style = true;
         if (name == "oss-data-acc")
         {
-            bucket = bucket.substr(0, bucket.find("."));
+            bucket = bucket.substr(0, bucket.find('.'));
             endpoint = uri.getScheme() + "://" + uri.getHost().substr(bucket.length() + 1);
         }
         else
