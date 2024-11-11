@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>ClickHouse Merges Visualizer</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        html, body {
+            height: 100%;
+            overflow: auto;
+            margin: 0;
+            background: #F8F8F8;
+            font-size: 16pt;
+        }
+        body {
+            font-family: Liberation Sans, DejaVu Sans, sans-serif, Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji;
+            padding: 1rem;
+        }
+
+        input, textarea {
+            border: 3px solid #EEE;
+            font-size: 16pt;
+            padding: 0.25rem;
+        }
+
+        #url {
+            width: 80%;
+        }
+        #user, #password {
+            width: 10%;
+        }
+        #query {
+            width: 100%;
+            height: 3rem;
+        }
+
+        input[type="button"] {
+            background: #FED;
+            width: 2rem;
+            height: 2rem;
+        }
+        input[type="button"]:hover {
+            background: #F88;
+            cursor: pointer;
+        }
+
+        #canvas {
+            margin-top: 0.25rem;
+            font-size: 10pt;
+        }
+    </style>
+</head>
+<body>
+<div class="inputs">
+    <form id="params">
+        <div id="connection-params">
+            <input spellcheck="false" id="url" type="text" value="" placeholder="URL" /><input spellcheck="false" id="user" type="text" value="" placeholder="user" /><input spellcheck="false" id="password" type="password" placeholder="password" value="" />
+            <input id="hidden-submit" type="submit" hidden="true"/>
+        </div>
+        <textarea spellcheck="false" data-gramm="false" id="query">SELECT database, table, partition, name, min_block_number, max_block_number, bytes_on_disk FROM system.parts WHERE active = 1 ORDER BY database, table, partition, min_block_number</textarea>
+        <input id="play" type="button" value="▶">
+    </form>
+</div>
+<div id="canvas">
+</div>
+<script type="module">
+
+function determineTickStep(max_block_number)
+{
+    let step;
+    let unit;
+
+    if (max_block_number >= Math.pow(1000, 3)) // For G range
+        unit = Math.pow(1000, 3); // 1 G
+    else if (max_block_number >= Math.pow(1000, 2)) // For M range
+        unit = Math.pow(1000, 2); // 1 M
+    else if (max_block_number >= 1000) // For K range
+        unit = 1000; // 1 K
+    else
+        unit = 1; // range
+
+    // Determine appropriate tick step based on the range (1, 2, 5, 10, 20, 50, 100, 200...)
+    if (max_block_number / unit > 500)
+        step = 100 * unit;
+    else if (max_block_number / unit > 200)
+        step = 50 * unit;
+    else if (max_block_number / unit > 100)
+        step = 20 * unit;
+    else if (max_block_number / unit > 50)
+        step = 10 * unit;
+    else if (max_block_number / unit > 20)
+        step = 5 * unit;
+    else if (max_block_number / unit > 10)
+        step = 2 * unit;
+    else
+        step = 1 * unit;
+
+    return step;
+}
+
+function formatBlockNumber(block_number)
+{
+    if (block_number >= Math.pow(1000, 3))
+        return (block_number / Math.pow(1000, 3)).toFixed(1) + 'G';
+    else if (block_number >= Math.pow(1000, 2))
+        return (block_number / Math.pow(1000, 2)).toFixed(1) + 'M';
+    else if (block_number >= 1000)
+        return (block_number / 1000).toFixed(1) + 'K';
+    else
+        return block_number;
+}
+
+function visualizeMergeTree(raw_data, container)
+{
+    // Input visuals
+    const margin = { left: 50, right: 30, top: 60, bottom: 60 };
+    const width = 800;
+    const height = 300;
+    const part_dy = 4;
+    const part_dx = 1;
+
+    // Compute useful aggregates
+    let log_min_bytes = Math.log2(d3.min(raw_data, d => d.bytes_on_disk));
+    let log_max_bytes = Math.log2(d3.max(raw_data, d => d.bytes_on_disk));
+
+    // Data
+    let data = [];
+    let lefts = {}; // Maps inserted part.begin to its part.left
+    let insert_left = 0;
+    for (const row of raw_data)
+    {
+        const {name, min_block_number, max_block_number, bytes_on_disk} = row;
+        data.push({
+            bytes: +bytes_on_disk,
+            left: +min_block_number,
+            right: +max_block_number,
+        });
+    }
+
+    const maxYValue = d3.max(data, d => d.bytes);
+    const minYValue = d3.min(data, d => d.bytes);
+    const minXValue = d3.min(data, d => d.left);
+    const maxXValue = d3.max(data, d => d.right);
+
+    console.log([minXValue, maxXValue], [minYValue, maxYValue]);
+
+    const svgWidth = width + margin.left + margin.right;
+    const svgHeight = height;
+
+    // Set up the horizontal scale (x-axis) — linear scale
+    const xScale = d3.scaleLinear()
+        .domain([minXValue, maxXValue])
+        .range([margin.left, svgWidth - margin.right]); // Apply left and right margins
+
+    // Set up the vertical scale (y-axis) — logarithmic scale
+    const yScale = d3.scaleLog()
+        .base(2) // Use base 2 for the logarithmic scale
+        .domain([Math.max(1, minYValue), Math.pow(2, Math.ceil(Math.log2(maxYValue)))]) // Fit the data into powers of 2
+        .range([svgHeight - margin.bottom, margin.top]); // Page coordinates (bottom to top)
+
+    // Create the SVG container
+    const svgContainer = container
+        .append("svg")
+        .attr("width", svgWidth)
+        .attr("height", svgHeight);
+
+    // To avoid negative width and height
+    function pxl(value, min = 0) { return Math.max(min, Math.floor(value)); }
+    function pxr(value, min = 1) { return Math.max(min, Math.ceil(value)); }
+    function pxt(value) { return value; }
+    function pxb(value) { return Math.max(1, value); }
+
+    // Append rectangles for parts
+    svgContainer.append("g").selectAll("rect")
+        .data(data)
+        .enter()
+        .append("rect")
+        .attr("x", d => pxl(xScale(d.left)))
+        .attr("y", d => pxt(yScale(d.bytes) - part_dy))
+        .attr("width", d => pxr(xScale(d.right) - xScale(d.left)))
+        .attr("height", d => pxb(part_dy))
+        .attr("fill", "black");
+
+    // Append marks for parts begin
+    svgContainer.append("g").selectAll("rect")
+        .data(data)
+        .enter()
+        .append("rect")
+        .attr("x", d => pxl(xScale(d.left)))
+        .attr("y", d => pxt(yScale(d.bytes) - part_dy))
+        .attr("width", d => pxr(Math.min(part_dx, xScale(d.right) - xScale(d.left))))
+        .attr("height", d => pxb(part_dy))
+        .attr("fill", "#0a0");
+
+    // Determine the tick step based on maxValue
+    const tickStep = determineTickStep(maxXValue - minXValue);
+
+    // Add the x-axis at the bottom of the SVG
+    const xAxis = d3.axisBottom(xScale)
+        //.ticks(Math.ceil(maxXValue / tickStep)) // Dynamically set the number of ticks
+        .tickValues(d3.range(minXValue, maxXValue, tickStep)) // Generate ticks based on the calculated tick step
+        .tickFormat(formatBlockNumber);
+    svgContainer.append("g")
+        .attr("transform", `translate(0, ${svgHeight - margin.bottom})`) // Position at the bottom
+        .call(xAxis);
+
+    // Add label for the x-axis
+    svgContainer.append("text")
+        .attr("x", svgWidth / 2)
+        .attr("y", svgHeight - margin.bottom / 2 + 20)
+        .attr("text-anchor", "middle")
+        .attr("font-size", "14px")
+        .text("Block Number");
+
+    // Add the y-axis with custom ticks for powers of 2
+    const powersOfTwo = Array.from({ length: 50 }, (v, i) => Math.pow(2, i + 1));
+    const yAxis = d3.axisLeft(yScale)
+        .tickValues(powersOfTwo.filter(d => d >= minYValue && d <= maxYValue))
+        .tickFormat(d => `2^${Math.log2(d)}`);
+    const yAxisGroup = svgContainer.append("g")
+        .attr("transform", `translate(${margin.left}, 0)`) // Align with the left margin
+        .call(yAxis);
+
+    // Add label for the y-axis
+    svgContainer.append("text")
+        .attr("transform", "rotate(-90)")
+        .attr("x", -svgHeight / 2)
+        .attr("y", margin.left / 2 - 10)
+        .attr("text-anchor", "middle")
+        .attr("font-size", "14px")
+        .text("Log(PartSize)");
+
+    // Modify the tick labels using <tspan> to position the exponent properly
+    yAxisGroup.selectAll(".tick text")
+        .each(function(d)
+        {
+            const exponent = Math.log2(d);  // Calculate the exponent
+            const self = d3.select(this);
+
+            // Create base '2'
+            self.text("");  // Clear current text
+            self.append("tspan").text("2");
+
+            // Add the exponent in a superscript-like way using <tspan> and dy positioning
+            self.append("tspan")
+                .attr("dy", "-0.7em")  // Move the exponent up
+                .attr("font-size", "70%")  // Reduce font size for the exponent
+                .text(exponent);
+        });
+}
+
+let add_http_cors_header = (location.protocol != 'file:');
+
+if (!document.getElementById('url').value) {
+    document.getElementById('url').value = location.protocol != 'file:' ? location.origin : 'http://localhost:8123/';
+}
+
+if (!document.getElementById('user').value) {
+    let user = 'default';
+
+    const current_url = new URL(window.location);
+    /// Substitute user name if it's specified in the query string
+    const user_from_url = current_url.searchParams.get('user');
+    if (user_from_url) {
+        user = user_from_url;
+    }
+    document.getElementById('user').value = user;
+}
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+let canvas = document.getElementById('canvas');
+
+let loading = false;
+let stopping = false;
+
+async function load() {
+    canvas.innerHTML = '';
+
+    const host = document.getElementById('url').value;
+    const user = document.getElementById('user').value;
+    const password = document.getElementById('password').value;
+
+    let url = `${host}?default_format=JSONEachRow&enable_http_compression=1`
+
+    if (add_http_cors_header) {
+        // For debug purposes, you may set add_http_cors_header from the browser console
+        url += '&add_http_cors_header=1';
+    }
+
+    if (user) {
+        url += `&user=${encodeURIComponent(user)}`;
+    }
+    if (password) {
+        url += `&password=${encodeURIComponent(password)}`;
+    }
+
+    const query = document.getElementById('query').value;
+
+    let response, reply, error;
+    try {
+        loading = true;
+        document.getElementById('play').value = '⏹';
+
+        response = await fetch(url, { method: "POST", body: query });
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+
+        let buffer = '';
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (stopping) {
+                stopped = true;
+                break;
+            }
+
+            buffer += decoder.decode(value, { stream: true });
+
+            let lines = buffer.split('\n');
+
+            for (const line of lines.slice(0, -1)) {
+                if (stopping) {
+                    stopped = true;
+                    break;
+                }
+                const data = JSON.parse(line);
+                await update(data);
+            };
+
+            buffer = lines[lines.length - 1];
+        }
+    } catch (e) {
+        console.log(e);
+        error = e.toString();
+    }
+
+    loading = false;
+    stopping = false;
+    document.getElementById('play').value = '▶';
+    await visualize();
+}
+
+function stop() {
+    stopping = true;
+}
+
+document.getElementById('play').addEventListener('click', _ => {
+    if (loading) {
+        stop();
+    } else if (stopping) {
+    } else {
+        load();
+    }
+});
+
+let all = {};
+
+async function update({database, table, partition, name, min_block_number, max_block_number, bytes_on_disk})
+{
+    const key = database + "." + table + ":" + partition;
+    if (!(key in all))
+        all[key] = [];
+    all[key].push({name, min_block_number, max_block_number, bytes_on_disk});
+ }
+
+async function visualize()
+{
+    for (const key in all)
+    {
+        const raw_data = all[key];
+        d3.select("body").append("div").text(key);
+        console.log(key);
+        visualizeMergeTree(raw_data, d3.select("body").append("div"), true);
+    }
+}
+
+</script>
+</body>
+</html>
