@@ -46,7 +46,7 @@ Detailed table sizes with scale factor 100:
 | orders   | 150.000.000    | 6.15 GB                         |
 | lineitem | 600.00.00      | 26.69 GB                        |
 
-(The table sizes in ClickHouse are taken from `system.tables.total_bytes` and based on below table definitions.
+(Compressed sizes in ClickHouse are taken from `system.tables.total_bytes` and based on below table definitions.)
 
 Now create tables in ClickHouse.
 
