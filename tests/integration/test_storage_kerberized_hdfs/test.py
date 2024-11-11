@@ -1,10 +1,10 @@
+import os
+import subprocess
 import time
+
 import pytest
 
-import os
-
 from helpers.cluster import ClickHouseCluster, is_arm
-import subprocess
 
 if is_arm():
     pytestmark = pytest.mark.skip

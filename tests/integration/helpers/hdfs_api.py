@@ -227,7 +227,6 @@ class HDFSApi(object):
 
         logging.debug(f"HDFS api response:{response.headers}")
 
-
         location = ""
         port_to_replace = 1006 if self.kerberized else 50075
         location = response.headers["Location"].replace(
