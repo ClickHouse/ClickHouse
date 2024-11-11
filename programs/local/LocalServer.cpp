@@ -23,7 +23,6 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/registerInterpreters.h>
-#include <base/getFQDNOrHostName.h>
 #include <Access/AccessControl.h>
 #include <Common/PoolId.h>
 #include <Common/Exception.h>
@@ -32,7 +31,6 @@
 #include <Common/ThreadStatus.h>
 #include <Common/TLDListsHolder.h>
 #include <Common/quoteString.h>
-#include <Common/randomSeed.h>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
 #include <Loggers/OwnFormattingChannel.h>
@@ -71,9 +69,11 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
 namespace Setting
 {
     extern const SettingsBool allow_introspection_functions;
+    extern const SettingsBool implicit_select;
     extern const SettingsLocalFSReadMethod storage_file_read_method;
 }
 
@@ -126,6 +126,7 @@ void applySettingsOverridesForLocal(ContextMutablePtr context)
 
     settings[Setting::allow_introspection_functions] = true;
     settings[Setting::storage_file_read_method] = LocalFSReadMethod::mmap;
+    settings[Setting::implicit_select] = true;
 
     context->setSettings(settings);
 }
