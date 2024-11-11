@@ -857,10 +857,10 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
     if (cannot_sort_primary_key) /// just expand to all parts + ranges
     {
         RangesInDataParts all_part_ranges(std::move(ranges_in_data_parts));
-        for (size_t part_index = 0; part_index < all_part_ranges.size(); ++part_index)
+        for (auto & all_part_range : all_part_ranges)
         {
-            const auto & index_granularity = all_part_ranges[part_index].data_part->index_granularity;
-            all_part_ranges[part_index].ranges = MarkRanges{{MarkRange{0, index_granularity.getMarksCountWithoutFinal()}}};
+            const auto & index_granularity = all_part_range.data_part->index_granularity;
+            all_part_range.ranges = MarkRanges{{MarkRange{0, index_granularity.getMarksCountWithoutFinal()}}};
         }
         return all_part_ranges;
     }
