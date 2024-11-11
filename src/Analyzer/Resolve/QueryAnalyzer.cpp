@@ -1,4 +1,5 @@
 #include <memory>
+#include "Common/LoggingFormatStringHelpers.h"
 #include <Common/FieldVisitorToString.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -1307,8 +1308,6 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
     if (!scope.context->getSettingsRef()[Setting::enable_global_with_statement] && (resolve_result.isResolvedFromAliases() || resolve_result.isResolvedFromCTEs()))
         return {};
 
-    auto * closest_query_scope = scope.getNearestQueryScope();
-
     /** From parent scopes we can resolve table identifiers only as CTE.
         * Example: SELECT (SELECT 1 FROM a) FROM test_table AS a;
         *
@@ -1341,11 +1340,9 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
         nodes_to_process.pop_back();
         if (auto * current_column = current->as<ColumnNode>())
         {
-            auto column_scope_depth = current_column->getOriginScopeDepth();
-
-            if (column_scope_depth < closest_query_scope->scope_depth)
+            if (isDependentColumn(&scope, current_column->getColumnSource()))
             {
-                LOG_DEBUG(&Poco::Logger::get("resolveInParentScope"), "Found dependency for indetifier '{}'\nresult column: {}\ncolumn scope depth: {}\nclosest query: {}", identifier_lookup.dump(), current_column->getColumnName(), column_scope_depth, closest_query_scope->scope_depth);
+                LOG_DEBUG(&Poco::Logger::get("resolveInParentScope"), "Found dependency for indetifier '{}'\nresult column: {}", identifier_lookup.dump(), current_column->getColumnName());
                 dependent_column = true;
                 break;
             }
@@ -1683,7 +1680,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
             }
         }
 
-        matched_column_nodes.emplace_back(std::make_shared<ColumnNode>(column, table_expression_node, &scope));
+        matched_column_nodes.emplace_back(std::make_shared<ColumnNode>(column, table_expression_node));
     }
 
     const auto & qualify_matched_column_nodes_scope = nearest_query_scope ? *nearest_query_scope : scope;
@@ -2965,7 +2962,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             for (auto & column : columns_to_select)
             {
-                column_nodes_to_select->getNodes().emplace_back(std::make_shared<ColumnNode>(column, in_second_argument, &scope));
+                column_nodes_to_select->getNodes().emplace_back(std::make_shared<ColumnNode>(column, in_second_argument));
                 projection_columns.emplace_back(column.name, column.type);
             }
 
@@ -3391,7 +3388,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             {
                 const auto & argument_type = function_data_type_argument_types[i];
                 auto column_name_and_type = NameAndTypePair{lambda_argument_names[i], argument_type};
-                lambda_arguments.push_back(std::make_shared<ColumnNode>(std::move(column_name_and_type), lambda_to_resolve, &lambda_scope));
+                lambda_arguments.push_back(std::make_shared<ColumnNode>(std::move(column_name_and_type), lambda_to_resolve));
             }
 
             lambda_projection_names = resolveLambda(lambda_argument, lambda_to_resolve, lambda_arguments, lambda_scope);
@@ -4205,7 +4202,7 @@ void QueryAnalyzer::resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpo
         auto & interpolation_to_resolve = interpolate_node_typed.getInterpolateExpression();
         IdentifierResolveScope interpolate_scope(interpolation_to_resolve, &scope /*parent_scope*/);
 
-        auto fake_column_node = std::make_shared<ColumnNode>(NameAndTypePair(column_to_interpolate_name, interpolate_node_typed.getExpression()->getResultType()), interpolate_node, &interpolate_scope);
+        auto fake_column_node = std::make_shared<ColumnNode>(NameAndTypePair(column_to_interpolate_name, interpolate_node_typed.getExpression()->getResultType()), interpolate_node);
         if (is_column_constant)
             interpolate_scope.expression_argument_name_to_node.emplace(column_to_interpolate_name, fake_column_node);
 
@@ -4481,13 +4478,13 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
             if (column_default && column_default->kind == ColumnDefaultKind::Alias)
             {
                 auto alias_expression = buildQueryTree(column_default->expression, scope.context);
-                auto column_node = std::make_shared<ColumnNode>(column_name_and_type, std::move(alias_expression), table_expression_node, &scope);
+                auto column_node = std::make_shared<ColumnNode>(column_name_and_type, std::move(alias_expression), table_expression_node);
                 column_name_to_column_node.emplace(column_name_and_type.name, column_node);
                 alias_columns_to_resolve.emplace_back(column_name_and_type.name, column_node);
             }
             else
             {
-                auto column_node = std::make_shared<ColumnNode>(column_name_and_type, table_expression_node, &scope);
+                auto column_node = std::make_shared<ColumnNode>(column_name_and_type, table_expression_node);
                 column_name_to_column_node.emplace(column_name_and_type.name, column_node);
             }
         }
@@ -4529,7 +4526,7 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
 
         for (const auto & column_name_and_type : table_expression_data.column_names_and_types)
         {
-            auto column_node = std::make_shared<ColumnNode>(column_name_and_type, table_expression_node, &scope);
+            auto column_node = std::make_shared<ColumnNode>(column_name_and_type, table_expression_node);
             table_expression_data.column_name_to_column_node.emplace(column_name_and_type.name, column_node);
         }
     }
@@ -4980,7 +4977,7 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
             array_join_column_names.emplace(array_join_column_name);
 
             NameAndTypePair array_join_column(array_join_column_name, result_type);
-            auto array_join_column_node = std::make_shared<ColumnNode>(std::move(array_join_column), expression, array_join_node, &scope);
+            auto array_join_column_node = std::make_shared<ColumnNode>(std::move(array_join_column), expression, array_join_node);
             array_join_column_node->setAlias(array_join_expression_alias);
             array_join_column_expressions.push_back(std::move(array_join_column_node));
         };
@@ -5084,7 +5081,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
               * Example: SELECT a + 1 AS b FROM (SELECT 1 AS a) t1 JOIN (SELECT 2 AS b) USING b
               * In this case `b` is not in the left table expression, but it is in the parent subquery projection.
               */
-            auto try_resolve_identifier_from_query_projection = [this, & scope](const String & identifier_full_name_,
+            auto try_resolve_identifier_from_query_projection = [this](const String & identifier_full_name_,
                                                                        const QueryTreeNodePtr & left_table_expression,
                                                                        const IdentifierResolveScope & scope_) -> QueryTreeNodePtr
             {
@@ -5111,8 +5108,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                             return std::make_shared<ColumnNode>(
                                 NameAndTypePair{identifier_full_name_, resolved_nodes.front()->getResultType()},
                                 resolved_nodes.front(),
-                                left_table_expression,
-                                &scope);
+                                left_table_expression);
                         }
                     }
                 }
@@ -5203,7 +5199,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
 
             NameAndTypePair join_using_column(identifier_full_name, common_type);
             ListNodePtr join_using_expression = std::make_shared<ListNode>(QueryTreeNodes{result_left_table_expression, result_right_table_expression});
-            auto join_using_column_node = std::make_shared<ColumnNode>(std::move(join_using_column), std::move(join_using_expression), join_node, &scope);
+            auto join_using_column_node = std::make_shared<ColumnNode>(std::move(join_using_column), std::move(join_using_expression), join_node);
             join_using_node = std::move(join_using_column_node);
         }
     }

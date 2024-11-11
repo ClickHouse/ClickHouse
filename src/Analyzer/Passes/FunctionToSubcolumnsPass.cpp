@@ -50,7 +50,7 @@ void optimizeFunctionLength(QueryTreeNodePtr & node, FunctionNode &, ColumnConte
     /// `argument` may be Array or Map.
 
     NameAndTypePair column{ctx.column.name + ".size0", std::make_shared<DataTypeUInt64>()};
-    node = std::make_shared<ColumnNode>(column, ctx.column_source, nullptr);
+    node = std::make_shared<ColumnNode>(column, ctx.column_source);
 }
 
 template <bool positive>
@@ -64,7 +64,7 @@ void optimizeFunctionEmpty(QueryTreeNodePtr &, FunctionNode & function_node, Col
     auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
     function_arguments_nodes.clear();
-    function_arguments_nodes.push_back(std::make_shared<ColumnNode>(column, ctx.column_source, nullptr));
+    function_arguments_nodes.push_back(std::make_shared<ColumnNode>(column, ctx.column_source));
     function_arguments_nodes.push_back(std::make_shared<ConstantNode>(static_cast<UInt64>(0)));
 
     const auto * function_name = positive ? "equals" : "notEquals";
@@ -111,7 +111,7 @@ void optimizeTupleOrVariantElement(QueryTreeNodePtr & node, FunctionNode & funct
         return;
 
     NameAndTypePair column{ctx.column.name + "." + subcolumn_name, function_node.getResultType()};
-    node = std::make_shared<ColumnNode>(column, ctx.column_source, nullptr);
+    node = std::make_shared<ColumnNode>(column, ctx.column_source);
 }
 
 std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transformers =
@@ -140,7 +140,7 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         {
             /// Replace `mapKeys(map_argument)` with `map_argument.keys`
             NameAndTypePair column{ctx.column.name + ".keys", function_node.getResultType()};
-            node = std::make_shared<ColumnNode>(column, ctx.column_source, nullptr);
+            node = std::make_shared<ColumnNode>(column, ctx.column_source);
         },
     },
     {
@@ -149,7 +149,7 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         {
             /// Replace `mapValues(map_argument)` with `map_argument.values`
             NameAndTypePair column{ctx.column.name + ".values", function_node.getResultType()};
-            node = std::make_shared<ColumnNode>(column, ctx.column_source, nullptr);
+            node = std::make_shared<ColumnNode>(column, ctx.column_source);
         },
     },
     {
@@ -162,7 +162,7 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
             NameAndTypePair column{ctx.column.name + ".keys", std::make_shared<DataTypeArray>(data_type_map.getKeyType())};
             auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
-            auto has_function_argument = std::make_shared<ColumnNode>(column, ctx.column_source, nullptr);
+            auto has_function_argument = std::make_shared<ColumnNode>(column, ctx.column_source);
             function_arguments_nodes[0] = std::move(has_function_argument);
 
             resolveOrdinaryFunctionNodeByName(function_node, "has", ctx.context);
@@ -176,7 +176,7 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
             NameAndTypePair column{ctx.column.name + ".null", std::make_shared<DataTypeUInt8>()};
             auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
-            auto new_column_node = std::make_shared<ColumnNode>(column, ctx.column_source, nullptr);
+            auto new_column_node = std::make_shared<ColumnNode>(column, ctx.column_source);
             auto function_node_not = std::make_shared<FunctionNode>("not");
 
             function_node_not->getArguments().getNodes().push_back(std::move(new_column_node));
@@ -192,7 +192,7 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         {
             /// Replace `isNull(nullable_argument)` with `nullable_argument.null`
             NameAndTypePair column{ctx.column.name + ".null", std::make_shared<DataTypeUInt8>()};
-            node = std::make_shared<ColumnNode>(column, ctx.column_source, nullptr);
+            node = std::make_shared<ColumnNode>(column, ctx.column_source);
         },
     },
     {
@@ -203,7 +203,7 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
             NameAndTypePair column{ctx.column.name + ".null", std::make_shared<DataTypeUInt8>()};
             auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
-            function_arguments_nodes = {std::make_shared<ColumnNode>(column, ctx.column_source, nullptr)};
+            function_arguments_nodes = {std::make_shared<ColumnNode>(column, ctx.column_source)};
             resolveOrdinaryFunctionNodeByName(function_node, "not", ctx.context);
         },
     },

@@ -22,17 +22,19 @@
 
 #include <Interpreters/Context.h>
 
-#include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/IdentifierNode.h>
-#include <Analyzer/ConstantNode.h>
-#include <Analyzer/ColumnNode.h>
-#include <Analyzer/FunctionNode.h>
-#include <Analyzer/JoinNode.h>
 #include <Analyzer/ArrayJoinNode.h>
-#include <Analyzer/TableNode.h>
-#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/ConstantNode.h>
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/IdentifierNode.h>
+#include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
+
+#include <Analyzer/Resolve/IdentifierResolveScope.h>
 
 namespace DB
 {
@@ -202,6 +204,19 @@ bool isQueryOrUnionNode(const IQueryTreeNode * node)
 bool isQueryOrUnionNode(const QueryTreeNodePtr & node)
 {
     return isQueryOrUnionNode(node.get());
+}
+
+bool isDependentColumn(IdentifierResolveScope * scope_to_check, const QueryTreeNodePtr & column_source)
+{
+    while (scope_to_check != nullptr)
+    {
+        if (scope_to_check->table_expression_node_to_data.contains(column_source))
+            return false;
+        if (isQueryOrUnionNode(scope_to_check->scope_node))
+            return true;
+        scope_to_check = scope_to_check->parent_scope;
+    }
+    return true;
 }
 
 QueryTreeNodePtr buildCastFunction(const QueryTreeNodePtr & expression,
@@ -891,7 +906,7 @@ QueryTreeNodePtr buildQueryToReadColumnsFromTableExpression(const NamesAndTypes 
     subquery_projection_nodes.reserve(projection_columns.size());
 
     for (const auto & column : projection_columns)
-        subquery_projection_nodes.push_back(std::make_shared<ColumnNode>(column, table_expression, nullptr));
+        subquery_projection_nodes.push_back(std::make_shared<ColumnNode>(column, table_expression));
 
     if (subquery_projection_nodes.empty())
     {

@@ -729,7 +729,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
         {
             if (auto dynamic_subcolumn_type = jt->second->getColumnType()->tryGetSubcolumnType(dynamic_subcolumn_name))
             {
-                result_column_node = std::make_shared<ColumnNode>(NameAndTypePair{identifier_full_name, dynamic_subcolumn_type}, jt->second->getColumnSource(), &scope);
+                result_column_node = std::make_shared<ColumnNode>(NameAndTypePair{identifier_full_name, dynamic_subcolumn_type}, jt->second->getColumnSource());
                 can_resolve_directly_from_storage = true;
                 is_subcolumn = true;
             }
@@ -1326,7 +1326,7 @@ QueryTreeNodePtr IdentifierResolver::matchArrayJoinSubcolumns(
     if (!startsWith(resolved_subcolumn_path, array_join_subcolumn_prefix))
         return {};
 
-    auto column_node = std::make_shared<ColumnNode>(array_join_column_expression_typed.getColumn(), array_join_column_expression_typed.getColumnSource(), &scope);
+    auto column_node = std::make_shared<ColumnNode>(array_join_column_expression_typed.getColumn(), array_join_column_expression_typed.getColumnSource());
 
     return wrapExpressionNodeInSubcolumn(std::move(column_node), resolved_subcolumn_path.substr(array_join_subcolumn_prefix.size()), scope.context);
 }
@@ -1377,7 +1377,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveExpressionFromArrayJoinExpression
                         continue;
 
                     auto array_join_column = std::make_shared<ColumnNode>(array_join_column_expression_typed.getColumn(),
-                        array_join_column_expression_typed.getColumnSource(), &scope);
+                        array_join_column_expression_typed.getColumnSource());
 
                     const auto & nested_key_name = nested_keys_names[i - 1].safeGet<String &>();
                     Identifier nested_identifier = Identifier(nested_key_name);
@@ -1393,7 +1393,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveExpressionFromArrayJoinExpression
         if (array_join_column_inner_expression->isEqual(*resolved_expression))
         {
             array_join_resolved_expression = std::make_shared<ColumnNode>(array_join_column_expression_typed.getColumn(),
-                array_join_column_expression_typed.getColumnSource(), &scope);
+                array_join_column_expression_typed.getColumnSource());
             break;
         }
 
@@ -1446,7 +1446,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromArrayJoin(co
         if (identifier_view.empty())
         {
             auto array_join_column = std::make_shared<ColumnNode>(array_join_column_expression_typed.getColumn(),
-                array_join_column_expression_typed.getColumnSource(), &scope);
+                array_join_column_expression_typed.getColumnSource());
             return { .resolved_identifier = array_join_column, .scope = &scope, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
         }
 
