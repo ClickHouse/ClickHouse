@@ -328,6 +328,11 @@ void LocalConnection::sendData(const Block & block, const String &, bool)
         sendProfileEvents();
 }
 
+bool LocalConnection::isSendDataNeeded() const
+{
+    return !state || state->input_pipeline == nullptr;
+}
+
 void LocalConnection::sendCancel()
 {
     state->is_cancelled = true;

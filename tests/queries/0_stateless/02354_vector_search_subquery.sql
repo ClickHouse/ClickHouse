@@ -3,7 +3,7 @@
 SET allow_experimental_vector_similarity_index = 1;
 SET enable_analyzer = 0;
 
--- Issue #69085: Reference vector for vector search is computed by a subquery
+-- Reference vector for vector search is computed by a subquery (issue #69085)
 
 DROP TABLE IF EXISTS tab;
 
