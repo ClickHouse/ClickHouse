@@ -295,6 +295,7 @@ private:
         const RPNBuilderFunctionTreeNode & func,
         RPNElement & out,
         size_t & out_key_column_num,
+        bool & allow_constant_transformation,
         bool & is_constant_transformed);
 
     /// Checks that the index can not be used.
