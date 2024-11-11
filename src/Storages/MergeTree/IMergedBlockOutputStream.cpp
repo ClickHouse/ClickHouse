@@ -2,7 +2,6 @@
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
-#include "Common/Logger.h"
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -123,7 +122,6 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
 
 PlainMarksByName IMergedBlockOutputStream::releaseCachedMarks()
 {
-    LOG_TRACE(getLogger("IMergedBlockOutputStream"), "releaseCachedMarks has writer {}", bool(writer));
     if (!writer)
         return {};
     return writer->releaseCachedMarks();

@@ -11,7 +11,6 @@
 #include <Common/Stopwatch.h>
 
 #include <mutex>
-#include <string_view>
 
 
 namespace DB

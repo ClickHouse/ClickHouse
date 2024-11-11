@@ -1,5 +1,5 @@
-#include "Common/Logger.h"
-#include "Common/logger_useful.h"
+#include <Common/Logger.h>
+#include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 #include <Common/PODArray.h>
@@ -1557,10 +1557,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         else if (auto txn = context->getCurrentTransaction())
             txn->onException();
 
-        LOG_DEBUG(getLogger("ExecuteQUERY"), "A");
         if (!internal)
             logExceptionBeforeStart(query_for_logging, context, ast, query_span, start_watch.elapsedMilliseconds());
-        LOG_DEBUG(getLogger("ExecuteQUERY"), "B");
 
         throw;
     }

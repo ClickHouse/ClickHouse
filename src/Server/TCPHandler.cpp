@@ -12,6 +12,7 @@
 #include <Compression/CompressionFactory.h>
 #include <Core/ExternalTable.h>
 #include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
 #include <IO/LimitReadBuffer.h>
@@ -36,7 +37,6 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/LayeredConfiguration.h>
-#include "Common/StackTrace.h"
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
@@ -47,9 +47,8 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
-#include "Core/Settings.h"
-#include "base/defines.h"
-#include "base/scope_guard.h"
+#include <base/defines.h>
+#include <base/scope_guard.h>
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
@@ -631,8 +630,6 @@ void TCPHandler::runImpl()
 
             query_state->query_context->setMergeTreeReadTaskCallback([this, &query_state](ParallelReadRequest request) -> std::optional<ParallelReadResponse>
             {
-                LOG_DEBUG(log, "MergeTreeReadTaskCallback called");
-
                 Stopwatch watch;
                 CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::MergeTreeReadTaskRequestsSent);
 
@@ -648,12 +645,8 @@ void TCPHandler::runImpl()
                 return res;
             });
 
-            LOG_DEBUG(log, "executeQuery before");
-
             /// Processing Query
             std::tie(query_state->parsed_query, query_state->io) = executeQuery(query_state->query, query_state->query_context, QueryFlags{}, query_state->stage);
-
-            LOG_DEBUG(log, "executeQuery started");
 
             after_check_cancelled.restart();
             after_send_progress.restart();
@@ -672,7 +665,6 @@ void TCPHandler::runImpl()
             }
             else if (query_state->io.pipeline.completed())
             {
-                LOG_DEBUG(log, " pipeline completed started");
                 {
                     CompletedPipelineExecutor executor(query_state->io.pipeline);
 
@@ -681,8 +673,6 @@ void TCPHandler::runImpl()
                     {
                         auto callback = [this, &query_state]()
                         {
-                            LOG_DEBUG(log, " pipeline CancelCallback called");
-
                             std::lock_guard lock(callback_mutex);
 
                             receivePacketsExpectCancel(query_state.value());
@@ -702,8 +692,6 @@ void TCPHandler::runImpl()
                     executor.execute();
                 }
 
-                LOG_DEBUG(log, " pipeline completed finish");
-
                 query_state->io.onFinish();
 
                 /// Send final progress after calling onFinish(), since it will update the progress.
@@ -716,14 +704,11 @@ void TCPHandler::runImpl()
             }
             else
             {
-                LOG_DEBUG(log, "other");
                 query_state->io.onFinish();
             }
 
             /// Do it before sending end of stream, to have a chance to show log message in client.
             query_scope->logPeakMemoryUsage();
-
-            LOG_DEBUG(log, "send logs at final");
 
             sendLogs(query_state.value());
             sendEndOfStream(query_state.value());
@@ -736,7 +721,6 @@ void TCPHandler::runImpl()
         }
         catch (const Poco::Exception & e)
         {
-            LOG_DEBUG(log, "XX Poco Exception: {}", e.what());
             exception = std::make_unique<DB::Exception>(Exception::CreateFromPocoTag{}, e);
         }
 // Server should die on std logic errors in debug, like with assert()
@@ -760,18 +744,12 @@ void TCPHandler::runImpl()
             exception = std::make_unique<DB::Exception>(Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception"));
         }
 
-        LOG_DEBUG(log, "we have an exception {}", bool(exception));
-
-
         if (exception)
         {
             auto exception_code = exception->code();
 
-            LOG_DEBUG(log, "XX exception {}: {}",exception_code, exception->message());
-
             if (!query_state.has_value())
             {
-                LOG_DEBUG(log, "we do not have an query state");
                 return;
             }
 
@@ -803,7 +781,6 @@ void TCPHandler::runImpl()
                 /// This fact can be abused by producing exception before or while we read the query.
                 /// To avoid any potential exploits, we simply close connection on any exceptions
                 /// that happen before the first query is authenticated with the cluster secret.
-                LOG_DEBUG(log, "is_interserver_mode && !is_interserver_authenticated");
                 query_state->cancelOut(out);
                 return;
             }
@@ -819,7 +796,6 @@ void TCPHandler::runImpl()
 
             if (!out || out->isCanceled())
             {
-                LOG_DEBUG(log, "Can't send logs or exception to client. Close connection.");
                 query_state->cancelOut(out);
                 return;
             }
@@ -828,12 +804,10 @@ void TCPHandler::runImpl()
             {
                 std::lock_guard lock(callback_mutex);
 
-                LOG_DEBUG(log, "try send logs");
                 /// Try to send logs to client, but it could be risky too
                 /// Assume that we can't break output here
                 sendLogs(query_state.value());
 
-                LOG_DEBUG(log, "try skip data");
                 /// A query packet is always followed by one or more data packets.
                 /// If some of those data packets are left, try to skip them.
                 if (!query_state->read_all_data)
@@ -841,20 +815,17 @@ void TCPHandler::runImpl()
 
                 if (exception_code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
                 {
-                    LOG_DEBUG(log, "try send EndOfStream");
                     sendEndOfStream(query_state.value());
                 }
                 else
                 {
-                    LOG_DEBUG(log, "try send exception");
                     sendException(*exception, send_exception_with_stack_trace);
                 }
 
-                LOG_DEBUG(log, "Logs and exception has been sent");
+                LOG_TEST(log, "Logs and exception has been sent. The connection is preserved.");
             }
             catch (...)
             {
-                LOG_DEBUG(log, "failed");
                 query_state->cancelOut(out);
                 tryLogCurrentException(log, "Can't send logs or exception to client. Close connection.");
                 return;
@@ -906,8 +877,6 @@ bool TCPHandler::receivePacketsExpectQuery(std::optional<QueryState> & state)
 {
     UInt64 packet_type = 0;
     readVarUInt(packet_type, *in);
-
-    LOG_DEBUG(log, "receivePacketsExpectQuery got {}", Protocol::Client::toString(packet_type));
 
     switch (packet_type)
     {
@@ -983,8 +952,6 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
 
         UInt64 packet_type = 0;
         readVarUInt(packet_type, *in);
-
-        LOG_DEBUG(log, "receivePacketsExpectData got {}", Protocol::Client::toString(packet_type));
 
         switch (packet_type)
         {
@@ -1389,9 +1356,6 @@ void TCPHandler::sendPartUUIDs(QueryState & state)
     auto uuids = state.query_context->getPartUUIDs()->get();
     if (uuids.empty())
         return;
-
-    for (const auto & uuid : uuids)
-        LOG_TRACE(log, "Sending UUID: {}", toString(uuid));
 
     writeVarUInt(Protocol::Server::PartUUIDs, *out);
     writeVectorBinary(uuids, *out);
@@ -1897,8 +1861,6 @@ String TCPHandler::receiveReadTaskResponse(QueryState & state)
     UInt64 packet_type = 0;
     readVarUInt(packet_type, *in);
 
-    LOG_DEBUG(log, "receiveReadTaskResponseAssumeLocked got {}", Protocol::Client::toString(packet_type));
-
     switch (packet_type)
     {
         case Protocol::Client::Cancel:
@@ -1927,8 +1889,6 @@ std::optional<ParallelReadResponse> TCPHandler::receivePartitionMergeTreeReadTas
 {
     UInt64 packet_type = 0;
     readVarUInt(packet_type, *in);
-
-    LOG_DEBUG(log, "receivePartitionMergeTreeReadTaskResponseAssumeLocked got {}", Protocol::Client::toString(packet_type));
 
     switch (packet_type)
     {
@@ -2368,8 +2328,6 @@ void TCPHandler::checkIfQueryCanceled(QueryState & state)
 
 void TCPHandler::processCancel(QueryState & state, bool throw_exception)
 {
-    LOG_DEBUG(log, "processCancel st: {}", StackTrace().toString());
-
     if (state.allow_partial_result_on_first_cancel && !state.stop_read_return_partial_result)
     {
         state.stop_read_return_partial_result = true;
@@ -2401,8 +2359,6 @@ void TCPHandler::receivePacketsExpectCancel(QueryState & state)
 
         UInt64 packet_type = 0;
         readVarUInt(packet_type, *in);
-
-        LOG_DEBUG(log, "receivePacketsExpectCancel got {}", Protocol::Client::toString(packet_type));
 
         switch (packet_type)
         {

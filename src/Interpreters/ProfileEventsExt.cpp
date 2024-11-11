@@ -3,7 +3,7 @@
 #include <Common/MemoryTracker.h>
 #include <Common/CurrentThread.h>
 #include <Common/ConcurrentBoundedQueue.h>
-#include "Core/Block.h"
+#include <Core/Block.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>

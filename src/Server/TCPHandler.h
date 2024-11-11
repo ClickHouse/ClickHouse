@@ -21,7 +21,7 @@
 #include <IO/ReadBufferFromPocoSocketChunked.h>
 #include <IO/WriteBufferFromPocoSocketChunked.h>
 
-#include "IO/WriteBuffer.h"
+#include <IO/WriteBuffer.h>
 #include "IServer.h"
 #include "Interpreters/AsynchronousInsertQueue.h"
 #include "Server/TCPProtocolStackData.h"

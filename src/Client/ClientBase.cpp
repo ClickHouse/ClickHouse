@@ -9,7 +9,6 @@
 #include <base/safeExit.h>
 #include <Core/Block.h>
 #include <Core/Protocol.h>
-#include "Common/StackTrace.h"
 #include <Common/DateLUT.h>
 #include <Common/MemoryTracker.h>
 #include <Common/scope_guard_safe.h>
@@ -461,7 +460,6 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     catch (const Exception &)
     {
         //this is a bad catch. It catches too much cases unrelated to LocalFormatError
-        //std::cerr << "write throw exception 2: " << getCurrentExceptionMessage(true) << '\n';
         /// Catch client errors like NO_ROW_DELIMITER
         throw LocalFormatError(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
     }
@@ -943,7 +941,6 @@ bool ClientBase::isSyncInsertWithData(const ASTInsertQuery & insert_query, const
 
 void ClientBase::processTextAsSingleQuery(const String & full_query)
 {
-    //std::cerr << "processTextAsSingleQuery" << std::endl;
     /// Some parts of a query (result output and formatting) are executed
     /// client-side. Thus we need to parse the query.
     const char * begin = full_query.data();
@@ -995,7 +992,6 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
 
 void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query)
 {
-    //std::cerr << "processParsedSingleQuery" << std::endl;
     auto query = query_to_execute;
 
     /// Rewrite query only when we have query parameters.
@@ -1120,7 +1116,6 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
             }
             catch (const NetException &)
             {
-                //std::cerr << "send query throw error " << getCurrentExceptionMessage(true) << '\n';
                 // We still want to attempt to process whatever we already received or can receive (socket receive buffer can be not empty)
                 receiveResult(parsed_query, signals_before_stop, settings[Setting::partial_result_on_first_cancel]);
                 throw;
@@ -1132,8 +1127,6 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
         }
         catch (const Exception & e)
         {
-            //std::cerr << "receiveResult throw error " << getCurrentExceptionMessage(true) << '\n';
-
             /// Retry when the server said "Client should retry" and no rows
             /// has been received yet.
             if (processed_rows == 0 && e.code() == ErrorCodes::DEADLOCK_AVOIDED && --retries_left)
@@ -1155,7 +1148,6 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
 /// Also checks if query execution should be cancelled.
 void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, bool partial_result_on_first_cancel)
 {
-    //std::cerr << "receiveResult" << std::endl;
     // TODO: get the poll_interval from commandline.
     const auto receive_timeout = connection_parameters.timeouts.receive_timeout;
     constexpr size_t default_poll_interval = 1000000; /// in microseconds
@@ -1265,9 +1257,7 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
 /// Output of result is suppressed if query was cancelled.
 bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_)
 {
-    //std::cerr << "receiveAndProcessPacket (cancelled_ = " << cancelled_ << ")" << std::endl;
     Packet packet = connection->receivePacket();
-    //std::cerr << "packet " << Protocol::Server::toString(packet.type) << std::endl;
 
     switch (packet.type)
     {
@@ -1470,7 +1460,6 @@ void ClientBase::resetOutput()
     if (need_render_progress_table && tty_buf)
         progress_table.clearTableOutput(*tty_buf);
 
-    //std::cerr << "resetOutput at" << StackTrace().toString() << std::endl;
     /// Order is important: format, compression, file
 
     try
@@ -1501,7 +1490,6 @@ void ClientBase::resetOutput()
 
     if (pager_cmd)
     {
-        //std::cerr << "cancel pager_cmd in" << std::endl;
         pager_cmd->in.close();
         pager_cmd->wait();
 
@@ -1974,7 +1962,6 @@ void ClientBase::cancelQuery()
 void ClientBase::processParsedSingleQuery(const String & full_query, const String & query_to_execute,
         ASTPtr parsed_query, std::optional<bool> echo_query_, bool report_error)
 {
-    //std::cerr << "processParsedSingleQuery" << std::endl;
     resetOutput();
     have_error = false;
     cancelled = false;
@@ -2309,8 +2296,6 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
 
 bool ClientBase::executeMultiQuery(const String & all_queries_text)
 {
-    //std::cerr << "executeMultiQuery" << std::endl;
-
     bool echo_query = echo_queries;
 
     {
@@ -2318,7 +2303,6 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
         TestHint test_hint(all_queries_text);
         if (test_hint.hasClientErrors() || test_hint.hasServerErrors())
         {
-            //std::cerr << "expect error" << std::endl;
             processTextAsSingleQuery("SET send_logs_level = 'fatal'");
         }
     }
@@ -2428,7 +2412,6 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 }
                 catch (...)
                 {
-                    //std::cerr << "processParsedSingleQuery throw exception " << getCurrentExceptionMessage(true) << std::endl;
                     // Surprisingly, this is a client error. A server error would
                     // have been reported without throwing (see onReceiveExceptionFromServer()).
                     client_exception = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
@@ -2439,8 +2422,6 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 // (or their absence).
                 bool error_matches_hint = true;
                 bool need_retry = test_hint.needRetry(server_exception, &retries_count);
-
-                //std::cerr << "executeMultiQuery have_error " << have_error << " need_retry " << need_retry << std::endl;
 
                 if (need_retry)
                 {
@@ -2504,8 +2485,6 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     }
                 }
 
-                //std::cerr << "executeMultiQuery have_error " << have_error << " error_matches_hint " << error_matches_hint << std::endl;
-
                 // If the error is expected, force reconnect and ignore it.
                 if (have_error && error_matches_hint)
                 {
@@ -2554,7 +2533,6 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 
 bool ClientBase::processQueryText(const String & text)
 {
-    //std::cerr << "processQueryText" << std::endl;
     auto trimmed_input = trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; });
 
     if (exit_strings.end() != exit_strings.find(trimmed_input))

@@ -68,8 +68,6 @@ void MergedBlockOutputStream::write(const Block & block)
 
 void MergedBlockOutputStream::cancel() noexcept
 {
-
-    LOG_TRACE(getLogger("MergedBlockOutputStream"), "cancel");
     if (writer)
         writer->cancel();
 }
