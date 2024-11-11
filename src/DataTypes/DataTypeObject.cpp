@@ -222,6 +222,15 @@ MutableColumnPtr DataTypeObject::createColumn() const
     return ColumnObject::create(std::move(typed_path_columns), max_dynamic_paths, max_dynamic_types);
 }
 
+void DataTypeObject::forEachChild(const ChildCallback & callback) const
+{
+    for (const auto & [path, type] : typed_paths)
+    {
+        callback(*type);
+        type->forEachChild(callback);
+    }
+}
+
 namespace
 {
 
