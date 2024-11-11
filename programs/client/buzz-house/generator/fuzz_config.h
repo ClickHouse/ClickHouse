@@ -7,6 +7,8 @@
 #include "../third_party/json.h"
 using json = nlohmann::json;
 
+#include <Client/ClientBase.h>
+
 namespace buzzhouse
 {
 
@@ -122,26 +124,35 @@ static const ServerCredentials LoadServerCredentials(const json & val, const std
 
 class FuzzConfig
 {
+private:
+    std::string buf;
+    DB::ClientBase * cb = nullptr;
+
 public:
     std::vector<const std::string> collations;
     ServerCredentials mysql_server, postgresql_server, sqlite_server, mongodb_server, redis_server, minio_server;
     bool read_log = false, fuzz_floating_points = true;
     uint32_t seed = 0, max_depth = 3, max_width = 3, max_databases = 4, max_functions = 4, max_tables = 10, max_views = 5;
     std::filesystem::path log_path = std::filesystem::temp_directory_path() / "out.sql",
-                          db_file_path = std::filesystem::temp_directory_path() / "db";
+                          db_file_path = std::filesystem::temp_directory_path() / "db", fuzz_out = db_file_path / "fuzz.data";
 
-    FuzzConfig() : mysql_server(), postgresql_server(), sqlite_server(), mongodb_server(), redis_server(), minio_server() { }
+    FuzzConfig() : cb(nullptr), mysql_server(), postgresql_server(), sqlite_server(), mongodb_server(), redis_server(), minio_server()
+    {
+        buf.reserve(512);
+    }
 
-    FuzzConfig(const std::string & path)
+    FuzzConfig(DB::ClientBase * c, const std::string & path) : cb(c)
     {
         std::ifstream ifs(path);
         const json jdata = json::parse(ifs);
 
+        buf.reserve(512);
         for (const auto & [key, value] : jdata.items())
         {
             if (key == "db_file_path")
             {
                 db_file_path = std::filesystem::path(value);
+                fuzz_out = db_file_path / "fuzz.data";
             }
             else if (key == "log_path")
             {
@@ -214,27 +225,23 @@ public:
         }
     }
 
-    void GenerateCollationsQuery(std::string & res) const
-    {
-        const std::filesystem::path & collfile = db_file_path / "collations.data";
-
-        res += "SELECT \"name\" FROM system.collations INTO OUTFILE '";
-        res += collfile.generic_string();
-        res += "' TRUNCATE FORMAT TabSeparated;";
-    }
+    void ProcessServerQuery(const std::string & input) const { this->cb->processTextAsSingleQuery(input); }
 
     void LoadCollations()
     {
-        std::string input;
-        const std::filesystem::path & collfile = db_file_path / "collations.data";
-        std::ifstream infile(collfile);
+        buf.resize(0);
+        buf += "SELECT \"name\" FROM system.collations INTO OUTFILE '";
+        buf += fuzz_out.generic_string();
+        buf += "' TRUNCATE FORMAT TabSeparated;";
+        this->ProcessServerQuery(buf);
 
-        input.reserve(64);
+        std::ifstream infile(fuzz_out);
+        buf.resize(0);
         collations.clear();
-        while (std::getline(infile, input))
+        while (std::getline(infile, buf))
         {
-            collations.push_back(input);
-            input.resize(0);
+            collations.push_back(buf);
+            buf.resize(0);
         }
     }
 };

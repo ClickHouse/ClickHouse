@@ -1006,7 +1006,7 @@ bool Client::buzzHouse()
 {
     bool server_up = true;
     std::string full_query;
-    buzzhouse::FuzzConfig fc(buzz_house_options_path);
+    buzzhouse::FuzzConfig fc(this, buzz_house_options_path);
     buzzhouse::ExternalIntegrations ei(fc);
 
     full_query.reserve(8192);
@@ -1044,9 +1044,6 @@ bool Client::buzzHouse()
         ProcessQueryAndLog(outf, rg.NextBool() ? "SET s3_truncate_on_insert = 1;" : "SET s3_create_new_file_on_insert = 1;");
 
         //Load collations
-        full_query.resize(0);
-        fc.GenerateCollationsQuery(full_query);
-        processTextAsSingleQuery(full_query);
         fc.LoadCollations();
 
         full_query2.reserve(8192);

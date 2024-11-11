@@ -100,6 +100,7 @@ public:
     void stopQuery() { query_interrupt_handler.stop(); }
 
     ASTPtr parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements);
+    void processTextAsSingleQuery(const String & full_query);
 
 protected:
     void runInteractive();
@@ -128,7 +129,6 @@ protected:
     void processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query);
     void processInsertQuery(const String & query_to_execute, ASTPtr parsed_query);
 
-    void processTextAsSingleQuery(const String & full_query);
     void processParsedSingleQuery(const String & full_query, const String & query_to_execute,
         ASTPtr parsed_query, std::optional<bool> echo_query_ = {}, bool report_error = false);
 
