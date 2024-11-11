@@ -608,26 +608,18 @@ namespace
         DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
             FunctionArgumentDescriptors mandatory_args;
-            FunctionArgumentDescriptors optional_args;
             if constexpr (return_type == ReturnType::DateTime64)
-            {
                 mandatory_args = {
                     {"time", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
-                    {"scale", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), nullptr, "UInt8"}
+                    {"scale", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), &isColumnConst, "UInt8"}
                 };
-                optional_args = {
-                    {"format", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
-                    {"timezone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"}
-                };
-            }
             else
-            {
                 mandatory_args = {{"time", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}};
-                optional_args = {
-                    {"format", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
-                    {"timezone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"}
-                };
-            }
+
+            FunctionArgumentDescriptors optional_args{
+                {"format", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
+                {"timezone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"}
+            };
             validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
             String time_zone_name = getTimeZone(arguments).getTimeZone();
@@ -644,7 +636,7 @@ namespace
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The scale argument is not Const(UInt8) type.");
                 }
                 if (parse_syntax == ParseSyntax::MySQL && scale != 6)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The scale value {} of MySQL parse syntax is not 6.", std::to_string(scale));
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The scale argument's value {} of MySQL parse syntax is not 6.", std::to_string(scale));
                 if (scale > maxScaleOfDateTime64)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "The scale argument's value {} exceed the max scale value {}.", std::to_string(scale), std::to_string(maxScaleOfDateTime64));
