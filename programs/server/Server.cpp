@@ -280,6 +280,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 uncompressed_cache_size;
     extern const ServerSettingsDouble uncompressed_cache_size_ratio;
     extern const ServerSettingsBool use_legacy_mongodb_integration;
+    extern const ServerSettingsUInt64 max_freeze_parts_thread_pool_size;
 }
 
 }
@@ -1202,6 +1203,11 @@ try
         server_settings[ServerSetting::database_catalog_drop_table_concurrency],
         0, // We don't need any threads if there are no DROP queries.
         server_settings[ServerSetting::database_catalog_drop_table_concurrency]);
+
+    getFreezePartThreadPool().initialize(
+        server_settings[ServerSetting::max_freeze_parts_thread_pool_size],
+        0,
+        server_settings[ServerSetting::max_freeze_parts_thread_pool_size]);
 
     /// Initialize global local cache for remote filesystem.
     if (config().has("local_cache_for_remote_fs"))

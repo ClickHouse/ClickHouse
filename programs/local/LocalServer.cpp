@@ -104,6 +104,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_thread_pool_free_size;
     extern const ServerSettingsUInt64 max_thread_pool_size;
     extern const ServerSettingsUInt64 max_unexpected_parts_loading_thread_pool_size;
+    extern const ServerSettingsUInt64 max_freeze_parts_thread_pool_size;
     extern const ServerSettingsUInt64 mmap_cache_size;
     extern const ServerSettingsBool show_addresses_in_stack_traces;
     extern const ServerSettingsUInt64 thread_pool_queue_size;
@@ -238,10 +239,17 @@ void LocalServer::initialize(Poco::Util::Application & self)
         0, // We don't need any threads one all the parts will be deleted
         cleanup_threads);
 
+    const size_t drop_tables_threas = server_settings[ServerSetting::database_catalog_drop_table_concurrency];
     getDatabaseCatalogDropTablesThreadPool().initialize(
-        server_settings[ServerSetting::database_catalog_drop_table_concurrency],
+        drop_tables_threas,
         0, // We don't need any threads if there are no DROP queries.
-        server_settings[ServerSetting::database_catalog_drop_table_concurrency]);
+        drop_tables_threas);
+
+    const size_t freeze_threads = server_settings[ServerSetting::max_freeze_parts_thread_pool_size];
+    getFreezePartThreadPool().initialize(
+        freeze_threads,
+        0,
+        freeze_threads);
 }
 
 
