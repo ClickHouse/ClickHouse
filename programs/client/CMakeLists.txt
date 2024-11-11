@@ -6,6 +6,7 @@ set (CLICKHOUSE_CLIENT_SOURCES
     buzz-house/ast/sql_query_proto_to_string.cpp
     buzz-house/generator/sql_query.cpp
     buzz-house/generator/sql_expression.cpp
+    buzz-house/generator/sql_table.cpp
     buzz-house/generator/sql_types.cpp
     buzz-house/generator/statement_generator.cpp
     buzz-house/generator/random_settings.cpp
