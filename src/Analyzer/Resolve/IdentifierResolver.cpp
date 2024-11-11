@@ -1308,7 +1308,7 @@ QueryTreeNodePtr IdentifierResolver::matchArrayJoinSubcolumns(
     if (!second_argument || second_argument->getValue().getType() != Field::Types::String)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected constant string as second argument of getSubcolumn function {}", resolved_function->dumpTree());
 
-    const auto & resolved_subcolumn_path = second_argument->getValue().safeGet<String &>();
+    auto resolved_subcolumn_path = second_argument->getValue().safeGet<String>();
     if (!startsWith(resolved_subcolumn_path, array_join_subcolumn_prefix))
         return {};
 
@@ -1352,8 +1352,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveExpressionFromArrayJoinExpression
             size_t nested_function_arguments_size = nested_function_arguments.size();
 
             const auto & nested_keys_names_constant_node = nested_function_arguments[0]->as<ConstantNode & >();
-            auto field = nested_keys_names_constant_node.getValue();
-            const auto & nested_keys_names = field.safeGet<Array &>();
+            auto nested_keys_names = nested_keys_names_constant_node.getValue().safeGet<Array>();
             size_t nested_keys_names_size = nested_keys_names.size();
 
             if (nested_keys_names_size == nested_function_arguments_size - 1)
