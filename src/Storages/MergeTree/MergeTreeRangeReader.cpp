@@ -4,6 +4,7 @@
 #include <Columns/FilterDescription.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
+#include "Common/Logger.h"
 #include <Common/TargetSpecific.h>
 #include <Common/logger_useful.h>
 #include <Core/UUID.h>

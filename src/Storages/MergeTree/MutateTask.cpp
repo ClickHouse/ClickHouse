@@ -35,6 +35,7 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/ProfileEventsScope.h>
+#include "Storages/MergeTree/MergeTreeIndexGranularity.h"
 #include <Core/ColumnsWithTypeAndName.h>
 
 
@@ -1597,7 +1598,6 @@ private:
 
         ctx->minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
 
-        MergeTreeIndexGranularity computed_granularity;
         bool has_delete = false;
 
         for (auto & command_for_interpreter : ctx->for_interpreter)
@@ -1610,9 +1610,21 @@ private:
             }
         }
 
+        MergeTreeIndexGranularityPtr index_granularity_ptr;
         /// Reuse source part granularity if mutation does not change number of rows
         if (!has_delete && ctx->execute_ttl_type == ExecuteTTLType::NONE)
-            computed_granularity = ctx->source_part->index_granularity;
+        {
+            index_granularity_ptr = ctx->source_part->index_granularity;
+        }
+        else
+        {
+            index_granularity_ptr = createMergeTreeIndexGranularity(
+                ctx->new_data_part->rows_count,
+                ctx->new_data_part->getBytesUncompressedOnDisk(),
+                *ctx->data->getSettings(),
+                ctx->new_data_part->index_granularity_info,
+                /*blocks_are_granules=*/ false);
+        }
 
         ctx->out = std::make_shared<MergedBlockOutputStream>(
             ctx->new_data_part,
@@ -1621,12 +1633,12 @@ private:
             skip_indices,
             stats_to_rewrite,
             ctx->compression_codec,
+            std::move(index_granularity_ptr),
             ctx->txn ? ctx->txn->tid : Tx::PrehistoricTID,
             /*reset_columns=*/ true,
             /*save_marks_in_cache=*/ false,
             /*blocks_are_granules_size=*/ false,
-            ctx->context->getWriteSettings(),
-            computed_granularity);
+            ctx->context->getWriteSettings());
 
         ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
         ctx->mutating_pipeline.setProgressCallback(ctx->progress_callback);
@@ -1848,14 +1860,10 @@ private:
                 ctx->new_data_part,
                 ctx->metadata_snapshot,
                 ctx->updated_header.getNamesAndTypesList(),
-                ctx->compression_codec,
                 std::vector<MergeTreeIndexPtr>(ctx->indices_to_recalc.begin(), ctx->indices_to_recalc.end()),
                 ColumnsStatistics(ctx->stats_to_recalc.begin(), ctx->stats_to_recalc.end()),
-                nullptr,
-                /*save_marks_in_cache=*/ false,
-                ctx->source_part->index_granularity,
-                &ctx->source_part->index_granularity_info
-            );
+                ctx->compression_codec,
+                ctx->source_part->index_granularity);
 
             ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
             ctx->mutating_pipeline.setProgressCallback(ctx->progress_callback);

@@ -60,8 +60,11 @@ public:
 
 protected:
      static void loadIndexGranularityImpl(
-         MergeTreeIndexGranularity & index_granularity_, const MergeTreeIndexGranularityInfo & index_granularity_info_,
-         size_t columns_count, const IDataPartStorage & data_part_storage_);
+         MergeTreeIndexGranularityPtr & index_granularity_,
+         const MergeTreeIndexGranularityInfo & index_granularity_info_,
+         size_t columns_count,
+         const IDataPartStorage & data_part_storage_,
+         const MergeTreeSettings & storage_settings);
 
      void doCheckConsistency(bool require_part_metadata) const override;
 

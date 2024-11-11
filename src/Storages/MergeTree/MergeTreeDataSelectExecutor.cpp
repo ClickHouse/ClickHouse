@@ -129,7 +129,7 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
     {
         MarkRanges part_ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, {}, &exact_ranges, settings, log);
         for (const auto & range : part_ranges)
-            rows_count += part->index_granularity.getRowsCountInRange(range);
+            rows_count += part->index_granularity->getRowsCountInRange(range);
     }
     UNUSED(exact_ranges);
 
@@ -688,7 +688,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             auto & part = parts[part_index];
 
             RangesInDataPart ranges(part, part_index);
-            size_t total_marks_count = part->index_granularity.getMarksCountWithoutFinal();
+            size_t total_marks_count = part->index_granularity->getMarksCountWithoutFinal();
 
             if (metadata_snapshot->hasPrimaryKey() || part_offset_condition)
             {
@@ -1044,12 +1044,12 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 {
     MarkRanges res;
 
-    size_t marks_count = part->index_granularity.getMarksCount();
+    size_t marks_count = part->index_granularity->getMarksCount();
     const auto & index = part->getIndex();
     if (marks_count == 0)
         return res;
 
-    bool has_final_mark = part->index_granularity.hasFinalMark();
+    bool has_final_mark = part->index_granularity->hasFinalMark();
 
     bool key_condition_useful = !key_condition.alwaysUnknownOrTrue();
     bool part_offset_condition_useful = part_offset_condition && !part_offset_condition->alwaysUnknownOrTrue();
@@ -1156,16 +1156,16 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
         auto check_part_offset_condition = [&]()
         {
-            auto begin = part->index_granularity.getMarkStartingRow(range.begin);
-            auto end = part->index_granularity.getMarkStartingRow(range.end) - 1;
+            auto begin = part->index_granularity->getMarkStartingRow(range.begin);
+            auto end = part->index_granularity->getMarkStartingRow(range.end) - 1;
             if (begin > end)
             {
                 /// Empty mark (final mark)
                 return BoolMask(false, true);
             }
 
-            part_offset_left[0] = part->index_granularity.getMarkStartingRow(range.begin);
-            part_offset_right[0] = part->index_granularity.getMarkStartingRow(range.end) - 1;
+            part_offset_left[0] = part->index_granularity->getMarkStartingRow(range.begin);
+            part_offset_right[0] = part->index_granularity->getMarkStartingRow(range.end) - 1;
             part_offset_left[1] = part->name;
             part_offset_right[1] = part->name;
 
@@ -1377,9 +1377,8 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         part->index_granularity_info.fixed_index_granularity,
         part->index_granularity_info.index_granularity_bytes);
 
-    size_t marks_count = part->getMarksCount();
-    size_t final_mark = part->index_granularity.hasFinalMark();
-    size_t index_marks_count = (marks_count - final_mark + index_granularity - 1) / index_granularity;
+    size_t marks_count = part->index_granularity->getMarksCountWithoutFinal();
+    size_t index_marks_count = (marks_count + index_granularity - 1) / index_granularity;
 
     MarkRanges index_ranges;
     for (const auto & range : ranges)
@@ -1427,8 +1426,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
 
                 for (auto row : rows)
                 {
-                    const MergeTreeIndexGranularity & merge_tree_index_granularity = part->index_granularity;
-                    size_t num_marks = merge_tree_index_granularity.countMarksForRows(index_mark * index_granularity, row);
+                    size_t num_marks = part->index_granularity->countMarksForRows(index_mark * index_granularity, row);
 
                     MarkRange data_range(
                         std::max(ranges[i].begin, (index_mark * index_granularity) + num_marks),
@@ -1501,9 +1499,8 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
         part->index_granularity_info.fixed_index_granularity,
         part->index_granularity_info.index_granularity_bytes);
 
-    size_t marks_count = part->getMarksCount();
-    size_t final_mark = part->index_granularity.hasFinalMark();
-    size_t index_marks_count = (marks_count - final_mark + index_granularity - 1) / index_granularity;
+    size_t marks_count = part->index_granularity->getMarksCountWithoutFinal();
+    size_t index_marks_count = (marks_count + index_granularity - 1) / index_granularity;
 
     std::vector<std::unique_ptr<MergeTreeIndexReader>> readers;
     for (const auto & index_helper : indices)
@@ -1603,9 +1600,7 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
                 continue;
         }
 
-        size_t num_granules = part->getMarksCount();
-        if (num_granules && part->index_granularity.hasFinalMark())
-            --num_granules;
+        size_t num_granules = part->index_granularity->getMarksCountWithoutFinal();
 
         counters.num_initial_selected_parts += 1;
         counters.num_initial_selected_granules += num_granules;
@@ -1672,9 +1667,7 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
             if (part->uuid != UUIDHelpers::Nil && ignored_part_uuids->has(part->uuid))
                 continue;
 
-            size_t num_granules = part->getMarksCount();
-            if (num_granules && part->index_granularity.hasFinalMark())
-                --num_granules;
+            size_t num_granules = part->index_granularity->getMarksCountWithoutFinal();
 
             counters.num_initial_selected_parts += 1;
             counters.num_initial_selected_granules += num_granules;

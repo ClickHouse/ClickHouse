@@ -21,6 +21,7 @@
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/typeid_cast.h>
+#include "Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h"
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
@@ -95,6 +96,7 @@
 #include <atomic>
 #include <chrono>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <ranges>
 #include <set>
@@ -7237,7 +7239,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         /// It's extremely rare that some parts have final marks while others don't. To make it
         /// straightforward, disable minmax_count projection when `max(pk)' encounters any part with
         /// no final mark.
-        if (need_primary_key_max_column && !part->index_granularity.hasFinalMark())
+        if (need_primary_key_max_column && !part->index_granularity->hasFinalMark())
             return {};
 
         real_parts.push_back(part);
@@ -8960,10 +8962,15 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     auto compression_codec = getContext()->chooseCompressionCodec(0, 0);
 
     const auto & index_factory = MergeTreeIndexFactory::instance();
-    MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns,
+    MergedBlockOutputStream out(
+        new_data_part,
+        metadata_snapshot,
+        columns,
         index_factory.getMany(metadata_snapshot->getSecondaryIndices()),
         ColumnsStatistics{},
-        compression_codec, txn ? txn->tid : Tx::PrehistoricTID);
+        compression_codec,
+        std::make_shared<MergeTreeIndexGranularityAdaptive>(),
+        txn ? txn->tid : Tx::PrehistoricTID);
 
     bool sync_on_insert = (*settings)[MergeTreeSetting::fsync_after_insert];
 

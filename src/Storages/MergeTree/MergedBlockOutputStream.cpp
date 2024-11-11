@@ -1,8 +1,10 @@
+#include <optional>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Parsers/queryToString.h>
+#include "Common/Logger.h"
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 
@@ -15,6 +17,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace MergeTreeSetting
+{
+    extern MergeTreeSettingsBool enable_index_granularity_compression;
+}
 
 MergedBlockOutputStream::MergedBlockOutputStream(
     const MergeTreeMutableDataPartPtr & data_part,
@@ -23,12 +29,12 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     const MergeTreeIndices & skip_indices,
     const ColumnsStatistics & statistics,
     CompressionCodecPtr default_codec_,
+    MergeTreeIndexGranularityPtr index_granularity_ptr,
     TransactionID tid,
     bool reset_columns_,
     bool save_marks_in_cache,
     bool blocks_are_granules_size,
-    const WriteSettings & write_settings_,
-    const MergeTreeIndexGranularity & computed_index_granularity)
+    const WriteSettings & write_settings_)
     : IMergedBlockOutputStream(data_part->storage.getSettings(), data_part->getDataPartStoragePtr(), metadata_snapshot_, columns_list_, reset_columns_)
     , columns_list(columns_list_)
     , default_codec(default_codec_)
@@ -53,11 +59,22 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     data_part->storeVersionMetadata();
 
     writer = createMergeTreeDataPartWriter(data_part->getType(),
-            data_part->name, data_part->storage.getLogName(), data_part->getSerializations(),
-            data_part_storage, data_part->index_granularity_info,
-            storage_settings,
-            columns_list, data_part->getColumnPositions(), metadata_snapshot, data_part->storage.getVirtualsPtr(),
-            skip_indices, statistics, data_part->getMarksFileExtension(), default_codec, writer_settings, computed_index_granularity);
+        data_part->name,
+        data_part->storage.getLogName(),
+        data_part->getSerializations(),
+        data_part_storage,
+        data_part->index_granularity_info,
+        storage_settings,
+        columns_list,
+        data_part->getColumnPositions(),
+        metadata_snapshot,
+        data_part->storage.getVirtualsPtr(),
+        skip_indices,
+        statistics,
+        data_part->getMarksFileExtension(),
+        default_codec,
+        writer_settings,
+        std::move(index_granularity_ptr));
 }
 
 /// If data is pre-sorted.
@@ -208,6 +225,12 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     new_part->setBytesUncompressedOnDisk(checksums.getTotalSizeUncompressedOnDisk());
     new_part->index_granularity = writer->getIndexGranularity();
     new_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
+
+    if ((*new_part->storage.getSettings())[MergeTreeSetting::enable_index_granularity_compression])
+    {
+        if (auto new_index_granularity = new_part->index_granularity->optimize())
+            new_part->index_granularity = std::move(new_index_granularity);
+    }
 
     /// In mutation, existing_rows_count is already calculated in PartMergerWriter
     /// In merge situation, lightweight deleted rows was physically deleted, existing_rows_count equals rows_count

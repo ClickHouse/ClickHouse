@@ -3,6 +3,7 @@
 #include <base/types.h>
 
 #include <exception>
+#include <memory>
 #include <optional>
 #include <string_view>
 #include <Compression/CompressedReadBuffer.h>
@@ -38,6 +39,8 @@
 #include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
+#include "Storages/MergeTree/MergeTreeIndexGranularity.h"
+#include "Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h"
 
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 
@@ -652,7 +655,7 @@ void IMergeTreeDataPart::assertOnDisk() const
 
 UInt64 IMergeTreeDataPart::getMarksCount() const
 {
-    return index_granularity.getMarksCount();
+    return index_granularity->getMarksCount();
 }
 
 UInt64 IMergeTreeDataPart::getExistingBytesOnDisk() const
@@ -931,13 +934,13 @@ void IMergeTreeDataPart::loadIndex() const
         for (size_t i = 0; i < key_size; ++i)
         {
             loaded_index[i] = primary_key.data_types[i]->createColumn();
-            loaded_index[i]->reserve(index_granularity.getMarksCount());
+            loaded_index[i]->reserve(index_granularity->getMarksCount());
         }
 
         String index_name = "primary" + getIndexExtensionFromFilesystem(getDataPartStorage());
         String index_path = fs::path(getDataPartStorage().getRelativePath()) / index_name;
         auto index_file = metadata_manager->read(index_name);
-        size_t marks_count = index_granularity.getMarksCount();
+        size_t marks_count = index_granularity->getMarksCount();
 
         Serializations key_serializations(key_size);
         for (size_t j = 0; j < key_size; ++j)
@@ -1350,7 +1353,7 @@ void IMergeTreeDataPart::loadRowsCount()
         assertEOF(*buf);
     };
 
-    if (index_granularity.empty())
+    if (index_granularity->empty())
     {
         rows_count = 0;
     }
@@ -1385,9 +1388,9 @@ void IMergeTreeDataPart::loadRowsCount()
                                     backQuote(column.name), rows_in_column, name, rows_count);
                 }
 
-                size_t last_possibly_incomplete_mark_rows = index_granularity.getLastNonFinalMarkRows();
+                size_t last_possibly_incomplete_mark_rows = index_granularity->getLastNonFinalMarkRows();
                 /// All this rows have to be written in column
-                size_t index_granularity_without_last_mark = index_granularity.getTotalRows() - last_possibly_incomplete_mark_rows;
+                size_t index_granularity_without_last_mark = index_granularity->getTotalRows() - last_possibly_incomplete_mark_rows;
                 /// We have more rows in column than in index granularity without last possibly incomplete mark
                 if (rows_in_column < index_granularity_without_last_mark)
                 {
@@ -1397,7 +1400,7 @@ void IMergeTreeDataPart::loadRowsCount()
                                     "and size of single value, "
                                     "but index granularity in part {} without last mark has {} rows, which "
                                     "is more than in column",
-                                    backQuote(column.name), rows_in_column, name, index_granularity.getTotalRows());
+                                    backQuote(column.name), rows_in_column, name, index_granularity->getTotalRows());
                 }
 
                 /// In last mark we actually written less or equal rows than stored in last mark of index granularity
@@ -1445,8 +1448,8 @@ void IMergeTreeDataPart::loadRowsCount()
                                 column.name, column_size, sizeof_field);
             }
 
-            size_t last_mark_index_granularity = index_granularity.getLastNonFinalMarkRows();
-            size_t rows_approx = index_granularity.getTotalRows();
+            size_t last_mark_index_granularity = index_granularity->getLastNonFinalMarkRows();
+            size_t rows_approx = index_granularity->getTotalRows();
             if (!(rows_count <= rows_approx && rows_approx < rows_count + last_mark_index_granularity))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of column {}: "
                     "{} rows, expected {}+-{} rows according to the index",
@@ -1509,7 +1512,7 @@ UInt64 IMergeTreeDataPart::readExistingRowsCount()
 
     while (current_row < rows_count)
     {
-        size_t rows_to_read = index_granularity.getMarkRows(current_mark);
+        size_t rows_to_read = index_granularity->getMarkRows(current_mark);
         continue_reading = (current_mark != 0);
 
         Columns result;
@@ -1957,6 +1960,9 @@ void IMergeTreeDataPart::initializeIndexGranularityInfo()
         index_granularity_info = MergeTreeIndexGranularityInfo(storage, *mrk_type);
     else
         index_granularity_info = MergeTreeIndexGranularityInfo(storage, part_type);
+
+    /// It may be converted to constant index granularity after loading it.
+    index_granularity = std::make_unique<MergeTreeIndexGranularityAdaptive>();
 }
 
 void IMergeTreeDataPart::remove()
@@ -2230,9 +2236,9 @@ void IMergeTreeDataPart::checkConsistency(bool require_part_metadata) const
             "part_state: [{}]",
             columns.toString(),
             index_granularity_info.getMarkSizeInBytes(columns.size()),
-            index_granularity.getMarksCount(),
+            index_granularity->getMarksCount(),
             index_granularity_info.describe(),
-            index_granularity.describe(),
+            index_granularity->describe(),
             part_state);
 
         e.addMessage(debug_info);
