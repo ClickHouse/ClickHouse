@@ -121,7 +121,7 @@ struct QueryState
 
     std::mutex mutex;
 
-    void finalizeOut(std::shared_ptr<WriteBufferFromPocoSocketChunked> & raw_out)
+    void finalizeOut(std::shared_ptr<WriteBufferFromPocoSocketChunked> & raw_out) const
     {
         if (maybe_compressed_out && maybe_compressed_out.get() != raw_out.get())
             maybe_compressed_out->finalize();
@@ -129,7 +129,7 @@ struct QueryState
             raw_out->next();
     }
 
-    void cancelOut(std::shared_ptr<WriteBufferFromPocoSocketChunked> & raw_out)
+    void cancelOut(std::shared_ptr<WriteBufferFromPocoSocketChunked> & raw_out) const
     {
         if (maybe_compressed_out && maybe_compressed_out.get() != raw_out.get())
             maybe_compressed_out->cancel();

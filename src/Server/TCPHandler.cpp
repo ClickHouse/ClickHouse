@@ -611,6 +611,7 @@ void TCPHandler::runImpl()
                 ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSent);
                 auto res = receiveReadTaskResponse(query_state.value());
                 ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSentElapsedMicroseconds, watch.elapsedMicroseconds());
+
                 return res;
             });
 

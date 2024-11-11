@@ -1,3 +1,5 @@
+#include "Common/Logger.h"
+#include "Common/logger_useful.h"
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 #include <Common/PODArray.h>
@@ -174,6 +176,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
     extern const int SYNTAX_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int INCORRECT_QUERY;
@@ -766,7 +769,9 @@ void logExceptionBeforeStart(
 
     if (settings[Setting::calculate_text_stack_trace])
         setExceptionStackTrace(elem);
-    logException(context, elem);
+
+    bool log_error = elem.exception_code != ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT && elem.exception_code !=  ErrorCodes::QUERY_WAS_CANCELLED;
+    logException(context, elem, log_error);
 
     /// Update performance counters before logging to query_log
     CurrentThread::finalizePerformanceCounters();
@@ -1552,8 +1557,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         else if (auto txn = context->getCurrentTransaction())
             txn->onException();
 
+        LOG_DEBUG(getLogger("ExecuteQUERY"), "A");
         if (!internal)
             logExceptionBeforeStart(query_for_logging, context, ast, query_span, start_watch.elapsedMilliseconds());
+        LOG_DEBUG(getLogger("ExecuteQUERY"), "B");
 
         throw;
     }
