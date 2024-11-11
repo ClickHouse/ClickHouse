@@ -173,7 +173,6 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
     if (new_pos + (working_buffer.end() - pos) == file_offset_of_buffer_end)
         return new_pos;
 
-    /// NOLINTBEGIN(readability-else-after-return)
     if (file_offset_of_buffer_end - working_buffer.size() <= new_pos
         && new_pos <= file_offset_of_buffer_end)
     {
@@ -233,7 +232,6 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
 
         return seek_pos;
     }
-    /// NOLINTEND(readability-else-after-return)
 }
 
 

@@ -99,8 +99,6 @@ struct FormatSettings
         Saturate
     };
 
-    bool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands = false;
-
     DateTimeOverflowBehavior date_time_overflow_behavior = DateTimeOverflowBehavior::Ignore;
 
     bool input_format_ipv4_default_on_conversion_error = false;
@@ -128,8 +126,6 @@ struct FormatSettings
         UInt64 max_binary_array_size = 1_GiB;
         bool encode_types_in_binary_format = false;
         bool decode_types_in_binary_format = false;
-        bool read_json_as_string = false;
-        bool write_json_as_string = false;
     } binary{};
 
     struct
@@ -276,7 +272,6 @@ struct FormatSettings
         bool skip_columns_with_unsupported_types_in_schema_inference = false;
         bool case_insensitive_column_matching = false;
         bool filter_push_down = true;
-        bool bloom_filter_push_down = true;
         bool use_native_reader = false;
         std::unordered_set<int> skip_row_groups = {};
         bool output_string_as_string = false;
@@ -293,7 +288,6 @@ struct FormatSettings
         size_t write_batch_size = 1024;
         bool write_page_index = false;
         size_t local_read_min_bytes_for_seek = 8192;
-        bool enable_row_group_prefetch = true;
     } parquet{};
 
     struct Pretty
@@ -421,7 +415,6 @@ struct FormatSettings
         bool filter_push_down = true;
         UInt64 output_row_index_stride = 10'000;
         String reader_time_zone_name = "GMT";
-        bool dictionary_as_low_cardinality = true;
         double output_dictionary_key_size_threshold = 0.0;
     } orc{};
 
@@ -480,7 +473,6 @@ struct FormatSettings
         bool allow_types_conversion = true;
         bool encode_types_in_binary_format = false;
         bool decode_types_in_binary_format = false;
-        bool write_json_as_string = false;
     } native{};
 
     struct

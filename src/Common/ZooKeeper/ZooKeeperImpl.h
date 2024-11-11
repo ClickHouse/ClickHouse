@@ -119,7 +119,7 @@ public:
 
     std::optional<int8_t> getConnectedNodeIdx() const override;
     String getConnectedHostPort() const override;
-    int64_t getConnectionXid() const override;
+    int32_t getConnectionXid() const override;
 
     String tryGetAvailabilityZone() override;
 
@@ -247,9 +247,6 @@ private:
     std::optional<CompressedWriteBuffer> compressed_out;
 
     bool use_compression = false;
-    bool use_xid_64 = false;
-
-    int64_t close_xid = CLOSE_XID;
 
     int64_t session_id = 0;
 

@@ -540,11 +540,13 @@ void NamedCollectionsMetadataStorage::update(const ASTAlterNamedCollectionQuery 
                 "Cannot delete key `{}` because it does not exist in collection",
                 delete_key);
         }
-
-        result_changes_map.erase(it);
-        auto it_override = result_overridability_map.find(delete_key);
-        if (it_override != result_overridability_map.end())
-            result_overridability_map.erase(it_override);
+        else
+        {
+            result_changes_map.erase(it);
+            auto it_override = result_overridability_map.find(delete_key);
+            if (it_override != result_overridability_map.end())
+                result_overridability_map.erase(it_override);
+        }
     }
 
     create_query.changes.clear();
@@ -568,7 +570,7 @@ std::vector<std::string> NamedCollectionsMetadataStorage::listCollections() cons
     std::vector<std::string> collections;
     collections.reserve(paths.size());
     for (const auto & path : paths)
-        collections.push_back(unescapeForFileName(std::filesystem::path(path).stem()));
+        collections.push_back(std::filesystem::path(path).stem());
     return collections;
 }
 
