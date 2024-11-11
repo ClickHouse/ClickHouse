@@ -3,7 +3,8 @@ import { assert } from 'https://cdn.jsdelivr.net/npm/chai/chai.js';
 import { EventSimulator } from '../EventSimulator.js';
 
 // Test 1: Order of execution of independent events
-async function testOrderOfIndependentEvents() {
+async function testOrderOfIndependentEvents()
+{
     const sim = new EventSimulator();
     const results = [];
 
@@ -18,7 +19,8 @@ async function testOrderOfIndependentEvents() {
 }
 
 // Test 2: Chain of dependent events
-async function testChainOfDependentEvents() {
+async function testChainOfDependentEvents()
+{
     const sim = new EventSimulator();
     const results = [];
 
@@ -33,7 +35,8 @@ async function testChainOfDependentEvents() {
 }
 
 // Test 3: Arbitrary in-tree of dependent events
-async function testInTreeOfDependentEvents() {
+async function testInTreeOfDependentEvents()
+{
     const sim = new EventSimulator();
     const results = [];
 
@@ -48,7 +51,8 @@ async function testInTreeOfDependentEvents() {
 }
 
 // Test 4: Arbitrary out-tree of dependent events
-async function testOutTreeOfDependentEvents() {
+async function testOutTreeOfDependentEvents()
+{
     const sim = new EventSimulator();
     const results = [];
 
@@ -63,7 +67,8 @@ async function testOutTreeOfDependentEvents() {
 }
 
 // Test 5: DAG with a Rhombus inside
-async function testDAGWithRhombus() {
+async function testDAGWithRhombus()
+{
     const sim = new EventSimulator();
     const results = [];
 
@@ -79,8 +84,9 @@ async function testDAGWithRhombus() {
     console.log('Test 5 passed: DAG with rhombus structure executed correctly');
 }
 
-// Test 6: Complex DAG with combined time and dependencies (7 nodes)
-async function testComplexDAGWithCombinedTimeAndDependencies() {
+// Test 6: Complex DAG with combined time and dependencies
+async function testComplexDAGWithCombinedTimeAndDependencies()
+{
     const sim = new EventSimulator();
     const results = [];
 
@@ -113,7 +119,8 @@ async function testComplexDAGWithCombinedTimeAndDependencies() {
 }
 
 // Run all the tests
-export async function testEventSimulator() {
+export async function testEventSimulator()
+{
     testOrderOfIndependentEvents();
     testChainOfDependentEvents();
     testInTreeOfDependentEvents();

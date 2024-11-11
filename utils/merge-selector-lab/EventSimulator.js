@@ -1,16 +1,20 @@
 import Heap from 'https://cdn.skypack.dev/heap-js';
 
-class Event
+export class Event
 {
-    constructor(time, callback, dependencies = [])
+    constructor(callback, dependencies = [])
     {
-        this.time = time;
+        this.time = 0;
         this.callback = callback;
         this.dependencies = dependencies; // List of events this event depends on
         this.executed = false;  // Whether the event has been executed
         this.dependents = [];   // List of events that depend on this event
-        this.dependencies_left = dependencies.length; // Count of unsatisfied dependencies
-        this.queue_drained = false;
+        this.dependencies_left = 0; // Count of unsatisfied dependencies
+        for (const dep of dependencies)
+        {
+            if (!dep.executed)
+                this.dependencies_left++;
+        }
     }
 
     // Add a dependent event
@@ -20,24 +24,23 @@ class Event
     }
 
     // Resolve a dependency
-    resolveDependency(simulator)
+    resolveDependency(sim)
     {
         this.dependencies_left--;
         if (this.dependencies_left === 0)
-            simulator._dependenciesResolved(this);
+            sim._dependenciesResolved(this);
     }
 
     // Execute the event
-    execute(simulator)
+    async execute(sim)
     {
         // console.log(`Executing event at time ${this.time}`);
-        this.callback(simulator); // Allow callback to add new events during execution
+        await this.callback(sim, this);
         this.executed = true;
 
         // Once this event is executed, trigger its dependents
-        this.dependents.forEach(dependent => {
-            dependent.resolveDependency(simulator);
-        });
+        for (const dependent of this.dependents)
+            dependent.resolveDependency(sim);
     }
 }
 
@@ -53,28 +56,30 @@ export class EventSimulator
     // Add an event to the simulator and classify it into appropriate queue
     scheduleAt(time, callback, dependencies = [])
     {
-        const event = new Event(time, callback, dependencies);
-        // Classify the event based on its time and dependencies
-        if (dependencies.length === 0)
-            this._dependenciesResolved(event);
-        else
-            // Link this event's dependencies to track dependents
-            dependencies.forEach(dep => dep.addDependent(event));
+        const event = new Event(callback, dependencies);
+        this.scheduleEventAt(time, event);
         return event;
     }
 
-    // IMPORTANT: this function should be called from every callback that could indirectly create new events
-    // Look for .then(callback) on promises or better avoid using Promise at all
-    ping()
+    scheduleEventAt(time, event)
     {
-        this.queue_drained = false;
+        if (isNaN(time))
+            throw { message: "Scheduling event to NaN time:", event};
+
+        event.time = time;
+        // Classify the event based on its time and dependencies
+        if (event.dependencies.length === 0)
+            this._dependenciesResolved(event);
+        else
+            // Link this event's dependencies to track dependents
+            event.dependencies.forEach(dep => dep.addDependent(event));
     }
 
     // Run the simulation
     async run()
     {
         while (this.ready_events.length > 0 || this.pending_events.size() > 0)
-            await this._executeNextEvent();
+            await this.#executeNextEvent();
     }
 
     // All dependencies of an event are now satisfied
@@ -87,13 +92,12 @@ export class EventSimulator
     }
 
     // Execute the next available event
-    async _executeNextEvent()
+    async #executeNextEvent()
     {
         if (this.ready_events.length > 0)
         {
             const event = this.ready_events.shift(); // Take the first event from ready_events
-            event.execute(this); // Execute the event
-            await this._drainMicrotasks();
+            await event.execute(this); // Execute the event
         }
         else if (this.pending_events.size() > 0)
         {
@@ -102,16 +106,6 @@ export class EventSimulator
             // Move pending events to ready events if their time has arrived
             while (this.pending_events.size() > 0 && this.pending_events.peek().time <= this.time)
                 this.ready_events.push(this.pending_events.pop()); // Move event to ready_events
-        }
-    }
-
-    async _drainMicrotasks()
-    {
-        this.queue_drained = false;
-        while (!this.queue_drained)
-        {
-            this.queue_drained = true;
-            await Promise.resolve(); // Wait for all microtasks to complete
         }
     }
 }

@@ -7,32 +7,42 @@ import { MergeTreeMerger } from '../MergeTreeMerger.js';
 import { visualizeExecutionTime } from '../visualizeExecutionTime.js';
 import { visualizeUtility } from '../visualizeUtility.js';
 
-export async function testMergeTreeMerger() {
+export async function testMergeTreeMerger()
+{
+    // Merge selector for test. It merges every two adjacent active parts.
+    function* testSelector(mt)
+    {
+        while (true)
+        {
+            if (mt.active_part_count < 2)
+                return; // no more merges possible
+            const active_parts = mt.parts.filter(d => d.active).sort((a, b) => a.begin - b.begin);
+            let merge_started = false;
+            for (let i = 0; i < active_parts.length - 1; i++)
+            {
+                const left = active_parts[i];
+                const right = active_parts[i + 1];
+                if (!left.merging && !right.merging)
+                {
+                    yield {type: 'merge', parts_to_merge: [left, right]};
+                    merge_started = true;
+                    break;
+                }
+            }
+            if (!merge_started)
+                yield {type: 'wait'}; // we have to wait for any merge to finish before proceeding
+        }
+    }
+
     const sim = new EventSimulator();
     const pool = new WorkerPool(sim, 4); // 4 workers available for parallel execution of level-1 merges
     const mt = new MergeTree();
-    const merger = new MergeTreeMerger(sim, mt, pool);
+    const merger = new MergeTreeMerger(sim, mt, pool, testSelector);
 
-    let level0 = [];
-    for (let i = 1; i <= 8; i++) {
-        level0.push(merger.insert(i * (100 << 20)));
-    }
+    for (let i = 1; i <= 8; i++)
+        mt.insertPart(i * (100 << 20));
 
-    const level1 = [
-        merger.merge([level0[0], level0[1]]),
-        merger.merge([level0[2], level0[3]]),
-        merger.merge([level0[4], level0[5]]),
-        merger.merge([level0[6], level0[7]]),
-    ];
-
-    const level2 = [
-        merger.promiseMerge([level1[0], level1[1]]),
-        merger.promiseMerge([level1[2], level1[3]]),
-    ];
-
-    const level3 = [
-        merger.promiseMerge([level2[0], level2[1]]),
-    ];
+    merger.start();
 
     await sim.run();
 
