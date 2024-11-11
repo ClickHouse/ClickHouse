@@ -5,7 +5,7 @@ IMAGES_ENV = {
     "altinityinfra/integration-helper": "DOCKER_HELPER_TAG",
     "altinityinfra/integration-test": "DOCKER_BASE_TAG",
     "altinityinfra/integration-tests-runner": "",
-    "altinityinfra/kerberized-hadoop": "DOCKER_KERBERIZED_HADOOP_TAG",
+    # "altinityinfra/kerberized-hadoop": "DOCKER_KERBERIZED_HADOOP_TAG",
     "altinityinfra/kerberos-kdc": "DOCKER_KERBEROS_KDC_TAG",
     "altinityinfra/mysql-golang-client": "DOCKER_MYSQL_GOLANG_CLIENT_TAG",
     "altinityinfra/mysql-java-client": "DOCKER_MYSQL_JAVA_CLIENT_TAG",
