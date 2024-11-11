@@ -845,7 +845,7 @@ ASTs buildFilters(const KeyDescription & primary_key, const std::vector<Values> 
     return filters;
 }
 
-RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ranges_in_data_parts, const LoggerPtr & logger)
+RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ranges_in_data_parts, bool cannot_sort_primary_key, const LoggerPtr & logger)
 {
     IndexAccess index_access(ranges_in_data_parts);
     std::vector<PartsRangesIterator> selected_ranges;
@@ -853,6 +853,17 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
 
     RangesInDataPartsBuilder result(ranges_in_data_parts);
     bool earliest_part_found = false;
+
+    if (cannot_sort_primary_key) /// just expand to all parts + ranges
+    {
+        RangesInDataParts all_part_ranges(std::move(ranges_in_data_parts));
+        for (size_t part_index = 0; part_index < all_part_ranges.size(); ++part_index)
+        {
+            const auto & index_granularity = all_part_ranges[part_index].data_part->index_granularity;
+            all_part_ranges[part_index].ranges = MarkRanges{{MarkRange{0, index_granularity.getMarksCountWithoutFinal()}}};
+        }
+        return all_part_ranges;
+    }
 
     for (size_t part_index = 0; part_index < ranges_in_data_parts.size(); ++part_index)
     {
@@ -1041,10 +1052,12 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndex(
     RangesInDataParts & ranges_in_data_parts,
     const LoggerPtr & logger)
 {
+    bool cannot_sort_primary_key = false;
     if (!isSafePrimaryKey(primary_key))
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Primary key cannot be used in this query for expanding skip index results. Please reexecute query with setting use_skip_indexes_if_final = 0 & use_skip_indexes_if_final_exact_mode = 0.");
+        LOG_TRACE(logger, "Primary key is not sortable, expanding PK range to entire due to exact_mode.");
+        cannot_sort_primary_key = true;
     }
-    return findPKRangesForFinalAfterSkipIndexImpl(ranges_in_data_parts, logger);
+    return findPKRangesForFinalAfterSkipIndexImpl(ranges_in_data_parts, cannot_sort_primary_key, logger);
 }
 }
