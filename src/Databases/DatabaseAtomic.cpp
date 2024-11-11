@@ -6,7 +6,6 @@
 #include <Databases/DatabaseReplicated.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -18,6 +17,7 @@
 #include <Common/atomicRename.h>
 #include <Common/filesystemHelpers.h>
 #include <Core/Settings.h>
+
 
 namespace fs = std::filesystem;
 
@@ -69,9 +69,13 @@ DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, UUID uuid, C
 
 void DatabaseAtomic::createDirectories()
 {
-    if (database_atomic_directories_created.test_and_set())
-        return;
-    DatabaseOnDisk::createDirectories();
+    std::lock_guard lock(mutex);
+    createDirectoriesUnlocked();
+}
+
+void DatabaseAtomic::createDirectoriesUnlocked()
+{
+    DatabaseOnDisk::createDirectoriesUnlocked();
     fs::create_directories(fs::path(getContext()->getPath()) / "metadata");
     fs::create_directories(path_to_table_symlinks);
     tryCreateMetadataSymlink();
@@ -113,9 +117,9 @@ void DatabaseAtomic::drop(ContextPtr)
 void DatabaseAtomic::attachTable(ContextPtr /* context_ */, const String & name, const StoragePtr & table, const String & relative_table_path)
 {
     assert(relative_table_path != data_path && !relative_table_path.empty());
-    createDirectories();
     DetachedTables not_in_use;
     std::lock_guard lock(mutex);
+    createDirectoriesUnlocked();
     not_in_use = cleanupDetachedTables();
     auto table_id = table->getStorageID();
     assertDetachedTableNotInUse(table_id.uuid);
