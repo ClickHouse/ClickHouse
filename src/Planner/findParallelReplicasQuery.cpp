@@ -227,7 +227,7 @@ const QueryNode * findQueryForParallelReplicas(
             const auto & children = next_node_to_check->children;
             auto * step = next_node_to_check->step.get();
 
-            LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Step {} childrens={}", step->getName(), children.size());
+            LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Step {} children={}", step->getName(), children.size());
 
             if (children.empty())
             {
@@ -347,7 +347,7 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
     }
 
     if (res)
-        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Choosen query: {}", res->dumpTree());
+        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Chosen query: {}", res->dumpTree());
     return res;
 }
 
