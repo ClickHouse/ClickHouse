@@ -161,6 +161,7 @@ namespace DB::ErrorCodes
     // When query is killed by `Protocol::Client::Cancel` packet we just stop execution,
     // there is no need to send the exception which has been caused by the cancel packet.
     extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 namespace
@@ -456,7 +457,7 @@ void TCPHandler::runImpl()
         SCOPE_EXIT({
             if (exception)
             {
-                if (exception->code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
+                if (exception->code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT || exception->code() == ErrorCodes::QUERY_WAS_CANCELLED)
                     LOG_INFO(log, getExceptionMessageAndPattern(*exception, send_exception_with_stack_trace));
                 else
                     LOG_ERROR(log, getExceptionMessageAndPattern(*exception, send_exception_with_stack_trace));
@@ -638,8 +639,7 @@ void TCPHandler::runImpl()
 
                 std::lock_guard lock(callback_mutex);
 
-                if (query_state->stop_query)
-                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Received 'Cancel' packet from the client, canceling the query.");
+                checkIfQueryCanceled(*query_state);
 
                 sendMergeTreeReadTaskRequest(std::move(request));
 
@@ -783,7 +783,7 @@ void TCPHandler::runImpl()
             catch (...)
             {
                 //LOG_DEBUG(log, "query_state->io.onException()");
-                query_state->io.onException(exception_code != ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT);
+                query_state->io.onException(exception_code != ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT && exception_code != ErrorCodes::QUERY_WAS_CANCELLED);
             }
 
              /// Authentication failure with interserver secret
@@ -841,7 +841,7 @@ void TCPHandler::runImpl()
                 if (!query_state->read_all_data)
                     skipData(query_state.value());
 
-                if (exception_code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
+                if (exception_code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT || exception_code == ErrorCodes::QUERY_WAS_CANCELLED)
                 {
                     LOG_DEBUG(log, "try send EndOfStream");
                     sendEndOfStream(query_state.value());
@@ -2365,7 +2365,7 @@ void TCPHandler::initProfileEventsBlockOutput(QueryState & state, const Block & 
 void TCPHandler::checkIfQueryCanceled(QueryState & state)
 {
     if (state.stop_query)
-        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Packet 'Cancel' has been received from the client, canceling the query.");
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Packet 'Cancel' has been received from the client, canceling the query.");
 }
 
 void TCPHandler::processCancel(QueryState & state, bool throw_exception)
@@ -2383,7 +2383,7 @@ void TCPHandler::processCancel(QueryState & state, bool throw_exception)
     state.stop_query = true;
 
     if (throw_exception)
-        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Received 'Cancel' packet from the client, canceling the query.");
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Received 'Cancel' packet from the client, canceling the query.");
     else
         LOG_INFO(log, "Received 'Cancel' packet from the client. Queries callbacks return nothing.");
 }
