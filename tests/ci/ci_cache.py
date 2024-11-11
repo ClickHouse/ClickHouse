@@ -795,11 +795,12 @@ class CiCache:
             # start waiting for the next TIMEOUT seconds if there are more than X(=4) jobs to wait
             # wait TIMEOUT seconds in rounds. Y(=5) is the max number of rounds
             expired_sec = 0
-            start_at = int(time.time())
+            start_at = time.time()
             while expired_sec < TIMEOUT and self.jobs_to_wait:
                 await_finished: Set[str] = set()
                 if not dry_run:
-                    time.sleep(poll_interval_sec)
+                    # Do not sleep longer than required
+                    time.sleep(min(poll_interval_sec, TIMEOUT - expired_sec))
                 self.update()
                 for job_name, job_config in self.jobs_to_wait.items():
                     num_batches = job_config.num_batches
@@ -844,10 +845,12 @@ class CiCache:
                     del self.jobs_to_wait[job]
 
                 if not dry_run:
-                    expired_sec = int(time.time()) - start_at
-                    print(
-                        f"...awaiting continues... seconds left [{TIMEOUT - expired_sec}]"
-                    )
+                    expired_sec = int(time.time() - start_at)
+                    msg = f"...awaiting continues... seconds left [{TIMEOUT - expired_sec}]"
+                    if expired_sec >= TIMEOUT:
+                        # Avoid `seconds left [-3]`
+                        msg = f"awaiting for round {round_cnt} is finished"
+                    print(msg)
                 else:
                     # make up for 2 iterations in dry_run
                     expired_sec += int(TIMEOUT / 2) + 1

@@ -1650,6 +1650,11 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     if (!parsed_insert_query)
         return;
 
+    /// If it's clickhouse-local, and the input data reading is already baked into the query pipeline,
+    /// don't read the data again here. This happens in some cases (e.g. input() table function) but not others (e.g. INFILE).
+    if (!connection->isSendDataNeeded())
+        return;
+
     bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(std_in);
 
     if (need_render_progress)
@@ -2676,7 +2681,10 @@ void ClientBase::runInteractive()
 #if USE_REPLXX
     replxx::Replxx::highlighter_callback_t highlight_callback{};
     if (getClientConfiguration().getBool("highlight", true))
-        highlight_callback = highlight;
+        highlight_callback = [this](const String & query, std::vector<replxx::Replxx::Color> & colors)
+        {
+            highlight(query, colors, *client_context);
+        };
 
     ReplxxLineReader lr(
         *suggest,
