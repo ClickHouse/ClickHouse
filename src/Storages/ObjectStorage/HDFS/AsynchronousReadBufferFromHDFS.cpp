@@ -270,6 +270,21 @@ size_t AsynchronousReadBufferFromHDFS::getFileOffsetOfBufferEnd() const
     return file_offset_of_buffer_end;
 }
 
+bool AsynchronousReadBufferFromHDFS::supportsRightBoundedReads() const
+{
+    return true;
+}
+
+void AsynchronousReadBufferFromHDFS::setReadUntilPosition(size_t position)
+{
+    read_until_position = position;
+}
+
+void AsynchronousReadBufferFromHDFS::setReadUntilEnd()
+{
+    read_until_position = impl->getFileSize();
+}
+
 }
 
 #endif

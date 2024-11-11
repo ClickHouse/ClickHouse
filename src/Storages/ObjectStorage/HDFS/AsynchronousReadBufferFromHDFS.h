@@ -31,6 +31,12 @@ public:
 
     ~AsynchronousReadBufferFromHDFS() override;
 
+    bool supportsRightBoundedReads() const override;
+
+    void setReadUntilPosition(size_t position) override;
+
+    void setReadUntilEnd() override;
+
     off_t seek(off_t offset_, int whence) override;
 
     void prefetch(Priority priority) override;
