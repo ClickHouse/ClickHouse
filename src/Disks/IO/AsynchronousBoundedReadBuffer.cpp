@@ -47,7 +47,8 @@ AsynchronousBoundedReadBuffer::AsynchronousBoundedReadBuffer(
     IAsynchronousReader & reader_,
     const ReadSettings & settings_,
     AsyncReadCountersPtr async_read_counters_,
-    FilesystemReadPrefetchesLogPtr prefetches_log_)
+    FilesystemReadPrefetchesLogPtr prefetches_log_,
+    bool enable_read_at)
     : ReadBufferFromFileBase(0, nullptr, 0)
     , impl(std::move(impl_))
     , read_settings(settings_)
@@ -57,6 +58,7 @@ AsynchronousBoundedReadBuffer::AsynchronousBoundedReadBuffer(
     , log(getLogger("AsynchronousBoundedReadBuffer"))
     , async_read_counters(async_read_counters_)
     , prefetches_log(prefetches_log_)
+    , supports_read_at(enable_read_at && impl->supportsReadAt())
 {
     ProfileEvents::increment(ProfileEvents::RemoteFSBuffers);
 }
@@ -87,6 +89,7 @@ std::future<IAsynchronousReader::Result> AsynchronousBoundedReadBuffer::readAsyn
     request.offset = file_offset_of_buffer_end;
     request.priority = Priority{read_settings.priority.value + priority.value};
     request.ignore = bytes_to_ignore;
+    request.supports_read_at = supports_read_at;
     return reader.submit(request);
 }
 
@@ -98,6 +101,7 @@ IAsynchronousReader::Result AsynchronousBoundedReadBuffer::readSync(char * data,
     request.size = size;
     request.offset = file_offset_of_buffer_end;
     request.ignore = bytes_to_ignore;
+    request.supports_read_at = supports_read_at;
     return reader.execute(request);
 }
 
@@ -234,7 +238,10 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
         pos = working_buffer.begin();
     }
 
-    file_offset_of_buffer_end = impl->getFileOffsetOfBufferEnd();
+    if (!impl->supportsReadAt())
+        file_offset_of_buffer_end = impl->getFileOffsetOfBufferEnd();
+    else
+        file_offset_of_buffer_end += bytes_to_ignore + result.size - result.offset;
 
     chassert(file_offset_of_buffer_end <= impl->getFileSize());
 

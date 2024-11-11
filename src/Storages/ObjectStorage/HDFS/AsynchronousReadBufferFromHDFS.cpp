@@ -36,7 +36,7 @@ namespace ErrorCodes
 }
 
 AsynchronousReadBufferFromHDFS::AsynchronousReadBufferFromHDFS(
-    IAsynchronousReader & reader_, const ReadSettings & settings_, std::shared_ptr<ReadBufferFromHDFS> impl_)
+    IAsynchronousReader & reader_, const ReadSettings & settings_, std::shared_ptr<ReadBufferFromHDFS> impl_, bool enable_read_at)
     : BufferWithOwnMemory<SeekableReadBuffer>(settings_.remote_fs_buffer_size)
     , reader(reader_)
     , base_priority(settings_.priority)
@@ -44,6 +44,7 @@ AsynchronousReadBufferFromHDFS::AsynchronousReadBufferFromHDFS(
     , prefetch_buffer(settings_.remote_fs_buffer_size)
     , read_until_position(impl->getFileSize())
     , use_prefetch(settings_.remote_fs_prefetch)
+    , supports_read_at(enable_read_at && impl->supportsReadAt())
     , log(getLogger("AsynchronousReadBufferFromHDFS"))
 {
     ProfileEvents::increment(ProfileEvents::RemoteFSBuffers);
@@ -73,7 +74,21 @@ std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromHDFS::asyncRe
     request.offset = file_offset_of_buffer_end;
     request.priority = Priority{base_priority.value + priority.value};
     request.ignore = 0;
+    request.supports_read_at = supports_read_at;
     return reader.submit(request);
+}
+
+IAsynchronousReader::Result AsynchronousReadBufferFromHDFS::readInto(char * data, size_t size, Priority priority)
+{
+    IAsynchronousReader::Request request;
+    request.descriptor = std::make_shared<RemoteFSFileDescriptor>(*impl, nullptr);
+    request.buf = data;
+    request.size = size;
+    request.offset = file_offset_of_buffer_end;
+    request.priority = Priority{base_priority.value + priority.value};
+    request.ignore = 0;
+    request.supports_read_at = supports_read_at;
+    return reader.execute(request);
 }
 
 void AsynchronousReadBufferFromHDFS::prefetch(Priority priority)
@@ -115,6 +130,7 @@ bool AsynchronousReadBufferFromHDFS::nextImpl()
     size_t size = 0;
     size_t bytes_read = 0;
 
+    IAsynchronousReader::Result result;
     if (prefetch_future.valid())
     {
         ProfileEvents::increment(ProfileEvents::RemoteFSPrefetchedReads);
@@ -123,7 +139,7 @@ bool AsynchronousReadBufferFromHDFS::nextImpl()
         {
             Stopwatch watch;
             CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
-            auto result = prefetch_future.get();
+            result = prefetch_future.get();
             size = result.size;
             offset = result.offset;
             LOG_TEST(log, "Current size: {}, offset: {}", size, offset);
@@ -147,7 +163,7 @@ bool AsynchronousReadBufferFromHDFS::nextImpl()
     {
         ProfileEvents::increment(ProfileEvents::RemoteFSUnprefetchedReads);
 
-        auto result = asyncReadInto(memory.data(), memory.size(), DEFAULT_PREFETCH_PRIORITY).get();
+        result = readInto(memory.data(), memory.size(), DEFAULT_PREFETCH_PRIORITY);
         size = result.size;
         auto offset = result.offset;
 
@@ -164,7 +180,11 @@ bool AsynchronousReadBufferFromHDFS::nextImpl()
         }
     }
 
-    file_offset_of_buffer_end = impl->getFileOffsetOfBufferEnd();
+    if (!supports_read_at)
+        file_offset_of_buffer_end = impl->getFileOffsetOfBufferEnd();
+    else
+        file_offset_of_buffer_end += result.size;
+
     prefetch_future = {};
 
     if (use_prefetch && bytes_read)
