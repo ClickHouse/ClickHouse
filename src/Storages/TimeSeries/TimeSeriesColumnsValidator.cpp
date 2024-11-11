@@ -12,6 +12,11 @@
 namespace DB
 {
 
+namespace TimeSeriesSetting
+{
+    extern const TimeSeriesSettingsMap tags_to_columns;
+}
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
@@ -63,7 +68,7 @@ void TimeSeriesColumnsValidator::validateColumnsImpl(const ColumnsDescription & 
     /// Validate columns for the "tags" table.
     validateColumnForMetricName(get_column_description(TimeSeriesColumnNames::MetricName));
 
-    const Map & tags_to_columns = time_series_settings.tags_to_columns;
+    const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
     for (const auto & tag_name_and_column_name : tags_to_columns)
     {
         const auto & tuple = tag_name_and_column_name.safeGet<const Tuple &>();
@@ -127,7 +132,7 @@ void TimeSeriesColumnsValidator::validateTargetColumnsImpl(ViewTarget::Kind targ
         {
             validateColumnForMetricName(get_column_description(TimeSeriesColumnNames::MetricName));
 
-            const Map & tags_to_columns = time_series_settings.tags_to_columns;
+            const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
             for (const auto & tag_name_and_column_name : tags_to_columns)
             {
                 const auto & tuple = tag_name_and_column_name.safeGet<const Tuple &>();

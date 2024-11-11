@@ -25,6 +25,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     CompressionCodecPtr default_codec_,
     TransactionID tid,
     bool reset_columns_,
+    bool save_marks_in_cache,
     bool blocks_are_granules_size,
     const WriteSettings & write_settings_,
     const MergeTreeIndexGranularity & computed_index_granularity)
@@ -39,6 +40,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         storage_settings,
         data_part->index_granularity_info.mark_type.adaptive,
         /* rewrite_primary_key = */ true,
+        save_marks_in_cache,
         blocks_are_granules_size);
 
     /// TODO: looks like isStoredOnDisk() is always true for MergeTreeDataPart
@@ -205,6 +207,8 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
     new_part->setBytesUncompressedOnDisk(checksums.getTotalSizeUncompressedOnDisk());
     new_part->index_granularity = writer->getIndexGranularity();
+    /// Just in case
+    new_part->index_granularity.shrinkToFitInMemory();
     new_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
 
     /// In mutation, existing_rows_count is already calculated in PartMergerWriter

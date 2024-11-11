@@ -10,7 +10,6 @@
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/FunctionNameNormalizer.h>
@@ -34,7 +33,6 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/queryToString.h>
 #include <Storages/AlterCommands.h>
-#include <Storages/IStorage.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -42,6 +40,7 @@
 #include <Common/randomSeed.h>
 
 #include <ranges>
+
 
 namespace DB
 {
@@ -51,7 +50,6 @@ namespace Setting
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool allow_suspicious_ttl_expressions;
-    extern const SettingsBool enable_deflate_qpl_codec;
     extern const SettingsBool enable_zstd_qat_codec;
     extern const SettingsBool flatten_nested;
 }
@@ -497,7 +495,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             column.comment = *comment;
 
         if (codec)
-            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type, false, true, true, true);
+            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type, false, true, true);
 
         column.ttl = ttl;
 
@@ -566,7 +564,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             else
             {
                 if (codec)
-                    column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type ? data_type : column.type, false, true, true, true);
+                    column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type ? data_type : column.type, false, true, true);
 
                 if (comment)
                     column.comment = *comment;
@@ -1381,7 +1379,6 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     command.data_type,
                     !settings[Setting::allow_suspicious_codecs],
                     settings[Setting::allow_experimental_codecs],
-                    settings[Setting::enable_deflate_qpl_codec],
                     settings[Setting::enable_zstd_qat_codec]);
             }
 
@@ -1412,7 +1409,6 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     command.data_type,
                     !context->getSettingsRef()[Setting::allow_suspicious_codecs],
                     context->getSettingsRef()[Setting::allow_experimental_codecs],
-                    context->getSettingsRef()[Setting::enable_deflate_qpl_codec],
                     context->getSettingsRef()[Setting::enable_zstd_qat_codec]);
             }
             auto column_default = all_columns.getDefault(column_name);
@@ -1461,14 +1457,6 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                         ErrorCodes::BAD_ARGUMENTS,
                         "The change of data type {} of column {} to {} is not allowed. It has known bugs",
                         old_data_type->getName(), backQuote(column_name), command.data_type->getName());
-
-                bool has_object_type = isObject(command.data_type);
-                command.data_type->forEachChild([&](const IDataType & type){ has_object_type |= isObject(type); });
-                if (has_object_type)
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "The change of data type {} of column {} to {} is not supported.",
-                        old_data_type->getName(), backQuote(column_name), command.data_type->getName());
             }
 
             if (command.isRemovingProperty())
@@ -1500,7 +1488,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 if (command.to_remove == AlterCommand::RemoveProperty::CODEC && column_from_table.codec == nullptr)
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
-                        "Column {} doesn't have TTL, cannot remove it",
+                        "Column {} doesn't have CODEC, cannot remove it",
                         backQuote(column_name));
                 if (command.to_remove == AlterCommand::RemoveProperty::COMMENT && column_from_table.comment.empty())
                     throw Exception(

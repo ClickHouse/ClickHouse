@@ -42,6 +42,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int INCORRECT_QUERY;
+    extern const int INVALID_SETTING_VALUE;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
@@ -110,7 +111,7 @@ USearchIndexWithSerialization::USearchIndexWithSerialization(
 {
     USearchIndex::metric_t metric(dimensions, metric_kind, scalar_kind);
 
-    unum::usearch::index_dense_config_t config(usearch_hnsw_params.connectivity, usearch_hnsw_params.expansion_add, unum::usearch::default_expansion_search());
+    unum::usearch::index_dense_config_t config(usearch_hnsw_params.connectivity, usearch_hnsw_params.expansion_add, default_expansion_search);
     config.enable_key_lookups = false; /// we don't do row-to-vector lookups
 
     auto result = USearchIndex::make(metric, config);
@@ -177,23 +178,20 @@ String USearchIndexWithSerialization::Statistics::toString() const
 }
 MergeTreeIndexGranuleVectorSimilarity::MergeTreeIndexGranuleVectorSimilarity(
     const String & index_name_,
-    const Block & index_sample_block_,
     unum::usearch::metric_kind_t metric_kind_,
     unum::usearch::scalar_kind_t scalar_kind_,
     UsearchHnswParams usearch_hnsw_params_)
-    : MergeTreeIndexGranuleVectorSimilarity(index_name_, index_sample_block_, metric_kind_, scalar_kind_, usearch_hnsw_params_, nullptr)
+    : MergeTreeIndexGranuleVectorSimilarity(index_name_, metric_kind_, scalar_kind_, usearch_hnsw_params_, nullptr)
 {
 }
 
 MergeTreeIndexGranuleVectorSimilarity::MergeTreeIndexGranuleVectorSimilarity(
     const String & index_name_,
-    const Block & index_sample_block_,
     unum::usearch::metric_kind_t metric_kind_,
     unum::usearch::scalar_kind_t scalar_kind_,
     UsearchHnswParams usearch_hnsw_params_,
     USearchIndexWithSerializationPtr index_)
     : index_name(index_name_)
-    , index_sample_block(index_sample_block_)
     , metric_kind(metric_kind_)
     , scalar_kind(scalar_kind_)
     , usearch_hnsw_params(usearch_hnsw_params_)
@@ -260,7 +258,7 @@ MergeTreeIndexAggregatorVectorSimilarity::MergeTreeIndexAggregatorVectorSimilari
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorVectorSimilarity::getGranuleAndReset()
 {
-    auto granule = std::make_shared<MergeTreeIndexGranuleVectorSimilarity>(index_name, index_sample_block, metric_kind, scalar_kind, usearch_hnsw_params, index);
+    auto granule = std::make_shared<MergeTreeIndexGranuleVectorSimilarity>(index_name, metric_kind, scalar_kind, usearch_hnsw_params, index);
     index = nullptr;
     return granule;
 }
@@ -344,10 +342,11 @@ void MergeTreeIndexAggregatorVectorSimilarity::update(const Block & block, size_
         throw Exception(ErrorCodes::INCORRECT_DATA, "Index granularity is too big: more than {} rows per index granule.", std::numeric_limits<UInt32>::max());
 
     if (index_sample_block.columns() > 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected block with single column");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected that index is build over a single column");
 
-    const String & index_column_name = index_sample_block.getByPosition(0).name;
-    const ColumnPtr & index_column = block.getByName(index_column_name).column;
+    const auto & index_column_name = index_sample_block.getByPosition(0).name;
+
+    const auto & index_column = block.getByName(index_column_name).column;
     ColumnPtr column_cut = index_column->cut(*pos, rows_read);
 
     const auto * column_array = typeid_cast<const ColumnArray *>(column_cut.get());
@@ -381,8 +380,7 @@ void MergeTreeIndexAggregatorVectorSimilarity::update(const Block & block, size_
     if (index->size() + rows > std::numeric_limits<UInt32>::max())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Size of vector similarity index would exceed 4 billion entries");
 
-    DataTypePtr data_type = block.getDataTypes()[0];
-    const auto * data_type_array = typeid_cast<const DataTypeArray *>(data_type.get());
+    const auto * data_type_array = typeid_cast<const DataTypeArray *>(block.getByName(index_column_name).type.get());
     if (!data_type_array)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected data type Array(Float*)");
     const TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
@@ -407,6 +405,9 @@ MergeTreeIndexConditionVectorSimilarity::MergeTreeIndexConditionVectorSimilarity
     , metric_kind(metric_kind_)
     , expansion_search(context->getSettingsRef()[Setting::hnsw_candidate_list_size_for_search])
 {
+    if (expansion_search == 0)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'hnsw_candidate_list_size_for_search' must not be 0");
+
 }
 
 bool MergeTreeIndexConditionVectorSimilarity::mayBeTrueOnGranule(MergeTreeIndexGranulePtr) const
@@ -447,7 +448,7 @@ std::vector<UInt64> MergeTreeIndexConditionVectorSimilarity::calculateApproximat
     /// synchronize index access, see https://github.com/unum-cloud/usearch/issues/500. As a workaround, we extended USearch' search method
     /// to accept a custom expansion_add setting. The config value is only used on the fly, i.e. not persisted in the index.
 
-    auto search_result = index->search(reference_vector.data(), limit, USearchIndex::any_thread(), false, (expansion_search == 0) ? unum::usearch::default_expansion_search() : expansion_search);
+    auto search_result = index->search(reference_vector.data(), limit, USearchIndex::any_thread(), false, expansion_search);
     if (!search_result)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Could not search in vector similarity index. Error: {}", String(search_result.error.release()));
 
@@ -486,7 +487,7 @@ MergeTreeIndexVectorSimilarity::MergeTreeIndexVectorSimilarity(
 
 MergeTreeIndexGranulePtr MergeTreeIndexVectorSimilarity::createIndexGranule() const
 {
-    return std::make_shared<MergeTreeIndexGranuleVectorSimilarity>(index.name, index.sample_block, metric_kind, scalar_kind, usearch_hnsw_params);
+    return std::make_shared<MergeTreeIndexGranuleVectorSimilarity>(index.name, metric_kind, scalar_kind, usearch_hnsw_params);
 }
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexVectorSimilarity::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
@@ -527,15 +528,17 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
 {
     const bool has_two_args = (index.arguments.size() == 2);
     const bool has_five_args = (index.arguments.size() == 5);
+    const bool has_six_args = (index.arguments.size() == 6); /// Legacy index creation syntax before #70616. Supported only to be able to load old tables, can be removed mid-2025.
+                                                             /// The 6th argument (ef_search) is ignored.
 
     /// Check number and type of arguments
-    if (!has_two_args && !has_five_args)
+    if (!has_two_args && !has_five_args && !has_six_args)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Vector similarity index must have two or five arguments");
     if (index.arguments[0].getType() != Field::Types::String)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "First argument of vector similarity index (method) must be of type String");
     if (index.arguments[1].getType() != Field::Types::String)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Second argument of vector similarity index (metric) must be of type String");
-    if (has_five_args)
+    if (has_five_args || has_six_args)
     {
         if (index.arguments[2].getType() != Field::Types::String)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Third argument of vector similarity index (quantization) must be of type String");
@@ -558,7 +561,7 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
         /// Call Usearch's own parameter validation method for HNSW-specific parameters
         UInt64 connectivity = index.arguments[3].safeGet<UInt64>();
         UInt64 expansion_add = index.arguments[4].safeGet<UInt64>();
-        UInt64 expansion_search = unum::usearch::default_expansion_search();
+        UInt64 expansion_search = default_expansion_search;
 
         unum::usearch::index_dense_config_t config(connectivity, expansion_add, expansion_search);
         if (auto error = config.validate(); error)

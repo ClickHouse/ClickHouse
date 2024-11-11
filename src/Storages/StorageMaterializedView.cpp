@@ -53,6 +53,11 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_materialized_views_count_for_table;
 }
 
+namespace RefreshSetting
+{
+    extern const RefreshSettingsBool all_replicas;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -177,7 +182,7 @@ StorageMaterializedView::StorageMaterializedView(
                 RefreshSettings s;
                 if (query.refresh_strategy->settings)
                     s.applyChanges(query.refresh_strategy->settings->changes);
-                refresh_coordinated = !s.all_replicas;
+                refresh_coordinated = !s[RefreshSetting::all_replicas];
             }
             else
             {
@@ -223,10 +228,20 @@ StorageMaterializedView::StorageMaterializedView(
 
     if (!fixed_uuid)
     {
-        if (to_inner_uuid != UUIDHelpers::Nil)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "TO INNER UUID is not allowed for materialized views with REFRESH without APPEND");
-        if (to_table_id.hasUUID())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "explicit UUID is not allowed for target table of materialized view with REFRESH without APPEND");
+        if (mode >= LoadingStrictnessLevel::ATTACH)
+        {
+            /// Old versions of ClickHouse (when refreshable MV was experimental) could add useless
+            /// UUIDs to attach queries.
+            to_table_id.uuid = UUIDHelpers::Nil;
+            to_inner_uuid = UUIDHelpers::Nil;
+        }
+        else
+        {
+            if (to_inner_uuid != UUIDHelpers::Nil)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "TO INNER UUID is not allowed for materialized views with REFRESH without APPEND");
+            if (to_table_id.hasUUID())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "explicit UUID is not allowed for target table of materialized view with REFRESH without APPEND");
+        }
     }
 
     if (!has_inner_table)
