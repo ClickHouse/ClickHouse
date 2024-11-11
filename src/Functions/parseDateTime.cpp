@@ -607,87 +607,71 @@ namespace
 
         DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
-            FunctionArgumentDescriptors mandatory_args{
-                {"time", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
-            };
-
+            FunctionArgumentDescriptors mandatory_args;
             FunctionArgumentDescriptors optional_args;
             if constexpr (return_type == ReturnType::DateTime64)
-                optional_args = {{"scale/format", static_cast<FunctionArgumentDescriptor::TypeValidator>(
-                        [](const IDataType & data_type) -> bool { return isUInt(data_type) || isString(data_type); }
-                    ), nullptr, "UInt or String"},
-                    {"format", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
-                    {"timezone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"}
+            {
+                mandatory_args = {
+                    {"time", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
+                    {"scale", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), nullptr, "UInt8"}
                 };
-            else
                 optional_args = {
                     {"format", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
                     {"timezone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"}
                 };
+            }
+            else
+            {
+                mandatory_args = {{"time", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}};
+                optional_args = {
+                    {"format", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
+                    {"timezone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"}
+                };
+            }
             validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
             String time_zone_name = getTimeZone(arguments).getTimeZone();
             DataTypePtr data_type;
             if constexpr (return_type == ReturnType::DateTime64)
             {
-                UInt32 scale = 0;
-                if (arguments.size() == 1)
+                UInt8 scale = 0;
+                if (isUInt8(arguments[1].type))
                 {
-                    /// In MySQL parse syntax, the scale of microseond is 6.
-                    if constexpr (parse_syntax == ParseSyntax::MySQL)
-                        scale = 6;
-                }
-                else
-                {
-                    if (isUInt(arguments[1].type))
-                    {
-                        const auto * col_scale = checkAndGetColumnConst<ColumnUInt8>(arguments[1].column.get());
-                        if (col_scale)
-                            scale = col_scale->getValue<UInt8>();
-                        else
-                            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "The input scale value may exceed the max scale value of `DateTime64`: {}.",
-                                maxScaleOfDateTime64);
-                    }
+                    const auto * col_scale = checkAndGetColumnConst<ColumnUInt8>(arguments[1].column.get());
+                    if (col_scale)
+                        scale = col_scale->getValue<UInt8>();
                     else
-                    {
-                        if constexpr (parse_syntax == ParseSyntax::MySQL)
-                            scale = 6;
-                    }
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The scale argument is not Const(UInt8) type.");
+                }
+                if (parse_syntax == ParseSyntax::MySQL && scale != 6)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The scale value {} of MySQL parse syntax is not 6.", std::to_string(scale));
+                if (scale > maxScaleOfDateTime64)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "The scale argument's value {} exceed the max scale value {}.", std::to_string(scale), std::to_string(maxScaleOfDateTime64));
 
-                    /// Construct the return type `DataTypDateTime64` with scale and time zone name. The scale value can be specified or be extracted
-                    /// from the format string by counting how many 'S' characters are contained in the format's microsceond fragment.
-                    String format = getFormat(arguments, scale);
-                    std::vector<Instruction> instructions = parseFormat(format);
-                    for (const auto & instruction : instructions)
+                String format = getFormat(arguments, scale);
+                std::vector<Instruction> instructions = parseFormat(format);
+                for (const auto & instruction : instructions)
+                {
+                    /// Check scale by counting how may 'S' characters exists in the format string.
+                    const String & fragment = instruction.getFragment();
+                    UInt32 s_cnt = 0;
+                    for (char ch : fragment)
                     {
-                        const String & fragment = instruction.getFragment();
-                        UInt32 val = 0;
-                        for (char ch : fragment)
+                        if (ch != 'S')
                         {
-                            if (ch != 'S')
-                            {
-                                val = 0;
-                                break;
-                            }
-                            else
-                                val++;
+                            s_cnt = 0;
+                            break;
                         }
-                        /// If the scale is already specified by the second argument, but it not equals the value that extract from the format string,
-                        /// then we should throw an exception; If the scale is not specified, then we should set its value as the extracted one.
-                        if (val != 0 && scale != 0 && val != scale)
-                            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "The scale of input format string {} not equals the given scale value {}.",
-                                format,
-                                scale);
-                        else if (scale == 0 && val != 0)
-                            scale = val;
+                        else
+                            s_cnt++;
                     }
-                    if (scale > maxScaleOfDateTime64)
+                    /// If the number of 'S' character in format string not euqals the scale, then throw an exception to report error.
+                    if (s_cnt != 0 && s_cnt != scale)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "The scale of the input format string {} exceed the max scale value {}.",
+                            "The scale of input format string {} not equals the given scale value {}.",
                             format,
-                            maxScaleOfDateTime64);
+                            std::to_string(scale));
                 }
                 data_type = std::make_shared<DataTypeDateTime64>(scale, time_zone_name);
             }
@@ -2267,18 +2251,7 @@ namespace
         {
             size_t format_arg_index = 1;
             if constexpr (return_type == ReturnType::DateTime64)
-            {
-                /// When parse `DateTime64` like `parseDateTime64[InJodaSyntax][OrZero/OrNull]('2024-11-05 12:22.22.123', 3), then the format is treated
-                /// as default value `yyyy-MM-dd HH:mm:ss`.
-                /// When parse `DateTime64` like `parseDateTime64[InJodaSyntax][OrZero/OrNull]('2024-11-05 12:22:22.123', 'yyyy-MM-dd HH:mm:ss.SSS')`,
-                /// then the second argument is the format.
-                /// When parse `DateTime64` like `parseDateTime64[InJodaSyntax][OrZero/OrNull]('2024-11-05 12:22:22.123', 3, 'yyyy-MM-dd HH:mm:ss.SSS')`,
-                /// then the third argument is the format.
-                if (arguments.size() > 1 && isString(removeNullable(arguments[1].type)))
-                    format_arg_index = 1;
-                else
-                    format_arg_index = 2;
-            }
+                format_arg_index = 2;
 
             if (arguments.size() <= format_arg_index)
             {
@@ -2311,18 +2284,11 @@ namespace
 
         const DateLUTImpl & getTimeZone(const ColumnsWithTypeAndName & arguments) const
         {
-            if (arguments.size() < 3)
+            if (return_type == ReturnType::DateTime && arguments.size() < 3)
                 return DateLUT::instance();
-            else if constexpr (return_type == ReturnType::DateTime64)
-            {
-                /// If the return type is DateTime64, and the second argument is UInt type for scale, then it has 2 reasonable situations:
-                /// the first like parseDateTime64[InJodaSyntax][OrZero/OrNull]('2024-11-07 17:27.30.123456', 6, '%Y-%m-%d %H:%i:%s.%f', 'Etc/GMT+8')
-                /// the second like parseDateTime64[InJodaSyntax][OrZero/OrNull]('2024-11-07 17:27.30.123456', 6, '%Y-%m-%d %H:%i:%s.%f'). And for the
-                /// first one, we should return the last argument as its timezone, and for the second one, we should return the default time zone as
-                /// `DateLUT::instance()`.
-                if (isUInt(arguments[1].type) && arguments.size() < 4)
-                    return DateLUT::instance();
-            }
+            else if (return_type == ReturnType::DateTime64 && arguments.size() < 4)
+                return DateLUT::instance();
+
             size_t timezone_arg_index = arguments.size() - 1;
             const auto * col = checkAndGetColumnConst<ColumnString>(arguments[timezone_arg_index].column.get());
             if (!col)
