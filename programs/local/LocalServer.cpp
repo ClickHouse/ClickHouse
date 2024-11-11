@@ -287,6 +287,10 @@ void LocalServer::tryInitPath()
     if (getClientConfiguration().has("path"))
     {
         /// User-supplied path.
+        /// By default it is a subdirectory in the current directory (it will be created lazily only if needed).
+        /// The subdirectory is named `clickhouse.local`. This name is to not collide with the possible names
+        /// of the binary file, `clickhouse` or `clickhouse-local`.
+
         path = getClientConfiguration().getString("path");
         Poco::trimInPlace(path);
 
@@ -337,14 +341,6 @@ void LocalServer::tryInitPath()
 
         path = default_path.string();
         LOG_DEBUG(log, "Working directory will be created as needed: {}", path);
-    }
-    else
-    {
-        /// No explicit path specified. Use a subdirectory in the current directory (it will be created lazily only if needed).
-        /// The subdirectory is named `clickhouse.local`. This name is to not collide with the possible names
-        /// of the binary file, `clickhouse` or `clickhouse-local`.
-        path = "clickhouse.local";
-        getClientConfiguration().setString("path", path);
     }
 
     global_context->setPath(fs::path(path) / "");
@@ -943,7 +939,8 @@ void LocalServer::addOptions(OptionsDescription & options_description)
         ("logger.level", po::value<std::string>(), "Log level")
 
         ("no-system-tables", "do not attach system tables (better startup time)")
-        ("path", po::value<std::string>(), "Storage path")
+        ("path", po::value<std::string>()->default_value("clickhouse.local"), "storage path")
+        ("tmp", "use a temporary directory for tables and delete it on exit")
         ("only-system-tables", "attach only system tables from specified path")
         ("top_level_domains_path", po::value<std::string>(), "Path to lists with custom TLDs")
         ;
@@ -981,12 +978,12 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
         getClientConfiguration().setString("table-file", options["file"].as<std::string>());
     if (options.count("structure"))
         getClientConfiguration().setString("table-structure", options["structure"].as<std::string>());
+    if (options.count("tmp"))
+        getClientConfiguration().setBool("tmp", true);
     if (options.count("no-system-tables"))
         getClientConfiguration().setBool("no-system-tables", true);
     if (options.count("only-system-tables"))
         getClientConfiguration().setBool("only-system-tables", true);
-    if (options.count("database"))
-        getClientConfiguration().setString("default_database", options["database"].as<std::string>());
 
     if (options.count("input-format"))
         getClientConfiguration().setString("table-data-format", options["input-format"].as<std::string>());
