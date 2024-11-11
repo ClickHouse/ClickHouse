@@ -93,6 +93,8 @@ struct ProjectionDescription
 
     Block calculate(const Block & block, ContextPtr context) const;
 
+    void mask(const Block & block, ContextPtr context) const;
+
     String getDirectoryName() const { return name + ".proj"; }
 };
 

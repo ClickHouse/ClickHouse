@@ -1028,6 +1028,8 @@ struct MutationContext
     std::unique_ptr<CurrentMetrics::Increment> num_mutations;
 
     QueryPipelineBuilder mutating_pipeline_builder;
+    /// source here is projection part instead of table part
+    QueryPipelineBuilder projection_mutating_pipeline_builder;
     QueryPipeline mutating_pipeline; // in
     std::unique_ptr<PullingPipelineExecutor> mutating_executor;
     ProgressCallback progress_callback;
@@ -1051,6 +1053,9 @@ struct MutationContext
 
     String mrk_extension;
 
+    /// Used in lightweight delete to bit mask the projection if possible,
+    /// preference is higher than rebuild as more performant.
+    std::vector<ProjectionDescriptionRawPtr> projections_to_mask;
     std::vector<ProjectionDescriptionRawPtr> projections_to_build;
     IMergeTreeDataPart::MinMaxIndexPtr minmax_idx;
 
@@ -1144,6 +1149,14 @@ public:
                 if (iterateThroughAllProjections())
                     return true;
 
+                state = State::NEED_MASK_PROJECTION_PARTS;
+                return true;
+            }
+            case State::NEED_MASK_PROJECTION_PARTS:
+            {
+                if (iterateThroughAllProjectionsToMask())
+                    return true;
+
                 state = State::SUCCESS;
                 return true;
             }
@@ -1163,6 +1176,7 @@ private:
     void finalizeTempProjections();
     bool iterateThroughAllProjections();
     void constructTaskForProjectionPartsMerge();
+    bool iterateThroughAllProjectionsToMask();
     void finalize();
 
     enum class State : uint8_t
@@ -1170,7 +1184,7 @@ private:
         NEED_PREPARE,
         NEED_MUTATE_ORIGINAL_PART,
         NEED_MERGE_PROJECTION_PARTS,
-
+        NEED_MASK_PROJECTION_PARTS,
         SUCCESS
     };
 
@@ -1334,6 +1348,14 @@ bool PartMergerWriter::iterateThroughAllProjections()
     constructTaskForProjectionPartsMerge();
 
     return true;
+}
+
+bool PartMergerWriter::iterateThroughAllProjectionsToMask()
+{
+    for (size_t i = 0, size = ctx->projections_to_mask.size(); i < size; ++i)
+    {
+    }
+    return false;
 }
 
 void PartMergerWriter::finalize()
