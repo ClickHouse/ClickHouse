@@ -163,6 +163,8 @@ public:
 
     size_t getBackgroundDownloadMaxFileSegmentSize() const { return metadata.getBackgroundDownloadMaxFileSegmentSize(); }
 
+    size_t getBoundaryAlignment() const { return boundary_alignment; }
+
     bool tryReserve(
         FileSegment & file_segment,
         size_t size,

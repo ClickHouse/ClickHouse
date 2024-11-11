@@ -632,9 +632,6 @@ void CacheMetadata::downloadThreadFunc(const bool & stop_flag)
 
                 auto & file_segment = holder->front();
 
-                if (file_segment.getDownloadedSize() >= download_max_file_segment_size)
-                    continue;
-
                 if (file_segment.getOrSetDownloader() != FileSegment::getCallerId())
                     continue;
 
@@ -681,6 +678,10 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
         log, "Downloading {} bytes for file segment {}",
         file_segment.range().size() - file_segment.getDownloadedSize(), file_segment.getInfoForLog());
 
+    size_t size_to_download = file_segment.getSizeForBackgroundDownload();
+    if (!size_to_download)
+        return;
+
     auto reader = file_segment.getRemoteFileReader();
     if (!reader)
     {
@@ -695,7 +696,7 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
     if (reader->internalBuffer().empty())
     {
         if (!memory)
-            memory.emplace(DBMS_DEFAULT_BUFFER_SIZE);
+            memory.emplace(std::min(size_t(DBMS_DEFAULT_BUFFER_SIZE), size_to_download));
         reader->set(memory->data(), memory->size());
     }
 
@@ -706,24 +707,13 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
     if (offset != static_cast<size_t>(reader->getPosition()))
         reader->seek(offset, SEEK_SET);
 
-    bool stop = false;
-    const size_t max_file_segment_size = download_max_file_segment_size.load();
-
-    while (!stop && !reader->eof())
+    while (size_to_download && !reader->eof())
     {
-        auto size = reader->available();
+        const auto available = reader->available();
+        chassert(available);
 
-        const size_t downloaded_size = file_segment.getDownloadedSize();
-        if (downloaded_size >= max_file_segment_size)
-            break;
-
-        if (downloaded_size + size > max_file_segment_size)
-        {
-            /// Do not download more than download_max_file_segment_size
-            /// because we want to leave right boundary of file segment aligned.
-            size = max_file_segment_size - downloaded_size;
-            stop = true;
-        }
+        const auto size = std::min(available, size_to_download);
+        size_to_download -= size;
 
         std::string failure_reason;
         if (!file_segment.reserve(size, reserve_space_lock_wait_timeout_milliseconds, failure_reason))

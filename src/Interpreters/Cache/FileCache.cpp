@@ -8,6 +8,7 @@
 #include <Interpreters/Cache/FileCacheSettings.h>
 #include <Interpreters/Cache/LRUFileCachePriority.h>
 #include <Interpreters/Cache/SLRUFileCachePriority.h>
+#include <Interpreters/Cache/FileCacheUtils.h>
 #include <Interpreters/Cache/EvictionCandidates.h>
 #include <Interpreters/Context.h>
 #include <base/hex.h>
@@ -53,16 +54,6 @@ namespace ErrorCodes
 
 namespace
 {
-    size_t roundDownToMultiple(size_t num, size_t multiple)
-    {
-        return (num / multiple) * multiple;
-    }
-
-    size_t roundUpToMultiple(size_t num, size_t multiple)
-    {
-        return roundDownToMultiple(num + multiple - 1, multiple);
-    }
-
     std::string getCommonUserID()
     {
         auto user_from_context = DB::Context::getGlobalContextInstance()->getFilesystemCacheUser();
@@ -605,8 +596,8 @@ FileCache::getOrSet(
     /// 2. max_file_segments_limit
     FileSegment::Range result_range = initial_range;
 
-    const auto aligned_offset = roundDownToMultiple(initial_range.left, boundary_alignment);
-    auto aligned_end_offset = std::min(roundUpToMultiple(initial_range.right + 1, boundary_alignment), file_size) - 1;
+    const auto aligned_offset = FileCacheUtils::roundDownToMultiple(initial_range.left, boundary_alignment);
+    auto aligned_end_offset = std::min(FileCacheUtils::roundUpToMultiple(initial_range.right + 1, boundary_alignment), file_size) - 1;
 
     chassert(aligned_offset <= initial_range.left);
     chassert(aligned_end_offset >= initial_range.right);
