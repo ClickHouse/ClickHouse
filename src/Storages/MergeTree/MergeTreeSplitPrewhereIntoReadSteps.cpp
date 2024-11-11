@@ -50,6 +50,17 @@ void fillRequiredColumns(const ActionsDAG::Node * node, std::unordered_map<const
     }
 }
 
+// void addToOutputsIfNotAlreadyAdded(ActionsDAG & dag, const ActionsDAG::Node * node)
+// {
+//     auto & outputs = dag.getOutputs();
+//     auto it = outputs.begin();
+//     while (it != outputs.end() && *it != node)
+//         ++it;
+
+//     if (it == outputs.end())
+//         outputs.push_back(node);
+// }
+
 /// Stores information about a node that has already been cloned or added to one of the new DAGs.
 /// This allows to avoid cloning the same sub-DAG into multiple step DAGs but reference previously cloned nodes from earlier steps.
 struct DAGNodeRef
@@ -58,7 +69,7 @@ struct DAGNodeRef
     const ActionsDAG::Node * node;
 };
 
-/// Result -> DAGNodeRef
+/// ResultNode -> DAGNodeRef
 using OriginalToNewNodeMap = std::unordered_map<const ActionsDAG::Node *, DAGNodeRef>;
 using NodeNameToLastUsedStepMap = std::unordered_map<const ActionsDAG::Node *, size_t>;
 
@@ -70,7 +81,6 @@ const ActionsDAG::Node & addClonedDAGToDAG(
     OriginalToNewNodeMap & node_remap,
     NodeNameToLastUsedStepMap & node_to_step_map)
 {
-    //const String & node_name = original_dag_node->result_name;
     /// Look for the node in the map of already known nodes
     if (node_remap.contains(original_dag_node))
     {
@@ -82,9 +92,11 @@ const ActionsDAG::Node & addClonedDAGToDAG(
         /// If the node is known from the previous steps, add it as an input, except for constants
         if (original_dag_node->type != ActionsDAG::ActionType::COLUMN)
         {
-            node_ref.dag->addOrReplaceInOutputs(*node_ref.node);
+            // addToOutputsIfNotAlreadyAdded(*node_ref.dag, node_ref.node);
+            node_ref.dag->getOutputs().push_back(node_ref.node);
+
             const auto & new_node = new_dag->addInput(node_ref.node->result_name, node_ref.node->result_type);
-            node_remap[original_dag_node] = {new_dag.get(), &new_node}; /// TODO: here we update the node reference. Is it always correct?
+            node_remap[original_dag_node] = {new_dag.get(), &new_node};
 
             /// Remember the index of the last step which reuses this node.
             /// We cannot remove this node from the outputs before that step.
@@ -207,7 +219,11 @@ const ActionsDAG::Node & addAndTrue(
 /// 6. Find all outputs of the original DAG
 /// 7. Find all outputs that were computed in the already built DAGs, mark these nodes as outputs in the steps where they were computed
 /// 8. Add computation of the remaining outputs to the last step with the procedure similar to 4
-bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionActionsSettings & actions_settings, PrewhereExprInfo & prewhere)
+bool tryBuildPrewhereSteps(
+    PrewhereInfoPtr prewhere_info,
+    const ExpressionActionsSettings & actions_settings,
+    PrewhereExprInfo & prewhere,
+    bool force_shirt_circuit_execution)
 {
     if (!prewhere_info)
         return true;
@@ -275,26 +291,16 @@ bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionAction
             /// Add AND function to combine the conditions
             FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
             const auto & and_function_node = addFunction(step_dag, func_builder_and, new_condition_nodes); //, node_remap);
-            //step_dag->addOrReplaceInOutputs(and_function_node);
             result_node = &and_function_node;
         }
         else
         {
             result_node = new_condition_nodes.front();
             /// Check if explicit cast is needed for the condition to serve as a filter.
-            //const auto result_type_name = result_node->result_type->getName();
-            if (isUInt8(removeNullable(removeLowCardinality(result_node->result_type))))
-            {
-                /// No need to cast
-                //step_dag->addOrReplaceInOutputs(result_node);
-                //result_name = result_node.result_name;
-            }
-            else
+            if (!isUInt8(removeNullable(removeLowCardinality(result_node->result_type))))
             {
                 /// Build "condition AND True" expression to "cast" the condition to UInt8 or Nullable(UInt8) depending on its type.
                 result_node = &addAndTrue(step_dag, *result_node); //, node_remap);
-                //step_dag->addOrReplaceInOutputs(cast_node);
-                //result_name = &cast_node.result_name;
             }
         }
 
@@ -334,7 +340,6 @@ bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionAction
             const auto & cast_node = addCast(last_step_dag, and_node, output->result_type); //, node_remap);
             /// Add alias for the result with the name of the PREWHERE column
             const auto & prewhere_result_node = last_step_dag->addAlias(cast_node, output->result_name);
-            //last_step_dag->addOrReplaceInOutputs(prewhere_result_node);
             last_step_dag->getOutputs().push_back(&prewhere_result_node);
             steps.back().result_node = &prewhere_result_node;
         }
@@ -358,7 +363,7 @@ bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionAction
                 /// Don't remove if it's in the list of original outputs
                 .remove_filter_column =
                     step.original_node && !all_outputs.contains(step.original_node) && node_to_step[step.original_node] <= step_index,
-                .need_filter = true,
+                .need_filter = force_shirt_circuit_execution,
                 .perform_alter_conversions = true,
             };
 

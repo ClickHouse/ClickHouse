@@ -64,6 +64,7 @@ static ActionsAndName splitSingleAndFilter(ActionsDAG & dag, const ActionsDAG::N
     return ActionsAndName{std::move(split_result.first), std::move(name)};
 }
 
+/// Try to split the left most AND atom to a separate DAG.
 static std::optional<ActionsAndName> trySplitSingleAndFilter(ActionsDAG & dag, const std::string & filter_name)
 {
     const auto * filter = &dag.findInOutputs(filter_name);
@@ -83,6 +84,7 @@ static std::optional<ActionsAndName> trySplitSingleAndFilter(ActionsDAG & dag, c
 
         if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "and")
         {
+            /// The order is important. We should take the left-most atom, so put conditions on stack in reverse order.
             for (const auto * child : node->children | std::ranges::views::reverse)
                 nodes.push(child);
 
@@ -141,6 +143,8 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
 {
     std::vector<ActionsAndName> and_atoms;
 
+    /// Spliting AND filter condition to steps under the setting, which is enabled with merge_filters optimization.
+    /// This is needed to support short-circuit properly.
     if (settings.enable_multiple_filters_transforms_for_and_chain && !actions_dag.hasStatefulFunctions())
         and_atoms = splitAndChainIntoMultipleFilters(actions_dag, filter_column_name);
 
@@ -206,6 +210,19 @@ void FilterStep::describeActions(FormatSettings & settings) const
 
 void FilterStep::describeActions(JSONBuilder::JSONMap & map) const
 {
+    auto cloned_dag = actions_dag.clone();
+
+    std::vector<ActionsAndName> and_atoms;
+    if (!actions_dag.hasStatefulFunctions())
+        and_atoms = splitAndChainIntoMultipleFilters(cloned_dag, filter_column_name);
+
+    for (auto & and_atom : and_atoms)
+    {
+        auto expression = std::make_shared<ExpressionActions>(std::move(and_atom.dag));
+        map.add("AND column", and_atom.name);
+        map.add("Expression", expression->toTree());
+    }
+
     map.add("Filter Column", filter_column_name);
     map.add("Removes Filter", remove_filter_column);
 
