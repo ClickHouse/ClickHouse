@@ -4094,7 +4094,7 @@ void MergeTreeData::checkPartDynamicColumns(MutableDataPartPtr & part, DataParts
     const auto & columns = metadata_snapshot->getColumns();
     auto virtuals = getVirtualsPtr();
 
-    if (!hasDynamicSubcolumns(columns))
+    if (!hasDynamicSubcolumnsDeprecated(columns))
         return;
 
     const auto & part_columns = part->getColumns();
@@ -8728,8 +8728,11 @@ void MergeTreeData::resetObjectColumnsFromActiveParts(const DataPartsLock & /*lo
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
     const auto & columns = metadata_snapshot->getColumns();
-    if (!hasDynamicSubcolumns(columns))
+    if (!hasDynamicSubcolumnsDeprecated(columns))
+    {
+        object_columns = ColumnsDescription{};
         return;
+    }
 
     auto range = getDataPartsStateRange(DataPartState::Active);
     object_columns = getConcreteObjectColumns(range, columns);
@@ -8739,7 +8742,7 @@ void MergeTreeData::updateObjectColumns(const DataPartPtr & part, const DataPart
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
     const auto & columns = metadata_snapshot->getColumns();
-    if (!hasDynamicSubcolumns(columns))
+    if (!hasDynamicSubcolumnsDeprecated(columns))
         return;
 
     DB::updateObjectColumns(object_columns, columns, part->getColumns());

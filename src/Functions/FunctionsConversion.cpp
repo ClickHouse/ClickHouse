@@ -4103,6 +4103,7 @@ private:
                 ColumnStringHelpers::WriteHelper write_helper(assert_cast<ColumnString &>(*json_string), input_rows_count);
                 auto & write_buffer = write_helper.getWriteBuffer();
                 FormatSettings format_settings = context ? getFormatSettings(context) : FormatSettings{};
+                format_settings.json.quote_64bit_integers = false;
                 auto serialization = arguments[0].type->getDefaultSerialization();
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
