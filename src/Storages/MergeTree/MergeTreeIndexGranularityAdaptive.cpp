@@ -1,9 +1,5 @@
-#include <memory>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
-#include <IO/WriteHelpers.h>
-#include "Common/Logger.h"
-#include "Common/logger_useful.h"
-#include "Storages/MergeTree/MergeTreeIndexGranularityConstant.h"
+#include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
 
 
 namespace DB

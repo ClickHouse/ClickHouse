@@ -1,11 +1,9 @@
-#include <memory>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <IO/WriteHelpers.h>
-#include "Common/Exception.h"
-#include "Storages/MergeTree/MergeTreeDataPartType.h"
 
 namespace DB
 {

@@ -21,7 +21,6 @@
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/typeid_cast.h>
-#include "Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h"
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
@@ -84,6 +83,7 @@
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 
 #include <boost/range/algorithm_ext/erase.hpp>
 #include <boost/algorithm/string/join.hpp>
@@ -96,7 +96,6 @@
 #include <atomic>
 #include <chrono>
 #include <limits>
-#include <memory>
 #include <optional>
 #include <ranges>
 #include <set>

@@ -1,11 +1,6 @@
-#include <memory>
-#include <optional>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
-#include "Storages/MergeTree/MergeTreeIndexGranularity.h"
-#include "Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h"
-#include "Storages/MergeTree/MergeTreeIndexGranularityConstant.h"
-#include "Storages/MergeTree/MergeTreeSettings.h"
+#include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Columns/ColumnSparse.h>
 
 namespace DB

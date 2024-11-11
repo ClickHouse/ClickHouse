@@ -3,7 +3,6 @@
 #include <base/types.h>
 
 #include <exception>
-#include <memory>
 #include <optional>
 #include <string_view>
 #include <Compression/CompressedReadBuffer.h>
@@ -30,6 +29,7 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/Backup.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 #include <base/JSON.h>
 #include <boost/algorithm/string/join.hpp>
 #include <Common/CurrentMetrics.h>
@@ -39,8 +39,6 @@
 #include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
-#include "Storages/MergeTree/MergeTreeIndexGranularity.h"
-#include "Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h"
 
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 

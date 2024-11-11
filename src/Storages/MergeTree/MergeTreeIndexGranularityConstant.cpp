@@ -1,6 +1,4 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
-#include <Common/Exception.h>
-#include <IO/WriteHelpers.h>
 
 
 namespace DB

@@ -273,7 +273,12 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Perm
     /// but not in case of vertical part of vertical merge)
     if (compute_granularity)
     {
-        size_t index_granularity_for_block = computeIndexGranularity(block_to_write);
+        size_t index_granularity_for_block;
+        if (auto constant_granularity = index_granularity->getConstantGranularity())
+            index_granularity_for_block = *constant_granularity;
+        else
+            index_granularity_for_block = computeIndexGranularity(block_to_write);
+
         if (rows_written_in_last_mark > 0)
         {
             size_t rows_left_in_last_mark = index_granularity->getMarkRows(getCurrentMark()) - rows_written_in_last_mark;

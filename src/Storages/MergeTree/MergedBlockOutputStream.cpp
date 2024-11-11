@@ -1,11 +1,9 @@
-#include <optional>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Parsers/queryToString.h>
-#include "Common/Logger.h"
-#include <Common/logger_useful.h>
 #include <Core/Settings.h>
 
 
@@ -19,7 +17,7 @@ namespace ErrorCodes
 
 namespace MergeTreeSetting
 {
-    extern MergeTreeSettingsBool enable_index_granularity_compression;
+    extern const MergeTreeSettingsBool enable_index_granularity_compression;
 }
 
 MergedBlockOutputStream::MergedBlockOutputStream(

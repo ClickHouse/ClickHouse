@@ -1,7 +1,6 @@
 #pragma once
 #include <optional>
 #include <Storages/MergeTree/MarkRange.h>
-#include "Storages/MergeTree/MergeTreeSettings.h"
 
 namespace DB
 {
@@ -17,6 +16,8 @@ class MergeTreeIndexGranularity
 public:
     MergeTreeIndexGranularity() = default;
     virtual ~MergeTreeIndexGranularity() = default;
+
+    virtual std::optional<size_t> getConstantGranularity() const = 0;
 
     /// Return count of rows between marks
     virtual size_t getRowsCountInRange(size_t begin, size_t end) const = 0;

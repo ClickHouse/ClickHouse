@@ -3,7 +3,7 @@
 #include <Storages/MergeTree/MergeTreeReaderCompactSingleBuffer.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
-#include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 
 namespace DB

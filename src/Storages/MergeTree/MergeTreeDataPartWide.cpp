@@ -3,9 +3,10 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <DataTypes/NestedUtils.h>
 #include <Core/NamesAndTypes.h>
-#include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
 
 
 namespace DB
