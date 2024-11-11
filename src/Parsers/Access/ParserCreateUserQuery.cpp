@@ -276,7 +276,7 @@ namespace
             {
                 std::shared_ptr<ASTAuthenticationData> ast_authentication_data;
 
-                if (!parseAuthenticationData(aux_pos, expected, ast_authentication_data, false, true, should_parse_no_password))
+                if (!parseAuthenticationData(aux_pos, expected, ast_authentication_data, false, true, false))
                 {
                     break;
                 }
