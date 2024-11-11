@@ -233,10 +233,20 @@ int StatementGenerator::GenerateTableKey(RandomGenerator & rg, sql_query_grammar
 
                 if ((HasType<DateType, false>(entry.tp) || HasType<DateTimeType, false>(entry.tp)) && rg.NextBool())
                 {
+                    //Use date functions for paritioning/keys
                     sql_query_grammar::SQLFuncCall * func_call = tkey->add_exprs()->mutable_comp_expr()->mutable_func_call();
 
                     func_call->mutable_func()->set_catalog_func(rg.PickRandomlyFromVector(dates_hash));
                     InsertEntryRef(entry, func_call->add_args()->mutable_expr());
+                }
+                else if (HasType<IntType, true>(entry.tp) && rg.NextBool())
+                {
+                    //Use modulo function for paritioning/keys
+                    sql_query_grammar::BinaryExpr * bexpr = tkey->add_exprs()->mutable_comp_expr()->mutable_binary_expr();
+
+                    InsertEntryRef(entry, bexpr->mutable_lhs());
+                    bexpr->set_op(sql_query_grammar::BinaryOperator::BINOP_PERCENT);
+                    bexpr->mutable_rhs()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rg.NextRandomUInt32() % (rg.NextBool() ? 1024 : 65536));
                 }
                 else
                 {

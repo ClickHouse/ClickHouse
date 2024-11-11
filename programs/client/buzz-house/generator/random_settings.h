@@ -24,6 +24,7 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
     {"aggregate_functions_null_for_empty", TrueOrFalse},
     {"aggregation_in_order_max_block_bytes",
      [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
+    {"allow_aggregate_partitions_independently", TrueOrFalse},
     {"allow_experimental_parallel_reading_from_replicas", ZeroOneTwo},
     {"allow_experimental_shared_set_join", TrueOrFalse},
     {"allow_introspection_functions", TrueOrFalse},
@@ -125,6 +126,7 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
     {"filesystem_prefetch_step_marks", [](RandomGenerator & rg, std::string & ret) { ret += rg.NextBool() ? "0" : "50"; }},
     {"filesystem_prefetches_limit", [](RandomGenerator & rg, std::string & ret) { ret += rg.NextBool() ? "0" : "10"; }},
     {"flatten_nested", TrueOrFalse},
+    {"force_aggregate_partitions_independently", TrueOrFalse},
     {"force_optimize_projection", TrueOrFalse},
     {"fsync_metadata", TrueOrFalse},
     /*{"group_by_overflow_mode",
@@ -244,6 +246,8 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
      [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << ((rg.NextLargeNumber() % 8) + 15)); }},
     {"max_memory_usage_for_user",
      [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << ((rg.NextLargeNumber() % 8) + 15)); }},
+    {"max_number_of_partitions_for_independent_aggregation",
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 15)); }},
     {"max_parsing_threads",
      [](RandomGenerator & rg, std::string & ret)
      {

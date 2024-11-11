@@ -312,6 +312,7 @@ Run query with different settings oracle
 static const std::vector<TestSetting> test_settings{
     TestSetting("aggregate_functions_null_for_empty", {"0", "1"}),
     TestSetting("aggregation_in_order_max_block_bytes", {"0", "1"}),
+    TestSetting("allow_aggregate_partitions_independently", {"0", "1"}),
     TestSetting("allow_introspection_functions", {"0", "1"}),
     TestSetting("allow_reorder_prewhere_conditions", {"0", "1"}),
     TestSetting("any_join_distinct_right_table_keys", {"0", "1"}),
@@ -340,6 +341,7 @@ static const std::vector<TestSetting> test_settings{
     TestSetting("enable_writes_to_query_cache", {"0", "1"}),
     TestSetting("exact_rows_before_limit", {"0", "1"}),
     TestSetting("flatten_nested", {"0", "1"}),
+    TestSetting("force_aggregate_partitions_independently", {"0", "1"}),
     TestSetting("force_optimize_projection", {"0", "1"}),
     TestSetting("fsync_metadata", {"0", "1"}),
     TestSetting("group_by_two_level_threshold", {"0", "1"}),
