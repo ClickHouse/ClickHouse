@@ -93,7 +93,10 @@ Vector similarity indexes currently support two distance functions:
   ([Wikipedia](https://en.wikipedia.org/wiki/Cosine_similarity)).
 
 Vector similarity indexes allows storing the vectors in reduced precision formats. Supported scalar kinds are `f64`, `f32`, `f16`, `bf16`,
-and `i8`. If no scalar kind was specified during index creation, `bf16` is used as default.
+and `i8`. If no scalar kind was specified during index creation, `bf16` is used as default. For scalar kinds `f64`, `f32`, and `bf16`, the
+values are simply downsampled. For `i8`, the values are mapped to range [-127, 127]. To improve precision, scalar quantization is applied to
+the uncompressed values. The quantization quantile can be specified using MergeTree setting
+`scalar_quantization_quantile_for_vector_similarity_index` (default: 0.99).
 
 For normalized data, `L2Distance` is usually a better choice, otherwise `cosineDistance` is recommended to compensate for scale. If no
 distance function was specified during index creation, `L2Distance` is used as default.

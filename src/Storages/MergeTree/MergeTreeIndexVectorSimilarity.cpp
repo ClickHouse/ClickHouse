@@ -72,6 +72,13 @@ const std::unordered_map<String, unum::usearch::scalar_kind_t> quantizationToSca
     {"i8", unum::usearch::scalar_kind_t::i8_k}};
 /// Usearch provides more quantizations but ^^ above ones seem the only ones comprehensively supported across all distance functions.
 
+/// The vector similarity index implements scalar quantization on top of Usearch. This is the target type (currently, only i8 is supported).
+using QuantizedValue = unum::usearch::i8_t;
+
+/// The maximum number of dimensions for scalar quantization. The purpose is to be able to allocate space for the result row on the stack
+/// (std::array) instead of the heap (std::vector). The value can be chosen randomly as long as the stack doesn't overflow.
+constexpr size_t MAX_DIMENSIONS_FOR_SCALAR_QUANTIZATION = 3000;
+
 template<typename T>
 concept is_set = std::same_as<T, std::set<typename T::key_type, typename T::key_compare, typename T::allocator_type>>;
 
@@ -214,6 +221,16 @@ void MergeTreeIndexGranuleVectorSimilarity::serializeBinary(WriteBuffer & ostr) 
 
     index->serialize(ostr);
 
+    writeIntBinary(index->scalar_quantization_codebooks ? static_cast<UInt64>(1) : static_cast<UInt64>(0), ostr);
+    if (index->scalar_quantization_codebooks)
+    {
+        for (const auto codebook : *(index->scalar_quantization_codebooks))
+        {
+            writeFloatBinary(codebook.min, ostr);
+            writeFloatBinary(codebook.max, ostr);
+        }
+    }
+
     auto statistics = index->getStatistics();
     LOG_TRACE(logger, "Wrote vector similarity index: {}", statistics.toString());
 }
@@ -232,11 +249,26 @@ void MergeTreeIndexGranuleVectorSimilarity::deserializeBinary(ReadBuffer & istr,
         /// More fancy error handling would be: Set a flag on the index that it failed to load. During usage return all granules, i.e.
         /// behave as if the index does not exist. Since format changes are expected to happen only rarely and it is "only" an index, keep it simple for now.
 
-    UInt64 dimension;
-    readIntBinary(dimension, istr);
-    index = std::make_shared<USearchIndexWithSerialization>(dimension, metric_kind, scalar_kind, usearch_hnsw_params);
+    UInt64 dimensions;
+    readIntBinary(dimensions, istr);
+    index = std::make_shared<USearchIndexWithSerialization>(dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
 
     index->deserialize(istr);
+
+    UInt64 has_scalar_quantization_codebooks;
+    readIntBinary(has_scalar_quantization_codebooks, istr);
+    if (has_scalar_quantization_codebooks)
+    {
+        index->scalar_quantization_codebooks = std::make_optional<ScalarQuantizationCodebooks>();
+        for (size_t dimension = 0; dimension < dimensions; ++dimension)
+        {
+            Float64 min;
+            Float64 max;
+            readFloatBinary(min, istr);
+            readFloatBinary(max, istr);
+            index->scalar_quantization_codebooks->push_back({min, max});
+        }
+    }
 
     auto statistics = index->getStatistics();
     LOG_TRACE(logger, "Loaded vector similarity index: {}", statistics.toString());
@@ -247,12 +279,16 @@ MergeTreeIndexAggregatorVectorSimilarity::MergeTreeIndexAggregatorVectorSimilari
     const Block & index_sample_block_,
     unum::usearch::metric_kind_t metric_kind_,
     unum::usearch::scalar_kind_t scalar_kind_,
-    UsearchHnswParams usearch_hnsw_params_)
+    UsearchHnswParams usearch_hnsw_params_,
+    Float64 scalar_quantization_quantile_,
+    size_t scalar_quantization_buffer_size_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
     , metric_kind(metric_kind_)
     , scalar_kind(scalar_kind_)
     , usearch_hnsw_params(usearch_hnsw_params_)
+    , scalar_quantization_quantile(scalar_quantization_quantile_)
+    , scalar_quantization_buffer_size(scalar_quantization_buffer_size_)
 {
 }
 
@@ -266,8 +302,80 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorVectorSimilarity::getGranuleAnd
 namespace
 {
 
+template <typename Value>
+ScalarQuantizationCodebook calculateCodebook(std::vector<Value> & values, Float64 quantile)
+{
+    if (values.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "values is empty");
+
+    std::ranges::sort(values);
+
+    size_t minimum_element_index = static_cast<size_t>(values.size() * (1.0 - quantile));
+    size_t maximum_element_index = std::min(static_cast<size_t>(values.size() * quantile), values.size() - 1);
+
+    return {values[minimum_element_index], values[maximum_element_index]};
+}
+
+template <typename Value>
+void quantize(
+    const Value * values, size_t dimensions, const ScalarQuantizationCodebooks & codebooks,
+    std::array<QuantizedValue, MAX_DIMENSIONS_FOR_SCALAR_QUANTIZATION> & quantized_vector)
+{
+    /// Does a similar calculation as in Usearch's cast_to_i8_gt::try_(byte_t const* input, std::size_t dim, byte_t* output)
+
+    /// For some reason, USearch does not map into range [-std::numeric_limits<Int8>, std::numeric_limits<Int8>]
+    /// aka. [-128, 127], it maps into [-127, 127]. Do the same here.
+    constexpr QuantizedValue i8_min = -127;
+    constexpr QuantizedValue i8_max = 127;
+
+    Float64 magnitude = 0.0;
+    for (size_t dimension = 0; dimension != dimensions; ++dimension)
+    {
+        Float64 value = static_cast<Float64>(*(values + dimension));
+        magnitude += value * value;
+    }
+    magnitude = std::sqrt(magnitude);
+
+    if (magnitude == 0.0)
+    {
+        for (std::size_t dimension = 0; dimension != dimensions; ++dimension)
+            quantized_vector[dimension] = 0;
+        return;
+    }
+
+    for (std::size_t dimension = 0; dimension != dimensions; ++dimension)
+    {
+        Float64 value = static_cast<Float64>(*(values + dimension));
+
+        const ScalarQuantizationCodebook & codebook = codebooks[dimension];
+        if (value < codebook.min)
+        {
+            quantized_vector[dimension] = i8_min;
+            continue;
+        }
+        if (value > codebook.max)
+        {
+            quantized_vector[dimension] = i8_max;
+            continue;
+        }
+
+        quantized_vector[dimension] = static_cast<QuantizedValue>(std::clamp(value * i8_max / magnitude, static_cast<Float64>(i8_min), static_cast<Float64>(i8_max)));
+
+    }
+
+    /// for (size_t dimension = 0; dimension < dimensions; ++dimension)
+    /// {
+    ///     const ScalarQuantizationCodebook & codebook = codebooks[dimension];
+    ///     Float64 value = static_cast<Float64>(*(values + dimension));
+    ///     LOG_TRACE(getLogger("Vector Similarity Index"), "{}: {} --> {} (cb: [{}, {}])", dimension, value, quantized_vector[dimension], codebook.min, codebook.max);
+    /// }
+}
+
 template <typename Column>
-void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & column_array_offsets, USearchIndexWithSerializationPtr & index, size_t dimensions, size_t rows)
+void updateImpl(
+    const ColumnArray * column_array, const ColumnArray::Offsets & column_array_offsets, USearchIndexWithSerializationPtr & index,
+    size_t dimensions, size_t rows,
+    Float64 scalar_quantization_quantile, size_t scalar_quantization_buffer_size)
 {
     const auto & column_array_data = column_array->getData();
     const auto & column_array_data_float = typeid_cast<const Column &>(column_array_data);
@@ -277,6 +385,51 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
     for (size_t row = 0; row < rows - 1; ++row)
         if (column_array_offsets[row + 1] - column_array_offsets[row] != dimensions)
             throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column with vector similarity index must have equal length");
+
+    /// ------------------
+    /// "Quantization" in Usearch means mere downsampling. We implement scalar quantization by ourselves.
+    /// The math only works for i8 and cosine distance.
+    /// --> compute for every dimension the quantiles and store them as "codebook" in the index.
+    if (index->scalar_kind() == unum::usearch::scalar_kind_t::i8_k
+        && index->metric_kind() == unum::usearch::metric_kind_t::cos_k
+        && scalar_quantization_buffer_size != 0 && dimensions < MAX_DIMENSIONS_FOR_SCALAR_QUANTIZATION)
+    {
+        const size_t buffer_size = std::min(rows, scalar_quantization_buffer_size);
+        /// Note: This function (update) can theoretically be called in a chunked fashion but this is currently not done, i.e. update is
+        /// called exactly once per index granule. This simplifies the code, so we make this assumption for now (otherwise, we'd need to
+        /// integrate with getGranuleAndReset which "finalizes" the insert of rows).
+
+        using ColumnValue = std::conditional_t<std::is_same_v<Column,ColumnFloat32>, Float32, Float64>;
+        std::vector<std::vector<ColumnValue>> values_per_dimension;
+
+        values_per_dimension.resize(dimensions);
+        for (auto & values : values_per_dimension)
+            values.resize(buffer_size);
+
+        /// Row-to-column conversion, needed because calculateCodebook sorts along each dimension
+        for (size_t i = 0; i < buffer_size * dimensions; ++i)
+        {
+            ColumnValue value = column_array_data_float_data[i];
+            size_t x = i % dimensions;
+            size_t y = i / dimensions;
+            values_per_dimension[x][y] = value;
+        }
+
+        index->scalar_quantization_codebooks = std::make_optional<ScalarQuantizationCodebooks>();
+        for (size_t dimension = 0; dimension < dimensions; ++dimension)
+        {
+            ScalarQuantizationCodebook codebook = calculateCodebook(values_per_dimension[dimension], scalar_quantization_quantile);
+            /// Invalid codebook that would lead to division-by-0 during quantizaiton. May happen if buffer size is too small or the data
+            /// distribution is too weird. Continue without quantization.
+            if (codebook.min == codebook.max)
+            {
+                index->scalar_quantization_codebooks = std::nullopt;
+                break;
+            }
+            index->scalar_quantization_codebooks->push_back(codebook);
+        }
+    }
+    /// ------------------
 
     /// Reserving space is mandatory
     size_t max_thread_pool_size = Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::max_build_vector_similarity_index_thread_pool_size];
@@ -299,24 +452,33 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
         if (thread_group)
             CurrentThread::attachToGroupIfDetached(thread_group);
 
-        /// add is thread-safe
-        auto result = index->add(key, &column_array_data_float_data[column_array_offsets[row - 1]]);
-        if (!result)
+        USearchIndexWithSerialization::add_result_t add_result;
+
+        if (index->scalar_quantization_codebooks)
         {
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Could not add data to vector similarity index. Error: {}", String(result.error.release()));
+            const ScalarQuantizationCodebooks & codebooks = *(index->scalar_quantization_codebooks);
+            std::array<QuantizedValue, MAX_DIMENSIONS_FOR_SCALAR_QUANTIZATION> quantized_vector;
+            quantize(&column_array_data_float_data[column_array_offsets[row - 1]], dimensions, codebooks, quantized_vector);
+            add_result = index->add(key, quantized_vector.data());
+        }
+        else
+        {
+            add_result = index->add(key, &column_array_data_float_data[column_array_offsets[row - 1]]);
         }
 
+        if (!add_result)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Could not add data to vector similarity index. Error: {}", String(add_result.error.release()));
+
         ProfileEvents::increment(ProfileEvents::USearchAddCount);
-        ProfileEvents::increment(ProfileEvents::USearchAddVisitedMembers, result.visited_members);
-        ProfileEvents::increment(ProfileEvents::USearchAddComputedDistances, result.computed_distances);
+        ProfileEvents::increment(ProfileEvents::USearchAddVisitedMembers, add_result.visited_members);
+        ProfileEvents::increment(ProfileEvents::USearchAddComputedDistances, add_result.computed_distances);
     };
 
-    size_t index_size = index->size();
-
+    const size_t index_size = index->size();
     for (size_t row = 0; row < rows; ++row)
     {
         auto key = static_cast<USearchIndex::vector_key_t>(index_size + row);
-        auto task = [group = CurrentThread::getGroup(), &add_vector_to_index, key, row] { add_vector_to_index(key, row, group); };
+        auto task = [&add_vector_to_index, key, row, thread_group = CurrentThread::getGroup()] { add_vector_to_index(key, row, thread_group); };
         thread_pool.scheduleOrThrowOnError(task);
     }
 
@@ -386,12 +548,11 @@ void MergeTreeIndexAggregatorVectorSimilarity::update(const Block & block, size_
     const TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
 
     if (WhichDataType(nested_type_index).isFloat32())
-        updateImpl<ColumnFloat32>(column_array, column_array_offsets, index, dimensions, rows);
+        updateImpl<ColumnFloat32>(column_array, column_array_offsets, index, dimensions, rows, scalar_quantization_quantile, scalar_quantization_buffer_size);
     else if (WhichDataType(nested_type_index).isFloat64())
-        updateImpl<ColumnFloat64>(column_array, column_array_offsets, index, dimensions, rows);
+        updateImpl<ColumnFloat64>(column_array, column_array_offsets, index, dimensions, rows, scalar_quantization_quantile, scalar_quantization_buffer_size);
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected data type Array(Float*)");
-
 
     *pos += rows_read;
 }
@@ -448,12 +609,35 @@ std::vector<UInt64> MergeTreeIndexConditionVectorSimilarity::calculateApproximat
     /// synchronize index access, see https://github.com/unum-cloud/usearch/issues/500. As a workaround, we extended USearch' search method
     /// to accept a custom expansion_add setting. The config value is only used on the fly, i.e. not persisted in the index.
 
-    auto search_result = index->search(reference_vector.data(), limit, USearchIndex::any_thread(), false, expansion_search);
-    if (!search_result)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Could not search in vector similarity index. Error: {}", String(search_result.error.release()));
+    std::vector<USearchIndex::vector_key_t> neighbors; /// indexes of vectors which were closest to the reference vector
 
-    std::vector<USearchIndex::vector_key_t> neighbors(search_result.size()); /// indexes of vectors which were closest to the reference vector
-    search_result.dump_to(neighbors.data());
+    if (index->scalar_quantization_codebooks)
+    {
+        const ScalarQuantizationCodebooks & codebooks = *(index->scalar_quantization_codebooks);
+        std::array<QuantizedValue, MAX_DIMENSIONS_FOR_SCALAR_QUANTIZATION> quantized_vector;
+        quantize(reference_vector.data(), index->dimensions(), codebooks, quantized_vector);
+        auto search_result = index->search(quantized_vector.data(), limit, USearchIndex::any_thread(), false, expansion_search);
+        if (!search_result)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Could not search in vector similarity index. Error: {}", search_result.error.release());
+        neighbors.resize(search_result.size());
+        search_result.dump_to(neighbors.data());
+
+        ProfileEvents::increment(ProfileEvents::USearchSearchCount);
+        ProfileEvents::increment(ProfileEvents::USearchSearchVisitedMembers, search_result.visited_members);
+        ProfileEvents::increment(ProfileEvents::USearchSearchComputedDistances, search_result.computed_distances);
+    }
+    else
+    {
+        auto search_result = index->search(reference_vector.data(), limit, USearchIndex::any_thread(), false, expansion_search);
+        if (!search_result)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Could not search in vector similarity index. Error: {}", search_result.error.release());
+        neighbors.resize(search_result.size());
+        search_result.dump_to(neighbors.data());
+
+        ProfileEvents::increment(ProfileEvents::USearchSearchCount);
+        ProfileEvents::increment(ProfileEvents::USearchSearchVisitedMembers, search_result.visited_members);
+        ProfileEvents::increment(ProfileEvents::USearchSearchComputedDistances, search_result.computed_distances);
+    }
 
     std::sort(neighbors.begin(), neighbors.end());
 
@@ -465,10 +649,6 @@ std::vector<UInt64> MergeTreeIndexConditionVectorSimilarity::calculateApproximat
 #else
         neighbors.erase(std::unique(neighbors.begin(), neighbors.end()), neighbors.end());
 #endif
-
-    ProfileEvents::increment(ProfileEvents::USearchSearchCount);
-    ProfileEvents::increment(ProfileEvents::USearchSearchVisitedMembers, search_result.visited_members);
-    ProfileEvents::increment(ProfileEvents::USearchSearchComputedDistances, search_result.computed_distances);
 
     return neighbors;
 }
@@ -490,9 +670,15 @@ MergeTreeIndexGranulePtr MergeTreeIndexVectorSimilarity::createIndexGranule() co
     return std::make_shared<MergeTreeIndexGranuleVectorSimilarity>(index.name, metric_kind, scalar_kind, usearch_hnsw_params);
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexVectorSimilarity::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
+MergeTreeIndexAggregatorPtr MergeTreeIndexVectorSimilarity::createIndexAggregator(const MergeTreeWriterSettings & settings) const
 {
-    return std::make_shared<MergeTreeIndexAggregatorVectorSimilarity>(index.name, index.sample_block, metric_kind, scalar_kind, usearch_hnsw_params);
+    Float64 scalar_quantization_quantile = settings.scalar_quantization_quantile_for_vector_similarity_index;
+    size_t scalar_quantization_buffer_size = settings.scalar_quantization_buffer_size_for_vector_similarity_index;
+
+    if (scalar_quantization_quantile < 0.5 || scalar_quantization_quantile > 1.0)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'scalar_quantization_quantile_for_vector_similarity_index' must be in [0.5, 1.0]");
+
+    return std::make_shared<MergeTreeIndexAggregatorVectorSimilarity>(index.name, index.sample_block, metric_kind, scalar_kind, usearch_hnsw_params, scalar_quantization_quantile, scalar_quantization_buffer_size);
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarity::createIndexCondition(const SelectQueryInfo & query, ContextPtr context) const

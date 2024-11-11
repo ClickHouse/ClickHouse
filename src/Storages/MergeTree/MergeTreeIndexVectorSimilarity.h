@@ -4,6 +4,7 @@
 
 #if USE_USEARCH
 
+#include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/VectorSimilarityCondition.h>
 #include <Common/Logger.h>
 #include <usearch/index_dense.hpp>
@@ -24,6 +25,16 @@ struct UsearchHnswParams
     size_t connectivity = default_connectivity;
     size_t expansion_add = default_expansion_add;
 };
+
+/// Statistics required to apply scalar quantization to a single dimension of a vector.
+struct ScalarQuantizationCodebook
+{
+    Float64 min;
+    Float64 max;
+};
+
+/// Statistics required to apply scalar quantization to all dimensions of a vector.
+using ScalarQuantizationCodebooks = std::vector<ScalarQuantizationCodebook>;
 
 using USearchIndex = unum::usearch::index_dense_t;
 
@@ -58,6 +69,8 @@ public:
 
         String toString() const;
     };
+
+    std::optional<ScalarQuantizationCodebooks> scalar_quantization_codebooks;
 
     Statistics getStatistics() const;
 };
@@ -100,7 +113,7 @@ private:
     /// Note: USearch prefixes the serialized data with its own version header. We can't rely on that because 1. the index in ClickHouse
     /// is (at least in theory) agnostic of specific vector search libraries, and 2. additional data (e.g. the number of dimensions)
     /// outside USearch exists which we should version separately.
-    static constexpr UInt64 FILE_FORMAT_VERSION = 1;
+    static constexpr UInt64 FILE_FORMAT_VERSION = 2;
 };
 
 
@@ -111,7 +124,9 @@ struct MergeTreeIndexAggregatorVectorSimilarity final : IMergeTreeIndexAggregato
         const Block & index_sample_block,
         unum::usearch::metric_kind_t metric_kind_,
         unum::usearch::scalar_kind_t scalar_kind_,
-        UsearchHnswParams usearch_hnsw_params_);
+        UsearchHnswParams usearch_hnsw_params_,
+        Float64 scalar_quantization_quantile_,
+        size_t quantization_buffer_size_);
 
     ~MergeTreeIndexAggregatorVectorSimilarity() override = default;
 
@@ -124,6 +139,8 @@ struct MergeTreeIndexAggregatorVectorSimilarity final : IMergeTreeIndexAggregato
     const unum::usearch::metric_kind_t metric_kind;
     const unum::usearch::scalar_kind_t scalar_kind;
     const UsearchHnswParams usearch_hnsw_params;
+    const Float64 scalar_quantization_quantile;
+    const size_t scalar_quantization_buffer_size;
     USearchIndexWithSerializationPtr index;
 };
 

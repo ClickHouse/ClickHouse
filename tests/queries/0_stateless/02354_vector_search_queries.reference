@@ -247,7 +247,7 @@ Expression (Projection)
             Name: idx
             Description: vector_similarity GRANULARITY 2
             Parts: 1/1
-            Granules: 3/4
+            Granules: 4/4
 -- Index on Array(Float64) column
 6	[0,2]	0
 7	[0,2.1]	0.10000000000000009

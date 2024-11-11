@@ -26,6 +26,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString primary_key_compression_codec;
     extern const MergeTreeSettingsBool use_adaptive_write_buffer_for_dynamic_subcolumns;
     extern const MergeTreeSettingsBool use_compact_variant_discriminators_serialization;
+    extern const MergeTreeSettingsFloat scalar_quantization_quantile_for_vector_similarity_index;
+    extern const MergeTreeSettingsUInt64 scalar_quantization_buffer_size_for_vector_similarity_index;
 }
 
 MergeTreeWriterSettings::MergeTreeWriterSettings(
@@ -55,6 +57,8 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     , use_compact_variant_discriminators_serialization((*storage_settings)[MergeTreeSetting::use_compact_variant_discriminators_serialization])
     , use_adaptive_write_buffer_for_dynamic_subcolumns((*storage_settings)[MergeTreeSetting::use_adaptive_write_buffer_for_dynamic_subcolumns])
     , adaptive_write_buffer_initial_size((*storage_settings)[MergeTreeSetting::adaptive_write_buffer_initial_size])
+    , scalar_quantization_quantile_for_vector_similarity_index((*storage_settings)[MergeTreeSetting::scalar_quantization_quantile_for_vector_similarity_index])
+    , scalar_quantization_buffer_size_for_vector_similarity_index((*storage_settings)[MergeTreeSetting::scalar_quantization_buffer_size_for_vector_similarity_index])
 {
 }
 
