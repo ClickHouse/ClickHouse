@@ -4312,7 +4312,7 @@ Disable limit on kafka_num_consumers that depends on the number of available CPU
 )", 0) \
     DECLARE(Bool, allow_experimental_kafka_offsets_storage_in_keeper, false, R"(
 Allow experimental feature to store Kafka related offsets in ClickHouse Keeper. When enabled a ClickHouse Keeper path and replica name can be specified to the Kafka table engine. As a result instead of the regular Kafka engine, a new type of storage engine will be used that stores the committed offsets primarily in ClickHouse Keeper
-)", 0) \
+)", EXPERIMENTAL) \
     DECLARE(Bool, enable_software_prefetch_in_aggregation, true, R"(
 Enable use of software prefetch in aggregation
 )", 0) \
@@ -5813,7 +5813,7 @@ If it is set to true, allow to use experimental full-text index.
     \
     DECLARE(Bool, allow_experimental_join_condition, false, R"(
 Support join with inequal conditions which involve columns from both left and right table. e.g. t1.y < t2.y.
-)", 0) \
+)", EXPERIMENTAL) \
     \
     DECLARE(Bool, allow_experimental_live_view, false, R"(
 Allows creation of a deprecated LIVE VIEW.
@@ -5822,7 +5822,7 @@ Possible values:
 
 - 0 — Working with live views is disabled.
 - 1 — Working with live views is enabled.
-)", 0) \
+)", EXPERIMENTAL) \
     DECLARE(Seconds, live_view_heartbeat_interval, 15, R"(
 The heartbeat interval in seconds to indicate live query is alive.
 )", EXPERIMENTAL) \
