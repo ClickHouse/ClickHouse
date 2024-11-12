@@ -645,9 +645,9 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
             getInfoForLog());
     }
 
-    const size_t aligned_downloaded_size = FileCacheUtils::roundUpToMultiple(downloaded_size, cache->getBoundaryAlignment());
+    size_t aligned_downloaded_size = FileCacheUtils::roundUpToMultiple(downloaded_size, cache->getBoundaryAlignment());
+    aligned_downloaded_size = std::min(aligned_downloaded_size, range().size());
 
-    chassert(aligned_downloaded_size <= range().size());
     chassert(aligned_downloaded_size >= downloaded_size);
 
     if (aligned_downloaded_size == range().size())
