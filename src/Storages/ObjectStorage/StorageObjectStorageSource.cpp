@@ -489,6 +489,10 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
                 return object_storage->readObject(StoredObject(path, "", object_size), modified_read_settings);
             };
 
+            /// Turn off boundary_alignment cache setting,
+            /// because it very significantly deteriorates read performance for some data formats.
+            modified_read_settings.filesystem_cache_boundary_alignment = 0;
+
             impl = std::make_unique<CachedOnDiskReadBufferFromFile>(
                 object_info.getPath(),
                 cache_key,

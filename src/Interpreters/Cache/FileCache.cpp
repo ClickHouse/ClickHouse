@@ -55,11 +55,15 @@ namespace
 {
     size_t roundDownToMultiple(size_t num, size_t multiple)
     {
+        if (!multiple)
+            return num;
         return (num / multiple) * multiple;
     }
 
     size_t roundUpToMultiple(size_t num, size_t multiple)
     {
+        if (!multiple)
+            return num;
         return roundDownToMultiple(num + multiple - 1, multiple);
     }
 
@@ -589,7 +593,8 @@ FileCache::getOrSet(
     size_t file_size,
     const CreateFileSegmentSettings & create_settings,
     size_t file_segments_limit,
-    const UserInfo & user)
+    const UserInfo & user,
+    std::optional<size_t> boundary_alignment_)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheGetOrSetMicroseconds);
 
@@ -601,8 +606,9 @@ FileCache::getOrSet(
     /// 2. max_file_segments_limit
     FileSegment::Range result_range = initial_range;
 
-    const auto aligned_offset = roundDownToMultiple(initial_range.left, boundary_alignment);
-    auto aligned_end_offset = std::min(roundUpToMultiple(initial_range.right + 1, boundary_alignment), file_size) - 1;
+    const size_t alignment = boundary_alignment_.has_value() ? boundary_alignment_.value() : boundary_alignment;
+    const auto aligned_offset = roundDownToMultiple(initial_range.left, alignment);
+    auto aligned_end_offset = std::min(roundUpToMultiple(initial_range.right + 1, alignment), file_size) - 1;
 
     chassert(aligned_offset <= initial_range.left);
     chassert(aligned_end_offset >= initial_range.right);
