@@ -762,11 +762,12 @@ void AppendDecimal(RandomGenerator & rg, std::string & ret, const uint32_t left,
     }
 }
 
+template <bool Extremes>
 static inline void NextFloatingPoint(RandomGenerator & rg, std::string & ret)
 {
     const uint32_t next_option = rg.NextLargeNumber();
 
-    if (next_option < 25)
+    if (Extremes && next_option < 25)
     {
         if (next_option < 17)
         {
@@ -774,7 +775,7 @@ static inline void NextFloatingPoint(RandomGenerator & rg, std::string & ret)
         }
         ret += "nan";
     }
-    else if (next_option < 49)
+    else if (Extremes && next_option < 49)
     {
         if (next_option < 41)
         {
@@ -782,7 +783,7 @@ static inline void NextFloatingPoint(RandomGenerator & rg, std::string & ret)
         }
         ret += "inf";
     }
-    else if (next_option < 73)
+    else if (Extremes && next_option < 73)
     {
         if (next_option < 65)
         {
@@ -812,9 +813,9 @@ void AppendGeoValue(RandomGenerator & rg, std::string & ret, const sql_query_gra
     {
         case sql_query_grammar::GeoTypes::Point:
             ret += "(";
-            NextFloatingPoint(rg, ret);
+            NextFloatingPoint<false>(rg, ret);
             ret += ",";
-            NextFloatingPoint(rg, ret);
+            NextFloatingPoint<false>(rg, ret);
             ret += ")";
             break;
         case sql_query_grammar::GeoTypes::Ring:
@@ -822,10 +823,14 @@ void AppendGeoValue(RandomGenerator & rg, std::string & ret, const sql_query_gra
             ret += "[";
             for (uint32_t i = 0; i < limit; i++)
             {
+                if (i != 0)
+                {
+                    ret += ", ";
+                }
                 ret += "(";
-                NextFloatingPoint(rg, ret);
+                NextFloatingPoint<false>(rg, ret);
                 ret += ",";
-                NextFloatingPoint(rg, ret);
+                NextFloatingPoint<false>(rg, ret);
                 ret += ")";
             }
             ret += "]";
@@ -837,13 +842,21 @@ void AppendGeoValue(RandomGenerator & rg, std::string & ret, const sql_query_gra
             {
                 const uint32_t nlines = rg.NextLargeNumber() % 10;
 
+                if (i != 0)
+                {
+                    ret += ", ";
+                }
                 ret += "[";
                 for (uint32_t j = 0; j < nlines; j++)
                 {
+                    if (j != 0)
+                    {
+                        ret += ", ";
+                    }
                     ret += "(";
-                    NextFloatingPoint(rg, ret);
+                    NextFloatingPoint<false>(rg, ret);
                     ret += ",";
-                    NextFloatingPoint(rg, ret);
+                    NextFloatingPoint<false>(rg, ret);
                     ret += ")";
                 }
                 ret += "]";
@@ -856,18 +869,30 @@ void AppendGeoValue(RandomGenerator & rg, std::string & ret, const sql_query_gra
             {
                 const uint32_t npoligons = rg.NextLargeNumber() % 10;
 
+                if (i != 0)
+                {
+                    ret += ", ";
+                }
                 ret += "[";
                 for (uint32_t j = 0; j < npoligons; j++)
                 {
                     const uint32_t nlines = rg.NextLargeNumber() % 10;
 
+                    if (j != 0)
+                    {
+                        ret += ", ";
+                    }
                     ret += "[";
                     for (uint32_t k = 0; k < nlines; k++)
                     {
+                        if (k != 0)
+                        {
+                            ret += ", ";
+                        }
                         ret += "(";
-                        NextFloatingPoint(rg, ret);
+                        NextFloatingPoint<false>(rg, ret);
                         ret += ",";
-                        NextFloatingPoint(rg, ret);
+                        NextFloatingPoint<false>(rg, ret);
                         ret += ")";
                     }
                     ret += "]";
@@ -937,7 +962,7 @@ void StatementGenerator::StrAppendBottomValue(RandomGenerator & rg, std::string 
     }
     else if (dynamic_cast<const FloatType *>(tp))
     {
-        NextFloatingPoint(rg, ret);
+        NextFloatingPoint<true>(rg, ret);
     }
     else if ((dtp = dynamic_cast<const DateType *>(tp)))
     {
@@ -1119,7 +1144,7 @@ void StrBuildJSONArray(RandomGenerator & rg, const int jdepth, const int jwidth,
 
 void StrBuildJSONElement(RandomGenerator & rg, std::string & ret)
 {
-    std::uniform_int_distribution<int> opts(1, 16);
+    std::uniform_int_distribution<int> opts(1, 15);
     const int noption = opts(rg.gen);
 
     switch (noption)
@@ -1192,18 +1217,6 @@ void StrBuildJSONElement(RandomGenerator & rg, std::string & ret)
             rg.NextIPv6(ret);
             ret += '"';
             break;
-        case 16: //double
-            ret += std::to_string(rg.NextRandomDouble());
-            break;
-        case 17: { //geo
-            const sql_query_grammar::GeoTypes gt = static_cast<sql_query_grammar::GeoTypes>(
-                (rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::GeoTypes_MAX)) + 1);
-
-            ret += "'";
-            AppendGeoValue(rg, ret, gt);
-            ret += "'";
-        }
-        break;
         default:
             assert(0);
     }
@@ -1257,13 +1270,8 @@ void StatementGenerator::StrAppendAnyValueInternal(RandomGenerator & rg, std::st
     const VariantType * vtp;
     const LowCardinality * lc;
     const GeoType * gtp;
-    const uint32_t ndefault = rg.NextMediumNumber();
 
-    if (ndefault < 5)
-    {
-        ret += "NULL";
-    }
-    else if (ndefault == 5)
+    if (rg.NextMediumNumber() == 1)
     {
         ret += "DEFAULT";
     }
@@ -1281,7 +1289,14 @@ void StatementGenerator::StrAppendAnyValueInternal(RandomGenerator & rg, std::st
     }
     else if ((nl = dynamic_cast<const Nullable *>(tp)))
     {
-        StrAppendAnyValueInternal(rg, ret, nl->subtype);
+        if (rg.NextMediumNumber() < 6)
+        {
+            ret += "NULL";
+        }
+        else
+        {
+            StrAppendAnyValueInternal(rg, ret, nl->subtype);
+        }
     }
     else if (dynamic_cast<const JSONType *>(tp))
     {

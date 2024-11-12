@@ -654,7 +654,7 @@ const std::vector<const CHFunction> CHFuncs = {
     CHFunction(sql_query_grammar::SQLFunc::FUNCtoNullable, 0, 0, 1, 1),
     //string replace
     CHFunction(sql_query_grammar::SQLFunc::FUNCoverlay, 0, 0, 3, 4),
-    CHFunction(sql_query_grammar::SQLFunc::FUNCoverlayUTF8, 0, 0, 0, 0),
+    CHFunction(sql_query_grammar::SQLFunc::FUNCoverlayUTF8, 0, 0, 3, 4),
     CHFunction(sql_query_grammar::SQLFunc::FUNCreplaceOne, 0, 0, 3, 3),
     CHFunction(sql_query_grammar::SQLFunc::FUNCreplaceAll, 0, 0, 3, 3),
     CHFunction(sql_query_grammar::SQLFunc::FUNCreplaceRegexpOne, 0, 0, 3, 3),

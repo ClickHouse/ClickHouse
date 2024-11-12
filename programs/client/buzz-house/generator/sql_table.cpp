@@ -903,7 +903,7 @@ int StatementGenerator::AddTableConstraint(RandomGenerator & rg, SQLTable & t, c
 
 sql_query_grammar::TableEngineValues StatementGenerator::GetNextTableEngine(RandomGenerator & rg, const bool use_external_integrations)
 {
-    if (rg.NextSmallNumber() < 5)
+    if (rg.NextBool())
     {
         std::uniform_int_distribution<uint32_t> table_engine(1, sql_query_grammar::TableEngineValues::VersionedCollapsingMergeTree);
         return static_cast<sql_query_grammar::TableEngineValues>(table_engine(rg.gen));

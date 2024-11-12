@@ -1040,7 +1040,34 @@ bool Client::buzzHouse()
         processTextAsSingleQuery("DROP DATABASE IF EXISTS fuzztest;");
 
         outf << "--Session seed: " << rg.GetSeed() << std::endl;
-        ProcessQueryAndLog(outf, "SET engine_file_truncate_on_insert = 1;");
+        ProcessQueryAndLog(
+            outf,
+            "SET engine_file_truncate_on_insert = 1, allow_aggregate_partitions_independently = 1, allow_archive_path_syntax = 1, "
+            "allow_asynchronous_read_from_io_pool_for_merge_tree = 1, allow_changing_replica_until_first_data_packet = 1, "
+            "allow_create_index_without_type = 1, allow_custom_error_code_in_throwif = 1, allow_ddl = 1, "
+            "allow_deprecated_database_ordinary = 1, allow_deprecated_error_prone_window_functions = 1, "
+            "allow_deprecated_snowflake_conversion_functions = 1, allow_deprecated_syntax_for_merge_tree = 1, allow_distributed_ddl = 1, "
+            "allow_drop_detached = 1, allow_execute_multiif_columnar = 1, allow_experimental_analyzer = 1, allow_experimental_codecs = 1, "
+            "allow_experimental_database_materialized_mysql = 1, allow_experimental_database_materialized_postgresql = 1, "
+            "allow_experimental_dynamic_type = 1, allow_experimental_full_text_index = 1, allow_experimental_funnel_functions = 1, "
+            "allow_experimental_hash_functions = 1, allow_experimental_inverted_index = 1, allow_experimental_join_condition = 1, "
+            "allow_experimental_join_right_table_sorting = 1, allow_experimental_json_type = 1, "
+            "allow_experimental_kafka_offsets_storage_in_keeper = 1, allow_experimental_live_view = 1, "
+            "allow_experimental_materialized_postgresql_table = 1, allow_experimental_nlp_functions = 1, allow_experimental_object_type = "
+            "1, allow_experimental_parallel_reading_from_replicas = 1, allow_experimental_query_deduplication = 1, "
+            "allow_experimental_shared_set_join = 1, allow_experimental_statistics = 1, allow_experimental_time_series_table = 1, "
+            "allow_experimental_variant_type = 1, allow_experimental_vector_similarity_index = 1, allow_experimental_window_view = 1, "
+            "allow_get_client_http_header = 1, allow_hyperscan = 1, allow_introspection_functions = 1, "
+            "allow_materialized_view_with_bad_select = 1, allow_named_collection_override_by_default = 1, allow_non_metadata_alters = 1, "
+            "allow_nonconst_timezone_arguments = 1, allow_nondeterministic_mutations = 1, "
+            "allow_nondeterministic_optimize_skip_unused_shards = 1, allow_prefetched_read_pool_for_local_filesystem = 1, "
+            "allow_prefetched_read_pool_for_remote_filesystem = 1, allow_push_predicate_when_subquery_contains_with = 1, "
+            "allow_reorder_prewhere_conditions = 1, allow_settings_after_format_in_insert = 1, allow_simdjson = 1, "
+            "allow_statistics_optimize = 1, allow_suspicious_codecs = 1, allow_suspicious_fixed_string_types = 1, allow_suspicious_indices "
+            "= 1, allow_suspicious_low_cardinality_types = 1, allow_suspicious_primary_key = 1, allow_suspicious_ttl_expressions = 1, "
+            "allow_suspicious_variant_types = 1, allow_suspicious_types_in_group_by = 1, allow_suspicious_types_in_order_by = 1, "
+            "allow_unrestricted_reads_from_keeper = 1, enable_analyzer = 1, enable_deflate_qpl_codec = 1, enable_zstd_qat_codec = 1, "
+            "type_json_skip_duplicated_paths = 1, allow_experimental_s3queue = 1;");
         ProcessQueryAndLog(outf, rg.NextBool() ? "SET s3_truncate_on_insert = 1;" : "SET s3_create_new_file_on_insert = 1;");
 
         //Load collations
@@ -1099,7 +1126,7 @@ bool Client::buzzHouse()
                     server_up &= ProcessBuzzHouseQuery(full_query);
                     (void)qo.ProcessOracleQueryResult(false, !have_error, "Correctness query");
                 }
-                else if (gen.CollectionHas<buzzhouse::SQLTable>(gen.attached_tables_for_oracle) && noption < 41)
+                else if (gen.CollectionHas<buzzhouse::SQLTable>(gen.attached_tables_for_oracle) && noption < 36)
                 {
                     bool second_success = true;
                     const buzzhouse::SQLTable & t
