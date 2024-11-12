@@ -45,7 +45,7 @@ ASTPtr JoinNode::toASTTableJoin() const
     {
         auto join_expression_ast = children[join_expression_child_index]->toAST();
 
-        if (is_using_join_expression)
+        if (children[join_expression_child_index]->getNodeType() == QueryTreeNodeType::LIST)
         {
             join_ast->using_expression_list = join_expression_ast;
             join_ast->children.push_back(join_ast->using_expression_list);
