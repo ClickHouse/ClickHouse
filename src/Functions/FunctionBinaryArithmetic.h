@@ -1691,6 +1691,13 @@ public:
             }
             else
             {
+                if constexpr ((std::is_same_v<LeftDataType, DataTypeBFloat16> || std::is_same_v<RightDataType, DataTypeBFloat16>)
+                    && (sizeof(typename LeftDataType::FieldType) > 8 || sizeof(typename RightDataType::FieldType) > 8))
+                {
+                    /// Big integers and BFloat16 are not supported together.
+                    return nullptr;
+                }
+
                 using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
 
                 if constexpr (!std::is_same_v<ResultDataType, InvalidType>)
