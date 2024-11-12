@@ -184,9 +184,8 @@ public:
 };
 
 
-
 template <typename FirstType, template <typename, typename> class AggregateFunctionTemplate, typename... TArgs>
-static IAggregateFunction * createWithTwoTypesSecond(const IDataType & second_type, TArgs && ... args)
+IAggregateFunction * createWithTwoTypesSecond(const IDataType & second_type, TArgs && ... args)
 {
     WhichDataType which(second_type);
 
@@ -203,7 +202,7 @@ static IAggregateFunction * createWithTwoTypesSecond(const IDataType & second_ty
 }
 
 template <template <typename, typename> class AggregateFunctionTemplate, typename... TArgs>
-static IAggregateFunction * createWithTwoTypes(const IDataType & first_type, const IDataType & second_type, TArgs && ... args)
+IAggregateFunction * createWithTwoTypes(const IDataType & first_type, const IDataType & second_type, TArgs && ... args)
 {
     WhichDataType which(first_type);
 
