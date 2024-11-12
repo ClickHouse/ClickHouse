@@ -315,7 +315,6 @@ bool tryBuildPrewhereSteps(
             /// 1. AND the last condition with constant True. This is needed to make sure that in the last step filter has UInt8 type
             ///    but contains values other than 0 and 1 (e.g. if it is (number%5) it contains 2,3,4)
             /// 2. CAST the result to the exact type of the PREWHERE column from the original DAG
-            //const auto & last_step_result_node_info = node_remap[steps.back().column_name];
             auto & last_step_dag = steps.back().actions;
             auto & last_step_result_node = steps.back().result_node;
             /// Build AND(last_step_result_node, true)

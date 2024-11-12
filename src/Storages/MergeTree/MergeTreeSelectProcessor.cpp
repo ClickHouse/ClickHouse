@@ -91,7 +91,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     , algorithm(std::move(algorithm_))
     , prewhere_info(prewhere_info_)
     , actions_settings(actions_settings_)
-    , prewhere_actions(getPrewhereActions(prewhere_info, actions_settings, reader_settings_.enable_multiple_prewhere_read_steps, reader_settings_.force_shirt_circuit_execution))
+    , prewhere_actions(getPrewhereActions(prewhere_info, actions_settings, reader_settings_.enable_multiple_prewhere_read_steps, reader_settings_.force_short_circuit_execution))
     , reader_settings(reader_settings_)
     , result_header(transformHeader(pool->getHeader(), prewhere_info))
 {
