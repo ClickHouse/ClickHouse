@@ -1093,7 +1093,7 @@ bool Client::buzzHouse()
                 total_create_database_tries++;
             }
             else if (
-                gen.CollectionHas<std::shared_ptr<buzzhouse::SQLDatabase>>(gen.attached_databases) && total_create_table_tries < 30
+                gen.CollectionHas<std::shared_ptr<buzzhouse::SQLDatabase>>(gen.attached_databases) && total_create_table_tries < 50
                 && nsuccessfull_create_table < 10)
             {
                 (void)gen.GenerateNextCreateTable(rg, sq1.mutable_inner_query()->mutable_create_table());
