@@ -85,7 +85,7 @@ public:
     }
 
 
-    void nextIfAtEnd()
+    inline void nextIfAtEnd()
     {
         if (!hasPendingData())
             next();

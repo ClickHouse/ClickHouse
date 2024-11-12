@@ -1,7 +1,6 @@
 -- Tags: no-fasttest
 
-SET output_format_pretty_single_large_number_tip_threshold = 0;
-SET enable_analyzer = 1;
+SET allow_experimental_analyzer = 1;
 
 SELECT
     toIPv4('1.2.3.4') AS ipv4,

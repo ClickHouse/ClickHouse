@@ -54,8 +54,7 @@ public:
     Names getPrimaryKey() const override { return {primary_key}; }
 
     Chunk getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & null_map, const Names &) const override;
-    Chunk getBySerializedKeys(
-        std::span<const std::string> keys, PaddedPODArray<UInt8> * null_map, bool with_version, const ContextPtr & local_context) const;
+    Chunk getBySerializedKeys(std::span<const std::string> keys, PaddedPODArray<UInt8> * null_map, bool with_version) const;
 
     Block getSampleBlock(const Names &) const override;
 
@@ -78,10 +77,10 @@ public:
     UInt64 keysLimit() const;
 
     template <bool throw_on_error>
-    void checkTable(const ContextPtr & local_context) const
+    void checkTable() const
     {
-        auto current_table_status = getTableStatus(local_context);
-        if (table_status == TableStatus::UNKNOWN)
+        auto is_table_valid = isTableValid();
+        if (!is_table_valid.has_value())
         {
             static constexpr auto error_msg = "Failed to activate table because of connection issues. It will be activated "
                                                           "once a connection is established and metadata is verified";
@@ -94,10 +93,10 @@ public:
             }
         }
 
-        if (current_table_status != TableStatus::VALID)
+        if (!*is_table_valid)
         {
             static constexpr auto error_msg
-                = "Failed to activate table because of invalid metadata in ZooKeeper. Please DROP/DETACH table";
+                = "Failed to activate table because of invalid metadata in ZooKeeper. Please DETACH table";
             if constexpr (throw_on_error)
                 throw Exception(ErrorCodes::INVALID_STATE, error_msg);
             else
@@ -111,15 +110,7 @@ public:
 private:
     bool dropTable(zkutil::ZooKeeperPtr zookeeper, const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock);
 
-    enum class TableStatus : uint8_t
-    {
-        UNKNOWN,
-        INVALID_METADATA,
-        INVALID_KEEPER_STRUCTURE,
-        VALID
-    };
-
-    TableStatus getTableStatus(const ContextPtr & context) const;
+    std::optional<bool> isTableValid() const;
 
     void restoreDataImpl(
         const BackupPtr & backup,
@@ -151,8 +142,7 @@ private:
     mutable zkutil::ZooKeeperPtr zookeeper_client{nullptr};
 
     mutable std::mutex init_mutex;
-
-    mutable TableStatus table_status{TableStatus::UNKNOWN};
+    mutable std::optional<bool> table_is_valid;
 
     LoggerPtr log;
 };

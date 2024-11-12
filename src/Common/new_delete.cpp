@@ -1,4 +1,5 @@
 #include <cassert>
+#include <iostream>
 #include <new>
 #include "config.h"
 #include <Common/memory.h>
@@ -39,6 +40,27 @@ static struct InitializeJemallocZoneAllocatorForOSX
         }
     }
 } initializeJemallocZoneAllocatorForOSX;
+#endif
+
+#if USE_GWP_ASAN
+
+#include <gwp_asan/optional/options_parser.h>
+
+/// Both clickhouse_new_delete and clickhouse_common_io links gwp_asan, but It should only init once, otherwise it
+/// will cause unexpected deadlock.
+static struct InitGwpAsan
+{
+    InitGwpAsan()
+    {
+         gwp_asan::options::initOptions();
+         gwp_asan::options::Options &opts = gwp_asan::options::getOptions();
+         GuardedAlloc.init(opts);
+
+         ///std::cerr << "GwpAsan is initialized, the options are { Enabled: " << opts.Enabled
+         ///          << ", MaxSimultaneousAllocations: " << opts.MaxSimultaneousAllocations
+         ///          << ", SampleRate: " << opts.SampleRate << " }\n";
+    }
+} init_gwp_asan;
 #endif
 
 /// Replace default new/delete with memory tracking versions.
@@ -87,7 +109,7 @@ void * operator new(std::size_t size, const std::nothrow_t &) noexcept
 {
     AllocationTrace trace;
     std::size_t actual_size = Memory::trackMemory(size, trace);
-    void * ptr = Memory::newNoExcept(size);
+    void * ptr = Memory::newNoExept(size);
     trace.onAlloc(ptr, actual_size);
     return ptr;
 }
@@ -96,7 +118,7 @@ void * operator new[](std::size_t size, const std::nothrow_t &) noexcept
 {
     AllocationTrace trace;
     std::size_t actual_size = Memory::trackMemory(size, trace);
-    void * ptr = Memory::newNoExcept(size);
+    void * ptr = Memory::newNoExept(size);
     trace.onAlloc(ptr, actual_size);
     return ptr;
 }
@@ -105,7 +127,7 @@ void * operator new(std::size_t size, std::align_val_t align, const std::nothrow
 {
     AllocationTrace trace;
     std::size_t actual_size = Memory::trackMemory(size, trace, align);
-    void * ptr = Memory::newNoExcept(size, align);
+    void * ptr = Memory::newNoExept(size, align);
     trace.onAlloc(ptr, actual_size);
     return ptr;
 }
@@ -114,7 +136,7 @@ void * operator new[](std::size_t size, std::align_val_t align, const std::nothr
 {
     AllocationTrace trace;
     std::size_t actual_size = Memory::trackMemory(size, trace, align);
-    void * ptr = Memory::newNoExcept(size, align);
+    void * ptr = Memory::newNoExept(size, align);
     trace.onAlloc(ptr, actual_size);
     return ptr;
 }

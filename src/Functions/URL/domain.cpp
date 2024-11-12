@@ -1,4 +1,5 @@
-#include <Functions/URL/domain.h>
+#include "domain.h"
+
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
 
