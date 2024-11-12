@@ -90,17 +90,17 @@ def validate_log_config_relation(config, logs, config_type):
         length = min(10, len(logs))
         for i in range(0, length):
             json_log = json.loads(logs[i])
-            keys_in_log = set()
-            for log_key in json_log.keys():
-                keys_in_log.add(log_key)
-                if log_key not in keys_in_config:
-                    return False
+            keys_in_log = set(json_log.keys())
+
+            if not keys_in_config.issubset(keys_in_log):
+                return False
 
             # Validate the UTC datetime format in "date_time_utc" if it exists
             if "date_time_utc" in json_log and not is_valid_utc_datetime(
                 json_log["date_time_utc"]
             ):
                 return False
+
     except ValueError as e:
         return False
     return True
