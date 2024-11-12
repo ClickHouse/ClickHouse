@@ -127,18 +127,18 @@ function determineTickStep(max_block_number)
     return step;
 }
 
-function formatBlockNumber(block_number)
+function formatNumber(number)
 {
-    if (block_number >= Math.pow(1000, 4))
-        return (block_number / Math.pow(1000, 4)).toFixed(1) + 'T';
-    else if (block_number >= Math.pow(1000, 3))
-        return (block_number / Math.pow(1000, 3)).toFixed(1) + 'G';
-    else if (block_number >= Math.pow(1000, 2))
-        return (block_number / Math.pow(1000, 2)).toFixed(1) + 'M';
-    else if (block_number >= 1000)
-        return (block_number / 1000).toFixed(1) + 'K';
+    if (number >= Math.pow(1000, 4))
+        return (number / Math.pow(1000, 4)).toFixed(1) + 'T';
+    else if (number >= Math.pow(1000, 3))
+        return (number / Math.pow(1000, 3)).toFixed(1) + 'G';
+    else if (number >= Math.pow(1000, 2))
+        return (number / Math.pow(1000, 2)).toFixed(1) + 'M';
+    else if (number >= 1000)
+        return (number / 1000).toFixed(1) + 'K';
     else
-        return block_number;
+        return number;
 }
 
 function formatBytes(bytes)
@@ -154,6 +154,21 @@ function formatBytes(bytes)
         return (bytes / 1024).toFixed(digits) + 'KB';
     else
         return bytes;
+}
+
+function getFormatter(selector) {
+    switch (selector) {
+        case "level":
+        case "blocks":
+        case "rows":
+            return formatNumber;
+        case "bytes_on_disk":
+        case "data_compressed_bytes":
+        case "data_uncompressed_bytes":
+            return formatBytes;
+        default:
+            return d3.format(",");
+    }
 }
 
 function visualizeMergeTree(title, raw_data) {
@@ -410,6 +425,9 @@ function visualizeMergeTree(title, raw_data) {
             const { minXValue, maxXValue } = computeXAggregates(data, leftSelector, rightSelector);
             xScale.domain([minXValue, maxXValue]);
 
+            // Update the formatter
+            const xAxisFormatter = getFormatter(xSelector);
+
             // Apply transitions to rectangles
             parts.transition().duration(1000)
                 .attr("x", d => pxl(xScale(d[leftSelector])))
@@ -417,7 +435,7 @@ function visualizeMergeTree(title, raw_data) {
 
             // Update axes with transitions
             xAxisGroup.transition().duration(1000)
-                .call(d3.axisBottom(xScale).tickFormat(formatBlockNumber));
+                .call(d3.axisBottom(xScale).tickFormat(xAxisFormatter));
         });
     xSelectorElement.selectAll("option")
         .data(xOptions)
@@ -442,6 +460,9 @@ function visualizeMergeTree(title, raw_data) {
             const { minYValue, maxYValue } = computeYAggregates(data, ySelector);
             yScale.domain([Math.max(1, minYValue), Math.pow(2, Math.ceil(Math.log2(maxYValue)))]);
 
+            // Update the formatter
+            const yAxisFormatter = getFormatter(ySelector);
+
             // Apply transitions to rectangles
             parts.transition().duration(1000)
                 .attr("y", d => pxt(yScale(d[ySelector]) - part_dy))
@@ -449,7 +470,7 @@ function visualizeMergeTree(title, raw_data) {
 
             // Update axes with transitions
             yAxisGroup.transition().duration(1000)
-                .call(d3.axisLeft(yScale).tickFormat(formatBytes))
+                .call(d3.axisLeft(yScale).tickFormat(yAxisFormatter))
         });
     ySelectorElement.selectAll("option")
         .data(yOptions)
@@ -475,7 +496,7 @@ function visualizeMergeTree(title, raw_data) {
             colorScale.domain([minColorValue, maxColorValue]);
 
             // Apply transitions to rectangles
-            parts.transition().duration(1000)
+            parts.transition().duration(0)
                 .attr("fill", d => colorScale(d[colorSelector]));
         });
     colorSelectorElement.selectAll("option")
@@ -491,24 +512,16 @@ function visualizeMergeTree(title, raw_data) {
     // Add the x-axis at the bottom of the SVG
     const xAxis = d3.axisBottom(xScale)
         .tickValues(d3.range(minXValue, maxXValue, tickStep))
-        .tickFormat(formatBlockNumber);
+        .tickFormat(getFormatter(xSelector));
     const xAxisGroup = svgContainer.append("g")
         .attr("transform", `translate(0, ${svgHeight - margin.bottom})`)
         .call(xAxis);
-
-    // Add label for the x-axis
-    // svgContainer.append("text")
-    //     .attr("x", svgWidth / 2)
-    //     .attr("y", svgHeight - margin.bottom / 2 + 20)
-    //     .attr("text-anchor", "middle")
-    //     .attr("font-size", "14px")
-    //     .text("Block Number");
 
     // Add the y-axis with custom ticks for powers of 2
     const powersOfTwo = Array.from({ length: 50 }, (v, i) => Math.pow(2, i + 1));
     const yAxis = d3.axisLeft(yScale)
         .tickValues(powersOfTwo.filter(d => d >= minYValue && d <= maxYValue))
-        .tickFormat(formatBytes);
+        .tickFormat(getFormatter(ySelector));
     const yAxisGroup = svgContainer.append("g")
         .attr("transform", `translate(${margin.left}, 0)`)
         .call(yAxis);
