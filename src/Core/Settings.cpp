@@ -2896,6 +2896,9 @@ Possible values:
 
 - [ORDER BY Clause](../../sql-reference/statements/select/order-by.md/#optimize_read_in_order)
 )", 0) \
+    DECLARE(Bool, read_in_order_use_virtual_row, false, R"(
+Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only relevant ones are touched.
+)", 0) \
     DECLARE(Bool, optimize_read_in_window_order, true, R"(
 Enable ORDER BY optimization in window clause for reading data in corresponding order in MergeTree tables.
 )", 0) \
@@ -4875,6 +4878,9 @@ Limit on size of a single batch of file segments that a read buffer can request 
 )", 0) \
     DECLARE(UInt64, filesystem_cache_reserve_space_wait_lock_timeout_milliseconds, 1000, R"(
 Wait time to lock cache for space reservation in filesystem cache
+)", 0) \
+    DECLARE(Bool, filesystem_cache_prefer_bigger_buffer_size, true, R"(
+Prefer bigger buffer size if filesystem cache is enabled to avoid writing small file segments which deteriorate cache performance. On the other hand, enabling this setting might increase memory usage.
 )", 0) \
     DECLARE(UInt64, temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds, (10 * 60 * 1000), R"(
 Wait time to lock cache for space reservation for temporary data in filesystem cache
