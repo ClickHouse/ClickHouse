@@ -128,4 +128,14 @@ void MergeTreeIndexGranularity::shrinkToFitInMemory()
     marks_rows_partial_sums.shrink_to_fit();
 }
 
+uint64_t MergeTreeIndexGranularity::getBytesSize() const
+{
+    return marks_rows_partial_sums.size() * sizeof(size_t);
+}
+uint64_t MergeTreeIndexGranularity::getBytesAllocated() const
+{
+    return marks_rows_partial_sums.capacity() * sizeof(size_t);
+}
+
+
 }
