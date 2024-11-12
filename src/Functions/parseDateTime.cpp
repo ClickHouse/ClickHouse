@@ -1394,16 +1394,26 @@ namespace
             [[nodiscard]]
             static PosOrError mysqlMicrosecond(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                if (date.scale != 6)
-                    RETURN_ERROR(
-                        ErrorCodes::CANNOT_PARSE_DATETIME,
-                        "Unable to parse fragment {} from {} because of the datetime scale {} is not 6",
-                        fragment,
-                        std::string_view(cur, end - cur),
-                        std::to_string(date.scale))
-                Int32 microsecond = 0;
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber6<Int32, NeedCheckSpace::Yes>(cur, end, fragment, microsecond)))
-                RETURN_ERROR_IF_FAILED(date.setMicrosecond(microsecond))
+                if constexpr (return_type == ReturnType::DateTime)
+                {
+                    RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 6, "mysqlMicrosecond requires size >= 6", fragment))
+
+                    for (size_t i = 0; i < 6; ++i)
+                        ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertNumber<NeedCheckSpace::No>(cur, end, fragment)))
+                }
+                else
+                {
+                    if (date.scale != 6)
+                        RETURN_ERROR(
+                            ErrorCodes::CANNOT_PARSE_DATETIME,
+                            "Unable to parse fragment {} from {} because of the datetime scale {} is not 6",
+                            fragment,
+                            std::string_view(cur, end - cur),
+                            std::to_string(date.scale))
+                    Int32 microsecond = 0;
+                    ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber6<Int32, NeedCheckSpace::Yes>(cur, end, fragment, microsecond)))
+                    RETURN_ERROR_IF_FAILED(date.setMicrosecond(microsecond))
+                }
                 return cur;
             }
 
