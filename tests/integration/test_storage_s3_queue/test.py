@@ -929,6 +929,8 @@ def test_max_set_age(started_cluster):
             "cleanup_interval_min_ms": max_age / 3,
             "cleanup_interval_max_ms": max_age / 3,
             "loading_retries": 0,
+            "polling_max_timeout_ms": 5000,
+            "polling_backoff_ms": 1000,
             "processing_threads_num": 1,
             "loading_retries": 0,
         },
