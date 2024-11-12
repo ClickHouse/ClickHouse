@@ -184,7 +184,6 @@ public:
 };
 
 
-
 template <typename FirstType, template <typename, typename> class AggregateFunctionTemplate, typename... TArgs>
 IAggregateFunction * createWithTwoTypesSecond(const IDataType & second_type, TArgs && ... args)
 {
