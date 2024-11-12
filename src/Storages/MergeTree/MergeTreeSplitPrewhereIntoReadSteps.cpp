@@ -81,7 +81,10 @@ const ActionsDAG::Node & addClonedDAGToDAG(
         /// If the node is known from the previous steps, add it as an input, except for constants
         if (original_dag_node->type != ActionsDAG::ActionType::COLUMN)
         {
-            node_ref.dag->getOutputs().push_back(node_ref.node);
+            /// If the node was found in node_remap, it was not added to outputs yet.
+            /// The only exception is the filter node, which is always the first one.
+            if (node_ref.dag->getOutputs().at(0) != node_ref.node)
+                node_ref.dag->getOutputs().push_back(node_ref.node);
 
             const auto & new_node = new_dag->addInput(node_ref.node->result_name, node_ref.node->result_type);
             node_remap[original_dag_node] = {new_dag.get(), &new_node};
@@ -140,10 +143,8 @@ const ActionsDAG::Node & addFunction(
         const ActionsDAGPtr & new_dag,
         const FunctionOverloadResolverPtr & function,
         ActionsDAG::NodeRawConstPtrs children)
-        //OriginalToNewNodeMap & node_remap)
 {
     const auto & new_node = new_dag->addFunction(function, children, "");
-    //node_remap[new_node.result_name] = {new_dag.get(), &new_node};
     return new_node;
 }
 
@@ -154,13 +155,11 @@ const ActionsDAG::Node & addCast(
         const ActionsDAGPtr & dag,
         const ActionsDAG::Node & node_to_cast,
         const DataTypePtr & to_type)
-        //[[maybe_unused]] OriginalToNewNodeMap & node_remap)
 {
     if (!node_to_cast.result_type->equals(*to_type))
         return node_to_cast;
 
     const auto & new_node = dag->addCast(node_to_cast, to_type, {});
-    //node_remap[new_node.result_name] = {dag.get(), &new_node};
     return new_node;
 }
 
@@ -265,7 +264,6 @@ bool tryBuildPrewhereSteps(
         ActionsDAGPtr step_dag = std::make_unique<ActionsDAG>();
         const ActionsDAG::Node * original_node = nullptr;
          const ActionsDAG::Node * result_node;
-        //String result_name;
 
         std::vector<const ActionsDAG::Node *> new_condition_nodes;
         for (const auto * node : condition_group)
