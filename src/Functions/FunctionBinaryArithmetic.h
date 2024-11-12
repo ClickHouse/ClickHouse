@@ -1695,7 +1695,7 @@ public:
                     && (sizeof(typename LeftDataType::FieldType) > 8 || sizeof(typename RightDataType::FieldType) > 8))
                 {
                     /// Big integers and BFloat16 are not supported together.
-                    return nullptr;
+                    return false;
                 }
 
                 using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
