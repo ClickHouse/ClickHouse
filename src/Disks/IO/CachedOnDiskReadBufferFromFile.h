@@ -57,7 +57,7 @@ public:
 
     void setReadUntilEnd() override;
 
-    String getFileName() const override { return source_file_path; }
+    String getFileName() const override { return info.source_file_path; }
 
     enum class ReadType : uint8_t
     {
@@ -75,45 +75,44 @@ public:
 
     size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const override;
 
-    using ImplementationBufferPtr = std::shared_ptr<ReadBufferFromFileBase>;
     struct ReadInfo
     {
-        ImplementationBufferPtr remote_file_reader;
-        ImplementationBufferPtr cache_file_reader;
+        ReadInfo(
+            const FileCacheKey & cache_key_,
+            const std::string & source_file_path_,
+            ImplementationBufferCreator impl_creator_,
+            bool use_external_buffer_,
+            const ReadSettings & read_settings_,
+            size_t read_until_position_);
 
+        std::shared_ptr<ReadBufferFromFileBase> remote_file_reader;
+        std::shared_ptr<ReadBufferFromFileBase> cache_file_reader;
+
+        const FileCacheKey cache_key;
+        const std::string source_file_path;
         const ImplementationBufferCreator implementation_buffer_creator;
         const bool use_external_buffer;
         const ReadSettings settings;
 
         size_t read_until_position = 0;
         FileSegmentsHolderPtr file_segments;
-
-        ReadInfo(ImplementationBufferCreator impl_creator_, bool use_external_buffer_, const ReadSettings & read_settings_, size_t read_until_position_)
-            : implementation_buffer_creator(impl_creator_), use_external_buffer(use_external_buffer_), settings(read_settings_), read_until_position(read_until_position_)
-        {
-        }
-
+        ProfileEvents::Counters current_file_segment_counters;
     };
 
 private:
-
     struct ReadFromFileSegmentState
     {
         ReadType read_type = ReadType::NONE;
-        ImplementationBufferPtr buf;
+        std::shared_ptr<ReadBufferFromFileBase> buf;
         size_t bytes_to_predownload = 0;
     };
     using ReadFromFileSegmentStatePtr = std::unique_ptr<ReadFromFileSegmentState>;
 
     void initialize();
 
-    /**
-     * Return a list of file segments ordered in ascending order. This list represents
-     * a full contiguous interval (without holes).
-     */
-    FileSegmentsHolderPtr getFileSegments(size_t offset, size_t size) const;
-
     bool updateImplementationBufferIfNeeded();
+
+    static bool canStartFromCache(size_t current_offset, const FileSegment & file_segment);
 
     static ReadFromFileSegmentStatePtr prepareReadFromFileSegmentState(
         FileSegment & file_segment,
@@ -143,55 +142,49 @@ private:
         bool & implementation_buffer_can_be_reused,
         LoggerPtr log);
 
-    bool nextImplStep();
-
-    size_t getRemainingSizeToRead();
-
-    bool completeFileSegmentAndGetNext();
-
-    void appendFilesystemCacheLog(const FileSegment & file_segment, ReadType read_type);
-
     static bool writeCache(
         char * data,
         size_t size,
         size_t offset,
         FileSegment & file_segment,
+        ReadInfo & info,
         LoggerPtr log);
 
-    static bool canStartFromCache(size_t current_offset, const FileSegment & file_segment);
+    static std::string getInfoForLog(
+        const ReadFromFileSegmentState * state,
+        const ReadInfo & info,
+        size_t offset);
+
+    bool nextImplStep();
+
+    size_t getRemainingSizeToRead();
 
     bool nextFileSegmentsBatch();
 
-    const LoggerPtr log;
-    const FileCacheKey cache_key;
-    const String source_file_path;
-    const FileCachePtr cache;
+    bool completeFileSegmentAndGetNext();
 
+    void appendFilesystemCacheLog(const FileSegment & file_segment, ReadType read_type);
+
+    const LoggerPtr log;
+    const FileCachePtr cache;
+    const String query_id;
+    const FileCacheUserInfo user;
+    const String current_buffer_id;
+    const bool allow_seeks_after_first_read;
+    const bool use_external_buffer;
+    const std::shared_ptr<FilesystemCacheLog> cache_log;
+    const FileCacheQueryLimit::QueryContextHolderPtr query_context_holder;
+
+    bool initialized = false;
     size_t file_offset_of_buffer_end = 0;
 
     ReadFromFileSegmentStatePtr state;
     ReadInfo info;
 
-    bool initialized = false;
-
-    static String toString(ReadType type);
-
     size_t first_offset = 0;
     String nextimpl_step_log_info;
-    String last_caller_id;
 
-    String query_id;
-    String current_buffer_id;
-    FileCacheUserInfo user;
-
-    bool allow_seeks_after_first_read;
-    [[maybe_unused]]bool use_external_buffer;
     CurrentMetrics::Increment metric_increment{CurrentMetrics::FilesystemCacheReadBuffers};
-    ProfileEvents::Counters current_file_segment_counters;
-
-    FileCacheQueryLimit::QueryContextHolderPtr query_context_holder;
-
-    std::shared_ptr<FilesystemCacheLog> cache_log;
 };
 
 }
