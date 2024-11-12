@@ -6,6 +6,7 @@
 #include <Analyzer/ConstantValue.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Interpreters/convertFieldToType.h>
 
 namespace DB
 {
@@ -57,7 +58,7 @@ public:
     {
         Field out;
         constant_value.getColumn()->get(0, out);
-        return out;
+        return convertFieldToType(out, *constant_value.getType());
     }
 
     /// Get constant value string representation
