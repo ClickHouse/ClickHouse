@@ -39,13 +39,6 @@ DOCKER_LIBRARY_REPOSITORY = "ClickHouse/docker-library"
 DOCKER_LIBRARY_NAME = {"server": "clickhouse"}
 
 
-def _rel_path(arg: str) -> Path:
-    path = Path(arg)
-    if path.is_absolute():
-        raise argparse.ArgumentError(None, message=f"path '{path}' must be relative")
-    return path
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -61,8 +54,8 @@ def parse_args() -> argparse.Namespace:
     )
     global_args.add_argument(
         "--directory",
-        type=_rel_path,
-        default=_rel_path("docker/official"),
+        type=Path,
+        default=Path("docker/official"),
         help="a relative to the reporitory root directory",
     )
     global_args.add_argument(
@@ -144,6 +137,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def get_versions_greater(minimal: ClickHouseVersion) -> Set[ClickHouseVersion]:
+    "Get the latest patch version for each major.minor >= minimal"
     supported = {}  # type: Dict[str, ClickHouseVersion]
     versions = get_tagged_versions()
     for v in versions:
@@ -182,15 +176,15 @@ def generate_docker_directories(
     stop_filter = "#docker-official-library:on"
     for version, directory in version_dirs.items():
         branch = docker_branch or version.describe
+        docker_source = f"{branch}:docker/{image_type}"
         logging.debug(
-            "Checkout directory content from '%s:docker/%s' to %s",
-            branch,
-            image_type,
+            "Unpack directory content from '%s' to %s",
+            docker_source,
             directory,
         )
+        # We ignore README* files
         git_runner(
-            f"git archive {branch}:docker/{image_type} | "
-            f"tar --exclude='README*' -x -C {directory}"
+            f"git archive {docker_source} | tar --exclude='README*' -x -C {directory}"
         )
         for df in directory.glob(dockerfile_glob):
             original_content = df.read_text().splitlines()
@@ -227,12 +221,14 @@ def generate_docker_directories(
 
 
 def path_is_changed(path: Path) -> bool:
+    "checks if `path` has uncommitted changes"
     logging.info("Checking if the path %s is changed", path)
     path_dir = path.parent
     return bool(git_runner(f"git -C {path_dir} status --porcelain -- '{path}'"))
 
 
 def get_cmdline(width: int = 80) -> str:
+    "Returns the cmdline split by words with given maximum width"
     cmdline = " ".join(
         quote(arg)
         for arg in Path(f"/proc/{getpid()}/cmdline")
@@ -299,7 +295,7 @@ def generate_tree(args: argparse.Namespace) -> None:
 
 @dataclass
 class TagAttrs:
-    """the metadata to preserve between generating tags for different versions"""
+    """A mutable metadata to preserve between generating tags for different versions"""
 
     # Only one latest can exist
     latest: ClickHouseVersion
@@ -310,6 +306,7 @@ class TagAttrs:
 
 
 def ldf_header(git: Git, directory: Path) -> List[str]:
+    "Generates the header for LDF"
     script_path = Path(__file__).relative_to(git.root)
     script_sha = git_runner(f"git log -1 --format=format:%H -- {script_path}")
     repo = f"https://github.com/{GITHUB_REPOSITORY}"
@@ -333,19 +330,22 @@ def ldf_header(git: Git, directory: Path) -> List[str]:
 def ldf_tags(version: ClickHouseVersion, distro: str, tag_attrs: TagAttrs) -> str:
     """returns the string 'Tags: coma, separated, tags'"""
     tags = []
+    # without_distro shows that it's the default tags set, without `-jammy` suffix
     without_distro = distro in UBUNTU_NAMES.values()
-    with_lts = tag_attrs.lts in (None, version) and version.is_lts
     if version == tag_attrs.latest:
         if without_distro:
             tags.append("latest")
         tags.append(distro)
 
+    # The current version gets the `lts` tag when it's the first met version.is_lts
+    with_lts = tag_attrs.lts in (None, version) and version.is_lts
     if with_lts:
         tag_attrs.lts = version
         if without_distro:
             tags.append("lts")
-        tags.append(f"{distro}-lts")
+        tags.append(f"lts-{distro}")
 
+    # If the tag `22`, `23`, `24` etc. should be included in the tags
     with_major = tag_attrs.majors.get(version.major) in (None, version)
     if with_major:
         tag_attrs.majors[version.major] = version
@@ -353,6 +353,7 @@ def ldf_tags(version: ClickHouseVersion, distro: str, tag_attrs: TagAttrs) -> st
             tags.append(f"{version.major}")
         tags.append(f"{version.major}-{distro}")
 
+    # Add all normal tags
     for tag in (
         f"{version.major}.{version.minor}",
         f"{version.major}.{version.minor}.{version.patch}",
@@ -366,25 +367,33 @@ def ldf_tags(version: ClickHouseVersion, distro: str, tag_attrs: TagAttrs) -> st
 
 
 def generate_ldf(args: argparse.Namespace) -> None:
-    "collect all Dockerfile.*"
+    """Collect all args.dockerfile_glob files from args.directory and generate the
+    Library Definition File, read about it in
+    https://github.com/docker-library/official-images/?tab=readme-ov-file#library-definition-files
+    """
     directory = Path(git_runner.cwd) / args.directory / args.image_type
     versions = sorted([get_version_from_string(d.name) for d in directory.iterdir()])
-    assert versions
+    assert versions, "There are no directories to generate the LDF"
     if args.check_changed:
-        assert not path_is_changed(directory)
+        assert not path_is_changed(
+            directory
+        ), f"There are uncommitted changes in {directory}"
     git = Git(True)
-    # Support a few repositories
+    # Support a few repositories, get the git-root for images directory
     dir_git_root = (
         args.directory / git_runner(f"git -C {args.directory} rev-parse --show-cdup")
     ).absolute()
     lines = ldf_header(git, directory)
     tag_attrs = TagAttrs(versions[-1], {}, None)
+
+    # We iterate from the most recent to the oldest version
     for version in reversed(versions):
         tag_dir = directory / str(version)
         for file in tag_dir.glob(args.dockerfile_glob):
             lines.append("")
             distro = file.suffix[1:]
             if distro == "ubuntu":
+                # replace 'ubuntu' by the release name from UBUNTU_NAMES
                 with open(file, "r", encoding="utf-8") as fd:
                     for l in fd:
                         if l.startswith("FROM ubuntu:"):
@@ -396,6 +405,7 @@ def generate_ldf(args: argparse.Namespace) -> None:
             lines.append(f"Directory: {tag_dir.relative_to(dir_git_root)}")
             lines.append(f"File: {file.name}")
 
+    # For the last '\n' in join
     lines.append("")
     ldf_file = (
         Path(git_runner.cwd) / args.directory / DOCKER_LIBRARY_NAME[args.image_type]
