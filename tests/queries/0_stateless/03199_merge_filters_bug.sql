@@ -1,3 +1,5 @@
+set allow_reorder_prewhere_conditions=0;
+
 drop table if exists t1;
 drop table if exists t2;
 

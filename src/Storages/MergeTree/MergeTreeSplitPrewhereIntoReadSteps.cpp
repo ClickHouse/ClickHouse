@@ -50,17 +50,6 @@ void fillRequiredColumns(const ActionsDAG::Node * node, std::unordered_map<const
     }
 }
 
-// void addToOutputsIfNotAlreadyAdded(ActionsDAG & dag, const ActionsDAG::Node * node)
-// {
-//     auto & outputs = dag.getOutputs();
-//     auto it = outputs.begin();
-//     while (it != outputs.end() && *it != node)
-//         ++it;
-
-//     if (it == outputs.end())
-//         outputs.push_back(node);
-// }
-
 /// Stores information about a node that has already been cloned or added to one of the new DAGs.
 /// This allows to avoid cloning the same sub-DAG into multiple step DAGs but reference previously cloned nodes from earlier steps.
 struct DAGNodeRef
@@ -92,7 +81,6 @@ const ActionsDAG::Node & addClonedDAGToDAG(
         /// If the node is known from the previous steps, add it as an input, except for constants
         if (original_dag_node->type != ActionsDAG::ActionType::COLUMN)
         {
-            // addToOutputsIfNotAlreadyAdded(*node_ref.dag, node_ref.node);
             node_ref.dag->getOutputs().push_back(node_ref.node);
 
             const auto & new_node = new_dag->addInput(node_ref.node->result_name, node_ref.node->result_type);
