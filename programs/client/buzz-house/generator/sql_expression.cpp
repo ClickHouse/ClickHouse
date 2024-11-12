@@ -513,7 +513,7 @@ int StatementGenerator::GeneratePredicate(RandomGenerator & rg, sql_query_gramma
             this->GenerateExpression(rg, enull->mutable_expr());
             this->depth--;
         }
-        else if (noption < 801)
+        else if (this->allow_subqueries && noption < 801)
         {
             sql_query_grammar::ComplicatedExpr * cexpr = expr->mutable_comp_expr();
             sql_query_grammar::ExprExists * exists = cexpr->mutable_expr_exists();
@@ -871,7 +871,7 @@ int StatementGenerator::GenerateExpression(RandomGenerator & rg, sql_query_gramm
         }
         this->depth--;
     }
-    else if (noption < 651)
+    else if (this->allow_subqueries && noption < 651)
     {
         this->depth++;
         this->GenerateSubquery(rg, expr->mutable_comp_expr()->mutable_subquery());
@@ -1053,7 +1053,7 @@ int StatementGenerator::GenerateExpression(RandomGenerator & rg, sql_query_gramm
         this->levels[this->current_level].allow_window_funcs = prev_allow_window_funcs;
     }
     AddFieldAccess(rg, expr, 16);
-    if (eca && rg.NextSmallNumber() < 4)
+    if (eca && this->allow_in_expression_alias && rg.NextSmallNumber() < 4)
     {
         SQLRelation rel("");
         const uint32_t cname = this->levels[this->current_level].aliases_counter++;

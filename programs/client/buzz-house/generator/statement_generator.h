@@ -72,7 +72,8 @@ private:
     const bool supports_cloud_features;
 
     std::string buf;
-    bool in_transaction = false, inside_projection = false, allow_not_deterministic = true, enforce_final = false;
+    bool in_transaction = false, inside_projection = false, allow_not_deterministic = true,
+         allow_in_expression_alias = true, allow_subqueries = true, enforce_final = false;
     uint32_t depth = 0, width = 0, database_counter = 0, table_counter = 0, zoo_path_counter = 0, function_counter = 0, current_level = 0;
     std::map<uint32_t, std::shared_ptr<SQLDatabase>> staged_databases, databases;
     std::map<uint32_t, SQLTable> staged_tables, tables;

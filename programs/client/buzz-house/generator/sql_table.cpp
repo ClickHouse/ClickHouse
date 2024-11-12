@@ -656,11 +656,13 @@ int StatementGenerator::AddTableColumn(
         col.dmod = std::optional<sql_query_grammar::DModifier>(dmod);
         if (dmod != sql_query_grammar::DModifier::DEF_EPHEMERAL || rg.NextSmallNumber() < 4)
         {
+            this->allow_in_expression_alias = this->allow_subqueries = false;
             AddTableRelation(rg, false, "", t);
             this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = false;
             GenerateExpression(rg, def_value->mutable_expr());
             this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = true;
             this->levels.clear();
+            this->allow_in_expression_alias = this->allow_subqueries = true;
         }
     }
     if (t.IsMergeTreeFamily())
