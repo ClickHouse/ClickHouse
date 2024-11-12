@@ -287,10 +287,6 @@ void LocalServer::tryInitPath()
     if (getClientConfiguration().has("path"))
     {
         /// User-supplied path.
-        /// By default it is a subdirectory in the current directory (it will be created lazily only if needed).
-        /// The subdirectory is named `clickhouse.local`. This name is to not collide with the possible names
-        /// of the binary file, `clickhouse` or `clickhouse-local`.
-
         path = getClientConfiguration().getString("path");
         Poco::trimInPlace(path);
 
@@ -302,7 +298,7 @@ void LocalServer::tryInitPath()
                 " correct the --path.");
         }
     }
-    else if (getClientConfiguration().has("tmp"))
+    else
     {
         /// The user requested to use a temporary path - use a unique path in the system temporary directory
         /// (or in the current dir if a temporary doesn't exist)
@@ -844,12 +840,12 @@ void LocalServer::processConfig()
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
 
         String path = global_context->getPath();
+
+        /// Lock path directory before read
+        status.emplace(fs::path(path) / "status", StatusFile::write_full_info);
+
         if (fs::exists(fs::path(path) / "metadata"))
         {
-            /// Lock path directory before read
-            /// Note: this is slightly unsafe. The first instance of clickhouse-local will not be protected.
-            status.emplace(fs::path(path) / "status", StatusFile::write_full_info);
-
             LOG_DEBUG(log, "Loading metadata from {}", path);
 
             if (fs::exists(std::filesystem::path(path) / "metadata" / "system.sql"))
@@ -939,8 +935,7 @@ void LocalServer::addOptions(OptionsDescription & options_description)
         ("logger.level", po::value<std::string>(), "Log level")
 
         ("no-system-tables", "do not attach system tables (better startup time)")
-        ("path", po::value<std::string>()->default_value("clickhouse.local"), "storage path")
-        ("tmp", "use a temporary directory for tables and delete it on exit")
+        ("path", po::value<std::string>(), "Storage path. If it was not specified, we will use a temporary directory, that is cleaned up on exit.")
         ("only-system-tables", "attach only system tables from specified path")
         ("top_level_domains_path", po::value<std::string>(), "Path to lists with custom TLDs")
         ;
@@ -978,8 +973,6 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
         getClientConfiguration().setString("table-file", options["file"].as<std::string>());
     if (options.count("structure"))
         getClientConfiguration().setString("table-structure", options["structure"].as<std::string>());
-    if (options.count("tmp"))
-        getClientConfiguration().setBool("tmp", true);
     if (options.count("no-system-tables"))
         getClientConfiguration().setBool("no-system-tables", true);
     if (options.count("only-system-tables"))
