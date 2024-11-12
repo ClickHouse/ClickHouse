@@ -646,8 +646,6 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
     }
 
     size_t aligned_downloaded_size = FileCacheUtils::roundUpToMultiple(downloaded_size, cache->getBoundaryAlignment());
-    aligned_downloaded_size = std::min(aligned_downloaded_size, range().size());
-
     chassert(aligned_downloaded_size >= downloaded_size);
 
     if (aligned_downloaded_size == range().size())
@@ -655,13 +653,18 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
         /// Nothing to resize;
         return;
     }
-
-    if (downloaded_size == aligned_downloaded_size)
+    else if (aligned_downloaded_size > range().size()
+             || downloaded_size == aligned_downloaded_size)
+    {
+        /// Does not make sense to resize upwords.
         setDownloadState(State::DOWNLOADED, lock);
+        segment_range.right = segment_range.left + downloaded_size - 1;
+    }
     else
+    {
         setDownloadState(State::PARTIALLY_DOWNLOADED, lock);
-
-    segment_range.right = segment_range.left + aligned_downloaded_size - 1;
+        segment_range.right = segment_range.left + aligned_downloaded_size - 1;
+    }
 
     const size_t diff = reserved_size - downloaded_size;
     chassert(reserved_size >= downloaded_size);
