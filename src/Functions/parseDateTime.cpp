@@ -615,7 +615,13 @@ namespace
         bool useDefaultImplementationForConstants() const override { return true; }
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-        ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }
+        ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
+        {
+            if constexpr (return_type == ReturnType::DateTime)
+                return {1, 2};
+            else
+                return {1, 2, 3};
+        }
         bool isVariadic() const override { return true; }
         size_t getNumberOfArguments() const override { return 0; }
 
@@ -2299,7 +2305,7 @@ namespace
                     throw Exception(
                         ErrorCodes::ILLEGAL_COLUMN,
                         "Illegal column {} of second ('format') argument of function {}. Must be constant string.",
-                        arguments[index_of_format_string_arg].column->getName(),
+                        arguments[index_of_format_string_arg].name,
                         getName());
                 return col_format->getValue<String>();
             }
