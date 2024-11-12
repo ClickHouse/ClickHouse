@@ -41,16 +41,21 @@ struct QueryMetricLogElement
     void appendToBlock(MutableColumns & columns) const;
 };
 
+struct QueryMetricLogStatusInfo
+{
+    UInt64 interval_milliseconds;
+    std::chrono::system_clock::time_point last_collect_time;
+    std::chrono::system_clock::time_point next_collect_time;
+    std::vector<ProfileEvents::Count> last_profile_events = std::vector<ProfileEvents::Count>(ProfileEvents::end());
+    BackgroundSchedulePool::TaskHolder task;
+};
+
 struct QueryMetricLogStatus
 {
     using TimePoint = std::chrono::system_clock::time_point;
     using Mutex = std::mutex;
 
-    UInt64 interval_milliseconds;
-    std::chrono::system_clock::time_point last_collect_time TSA_GUARDED_BY(getMutex());
-    std::chrono::system_clock::time_point next_collect_time TSA_GUARDED_BY(getMutex());
-    std::vector<ProfileEvents::Count> last_profile_events TSA_GUARDED_BY(getMutex()) = std::vector<ProfileEvents::Count>(ProfileEvents::end());
-    BackgroundSchedulePool::TaskHolder task TSA_GUARDED_BY(getMutex());
+    QueryMetricLogStatusInfo info TSA_GUARDED_BY(getMutex());
 
     /// We need to be able to move it for the hash map, so we need to add an indirection here.
     std::unique_ptr<Mutex> mutex = std::make_unique<Mutex>();
