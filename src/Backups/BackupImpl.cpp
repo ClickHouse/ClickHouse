@@ -4,7 +4,7 @@
 #include <Backups/BackupIO.h>
 #include <Backups/IBackupEntry.h>
 #include <Common/ProfileEvents.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <base/hex.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -23,6 +23,8 @@
 #include <IO/copyData.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/DOM/DOMParser.h>
+
+#include <ranges>
 
 
 namespace ProfileEvents
@@ -91,9 +93,7 @@ BackupImpl::BackupImpl(
     const std::optional<BackupInfo> & base_backup_info_,
     std::shared_ptr<IBackupReader> reader_,
     const ContextPtr & context_,
-    bool is_internal_backup_,
-    bool use_same_s3_credentials_for_base_backup_,
-    bool use_same_password_for_base_backup_)
+    bool use_same_s3_credentials_for_base_backup_)
     : backup_info(backup_info_)
     , backup_name_for_logging(backup_info.toStringForLogging())
     , use_archive(!archive_params_.archive_name.empty())
@@ -101,11 +101,10 @@ BackupImpl::BackupImpl(
     , open_mode(OpenMode::READ)
     , reader(std::move(reader_))
     , context(context_)
-    , is_internal_backup(is_internal_backup_)
+    , is_internal_backup(false)
     , version(INITIAL_BACKUP_VERSION)
     , base_backup_info(base_backup_info_)
     , use_same_s3_credentials_for_base_backup(use_same_s3_credentials_for_base_backup_)
-    , use_same_password_for_base_backup(use_same_password_for_base_backup_)
     , log(getLogger("BackupImpl"))
 {
     open();
@@ -122,8 +121,7 @@ BackupImpl::BackupImpl(
     const std::shared_ptr<IBackupCoordination> & coordination_,
     const std::optional<UUID> & backup_uuid_,
     bool deduplicate_files_,
-    bool use_same_s3_credentials_for_base_backup_,
-    bool use_same_password_for_base_backup_)
+    bool use_same_s3_credentials_for_base_backup_)
     : backup_info(backup_info_)
     , backup_name_for_logging(backup_info.toStringForLogging())
     , use_archive(!archive_params_.archive_name.empty())
@@ -138,7 +136,6 @@ BackupImpl::BackupImpl(
     , base_backup_info(base_backup_info_)
     , deduplicate_files(deduplicate_files_)
     , use_same_s3_credentials_for_base_backup(use_same_s3_credentials_for_base_backup_)
-    , use_same_password_for_base_backup(use_same_password_for_base_backup_)
     , log(getLogger("BackupImpl"))
 {
     open();
@@ -147,11 +144,11 @@ BackupImpl::BackupImpl(
 
 BackupImpl::~BackupImpl()
 {
-    if ((open_mode == OpenMode::WRITE) && !writing_finalized && !corrupted)
+    if ((open_mode == OpenMode::WRITE) && !is_internal_backup && !writing_finalized && !std::uncaught_exceptions() && !std::current_exception())
     {
         /// It is suspicious to destroy BackupImpl without finalization while writing a backup when there is no exception.
-        LOG_ERROR(log, "BackupImpl is not finalized or marked as corrupted when destructor is called. Stack trace: {}", StackTrace().toString());
-        chassert(false, "BackupImpl is not finalized or marked as corrupted when destructor is called.");
+        LOG_ERROR(log, "BackupImpl is not finalized when destructor is called. Stack trace: {}", StackTrace().toString());
+        chassert(false && "BackupImpl is not finalized when destructor is called.");
     }
 
     try
@@ -196,6 +193,9 @@ void BackupImpl::open()
 
     if (open_mode == OpenMode::READ)
         readBackupMetadata();
+
+    if ((open_mode == OpenMode::WRITE) && base_backup_info)
+        base_backup_uuid = getBaseBackupUnlocked()->getUUID();
 }
 
 void BackupImpl::close()
@@ -256,14 +256,8 @@ std::shared_ptr<const IBackup> BackupImpl::getBaseBackupUnlocked() const
         params.backup_info = *base_backup_info;
         params.open_mode = OpenMode::READ;
         params.context = context;
-        params.is_internal_backup = is_internal_backup;
         /// use_same_s3_credentials_for_base_backup should be inherited for base backups
         params.use_same_s3_credentials_for_base_backup = use_same_s3_credentials_for_base_backup;
-        /// use_same_password_for_base_backup should be inherited for base backups
-        params.use_same_password_for_base_backup = use_same_password_for_base_backup;
-
-        if (params.use_same_password_for_base_backup)
-            params.password = archive_params.password;
 
         base_backup = BackupFactory::instance().createBackup(params);
 
@@ -277,8 +271,6 @@ std::shared_ptr<const IBackup> BackupImpl::getBaseBackupUnlocked() const
                 toString(base_backup->getUUID()),
                 (base_backup_uuid ? toString(*base_backup_uuid) : ""));
         }
-
-        base_backup_uuid = base_backup->getUUID();
     }
     return base_backup;
 }
@@ -368,7 +360,7 @@ void BackupImpl::writeBackupMetadata()
         if (base_backup_in_use)
         {
             *out << "<base_backup>" << xml << base_backup_info->toString() << "</base_backup>";
-            *out << "<base_backup_uuid>" << getBaseBackupUnlocked()->getUUID() << "</base_backup_uuid>";
+            *out << "<base_backup_uuid>" << toString(*base_backup_uuid) << "</base_backup_uuid>";
         }
     }
 
@@ -593,6 +585,9 @@ bool BackupImpl::checkLockFile(bool throw_if_failed) const
 
 void BackupImpl::removeLockFile()
 {
+    if (is_internal_backup)
+        return; /// Internal backup must not remove the lock file (it's still used by the initiator).
+
     if (checkLockFile(false))
         writer->removeFile(lock_file_name);
 }
@@ -788,16 +783,18 @@ std::unique_ptr<SeekableReadBuffer> BackupImpl::readFileImpl(const SizeAndChecks
         /// Data comes completely from this backup, the base backup isn't used.
         return read_buffer;
     }
-    if (info.size == info.base_size)
+    else if (info.size == info.base_size)
     {
         /// Data comes completely from the base backup (nothing comes from this backup).
         return base_read_buffer;
     }
-
-    /// The beginning of the data comes from the base backup,
-    /// and the ending comes from this backup.
-    return std::make_unique<ConcatSeekableReadBuffer>(
-        std::move(base_read_buffer), info.base_size, std::move(read_buffer), info.size - info.base_size);
+    else
+    {
+        /// The beginning of the data comes from the base backup,
+        /// and the ending comes from this backup.
+        return std::make_unique<ConcatSeekableReadBuffer>(
+            std::move(base_read_buffer), info.base_size, std::move(read_buffer), info.size - info.base_size);
+    }
 }
 
 size_t BackupImpl::copyFileToDisk(const String & file_name,
@@ -985,11 +982,8 @@ void BackupImpl::finalizeWriting()
     if (open_mode != OpenMode::WRITE)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for writing");
 
-    if (corrupted)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup can't be finalized after an error happened");
-
     if (writing_finalized)
-        return;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is already finalized");
 
     if (!is_internal_backup)
     {
@@ -1014,58 +1008,20 @@ void BackupImpl::setCompressedSize()
 }
 
 
-bool BackupImpl::setIsCorrupted() noexcept
+void BackupImpl::tryRemoveAllFiles()
 {
+    if (open_mode != OpenMode::WRITE)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for writing");
+
+    if (is_internal_backup)
+        return;
+
     try
     {
-        std::lock_guard lock{mutex};
-        if (open_mode != OpenMode::WRITE)
-        {
-            LOG_ERROR(log, "Backup is not opened for writing. Stack trace: {}", StackTrace().toString());
-            chassert(false, "Backup is not opened for writing when setIsCorrupted() is called");
-            return false;
-        }
-
-        if (writing_finalized)
-        {
-            LOG_WARNING(log, "An error happened after the backup was completed successfully, the backup must be correct!");
-            return false;
-        }
-
-        if (corrupted)
-            return true;
-
-        LOG_WARNING(log, "An error happened, the backup won't be completed");
-
+        LOG_INFO(log, "Removing all files of backup {}", backup_name_for_logging);
         closeArchive(/* finalize= */ false);
 
-        corrupted = true;
-        return true;
-    }
-    catch (...)
-    {
-        DB::tryLogCurrentException(log, "Caught exception while setting that the backup was corrupted");
-        return false;
-    }
-}
-
-
-bool BackupImpl::tryRemoveAllFiles() noexcept
-{
-    try
-    {
-        std::lock_guard lock{mutex};
-        if (!corrupted)
-        {
-            LOG_ERROR(log, "Backup is not set as corrupted. Stack trace: {}", StackTrace().toString());
-            chassert(false, "Backup is not set as corrupted when tryRemoveAllFiles() is called");
-            return false;
-        }
-
-        LOG_INFO(log, "Removing all files of backup {}", backup_name_for_logging);
-
         Strings files_to_remove;
-
         if (use_archive)
         {
             files_to_remove.push_back(archive_params.archive_name);
@@ -1078,17 +1034,14 @@ bool BackupImpl::tryRemoveAllFiles() noexcept
         }
 
         if (!checkLockFile(false))
-            return false;
+            return;
 
         writer->removeFiles(files_to_remove);
         removeLockFile();
-        writer->removeEmptyDirectories();
-        return true;
     }
     catch (...)
     {
-        DB::tryLogCurrentException(log, "Caught exception while removing files of a corrupted backup");
-        return false;
+        DB::tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
 

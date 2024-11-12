@@ -4,12 +4,10 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
+#include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Common/re2.h>
 
-#include <base/scope_guard.h>
-
 #include "config.h"
-
 
 namespace CurrentMetrics
 {
@@ -52,6 +50,11 @@ public:
 
     StoredObjects getStorageObjects(const String & local_path) const override;
 
+    void getRemotePathsRecursive(
+        const String & local_path,
+        std::vector<LocalPathWithObjectStoragePaths> & paths_map,
+        const std::function<bool(const String &)> & skip_predicate) override;
+
     const std::string & getCacheName() const override { return object_storage->getCacheName(); }
 
     std::optional<UInt64> getTotalSpace() const override { return {}; }
@@ -60,9 +63,9 @@ public:
 
     UInt64 getKeepingFreeSpace() const override { return 0; }
 
-    bool existsFile(const String & path) const override;
-    bool existsDirectory(const String & path) const override;
-    bool existsFileOrDirectory(const String & path) const override;
+    bool exists(const String & path) const override;
+
+    bool isFile(const String & path) const override;
 
     void createFile(const String & path) override;
 
@@ -88,8 +91,6 @@ public:
 
     void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
 
-    void truncateFile(const String & path, size_t size) override;
-
     MetadataStoragePtr getMetadataStorage() override { return metadata_storage; }
 
     UInt32 getRefCount(const String & path) const override;
@@ -110,13 +111,15 @@ public:
 
     void setReadOnly(const String & path) override;
 
+    bool isDirectory(const String & path) const override;
+
     void createDirectory(const String & path) override;
 
     void createDirectories(const String & path) override;
 
     void clearDirectory(const String & path) override;
 
-    void moveDirectory(const String & from_path, const String & to_path) override;
+    void moveDirectory(const String & from_path, const String & to_path) override { moveFile(from_path, to_path); }
 
     void removeDirectory(const String & path) override;
 
@@ -142,12 +145,6 @@ public:
         std::optional<size_t> read_hint,
         std::optional<size_t> file_size) const override;
 
-    std::unique_ptr<ReadBufferFromFileBase> readFileIfExists(
-        const String & path,
-        const ReadSettings & settings,
-        std::optional<size_t> read_hint,
-        std::optional<size_t> file_size) const override;
-
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
         size_t buf_size,
@@ -161,7 +158,7 @@ public:
         const String & from_file_path,
         IDisk & to_disk,
         const String & to_file_path,
-        const ReadSettings & read_settings,
+        const ReadSettings & read_settings = {},
         const WriteSettings & write_settings = {},
         const std::function<void()> & cancellation_hook = {}
         ) override;
@@ -193,14 +190,13 @@ public:
     /// MergeTree table on this disk.
     bool isWriteOnce() const override;
 
-    bool supportsHardLinks() const override;
-
     /// Get structure of object storage this disk works with. Examples:
     /// DiskObjectStorage(S3ObjectStorage)
     /// DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
     /// DiskObjectStorage(CachedObjectStorage(CachedObjectStorage(S3ObjectStorage)))
     String getStructure() const { return fmt::format("DiskObjectStorage-{}({})", getName(), object_storage->getName()); }
 
+#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
     /// Add a cache layer.
     /// Example: DiskObjectStorage(S3ObjectStorage) -> DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
     /// There can be any number of cache layers:
@@ -209,6 +205,7 @@ public:
 
     /// Get names of all cache layers. Name is how cache is defined in configuration file.
     NameSet getCacheLayersNames() const override;
+#endif
 
     bool supportsStat() const override { return metadata_storage->supportsStat(); }
     struct stat stat(const String & path) const override;
@@ -218,7 +215,6 @@ public:
 
 #if USE_AWS_S3
     std::shared_ptr<const S3::Client> getS3StorageClient() const override;
-    std::shared_ptr<const S3::Client> tryGetS3StorageClient() const override;
 #endif
 
 private:
@@ -230,8 +226,6 @@ private:
 
     String getReadResourceName() const;
     String getWriteResourceName() const;
-    String getReadResourceNameNoLock() const;
-    String getWriteResourceNameNoLock() const;
 
     const String object_key_prefix;
     LoggerPtr log;
@@ -245,18 +239,12 @@ private:
     std::mutex reservation_mutex;
 
     bool tryReserve(UInt64 bytes);
-    void sendMoveMetadata(const String & from_path, const String & to_path);
 
     const bool send_metadata;
 
     mutable std::mutex resource_mutex;
-    String read_resource_name_from_config; // specified in disk config.xml read_resource element
-    String write_resource_name_from_config; // specified in disk config.xml write_resource element
-    String read_resource_name_from_sql; // described by CREATE RESOURCE query with READ DISK clause
-    String write_resource_name_from_sql; // described by CREATE RESOURCE query with WRITE DISK clause
-    String read_resource_name_from_sql_any; // described by CREATE RESOURCE query with READ ANY DISK clause
-    String write_resource_name_from_sql_any; // described by CREATE RESOURCE query with WRITE ANY DISK clause
-    scope_guard resource_changes_subscription;
+    String read_resource_name;
+    String write_resource_name;
 
     std::unique_ptr<DiskObjectStorageRemoteMetadataRestoreHelper> metadata_helper;
 };

@@ -13,10 +13,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool geo_distance_returns_float64_on_float64_arguments;
-}
 
 namespace ErrorCodes
 {
@@ -45,7 +41,7 @@ namespace ErrorCodes
 namespace
 {
 
-enum class Method : uint8_t
+enum class Method
 {
     SPHERE_DEGREES,
     SPHERE_METERS,
@@ -98,13 +94,13 @@ struct Impl
         }
     }
 
-    static NO_SANITIZE_UNDEFINED size_t toIndex(T x)
+    static inline NO_SANITIZE_UNDEFINED size_t toIndex(T x)
     {
         /// Implementation specific behaviour on overflow or infinite value.
         return static_cast<size_t>(x);
     }
 
-    static T degDiff(T f)
+    static inline T degDiff(T f)
     {
         f = std::abs(f);
         if (f > 180)
@@ -112,7 +108,7 @@ struct Impl
         return f;
     }
 
-    T fastCos(T x)
+    inline T fastCos(T x)
     {
         T y = std::abs(x) * (T(COS_LUT_SIZE) / T(PI) / T(2.0));
         size_t i = toIndex(y);
@@ -121,7 +117,7 @@ struct Impl
         return cos_lut[i] + (cos_lut[i + 1] - cos_lut[i]) * y;
     }
 
-    T fastSin(T x)
+    inline T fastSin(T x)
     {
         T y = std::abs(x) * (T(COS_LUT_SIZE) / T(PI) / T(2.0));
         size_t i = toIndex(y);
@@ -132,7 +128,7 @@ struct Impl
 
     /// fast implementation of asin(sqrt(x))
     /// max error in floats 0.00369%, in doubles 0.00072%
-    T fastAsinSqrt(T x)
+    inline T fastAsinSqrt(T x)
     {
         if (x < T(0.122))
         {
@@ -208,18 +204,21 @@ T distance(T lon1deg, T lat1deg, T lon2deg, T lat2deg)
         /// Metric on a tangent plane: it differs from Euclidean metric only by scale of coordinates.
         return std::sqrt(k_lat * lat_diff * lat_diff + k_lon * lon_diff * lon_diff);
     }
-    /// Points are too far away: use Haversine.
-
-    static constexpr T RAD_IN_DEG = T(PI / 180.0);
-    static constexpr T RAD_IN_DEG_HALF = T(PI / 360.0);
-
-    T a = sqr(impl<T>.fastSin(lat_diff * RAD_IN_DEG_HALF))
-        + impl<T>.fastCos(lat1deg * RAD_IN_DEG) * impl<T>.fastCos(lat2deg * RAD_IN_DEG) * sqr(impl<T>.fastSin(lon_diff * RAD_IN_DEG_HALF));
-
-    if constexpr (method == Method::SPHERE_DEGREES)
-        return (T(360.0) / T(PI)) * impl<T>.fastAsinSqrt(a);
     else
-        return T(EARTH_DIAMETER) * impl<T>.fastAsinSqrt(a);
+    {
+        /// Points are too far away: use Haversine.
+
+        static constexpr T RAD_IN_DEG = T(PI / 180.0);
+        static constexpr T RAD_IN_DEG_HALF = T(PI / 360.0);
+
+        T a = sqr(impl<T>.fastSin(lat_diff * RAD_IN_DEG_HALF))
+            + impl<T>.fastCos(lat1deg * RAD_IN_DEG) * impl<T>.fastCos(lat2deg * RAD_IN_DEG) * sqr(impl<T>.fastSin(lon_diff * RAD_IN_DEG_HALF));
+
+        if constexpr (method == Method::SPHERE_DEGREES)
+            return (T(360.0) / T(PI)) * impl<T>.fastAsinSqrt(a);
+        else
+            return T(EARTH_DIAMETER) * impl<T>.fastAsinSqrt(a);
+    }
 }
 
 }
@@ -230,7 +229,7 @@ class FunctionGeoDistance : public IFunction
 public:
     explicit FunctionGeoDistance(ContextPtr context)
     {
-        always_float32 = !context->getSettingsRef()[Setting::geo_distance_returns_float64_on_float64_arguments];
+        always_float32 = !context->getSettingsRef().geo_distance_returns_float64_on_float64_arguments;
     }
 
 private:
@@ -269,8 +268,8 @@ private:
 
         if (has_float64 && !always_float32)
             return std::make_shared<DataTypeFloat64>();
-
-        return std::make_shared<DataTypeFloat32>();
+        else
+            return std::make_shared<DataTypeFloat32>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override

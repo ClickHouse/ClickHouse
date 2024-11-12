@@ -28,9 +28,8 @@ public:
     ProfileInfo & getProfileInfo() { return info; }
 
     void setRowsBeforeLimit(size_t rows_before_limit) override;
-    void setRowsBeforeAggregation(size_t rows_before_aggregation) override;
 
-    void onCancel() noexcept override
+    void onCancel() override
     {
         queue.clearAndFinish();
     }

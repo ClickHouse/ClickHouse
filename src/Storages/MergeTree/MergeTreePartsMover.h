@@ -12,7 +12,7 @@
 namespace DB
 {
 
-enum class MovePartsOutcome : uint8_t
+enum class MovePartsOutcome
 {
     PartsMoved,
     NothingToMove,

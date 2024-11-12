@@ -21,20 +21,10 @@ class ProtocolServerAdapter
 public:
     ProtocolServerAdapter(ProtocolServerAdapter && src) = default;
     ProtocolServerAdapter & operator =(ProtocolServerAdapter && src) = default;
-    ProtocolServerAdapter(
-        const std::string & listen_host_,
-        const char * port_name_,
-        const std::string & description_,
-        std::unique_ptr<TCPServer> tcp_server_,
-        bool supports_runtime_reconfiguration_ = true);
+    ProtocolServerAdapter(const std::string & listen_host_, const char * port_name_, const std::string & description_, std::unique_ptr<TCPServer> tcp_server_);
 
-#if USE_GRPC
-    ProtocolServerAdapter(
-        const std::string & listen_host_,
-        const char * port_name_,
-        const std::string & description_,
-        std::unique_ptr<GRPCServer> grpc_server_,
-        bool supports_runtime_reconfiguration_ = true);
+#if USE_GRPC && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
+    ProtocolServerAdapter(const std::string & listen_host_, const char * port_name_, const std::string & description_, std::unique_ptr<GRPCServer> grpc_server_);
 #endif
 
     /// Starts the server. A new thread will be created that waits for and accepts incoming connections.
@@ -48,15 +38,11 @@ public:
     /// Returns the number of currently handled connections.
     size_t currentConnections() const { return impl->currentConnections(); }
 
-    size_t refusedConnections() const { return impl->refusedConnections(); }
-
     /// Returns the number of current threads.
     size_t currentThreads() const { return impl->currentThreads(); }
 
     /// Returns the port this server is listening to.
     UInt16 portNumber() const { return impl->portNumber(); }
-
-    bool supportsRuntimeReconfiguration() const { return supports_runtime_reconfiguration; }
 
     const std::string & getListenHost() const { return listen_host; }
 
@@ -75,7 +61,6 @@ private:
         virtual UInt16 portNumber() const = 0;
         virtual size_t currentConnections() const = 0;
         virtual size_t currentThreads() const = 0;
-        virtual size_t refusedConnections() const = 0;
     };
     class TCPServerAdapterImpl;
     class GRPCServerAdapterImpl;
@@ -84,7 +69,6 @@ private:
     std::string port_name;
     std::string description;
     std::unique_ptr<Impl> impl;
-    bool supports_runtime_reconfiguration = true;
 };
 
 }

@@ -39,7 +39,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int UNKNOWN_TYPE;
-    extern const int TYPE_MISMATCH;
 }
 
 namespace
@@ -71,17 +70,20 @@ inline size_t BSONEachRowRowInputFormat::columnIndex(const StringRef & name, siz
     {
         return prev_positions[key_index]->second;
     }
-
-    const auto it = name_map.find(name);
-
-    if (it != name_map.end())
+    else
     {
-        if (key_index < prev_positions.size())
-            prev_positions[key_index] = it;
+        const auto it = name_map.find(name);
 
-        return it->second;
+        if (it != name_map.end())
+        {
+            if (key_index < prev_positions.size())
+                prev_positions[key_index] = it;
+
+            return it->second;
+        }
+        else
+            return UNKNOWN_FIELD;
     }
-    return UNKNOWN_FIELD;
 }
 
 /// Read the field name. Resulting StringRef is valid only before next read from buf.
@@ -818,12 +820,7 @@ bool BSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
     /// Fill non-visited columns with the default values.
     for (size_t i = 0; i < num_columns; ++i)
         if (!seen_columns[i])
-        {
-            const auto & type = header.getByPosition(i).type;
-            if (format_settings.force_null_for_omitted_fields && !isNullableOrLowCardinalityNullable(type))
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot insert NULL value into a column of type '{}' at index {}", type->getName(), i);
-            type->insertDefaultInto(*columns[i]);
-        }
+            header.getByPosition(i).type->insertDefaultInto(*columns[i]);
 
     if (format_settings.defaults_for_omitted_fields)
         ext.read_columns = read_columns;
