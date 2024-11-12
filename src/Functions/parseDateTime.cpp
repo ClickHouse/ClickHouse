@@ -750,7 +750,7 @@ namespace
                 Pos end = str_ref.data + str_ref.size;
                 bool error = false;
 
-                auto handleError = [&](const auto & result) -> void
+                auto handleError = [&](const auto & result [[maybe_unused]]) -> void
                 {
                     if constexpr (error_handling == ErrorHandling::Zero)
                     {
