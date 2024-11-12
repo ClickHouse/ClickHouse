@@ -1481,7 +1481,7 @@ class ClickHouseCluster:
             p.join(docker_compose_yml_dir, "docker_compose_iceberg_rest_catalog.yml"),
         )
         return self.base_iceberg_catalog_cmd
-        #return self.base_minio_cmd
+        # return self.base_minio_cmd
 
     def setup_azurite_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_azurite = True

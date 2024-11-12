@@ -7,28 +7,25 @@ import uuid
 
 import pytest
 import requests
-from minio import Minio
 import urllib3
-
-from helpers.test_tools import TSV, csv_compare
+from minio import Minio
 from pyiceberg.catalog import load_catalog
+from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
+from pyiceberg.table.sorting import SortField, SortOrder
+from pyiceberg.transforms import DayTransform, IdentityTransform
 from pyiceberg.types import (
-    TimestampType,
-    FloatType,
     DoubleType,
-    StringType,
+    FloatType,
     NestedField,
+    StringType,
     StructType,
+    TimestampType,
 )
-from pyiceberg.partitioning import PartitionSpec, PartitionField
-from pyiceberg.transforms import DayTransform
-from pyiceberg.table.sorting import SortOrder, SortField
-from pyiceberg.transforms import IdentityTransform
-
 
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance, is_arm
 from helpers.s3_tools import get_file_contents, list_s3_objects, prepare_s3_bucket
+from helpers.test_tools import TSV, csv_compare
 
 BASE_URL = "http://rest:8181/v1"
 BASE_URL_LOCAL = "http://localhost:8181/v1"
@@ -192,12 +189,22 @@ def test_simple(started_cluster):
 
 def test_different_namespaces(started_cluster):
     node = started_cluster.instances["node1"]
-    namespaces = ["A", "A.B.C", "A.B.C.D", "A.B.C.D.E", "A.B.C.D.E.F", "A.B.C.D.E.FF", "B", "B.C", "B.CC"]
+    namespaces = [
+        "A",
+        "A.B.C",
+        "A.B.C.D",
+        "A.B.C.D.E",
+        "A.B.C.D.E.F",
+        "A.B.C.D.E.FF",
+        "B",
+        "B.C",
+        "B.CC",
+    ]
     tables = ["A", "B", "C", "D", "E", "F"]
     catalog = load_catalog_impl()
 
     for namespace in namespaces:
-        #if namespace in catalog.list_namespaces()["namesoaces"]:
+        # if namespace in catalog.list_namespaces()["namesoaces"]:
         #    catalog.drop_namespace(namespace)
         catalog.create_namespace(namespace)
         for table in tables:
@@ -208,6 +215,8 @@ def test_different_namespaces(started_cluster):
     for namespace in namespaces:
         for table in tables:
             table_name = f"{namespace}.{table}"
-            assert int(node.query(
-                f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' and name = '{table_name}'"
-            ))
+            assert int(
+                node.query(
+                    f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' and name = '{table_name}'"
+                )
+            )
