@@ -58,7 +58,18 @@ public:
     {
         Field out;
         constant_value.getColumn()->get(0, out);
-        return convertFieldToType(out, *constant_value.getType());
+
+        const IDataType & to_type = *constant_value.getType();
+
+        if (out.isNull() && !canContainNull(to_type))
+            return out;
+
+        Field converted = tryConvertFieldToType(out, *constant_value.getType());
+
+        if (!out.isNull() && converted.isNull())
+            return out;
+
+        return converted;
     }
 
     /// Get constant value string representation
