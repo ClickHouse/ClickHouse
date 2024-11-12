@@ -49,11 +49,13 @@ struct ParallelReadRequest
         CoordinationMode mode_,
         size_t replica_num_,
         size_t min_number_of_marks_,
-        RangesInDataPartsDescription description_)
+        RangesInDataPartsDescription description_,
+        UInt64 protocol_version_ = 0)
         : mode(mode_)
         , replica_num(replica_num_)
         , min_number_of_marks(min_number_of_marks_)
         , description(std::move(description_))
+        , protocol_version(protocol_version_)
     {}
 
     CoordinationMode mode;
@@ -62,6 +64,7 @@ struct ParallelReadRequest
     /// Extension for Ordered (InOrder or ReverseOrder) mode
     /// Contains only data part names without mark ranges.
     RangesInDataPartsDescription description;
+    UInt64 protocol_version;
 
     void serialize(WriteBuffer & out, UInt64 initiator_protocol_version) const;
     String describe() const;
@@ -93,14 +96,23 @@ struct InitialAllRangesAnnouncement
     /// No default constructor, you must initialize all fields at once.
 
     InitialAllRangesAnnouncement(
-        CoordinationMode mode_, RangesInDataPartsDescription description_, size_t replica_num_, size_t mark_segment_size_)
-        : mode(mode_), description(std::move(description_)), replica_num(replica_num_), mark_segment_size(mark_segment_size_)
+        CoordinationMode mode_,
+        RangesInDataPartsDescription description_,
+        size_t replica_num_,
+        size_t mark_segment_size_,
+        UInt64 protocol_version_ = 0)
+        : mode(mode_)
+        , description(std::move(description_))
+        , replica_num(replica_num_)
+        , mark_segment_size(mark_segment_size_)
+        , protocol_version(protocol_version_)
     {}
 
     CoordinationMode mode;
     RangesInDataPartsDescription description;
     size_t replica_num;
     size_t mark_segment_size;
+    UInt64 protocol_version;
 
     void serialize(WriteBuffer & out, UInt64 initiator_protocol_version) const;
     String describe();

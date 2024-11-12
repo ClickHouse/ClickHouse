@@ -43,6 +43,7 @@ namespace Setting
     extern const SettingsBool skip_unavailable_shards;
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsBool use_hedged_requests;
+    extern const SettingsBool parallel_replicas_strict_versioning;
 }
 
 namespace ErrorCodes
@@ -702,6 +703,15 @@ void RemoteQueryExecutor::processMergeTreeReadTaskRequest(ParallelReadRequest re
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Coordinator for parallel reading from replicas is not initialized");
 
     ProfileEvents::increment(ProfileEvents::MergeTreeReadTaskRequestsReceived);
+
+    const auto & settings = context->getSettingsRef();
+    if (settings[Setting::parallel_replicas_strict_versioning] && request.protocol_version != DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION)
+    {
+        ParallelReadResponse response{.finish = true, .description = {}};
+        connections->sendMergeTreeReadTaskResponse(response);
+        return;
+    }
+
     auto response = extension->parallel_reading_coordinator->handleRequest(std::move(request));
     connections->sendMergeTreeReadTaskResponse(response);
 }
@@ -710,6 +720,10 @@ void RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement(InitialAllRang
 {
     if (!extension || !extension->parallel_reading_coordinator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Coordinator for parallel reading from replicas is not initialized");
+
+    const auto & settings = context->getSettingsRef();
+    if (settings[Setting::parallel_replicas_strict_versioning] && announcement.protocol_version != DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION)
+        return;
 
     extension->parallel_reading_coordinator->handleInitialAllRangesAnnouncement(std::move(announcement));
 }

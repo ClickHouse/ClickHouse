@@ -1,7 +1,7 @@
-#include <chrono>
 #include <Storages/MergeTree/RequestResponse.h>
 
 #include <Core/ProtocolDefines.h>
+#include <Core/ParallelReplicasProtocolDefines.h>
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
 #include <IO/WriteHelpers.h>
@@ -76,7 +76,7 @@ ParallelReadRequest ParallelReadRequest::deserialize(ReadBuffer & in)
     readIntBinary(min_number_of_marks, in);
     description.deserialize(in);
 
-    return ParallelReadRequest(mode, replica_num, min_number_of_marks, std::move(description));
+    return ParallelReadRequest(mode, replica_num, min_number_of_marks, std::move(description), version);
 }
 
 void ParallelReadRequest::merge(ParallelReadRequest & other)
@@ -171,7 +171,7 @@ InitialAllRangesAnnouncement InitialAllRangesAnnouncement::deserialize(ReadBuffe
     if (replica_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MARK_SEGMENT_SIZE_FIELD)
         readIntBinary(mark_segment_size, in);
 
-    return InitialAllRangesAnnouncement{mode, description, replica_num, mark_segment_size};
+    return InitialAllRangesAnnouncement{mode, description, replica_num, mark_segment_size, version};
 }
 
 }
