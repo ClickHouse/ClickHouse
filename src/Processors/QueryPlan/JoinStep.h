@@ -37,7 +37,7 @@ public:
     void setJoin(JoinPtr join_, bool swap_streams_ = false);
     bool allowPushDownToRight() const;
 
-    /// Swap automatically if not set, othewise always or never, depending on the value
+    /// Swap automatically if not set, otherwise always or never, depending on the value
     std::optional<bool> swap_join_tables = {};
 
 private:

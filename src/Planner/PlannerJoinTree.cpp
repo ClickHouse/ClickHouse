@@ -1589,7 +1589,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
 
     if (table_join->getOutputColumns(JoinTableSide::Left).empty() && table_join->getOutputColumns(JoinTableSide::Right).empty())
     {
-        /// We should add all duplicated columns, because join algorithm add either all colum with specified name or none
+        /// We should add all duplicated columns, because join algorithm add either all column with specified name or none
         auto set_used_column_with_duplicates = [&](const NamesAndTypesList & columns, JoinTableSide join_table_side)
         {
             const auto & column_name = columns.front().name;
