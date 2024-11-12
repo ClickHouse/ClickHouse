@@ -115,12 +115,15 @@ void SerializationDynamic::serializeBinaryBulkStatePrefix(
     dynamic_state->variant_names = variant_info.variant_names;
     const auto & variant_column = column_dynamic.getVariantColumn();
 
-    /// In V1 version write max_dynamic_types parameter.
-    if (structure_version == DynamicSerializationVersion::Value::V1)
-        writeVarUInt(column_dynamic.getMaxDynamicTypes(), *stream);
-
     /// Write information about dynamic types.
     dynamic_state->num_dynamic_types = dynamic_state->variant_names.size() - 1; ///  -1 for SharedVariant
+
+    /// In V1 version we had max_dynamic_types parameter written, but now we need only actual number of variants.
+    /// For compatibility we need to write V1 version sometimes, but we should write number of variants instead of
+    /// max_dynamic_types (because now max_dynamic_types can be different in different serialized columns).
+    if (structure_version == DynamicSerializationVersion::Value::V1)
+        writeVarUInt(dynamic_state->num_dynamic_types, *stream);
+
     writeVarUInt(dynamic_state->num_dynamic_types, *stream);
     if (settings.data_types_binary_encoding)
     {

@@ -201,15 +201,18 @@ void SerializationObject::serializeBinaryBulkStatePrefix(
         return;
     }
 
-    /// In V1 version write max_dynamic_paths parameter.
-    if (serialization_version == ObjectSerializationVersion::Value::V1)
-        writeVarUInt(column_object.getMaxDynamicPaths(), *stream);
-
     /// Write all dynamic paths in sorted order.
     object_state->sorted_dynamic_paths.reserve(dynamic_paths.size());
     for (const auto & [path, _] : dynamic_paths)
         object_state->sorted_dynamic_paths.push_back(path);
     std::sort(object_state->sorted_dynamic_paths.begin(), object_state->sorted_dynamic_paths.end());
+
+    /// In V1 version we had max_dynamic_paths parameter written, but now we need only actual number of dynamic paths.
+    /// For compatibility we need to write V1 version sometimes, but we should write number of dynamic paths instead of
+    /// max_dynamic_paths (because now max_dynamic_paths can be different in different serialized columns).
+    if (serialization_version == ObjectSerializationVersion::Value::V1)
+        writeVarUInt(object_state->sorted_dynamic_paths.size(), *stream);
+
     writeVarUInt(object_state->sorted_dynamic_paths.size(), *stream);
     for (const auto & path : object_state->sorted_dynamic_paths)
         writeStringBinary(path, *stream);
