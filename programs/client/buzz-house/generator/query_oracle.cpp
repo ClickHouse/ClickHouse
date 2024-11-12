@@ -438,7 +438,6 @@ static const std::vector<TestSetting> test_settings{
     TestSetting("query_plan_filter_push_down", {"0", "1"}),
     TestSetting("query_plan_lift_up_array_join", {"0", "1"}),
     TestSetting("query_plan_lift_up_union", {"0", "1"}),
-    TestSetting("query_plan_max_optimizations_to_apply", {"0", "1"}),
     TestSetting("query_plan_merge_expressions", {"0", "1"}),
     TestSetting("query_plan_merge_filters", {"0", "1"}),
     TestSetting("query_plan_optimize_prewhere", {"0", "1"}),

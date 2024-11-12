@@ -282,7 +282,7 @@ int StatementGenerator::GenerateMergeTreeEngineDetails(
     {
         GenerateTableKey(rg, te->mutable_primary_key());
     }
-    if (rg.NextSmallNumber() < 5)
+    if (rg.NextBool())
     {
         GenerateTableKey(rg, te->mutable_partition_by());
     }
@@ -903,7 +903,7 @@ int StatementGenerator::AddTableConstraint(RandomGenerator & rg, SQLTable & t, c
 
 sql_query_grammar::TableEngineValues StatementGenerator::GetNextTableEngine(RandomGenerator & rg, const bool use_external_integrations)
 {
-    if (rg.NextBool())
+    if (rg.NextSmallNumber() < 9)
     {
         std::uniform_int_distribution<uint32_t> table_engine(1, sql_query_grammar::TableEngineValues::VersionedCollapsingMergeTree);
         return static_cast<sql_query_grammar::TableEngineValues>(table_engine(rg.gen));
@@ -1127,7 +1127,7 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator & rg, sql_query_
         sql_query_grammar::CreateTableAs * cta = ct->mutable_table_as();
         sql_query_grammar::ExprSchemaTable * aest = cta->mutable_est();
         const SQLTable & t = rg.PickRandomlyFromVector(FilterCollection<SQLTable>(attached_tables));
-        std::uniform_int_distribution<size_t> table_engine(0, like_engs.size() - 1);
+        std::uniform_int_distribution<size_t> table_engine(0, rg.NextSmallNumber() < 8 ? 3 : (like_engs.size() - 1));
         sql_query_grammar::TableEngineValues val = like_engs[table_engine(rg.gen)];
 
         next.teng = val;

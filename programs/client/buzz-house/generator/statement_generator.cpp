@@ -451,6 +451,7 @@ int StatementGenerator::GenerateNextInsert(RandomGenerator & rg, sql_query_gramm
         for (uint32_t i = 0; i < nrows; i++)
         {
             uint32_t j = 0;
+            const uint32_t next_nested_rows = rg.NextLargeNumber() % 100;
 
             if (i != 0)
             {
@@ -464,7 +465,7 @@ int StatementGenerator::GenerateNextInsert(RandomGenerator & rg, sql_query_gramm
                     buf += ", ";
                 }
                 if ((entry.dmod.has_value() && entry.dmod.value() == sql_query_grammar::DModifier::DEF_DEFAULT && rg.NextMediumNumber() < 6)
-                    || rg.NextLargeNumber() < 4)
+                    || rg.NextLargeNumber() < 2)
                 {
                     buf += "DEFAULT";
                 }
@@ -475,6 +476,11 @@ int StatementGenerator::GenerateNextInsert(RandomGenerator & rg, sql_query_gramm
                 else if (entry.special == ColumnSpecial::IS_DELETED)
                 {
                     buf += rg.NextBool() ? "1" : "0";
+                }
+                else if (entry.cname2.has_value())
+                {
+                    //make sure all nested entries have the same number of rows
+                    StrAppendArray(rg, buf, dynamic_cast<const ArrayType *>(entry.tp), next_nested_rows);
                 }
                 else
                 {

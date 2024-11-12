@@ -632,7 +632,7 @@ const SQLType * StatementGenerator::RandomNextType(
         sql_query_grammar::TupleWithColumnNames * twcn = (tp && with_names) ? tt->mutable_with_names() : nullptr;
         sql_query_grammar::TupleWithOutColumnNames * twocn = (tp && !with_names) ? tt->mutable_no_names() : nullptr;
         const uint32_t ncols
-            = this->width >= this->fc.max_width ? 0 : (rg.NextMediumNumber() % std::min<uint32_t>(6, this->fc.max_width - this->width));
+            = this->width >= this->fc.max_width ? 0 : (rg.NextMediumNumber() % std::min<uint32_t>(5, this->fc.max_width - this->width));
 
         this->depth++;
         for (uint32_t i = 0; i < ncols; i++)
@@ -661,7 +661,7 @@ const SQLType * StatementGenerator::RandomNextType(
         std::vector<const SQLType *> subtypes;
         sql_query_grammar::TupleWithOutColumnNames * twocn = tp ? tp->mutable_variant() : nullptr;
         const uint32_t ncols
-            = this->width >= this->fc.max_width ? 0 : (rg.NextMediumNumber() % std::min<uint32_t>(6, this->fc.max_width - this->width));
+            = this->width >= this->fc.max_width ? 0 : (rg.NextMediumNumber() % std::min<uint32_t>(5, this->fc.max_width - this->width));
 
         this->depth++;
         for (uint32_t i = 0; i < ncols; i++)
@@ -1054,10 +1054,8 @@ void StatementGenerator::StrAppendMap(RandomGenerator & rg, std::string & ret, c
     ret += ")";
 }
 
-void StatementGenerator::StrAppendArray(RandomGenerator & rg, std::string & ret, const ArrayType * at)
+void StatementGenerator::StrAppendArray(RandomGenerator & rg, std::string & ret, const ArrayType * at, const uint32_t limit)
 {
-    const uint32_t limit = rg.NextLargeNumber() % 100;
-
     ret += "[";
     for (uint32_t i = 0; i < limit; i++)
     {
@@ -1070,16 +1068,18 @@ void StatementGenerator::StrAppendArray(RandomGenerator & rg, std::string & ret,
     ret += "]";
 }
 
+void StatementGenerator::StrAppendArray(RandomGenerator & rg, std::string & ret, const ArrayType * at)
+{
+    StrAppendArray(rg, ret, at, rg.NextLargeNumber() % 100);
+}
+
 void StatementGenerator::StrAppendTuple(RandomGenerator & rg, std::string & ret, const TupleType * at)
 {
     ret += "(";
     for (uint32_t i = 0; i < at->subtypes.size(); i++)
     {
-        if (i != 0)
-        {
-            ret += ", ";
-        }
         StrAppendAnyValueInternal(rg, ret, at->subtypes[i].subtype);
+        ret += ", ";
     }
     ret += ")";
 }
@@ -1116,9 +1116,7 @@ void StrBuildJSONArray(RandomGenerator & rg, const int jdepth, const int jwidth,
         }
         if (jdepth)
         {
-            const int noption = jopt(rg.gen);
-
-            switch (noption)
+            switch (jopt(rg.gen))
             {
                 case 1: //object
                     StrBuildJSON(rg, jdepth - 1, next_width, ret);
@@ -1144,10 +1142,9 @@ void StrBuildJSONArray(RandomGenerator & rg, const int jdepth, const int jwidth,
 
 void StrBuildJSONElement(RandomGenerator & rg, std::string & ret)
 {
-    std::uniform_int_distribution<int> opts(1, 15);
-    const int noption = opts(rg.gen);
+    std::uniform_int_distribution<int> opts(1, 20);
 
-    switch (noption)
+    switch (opts(rg.gen))
     {
         case 1:
             ret += "false";
@@ -1165,54 +1162,56 @@ void StrBuildJSONElement(RandomGenerator & rg, std::string & ret)
             ret += std::to_string(rg.NextRandomUInt64());
             break;
         case 6:
-        case 7: { //small number
+        case 7:
+        case 8: { //small number
             std::uniform_int_distribution<int> numbers(-1000, 1000);
             ret += std::to_string(numbers(rg.gen));
         }
         break;
-        case 8: //date
-            ret += '"';
-            if (noption < 251)
-            {
-                rg.NextDate(ret);
-            }
-            else if (noption < 301)
-            {
-                rg.NextDate32(ret);
-            }
-            else if (noption < 351)
-            {
-                rg.NextDateTime(ret);
-            }
-            else
-            {
-                rg.NextDateTime64(ret);
-            }
-            ret += '"';
-            break;
-        case 9: { //decimal
+        case 9:
+        case 10: { //decimal
             std::uniform_int_distribution<uint32_t> next_dist(0, 30);
             const uint32_t left = next_dist(rg.gen), right = next_dist(rg.gen);
 
             AppendDecimal(rg, ret, left, right);
         }
         break;
-        case 10:
         case 11:
-        case 12: //string
+        case 12:
+        case 13: //string
             rg.NextString(ret, "\"", false, (rg.NextRandomUInt32() % 10000) + 1);
             break;
-        case 13: //uuid
+        case 14: //date
+            ret += '"';
+            rg.NextDate(ret);
+            ret += '"';
+            break;
+        case 15: //date32
+            ret += '"';
+            rg.NextDate32(ret);
+            ret += '"';
+            break;
+        case 16: //datetime
+            ret += '"';
+            rg.NextDateTime(ret);
+            ret += '"';
+            break;
+        case 17: //datetime64
+            ret += '"';
+            rg.NextDateTime64(ret);
+            ret += '"';
+            break;
+        case 18: //uuid
             ret += '"';
             rg.NextUUID(ret);
             ret += '"';
             break;
-        case 14: //ipv4
+        case 19: //ipv4
             ret += '"';
             rg.NextIPv4(ret);
             ret += '"';
             break;
-        case 15: //ipv6
+        case 20: //ipv6
             ret += '"';
             rg.NextIPv6(ret);
             ret += '"';
@@ -1233,7 +1232,6 @@ void StrBuildJSON(RandomGenerator & rg, const int jdepth, const int jwidth, std:
         for (int i = 0; i < nchildren; i++)
         {
             std::uniform_int_distribution<int> jopt(1, 3);
-            const int noption = jopt(rg.gen);
 
             if (i != 0)
             {
@@ -1242,7 +1240,7 @@ void StrBuildJSON(RandomGenerator & rg, const int jdepth, const int jwidth, std:
             ret += "\"";
             rg.NextJsonCol(ret);
             ret += "\":";
-            switch (noption)
+            switch (jopt(rg.gen))
             {
                 case 1: //object
                     StrBuildJSON(rg, jdepth - 1, jwidth, ret);
