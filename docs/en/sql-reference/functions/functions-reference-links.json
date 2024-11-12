@@ -1,0 +1,22 @@
+[
+	{
+		"title": "Regular Functions",
+		"description": "Functions which perform operations on individual rows of data. They can manipulate strings, numbers, and dates, among other things.",
+		"url": "/docs/en/sql-reference/functions/regular-functions/"
+	},
+	{
+		"title": "Aggregate Functions",
+		"description": "Functions which operate on data across multiple rows, returning a single result. They are typically used with the GROUP BY clause.",
+		"url": "/docs/en/sql-reference/functions/regular-functions/"
+	},
+	{
+		"title": "Table Functions",
+		"description": "Functions which enable complex data selection and transformation, often involving external data sources or special table structures.",
+		"url": "/docs/en/sql-reference/functions/table-functions/"
+	},
+	{
+		"title": "Window Functions",
+		"description": "Functions which perform calculations across a set of table rows that are related to the current row. They are useful for running totals, moving averages, and other analytics.",
+		"url": "/docs/en/sql-reference/functions/window-functions/"
+	}
+]

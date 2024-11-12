@@ -1,8 +1,10 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/
-toc_folder_title: Reference
 sidebar_position: 36
-toc_hidden: true
+toc_folder_title: Reference
+toc_priority: 1
+toc_title: List of Aggregate Functions
+displayed_sidebar: sqlreference
 ---
 
 # List of Aggregate Functions

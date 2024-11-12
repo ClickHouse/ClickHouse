@@ -1,7 +1,10 @@
 ---
-slug: /en/sql-reference/aggregate-functions/
-sidebar_label: Aggregate Functions
+slug: /en/sql-reference/functions/aggregate-functions/
 sidebar_position: 33
+displayed_sidebar: sqlreference
+toc_folder_title: Aggregate Functions
+toc_priority: 27
+toc_title: Aggregate Functions
 ---
 
 # Aggregate Functions
