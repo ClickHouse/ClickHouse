@@ -124,9 +124,9 @@ String MergeTreeSelectProcessor::getName() const
     return fmt::format("MergeTreeSelect(pool: {}, algorithm: {})", pool->getName(), algorithm->getName());
 }
 
-bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionActionsSettings & actions_settings, PrewhereExprInfo & prewhere, bool force_shirt_circuit_execution);
+bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionActionsSettings & actions_settings, PrewhereExprInfo & prewhere, bool force_short_circuit_execution);
 
-PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(PrewhereInfoPtr prewhere_info, const ExpressionActionsSettings & actions_settings, bool enable_multiple_prewhere_read_steps, bool force_shirt_circuit_execution)
+PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(PrewhereInfoPtr prewhere_info, const ExpressionActionsSettings & actions_settings, bool enable_multiple_prewhere_read_steps, bool force_short_circuit_execution)
 {
     PrewhereExprInfo prewhere_actions;
     if (prewhere_info)
@@ -147,7 +147,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(PrewhereInfoPtr pr
         }
 
         if (!enable_multiple_prewhere_read_steps ||
-            !tryBuildPrewhereSteps(prewhere_info, actions_settings, prewhere_actions, force_shirt_circuit_execution))
+            !tryBuildPrewhereSteps(prewhere_info, actions_settings, prewhere_actions, force_short_circuit_execution))
         {
             PrewhereExprStep prewhere_step
             {

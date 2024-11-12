@@ -209,7 +209,7 @@ bool tryBuildPrewhereSteps(
     PrewhereInfoPtr prewhere_info,
     const ExpressionActionsSettings & actions_settings,
     PrewhereExprInfo & prewhere,
-    bool force_shirt_circuit_execution)
+    bool force_short_circuit_execution)
 {
     if (!prewhere_info)
         return true;
@@ -346,7 +346,7 @@ bool tryBuildPrewhereSteps(
                 /// Don't remove if it's in the list of original outputs
                 .remove_filter_column =
                     step.original_node && !all_outputs.contains(step.original_node) && node_to_step[step.original_node] <= step_index,
-                .need_filter = force_shirt_circuit_execution,
+                .need_filter = force_short_circuit_execution,
                 .perform_alter_conversions = true,
             };
 
