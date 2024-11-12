@@ -4,6 +4,10 @@
 namespace DB
 {
 
+/// Class that stores adaptive index granularity.
+/// Inside it contains vector of partial sums of rows after mark:
+/// |-----|---|----|----|
+/// |  5  | 8 | 12 | 16 |
 class MergeTreeIndexGranularityAdaptive : public MergeTreeIndexGranularity
 {
 public:
@@ -19,7 +23,6 @@ public:
     size_t getTotalRows() const override;
 
     size_t getMarkRows(size_t mark_index) const override;
-    size_t getMarkStartingRow(size_t mark_index) const override;
     bool hasFinalMark() const override;
 
     void appendMark(size_t rows_count) override;

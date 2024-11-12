@@ -5,12 +5,7 @@
 namespace DB
 {
 
-/// Class contains information about index granularity in rows of IMergeTreeDataPart
-/// Inside it contains vector of partial sums of rows after mark:
-/// |-----|---|----|----|
-/// |  5  | 8 | 12 | 16 |
-/// If user doesn't specify setting index_granularity_bytes for MergeTree* table
-/// all values in inner vector would have constant stride (default 8192).
+/// Class that contains information about index granularity in rows of IMergeTreeDataPart
 class MergeTreeIndexGranularity
 {
 public:
@@ -49,7 +44,7 @@ public:
     virtual size_t getMarkRows(size_t mark_index) const = 0;
 
     /// Return amount of rows before mark
-    virtual size_t getMarkStartingRow(size_t mark_index) const = 0;
+    size_t getMarkStartingRow(size_t mark_index) const;
 
     /// Amount of rows after last mark
     size_t getLastMarkRows() const;

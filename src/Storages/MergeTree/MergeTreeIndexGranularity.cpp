@@ -41,6 +41,11 @@ size_t MergeTreeIndexGranularity::getMarksCountWithoutFinal() const
     return total - hasFinalMark();
 }
 
+size_t MergeTreeIndexGranularity::getMarkStartingRow(size_t mark_index) const
+{
+    return getRowsCountInRange(0, mark_index);
+}
+
 size_t MergeTreeIndexGranularity::getLastMarkRows() const
 {
     return getMarkRows(getMarksCount() - 1);
@@ -48,7 +53,7 @@ size_t MergeTreeIndexGranularity::getLastMarkRows() const
 
 size_t MergeTreeIndexGranularity::getLastNonFinalMarkRows() const
 {
-    size_t last_mark_rows = getLastMarkRows();
+    size_t last_mark_rows = getMarkRows(getMarksCount() - 1);
     if (last_mark_rows != 0)
         return last_mark_rows;
     return getMarkRows(getMarksCount() - 2);
@@ -139,6 +144,5 @@ MergeTreeIndexGranularityPtr createMergeTreeIndexGranularity(
 
     return std::make_shared<MergeTreeIndexGranularityConstant>(computed_granularity);
 }
-
 
 }

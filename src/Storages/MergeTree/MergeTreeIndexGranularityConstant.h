@@ -4,6 +4,8 @@
 namespace DB
 {
 
+/// Class that stores constant index granularity for whole part, except
+/// last non-zero granule and final granule which always has zero rows.
 class MergeTreeIndexGranularityConstant : public MergeTreeIndexGranularity
 {
 private:
@@ -12,6 +14,8 @@ private:
 
     size_t num_marks_without_final = 0;
     bool has_final_mark = false;
+
+    size_t getMarkUpperBoundForRow(size_t row_index) const;
 
 public:
     MergeTreeIndexGranularityConstant() = default;
@@ -27,7 +31,6 @@ public:
     size_t getTotalRows() const override;
 
     size_t getMarkRows(size_t mark_index) const override;
-    size_t getMarkStartingRow(size_t mark_index) const override;
     bool hasFinalMark() const override { return has_final_mark; }
 
     void appendMark(size_t rows_count) override;

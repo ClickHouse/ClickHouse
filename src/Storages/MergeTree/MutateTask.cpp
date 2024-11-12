@@ -35,7 +35,6 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/ProfileEventsScope.h>
-#include "Storages/MergeTree/MergeTreeIndexGranularity.h"
 #include <Core/ColumnsWithTypeAndName.h>
 
 
@@ -75,6 +74,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsBool replace_long_file_name_to_hash;
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
+    extern const MergeTreeSettingsBool enable_index_granularity_compression;
 }
 
 namespace ErrorCodes
@@ -985,11 +985,18 @@ void finalizeMutatedPart(
 
     new_data_part->rows_count = source_part->rows_count;
     new_data_part->index_granularity = source_part->index_granularity;
-    /// Just in case
-    new_data_part->index_granularity->shrinkToFitInMemory();
     new_data_part->setIndex(*source_part->getIndex());
     new_data_part->minmax_idx = source_part->minmax_idx;
     new_data_part->modification_time = time(nullptr);
+
+    if ((*new_data_part->storage.getSettings())[MergeTreeSetting::enable_index_granularity_compression])
+    {
+        if (auto new_index_granularity = new_data_part->index_granularity->optimize())
+            new_data_part->index_granularity = std::move(new_index_granularity);
+    }
+
+    /// Just in case
+    new_data_part->index_granularity->shrinkToFitInMemory();
 
     /// Load rest projections which are hardlinked
     bool noop;

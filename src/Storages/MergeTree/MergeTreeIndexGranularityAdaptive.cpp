@@ -27,22 +27,11 @@ size_t MergeTreeIndexGranularityAdaptive::getMarkRows(size_t mark_index) const
     return marks_rows_partial_sums[mark_index] - marks_rows_partial_sums[mark_index - 1];
 }
 
-size_t MergeTreeIndexGranularityAdaptive::getMarkStartingRow(size_t mark_index) const
-{
-    if (mark_index > getMarksCount())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get non existing mark {}, while size is {}", mark_index, getMarksCount());
-
-    if (mark_index == 0)
-        return 0;
-
-    return marks_rows_partial_sums[mark_index - 1];
-}
-
 bool MergeTreeIndexGranularityAdaptive::hasFinalMark() const
 {
     if (marks_rows_partial_sums.empty())
         return false;
-    return marks_rows_partial_sums.back() == 0;
+    return getLastMarkRows() == 0;
 }
 
 size_t MergeTreeIndexGranularityAdaptive::getMarksCount() const
@@ -92,9 +81,16 @@ void MergeTreeIndexGranularityAdaptive::adjustLastMark(size_t rows_count)
 
 size_t MergeTreeIndexGranularityAdaptive::getRowsCountInRange(size_t begin, size_t end) const
 {
+    if (end > getMarksCount())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get marks in range [{}; {}), while size is {}", begin, end, getMarksCount());
+
+    if (end == 0)
+        return 0;
+
     size_t subtrahend = 0;
     if (begin != 0)
         subtrahend = marks_rows_partial_sums[begin - 1];
+
     return marks_rows_partial_sums[end - 1] - subtrahend;
 }
 
@@ -126,6 +122,7 @@ uint64_t MergeTreeIndexGranularityAdaptive::getBytesSize() const
 {
     return marks_rows_partial_sums.size() * sizeof(size_t);
 }
+
 uint64_t MergeTreeIndexGranularityAdaptive::getBytesAllocated() const
 {
     return marks_rows_partial_sums.capacity() * sizeof(size_t);
