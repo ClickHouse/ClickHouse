@@ -6,7 +6,7 @@
 #include <filesystem>
 
 #include <IO/WriteBufferFromFile.h>
-#include <Common/MemoryWorker.h>
+#include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/filesystemHelpers.h>
 
 using namespace DB;
@@ -126,7 +126,7 @@ const std::string EXPECTED[2]
        "\"workingset_restore_anon\": 0, \"workingset_restore_file\": 0, \"zswap\": 0, \"zswapped\": 0, \"zswpin\": 0, \"zswpout\": 0}"};
 
 
-class CgroupsMemoryUsageObserverFixture : public ::testing::TestWithParam<ICgroupsReader::CgroupsVersion>
+class CgroupsMemoryUsageObserverFixture : public ::testing::TestWithParam<CgroupsMemoryUsageObserver::CgroupsVersion>
 {
     void SetUp() override
     {
@@ -138,7 +138,7 @@ class CgroupsMemoryUsageObserverFixture : public ::testing::TestWithParam<ICgrou
         stat_file.write(SAMPLE_FILE[version].data(), SAMPLE_FILE[version].size());
         stat_file.sync();
 
-        if (GetParam() == ICgroupsReader::CgroupsVersion::V2)
+        if (GetParam() == CgroupsMemoryUsageObserver::CgroupsVersion::V2)
         {
             auto current_file = WriteBufferFromFile(tmp_dir + "/memory.current");
             current_file.write("29645422592", 11);
@@ -154,18 +154,18 @@ protected:
 TEST_P(CgroupsMemoryUsageObserverFixture, ReadMemoryUsageTest)
 {
     const auto version = GetParam();
-    auto reader = ICgroupsReader::createCgroupsReader(version, tmp_dir);
+    auto reader = createCgroupsReader(version, tmp_dir);
     ASSERT_EQ(
         reader->readMemoryUsage(),
-        version == ICgroupsReader::CgroupsVersion::V1 ? /* rss from memory.stat */ 2232029184
-                                                                  : /* anon from memory.stat */ 10429399040);
+        version == CgroupsMemoryUsageObserver::CgroupsVersion::V1 ? /* rss from memory.stat */ 2232029184
+                                                                  : /* value from memory.current - inactive_file */ 20952338432);
 }
 
 
 TEST_P(CgroupsMemoryUsageObserverFixture, DumpAllStatsTest)
 {
     const auto version = GetParam();
-    auto reader = ICgroupsReader::createCgroupsReader(version, tmp_dir);
+    auto reader = createCgroupsReader(version, tmp_dir);
     ASSERT_EQ(reader->dumpAllStats(), EXPECTED[static_cast<uint8_t>(version)]);
 }
 
@@ -173,6 +173,6 @@ TEST_P(CgroupsMemoryUsageObserverFixture, DumpAllStatsTest)
 INSTANTIATE_TEST_SUITE_P(
     CgroupsMemoryUsageObserverTests,
     CgroupsMemoryUsageObserverFixture,
-    ::testing::Values(ICgroupsReader::CgroupsVersion::V1, ICgroupsReader::CgroupsVersion::V2));
+    ::testing::Values(CgroupsMemoryUsageObserver::CgroupsVersion::V1, CgroupsMemoryUsageObserver::CgroupsVersion::V2));
 
 #endif

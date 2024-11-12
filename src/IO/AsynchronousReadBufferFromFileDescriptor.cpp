@@ -196,7 +196,7 @@ off_t AsynchronousReadBufferFromFileDescriptor::seek(off_t offset, int whence)
 
             return new_pos;
         }
-        if (prefetch_future.valid())
+        else if (prefetch_future.valid())
         {
             /// Read from prefetch buffer and recheck if the new position is valid inside.
             if (nextImpl())
