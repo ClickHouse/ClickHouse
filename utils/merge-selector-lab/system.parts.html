@@ -259,6 +259,10 @@ function visualizeMergeTree(title, raw_data) {
         .domain([Math.max(1, minYValue), Math.pow(2, Math.ceil(Math.log2(maxYValue)))])
         .range([svgHeight - margin.bottom, margin.top]);
 
+    // Set up color scale
+    let colorScale = d3.scaleSequential(d3.interpolateViridis)
+        .domain([minColorValue, maxColorValue]);
+
     // Create the SVG container
     const svgContainer = container
         .append("svg")
@@ -310,7 +314,7 @@ function visualizeMergeTree(title, raw_data) {
         .attr("y", d => pxt(yScale(d[ySelector]) - part_dy))
         .attr("width", d => pxr(xScale(d[rightSelector]) - xScale(d[leftSelector])))
         .attr("height", d => pxb(part_dy))
-        .attr("fill", "black")
+        .attr("fill", d => colorScale(d[colorSelector]))
         .on("click", function(event, d) {
             // Stop propagation to prevent triggering other click events
             event.stopPropagation();
@@ -383,9 +387,10 @@ function visualizeMergeTree(title, raw_data) {
                 .style("opacity", 1);
         });
 
-    // Create selectors for y-axis and x-axis
-    const yOptions = ["bytes_on_disk", "data_compressed_bytes", "data_uncompressed_bytes"];
+    // Create selectors for y-axis, x-axis, and color-axis
+    const yOptions = ["bytes_on_disk", "data_compressed_bytes", "data_uncompressed_bytes", "blocks", "rows"];
     const xOptions = ["blocks", "bytes_on_disk", "rows"];
+    const colorOptions = ["level", "blocks", "rows", "bytes_on_disk", "data_compressed_bytes", "data_uncompressed_bytes"];
 
     // X selector
     const xSelectorCol = selectorsContainer
@@ -448,6 +453,33 @@ function visualizeMergeTree(title, raw_data) {
         });
     ySelectorElement.selectAll("option")
         .data(yOptions)
+        .enter()
+        .append("option")
+        .text(d => d)
+        .attr("value", d => d);
+
+    // Color selector
+    const colorSelectorCol = selectorsContainer
+        .append("div")
+        .attr("class", "me-3");
+    colorSelectorCol.append("label")
+        .attr("class", "form-label small me-2")
+        .text("Color: ");
+    const colorSelectorElement = colorSelectorCol.append("select")
+        .attr("class", "form-select form-select-sm")
+        .on("change", function() {
+            colorSelector = this.value;
+
+            // Rescale color axis
+            const { minColorValue, maxColorValue } = computeColorAggregates(data, colorSelector);
+            colorScale.domain([minColorValue, maxColorValue]);
+
+            // Apply transitions to rectangles
+            parts.transition().duration(1000)
+                .attr("fill", d => colorScale(d[colorSelector]));
+        });
+    colorSelectorElement.selectAll("option")
+        .data(colorOptions)
         .enter()
         .append("option")
         .text(d => d)
