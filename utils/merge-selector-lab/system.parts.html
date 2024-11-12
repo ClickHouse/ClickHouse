@@ -4,26 +4,26 @@
     <meta charset="UTF-8">
     <title>ClickHouse Parts Visualizer</title>
     <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
     <style>
-        * {
-            box-sizing: border-box;
-        }
-        html, body {
-            height: 100%;
-            overflow: auto;
-            margin: 0;
-            background: #F8F8F8;
-            font-size: 16pt;
-        }
         body {
             font-family: Liberation Sans, DejaVu Sans, sans-serif, Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji;
             padding: 1rem;
         }
 
-        input, textarea {
+        input#url, textarea#query {
             border: 3px solid #EEE;
-            font-size: 16pt;
+            font-size: 12pt;
             padding: 0.25rem;
+        }
+
+        textarea#query {
+            height: 82px;
+        }
+
+        input#play {
+            font-size: 16pt;
+            padding: 0;
         }
 
         #url {
@@ -37,12 +37,12 @@
             height: 3rem;
         }
 
-        input[type="button"] {
+        input.my-button[type="button"] {
             background: #FED;
             width: 2rem;
             height: 2rem;
         }
-        input[type="button"]:hover {
+        input.my-button[type="button"]:hover {
             background: #F88;
             cursor: pointer;
         }
@@ -51,17 +51,43 @@
             margin-top: 0.25rem;
             font-size: 10pt;
         }
+
+        .tooltip {
+            position: absolute;
+            text-align: left; /* Align text to the left for better readability */
+            padding: 10px;
+            font: 12px sans-serif;
+            background: rgba(0, 0, 0, 0.8);
+            color: #fff;
+            border-radius: 4px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.5);
+        }
+
+        .tooltip table {
+            border-collapse: collapse;
+        }
+
+        .tooltip td {
+            padding: 4px 8px;
+        }
+
+        .tooltip tr:nth-child(even) {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
     </style>
 </head>
 <body>
 <div class="inputs">
     <form id="params">
         <div id="connection-params">
-            <input spellcheck="false" id="url" type="text" value="" placeholder="URL" /><input spellcheck="false" id="user" type="text" value="" placeholder="user" /><input spellcheck="false" id="password" type="password" placeholder="password" value="" />
+            <input spellcheck="false" id="url" type="text" value="http://localhost:8123" placeholder="URL" /><input spellcheck="false" id="user" type="text" value="" placeholder="user" /><input spellcheck="false" id="password" type="password" placeholder="password" value="" />
             <input id="hidden-submit" type="submit" hidden="true"/>
         </div>
-        <textarea spellcheck="false" data-gramm="false" id="query">SELECT database, table, partition, name, min_block_number, max_block_number, bytes_on_disk FROM system.parts WHERE active = 1 ORDER BY database, table, partition, min_block_number</textarea>
-        <input id="play" type="button" value="▶">
+        <textarea spellcheck="false" data-gramm="false" id="query" rows="10">SELECT * FROM parts WHERE active = 1 ORDER BY database, table, partition, min_block_number</textarea>
+        <input class="my-button" id="play" type="button" value="▶">
     </form>
 </div>
 <div id="canvas">
@@ -103,7 +129,9 @@ function determineTickStep(max_block_number)
 
 function formatBlockNumber(block_number)
 {
-    if (block_number >= Math.pow(1000, 3))
+    if (block_number >= Math.pow(1000, 4))
+        return (block_number / Math.pow(1000, 4)).toFixed(1) + 'T';
+    else if (block_number >= Math.pow(1000, 3))
         return (block_number / Math.pow(1000, 3)).toFixed(1) + 'G';
     else if (block_number >= Math.pow(1000, 2))
         return (block_number / Math.pow(1000, 2)).toFixed(1) + 'M';
@@ -113,47 +141,121 @@ function formatBlockNumber(block_number)
         return block_number;
 }
 
-function visualizeMergeTree(raw_data, container) {
+function formatBytes(bytes)
+{
+    const digits = 0;
+    if (bytes >= Math.pow(1024, 4))
+        return (bytes / Math.pow(1024, 4)).toFixed(digits) + 'TB';
+    else if (bytes >= Math.pow(1024, 3))
+        return (bytes / Math.pow(1024, 3)).toFixed(digits) + 'GB';
+    else if (bytes >= Math.pow(1024, 2))
+        return (bytes / Math.pow(1024, 2)).toFixed(digits) + 'MB';
+    else if (bytes >= 1024)
+        return (bytes / 1024).toFixed(digits) + 'KB';
+    else
+        return bytes;
+}
+
+function visualizeMergeTree(title, raw_data) {
+    let titleContainer = d3.select("body")
+        .append("div")
+        .attr("class", "container-fluid bg-primary text-white")
+        .text(title);
+
+    let selectorsContainer = d3.select("body")
+        .append("div")
+        .attr("class", "container mt-3")
+        .append("form")
+        .attr("class", "d-flex align-items-center")
+
+    let container = d3.select("body")
+        .append("div")
+        .attr("class", "container-fluid")
+        .append("div")
+
     // Input visuals
-    const margin = { left: 50, right: 30, top: 60, bottom: 60 };
-    const width = 800;
+    const margin = { left: 50, right: 30, top: 10, bottom: 50 };
+    const width = container.node().clientWidth - margin.left - margin.right;
     const height = 300;
     const part_dy = 4;
-    const part_dx = 1;
+    const part_dx = 4;
+
+    // Set initial selector values
+    let xSelector = "blocks";
+    let leftSelector = "left_blocks";
+    let rightSelector = "right_blocks";
+    let ySelector = "bytes_on_disk";
+    let colorSelector = "level";
 
     // Compute useful aggregates
-    let log_min_bytes = Math.log2(d3.min(raw_data, d => d.bytes_on_disk));
-    let log_max_bytes = Math.log2(d3.max(raw_data, d => d.bytes_on_disk));
-
-    // Data
-    let data = [];
-    let lefts = {}; // Maps inserted part.begin to its part.left
-    let insert_left = 0;
-    for (const row of raw_data) {
-        const { name, min_block_number, max_block_number, bytes_on_disk } = row;
-        data.push({
-            bytes: +bytes_on_disk,
-            left: +min_block_number,
-            right: +max_block_number,
-        });
+    function computeXAggregates(data, leftSelector, rightSelector) {
+        let minXValue = d3.min(data, d => d[leftSelector]);
+        let maxXValue = d3.max(data, d => d[rightSelector]);
+        return { minXValue, maxXValue };
+    }
+    function computeYAggregates(data, ySelector) {
+        let minYValue = d3.min(data, d => d[ySelector]);
+        let maxYValue = d3.max(data, d => d[ySelector]);
+        return { minYValue, maxYValue };
+    }
+    function computeColorAggregates(data, colorSelector) {
+        let minColorValue = d3.min(data, d => d[colorSelector]);
+        let maxColorValue = d3.max(data, d => d[colorSelector]);
+        return { minColorValue, maxColorValue };
     }
 
-    const maxYValue = d3.max(data, d => d.bytes);
-    const minYValue = d3.min(data, d => d.bytes);
-    const minXValue = d3.min(data, d => d.left);
-    const maxXValue = d3.max(data, d => d.right);
+    // Prepare Data
+    let totals = {
+        bytes_on_disk: 0,
+        data_compressed_bytes: 0,
+        data_uncompressed_bytes: 0,
+        blocks: 0,
+        rows: 0,
+    };
+    let data = raw_data.map(row => {
+        row.blocks = +row.max_block_number - +row.min_block_number + 1;
+        totals.blocks = +row.min_block_number; // In case of skipped blocks
+        let lefts = {};
+        let rights = {};
+        let values = {};
+        for (const k in totals) {
+            const value = +row[k];
+            lefts[`left_${k}`] = totals[k];
+            totals[k] += value;
+            values[k] = value;
+            rights[`right_${k}`] = totals[k];
+        }
+        return {
+            name: row.name,
+            modification_time: row.modification_time,
+            part_type: row.part_type,
+            level: +row.level,
+            marks: +row.marks,
+            marks_bytes: +row.marks_bytes,
+            primary_key_size: +row.primary_key_size,
+            ...lefts,
+            ...rights,
+            ...values,
+        };
+    });
+
+    let { minXValue, maxXValue } = computeXAggregates(data, leftSelector, rightSelector);
+    let { minYValue, maxYValue } = computeYAggregates(data, ySelector);
+    let { minColorValue, maxColorValue } = computeColorAggregates(data, colorSelector);
+
+    console.log([minXValue, maxXValue], [minYValue, maxYValue]);
 
     const svgWidth = width + margin.left + margin.right;
-    const svgHeight = height;
+    const svgHeight = height + margin.top + margin.bottom;
 
     // Set up the horizontal scale (x-axis) — linear scale
-    const xScale = d3.scaleLinear()
+    let xScale = d3.scaleLinear()
         .domain([minXValue, maxXValue])
-        .range([margin.left, svgWidth - margin.right]);
+        .range([margin.left, margin.left + width]);
 
     // Set up the vertical scale (y-axis) — logarithmic scale
-    const yScale = d3.scaleLog()
-        .base(2) // Use base 2 for the logarithmic scale
+    let yScale = d3.scaleLog()
+        .base(2)
         .domain([Math.max(1, minYValue), Math.pow(2, Math.ceil(Math.log2(maxYValue)))])
         .range([svgHeight - margin.bottom, margin.top]);
 
@@ -164,8 +266,8 @@ function visualizeMergeTree(raw_data, container) {
         .attr("height", svgHeight);
 
     // To avoid negative width and height
-    function pxl(value, min = 0) { return Math.max(min, Math.floor(value)); }
-    function pxr(value, min = 1) { return Math.max(min, Math.ceil(value)); }
+    function pxl(value) { return value; }
+    function pxr(value) { return Math.max(1, value); }
     function pxt(value) { return value; }
     function pxb(value) { return Math.max(1, value); }
 
@@ -176,11 +278,27 @@ function visualizeMergeTree(raw_data, container) {
         .attr("x", margin.left)
         .attr("y", margin.top)
         .attr("width", width)
-        .attr("height", height - margin.bottom);
+        .attr("height", height);
 
     // Create a group for the chart content
     const chartGroup = svgContainer.append("g")
         .attr("clip-path", "url(#clip)");
+
+    const bytesFormatter = bytes => `${d3.format(",")(bytes)} (${formatBytes(bytes)})`;
+    const tooltipFields = {
+        "name": d => d.name,
+        "part_type": d => d.part_type,
+        "modification_time": d => d.modification_time,
+        "marks": d => d3.format(",")(d.marks),
+        "marks_bytes": d => bytesFormatter(d.marks_bytes),
+        "primary_key_size": d => bytesFormatter(d.primary_key_size),
+        "bytes_on_disk": d => bytesFormatter(d.bytes_on_disk),
+        "data_compressed_bytes": d => bytesFormatter(d.data_compressed_bytes),
+        "data_uncompressed_bytes": d => bytesFormatter(d.data_uncompressed_bytes),
+        "blocks": d => d3.format(",")(d.blocks),
+        "rows": d => d3.format(",")(d.rows),
+        "level": d => d.level,
+    };
 
     // Append rectangles for parts
     const parts = chartGroup.selectAll("rect.part")
@@ -188,23 +306,152 @@ function visualizeMergeTree(raw_data, container) {
         .enter()
         .append("rect")
         .attr("class", "part")
-        .attr("x", d => pxl(xScale(d.left)))
-        .attr("y", d => pxt(yScale(d.bytes) - part_dy))
-        .attr("width", d => pxr(xScale(d.right) - xScale(d.left)))
+        .attr("x", d => pxl(xScale(d[leftSelector])))
+        .attr("y", d => pxt(yScale(d[ySelector]) - part_dy))
+        .attr("width", d => pxr(xScale(d[rightSelector]) - xScale(d[leftSelector])))
         .attr("height", d => pxb(part_dy))
-        .attr("fill", "black");
+        .attr("fill", "black")
+        .on("click", function(event, d) {
+            // Stop propagation to prevent triggering other click events
+            event.stopPropagation();
 
-    // Append marks for parts begin
-    const marks = chartGroup.selectAll("rect.mark")
-        .data(data)
+            console.log("CLICKED", d);
+
+            // Generate table rows
+            const rows = Object.keys(tooltipFields).map(field => `
+                <tr><td><strong>${field}</strong></td><td>${tooltipFields[field](d)}</td></tr>
+            `).join("");
+
+            // Set the content of the tooltip
+            tooltip
+                .style("left", `${event.pageX + 10}px`)
+                .style("top", `${event.pageY + 10}px`)
+                .html(`
+                    <table>${rows}</table>
+                `)
+                .transition()
+                .duration(200)
+                .style("opacity", 1);
+
+            // Get the tooltip's dimensions
+            const tooltipNode = tooltip.node();
+            const tooltipRect = tooltipNode.getBoundingClientRect();
+            const tooltipWidth = tooltipRect.width;
+            const tooltipHeight = tooltipRect.height;
+
+            // Get the viewport dimensions
+            const pageWidth = window.innerWidth;
+            const pageHeight = window.innerHeight;
+
+            // Define offsets
+            const offset = 10; // Distance from cursor
+
+            // Calculate initial position (right and below the cursor)
+            let left = event.pageX + offset;
+            let top = event.pageY + offset;
+
+            // Get the mouse position relative to the page
+            const [mouseX, mouseY] = d3.pointer(event);
+
+            // Adjust horizontal position if tooltip overflows to the right
+            if (mouseX + offset + tooltipWidth > pageWidth) {
+                left = event.pageX - tooltipWidth - offset;
+            }
+
+            // Adjust vertical position if tooltip overflows to the bottom
+            if (mouseY + offset + tooltipHeight > pageHeight) {
+                top = event.pageY - tooltipHeight - offset;
+            }
+
+            // Further adjust if tooltip goes beyond the left edge
+            if (left < 0) {
+                left = offset;
+            }
+
+            // Further adjust if tooltip goes beyond the top edge
+            if (top < 0) {
+                top = offset;
+            }
+
+            // Position the tooltip
+            tooltip
+                .style("left", `${left}px`)
+                .style("top", `${top}px`)
+                .style("visibility", "visible") // Make it visible
+                .transition()
+                .duration(200)
+                .style("opacity", 1);
+        });
+
+    // Create selectors for y-axis and x-axis
+    const yOptions = ["bytes_on_disk", "data_compressed_bytes", "data_uncompressed_bytes"];
+    const xOptions = ["blocks", "bytes_on_disk", "rows"];
+
+    // X selector
+    const xSelectorCol = selectorsContainer
+        .append("div")
+        .attr("class", "me-3");
+    xSelectorCol.append("label")
+        .attr("class", "form-label small me-2")
+        .text("X: ");
+    const xSelectorElement = xSelectorCol.append("select")
+        .attr("class", "form-select form-select-sm me-2")
+        .on("change", function() {
+            xSelector = this.value;
+            leftSelector = `left_${xSelector}`;
+            rightSelector = `right_${xSelector}`;
+
+            // Rescale axis
+            const { minXValue, maxXValue } = computeXAggregates(data, leftSelector, rightSelector);
+            xScale.domain([minXValue, maxXValue]);
+
+            // Apply transitions to rectangles
+            parts.transition().duration(1000)
+                .attr("x", d => pxl(xScale(d[leftSelector])))
+                .attr("width", d => pxr(xScale(d[rightSelector]) - xScale(d[leftSelector])))
+
+            // Update axes with transitions
+            xAxisGroup.transition().duration(1000)
+                .call(d3.axisBottom(xScale).tickFormat(formatBlockNumber));
+        });
+    xSelectorElement.selectAll("option")
+        .data(xOptions)
         .enter()
-        .append("rect")
-        .attr("class", "mark")
-        .attr("x", d => pxl(xScale(d.left)))
-        .attr("y", d => pxt(yScale(d.bytes) - part_dy))
-        .attr("width", d => pxr(Math.min(part_dx, xScale(d.right) - xScale(d.left))))
-        .attr("height", d => pxb(part_dy))
-        .attr("fill", "#0a0");
+        .append("option")
+        .text(d => d)
+        .attr("value", d => d);
+
+    // Y selector
+    const ySelectorCol = selectorsContainer
+        .append("div")
+        .attr("class", "me-3");
+    ySelectorCol.append("label")
+        .attr("class", "form-label small me-2")
+        .text("Y: ");
+    const ySelectorElement = ySelectorCol.append("select")
+        .attr("class", "form-select form-select-sm")
+        .on("change", function() {
+            ySelector = this.value;
+
+            // Rescale axis
+            const { minYValue, maxYValue } = computeYAggregates(data, ySelector);
+            yScale.domain([Math.max(1, minYValue), Math.pow(2, Math.ceil(Math.log2(maxYValue)))]);
+
+            // Apply transitions to rectangles
+            parts.transition().duration(1000)
+                .attr("y", d => pxt(yScale(d[ySelector]) - part_dy))
+                .attr("height", d => pxb(part_dy));
+
+            // Update axes with transitions
+            yAxisGroup.transition().duration(1000)
+                .call(d3.axisLeft(yScale).tickFormat(formatBytes))
+        });
+    ySelectorElement.selectAll("option")
+        .data(yOptions)
+        .enter()
+        .append("option")
+        .text(d => d)
+        .attr("value", d => d);
 
     // Determine the tick step based on maxValue
     const tickStep = determineTickStep(maxXValue - minXValue);
@@ -218,53 +465,35 @@ function visualizeMergeTree(raw_data, container) {
         .call(xAxis);
 
     // Add label for the x-axis
-    svgContainer.append("text")
-        .attr("x", svgWidth / 2)
-        .attr("y", svgHeight - margin.bottom / 2 + 20)
-        .attr("text-anchor", "middle")
-        .attr("font-size", "14px")
-        .text("Block Number");
+    // svgContainer.append("text")
+    //     .attr("x", svgWidth / 2)
+    //     .attr("y", svgHeight - margin.bottom / 2 + 20)
+    //     .attr("text-anchor", "middle")
+    //     .attr("font-size", "14px")
+    //     .text("Block Number");
 
     // Add the y-axis with custom ticks for powers of 2
     const powersOfTwo = Array.from({ length: 50 }, (v, i) => Math.pow(2, i + 1));
     const yAxis = d3.axisLeft(yScale)
         .tickValues(powersOfTwo.filter(d => d >= minYValue && d <= maxYValue))
-        .tickFormat(d => `2^${Math.log2(d)}`);
+        .tickFormat(formatBytes);
     const yAxisGroup = svgContainer.append("g")
-        .attr("transform", `translate(${margin.left}, 0)`) // Align with the left margin
+        .attr("transform", `translate(${margin.left}, 0)`)
         .call(yAxis);
 
     // Add label for the y-axis
-    svgContainer.append("text")
-        .attr("transform", "rotate(-90)")
-        .attr("x", -svgHeight / 2)
-        .attr("y", margin.left / 2 - 10)
-        .attr("text-anchor", "middle")
-        .attr("font-size", "14px")
-        .text("Log(PartSize)");
-
-    // Modify the tick labels using <tspan> to position the exponent properly
-    yAxisGroup.selectAll(".tick text")
-        .each(function(d)
-        {
-            const exponent = Math.log2(d);  // Calculate the exponent
-            const self = d3.select(this);
-
-            // Create base '2'
-            self.text("");  // Clear current text
-            self.append("tspan").text("2");
-
-            // Add the exponent in a superscript-like way using <tspan> and dy positioning
-            self.append("tspan")
-                .attr("dy", "-0.7em")  // Move the exponent up
-                .attr("font-size", "70%")  // Reduce font size for the exponent
-                .text(exponent);
-        });
+    // svgContainer.append("text")
+    //     .attr("transform", "rotate(-90)")
+    //     .attr("x", -svgHeight / 2)
+    //     .attr("y", margin.left / 2 - 10)
+    //     .attr("text-anchor", "middle")
+    //     .attr("font-size", "14px")
+    //     .text("Log(PartSize)");
 
     // Zoom functionality
     const zoom = d3.zoom()
-        .scaleExtent([1, 10000]) // Limit the zoom scale
-        .translateExtent([[margin.left, 0], [svgWidth - margin.right, svgHeight]]) // Limit panning
+        .scaleExtent([1, 1000000])
+        .translateExtent([[margin.left, 0], [svgWidth - margin.right, svgHeight]])
         .on("zoom", zoomed);
 
     svgContainer.call(zoom);
@@ -276,10 +505,8 @@ function visualizeMergeTree(raw_data, container) {
 
         // Update axes and rectangles with the new scale
         xAxisGroup.call(xAxis.scale(newXScale));
-        parts.attr("x", d => newXScale(d.left))
-            .attr("width", d => Math.max(1, newXScale(d.right) - newXScale(d.left)));
-        marks.attr("x", d => newXScale(d.left))
-            .attr("width", d => Math.min(part_dx, newXScale(d.right) - newXScale(d.left)));
+        parts.attr("x", d => pxl(newXScale(d[leftSelector])))
+            .attr("width", d => pxr(newXScale(d[rightSelector]) - newXScale(d[leftSelector])));
     }
 }
 
@@ -392,24 +619,35 @@ document.getElementById('play').addEventListener('click', _ => {
 
 let all = {};
 
-async function update({database, table, partition, name, min_block_number, max_block_number, bytes_on_disk})
+async function update(data)
 {
+    // console.log(data);
+    const {database, table, partition} = data;
     const key = database + "." + table + ":" + partition;
     if (!(key in all))
         all[key] = [];
-    all[key].push({name, min_block_number, max_block_number, bytes_on_disk});
- }
+    all[key].push(data);
+}
 
 async function visualize()
 {
     for (const key in all)
     {
-        const raw_data = all[key];
-        d3.select("body").append("div").text(key);
         console.log(key);
-        visualizeMergeTree(raw_data, d3.select("body").append("div"), true);
+        visualizeMergeTree(key, all[key]);
     }
 }
+
+// Create tooltip div and hide it initially
+const tooltip = d3.select("body").append("div")
+    .attr("class", "tooltip");
+
+// Hide tooltip when clicking anywhere else on the page
+d3.select("body").on("click", function() {
+    tooltip.transition()
+        .duration(200)
+        .style("opacity", 0);
+});
 
 </script>
 </body>
