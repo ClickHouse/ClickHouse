@@ -404,6 +404,28 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
     if (current_settings[Setting::readonly] > 1 && resolved_name == "readonly")
         return Checker(PreformattedMessage::create("Cannot modify 'readonly' setting in readonly mode"), ErrorCodes::READONLY);
 
+    if (access_control)
+    {
+        bool allowed_experimental = access_control->getAllowExperimentalTierSettings();
+        bool allowed_beta = access_control->getAllowBetaTierSettings();
+        if (!allowed_experimental || !allowed_beta)
+        {
+            auto setting_tier = current_settings.getTier(resolved_name);
+            if (setting_tier == SettingsTierType::EXPERIMENTAL && !allowed_experimental)
+                return Checker(
+                    PreformattedMessage::create(
+                        "Cannot modify setting '{}'. Changes to EXPERIMENTAL settings are disabled in the server config ('allowed_feature_tier')",
+                        setting_name),
+                    ErrorCodes::READONLY);
+            if (setting_tier == SettingsTierType::BETA && !allowed_beta)
+                return Checker(
+                    PreformattedMessage::create(
+                        "Cannot modify setting '{}'. Changes to BETA settings are disabled in the server config ('allowed_feature_tier')",
+                        setting_name),
+                    ErrorCodes::READONLY);
+        }
+    }
+
     auto it = constraints.find(resolved_name);
     if (current_settings[Setting::readonly] == 1)
     {

@@ -6176,6 +6176,11 @@ bool Settings::isChanged(std::string_view name) const
     return impl->isChanged(name);
 }
 
+SettingsTierType Settings::getTier(std::string_view name) const
+{
+    return impl->getTier(name);
+}
+
 bool Settings::tryGet(std::string_view name, Field & value) const
 {
     return impl->tryGet(name, value);
