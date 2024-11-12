@@ -697,6 +697,30 @@ CONV_FN(LiteralValue, lit_val)
                 case SpecialVal::MAX_UINT256:
                     ret += "115792089237316195423570985008687907853269984665640564039457584007913129639935";
                     break;
+                case SpecialVal::MIN_DATE:
+                    ret += "'1970-01-01'::Date";
+                    break;
+                case SpecialVal::MAX_DATE:
+                    ret += "'2149-06-06'::Date";
+                    break;
+                case SpecialVal::MIN_DATE32:
+                    ret += "'1900-01-01'::Date32";
+                    break;
+                case SpecialVal::MAX_DATE32:
+                    ret += "'2299-12-31'::Date32";
+                    break;
+                case SpecialVal::MIN_DATETIME:
+                    ret += "'1970-01-01 00:00:00'::DateTime";
+                    break;
+                case SpecialVal::MAX_DATETIME:
+                    ret += "'2106-02-07 06:28:15'::DateTime";
+                    break;
+                case SpecialVal::MIN_DATETIME64:
+                    ret += "'1900-01-01 00:00:00'::DateTime64";
+                    break;
+                case SpecialVal::MAX_DATETIME64:
+                    ret += "'2299-12-31 23:59:59.99999999'::DateTime64";
+                    break;
                 case SpecialVal::VAL_NULL_CHAR:
                     ret += "'\\0'";
                     break;

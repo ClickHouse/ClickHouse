@@ -1592,9 +1592,17 @@ enum SpecialVal {
     MAX_UINT64 = 32;
     MAX_UINT128 = 33;
     MAX_UINT256 = 34;
-    VAL_NULL_CHAR = 35;
-    VAL_DEFAULT = 36;
-    VAL_STAR = 37;
+    MIN_DATE = 35;
+    MAX_DATE = 36;
+    MIN_DATE32 = 37;
+    MAX_DATE32 = 38;
+    MIN_DATETIME = 39;
+    MAX_DATETIME = 40;
+    MIN_DATETIME64 = 41;
+    MAX_DATETIME64 = 42;
+    VAL_NULL_CHAR = 43;
+    VAL_DEFAULT = 44;
+    VAL_STAR = 45;
 }
 
 message NumericLiteral {
@@ -3166,7 +3174,7 @@ message AlterTableItem {
     oneof alter_oneof {
         //for tables
         HeavyDelete del = 1;
-        Update update = 2;  
+        Update update = 2;
         TableKey order = 3;
         ColInPartition materialize_column = 4;
         AddColumn add_column = 5;
