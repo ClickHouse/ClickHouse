@@ -108,11 +108,13 @@ size_t MergeTreeIndexGranularityConstant::getMarkUpperBoundForRow(size_t row_ind
 {
     size_t num_rows_with_constant_granularity = (num_marks_without_final - 1) * constant_granularity;
 
-    /// All granules with constant granularity + last granule + final granule
-    if (row_index >= num_rows_with_constant_granularity)
+    if (row_index >= getTotalRows())
         return getMarksCount();
 
-    return (row_index + constant_granularity - 1) / constant_granularity;
+    if (row_index >= num_rows_with_constant_granularity)
+        return num_marks_without_final - 1;
+
+    return row_index / constant_granularity;
 }
 
 size_t MergeTreeIndexGranularityConstant::countMarksForRows(size_t from_mark, size_t number_of_rows) const

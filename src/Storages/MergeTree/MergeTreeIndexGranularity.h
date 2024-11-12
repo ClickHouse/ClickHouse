@@ -12,8 +12,8 @@ public:
     MergeTreeIndexGranularity() = default;
     virtual ~MergeTreeIndexGranularity() = default;
 
+    /// Returns granularity if it is constant for whole part (except last granule).
     virtual std::optional<size_t> getConstantGranularity() const = 0;
-
     /// Return count of rows between marks
     virtual size_t getRowsCountInRange(size_t begin, size_t end) const = 0;
     /// Return count of rows between marks
@@ -53,13 +53,12 @@ public:
     size_t getLastNonFinalMarkRows() const;
 
     virtual bool hasFinalMark() const = 0;
-
     bool empty() const { return getMarksCount() == 0; }
 
-    /// Add new mark with rows_count
+    /// Add new mark with rows_count.
     virtual void appendMark(size_t rows_count) = 0;
 
-    /// Extends last mark by rows_count.
+    /// Sets last mark equal to rows_count.
     virtual void adjustLastMark(size_t rows_count) = 0;
     void addRowsToLastMark(size_t rows_count);
 
@@ -67,6 +66,8 @@ public:
     virtual uint64_t getBytesSize() const = 0;
     virtual uint64_t getBytesAllocated() const = 0;
 
+    /// Possibly optimizes values in memory (for example, to constant value).
+    /// Returns new optimized index granularity structure or nullptr if no optimization is not applicable.
     virtual std::shared_ptr<MergeTreeIndexGranularity> optimize() const = 0;
     virtual std::string describe() const = 0;
 };
