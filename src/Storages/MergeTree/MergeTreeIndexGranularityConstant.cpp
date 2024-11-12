@@ -134,7 +134,7 @@ size_t MergeTreeIndexGranularityConstant::countRowsForRows(size_t from_mark, siz
 std::string MergeTreeIndexGranularityConstant::describe() const
 {
     return fmt::format(
-        "Constant(constant_granularity: {}, last_mark_granularity: {}, num_marks_without_final: {}, has_final_mark: {}",
+        "Constant(constant_granularity: {}, last_mark_granularity: {}, num_marks_without_final: {}, has_final_mark: {})",
         constant_granularity, last_mark_granularity, num_marks_without_final, has_final_mark);
 }
 

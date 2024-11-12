@@ -68,7 +68,6 @@ public:
     virtual uint64_t getBytesAllocated() const = 0;
 
     virtual std::shared_ptr<MergeTreeIndexGranularity> optimize() const = 0;
-
     virtual std::string describe() const = 0;
 };
 
