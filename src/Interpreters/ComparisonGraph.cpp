@@ -101,7 +101,7 @@ std::optional<Field> tryGetConstantValue(const QueryTreeNodePtr & node)
 std::optional<Field> tryGetConstantValue(const ASTPtr & node)
 {
     if (const auto * constant = node->as<ASTLiteral>())
-        return &constant->value;
+        return constant->value;
 
     return {};
 }
