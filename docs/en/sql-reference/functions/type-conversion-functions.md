@@ -6874,7 +6874,7 @@ Converts a [String](../data-types/string.md) to [DateTime64](../data-types/datet
 **Syntax**
 
 ``` sql
-parseDateTime64(str, scale, [format[, timezone]])
+parseDateTime64(str, scale[, format[, timezone]])
 ```
 
 **Arguments**
@@ -6903,7 +6903,7 @@ Converts a [String](../data-types/string.md) to [DateTime64](../data-types/datet
 **Syntax**
 
 ``` sql
-parseDateTime64InJodaSyntax(str, scale, [format[, timezone]])
+parseDateTime64InJodaSyntax(str, scale[, format[, timezone]])
 ```
 
 **Arguments**

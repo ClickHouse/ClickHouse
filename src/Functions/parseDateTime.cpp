@@ -32,13 +32,13 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
-    extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
-    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
     extern const int CANNOT_PARSE_DATETIME;
-    extern const int NOT_ENOUGH_SPACE;
+    extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_ENOUGH_SPACE;
+    extern const int NOT_IMPLEMENTED;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 namespace
@@ -66,7 +66,6 @@ namespace
 
     constexpr Int32 minYear = 1970;
     constexpr Int32 maxYear = 2106;
-    constexpr Int32 maxScaleOfDateTime64 = 6;
 
     const std::unordered_map<String, std::pair<String, Int32>> dayOfWeekMap{
         {"mon", {"day", 1}},
@@ -465,7 +464,7 @@ namespace
             if (parse_syntax_ == ParseSyntax::MySQL && scale_ != 6)
                 RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for scale must be 6 for MySQL parse syntax", std::to_string(scale_))
             else if (parse_syntax_ == ParseSyntax::Joda && scale_ > 6)
-                RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for scale must be in the range [0, 6] for joda syntax", std::to_string(scale_))
+                RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for scale must be in the range [0, 6] for Joda syntax", std::to_string(scale_))
 
             scale = scale_;
             return {};
@@ -627,14 +626,11 @@ namespace
 
         DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
-            FunctionArgumentDescriptors mandatory_args;
-            if constexpr (return_type == ReturnType::DateTime)
-                mandatory_args = {{"time", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}};
-            else
-                mandatory_args = {
-                    {"time", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
-                    {"scale", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), &isColumnConst, "UInt8"}
-                };
+            FunctionArgumentDescriptors mandatory_args = {
+                {"time", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}};
+            if constexpr (return_type == ReturnType::DateTime64)
+                mandatory_args.push_back(
+                    {"scale", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), &isColumnConst, "UInt8"});
 
             FunctionArgumentDescriptors optional_args{
                 {"format", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
@@ -649,41 +645,11 @@ namespace
             else
             {
                 UInt8 scale = 0;
-                const auto * col_scale = checkAndGetColumnConst<ColumnUInt8>(arguments[1].column.get());
-                if (col_scale)
+                if (const auto * col_scale = checkAndGetColumnConst<ColumnUInt8>(arguments[1].column.get()); col_scale != nullptr)
                     scale = col_scale->getValue<UInt8>();
                 else
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "The scale argument is not Const(UInt8) type.");
 
-                if (parse_syntax == ParseSyntax::MySQL && scale != 6)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The scale argument's value {} of MySQL parse syntax is not 6.", std::to_string(scale));
-                if (scale > maxScaleOfDateTime64)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The scale argument's value {} exceed the max scale value {}.", std::to_string(scale), std::to_string(maxScaleOfDateTime64));
-
-                String format = getFormat(arguments, scale);
-                std::vector<Instruction> instructions = parseFormat(format);
-                for (const auto & instruction : instructions)
-                {
-                    /// Check scale by counting how may 'S' characters exists in the format string.
-                    const String & fragment = instruction.getFragment();
-                    UInt32 s_count = 0;
-                    for (char ch : fragment)
-                    {
-                        if (ch != 'S')
-                        {
-                            s_count = 0;
-                            break;
-                        }
-                        else
-                            s_count++;
-                    }
-                    /// If the number of 'S' characters in format string not euqals the scale, then throw an exception to report error.
-                    if (s_count != 0 && s_count != scale)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "The number of 'S' characters in the input format string {} does not equal the given scale value {}.",
-                            format,
-                            std::to_string(scale));
-                }
                 data_type = std::make_shared<DataTypeDateTime64>(scale, time_zone_name);
             }
 
@@ -742,9 +708,37 @@ namespace
             }
 
             const String format = getFormat(arguments, scale);
-            const auto & time_zone = getTimeZone(arguments);
             std::vector<Instruction> instructions = parseFormat(format);
+            Int64OrError result = 0;
 
+            /// Check scale by counting how many 'S' characters exist in the format string when parse syntax is Joda and
+            /// return type is DateTime64.
+            if constexpr (return_type == ReturnType::DateTime64 && parse_syntax == ParseSyntax::Joda)
+            {
+                UInt32 s_count = 0;
+                for (const auto & instruction : instructions)
+                {
+                    const String & fragment = instruction.getFragment();
+                    for (char ch : fragment)
+                    {
+                        if (ch != 'S')
+                        {
+                            s_count = 0;
+                            break;
+                        }
+                        else
+                            ++s_count;
+                    }
+                }
+                /// If the number of 'S' characters in format string not euqals the scale, then throw an exception to report error.
+                if (s_count != 0 && s_count != scale)
+                    result = tl::unexpected(ErrorCodeAndMessage(ErrorCodes::BAD_ARGUMENTS,
+                        "The number of 'S' characters in the input format string {} does not equal the given scale value {}.",
+                        format,
+                        std::to_string(scale)));
+            }
+
+            const auto & time_zone = getTimeZone(arguments);
             /// Make datetime fit in a cache line.
             alignas(64) DateTime<error_handling> datetime;
             for (size_t i = 0; i < input_rows_count; ++i)
@@ -756,7 +750,7 @@ namespace
                 Pos end = str_ref.data + str_ref.size;
                 bool error = false;
 
-                auto handleError = [&](const auto & result [[maybe_unused]]) -> void
+                auto handle_error = [&]([[maybe_unused]] const auto & res) -> void
                 {
                     if constexpr (error_handling == ErrorHandling::Zero)
                     {
@@ -772,37 +766,41 @@ namespace
                     else
                     {
                         static_assert(error_handling == ErrorHandling::Exception);
-                        const ErrorCodeAndMessage & err = result.error();
+                        const ErrorCodeAndMessage & err = res.error();
                         throw Exception(err.error_code, "{}", err.error_message);
                     }
                 };
 
+                if (!result.has_value())
+                {
+                    handle_error(result);
+                    continue;
+                }
+
                 if constexpr (return_type == ReturnType::DateTime64)
                 {
-                    if (auto result = datetime.setScale(static_cast<UInt8>(scale), parse_syntax); !result.has_value())
+                    if (auto res = datetime.setScale(static_cast<UInt8>(scale), parse_syntax); !res.has_value())
                     {
-                        handleError(result);
+                        handle_error(res);
                         continue;
                     }
                 }
 
                 for (const auto & instruction : instructions)
                 {
-                    if (auto result = instruction.perform(cur, end, datetime) ; result.has_value())
+                    if (auto res = instruction.perform(cur, end, datetime) ; res.has_value())
                     {
-                        cur = *result;
+                        cur = *res;
                     }
                     else
                     {
-                        handleError(result);
+                        handle_error(res);
                         break;
                     }
                 }
 
                 if (error)
                     continue;
-
-                Int64OrError result = 0;
 
                 /// Ensure all input was consumed.
                 if (cur < end)
@@ -2305,7 +2303,7 @@ namespace
                     throw Exception(
                         ErrorCodes::ILLEGAL_COLUMN,
                         "Illegal column {} of second ('format') argument of function {}. Must be constant string.",
-                        arguments[index_of_format_string_arg].name,
+                        arguments[index_of_format_string_arg].column->getName(),
                         getName());
                 return col_format->getValue<String>();
             }
