@@ -6889,9 +6889,11 @@ parseDateTime64(str, scale, [format[, timezone]])
 Returns [DateTime64](../data-types/datetime64.md) type values parsed from input string according to a MySQL style format string.
 
 ## parseDateTime64OrZero
+
 Same as for [parseDateTime64](#parsedatetime64) except that it returns zero date when it encounters a date format that cannot be processed.
 
 ## parseDateTime64OrNull
+
 Same as for [parseDateTime64](#parsedatetime64) except that it returns `NULL` when it encounters a date format that cannot be processed.
 
 ## parseDateTime64InJodaSyntax

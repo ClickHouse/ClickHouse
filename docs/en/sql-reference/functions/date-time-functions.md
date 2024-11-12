@@ -4489,9 +4489,9 @@ Using replacement fields, you can define a pattern for the resulting string.
 | k           | clockhour of day (1~24)                  | number        | 24                                 |
 | m           | minute of hour                           | number        | 30                                 |
 | s           | second of minute                         | number        | 55                                 |
-| S           | fraction of second (not supported yet)   | number        | 978                                |
-| z           | time zone (short name not supported yet) | text          | Pacific Standard Time; PST         |
-| Z           | time zone offset/id (not supported yet)  | zone          | -0800; -08:00; America/Los_Angeles |
+| S           | fraction of second                       | number        | 978                                |
+| z           | time zone                                | text          | Eastern Standard Time; EST         |
+| Z           | time zone offset                         | zone          | -0800; -0812                       |
 | '           | escape for text                          | delimiter     |                                    |
 | ''          | single quote                             | literal       | '                                  |
 

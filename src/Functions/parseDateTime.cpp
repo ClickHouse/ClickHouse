@@ -38,6 +38,7 @@ namespace ErrorCodes
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
     extern const int CANNOT_PARSE_DATETIME;
     extern const int NOT_ENOUGH_SPACE;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -193,7 +194,7 @@ namespace
         Int32 minute = 0; /// range [0, 59]
         Int32 second = 0; /// range [0, 59]
         Int32 microsecond = 0; /// range [0, 999999]
-        UInt32 scale = 0; /// The scale of DateTime64, range [0, 6].
+        UInt32 scale = 0; /// Scale of DateTime64. When parse syntax is `Joda`, it range [0, 6]; When parse syntax is `MySQL`, it should be 6
 
         bool is_am = true; /// If is_hour_of_half_day = true and is_am = false (i.e. pm) then add 12 hours to the result DateTime
         bool hour_starts_at_1 = false; /// Whether the hour is clockhour
@@ -458,6 +459,18 @@ namespace
             return {};
         }
 
+        [[nodiscard]]
+        VoidOrError setScale(UInt8 scale_, ParseSyntax parse_syntax_)
+        {
+            if (parse_syntax_ == ParseSyntax::MySQL && scale_ != 6)
+                RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for scale must be 6 for MySQL parse syntax", std::to_string(scale_))
+            else if (parse_syntax_ == ParseSyntax::Joda && scale_ > 6)
+                RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for scale must be in the range [0, 6] for joda syntax", std::to_string(scale_))
+
+            scale = scale_;
+            return {};
+        }
+
         /// For debug
         [[maybe_unused]] String toString() const
         {
@@ -579,7 +592,8 @@ namespace
         }
     };
 
-    /// _FUNC_(str[scale, format, timezone])
+    /// _FUNC_(str[, format, timezone])          /// for ReturnType::DateTime
+    /// _FUNC_(str, scale[, format, timezone]).  /// for ReturnType::DateTime64
     template <typename Name, ParseSyntax parse_syntax, ReturnType return_type, ErrorHandling error_handling>
     class FunctionParseDateTimeImpl : public IFunction
     {
@@ -608,13 +622,13 @@ namespace
         DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
             FunctionArgumentDescriptors mandatory_args;
-            if constexpr (return_type == ReturnType::DateTime64)
+            if constexpr (return_type == ReturnType::DateTime)
+                mandatory_args = {{"time", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}};
+            else
                 mandatory_args = {
                     {"time", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
                     {"scale", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), &isColumnConst, "UInt8"}
                 };
-            else
-                mandatory_args = {{"time", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}};
 
             FunctionArgumentDescriptors optional_args{
                 {"format", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
@@ -624,22 +638,21 @@ namespace
 
             String time_zone_name = getTimeZone(arguments).getTimeZone();
             DataTypePtr data_type;
-            if constexpr (return_type == ReturnType::DateTime64)
+            if constexpr (return_type == ReturnType::DateTime)
+                data_type = std::make_shared<DataTypeDateTime>(time_zone_name);
+            else
             {
                 UInt8 scale = 0;
-                if (isUInt8(arguments[1].type))
-                {
-                    const auto * col_scale = checkAndGetColumnConst<ColumnUInt8>(arguments[1].column.get());
-                    if (col_scale)
-                        scale = col_scale->getValue<UInt8>();
-                    else
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The scale argument is not Const(UInt8) type.");
-                }
+                const auto * col_scale = checkAndGetColumnConst<ColumnUInt8>(arguments[1].column.get());
+                if (col_scale)
+                    scale = col_scale->getValue<UInt8>();
+                else
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "The scale argument is not Const(UInt8) type.");
+
                 if (parse_syntax == ParseSyntax::MySQL && scale != 6)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The scale argument's value {} of MySQL parse syntax is not 6.", std::to_string(scale));
                 if (scale > maxScaleOfDateTime64)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "The scale argument's value {} exceed the max scale value {}.", std::to_string(scale), std::to_string(maxScaleOfDateTime64));
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The scale argument's value {} exceed the max scale value {}.", std::to_string(scale), std::to_string(maxScaleOfDateTime64));
 
                 String format = getFormat(arguments, scale);
                 std::vector<Instruction> instructions = parseFormat(format);
@@ -647,28 +660,26 @@ namespace
                 {
                     /// Check scale by counting how may 'S' characters exists in the format string.
                     const String & fragment = instruction.getFragment();
-                    UInt32 s_cnt = 0;
+                    UInt32 s_count = 0;
                     for (char ch : fragment)
                     {
                         if (ch != 'S')
                         {
-                            s_cnt = 0;
+                            s_count = 0;
                             break;
                         }
                         else
-                            s_cnt++;
+                            s_count++;
                     }
-                    /// If the number of 'S' character in format string not euqals the scale, then throw an exception to report error.
-                    if (s_cnt != 0 && s_cnt != scale)
+                    /// If the number of 'S' characters in format string not euqals the scale, then throw an exception to report error.
+                    if (s_count != 0 && s_count != scale)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "The scale of input format string {} not equals the given scale value {}.",
+                            "The number of 'S' characters in the input format string {} does not equal the given scale value {}.",
                             format,
                             std::to_string(scale));
                 }
                 data_type = std::make_shared<DataTypeDateTime64>(scale, time_zone_name);
             }
-            else
-                data_type = std::make_shared<DataTypeDateTime>(time_zone_name);
 
             if (error_handling == ErrorHandling::Null)
                 return std::make_shared<DataTypeNullable>(data_type);
@@ -679,22 +690,23 @@ namespace
         {
             DataTypePtr non_null_result_type;
             if constexpr (error_handling == ErrorHandling::Null)
+                /// Remove Nullable wrapper. It will be added back later.
                 non_null_result_type = removeNullable(result_type);
             else
                 non_null_result_type = result_type;
 
-            if constexpr (return_type == ReturnType::DateTime64)
+            if constexpr (return_type == ReturnType::DateTime)
+            {
+                MutableColumnPtr col_res = ColumnDateTime::create(input_rows_count);
+                ColumnDateTime * col_datetime = assert_cast<ColumnDateTime *>(col_res.get());
+                return executeImpl2<DataTypeDateTime::FieldType>(arguments, result_type, input_rows_count, col_res, col_datetime->getData());
+            }
+            else
             {
                 const auto * datatime64_type = checkAndGetDataType<DataTypeDateTime64>(non_null_result_type.get());
                 MutableColumnPtr col_res = ColumnDateTime64::create(input_rows_count, datatime64_type->getScale());
                 ColumnDateTime64 * col_datetime64 = assert_cast<ColumnDateTime64 *>(col_res.get());
                 return executeImpl2<DataTypeDateTime64::FieldType>(arguments, result_type, input_rows_count, col_res, col_datetime64->getData());
-            }
-            else
-            {
-                MutableColumnPtr col_res = ColumnDateTime::create(input_rows_count);
-                ColumnDateTime * col_datetime = assert_cast<ColumnDateTime *>(col_res.get());
-                return executeImpl2<DataTypeDateTime::FieldType>(arguments, result_type, input_rows_count, col_res, col_datetime->getData());
             }
         }
 
@@ -732,41 +744,52 @@ namespace
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 datetime.reset();
-                if constexpr (return_type == ReturnType::DateTime64)
-                    datetime.scale = scale;
 
                 StringRef str_ref = col_str->getDataAt(i);
                 Pos cur = str_ref.data;
                 Pos end = str_ref.data + str_ref.size;
                 bool error = false;
 
+                auto handleError = [&](const auto & result) -> void
+                {
+                    if constexpr (error_handling == ErrorHandling::Zero)
+                    {
+                        res_data[i] = 0;
+                        error = true;
+                    }
+                    else if constexpr (error_handling == ErrorHandling::Null)
+                    {
+                        res_data[i] = 0;
+                        col_null_map->getData()[i] = 1;
+                        error = true;
+                    }
+                    else
+                    {
+                        static_assert(error_handling == ErrorHandling::Exception);
+                        const ErrorCodeAndMessage & err = result.error();
+                        throw Exception(err.error_code, "{}", err.error_message);
+                    }
+                };
+
+                if constexpr (return_type == ReturnType::DateTime64)
+                {
+                    if (auto result = datetime.setScale(static_cast<UInt8>(scale), parse_syntax); !result.has_value())
+                    {
+                        handleError(result);
+                        continue;
+                    }
+                }
+
                 for (const auto & instruction : instructions)
                 {
-                    if (auto result = instruction.perform(cur, end, datetime); result.has_value())
+                    if (auto result = instruction.perform(cur, end, datetime) ; result.has_value())
                     {
                         cur = *result;
                     }
                     else
                     {
-                        if constexpr (error_handling == ErrorHandling::Zero)
-                        {
-                            res_data[i] = 0;
-                            error = true;
-                            break;
-                        }
-                        else if constexpr (error_handling == ErrorHandling::Null)
-                        {
-                            res_data[i] = 0;
-                            col_null_map->getData()[i] = 1;
-                            error = true;
-                            break;
-                        }
-                        else
-                        {
-                            static_assert(error_handling == ErrorHandling::Exception);
-                            const ErrorCodeAndMessage & err = result.error();
-                            throw Exception(err.error_code, "{}", err.error_message);
-                        }
+                        handleError(result);
+                        break;
                     }
                 }
 
@@ -789,10 +812,10 @@ namespace
                 {
                     if (result = datetime.buildDateTime(time_zone); result.has_value())
                     {
-                        if constexpr (return_type == ReturnType::DateTime64)
-                            res_data[i] = static_cast<Int64>(*result) * multiplier + datetime.microsecond;
-                        else
+                        if constexpr (return_type == ReturnType::DateTime)
                             res_data[i] = static_cast<UInt32>(*result);
+                        else
+                            res_data[i] = static_cast<Int64>(*result) * multiplier + datetime.microsecond;
                     }
                 }
 
@@ -2241,11 +2264,9 @@ namespace
 
         String getFormat(const ColumnsWithTypeAndName & arguments, UInt32 scale) const
         {
-            size_t format_arg_index = 1;
-            if constexpr (return_type == ReturnType::DateTime64)
-                format_arg_index = 2;
+            size_t index_of_format_string_arg = (return_type == ReturnType::DateTime) ? 1 : 2;
 
-            if (arguments.size() <= format_arg_index)
+            if (arguments.size() <= index_of_format_string_arg)
             {
                 String format;
                 if constexpr (parse_syntax == ParseSyntax::MySQL)
@@ -2263,12 +2284,12 @@ namespace
             }
             else
             {
-                const auto * col_format = checkAndGetColumnConst<ColumnString>(arguments[format_arg_index].column.get());
+                const auto * col_format = checkAndGetColumnConst<ColumnString>(arguments[index_of_format_string_arg].column.get());
                 if (!col_format)
                     throw Exception(
                         ErrorCodes::ILLEGAL_COLUMN,
                         "Illegal column {} of second ('format') argument of function {}. Must be constant string.",
-                        arguments[format_arg_index].column->getName(),
+                        arguments[index_of_format_string_arg].column->getName(),
                         getName());
                 return col_format->getValue<String>();
             }

@@ -8,8 +8,8 @@ select parseDateTime64InJodaSyntax('2024-10-09 10:30:10.123', 3, 'yyyy-MM-dd HH:
 select parseDateTime64InJodaSyntax('2024-10-09 10:30:10.123', 3, 'yyyy-MM-dd HH:mm:ss.SSSS');  -- { serverError BAD_ARGUMENTS }
 select parseDateTime64InJodaSyntax('2024-10-09 10:30:10.123456-0812', 6, 'yyyy-MM-dd HH:mm:ss.SSSSSSZ');
 select parseDateTime64InJodaSyntax('2024-10-09 10:30:10.123456-08123', 6, 'yyyy-MM-dd HH:mm:ss.SSSSSSZZZ'); -- {serverError CANNOT_PARSE_DATETIME}
-select parseDateTime64InJodaSyntax('2024-10-09 10:30:10.123456America/Los_Angeles', 6, 'yyyy-MM-dd HH:mm:ss.SSSSSSz');
-select parseDateTime64InJodaSyntax('2024-10-09 10:30:10.123456America/Los_Angeles', 6, 'yyyy-MM-dd HH:mm:ss.SSSSSSzzz');
+select parseDateTime64InJodaSyntax('2024-10-09 10:30:10.123456EST', 6, 'yyyy-MM-dd HH:mm:ss.SSSSSSz');
+select parseDateTime64InJodaSyntax('2024-10-09 10:30:10.123456EST', 6, 'yyyy-MM-dd HH:mm:ss.SSSSSSzzz');
 -- incorrect timezone offset and timezone
 select parseDateTime64InJodaSyntax('2024-10-09 10:30:10.123456-8000', 6, 'yyyy-MM-dd HH:mm:ss.SSSSSSZ'); -- { serverError CANNOT_PARSE_DATETIME }
 select parseDateTime64InJodaSyntax('2024-10-09 10:30:10.123456ABCD', 6, 'yyyy-MM-dd HH:mm:ss.SSSSSSz'); -- { serverError BAD_ARGUMENTS }
@@ -22,8 +22,8 @@ select parseDateTime64InJodaSyntaxOrZero('2024-10-09 10:30:10.123', 3, 'yyyy-MM-
 select parseDateTime64InJodaSyntaxOrZero('2024-10-09 10:30:10.123', 3, 'yyyy-MM-dd HH:mm:ss.SSSS');  -- { serverError BAD_ARGUMENTS }
 select parseDateTime64InJodaSyntaxOrZero('2024-10-09 10:30:10.123456-0812', 6, 'yyyy-MM-dd HH:mm:ss.SSSSSSZ');
 select parseDateTime64InJodaSyntaxOrZero('2024-10-09 10:30:10.123456-08123', 6, 'yyyy-MM-dd HH:mm:ss.SSSSSSZZZ');
-select parseDateTime64InJodaSyntaxOrZero('2024-10-09 10:30:10.123456America/Los_Angeles', 6, 'yyyy-MM-dd HH:mm:ss.SSSSSSz');
-select parseDateTime64InJodaSyntaxOrZero('2024-10-09 10:30:10.123456America/Los_Angeles', 6, 'yyyy-MM-dd HH:mm:ss.SSSSSSzzz');
+select parseDateTime64InJodaSyntaxOrZero('2024-10-09 10:30:10.123456EST', 6, 'yyyy-MM-dd HH:mm:ss.SSSSSSz');
+select parseDateTime64InJodaSyntaxOrZero('2024-10-09 10:30:10.123456EST', 6, 'yyyy-MM-dd HH:mm:ss.SSSSSSzzz');
 -- incorrect timezone offset and timezone
 select parseDateTime64InJodaSyntaxOrZero('2024-10-09 10:30:10.123456-8000', 6, 'yyyy-MM-dd HH:mm:ss.SSSSSSZ');
 select parseDateTime64InJodaSyntaxOrZero('2024-10-09 10:30:10.123456ABCD', 6, 'yyyy-MM-dd HH:mm:ss.SSSSSSz'); -- { serverError BAD_ARGUMENTS }
@@ -36,8 +36,8 @@ select parseDateTime64InJodaSyntaxOrNull('2024-10-09 10:30:10.123', 3, 'yyyy-MM-
 select parseDateTime64InJodaSyntaxOrNull('2024-10-09 10:30:10.123', 3, 'yyyy-MM-dd HH:mm:ss.SSSS');  -- { serverError BAD_ARGUMENTS }
 select parseDateTime64InJodaSyntaxOrNull('2024-10-09 10:30:10.123456-0812', 6, 'yyyy-MM-dd HH:mm:ss.SSSSSSZ');
 select parseDateTime64InJodaSyntaxOrNull('2024-10-09 10:30:10.123456-08123', 6, 'yyyy-MM-dd HH:mm:ss.SSSSSSZZZ');
-select parseDateTime64InJodaSyntaxOrNull('2024-10-09 10:30:10.123456America/Los_Angeles', 6, 'yyyy-MM-dd HH:mm:ss.SSSSSSz');
-select parseDateTime64InJodaSyntaxOrNull('2024-10-09 10:30:10.123456America/Los_Angeles', 6, 'yyyy-MM-dd HH:mm:ss.SSSSSSzzz');
+select parseDateTime64InJodaSyntaxOrNull('2024-10-09 10:30:10.123456EST', 6, 'yyyy-MM-dd HH:mm:ss.SSSSSSz');
+select parseDateTime64InJodaSyntaxOrNull('2024-10-09 10:30:10.123456EST', 6, 'yyyy-MM-dd HH:mm:ss.SSSSSSzzz');
 -- incorrect timezone offset and timezone
 select parseDateTime64InJodaSyntaxOrNull('2024-10-09 10:30:10.123456-8000', 6, 'yyyy-MM-dd HH:mm:ss.SSSSSSZ');
 select parseDateTime64InJodaSyntaxOrNull('2024-10-09 10:30:10.123456ABCD', 6, 'yyyy-MM-dd HH:mm:ss.SSSSSSz'); -- { serverError BAD_ARGUMENTS }
