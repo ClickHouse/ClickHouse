@@ -1,5 +1,6 @@
 #include <Interpreters/ProcessorsProfileLog.h>
 
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -8,15 +9,18 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/Context.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DateLUTImpl.h>
-#include <Common/logger_useful.h>
-
-#include <array>
 
 namespace DB
 {
+
+namespace Setting
+{
+extern const SettingsBool log_processors_profiles;
+}
 
 ColumnsDescription ProcessorProfileLogElement::getColumnsDescription()
 {
@@ -81,5 +85,57 @@ void ProcessorProfileLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(output_bytes);
 }
 
+void logProcessorProfile(ContextPtr context, const Processors & processors)
+{
+    const Settings & settings = context->getSettingsRef();
+    if (settings[Setting::log_processors_profiles])
+    {
+        if (auto processors_profile_log = context->getProcessorsProfileLog())
+        {
+            ProcessorProfileLogElement processor_elem;
 
+            const auto time_now = std::chrono::system_clock::now();
+            processor_elem.event_time = timeInSeconds(time_now);
+            processor_elem.event_time_microseconds = timeInMicroseconds(time_now);
+            processor_elem.initial_query_id = context->getInitialQueryId();
+            processor_elem.query_id = context->getCurrentQueryId();
+
+            auto get_proc_id = [](const IProcessor & proc) -> UInt64 { return reinterpret_cast<std::uintptr_t>(&proc); };
+
+            for (const auto & processor : processors)
+            {
+                std::vector<UInt64> parents;
+                for (const auto & port : processor->getOutputs())
+                {
+                    if (!port.isConnected())
+                        continue;
+                    const IProcessor & next = port.getInputPort().getProcessor();
+                    parents.push_back(get_proc_id(next));
+                }
+
+                processor_elem.id = get_proc_id(*processor);
+                processor_elem.parent_ids = std::move(parents);
+
+                processor_elem.plan_step = reinterpret_cast<std::uintptr_t>(processor->getQueryPlanStep());
+                processor_elem.plan_step_name = processor->getPlanStepName();
+                processor_elem.plan_step_description = processor->getPlanStepDescription();
+                processor_elem.plan_group = processor->getQueryPlanStepGroup();
+
+                processor_elem.processor_name = processor->getName();
+
+                processor_elem.elapsed_us = static_cast<UInt64>(processor->getElapsedNs() / 1000U);
+                processor_elem.input_wait_elapsed_us = static_cast<UInt64>(processor->getInputWaitElapsedNs() / 1000U);
+                processor_elem.output_wait_elapsed_us = static_cast<UInt64>(processor->getOutputWaitElapsedNs() / 1000U);
+
+                auto stats = processor->getProcessorDataStats();
+                processor_elem.input_rows = stats.input_rows;
+                processor_elem.input_bytes = stats.input_bytes;
+                processor_elem.output_rows = stats.output_rows;
+                processor_elem.output_bytes = stats.output_bytes;
+
+                processors_profile_log->add(processor_elem);
+            }
+        }
+    }
+}
 }
