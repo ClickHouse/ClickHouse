@@ -113,7 +113,9 @@ RUN clickhouse local -q 'SELECT 1' >/dev/null 2>&1 && exit 0 || : \
         /var/lib/apt/lists/* \
         /var/cache/debconf \
         /tmp/* \
-    && apt-get autoremove --purge -yq dirmngr gnupg2
+    && apt-get autoremove --purge -yq dirmngr gnupg2 \
+    && chmod ugo+Xrw -R /etc/clickhouse-server /etc/clickhouse-client
+# The last chmod is here to make the next one is No-op in docker official library Dockerfile
 
 # post install
 # we need to allow "others" access to clickhouse folder, because docker container
