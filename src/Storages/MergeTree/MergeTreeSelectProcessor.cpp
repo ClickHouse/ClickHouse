@@ -6,7 +6,7 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
-#include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
+#include <Processors/Merges/Algorithms/MergeTreePartLevelInfo.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Processors/Chunk.h>
@@ -86,6 +86,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     MergeTreeSelectAlgorithmPtr algorithm_,
     const PrewhereInfoPtr & prewhere_info_,
     const ExpressionActionsSettings & actions_settings_,
+    const MergeTreeReadTask::BlockSizeParams & block_size_params_,
     const MergeTreeReaderSettings & reader_settings_)
     : pool(std::move(pool_))
     , algorithm(std::move(algorithm_))
@@ -93,6 +94,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     , actions_settings(actions_settings_)
     , prewhere_actions(getPrewhereActions(prewhere_info, actions_settings, reader_settings_.enable_multiple_prewhere_read_steps))
     , reader_settings(reader_settings_)
+    , block_size_params(block_size_params_)
     , result_header(transformHeader(pool->getHeader(), prewhere_info))
 {
     if (reader_settings.apply_deleted_mask)
@@ -188,7 +190,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
         if (!task->getMainRangeReader().isInitialized())
             initializeRangeReaders();
 
-        auto res = algorithm->readFromTask(*task);
+        auto res = algorithm->readFromTask(*task, block_size_params);
 
         if (res.row_count)
         {
@@ -203,7 +205,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
 
             auto chunk = Chunk(ordered_columns, res.row_count);
             if (add_part_level)
-                chunk.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(task->getInfo().data_part->info.level));
+                chunk.getChunkInfos().add(std::make_shared<MergeTreePartLevelInfo>(task->getInfo().data_part->info.level));
 
             return ChunkAndProgress{
                 .chunk = std::move(chunk),
@@ -211,8 +213,10 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                 .num_read_bytes = res.num_read_bytes,
                 .is_finished = false};
         }
-
-        return {Chunk(), res.num_read_rows, res.num_read_bytes, false};
+        else
+        {
+            return {Chunk(), res.num_read_rows, res.num_read_bytes, false};
+        }
     }
 
     return {Chunk(), 0, 0, true};

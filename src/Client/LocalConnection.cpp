@@ -33,7 +33,6 @@ namespace Setting
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
-    extern const SettingsBool implicit_select;
 }
 
 namespace ErrorCodes
@@ -179,7 +178,7 @@ void LocalConnection::sendQuery(
             parser
                 = std::make_unique<ParserPRQLQuery>(settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         else
-            parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+            parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert]);
 
         ASTPtr parsed_query;
         if (dialect == Dialect::kusto)
@@ -269,7 +268,6 @@ void LocalConnection::sendQuery(
         {
             state->block = state->io.pipeline.getHeader();
             state->executor = std::make_unique<PullingAsyncPipelineExecutor>(state->io.pipeline);
-            state->io.pipeline.setConcurrencyControl(false);
         }
         else if (state->io.pipeline.completed())
         {
@@ -326,11 +324,6 @@ void LocalConnection::sendData(const Block & block, const String &, bool)
 
     if (send_profile_events)
         sendProfileEvents();
-}
-
-bool LocalConnection::isSendDataNeeded() const
-{
-    return !state || state->input_pipeline == nullptr;
 }
 
 void LocalConnection::sendCancel()
@@ -527,7 +520,7 @@ bool LocalConnection::pollImpl()
     {
         return true;
     }
-    if (block && !state->io.null_format)
+    else if (block && !state->io.null_format)
     {
         state->block.emplace(block);
     }

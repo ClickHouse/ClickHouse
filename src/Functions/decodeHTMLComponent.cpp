@@ -156,14 +156,14 @@ namespace
                 ++dst_pos;
                 return 1;
             }
-            if (code_point < (1 << 11))
+            else if (code_point < (1 << 11))
             {
                 dst_pos[0] = ((code_point >> 6) & 0x1F) + 0xC0;
                 dst_pos[1] = (code_point & 0x3F) + 0x80;
                 dst_pos += 2;
                 return 2;
             }
-            if (code_point < (1 << 16))
+            else if (code_point < (1 << 16))
             {
                 dst_pos[0] = ((code_point >> 12) & 0x0F) + 0xE0;
                 dst_pos[1] = ((code_point >> 6) & 0x3F) + 0x80;
@@ -171,13 +171,15 @@ namespace
                 dst_pos += 3;
                 return 3;
             }
-
-            dst_pos[0] = ((code_point >> 18) & 0x07) + 0xF0;
-            dst_pos[1] = ((code_point >> 12) & 0x3F) + 0x80;
-            dst_pos[2] = ((code_point >> 6) & 0x3F) + 0x80;
-            dst_pos[3] = (code_point & 0x3F) + 0x80;
-            dst_pos += 4;
-            return 4;
+            else
+            {
+                dst_pos[0] = ((code_point >> 18) & 0x07) + 0xF0;
+                dst_pos[1] = ((code_point >> 12) & 0x3F) + 0x80;
+                dst_pos[2] = ((code_point >> 6) & 0x3F) + 0x80;
+                dst_pos[3] = (code_point & 0x3F) + 0x80;
+                dst_pos += 4;
+                return 4;
+            }
         }
 
         [[maybe_unused]] static bool isValidNumericEntity(const char * src, const char * end, uint32_t & code_point)

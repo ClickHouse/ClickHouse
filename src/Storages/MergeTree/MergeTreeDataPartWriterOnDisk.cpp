@@ -13,13 +13,6 @@ extern const Event MergeTreeDataWriterStatisticsCalculationMicroseconds;
 
 namespace DB
 {
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsUInt64 index_granularity;
-    extern const MergeTreeSettingsUInt64 index_granularity_bytes;
-    extern const MergeTreeSettingsUInt64 max_digestion_size_per_segment;
-}
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -179,8 +172,8 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Can't take information about index granularity from blocks, when non empty index_granularity array specified");
 
-    /// We don't need to check if it exists or not, createDirectories doesn't throw
-    getDataPartStorage().createDirectories();
+    if (!getDataPartStorage().exists())
+        getDataPartStorage().createDirectories();
 
     if (settings.rewrite_primary_key)
         initPrimaryIndex();
@@ -242,8 +235,8 @@ size_t MergeTreeDataPartWriterOnDisk::computeIndexGranularity(const Block & bloc
 {
     return computeIndexGranularityImpl(
             block,
-            (*storage_settings)[MergeTreeSetting::index_granularity_bytes],
-            (*storage_settings)[MergeTreeSetting::index_granularity],
+            storage_settings->index_granularity_bytes,
+            storage_settings->index_granularity,
             settings.blocks_are_granules_size,
             settings.can_use_adaptive_granularity);
 }
@@ -310,7 +303,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
         GinIndexStorePtr store = nullptr;
         if (typeid_cast<const MergeTreeIndexFullText *>(&*skip_index) != nullptr)
         {
-            store = std::make_shared<GinIndexStore>(stream_name, data_part_storage, data_part_storage, (*storage_settings)[MergeTreeSetting::max_digestion_size_per_segment]);
+            store = std::make_shared<GinIndexStore>(stream_name, data_part_storage, data_part_storage, storage_settings->max_digestion_size_per_segment);
             gin_index_stores[stream_name] = store;
         }
 
@@ -369,7 +362,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeStatistics(const Block 
     {
         const auto & stat_ptr = stats[i];
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
-        stat_ptr->build(block.getByName(stat_ptr->columnName()).column);
+        stat_ptr->update(block.getByName(stat_ptr->columnName()).column);
         execution_stats.statistics_build_us[i] += watch.elapsed();
     }
 }
@@ -562,45 +555,6 @@ Names MergeTreeDataPartWriterOnDisk::getSkipIndicesColumns() const
         std::copy(index->index.column_names.cbegin(), index->index.column_names.cend(),
                   std::inserter(skip_indexes_column_names_set, skip_indexes_column_names_set.end()));
     return Names(skip_indexes_column_names_set.begin(), skip_indexes_column_names_set.end());
-}
-
-void MergeTreeDataPartWriterOnDisk::initOrAdjustDynamicStructureIfNeeded(Block & block)
-{
-    if (!is_dynamic_streams_initialized)
-    {
-        for (const auto & column : columns_list)
-        {
-            if (column.type->hasDynamicSubcolumns())
-            {
-                /// Create all streams for dynamic subcolumns using dynamic structure from block.
-                auto compression = getCodecDescOrDefault(column.name, default_codec);
-                addStreams(column, block.getByName(column.name).column, compression);
-            }
-        }
-        is_dynamic_streams_initialized = true;
-        block_sample = block.cloneEmpty();
-    }
-    else
-    {
-        size_t size = block.columns();
-        for (size_t i = 0; i != size; ++i)
-        {
-            auto & column = block.getByPosition(i);
-            const auto & sample_column = block_sample.getByPosition(i);
-            /// Check if the dynamic structure of this column is different from the sample column.
-            if (column.type->hasDynamicSubcolumns() && !column.column->dynamicStructureEquals(*sample_column.column))
-            {
-                /// We need to change the dynamic structure of the column so it matches the sample column.
-                /// To do it, we create empty column of this type, take dynamic structure from sample column
-                /// and insert data into it. Resulting column will have required dynamic structure and the content
-                /// of the column in current block.
-                auto new_column = sample_column.type->createColumn();
-                new_column->takeDynamicStructureFromSourceColumns({sample_column.column});
-                new_column->insertRangeFrom(*column.column, 0, column.column->size());
-                column.column = std::move(new_column);
-            }
-        }
-    }
 }
 
 template struct MergeTreeDataPartWriterOnDisk::Stream<false>;

@@ -97,7 +97,7 @@ bool SlowWithHyperscanChecker::isSlow(std::string_view regexp)
 {
     if (isSlowOneRepeat(regexp))
         return true;
-    if (isSlowTwoRepeats(regexp))
+    else if (isSlowTwoRepeats(regexp))
         return true;
     return false;
 }

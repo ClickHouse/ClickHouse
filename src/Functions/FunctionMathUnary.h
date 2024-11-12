@@ -54,12 +54,8 @@ private:
         /// Integers are converted to Float64.
         if (Impl::always_returns_float64 || !isFloat(argument))
             return std::make_shared<DataTypeFloat64>();
-        return argument;
-    }
-
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return Impl::always_returns_float64 ? std::make_shared<DataTypeFloat64>() : nullptr;
+        else
+            return argument;
     }
 
     template <typename T, typename ReturnType>

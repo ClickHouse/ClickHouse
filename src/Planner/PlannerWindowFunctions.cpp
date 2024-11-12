@@ -148,15 +148,15 @@ void sortWindowDescriptions(std::vector<WindowDescription> & window_descriptions
         {
             if (left[i].column_name < right[i].column_name)
                 return true;
-            if (left[i].column_name > right[i].column_name)
+            else if (left[i].column_name > right[i].column_name)
                 return false;
-            if (left[i].direction < right[i].direction)
+            else if (left[i].direction < right[i].direction)
                 return true;
-            if (left[i].direction > right[i].direction)
+            else if (left[i].direction > right[i].direction)
                 return false;
-            if (left[i].nulls_direction < right[i].nulls_direction)
+            else if (left[i].nulls_direction < right[i].nulls_direction)
                 return true;
-            if (left[i].nulls_direction > right[i].nulls_direction)
+            else if (left[i].nulls_direction > right[i].nulls_direction)
                 return false;
 
             assert(left[i] == right[i]);

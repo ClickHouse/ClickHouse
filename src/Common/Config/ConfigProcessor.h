@@ -63,8 +63,7 @@ public:
     XMLDocumentPtr processConfig(
         bool * has_zk_includes = nullptr,
         zkutil::ZooKeeperNodeCache * zk_node_cache = nullptr,
-        const zkutil::EventPtr & zk_changed_event = nullptr,
-        bool is_config_changed = true);
+        const zkutil::EventPtr & zk_changed_event = nullptr);
 
     XMLDocumentPtr parseConfig(const std::string & config_path);
 
@@ -89,15 +88,14 @@ public:
     /// If allow_zk_includes is true, expect that the configuration XML can contain from_zk nodes.
     /// If it is the case, set has_zk_includes to true and don't write config-preprocessed.xml,
     /// expecting that config would be reloaded with zookeeper later.
-    LoadedConfig loadConfig(bool allow_zk_includes = false, bool is_config_changed = true);
+    LoadedConfig loadConfig(bool allow_zk_includes = false);
 
     /// If fallback_to_preprocessed is true, then if KeeperException is thrown during config
     /// processing, load the configuration from the preprocessed file.
     LoadedConfig loadConfigWithZooKeeperIncludes(
         zkutil::ZooKeeperNodeCache & zk_node_cache,
         const zkutil::EventPtr & zk_changed_event,
-        bool fallback_to_preprocessed = false,
-        bool is_config_changed = true);
+        bool fallback_to_preprocessed = false);
 
     /// Save preprocessed config to specified directory.
     /// If preprocessed_dir is empty - calculate from loaded_config.path + /preprocessed_configs/

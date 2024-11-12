@@ -144,7 +144,7 @@ std::optional<String> IdentifierSemantic::extractNestedName(const ASTIdentifier 
 {
     if (identifier.name_parts.size() == 3 && table_name == identifier.name_parts[0])
         return identifier.name_parts[1] + '.' + identifier.name_parts[2];
-    if (identifier.name_parts.size() == 2)
+    else if (identifier.name_parts.size() == 2)
         return identifier.name_parts[0] + '.' + identifier.name_parts[1];
     return {};
 }
@@ -209,7 +209,8 @@ IdentifierSemantic::ColumnMatch IdentifierSemantic::canReferColumnToTable(const 
     {
         if (!db_and_table.alias.empty())
             return ColumnMatch::AliasedTableName;
-        return ColumnMatch::TableName;
+        else
+            return ColumnMatch::TableName;
     }
 
     return ColumnMatch::NoMatch;
