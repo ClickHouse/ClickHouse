@@ -172,7 +172,6 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
-        size_t num_streams,
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
         const MergeTreeData & data,
         const Names & all_column_names,

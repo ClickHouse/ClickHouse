@@ -61,7 +61,6 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
-        size_t num_streams,
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr) const;
 
     static MarkRanges markRangesFromPKRange(
@@ -194,7 +193,6 @@ public:
         const UsefulSkipIndexes & skip_indexes,
         const MergeTreeReaderSettings & reader_settings,
         LoggerPtr log,
-        size_t num_streams,
         ReadFromMergeTree::IndexStats & index_stats,
         bool use_skip_indexes,
         bool find_exact_ranges);

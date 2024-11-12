@@ -628,7 +628,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     const UsefulSkipIndexes & skip_indexes,
     const MergeTreeReaderSettings & reader_settings,
     LoggerPtr log,
-    size_t num_streams,
     ReadFromMergeTree::IndexStats & index_stats,
     bool use_skip_indexes,
     bool find_exact_ranges)
@@ -938,7 +937,6 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
     ContextPtr context,
-    size_t num_streams,
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read) const
 {
     size_t total_parts = parts.size();
@@ -952,7 +950,6 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         metadata_snapshot,
         query_info,
         context,
-        num_streams,
         max_block_numbers_to_read,
         data,
         column_names_to_return,

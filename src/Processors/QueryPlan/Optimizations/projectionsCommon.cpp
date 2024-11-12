@@ -256,7 +256,6 @@ bool analyzeProjectionCandidate(
         candidate.projection->metadata,
         projection_query_info,
         context,
-        context->getSettingsRef()[Setting::max_threads],
         max_added_blocks);
 
     candidate.merge_tree_projection_select_result_ptr = std::move(projection_result_ptr);

@@ -7419,8 +7419,7 @@ UInt64 MergeTreeData::estimateNumberOfRowsToRead(
         storage_snapshot->metadata->getColumns().getAll().getNames(),
         storage_snapshot->metadata,
         query_info,
-        query_context,
-        query_context->getSettingsRef()[Setting::max_threads]);
+        query_context);
 
     UInt64 total_rows = result_ptr->selected_rows;
     if (query_info.trivial_limit > 0 && query_info.trivial_limit < total_rows)

@@ -1481,7 +1481,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(Merge
         storage_snapshot->metadata,
         query_info,
         context,
-        requested_num_streams,
         max_block_numbers_to_read,
         data,
         all_column_names,
@@ -1674,7 +1673,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info_,
     ContextPtr context_,
-    size_t num_streams,
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
     const MergeTreeData & data,
     const Names & all_column_names,
@@ -1770,7 +1768,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             indexes->skip_indexes,
             reader_settings,
             log,
-            num_streams,
             result.index_stats,
             indexes->use_skip_indexes,
             find_exact_ranges);
