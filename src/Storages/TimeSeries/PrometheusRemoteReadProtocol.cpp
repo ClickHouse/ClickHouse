@@ -231,6 +231,7 @@ namespace
             table_join->strictness = JoinStrictness::Semi;
 
             table_join->on_expression = makeASTFunction("equals", makeASTColumn(data_table_id, TimeSeriesColumnNames::ID), makeASTColumn(tags_table_id, TimeSeriesColumnNames::ID));
+            table_join->children.push_back(table_join->on_expression);
             table->table_join = table_join;
 
             auto table_exp = std::make_shared<ASTTableExpression>();

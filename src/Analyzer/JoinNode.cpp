@@ -46,9 +46,15 @@ ASTPtr JoinNode::toASTTableJoin() const
         auto join_expression_ast = children[join_expression_child_index]->toAST();
 
         if (children[join_expression_child_index]->getNodeType() == QueryTreeNodeType::LIST)
-            join_ast->using_expression_list = std::move(join_expression_ast);
+        {
+            join_ast->using_expression_list = join_expression_ast;
+            join_ast->children.push_back(join_ast->using_expression_list);
+        }
         else
-            join_ast->on_expression = std::move(join_expression_ast);
+        {
+            join_ast->on_expression = join_expression_ast;
+            join_ast->children.push_back(join_ast->on_expression);
+        }
     }
 
     return join_ast;
