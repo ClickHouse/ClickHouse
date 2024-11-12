@@ -268,6 +268,13 @@ namespace
                 authentication_methods.push_back(ast_authentication_data);
             }
 
+            // if the first authentication method parsed is of type no_password, then we should not try to parse any further
+            // as it cannot co-exist with other authentication types
+            if (authentication_methods.back()->type && authentication_methods.back()->type.value() == AuthenticationType::NO_PASSWORD)
+            {
+                return true;
+            }
+
             // Need to save current position, process comma and only update real position in case there is an authentication method after
             // the comma. Otherwise, position should not be changed as it needs to be processed by other parsers and possibly throw error
             // on trailing comma.
@@ -285,7 +292,7 @@ namespace
                 authentication_methods.push_back(ast_authentication_data);
             }
 
-            return !authentication_methods.empty();
+            return true;
         });
     }
 
