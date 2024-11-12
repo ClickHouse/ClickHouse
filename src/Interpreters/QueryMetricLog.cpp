@@ -24,11 +24,6 @@ namespace DB
 
 static auto logger = getLogger("QueryMetricLog");
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-};
-
 String timePointToString(QueryMetricLog::TimePoint time)
 {
     /// fmtlib supports subsecond formatting in 10.0.0. We're in 9.1.0, so we need to add the milliseconds ourselves.
