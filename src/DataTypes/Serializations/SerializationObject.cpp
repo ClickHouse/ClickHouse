@@ -187,7 +187,11 @@ void SerializationObject::serializeBinaryBulkStatePrefix(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing stream for Object column structure during serialization of binary bulk state prefix");
 
     /// Write serialization version.
-    UInt64 serialization_version = settings.write_json_as_string ? ObjectSerializationVersion::Value::STRING : ObjectSerializationVersion::Value::V2;
+    UInt64 serialization_version = ObjectSerializationVersion::Value::V2;
+    if (settings.write_json_as_string)
+        serialization_version = ObjectSerializationVersion::Value::STRING;
+    else if (settings.use_v1_object_and_dynamic_serialization)
+        serialization_version = ObjectSerializationVersion::Value::V1;
     writeBinaryLittleEndian(serialization_version, *stream);
 
     auto object_state = std::make_shared<SerializeBinaryBulkStateObject>(serialization_version);
@@ -196,6 +200,10 @@ void SerializationObject::serializeBinaryBulkStatePrefix(
         state = std::move(object_state);
         return;
     }
+
+    /// In V1 version write max_dynamic_paths parameter.
+    if (serialization_version == ObjectSerializationVersion::Value::V1)
+        writeVarUInt(column_object.getMaxDynamicPaths(), *stream);
 
     /// Write all dynamic paths in sorted order.
     object_state->sorted_dynamic_paths.reserve(dynamic_paths.size());
