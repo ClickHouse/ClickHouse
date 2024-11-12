@@ -93,7 +93,7 @@ StatusFile::StatusFile(std::string path_, FillFunction fill_)
         catch (...)
         {
             /// Finalize in case of exception to avoid throwing exceptions in destructor
-            out.finalize();
+            out.cancel();
             throw;
         }
     }

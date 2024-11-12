@@ -27,7 +27,7 @@ WriteBuffer::~WriteBuffer()
             "The file might not be written at all or might be truncated."
             "Stack trace: {}",
             StackTrace().toString());
-        chassert(false && "WriteBuffer is not finalized in destructor.");
+        chassert(false && "WriteBuffer is neither finalized nor canceled in destructor.");
     }
 }
 
