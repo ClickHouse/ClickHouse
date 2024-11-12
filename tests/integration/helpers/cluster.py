@@ -440,7 +440,6 @@ class ClickHouseCluster:
         zookeeper_keyfile=None,
         zookeeper_certfile=None,
         with_spark=False,
-        with_iceberg_catalog=False,
     ):
         for param in list(os.environ.keys()):
             logging.debug("ENV %40s %s" % (param, os.environ[param]))
@@ -569,6 +568,7 @@ class ClickHouseCluster:
         self.resolver_logs_dir = os.path.join(self.instances_dir, "resolver")
 
         self.spark_session = None
+        self.with_iceberg_catalog = False
 
         self.with_azurite = False
         self.azurite_container = "azurite-container"
@@ -1480,7 +1480,8 @@ class ClickHouseCluster:
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_iceberg_rest_catalog.yml"),
         )
-        return self.base_minio_cmd
+        return self.base_iceberg_catalog_cmd
+        #return self.base_minio_cmd
 
     def setup_azurite_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_azurite = True
@@ -1648,6 +1649,7 @@ class ClickHouseCluster:
         with_hive=False,
         with_coredns=False,
         with_prometheus=False,
+        with_iceberg_catalog=False,
         handle_prometheus_remote_write=False,
         handle_prometheus_remote_read=False,
         use_old_analyzer=None,
@@ -1750,6 +1752,7 @@ class ClickHouseCluster:
             with_coredns=with_coredns,
             with_cassandra=with_cassandra,
             with_ldap=with_ldap,
+            with_iceberg_catalog=with_iceberg_catalog,
             use_old_analyzer=use_old_analyzer,
             server_bin_path=self.server_bin_path,
             odbc_bridge_bin_path=self.odbc_bridge_bin_path,
@@ -1937,6 +1940,8 @@ class ClickHouseCluster:
             cmds.append(
                 self.setup_minio_cmd(instance, env_variables, docker_compose_yml_dir)
             )
+
+        if with_iceberg_catalog and not self.with_iceberg_catalog:
             cmds.append(
                 self.setup_iceberg_catalog_cmd(
                     instance, env_variables, docker_compose_yml_dir
@@ -3383,6 +3388,7 @@ class ClickHouseInstance:
         with_coredns,
         with_cassandra,
         with_ldap,
+        with_iceberg_catalog,
         use_old_analyzer,
         server_bin_path,
         odbc_bridge_bin_path,
