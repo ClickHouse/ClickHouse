@@ -37,7 +37,8 @@ public:
     void setJoin(JoinPtr join_, bool swap_streams_ = false);
     bool allowPushDownToRight() const;
 
-    JoinInnerTableSelectionMode inner_table_selection_mode = JoinInnerTableSelectionMode::Right;
+    /// Swap automatically if not set, othewise always or never, depending on the value
+    std::optional<bool> swap_join_tables = {};
 
 private:
     void updateOutputHeader() override;

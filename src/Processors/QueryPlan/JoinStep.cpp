@@ -100,37 +100,39 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     if (swap_streams)
         std::swap(pipelines[0], pipelines[1]);
 
+    std::unique_ptr<QueryPipelineBuilder> joined_pipeline;
     if (join->pipelineType() == JoinPipelineType::YShaped)
     {
-        auto joined_pipeline = QueryPipelineBuilder::joinPipelinesYShaped(
+        joined_pipeline = QueryPipelineBuilder::joinPipelinesYShaped(
             std::move(pipelines[0]), std::move(pipelines[1]), join, join_algorithm_header, max_block_size, &processors);
         joined_pipeline->resize(max_streams);
-        return joined_pipeline;
+    }
+    else
+    {
+        joined_pipeline = QueryPipelineBuilder::joinPipelinesRightLeft(
+            std::move(pipelines[0]),
+            std::move(pipelines[1]),
+            join,
+            join_algorithm_header,
+            max_block_size,
+            max_streams,
+            keep_left_read_in_order,
+            &processors);
     }
 
-    auto pipeline = QueryPipelineBuilder::joinPipelinesRightLeft(
-        std::move(pipelines[0]),
-        std::move(pipelines[1]),
-        join,
-        join_algorithm_header,
-        max_block_size,
-        max_streams,
-        keep_left_read_in_order,
-        &processors);
-
     if (!use_new_analyzer)
-        return pipeline;
+        return joined_pipeline;
 
-    auto column_permutation = getPermutationForBlock(pipeline->getHeader(), lhs_header, rhs_header, required_output);
+    auto column_permutation = getPermutationForBlock(joined_pipeline->getHeader(), lhs_header, rhs_header, required_output);
     if (!column_permutation.empty())
     {
-        pipeline->addSimpleTransform([&column_permutation](const Block & header)
+        joined_pipeline->addSimpleTransform([&column_permutation](const Block & header)
         {
             return std::make_shared<ColumnPermuteTransform>(header, column_permutation);
         });
     }
 
-    return pipeline;
+    return joined_pipeline;
 }
 
 bool JoinStep::allowPushDownToRight() const

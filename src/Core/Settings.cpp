@@ -1912,8 +1912,14 @@ See also:
 For single JOIN in case of identifier ambiguity prefer left table
 )", IMPORTANT) \
     \
-    DECLARE(JoinInnerTableSelectionMode, query_plan_join_inner_table_selection, JoinInnerTableSelectionMode::Auto, R"(
-Select the side of the join to be the inner table in the query plan. Supported only for `ALL` join strictness with `JOIN ON` clause. Possible values: 'auto', 'left', 'right'.
+DECLARE(BoolAuto, query_plan_join_swap_table, {}, R"(
+    Determine which side of the join should be the build table (also called inner, the one inserted into the hash table for a hash join) in the query plan. This setting is supported only for `ALL` join strictness with the `JOIN ON` clause. Possible values are:
+    - 'auto': Let the planner decide which table to use as the build table.
+    - 'false': Never swap tables (the right table is the build table).
+    - 'true': Always swap tables (the left table is the build table).
+)", 0) \
+    \
+    DECLARE(Bool, join_use_nulls_for_system_columns, false, R"(
 )", 0) \
     DECLARE(UInt64, preferred_block_size_bytes, 1000000, R"(
 This setting adjusts the data block size for query processing and represents additional fine-tuning to the more rough 'max_block_size' setting. If the columns are large and with 'max_block_size' rows the block size is likely to be larger than the specified amount of bytes, its size will be lowered for better CPU cache locality.

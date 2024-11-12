@@ -104,7 +104,7 @@ namespace Setting
     extern const SettingsBool optimize_move_to_prewhere;
     extern const SettingsBool optimize_move_to_prewhere_if_final;
     extern const SettingsBool use_concurrency_control;
-    extern const SettingsJoinInnerTableSelectionMode query_plan_join_inner_table_selection;
+    extern const SettingsBoolAuto query_plan_join_swap_table;
 }
 
 namespace ErrorCodes
@@ -1586,12 +1586,22 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             table_join->setUsedColumn(column_from_joined_table, JoinTableSide::Right);
     }
 
+
     if (table_join->getOutputColumns(JoinTableSide::Left).empty() && table_join->getOutputColumns(JoinTableSide::Right).empty())
     {
+        /// We should add all duplicated columns, because join algorithm add either all colum with specified name or none
+        auto set_used_column_with_duplicates = [&](const NamesAndTypesList & columns, JoinTableSide join_table_side)
+        {
+            const auto & column_name = columns.front().name;
+            for (const auto & column : columns)
+                if (column.name == column_name)
+                    table_join->setUsedColumn(column, join_table_side);
+        };
+
         if (!columns_from_left_table.empty())
-            table_join->setUsedColumn(columns_from_left_table.front(), JoinTableSide::Left);
+            set_used_column_with_duplicates(columns_from_left_table, JoinTableSide::Left);
         else if (!columns_from_right_table.empty())
-            table_join->setUsedColumn(columns_from_right_table.front(), JoinTableSide::Right);
+            set_used_column_with_duplicates(columns_from_right_table, JoinTableSide::Right);
     }
 
     auto join_algorithm = chooseJoinAlgorithm(table_join, join_node.getRightTableExpression(), left_header, right_header, planner_context);
@@ -1700,7 +1710,8 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             outer_scope_columns.empty() ? outer_scope_columns_nonempty : outer_scope_columns,
             false /*optimize_read_in_order*/,
             true /*optimize_skip_unused_shards*/);
-        join_step->inner_table_selection_mode = settings[Setting::query_plan_join_inner_table_selection];
+
+        join_step->swap_join_tables = settings[Setting::query_plan_join_swap_table].get();
 
         join_step->setStepDescription(fmt::format("JOIN {}", join_pipeline_type));
 

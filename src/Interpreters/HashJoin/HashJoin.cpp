@@ -1249,9 +1249,9 @@ IBlocksStreamPtr HashJoin::getNonJoinedBlocks(const Block & left_sample_block,
         size_t expected_columns_count = left_columns_count + required_right_keys.columns() + sample_block_with_columns_to_add.columns();
         if (expected_columns_count != result_sample_block.columns())
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected number of columns in result sample block: {} instead of {} ({} + {} + {})",
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected number of columns in result sample block: {} expected {} ([{}] + [{}] + [{}])",
                             result_sample_block.columns(), expected_columns_count,
-                            left_columns_count, required_right_keys.columns(), sample_block_with_columns_to_add.columns());
+                            left_sample_block.dumpNames(), required_right_keys.dumpNames(), sample_block_with_columns_to_add.dumpNames());
         }
     }
 
