@@ -170,7 +170,6 @@ const ActionsDAG::Node & addCast(
 const ActionsDAG::Node & addAndTrue(
     const ActionsDAGPtr & dag,
     const ActionsDAG::Node & filter_node_to_normalize)
-    //OriginalToNewNodeMap & node_remap)
 {
     Field const_true_value(true);
 
@@ -181,7 +180,7 @@ const ActionsDAG::Node & addAndTrue(
     const auto * const_true_node = &dag->addColumn(std::move(const_true_column));
     ActionsDAG::NodeRawConstPtrs children = {&filter_node_to_normalize, const_true_node};
     FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
-    return addFunction(dag, func_builder_and, children); //, node_remap);
+    return addFunction(dag, func_builder_and, children);
 }
 
 }
@@ -251,7 +250,6 @@ bool tryBuildPrewhereSteps(
         const ActionsDAG::Node * original_node;
         /// Result condition node
         const ActionsDAG::Node * result_node;
-        //String column_name;
     };
     std::vector<Step> steps;
 
@@ -276,7 +274,7 @@ bool tryBuildPrewhereSteps(
         {
             /// Add AND function to combine the conditions
             FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
-            const auto & and_function_node = addFunction(step_dag, func_builder_and, new_condition_nodes); //, node_remap);
+            const auto & and_function_node = addFunction(step_dag, func_builder_and, new_condition_nodes);
             result_node = &and_function_node;
         }
         else
@@ -286,7 +284,7 @@ bool tryBuildPrewhereSteps(
             if (!isUInt8(removeNullable(removeLowCardinality(result_node->result_type))))
             {
                 /// Build "condition AND True" expression to "cast" the condition to UInt8 or Nullable(UInt8) depending on its type.
-                result_node = &addAndTrue(step_dag, *result_node); //, node_remap);
+                result_node = &addAndTrue(step_dag, *result_node);
             }
         }
 
@@ -303,7 +301,7 @@ bool tryBuildPrewhereSteps(
     for (const auto * output : original_outputs)
     {
         all_outputs.insert(output);
-        if (node_remap.contains(output)) //->result_name))
+        if (node_remap.contains(output))
         {
             const auto & new_node_info = node_remap[output];
             new_node_info.dag->getOutputs().push_back(new_node_info.node);
@@ -321,9 +319,9 @@ bool tryBuildPrewhereSteps(
             auto & last_step_dag = steps.back().actions;
             auto & last_step_result_node = steps.back().result_node;
             /// Build AND(last_step_result_node, true)
-            const auto & and_node = addAndTrue(last_step_dag, *last_step_result_node); //, node_remap);
+            const auto & and_node = addAndTrue(last_step_dag, *last_step_result_node);
             /// Build CAST(and_node, type of PREWHERE column)
-            const auto & cast_node = addCast(last_step_dag, and_node, output->result_type); //, node_remap);
+            const auto & cast_node = addCast(last_step_dag, and_node, output->result_type);
             /// Add alias for the result with the name of the PREWHERE column
             const auto & prewhere_result_node = last_step_dag->addAlias(cast_node, output->result_name);
             last_step_dag->getOutputs().push_back(&prewhere_result_node);
