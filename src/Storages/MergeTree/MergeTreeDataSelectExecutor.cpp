@@ -40,6 +40,7 @@
 
 #include <Core/UUID.h>
 #include <Core/Settings.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/FailPoint.h>
 #include <base/sleep.h>
@@ -768,13 +769,19 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 parts_with_ranges[part_index] = std::move(ranges);
         };
 
-        size_t num_threads = std::min<size_t>(num_streams, parts.size());
+        size_t num_threads = parts.size();
         if (settings[Setting::max_threads_for_indexes])
         {
-            num_threads = std::min<size_t>(num_streams, settings[Setting::max_threads_for_indexes]);
+            num_threads = std::min<size_t>(num_threads, settings[Setting::max_threads_for_indexes]);
         }
+        else
+        {
+            num_threads = std::min<size_t>(num_threads, num_streams);
+        }
+        /// Protect from using too many threads.
+        num_threads = std::min<size_t>(num_threads, 2 * getNumberOfCPUCoresToUse());
 
-        LOG_TRACE(log, "Filtering marks by primary and secondary keys");
+        LOG_TRACE(log, "Filtering marks by primary and secondary keys with {} threads", num_threads);
 
         if (num_threads <= 1)
         {
