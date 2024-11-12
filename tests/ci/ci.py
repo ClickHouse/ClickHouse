@@ -2077,6 +2077,7 @@ def main() -> int:
                         s3,
                         pr_info.number,
                         pr_info.sha,
+                        pr_info.head_ref,
                         job_report.test_results,
                         job_report.additional_files,
                         job_report.check_name or _get_ext_check_name(args.job_name),
@@ -2114,6 +2115,69 @@ def main() -> int:
                 db="default", table="checks", events=prepared_events
             )
         else:
+<<<<<<< HEAD
+            print("ERROR: Job was killed - generate evidence")
+            job_report.update_duration()
+            ret_code = os.getenv("JOB_EXIT_CODE", "")
+            if ret_code:
+                try:
+                    job_report.exit_code = int(ret_code)
+                except ValueError:
+                    pass
+            if Utils.is_killed_with_oom():
+                print("WARNING: OOM while job execution")
+                print(subprocess.run("sudo dmesg -T", check=False))
+                error_description = f"Out Of Memory, exit_code {job_report.exit_code}"
+            else:
+                error_description = f"Unknown, exit_code {job_report.exit_code}"
+            CIBuddy().post_job_error(
+                error_description + f" after {int(job_report.duration)}s",
+                job_name=_get_ext_check_name(args.job_name),
+            )
+            if CI.is_test_job(args.job_name):
+                gh = GitHub(get_best_robot_token(), per_page=100)
+                commit = get_commit(gh, pr_info.sha)
+                check_url = ""
+                if job_report.test_results or job_report.additional_files:
+                    check_url = upload_result_helper.upload_results(
+                        s3,
+                        pr_info.number,
+                        pr_info.sha,
+                        pr_info.head_ref,
+                        job_report.test_results,
+                        job_report.additional_files,
+                        job_report.check_name or _get_ext_check_name(args.job_name),
+                    )
+                post_commit_status(
+                    commit,
+                    ERROR,
+                    check_url,
+                    "Error: " + error_description,
+                    _get_ext_check_name(args.job_name),
+                    pr_info,
+                    dump_to_file=True,
+                )
+
+        if not job_report.job_skipped:
+            print("push finish record to ci db")
+            prepared_events = prepare_tests_results_for_clickhouse(
+                pr_info,
+                [
+                    TestResult(
+                        JOB_FINISHED_TEST_NAME,
+                        FAIL if error_description else OK,
+                        raw_logs=error_description or None,
+                    )
+                ],
+                SUCCESS if not error_description else ERROR,
+                0.0,
+                JobReport.get_start_time_from_current(),
+                "",
+                _get_ext_check_name(args.job_name),
+            )
+            ClickHouseHelper().insert_events_into(
+                db="default", table="checks", events=prepared_events
+            )
             # no job report
             print(f"No job report for {[args.job_name]} - do nothing")
     ### POST action: end
