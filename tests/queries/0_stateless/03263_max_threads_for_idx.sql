@@ -14,7 +14,7 @@ INSERT INTO t_03263 VALUES(6);
 
 SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_03263';
 
-SELECT * FROM t_03263 LIMIT 1 SETTINGS max_threads=1, log_comment='t_03263--1' FORMAT Null;
+SELECT * FROM t_03263 LIMIT 1 SETTINGS max_threads=1, max_threads_for_indexes=0, log_comment='t_03263--1' FORMAT Null;
 SELECT * FROM t_03263 LIMIT 1 SETTINGS max_threads=1, max_threads_for_indexes=4, log_comment='t_03263--2' FORMAT Null;
 SELECT * FROM t_03263 LIMIT 1 SETTINGS max_threads=4, max_threads_for_indexes=1, log_comment='t_03263--3' FORMAT Null;
 SELECT * FROM t_03263 LIMIT 1 SETTINGS max_threads=4, max_threads_for_indexes=4, log_comment='t_03263--4' FORMAT Null;
