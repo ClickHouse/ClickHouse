@@ -46,6 +46,8 @@ public:
 
     virtual void finish(bool sync) = 0;
 
+    virtual size_t getNumberOfOpenStreams() const = 0;
+
     Columns releaseIndexColumns();
 
     PlainMarksByName releaseCachedMarks();
