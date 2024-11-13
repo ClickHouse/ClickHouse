@@ -315,7 +315,7 @@ DatabaseTablesIteratorPtr DatabasesOverlay::getTablesIterator(ContextPtr context
 
 bool DatabasesOverlay::canContainMergeTreeTables() const
 {
-    for (auto & db : databases)
+    for (const auto & db : databases)
         if (db->canContainMergeTreeTables())
             return true;
     return false;
@@ -323,7 +323,7 @@ bool DatabasesOverlay::canContainMergeTreeTables() const
 
 bool DatabasesOverlay::canContainDistributedTables() const
 {
-    for (auto & db : databases)
+    for (const auto & db : databases)
         if (db->canContainDistributedTables())
             return true;
     return false;
@@ -338,7 +338,7 @@ void DatabasesOverlay::loadStoredObjects(ContextMutablePtr local_context, Loadin
 
 bool DatabasesOverlay::supportsLoadingInTopologicalOrder() const
 {
-    for (auto & db : databases)
+    for (const auto & db : databases)
         if (db->supportsLoadingInTopologicalOrder())
             return true;
     return false;
@@ -477,7 +477,7 @@ LoadTaskPtr DatabasesOverlay::startupDatabaseAsync(
 
 void DatabasesOverlay::waitTableStarted(const String & name) const
 {
-    for (auto & db : databases)
+    for (const auto & db : databases)
     {
         if (db->isReadOnly())
             continue;
@@ -501,7 +501,7 @@ void DatabasesOverlay::waitTableStarted(const String & name) const
 
 void DatabasesOverlay::waitDatabaseStarted() const
 {
-    for (auto & db : databases)
+    for (const auto & db : databases)
     {
         if (db->isReadOnly())
             continue;
@@ -547,7 +547,7 @@ void DatabasesOverlay::stopLoading()
 
 void DatabasesOverlay::checkMetadataFilenameAvailability(const String & table_name) const
 {
-    for (auto & db : databases)
+    for (const auto & db : databases)
     {
         if (db->isReadOnly())
             continue;
