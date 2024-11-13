@@ -529,11 +529,6 @@ ColumnPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::buildAdditionalFilter
             }
             right_col_pos += 1;
         }
-        if (!executed_block)
-        {
-            result_column = ColumnUInt8::create();
-            break;
-        }
 
         for (const auto & col_name : required_column_names)
         {
