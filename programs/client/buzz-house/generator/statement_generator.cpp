@@ -748,7 +748,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
         {
             const uint32_t alter_order_by
                 = 3 * static_cast<uint32_t>(t.IsMergeTreeFamily()),
-                heavy_delete = 30, heavy_update = 30, add_column = 2 * static_cast<uint32_t>(t.cols.size() < 10), materialize_column = 2,
+                heavy_delete = 30, heavy_update = 40, add_column = 2 * static_cast<uint32_t>(t.cols.size() < 10), materialize_column = 2,
                 drop_column = 2 * static_cast<uint32_t>(t.cols.size() > 1), rename_column = 2, clear_column = 2, modify_column = 2,
                 add_stats = 3 * static_cast<uint32_t>(t.IsMergeTreeFamily()), mod_stats = 3 * static_cast<uint32_t>(t.IsMergeTreeFamily()),
                 drop_stats = 3 * static_cast<uint32_t>(t.IsMergeTreeFamily()),
@@ -767,16 +767,16 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
                 clear_projection = 2 * static_cast<uint32_t>(t.IsMergeTreeFamily() && !t.projs.empty()),
                 add_constraint = 2 * static_cast<uint32_t>(t.constrs.size() < 4),
                 remove_constraint = 2 * static_cast<uint32_t>(!t.constrs.empty()),
-                detach_partition = 2 * static_cast<uint32_t>(t.IsMergeTreeFamily()),
-                drop_partition = 2 * static_cast<uint32_t>(t.IsMergeTreeFamily()),
-                drop_detached_partition = 2 * static_cast<uint32_t>(t.IsMergeTreeFamily()),
-                forget_partition = 2 * static_cast<uint32_t>(table_has_partitions),
-                attach_partition = 2 * static_cast<uint32_t>(t.IsMergeTreeFamily()),
-                move_partition_to = 2 * static_cast<uint32_t>(table_has_partitions),
-                clear_column_partition = 2 * static_cast<uint32_t>(table_has_partitions),
-                freeze_partition = 2 * static_cast<uint32_t>(t.IsMergeTreeFamily()),
-                unfreeze_partition = 4 * static_cast<uint32_t>(!t.frozen_partitions.empty()),
-                clear_index_partition = 2 * static_cast<uint32_t>(table_has_partitions && !t.idxs.empty()),
+                detach_partition = 5 * static_cast<uint32_t>(t.IsMergeTreeFamily()),
+                drop_partition = 5 * static_cast<uint32_t>(t.IsMergeTreeFamily()),
+                drop_detached_partition = 5 * static_cast<uint32_t>(t.IsMergeTreeFamily()),
+                forget_partition = 5 * static_cast<uint32_t>(table_has_partitions),
+                attach_partition = 5 * static_cast<uint32_t>(t.IsMergeTreeFamily()),
+                move_partition_to = 5 * static_cast<uint32_t>(table_has_partitions),
+                clear_column_partition = 5 * static_cast<uint32_t>(table_has_partitions),
+                freeze_partition = 5 * static_cast<uint32_t>(t.IsMergeTreeFamily()),
+                unfreeze_partition = 7 * static_cast<uint32_t>(!t.frozen_partitions.empty()),
+                clear_index_partition = 5 * static_cast<uint32_t>(table_has_partitions && !t.idxs.empty()),
                 prob_space = alter_order_by + heavy_delete + heavy_update + add_column + materialize_column + drop_column + rename_column
                 + clear_column + modify_column + delete_mask + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
                 + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + column_remove_setting
