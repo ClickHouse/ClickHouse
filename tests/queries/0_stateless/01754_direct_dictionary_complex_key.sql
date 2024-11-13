@@ -89,7 +89,7 @@ SELECT dictGetOrDefault('01754_dictionary_db.direct_dictionary_complex_key_compl
 SELECT 'dictHas';
 SELECT dictHas('01754_dictionary_db.direct_dictionary_complex_key_complex_attributes', (number, concat('id_key_', toString(number)))) FROM system.numbers LIMIT 4;
 SELECT 'select all values as input stream';
-SELECT * FROM 01754_dictionary_db.direct_dictionary_complex_key_complex_attributes;
+SELECT * FROM 01754_dictionary_db.direct_dictionary_complex_key_complex_attributes ORDER BY ALL;
 
 DROP DICTIONARY 01754_dictionary_db.direct_dictionary_complex_key_complex_attributes;
 DROP TABLE 01754_dictionary_db.complex_key_complex_attributes_source_table;

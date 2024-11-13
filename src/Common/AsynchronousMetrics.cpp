@@ -331,7 +331,7 @@ AsynchronousMetrics::~AsynchronousMetrics()
 
 AsynchronousMetricValues AsynchronousMetrics::getValues() const
 {
-    std::lock_guard lock(data_mutex);
+    SharedLockGuard lock(values_mutex);
     return values;
 }
 
@@ -1807,7 +1807,10 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     first_run = false;
 
     // Finally, update the current metrics.
-    values = new_values;
+    {
+        std::lock_guard values_lock(values_mutex);
+        values.swap(new_values);
+    }
 }
 
 }

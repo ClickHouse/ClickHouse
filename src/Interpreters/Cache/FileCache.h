@@ -6,8 +6,6 @@
 #include <unordered_map>
 #include <boost/functional/hash.hpp>
 
-#include <IO/ReadSettings.h>
-
 #include <Common/callOnce.h>
 #include <Common/ThreadPool.h>
 #include <Common/StatusFile.h>
@@ -25,6 +23,7 @@
 
 namespace DB
 {
+struct ReadSettings;
 
 /// Track acquired space in cache during reservation
 /// to make error messages when no space left more informative.

@@ -61,6 +61,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/QueryMetricLog.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/SelectQueryOptions.h>
@@ -80,6 +81,7 @@
 #include <base/EnumReflection.h>
 #include <base/demangle.h>
 
+#include <chrono>
 #include <memory>
 #include <random>
 
@@ -115,7 +117,6 @@ namespace Setting
     extern const SettingsOverflowMode join_overflow_mode;
     extern const SettingsString log_comment;
     extern const SettingsBool log_formatted_queries;
-    extern const SettingsBool log_processors_profiles;
     extern const SettingsBool log_profile_events;
     extern const SettingsUInt64 log_queries_cut_to_length;
     extern const SettingsBool log_queries;
@@ -143,6 +144,7 @@ namespace Setting
     extern const SettingsBool query_cache_squash_partial_results;
     extern const SettingsQueryCacheSystemTableHandling query_cache_system_table_handling;
     extern const SettingsSeconds query_cache_ttl;
+    extern const SettingsInt64 query_metric_log_interval;
     extern const SettingsOverflowMode read_overflow_mode;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
     extern const SettingsOverflowMode result_overflow_mode;
@@ -367,6 +369,15 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
     addPrivilegesInfoToQueryLogElement(element, context_ptr);
 }
 
+static UInt64 getQueryMetricLogInterval(ContextPtr context)
+{
+    const auto & settings = context->getSettingsRef();
+    auto interval_milliseconds = settings[Setting::query_metric_log_interval];
+    if (interval_milliseconds < 0)
+        interval_milliseconds = context->getConfigRef().getUInt64("query_metric_log.collect_interval_milliseconds", 1000);
+
+    return interval_milliseconds;
+}
 
 QueryLogElement logQueryStart(
     const std::chrono::time_point<std::chrono::system_clock> & query_start_time,
@@ -439,7 +450,38 @@ QueryLogElement logQueryStart(
         }
     }
 
+    if (auto query_metric_log = context->getQueryMetricLog(); query_metric_log && !internal)
+    {
+        auto interval_milliseconds = getQueryMetricLogInterval(context);
+        if (interval_milliseconds > 0)
+            query_metric_log->startQuery(elem.client_info.current_query_id, query_start_time, interval_milliseconds);
+    }
+
     return elem;
+}
+
+void logQueryMetricLogFinish(ContextPtr context, bool internal, String query_id, std::chrono::system_clock::time_point finish_time, QueryStatusInfoPtr info)
+{
+    if (auto query_metric_log = context->getQueryMetricLog(); query_metric_log && !internal)
+    {
+        auto interval_milliseconds = getQueryMetricLogInterval(context);
+        if (info && interval_milliseconds > 0)
+        {
+            /// Only collect data on query finish if the elapsed time exceeds the interval to collect.
+            /// If we don't do this, it's counter-intuitive to have a single entry for every quick query
+            /// where the data is basically a subset of the query_log.
+            /// On the other hand, it's very convenient to have a new entry whenever the query finishes
+            /// so that we can get nice time-series querying only query_metric_log without the need
+            /// to query the final state in query_log.
+            auto collect_on_finish = info->elapsed_microseconds > interval_milliseconds * 1000;
+            auto query_info = collect_on_finish ? info : nullptr;
+            query_metric_log->finishQuery(query_id, finish_time, query_info);
+        }
+        else
+        {
+            query_metric_log->finishQuery(query_id, finish_time, nullptr);
+        }
+    }
 }
 
 void logQueryFinish(
@@ -461,6 +503,7 @@ void logQueryFinish(
         /// Update performance counters before logging to query_log
         CurrentThread::finalizePerformanceCounters();
 
+        auto time_now = std::chrono::system_clock::now();
         QueryStatusInfo info = process_list_elem->getInfo(true, settings[Setting::log_profile_events]);
         elem.type = QueryLogElementType::QUERY_FINISH;
 
@@ -507,53 +550,10 @@ void logQueryFinish(
             if (auto query_log = context->getQueryLog())
                 query_log->add(elem);
         }
-        if (settings[Setting::log_processors_profiles])
-        {
-            if (auto processors_profile_log = context->getProcessorsProfileLog())
-            {
-                ProcessorProfileLogElement processor_elem;
-                processor_elem.event_time = elem.event_time;
-                processor_elem.event_time_microseconds = elem.event_time_microseconds;
-                processor_elem.initial_query_id = elem.client_info.initial_query_id;
-                processor_elem.query_id = elem.client_info.current_query_id;
 
-                auto get_proc_id = [](const IProcessor & proc) -> UInt64 { return reinterpret_cast<std::uintptr_t>(&proc); };
+        logProcessorProfile(context, query_pipeline.getProcessors());
 
-                for (const auto & processor : query_pipeline.getProcessors())
-                {
-                    std::vector<UInt64> parents;
-                    for (const auto & port : processor->getOutputs())
-                    {
-                        if (!port.isConnected())
-                            continue;
-                        const IProcessor & next = port.getInputPort().getProcessor();
-                        parents.push_back(get_proc_id(next));
-                    }
-
-                    processor_elem.id = get_proc_id(*processor);
-                    processor_elem.parent_ids = std::move(parents);
-
-                    processor_elem.plan_step = reinterpret_cast<std::uintptr_t>(processor->getQueryPlanStep());
-                    processor_elem.plan_step_name = processor->getPlanStepName();
-                    processor_elem.plan_step_description = processor->getPlanStepDescription();
-                    processor_elem.plan_group = processor->getQueryPlanStepGroup();
-
-                    processor_elem.processor_name = processor->getName();
-
-                    processor_elem.elapsed_us = static_cast<UInt64>(processor->getElapsedNs() / 1000U);
-                    processor_elem.input_wait_elapsed_us = static_cast<UInt64>(processor->getInputWaitElapsedNs() / 1000U);
-                    processor_elem.output_wait_elapsed_us = static_cast<UInt64>(processor->getOutputWaitElapsedNs() / 1000U);
-
-                    auto stats = processor->getProcessorDataStats();
-                    processor_elem.input_rows = stats.input_rows;
-                    processor_elem.input_bytes = stats.input_bytes;
-                    processor_elem.output_rows = stats.output_rows;
-                    processor_elem.output_bytes = stats.output_bytes;
-
-                    processors_profile_log->add(processor_elem);
-                }
-            }
-        }
+        logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, time_now, std::make_shared<QueryStatusInfo>(info));
     }
 
     if (query_span)
@@ -613,10 +613,11 @@ void logQueryException(
     elem.event_time = timeInSeconds(time_now);
     elem.event_time_microseconds = timeInMicroseconds(time_now);
 
+    QueryStatusInfoPtr info;
     if (process_list_elem)
     {
-        QueryStatusInfo info = process_list_elem->getInfo(true, settings[Setting::log_profile_events], false);
-        addStatusInfoToQueryLogElement(elem, info, query_ast, context);
+        info = std::make_shared<QueryStatusInfo>(process_list_elem->getInfo(true, settings[Setting::log_profile_events], false));
+        addStatusInfoToQueryLogElement(elem, *info, query_ast, context);
     }
     else
     {
@@ -651,6 +652,8 @@ void logQueryException(
         query_span->addAttribute("clickhouse.exception_code", elem.exception_code);
         query_span->finish();
     }
+
+    logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, time_now, info);
 }
 
 void logExceptionBeforeStart(
@@ -748,6 +751,8 @@ void logExceptionBeforeStart(
             ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
         }
     }
+
+    logQueryMetricLogFinish(context, false, elem.client_info.current_query_id, std::chrono::system_clock::now(), nullptr);
 }
 
 void validateAnalyzerSettings(ASTPtr ast, bool context_value)

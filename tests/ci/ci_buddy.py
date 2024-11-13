@@ -3,14 +3,13 @@ import json
 import os
 from typing import Dict, List, Union
 
-import boto3
 import requests
 from botocore.exceptions import ClientError
 
 from ci_config import CI
 from ci_utils import WithIter
 from commit_status_helper import get_commit_filtered_statuses, get_repo
-from get_robot_token import get_best_robot_token
+from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from github_helper import GitHub
 from pr_info import PRInfo
 
@@ -89,15 +88,9 @@ class CIBuddy:
     def _get_webhooks():
         name = "ci_buddy_web_hooks"
 
-        session = boto3.Session(region_name="us-east-1")  # Replace with your region
-        ssm_client = session.client("ssm")
         json_string = None
         try:
-            response = ssm_client.get_parameter(
-                Name=name,
-                WithDecryption=True,  # Set to True if the parameter is a SecureString
-            )
-            json_string = response["Parameter"]["Value"]
+            json_string = get_parameter_from_ssm(name, decrypt=True)
         except ClientError as e:
             print(f"An error occurred: {e}")
 
