@@ -262,17 +262,20 @@ sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, l.y, y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
 select * from sub5
 SETTINGS enable_parallel_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', enable_analyzer=1;
-Expression
-  Join
-    Expression
-      Join
-        Expression
-          ReadFromMemoryStorage
-        Expression
+Union
+  Expression
+    Join
+      Expression
+        Join
           Expression
-            ReadFromMergeTree
-    Expression
-      ReadFromMemoryStorage
+            ReadFromMemoryStorage
+          Expression
+            Expression
+              ReadFromMergeTree
+      Expression
+        ReadFromMemoryStorage
+  Expression
+    ReadFromRemoteParallelReplicas
 --
 -- RIGHT JOIN in sub5: sub5 -> WithMergableStage
 with sub1 as (select x, y from tab1 where x != 2),
@@ -305,20 +308,23 @@ sub5 as (select z, a, x, y, r.y, ll.z from sub4 rr any right join sub3 ll on ll.
 select * from sub5 order by x SETTINGS enable_parallel_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', enable_analyzer=1;
 Expression
   Sorting
-    Expression
-      Sorting
-        Expression
-          Join
-            Expression
-              ReadFromMemoryStorage
-            Expression
-              Join
-                Expression
+    Union
+      Expression
+        Sorting
+          Expression
+            Join
+              Expression
+                ReadFromMemoryStorage
+              Expression
+                Join
                   Expression
-                    ReadFromMergeTree
-                Expression
+                    Expression
+                      ReadFromMergeTree
                   Expression
-                    ReadFromMergeTree
+                    Expression
+                      ReadFromMergeTree
+      Expression
+        ReadFromRemoteParallelReplicas
 --
 -- Subqueries for IN allowed
 with sub1 as (select x, y from tab1 where x in (select number from numbers(16) where number != 2)),
