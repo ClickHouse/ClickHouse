@@ -204,14 +204,14 @@ bool ThreadStatus::isQueryCanceled() const
     return false;
 }
 
-size_t ThreadStatus::incrStepIndex()
+size_t ThreadStatus::getNextPlanStepIndex() const
 {
-    return ++(*local_data.step_count);
+    return local_data.plan_step_index->fetch_add(1);
 }
 
-size_t ThreadStatus::incrProcessorIndex()
+size_t ThreadStatus::getNextPipelineProcessorIndex() const
 {
-    return ++(*local_data.processor_count);
+    return local_data.pipeline_processor_index->fetch_add(1);
 }
 
 ThreadStatus::~ThreadStatus()

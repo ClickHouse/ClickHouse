@@ -113,7 +113,7 @@ void printPipelineCompact(const Processors & processors, WriteBuffer & out, bool
         if (item.first != nullptr)
         {
             out << "    subgraph cluster_" << next_step << " {\n";
-            out << "      label =\"" << item.first->getUniqID() << "\";\n";
+            out << "      label =\"" << item.first->getName() << "\";\n";
             out << "      style=filled;\n";
             out << "      color=lightgrey;\n";
             out << "      node [style=filled,color=white];\n";
@@ -125,7 +125,7 @@ void printPipelineCompact(const Processors & processors, WriteBuffer & out, bool
         for (const auto & node : item.second)
         {
             const auto & processor = node->agents.front();
-            out << "        n" << node->id << " [label=\"" << processor->getUniqID();
+            out << "        n" << node->id << " [label=\"" << processor->getName();
 
             if (node->agents.size() > 1)
                 out << " × " << node->agents.size();

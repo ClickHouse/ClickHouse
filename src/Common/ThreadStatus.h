@@ -91,10 +91,10 @@ public:
         String query_for_logs;
         UInt64 normalized_query_hash = 0;
 
-        //QueryPlan can not build parallel, but processor may build parallel in expand() function.
-        //so we use atomic_size_t for processor_count
-        std::shared_ptr<std::atomic_size_t> step_count = std::make_shared<std::atomic_size_t>(0);
-        std::shared_ptr<std::atomic_size_t> processor_count = std::make_shared<std::atomic_size_t>(0);
+        // Since processors might be added on the fly within expand() function we use atomic_size_t.
+        // These two fields are used for EXPLAIN PLAN / PIPELINE.
+        std::shared_ptr<std::atomic_size_t> plan_step_index = std::make_shared<std::atomic_size_t>(0);
+        std::shared_ptr<std::atomic_size_t> pipeline_processor_index = std::make_shared<std::atomic_size_t>(0);
 
         QueryIsCanceledPredicate query_is_canceled_predicate = {};
     };
@@ -319,8 +319,8 @@ public:
 
     void initGlobalProfiler(UInt64 global_profiler_real_time_period, UInt64 global_profiler_cpu_time_period);
 
-    size_t incrStepIndex();
-    size_t incrProcessorIndex();
+    size_t getNextPlanStepIndex() const;
+    size_t getNextPipelineProcessorIndex() const;
 
 private:
     void applyGlobalSettings();
