@@ -470,7 +470,7 @@ CachedOnDiskReadBufferFromFile::ReadFromFileSegmentStatePtr CachedOnDiskReadBuff
     ReadInfo & info,
     LoggerPtr log)
 {
-    chassert(!file_segment.isDownloader());
+    chassert(!file_segment.isDownloader(), getInfoForLog(nullptr, info, offset));
     chassert(offset >= file_segment.range().left);
 
     auto range = file_segment.range();
@@ -813,7 +813,7 @@ bool CachedOnDiskReadBufferFromFile::updateImplementationBufferIfNeeded()
     auto current_state = file_segment.state();
 
     chassert(current_read_range.left <= file_offset_of_buffer_end);
-    chassert(!file_segment.isDownloader());
+    chassert(!file_segment.isDownloader(), getInfoForLog());
 
     if (file_offset_of_buffer_end > current_read_range.right)
     {
@@ -950,7 +950,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
             if (use_external_buffer && !internal_buffer.empty())
                 internal_buffer.resize(original_buffer_size);
 
-            chassert(!file_segment.isDownloader());
+            chassert(!file_segment.isDownloader(), getInfoForLog());
         }
         catch (...)
         {
@@ -1204,10 +1204,12 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
     }
 
     // No necessary because of the SCOPE_EXIT above, but useful for logging below.
-    if (do_download && reset_downloader_after_read)
+    if (reset_downloader_after_read)
     {
-        file_segment.completePartAndResetDownloader();
-        chassert(!file_segment.isDownloader());
+        if (do_download)
+            file_segment.completePartAndResetDownloader();
+
+        chassert(!file_segment.isDownloader(), getInfoForLog(&state, info, offset));
     }
 
     LOG_TEST(log, "Read {} bytes. Read info: {}", size, getInfoForLog(&state, info, offset));
