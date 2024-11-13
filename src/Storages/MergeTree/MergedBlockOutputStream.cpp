@@ -209,7 +209,7 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     new_part->index_granularity = writer->getIndexGranularity();
     /// Just in case
     new_part->index_granularity.shrinkToFitInMemory();
-    new_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
+    new_part->calculateColumnsAndSecondaryIndicesSizesOnDisk(writer->getColumnsSample());
 
     /// In mutation, existing_rows_count is already calculated in PartMergerWriter
     /// In merge situation, lightweight deleted rows was physically deleted, existing_rows_count equals rows_count
