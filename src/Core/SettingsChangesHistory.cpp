@@ -64,6 +64,9 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     },
     {"24.11",
         {
+            {"enable_job_stack_trace", false, true, "Enable by default collecting stack traces from job's scheduling."},
+            {"allow_suspicious_types_in_group_by", true, false, "Don't allow Variant/Dynamic types in GROUP BY by default"},
+            {"allow_suspicious_types_in_order_by", true, false, "Don't allow Variant/Dynamic types in ORDER BY by default"},
             {"distributed_cache_discard_connection_if_unread_data", true, true, "New setting"},
             {"filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage", true, true, "New setting"},
             {"filesystem_cache_enable_background_download_during_fetch", true, true, "New setting"},
@@ -74,7 +77,10 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"backup_restore_keeper_max_retries_while_handling_error", 0, 20, "New setting."},
             {"backup_restore_finish_timeout_after_error_sec", 0, 180, "New setting."},
             {"query_plan_join_swap_table", "false", "auto", "New setting. Right table was always chosen before."},
+            {"query_plan_merge_filters", false, true, "Allow to merge filters in the query plan. This is required to properly support filter-push-down with a new analyzer."},
             {"parallel_replicas_local_plan", false, true, "Use local plan for local replica in a query with parallel replicas"},
+            {"filesystem_cache_prefer_bigger_buffer_size", true, true, "New setting"},
+            {"read_in_order_use_virtual_row", false, false, "Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only relevant ones are touched."},
         }
     },
     {"24.10",
