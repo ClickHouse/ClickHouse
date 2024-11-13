@@ -80,7 +80,7 @@ def wait_for_large_objects_count(cluster, expected, size=100, timeout=30):
 
 
 def wait_for_active_parts(
-    node, num_expected_parts, table_name, timeout=30, disk_name = None
+    node, num_expected_parts, table_name, timeout=30, disk_name=None
 ):
     deadline = time.monotonic() + timeout
     num_parts = 0
