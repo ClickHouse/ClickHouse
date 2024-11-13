@@ -1,5 +1,8 @@
 #include "config.h"
 
+#include <Core/Settings.h>
+#include <Core/SettingsEnums.h>
+
 #include <Access/Common/AccessFlags.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableFunctionNode.h>
@@ -19,10 +22,19 @@
 #include <Storages/ObjectStorage/Local/Configuration.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool use_parallel_replicas;
+    extern const SettingsBool parallel_replicas_for_cluster_engines;
+    extern const SettingsString cluster_for_parallel_replicas;
+    extern const SettingsParallelReplicasMode parallel_replicas_mode;
+}
 
 namespace ErrorCodes
 {
@@ -100,8 +112,9 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration>::executeImpl(
     ColumnsDescription cached_columns,
     bool is_insert_query) const
 {
-    ColumnsDescription columns;
     chassert(configuration);
+    ColumnsDescription columns;
+
     if (configuration->structure != "auto")
         columns = parseColumnsListFromString(configuration->structure, context);
     else if (!structure_hint.empty())
@@ -109,18 +122,61 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration>::executeImpl(
     else if (!cached_columns.empty())
         columns = cached_columns;
 
-    StoragePtr storage = std::make_shared<StorageObjectStorage>(
+    StoragePtr storage;
+
+    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        storage = std::make_shared<StorageObjectStorage>(
+            configuration,
+            getObjectStorage(context, !is_insert_query),
+            context,
+            StorageID(getDatabaseName(), table_name),
+            columns,
+            ConstraintsDescription{},
+            /* comment */ String{},
+            /* format_settings */ std::nullopt,
+            /* mode */ LoadingStrictnessLevel::CREATE,
+            /* distributed_processing */ true,
+            /* partition_by */ nullptr);
+
+        storage->startup();
+        return storage;
+    }
+
+    const auto & settings = context->getSettingsRef();
+    auto parallel_replicas_cluster_name = settings[Setting::cluster_for_parallel_replicas].toString();
+    auto can_use_parallel_replicas = settings[Setting::use_parallel_replicas]
+        && settings[Setting::parallel_replicas_for_cluster_engines]
+        && settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
+        && !parallel_replicas_cluster_name.empty();
+
+    if (can_use_parallel_replicas)
+    {
+        storage = std::make_shared<StorageObjectStorageCluster>(
+            parallel_replicas_cluster_name,
+            configuration,
+            getObjectStorage(context, !is_insert_query),
+            StorageID(getDatabaseName(), table_name),
+            columns,
+            ConstraintsDescription{},
+            context);
+
+        storage->startup();
+        return storage;
+    }
+
+    storage = std::make_shared<StorageObjectStorage>(
         configuration,
         getObjectStorage(context, !is_insert_query),
         context,
         StorageID(getDatabaseName(), table_name),
         columns,
         ConstraintsDescription{},
-        String{},
+        /* comment */ String{},
         /* format_settings */ std::nullopt,
         /* mode */ LoadingStrictnessLevel::CREATE,
         /* distributed_processing */ false,
-        nullptr);
+        /* partition_by */ nullptr);
 
     storage->startup();
     return storage;
