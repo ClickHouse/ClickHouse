@@ -842,6 +842,7 @@ void LocalServer::processConfig()
         String path = global_context->getPath();
 
         /// Lock path directory before read
+        fs::create_directories(fs::path(path));
         status.emplace(fs::path(path) / "status", StatusFile::write_full_info);
 
         if (fs::exists(fs::path(path) / "metadata"))
