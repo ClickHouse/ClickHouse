@@ -212,6 +212,7 @@ protected:
 
     const String host;
     const Poco::Timespan history;
+    const Poco::Timespan resolve_interval;
     const HostResolverMetrics metrics = getMetrics();
 
     // for tests purpose

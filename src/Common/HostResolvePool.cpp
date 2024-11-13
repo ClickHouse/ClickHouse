@@ -52,6 +52,7 @@ HostResolver::WeakPtr HostResolver::getWeakFromThis()
 HostResolver::HostResolver(String host_, Poco::Timespan history_)
     : host(std::move(host_))
     , history(history_)
+    , resolve_interval(history_.totalMicroseconds() / 3)
     , resolve_function([](const String & host_to_resolve) { return DNSResolver::instance().resolveHostAllInOriginOrder(host_to_resolve); })
 {
     update();
@@ -203,10 +204,8 @@ bool HostResolver::isUpdateNeeded()
 {
     Poco::Timestamp now;
 
-    auto piece_history = Poco::Timespan(history.totalMicroseconds() / 3);
-
     std::lock_guard lock(mutex);
-    return last_resolve_time + piece_history < now || records.empty();
+    return last_resolve_time + resolve_interval < now || records.empty();
 }
 
 void HostResolver::updateImpl(Poco::Timestamp now, std::vector<Poco::Net::IPAddress> & next_gen)
