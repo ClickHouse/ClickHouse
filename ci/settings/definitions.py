@@ -133,12 +133,12 @@ DOCKERS = [
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
-    # Docker.Config(
-    #     name="clickhouse/stateful-test",
-    #     path="./ci/docker/test/stateful",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=["clickhouse/stateless-test"],
-    # ),
+    Docker.Config(
+        name="clickhouse/stateful-test",
+        path="./ci/docker/stateful-test",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=["clickhouse/stateless-test"],
+    ),
     # Docker.Config(
     #     name="clickhouse/stress-test",
     #     path="./ci/docker/test/stress",
@@ -241,3 +241,4 @@ class JobNames:
     FAST_TEST = "Fast test"
     BUILD = "Build"
     STATELESS = "Stateless tests"
+    STATEFUL = "Stateful tests"

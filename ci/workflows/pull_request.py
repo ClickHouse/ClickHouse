@@ -1,5 +1,3 @@
-from typing import List
-
 from praktika import Artifact, Job, Workflow
 from praktika.settings import Settings
 
@@ -83,7 +81,7 @@ stateless_tests_jobs = Job.Config(
     runs_on=[RunnerLabels.BUILDER_AMD],
     command="python3 ./ci/jobs/functional_stateless_tests.py --test-options {PARAMETER}",
     # many tests expect to see "/var/lib/clickhouse" in various output lines - add mount for now, consider creating this dir in docker file
-    run_in_docker="clickhouse/stateless-test+--security-opt seccomp=unconfined+--volume=/tmp/praktika:/var/lib/clickhouse",
+    run_in_docker="clickhouse/stateless-test+--security-opt seccomp=unconfined",
     digest_config=Job.CacheDigestConfig(
         include_paths=[
             "./ci/jobs/functional_stateless_tests.py",
@@ -116,6 +114,30 @@ stateless_tests_jobs = Job.Config(
     ],
 )
 
+stateful_tests_jobs = Job.Config(
+    name=JobNames.STATEFUL,
+    runs_on=[RunnerLabels.BUILDER_AMD],
+    command="python3 ./ci/jobs/functional_stateful_tests.py --test-options {PARAMETER}",
+    # many tests expect to see "/var/lib/clickhouse"
+    # some tests expect to see "/var/log/clickhouse"
+    run_in_docker="clickhouse/stateless-test+--security-opt seccomp=unconfined",
+    digest_config=Job.CacheDigestConfig(
+        include_paths=[
+            "./ci/jobs/functional_stateful_tests.py",
+        ],
+    ),
+).parametrize(
+    parameter=[
+        "amd_debug,parallel",
+    ],
+    runs_on=[
+        [RunnerLabels.BUILDER_AMD],
+    ],
+    requires=[
+        [ArtifactNames.CH_AMD_DEBUG],
+    ],
+)
+
 workflow = Workflow.Config(
     name="PR",
     event=Workflow.Event.PULL_REQUEST,
@@ -125,6 +147,7 @@ workflow = Workflow.Config(
         fast_test_job,
         *build_jobs,
         *stateless_tests_jobs,
+        *stateful_tests_jobs,
     ],
     artifacts=[
         Artifact.Config(
@@ -157,7 +180,7 @@ workflow = Workflow.Config(
 
 WORKFLOWS = [
     workflow,
-]  # type: List[Workflow.Config]
+]
 
 
 # if __name__ == "__main__":

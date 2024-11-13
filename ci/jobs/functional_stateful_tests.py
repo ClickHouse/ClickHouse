@@ -32,24 +32,18 @@ def parse_args():
     return parser.parse_args()
 
 
-def run_stateless_test(
+def run_test(
     no_parallel: bool, no_sequiential: bool, batch_num: int, batch_total: int, test=""
 ):
-    assert not (no_parallel and no_sequiential)
     test_output_file = f"{Settings.OUTPUT_DIR}/test_result.txt"
-    aux = ""
-    nproc = int(Utils.cpu_count() / 2)
-    if batch_num and batch_total:
-        aux = f"--run-by-hash-total {batch_total} --run-by-hash-num {batch_num-1}"
-    statless_test_command = f"clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
-                --no-drop-if-fail --capture-client-stacktrace --queries /repo/tests/queries --test-runs 1 --hung-check \
-                {'--no-parallel' if no_parallel else ''}  {'--no-sequential' if no_sequiential else ''} \
-                --print-time --jobs {nproc} --report-coverage --report-logs-stats {aux} \
-                --queries ./tests/queries -- '{test}' | ts '%Y-%m-%d %H:%M:%S' \
-                | tee -a \"{test_output_file}\""
+
+    test_command = f"clickhouse-test --jobs 2 --testname --shard --zookeeper --check-zookeeper-session --no-stateless \
+        --hung-check --print-time \
+        --capture-client-stacktrace --queries ./tests/queries -- '{test}' \
+        | ts '%Y-%m-%d %H:%M:%S' | tee -a \"{test_output_file}\""
     if Path(test_output_file).exists():
         Path(test_output_file).unlink()
-    Shell.run(statless_test_command, verbose=True)
+    Shell.run(test_command, verbose=True)
 
 
 def main():
@@ -103,8 +97,7 @@ def main():
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-local",
             f"rm -rf {Settings.TEMP_DIR}/etc/ && mkdir -p {Settings.TEMP_DIR}/etc/clickhouse-client {Settings.TEMP_DIR}/etc/clickhouse-server",
             f"cp programs/server/config.xml programs/server/users.xml {Settings.TEMP_DIR}/etc/clickhouse-server/",
-            # TODO: find a way to work with Azure secret so it's ok for local tests as well, for now keep azure disabled
-            f"./tests/config/install.sh {Settings.TEMP_DIR}/etc/clickhouse-server {Settings.TEMP_DIR}/etc/clickhouse-client --s3-storage --no-azure",
+            f"./tests/config/install.sh {Settings.TEMP_DIR}/etc/clickhouse-server {Settings.TEMP_DIR}/etc/clickhouse-client --s3-storage",
             # clickhouse benchmark segfaults with --config-path, so provide client config by its default location
             f"cp {Settings.TEMP_DIR}/etc/clickhouse-client/* /etc/clickhouse-client/",
             # update_path_ch_config,
@@ -127,14 +120,11 @@ def main():
         stop_watch_ = Utils.Stopwatch()
         step_name = "Start ClickHouse Server"
         print(step_name)
-        hdfs_log = "/tmp/praktika/output/hdfs_mini.log"
         minio_log = "/tmp/praktika/output/minio.log"
-        res = res and CH.start_hdfs(log_file_path=hdfs_log)
         res = res and CH.start_minio(test_type="stateful", log_file_path=minio_log)
-        logs_to_attach += [minio_log, hdfs_log]
+        logs_to_attach += [minio_log]
         time.sleep(10)
         Shell.check("ps -ef | grep minio", verbose=True)
-        Shell.check("ps -ef | grep hdfs", verbose=True)
         res = res and Shell.check(
             "aws s3 ls s3://test --endpoint-url http://localhost:11111/", verbose=True
         )
@@ -159,11 +149,8 @@ def main():
         stop_watch_ = Utils.Stopwatch()
         step_name = "Tests"
         print(step_name)
-        assert Shell.check(
-            "clickhouse-client -q \"insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')\"",
-            verbose=True,
-        )
-        run_stateless_test(
+        # assert Shell.check("clickhouse-client -q \"insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')\"", verbose=True)
+        run_test(
             no_parallel=no_parallel,
             no_sequiential=no_sequential,
             batch_num=batch_num,

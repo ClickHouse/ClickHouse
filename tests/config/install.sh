@@ -13,12 +13,13 @@ shift  # DEST_SERVER_PATH
 shift  # DEST_CLIENT_PATH
 
 FAST_TEST=0
-S3_STORAGE=0
+NO_AZURE=0
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
         --fast-test) FAST_TEST=1 ;;
-        --s3-storage) S3_STORAGE=1 ;;
+        --s3-storage) EXPORT_S3_STORAGE_POLICIES=1 ;;
+        --no-azure) NO_AZURE=1 ;;
         *) echo "Unknown option: $1" ; exit 1 ;;
     esac
     shift
@@ -199,8 +200,10 @@ elif [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
     ln -sf $SRC_PATH/config.d/azure_storage_policy_by_default.xml $DEST_SERVER_PATH/config.d/
 fi
 
-if [[ "$EXPORT_S3_STORAGE_POLICIES" == "1" ]] || [[ "$S3_STORAGE" = "1" ]]; then
-    #ln -sf $SRC_PATH/config.d/azure_storage_conf.xml $DEST_SERVER_PATH/config.d/
+if [[ "$EXPORT_S3_STORAGE_POLICIES" == "1" ]]; then
+    if [[ "$NO_AZURE" != "1" ]]; then
+      ln -sf $SRC_PATH/config.d/azure_storage_conf.xml $DEST_SERVER_PATH/config.d/
+    fi
     ln -sf $SRC_PATH/config.d/storage_conf.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/config.d/storage_conf_02944.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/config.d/storage_conf_02963.xml $DEST_SERVER_PATH/config.d/

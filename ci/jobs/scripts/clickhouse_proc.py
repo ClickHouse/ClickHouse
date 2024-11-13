@@ -31,12 +31,10 @@ class ClickHouseProc:
         self.info = ""
         self.info_file = ""
 
-        self.minio_cmd = f"tests/docker_scripts/setup_minio.sh stateless 2>&1 > {Settings.OUTPUT_DIR}/minio.log"
-
         Utils.set_env("CLICKHOUSE_CONFIG_DIR", self.ch_config_dir)
         Utils.set_env("CLICKHOUSE_CONFIG", self.config_file)
         Utils.set_env("CLICKHOUSE_USER_FILES", self.user_files_path)
-        Utils.set_env("CLICKHOUSE_SCHEMA_FILES", f"{self.ch_config_dir}/format_schemas")
+        # Utils.set_env("CLICKHOUSE_SCHEMA_FILES", f"{self.ch_config_dir}/format_schemas")
 
         # if not fast_test:
         #     with open(f"{self.ch_config_dir}/config.d/backups.xml", "w") as file:
@@ -55,8 +53,12 @@ class ClickHouseProc:
         )
         return True
 
-    def start_minio(self, log_file_path):
-        command = ["tests/docker_scripts/setup_minio.sh", "stateless", "./tests"]
+    def start_minio(self, test_type, log_file_path):
+        command = [
+            "./ci/jobs/scripts/functional_tests/setup_minio.sh",
+            test_type,
+            "./tests",
+        ]
         with open(log_file_path, "w") as log_file:
             process = subprocess.Popen(
                 command, stdout=log_file, stderr=subprocess.STDOUT

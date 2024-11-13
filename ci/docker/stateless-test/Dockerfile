@@ -8,10 +8,10 @@ RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/download/v1.1.6.20200320/clickhouse-odbc-1.1.6-Linux.tar.gz"
 
 
-RUN mkdir /etc/clickhouse-server /etc/clickhouse-keeper /etc/clickhouse-server && chmod 777 /etc/clickhouse-*
+RUN mkdir /etc/clickhouse-server /etc/clickhouse-keeper /etc/clickhouse-client && chmod 777 /etc/clickhouse-* \
+    && mkdir -p /var/lib/clickhouse /var/log/clickhouse-server && chmod 777 /var/log/clickhouse-server /var/lib/clickhouse
 
 RUN addgroup --gid 1001 clickhouse && adduser --uid 1001 --gid 1001 --disabled-password clickhouse
-USER clickhouse
 
 # moreutils - provides ts fo FT
 # expect, bzip2 - requried by FT
@@ -57,6 +57,7 @@ RUN apt-get update -y \
             p7zip-full \
             curl \
             wget \
+            xz-utils \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
@@ -112,3 +113,5 @@ RUN curl -L --no-verbose -O 'https://archive.apache.org/dist/hadoop/common/hadoo
 
 RUN npm install -g azurite@3.30.0 \
     && npm install -g tslib && npm install -g node
+
+USER clickhouse
