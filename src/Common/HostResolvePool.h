@@ -26,7 +26,7 @@
 //    a) it still occurs in resolve set after `history_` time or b) all other addresses are pessimized as well.
 // - resolve schedule
 //    Addresses are resolved through `DB::DNSResolver::instance()`.
-//    Usually it does not happen more often than once in `history_` time.
+//    Usually it does not happen more often than 3 times in `history_` period.
 //    But also new resolve performed each `setFail()` call.
 
 namespace DB
@@ -245,4 +245,3 @@ private:
 };
 
 }
-

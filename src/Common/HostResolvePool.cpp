@@ -9,6 +9,7 @@
 
 #include <mutex>
 #include <algorithm>
+#include <Poco/Timespan.h>
 
 
 namespace ProfileEvents
@@ -202,8 +203,10 @@ bool HostResolver::isUpdateNeeded()
 {
     Poco::Timestamp now;
 
+    auto piece_history = Poco::Timespan(history.totalMicroseconds() / 3);
+
     std::lock_guard lock(mutex);
-    return last_resolve_time + history < now || records.empty();
+    return last_resolve_time + piece_history < now || records.empty();
 }
 
 void HostResolver::updateImpl(Poco::Timestamp now, std::vector<Poco::Net::IPAddress> & next_gen)
