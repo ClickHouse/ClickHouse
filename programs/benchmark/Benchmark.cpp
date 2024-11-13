@@ -342,16 +342,16 @@ private:
                 std::cout << "Stopping launch of queries. SIGINT received." << std::endl;
                 return false;
             }
+        }
 
-            double seconds = delay_watch.elapsedSeconds();
-            if (delay > 0 && seconds > delay)
-            {
-                printNumberOfQueriesExecuted(queries_executed);
-                cumulative
-                    ? report(comparison_info_total, total_watch.elapsedSeconds())
-                    : report(comparison_info_per_interval, seconds);
-                delay_watch.restart();
-            }
+        double seconds = delay_watch.elapsedSeconds();
+        if (delay > 0 && seconds > delay)
+        {
+            printNumberOfQueriesExecuted(queries_executed);
+            cumulative
+            ? report(comparison_info_total, total_watch.elapsedSeconds())
+            : report(comparison_info_per_interval, seconds);
+            delay_watch.restart();
         }
 
         return true;
