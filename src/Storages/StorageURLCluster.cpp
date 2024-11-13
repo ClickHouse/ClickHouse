@@ -30,14 +30,10 @@
 
 namespace DB
 {
+
 namespace Setting
 {
     extern const SettingsUInt64 glob_expansion_max_elements;
-}
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
 }
 
 StorageURLCluster::StorageURLCluster(
