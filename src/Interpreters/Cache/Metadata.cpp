@@ -680,7 +680,7 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
     if (!size_to_download)
         return;
 
-    auto reader = file_segment.getRemoteFileReader();
+    auto reader = file_segment.extractRemoteFileReader();
     if (!reader)
     {
         throw Exception(
