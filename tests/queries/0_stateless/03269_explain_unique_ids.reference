@@ -59,6 +59,9 @@ digraph
 
 ('AggregatingTransform_8','Aggregating_4')
 ('ConvertingAggregatedToChunksTransform_32','')
+('CreatingSetsTransform_2','CreatingSet_19')
+('EmptySink_3','')
+('ExpressionTransform_1','Expression_21')
 ('ExpressionTransform_10','Expression_16')
 ('ExpressionTransform_11','Expression_16')
 ('ExpressionTransform_12','Expression_16')
@@ -80,6 +83,7 @@ digraph
 ('MergingSortedTransform_26','Sorting_7')
 ('NullSource_30','')
 ('NullSource_31','')
+('NumbersRange_0','ReadFromSystemNumbers_9')
 ('PartialSortingTransform_14','Sorting_7')
 ('PartialSortingTransform_15','Sorting_7')
 ('PartialSortingTransform_16','Sorting_7')
