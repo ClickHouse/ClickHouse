@@ -5,13 +5,7 @@ export class MergeTreeInserter
     {
         this.sim = sim; // EventSimulator
         this.mt = mt; // MergeTree
-        this.inserter = inserter; // schedule of INSERTs
-    }
-
-    // Call start once to initiate insertion process
-    start(opts = {})
-    {
-        this.inserterInstance = this.inserter(this.mt, opts);
+        this.inserter = inserter;
         this.#iterateInserter();
     }
 
@@ -19,19 +13,23 @@ export class MergeTreeInserter
     {
         while (true)
         {
-            const { value, done } = this.inserterInstance.next();
+            const { value, done } = this.inserter.next();
             if (done)
-                return; // No more merges required
+                return; // No more inserts
             switch (value.type)
             {
                 case 'insert':
                     this.mt.insertPart(value.bytes);
                     break;
                 case 'sleep':
-                    this.sim.scheduleAt(this.sim.time + value.delay, () => this.#iterateInserter());
-                    return;
+                    if (value.delay > 0)
+                    {
+                        this.sim.scheduleAt(this.sim.time + value.delay, "InserterSleep", () => this.#iterateInserter());
+                        return;
+                    }
+                    break;
                 default:
-                    throw { message: "Unknown merge inserter yield type", value};
+                    throw { message: "Unknown merge tree inserter yield type", value};
             }
         }
     }

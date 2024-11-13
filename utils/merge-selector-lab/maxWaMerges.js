@@ -1,6 +1,8 @@
-export function maxWaMerges(mt, {count, min_parts, max_parts, min_score})
+export function* maxWaMerges({min_parts, max_parts, min_score})
 {
-    for (let i = 0; i < count; i++)
+    // TODO: adapt for parallel merges
+    let mt = yield {type: 'getMergeTree'};
+    while (true)
     {
         const active_parts = mt.parts.filter(d => d.active).sort((a, b) => a.begin - b.begin);
         let best_begin = -1;
@@ -25,8 +27,8 @@ export function maxWaMerges(mt, {count, min_parts, max_parts, min_score})
             }
         }
         if (best_score > min_score)
-            mt.mergeParts(active_parts.slice(best_begin, best_end));
+            yield {type: 'merge', parts_to_merge: active_parts.slice(best_begin, best_end)};
         else
-            break; // Better not to merge
+            yield {type: 'wait'}; // Better not to merge
     }
 }

@@ -116,7 +116,7 @@ function showSimulation(data, automatic = false)
                 Inserted: ${mt.inserted_bytes / 1024 / 1024} MB,
                 WA: ${mt.writeAmplification().toFixed(2)},
                 AvgPartCount: ${mt.avgActivePartCount().toFixed(2)}
-                Time: ${(mt.current_time).toFixed(2)}s
+                Time: ${(mt.time).toFixed(2)}s
             `);
     }
 }
@@ -137,12 +137,12 @@ function argMin(array, func)
     return result;
 }
 
-function runSelector(selector, opts)
+function runSelector(selectorGen, opts)
 {
-    let mt = noArrivalsScenario(selector, opts);
+    let mt = noArrivalsScenario(selectorGen(opts), opts);
     const { count, total_time, ...other_opts } = opts;
-    mt.title = `${selector.name} ║ ${JSON.stringify(other_opts)} ║`;
-    mt.selector = selector;
+    mt.title = `${selectorGen.name} ║ ${JSON.stringify(other_opts)} ║`;
+    mt.selectorGen = selectorGen;
     const time_integral = mt.integral_active_part_count;
     const y = time_integral / total_time;
     return {y: y, mt};
@@ -179,12 +179,12 @@ async function minimizeAvgPartCount(parts, chart)
     return results;
 }
 
-export async function main2()
+export async function demo()
 {
     showSimulation({mt: runScenario()}, true);
 }
 
-export async function main()
+export async function compareAvgPartCount()
 {
     const optimal_chart = new Chart(
         d3.select("#opt-container"),
@@ -236,4 +236,39 @@ export async function main()
 
         variants_chart.clear();
     }
+}
+
+function* sequenceInserter({start_time, interval, parts, bytes})
+{
+    yield {type: 'sleep', delay: start_time};
+    for (let i = 0; i < parts; i++)
+    {
+        yield {type: 'insert', bytes};
+        yield {type: 'sleep', delay: interval};
+    }
+}
+
+async function custom()
+{
+    const scenario = {
+        inserts: [
+            sequenceInserter({
+                start_time: 0,
+                interval: 0,
+                parts: 5000,
+                bytes: 10 << 20,
+            }),
+        ],
+        selector: simpleMerges(),
+        pool_size: 1000,
+    }
+    const mt = await customScenario(scenario);
+    showSimulation({mt}, true);
+}
+
+export async function main()
+{
+    // demo();
+    // compareAvgPartCount();
+    custom();
 }

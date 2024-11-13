@@ -2,9 +2,10 @@ import Heap from 'https://cdn.skypack.dev/heap-js';
 
 export class Event
 {
-    constructor(callback, dependencies = [])
+    constructor(name, callback, dependencies = [])
     {
         this.time = 0;
+        this.name = name;
         this.callback = callback;
         this.dependencies = dependencies; // List of events this event depends on
         this.executed = false;  // Whether the event has been executed
@@ -34,7 +35,7 @@ export class Event
     // Execute the event
     async execute(sim)
     {
-        // console.log(`Executing event at time ${this.time}`);
+        console.log("EXEC", sim.time, this.name, this);
         await this.callback(sim, this);
         this.executed = true;
 
@@ -53,17 +54,18 @@ export class EventSimulator
         this.time = 0;
     }
 
-    // Add an event to the simulator and classify it into appropriate queue
-    scheduleAt(time, callback, dependencies = [])
+    // Schedule new event to be executed at specific time
+    scheduleAt(time, name, callback, dependencies = [])
     {
-        const event = new Event(callback, dependencies);
+        const event = new Event(name, callback, dependencies);
         this.scheduleEventAt(time, event);
         return event;
     }
 
+    // Schedule given event to be executed at specific time
     scheduleEventAt(time, event)
     {
-        if (isNaN(time))
+        if (isNaN(time)) // Prevent hangups
             throw { message: "Scheduling event to NaN time:", event};
 
         event.time = time;
@@ -73,6 +75,12 @@ export class EventSimulator
         else
             // Link this event's dependencies to track dependents
             event.dependencies.forEach(dep => dep.addDependent(event));
+    }
+
+    // Schedule event to be executed after all current ready events
+    postpone(name, callback)
+    {
+        this.scheduleAt(0, name, callback, []);
     }
 
     // Run the simulation

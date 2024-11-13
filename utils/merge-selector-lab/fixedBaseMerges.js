@@ -1,6 +1,8 @@
-export function fixedBaseMerges(mt, {count, base})
+export function* fixedBaseMerges({base})
 {
-    for (let i = 0; i < count; i++)
+    // TODO: adapt for parallel merges
+    let mt = yield {type: 'getMergeTree'};
+    while (true)
     {
         if (mt.active_part_count <= 1)
             break;
@@ -12,6 +14,6 @@ export function fixedBaseMerges(mt, {count, base})
             max_size = d3.min(active_parts.filter(d => d.bytes > max_size), d => d.bytes);
             eligible_parts = active_parts.filter(d => d.bytes <= max_size);
         }
-        mt.mergeParts(eligible_parts.slice(0, base));
+        yield {type: 'merge', parts_to_merge: eligible_parts.slice(0, base)};
     }
 }

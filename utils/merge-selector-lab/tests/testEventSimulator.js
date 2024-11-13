@@ -8,9 +8,9 @@ async function testOrderOfIndependentEvents()
     const sim = new EventSimulator();
     const results = [];
 
-    sim.scheduleAt(3, () => results.push('Event 3'));
-    sim.scheduleAt(2, () => results.push('Event 2'));
-    sim.scheduleAt(1, () => results.push('Event 1'));
+    sim.scheduleAt(3, "test", () => results.push('Event 3'));
+    sim.scheduleAt(2, "test", () => results.push('Event 2'));
+    sim.scheduleAt(1, "test", () => results.push('Event 1'));
 
     await sim.run();
 
@@ -24,9 +24,9 @@ async function testChainOfDependentEvents()
     const sim = new EventSimulator();
     const results = [];
 
-    const event1 = sim.scheduleAt(1, () => results.push('Event 1'));
-    const event2 = sim.scheduleAt(2, () => results.push('Event 2'), [event1]);
-    const event3 = sim.scheduleAt(3, () => results.push('Event 3'), [event2]);
+    const event1 = sim.scheduleAt(1, "test", () => results.push('Event 1'));
+    const event2 = sim.scheduleAt(2, "test", () => results.push('Event 2'), [event1]);
+    const event3 = sim.scheduleAt(3, "test", () => results.push('Event 3'), [event2]);
 
     await sim.run();
 
@@ -40,9 +40,9 @@ async function testInTreeOfDependentEvents()
     const sim = new EventSimulator();
     const results = [];
 
-    const event1 = sim.scheduleAt(1, () => results.push('Event 1'));
-    const event2 = sim.scheduleAt(2, () => results.push('Event 2'));
-    const event3 = sim.scheduleAt(3, () => results.push('Event 3'), [event1, event2]);
+    const event1 = sim.scheduleAt(1, "test", () => results.push('Event 1'));
+    const event2 = sim.scheduleAt(2, "test", () => results.push('Event 2'));
+    const event3 = sim.scheduleAt(3, "test", () => results.push('Event 3'), [event1, event2]);
 
     await sim.run();
 
@@ -56,9 +56,9 @@ async function testOutTreeOfDependentEvents()
     const sim = new EventSimulator();
     const results = [];
 
-    const event1 = sim.scheduleAt(1, () => results.push('Event 1'));
-    const event2 = sim.scheduleAt(2, () => results.push('Event 2'), [event1]);
-    const event3 = sim.scheduleAt(3, () => results.push('Event 3'), [event1]);
+    const event1 = sim.scheduleAt(1, "test", () => results.push('Event 1'));
+    const event2 = sim.scheduleAt(2, "test", () => results.push('Event 2'), [event1]);
+    const event3 = sim.scheduleAt(3, "test", () => results.push('Event 3'), [event1]);
 
     await sim.run();
 
@@ -73,10 +73,10 @@ async function testDAGWithRhombus()
     const results = [];
 
     // Create events in a rhombus shape
-    const event1 = sim.scheduleAt(1, () => results.push('Event 1'));
-    const event2 = sim.scheduleAt(2, () => results.push('Event 2'), [event1]);
-    const event3 = sim.scheduleAt(3, () => results.push('Event 3'), [event1]);
-    const event4 = sim.scheduleAt(4, () => results.push('Event 4'), [event2, event3]);
+    const event1 = sim.scheduleAt(1, "test", () => results.push('Event 1'));
+    const event2 = sim.scheduleAt(2, "test", () => results.push('Event 2'), [event1]);
+    const event3 = sim.scheduleAt(3, "test", () => results.push('Event 3'), [event1]);
+    const event4 = sim.scheduleAt(4, "test", () => results.push('Event 4'), [event2, event3]);
 
     await sim.run();
 
@@ -104,13 +104,13 @@ async function testComplexDAGWithCombinedTimeAndDependencies()
      *             \    /
      *              Event 7
      */
-    const event1 = sim.scheduleAt(1, () => results.push('Event 1'));
-    const event2 = sim.scheduleAt(5, () => results.push('Event 2'), [event1]);
-    const event3 = sim.scheduleAt(3, () => results.push('Event 3'));
-    const event4 = sim.scheduleAt(4, () => results.push('Event 4'), [event1, event3]);
-    const event5 = sim.scheduleAt(6, () => results.push('Event 5'), [event2, event4]);
-    const event6 = sim.scheduleAt(2, () => results.push('Event 6'));
-    const event7 = sim.scheduleAt(7, () => results.push('Event 7'), [event5, event6]);
+    const event1 = sim.scheduleAt(1, "test", () => results.push('Event 1'));
+    const event2 = sim.scheduleAt(5, "test", () => results.push('Event 2'), [event1]);
+    const event3 = sim.scheduleAt(3, "test", () => results.push('Event 3'));
+    const event4 = sim.scheduleAt(4, "test", () => results.push('Event 4'), [event1, event3]);
+    const event5 = sim.scheduleAt(6, "test", () => results.push('Event 5'), [event2, event4]);
+    const event6 = sim.scheduleAt(2, "test", () => results.push('Event 6'));
+    const event7 = sim.scheduleAt(7, "test", () => results.push('Event 7'), [event5, event6]);
 
     await sim.run();
 

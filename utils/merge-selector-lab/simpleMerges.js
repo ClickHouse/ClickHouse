@@ -1,5 +1,7 @@
-export function simpleMerges(mt, {count})
+export function* simpleMerges()
 {
+    let mt = yield {type: 'getMergeTree'};
+
     let settings =
     {
         /// Zero means unlimited. Can be overridden by the same merge tree setting.
@@ -114,46 +116,53 @@ export function simpleMerges(mt, {count})
     const min_size_to_lower_base_log = Math.log(1 + settings.min_size_to_lower_base);
     const max_size_to_lower_base_log = Math.log(1 + settings.max_size_to_lower_base);
 
-    for (let i = 0; i < count; i++)
+    while (mt.active_part_count >= 2)
     {
-        const active_parts = mt.parts.filter(d => d.active).sort((a, b) => a.begin - b.begin);
+        let best_range = null;
         let best_begin = -1;
         let best_end = -1;
         let best_score = 0;
-        for (let begin = 0; begin < active_parts.length - settings.min_parts; begin++)
+        for (const cur_range of mt.getRangesForMerge())
         {
-            for (let end = begin + settings.min_parts; end < active_parts.length; end++)
+            for (let begin = 0; begin < cur_range.length - settings.min_parts; begin++)
             {
-                if (settings.max_parts_to_merge_at_once && end - begin > settings.max_parts_to_merge_at_once)
-                    break;
-                const range = active_parts.slice(begin, end);
-                const count = end - begin;
-                const sum_bytes = d3.sum(range, d => d.bytes);
-                const score = sum_bytes / (count - 1.9);
+                for (let end = begin + settings.min_parts; end < cur_range.length; end++)
+                {
+                    if (settings.max_parts_to_merge_at_once && end - begin > settings.max_parts_to_merge_at_once)
+                        break;
+                    const range = cur_range.slice(begin, end);
+                    const count = end - begin;
+                    const sum_bytes = range.reduce((a, d) => a + d.bytes, 0);
+                    const score = sum_bytes / (count - 1.9);
 
-                let allowed = allow({
-                    sum_size: sum_bytes,
-                    max_size: d3.max(range, d => d.bytes),
-                    min_age: d3.min(range, d => mt.current_time - d.created),
-                    range_size: count,
-                    partition_size: active_parts.length,
-                    min_size_to_lower_base_log,
-                    max_size_to_lower_base_log
-                });
+                    let allowed = allow({
+                        sum_size: sum_bytes,
+                        max_size: range.reduce((a, d) => Math.max(a, d.bytes), 0),
+                        min_age: range.reduce((a, d) => Math.min(a, mt.time - d.created), Infinity),
+                        range_size: count,
+                        partition_size: cur_range.length,
+                        min_size_to_lower_base_log,
+                        max_size_to_lower_base_log
+                    });
 
-                if (allowed) {
-                    if (best_score == 0 || score < best_score)
+                    if (allowed)
                     {
-                        best_begin = begin;
-                        best_end = end;
-                        best_score = score;
+                        if (best_score == 0 || score < best_score)
+                        {
+                            best_begin = begin;
+                            best_end = end;
+                            best_range = cur_range;
+                            best_score = score;
+                        }
                     }
                 }
             }
         }
-        if (best_score != 0)
-            mt.mergeParts(active_parts.slice(best_begin, best_end));
+        if (best_range)
+            yield {type: 'merge', parts_to_merge: best_range.slice(best_begin, best_end)};
+        else if (mt.merging_part_count > 0)
+            yield {type: 'wait'};
         else
-            break; // Better not to merge
+            return; // Simple merge selector thinks it is better not to merge
     }
 }

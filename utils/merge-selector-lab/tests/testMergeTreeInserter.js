@@ -34,13 +34,9 @@ export async function testMergeTreeInserter()
 
     const sim = new EventSimulator();
     const mt = new MergeTree();
-    const inserter1 = new MergeTreeInserter(sim, mt, testInserter1);
-    const inserter2 = new MergeTreeInserter(sim, mt, testInserter2);
-    const inserter3 = new MergeTreeInserter(sim, mt, testInserter3);
-
-    inserter1.start();
-    inserter2.start();
-    inserter3.start();
+    const inserter1 = new MergeTreeInserter(sim, mt, testInserter1());
+    const inserter2 = new MergeTreeInserter(sim, mt, testInserter2());
+    const inserter3 = new MergeTreeInserter(sim, mt, testInserter3());
 
     await sim.run();
 

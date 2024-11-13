@@ -35,7 +35,7 @@ function explainDemo()
 {
     const mt = new MergeTree();
     randomInserts(mt, {count: 20, min_size: 10, max_size: 100});
-    maxWaMerges(mt, {count: 7, min_parts: 2, max_parts: 5, min_score: 1.5});
+    runSelector(mt, 7, maxWaMerges({min_parts: 2, max_parts: 5, min_score: 1.5}));
     return mt;
 }
 
@@ -89,7 +89,7 @@ function maxWaDemo()
     for (let i = 0; i < 300; i++)
     {
         randomInserts(mt, {count: 10, min_size: 10, max_size: 100});
-        maxWaMerges(mt, {count: 3, min_parts: 2, max_parts: 20, min_score: Math.log2(5)});
+        runSelector(mt, 3, maxWaMerges({min_parts: 2, max_parts: 20, min_score: Math.log2(5)}));
     }
     return mt;
 }
@@ -100,8 +100,8 @@ function simple1000()
     for (let i = 0; i < 1; i++)
     {
         randomInserts(mt, {count: 1000, min_size: 10, max_size: 100});
-        //mt.advanceTime(30 * 86400);
-        simpleMerges(mt, {count: 1000});
+        mt.advanceTime(30 * 86400);
+        runSelector(mt, 1000, simpleMerges());
     }
     return mt;
 }
@@ -117,7 +117,7 @@ function maxWa1000()
         const inserts = mt.parts.filter(d => d.level == 0);
         const avg_insert_size = d3.sum(inserts, d => d.bytes) / inserts.length;
         const min_score = Math.log2(current_size/avg_insert_size) / (max_wa - 1);
-        maxWaMerges(mt, {count: 10, min_parts: 2, max_parts: 100, min_score});
+        runSelector(mt, 10, maxWaMerges({min_parts: 2, max_parts: 100, min_score}));
     }
     return mt;
 }
@@ -130,7 +130,7 @@ function simple10000Period()
     {
         randomInserts(mt, {count: 10, min_size: 1, max_size: 100});
         mt.advanceTime(mt.time + dt);
-        simpleMerges(mt, {count: 10});
+        runSelector(mt, 10, simpleMerges());
         mt.advanceTime(mt.time + dt);
     }
     return mt;
@@ -147,9 +147,36 @@ function maxWa10000Period()
         const inserts = mt.parts.filter(d => d.level == 0);
         const avg_insert_size = d3.sum(inserts, d => d.bytes) / inserts.length;
         const min_score = Math.log2(current_size/avg_insert_size) / (max_wa - 1);
-        maxWaMerges(mt, {count: 10, min_parts: 2, max_parts: 100, min_score});
+        runSelector(mt, 10, maxWaMerges({min_parts: 2, max_parts: 100, min_score}));
     }
     return mt;
+}
+
+function runSelector(mt, count, selector)
+{
+    let value_to_send = null;
+    loop: while (true)
+    {
+        const { value, done } = selector.next(value_to_send);
+        value_to_send = null;
+        if (done)
+            return; // No more merges required
+        switch (value.type)
+        {
+            case 'getMergeTree':
+                value_to_send = mt;
+                break;
+            case 'merge':
+                mt.mergeParts(value.parts_to_merge);
+                if (--count == 0)
+                    return;
+                break;
+            case 'wait':
+                return;
+            default:
+                throw { message: "Unknown merge selector yield type", value};
+        }
+    }
 }
 
 export function noArrivalsScenario(selector, opts)
@@ -158,8 +185,7 @@ export function noArrivalsScenario(selector, opts)
     const {parts, total_time} = opts;
 
     randomInserts(mt, {count: parts, min_size: 1, max_size: 1});
-    opts.count = mt.active_part_count;
-    selector(mt, opts);
+    runSelector(mt, mt.active_part_count, selector);
     if (mt.time < total_time)
         mt.advanceTime(total_time);
     return mt;
@@ -172,9 +198,9 @@ export function runScenario()
     // return explainDemo();
     // return binaryTree();
     // return aggressiveMerging();
-    return randomMess();
+    // return randomMess();
     // return maxWaDemo();
-    // return simple1000();
+    return simple1000();
     // return maxWa1000();
     // return oneBigMerge();
     // return simple10000Period();

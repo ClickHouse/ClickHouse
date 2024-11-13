@@ -12,6 +12,7 @@ export class MergeTree {
         this.written_bytes = 0; // inserts + merges
         this.inserted_utility = 0; // utility = size * log(size)
         this.active_part_count = 0;
+        this.merging_part_count = 0;
         this.integral_active_part_count = 0;
     }
 
@@ -92,6 +93,7 @@ export class MergeTree {
             if (p.merging == true)
                 throw { message: "Attempt to begin merge of part that already participates in another merge", part: p};
             p.merging = true;
+            this.merging_part_count++;
         }
         // console.log("BEGIN MERGE", this.time, parts_to_merge);
     }
@@ -139,10 +141,35 @@ export class MergeTree {
                 throw { message: "Merging inactive part", part: p};
             p.active = false;
             p.merging = false;
+            this.merging_part_count--;
             this.active_part_count--;
         }
         // console.log("END MERGE", this.time, parts_to_merge, "INTO", result);
         this.written_bytes += bytes;
         return result;
+    }
+
+    // Returns all ranges to be considered by merge selector (excluding already merging parts)
+    getRangesForMerge()
+    {
+        const active_parts = this.parts.filter(d => d.active).sort((a, b) => a.begin - b.begin);
+        const all_ranges = [];
+        let cur_range = [];
+        for (const p of active_parts)
+        {
+            if (p.merging)
+            {
+                if (cur_range.length > 1) // There is no point in ranges with the only part
+                    all_ranges.push(cur_range);
+                cur_range = [];
+            }
+            else
+            {
+                cur_range.push(p);
+            }
+        }
+        if (cur_range.length > 1) // There is no point in ranges with the only part
+            all_ranges.push(cur_range);
+        return all_ranges;
     }
 }

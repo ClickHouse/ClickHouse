@@ -10,8 +10,9 @@ import { visualizeUtility } from '../visualizeUtility.js';
 export async function testMergeTreeMerger()
 {
     // Merge selector for test. It merges every two adjacent active parts.
-    function* testSelector(mt)
+    function* testSelector()
     {
+        const mt = yield {type: 'getMergeTree'};
         while (true)
         {
             if (mt.active_part_count < 2)
@@ -37,7 +38,6 @@ export async function testMergeTreeMerger()
     const sim = new EventSimulator();
     const pool = new WorkerPool(sim, 4); // 4 workers available for parallel execution of level-1 merges
     const mt = new MergeTree();
-    const merger = new MergeTreeMerger(sim, mt, pool, testSelector);
 
     let expected_bytes = 0;
     for (let i = 1; i <= 8; i++)
@@ -47,8 +47,7 @@ export async function testMergeTreeMerger()
         expected_bytes += bytes;
     }
 
-    merger.start();
-
+    const merger = new MergeTreeMerger(sim, mt, pool, testSelector());
     await sim.run();
 
     assert.deepEqual(mt.parts.filter(d => d.active).map(d => d.bytes), [expected_bytes]);

@@ -9,13 +9,13 @@ async function testAddFewTasksOneWorker()
     const sim = new EventSimulator();
     const pool = new WorkerPool(sim, 1);
 
-    pool.schedule(5, () => {
+    pool.schedule(5, "test", () => {
         assert.equal(sim.time, 5, "Current time should be 5 when Task 1 completes");
     });
-    pool.schedule(3, () => {
+    pool.schedule(3, "test", () => {
         assert.equal(sim.time, 8, "Current time should be 8 when Task 2 completes");
     });
-    pool.schedule(2, () => {
+    pool.schedule(2, "test", () => {
         assert.equal(sim.time, 10, "Current time should be 10 when Task 3 completes");
     });
 
@@ -29,25 +29,25 @@ async function testAddSevenTasksThreeWorkers()
     const sim = new EventSimulator();
     const pool = new WorkerPool(sim, 3);
 
-    pool.schedule(4, () => {
+    pool.schedule(4, "test", () => {
         assert.equal(sim.time, 4, "Current time should be 4 when Task A completes");
     });
-    pool.schedule(3, () => {
+    pool.schedule(3, "test", () => {
         assert.equal(sim.time, 3, "Current time should be 3 when Task B completes");
     });
-    pool.schedule(2, () => {
+    pool.schedule(2, "test", () => {
         assert.equal(sim.time, 2, "Current time should be 2 when Task C completes");
     });
-    pool.schedule(1, () => {
+    pool.schedule(1, "test", () => {
         assert.equal(sim.time, 3, "Current time should be 1 when Task D completes");
     });
-    pool.schedule(5, () => {
+    pool.schedule(5, "test", () => {
         assert.equal(sim.time, 8, "Current time should be 5 when Task E completes");
     });
-    pool.schedule(6, () => {
+    pool.schedule(6, "test", () => {
         assert.equal(sim.time, 9, "Current time should be 6 when Task F completes");
     });
-    pool.schedule(7, () => {
+    pool.schedule(7, "test", () => {
         assert.equal(sim.time, 11, "Current time should be 7 when Task G completes");
     });
 
@@ -65,7 +65,7 @@ async function testGenerateTasksUntil100()
     function createTask() {
         if (taskCount < 100) {
             taskCount++;
-            pool.schedule(1, () => {
+            pool.schedule(1, "test", () => {
                 assert.equal(sim.time, taskCount, `Current time should be ${taskCount} when Task ${taskCount} completes`);
                 createTask();
             });
@@ -88,7 +88,7 @@ async function testGenerateTasksDoubling()
     function createTask() {
         if (taskCount < 500) {
             taskCount++;
-            pool.schedule(1, () => {
+            pool.schedule(1, "test", () => {
                 createTask();
                 createTask();
             });

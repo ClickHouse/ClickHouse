@@ -16,9 +16,9 @@ export class WorkerPool
     }
 
     // Method to schedule a task
-    schedule(duration, callback)
+    schedule(duration, name, callback)
     {
-        const task = new Event((sim, event) => this.#finishTask(sim, event, callback));
+        const task = new Event(name, (sim, event) => this.#finishTask(sim, event, callback));
         task.duration = duration;
 
         if (this.available_workers > 0) // If a worker is available, start the task immediately
@@ -39,8 +39,8 @@ export class WorkerPool
     #finishTask(sim, event, callback)
     {
         //console.log(`Ending task with duration ${task.duration} at time ${this.sim.time}`);
-        callback(sim, event);
         this.available_workers++;
+        callback(sim, event);
         while (this.available_workers > 0 && this.queue.length > 0)
             this.#beginTask(this.queue.shift());
     }

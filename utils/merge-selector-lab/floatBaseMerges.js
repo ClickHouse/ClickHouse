@@ -1,8 +1,7 @@
-export function floatBaseMerges(mt, {count, base})
+export function* floatBaseMerges({base})
 {
-    if (count == 0)
-        return;
-    let merge_left = count;
+    // TODO: adapt for parallel merges
+    let mt = yield {type: 'getMergeTree'};
     while (true)
     {
         if (mt.active_part_count <= 1)
@@ -24,9 +23,7 @@ export function floatBaseMerges(mt, {count, base})
                 continue;
             }
 
-            mt.mergeParts(parts_to_merge);
-            if (--merge_left == 0)
-                return;
+            yield {type: 'merge', parts_to_merge};
 
             sum_bytes += part.bytes;
             parts_to_merge = [part];
@@ -34,10 +31,6 @@ export function floatBaseMerges(mt, {count, base})
         }
 
         if (parts_to_merge.length >= 2)
-        {
-            mt.mergeParts(parts_to_merge);
-            if (--merge_left == 0)
-                return;
-        }
+            yield {type: 'merge', parts_to_merge};
     }
 }
