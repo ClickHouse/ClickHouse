@@ -61,6 +61,7 @@ public:
         ColumnArray::Offset offset = 0;
         for (size_t i = 0; i < num_rows; ++i)
         {
+            
             auto array_size = col_num->getInt(i);
             auto element_size = col_value->byteSizeAt(i);
 
