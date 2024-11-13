@@ -46,3 +46,12 @@ T NaNOrZero()
     else
         return {};
 }
+
+template <typename T>
+bool signBit(T x)
+{
+    if constexpr (is_floating_point<T>)
+        return DecomposedFloat(x).isNegative();
+    else
+        return x < 0;
+}

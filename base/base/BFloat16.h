@@ -311,11 +311,3 @@ constexpr inline auto operator/(BFloat16 a, T b)
 {
     return Float32(a) / b;
 }
-
-
-namespace std
-{
-    inline constexpr bool isfinite(BFloat16 x) { return x.isFinite(); }
-    inline constexpr bool isnan(BFloat16 x) { return x.isNaN(); }
-    inline constexpr bool signbit(BFloat16 x) { return x.signBit(); }
-}

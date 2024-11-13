@@ -551,7 +551,7 @@ void writeJSONNumber(T x, WriteBuffer & ostr, const FormatSettings & settings)
     {
         if constexpr (is_floating_point<T>)
         {
-            if (std::signbit(x))
+            if (signBit(x))
             {
                 if (isNaN(x))
                     writeCString("-nan", ostr);
