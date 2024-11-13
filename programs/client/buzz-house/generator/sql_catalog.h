@@ -134,10 +134,11 @@ struct SQLTable : SQLBase
 {
 public:
     bool is_temp = false;
-    uint32_t col_counter = 0, idx_counter = 0, proj_counter = 0, constr_counter = 0;
+    uint32_t col_counter = 0, idx_counter = 0, proj_counter = 0, constr_counter = 0, freeze_counter = 0;
     std::map<uint32_t, SQLColumn> cols, staged_cols;
     std::map<uint32_t, SQLIndex> idxs, staged_idxs;
     std::set<uint32_t> projs, staged_projs, constrs, staged_constrs;
+    std::map<uint32_t, uint32_t> frozen_partitions;
 
     size_t RealNumberOfColumns() const
     {

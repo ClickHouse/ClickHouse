@@ -244,6 +244,76 @@ public:
             buf.resize(0);
         }
     }
+
+    bool TableHasPartitions(const std::string & sys_table, const std::string & database, const std::string & table)
+    {
+        buf.resize(0);
+        buf += "SELECT count() FROM system.";
+        buf += sys_table;
+        buf += " WHERE ";
+        if (database != "")
+        {
+            buf += "\"database\" = '";
+            buf += database;
+            buf += "' AND ";
+        }
+        buf += "\"table\" = '";
+        buf += table;
+        buf += "' INTO OUTFILE '";
+        buf += fuzz_out.generic_string();
+        buf += "' TRUNCATE FORMAT CSV;";
+        this->ProcessServerQuery(buf);
+
+        std::ifstream infile(fuzz_out);
+        buf.resize(0);
+        if (std::getline(infile, buf))
+        {
+            return !buf.empty() && buf[0] != '0';
+        }
+        return false;
+    }
+
+    uint32_t TableGetRandomPartition(const std::string & sys_table, const std::string & database, const std::string & table)
+    {
+        //system.parts doesn't support sampling, so pick up a random part with a window function
+        buf.resize(0);
+        buf += "SELECT z.y FROM (SELECT (row_number() OVER () - 1) AS x, \"";
+        buf += (sys_table == "parts") ? "partition" : "partition_id";
+        buf += "\" AS y FROM system.";
+        buf += sys_table;
+        buf += " WHERE ";
+        if (database != "")
+        {
+            buf += "\"database\" = '";
+            buf += database;
+            buf += "' AND ";
+        }
+        buf += "\"table\" = '";
+        buf += table;
+        buf += "') AS z WHERE z.x = (SELECT rand() % (max2(count(), 1)::Int) FROM system.";
+        buf += sys_table;
+        buf += " WHERE ";
+        if (database != "")
+        {
+            buf += "\"database\" = '";
+            buf += database;
+            buf += "' AND ";
+        }
+        buf += "\"table\" = '";
+        buf += table;
+        buf += "') INTO OUTFILE '";
+        buf += fuzz_out.generic_string();
+        buf += "' TRUNCATE FORMAT CSV;";
+        this->ProcessServerQuery(buf);
+
+        std::ifstream infile(fuzz_out);
+        buf.resize(0);
+        if (std::getline(infile, buf))
+        {
+            return static_cast<uint32_t>(std::stoul(buf));
+        }
+        return 0;
+    }
 };
 
 }

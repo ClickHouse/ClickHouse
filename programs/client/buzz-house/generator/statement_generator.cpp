@@ -708,13 +708,15 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
                                                                                     && !tt.IsFileEngine();
                                                                             }))
                                                   .get());
+        const std::string dname = t.db ? ("d" + std::to_string(t.db->dname)) : "", tname = "t" + std::to_string(t.tname);
+        const bool table_has_partitions = t.IsMergeTreeFamily() && fc.TableHasPartitions("parts", dname, tname);
 
         at->set_is_temp(t.is_temp);
         if (t.db)
         {
-            est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
+            est->mutable_database()->set_database(dname);
         }
-        est->mutable_table()->set_table("t" + std::to_string(t.tname));
+        est->mutable_table()->set_table(tname);
         for (uint32_t i = 0; i < nalters; i++)
         {
             const uint32_t alter_order_by
@@ -738,11 +740,23 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
                 clear_projection = 2 * static_cast<uint32_t>(t.IsMergeTreeFamily() && !t.projs.empty()),
                 add_constraint = 2 * static_cast<uint32_t>(t.constrs.size() < 4),
                 remove_constraint = 2 * static_cast<uint32_t>(!t.constrs.empty()),
+                detach_partition = 2 * static_cast<uint32_t>(t.IsMergeTreeFamily()),
+                drop_partition = 2 * static_cast<uint32_t>(t.IsMergeTreeFamily()),
+                drop_detached_partition = 2 * static_cast<uint32_t>(t.IsMergeTreeFamily()),
+                forget_partition = 2 * static_cast<uint32_t>(table_has_partitions),
+                attach_partition = 2 * static_cast<uint32_t>(t.IsMergeTreeFamily()),
+                move_partition_to = 2 * static_cast<uint32_t>(table_has_partitions),
+                clear_column_partition = 2 * static_cast<uint32_t>(table_has_partitions),
+                freeze_partition = 2 * static_cast<uint32_t>(t.IsMergeTreeFamily()),
+                unfreeze_partition = 4 * static_cast<uint32_t>(!t.frozen_partitions.empty()),
+                clear_index_partition = 2 * static_cast<uint32_t>(table_has_partitions && !t.idxs.empty()),
                 prob_space = alter_order_by + heavy_delete + heavy_update + add_column + materialize_column + drop_column + rename_column
                 + clear_column + modify_column + delete_mask + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
                 + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + column_remove_setting
                 + table_modify_setting + table_remove_setting + add_projection + remove_projection + materialize_projection
-                + clear_projection + add_constraint + remove_constraint;
+                + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition + drop_detached_partition
+                + forget_partition + attach_partition + move_partition_to + clear_column_partition + freeze_partition + unfreeze_partition
+                + clear_index_partition;
             sql_query_grammar::AlterTableItem * ati = i == 0 ? at->mutable_alter() : at->add_other_alters();
             std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
             const uint32_t nopt = next_dist(rg.gen);
@@ -808,8 +822,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
                     rg, t, t.col_counter++, true, false, rg.NextMediumNumber() < 6, ColumnSpecial::NONE, add_col->mutable_new_col());
                 if (next_option < 4)
                 {
-                    const SQLColumn & ocol = rg.PickValueRandomlyFromMap(t.cols);
-                    add_col->mutable_add_where()->mutable_col()->set_column("c" + std::to_string(ocol.cname));
+                    add_col->mutable_add_where()->mutable_col()->set_column("c" + std::to_string(rg.PickKeyRandomlyFromMap(t.cols)));
                 }
                 else if (next_option < 8)
                 {
@@ -818,10 +831,9 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
             }
             else if (materialize_column && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + 1))
             {
-                const SQLColumn & col = rg.PickValueRandomlyFromMap(t.cols);
                 sql_query_grammar::ColInPartition * mcol = ati->mutable_materialize_column();
 
-                mcol->mutable_col()->set_column("c" + std::to_string(col.cname));
+                mcol->mutable_col()->set_column("c" + std::to_string(rg.PickKeyRandomlyFromMap(t.cols)));
                 if (t.IsMergeTreeFamily() && rg.NextBool())
                 {
                     mcol->mutable_partition()->set_tuple(true);
@@ -829,18 +841,15 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
             }
             else if (drop_column && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + 1))
             {
-                const SQLColumn & col = rg.PickValueRandomlyFromMap(t.cols);
-
-                ati->mutable_drop_column()->set_column("c" + std::to_string(col.cname));
+                ati->mutable_drop_column()->set_column("c" + std::to_string(rg.PickKeyRandomlyFromMap(t.cols)));
             }
             else if (
                 rename_column && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + 1))
             {
                 const uint32_t ncname = t.col_counter++;
-                const SQLColumn & col = rg.PickValueRandomlyFromMap(t.cols);
                 sql_query_grammar::RenameCol * rcol = ati->mutable_rename_column();
 
-                rcol->mutable_old_name()->set_column("c" + std::to_string(col.cname));
+                rcol->mutable_old_name()->set_column("c" + std::to_string(rg.PickKeyRandomlyFromMap(t.cols)));
                 rcol->mutable_new_name()->set_column("c" + std::to_string(ncname));
             }
             else if (
@@ -848,10 +857,9 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column + 1))
             {
-                const SQLColumn & col = rg.PickValueRandomlyFromMap(t.cols);
                 sql_query_grammar::ColInPartition * ccol = ati->mutable_clear_column();
 
-                ccol->mutable_col()->set_column("c" + std::to_string(col.cname));
+                ccol->mutable_col()->set_column("c" + std::to_string(rg.PickKeyRandomlyFromMap(t.cols)));
                 if (t.IsMergeTreeFamily() && rg.NextBool())
                 {
                     ccol->mutable_partition()->set_tuple(true);
@@ -863,15 +871,21 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
                        + modify_column + 1))
             {
-                const SQLColumn & ocol = rg.PickValueRandomlyFromMap(t.cols);
                 const uint32_t next_option = rg.NextSmallNumber();
                 sql_query_grammar::AddColumn * add_col = ati->mutable_modify_column();
 
-                AddTableColumn(rg, t, ocol.cname, true, true, rg.NextMediumNumber() < 6, ColumnSpecial::NONE, add_col->mutable_new_col());
+                AddTableColumn(
+                    rg,
+                    t,
+                    rg.PickKeyRandomlyFromMap(t.cols),
+                    true,
+                    true,
+                    rg.NextMediumNumber() < 6,
+                    ColumnSpecial::NONE,
+                    add_col->mutable_new_col());
                 if (next_option < 4)
                 {
-                    const SQLColumn & col = rg.PickValueRandomlyFromMap(t.cols);
-                    add_col->mutable_add_where()->mutable_col()->set_column("c" + std::to_string(col.cname));
+                    add_col->mutable_add_where()->mutable_col()->set_column("c" + std::to_string(rg.PickKeyRandomlyFromMap(t.cols)));
                 }
                 else if (next_option < 8)
                 {
@@ -1038,8 +1052,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
 
                     if (next_option < 4)
                     {
-                        const SQLIndex & oidx = rg.PickValueRandomlyFromMap(t.idxs);
-                        add_index->mutable_add_where()->mutable_idx()->set_index("c" + std::to_string(oidx.iname));
+                        add_index->mutable_add_where()->mutable_idx()->set_index("i" + std::to_string(rg.PickKeyRandomlyFromMap(t.idxs)));
                     }
                     else if (next_option < 8)
                     {
@@ -1054,10 +1067,9 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
                        + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
                        + materialize_idx + 1))
             {
-                const SQLIndex & idx = rg.PickValueRandomlyFromMap(t.idxs);
                 sql_query_grammar::IdxInPartition * iip = ati->mutable_materialize_index();
 
-                iip->mutable_idx()->set_index("i" + std::to_string(idx.iname));
+                iip->mutable_idx()->set_index("i" + std::to_string(rg.PickKeyRandomlyFromMap(t.idxs)));
                 if (t.IsMergeTreeFamily() && rg.NextBool())
                 {
                     iip->mutable_partition()->set_tuple(true);
@@ -1070,10 +1082,9 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
                        + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
                        + materialize_idx + clear_idx + 1))
             {
-                const SQLIndex & idx = rg.PickValueRandomlyFromMap(t.idxs);
                 sql_query_grammar::IdxInPartition * iip = ati->mutable_clear_index();
 
-                iip->mutable_idx()->set_index("i" + std::to_string(idx.iname));
+                iip->mutable_idx()->set_index("i" + std::to_string(rg.PickKeyRandomlyFromMap(t.idxs)));
                 if (t.IsMergeTreeFamily() && rg.NextBool())
                 {
                     iip->mutable_partition()->set_tuple(true);
@@ -1086,8 +1097,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
                        + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
                        + materialize_idx + clear_idx + drop_idx + 1))
             {
-                const SQLIndex & idx = rg.PickValueRandomlyFromMap(t.idxs);
-                ati->mutable_drop_index()->set_index("i" + std::to_string(idx.iname));
+                ati->mutable_drop_index()->set_index("i" + std::to_string(rg.PickKeyRandomlyFromMap(t.idxs)));
             }
             else if (
                 column_remove_property
@@ -1097,9 +1107,8 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
                        + materialize_idx + clear_idx + drop_idx + column_remove_property + 1))
             {
                 sql_query_grammar::RemoveColumnProperty * rcs = ati->mutable_column_remove_property();
-                const SQLColumn & col = rg.PickValueRandomlyFromMap(t.cols);
 
-                rcs->mutable_col()->set_column("c" + std::to_string(col.cname));
+                rcs->mutable_col()->set_column("c" + std::to_string(rg.PickKeyRandomlyFromMap(t.cols)));
                 rcs->set_property(static_cast<sql_query_grammar::RemoveColumnProperty_ColumnProperties>(
                     (rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::RemoveColumnProperty::ColumnProperties_MAX)) + 1));
             }
@@ -1112,9 +1121,8 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
             {
                 sql_query_grammar::ModifyColumnSetting * mcp = ati->mutable_column_modify_setting();
                 const auto & csettings = AllColumnSettings.at(t.teng);
-                const SQLColumn & col = rg.PickValueRandomlyFromMap(t.cols);
 
-                mcp->mutable_col()->set_column("c" + std::to_string(col.cname));
+                mcp->mutable_col()->set_column("c" + std::to_string(rg.PickKeyRandomlyFromMap(t.cols)));
                 GenerateSettingValues(rg, csettings, mcp->mutable_settings());
             }
             else if (
@@ -1127,9 +1135,8 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
             {
                 sql_query_grammar::RemoveColumnSetting * rcp = ati->mutable_column_remove_setting();
                 const auto & csettings = AllColumnSettings.at(t.teng);
-                const SQLColumn & col = rg.PickValueRandomlyFromMap(t.cols);
 
-                rcp->mutable_col()->set_column("c" + std::to_string(col.cname));
+                rcp->mutable_col()->set_column("c" + std::to_string(rg.PickKeyRandomlyFromMap(t.cols)));
                 GenerateSettingList(rg, csettings, rcp->mutable_settings());
             }
             else if (
@@ -1174,8 +1181,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
                        + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + column_remove_setting
                        + table_modify_setting + table_remove_setting + add_projection + remove_projection + 1))
             {
-                const uint32_t & proj = rg.PickRandomlyFromSet(t.projs);
-                ati->mutable_remove_projection()->set_projection("p" + std::to_string(proj));
+                ati->mutable_remove_projection()->set_projection("p" + std::to_string(rg.PickRandomlyFromSet(t.projs)));
             }
             else if (
                 materialize_projection
@@ -1185,8 +1191,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
                        + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + column_remove_setting
                        + table_modify_setting + table_remove_setting + add_projection + remove_projection + materialize_projection + 1))
             {
-                const uint32_t & proj = rg.PickRandomlyFromSet(t.projs);
-                ati->mutable_materialize_projection()->set_projection("p" + std::to_string(proj));
+                ati->mutable_materialize_projection()->set_projection("p" + std::to_string(rg.PickRandomlyFromSet(t.projs)));
             }
             else if (
                 clear_projection
@@ -1197,8 +1202,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
                        + table_modify_setting + table_remove_setting + add_projection + remove_projection + materialize_projection
                        + clear_projection + 1))
             {
-                const uint32_t & proj = rg.PickRandomlyFromSet(t.projs);
-                ati->mutable_clear_projection()->set_projection("p" + std::to_string(proj));
+                ati->mutable_clear_projection()->set_projection("p" + std::to_string(rg.PickRandomlyFromSet(t.projs)));
             }
             else if (
                 add_constraint
@@ -1211,10 +1215,211 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
             {
                 AddTableConstraint(rg, t, true, ati->mutable_add_constraint());
             }
+            else if (
+                remove_constraint
+                && nopt
+                    < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
+                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
+                       + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + column_remove_setting
+                       + table_modify_setting + table_remove_setting + add_projection + remove_projection + materialize_projection
+                       + clear_projection + add_constraint + remove_constraint + 1))
+            {
+                ati->mutable_remove_constraint()->set_constraint("c" + std::to_string(rg.PickRandomlyFromSet(t.constrs)));
+            }
+            else if (
+                detach_partition
+                && nopt
+                    < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
+                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
+                       + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + column_remove_setting
+                       + table_modify_setting + table_remove_setting + add_projection + remove_projection + materialize_projection
+                       + clear_projection + add_constraint + remove_constraint + detach_partition + 1))
+            {
+                sql_query_grammar::PartitionExpr * pexpr = ati->mutable_detach_partition();
+
+                if (table_has_partitions && rg.NextSmallNumber() < 9)
+                {
+                    pexpr->set_partition(fc.TableGetRandomPartition("parts", dname, tname));
+                }
+                else
+                {
+                    pexpr->set_all(true);
+                }
+            }
+            else if (
+                drop_partition
+                && nopt
+                    < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
+                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
+                       + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + column_remove_setting
+                       + table_modify_setting + table_remove_setting + add_projection + remove_projection + materialize_projection
+                       + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition + 1))
+            {
+                sql_query_grammar::PartitionExpr * pexpr = ati->mutable_drop_partition();
+
+                if (table_has_partitions && rg.NextSmallNumber() < 9)
+                {
+                    pexpr->set_partition(fc.TableGetRandomPartition("parts", dname, tname));
+                }
+                else
+                {
+                    pexpr->set_all(true);
+                }
+            }
+            else if (
+                drop_detached_partition
+                && nopt
+                    < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
+                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
+                       + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + column_remove_setting
+                       + table_modify_setting + table_remove_setting + add_projection + remove_projection + materialize_projection
+                       + clear_projection + add_constraint + remove_constraint + detach_partition + drop_detached_partition + 1))
+            {
+                sql_query_grammar::PartitionExpr * pexpr = ati->mutable_drop_detached_partition();
+                const bool table_has_detached_partitions = t.IsMergeTreeFamily() && fc.TableHasPartitions("detached_parts", dname, tname);
+
+                if (table_has_detached_partitions && rg.NextSmallNumber() < 9)
+                {
+                    pexpr->set_partition(fc.TableGetRandomPartition("detached_parts", dname, tname));
+                }
+                else
+                {
+                    pexpr->set_all(true);
+                }
+            }
+            else if (
+                forget_partition
+                && nopt
+                    < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
+                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
+                       + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + column_remove_setting
+                       + table_modify_setting + table_remove_setting + add_projection + remove_projection + materialize_projection
+                       + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition + drop_detached_partition
+                       + forget_partition + 1))
+            {
+                sql_query_grammar::PartitionExpr * pexpr = ati->mutable_forget_partition();
+
+                pexpr->set_partition(fc.TableGetRandomPartition("parts", dname, tname));
+            }
+            else if (
+                attach_partition
+                && nopt
+                    < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
+                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
+                       + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + column_remove_setting
+                       + table_modify_setting + table_remove_setting + add_projection + remove_projection + materialize_projection
+                       + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition + drop_detached_partition
+                       + forget_partition + attach_partition + 1))
+            {
+                sql_query_grammar::PartitionExpr * pexpr = ati->mutable_attach_partition();
+                const bool table_has_detached_partitions = t.IsMergeTreeFamily() && fc.TableHasPartitions("detached_parts", dname, tname);
+
+                if (table_has_detached_partitions && rg.NextSmallNumber() < 9)
+                {
+                    pexpr->set_partition(fc.TableGetRandomPartition("detached_parts", dname, tname));
+                }
+                else
+                {
+                    pexpr->set_all(true);
+                }
+            }
+            else if (
+                move_partition_to
+                && nopt
+                    < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
+                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
+                       + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + column_remove_setting
+                       + table_modify_setting + table_remove_setting + add_projection + remove_projection + materialize_projection
+                       + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition + drop_detached_partition
+                       + forget_partition + attach_partition + move_partition_to + 1))
+            {
+                sql_query_grammar::AttachPartitionFrom * apf = ati->mutable_move_partition_to();
+                sql_query_grammar::PartitionExpr * pexpr = apf->mutable_partition();
+                sql_query_grammar::ExprSchemaTable * est2 = apf->mutable_est();
+                const SQLTable & t2 = rg.PickRandomlyFromVector(FilterCollection<SQLTable>(attached_tables));
+
+                pexpr->set_partition(fc.TableGetRandomPartition("parts", dname, tname));
+                if (t2.db)
+                {
+                    est2->mutable_database()->set_database("d" + std::to_string(t2.db->dname));
+                }
+                est2->mutable_table()->set_table("t" + std::to_string(t2.tname));
+            }
+            else if (
+                clear_column_partition
+                && nopt
+                    < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
+                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
+                       + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + column_remove_setting
+                       + table_modify_setting + table_remove_setting + add_projection + remove_projection + materialize_projection
+                       + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition + drop_detached_partition
+                       + forget_partition + attach_partition + move_partition_to + clear_column_partition + 1))
+            {
+                sql_query_grammar::ClearColumnInPartition * ccip = ati->mutable_clear_column_partition();
+                sql_query_grammar::PartitionExpr * pexpr = ccip->mutable_partition();
+
+                pexpr->set_partition(fc.TableGetRandomPartition("parts", dname, tname));
+                ccip->mutable_col()->set_column("c" + std::to_string(rg.PickKeyRandomlyFromMap(t.cols)));
+            }
+            else if (
+                freeze_partition
+                && nopt
+                    < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
+                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
+                       + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + column_remove_setting
+                       + table_modify_setting + table_remove_setting + add_projection + remove_projection + materialize_projection
+                       + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition + drop_detached_partition
+                       + forget_partition + attach_partition + move_partition_to + clear_column_partition + freeze_partition + 1))
+            {
+                sql_query_grammar::FreezePartition * fp = ati->mutable_freeze_partition();
+
+                if (table_has_partitions && rg.NextSmallNumber() < 9)
+                {
+                    fp->mutable_partition()->set_partition(fc.TableGetRandomPartition("parts", dname, tname));
+                }
+                fp->set_fname(t.freeze_counter++);
+            }
+            else if (
+                unfreeze_partition
+                && nopt
+                    < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
+                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
+                       + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + column_remove_setting
+                       + table_modify_setting + table_remove_setting + add_projection + remove_projection + materialize_projection
+                       + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition + drop_detached_partition
+                       + forget_partition + attach_partition + move_partition_to + clear_column_partition + freeze_partition
+                       + unfreeze_partition + 1))
+            {
+                sql_query_grammar::FreezePartition * fp = ati->mutable_unfreeze_partition();
+                const uint32_t fname = rg.PickKeyRandomlyFromMap(t.frozen_partitions);
+                const uint32_t partition_name = t.frozen_partitions[fname];
+
+                if (partition_name != 0)
+                {
+                    fp->mutable_partition()->set_partition(partition_name);
+                }
+                fp->set_fname(fname);
+            }
+            else if (
+                clear_index_partition
+                && nopt
+                    < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
+                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
+                       + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + column_remove_setting
+                       + table_modify_setting + table_remove_setting + add_projection + remove_projection + materialize_projection
+                       + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition + drop_detached_partition
+                       + forget_partition + attach_partition + move_partition_to + clear_column_partition + freeze_partition
+                       + unfreeze_partition + clear_index_partition + 1))
+            {
+                sql_query_grammar::ClearIndexInPartition * ccip = ati->mutable_clear_index_partition();
+                sql_query_grammar::PartitionExpr * pexpr = ccip->mutable_partition();
+
+                pexpr->set_partition(fc.TableGetRandomPartition("parts", dname, tname));
+                ccip->mutable_idx()->set_index("i" + std::to_string(rg.PickKeyRandomlyFromMap(t.idxs)));
+            }
             else
             {
-                const uint32_t & constr = rg.PickRandomlyFromSet(t.constrs);
-                ati->mutable_remove_constraint()->set_constraint("c" + std::to_string(constr));
+                assert(0);
             }
         }
     }
@@ -1796,6 +2001,16 @@ void StatementGenerator::UpdateGenerator(const sql_query_grammar::SQLQuery & sq,
                     const uint32_t cname = static_cast<uint32_t>(std::stoul(ati.column_remove_property().col().column().substr(1)));
 
                     t.cols[cname].dmod = std::nullopt;
+                }
+                else if (ati.has_freeze_partition() && success)
+                {
+                    const sql_query_grammar::FreezePartition & fp = ati.freeze_partition();
+
+                    t.frozen_partitions[fp.fname()] = fp.has_partition() ? fp.partition().partition() : 0;
+                }
+                else if (ati.has_unfreeze_partition() && success)
+                {
+                    t.frozen_partitions.erase(ati.unfreeze_partition().fname());
                 }
             }
         }

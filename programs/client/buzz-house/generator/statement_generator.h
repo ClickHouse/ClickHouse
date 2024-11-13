@@ -67,7 +67,7 @@ const constexpr uint32_t allow_set = (1 << 0), allow_cte = (1 << 1), allow_disti
 class StatementGenerator
 {
 private:
-    const FuzzConfig & fc;
+    FuzzConfig & fc;
     ExternalIntegrations & connections;
     const bool supports_cloud_features;
 
@@ -364,7 +364,7 @@ public:
     const std::function<bool(const SQLView &)> detached_views
         = [](const SQLView & v) { return (v.db && v.db->attached != DetachStatus::ATTACHED) || v.attached != DetachStatus::ATTACHED; };
 
-    StatementGenerator(const FuzzConfig & fuzzc, ExternalIntegrations & conn, const bool scf)
+    StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations & conn, const bool scf)
         : fc(fuzzc), connections(conn), supports_cloud_features(scf)
     {
         buf.reserve(2048);
