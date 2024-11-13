@@ -1,3 +1,4 @@
+#include <Interpreters/ProcessorsProfileLog.h>
 #include <Common/FieldVisitorToString.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -51,7 +52,6 @@
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/UnionNode.h>
-#include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Identifier.h>
@@ -677,6 +677,8 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                         "tuple"});
                 }
             }
+
+            logProcessorProfile(context, io.pipeline.getProcessors());
         }
 
         scalars_cache.emplace(node_with_hash, scalar_block);
@@ -3023,9 +3025,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         argument_column.name = arguments_projection_names[function_argument_index];
 
         /** If function argument is lambda, save lambda argument index and initialize argument type as DataTypeFunction
-          * where function argument types are initialized with empty array of lambda arguments size.
+          * where function argument types are initialized with empty arrays of lambda arguments size.
           */
-        if (const auto * lambda_node = function_argument->as<const LambdaNode>())
+        const auto * lambda_node = function_argument->as<const LambdaNode>();
+        if (lambda_node)
         {
             size_t lambda_arguments_size = lambda_node->getArguments().getNodes().size();
             argument_column.type = std::make_shared<DataTypeFunction>(DataTypes(lambda_arguments_size, nullptr), nullptr);
@@ -3497,15 +3500,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         else
             function_base = function->build(argument_columns);
 
-        /// Do not constant fold get scalar functions
-        // bool disable_constant_folding = function_name == "__getScalar" || function_name == "shardNum" ||
-        //     function_name == "shardCount" || function_name == "hostName" || function_name == "tcpPort";
-
         /** If function is suitable for constant folding try to convert it to constant.
           * Example: SELECT plus(1, 1);
           * Result: SELECT 2;
           */
-        if (function_base->isSuitableForConstantFolding()) // && !disable_constant_folding)
+        if (function_base->isSuitableForConstantFolding())
         {
             auto result_type = function_base->getResultType();
             auto executable_function = function_base->prepare(argument_columns);
@@ -3514,7 +3513,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             if (all_arguments_constants)
             {
-                size_t num_rows = function_arguments.empty() ? 0 : argument_columns.front().column->size();
+                size_t num_rows = 0;
+                if (!argument_columns.empty())
+                    num_rows = argument_columns.front().column->size();
                 column = executable_function->execute(argument_columns, result_type, num_rows, true);
             }
             else

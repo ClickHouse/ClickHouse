@@ -308,6 +308,17 @@ void MergeTreeIndexGranularity::shrinkToFitInMemory()
         marks_rows_partial_sums.shrink_to_fit();
 }
 
+uint64_t MergeTreeIndexGranularity::getBytesSize() const
+{
+    return sizeof(MergeTreeIndexGranularity) + marks_rows_partial_sums.size() * sizeof(size_t)
+        + uncompressed_marks_partial_sums.size() * sizeof(size_t);
+}
+uint64_t MergeTreeIndexGranularity::getBytesAllocated() const
+{
+    return sizeof(MergeTreeIndexGranularity) + marks_rows_partial_sums.capacity() * sizeof(size_t)
+        + uncompressed_marks_partial_sums.capacity() * sizeof(size_t);
+}
+
 bool MergeTreeIndexGranularity::tryCompressInMemory()
 {
     if (compressed || marks_rows_partial_sums.size() <= 2)
