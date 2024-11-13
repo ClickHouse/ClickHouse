@@ -43,7 +43,7 @@ struct AuthResult
 class IAccessStorage : public boost::noncopyable
 {
 public:
-    explicit IAccessStorage(const String & storage_name_) : storage_name(storage_name_) {}
+    explicit IAccessStorage(UInt64 access_entities_num_limit_, const String & storage_name_) : access_entities_num_limit(access_entities_num_limit_), storage_name(storage_name_) {}
     virtual ~IAccessStorage() = default;
 
     /// If the AccessStorage has to do some complicated work when destroying - do it in advance.
@@ -218,6 +218,8 @@ public:
     virtual void backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, AccessEntityType type) const;
     virtual void restoreFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup);
 
+    virtual void updateAccessEntitiesLimit(UInt64 limit) { access_entities_num_limit = limit; }
+
 protected:
     virtual std::optional<UUID> findImpl(AccessEntityType type, const String & name) const = 0;
     virtual std::vector<UUID> findAllImpl(AccessEntityType type) const = 0;
@@ -246,6 +248,7 @@ protected:
     static String formatEntityTypeWithName(AccessEntityType type, const String & name) { return AccessEntityTypeInfo::get(type).formatEntityNameWithType(name); }
     static void clearConflictsInEntitiesList(std::vector<std::pair<UUID, AccessEntityPtr>> & entities, LoggerPtr log_);
     virtual bool acquireReplicatedRestore(RestorerFromBackup &) const { return false; }
+    bool entityLimitReached(UInt64 entity_count) const;
     [[noreturn]] void throwNotFound(const UUID & id) const;
     [[noreturn]] void throwNotFound(AccessEntityType type, const String & name) const;
     [[noreturn]] static void throwBadCast(const UUID & id, AccessEntityType type, const String & name, AccessEntityType required_type);
@@ -260,6 +263,8 @@ protected:
     [[noreturn]] static void throwInvalidCredentials();
     [[noreturn]] void throwBackupNotAllowed() const;
     [[noreturn]] void throwRestoreNotAllowed() const;
+    [[noreturn]] void throwTooManyEntities(UInt64 current_number) const;
+    UInt64 access_entities_num_limit;
 
 private:
     const String storage_name;

@@ -4,11 +4,10 @@
 #include <boost/container/flat_set.hpp>
 #include <boost/range/adaptor/map.hpp>
 
-
 namespace DB
 {
-MemoryAccessStorage::MemoryAccessStorage(const String & storage_name_, AccessChangesNotifier & changes_notifier_, bool allow_backup_)
-    : IAccessStorage(storage_name_), changes_notifier(changes_notifier_), backup_allowed(allow_backup_)
+MemoryAccessStorage::MemoryAccessStorage(const String & storage_name_, AccessChangesNotifier & changes_notifier_, bool allow_backup_, UInt64 access_entities_num_limit_)
+    : AccessStorageBase(access_entities_num_limit_, storage_name_, changes_notifier_), backup_allowed(allow_backup_)
 {
 }
 
@@ -142,11 +141,8 @@ bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & 
     }
 
     /// Do insertion.
-    auto & entry = entries_by_id[id];
-    entry.id = id;
-    entry.entity = new_entity;
-    entries_by_name[name] = &entry;
-    changes_notifier.onEntityAdded(id, new_entity);
+    insertEntry(id, name, type, new_entity);
+
     return true;
 }
 
@@ -174,12 +170,8 @@ bool MemoryAccessStorage::removeNoLock(const UUID & id, bool throw_if_not_exists
     AccessEntityType type = entry.entity->getType();
 
     /// Do removing.
-    UUID removed_id = id;
-    auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
-    entries_by_name.erase(name);
-    entries_by_id.erase(it);
+    removeEntry(id, name, type);
 
-    changes_notifier.onEntityRemoved(removed_id, type);
     return true;
 }
 

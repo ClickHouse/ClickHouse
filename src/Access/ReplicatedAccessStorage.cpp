@@ -12,6 +12,7 @@
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
+#include <Access/IAccessStorage.h>
 #include <base/range.h>
 #include <base/sleep.h>
 #include <boost/range/algorithm_ext/erase.hpp>
@@ -38,12 +39,13 @@ ReplicatedAccessStorage::ReplicatedAccessStorage(
     const String & zookeeper_path_,
     zkutil::GetZooKeeper get_zookeeper_,
     AccessChangesNotifier & changes_notifier_,
-    bool allow_backup_)
-    : IAccessStorage(storage_name_)
+    bool allow_backup_,
+    UInt64 access_entities_num_limit_)
+    : IAccessStorage(access_entities_num_limit_, storage_name_)
     , zookeeper_path(zookeeper_path_)
     , get_zookeeper(get_zookeeper_)
     , watched_queue(std::make_shared<ConcurrentBoundedQueue<UUID>>(std::numeric_limits<size_t>::max()))
-    , memory_storage(storage_name_, changes_notifier_, false)
+    , memory_storage(storage_name_, changes_notifier_, false, access_entities_num_limit_)
     , changes_notifier(changes_notifier_)
     , backup_allowed(allow_backup_)
 {

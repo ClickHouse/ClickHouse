@@ -11,6 +11,7 @@
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <Common/callOnce.h>
+#include <Common/CurrentMetrics.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Poco/UUIDGenerator.h>
@@ -24,6 +25,11 @@
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/range/algorithm_ext/erase.hpp>
 
+namespace CurrentMetrics
+{
+    extern const Metric AttachedAccessEntity;
+}
+
 namespace DB
 {
 namespace ErrorCodes
@@ -36,6 +42,7 @@ namespace ErrorCodes
     extern const int IP_ADDRESS_NOT_ALLOWED;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int TOO_MANY_ACCESS_ENTITIES;
 }
 
 
@@ -322,7 +329,10 @@ std::vector<UUID> IAccessStorage::remove(const std::vector<UUID> & ids, bool thr
     if (ids.empty())
         return {};
     if (ids.size() == 1)
-        return remove(ids[0], throw_if_not_exists) ? ids : std::vector<UUID>{};
+    {
+        auto result = remove(ids[0], throw_if_not_exists) ? ids : std::vector<UUID>{};
+        return result;
+    }
 
     Strings removed_names;
     try
@@ -827,4 +837,11 @@ void IAccessStorage::throwRestoreNotAllowed() const
     throw Exception(ErrorCodes::ACCESS_STORAGE_DOESNT_ALLOW_BACKUP, "Restore of access entities is not allowed in {}", getStorageName());
 }
 
+void IAccessStorage::throwTooManyEntities(UInt64 current_number) const
+{
+    throw Exception(ErrorCodes::TOO_MANY_ACCESS_ENTITIES,
+                                    "Too many access entities. "
+                                    "The limit (server configuration parameter `max_user_num_to_throw`) is set to {}, the current number is {}",
+                                        access_entities_num_limit, current_number);
+}
 }

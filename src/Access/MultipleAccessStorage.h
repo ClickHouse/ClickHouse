@@ -18,7 +18,7 @@ public:
     using StoragePtr = std::shared_ptr<Storage>;
     using ConstStoragePtr = std::shared_ptr<const Storage>;
 
-    explicit MultipleAccessStorage(const String & storage_name_ = STORAGE_TYPE);
+    explicit MultipleAccessStorage(UInt64 access_entities_num_limit_, const String & storage_name_ = STORAGE_TYPE);
     ~MultipleAccessStorage() override;
 
     void shutdown() override;
@@ -61,6 +61,8 @@ public:
     void backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, AccessEntityType type) const override;
     void restoreFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup) override;
     bool containsStorage(std::string_view storage_type) const;
+
+    void updateAccessEntitiesLimit(UInt64 limit) override;
 
 protected:
     std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;

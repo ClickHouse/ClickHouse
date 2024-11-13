@@ -5,7 +5,7 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-node = cluster.add_instance("node", main_configs=["config/config.xml"])
+node = cluster.add_instance("node", main_configs=["config/config.xml"], stay_alive=True)
 
 
 @pytest.fixture(scope="module")
@@ -45,3 +45,36 @@ def test_table_db_limit(started_cluster):
         node.query("create table default.tx (a Int32) Engine = Log")
 
     assert "TOO_MANY_TABLES" in str(exp_info)
+
+
+def test_access_limit(started_cluster):
+    roles = 3
+    users = 2
+    # 4 entities are already loaded from config
+    for i in range(roles):
+        node.query("create role r{}".format(i))
+
+    for i in range(users):
+        node.query("create user u{}".format(i))
+
+    assert "Too many access entities" in node.query_and_get_error("create user ux")
+
+    # Updating existing users not changing user count
+    for i in range(users):
+        node.query("create user or replace u{}".format(i))
+
+    for i in range(users):
+        node.query("create user if not exists u{}".format(i))
+
+    for i in range(users):
+        node.query("drop user u{}".format(i))
+
+    for i in range(users):
+        node.query("create user u{}".format(i))
+
+    assert "Too many access entities" in node.query_and_get_error("create user ux")
+
+    # Loaded users are counted correctly
+    node.restart_clickhouse()
+
+    assert "Too many access entities" in node.query_and_get_error("create user ux")

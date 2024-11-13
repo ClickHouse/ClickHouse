@@ -7,6 +7,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <Interpreters/Access/InterpreterCreateUserQuery.h>
 #include <Interpreters/Access/InterpreterShowGrantsQuery.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Poco/JSON/JSON.h>
@@ -20,6 +21,10 @@
 #include <fstream>
 #include <memory>
 
+namespace CurrentMetrics
+{
+    extern const Metric AttachedAccessEntity;
+}
 
 namespace DB
 {
@@ -161,8 +166,8 @@ namespace
 }
 
 
-DiskAccessStorage::DiskAccessStorage(const String & storage_name_, const String & directory_path_, AccessChangesNotifier & changes_notifier_, bool readonly_, bool allow_backup_)
-    : IAccessStorage(storage_name_), changes_notifier(changes_notifier_)
+DiskAccessStorage::DiskAccessStorage(const String & storage_name_, const String & directory_path_, AccessChangesNotifier & changes_notifier_, bool readonly_, bool allow_backup_, UInt64 access_entities_num_limit_)
+    : AccessStorageBase(access_entities_num_limit_, storage_name_, changes_notifier_)
 {
     directory_path = makeDirectoryPathCanonical(directory_path_);
     readonly = readonly_;
@@ -265,14 +270,7 @@ bool DiskAccessStorage::readLists()
         entries_by_name_and_type[static_cast<size_t>(type)].clear();
 
     for (auto & [id, name, type] : ids_names_types)
-    {
-        auto & entry = entries_by_id[id];
-        entry.id = id;
-        entry.type = type;
-        entry.name = std::move(name);
-        auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
-        entries_by_name[entry.name] = &entry;
-    }
+        insertEntry(id, std::move(name), type, nullptr);
 
     return true;
 }
@@ -397,6 +395,7 @@ void DiskAccessStorage::reloadAllAndRebuildLists()
     for (auto type : collections::range(AccessEntityType::MAX))
         types_of_lists_to_write.insert(type);
 
+    CurrentMetrics::add(CurrentMetrics::AttachedAccessEntity, entries_by_id.size());
     failed_to_write_lists = false; /// Try again writing lists.
     writeLists();
 }
@@ -595,17 +594,11 @@ bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & ne
     }
 
     /// Do insertion.
+    insertEntry(id, name, type, new_entity);
+
     if (write_on_disk)
         writeAccessEntityToDisk(id, *new_entity);
 
-    auto & entry = entries_by_id[id];
-    entry.id = id;
-    entry.type = type;
-    entry.name = name;
-    entry.entity = new_entity;
-    entries_by_name[entry.name] = &entry;
-
-    changes_notifier.onEntityAdded(id, new_entity);
     return true;
 }
 
@@ -641,12 +634,8 @@ bool DiskAccessStorage::removeNoLock(const UUID & id, bool throw_if_not_exists, 
     }
 
     /// Do removing.
-    UUID removed_id = id;
-    auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
-    entries_by_name.erase(entry.name);
-    entries_by_id.erase(it);
+    removeEntry(id, entry.name, type);
 
-    changes_notifier.onEntityRemoved(removed_id, type);
     return true;
 }
 
