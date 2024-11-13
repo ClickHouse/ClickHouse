@@ -407,6 +407,8 @@ def test_failed_retry(started_cluster, mode, engine_name):
         additional_settings={
             "s3queue_loading_retries": retries_num,
             "keeper_path": keeper_path,
+            "polling_max_timeout_ms": 5000,
+            "polling_backoff_ms": 1000,
         },
         engine_name=engine_name,
     )
