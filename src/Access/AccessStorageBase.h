@@ -51,7 +51,8 @@ protected:
         entry.entity = entity;
         entries_by_name[entry.name] = &entry;
 
-        changes_notifier.onEntityAdded(id, entity);
+        if (entity)
+            changes_notifier.onEntityAdded(id, entity);
 
         CurrentMetrics::add(CurrentMetrics::AttachedAccessEntity);
     }
@@ -68,6 +69,11 @@ protected:
         changes_notifier.onEntityRemoved(id, type);
 
         CurrentMetrics::sub(CurrentMetrics::AttachedAccessEntity);
+    }
+
+    bool entityLimitReached(UInt64 entity_count) const
+    {
+        return access_entities_num_limit > 0 && entity_count >= access_entities_num_limit;
     }
 
     AccessChangesNotifier & changes_notifier;

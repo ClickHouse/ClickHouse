@@ -270,19 +270,7 @@ bool DiskAccessStorage::readLists()
         entries_by_name_and_type[static_cast<size_t>(type)].clear();
 
     for (auto & [id, name, type] : ids_names_types)
-    {
-        auto & entry = entries_by_id[id];
-        entry.id = id;
-        entry.type = type;
-        entry.name = std::move(name);
-        auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
-        entries_by_name[entry.name] = &entry;
-    }
-
-    if (entityLimitReached(entries_by_id.size()))
-        throwTooManyEntities(entries_by_id.size());
-
-    CurrentMetrics::add(CurrentMetrics::AttachedAccessEntity, entries_by_id.size());
+        insertEntry(id, std::move(name), type, nullptr);
 
     return true;
 }
@@ -403,9 +391,6 @@ void DiskAccessStorage::reloadAllAndRebuildLists()
     }
 
     setAllInMemory(all_entities);
-
-    if (entityLimitReached(entries_by_id.size()))
-        throwTooManyEntities(entries_by_id.size());
 
     for (auto type : collections::range(AccessEntityType::MAX))
         types_of_lists_to_write.insert(type);

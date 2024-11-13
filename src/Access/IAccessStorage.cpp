@@ -753,10 +753,6 @@ LoggerPtr IAccessStorage::getLogger() const
     return log;
 }
 
-bool IAccessStorage::entityLimitReached(UInt64 entity_count) const
-{
-    return access_entities_num_limit > 0 && entity_count >= access_entities_num_limit;
-}
 
 void IAccessStorage::throwNotFound(const UUID & id) const
 {
