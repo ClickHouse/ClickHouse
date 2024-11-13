@@ -239,11 +239,11 @@ void LocalServer::initialize(Poco::Util::Application & self)
         0, // We don't need any threads one all the parts will be deleted
         cleanup_threads);
 
-    const size_t drop_tables_threas = server_settings[ServerSetting::database_catalog_drop_table_concurrency];
+    const size_t drop_tables_threads = server_settings[ServerSetting::database_catalog_drop_table_concurrency];
     getDatabaseCatalogDropTablesThreadPool().initialize(
-        drop_tables_threas,
+        drop_tables_threads,
         0, // We don't need any threads if there are no DROP queries.
-        drop_tables_threas);
+        drop_tables_threads);
 
     const size_t freeze_threads = server_settings[ServerSetting::max_freeze_parts_thread_pool_size];
     getFreezePartThreadPool().initialize(
