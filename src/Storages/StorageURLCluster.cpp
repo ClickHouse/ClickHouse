@@ -19,7 +19,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageURL.h>
-#include <Storages/extractTableFunctionArgumentsFromSelectQuery.h>
+#include <Storages/extractTableFunctionFromSelectQuery.h>
 #include <Storages/VirtualColumnUtils.h>
 
 #include <TableFunctions/TableFunctionURLCluster.h>
@@ -29,14 +29,15 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 glob_expansion_max_elements;
-}
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace Setting
+{
+    extern const SettingsUInt64 glob_expansion_max_elements;
 }
 
 StorageURLCluster::StorageURLCluster(
@@ -85,12 +86,20 @@ StorageURLCluster::StorageURLCluster(
 
 void StorageURLCluster::updateQueryToSendIfNeeded(ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context)
 {
-    ASTExpressionList * expression_list = extractTableFunctionArgumentsFromSelectQuery(query);
+    auto * table_function = extractTableFunctionFromSelectQuery(query);
+    if (!table_function)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function urlCluster, got '{}'", queryToString(query));
+
+    auto * expression_list = table_function->arguments->as<ASTExpressionList>();
     if (!expression_list)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function urlCluster, got '{}'", queryToString(query));
 
     TableFunctionURLCluster::updateStructureAndFormatArgumentsIfNeeded(
-        expression_list->children, storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription(), format_name, context);
+        table_function,
+        storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription(),
+        format_name,
+        context
+    );
 }
 
 RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const

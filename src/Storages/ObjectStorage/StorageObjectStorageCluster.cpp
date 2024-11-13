@@ -10,7 +10,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <Storages/extractTableFunctionArgumentsFromSelectQuery.h>
+#include <Storages/extractTableFunctionFromSelectQuery.h>
 
 
 namespace DB
@@ -86,7 +86,16 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     const DB::StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context)
 {
-    ASTExpressionList * expression_list = extractTableFunctionArgumentsFromSelectQuery(query);
+    auto * table_function = extractTableFunctionFromSelectQuery(query);
+    if (!table_function)
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Expected SELECT query from table function {}, got '{}'",
+            configuration->getEngineName(), queryToString(query));
+    }
+
+    auto * expression_list = table_function->arguments->as<ASTExpressionList>();
     if (!expression_list)
     {
         throw Exception(
@@ -105,10 +114,15 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
             configuration->getEngineName());
     }
 
-    ASTPtr cluster_name_arg = args.front();
-    args.erase(args.begin());
-    configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
-    args.insert(args.begin(), cluster_name_arg);
+    if (!endsWith(table_function->name, "Cluster"))
+        configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
+    else
+    {
+        ASTPtr cluster_name_arg = args.front();
+        args.erase(args.begin());
+        configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
+        args.insert(args.begin(), cluster_name_arg);
+    }
 }
 
 RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExtension(
