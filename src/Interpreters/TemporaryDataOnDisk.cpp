@@ -63,7 +63,7 @@ public:
         const auto key = FileSegment::Key::random();
         LOG_TRACE(getLogger("TemporaryFileInLocalCache"), "Creating temporary file in cache with key {}", key);
         segment_holder = file_cache.set(
-            key, 0, std::max(1, reserve_size),
+            key, 0, std::max<size_t>(1, reserve_size),
             CreateFileSegmentSettings(FileSegmentKind::Ephemeral), FileCache::getCommonUser());
 
         chassert(segment_holder->size() == 1);
