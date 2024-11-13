@@ -21,6 +21,12 @@ Positions: 4 0 2 1
   Strictness: ALL
   Algorithm: HashJoin
   Clauses: [(__table1.id) = (__table2.id)]
+  Dynamic Filter
+  Actions: INPUT : 0 -> id UInt64 : 0
+           COLUMN Const(Set) ->  Set : 1
+           ALIAS id :: 0 -> __table1.id UInt64 : 2
+           FUNCTION in(__table1.id :: 2,  :: 1) -> in(__table1.id, ) UInt8 : 0
+  Positions: 0
     Expression
     Header: __table1.id UInt64
             __table1.value String
@@ -91,6 +97,12 @@ Positions: 4 0 2 1
   Strictness: ALL
   Algorithm: HashJoin
   Clauses: [(__table1.id) = (__table2.id)]
+  Dynamic Filter
+  Actions: INPUT : 0 -> id UInt64 : 0
+           COLUMN Const(Set) ->  Set : 1
+           ALIAS id :: 0 -> __table1.id UInt64 : 2
+           FUNCTION in(__table1.id :: 2,  :: 1) -> in(__table1.id, ) UInt8 : 0
+  Positions: 0
     Expression
     Header: __table1.id UInt64
             __table1.value String
@@ -161,6 +173,12 @@ Positions: 4 0 2 1
   Strictness: ALL
   Algorithm: HashJoin
   Clauses: [(__table1.id) = (__table2.id)]
+  Dynamic Filter
+  Actions: INPUT : 0 -> id UInt64 : 0
+           COLUMN Const(Set) ->  Set : 1
+           ALIAS id :: 0 -> __table1.id UInt64 : 2
+           FUNCTION in(__table1.id :: 2,  :: 1) -> in(__table1.id, ) UInt8 : 0
+  Positions: 0
     Expression
     Header: __table1.id UInt64
             __table1.value String

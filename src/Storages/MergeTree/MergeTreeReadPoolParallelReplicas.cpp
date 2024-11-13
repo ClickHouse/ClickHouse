@@ -128,14 +128,7 @@ MergeTreeReadPoolParallelReplicas::MergeTreeReadPoolParallelReplicas(
         context_)
     , extension(std::move(extension_))
     , coordination_mode(CoordinationMode::Default)
-    , min_marks_per_task(getMinMarksPerTask(pool_settings.min_marks_for_concurrent_read, per_part_infos))
-    , mark_segment_size(chooseSegmentSize(
-          log,
-          context_->getSettingsRef()[Setting::parallel_replicas_mark_segment_size],
-          min_marks_per_task,
-          pool_settings.threads,
-          pool_settings.sum_marks,
-          extension.getTotalNodesCount()))
+    , parallel_replicas_mark_segment_size(context_->getSettingsRef()[Setting::parallel_replicas_mark_segment_size])
 {
 }
 
@@ -147,6 +140,15 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_id
         const auto & parts_ranges = parts_ranges_and_lock.parts_ranges;
 
         fillPerPartInfos(parts_ranges);
+        min_marks_per_task = getMinMarksPerTask(pool_settings.min_marks_for_concurrent_read, per_part_infos);
+        mark_segment_size = chooseSegmentSize(
+          log,
+          parallel_replicas_mark_segment_size,
+          min_marks_per_task,
+          pool_settings.threads,
+          pool_settings.sum_marks,
+          extension.getTotalNodesCount());
+
         extension.sendInitialRequest(coordination_mode, parts_ranges, mark_segment_size);
     };
     std::call_once(init_flag, init);

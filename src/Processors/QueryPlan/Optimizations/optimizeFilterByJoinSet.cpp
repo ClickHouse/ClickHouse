@@ -7,6 +7,7 @@
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 
+#include <Core/Settings.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeSet.h>
@@ -15,14 +16,16 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+
 namespace DB
 {
-namespace Setting
-{
-}
-}
+// namespace Setting
+// {
+//     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+// }
 
-namespace DB::QueryPlanOptimizations
+
+namespace QueryPlanOptimizations
 {
 
 ReadFromMergeTree * findReadingStep(QueryPlan::Node & node)
@@ -139,6 +142,9 @@ void optimizeFilterByJoinSet(QueryPlan::Node & node)
     if (!reading)
         return;
 
+    // if (reading->getContext()->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas])
+    //     return;
+
     // std::cerr << "optimizeFilterByJoinSetone reading\n";
 
     const auto & pk = reading->getStorageMetadata()->getPrimaryKey();
@@ -231,4 +237,5 @@ void optimizeFilterByJoinSet(QueryPlan::Node & node)
     hash_join->saveRightKeyColumnsForFilter();
 }
 
+}
 }

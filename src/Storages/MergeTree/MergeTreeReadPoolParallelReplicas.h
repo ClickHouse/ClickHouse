@@ -35,6 +35,7 @@ private:
     LoggerPtr log = getLogger("MergeTreeReadPoolParallelReplicas");
     const ParallelReadingExtension extension;
     const CoordinationMode coordination_mode;
+    const size_t parallel_replicas_mark_segment_size;
     size_t min_marks_per_task{0};
     size_t mark_segment_size{0};
     RangesInDataPartsDescription buffered_ranges;
