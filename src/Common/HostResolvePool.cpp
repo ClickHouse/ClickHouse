@@ -50,17 +50,15 @@ HostResolver::WeakPtr HostResolver::getWeakFromThis()
 }
 
 HostResolver::HostResolver(String host_, Poco::Timespan history_)
-    : host(std::move(host_))
-    , history(history_)
-    , resolve_interval(history_.totalMicroseconds() / 3)
-    , resolve_function([](const String & host_to_resolve) { return DNSResolver::instance().resolveHostAllInOriginOrder(host_to_resolve); })
-{
-    update();
-}
+    : HostResolver([](const String & host_to_resolve) { return DNSResolver::instance().resolveHostAllInOriginOrder(host_to_resolve); }, host_, history_)
+{}
 
 HostResolver::HostResolver(
     ResolveFunction && resolve_function_, String host_, Poco::Timespan history_)
-    : host(std::move(host_)), history(history_), resolve_function(std::move(resolve_function_))
+    : host(std::move(host_))
+    , history(history_)
+    , resolve_interval(history_.totalMicroseconds() / 3)
+    , resolve_function(std::move(resolve_function_))
 {
     update();
 }
