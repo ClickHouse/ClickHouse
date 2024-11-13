@@ -19,11 +19,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int LOGICAL_ERROR;
-}
-
 StorageFileCluster::StorageFileCluster(
     const ContextPtr & context,
     const String & cluster_name_,
