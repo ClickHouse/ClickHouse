@@ -23,20 +23,19 @@ class BackupCoordinationLocal : public IBackupCoordination
 {
 public:
     explicit BackupCoordinationLocal(
-        const UUID & backup_uuid_,
         bool is_plain_backup_,
         bool allow_concurrent_backup_,
         BackupConcurrencyCounters & concurrency_counters_);
 
     ~BackupCoordinationLocal() override;
 
+    void setBackupQueryIsSentToOtherHosts() override {}
+    bool isBackupQuerySentToOtherHosts() const override { return false; }
     Strings setStage(const String &, const String &, bool) override { return {}; }
-    void setBackupQueryWasSentToOtherHosts() override {}
-    bool trySetError(std::exception_ptr) override { return true; }
-    void finish() override {}
-    bool tryFinishAfterError() noexcept override { return true; }
-    void waitForOtherHostsToFinish() override {}
-    bool tryWaitForOtherHostsToFinishAfterError() noexcept override { return true; }
+    bool setError(std::exception_ptr, bool) override { return true; }
+    bool waitOtherHostsFinish(bool) const override { return true; }
+    bool finish(bool) override { return true; }
+    bool cleanup(bool) override { return true; }
 
     void addReplicatedPartNames(const String & table_zk_path, const String & table_name_for_logs, const String & replica_name,
                                 const std::vector<PartNameAndChecksum> & part_names_and_checksums) override;
