@@ -38,7 +38,7 @@ public:
     bool allowPushDownToRight() const;
 
     /// Swap automatically if not set, otherwise always or never, depending on the value
-    std::optional<bool> swap_join_tables = {};
+    std::optional<bool> swap_join_tables = false;
 
 private:
     void updateOutputHeader() override;
