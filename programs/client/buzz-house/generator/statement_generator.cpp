@@ -205,36 +205,6 @@ int StatementGenerator::GenerateNextCreateView(RandomGenerator & rg, sql_query_g
     return 0;
 }
 
-int StatementGenerator::GenerateNextTablePartition(RandomGenerator & rg, const SQLTable & t, sql_query_grammar::PartitionExpr * pexpr)
-{
-    bool set_part = false;
-
-    if (t.IsMergeTreeFamily())
-    {
-        const std::string dname = t.db ? ("d" + std::to_string(t.db->dname)) : "", tname = "t" + std::to_string(t.tname);
-        const bool table_has_partitions = rg.NextSmallNumber() < 9 && fc.TableHasPartitions<false>(dname, tname);
-
-        if (table_has_partitions)
-        {
-            fc.TableGetRandomPartitionOrPart<false, true>(dname, tname, buf);
-            if (rg.NextBool())
-            {
-                pexpr->set_partition(buf);
-            }
-            else
-            {
-                pexpr->set_partition_id(buf);
-            }
-            set_part = true;
-        }
-    }
-    if (!set_part)
-    {
-        pexpr->set_tuple(true);
-    }
-    return 0;
-}
-
 int StatementGenerator::GenerateNextDrop(RandomGenerator & rg, sql_query_grammar::Drop * dp)
 {
     sql_query_grammar::SQLObjectName * sot = dp->mutable_object();
@@ -313,7 +283,7 @@ int StatementGenerator::GenerateNextOptimizeTable(RandomGenerator & rg, sql_quer
     {
         if (rg.NextBool())
         {
-            GenerateNextTablePartition(rg, t, ot->mutable_partition());
+            GenerateNextTablePartition<false>(rg, t, ot->mutable_partition());
         }
         ot->set_cleanup(rg.NextSmallNumber() < 3);
     }
@@ -386,7 +356,7 @@ int StatementGenerator::GenerateNextCheckTable(RandomGenerator & rg, sql_query_g
     est->mutable_table()->set_table("t" + std::to_string(t.tname));
     if (t.IsMergeTreeFamily() && rg.NextBool())
     {
-        GenerateNextTablePartition(rg, t, ct->mutable_partition());
+        GenerateNextTablePartition<true>(rg, t, ct->mutable_partition());
     }
     ct->set_single_result(rg.NextSmallNumber() < 4);
     return 0;
@@ -595,7 +565,7 @@ int StatementGenerator::GenerateNextDelete(RandomGenerator & rg, sql_query_gramm
     est->mutable_table()->set_table("t" + std::to_string(t.tname));
     if (t.IsMergeTreeFamily() && rg.NextBool())
     {
-        GenerateNextTablePartition(rg, t, del->mutable_partition());
+        GenerateNextTablePartition<false>(rg, t, del->mutable_partition());
     }
     GenerateUptDelWhere(rg, t, del->mutable_where()->mutable_expr()->mutable_expr());
     return 0;
@@ -836,7 +806,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
 
                 if (t.IsMergeTreeFamily() && rg.NextBool())
                 {
-                    GenerateNextTablePartition(rg, t, hdel->mutable_partition());
+                    GenerateNextTablePartition<false>(rg, t, hdel->mutable_partition());
                 }
                 GenerateUptDelWhere(rg, t, hdel->mutable_del()->mutable_expr()->mutable_expr());
             }
@@ -863,7 +833,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
                 mcol->mutable_col()->set_column("c" + std::to_string(rg.PickKeyRandomlyFromMap(t.cols)));
                 if (t.IsMergeTreeFamily() && rg.NextBool())
                 {
-                    GenerateNextTablePartition(rg, t, mcol->mutable_partition());
+                    GenerateNextTablePartition<false>(rg, t, mcol->mutable_partition());
                 }
             }
             else if (drop_column && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + 1))
@@ -889,7 +859,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
                 ccol->mutable_col()->set_column("c" + std::to_string(rg.PickKeyRandomlyFromMap(t.cols)));
                 if (t.IsMergeTreeFamily() && rg.NextBool())
                 {
-                    GenerateNextTablePartition(rg, t, ccol->mutable_partition());
+                    GenerateNextTablePartition<false>(rg, t, ccol->mutable_partition());
                 }
             }
             else if (
@@ -929,7 +899,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
 
                 if (rg.NextBool())
                 {
-                    GenerateNextTablePartition(rg, t, adm->mutable_partition());
+                    GenerateNextTablePartition<false>(rg, t, adm->mutable_partition());
                 }
             }
             else if (
@@ -942,7 +912,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
 
                 if (t.IsMergeTreeFamily() && rg.NextBool())
                 {
-                    GenerateNextTablePartition(rg, t, upt->mutable_partition());
+                    GenerateNextTablePartition<false>(rg, t, upt->mutable_partition());
                 }
                 assert(this->entries.empty());
                 for (const auto & entry : t.cols)
@@ -1099,7 +1069,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
                 iip->mutable_idx()->set_index("i" + std::to_string(rg.PickKeyRandomlyFromMap(t.idxs)));
                 if (t.IsMergeTreeFamily() && rg.NextBool())
                 {
-                    GenerateNextTablePartition(rg, t, iip->mutable_partition());
+                    GenerateNextTablePartition<false>(rg, t, iip->mutable_partition());
                 }
             }
             else if (
@@ -1114,7 +1084,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
                 iip->mutable_idx()->set_index("i" + std::to_string(rg.PickKeyRandomlyFromMap(t.idxs)));
                 if (t.IsMergeTreeFamily() && rg.NextBool())
                 {
-                    GenerateNextTablePartition(rg, t, iip->mutable_partition());
+                    GenerateNextTablePartition<false>(rg, t, iip->mutable_partition());
                 }
             }
             else if (

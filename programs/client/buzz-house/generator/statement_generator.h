@@ -253,7 +253,6 @@ private:
 
     sql_query_grammar::TableEngineValues GetNextTableEngine(RandomGenerator & rg, const bool use_external_integrations);
 
-    int GenerateNextTablePartition(RandomGenerator & rg, const SQLTable & t, sql_query_grammar::PartitionExpr * pexpr);
     int GenerateNextRefreshableView(RandomGenerator & rg, sql_query_grammar::RefreshableView * cv);
     int GenerateNextCreateView(RandomGenerator & rg, sql_query_grammar::CreateView * cv);
     int GenerateNextDrop(RandomGenerator & rg, sql_query_grammar::Drop * sq);
@@ -346,6 +345,45 @@ private:
     RandomNextType(RandomGenerator & rg, const uint32_t allowed_types, uint32_t & col_counter, sql_query_grammar::TopTypeName * tp);
 
     void DropDatabase(const uint32_t dname);
+
+    template <bool AllowParts>
+    int GenerateNextTablePartition(RandomGenerator & rg, const SQLTable & t, sql_query_grammar::PartitionExpr * pexpr)
+    {
+        bool set_part = false;
+
+        if (t.IsMergeTreeFamily())
+        {
+            const std::string dname = t.db ? ("d" + std::to_string(t.db->dname)) : "", tname = "t" + std::to_string(t.tname);
+            const bool table_has_partitions = rg.NextSmallNumber() < 9 && fc.TableHasPartitions<false>(dname, tname);
+
+            if (table_has_partitions)
+            {
+                if (AllowParts && rg.NextBool())
+                {
+                    fc.TableGetRandomPartitionOrPart<false, false>(dname, tname, buf);
+                    pexpr->set_part(buf);
+                }
+                else
+                {
+                    fc.TableGetRandomPartitionOrPart<false, true>(dname, tname, buf);
+                    if (rg.NextBool())
+                    {
+                        pexpr->set_partition(buf);
+                    }
+                    else
+                    {
+                        pexpr->set_partition_id(buf);
+                    }
+                }
+                set_part = true;
+            }
+        }
+        if (!set_part)
+        {
+            pexpr->set_tuple(true);
+        }
+        return 0;
+    }
 
 public:
     const std::function<bool(const std::shared_ptr<SQLDatabase> &)> attached_databases
