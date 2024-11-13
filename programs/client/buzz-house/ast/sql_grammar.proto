@@ -2923,10 +2923,9 @@ message PartitionExpr {
     oneof partition_oneof {
         string part = 1;
         uint32 partition = 2;
-        Expr part_expr = 3;
-        Expr partition_expr = 4;
-        bool all = 5;
-        bool tuple = 6;
+        uint32 partition_id = 3;
+        bool all = 4;
+        bool tuple = 5;
     }
 }
 

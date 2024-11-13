@@ -252,6 +252,8 @@ private:
     int GenerateEngineDetails(RandomGenerator & rg, SQLBase & b, const bool add_pkey, sql_query_grammar::TableEngine * te);
 
     sql_query_grammar::TableEngineValues GetNextTableEngine(RandomGenerator & rg, const bool use_external_integrations);
+
+    int GenerateNextTablePartition(RandomGenerator & rg, const SQLTable & t, sql_query_grammar::PartitionExpr * pexpr);
     int GenerateNextRefreshableView(RandomGenerator & rg, sql_query_grammar::RefreshableView * cv);
     int GenerateNextCreateView(RandomGenerator & rg, sql_query_grammar::CreateView * cv);
     int GenerateNextDrop(RandomGenerator & rg, sql_query_grammar::Drop * sq);
