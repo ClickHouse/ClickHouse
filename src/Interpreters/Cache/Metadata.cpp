@@ -680,13 +680,13 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
     if (!size_to_download)
         return;
 
-    auto reader = file_segment.extractRemoteFileReader();
+    auto reader = file_segment.getRemoteFileReader();
     if (!reader)
     {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "No reader. "
-            "File segment should not have been submitted for background download ({})",
-            file_segment.getInfoForLog());
+        LOG_TEST(log, "No reader in {}:{} (state: {}, range: {}, downloaded size: {})",
+                 file_segment.key(), file_segment.offset(), file_segment.state(),
+                 file_segment.range().toString(), file_segment.getDownloadedSize());
+        return;
     }
 
     /// If remote_fs_read_method == 'threadpool',
@@ -721,7 +721,7 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
                 "for {}:{} (downloaded size: {}/{})",
                 file_segment.key(), file_segment.offset(),
                 file_segment.getDownloadedSize(), file_segment.range().size());
-            return;
+            break;
         }
 
         try
@@ -736,11 +736,13 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
             if (code == /* No space left on device */28 || code == /* Quota exceeded */122)
             {
                 LOG_INFO(log, "Insert into cache is skipped due to insufficient disk space. ({})", e.displayText());
-                return;
+                break;
             }
             throw;
         }
     }
+
+    file_segment.resetRemoteFileReader();
 
     LOG_TEST(log, "Downloaded file segment: {}", file_segment.getInfoForLog());
 }
