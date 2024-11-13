@@ -63,6 +63,17 @@ ParallelReadBuffer::ParallelReadBuffer(
     }
 }
 
+ParallelReadBuffer::ParallelReadBuffer(
+    std::unique_ptr<SeekableReadBuffer> input_,
+    ThreadPoolCallbackRunnerUnsafe<void> schedule_,
+    size_t max_working_readers_,
+    size_t range_step_,
+    size_t file_size_)
+    : ParallelReadBuffer(*input_, std::move(schedule_), max_working_readers_, range_step_, file_size_)
+{
+    input_holder = std::move(input_);
+}
+
 bool ParallelReadBuffer::addReaderToPool()
 {
     if (next_range_start >= file_size)
@@ -303,6 +314,21 @@ std::unique_ptr<ParallelReadBuffer> wrapInParallelReadBufferIfSupported(
 
     return std::make_unique<ParallelReadBuffer>(
         *seekable, schedule, max_working_readers, range_step, file_size);
+}
+
+std::unique_ptr<ReadBuffer> wrapInParallelReadBufferIfSupported(
+    std::unique_ptr<ReadBuffer> buf,
+    ThreadPoolCallbackRunnerUnsafe<void> schedule,
+    size_t max_working_readers,
+    size_t range_step,
+    size_t file_size)
+{
+    auto * seekable = dynamic_cast<SeekableReadBuffer *>(buf.get());
+    if (!seekable || !seekable->supportsReadAt())
+        return buf;
+
+    std::unique_ptr<SeekableReadBuffer> seekable_buf(dynamic_cast<SeekableReadBuffer *>(buf.release()));
+    return std::make_unique<ParallelReadBuffer>(std::move(seekable_buf), schedule, max_working_readers, range_step, file_size);
 }
 
 }

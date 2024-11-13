@@ -30,6 +30,14 @@ private:
 public:
     ParallelReadBuffer(SeekableReadBuffer & input, ThreadPoolCallbackRunnerUnsafe<void> schedule_, size_t max_working_readers, size_t range_step_, size_t file_size);
 
+    ParallelReadBuffer(
+        std::unique_ptr<SeekableReadBuffer> input,
+        ThreadPoolCallbackRunnerUnsafe<void> schedule_,
+        size_t max_working_readers,
+        size_t range_step_,
+        size_t file_size);
+
+
     ~ParallelReadBuffer() override { finishAndWait(); }
 
     off_t seek(off_t off, int whence) override;
@@ -65,6 +73,7 @@ private:
 
     ThreadPoolCallbackRunnerUnsafe<void> schedule;
 
+    std::shared_ptr<SeekableReadBuffer> input_holder;
     SeekableReadBuffer & input;
     size_t file_size;
     size_t range_step;
@@ -97,4 +106,10 @@ std::unique_ptr<ParallelReadBuffer> wrapInParallelReadBufferIfSupported(
     ReadBuffer & buf, ThreadPoolCallbackRunnerUnsafe<void> schedule, size_t max_working_readers,
     size_t range_step, size_t file_size);
 
+std::unique_ptr<ReadBuffer> wrapInParallelReadBufferIfSupported(
+    std::unique_ptr<ReadBuffer> buf,
+    ThreadPoolCallbackRunnerUnsafe<void> schedule,
+    size_t max_working_readers,
+    size_t range_step,
+    size_t file_size);
 }
