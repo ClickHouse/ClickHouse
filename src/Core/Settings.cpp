@@ -1919,8 +1919,6 @@ DECLARE(BoolAuto, query_plan_join_swap_table, {}, R"(
     - 'true': Always swap tables (the left table is the build table).
 )", 0) \
     \
-    DECLARE(Bool, join_use_nulls_for_system_columns, false, R"(
-)", 0) \
     DECLARE(UInt64, preferred_block_size_bytes, 1000000, R"(
 This setting adjusts the data block size for query processing and represents additional fine-tuning to the more rough 'max_block_size' setting. If the columns are large and with 'max_block_size' rows the block size is likely to be larger than the specified amount of bytes, its size will be lowered for better CPU cache locality.
 )", 0) \
