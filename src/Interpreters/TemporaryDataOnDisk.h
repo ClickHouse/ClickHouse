@@ -184,7 +184,7 @@ public:
         size_t uncompressed_size = 0;
     };
 
-    explicit TemporaryDataBuffer(TemporaryDataOnDiskScope * parent_, size_t max_file_size = 0);
+    explicit TemporaryDataBuffer(TemporaryDataOnDiskScope * parent_, size_t reserve_size = 0);
     void nextImpl() override;
     void finalizeImpl() override;
     void cancelImpl() noexcept override;
@@ -214,7 +214,7 @@ using TemporaryBlockStreamReaderHolder = WrapperGuard<NativeReader, ReadBuffer>;
 class TemporaryBlockStreamHolder : public WrapperGuard<NativeWriter, TemporaryDataBuffer>
 {
 public:
-    TemporaryBlockStreamHolder(const Block & header_, TemporaryDataOnDiskScope * parent_, size_t max_file_size = 0);
+    TemporaryBlockStreamHolder(const Block & header_, TemporaryDataOnDiskScope * parent_, size_t reserve_size = 0);
 
     TemporaryBlockStreamReaderHolder getReadStream() const;
 

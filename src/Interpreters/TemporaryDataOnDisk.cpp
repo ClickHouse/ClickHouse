@@ -58,12 +58,12 @@ TemporaryFileHolder::TemporaryFileHolder()
 class TemporaryFileInLocalCache : public TemporaryFileHolder
 {
 public:
-    explicit TemporaryFileInLocalCache(FileCache & file_cache, size_t max_file_size = 0)
+    explicit TemporaryFileInLocalCache(FileCache & file_cache, size_t reserve_size = 0)
     {
         const auto key = FileSegment::Key::random();
         LOG_TRACE(getLogger("TemporaryFileInLocalCache"), "Creating temporary file in cache with key {}", key);
         segment_holder = file_cache.set(
-            key, 0, std::max(10_MiB, max_file_size),
+            key, 0, std::max(1, reserve_size),
             CreateFileSegmentSettings(FileSegmentKind::Ephemeral), FileCache::getCommonUser());
 
         chassert(segment_holder->size() == 1);
@@ -92,13 +92,13 @@ private:
 class TemporaryFileOnLocalDisk : public TemporaryFileHolder
 {
 public:
-    explicit TemporaryFileOnLocalDisk(VolumePtr volume, size_t max_file_size = 0)
+    explicit TemporaryFileOnLocalDisk(VolumePtr volume, size_t reserve_size = 0)
         : path_to_file("tmp" + toString(UUIDHelpers::generateV4()))
     {
         LOG_TRACE(getLogger("TemporaryFileOnLocalDisk"), "Creating temporary file '{}'", path_to_file);
-        if (max_file_size > 0)
+        if (reserve_size > 0)
         {
-            auto reservation = volume->reserve(max_file_size);
+            auto reservation = volume->reserve(reserve_size);
             if (!reservation)
             {
                 auto disks = volume->getDisks();
@@ -116,7 +116,7 @@ public:
 
                 throw Exception(ErrorCodes::NOT_ENOUGH_SPACE,
                     "Not enough space on temporary disk, cannot reserve {} bytes on [{}]",
-                    max_file_size, fmt::join(disks_info, ", "));
+                    reserve_size, fmt::join(disks_info, ", "));
             }
             disk = reservation->getDisk();
         }
@@ -216,10 +216,10 @@ bool TemporaryDataReadBuffer::nextImpl()
     return true;
 }
 
-TemporaryDataBuffer::TemporaryDataBuffer(TemporaryDataOnDiskScope * parent_, size_t max_file_size)
+TemporaryDataBuffer::TemporaryDataBuffer(TemporaryDataOnDiskScope * parent_, size_t reserve_size)
     : WriteBuffer(nullptr, 0)
     , parent(parent_)
-    , file_holder(parent->file_provider(max_file_size == 0 ? parent->getSettings().max_size_on_disk : max_file_size))
+    , file_holder(parent->file_provider(reserve_size))
     , out_compressed_buf(file_holder->write(), getCodec(parent->getSettings()))
 {
     WriteBuffer::set(out_compressed_buf->buffer().begin(), out_compressed_buf->buffer().size());
@@ -339,8 +339,8 @@ void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssiz
     stat.uncompressed_size += uncompressed_delta;
 }
 
-TemporaryBlockStreamHolder::TemporaryBlockStreamHolder(const Block & header_, TemporaryDataOnDiskScope * parent_, size_t max_file_size)
-    : WrapperGuard(std::make_unique<TemporaryDataBuffer>(parent_, max_file_size), DBMS_TCP_PROTOCOL_VERSION, header_)
+TemporaryBlockStreamHolder::TemporaryBlockStreamHolder(const Block & header_, TemporaryDataOnDiskScope * parent_, size_t reserve_size)
+    : WrapperGuard(std::make_unique<TemporaryDataBuffer>(parent_, reserve_size), DBMS_TCP_PROTOCOL_VERSION, header_)
     , header(header_)
 {}
 
