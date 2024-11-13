@@ -285,10 +285,7 @@ int StatementGenerator::GenerateNextOptimizeTable(RandomGenerator & rg, sql_quer
         {
             ot->mutable_partition()->set_tuple(true);
         }
-        if (rg.NextSmallNumber() < 3)
-        {
-            ot->set_cleanup(true);
-        }
+        ot->set_cleanup(rg.NextSmallNumber() < 3);
     }
     if (rg.NextSmallNumber() < 4)
     {
@@ -343,7 +340,7 @@ int StatementGenerator::GenerateNextOptimizeTable(RandomGenerator & rg, sql_quer
             dde->set_ded_star(true);
         }
     }
-    ot->set_final(t.SupportsFinal() && rg.NextSmallNumber() < 3);
+    ot->set_final((t.SupportsFinal() || t.IsMergeTreeFamily()) && rg.NextSmallNumber() < 3);
     return 0;
 }
 
