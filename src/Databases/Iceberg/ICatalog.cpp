@@ -10,7 +10,7 @@ namespace DB::ErrorCodes
 namespace Iceberg
 {
 
-std::string ICatalog::TableMetadata::getPath() const
+std::string TableMetadata::getPath() const
 {
     if (!with_location)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data location was not requested");
@@ -21,7 +21,7 @@ std::string ICatalog::TableMetadata::getPath() const
         throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unexpected path format: {}", location);
 }
 
-const DB::NamesAndTypesList & ICatalog::TableMetadata::getSchema() const
+const DB::NamesAndTypesList & TableMetadata::getSchema() const
 {
     if (!with_schema)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data location was not requested");

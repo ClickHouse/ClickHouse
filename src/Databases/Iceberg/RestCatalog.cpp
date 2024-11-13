@@ -38,20 +38,6 @@ RestCatalog::RestCatalog(
 {
 }
 
-bool RestCatalog::existsCatalog() const
-{
-    try
-    {
-        createReadBuffer(namespaces_endpoint)->eof();
-        return true;
-    }
-    catch (...)
-    {
-        DB::tryLogCurrentException(log);
-        return false;
-    }
-}
-
 bool RestCatalog::empty() const
 {
     try
@@ -108,7 +94,7 @@ RestCatalog::Tables RestCatalog::getTables() const
     return tables;
 }
 
-void RestCatalog::getNamespacesRecursive(const Namespace & base_namespace, Namespaces & result, StopCondition stop_condition) const
+void RestCatalog::getNamespacesRecursive(const std::string & base_namespace, Namespaces & result, StopCondition stop_condition) const
 {
     auto namespaces = getNamespaces(base_namespace);
     result.reserve(result.size() + namespaces.size());
@@ -194,16 +180,19 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
         if (current_namespace_array->size() == 0)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Expected namespace array to be non-empty");
 
-        const int current_namespace_idx = static_cast<int>(current_namespace_array->size()) - 1;
-        const auto current_namespace = current_namespace_array->get(current_namespace_idx).extract<String>();
-        const auto full_namespace = base_namespace.empty() ? current_namespace : base_namespace + "." + current_namespace;
+        const int idx = static_cast<int>(current_namespace_array->size()) - 1;
+        const auto current_namespace = current_namespace_array->get(idx).extract<String>();
+        const auto full_namespace = base_namespace.empty()
+            ? current_namespace
+            : base_namespace + "." + current_namespace;
+
         namespaces.push_back(full_namespace);
     }
 
     return namespaces;
 }
 
-RestCatalog::Tables RestCatalog::getTables(const Namespace & base_namespace, size_t limit) const
+RestCatalog::Tables RestCatalog::getTables(const std::string & base_namespace, size_t limit) const
 {
     const auto endpoint = std::string(namespaces_endpoint) + "/" + base_namespace + "/tables";
     auto buf = createReadBuffer(endpoint);

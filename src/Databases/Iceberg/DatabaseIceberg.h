@@ -10,6 +10,10 @@
 namespace DB
 {
 
+/// TODO:
+/// - http basic auth for catalog
+/// - tests with azure, hdfs, local
+
 class DatabaseIceberg final : public IDatabase, WithContext
 {
 public:
@@ -20,7 +24,6 @@ public:
         ASTPtr database_engine_definition_);
 
     String getEngineName() const override { return "Iceberg"; }
-    String getMetadataPath() const override { return ""; }
 
     bool canContainMergeTreeTables() const override { return false; }
     bool canContainDistributedTables() const override { return false; }
@@ -44,13 +47,18 @@ protected:
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr context, bool throw_on_error) const override;
 
 private:
+    /// Iceberg Catalog url.
     const std::string url;
+    /// SETTINGS from CREATE query.
     const DatabaseIcebergSettings settings;
+    /// Database engine definition taken from initial CREATE DATABASE query.
     const ASTPtr database_engine_definition;
+
     const LoggerPtr log;
 
     std::unique_ptr<Iceberg::ICatalog> getCatalog(ContextPtr context_) const;
     std::shared_ptr<StorageObjectStorage::Configuration> getConfiguration() const;
+    std::string getStorageEndpointForTable(const Iceberg::TableMetadata & table_metadata) const;
 };
 
 }

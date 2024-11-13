@@ -101,6 +101,13 @@ std::shared_ptr<StorageObjectStorage::Configuration> DatabaseIceberg::getConfigu
     }
 }
 
+std::string DatabaseIceberg::getStorageEndpointForTable(const Iceberg::TableMetadata & table_metadata) const
+{
+    return std::filesystem::path(settings[DatabaseIcebergSetting::storage_endpoint].value)
+        / table_metadata.getPath()
+        / "";
+}
+
 bool DatabaseIceberg::empty() const
 {
     return getCatalog(Context::getGlobalContextInstance())->empty();
@@ -115,7 +122,7 @@ bool DatabaseIceberg::isTableExist(const String & name, ContextPtr context_) con
 StoragePtr DatabaseIceberg::tryGetTable(const String & name, ContextPtr context_) const
 {
     auto catalog = getCatalog(context_);
-    auto table_metadata = Iceberg::ICatalog::TableMetadata().withLocation().withSchema();
+    auto table_metadata = Iceberg::TableMetadata().withLocation().withSchema();
     auto [namespace_name, table_name] = parseTableName(name);
 
     if (!catalog->tryGetTableMetadata(namespace_name, table_name, table_metadata))
@@ -126,17 +133,16 @@ StoragePtr DatabaseIceberg::tryGetTable(const String & name, ContextPtr context_
     ASTs args = storage->engine->arguments->children;
 
     /// Replace Iceberg Catalog endpoint with storage path endpoint of requested table.
-    auto table_endpoint = std::filesystem::path(settings[DatabaseIcebergSetting::storage_endpoint].value)
-        / table_metadata.getPath()
-        / "";
+    auto table_endpoint = getStorageEndpointForTable(table_metadata);
+    args[0] = std::make_shared<ASTLiteral>(table_endpoint);
 
-    args[0] = std::make_shared<ASTLiteral>(table_endpoint.string());
-
-    LOG_TEST(log, "Using table endpoint: {}", table_endpoint.string());
+    LOG_TEST(log, "Using table endpoint: {}", table_endpoint);
 
     const auto columns = ColumnsDescription(table_metadata.getSchema());
     const auto configuration = getConfiguration();
-    /// with_table_structure = false: because there will be no table structure in table definition AST.
+
+    /// with_table_structure = false: because there will be
+    /// no table structure in table definition AST.
     StorageObjectStorage::Configuration::initialize(*configuration, args, context_, /* with_table_structure */false);
 
     return std::make_shared<StorageObjectStorage>(
@@ -184,8 +190,9 @@ ASTPtr DatabaseIceberg::getCreateTableQueryImpl(
     bool /* throw_on_error */) const
 {
     auto catalog = getCatalog(context_);
-    auto table_metadata = Iceberg::ICatalog::TableMetadata().withLocation().withSchema();
-    auto [namespace_name, table_name] = parseTableName(name);
+    auto table_metadata = Iceberg::TableMetadata().withLocation().withSchema();
+
+    const auto [namespace_name, table_name] = parseTableName(name);
     catalog->getTableMetadata(namespace_name, table_name, table_metadata);
 
     auto create_table_query = std::make_shared<ASTCreateQuery>();
@@ -203,7 +210,6 @@ ASTPtr DatabaseIceberg::getCreateTableQueryImpl(
     columns_declare_list->set(columns_declare_list->columns, columns_expression_list);
     create_table_query->set(create_table_query->columns_list, columns_declare_list);
 
-    /// init create query.
     create_table_query->setTable(name);
     create_table_query->setDatabase(getDatabaseName());
 
@@ -217,10 +223,14 @@ ASTPtr DatabaseIceberg::getCreateTableQueryImpl(
 
     auto storage_engine_arguments = storage->engine->arguments;
     if (storage_engine_arguments->children.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected number of arguments: {}", storage_engine_arguments->children.size());
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Unexpected number of arguments: {}",
+            storage_engine_arguments->children.size());
+    }
 
-    auto table_endpoint = std::filesystem::path(settings[DatabaseIcebergSetting::storage_endpoint].value) / table_metadata.getPath();
-    storage_engine_arguments->children[0] = std::make_shared<ASTLiteral>(table_endpoint.string());
+    auto table_endpoint = getStorageEndpointForTable(table_metadata);
+    storage_engine_arguments->children[0] = std::make_shared<ASTLiteral>(table_endpoint);
 
     return create_table_query;
 }
