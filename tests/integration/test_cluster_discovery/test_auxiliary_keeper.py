@@ -9,20 +9,21 @@ from .common import check_on_cluster
 cluster = ClickHouseCluster(__file__)
 
 shard_configs = {
-    "node0": "config/config.xml",
-    "node1": "config/config_shard1.xml",
-    "node2": "config/config.xml",
-    "node3": "config/config_shard3.xml",
-    "node4": "config/config.xml",
-    "node_observer": "config/config_observer.xml",
+    "node0": ["config/config.xml", "config/macros0.xml"],
+    "node1": ["config/config_shard1.xml", "config/macros1.xml"],
+    "node2": ["config/config.xml", "config/macros2.xml"],
+    "node3": ["config/config_shard3.xml", "config/macros3.xml"],
+    "node4": ["config/config.xml", "config/macros4.xml"],
+    "node_observer": ["config/config_observer.xml", "config/macros_o.xml"],
 }
 
 nodes = {
     node_name: cluster.add_instance(
         node_name,
-        main_configs=[shard_config, "config/config_discovery_path.xml"],
+        main_configs=shard_config + ["config/config_discovery_path_auxiliary_keeper.xml", "config/config_keepers.xml"],
         stay_alive=True,
         with_zookeeper=True,
+        #use_keeper=False,
     )
     for node_name, shard_config in shard_configs.items()
 }
@@ -37,7 +38,7 @@ def start_cluster():
         cluster.shutdown()
 
 
-def test_cluster_discovery_startup_and_stop(start_cluster):
+def test_cluster_discovery_with_auxiliary_keeper_startup_and_stop(start_cluster):
     """
     Start cluster, check nodes count in system.clusters,
     then stop/start some nodes and check that it (dis)appeared in cluster.
@@ -52,9 +53,8 @@ def test_cluster_discovery_startup_and_stop(start_cluster):
         msg="Wrong shard_num count in cluster",
     )
 
-    # `- 1` because one node is an observer
-    total_shards = len(set(shard_configs.values())) - 1
-    total_nodes = len(nodes) - 1
+    total_shards = 3
+    total_nodes = 5
 
     check_nodes_count(
         [nodes["node0"], nodes["node2"], nodes["node_observer"]], total_nodes
@@ -65,7 +65,7 @@ def test_cluster_discovery_startup_and_stop(start_cluster):
 
     # test ON CLUSTER query
     nodes["node0"].query(
-        "CREATE TABLE tbl ON CLUSTER 'test_auto_cluster' (x UInt64) ENGINE = MergeTree ORDER BY x"
+        "CREATE TABLE tbl ON CLUSTER 'test_auto_cluster' (x UInt64) ENGINE = ReplicatedMergeTree('zookeeper2:/clickhouse/{shard}/tbl', '{replica}') ORDER BY x"
     )
     nodes["node0"].query("INSERT INTO tbl VALUES (1)")
     nodes["node1"].query("INSERT INTO tbl VALUES (2)")
