@@ -742,7 +742,6 @@ namespace
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 datetime.reset();
-
                 StringRef str_ref = col_str->getDataAt(i);
                 Pos cur = str_ref.data;
                 Pos end = str_ref.data + str_ref.size;
@@ -769,12 +768,14 @@ namespace
                         {
                             res_data[i] = 0;
                             error = true;
+                            break;
                         }
                         else if constexpr (error_handling == ErrorHandling::Null)
                         {
                             res_data[i] = 0;
                             col_null_map->getData()[i] = 1;
                             error = true;
+                            break;
                         }
                         else
                         {
