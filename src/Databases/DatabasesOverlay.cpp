@@ -484,7 +484,8 @@ void DatabasesOverlay::waitTableStarted(const String & name) const
 
         try
         {
-            return db->waitTableStarted(name);
+            db->waitTableStarted(name);
+            return
         }
         catch (...)
         {
@@ -508,7 +509,8 @@ void DatabasesOverlay::waitDatabaseStarted() const
 
         try
         {
-            return db->waitDatabaseStarted();
+            db->waitDatabaseStarted();
+            return;
         }
         catch (...)
         {
@@ -531,7 +533,8 @@ void DatabasesOverlay::stopLoading()
 
         try
         {
-            return db->stopLoading();
+            db->stopLoading();
+            return;
         }
         catch (...)
         {
