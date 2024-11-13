@@ -6,7 +6,7 @@
 #ifndef NDEBUG
 /// TODO: Review. The exceptions in non-const members might need to go elsewhere
 /// And we might need a better approach to load data from disk that isn't push_back in a loop with conditionals
-// just to compress it later
+/// just to compress it later
 /// Also, the only reason we have 2 vectors after compression is for debugging, so that should be simplified
 #    define DEBUG_MARKS 1
 #endif
@@ -325,7 +325,7 @@ bool MergeTreeIndexGranularity::tryCompressInMemory()
         return compressed;
 
     const size_t fixed_granularity_value = marks_rows_partial_sums[0];
-    if (fixed_granularity_value <= 1)
+    if (fixed_granularity_value == 0)
         return compressed;
     const size_t current_size = marks_rows_partial_sums.size();
 
@@ -357,10 +357,11 @@ bool MergeTreeIndexGranularity::tryCompressInMemory()
     compressed = current_size - uncompressed;
     uncompressed_marks_partial_sums.resize(compressed_size);
     uncompressed_marks_partial_sums[0] = fixed_granularity_value;
-    std::memcpy(&uncompressed_marks_partial_sums[1], &marks_rows_partial_sums[compressed], uncompressed * sizeof(size_t));
+    if (uncompressed)
+        std::memcpy(&uncompressed_marks_partial_sums[1], &marks_rows_partial_sums[compressed], uncompressed * sizeof(size_t));
 
 #ifndef DEBUG_MARKS
-    marks_rows_partial_sums.clear();
+    std::vector<size_t>().swap(marks_rows_partial_sums);
 #endif
 
     return true;
