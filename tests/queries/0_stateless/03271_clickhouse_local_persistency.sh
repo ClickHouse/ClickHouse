@@ -4,7 +4,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-cd "${CLICKHOUSE_TMP}"
+cd "${CLICKHOUSE_TMP}" || exit
 rm -rf "clickhouse.local"
 rm -f test
 
