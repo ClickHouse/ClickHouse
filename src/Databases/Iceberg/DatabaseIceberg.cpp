@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypeString.h>
 
 #include <Storages/ObjectStorage/S3/Configuration.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/StorageNull.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
@@ -29,6 +28,7 @@ namespace DatabaseIcebergSetting
 {
     extern const DatabaseIcebergSettingsString storage_endpoint;
     extern const DatabaseIcebergSettingsDatabaseIcebergCatalogType catalog_type;
+    extern const DatabaseIcebergSettingsDatabaseIcebergStorageType storage_type;
 }
 
 namespace ErrorCodes
@@ -38,6 +38,10 @@ namespace ErrorCodes
 
 namespace
 {
+    /// Parse a string, containing at least one dot, into a two substrings:
+    /// A.B.C.D.E -> A.B.C.D and E, where
+    /// `A.B.C.D` is a table "namespace".
+    /// `E` is a table name.
     std::pair<std::string, std::string> parseTableName(const std::string & name)
     {
         auto pos = name.rfind('.');
@@ -74,41 +78,73 @@ std::unique_ptr<Iceberg::ICatalog> DatabaseIceberg::getCatalog(ContextPtr contex
     }
 }
 
+std::shared_ptr<StorageObjectStorage::Configuration> DatabaseIceberg::getConfiguration() const
+{
+    switch (settings[DatabaseIcebergSetting::storage_type].value)
+    {
+        case DB::DatabaseIcebergStorageType::S3:
+        {
+            return std::make_shared<StorageS3IcebergConfiguration>();
+        }
+        case DB::DatabaseIcebergStorageType::Azure:
+        {
+            return std::make_shared<StorageAzureIcebergConfiguration>();
+        }
+        case DB::DatabaseIcebergStorageType::HDFS:
+        {
+            return std::make_shared<StorageHDFSIcebergConfiguration>();
+        }
+        case DB::DatabaseIcebergStorageType::Local:
+        {
+            return std::make_shared<StorageLocalIcebergConfiguration>();
+        }
+    }
+}
+
 bool DatabaseIceberg::empty() const
 {
-    return getCatalog(Context::getGlobalContextInstance())->existsCatalog();
+    return getCatalog(Context::getGlobalContextInstance())->empty();
 }
 
 bool DatabaseIceberg::isTableExist(const String & name, ContextPtr context_) const
 {
-    auto [namespace_name, table_name] = parseTableName(name);
+    const auto [namespace_name, table_name] = parseTableName(name);
     return getCatalog(context_)->existsTable(namespace_name, table_name);
 }
 
 StoragePtr DatabaseIceberg::tryGetTable(const String & name, ContextPtr context_) const
 {
     auto catalog = getCatalog(context_);
-    auto table_metadata = Iceberg::ICatalog::TableMetadata().withLocation();
+    auto table_metadata = Iceberg::ICatalog::TableMetadata().withLocation().withSchema();
     auto [namespace_name, table_name] = parseTableName(name);
+
     if (!catalog->tryGetTableMetadata(namespace_name, table_name, table_metadata))
         return nullptr;
 
-    auto configuration = std::make_shared<StorageS3IcebergConfiguration>();
+    /// Take database engine definition AST as base.
     ASTStorage * storage = database_engine_definition->as<ASTStorage>();
     ASTs args = storage->engine->arguments->children;
 
-    auto table_endpoint = std::filesystem::path(settings[DatabaseIcebergSetting::storage_endpoint].value) / table_metadata.getPath();
+    /// Replace Iceberg Catalog endpoint with storage path endpoint of requested table.
+    auto table_endpoint = std::filesystem::path(settings[DatabaseIcebergSetting::storage_endpoint].value)
+        / table_metadata.getPath()
+        / "";
+
     args[0] = std::make_shared<ASTLiteral>(table_endpoint.string());
 
-    LOG_TEST(log, "Using endpoint: {}", table_endpoint.string());
+    LOG_TEST(log, "Using table endpoint: {}", table_endpoint.string());
 
-    StorageObjectStorage::Configuration::initialize(*configuration, args, context_, false);
+    const auto columns = ColumnsDescription(table_metadata.getSchema());
+    const auto configuration = getConfiguration();
+    /// with_table_structure = false: because there will be no table stucture in table definition AST.
+    StorageObjectStorage::Configuration::initialize(*configuration, args, context_, /* with_table_structure */false);
+
     return std::make_shared<StorageObjectStorage>(
         configuration,
         configuration->createObjectStorage(context_, /* is_readonly */ false),
         context_,
         StorageID(getDatabaseName(), name),
-        /* columns */ColumnsDescription{},
+        /* columns */columns,
         /* constraints */ConstraintsDescription{},
         /* comment */"",
         getFormatSettings(context_),
@@ -117,16 +153,17 @@ StoragePtr DatabaseIceberg::tryGetTable(const String & name, ContextPtr context_
 
 DatabaseTablesIteratorPtr DatabaseIceberg::getTablesIterator(
     ContextPtr context_,
-    const FilterByNameFunction & /* filter_by_table_name */,
+    const FilterByNameFunction & filter_by_table_name,
     bool /* skip_not_loaded */) const
 {
     Tables tables;
     auto catalog = getCatalog(context_);
     for (const auto & table_name : catalog->getTables())
     {
-        DataTypePtr type = std::make_shared<DataTypeString>();
-        auto columns = ColumnsDescription{NamesAndTypesList({NameAndTypePair(std::string("a"), type)})};
-        auto storage = std::make_shared<StorageNull>(StorageID(getDatabaseName(), table_name), columns, ConstraintsDescription{}, "");
+        if (filter_by_table_name && !filter_by_table_name(table_name))
+            continue;
+
+        auto storage = tryGetTable(table_name, context_);
         tables.emplace(table_name, storage);
     }
 

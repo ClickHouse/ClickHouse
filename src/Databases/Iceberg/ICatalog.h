@@ -21,6 +21,8 @@ public:
 
     virtual bool existsCatalog() const = 0;
 
+    virtual bool empty() const = 0;
+
     virtual Tables getTables() const = 0;
 
     virtual bool existsTable(

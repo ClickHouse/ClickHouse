@@ -5,6 +5,7 @@
 #include <Databases/DatabasesCommon.h>
 #include <Databases/Iceberg/DatabaseIcebergSettings.h>
 #include <Databases/Iceberg/ICatalog.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 namespace DB
 {
@@ -49,7 +50,7 @@ private:
     const LoggerPtr log;
 
     std::unique_ptr<Iceberg::ICatalog> getCatalog(ContextPtr context_) const;
-
+    std::shared_ptr<StorageObjectStorage::Configuration> getConfiguration() const;
 };
 
 }

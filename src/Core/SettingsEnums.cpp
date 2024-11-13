@@ -287,4 +287,11 @@ IMPLEMENT_SETTING_ENUM(
 IMPLEMENT_SETTING_ENUM(DatabaseIcebergCatalogType, ErrorCodes::BAD_ARGUMENTS,
                        {{"rest", DatabaseIcebergCatalogType::REST}})
 
+IMPLEMENT_SETTING_ENUM(DatabaseIcebergStorageType, ErrorCodes::BAD_ARGUMENTS,
+                       {{"s3", DatabaseIcebergStorageType::S3},
+                       {"azure", DatabaseIcebergStorageType::Azure},
+                       {"hdfs", DatabaseIcebergStorageType::HDFS},
+                       {"local", DatabaseIcebergStorageType::Local},
+                   })
+
 }

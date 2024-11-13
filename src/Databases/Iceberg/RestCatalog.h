@@ -25,6 +25,8 @@ public:
 
     bool existsCatalog() const override;
 
+    bool empty() const override;
+
     Tables getTables() const override;
 
     bool existsTable(const std::string & namespace_name, const std::string & table_name) const override;
@@ -48,15 +50,16 @@ private:
 
     Poco::URI::QueryParameters createParentNamespaceParams(const std::string & base_namespace) const;
 
-    void getNamespacesRecursive(const Namespace & base_namespace, Namespaces & result) const;
+    using StopCondition = std::function<bool(const std::string & namespace_name)>;
+    void getNamespacesRecursive(const Namespace & base_namespace, Namespaces & result, StopCondition stop_condition) const;
 
     Namespaces getNamespaces(const Namespace & base_namespace) const;
 
     Namespaces parseNamespaces(DB::ReadBuffer & buf, const std::string & base_namespace) const;
 
-    Tables getTables(const Namespace & base_namespace) const;
+    Tables getTables(const Namespace & base_namespace, size_t limit = 0) const;
 
-    Tables parseTables(DB::ReadBuffer & buf, const std::string & base_namespace) const;
+    Tables parseTables(DB::ReadBuffer & buf, const std::string & base_namespace, size_t limit) const;
 
     bool getTableMetadataImpl(
         const std::string & namespace_name,

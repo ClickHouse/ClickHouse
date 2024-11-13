@@ -367,4 +367,15 @@ enum class DatabaseIcebergCatalogType : uint8_t
 };
 
 DECLARE_SETTING_ENUM(DatabaseIcebergCatalogType)
+
+enum class DatabaseIcebergStorageType : uint8_t
+{
+    S3,
+    Azure,
+    Local,
+    HDFS,
+};
+
+DECLARE_SETTING_ENUM(DatabaseIcebergStorageType)
+
 }

@@ -18,7 +18,7 @@ std::string ICatalog::TableMetadata::getPath() const
     if (location.starts_with("s3://"))
         return location.substr(std::strlen("s3://"));
     else
-        throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unsupported location type: {}", location);
+        throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unexpected path format: {}", location);
 }
 
 const DB::NamesAndTypesList & ICatalog::TableMetadata::getSchema() const

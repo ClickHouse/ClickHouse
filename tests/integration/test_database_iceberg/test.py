@@ -22,7 +22,9 @@ from pyiceberg.types import (
     StructType,
     TimestampType,
 )
-
+import pyarrow as pa
+import random
+from datetime import datetime, timedelta
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance, is_arm
 from helpers.s3_tools import get_file_contents, list_s3_objects, prepare_s3_bucket
 from helpers.test_tools import TSV, csv_compare
@@ -34,9 +36,11 @@ BASE_URL_LOCAL_RAW = "http://localhost:8182"
 CATALOG_NAME = "demo"
 
 DEFAULT_SCHEMA = Schema(
-    NestedField(field_id=1, name="datetime", field_type=TimestampType(), required=True),
-    NestedField(field_id=2, name="symbol", field_type=StringType(), required=True),
-    NestedField(field_id=3, name="bid", field_type=FloatType(), required=False),
+    NestedField(
+        field_id=1, name="datetime", field_type=TimestampType(), required=False
+    ),
+    NestedField(field_id=2, name="symbol", field_type=StringType(), required=False),
+    NestedField(field_id=3, name="bid", field_type=DoubleType(), required=False),
     NestedField(field_id=4, name="ask", field_type=DoubleType(), required=False),
     NestedField(
         field_id=5,
@@ -52,11 +56,15 @@ DEFAULT_SCHEMA = Schema(
         required=False,
     ),
 )
+
+DEFAULT_CREATE_TABLE = "CREATE TABLE {}.`{}.{}`\\n(\\n    `datetime` Nullable(DateTime64(6)),\\n    `symbol` Nullable(String),\\n    `bid` Nullable(Float64),\\n    `ask` Nullable(Float64),\\n    `details` Tuple(created_by Nullable(String))\\n)\\nENGINE = Iceberg(\\'http://minio:9000/warehouse/data\\', \\'minio\\', \\'[HIDDEN]\\')\n"
+
 DEFAULT_PARTITION_SPEC = PartitionSpec(
     PartitionField(
         source_id=1, field_id=1000, transform=DayTransform(), name="datetime_day"
     )
 )
+
 DEFAULT_SORT_ORDER = SortOrder(SortField(source_id=2, transform=IdentityTransform()))
 
 
@@ -68,13 +76,13 @@ def list_namespaces():
         raise Exception(f"Failed to list namespaces: {response.status_code}")
 
 
-def load_catalog_impl():
+def load_catalog_impl(started_cluster):
     return load_catalog(
         CATALOG_NAME,
         **{
             "uri": BASE_URL_LOCAL_RAW,
             "type": "rest",
-            "s3.endpoint": f"http://minio:9000",
+            "s3.endpoint": f"http://localhost:9002",
             "s3.access-key-id": "minio",
             "s3.secret-access-key": "minio123",
         },
@@ -89,13 +97,23 @@ def create_table(
     partition_spec=DEFAULT_PARTITION_SPEC,
     sort_order=DEFAULT_SORT_ORDER,
 ):
-    catalog.create_table(
+    return catalog.create_table(
         identifier=f"{namespace}.{table}",
         schema=schema,
-        location=f"s3://warehouse",
+        location=f"s3://warehouse/data",
         partition_spec=partition_spec,
         sort_order=sort_order,
     )
+
+
+def generate_record():
+    return {
+        "datetime": datetime.now(),
+        "symbol": str("kek"),
+        "bid": round(random.uniform(100, 200), 2),
+        "ask": round(random.uniform(200, 300), 2),
+        "details": {"created_by": "Alice Smith"},
+    }
 
 
 def create_clickhouse_iceberg_database(started_cluster, node, name):
@@ -103,9 +121,25 @@ def create_clickhouse_iceberg_database(started_cluster, node, name):
         f"""
 DROP DATABASE IF EXISTS {name};
 CREATE DATABASE {name} ENGINE = Iceberg('{BASE_URL}', 'minio', 'minio123')
-SETTINGS catalog_type = 'rest', storage_endpoint = 'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/'
+SETTINGS catalog_type = 'rest', storage_endpoint = 'http://minio:9000/'
     """
     )
+
+
+def print_objects():
+    minio_client = Minio(
+        f"localhost:9002",
+        access_key="minio",
+        secret_key="minio123",
+        secure=False,
+        http_client=urllib3.PoolManager(cert_reqs="CERT_NONE"),
+    )
+
+    objects = list(minio_client.list_objects("warehouse", "", recursive=True))
+    names = [x.object_name for x in objects]
+    names.sort()
+    for name in names:
+        print(f"Found object: {name}")
 
 
 @pytest.fixture(scope="module")
@@ -125,7 +159,6 @@ def started_cluster():
 
         # TODO: properly wait for container
         time.sleep(10)
-        #cluster.minio_client.make_bucket("warehouse")
 
         yield cluster
 
@@ -133,7 +166,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_simple(started_cluster):
+def test_list_tables(started_cluster):
     node = started_cluster.instances["node1"]
 
     root_namespace = "clickhouse"
@@ -142,7 +175,7 @@ def test_simple(started_cluster):
     namespace_1_tables = ["tableA", "tableB"]
     namespace_2_tables = ["tableC", "tableD"]
 
-    catalog = load_catalog_impl()
+    catalog = load_catalog_impl(started_cluster)
 
     for namespace in [namespace_1, namespace_2]:
         catalog.create_namespace(namespace)
@@ -182,13 +215,13 @@ def test_simple(started_cluster):
         ).strip()
     )
 
-    expected = f"CREATE TABLE {CATALOG_NAME}.`{namespace_2}.tableC`\\n(\\n    `datetime` DateTime64(6),\\n    `symbol` String,\\n    `bid` Nullable(Float32),\\n    `ask` Nullable(Float64),\\n    `details` Tuple(created_by Nullable(String))\\n)\\nENGINE = Iceberg(\\'http://None:9001/warehouse\\', \\'minio\\', \\'[HIDDEN]\\')\n"
+    expected = DEFAULT_CREATE_TABLE.format(CATALOG_NAME, namespace_2, "tableC")
     assert expected == node.query(
         f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace_2}.tableC`"
     )
 
 
-def test_different_namespaces(started_cluster):
+def test_many_namespaces(started_cluster):
     node = started_cluster.instances["node1"]
     namespaces = [
         "A",
@@ -202,11 +235,9 @@ def test_different_namespaces(started_cluster):
         "B.CC",
     ]
     tables = ["A", "B", "C", "D", "E", "F"]
-    catalog = load_catalog_impl()
+    catalog = load_catalog_impl(started_cluster)
 
     for namespace in namespaces:
-        # if namespace in catalog.list_namespaces()["namesoaces"]:
-        #    catalog.drop_namespace(namespace)
         catalog.create_namespace(namespace)
         for table in tables:
             create_table(catalog, namespace, table)
@@ -221,3 +252,43 @@ def test_different_namespaces(started_cluster):
                     f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' and name = '{table_name}'"
                 )
             )
+
+
+def test_select(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = "test_list_tables"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    namespace = f"{root_namespace}.A.B.C"
+    namespaces_to_create = [
+        root_namespace,
+        f"{root_namespace}.A",
+        f"{root_namespace}.A.B",
+        f"{root_namespace}.A.B.C",
+    ]
+
+    catalog = load_catalog_impl(started_cluster)
+
+    for namespace in namespaces_to_create:
+        catalog.create_namespace(namespace)
+        assert len(catalog.list_tables(namespace)) == 0
+
+    table = create_table(catalog, namespace, table_name)
+
+    num_rows = 10
+    data = [generate_record() for _ in range(num_rows)]
+    df = pa.Table.from_pylist(data)
+    table.append(df)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    expected = DEFAULT_CREATE_TABLE.format(CATALOG_NAME, namespace, table_name)
+    assert expected == node.query(
+        f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.{table_name}`"
+    )
+
+    assert num_rows == int(
+        node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}`")
+    )

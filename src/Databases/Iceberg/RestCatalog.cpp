@@ -52,6 +52,30 @@ bool RestCatalog::existsCatalog() const
     }
 }
 
+bool RestCatalog::empty() const
+{
+    try
+    {
+        bool found_table = false;
+        auto stop_condition = [&](const std::string & namespace_name) -> bool
+        {
+            const auto tables = getTables(namespace_name, /* limit */1);
+            found_table = !tables.empty();
+            return found_table;
+        };
+
+        Namespaces namespaces;
+        getNamespacesRecursive("", namespaces, stop_condition);
+
+        return found_table;
+    }
+    catch (...)
+    {
+        DB::tryLogCurrentException(log);
+        return true;
+    }
+}
+
 DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(const std::string & endpoint, const Poco::URI::QueryParameters & params) const
 {
     const auto & context = getContext();
@@ -73,7 +97,7 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(const std::string &
 RestCatalog::Tables RestCatalog::getTables() const
 {
     Namespaces namespaces;
-    getNamespacesRecursive("", namespaces);
+    getNamespacesRecursive("", namespaces, {});
 
     Tables tables;
     for (const auto & current_namespace : namespaces)
@@ -84,7 +108,7 @@ RestCatalog::Tables RestCatalog::getTables() const
     return tables;
 }
 
-void RestCatalog::getNamespacesRecursive(const Namespace & base_namespace, Namespaces & result) const
+void RestCatalog::getNamespacesRecursive(const Namespace & base_namespace, Namespaces & result, StopCondition stop_condition) const
 {
     auto namespaces = getNamespaces(base_namespace);
     result.reserve(result.size() + namespaces.size());
@@ -93,7 +117,11 @@ void RestCatalog::getNamespacesRecursive(const Namespace & base_namespace, Names
     for (const auto & current_namespace : namespaces)
     {
         chassert(current_namespace.starts_with(base_namespace));
-        getNamespacesRecursive(current_namespace, result);
+
+        if (stop_condition && stop_condition(current_namespace))
+            break;
+
+        getNamespacesRecursive(current_namespace, result, stop_condition);
     }
 }
 
@@ -175,14 +203,14 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
     return namespaces;
 }
 
-RestCatalog::Tables RestCatalog::getTables(const Namespace & base_namespace) const
+RestCatalog::Tables RestCatalog::getTables(const Namespace & base_namespace, size_t limit) const
 {
     const auto endpoint = std::string(namespaces_endpoint) + "/" + base_namespace + "/tables";
     auto buf = createReadBuffer(endpoint);
-    return parseTables(*buf, base_namespace);
+    return parseTables(*buf, base_namespace, limit);
 }
 
-RestCatalog::Tables RestCatalog::parseTables(DB::ReadBuffer & buf, const std::string & base_namespace) const
+RestCatalog::Tables RestCatalog::parseTables(DB::ReadBuffer & buf, const std::string & base_namespace, size_t limit) const
 {
     if (buf.eof())
         return {};
@@ -201,9 +229,12 @@ RestCatalog::Tables RestCatalog::parseTables(DB::ReadBuffer & buf, const std::st
     Tables tables;
     for (size_t i = 0; i < identifiers_object->size(); ++i)
     {
-        auto current_table_json = identifiers_object->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
-        auto table_name = current_table_json->get("name").extract<String>();
+        const auto current_table_json = identifiers_object->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
+        const auto table_name = current_table_json->get("name").extract<String>();
+
         tables.push_back(base_namespace + "." + table_name);
+        if (limit && tables.size() >= limit)
+            break;
     }
     return tables;
 }
