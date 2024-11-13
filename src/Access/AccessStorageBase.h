@@ -36,9 +36,12 @@ protected:
         UUID id,
         String name,
         AccessEntityType type,
-        AccessEntityPtr entity,
-        bool replaced)
+        AccessEntityPtr entity)
     {
+        auto attached_count = CurrentMetrics::get(CurrentMetrics::AttachedAccessEntity) + 1;
+        if (entityLimitReached(attached_count))
+            throwTooManyEntities(attached_count);
+
         auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
 
         auto & entry = entries_by_id[id];
@@ -50,8 +53,7 @@ protected:
 
         changes_notifier.onEntityAdded(id, entity);
 
-        if (!replaced)
-            CurrentMetrics::add(CurrentMetrics::AttachedAccessEntity);
+        CurrentMetrics::add(CurrentMetrics::AttachedAccessEntity);
     }
 
     void removeEntry(

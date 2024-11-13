@@ -141,7 +141,7 @@ bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & 
     }
 
     /// Do insertion.
-    insertEntry(id, name, type, new_entity, name_collision || id_collision);
+    insertEntry(id, name, type, new_entity);
 
     return true;
 }

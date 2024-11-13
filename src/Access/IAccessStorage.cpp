@@ -241,15 +241,7 @@ std::vector<UUID> IAccessStorage::insert(const std::vector<AccessEntityPtr> & mu
             id = generateRandomID();
 
         if (insert(id, multiple_entities[0], replace_if_exists, throw_if_exists))
-        {
-            UInt64 attached_count = CurrentMetrics::get(CurrentMetrics::AttachedAccessEntity);
-            if (entityLimitReached(attached_count))
-            {
-                remove(id, throw_if_exists = false);
-                throwTooManyEntities(attached_count);
-            }
             return {id};
-        }
         return {};
     }
 
@@ -269,13 +261,6 @@ std::vector<UUID> IAccessStorage::insert(const std::vector<AccessEntityPtr> & mu
 
             if (insert(id, entity, replace_if_exists, throw_if_exists))
             {
-                UInt64 attached_count = CurrentMetrics::get(CurrentMetrics::AttachedAccessEntity);
-
-                if (entityLimitReached(attached_count))
-                {
-                    remove(id, throw_if_exists = false);
-                    throwTooManyEntities(attached_count);
-                }
                 successfully_inserted.push_back(entity);
                 new_ids.push_back(id);
             }

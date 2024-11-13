@@ -609,10 +609,10 @@ bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & ne
     }
 
     /// Do insertion.
+    insertEntry(id, name, type, new_entity);
+
     if (write_on_disk)
         writeAccessEntityToDisk(id, *new_entity);
-
-    insertEntry(id, name, type, new_entity, name_collision || id_collision);
 
     return true;
 }
