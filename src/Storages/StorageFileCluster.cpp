@@ -66,12 +66,14 @@ StorageFileCluster::StorageFileCluster(
 
 void StorageFileCluster::updateQueryToSendIfNeeded(DB::ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const DB::ContextPtr & context)
 {
-    ASTExpressionList * expression_list = extractTableFunctionArgumentsFromSelectQuery(query);
-    if (!expression_list)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function fileCluster, got '{}'", queryToString(query));
+    auto * table_function = extractTableFunctionFromSelectQuery(query);
 
     TableFunctionFileCluster::updateStructureAndFormatArgumentsIfNeeded(
-        expression_list->children, storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription(), format_name, context);
+        table_function,
+        storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription(),
+        format_name,
+        context
+    );
 }
 
 RemoteQueryExecutor::Extension StorageFileCluster::getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const

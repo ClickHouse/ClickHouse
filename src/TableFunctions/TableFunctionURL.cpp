@@ -2,21 +2,33 @@
 
 #include "registerTableFunctions.h"
 #include <Access/Common/AccessFlags.h>
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Core/Settings.h>
+#include <Formats/FormatFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/StorageURLCluster.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <Analyzer/FunctionNode.h>
-#include <Analyzer/TableFunctionNode.h>
-#include <Interpreters/parseColumnsListForTableFunction.h>
-#include <Formats/FormatFactory.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromVector.h>
+
+
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool use_parallel_replicas;
+    extern const SettingsBool parallel_replicas_for_cluster_engines;
+    extern const SettingsString cluster_for_parallel_replicas;
+    extern const SettingsParallelReplicasMode parallel_replicas_mode;
+}
 
 std::vector<size_t> TableFunctionURL::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
 {
@@ -120,6 +132,46 @@ StoragePtr TableFunctionURL::getStorage(
     const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
     const std::string & table_name, const String & compression_method_) const
 {
+    if (global_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        return std::make_shared<StorageURL>(
+            source,
+            StorageID(getDatabaseName(), table_name),
+            format_,
+            std::nullopt /*format settings*/,
+            columns,
+            ConstraintsDescription{},
+            String{},
+            global_context,
+            compression_method_,
+            configuration.headers,
+            configuration.http_method,
+            nullptr,
+            /*distributed_processing*/ true);
+    }
+
+    const auto & settings = global_context->getSettingsRef();
+    auto parallel_replicas_cluster_name = settings[Setting::cluster_for_parallel_replicas].toString();
+    auto can_use_parallel_replicas = settings[Setting::use_parallel_replicas]
+        && settings[Setting::parallel_replicas_for_cluster_engines]
+        && settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
+        && !parallel_replicas_cluster_name.empty();
+
+    if (can_use_parallel_replicas)
+    {
+        LOG_DEBUG(&Poco::Logger::get("TableFunctionURL"), "TableFunctionURL::getStorage wrapped to cluster version");
+        return std::make_shared<StorageURLCluster>(
+            global_context,
+            settings[Setting::cluster_for_parallel_replicas],
+            filename,
+            format,
+            compression_method,
+            StorageID(getDatabaseName(), table_name),
+            getActualTableStructure(global_context, /* is_insert_query */ true),
+            ConstraintsDescription{},
+            configuration);
+    }
+
     return std::make_shared<StorageURL>(
         source,
         StorageID(getDatabaseName(), table_name),
