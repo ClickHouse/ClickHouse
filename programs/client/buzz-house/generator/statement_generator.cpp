@@ -1235,11 +1235,21 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
                        + table_modify_setting + table_remove_setting + add_projection + remove_projection + materialize_projection
                        + clear_projection + add_constraint + remove_constraint + detach_partition + 1))
             {
+                const uint32_t nopt2 = rg.NextSmallNumber();
                 sql_query_grammar::PartitionExpr * pexpr = ati->mutable_detach_partition();
 
-                if (table_has_partitions && rg.NextSmallNumber() < 9)
+                if (table_has_partitions && nopt2 < 5)
                 {
-                    pexpr->set_partition(fc.TableGetRandomPartition("parts", dname, tname));
+                    uint32_t partition_id = 0;
+
+                    fc.TableGetRandomPartitionOrPart<uint32_t>("parts", dname, tname, partition_id);
+                    pexpr->set_partition(partition_id);
+                }
+                else if (table_has_partitions && nopt2 < 9)
+                {
+                    buf.resize(0);
+                    fc.TableGetRandomPartitionOrPart<std::string>("parts", dname, tname, buf);
+                    pexpr->set_part(buf);
                 }
                 else
                 {
@@ -1255,11 +1265,21 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
                        + table_modify_setting + table_remove_setting + add_projection + remove_projection + materialize_projection
                        + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition + 1))
             {
+                const uint32_t nopt2 = rg.NextSmallNumber();
                 sql_query_grammar::PartitionExpr * pexpr = ati->mutable_drop_partition();
 
-                if (table_has_partitions && rg.NextSmallNumber() < 9)
+                if (table_has_partitions && nopt2 < 5)
                 {
-                    pexpr->set_partition(fc.TableGetRandomPartition("parts", dname, tname));
+                    uint32_t partition_id = 0;
+
+                    fc.TableGetRandomPartitionOrPart<uint32_t>("parts", dname, tname, partition_id);
+                    pexpr->set_partition(partition_id);
+                }
+                else if (table_has_partitions && nopt2 < 9)
+                {
+                    buf.resize(0);
+                    fc.TableGetRandomPartitionOrPart<std::string>("parts", dname, tname, buf);
+                    pexpr->set_part(buf);
                 }
                 else
                 {
@@ -1275,12 +1295,22 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
                        + table_modify_setting + table_remove_setting + add_projection + remove_projection + materialize_projection
                        + clear_projection + add_constraint + remove_constraint + detach_partition + drop_detached_partition + 1))
             {
+                const uint32_t nopt2 = rg.NextSmallNumber();
                 sql_query_grammar::PartitionExpr * pexpr = ati->mutable_drop_detached_partition();
-                const bool table_has_detached_partitions = t.IsMergeTreeFamily() && fc.TableHasPartitions("detached_parts", dname, tname);
+                const bool table_has_detached_partitions = fc.TableHasPartitions("detached_parts", dname, tname);
 
-                if (table_has_detached_partitions && rg.NextSmallNumber() < 9)
+                if (table_has_detached_partitions && nopt2 < 5)
                 {
-                    pexpr->set_partition(fc.TableGetRandomPartition("detached_parts", dname, tname));
+                    uint32_t partition_id = 0;
+
+                    fc.TableGetRandomPartitionOrPart<uint32_t>("detached_parts", dname, tname, partition_id);
+                    pexpr->set_partition(partition_id);
+                }
+                else if (table_has_detached_partitions && nopt2 < 9)
+                {
+                    buf.resize(0);
+                    fc.TableGetRandomPartitionOrPart<std::string>("detached_parts", dname, tname, buf);
+                    pexpr->set_part(buf);
                 }
                 else
                 {
@@ -1297,9 +1327,11 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
                        + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition + drop_detached_partition
                        + forget_partition + 1))
             {
+                uint32_t partition_id = 0;
                 sql_query_grammar::PartitionExpr * pexpr = ati->mutable_forget_partition();
 
-                pexpr->set_partition(fc.TableGetRandomPartition("parts", dname, tname));
+                fc.TableGetRandomPartitionOrPart<uint32_t>("parts", dname, tname, partition_id);
+                pexpr->set_partition(partition_id);
             }
             else if (
                 attach_partition
@@ -1311,12 +1343,22 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
                        + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition + drop_detached_partition
                        + forget_partition + attach_partition + 1))
             {
+                const uint32_t nopt2 = rg.NextSmallNumber();
                 sql_query_grammar::PartitionExpr * pexpr = ati->mutable_attach_partition();
-                const bool table_has_detached_partitions = t.IsMergeTreeFamily() && fc.TableHasPartitions("detached_parts", dname, tname);
+                const bool table_has_detached_partitions = fc.TableHasPartitions("detached_parts", dname, tname);
 
-                if (table_has_detached_partitions && rg.NextSmallNumber() < 9)
+                if (table_has_detached_partitions && nopt2 < 5)
                 {
-                    pexpr->set_partition(fc.TableGetRandomPartition("detached_parts", dname, tname));
+                    uint32_t partition_id = 0;
+
+                    fc.TableGetRandomPartitionOrPart<uint32_t>("detached_parts", dname, tname, partition_id);
+                    pexpr->set_partition(partition_id);
+                }
+                else if (table_has_detached_partitions && nopt2 < 9)
+                {
+                    buf.resize(0);
+                    fc.TableGetRandomPartitionOrPart<std::string>("detached_parts", dname, tname, buf);
+                    pexpr->set_part(buf);
                 }
                 else
                 {
@@ -1333,12 +1375,14 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
                        + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition + drop_detached_partition
                        + forget_partition + attach_partition + move_partition_to + 1))
             {
+                uint32_t partition_id = 0;
                 sql_query_grammar::AttachPartitionFrom * apf = ati->mutable_move_partition_to();
                 sql_query_grammar::PartitionExpr * pexpr = apf->mutable_partition();
                 sql_query_grammar::ExprSchemaTable * est2 = apf->mutable_est();
                 const SQLTable & t2 = rg.PickRandomlyFromVector(FilterCollection<SQLTable>(attached_tables));
 
-                pexpr->set_partition(fc.TableGetRandomPartition("parts", dname, tname));
+                fc.TableGetRandomPartitionOrPart<uint32_t>("parts", dname, tname, partition_id);
+                pexpr->set_partition(partition_id);
                 if (t2.db)
                 {
                     est2->mutable_database()->set_database("d" + std::to_string(t2.db->dname));
@@ -1355,10 +1399,12 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
                        + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition + drop_detached_partition
                        + forget_partition + attach_partition + move_partition_to + clear_column_partition + 1))
             {
+                uint32_t partition_id = 0;
                 sql_query_grammar::ClearColumnInPartition * ccip = ati->mutable_clear_column_partition();
                 sql_query_grammar::PartitionExpr * pexpr = ccip->mutable_partition();
 
-                pexpr->set_partition(fc.TableGetRandomPartition("parts", dname, tname));
+                fc.TableGetRandomPartitionOrPart<uint32_t>("parts", dname, tname, partition_id);
+                pexpr->set_partition(partition_id);
                 ccip->mutable_col()->set_column("c" + std::to_string(rg.PickKeyRandomlyFromMap(t.cols)));
             }
             else if (
@@ -1375,7 +1421,10 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
 
                 if (table_has_partitions && rg.NextSmallNumber() < 9)
                 {
-                    fp->mutable_partition()->set_partition(fc.TableGetRandomPartition("parts", dname, tname));
+                    uint32_t partition_id = 0;
+
+                    fc.TableGetRandomPartitionOrPart<uint32_t>("parts", dname, tname, partition_id);
+                    fp->mutable_partition()->set_partition(partition_id);
                 }
                 fp->set_fname(t.freeze_counter++);
             }
@@ -1391,8 +1440,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
                        + unfreeze_partition + 1))
             {
                 sql_query_grammar::FreezePartition * fp = ati->mutable_unfreeze_partition();
-                const uint32_t fname = rg.PickKeyRandomlyFromMap(t.frozen_partitions);
-                const uint32_t partition_name = t.frozen_partitions[fname];
+                const uint32_t fname = rg.PickKeyRandomlyFromMap(t.frozen_partitions), partition_name = t.frozen_partitions[fname];
 
                 if (partition_name != 0)
                 {
@@ -1411,10 +1459,12 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
                        + forget_partition + attach_partition + move_partition_to + clear_column_partition + freeze_partition
                        + unfreeze_partition + clear_index_partition + 1))
             {
+                uint32_t partition_id = 0;
                 sql_query_grammar::ClearIndexInPartition * ccip = ati->mutable_clear_index_partition();
                 sql_query_grammar::PartitionExpr * pexpr = ccip->mutable_partition();
 
-                pexpr->set_partition(fc.TableGetRandomPartition("parts", dname, tname));
+                fc.TableGetRandomPartitionOrPart<uint32_t>("parts", dname, tname, partition_id);
+                pexpr->set_partition(partition_id);
                 ccip->mutable_idx()->set_index("i" + std::to_string(rg.PickKeyRandomlyFromMap(t.idxs)));
             }
             else

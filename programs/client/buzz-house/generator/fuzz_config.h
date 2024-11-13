@@ -273,12 +273,25 @@ public:
         return false;
     }
 
-    uint32_t TableGetRandomPartition(const std::string & sys_table, const std::string & database, const std::string & table)
+    template <typename T>
+    void TableGetRandomPartitionOrPart(const std::string & sys_table, const std::string & database, const std::string & table, T & res)
     {
         //system.parts doesn't support sampling, so pick up a random part with a window function
         buf.resize(0);
         buf += "SELECT z.y FROM (SELECT (row_number() OVER () - 1) AS x, \"";
-        buf += (sys_table == "parts") ? "partition" : "partition_id";
+        if constexpr (std::is_same<T, uint32_t>::value)
+        {
+            buf += (sys_table == "parts") ? "partition" : "partition_id";
+            buf += "::UInt32";
+        }
+        else if constexpr (std::is_same<T, std::string>::value)
+        {
+            buf += "name";
+        }
+        else
+        {
+            assert(0);
+        }
         buf += "\" AS y FROM system.";
         buf += sys_table;
         buf += " WHERE ";
@@ -303,16 +316,26 @@ public:
         buf += table;
         buf += "') INTO OUTFILE '";
         buf += fuzz_out.generic_string();
-        buf += "' TRUNCATE FORMAT CSV;";
+        buf += "' TRUNCATE FORMAT RawBlob;";
         this->ProcessServerQuery(buf);
 
-        std::ifstream infile(fuzz_out);
-        buf.resize(0);
-        if (std::getline(infile, buf))
+        if constexpr (std::is_same<T, uint32_t>::value)
         {
-            return static_cast<uint32_t>(std::stoul(buf));
+            res = 0;
         }
-        return 0;
+        else if constexpr (std::is_same<T, std::string>::value)
+        {
+            res.resize(0);
+        }
+        std::ifstream infile(fuzz_out, std::ios::in | std::ios::binary);
+        if constexpr (std::is_same<T, uint32_t>::value)
+        {
+            infile.read(reinterpret_cast<char *>(&res), sizeof(uint32_t));
+        }
+        else
+        {
+            std::getline(infile, res);
+        }
     }
 };
 
