@@ -1425,6 +1425,8 @@ def test_shards_distributed(started_cluster, mode, processing_threads):
                 "keeper_path": keeper_path,
                 "s3queue_processing_threads_num": processing_threads,
                 "s3queue_buckets": shards_num,
+                "polling_max_timeout_ms": 1000,
+                "polling_backoff_ms": 0,
             },
         )
         i += 1
