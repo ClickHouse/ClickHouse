@@ -12,9 +12,11 @@
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ColumnNode.h>
+#include <ranges>
 
 namespace DB
 {
+
 namespace Setting
 {
     extern const SettingsBool force_grouping_standard_compatibility;
@@ -26,6 +28,9 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
+
+template <typename Value>
+using QueryTreeNodePtrWithHashMapIgnoreAliases = std::unordered_map<QueryTreeNodeWithHash<QueryTreeNodePtr, /*compare_aliases*/ false>, Value>;
 
 namespace
 {
@@ -42,7 +47,7 @@ class GroupingFunctionResolveVisitor : public InDepthQueryTreeVisitorWithContext
 {
 public:
     GroupingFunctionResolveVisitor(GroupByKind group_by_kind_,
-        QueryTreeNodePtrWithHashMap<size_t> aggregation_key_to_index_,
+        QueryTreeNodePtrWithHashMapIgnoreAliases<size_t> aggregation_key_to_index_,
         ColumnNumbersList grouping_sets_keys_indices_,
         ContextPtr context_)
         : InDepthQueryTreeVisitorWithContext(std::move(context_))
@@ -67,9 +72,12 @@ public:
         {
             auto it = aggregation_key_to_index.find(argument);
             if (it == aggregation_key_to_index.end())
+            {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Argument {} of GROUPING function is not a part of GROUP BY clause",
-                    argument->formatASTForErrorMessage());
+                    "Argument {} of GROUPING function is not a part of GROUP BY clause [{}]",
+                    argument->formatASTForErrorMessage(),
+                    fmt::join(aggregation_key_to_index | std::views::transform([](const auto & e) { return e.first.node->formatASTForErrorMessage(); }), ", "));
+            }
 
             arguments_indexes.push_back(it->second);
         }
@@ -133,7 +141,7 @@ public:
 
 private:
     GroupByKind group_by_kind;
-    QueryTreeNodePtrWithHashMap<size_t> aggregation_key_to_index;
+    QueryTreeNodePtrWithHashMapIgnoreAliases<size_t> aggregation_key_to_index;
     ColumnNumbersList grouping_sets_keys_indexes;
 };
 
@@ -142,7 +150,7 @@ void resolveGroupingFunctions(QueryTreeNodePtr & query_node, ContextPtr context)
     auto & query_node_typed = query_node->as<QueryNode &>();
 
     size_t aggregation_node_index = 0;
-    QueryTreeNodePtrWithHashMap<size_t> aggregation_key_to_index;
+    QueryTreeNodePtrWithHashMapIgnoreAliases<size_t> aggregation_key_to_index;
 
     std::vector<QueryTreeNodes> grouping_sets_used_aggregation_keys_list;
 
