@@ -645,6 +645,8 @@ size_t FileSegment::getSizeForBackgroundDownloadUnlocked(const FileSegmentGuard:
         return 0;
     }
 
+    chassert(downloaded_size <= range().size());
+
     const size_t background_download_max_file_segment_size = cache->getBackgroundDownloadMaxFileSegmentSize();
     size_t desired_size;
     if (downloaded_size >= background_download_max_file_segment_size)
@@ -652,7 +654,9 @@ size_t FileSegment::getSizeForBackgroundDownloadUnlocked(const FileSegmentGuard:
     else
         desired_size = FileCacheUtils::roundUpToMultiple(background_download_max_file_segment_size, cache->getBoundaryAlignment());
 
-    chassert(desired_size <= range().size());
+    desired_size = std::min(desired_size, range().size());
+    chassert(desired_size >= downloaded_size);
+
     return desired_size - downloaded_size;
 }
 
