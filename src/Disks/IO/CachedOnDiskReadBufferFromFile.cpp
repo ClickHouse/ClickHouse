@@ -399,6 +399,15 @@ CachedOnDiskReadBufferFromFile::ReadFromFileSegmentStatePtr CachedOnDiskReadBuff
                 auto downloader_id = file_segment.getOrSetDownloader();
                 if (downloader_id == FileSegment::getCallerId())
                 {
+                    SCOPE_EXIT(
+                    {
+                        if (result->read_type != ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE
+                            && file_segment.isDownloader())
+                        {
+                            file_segment.resetDownloader();
+                        }
+                    });
+
                     if (canStartFromCache(offset, file_segment))
                     {
                         ///                      segment{k}
