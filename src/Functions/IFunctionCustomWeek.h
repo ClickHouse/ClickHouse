@@ -60,10 +60,10 @@ public:
         {
 
             const auto & left_date_time = left.safeGet<DateTime64>();
-            TransformDateTime64<Transform> transformer_left(left_date_time.getScale());
+            TransformDateTime64<typename Transform::FactorTransform> transformer_left(left_date_time.getScale());
 
             const auto & right_date_time = right.safeGet<DateTime64>();
-            TransformDateTime64<Transform> transformer_right(right_date_time.getScale());
+            TransformDateTime64<typename Transform::FactorTransform> transformer_right(right_date_time.getScale());
 
             return transformer_left.execute(left_date_time.getValue(), date_lut)
                     == transformer_right.execute(right_date_time.getValue(), date_lut)
