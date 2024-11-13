@@ -2922,8 +2922,8 @@ message Insert {
 message PartitionExpr {
     oneof partition_oneof {
         string part = 1;
-        uint32 partition = 2;
-        uint32 partition_id = 3;
+        string partition = 2;
+        string partition_id = 3;
         bool all = 4;
         bool tuple = 5;
     }

@@ -138,7 +138,7 @@ public:
     std::map<uint32_t, SQLColumn> cols, staged_cols;
     std::map<uint32_t, SQLIndex> idxs, staged_idxs;
     std::set<uint32_t> projs, staged_projs, constrs, staged_constrs;
-    std::map<uint32_t, uint32_t> frozen_partitions;
+    std::map<uint32_t, std::string> frozen_partitions;
 
     size_t RealNumberOfColumns() const
     {

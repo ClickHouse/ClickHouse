@@ -2773,12 +2773,13 @@ CONV_FN(PartitionExpr, pexpr)
             ret += "'";
             break;
         case PartitionType::kPartition:
-            ret += "PARTITION ";
-            ret += std::to_string(pexpr.partition());
+            ret += "PARTITION '";
+            ret += pexpr.partition();
+            ret += "'";
             break;
         case PartitionType::kPartitionId:
             ret += "PARTITION ID '";
-            ret += std::to_string(pexpr.partition_id());
+            ret += pexpr.partition_id();
             ret += "'";
             break;
         case PartitionType::kAll:

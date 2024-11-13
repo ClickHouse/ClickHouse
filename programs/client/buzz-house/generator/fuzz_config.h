@@ -245,12 +245,20 @@ public:
         }
     }
 
-    bool TableHasPartitions(const std::string & sys_table, const std::string & database, const std::string & table)
+    template <bool IsDetached>
+    bool TableHasPartitions(const std::string & database, const std::string & table)
     {
         buf.resize(0);
-        buf += "SELECT count() FROM system.";
-        buf += sys_table;
-        buf += " WHERE ";
+        buf += "SELECT count() FROM \"system\".\"";
+        if constexpr (IsDetached)
+        {
+            buf += "detached_parts";
+        }
+        else
+        {
+            buf += "parts";
+        }
+        buf += "\" WHERE ";
         if (database != "")
         {
             buf += "\"database\" = '";
@@ -273,28 +281,34 @@ public:
         return false;
     }
 
-    template <typename T>
-    void TableGetRandomPartitionOrPart(const std::string & sys_table, const std::string & database, const std::string & table, T & res)
+    template <bool IsDetached, bool IsPartition>
+    void TableGetRandomPartitionOrPart(const std::string & database, const std::string & table, std::string & res)
     {
         //system.parts doesn't support sampling, so pick up a random part with a window function
         buf.resize(0);
         buf += "SELECT z.y FROM (SELECT (row_number() OVER () - 1) AS x, \"";
-        if constexpr (std::is_same<T, uint32_t>::value)
+        if constexpr (IsPartition)
         {
-            buf += (sys_table == "parts") ? "partition" : "partition_id";
-            buf += "::UInt32";
-        }
-        else if constexpr (std::is_same<T, std::string>::value)
-        {
-            buf += "name";
+            buf += "partition";
+            if constexpr (IsDetached)
+            {
+                buf += "_id";
+            }
         }
         else
         {
-            assert(0);
+            buf += "name";
         }
-        buf += "\" AS y FROM system.";
-        buf += sys_table;
-        buf += " WHERE ";
+        buf += "\" AS y FROM \"system\".\"";
+        if constexpr (IsDetached)
+        {
+            buf += "detached_parts";
+        }
+        else
+        {
+            buf += "parts";
+        }
+        buf += "\" WHERE ";
         if (database != "")
         {
             buf += "\"database\" = '";
@@ -303,9 +317,16 @@ public:
         }
         buf += "\"table\" = '";
         buf += table;
-        buf += "') AS z WHERE z.x = (SELECT rand() % (max2(count(), 1)::Int) FROM system.";
-        buf += sys_table;
-        buf += " WHERE ";
+        buf += "') AS z WHERE z.x = (SELECT rand() % (max2(count(), 1)::Int) FROM \"system\".\"";
+        if constexpr (IsDetached)
+        {
+            buf += "detached_parts";
+        }
+        else
+        {
+            buf += "parts";
+        }
+        buf += "\" WHERE ";
         if (database != "")
         {
             buf += "\"database\" = '";
@@ -319,23 +340,9 @@ public:
         buf += "' TRUNCATE FORMAT RawBlob;";
         this->ProcessServerQuery(buf);
 
-        if constexpr (std::is_same<T, uint32_t>::value)
-        {
-            res = 0;
-        }
-        else if constexpr (std::is_same<T, std::string>::value)
-        {
-            res.resize(0);
-        }
-        std::ifstream infile(fuzz_out, std::ios::in | std::ios::binary);
-        if constexpr (std::is_same<T, uint32_t>::value)
-        {
-            infile.read(reinterpret_cast<char *>(&res), sizeof(uint32_t));
-        }
-        else
-        {
-            std::getline(infile, res);
-        }
+        res.resize(0);
+        std::ifstream infile(fuzz_out, std::ios::in);
+        std::getline(infile, res);
     }
 };
 
