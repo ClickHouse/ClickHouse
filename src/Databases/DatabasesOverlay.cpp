@@ -485,7 +485,7 @@ void DatabasesOverlay::waitTableStarted(const String & name) const
         try
         {
             db->waitTableStarted(name);
-            return
+            return;
         }
         catch (...)
         {
