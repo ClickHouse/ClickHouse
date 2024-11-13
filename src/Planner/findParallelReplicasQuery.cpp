@@ -164,12 +164,14 @@ QueryTreeNodePtr replaceTablesWithDummyTables(QueryTreeNodePtr query, const Cont
     return query->cloneAndReplace(visitor.replacement_map);
 }
 
+#ifdef DUMP_PARALLEL_REPLICAS_QUERY_CANDIDATES
 static void dumpStack(const std::vector<const QueryNode *> & stack)
 {
     std::ranges::reverse_view rv{stack};
     for (const auto * node : rv)
         LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "{}\n{}", CityHash_v1_0_2::Hash128to64(node->getTreeHash()), node->dumpTree());
 }
+#endif
 
 /// Find the best candidate for parallel replicas execution by verifying query plan.
 /// If query plan has only Expression, Filter or Join steps, we can execute it fully remotely and check the next query.
@@ -179,9 +181,9 @@ const QueryNode * findQueryForParallelReplicas(
     const std::unordered_map<const QueryNode *, const QueryPlan::Node *> & mapping,
     const Settings & settings)
 {
-    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "{}", StackTrace().toString());
-
+#ifdef DUMP_PARALLEL_REPLICAS_QUERY_CANDIDATES
     dumpStack(stack);
+#endif
 
     struct Frame
     {
@@ -209,12 +211,6 @@ const QueryNode * findQueryForParallelReplicas(
         if (it == mapping.end())
             break;
 
-        LOG_DEBUG(
-            getLogger(__PRETTY_FUNCTION__),
-            "{} : {}",
-            CityHash_v1_0_2::Hash128to64(it->first->getTreeHash()),
-            it->second->step->getName());
-
         std::stack<Frame> nodes_to_check;
         nodes_to_check.push({.node = it->second, .inside_join = false});
         bool can_distribute_full_node = true;
@@ -226,8 +222,6 @@ const QueryNode * findQueryForParallelReplicas(
             nodes_to_check.pop();
             const auto & children = next_node_to_check->children;
             auto * step = next_node_to_check->step.get();
-
-            LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Step {} children={}", step->getName(), children.size());
 
             if (children.empty())
             {
@@ -345,9 +339,6 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
             new_stack.pop_back();
         }
     }
-
-    if (res)
-        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Chosen query: {}", res->dumpTree());
     return res;
 }
 
