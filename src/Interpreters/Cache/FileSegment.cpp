@@ -652,6 +652,7 @@ size_t FileSegment::getSizeForBackgroundDownloadUnlocked(const FileSegmentGuard:
     else
         desired_size = FileCacheUtils::roundUpToMultiple(background_download_max_file_segment_size, cache->getBoundaryAlignment());
 
+    chassert(desired_size <= range().size());
     return desired_size - downloaded_size;
 }
 
