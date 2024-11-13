@@ -1,8 +1,9 @@
 #pragma once
 
-#include "config.h"
 #include <memory>
+#include <optional>
 #include <unordered_map>
+#include "config.h"
 
 #if USE_AVRO /// StorageIceberg depending on Avro to parse metadata with Avro format.
 
@@ -188,25 +189,22 @@ public:
 
     std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String & data_path) const override
     {
-        auto it = initial_schemas.find(data_path);
-        if (it != initial_schemas.end())
-            return it->second;
-        return {};
+        auto version_if_outdated = getSchemaVersionByFileIfOutdated(data_path);
+        return version_if_outdated.has_value() ? schema_processor.getClickhouseTableSchemaById(version_if_outdated.value()) : nullptr;
     }
 
     std::shared_ptr<const ActionsDAG> getSchemaTransformer(const String & data_path) const override
     {
-        auto it = schema_transformers.find(data_path);
-        if (it != schema_transformers.end())
-            return it->second;
-        return {};
+        auto version_if_outdated = getSchemaVersionByFileIfOutdated(data_path);
+        return version_if_outdated.has_value()
+            ? schema_processor.getSchemaTransformationDagByIds(version_if_outdated.value(), current_schema_id)
+            : nullptr;
     }
 
     bool supportsExternalMetadataChange() const override { return true; }
 
 private:
-    mutable std::unordered_map<String, std::shared_ptr<NamesAndTypesList>> initial_schemas;
-    mutable std::unordered_map<String, std::shared_ptr<const ActionsDAG>> schema_transformers;
+    mutable std::unordered_map<String, Int32> schema_id_by_data_file;
 
     const ObjectStoragePtr object_storage;
     const ConfigurationObserverPtr configuration;
@@ -220,6 +218,18 @@ private:
     mutable IcebergSchemaProcessor schema_processor;
     NamesAndTypesList schema;
     LoggerPtr log;
+
+    std::optional<Int32> getSchemaVersionByFileIfOutdated(String data_path) const
+    {
+        auto schema_id = schema_id_by_data_file.find(data_path);
+        if (schema_id == schema_id_by_data_file.end())
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find schema version for data file: {}", data_path);
+        }
+        if (schema_id->second == current_schema_id)
+            return std::nullopt;
+        return std::optional{schema_id->second};
+    }
 };
 
 }

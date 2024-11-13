@@ -594,7 +594,6 @@ Strings IcebergMetadata::getDataFiles() const
         manifest_files.emplace_back(std::filesystem::path(configuration_ptr->getPath()) / "metadata" / filename);
     }
 
-    std::map<String, Int32> files;
     LOG_TEST(log, "Collect data files");
     for (const auto & manifest_file : manifest_files)
     {
@@ -728,23 +727,21 @@ Strings IcebergMetadata::getDataFiles() const
             if (ManifestEntryStatus(status) == ManifestEntryStatus::DELETED)
             {
                 LOG_TEST(log, "Processing delete file for path: {}", file_path);
-                chassert(files.contains(file_path) == 0);
+                chassert(schema_id_by_data_file.contains(file_path) == 0);
             }
             else
             {
                 LOG_TEST(log, "Processing data file for path: {}", file_path);
-                files[file_path] = schema_object_id;
+                schema_id_by_data_file[file_path] = schema_object_id;
             }
         }
 
         schema_processor.addIcebergTableSchema(schema_object);
     }
 
-    for (const auto & [file_path, schema_object_id] : files)
+    for (const auto & [file_path, schema_object_id] : schema_id_by_data_file)
     {
         data_files.emplace_back(file_path);
-        initial_schemas[file_path] = schema_processor.getClickhouseTableSchemaById(schema_object_id);
-        schema_transformers[file_path] = schema_processor.getSchemaTransformationDagByIds(schema_object_id, current_schema_id);
     }
     return data_files;
 }
