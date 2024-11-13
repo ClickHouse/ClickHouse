@@ -318,7 +318,7 @@ void LimitTransform::splitChunk(PortsData & data)
     }
 
     /// Check if other rows in current block equals to last one in limit
-    /// when WITH TIES is enabled and rows read is less than offset + limit.
+    /// when rows read >= offset + limit.
     if (with_ties && offset + limit <= rows_read && length)
     {
         UInt64 current_row_num = start + length;
