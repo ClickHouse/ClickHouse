@@ -1,7 +1,6 @@
-#include <Storages/extractTableFunctionArgumentsFromSelectQuery.h>
+#include <Storages/extractTableFunctionFromSelectQuery.h>
 
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -11,7 +10,7 @@
 namespace DB
 {
 
-ASTExpressionList * extractTableFunctionArgumentsFromSelectQuery(ASTPtr & query)
+ASTFunction * extractTableFunctionFromSelectQuery(ASTPtr & query)
 {
     auto * select_query = query->as<ASTSelectQuery>();
     if (!select_query || !select_query->tables())
@@ -22,8 +21,7 @@ ASTExpressionList * extractTableFunctionArgumentsFromSelectQuery(ASTPtr & query)
     if (!table_expression->table_function)
         return nullptr;
 
-    auto * table_function = table_expression->table_function->as<ASTFunction>();
-    return table_function->arguments->as<ASTExpressionList>();
+    return table_expression->table_function->as<ASTFunction>();
 }
 
 }
