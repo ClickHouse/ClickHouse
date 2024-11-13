@@ -65,8 +65,8 @@ String StorageObjectStorage::getPathSample(StorageInMemoryMetadata metadata, Con
         {} // file_progress_callback
     );
 
-    if (dynamic_cast<StorageObjectStorageSource::KeysIterator *>(file_iterator.get()))
-        return "";
+    if (!configuration->isArchive() && !configuration->isPathWithGlobs() && !local_distributed_processing)
+        return configuration->getPath();
 
     if (auto file = file_iterator->next(0))
         return file->getPath();
