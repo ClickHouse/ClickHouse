@@ -608,7 +608,7 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
                 if (null_map)
                     filterBlock(right_key_columns_for_filter, *null_map);
 
-                if (right_key_columns_for_filter)
+                if (onexpr_idx == 0 && right_key_columns_for_filter)
                     data->right_key_columns_for_filter.emplace_back(std::move(right_key_columns_for_filter));
             }
 
