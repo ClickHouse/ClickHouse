@@ -80,7 +80,7 @@ void validateFilters(const QueryTreeNodePtr & query_node)
         validateFilter(query_node_typed.getQualify(), "QUALIFY", query_node);
 }
 
-static bool areColumnSourcesEqual(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs)
+bool areColumnSourcesEqual(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs)
 {
     using NodePair = std::pair<const IQueryTreeNode *, const IQueryTreeNode *>;
     std::vector<NodePair> nodes_to_process;

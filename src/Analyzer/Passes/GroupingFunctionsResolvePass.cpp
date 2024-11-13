@@ -92,12 +92,16 @@ public:
             auto it = aggregation_key_to_index.find(argument);
             if (it == aggregation_key_to_index.end())
             {
+                auto format_node_with_type = [](const auto & e)
+                {
+                    return fmt::format("{} :: {}", e->formatASTForErrorMessage(), e->getResultType()->getName());
+                };
+
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Argument {} of GROUPING function is not a part of GROUP BY clause [{}]",
-                    argument->formatASTForErrorMessage(),
-                    fmt::join(aggregation_key_to_index | std::views::transform([](const auto & e) { return e.first.node->formatASTForErrorMessage(); }), ", "));
+                    format_node_with_type(argument),
+                    fmt::join(aggregation_key_to_index | std::views::transform([&](const auto & e) { return format_node_with_type(e.first.node); }), ", "));
             }
-
             arguments_indexes.push_back(it->second);
         }
 
@@ -173,11 +177,19 @@ void resolveGroupingFunctions(QueryTreeNodePtr & query_node, ContextPtr context)
 
     std::vector<QueryTreeNodes> grouping_sets_used_aggregation_keys_list;
 
+    bool group_by_use_nulls = context->getSettingsRef()[Setting::group_by_use_nulls];
+    auto convert_to_nullable_if_needed = [group_by_use_nulls](QueryTreeNodePtr node) -> QueryTreeNodePtr
+    {
+        if (group_by_use_nulls)
+            node->convertToNullable();
+        return node;
+    };
+
     if (query_node_typed.hasGroupBy())
     {
         /// It is expected by execution layer that if there are only 1 grouping set it will be removed
         if (query_node_typed.isGroupByWithGroupingSets() && query_node_typed.getGroupBy().getNodes().size() == 1
-            && !context->getSettingsRef()[Setting::group_by_use_nulls])
+            && !group_by_use_nulls)
         {
             auto grouping_set_list_node = query_node_typed.getGroupBy().getNodes().front();
             auto & grouping_set_list_node_typed = grouping_set_list_node->as<ListNode &>();
@@ -191,34 +203,33 @@ void resolveGroupingFunctions(QueryTreeNodePtr & query_node, ContextPtr context)
             {
                 auto & grouping_set_keys_list_node_typed = grouping_set_keys_list_node->as<ListNode &>();
 
-                grouping_sets_used_aggregation_keys_list.emplace_back();
-                auto & grouping_sets_used_aggregation_keys = grouping_sets_used_aggregation_keys_list.back();
+                auto & grouping_sets_used_aggregation_keys = grouping_sets_used_aggregation_keys_list.emplace_back();
 
                 QueryTreeNodePtrWithHashSet used_keys_in_set;
 
                 for (auto & grouping_set_key_node : grouping_set_keys_list_node_typed.getNodes())
                 {
-                    if (used_keys_in_set.contains(grouping_set_key_node))
-                        continue;
-                    used_keys_in_set.insert(grouping_set_key_node);
-                    grouping_sets_used_aggregation_keys.push_back(grouping_set_key_node);
+                    auto node_to_insert = convert_to_nullable_if_needed(grouping_set_key_node);
 
-                    if (aggregation_key_to_index.contains(grouping_set_key_node))
+                    if (used_keys_in_set.contains(node_to_insert))
                         continue;
-                    aggregation_key_to_index.emplace(grouping_set_key_node, aggregation_node_index);
-                    ++aggregation_node_index;
+                    used_keys_in_set.insert(node_to_insert);
+                    grouping_sets_used_aggregation_keys.push_back(node_to_insert);
+
+                    const auto & [_, inserted] = aggregation_key_to_index.emplace(std::move(node_to_insert), aggregation_node_index);
+                    if (inserted)
+                        ++aggregation_node_index;
                 }
             }
         }
         else
         {
-            for (auto & group_by_key_node : query_node_typed.getGroupBy().getNodes())
+            for (const auto & group_by_key_node : query_node_typed.getGroupBy().getNodes())
             {
-                if (aggregation_key_to_index.contains(group_by_key_node))
-                    continue;
-
-                aggregation_key_to_index.emplace(group_by_key_node, aggregation_node_index);
-                ++aggregation_node_index;
+                auto node_to_insert = convert_to_nullable_if_needed(group_by_key_node);
+                const auto & [_, inserted] = aggregation_key_to_index.emplace(std::move(node_to_insert), aggregation_node_index);
+                if (inserted)
+                    ++aggregation_node_index;
             }
         }
     }
