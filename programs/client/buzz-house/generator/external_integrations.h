@@ -55,7 +55,6 @@ public:
 
     bool PerformIntegration(RandomGenerator & rg, const uint32_t tname, std::vector<InsertEntry> & entries) override
     {
-        bool res = true;
         const std::string str_tname = GetTableName(tname);
 
         buf.resize(0);
@@ -63,7 +62,7 @@ public:
         buf += str_tname;
         buf += ";";
 
-        if ((res = PerformQuery(buf)))
+        if (PerformQuery(buf))
         {
             buf.resize(0);
             buf += "CREATE TABLE ";
@@ -95,9 +94,9 @@ public:
                 assert(!entry.cname2.has_value());
             }
             buf += ");";
-            res &= PerformQuery(buf);
+            return PerformQuery(buf);
         }
-        return res;
+        return false;
     }
 
     ~ClickHouseIntegratedDatabase() override = default;

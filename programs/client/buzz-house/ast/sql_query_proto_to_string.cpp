@@ -3285,9 +3285,10 @@ CONV_FN(AlterTableItem, alter)
             PartitionExprToString(ret, alter.clear_column_partition().partition());
             break;
         case AlterType::kFreezePartition:
-            ret += "FREEZE ";
+            ret += "FREEZE";
             if (alter.freeze_partition().has_partition())
             {
+                ret += " ";
                 PartitionExprToString(ret, alter.freeze_partition().partition());
             }
             ret += " WITH NAME 'f";
@@ -3295,9 +3296,10 @@ CONV_FN(AlterTableItem, alter)
             ret += "'";
             break;
         case AlterType::kUnfreezePartition:
-            ret += "UNFREEZE ";
+            ret += "UNFREEZE";
             if (alter.unfreeze_partition().has_partition())
             {
+                ret += " ";
                 PartitionExprToString(ret, alter.unfreeze_partition().partition());
             }
             ret += " WITH NAME 'f";

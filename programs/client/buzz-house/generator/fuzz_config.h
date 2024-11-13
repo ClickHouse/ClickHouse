@@ -267,7 +267,12 @@ public:
         }
         buf += "\"table\" = '";
         buf += table;
-        buf += "' INTO OUTFILE '";
+        buf += "' AND \"partition";
+        if constexpr (IsDetached)
+        {
+            buf += "_id";
+        }
+        buf += "\" != 'tuple()' INTO OUTFILE '";
         buf += fuzz_out.generic_string();
         buf += "' TRUNCATE FORMAT CSV;";
         this->ProcessServerQuery(buf);
@@ -317,7 +322,12 @@ public:
         }
         buf += "\"table\" = '";
         buf += table;
-        buf += "') AS z WHERE z.x = (SELECT rand() % (max2(count(), 1)::Int) FROM \"system\".\"";
+        buf += "' AND \"partition";
+        if constexpr (IsDetached)
+        {
+            buf += "_id";
+        }
+        buf += "\" != 'tuple()') AS z WHERE z.x = (SELECT rand() % (max2(count(), 1)::Int) FROM \"system\".\"";
         if constexpr (IsDetached)
         {
             buf += "detached_parts";

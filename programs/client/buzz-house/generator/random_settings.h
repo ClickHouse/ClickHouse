@@ -40,6 +40,7 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
      { ret += std::to_string(rg.RandomInt<uint32_t>(0, std::thread::hardware_concurrency())); }},
     {"async_insert_use_adaptive_busy_timeout", TrueOrFalse},
     {"cast_keep_nullable", TrueOrFalse},
+    {"cast_string_to_dynamic_use_inference", TrueOrFalse},
     {"check_query_single_value_result", TrueOrFalse},
     {"checksum_on_read", TrueOrFalse},
     {"compile_aggregate_expressions", TrueOrFalse},
