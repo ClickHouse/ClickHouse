@@ -50,7 +50,10 @@ HostResolver::WeakPtr HostResolver::getWeakFromThis()
 }
 
 HostResolver::HostResolver(String host_, Poco::Timespan history_)
-    : HostResolver([](const String & host_to_resolve) { return DNSResolver::instance().resolveHostAllInOriginOrder(host_to_resolve); }, host_, history_)
+    : HostResolver(
+        [](const String & host_to_resolve) { return DNSResolver::instance().resolveHostAllInOriginOrder(host_to_resolve); },
+        host_,
+        history_)
 {}
 
 HostResolver::HostResolver(
