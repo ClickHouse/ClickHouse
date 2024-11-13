@@ -3216,11 +3216,21 @@ CONV_FN(AlterTableItem, alter)
             break;
         case AlterType::kMaterializeProjection:
             ret += "MATERIALIZE PROJECTION ";
-            ProjectionToString(ret, alter.materialize_projection());
+            ProjectionToString(ret, alter.materialize_projection().proj());
+            if (alter.materialize_projection().has_partition())
+            {
+                ret += " IN ";
+                PartitionExprToString(ret, alter.materialize_projection().partition());
+            }
             break;
         case AlterType::kClearProjection:
             ret += "CLEAR PROJECTION ";
-            ProjectionToString(ret, alter.clear_projection());
+            ProjectionToString(ret, alter.clear_projection().proj());
+            if (alter.clear_projection().has_partition())
+            {
+                ret += " IN ";
+                PartitionExprToString(ret, alter.clear_projection().partition());
+            }
             break;
         case AlterType::kAddConstraint:
             ret += "ADD ";

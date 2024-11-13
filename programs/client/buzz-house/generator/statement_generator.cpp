@@ -1188,7 +1188,13 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
                        + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + column_remove_setting
                        + table_modify_setting + table_remove_setting + add_projection + remove_projection + materialize_projection + 1))
             {
-                ati->mutable_materialize_projection()->set_projection("p" + std::to_string(rg.PickRandomlyFromSet(t.projs)));
+                sql_query_grammar::ProjectionInPartition * pip = ati->mutable_materialize_projection();
+
+                pip->mutable_proj()->set_projection("p" + std::to_string(rg.PickRandomlyFromSet(t.projs)));
+                if (t.IsMergeTreeFamily() && rg.NextBool())
+                {
+                    GenerateNextTablePartition<false>(rg, t, pip->mutable_partition());
+                }
             }
             else if (
                 clear_projection
@@ -1199,7 +1205,13 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
                        + table_modify_setting + table_remove_setting + add_projection + remove_projection + materialize_projection
                        + clear_projection + 1))
             {
-                ati->mutable_clear_projection()->set_projection("p" + std::to_string(rg.PickRandomlyFromSet(t.projs)));
+                sql_query_grammar::ProjectionInPartition * pip = ati->mutable_clear_projection();
+
+                pip->mutable_proj()->set_projection("p" + std::to_string(rg.PickRandomlyFromSet(t.projs)));
+                if (t.IsMergeTreeFamily() && rg.NextBool())
+                {
+                    GenerateNextTablePartition<false>(rg, t, pip->mutable_partition());
+                }
             }
             else if (
                 add_constraint

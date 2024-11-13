@@ -3074,6 +3074,11 @@ message IdxInPartition {
     optional PartitionExpr partition = 2;
 }
 
+message ProjectionInPartition {
+    required Projection proj = 1;
+    optional PartitionExpr partition = 2;
+}
+
 message RemoveColumnProperty {
     enum ColumnProperties {
         DEFAULT = 1;
@@ -3199,8 +3204,8 @@ message AlterTableItem {
         SettingList table_remove_setting = 24;
         ProjectionDef add_projection = 25;
         Projection remove_projection = 26;
-        Projection materialize_projection = 27;
-        Projection clear_projection = 28;
+        ProjectionInPartition materialize_projection = 27;
+        ProjectionInPartition clear_projection = 28;
         ConstraintDef add_constraint = 29;
         Constraint remove_constraint = 30;
         PartitionExpr detach_partition = 31;
