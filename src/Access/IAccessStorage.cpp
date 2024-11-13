@@ -27,7 +27,7 @@
 
 namespace CurrentMetrics
 {
-    extern const Metric AttachedUser;
+    extern const Metric AttachedAccessEntity;
 }
 
 namespace DB
@@ -214,7 +214,7 @@ std::optional<UUID> IAccessStorage::insert(const AccessEntityPtr & entity, bool 
 }
 
 
-IAccessStorage::InsertResult IAccessStorage::insert(const DB::UUID & id, const DB::AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id)
+bool IAccessStorage::insert(const DB::UUID & id, const DB::AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id)
 {
     return insertImpl(id, entity, replace_if_exists, throw_if_exists, conflicting_id);
 }
@@ -240,18 +240,13 @@ std::vector<UUID> IAccessStorage::insert(const std::vector<AccessEntityPtr> & mu
         else
             id = generateRandomID();
 
-        auto result = insert(id, multiple_entities[0], replace_if_exists, throw_if_exists);
-        if (result != IAccessStorage::InsertResult::ALREADY_EXISTS)
+        if (insert(id, multiple_entities[0], replace_if_exists, throw_if_exists))
         {
-            if (result == IAccessStorage::InsertResult::INSERTED)
+            UInt64 attached_count = CurrentMetrics::get(CurrentMetrics::AttachedAccessEntity);
+            if (entityLimitReached(attached_count))
             {
-                UInt64 attached_count = CurrentMetrics::get(CurrentMetrics::AttachedUser) + 1;
-                if (entityLimitReached(attached_count))
-                {
-                    remove(id, throw_if_exists = false);
-                    throwTooManyEntities(attached_count);
-                }
-                CurrentMetrics::add(CurrentMetrics::AttachedUser);
+                remove(id, throw_if_exists = false);
+                throwTooManyEntities(attached_count);
             }
             return {id};
         }
@@ -272,18 +267,14 @@ std::vector<UUID> IAccessStorage::insert(const std::vector<AccessEntityPtr> & mu
             else
                 id = generateRandomID();
 
-            auto result = insert(id, entity, replace_if_exists, throw_if_exists);
-            if (result != IAccessStorage::InsertResult::ALREADY_EXISTS)
+            if (insert(id, entity, replace_if_exists, throw_if_exists))
             {
-                if (result == IAccessStorage::InsertResult::INSERTED)
+                UInt64 attached_count = CurrentMetrics::get(CurrentMetrics::AttachedAccessEntity);
+
+                if (entityLimitReached(attached_count))
                 {
-                    UInt64 attached_count = CurrentMetrics::get(CurrentMetrics::AttachedUser) + 1;
-                    if (entityLimitReached(attached_count))
-                    {
-                        remove(id, throw_if_exists = false);
-                        throwTooManyEntities(attached_count);
-                    }
-                    CurrentMetrics::add(CurrentMetrics::AttachedUser);
+                    remove(id, throw_if_exists = false);
+                    throwTooManyEntities(attached_count);
                 }
                 successfully_inserted.push_back(entity);
                 new_ids.push_back(id);
@@ -334,7 +325,7 @@ std::vector<UUID> IAccessStorage::insertOrReplace(const std::vector<AccessEntity
 }
 
 
-IAccessStorage::InsertResult IAccessStorage::insertImpl(const UUID &, const AccessEntityPtr & entity, bool, bool, UUID *)
+bool IAccessStorage::insertImpl(const UUID &, const AccessEntityPtr & entity, bool, bool, UUID *)
 {
     if (isReadOnly())
         throwReadonlyCannotInsert(entity->getType(), entity->getName());
@@ -355,8 +346,6 @@ std::vector<UUID> IAccessStorage::remove(const std::vector<UUID> & ids, bool thr
     if (ids.size() == 1)
     {
         auto result = remove(ids[0], throw_if_not_exists) ? ids : std::vector<UUID>{};
-        if (!result.empty())
-            CurrentMetrics::sub(CurrentMetrics::AttachedUser);
         return result;
     }
 
@@ -376,7 +365,6 @@ std::vector<UUID> IAccessStorage::remove(const std::vector<UUID> & ids, bool thr
                 auto name = tryReadName(id);
                 if (remove(id, throw_if_not_exists))
                 {
-                    CurrentMetrics::sub(CurrentMetrics::AttachedUser);
                     removed_ids.push_back(id);
                     if (name)
                         removed_names.push_back(std::move(name).value());
@@ -392,7 +380,6 @@ std::vector<UUID> IAccessStorage::remove(const std::vector<UUID> & ids, bool thr
             auto name = tryReadName(id);
             if (remove(id, throw_if_not_exists))
             {
-                CurrentMetrics::sub(CurrentMetrics::AttachedUser);
                 removed_ids.push_back(id);
                 if (name)
                     removed_names.push_back(std::move(name).value());

@@ -7,7 +7,7 @@
 namespace DB
 {
 MemoryAccessStorage::MemoryAccessStorage(const String & storage_name_, AccessChangesNotifier & changes_notifier_, bool allow_backup_, UInt64 access_entities_num_limit_)
-    : IAccessStorage(access_entities_num_limit_, storage_name_), changes_notifier(changes_notifier_), backup_allowed(allow_backup_)
+    : AccessStorageBase(access_entities_num_limit_, storage_name_, changes_notifier_), backup_allowed(allow_backup_)
 {
 }
 
@@ -60,14 +60,14 @@ AccessEntityPtr MemoryAccessStorage::readImpl(const UUID & id, bool throw_if_not
 }
 
 
-IAccessStorage::InsertResult MemoryAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id)
+bool MemoryAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id)
 {
     std::lock_guard lock{mutex};
     return insertNoLock(id, new_entity, replace_if_exists, throw_if_exists, conflicting_id);
 }
 
 
-IAccessStorage::InsertResult MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id)
+bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id)
 {
     const String & name = new_entity->getName();
     AccessEntityType type = new_entity->getType();
@@ -90,7 +90,7 @@ IAccessStorage::InsertResult MemoryAccessStorage::insertNoLock(const UUID & id, 
         {
             if (conflicting_id)
                 *conflicting_id = id_by_name;
-            return IAccessStorage::InsertResult::ALREADY_EXISTS;
+            return false;
         }
     }
 
@@ -107,7 +107,7 @@ IAccessStorage::InsertResult MemoryAccessStorage::insertNoLock(const UUID & id, 
         {
             if (conflicting_id)
                 *conflicting_id = id;
-            return IAccessStorage::InsertResult::ALREADY_EXISTS;
+            return false;
         }
     }
 
@@ -135,21 +135,15 @@ IAccessStorage::InsertResult MemoryAccessStorage::insertNoLock(const UUID & id, 
                 existing_entry.entity = new_entity;
                 changes_notifier.onEntityUpdated(id, new_entity);
             }
-            return IAccessStorage::InsertResult::REPLACED;
+            return true;
         }
         removeNoLock(id, /* throw_if_not_exists= */ true); // NOLINT
     }
 
     /// Do insertion.
-    auto & entry = entries_by_id[id];
-    entry.id = id;
-    entry.entity = new_entity;
-    entries_by_name[name] = &entry;
-    changes_notifier.onEntityAdded(id, new_entity);
+    insertEntry(id, name, type, new_entity, name_collision || id_collision);
 
-    if (name_collision || id_collision)
-        return IAccessStorage::InsertResult::REPLACED;
-    return IAccessStorage::InsertResult::INSERTED;
+    return true;
 }
 
 
@@ -176,12 +170,8 @@ bool MemoryAccessStorage::removeNoLock(const UUID & id, bool throw_if_not_exists
     AccessEntityType type = entry.entity->getType();
 
     /// Do removing.
-    UUID removed_id = id;
-    auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
-    entries_by_name.erase(name);
-    entries_by_id.erase(it);
+    removeEntry(id, name, type);
 
-    changes_notifier.onEntityRemoved(removed_id, type);
     return true;
 }
 

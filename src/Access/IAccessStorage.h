@@ -46,13 +46,6 @@ public:
     explicit IAccessStorage(UInt64 access_entities_num_limit_, const String & storage_name_) : access_entities_num_limit(access_entities_num_limit_), storage_name(storage_name_) {}
     virtual ~IAccessStorage() = default;
 
-    enum InsertResult
-    {
-        INSERTED,
-        REPLACED,
-        ALREADY_EXISTS
-    };
-
     /// If the AccessStorage has to do some complicated work when destroying - do it in advance.
     /// For example, if the AccessStorage contains any threads for background work - ask them to complete and wait for completion.
     /// By default, does nothing.
@@ -166,7 +159,7 @@ public:
     /// Throws an exception if the specified name already exists.
     UUID insert(const AccessEntityPtr & entity);
     std::optional<UUID> insert(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id = nullptr);
-    InsertResult insert(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id = nullptr);
+    bool insert(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id = nullptr);
     std::vector<UUID> insert(const std::vector<AccessEntityPtr> & multiple_entities, bool replace_if_exists = false, bool throw_if_exists = true);
     std::vector<UUID> insert(const std::vector<AccessEntityPtr> & multiple_entities, const std::vector<UUID> & ids, bool replace_if_exists = false, bool throw_if_exists = true);
 
@@ -233,7 +226,7 @@ protected:
     virtual std::vector<UUID> findAllImpl() const;
     virtual AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const = 0;
     virtual std::optional<std::pair<String, AccessEntityType>> readNameWithTypeImpl(const UUID & id, bool throw_if_not_exists) const;
-    virtual InsertResult insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id);
+    virtual bool insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id);
     virtual bool removeImpl(const UUID & id, bool throw_if_not_exists);
     virtual bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists);
     virtual std::optional<AuthResult> authenticateImpl(

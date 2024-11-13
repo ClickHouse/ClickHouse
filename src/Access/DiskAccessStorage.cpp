@@ -23,7 +23,7 @@
 
 namespace CurrentMetrics
 {
-    extern const Metric AttachedUser;
+    extern const Metric AttachedAccessEntity;
 }
 
 namespace DB
@@ -167,7 +167,7 @@ namespace
 
 
 DiskAccessStorage::DiskAccessStorage(const String & storage_name_, const String & directory_path_, AccessChangesNotifier & changes_notifier_, bool readonly_, bool allow_backup_, UInt64 access_entities_num_limit_)
-    : IAccessStorage(access_entities_num_limit_, storage_name_), changes_notifier(changes_notifier_)
+    : AccessStorageBase(access_entities_num_limit_, storage_name_, changes_notifier_)
 {
     directory_path = makeDirectoryPathCanonical(directory_path_);
     readonly = readonly_;
@@ -282,7 +282,7 @@ bool DiskAccessStorage::readLists()
     if (entityLimitReached(entries_by_id.size()))
         throwTooManyEntities(entries_by_id.size());
 
-    CurrentMetrics::add(CurrentMetrics::AttachedUser, entries_by_id.size());
+    CurrentMetrics::add(CurrentMetrics::AttachedAccessEntity, entries_by_id.size());
 
     return true;
 }
@@ -410,7 +410,7 @@ void DiskAccessStorage::reloadAllAndRebuildLists()
     for (auto type : collections::range(AccessEntityType::MAX))
         types_of_lists_to_write.insert(type);
 
-    CurrentMetrics::add(CurrentMetrics::AttachedUser, entries_by_id.size());
+    CurrentMetrics::add(CurrentMetrics::AttachedAccessEntity, entries_by_id.size());
     failed_to_write_lists = false; /// Try again writing lists.
     writeLists();
 }
@@ -519,14 +519,14 @@ std::optional<std::pair<String, AccessEntityType>> DiskAccessStorage::readNameWi
 }
 
 
-IAccessStorage::InsertResult DiskAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id)
+bool DiskAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id)
 {
     std::lock_guard lock{mutex};
     return insertNoLock(id, new_entity, replace_if_exists, throw_if_exists, conflicting_id, /* write_on_disk = */ true);
 }
 
 
-IAccessStorage::InsertResult DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id, bool write_on_disk)
+bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id, bool write_on_disk)
 {
     const String & name = new_entity->getName();
     AccessEntityType type = new_entity->getType();
@@ -552,7 +552,7 @@ IAccessStorage::InsertResult DiskAccessStorage::insertNoLock(const UUID & id, co
         {
             if (conflicting_id)
                 *conflicting_id = id_by_name;
-            return IAccessStorage::ALREADY_EXISTS;
+            return false;
         }
     }
 
@@ -569,7 +569,7 @@ IAccessStorage::InsertResult DiskAccessStorage::insertNoLock(const UUID & id, co
         {
             if (conflicting_id)
                 *conflicting_id = id;
-            return IAccessStorage::ALREADY_EXISTS;
+            return false;
         }
     }
 
@@ -602,7 +602,7 @@ IAccessStorage::InsertResult DiskAccessStorage::insertNoLock(const UUID & id, co
                 existing_entry.entity = new_entity;
                 changes_notifier.onEntityUpdated(id, new_entity);
             }
-            return IAccessStorage::REPLACED;
+            return true;
         }
 
         removeNoLock(id, /* throw_if_not_exists= */ false, write_on_disk); // NOLINT
@@ -612,17 +612,9 @@ IAccessStorage::InsertResult DiskAccessStorage::insertNoLock(const UUID & id, co
     if (write_on_disk)
         writeAccessEntityToDisk(id, *new_entity);
 
-    auto & entry = entries_by_id[id];
-    entry.id = id;
-    entry.type = type;
-    entry.name = name;
-    entry.entity = new_entity;
-    entries_by_name[entry.name] = &entry;
-    changes_notifier.onEntityAdded(id, new_entity);
+    insertEntry(id, name, type, new_entity, name_collision || id_collision);
 
-    if (name_collision || id_collision)
-        return IAccessStorage::REPLACED;
-    return IAccessStorage::INSERTED;
+    return true;
 }
 
 
@@ -657,12 +649,8 @@ bool DiskAccessStorage::removeNoLock(const UUID & id, bool throw_if_not_exists, 
     }
 
     /// Do removing.
-    UUID removed_id = id;
-    auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
-    entries_by_name.erase(entry.name);
-    entries_by_id.erase(it);
+    removeEntry(id, entry.name, type);
 
-    changes_notifier.onEntityRemoved(removed_id, type);
     return true;
 }
 

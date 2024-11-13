@@ -48,28 +48,33 @@ def test_table_db_limit(started_cluster):
 
 
 def test_access_limit(started_cluster):
-    for i in range(5):
+    roles = 3
+    users = 2
+    # 4 entities are already loaded from config
+    for i in range(roles):
         node.query("create role r{}".format(i))
 
-    for i in range(4):
+    for i in range(users):
         node.query("create user u{}".format(i))
 
     assert "Too many access entities" in node.query_and_get_error("create user ux")
 
-    for i in range(4):
+    # Updating existing users not changing user count
+    for i in range(users):
         node.query("create user or replace u{}".format(i))
 
-    for i in range(4):
+    for i in range(users):
         node.query("create user if not exists u{}".format(i))
 
-    for i in range(4):
+    for i in range(users):
         node.query("drop user u{}".format(i))
 
-    for i in range(4):
+    for i in range(users):
         node.query("create user u{}".format(i))
 
     assert "Too many access entities" in node.query_and_get_error("create user ux")
 
+    # Loaded users are counted correctly
     node.restart_clickhouse()
 
     assert "Too many access entities" in node.query_and_get_error("create user ux")

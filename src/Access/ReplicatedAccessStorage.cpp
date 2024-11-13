@@ -117,25 +117,25 @@ static void retryOnZooKeeperUserError(size_t attempts, Func && function)
     }
 }
 
-IAccessStorage::InsertResult ReplicatedAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id)
+bool ReplicatedAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id)
 {
     const AccessEntityTypeInfo type_info = AccessEntityTypeInfo::get(new_entity->getType());
     const String & name = new_entity->getName();
     LOG_DEBUG(getLogger(), "Inserting entity of type {} named {} with id {}", type_info.name, name, toString(id));
 
     auto zookeeper = getZooKeeper();
-    auto result = IAccessStorage::InsertResult::INSERTED;
-    retryOnZooKeeperUserError(10, [&]{ result = insertZooKeeper(zookeeper, id, new_entity, replace_if_exists, throw_if_exists, conflicting_id); });
+    bool ok = false;
+    retryOnZooKeeperUserError(10, [&]{ ok = insertZooKeeper(zookeeper, id, new_entity, replace_if_exists, throw_if_exists, conflicting_id); });
 
-    if (result == IAccessStorage::InsertResult::ALREADY_EXISTS)
-        return result;
+    if (!ok)
+        return false;
 
     refreshEntity(zookeeper, id);
-    return result;
+    return true;
 }
 
 
-IAccessStorage::InsertResult ReplicatedAccessStorage::insertZooKeeper(
+bool ReplicatedAccessStorage::insertZooKeeper(
     const zkutil::ZooKeeperPtr & zookeeper,
     const UUID & id,
     const AccessEntityPtr & new_entity,
@@ -186,7 +186,7 @@ IAccessStorage::InsertResult ReplicatedAccessStorage::insertZooKeeper(
                 {
                     if (conflicting_id)
                         *conflicting_id = id;
-                    return IAccessStorage::InsertResult::ALREADY_EXISTS;
+                    return false;
                 }
             }
             else if (responses[1]->error == Coordination::Error::ZNODEEXISTS)
@@ -205,7 +205,7 @@ IAccessStorage::InsertResult ReplicatedAccessStorage::insertZooKeeper(
                         /// If that happens, then retryOnZooKeeperUserError() will just retry the operation from the start.
                         *conflicting_id = parseUUID(zookeeper->get(name_path));
                     }
-                    return IAccessStorage::InsertResult::ALREADY_EXISTS;
+                    return false;
                 }
             }
             else
@@ -262,14 +262,14 @@ IAccessStorage::InsertResult ReplicatedAccessStorage::insertZooKeeper(
         zookeeper->multi(replace_ops);
 
         /// Everything's fine, the new entity has been inserted instead of an existing entity.
-        return IAccessStorage::InsertResult::REPLACED;
+        return true;
     }
 
     /// If this fails, then we'll just retry from the start.
     zkutil::KeeperMultiException::check(res, ops, responses);
 
     /// Everything's fine, the new entity has been inserted.
-    return IAccessStorage::InsertResult::INSERTED;
+    return true;
 }
 
 bool ReplicatedAccessStorage::removeImpl(const UUID & id, bool throw_if_not_exists)
