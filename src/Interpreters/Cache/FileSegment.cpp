@@ -360,11 +360,14 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
                 "Expected DOWNLOADING state, got {}", stateToString(download_state));
 
         const size_t first_non_downloaded_offset = getCurrentWriteOffset();
+
         if (offset_in_file != first_non_downloaded_offset)
+        {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Attempt to write {} bytes to offset: {}, but current write offset is {}",
                 size, offset_in_file, first_non_downloaded_offset);
+        }
 
         const size_t current_downloaded_size = getDownloadedSize();
         chassert(reserved_size >= current_downloaded_size);
@@ -375,8 +378,19 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
                 ErrorCodes::LOGICAL_ERROR,
                 "Not enough space is reserved. Available: {}, expected: {}", free_reserved_size, size);
 
-        if (!is_unbound && current_downloaded_size == range().size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "File segment is already fully downloaded");
+        if (!is_unbound)
+        {
+            if (current_downloaded_size == range().size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "File segment is already fully downloaded");
+
+            if (current_downloaded_size + size > range().size())
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Cannot download beyond file segment boundaries: {}. Write offset: {}, size: {}, downloaded size: {}",
+                    range().size(), first_non_downloaded_offset, size, current_downloaded_size);
+            }
+        }
 
         if (!cache_writer && current_downloaded_size > 0)
             throw Exception(
