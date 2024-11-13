@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-ordinary-database
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-SQL_FILE_NAME=$"03156_default_multiquery_split_$$.sql"
+SQL_FILE_NAME=$"03156_default_multiquery_split_${CLICKHOUSE_DATABASE}.sql"
 
 # The old multiquery implementation uses '\n' to split INSERT query segmentation
 # this case is mainly to test the following situations
@@ -52,8 +51,15 @@ INSERT INTO TEST2 VALUES
 SELECT * FROM TEST1 ORDER BY value;
 SELECT * FROM TEST2 ORDER BY value;
 DROP TABLE TEST1; DROP TABLE TEST2;
+
+EXPLAIN AST INSERT INTO TEST2 FORMAT CSV
+1
+2
+
+EXPLAIN AST INSERT INTO TEST1 VALUES (101),(102);
+
 EOF
 
-$CLICKHOUSE_CLIENT -m -n < "$SQL_FILE_NAME"
+$CLICKHOUSE_CLIENT -m < "$SQL_FILE_NAME"
 
 rm "$SQL_FILE_NAME"

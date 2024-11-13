@@ -7,12 +7,12 @@
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
+#include <Common/Scheduler/ResourceLink.h>
 
 #include <boost/noncopyable.hpp>
 
 #include <atomic>
 #include <functional>
-#include <map>
 #include <memory>
 #include <mutex>
 #include <unordered_set>
@@ -193,6 +193,10 @@ public:
     /// Statistics of read and write rows/bytes
     Progress progress_in;
     Progress progress_out;
+
+    /// IO scheduling
+    ResourceLink read_resource_link;
+    ResourceLink write_resource_link;
 
 private:
     /// Group of threads, to which this thread attached

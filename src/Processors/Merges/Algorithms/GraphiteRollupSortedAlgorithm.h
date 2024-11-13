@@ -33,6 +33,8 @@ public:
     const char * getName() const override { return "GraphiteRollupSortedAlgorithm"; }
     Status merge() override;
 
+    MergedStats getMergedStats() const override { return merged_data->getMergedStats(); }
+
     struct ColumnsDefinition
     {
         size_t path_column_num;

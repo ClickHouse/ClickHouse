@@ -27,6 +27,14 @@
 #include <Storages/ProjectionsDescription.h>
 #include <Parsers/queryToString.h>
 
+namespace DB
+{
+namespace Setting
+{
+    extern const SettingsString preferred_optimize_projection_name;
+}
+}
+
 namespace DB::QueryPlanOptimizations
 {
 
@@ -255,20 +263,13 @@ static void appendAggregateFunctions(
 
         const auto * node = input;
 
-        if (node->result_name != aggregate.column_name)
-        {
-            if (DataTypeAggregateFunction::strictEquals(type, node->result_type))
-            {
-                node = &proj_dag.addAlias(*node, aggregate.column_name);
-            }
-            else
-            {
-                /// Cast to aggregate types specified in query if it's not
-                /// strictly the same as the one specified in projection. This
-                /// is required to generate correct results during finalization.
-                node = &proj_dag.addCast(*node, type, aggregate.column_name);
-            }
-        }
+        if (!DataTypeAggregateFunction::strictEquals(type, node->result_type))
+            /// Cast to aggregate types specified in query if it's not
+            /// strictly the same as the one specified in projection. This
+            /// is required to generate correct results during finalization.
+            node = &proj_dag.addCast(*node, type, aggregate.column_name);
+        else if (node->result_name != aggregate.column_name)
+            node = &proj_dag.addAlias(*node, aggregate.column_name);
 
         proj_dag_outputs.push_back(node);
     }
@@ -520,7 +521,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
             agg_projections.begin(),
             agg_projections.end(),
             [&](const auto * projection)
-            { return projection->name == context->getSettingsRef().preferred_optimize_projection_name.value; });
+            { return projection->name == context->getSettingsRef()[Setting::preferred_optimize_projection_name].value; });
 
         if (it != agg_projections.end())
         {
@@ -551,7 +552,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
 static QueryPlan::Node * findReadingStep(QueryPlan::Node & node)
 {
     IQueryPlanStep * step = node.step.get();
-    if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
+    if (auto * /*reading*/ _ = typeid_cast<ReadFromMergeTree *>(step))
         return &node;
 
     if (node.children.size() != 1)
@@ -751,22 +752,21 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
         Pipe pipe(std::make_shared<SourceFromSingleChunk>(std::move(block_with_count)));
         projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
 
-        selected_projection_name = "Optimized trivial count";
+        /// Use @minmax_count_projection name as it goes through the same optimization.
+        selected_projection_name = metadata->minmax_count_projection->name;
         has_ordinary_parts = reading->getAnalyzedResult() != nullptr;
     }
     else
     {
         auto storage_snapshot = reading->getStorageSnapshot();
-        auto proj_snapshot = std::make_shared<StorageSnapshot>(storage_snapshot->storage, storage_snapshot->metadata);
-        proj_snapshot->addProjection(best_candidate->projection);
-
+        auto proj_snapshot = std::make_shared<StorageSnapshot>(storage_snapshot->storage, best_candidate->projection->metadata);
         auto projection_query_info = query_info;
         projection_query_info.prewhere_info = nullptr;
         projection_query_info.filter_actions_dag = nullptr;
 
         projection_reading = reader.readFromParts(
             /* parts = */ {},
-            /* alter_conversions = */ {},
+            reading->getMutationsSnapshot()->cloneEmpty(),
             best_candidate->dag.getRequiredColumnsNames(),
             proj_snapshot,
             projection_query_info,
@@ -799,7 +799,7 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
     }
 
     // LOG_TRACE(getLogger("optimizeUseProjections"), "Projection reading header {}",
-    //           projection_reading->getOutputStream().header.dumpStructure());
+    //           projection_reading->getOutputHeader().header.dumpStructure());
 
     projection_reading->setStepDescription(selected_projection_name);
     auto & projection_reading_node = nodes.emplace_back(QueryPlan::Node{.step = std::move(projection_reading)});
@@ -815,14 +815,14 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
         {
             const auto & result_name = best_candidate->dag.getOutputs().front()->result_name;
             aggregate_projection_node->step = std::make_unique<FilterStep>(
-                projection_reading_node.step->getOutputStream(),
+                projection_reading_node.step->getOutputHeader(),
                 std::move(best_candidate->dag),
                 result_name,
                 true);
         }
         else
             aggregate_projection_node->step
-                = std::make_unique<ExpressionStep>(projection_reading_node.step->getOutputStream(), std::move(best_candidate->dag));
+                = std::make_unique<ExpressionStep>(projection_reading_node.step->getOutputHeader(), std::move(best_candidate->dag));
 
         aggregate_projection_node->children.push_back(&projection_reading_node);
     }
@@ -834,12 +834,12 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
     if (!has_ordinary_parts)
     {
         /// All parts are taken from projection
-        aggregating->requestOnlyMergeForAggregateProjection(aggregate_projection_node->step->getOutputStream());
+        aggregating->requestOnlyMergeForAggregateProjection(aggregate_projection_node->step->getOutputHeader());
         node.children.front() = aggregate_projection_node;
     }
     else
     {
-        node.step = aggregating->convertToAggregatingProjection(aggregate_projection_node->step->getOutputStream());
+        node.step = aggregating->convertToAggregatingProjection(aggregate_projection_node->step->getOutputHeader());
         node.children.push_back(aggregate_projection_node);
     }
 

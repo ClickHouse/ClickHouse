@@ -253,18 +253,18 @@ void HostResolver::updateImpl(Poco::Timestamp now, std::vector<Poco::Net::IPAddr
         }
     }
 
-    for (auto & rec : merged)
+    for (auto & record : merged)
     {
-            if (!rec.failed)
-                continue;
+        if (!record.failed || !record.consecutive_fail_count)
+            continue;
 
-            /// Exponential increased time for each consecutive fail
-            auto banned_until = now - Poco::Timespan(history.totalMicroseconds() * (1ull << (rec.consecutive_fail_count - 1)));
-            if (rec.fail_time < banned_until)
-            {
-                rec.failed = false;
-                CurrentMetrics::sub(metrics.banned_count);
-            }
+        /// Exponential increased time for each consecutive fail
+        auto banned_until = now - Poco::Timespan(history.totalMicroseconds() * (1ull << (record.consecutive_fail_count - 1)));
+        if (record.fail_time < banned_until)
+        {
+            record.failed = false;
+            CurrentMetrics::sub(metrics.banned_count);
+        }
     }
 
     chassert(std::is_sorted(merged.begin(), merged.end()));

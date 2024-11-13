@@ -1,10 +1,9 @@
 #pragma once
 
-#include <Client/ClientBase.h>
+#include <Client/ClientApplicationBase.h>
 #include <Client/LocalConnection.h>
 
 #include <Core/ServerSettings.h>
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Loggers/Loggers.h>
 #include <Common/InterruptListener.h>
@@ -21,7 +20,7 @@ namespace DB
 /// Lightweight Application for clickhouse-local
 /// No networking, no extra configs and working directories, no pid and status files, no dictionaries, no logging.
 /// Quiet mode by default
-class LocalServer : public ClientBase, public Loggers
+class LocalServer : public ClientApplicationBase, public Loggers
 {
 public:
     LocalServer() = default;

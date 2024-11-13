@@ -27,7 +27,7 @@ function wait_until()
 function get_buffer_delay()
 {
     local buffer_insert_id=$1 && shift
-    query "SYSTEM FLUSH LOGS"
+    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
     query "
         WITH
             (SELECT event_time_microseconds FROM system.query_log WHERE current_database = '$CLICKHOUSE_DATABASE' AND type = 'QueryStart' AND query_id = '$buffer_insert_id') AS begin_,

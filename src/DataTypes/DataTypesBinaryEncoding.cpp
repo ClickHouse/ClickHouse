@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -94,7 +95,12 @@ enum class BinaryTypeIndex : uint8_t
     Bool = 0x2D,
     SimpleAggregateFunction = 0x2E,
     Nested = 0x2F,
+    JSON = 0x30,
 };
+
+/// In future we can introduce more arguments in the JSON data type definition.
+/// To support such changes, use versioning in the serialization of JSON type.
+const UInt8 TYPE_JSON_SERIALIZATION_VERSION = 0;
 
 BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
 {
@@ -202,7 +208,7 @@ BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
             return BinaryTypeIndex::LowCardinality;
         case TypeIndex::Map:
             return BinaryTypeIndex::Map;
-        case TypeIndex::Object:
+        case TypeIndex::ObjectDeprecated:
             /// Object type will be deprecated and replaced by new implementation. No need to support it here.
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Binary encoding of type Object is not supported");
         case TypeIndex::IPv4:
@@ -216,6 +222,15 @@ BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
         /// JSONPaths is used only during schema inference and cannot be used anywhere else.
         case TypeIndex::JSONPaths:
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Binary encoding of type JSONPaths is not supported");
+        case TypeIndex::Object:
+        {
+            const auto & object_type = assert_cast<const DataTypeObject &>(*type);
+            switch (object_type.getSchemaFormat())
+            {
+                case DataTypeObject::SchemaFormat::JSON:
+                    return BinaryTypeIndex::JSON;
+            }
+        }
     }
 }
 
@@ -444,7 +459,7 @@ void encodeDataType(const DataTypePtr & type, WriteBuffer & buf)
         case BinaryTypeIndex::Dynamic:
         {
             const auto & dynamic_type = assert_cast<const DataTypeDynamic &>(*type);
-            /// Maximum number of dynamic types is 255, we can write it as 1 byte.
+            /// Maximum number of dynamic types is 254, we can write it as 1 byte.
             writeBinary(UInt8(dynamic_type.getMaxDynamicTypes()), buf);
             break;
         }
@@ -478,6 +493,30 @@ void encodeDataType(const DataTypePtr & type, WriteBuffer & buf)
         {
             const auto & type_name = type->getName();
             writeStringBinary(type_name, buf);
+            break;
+        }
+        case BinaryTypeIndex::JSON:
+        {
+            const auto & object_type = assert_cast<const DataTypeObject &>(*type);
+            /// Write version of the serialization because we can add new arguments in the JSON type.
+            writeBinary(TYPE_JSON_SERIALIZATION_VERSION, buf);
+            writeVarUInt(object_type.getMaxDynamicPaths(), buf);
+            writeBinary(UInt8(object_type.getMaxDynamicTypes()), buf);
+            const auto & typed_paths = object_type.getTypedPaths();
+            writeVarUInt(typed_paths.size(), buf);
+            for (const auto & [path, path_type] : typed_paths)
+            {
+                writeStringBinary(path, buf);
+                encodeDataType(path_type, buf);
+            }
+            const auto & paths_to_skip = object_type.getPathsToSkip();
+            writeVarUInt(paths_to_skip.size(), buf);
+            for (const auto & path : paths_to_skip)
+                writeStringBinary(path, buf);
+            const auto & path_regexps_to_skip = object_type.getPathRegexpsToSkip();
+            writeVarUInt(path_regexps_to_skip.size(), buf);
+            for (const auto & regexp : path_regexps_to_skip)
+                writeStringBinary(regexp, buf);
             break;
         }
         default:
@@ -690,6 +729,54 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
             String type_name;
             readStringBinary(type_name, buf);
             return DataTypeFactory::instance().get(type_name);
+        }
+        case BinaryTypeIndex::JSON:
+        {
+            UInt8 serialization_version;
+            readBinary(serialization_version, buf);
+            if (serialization_version > TYPE_JSON_SERIALIZATION_VERSION)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected version of JSON type binary encoding");
+            size_t max_dynamic_paths;
+            readVarUInt(max_dynamic_paths, buf);
+            UInt8 max_dynamic_types;
+            readBinary(max_dynamic_types, buf);
+            size_t typed_paths_size;
+            readVarUInt(typed_paths_size, buf);
+            std::unordered_map<String, DataTypePtr> typed_paths;
+            for (size_t i = 0; i != typed_paths_size; ++i)
+            {
+                String path;
+                readStringBinary(path, buf);
+                typed_paths[path] = decodeDataType(buf);
+            }
+            size_t paths_to_skip_size;
+            readVarUInt(paths_to_skip_size, buf);
+            std::unordered_set<String> paths_to_skip;
+            paths_to_skip.reserve(paths_to_skip_size);
+            for (size_t i = 0; i != paths_to_skip_size; ++i)
+            {
+                String path;
+                readStringBinary(path, buf);
+                paths_to_skip.insert(path);
+            }
+
+            size_t path_regexps_to_skip_size;
+            readVarUInt(path_regexps_to_skip_size, buf);
+            std::vector<String> path_regexps_to_skip;
+            path_regexps_to_skip.reserve(path_regexps_to_skip_size);
+            for (size_t i = 0; i != path_regexps_to_skip_size; ++i)
+            {
+                String regexp;
+                readStringBinary(regexp, buf);
+                path_regexps_to_skip.push_back(regexp);
+            }
+            return std::make_shared<DataTypeObject>(
+                DataTypeObject::SchemaFormat::JSON,
+                typed_paths,
+                paths_to_skip,
+                path_regexps_to_skip,
+                max_dynamic_paths,
+                max_dynamic_types);
         }
     }
 

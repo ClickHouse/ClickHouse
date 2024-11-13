@@ -19,7 +19,7 @@ $CLICKHOUSE_CLIENT --query "SHOW TABLES" || echo "Failed"
 $CLICKHOUSE_CLIENT --query "SELECT * FROM system.tables WHERE database = currentDatabase() FORMAT Null" || echo "Failed"
 
 # Multi queries are ok:
-$CLICKHOUSE_LOCAL --multiquery "SELECT 1; SELECT 2;" || echo "Failed"
+$CLICKHOUSE_LOCAL "SELECT 1; SELECT 2;" || echo "Failed"
 
 # It can run in interactive mode:
 function run()

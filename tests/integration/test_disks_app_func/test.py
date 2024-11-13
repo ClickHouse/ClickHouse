@@ -1,6 +1,6 @@
-from helpers.cluster import ClickHouseCluster
-
 import pytest
+
+from helpers.cluster import ClickHouseCluster
 
 
 @pytest.fixture(scope="module")
@@ -13,8 +13,20 @@ def started_cluster():
             main_configs=["config.xml"],
             with_minio=True,
         )
-
         cluster.start()
+
+        # local disk requires its `path` directory to exist.
+        # the two paths below belong to `test1` and `test2` disks
+        node = cluster.instances["disks_app_test"]
+        for path in ["path1", "path2"]:
+            node.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    f"mkdir -p /var/lib/clickhouse/{path}",
+                ]
+            )
+
         yield cluster
 
     finally:

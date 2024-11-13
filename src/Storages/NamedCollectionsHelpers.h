@@ -133,7 +133,7 @@ void validateNamedCollection(
         {
              throw Exception(
                  ErrorCodes::BAD_ARGUMENTS,
-                 "Unexpected key {} in named collection. Required keys: {}, optional keys: {}",
+                 "Unexpected key `{}` in named collection. Required keys: {}, optional keys: {}",
                  backQuoteIfNeed(key), fmt::join(required_keys, ", "), fmt::join(optional_keys, ", "));
         }
     }

@@ -3,6 +3,7 @@
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ArrayJoin.h>
 #include <Interpreters/ExpressionActionsSettings.h>
 
 #include <variant>
@@ -21,9 +22,6 @@ namespace ErrorCodes
 class TableJoin;
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
-
-class ArrayJoinAction;
-using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
@@ -102,7 +100,7 @@ public:
     ///
     /// @param allow_duplicates_in_input - actions are allowed to have
     /// duplicated input (that will refer into the block). This is needed for
-    /// preliminary query filtering (filterBlockWithDAG()), because they just
+    /// preliminary query filtering (filterBlockWithExpression()), because they just
     /// pass available virtual columns, which cannot be moved in case they are
     /// used multiple times.
     void execute(Block & block, size_t & num_rows, bool dry_run = false, bool allow_duplicates_in_input = false) const;
@@ -223,11 +221,11 @@ struct ExpressionActionsChain : WithContext
 
     struct ArrayJoinStep : public Step
     {
-        ArrayJoinActionPtr array_join;
+        const NameSet array_join_columns;
         NamesAndTypesList required_columns;
         ColumnsWithTypeAndName result_columns;
 
-        ArrayJoinStep(ArrayJoinActionPtr array_join_, ColumnsWithTypeAndName required_columns_);
+        ArrayJoinStep(const Names & array_join_columns_, ColumnsWithTypeAndName required_columns_);
 
         NamesAndTypesList getRequiredColumns() const override { return required_columns; }
         ColumnsWithTypeAndName getResultColumns() const override { return result_columns; }

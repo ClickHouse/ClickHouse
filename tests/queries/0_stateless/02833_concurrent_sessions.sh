@@ -137,7 +137,23 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count(*) FROM system.session_log WHERE user IN (
 for user in "${ALL_USERS[@]}"; do
     ${CLICKHOUSE_CLIENT} -q "DROP USER ${user}"
     echo "Corresponding LoginSuccess/Logout"
-    ${CLICKHOUSE_CLIENT} -q "SELECT COUNT(*) FROM (SELECT ${SESSION_LOG_MATCHING_FIELDS} FROM system.session_log WHERE user = '${user}' AND type = 'LoginSuccess' INTERSECT SELECT ${SESSION_LOG_MATCHING_FIELDS} FROM system.session_log WHERE user = '${user}' AND type = 'Logout')"
+
+    # The client can exit sooner than the server records its disconnection and closes the session.
+    # When the client disconnects, two processes happen at the same time and are in the race condition:
+    # - the client application exits and returns control to the shell;
+    # - the server closes the session and records the logout event to the session log.
+    # We cannot expect that after the control is returned to the shell, the server records the logout event.
+    while true
+    do
+        [[ 3 -eq $(${CLICKHOUSE_CLIENT} -q "
+            SELECT COUNT(*) FROM (
+                SELECT ${SESSION_LOG_MATCHING_FIELDS} FROM system.session_log WHERE user = '${user}' AND type = 'LoginSuccess'
+                INTERSECT
+                SELECT ${SESSION_LOG_MATCHING_FIELDS} FROM system.session_log WHERE user = '${user}' AND type = 'Logout'
+            )") ]] && echo 3 && break;
+        sleep 0.1
+    done
+
     echo "LoginFailure"
     ${CLICKHOUSE_CLIENT} -q "SELECT COUNT(*) FROM system.session_log WHERE user = '${user}' AND type = 'LoginFailure'"
  done

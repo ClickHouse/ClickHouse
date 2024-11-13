@@ -8,7 +8,7 @@ SET allow_experimental_object_type = 1;
 
 DROP TABLE IF EXISTS t_json_3;
 
-CREATE TABLE t_json_3(id UInt64, data JSON)
+CREATE TABLE t_json_3(id UInt64, data Object('json'))
 ENGINE = {{ engine }};
 
 {% if 'MergeTree' in engine %}

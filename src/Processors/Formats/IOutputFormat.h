@@ -1,9 +1,9 @@
 #pragma once
 
 #include <string>
-#include <Processors/IProcessor.h>
-#include <Processors/RowsBeforeLimitCounter.h>
 #include <IO/Progress.h>
+#include <Processors/IProcessor.h>
+#include <Processors/RowsBeforeStepCounter.h>
 #include <Common/Stopwatch.h>
 
 namespace DB
@@ -36,14 +36,20 @@ public:
     void setAutoFlush() { auto_flush = true; }
 
     /// Value for rows_before_limit_at_least field.
-    virtual void setRowsBeforeLimit(size_t /*rows_before_limit*/) {}
+    virtual void setRowsBeforeLimit(size_t /*rows_before_limit*/) { }
 
     /// Counter to calculate rows_before_limit_at_least in processors pipeline.
-    void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) override { rows_before_limit_counter.swap(counter); }
+    void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr counter) override { rows_before_limit_counter.swap(counter); }
+
+    /// Value for rows_before_aggregation field.
+    virtual void setRowsBeforeAggregation(size_t /*rows_before_aggregation*/) { }
+
+    /// Counter to calculate rows_before_aggregation in processors pipeline.
+    void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr counter) override { rows_before_aggregation_counter.swap(counter); }
 
     /// Notify about progress. Method could be called from different threads.
     /// Passed value are delta, that must be summarized.
-    virtual void onProgress(const Progress & /*progress*/) {}
+    virtual void onProgress(const Progress & /*progress*/) { }
 
     /// Content-Type to set when sending HTTP response.
     virtual std::string getContentType() const { return "text/plain; charset=UTF-8"; }
@@ -151,6 +157,8 @@ protected:
         Progress progress;
         bool applied_limit = false;
         size_t rows_before_limit = 0;
+        bool applied_aggregation = false;
+        size_t rows_before_aggregation = 0;
         Chunk totals;
         Chunk extremes;
     };
@@ -184,7 +192,8 @@ protected:
     bool need_write_prefix  = true;
     bool need_write_suffix = true;
 
-    RowsBeforeLimitCounterPtr rows_before_limit_counter;
+    RowsBeforeStepCounterPtr rows_before_limit_counter;
+    RowsBeforeStepCounterPtr rows_before_aggregation_counter;
     Statistics statistics;
 
 private:

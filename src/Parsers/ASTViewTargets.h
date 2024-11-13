@@ -9,7 +9,7 @@ namespace DB
 class ASTStorage;
 enum class Keyword : size_t;
 
-/// Information about target tables (external or inner) of a materialized view or a window view.
+/// Information about target tables (external or inner) of a materialized view or a window view or a TimeSeries table.
 /// See ASTViewTargets for more details.
 struct ViewTarget
 {
@@ -24,6 +24,15 @@ struct ViewTarget
         /// If `kind == ViewTarget::Inner` then `ViewTarget` contains information about the "INNER" table of a window view:
         ///     CREATE WINDOW VIEW db.wv_name {INNER ENGINE inner_engine} AS SELECT ...
         Inner,
+
+        /// The "data" table for a TimeSeries table, contains time series.
+        Data,
+
+        /// The "tags" table for a TimeSeries table, contains identifiers for each combination of a metric name and tags (labels).
+        Tags,
+
+        /// The "metrics" table for a TimeSeries table, contains general information (metadata) about metrics.
+        Metrics,
     };
 
     Kind kind = To;

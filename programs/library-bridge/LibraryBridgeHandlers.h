@@ -18,14 +18,13 @@ namespace DB
 class ExternalDictionaryLibraryBridgeRequestHandler : public HTTPRequestHandler, WithContext
 {
 public:
-    ExternalDictionaryLibraryBridgeRequestHandler(size_t keep_alive_timeout_, ContextPtr context_);
+    explicit ExternalDictionaryLibraryBridgeRequestHandler(ContextPtr context_);
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
 private:
     static constexpr auto FORMAT = "RowBinary";
 
-    const size_t keep_alive_timeout;
     LoggerPtr log;
 };
 
@@ -34,12 +33,11 @@ private:
 class ExternalDictionaryLibraryBridgeExistsHandler : public HTTPRequestHandler, WithContext
 {
 public:
-    ExternalDictionaryLibraryBridgeExistsHandler(size_t keep_alive_timeout_, ContextPtr context_);
+    explicit ExternalDictionaryLibraryBridgeExistsHandler(ContextPtr context_);
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
 private:
-    const size_t keep_alive_timeout;
     LoggerPtr log;
 };
 
@@ -63,12 +61,11 @@ private:
 class CatBoostLibraryBridgeRequestHandler : public HTTPRequestHandler, WithContext
 {
 public:
-    CatBoostLibraryBridgeRequestHandler(size_t keep_alive_timeout_, ContextPtr context_);
+    explicit CatBoostLibraryBridgeRequestHandler(ContextPtr context_);
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
 private:
-    const size_t keep_alive_timeout;
     LoggerPtr log;
 };
 
@@ -77,12 +74,11 @@ private:
 class CatBoostLibraryBridgeExistsHandler : public HTTPRequestHandler, WithContext
 {
 public:
-    CatBoostLibraryBridgeExistsHandler(size_t keep_alive_timeout_, ContextPtr context_);
+    explicit CatBoostLibraryBridgeExistsHandler(ContextPtr context_);
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
 private:
-    const size_t keep_alive_timeout;
     LoggerPtr log;
 };
 

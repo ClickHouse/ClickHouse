@@ -4,6 +4,7 @@
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier_fwd.h>
+#include <Parsers/ASTObjectTypeArgument.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -16,8 +17,8 @@ namespace DB
 namespace
 {
 
-/// Parser of Dynamic type arguments: Dynamic(max_types=N)
-class DynamicArgumentsParser : public IParserBase
+/// Parser of Dynamic type argument: Dynamic(max_types=N)
+class DynamicArgumentParser : public IParserBase
 {
 private:
     const char * getName() const override { return "Dynamic data type optional argument"; }
@@ -46,14 +47,84 @@ private:
     }
 };
 
+/// Parser of Object type argument. For example: JSON(some_parameter=N, some.path SomeType, SKIP skip.path, ...)
+class ObjectArgumentParser : public IParserBase
+{
+private:
+    const char * getName() const override { return "JSON data type optional argument"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    {
+        auto argument = std::make_shared<ASTObjectTypeArgument>();
+
+        /// SKIP arguments
+        if (ParserKeyword(Keyword::SKIP).ignore(pos))
+        {
+            /// SKIP REGEXP '<some_regexp>'
+            if (ParserKeyword(Keyword::REGEXP).ignore(pos))
+            {
+                ParserStringLiteral literal_parser;
+                ASTPtr literal;
+                if (!literal_parser.parse(pos, literal, expected))
+                    return false;
+                argument->skip_path_regexp = literal;
+                argument->children.push_back(argument->skip_path_regexp);
+            }
+            /// SKIP some.path
+            else
+            {
+                ParserCompoundIdentifier compound_identifier_parser;
+                ASTPtr compound_identifier;
+                if (!compound_identifier_parser.parse(pos, compound_identifier, expected))
+                    return false;
+
+                argument->skip_path = compound_identifier;
+                argument->children.push_back(argument->skip_path);
+            }
+
+            node = argument;
+            return true;
+        }
+
+        ParserCompoundIdentifier compound_identifier_parser;
+        ASTPtr identifier;
+        if (!compound_identifier_parser.parse(pos, identifier, expected))
+            return false;
+
+        /// some_parameter=N
+        if (pos->type == TokenType::Equals)
+        {
+            ++pos;
+            ASTPtr number;
+            ParserNumber number_parser;
+            if (!number_parser.parse(pos, number, expected))
+                return false;
+
+            argument->parameter = makeASTFunction("equals", identifier, number);
+            argument->children.push_back(argument->parameter);
+            node = argument;
+            return true;
+        }
+
+        ParserDataType type_parser;
+        ASTPtr type;
+        if (!type_parser.parse(pos, type, expected))
+            return false;
+
+        auto name_and_type = std::make_shared<ASTNameTypePair>();
+        name_and_type->name = getIdentifierName(identifier);
+        name_and_type->type = type;
+        name_and_type->children.push_back(name_and_type->type);
+        argument->path_with_type = name_and_type;
+        argument->children.push_back(argument->path_with_type);
+        node = argument;
+        return true;
+    }
+};
+
 }
 
 bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserNestedTable nested;
-    if (nested.parse(pos, node, expected))
-        return true;
-
     String type_name;
 
     ParserIdentifier name_parser;
@@ -171,10 +242,12 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     /// Allow mixed lists of nested and normal types.
     /// Parameters are either:
-    /// - Nested table elements;
+    /// - Nested table element;
+    /// - Tuple element
     /// - Enum element in form of 'a' = 1;
     /// - literal;
-    /// - Dynamic type arguments;
+    /// - Dynamic type argument;
+    /// - JSON type argument;
     /// - another data type (or identifier);
 
     size_t arg_num = 0;
@@ -192,13 +265,24 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         ASTPtr arg;
         if (type_name == "Dynamic")
         {
-            DynamicArgumentsParser parser;
+            DynamicArgumentParser parser;
+            parser.parse(pos, arg, expected);
+        }
+        else if (type_name == "JSON")
+        {
+            ObjectArgumentParser parser;
             parser.parse(pos, arg, expected);
         }
         else if (type_name == "Nested")
         {
-            ParserNestedTable nested_parser;
-            nested_parser.parse(pos, arg, expected);
+            ParserNameTypePair name_and_type_parser;
+            name_and_type_parser.parse(pos, arg, expected);
+        }
+        else if (type_name == "Tuple")
+        {
+            ParserNameTypePair name_and_type_parser;
+            ParserDataType only_type_parser;
+            name_and_type_parser.parse(pos, arg, expected) || only_type_parser.parse(pos, arg, expected);
         }
         else if (type_name == "AggregateFunction" || type_name == "SimpleAggregateFunction")
         {
@@ -252,9 +336,6 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         ++arg_num;
     }
 
-    if (pos->type == TokenType::Comma)
-        // ignore trailing comma inside Nested structures like Tuple(Int, Tuple(Int, String),)
-        ++pos;
     if (pos->type != TokenType::ClosingRoundBracket)
         return false;
     ++pos;

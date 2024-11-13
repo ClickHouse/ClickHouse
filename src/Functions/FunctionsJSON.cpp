@@ -44,6 +44,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_simdjson;
+}
 
 namespace ErrorCodes
 {
@@ -243,7 +247,7 @@ private:
                 }
                 case MoveType::Index:
                 {
-                    Int64 index = (*arguments[j + 1].column)[row].get<Int64>();
+                    Int64 index = (*arguments[j + 1].column)[row].safeGet<Int64>();
                     if (!moveToElementByIndex<JSONParser>(res_element, static_cast<int>(index), key))
                         return false;
                     break;
@@ -531,7 +535,7 @@ public:
         for (const auto & argument : arguments)
             argument_types.emplace_back(argument.type);
         return std::make_unique<FunctionBaseFunctionJSON<Name, Impl>>(
-            null_presence, getContext()->getSettingsRef().allow_simdjson, argument_types, return_type, json_return_type, getFormatSettings(getContext()));
+            null_presence, getContext()->getSettingsRef()[Setting::allow_simdjson], argument_types, return_type, json_return_type, getFormatSettings(getContext()));
     }
 };
 
@@ -739,7 +743,7 @@ public:
     {
         NumberType value;
 
-        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, convert_bool_to_integer, error))
+        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, convert_bool_to_integer, /*allow_type_conversion=*/true, error))
             return false;
         auto & col_vec = assert_cast<ColumnVector<NumberType> &>(dest);
         col_vec.insertValue(value);

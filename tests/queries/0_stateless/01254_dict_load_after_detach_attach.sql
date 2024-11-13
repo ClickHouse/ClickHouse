@@ -12,7 +12,7 @@ LAYOUT(FLAT());
 DETACH DATABASE {CLICKHOUSE_DATABASE:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE:Identifier};
 
-SELECT COALESCE((SELECT status FROM system.dictionaries WHERE database = currentDatabase() AND name = 'dict')::Nullable(String), 'NOT_LOADED');
+SELECT query_count, status FROM system.dictionaries WHERE database = currentDatabase() AND name = 'dict';
 SYSTEM RELOAD DICTIONARY dict;
 SELECT query_count, status FROM system.dictionaries WHERE database = currentDatabase() AND name = 'dict';
 SELECT dictGetUInt64('dict', 'val', toUInt64(0));

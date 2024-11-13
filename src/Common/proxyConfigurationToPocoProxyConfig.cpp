@@ -25,15 +25,11 @@ namespace
  * `curl` strips leading dot and accepts url gitlab.com as a match for no_proxy .gitlab.com,
  * while `wget` does an exact match.
  * */
-std::string buildPocoRegexpEntryWithoutLeadingDot(const std::string & host)
+std::string buildPocoRegexpEntryWithoutLeadingDot(std::string_view host)
 {
-    std::string_view view_without_leading_dot = host;
-    if (host[0] == '.')
-    {
-        view_without_leading_dot = std::string_view {host.begin() + 1u, host.end()};
-    }
-
-    return RE2::QuoteMeta(view_without_leading_dot);
+    if (host.starts_with('.'))
+        host.remove_prefix(1);
+    return RE2::QuoteMeta(host);
 }
 
 }

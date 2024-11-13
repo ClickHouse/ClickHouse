@@ -8,13 +8,15 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
-#include <QueryPipeline/Pipe.h>
-#include <Processors/ISimpleTransform.h>
-#include <Processors/Formats/IOutputFormat.h>
-#include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Interpreters/Context.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Formats/IOutputFormat.h>
+#include <Processors/ISimpleTransform.h>
+#include <QueryPipeline/Pipe.h>
+
 #include <boost/circular_buffer.hpp>
 
+#include <ranges>
 
 namespace DB
 {
@@ -68,11 +70,17 @@ static void makeFdBlocking(int fd)
 
 static int pollWithTimeout(pollfd * pfds, size_t num, size_t timeout_milliseconds)
 {
+    auto logger = getLogger("TimeoutReadBufferFromFileDescriptor");
+    auto describe_fd = [](const auto & pollfd) { return fmt::format("(fd={}, flags={})", pollfd.fd, fcntl(pollfd.fd, F_GETFL)); };
+
     int res;
 
     while (true)
     {
         Stopwatch watch;
+
+        LOG_TEST(logger, "Polling descriptors: {}", fmt::join(std::span(pfds, pfds + num) | std::views::transform(describe_fd), ", "));
+
         res = poll(pfds, static_cast<nfds_t>(num), static_cast<int>(timeout_milliseconds));
 
         if (res < 0)
@@ -82,7 +90,10 @@ static int pollWithTimeout(pollfd * pfds, size_t num, size_t timeout_millisecond
 
             const auto elapsed = watch.elapsedMilliseconds();
             if (timeout_milliseconds <= elapsed)
+            {
+                LOG_TEST(logger, "Timeout exceeded: elapsed={}, timeout={}", elapsed, timeout_milliseconds);
                 break;
+            }
             timeout_milliseconds -= elapsed;
         }
         else
@@ -90,6 +101,12 @@ static int pollWithTimeout(pollfd * pfds, size_t num, size_t timeout_millisecond
             break;
         }
     }
+
+    LOG_TEST(
+        logger,
+        "Poll for descriptors: {} returned {}",
+        fmt::join(std::span(pfds, pfds + num) | std::views::transform(describe_fd), ", "),
+        res);
 
     return res;
 }
@@ -156,9 +173,8 @@ public:
                     std::string_view str(stderr_read_buf.get(), res);
                     if (stderr_reaction == ExternalCommandStderrReaction::THROW)
                         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Executable generates stderr: {}", str);
-                    else if (stderr_reaction == ExternalCommandStderrReaction::LOG)
-                        LOG_WARNING(
-                            getLogger("TimeoutReadBufferFromFileDescriptor"), "Executable generates stderr: {}", str);
+                    if (stderr_reaction == ExternalCommandStderrReaction::LOG)
+                        LOG_WARNING(getLogger("TimeoutReadBufferFromFileDescriptor"), "Executable generates stderr: {}", str);
                     else if (stderr_reaction == ExternalCommandStderrReaction::LOG_FIRST)
                     {
                         res = std::min(ssize_t(stderr_result_buf.reserve()), res);
@@ -198,12 +214,6 @@ public:
         }
 
         return true;
-    }
-
-    void reset() const
-    {
-        makeFdBlocking(stdout_fd);
-        makeFdBlocking(stderr_fd);
     }
 
     ~TimeoutReadBufferFromFileDescriptor() override
@@ -599,8 +609,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
                 {
                     if (execute_direct)
                         return ShellCommand::executeDirect(command_config);
-                    else
-                        return ShellCommand::execute(command_config);
+                    return ShellCommand::execute(command_config);
                 };
 
                 return std::make_unique<ShellCommandHolder>(std::move(func));

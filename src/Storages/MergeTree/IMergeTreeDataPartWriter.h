@@ -2,11 +2,13 @@
 
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
+#include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/VirtualColumnsDescription.h>
+#include <Formats/MarkInCompressedFile.h>
 
 
 namespace DB
@@ -15,7 +17,7 @@ namespace DB
 struct MergeTreeSettings;
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 
-Block getBlockAndPermute(const Block & block, const Names & names, const IColumn::Permutation * permutation);
+Block getIndexBlockAndPermute(const Block & block, const Names & names, const IColumn::Permutation * permutation);
 
 Block permuteBlockIfNeeded(const Block & block, const IColumn::Permutation * permutation);
 
@@ -44,7 +46,12 @@ public:
 
     virtual void finish(bool sync) = 0;
 
+    virtual size_t getNumberOfOpenStreams() const = 0;
+
     Columns releaseIndexColumns();
+
+    PlainMarksByName releaseCachedMarks();
+
     const MergeTreeIndexGranularity & getIndexGranularity() const { return index_granularity; }
 
 protected:
@@ -68,6 +75,8 @@ protected:
     MutableDataPartStoragePtr data_part_storage;
     MutableColumns index_columns;
     MergeTreeIndexGranularity index_granularity;
+    /// Marks that will be saved to cache on finish.
+    PlainMarksByName cached_marks;
 };
 
 using MergeTreeDataPartWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;

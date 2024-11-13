@@ -20,6 +20,7 @@ public:
     std::string getRelativePath() const override;
     std::string getPartDirectory() const override;
     std::string getFullRootPath() const override;
+    std::string getParentDirectory() const override;
 
     Poco::Timestamp getLastModified() const override;
     UInt64 calculateTotalSizeOnDisk() const override;

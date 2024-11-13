@@ -53,40 +53,6 @@ ASTPtr parseComment(IParser::Pos & pos, Expected & expected)
 
 }
 
-
-bool ParserNestedTable::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    ParserToken open(TokenType::OpeningRoundBracket);
-    ParserToken close(TokenType::ClosingRoundBracket);
-    ParserIdentifier name_p;
-    ParserNameTypePairList columns_p;
-
-    ASTPtr name;
-    ASTPtr columns;
-
-    /// For now `name == 'Nested'`, probably alternative nested data structures will appear
-    if (!name_p.parse(pos, name, expected))
-        return false;
-
-    if (!open.ignore(pos, expected))
-        return false;
-
-    if (!columns_p.parse(pos, columns, expected))
-        return false;
-
-    if (!close.ignore(pos, expected))
-        return false;
-
-    auto func = std::make_shared<ASTDataType>();
-    tryGetIdentifierNameInto(name, func->name);
-
-    func->arguments = columns;
-    func->children.push_back(columns);
-    node = func;
-
-    return true;
-}
-
 bool ParserSQLSecurity::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserToken s_eq(TokenType::Equals);
@@ -102,7 +68,7 @@ bool ParserSQLSecurity::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     while (true)
     {
-        if (!definer && s_definer.ignore(pos, expected))
+        if (!definer && !is_definer_current_user && s_definer.ignore(pos, expected))
         {
             s_eq.ignore(pos, expected);
             if (s_current_user.ignore(pos, expected))
@@ -214,10 +180,8 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     else
     {
         auto index_type = index->getType();
-        if (index_type->name == "annoy")
-            index->granularity = ASTIndexDeclaration::DEFAULT_ANNOY_INDEX_GRANULARITY;
-        else if (index_type->name == "usearch")
-            index->granularity = ASTIndexDeclaration::DEFAULT_USEARCH_INDEX_GRANULARITY;
+        if (index_type->name == "vector_similarity")
+            index->granularity = ASTIndexDeclaration::DEFAULT_VECTOR_SIMILARITY_INDEX_GRANULARITY;
         else
             index->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
     }
@@ -577,8 +541,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 storage_like = true;
                 continue;
             }
-            else
-                return false;
+            return false;
         }
 
         if (!primary_key && s_primary_key.ignore(pos, expected))
@@ -588,8 +551,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 storage_like = true;
                 continue;
             }
-            else
-                return false;
+            return false;
         }
 
         if (!order_by && s_order_by.ignore(pos, expected))
@@ -599,8 +561,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 storage_like = true;
                 continue;
             }
-            else
-                return false;
+            return false;
         }
 
         if (!sample_by && s_sample_by.ignore(pos, expected))
@@ -610,8 +571,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 storage_like = true;
                 continue;
             }
-            else
-                return false;
+            return false;
         }
 
         if (!ttl_table && s_ttl.ignore(pos, expected))
@@ -621,8 +581,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 storage_like = true;
                 continue;
             }
-            else
-                return false;
+            return false;
         }
 
         /// Do not allow SETTINGS clause without ENGINE,
@@ -696,6 +655,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ASTPtr table;
     ASTPtr columns_list;
     std::shared_ptr<ASTStorage> storage;
+    bool is_time_series_table = false;
     ASTPtr targets;
     ASTPtr as_database;
     ASTPtr as_table;
@@ -710,6 +670,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     bool if_not_exists = false;
     bool is_temporary = false;
     bool is_create_empty = false;
+    bool is_clone_as = false;
 
     if (s_create.ignore(pos, expected))
     {
@@ -784,14 +745,26 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             return false;
 
         storage = typeid_cast<std::shared_ptr<ASTStorage>>(ast);
+
+        if (storage && storage->engine && (storage->engine->name == "TimeSeries"))
+        {
+            is_time_series_table = true;
+            ParserViewTargets({ViewTarget::Data, ViewTarget::Tags, ViewTarget::Metrics}).parse(pos, targets, expected);
+        }
+
         return true;
     };
 
-    auto need_parse_as_select = [&is_create_empty, &pos, &expected]()
+    auto need_parse_as_select = [&is_create_empty, &is_clone_as, &pos, &expected]()
     {
         if (ParserKeyword{Keyword::EMPTY_AS}.ignore(pos, expected))
         {
             is_create_empty = true;
+            return true;
+        }
+        if (ParserKeyword{Keyword::CLONE_AS}.ignore(pos, expected))
+        {
+            is_clone_as = true;
             return true;
         }
 
@@ -873,6 +846,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     query->create_or_replace = or_replace;
     query->if_not_exists = if_not_exists;
     query->temporary = is_temporary;
+    query->is_time_series_table = is_time_series_table;
 
     query->database = table_id->getDatabase();
     query->table = table_id->getTable();
@@ -920,9 +894,10 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     query->set(query->select, select);
     query->set(query->targets, targets);
     query->is_create_empty = is_create_empty;
+    query->is_clone_as = is_clone_as;
 
     if (from_path)
-        query->attach_from_path = from_path->as<ASTLiteral &>().value.get<String>();
+        query->attach_from_path = from_path->as<ASTLiteral &>().value.safeGet<String>();
 
     return true;
 }
@@ -1299,40 +1274,35 @@ bool ParserTableOverrideDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expecte
         {
             if (expression_p.parse(pos, partition_by, expected))
                 continue;
-            else
-                return false;
+            return false;
         }
 
         if (!primary_key && s_primary_key.ignore(pos, expected))
         {
             if (expression_p.parse(pos, primary_key, expected))
                 continue;
-            else
-                return false;
+            return false;
         }
 
         if (!order_by && s_order_by.ignore(pos, expected))
         {
             if (expression_p.parse(pos, order_by, expected))
                 continue;
-            else
-                return false;
+            return false;
         }
 
         if (!sample_by && s_sample_by.ignore(pos, expected))
         {
             if (expression_p.parse(pos, sample_by, expected))
                 continue;
-            else
-                return false;
+            return false;
         }
 
         if (!ttl_table && s_ttl.ignore(pos, expected))
         {
             if (parser_ttl_list.parse(pos, ttl_table, expected))
                 continue;
-            else
-                return false;
+            return false;
         }
 
         break;
@@ -1431,7 +1401,7 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         ASTPtr ast_uuid;
         if (!uuid_p.parse(pos, ast_uuid, expected))
             return false;
-        uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.get<String>());
+        uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.safeGet<String>());
     }
 
     if (s_on.ignore(pos, expected))

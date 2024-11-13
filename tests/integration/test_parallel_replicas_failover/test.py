@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -25,19 +27,15 @@ def start_cluster():
 
 
 def create_tables(cluster, table_name, skip_last_replica):
-    node1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
-    node2.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
-    node3.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
-
     node1.query(
-        f"CREATE TABLE IF NOT EXISTS {table_name} (key Int64, value String) Engine=ReplicatedMergeTree('/test_parallel_replicas/shard1/{table_name}', 'r1') ORDER BY (key)"
+        f"CREATE TABLE {table_name} (key Int64, value String) Engine=ReplicatedMergeTree('/test_parallel_replicas/shard1/{table_name}', 'r1') ORDER BY (key)"
     )
     node2.query(
-        f"CREATE TABLE IF NOT EXISTS {table_name} (key Int64, value String) Engine=ReplicatedMergeTree('/test_parallel_replicas/shard1/{table_name}', 'r2') ORDER BY (key)"
+        f"CREATE TABLE {table_name} (key Int64, value String) Engine=ReplicatedMergeTree('/test_parallel_replicas/shard1/{table_name}', 'r2') ORDER BY (key)"
     )
     if not skip_last_replica:
         node3.query(
-            f"CREATE TABLE IF NOT EXISTS {table_name} (key Int64, value String) Engine=ReplicatedMergeTree('/test_parallel_replicas/shard1/{table_name}', 'r3') ORDER BY (key)"
+            f"CREATE TABLE {table_name} (key Int64, value String) Engine=ReplicatedMergeTree('/test_parallel_replicas/shard1/{table_name}', 'r3') ORDER BY (key)"
         )
 
     # populate data
@@ -67,12 +65,12 @@ def test_skip_replicas_without_table(start_cluster):
     for i in range(4):
         expected_result += f"{i}\t1000\n"
 
-    log_comment = "5230b069-9574-407d-9b80-891b5a175f41"
+    log_comment = uuid.uuid4()
     assert (
         node1.query(
             f"SELECT key, count() FROM {table_name} GROUP BY key ORDER BY key",
             settings={
-                "allow_experimental_parallel_reading_from_replicas": 2,
+                "enable_parallel_replicas": 2,
                 "max_parallel_replicas": 3,
                 "cluster_for_parallel_replicas": cluster_name,
                 "log_comment": log_comment,
@@ -84,10 +82,12 @@ def test_skip_replicas_without_table(start_cluster):
     node1.query("SYSTEM FLUSH LOGS")
     assert (
         node1.query(
-            f"SELECT ProfileEvents['DistributedConnectionMissingTable'], ProfileEvents['ParallelReplicasUnavailableCount'] FROM system.query_log WHERE type = 'QueryFinish' AND query_id IN (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase() AND log_comment = '{log_comment}' AND type = 'QueryFinish' AND initial_query_id = query_id)  SETTINGS allow_experimental_parallel_reading_from_replicas=0"
+            f"SELECT ProfileEvents['DistributedConnectionMissingTable'], ProfileEvents['ParallelReplicasUnavailableCount'] FROM system.query_log WHERE type = 'QueryFinish' AND query_id IN (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase() AND log_comment = '{log_comment}' AND type = 'QueryFinish' AND initial_query_id = query_id)  SETTINGS enable_parallel_replicas=0"
         )
         == "1\t1\n"
     )
+    node1.query(f"DROP TABLE {table_name} SYNC")
+    node2.query(f"DROP TABLE {table_name} SYNC")
 
 
 def test_skip_unresponsive_replicas(start_cluster):
@@ -105,10 +105,13 @@ def test_skip_unresponsive_replicas(start_cluster):
         node1.query(
             f"SELECT key, count() FROM {table_name} GROUP BY key ORDER BY key",
             settings={
-                "allow_experimental_parallel_reading_from_replicas": 2,
+                "enable_parallel_replicas": 2,
                 "max_parallel_replicas": 3,
                 "cluster_for_parallel_replicas": cluster_name,
             },
         )
         == expected_result
     )
+    node1.query(f"DROP TABLE {table_name} SYNC")
+    node2.query(f"DROP TABLE {table_name} SYNC")
+    node3.query(f"DROP TABLE {table_name} SYNC")

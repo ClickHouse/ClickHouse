@@ -3,6 +3,7 @@
 #include <memory>
 #include <optional>
 #include <Interpreters/Context_fwd.h>
+#include <Core/ColumnWithTypeAndName.h>
 
 
 namespace DB
@@ -10,6 +11,9 @@ namespace DB
 
 class IFunctionOverloadResolver;
 using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
+
+class IFunctionBase;
+using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 
 enum class CastType : uint8_t
 {
@@ -24,6 +28,6 @@ struct CastDiagnostic
     std::string column_to;
 };
 
-FunctionOverloadResolverPtr createInternalCastOverloadResolver(CastType type, std::optional<CastDiagnostic> diagnostic);
+FunctionBasePtr createInternalCast(ColumnWithTypeAndName from, DataTypePtr to, CastType cast_type, std::optional<CastDiagnostic> diagnostic);
 
 }

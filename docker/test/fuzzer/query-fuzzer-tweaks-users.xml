@@ -28,9 +28,9 @@
                 </table_function_remote_max_addresses>
 
                 <!-- Don't waste cycles testing the old interpreter. Spend time in the new analyzer instead -->
-                <allow_experimental_analyzer>
+                <enable_analyzer>
                     <readonly/>
-                </allow_experimental_analyzer>
+                </enable_analyzer>
 
                 <!-- This feature is broken, deprecated and will be removed. We don't want more reports about it -->
                 <allow_experimental_object_type>

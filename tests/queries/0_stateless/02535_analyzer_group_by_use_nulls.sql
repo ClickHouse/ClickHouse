@@ -1,4 +1,4 @@
-SET allow_experimental_analyzer=1;
+SET enable_analyzer=1;
 
 -- { echoOn }
 SELECT number, number % 2, sum(number) AS val

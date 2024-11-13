@@ -21,6 +21,9 @@ std::string_view toString(ViewTarget::Kind kind)
     {
         case ViewTarget::To:      return "to";
         case ViewTarget::Inner:   return "inner";
+        case ViewTarget::Data:    return "data";
+        case ViewTarget::Tags:    return "tags";
+        case ViewTarget::Metrics: return "metrics";
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "{} doesn't support kind {}", __FUNCTION__, kind);
 }
@@ -254,6 +257,9 @@ std::optional<Keyword> ASTViewTargets::getKeywordForTableID(ViewTarget::Kind kin
     {
         case ViewTarget::To:      return Keyword::TO;      /// TO mydb.mydata
         case ViewTarget::Inner:   return std::nullopt;
+        case ViewTarget::Data:    return Keyword::DATA;    /// DATA mydb.mydata
+        case ViewTarget::Tags:    return Keyword::TAGS;    /// TAGS mydb.mytags
+        case ViewTarget::Metrics: return Keyword::METRICS; /// METRICS mydb.mymetrics
     }
     UNREACHABLE();
 }
@@ -264,6 +270,9 @@ std::optional<Keyword> ASTViewTargets::getKeywordForInnerStorage(ViewTarget::Kin
     {
         case ViewTarget::To:      return std::nullopt;      /// ENGINE = MergeTree()
         case ViewTarget::Inner:   return Keyword::INNER;    /// INNER ENGINE = MergeTree()
+        case ViewTarget::Data:    return Keyword::DATA;     /// DATA ENGINE = MergeTree()
+        case ViewTarget::Tags:    return Keyword::TAGS;     /// TAGS ENGINE = MergeTree()
+        case ViewTarget::Metrics: return Keyword::METRICS;  /// METRICS ENGINE = MergeTree()
     }
     UNREACHABLE();
 }
@@ -274,6 +283,9 @@ std::optional<Keyword> ASTViewTargets::getKeywordForInnerUUID(ViewTarget::Kind k
     {
         case ViewTarget::To:      return Keyword::TO_INNER_UUID;       /// TO INNER UUID 'XXX'
         case ViewTarget::Inner:   return std::nullopt;
+        case ViewTarget::Data:    return Keyword::DATA_INNER_UUID;     /// DATA INNER UUID 'XXX'
+        case ViewTarget::Tags:    return Keyword::TAGS_INNER_UUID;     /// TAGS INNER UUID 'XXX'
+        case ViewTarget::Metrics: return Keyword::METRICS_INNER_UUID;  /// METRICS INNER UUID 'XXX'
     }
     UNREACHABLE();
 }
