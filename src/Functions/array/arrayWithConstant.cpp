@@ -69,10 +69,10 @@ public:
 
             Int64 estimated_size = 0;
             if (unlikely(common::mulOverflow(array_size, value_size, estimated_size)))
-                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array size {} with element size {} bytes is too large: while executing function {}", array_size, col_value->byteSize(), getName());
+                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array size {} with element size {} bytes is too large: while executing function {}", array_size, value_size, getName());
 
             if (unlikely(estimated_size > max_array_size_in_columns_bytes))
-                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array size {} with element size {} bytes is too large: while executing function {}", array_size, col_value->byteSize(), getName());
+                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array size {} with element size {} bytes is too large: while executing function {}", array_size, value_size, getName());
 
             offset += array_size;
 
