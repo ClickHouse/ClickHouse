@@ -1,11 +1,12 @@
 #pragma once
 
-#include <memory>
-#include <Processors/Port.h>
-#include <Common/Stopwatch.h>
-#include <Common/CurrentThread.h>
-#include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Interpreters/Context.h>
+#include <Processors/Port.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Common/CurrentThread.h>
+#include <Common/Stopwatch.h>
+
+#include <memory>
 
 class EventCounter;
 
