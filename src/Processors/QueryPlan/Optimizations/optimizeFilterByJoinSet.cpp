@@ -126,6 +126,9 @@ void optimizeFilterByJoinSet(QueryPlan::Node & node)
     // std::cerr << "optimizeFilterByJoinSet got hash join\n";
 
     const auto & table_join = join->getTableJoin();
+    if (table_join.kind() != JoinKind::Inner && table_join.kind() != JoinKind::Right)
+        return;
+
     const auto & clauses = table_join.getClauses();
     if (clauses.size() != 1)
         return;
