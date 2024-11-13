@@ -790,6 +790,12 @@ void MutationsInterpreter::prepare(bool dry_run)
             if (stages.size() == 1) /// First stage only supports filtering and can't update columns.
                 stages.emplace_back(context);
 
+            // Can't materialize a column in the sort key
+            Names sort_columns = metadata_snapshot->getSortingKeyColumns();
+            if (std::find(sort_columns.begin(), sort_columns.end(), command.column_name) != sort_columns.end()) {
+                throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN, "Failed to materialize column {} because it's in the sort key. Doing so would break sort order", command.column_name);
+            }
+
             const auto & column = columns_desc.get(command.column_name);
 
             if (!column.default_desc.expression)
