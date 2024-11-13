@@ -5,7 +5,7 @@ digraph
 {
   rankdir="LR";
   { node [shape = rect]
-    n0[label="MergeTreeSelect(pool: ReadPool, algorithm: Thread)_5"];
+    n0[label="MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder)_5"];
     n1[label="FilterTransform_6"];
     n2[label="ExpressionTransform_7"];
     n3[label="AggregatingTransform_8"];
@@ -79,7 +79,7 @@ digraph
 ('MergeSortingTransform_23','Sorting_7')
 ('MergeSortingTransform_24','Sorting_7')
 ('MergeSortingTransform_25','Sorting_7')
-('MergeTreeSelect(pool: ReadPool, algorithm: Thread)_5','ReadFromMergeTree_0')
+('MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder)_5','ReadFromMergeTree_0')
 ('MergingSortedTransform_26','Sorting_7')
 ('NullSource_30','')
 ('NullSource_31','')
