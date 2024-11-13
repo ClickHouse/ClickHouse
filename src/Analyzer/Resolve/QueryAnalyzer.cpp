@@ -5564,6 +5564,11 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     TableExpressionsAliasVisitor table_expressions_visitor(scope);
     table_expressions_visitor.visit(query_node_typed.getJoinTree());
 
+    TableFunctionsWithClusterAlternativesVisitor table_function_visitor;
+    table_function_visitor.visit(query_node);
+    if (!table_function_visitor.shouldReplaceWithClusterAlternatives() && scope.context->hasQueryContext())
+        scope.context->getQueryContext()->setSetting("parallel_replicas_for_cluster_engines", false);
+
     initializeQueryJoinTreeNode(query_node_typed.getJoinTree(), scope);
     scope.aliases.alias_name_to_table_expression_node = std::move(transitive_aliases);
 
