@@ -876,7 +876,12 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
             chassert(downloaded_size == reserved_size);
             chassert(downloaded_size == range().size());
             chassert(downloaded_size > 0);
-            chassert(fs::file_size(getPath()) > 0);
+
+            auto file_size = fs::file_size(getPath());
+            UNUSED(file_size);
+
+            chassert(file_size == range().size());
+            chassert(downloaded_size == range().size());
 
             chassert(queue_iterator || on_delayed_removal);
             check_iterator(queue_iterator);
@@ -898,7 +903,13 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
 
             chassert(reserved_size >= downloaded_size);
             chassert(downloaded_size > 0);
-            chassert(fs::file_size(getPath()) > 0);
+
+            auto file_size = fs::file_size(getPath());
+            UNUSED(file_size);
+
+            chassert(file_size > 0);
+            chassert(file_size <= range().size());
+            chassert(downloaded_size <= range().size());
 
             chassert(queue_iterator);
             check_iterator(queue_iterator);
