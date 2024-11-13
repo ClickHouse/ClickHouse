@@ -12,6 +12,7 @@
             <type>json</type>
             <names>
                 <date_time>DATE_TIME</date_time>
+                <date_time_utc>DATE_TIME_UTC</date_time_utc>
                 <thread_name>THREAD_NAME</thread_name>
                 <thread_id>THREAD_ID</thread_id>
                 <level>LEVEL</level>
