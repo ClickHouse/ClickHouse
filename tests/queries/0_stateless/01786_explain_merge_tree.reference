@@ -29,7 +29,7 @@
         Granules: 2/3
 -----------------
               "Node Type": "ReadFromMergeTree",
-              "Node Id": "ReadFromMergeTree_1",
+              "Node Id": "ReadFromMergeTree_0",
               "Description": "default.test_index",
               "Indexes": [
                 {
@@ -127,7 +127,7 @@
         Granules: 3/6
 -----------------
               "Node Type": "ReadFromMergeTree",
-              "Node Id": "ReadFromMergeTree_1",
+              "Node Id": "ReadFromMergeTree_0",
               "Description": "default.test_index",
               "Indexes": [
                 {
