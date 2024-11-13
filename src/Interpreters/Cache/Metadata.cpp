@@ -1155,7 +1155,7 @@ std::vector<FileSegment::Info> LockedKey::sync()
             actual_size, expected_size, file_segment->getInfoForLog());
 
         broken.push_back(FileSegment::getInfo(file_segment));
-        it = removeFileSegment(file_segment->offset(), file_segment->lock(), /* can_be_broken */false);
+        it = removeFileSegment(file_segment->offset(), file_segment->lock(), /* can_be_broken */true);
     }
     return broken;
 }
