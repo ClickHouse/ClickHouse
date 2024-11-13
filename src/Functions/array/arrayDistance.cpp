@@ -622,8 +622,8 @@ private:
                 }
             }
 #else
-            /// Process chunks in vectorized manner
-            static constexpr size_t VEC_SIZE = 4;
+            /// Process chunks in a vectorized manner.
+            static constexpr size_t VEC_SIZE = 16;
             typename Kernel::template State<ResultType> states[VEC_SIZE];
             for (; prev + VEC_SIZE < off; i += VEC_SIZE, prev += VEC_SIZE)
             {
@@ -635,7 +635,7 @@ private:
             for (const auto & other_state : states)
                 Kernel::template combine<ResultType>(state, other_state, kernel_params);
 #endif
-            /// Process the tail
+            /// Process the tail.
             for (; prev < off; ++i, ++prev)
             {
                 Kernel::template accumulate<ResultType>(
