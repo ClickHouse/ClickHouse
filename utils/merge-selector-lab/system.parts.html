@@ -526,15 +526,6 @@ function visualizeMergeTree(title, raw_data) {
         .attr("transform", `translate(${margin.left}, 0)`)
         .call(yAxis);
 
-    // Add label for the y-axis
-    // svgContainer.append("text")
-    //     .attr("transform", "rotate(-90)")
-    //     .attr("x", -svgHeight / 2)
-    //     .attr("y", margin.left / 2 - 10)
-    //     .attr("text-anchor", "middle")
-    //     .attr("font-size", "14px")
-    //     .text("Log(PartSize)");
-
     // Zoom functionality
     const zoom = d3.zoom()
         .scaleExtent([1, 1000000])
