@@ -17,7 +17,7 @@ services:
   rest:
     image: tabulario/iceberg-rest
     ports:
-      - 8181:8181
+      - 8182:8181
     environment:
       - AWS_ACCESS_KEY_ID=minio
       - AWS_SECRET_ACCESS_KEY=minio123
@@ -36,9 +36,8 @@ services:
       default:
         aliases:
           - warehouse.minio
-    ports:
-      - 9001:9001
-      - 9000:9000
+    expose:
+      - 9001
     command: ["server", "/data", "--console-address", ":9001"]
   mc:
     depends_on:

@@ -28,8 +28,8 @@ from helpers.s3_tools import get_file_contents, list_s3_objects, prepare_s3_buck
 from helpers.test_tools import TSV, csv_compare
 
 BASE_URL = "http://rest:8181/v1"
-BASE_URL_LOCAL = "http://localhost:8181/v1"
-BASE_URL_LOCAL_RAW = "http://localhost:8181"
+BASE_URL_LOCAL = "http://localhost:8182/v1"
+BASE_URL_LOCAL_RAW = "http://localhost:8182"
 
 CATALOG_NAME = "demo"
 
@@ -125,6 +125,7 @@ def started_cluster():
 
         # TODO: properly wait for container
         time.sleep(10)
+        #cluster.minio_client.make_bucket("warehouse")
 
         yield cluster
 
