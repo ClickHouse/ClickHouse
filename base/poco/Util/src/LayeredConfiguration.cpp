@@ -142,6 +142,13 @@ void LayeredConfiguration::removeConfiguration(AbstractConfiguration* pConfig)
 }
 
 
+void LayeredConfiguration::assignConfigurations(LayeredConfiguration& pConfig)
+{
+	_configs.clear();
+	_configs = pConfig._configs;
+}
+
+
 LayeredConfiguration::ConfigPtr LayeredConfiguration::find(const std::string& label) const
 {
 	for (ConfigList::const_iterator it = _configs.begin(); it != _configs.end(); ++it)

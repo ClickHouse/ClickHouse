@@ -443,7 +443,8 @@ void DiskObjectStorage::startupImpl(ContextPtr context)
     LOG_INFO(log, "Starting up disk {}", name);
     object_storage->startup();
 
-    restoreMetadataIfNeeded(context->getConfigRef(), "storage_configuration.disks." + name, context);
+    auto config = context->getConfig();
+    restoreMetadataIfNeeded(*config, "storage_configuration.disks." + name, context);
 
     LOG_INFO(log, "Disk {} started up", name);
 }
@@ -544,12 +545,13 @@ bool DiskObjectStorage::supportsHardLinks() const
 DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()
 {
     const auto config_prefix = "storage_configuration.disks." + name;
+    auto config = Context::getGlobalContextInstance()->getConfig();
     return std::make_shared<DiskObjectStorage>(
         getName(),
         object_key_prefix,
         metadata_storage,
         object_storage,
-        Context::getGlobalContextInstance()->getConfigRef(),
+        *config,
         config_prefix);
 }
 

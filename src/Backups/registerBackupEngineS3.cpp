@@ -52,18 +52,18 @@ void registerBackupEngineS3(BackupFactory & factory)
 
         if (!id_arg.empty())
         {
-            const auto & config = params.context->getConfigRef();
+            auto config = params.context->getConfig();
             auto config_prefix = "named_collections." + id_arg;
 
-            if (!config.has(config_prefix))
+            if (!config->has(config_prefix))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection named `{}` in config", id_arg);
 
-            s3_uri = config.getString(config_prefix + ".url");
-            access_key_id = config.getString(config_prefix + ".access_key_id", "");
-            secret_access_key = config.getString(config_prefix + ".secret_access_key", "");
+            s3_uri = config->getString(config_prefix + ".url");
+            access_key_id = config->getString(config_prefix + ".access_key_id", "");
+            secret_access_key = config->getString(config_prefix + ".secret_access_key", "");
 
-            if (config.has(config_prefix + ".filename"))
-                s3_uri = std::filesystem::path(s3_uri) / config.getString(config_prefix + ".filename");
+            if (config->has(config_prefix + ".filename"))
+                s3_uri = std::filesystem::path(s3_uri) / config->getString(config_prefix + ".filename");
 
             if (args.size() > 1)
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Backup S3 requires 1 or 2 arguments: named_collection, [filename]");

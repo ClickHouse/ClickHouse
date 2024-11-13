@@ -76,7 +76,7 @@ std::string getOrCreateCustomDisk(DiskConfigurationPtr config, const std::string
     if (!attach && !disk->isRemote())
     {
         static constexpr auto custom_local_disks_base_dir_in_config = "custom_local_disks_base_directory";
-        auto disk_path_expected_prefix = context->getConfigRef().getString(custom_local_disks_base_dir_in_config, "");
+        auto disk_path_expected_prefix = context->getConfig()->getString(custom_local_disks_base_dir_in_config, "");
 
         if (disk_path_expected_prefix.empty())
             throw Exception(

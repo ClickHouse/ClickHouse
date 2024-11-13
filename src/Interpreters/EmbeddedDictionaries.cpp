@@ -35,7 +35,7 @@ bool EmbeddedDictionaries::reloadDictionary(
     const bool throw_on_error,
     const bool force_reload)
 {
-    const auto & config = getContext()->getConfigRef();
+    auto config = getContext()->getConfig();
 
     bool not_initialized = dictionary.get() == nullptr;
 
@@ -43,7 +43,7 @@ bool EmbeddedDictionaries::reloadDictionary(
     {
         try
         {
-            auto new_dictionary = reload_dictionary(config);
+            auto new_dictionary = reload_dictionary(*config);
             if (new_dictionary)
                 dictionary.set(std::move(new_dictionary));
         }
@@ -127,7 +127,7 @@ EmbeddedDictionaries::EmbeddedDictionaries(
     : WithContext(context_)
     , log(getLogger("EmbeddedDictionaries"))
     , geo_dictionaries_loader(std::move(geo_dictionaries_loader_))
-    , reload_period(getContext()->getConfigRef().getInt("builtin_dictionaries_reload_interval", 3600))
+    , reload_period(getContext()->getConfig()->getInt("builtin_dictionaries_reload_interval", 3600))
 {
     reloadImpl(throw_on_error);
     reloading_thread = ThreadFromGlobalPool([this] { reloadPeriodically(); });

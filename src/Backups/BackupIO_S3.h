@@ -79,6 +79,8 @@ public:
 private:
     std::unique_ptr<ReadBuffer> readFile(const String & file_name, size_t expected_file_size) override;
 
+    Poco::AutoPtr<Poco::Util::AbstractConfiguration> config;
+
     const S3::URI s3_uri;
     const DataSourceDescription data_source_description;
     S3Settings s3_settings;

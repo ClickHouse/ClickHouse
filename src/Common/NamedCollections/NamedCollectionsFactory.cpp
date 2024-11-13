@@ -234,7 +234,8 @@ bool NamedCollectionFactory::loadIfNot(std::lock_guard<std::mutex> & lock)
     auto context = Context::getGlobalContextInstance();
     metadata_storage = NamedCollectionsMetadataStorage::create(context);
 
-    loadFromConfig(context->getConfigRef(), lock);
+    auto config = context->getConfig();
+    loadFromConfig(*config, lock);
     loadFromSQL(lock);
 
     if (metadata_storage->isReplicated())

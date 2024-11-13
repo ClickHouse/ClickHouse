@@ -437,27 +437,27 @@ static const Pattern & appendGraphitePattern(
 
 void setGraphitePatternsFromConfig(ContextPtr context, const String & config_element, Graphite::Params & params)
 {
-    const auto & config = context->getConfigRef();
+    auto config = context->getConfig();
 
-    if (!config.has(config_element))
+    if (!config->has(config_element))
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "No '{}' element in configuration file", config_element);
 
     params.config_name = config_element;
-    params.path_column_name = config.getString(config_element + ".path_column_name", "Path");
-    params.time_column_name = config.getString(config_element + ".time_column_name", "Time");
-    params.value_column_name = config.getString(config_element + ".value_column_name", "Value");
-    params.version_column_name = config.getString(config_element + ".version_column_name", "Timestamp");
+    params.path_column_name = config->getString(config_element + ".path_column_name", "Path");
+    params.time_column_name = config->getString(config_element + ".time_column_name", "Time");
+    params.value_column_name = config->getString(config_element + ".value_column_name", "Value");
+    params.version_column_name = config->getString(config_element + ".version_column_name", "Timestamp");
 
     params.patterns_typed = false;
 
     Poco::Util::AbstractConfiguration::Keys keys;
-    config.keys(config_element, keys);
+    config->keys(config_element, keys);
 
     for (const auto & key : keys)
     {
         if (startsWith(key, "pattern"))
         {
-            if (appendGraphitePattern(config, config_element + "." + key, params.patterns, false, context).rule_type != RuleTypeAll)
+            if (appendGraphitePattern(*config, config_element + "." + key, params.patterns, false, context).rule_type != RuleTypeAll)
                 params.patterns_typed = true;
         }
         else if (key == "default")
@@ -472,8 +472,8 @@ void setGraphitePatternsFromConfig(ContextPtr context, const String & config_ele
             throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}", key);
     }
 
-    if (config.has(config_element + ".default"))
-        appendGraphitePattern(config, config_element + "." + ".default", params.patterns, true, context);
+    if (config->has(config_element + ".default"))
+        appendGraphitePattern(*config, config_element + "." + ".default", params.patterns, true, context);
 
     for (const auto & pattern : params.patterns)
     {

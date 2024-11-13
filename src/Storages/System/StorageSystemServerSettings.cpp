@@ -36,9 +36,9 @@ ColumnsDescription StorageSystemServerSettings::getColumnsDescription()
 
 void StorageSystemServerSettings::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
-    const auto & config = context->getConfigRef();
+    auto config = context->getConfig();
     ServerSettings settings;
-    settings.loadSettingsFromConfig(config);
+    settings.loadSettingsFromConfig(*config);
 
     ServerSettingColumnsParams params{res_columns, context};
     settings.dumpToSystemServerSettingsColumns(params);

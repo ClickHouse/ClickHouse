@@ -109,6 +109,8 @@ private:
     std::shared_ptr<IBackupCoordination> backup_coordination;
     const ReadSettings read_settings;
     ContextPtr context;
+    Poco::AutoPtr<Poco::Util::AbstractConfiguration> config;
+
     QueryStatusPtr process_list_element;
 
     /// The time a BACKUP command will try to collect the metadata of tables & databases.

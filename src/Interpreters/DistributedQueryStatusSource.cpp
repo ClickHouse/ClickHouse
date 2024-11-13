@@ -144,11 +144,11 @@ ExecutionStatus DistributedQueryStatusSource::getExecutionStatus(const fs::path 
 
 ZooKeeperRetriesInfo DistributedQueryStatusSource::getRetriesInfo()
 {
-    const auto & config_ref = Context::getGlobalContextInstance()->getConfigRef();
+    auto config = Context::getGlobalContextInstance()->getConfig();
     return ZooKeeperRetriesInfo(
-        config_ref.getInt("distributed_ddl_keeper_max_retries", 5),
-        config_ref.getInt("distributed_ddl_keeper_initial_backoff_ms", 100),
-        config_ref.getInt("distributed_ddl_keeper_max_backoff_ms", 5000));
+        config->getInt("distributed_ddl_keeper_max_retries", 5),
+        config->getInt("distributed_ddl_keeper_initial_backoff_ms", 100),
+        config->getInt("distributed_ddl_keeper_max_backoff_ms", 5000));
 }
 
 std::pair<String, UInt16> DistributedQueryStatusSource::parseHostAndPort(const String & host_id)

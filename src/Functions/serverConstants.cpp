@@ -140,7 +140,7 @@ namespace
     {
     public:
         static constexpr auto name = "displayName";
-        explicit FunctionDisplayName(ContextPtr context) : FunctionServerConstantBase(context->getConfigRef().getString("display_name", getFQDNOrHostName()), context->isDistributed()) {}
+        explicit FunctionDisplayName(ContextPtr context) : FunctionServerConstantBase(context->getConfig()->getString("display_name", getFQDNOrHostName()), context->isDistributed()) {}
         static FunctionPtr create(ContextPtr context) {return std::make_shared<FunctionDisplayName>(context); }
     };
 }

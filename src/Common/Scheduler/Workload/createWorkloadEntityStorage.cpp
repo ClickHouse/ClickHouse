@@ -23,10 +23,10 @@ std::unique_ptr<IWorkloadEntityStorage> createWorkloadEntityStorage(const Contex
     const String zookeeper_path_key = "workload_zookeeper_path";
     const String disk_path_key = "workload_path";
 
-    const auto & config = global_context->getConfigRef();
-    if (config.has(zookeeper_path_key))
+    auto config = global_context->getConfig();
+    if (config->has(zookeeper_path_key))
     {
-        if (config.has(disk_path_key))
+        if (config->has(disk_path_key))
         {
             throw Exception(
                 ErrorCodes::INVALID_CONFIG_PARAMETER,
@@ -34,11 +34,11 @@ std::unique_ptr<IWorkloadEntityStorage> createWorkloadEntityStorage(const Contex
                 zookeeper_path_key,
                 disk_path_key);
         }
-        return std::make_unique<WorkloadEntityKeeperStorage>(global_context, config.getString(zookeeper_path_key));
+        return std::make_unique<WorkloadEntityKeeperStorage>(global_context, config->getString(zookeeper_path_key));
     }
 
     String default_path = fs::path{global_context->getPath()} / "workload" / "";
-    String path = config.getString(disk_path_key, default_path);
+    String path = config->getString(disk_path_key, default_path);
     return std::make_unique<WorkloadEntityDiskStorage>(global_context, path);
 }
 

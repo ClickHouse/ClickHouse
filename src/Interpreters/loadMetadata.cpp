@@ -140,7 +140,7 @@ static void checkUnsupportedVersion(ContextMutablePtr context, const String & da
 
 static void checkIncompleteOrdinaryToAtomicConversion(ContextPtr context, const std::map<String, String> & databases)
 {
-    if (context->getConfigRef().has("allow_reserved_database_name_tmp_convert"))
+    if (context->getConfig()->has("allow_reserved_database_name_tmp_convert"))
         return;
 
     auto convert_flag_path = fs::path(context->getFlagsPath()) / "convert_ordinary_to_atomic";

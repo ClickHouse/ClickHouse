@@ -101,15 +101,16 @@ BackupEntriesCollector::BackupEntriesCollector(
     , backup_coordination(backup_coordination_)
     , read_settings(read_settings_)
     , context(context_)
+    , config(context->getConfig())
     , process_list_element(context->getProcessListElement())
-    , collect_metadata_timeout(context->getConfigRef().getUInt64(
-          "backups.collect_metadata_timeout", context->getConfigRef().getUInt64("backups.consistent_metadata_snapshot_timeout", 600000)))
-    , attempts_to_collect_metadata_before_sleep(context->getConfigRef().getUInt("backups.attempts_to_collect_metadata_before_sleep", 2))
+    , collect_metadata_timeout(config->getUInt64(
+          "backups.collect_metadata_timeout", config->getUInt64("backups.consistent_metadata_snapshot_timeout", 600000)))
+    , attempts_to_collect_metadata_before_sleep(config->getUInt("backups.attempts_to_collect_metadata_before_sleep", 2))
     , min_sleep_before_next_attempt_to_collect_metadata(
-          context->getConfigRef().getUInt64("backups.min_sleep_before_next_attempt_to_collect_metadata", 100))
+          config->getUInt64("backups.min_sleep_before_next_attempt_to_collect_metadata", 100))
     , max_sleep_before_next_attempt_to_collect_metadata(
-          context->getConfigRef().getUInt64("backups.max_sleep_before_next_attempt_to_collect_metadata", 5000))
-    , compare_collected_metadata(context->getConfigRef().getBool("backups.compare_collected_metadata", true))
+          config->getUInt64("backups.max_sleep_before_next_attempt_to_collect_metadata", 5000))
+    , compare_collected_metadata(config->getBool("backups.compare_collected_metadata", true))
     , log(getLogger("BackupEntriesCollector"))
     , global_zookeeper_retries_info(
           context->getSettingsRef()[Setting::backup_restore_keeper_max_retries],

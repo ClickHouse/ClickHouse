@@ -295,11 +295,12 @@ private:
 
 BackupsWorker::BackupsWorker(ContextMutablePtr global_context, size_t num_backup_threads, size_t num_restore_threads)
     : thread_pools(std::make_unique<ThreadPools>(num_backup_threads, num_restore_threads))
-    , allow_concurrent_backups(global_context->getConfigRef().getBool("backups.allow_concurrent_backups", true))
-    , allow_concurrent_restores(global_context->getConfigRef().getBool("backups.allow_concurrent_restores", true))
-    , remove_backup_files_after_failure(global_context->getConfigRef().getBool("backups.remove_backup_files_after_failure", true))
-    , test_randomize_order(global_context->getConfigRef().getBool("backups.test_randomize_order", false))
-    , test_inject_sleep(global_context->getConfigRef().getBool("backups.test_inject_sleep", false))
+    , config(global_context->getConfig())
+    , allow_concurrent_backups(config->getBool("backups.allow_concurrent_backups", true))
+    , allow_concurrent_restores(config->getBool("backups.allow_concurrent_restores", true))
+    , remove_backup_files_after_failure(config->getBool("backups.remove_backup_files_after_failure", true))
+    , test_randomize_order(config->getBool("backups.test_randomize_order", false))
+    , test_inject_sleep(config->getBool("backups.test_inject_sleep", false))
     , log(getLogger("BackupsWorker"))
     , backup_log(global_context->getBackupLog())
     , process_list(global_context->getProcessList())
@@ -948,7 +949,7 @@ BackupsWorker::makeBackupCoordination(bool on_cluster, const BackupSettings & ba
 
     bool is_internal_backup = backup_settings.internal;
 
-    String root_zk_path = context->getConfigRef().getString("backups.zookeeper_path", "/clickhouse/backups");
+    String root_zk_path = config->getString("backups.zookeeper_path", "/clickhouse/backups");
     auto get_zookeeper = [global_context = context->getGlobalContext()] { return global_context->getZooKeeper(); };
     auto keeper_settings = BackupKeeperSettings::fromContext(context);
 
@@ -987,7 +988,7 @@ BackupsWorker::makeRestoreCoordination(bool on_cluster, const RestoreSettings & 
 
     bool is_internal_restore = restore_settings.internal;
 
-    String root_zk_path = context->getConfigRef().getString("backups.zookeeper_path", "/clickhouse/backups");
+    String root_zk_path = config->getString("backups.zookeeper_path", "/clickhouse/backups");
     auto get_zookeeper = [global_context = context->getGlobalContext()] { return global_context->getZooKeeper(); };
     auto keeper_settings = BackupKeeperSettings::fromContext(context);
 

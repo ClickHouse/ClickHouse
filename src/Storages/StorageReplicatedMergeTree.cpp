@@ -1606,7 +1606,7 @@ void StorageReplicatedMergeTree::paranoidCheckForCoveredPartsInZooKeeperOnStart(
     constexpr bool paranoid_check_for_covered_parts_default = false;
 #endif
 
-    bool paranoid_check_for_covered_parts = Context::getGlobalContextInstance()->getConfigRef().getBool(
+    bool paranoid_check_for_covered_parts = Context::getGlobalContextInstance()->getConfig()->getBool(
         "replicated_merge_tree_paranoid_check_on_startup", paranoid_check_for_covered_parts_default);
     if (!paranoid_check_for_covered_parts)
         return;
@@ -2477,7 +2477,7 @@ static void paranoidCheckForCoveredPartsInZooKeeper(
     constexpr bool paranoid_check_for_covered_parts_default = false;
 #endif
 
-    bool paranoid_check_for_covered_parts = Context::getGlobalContextInstance()->getConfigRef().getBool(
+    bool paranoid_check_for_covered_parts = Context::getGlobalContextInstance()->getConfig()->getBool(
         "replicated_merge_tree_paranoid_check_on_drop_range", paranoid_check_for_covered_parts_default);
     if (!paranoid_check_for_covered_parts)
         return;
@@ -3237,7 +3237,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     Strings active_parts = get_part_set.getParts();
 
     /// Remove local parts if source replica does not have them, because such parts will never be fetched by other replicas.
-    static const auto test_delay = getContext()->getConfigRef().getUInt64("test.clone_replica.delay_before_removing_local_parts_ms", 0);
+    static const auto test_delay = getContext()->getConfig()->getUInt64("test.clone_replica.delay_before_removing_local_parts_ms", 0);
     if (test_delay)
         randomDelayForMaxMilliseconds(test_delay, log.load(), "cloneReplica: Before removing local parts");
 

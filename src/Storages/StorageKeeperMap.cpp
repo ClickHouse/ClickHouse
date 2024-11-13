@@ -360,7 +360,7 @@ StorageKeeperMap::StorageKeeperMap(
     , keys_limit(keys_limit_)
     , log(getLogger(fmt::format("StorageKeeperMap ({})", table_id.getNameForLogs())))
 {
-    std::string path_prefix = context_->getConfigRef().getString("keeper_map_path_prefix", "");
+    std::string path_prefix = context_->getConfig()->getString("keeper_map_path_prefix", "");
     if (path_prefix.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "KeeperMap is disabled because 'keeper_map_path_prefix' config is not defined");
 
@@ -383,7 +383,7 @@ StorageKeeperMap::StorageKeeperMap(
     if (!zk_root_path.starts_with('/'))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "zk_root_path should start with '/'");
 
-    auto config_keys_limit = context_->getConfigRef().getUInt64("keeper_map_keys_limit", 0);
+    auto config_keys_limit = context_->getConfig()->getUInt64("keeper_map_keys_limit", 0);
     if (config_keys_limit != 0 && (keys_limit == 0 || keys_limit > config_keys_limit))
     {
         LOG_WARNING(

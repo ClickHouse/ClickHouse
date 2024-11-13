@@ -150,6 +150,9 @@ namespace Util
         /// Does nothing if the given configuration is not part of the
         /// LayeredConfiguration.
 
+        void assignConfigurations(LayeredConfiguration& pConfig);
+        /// Clear and adds all configurations from other LayeredConfiguration.
+
     protected:
         struct ConfigItem
         {

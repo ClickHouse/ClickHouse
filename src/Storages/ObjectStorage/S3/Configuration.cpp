@@ -131,10 +131,10 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
 {
     assertInitialized();
 
-    const auto & config = context->getConfigRef();
+    const auto config = context->getConfig();
     const auto & settings = context->getSettingsRef();
 
-    auto s3_settings = getSettings(config, "s3" /* config_prefix */, context, url.uri_str, settings[Setting::s3_validate_request_settings]);
+    auto s3_settings = getSettings(*config, "s3" /* config_prefix */, context, url.uri_str, settings[Setting::s3_validate_request_settings]);
 
     if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
     {
@@ -154,7 +154,7 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
 
     auto client = getClient(url, *s3_settings, context, /* for_disk_s3 */false);
     auto key_generator = createObjectStorageKeysGeneratorAsIsWithPrefix(url.key);
-    auto s3_capabilities = getCapabilitiesFromConfig(config, "s3");
+    auto s3_capabilities = getCapabilitiesFromConfig(*config, "s3");
 
     return std::make_shared<S3ObjectStorage>(
         std::move(client), std::move(s3_settings), url, s3_capabilities,

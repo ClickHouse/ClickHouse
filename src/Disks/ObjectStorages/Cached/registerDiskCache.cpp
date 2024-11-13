@@ -54,7 +54,7 @@ void registerDiskCache(DiskFactory & factory, bool /* global_skip_access_check *
         if (custom_disk)
         {
             static constexpr auto custom_cached_disks_base_dir_in_config = "custom_cached_disks_base_directory";
-            auto custom_cached_disk_path_prefix = context->getConfigRef().getString(custom_cached_disks_base_dir_in_config, config_fs_caches_dir);
+            auto custom_cached_disk_path_prefix = context->getConfig()->getString(custom_cached_disks_base_dir_in_config, config_fs_caches_dir);
             if (custom_cached_disk_path_prefix.empty())
             {
                 if (!attach)

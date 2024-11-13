@@ -139,7 +139,7 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
 
     LOG_TRACE(log, "Sending part {}", part_name);
 
-    static const auto test_delay = data.getContext()->getConfigRef().getUInt64("test.data_parts_exchange.delay_before_sending_part_ms", 0);
+    static const auto test_delay = data.getContext()->getConfig()->getUInt64("test.data_parts_exchange.delay_before_sending_part_ms", 0);
     if (test_delay)
         randomDelayForMaxMilliseconds(test_delay, log, "DataPartsExchange: Before sending part");
 

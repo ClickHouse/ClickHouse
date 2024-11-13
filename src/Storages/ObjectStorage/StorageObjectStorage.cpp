@@ -146,7 +146,8 @@ bool StorageObjectStorage::supportsSubsetOfColumns(const ContextPtr & context) c
 void StorageObjectStorage::Configuration::update(ObjectStoragePtr object_storage_ptr, ContextPtr context)
 {
     IObjectStorage::ApplyNewSettingsOptions options{.allow_client_change = !isStaticConfiguration()};
-    object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);
+    auto config = context->getConfig();
+    object_storage_ptr->applyNewSettings(*config, getTypeName() + ".", context, options);
 }
 namespace
 {
@@ -481,30 +482,29 @@ std::pair<ColumnsDescription, std::string> StorageObjectStorage::resolveSchemaAn
 
 SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, const std::string & storage_type_name)
 {
+    auto config = context->getConfig();
     if (storage_type_name == "s3")
     {
         static SchemaCache schema_cache(
-            context->getConfigRef().getUInt(
-                "schema_inference_cache_max_elements_for_s3",
-                DEFAULT_SCHEMA_CACHE_ELEMENTS));
+            config->getUInt("schema_inference_cache_max_elements_for_s3", DEFAULT_SCHEMA_CACHE_ELEMENTS));
         return schema_cache;
     }
     if (storage_type_name == "hdfs")
     {
         static SchemaCache schema_cache(
-            context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_hdfs", DEFAULT_SCHEMA_CACHE_ELEMENTS));
+            config->getUInt("schema_inference_cache_max_elements_for_hdfs", DEFAULT_SCHEMA_CACHE_ELEMENTS));
         return schema_cache;
     }
     if (storage_type_name == "azure")
     {
         static SchemaCache schema_cache(
-            context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_azure", DEFAULT_SCHEMA_CACHE_ELEMENTS));
+            config->getUInt("schema_inference_cache_max_elements_for_azure", DEFAULT_SCHEMA_CACHE_ELEMENTS));
         return schema_cache;
     }
     if (storage_type_name == "local")
     {
         static SchemaCache schema_cache(
-            context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_local", DEFAULT_SCHEMA_CACHE_ELEMENTS));
+            config->getUInt("schema_inference_cache_max_elements_for_local", DEFAULT_SCHEMA_CACHE_ELEMENTS));
         return schema_cache;
     }
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported storage type: {}", storage_type_name);

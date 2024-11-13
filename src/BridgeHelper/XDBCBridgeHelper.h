@@ -69,10 +69,10 @@ public:
         , connection_string(connection_string_)
         , use_connection_pooling(use_connection_pooling_)
         , http_timeout(http_timeout_)
-        , config(context_->getGlobalContext()->getConfigRef())
+        , config(context_->getGlobalContext()->getConfig())
     {
-        bridge_host = config.getString(BridgeHelperMixin::configPrefix() + ".host", DEFAULT_HOST);
-        bridge_port = config.getUInt(BridgeHelperMixin::configPrefix() + ".port", DEFAULT_PORT);
+        bridge_host = config->getString(BridgeHelperMixin::configPrefix() + ".host", DEFAULT_HOST);
+        bridge_port = config->getUInt(BridgeHelperMixin::configPrefix() + ".port", DEFAULT_PORT);
     }
 
 protected:
@@ -126,7 +126,7 @@ protected:
 
     Poco::Timespan getHTTPTimeout() const override { return http_timeout; }
 
-    const Poco::Util::AbstractConfiguration & getConfig() const override { return config; }
+    const Poco::Util::AbstractConfiguration & getConfig() const override { return *config; }
 
     LoggerPtr getLog() const override { return log; }
 
@@ -158,7 +158,7 @@ private:
     std::string bridge_host;
     size_t bridge_port;
 
-    const Configuration & config;
+    Poco::AutoPtr<Configuration> config;
 
     std::optional<IdentifierQuotingStyle> quote_style;
     std::optional<bool> is_schema_allowed;

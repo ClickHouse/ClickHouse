@@ -152,10 +152,11 @@ DatabaseReplicated::DatabaseReplicated(
     if (zookeeper_path.front() != '/')
         zookeeper_path = "/" + zookeeper_path;
 
+    auto config = context_->getConfig();
     if (!db_settings[DatabaseReplicatedSetting::collection_name].value.empty())
-        fillClusterAuthInfo(db_settings[DatabaseReplicatedSetting::collection_name].value, context_->getConfigRef());
+        fillClusterAuthInfo(db_settings[DatabaseReplicatedSetting::collection_name].value, *config);
 
-    replica_group_name = context_->getConfigRef().getString("replica_group_name", "");
+    replica_group_name = config->getString("replica_group_name", "");
 
     if (!replica_group_name.empty() && database_name.starts_with(DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX))
     {
@@ -933,7 +934,7 @@ void DatabaseReplicated::checkTableEngine(const ASTCreateQuery & query, ASTStora
     info.expanded_other = false;
     query_context->getMacros()->expand(maybe_replica, info);
     bool maybe_replica_macros = info.expanded_other;
-    bool enable_functional_tests_helper = getContext()->getConfigRef().has("_functional_tests_helper_database_replicated_replace_args_macros");
+    bool enable_functional_tests_helper = getContext()->getConfig()->has("_functional_tests_helper_database_replicated_replace_args_macros");
 
     if (maybe_shard_macros && maybe_replica_macros)
         return;

@@ -447,10 +447,10 @@ void StorageEmbeddedRocksDB::initDB()
     rocksdb::Options merged = base;
     rocksdb::BlockBasedTableOptions table_options;
 
-    const auto & config = getContext()->getConfigRef();
-    if (config.has("rocksdb.options"))
+    auto config = getContext()->getConfig();
+    if (config->has("rocksdb.options"))
     {
-        auto config_options = getOptionsFromConfig(config, "rocksdb.options");
+        auto config_options = getOptionsFromConfig(*config, "rocksdb.options");
         status = rocksdb::GetDBOptionsFromMap({}, merged, config_options, &merged);
         if (!status.ok())
         {
@@ -458,9 +458,9 @@ void StorageEmbeddedRocksDB::initDB()
                 rocksdb_dir, status.ToString());
         }
     }
-    if (config.has("rocksdb.column_family_options"))
+    if (config->has("rocksdb.column_family_options"))
     {
-        auto column_family_options = getOptionsFromConfig(config, "rocksdb.column_family_options");
+        auto column_family_options = getOptionsFromConfig(*config, "rocksdb.column_family_options");
         status = rocksdb::GetColumnFamilyOptionsFromMap({}, merged, column_family_options, &merged);
         if (!status.ok())
         {
@@ -468,9 +468,9 @@ void StorageEmbeddedRocksDB::initDB()
                 rocksdb_dir, status.ToString());
         }
     }
-    if (config.has("rocksdb.block_based_table_options"))
+    if (config->has("rocksdb.block_based_table_options"))
     {
-        auto block_based_table_options = getOptionsFromConfig(config, "rocksdb.block_based_table_options");
+        auto block_based_table_options = getOptionsFromConfig(*config, "rocksdb.block_based_table_options");
         status = rocksdb::GetBlockBasedTableOptionsFromMap({}, table_options, block_based_table_options, &table_options);
         if (!status.ok())
         {
@@ -479,23 +479,23 @@ void StorageEmbeddedRocksDB::initDB()
         }
     }
 
-    if (config.has("rocksdb.tables"))
+    if (config->has("rocksdb.tables"))
     {
         auto table_name = getStorageID().getTableName();
 
         Poco::Util::AbstractConfiguration::Keys keys;
-        config.keys("rocksdb.tables", keys);
+        config->keys("rocksdb.tables", keys);
 
         for (const auto & key : keys)
         {
             const String key_prefix = "rocksdb.tables." + key;
-            if (config.getString(key_prefix + ".name") != table_name)
+            if (config->getString(key_prefix + ".name") != table_name)
                 continue;
 
             String config_key = key_prefix + ".options";
-            if (config.has(config_key))
+            if (config->has(config_key))
             {
-                auto table_config_options = getOptionsFromConfig(config, config_key);
+                auto table_config_options = getOptionsFromConfig(*config, config_key);
                 status = rocksdb::GetDBOptionsFromMap({}, merged, table_config_options, &merged);
                 if (!status.ok())
                 {
@@ -505,9 +505,9 @@ void StorageEmbeddedRocksDB::initDB()
             }
 
             config_key = key_prefix + ".column_family_options";
-            if (config.has(config_key))
+            if (config->has(config_key))
             {
-                auto table_column_family_options = getOptionsFromConfig(config, config_key);
+                auto table_column_family_options = getOptionsFromConfig(*config, config_key);
                 status = rocksdb::GetColumnFamilyOptionsFromMap({}, merged, table_column_family_options, &merged);
                 if (!status.ok())
                 {
@@ -517,9 +517,9 @@ void StorageEmbeddedRocksDB::initDB()
             }
 
             config_key = key_prefix + ".block_based_table_options";
-            if (config.has(config_key))
+            if (config->has(config_key))
             {
-                auto block_based_table_options = getOptionsFromConfig(config, config_key);
+                auto block_based_table_options = getOptionsFromConfig(*config, config_key);
                 status = rocksdb::GetBlockBasedTableOptionsFromMap({}, table_options, block_based_table_options, &table_options);
                 if (!status.ok())
                 {

@@ -45,11 +45,12 @@ catch (...)
 
 TransactionLog::TransactionLog()
     : global_context(Context::getGlobalContextInstance())
+    , config(global_context->getConfig())
     , log(getLogger("TransactionLog"))
-    , zookeeper_path(global_context->getConfigRef().getString("transaction_log.zookeeper_path", "/clickhouse/txn"))
+    , zookeeper_path(config->getString("transaction_log.zookeeper_path", "/clickhouse/txn"))
     , zookeeper_path_log(zookeeper_path + "/log")
-    , fault_probability_before_commit(global_context->getConfigRef().getDouble("transaction_log.fault_probability_before_commit", 0))
-    , fault_probability_after_commit(global_context->getConfigRef().getDouble("transaction_log.fault_probability_after_commit", 0))
+    , fault_probability_before_commit(config->getDouble("transaction_log.fault_probability_before_commit", 0))
+    , fault_probability_after_commit(config->getDouble("transaction_log.fault_probability_after_commit", 0))
 {
     loadLogFromZooKeeper();
 
