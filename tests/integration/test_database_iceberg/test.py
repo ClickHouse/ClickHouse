@@ -2,9 +2,12 @@ import glob
 import json
 import logging
 import os
+import random
 import time
 import uuid
+from datetime import datetime, timedelta
 
+import pyarrow as pa
 import pytest
 import requests
 import urllib3
@@ -22,9 +25,7 @@ from pyiceberg.types import (
     StructType,
     TimestampType,
 )
-import pyarrow as pa
-import random
-from datetime import datetime, timedelta
+
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance, is_arm
 from helpers.s3_tools import get_file_contents, list_s3_objects, prepare_s3_bucket
 from helpers.test_tools import TSV, csv_compare
