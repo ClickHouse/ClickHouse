@@ -689,10 +689,12 @@ def test_s3_zero_copy_keeps_data_after_mutation(started_cluster):
     check_objects_not_exisis(cluster, objectsY)
 
 
-@pytest.mark.parametrize("failpoint", ["zero_copy_lock_zk_fail_before_op", "zero_copy_lock_zk_fail_after_op"])
+@pytest.mark.parametrize(
+    "failpoint", ["zero_copy_lock_zk_fail_before_op", "zero_copy_lock_zk_fail_after_op"]
+)
 def test_move_shared_lock_fail_once(started_cluster, test_table, failpoint):
     node1 = cluster.instances["node1"]
-    node2 = cluster.instances["node2"]    
+    node2 = cluster.instances["node2"]
 
     node1.query(
         f"""
@@ -703,28 +705,42 @@ def test_move_shared_lock_fail_once(started_cluster, test_table, failpoint):
         """
     )
 
-    date = '2024-10-23'
+    date = "2024-10-23"
 
-    node2.query(f"SYSTEM STOP FETCHES {test_table}")    
+    node2.query(f"SYSTEM STOP FETCHES {test_table}")
     node1.query(f"INSERT INTO {test_table} VALUES (1, '{date}')")
 
     # Try to move and get fail on acquring zero-copy shared lock
     node1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
-    node1.query_and_get_error(f"ALTER TABLE {test_table} MOVE PARTITION '{date}' TO VOLUME 'external'")
+    node1.query_and_get_error(
+        f"ALTER TABLE {test_table} MOVE PARTITION '{date}' TO VOLUME 'external'"
+    )
 
     # After fail the part must remain on the source disk
-    assert node1.query(f"SELECT disk_name FROM system.parts WHERE table='{test_table}' GROUP BY disk_name") == "default\n"
+    assert (
+        node1.query(
+            f"SELECT disk_name FROM system.parts WHERE table='{test_table}' GROUP BY disk_name"
+        )
+        == "default\n"
+    )
 
     # Try another attempt after zk connection is restored
     # It should not failed due to leftovers of previous attempt (temporary cloned files)
     node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
-    node1.query(f"ALTER TABLE {test_table} MOVE PARTITION '{date}' TO VOLUME 'external'")
+    node1.query(
+        f"ALTER TABLE {test_table} MOVE PARTITION '{date}' TO VOLUME 'external'"
+    )
 
-    assert node1.query(f"SELECT disk_name FROM system.parts WHERE table='{test_table}' GROUP BY disk_name") == "s31\n"
+    assert (
+        node1.query(
+            f"SELECT disk_name FROM system.parts WHERE table='{test_table}' GROUP BY disk_name"
+        )
+        == "s31\n"
+    )
 
     # Sanity check
     node2.query(f"SYSTEM START FETCHES {test_table}")
-    wait_for_active_parts(node2, 1, test_table, disk_name='s31')
+    wait_for_active_parts(node2, 1, test_table, disk_name="s31")
     assert node2.query(f"SELECT sum(num) FROM {test_table}") == "1\n"
 
     node1.query(f"DROP TABLE IF EXISTS {test_table} SYNC")
@@ -733,7 +749,7 @@ def test_move_shared_lock_fail_once(started_cluster, test_table, failpoint):
 
 def test_move_shared_lock_fail_keeper_unavailable(started_cluster, test_table):
     node1 = cluster.instances["node1"]
-    node2 = cluster.instances["node2"]    
+    node2 = cluster.instances["node2"]
 
     node1.query(
         f"""
@@ -744,15 +760,17 @@ def test_move_shared_lock_fail_keeper_unavailable(started_cluster, test_table):
         """
     )
 
-    date = '2024-10-23'
+    date = "2024-10-23"
     node2.query(f"SYSTEM STOP FETCHES {test_table}")
 
     node1.query(f"INSERT INTO {test_table} VALUES (1, '{date}')")
     # Pause moving after part cloning, but before swapping
-    node1.query("SYSTEM ENABLE FAILPOINT stop_moving_part_before_swap_with_active")    
+    node1.query("SYSTEM ENABLE FAILPOINT stop_moving_part_before_swap_with_active")
 
     def move(node):
-        node.query_and_get_error(f"ALTER TABLE {test_table} MOVE PARTITION '{date}' TO VOLUME 'external'")
+        node.query_and_get_error(
+            f"ALTER TABLE {test_table} MOVE PARTITION '{date}' TO VOLUME 'external'"
+        )
 
     # Start moving
     t1 = threading.Thread(target=move, args=[node1])
@@ -763,14 +781,16 @@ def test_move_shared_lock_fail_keeper_unavailable(started_cluster, test_table):
         # Continue moving and try to swap
         node1.query("SYSTEM DISABLE FAILPOINT stop_moving_part_before_swap_with_active")
         t1.join()
- 
+
     # Previous MOVE was failed, try another one after zk connection is restored
     # It should not failed due to leftovers of previous attempt (temporary cloned files)
-    node1.query_with_retry(f"ALTER TABLE {test_table} MOVE PARTITION '{date}' TO VOLUME 'external'")
+    node1.query_with_retry(
+        f"ALTER TABLE {test_table} MOVE PARTITION '{date}' TO VOLUME 'external'"
+    )
 
     # Sanity check
     node2.query(f"SYSTEM START FETCHES {test_table}")
-    wait_for_active_parts(node2, 1, test_table, disk_name='s31')
+    wait_for_active_parts(node2, 1, test_table, disk_name="s31")
     assert node2.query(f"SELECT sum(num) FROM {test_table}") == "1\n"
 
     node1.query(f"DROP TABLE IF EXISTS {test_table} SYNC")
