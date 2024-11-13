@@ -19,7 +19,7 @@ select parseDateTime64InJodaSyntaxOrZero('2024-10-09 10:30:10', -3); -- {serverE
 select parseDateTime64InJodaSyntax('2024-10-09 10:30:10.123', 'yyyy-MM-dd HH:mm:ss.SSS'); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
 select parseDateTime64InJodaSyntaxOrZero('2024-10-09 10:30:10.123', 3), parseDateTime64InJodaSyntaxOrZero('2024-10-09 10:30:10.123', 6);
 select parseDateTime64InJodaSyntaxOrZero('2024-10-09 10:30:10.123', 3, 'yyyy-MM-dd HH:mm:ss.SSS'), parseDateTime64InJodaSyntaxOrZero('2024-10-09 10:30:10.123', 6, 'yyyy-MM-dd HH:mm:ss.SSSSSS');
-select parseDateTime64InJodaSyntaxOrZero('2024-10-09 10:30:10.123', 3, 'yyyy-MM-dd HH:mm:ss.SSSS');
+select parseDateTime64InJodaSyntaxOrZero('2024-10-09 10:30:10.123', 3, 'yyyy-MM-dd HH:mm:ss.SSSS'); -- { serverError BAD_ARGUMENTS }
 select parseDateTime64InJodaSyntaxOrZero('2024-10-09 10:30:10.123456-0812', 6, 'yyyy-MM-dd HH:mm:ss.SSSSSSZ');
 select parseDateTime64InJodaSyntaxOrZero('2024-10-09 10:30:10.123456-08123', 6, 'yyyy-MM-dd HH:mm:ss.SSSSSSZZZ');
 select parseDateTime64InJodaSyntaxOrZero('2024-10-09 10:30:10.123456EST', 6, 'yyyy-MM-dd HH:mm:ss.SSSSSSz');
@@ -33,7 +33,7 @@ select parseDateTime64InJodaSyntaxOrNull('2024-10-09 10:30:10', -3); -- {serverE
 select parseDateTime64InJodaSyntax('2024-10-09 10:30:10.123', 'yyyy-MM-dd HH:mm:ss.SSS'); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
 select parseDateTime64InJodaSyntaxOrNull('2024-10-09 10:30:10.123', 3), parseDateTime64InJodaSyntaxOrNull('2024-10-09 10:30:10.123', 6);
 select parseDateTime64InJodaSyntaxOrNull('2024-10-09 10:30:10.123', 3, 'yyyy-MM-dd HH:mm:ss.SSS'), parseDateTime64InJodaSyntaxOrNull('2024-10-09 10:30:10.123', 6, 'yyyy-MM-dd HH:mm:ss.SSSSSS');
-select parseDateTime64InJodaSyntaxOrNull('2024-10-09 10:30:10.123', 3, 'yyyy-MM-dd HH:mm:ss.SSSS');
+select parseDateTime64InJodaSyntaxOrNull('2024-10-09 10:30:10.123', 3, 'yyyy-MM-dd HH:mm:ss.SSSS'); -- { serverError BAD_ARGUMENTS }
 select parseDateTime64InJodaSyntaxOrNull('2024-10-09 10:30:10.123456-0812', 6, 'yyyy-MM-dd HH:mm:ss.SSSSSSZ');
 select parseDateTime64InJodaSyntaxOrNull('2024-10-09 10:30:10.123456-08123', 6, 'yyyy-MM-dd HH:mm:ss.SSSSSSZZZ');
 select parseDateTime64InJodaSyntaxOrNull('2024-10-09 10:30:10.123456EST', 6, 'yyyy-MM-dd HH:mm:ss.SSSSSSz');
