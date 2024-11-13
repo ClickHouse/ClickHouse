@@ -66,11 +66,11 @@ def cluster():
 
 
 def azure_query(
-    node, query, expect_error="false", try_num=10, settings={}, query_on_retry=None
+    node, query, expect_error=False, try_num=10, settings={}, query_on_retry=None
 ):
     for i in range(try_num):
         try:
-            if expect_error == "true":
+            if expect_error:
                 return node.query_and_get_error(query, settings=settings)
             else:
                 return node.query(query, settings=settings)

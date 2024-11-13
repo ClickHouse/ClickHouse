@@ -1257,6 +1257,33 @@ void IMergeTreeDataPart::appendFilesOfChecksums(Strings & files)
     files.push_back("checksums.txt");
 }
 
+void IMergeTreeDataPart::loadRowsCountFileForUnexpectedPart()
+{
+    auto read_rows_count = [&]()
+    {
+        auto buf = metadata_manager->read("count.txt");
+        readIntText(rows_count, *buf);
+        assertEOF(*buf);
+    };
+    if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || part_type == Type::Compact || parent_part)
+    {
+        if (metadata_manager->exists("count.txt"))
+        {
+            read_rows_count();
+            return;
+        }
+    }
+    else
+    {
+        if (getDataPartStorage().exists("count.txt"))
+        {
+            read_rows_count();
+            return;
+        }
+    }
+    throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No count.txt in part {}", name);
+}
+
 void IMergeTreeDataPart::loadRowsCount()
 {
     auto read_rows_count = [&]()
@@ -1985,6 +2012,7 @@ DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(const String & prefix
     IDataPartStorage::ClonePartParams params
     {
         .copy_instead_of_hardlink = isStoredOnRemoteDiskWithZeroCopySupport() && storage.supportsReplication() && storage_settings->allow_remote_fs_zero_copy_replication,
+        .keep_metadata_version = prefix == "covered-by-broken",
         .make_source_readonly = true,
         .external_transaction = disk_transaction
     };

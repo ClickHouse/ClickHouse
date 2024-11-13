@@ -14,15 +14,10 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Common/logger_useful.h>
 #include <Processors/Merges/Algorithms/MergeTreePartLevelInfo.h>
+#include <Storages/MergeTree/checkDataPart.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int MEMORY_LIMIT_EXCEEDED;
-}
-
 
 /// Lightweight (in terms of logic) stream for reading single part from
 /// MergeTree, used for merges and mutations.
@@ -275,7 +270,7 @@ try
 catch (...)
 {
     /// Suspicion of the broken part. A part is added to the queue for verification.
-    if (getCurrentExceptionCode() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+    if (!isRetryableException(std::current_exception()))
         storage.reportBrokenPart(data_part);
     throw;
 }

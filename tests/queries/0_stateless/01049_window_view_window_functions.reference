@@ -67,3 +67,7 @@ SELECT toDateTime(hopEnd(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL
 2020-01-10 00:00:00
 SELECT hopEnd(hop(toDateTime('2019-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' DAY, INTERVAL '3' DAY, 'US/Samoa'));
 2019-01-10 00:00:00
+SELECT hopStart(tuple()); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT hopEnd(tuple()); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT tumbleStart(tuple()); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT tumbleEnd(tuple()); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }

@@ -223,4 +223,4 @@ def test_corrupted_unexpected_part_ultimate():
         == "1\n"
     )
 
-    assert node.query("SELECT sum(key) FROM broken_table_3") == "190\n"
+    assert node.query("SELECT sum(key) FROM broken_table_3") == "145\n"

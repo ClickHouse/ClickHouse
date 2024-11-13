@@ -1,5 +1,4 @@
 #include <Poco/Logger.h>
-#include <algorithm>
 #include <optional>
 
 #include <Poco/DirectoryIterator.h>
@@ -16,11 +15,9 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/IKeeper.h>
+#include <IO/AzureBlobStorage/isRetryableAzureException.h>
 #include <Poco/Net/NetException.h>
 
-#if USE_AZURE_BLOB_STORAGE
-#include <azure/core/http/http.hpp>
-#endif
 
 namespace CurrentMetrics
 {
@@ -38,11 +35,13 @@ namespace ErrorCodes
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int CANNOT_MUNMAP;
     extern const int CANNOT_MREMAP;
+    extern const int CANNOT_SCHEDULE_TASK;
     extern const int UNEXPECTED_FILE_IN_DATA_PART;
     extern const int NO_FILE_IN_DATA_PART;
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
     extern const int BROKEN_PROJECTION;
+    extern const int ABORTED;
 }
 
 
@@ -66,33 +65,30 @@ bool isRetryableException(std::exception_ptr exception_ptr)
 #if USE_AWS_S3
     catch (const S3Exception & s3_exception)
     {
-        if (s3_exception.isRetryableError())
-            return true;
+        return s3_exception.isRetryableError();
     }
 #endif
 #if USE_AZURE_BLOB_STORAGE
-    catch (const Azure::Core::RequestFailedException &)
+    catch (const Azure::Core::RequestFailedException & e)
     {
-        return true;
+        return isRetryableAzureException(e);
     }
 #endif
     catch (const ErrnoException & e)
     {
-        if (e.getErrno() == EMFILE)
-            return true;
+        return e.getErrno() == EMFILE;
     }
-    catch (const Coordination::Exception  & e)
+    catch (const Coordination::Exception & e)
     {
-        if (Coordination::isHardwareError(e.code))
-            return true;
+        return Coordination::isHardwareError(e.code);
     }
     catch (const Exception & e)
     {
-        if (isNotEnoughMemoryErrorCode(e.code()))
-            return true;
-
-        if (e.code() == ErrorCodes::NETWORK_ERROR || e.code() == ErrorCodes::SOCKET_TIMEOUT)
-            return true;
+        return isNotEnoughMemoryErrorCode(e.code())
+            || e.code() == ErrorCodes::NETWORK_ERROR
+            || e.code() == ErrorCodes::SOCKET_TIMEOUT
+            || e.code() == ErrorCodes::CANNOT_SCHEDULE_TASK
+            || e.code() == ErrorCodes::ABORTED;
     }
     catch (const Poco::Net::NetException &)
     {
@@ -102,10 +98,12 @@ bool isRetryableException(std::exception_ptr exception_ptr)
     {
         return true;
     }
-
-    /// In fact, there can be other similar situations.
-    /// But it is OK, because there is a safety guard against deleting too many parts.
-    return false;
+    catch (...)
+    {
+        /// In fact, there can be other similar situations.
+        /// But it is OK, because there is a safety guard against deleting too many parts.
+        return false;
+    }
 }
 
 
@@ -335,16 +333,21 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         projections_on_disk.erase(projection_file);
     }
 
-    if (throw_on_broken_projection && !broken_projections_message.empty())
+    if (throw_on_broken_projection)
     {
-        throw Exception(ErrorCodes::BROKEN_PROJECTION, "{}", broken_projections_message);
-    }
+        if (!broken_projections_message.empty())
+        {
+            throw Exception(ErrorCodes::BROKEN_PROJECTION, "{}", broken_projections_message);
+        }
 
-    if (require_checksums && !projections_on_disk.empty())
-    {
-        throw Exception(ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART,
-            "Found unexpected projection directories: {}",
-            fmt::join(projections_on_disk, ","));
+        /// This one is actually not broken, just redundant files on disk which
+        /// MergeTree will never use.
+        if (require_checksums && !projections_on_disk.empty())
+        {
+            throw Exception(ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART,
+                "Found unexpected projection directories: {}",
+                fmt::join(projections_on_disk, ","));
+        }
     }
 
     if (is_cancelled())
@@ -384,17 +387,9 @@ IMergeTreeDataPart::Checksums checkDataPart(
             auto file_name = it->name();
             if (!data_part_storage.isDirectory(file_name))
             {
-                const bool is_projection_part = data_part->isProjectionPart();
-                auto remote_path = data_part_storage.getRemotePath(file_name, /* if_exists */is_projection_part);
-                if (remote_path.empty())
-                {
-                    chassert(is_projection_part);
-                    throw Exception(
-                        ErrorCodes::BROKEN_PROJECTION,
-                        "Remote path for {} does not exist for projection path. Projection {} is broken",
-                        file_name, data_part->name);
-                }
-                cache.removePathIfExists(remote_path, FileCache::getCommonUser().user_id);
+                auto remote_paths = data_part_storage.getRemotePaths(file_name);
+                for (const auto & remote_path : remote_paths)
+                    cache.removePathIfExists(remote_path, FileCache::getCommonUser().user_id);
             }
         }
 

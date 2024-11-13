@@ -652,10 +652,9 @@ public:
 
     /// Renames the part to detached/<prefix>_<part> and removes it from data_parts,
     //// so it will not be deleted in clearOldParts.
-    /// If restore_covered is true, adds to the working set inactive parts, which were merged into the deleted part.
     /// NOTE: This method is safe to use only for parts which nobody else holds (like on server start or for parts which was not committed).
     /// For active parts it's unsafe because this method modifies fields of part (rename) while some other thread can try to read it.
-    void forcefullyMovePartToDetachedAndRemoveFromMemory(const DataPartPtr & part, const String & prefix = "", bool restore_covered = false);
+    void forcefullyMovePartToDetachedAndRemoveFromMemory(const DataPartPtr & part, const String & prefix = "");
 
     /// This method should not be here, but async loading of Outdated parts is implemented in MergeTreeData
     virtual void forcefullyRemoveBrokenOutdatedPartFromZooKeeperBeforeDetaching(const String & /*part_name*/) {}
@@ -1068,6 +1067,7 @@ public:
     scope_guard getTemporaryPartDirectoryHolder(const String & part_dir_name) const;
 
     void waitForOutdatedPartsToBeLoaded() const;
+    void waitForUnexpectedPartsToBeLoaded() const;
     bool canUsePolymorphicParts() const;
 
     /// TODO: make enabled by default in the next release if no problems found.
@@ -1545,13 +1545,33 @@ protected:
     PartLoadingTreeNodes outdated_unloaded_data_parts TSA_GUARDED_BY(outdated_data_parts_mutex);
     bool outdated_data_parts_loading_canceled TSA_GUARDED_BY(outdated_data_parts_mutex) = false;
 
+    mutable std::mutex unexpected_data_parts_mutex;
+    mutable std::condition_variable unexpected_data_parts_cv;
+
+    struct UnexpectedPartLoadState
+    {
+        PartLoadingTree::NodePtr loading_info;
+        /// if it is covered by any unexpected part
+        bool uncovered = true;
+        bool is_broken = false;
+        MutableDataPartPtr part;
+    };
+
+    BackgroundSchedulePool::TaskHolder unexpected_data_parts_loading_task;
+    std::vector<UnexpectedPartLoadState> unexpected_data_parts;
+    bool unexpected_data_parts_loading_canceled TSA_GUARDED_BY(unexpected_data_parts_mutex) = false;
+
+    void loadUnexpectedDataParts();
+    void loadUnexpectedDataPart(UnexpectedPartLoadState & state);
+
     /// This has to be "true" by default, because in case of empty table or absence of Outdated parts
     /// it is automatically finished.
     std::atomic_bool outdated_data_parts_loading_finished = true;
+    std::atomic_bool unexpected_data_parts_loading_finished = true;
 
     void loadOutdatedDataParts(bool is_async);
-    void startOutdatedDataPartsLoadingTask();
-    void stopOutdatedDataPartsLoadingTask();
+    void startOutdatedAndUnexpectedDataPartsLoadingTask();
+    void stopOutdatedAndUnexpectedDataPartsLoadingTask();
 
     static void incrementInsertedPartsProfileEvent(MergeTreeDataPartType type);
     static void incrementMergedPartsProfileEvent(MergeTreeDataPartType type);

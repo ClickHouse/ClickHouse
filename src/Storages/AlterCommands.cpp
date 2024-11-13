@@ -18,6 +18,7 @@
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Storages/StorageView.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
@@ -32,6 +33,7 @@
 #include <Parsers/queryToString.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageFactory.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/typeid_cast.h>
 #include <Common/randomSeed.h>
@@ -1285,6 +1287,9 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Data type have to be specified for column {} to add", backQuote(column_name));
 
+            validateDataType(command.data_type, DataTypeValidationSettings(context->getSettingsRef()));
+            checkAllTypesAreAllowedInTable(NamesAndTypesList{{command.column_name, command.data_type}});
+
             /// FIXME: Adding a new column of type Object(JSON) is broken.
             /// Looks like there is something around default expression for this column (method `getDefault` is not implemented for the data type Object).
             /// But after ALTER TABLE ADD COLUMN we need to fill existing rows with something (exactly the default value).
@@ -1364,6 +1369,9 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             /// So we don't allow to do it for now.
             if (command.data_type)
             {
+                validateDataType(command.data_type, DataTypeValidationSettings(context->getSettingsRef()));
+                checkAllTypesAreAllowedInTable(NamesAndTypesList{{command.column_name, command.data_type}});
+
                 const GetColumnsOptions options(GetColumnsOptions::All);
                 const auto old_data_type = all_columns.getColumn(options, column_name).type;
 

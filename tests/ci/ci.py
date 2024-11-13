@@ -14,10 +14,12 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union
 
+from github import Github
+
 import docker_images_helper
 import upload_result_helper
 from build_check import get_release_or_pr
-from ci_config import CI_CONFIG, Build, CIStages, Labels, JobNames
+from ci_config import CI_CONFIG, Build, CIStages, JobNames, Labels
 from ci_utils import GHActions, is_hex, normalize_string
 from clickhouse_helper import (
     CiLogsCredentials,
@@ -49,7 +51,6 @@ from env_helper import (
 from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, Git
 from git_helper import Runner as GitRunner
-from github import Github
 from pr_info import PRInfo
 from report import ERROR, SUCCESS, BuildResult, JobReport
 from s3_helper import S3Helper
@@ -2077,6 +2078,7 @@ def main() -> int:
                         s3,
                         pr_info.number,
                         pr_info.sha,
+                        pr_info.head_ref,
                         job_report.test_results,
                         job_report.additional_files,
                         job_report.check_name or _get_ext_check_name(args.job_name),

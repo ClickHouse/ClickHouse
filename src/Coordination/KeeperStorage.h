@@ -301,6 +301,7 @@ public:
     struct FailedMultiDelta
     {
         std::vector<Coordination::Error> error_codes;
+        Coordination::Error global_error{Coordination::Error::ZOK};
     };
 
     // Denotes end of a subrequest in multi request

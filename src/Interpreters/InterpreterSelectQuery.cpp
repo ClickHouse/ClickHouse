@@ -348,6 +348,27 @@ bool shouldIgnoreQuotaAndLimits(const StorageID & table_id)
     return false;
 }
 
+GroupingSetsParamsList getAggregatorGroupingSetsParams(const NamesAndTypesLists & aggregation_keys_list, const Names & all_keys)
+{
+    GroupingSetsParamsList result;
+
+    for (const auto & aggregation_keys : aggregation_keys_list)
+    {
+        NameSet keys;
+        for (const auto & key : aggregation_keys)
+            keys.insert(key.name);
+
+        Names missing_keys;
+        for (const auto & key : all_keys)
+            if (!keys.contains(key))
+                missing_keys.push_back(key);
+
+        result.emplace_back(aggregation_keys.getNames(), std::move(missing_keys));
+    }
+
+    return result;
+}
+
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(
@@ -2002,13 +2023,12 @@ static void executeMergeAggregatedImpl(
     bool has_grouping_sets,
     const Settings & settings,
     const NamesAndTypesList & aggregation_keys,
+    const NamesAndTypesLists & aggregation_keys_list,
     const AggregateDescriptions & aggregates,
     bool should_produce_results_in_order_of_bucket_number,
     SortDescription group_by_sort_description)
 {
     auto keys = aggregation_keys.getNames();
-    if (has_grouping_sets)
-        keys.insert(keys.begin(), "__grouping_set");
 
     /** There are two modes of distributed aggregation.
       *
@@ -2026,10 +2046,12 @@ static void executeMergeAggregatedImpl(
       */
 
     Aggregator::Params params(keys, aggregates, overflow_row, settings.max_threads, settings.max_block_size, settings.min_hit_rate_to_use_consecutive_keys_optimization);
+    auto grouping_sets_params = getAggregatorGroupingSetsParams(aggregation_keys_list, keys);
 
     auto merging_aggregated = std::make_unique<MergingAggregatedStep>(
         query_plan.getCurrentDataStream(),
         params,
+        grouping_sets_params,
         final,
         /// Grouping sets don't work with distributed_aggregation_memory_efficient enabled (#43989)
         settings.distributed_aggregation_memory_efficient && is_remote_storage && !has_grouping_sets,
@@ -2371,49 +2393,6 @@ UInt64 InterpreterSelectQuery::maxBlockSizeByLimit() const
     return 0;
 }
 
-/** Storages can rely that filters that for storage will be available for analysis before
-  * plan is fully constructed and optimized.
-  *
-  * StorageMerge common header calculation and prewhere push-down relies on this.
-  *
-  * This is similar to Planner::collectFiltersForAnalysis
-  */
-void collectFiltersForAnalysis(
-    const ASTPtr & query_ptr,
-    const ContextPtr & query_context,
-    const StorageSnapshotPtr & storage_snapshot,
-    const SelectQueryOptions & options,
-    SelectQueryInfo & query_info)
-{
-    auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
-
-    auto dummy = std::make_shared<StorageDummy>(
-        storage_snapshot->storage.getStorageID(), ColumnsDescription(storage_snapshot->getColumns(get_column_options)), storage_snapshot);
-
-    QueryPlan query_plan;
-    InterpreterSelectQuery(query_ptr, query_context, dummy, dummy->getInMemoryMetadataPtr(), options).buildQueryPlan(query_plan);
-
-    auto optimization_settings = QueryPlanOptimizationSettings::fromContext(query_context);
-    query_plan.optimize(optimization_settings);
-
-    std::vector<QueryPlan::Node *> nodes_to_process;
-    nodes_to_process.push_back(query_plan.getRootNode());
-
-    while (!nodes_to_process.empty())
-    {
-        const auto * node_to_process = nodes_to_process.back();
-        nodes_to_process.pop_back();
-        nodes_to_process.insert(nodes_to_process.end(), node_to_process->children.begin(), node_to_process->children.end());
-
-        auto * read_from_dummy = typeid_cast<ReadFromDummy *>(node_to_process->step.get());
-        if (!read_from_dummy)
-            continue;
-
-        query_info.filter_actions_dag = read_from_dummy->getFilterActionsDAG();
-        query_info.optimized_prewhere_info = read_from_dummy->getPrewhereInfo();
-    }
-}
-
 void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum processing_stage, QueryPlan & query_plan)
 {
     auto & query = getSelectQuery();
@@ -2540,10 +2519,6 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     }
     else if (storage)
     {
-        if (shouldMoveToPrewhere() && settings.query_plan_optimize_prewhere && settings.query_plan_enable_optimizations
-            && typeid_cast<const StorageMerge *>(storage.get()))
-            collectFiltersForAnalysis(query_ptr, context, storage_snapshot, options, query_info);
-
         /// Table.
         if (max_streams == 0)
             max_streams = 1;
@@ -2693,30 +2668,6 @@ static Aggregator::Params getAggregatorParams(
     };
 }
 
-static GroupingSetsParamsList getAggregatorGroupingSetsParams(const SelectQueryExpressionAnalyzer & query_analyzer, const Names & all_keys)
-{
-    GroupingSetsParamsList result;
-    if (query_analyzer.useGroupingSetKey())
-    {
-        auto const & aggregation_keys_list = query_analyzer.aggregationKeysList();
-
-        for (const auto & aggregation_keys : aggregation_keys_list)
-        {
-            NameSet keys;
-            for (const auto & key : aggregation_keys)
-                keys.insert(key.name);
-
-            Names missing_keys;
-            for (const auto & key : all_keys)
-                if (!keys.contains(key))
-                    missing_keys.push_back(key);
-
-            result.emplace_back(aggregation_keys.getNames(), std::move(missing_keys));
-        }
-    }
-    return result;
-}
-
 void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info)
 {
     auto expression_before_aggregation = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), expression);
@@ -2738,7 +2689,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
         settings.group_by_two_level_threshold,
         settings.group_by_two_level_threshold_bytes);
 
-    auto grouping_sets_params = getAggregatorGroupingSetsParams(*query_analyzer, keys);
+    auto grouping_sets_params = getAggregatorGroupingSetsParams(query_analyzer->aggregationKeysList(), keys);
 
     SortDescription group_by_sort_description;
     SortDescription sort_description_for_merging;
@@ -2806,6 +2757,7 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPlan & query_plan, bool
         has_grouping_sets,
         context->getSettingsRef(),
         query_analyzer->aggregationKeys(),
+        query_analyzer->aggregationKeysList(),
         query_analyzer->aggregates(),
         should_produce_results_in_order_of_bucket_number,
         std::move(group_by_sort_description));

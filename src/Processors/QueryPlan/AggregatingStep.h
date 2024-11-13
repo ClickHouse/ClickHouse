@@ -7,18 +7,6 @@
 namespace DB
 {
 
-struct GroupingSetsParams
-{
-    GroupingSetsParams() = default;
-
-    GroupingSetsParams(Names used_keys_, Names missing_keys_) : used_keys(std::move(used_keys_)), missing_keys(std::move(missing_keys_)) { }
-
-    Names used_keys;
-    Names missing_keys;
-};
-
-using GroupingSetsParamsList = std::vector<GroupingSetsParams>;
-
 Block appendGroupingSetColumn(Block header);
 Block generateOutputHeader(const Block & input_header, const Names & keys, bool use_nulls);
 
@@ -75,6 +63,13 @@ public:
     /// When we apply aggregate projection (which is partial), this step should be replaced to AggregatingProjection.
     /// Argument input_stream would be the second input (from projection).
     std::unique_ptr<AggregatingProjectionStep> convertToAggregatingProjection(const DataStream & input_stream) const;
+
+    static ActionsDAGPtr makeCreatingMissingKeysForGroupingSetDAG(
+        const Block & in_header,
+        const Block & out_header,
+        const GroupingSetsParamsList & grouping_sets_params,
+        UInt64 group,
+        bool group_by_use_nulls);
 
 private:
     void updateOutputStream() override;

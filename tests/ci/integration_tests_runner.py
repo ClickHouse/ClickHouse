@@ -18,6 +18,7 @@ from collections import defaultdict
 from itertools import chain
 from typing import Any, Dict
 
+from ci_utils import kill_ci_runner
 from env_helper import CI
 from integration_test_images import IMAGES
 
@@ -67,9 +68,9 @@ def get_changed_tests_to_run(pr_info, repo_path):
         return []
 
     for fpath in changed_files:
-        if "tests/integration/test_" in fpath:
+        if re.search(r"tests/integration/test_.*/test.*\.py", fpath) is not None:
             logging.info("File %s changed and seems like integration test", fpath)
-            result.add(fpath.split("/")[2])
+            result.add("/".join(fpath.split("/")[2:]))
     return filter_existing_tests(result, repo_path)
 
 
@@ -325,7 +326,9 @@ class ClickhouseIntegrationTestsRunner:
             except subprocess.CalledProcessError as err:
                 logging.info("docker-compose pull failed: %s", str(err))
                 continue
-        logging.error("Pulling images failed for 5 attempts. Will fail the worker.")
+        message = "Pulling images failed for 5 attempts. Will fail the worker."
+        logging.error(message)
+        kill_ci_runner(message)
         # We pass specific retcode to to ci/integration_test_check.py to skip status reporting and restart job
         sys.exit(13)
 
@@ -430,7 +433,14 @@ class ClickhouseIntegrationTestsRunner:
             "Getting all tests to the file %s with cmd: \n%s", out_file_full, cmd
         )
         with open(out_file_full, "wb") as ofd:
-            subprocess.check_call(cmd, shell=True, stdout=ofd, stderr=ofd)
+            try:
+                subprocess.check_call(cmd, shell=True, stdout=ofd, stderr=ofd)
+            except subprocess.CalledProcessError as ex:
+                print("ERROR: Setting test plan failed. Output:")
+                with open(out_file_full, "r", encoding="utf-8") as file:
+                    for line in file:
+                        print("    " + line, end="")
+                raise ex
 
         all_tests = set()
         with open(out_file_full, "r", encoding="utf-8") as all_tests_fd:

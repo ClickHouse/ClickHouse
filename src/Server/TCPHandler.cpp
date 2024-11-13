@@ -1851,7 +1851,7 @@ void TCPHandler::receiveQuery()
 #endif
     }
 
-    query_context = session->makeQueryContext(std::move(client_info));
+    query_context = session->makeQueryContext(client_info);
 
     /// Sets the default database if it wasn't set earlier for the session context.
     if (is_interserver_mode && !default_database.empty())
@@ -1866,6 +1866,16 @@ void TCPHandler::receiveQuery()
     ///
     /// Settings
     ///
+
+    /// FIXME: Remove when allow_experimental_analyzer will become obsolete.
+    /// Analyzer became Beta in 24.3 and started to be enabled by default.
+    /// We have to disable it for ourselves to make sure we don't have different settings on
+    /// different servers.
+    if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        && client_info.getVersionNumber() < VersionNumber(23, 3, 0)
+        && !passed_settings.allow_experimental_analyzer.changed)
+        passed_settings.set("allow_experimental_analyzer", false);
+
     auto settings_changes = passed_settings.changes();
     query_kind = query_context->getClientInfo().query_kind;
     if (query_kind == ClientInfo::QueryKind::INITIAL_QUERY)

@@ -713,10 +713,11 @@ try
 
     const size_t physical_server_memory = getMemoryAmount();
 
-    LOG_INFO(log, "Available RAM: {}; physical cores: {}; logical cores: {}.",
+    LOG_INFO(log, "Available RAM: {}; logical cores: {}; used cores: {}.",
         formatReadableSizeWithBinarySuffix(physical_server_memory),
-        getNumberOfPhysicalCPUCores(),  // on ARM processors it can show only enabled at current moment cores
-        std::thread::hardware_concurrency());
+        std::thread::hardware_concurrency(),
+        getNumberOfPhysicalCPUCores()  // on ARM processors it can show only enabled at current moment cores
+        );
 
 #if defined(__x86_64__)
     String cpu_info;
@@ -839,6 +840,16 @@ try
 
     /// It could grow if we need to synchronously wait until all the data parts will be loaded.
     getOutdatedPartsLoadingThreadPool().setMaxTurboThreads(
+        server_settings.max_active_parts_loading_thread_pool_size
+    );
+
+    getUnexpectedPartsLoadingThreadPool().initialize(
+        server_settings.max_unexpected_parts_loading_thread_pool_size,
+        0, // We don't need any threads once all the parts will be loaded
+        server_settings.max_unexpected_parts_loading_thread_pool_size);
+
+    /// It could grow if we need to synchronously wait until all the data parts will be loaded.
+    getUnexpectedPartsLoadingThreadPool().setMaxTurboThreads(
         server_settings.max_active_parts_loading_thread_pool_size
     );
 
@@ -1431,7 +1442,7 @@ try
                 concurrent_threads_soft_limit = new_server_settings.concurrent_threads_soft_limit_num;
             if (new_server_settings.concurrent_threads_soft_limit_ratio_to_cores > 0)
             {
-                auto value = new_server_settings.concurrent_threads_soft_limit_ratio_to_cores * std::thread::hardware_concurrency();
+                auto value = new_server_settings.concurrent_threads_soft_limit_ratio_to_cores * getNumberOfPhysicalCPUCores();
                 if (value > 0 && value < concurrent_threads_soft_limit)
                     concurrent_threads_soft_limit = value;
             }

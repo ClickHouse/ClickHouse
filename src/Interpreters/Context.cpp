@@ -2030,13 +2030,22 @@ StoragePtr Context::buildParametrizedViewStorage(const ASTPtr & table_expression
     if (!storage_view || !storage_view->isParameterizedView())
         return nullptr;
 
-    auto query = original_view->getInMemoryMetadataPtr()->getSelectQuery().inner_query->clone();
+    auto original_view_metadata = original_view->getInMemoryMetadataPtr();
+    auto query = original_view_metadata->getSelectQuery().inner_query->clone();
     NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression);
     StorageView::replaceQueryParametersIfParametrizedView(query, parameterized_view_values);
 
     ASTCreateQuery create;
     create.select = query->as<ASTSelectWithUnionQuery>();
-    auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, shared_from_this());
+
+    auto sql_security = std::make_shared<ASTSQLSecurity>();
+    sql_security->type = original_view_metadata->sql_security_type;
+    if (original_view_metadata->definer)
+        sql_security->definer = std::make_shared<ASTUserNameWithHost>(*original_view_metadata->definer);
+    create.sql_security = sql_security;
+
+    auto view_context = original_view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
+    auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);
     auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                 create,
                                                 ColumnsDescription(sample_block.getNamesAndTypesList()),
@@ -3258,18 +3267,22 @@ DDLWorker & Context::getDDLWorker() const
     if (shared->ddl_worker_startup_task)
         waitLoad(shared->ddl_worker_startup_task); // Just wait and do not prioritize, because it depends on all load and startup tasks
 
-    SharedLockGuard lock(shared->mutex);
-    if (!shared->ddl_worker)
     {
-        if (!hasZooKeeper())
-            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no Zookeeper configuration in server config");
-
-        if (!hasDistributedDDL())
-            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no DistributedDDL configuration in server config");
-
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "DDL background thread is not initialized");
+        /// Only acquire the lock for reading ddl_worker field.
+        /// hasZooKeeper() and hasDistributedDDL() acquire the same lock as well and double acquisition of the lock in shared mode can lead
+        /// to a deadlock if an exclusive lock attempt is made in the meantime by another thread.
+        SharedLockGuard lock(shared->mutex);
+        if (shared->ddl_worker)
+            return *shared->ddl_worker;
     }
-    return *shared->ddl_worker;
+
+    if (!hasZooKeeper())
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no Zookeeper configuration in server config");
+
+    if (!hasDistributedDDL())
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no DistributedDDL configuration in server config");
+
+    throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "DDL background thread is not initialized");
 }
 
 zkutil::ZooKeeperPtr Context::getZooKeeper() const

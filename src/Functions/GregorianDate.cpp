@@ -284,12 +284,12 @@ void OrdinalDate::init(int64_t modified_julian_day)
 
 bool OrdinalDate::tryInit(int64_t modified_julian_day)
 {
-    /// This function supports day number from -678941 to 2973119 (which represent 0000-01-01 and 9999-12-31 respectively).
+    /// This function supports day number from -678941 to 2973483 (which represent 0000-01-01 and 9999-12-31 respectively).
 
     if (modified_julian_day < -678941)
         return false;
 
-    if (modified_julian_day > 2973119)
+    if (modified_julian_day > 2973483)
         return false;
 
     const auto a         = modified_julian_day + 678575;
