@@ -43,7 +43,7 @@ void validateTreeSize(const QueryTreeNodePtr & node,
 
 
 /** Compare node with group by key node.
-  * Such comparsion does not take into account aliases, but checks types and column sources.
+  * Such comparison does not take into account aliases, but checks types and column sources.
   */
 bool compareGroupByKeys(const QueryTreeNodePtr & node, const QueryTreeNodePtr & group_by_key_node);
 
