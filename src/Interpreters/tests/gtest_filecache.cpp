@@ -988,7 +988,7 @@ try
     {
         TemporaryBlockStreamHolder stream(generateBlock(), tmp_data_scope.get());
         ASSERT_TRUE(stream);
-        /// Do nothitng with stream, just create it and destroy.
+        /// Do nothing with stream, just create it and destroy.
     }
 
     {

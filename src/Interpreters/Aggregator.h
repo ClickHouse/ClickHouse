@@ -311,7 +311,7 @@ public:
 
     bool hasTemporaryData() const;
 
-    std::list<TemporaryBlockStreamHolder> & getTemporaryData();
+    std::list<TemporaryBlockStreamHolder> detachTemporaryData();
 
     /// Get data structure of the result.
     Block getHeader(bool final) const;
@@ -357,7 +357,7 @@ private:
     /// For external aggregation.
     TemporaryDataOnDiskScopePtr tmp_data;
     mutable std::mutex tmp_files_mutex;
-    mutable std::list<TemporaryBlockStreamHolder> tmp_files;
+    mutable std::list<TemporaryBlockStreamHolder> tmp_files TSA_GUARDED_BY(tmp_files_mutex);
 
     size_t min_bytes_for_prefetch = 0;
 

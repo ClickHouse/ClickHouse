@@ -1519,9 +1519,11 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
     Stopwatch watch;
     size_t rows = data_variants.size();
 
-    std::unique_lock lk(tmp_files_mutex);
-    auto & out_stream = tmp_files.emplace_back(getHeader(false), tmp_data.get(), max_temp_file_size);
-    lk.unlock();
+    auto & out_stream = [this, max_temp_file_size]() -> TemporaryBlockStreamHolder &
+    {
+        std::lock_guard lk(tmp_files_mutex);
+        return tmp_files.emplace_back(getHeader(false), tmp_data.get(), max_temp_file_size);
+    }();
 
     ProfileEvents::increment(ProfileEvents::ExternalAggregationWritePart);
 
@@ -1642,9 +1644,10 @@ Block Aggregator::convertOneBucketToBlock(AggregatedDataVariants & variants, Are
     return block;
 }
 
-std::list<TemporaryBlockStreamHolder> & Aggregator::getTemporaryData()
+std::list<TemporaryBlockStreamHolder> Aggregator::detachTemporaryData()
 {
-    return tmp_files;
+    std::lock_guard lk(tmp_files_mutex);
+    return std::move(tmp_files);
 }
 
 bool Aggregator::hasTemporaryData() const

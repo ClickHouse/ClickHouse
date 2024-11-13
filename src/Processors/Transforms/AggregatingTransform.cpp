@@ -813,10 +813,10 @@ void AggregatingTransform::initGenerate()
         /// Merge external data from all aggregators used in query.
         for (auto & aggregator : *params->aggregator_list_ptr)
         {
-            auto & tmp_data = aggregator.getTemporaryData();
-            num_streams += tmp_data.size();
+            tmp_files = aggregator.detachTemporaryData();
+            num_streams += tmp_files.size();
 
-            for (auto & tmp_stream : tmp_data)
+            for (auto & tmp_stream : tmp_files)
             {
                 auto stat = tmp_stream.finishWriting();
                 compressed_size += stat.compressed_size;
