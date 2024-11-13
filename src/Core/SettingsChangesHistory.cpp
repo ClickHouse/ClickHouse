@@ -139,6 +139,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "24.12",
         {
             /// Release closed. Please use 25.1
+            {"parallel_replicas_for_cluster_engines", false, true, "New setting."},
             {"allow_experimental_database_iceberg", false, false, "New setting."},
             {"shared_merge_tree_sync_parts_on_partition_operations", 1, 1, "New setting. By default parts are always synchronized"},
             {"query_plan_join_swap_table", "false", "auto", "New setting. Right table was always chosen before."},
