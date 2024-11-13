@@ -8,7 +8,6 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 
-
 logging.getLogger().setLevel(logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler())
 
@@ -80,11 +79,15 @@ def wait_for_large_objects_count(cluster, expected, size=100, timeout=30):
     assert get_large_objects_count(cluster, size=size) == expected
 
 
-def wait_for_active_parts(node, num_expected_parts, table_name, timeout=30, disk_name = None):
+def wait_for_active_parts(
+    node, num_expected_parts, table_name, timeout=30, disk_name = None
+):
     deadline = time.monotonic() + timeout
     num_parts = 0
     while time.monotonic() < deadline:
-        query = f"select count() from system.parts where table = '{table_name}' and active"
+        query = (
+            f"select count() from system.parts where table = '{table_name}' and active"
+        )
         if disk_name:
             query += f" and disk_name='{disk_name}'"
 

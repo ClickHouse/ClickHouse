@@ -354,7 +354,7 @@ void MergeTreePartsMover::swapClonedPart(TemporaryClonedPart & cloned_part) cons
     /// because no one can fetch it until it is *swapped*.
     ///
     /// Set ASK_KEEPER to try to unlock it in destructor if something goes wrong before *renaming*
-    /// If unlocking is failed we will not get a stucked part in moving directory
+    /// If unlocking is failed we will not get a stuck part in moving directory
     /// because it will be renamed to delete_tmp_<name> beforehand and cleaned up later.
     /// Worst outcomes: trash in object storage and/or orphaned shared zero-copy lock. It is acceptable.
     /// See DataPartStorageOnDiskBase::remove().
