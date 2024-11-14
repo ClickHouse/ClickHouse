@@ -6874,13 +6874,12 @@ Converts a [String](../data-types/string.md) to [DateTime64](../data-types/datet
 **Syntax**
 
 ``` sql
-parseDateTime64(str, scale[, format[, timezone]])
+parseDateTime64(str[, format[, timezone]])
 ```
 
 **Arguments**
 
 - `str` — The String to be parsed.
-- `scale` - The scale of [DateTime64](../data-types/datetime64.md).
 - `format` — The format string. Optional. `%Y-%m-%d %H:%i:%s.%f` if not specified.
 - `timezone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md#timezone). Optional.
 
@@ -6903,13 +6902,12 @@ Converts a [String](../data-types/string.md) to [DateTime64](../data-types/datet
 **Syntax**
 
 ``` sql
-parseDateTime64InJodaSyntax(str, scale[, format[, timezone]])
+parseDateTime64InJodaSyntax(str[, format[, timezone]])
 ```
 
 **Arguments**
 
 - `str` — The String to be parsed.
-- `scale` - The scale of [DateTime64](../data-types/datetime64.md).
 - `format` — The format string. Optional. `yyyy-MM-dd HH:mm:ss` if not specified.
 - `timezone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md#timezone). Optional.
 

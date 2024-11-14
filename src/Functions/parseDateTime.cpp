@@ -613,26 +613,17 @@ namespace
         bool useDefaultImplementationForConstants() const override { return true; }
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-        ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
-        {
-            if constexpr (return_type == ReturnType::DateTime)
-                return {1, 2};
-            else
-                return {1, 2, 3};
-        }
+        ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
         bool isVariadic() const override { return true; }
         size_t getNumberOfArguments() const override { return 0; }
 
         DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
-            FunctionArgumentDescriptors mandatory_args = {
-                {"time", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}};
-            if constexpr (return_type == ReturnType::DateTime64)
-                mandatory_args.push_back(
-                    {"scale", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), &isColumnConst, "const UInt8"});
-
+            FunctionArgumentDescriptors mandatory_args{
+                {"time", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
+            };
             FunctionArgumentDescriptors optional_args{
-                {"format", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "const String"},
+                {"format", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"},
                 {"timezone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"}
             };
             validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
@@ -643,16 +634,30 @@ namespace
                 data_type = std::make_shared<DataTypeDateTime>(time_zone_name);
             else
             {
-                UInt8 scale = 0;
-                if (const auto * col_scale = checkAndGetColumnConst<ColumnUInt8>(arguments[1].column.get()); col_scale != nullptr)
-                    scale = col_scale->getValue<UInt8>();
+                if constexpr (parse_syntax == ParseSyntax::MySQL)
+                    data_type = std::make_shared<DataTypeDateTime64>(6, time_zone_name);
                 else
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_COLUMN,
-                        "Illegal type in 2nd ('scale') argument of function {}. Must be constant UInt8.",
-                        getName());
-
-                data_type = std::make_shared<DataTypeDateTime64>(scale, time_zone_name);
+                {
+                    String format = getFormat(arguments);
+                    std::vector<Instruction> instructions = parseFormat(format);
+                    /// How many 'S' characters does the format string contain?
+                    UInt32 s_count = 0;
+                    for (const auto & instruction : instructions)
+                    {
+                        const String fragment = instruction.getFragment();
+                        for (char c : fragment)
+                        {
+                            if (c == 'S')
+                                ++s_count;
+                            else
+                                break;
+                        }
+                        if (s_count > 0)
+                            break;
+                    }
+                    /// Use s_count as DateTime64's scale.
+                    data_type = std::make_shared<DataTypeDateTime64>(s_count, time_zone_name);
+                }
             }
 
             if (error_handling == ErrorHandling::Null)
@@ -708,34 +713,8 @@ namespace
             if constexpr (error_handling == ErrorHandling::Null)
                 col_null_map = ColumnUInt8::create(input_rows_count, 0);
 
-            const String format = getFormat(arguments, scale);
+            const String format = getFormat(arguments);
             const std::vector<Instruction> instructions = parseFormat(format);
-
-            if constexpr (return_type == ReturnType::DateTime64 && parse_syntax == ParseSyntax::Joda)
-            {
-                 /// How many 'S' characters does the format string contain?
-                UInt32 s_count = 0;
-                for (const auto & instruction : instructions)
-                {
-                    const String & fragment = instruction.getFragment();
-                    for (char ch : fragment)
-                    {
-                        if (ch != 'S')
-                        {
-                            s_count = 0;
-                            break;
-                        }
-                        else
-                            ++s_count;
-                    }
-                }
-                /// The number of 'S' characters in the format string must be equal to the scale.
-                if (s_count != 0 && s_count != scale)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "The number of 'S' characters in the input format string {} is different than the scale {}.",
-                        format,
-                        std::to_string(scale));
-            }
             const auto & time_zone = getTimeZone(arguments);
             /// Make datetime fit in a cache line.
             alignas(64) DateTime<error_handling> datetime;
@@ -2265,30 +2244,23 @@ namespace
         }
 
 
-        String getFormat(const ColumnsWithTypeAndName & arguments, UInt32 scale) const
+        String getFormat(const ColumnsWithTypeAndName & arguments) const
         {
-            size_t index_of_format_string_arg = (return_type == ReturnType::DateTime) ? 1 : 2;
-
-            if (arguments.size() <= index_of_format_string_arg)
+            if (arguments.size() == 1)
             {
-                /// No format string given. Use default format string.
-                String format;
                 if constexpr (parse_syntax == ParseSyntax::MySQL)
-                    format = "%Y-%m-%d %H:%i:%s";
-                else
-                    format = "yyyy-MM-dd HH:mm:ss";
-                if (scale > 0)
                 {
-                    if constexpr (parse_syntax == ParseSyntax::MySQL)
-                        format += ".%f";
+                    if constexpr (return_type == ReturnType::DateTime)
+                        return "%Y-%m-%d %H:%i:%s";
                     else
-                        format += "." + String(scale, 'S');
+                        return "%Y-%m-%d %H:%i:%s.%f";
                 }
-                return format;
+                else
+                    return "yyyy-MM-dd HH:mm:ss";
             }
             else
             {
-                const auto * col_format = checkAndGetColumnConst<ColumnString>(arguments[index_of_format_string_arg].column.get());
+                const auto * col_format = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
                 if (!col_format)
                     throw Exception(
                         ErrorCodes::ILLEGAL_COLUMN,
@@ -2300,13 +2272,10 @@ namespace
 
         const DateLUTImpl & getTimeZone(const ColumnsWithTypeAndName & arguments) const
         {
-            if (return_type == ReturnType::DateTime && arguments.size() < 3)
-                return DateLUT::instance();
-            else if (return_type == ReturnType::DateTime64 && arguments.size() < 4)
+            if (arguments.size() < 3)
                 return DateLUT::instance();
 
-            size_t index_of_timezone_arg = arguments.size() - 1;
-            const auto * col = checkAndGetColumnConst<ColumnString>(arguments[index_of_timezone_arg].column.get());
+            const auto * col = checkAndGetColumnConst<ColumnString>(arguments[2].column.get());
             if (!col)
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
