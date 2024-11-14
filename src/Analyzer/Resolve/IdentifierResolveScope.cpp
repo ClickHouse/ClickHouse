@@ -114,6 +114,21 @@ void IdentifierResolveScope::popExpressionNode()
     expressions_in_resolve_process_stack.pop();
 }
 
+namespace
+{
+
+void dump_mapping(WriteBuffer & buffer, const String & mapping_name, const std::unordered_map<std::string, QueryTreeNodePtr> & mapping)
+{
+    if (mapping.empty())
+        return;
+
+    buffer << mapping_name << " table size: " << mapping.size() << '\n';
+    for (const auto & [alias_name, node] : mapping)
+        buffer << " { '" << alias_name << "' : " << node->formatASTForErrorMessage() << " }\n";
+}
+
+}
+
 /// Dump identifier resolve scope
 [[maybe_unused]] void IdentifierResolveScope::dump(WriteBuffer & buffer) const
 {
@@ -137,55 +152,45 @@ void IdentifierResolveScope::popExpressionNode()
     buffer << "Identifier lookup to resolve state " << identifier_in_lookup_process.size() << '\n';
     for (const auto & [identifier, state] : identifier_in_lookup_process)
     {
-        buffer << "Identifier " << identifier.dump() << " count ";
+        buffer << " { '" << identifier.dump() << "' : ";
         buffer << state.count;
-        buffer << '\n';
+        buffer << " }\n";
     }
 
-    buffer << "Expression argument name to node " << expression_argument_name_to_node.size() << '\n';
-    for (const auto & [alias_name, node] : expression_argument_name_to_node)
-        buffer << "Alias name " << alias_name << " node " << node->formatASTForErrorMessage() << '\n';
+    dump_mapping(buffer, "Expression argument name to node", expression_argument_name_to_node);
+    dump_mapping(buffer, "Alias name to expression node", aliases.alias_name_to_expression_node);
+    dump_mapping(buffer, "Alias name to function node", aliases.alias_name_to_lambda_node);
+    dump_mapping(buffer, "Alias name to table expression node", aliases.alias_name_to_table_expression_node);
+    dump_mapping(buffer, "CTE name to query node", cte_name_to_query_node);
+    dump_mapping(buffer, "WINDOW name to window node", window_name_to_window_node);
 
-    buffer << "Alias name to expression node table size " << aliases.alias_name_to_expression_node.size() << '\n';
-    for (const auto & [alias_name, node] : aliases.alias_name_to_expression_node)
-        buffer << "Alias name " << alias_name << " expression node " << node->dumpTree() << '\n';
+    if (!aliases.nodes_with_duplicated_aliases.empty())
+    {
+        buffer << "Nodes with duplicated aliases size " << aliases.nodes_with_duplicated_aliases.size() << '\n';
+        for (const auto & node : aliases.nodes_with_duplicated_aliases)
+            buffer << " { " << node->formatASTForErrorMessage() << " }\n";
+    }
 
-    buffer << "Alias name to function node table size " << aliases.alias_name_to_lambda_node.size() << '\n';
-    for (const auto & [alias_name, node] : aliases.alias_name_to_lambda_node)
-        buffer << "Alias name " << alias_name << " lambda node " << node->formatASTForErrorMessage() << '\n';
-
-    buffer << "Alias name to table expression node table size " << aliases.alias_name_to_table_expression_node.size() << '\n';
-    for (const auto & [alias_name, node] : aliases.alias_name_to_table_expression_node)
-        buffer << "Alias name " << alias_name << " node " << node->formatASTForErrorMessage() << '\n';
-
-    buffer << "CTE name to query node table size " << cte_name_to_query_node.size() << '\n';
-    for (const auto & [cte_name, node] : cte_name_to_query_node)
-        buffer << "CTE name " << cte_name << " node " << node->formatASTForErrorMessage() << '\n';
-
-    buffer << "WINDOW name to window node table size " << window_name_to_window_node.size() << '\n';
-    for (const auto & [window_name, node] : window_name_to_window_node)
-        buffer << "CTE name " << window_name << " node " << node->formatASTForErrorMessage() << '\n';
-
-    buffer << "Nodes with duplicated aliases size " << aliases.nodes_with_duplicated_aliases.size() << '\n';
-    for (const auto & node : aliases.nodes_with_duplicated_aliases)
-        buffer << "Alias name " << node->getAlias() << " node " << node->formatASTForErrorMessage() << '\n';
-
-    buffer << "Expression resolve process stack " << '\n';
     expressions_in_resolve_process_stack.dump(buffer);
 
-    buffer << "Table expressions in resolve process size " << table_expressions_in_resolve_process.size() << '\n';
-    for (const auto & node : table_expressions_in_resolve_process)
-        buffer << "Table expression " << node->formatASTForErrorMessage() << '\n';
+    if (!table_expressions_in_resolve_process.empty())
+    {
+        buffer << "Table expressions in resolve process size " << table_expressions_in_resolve_process.size() << '\n';
+        for (const auto & node : table_expressions_in_resolve_process)
+            buffer << " { " << node->formatASTForErrorMessage() << " }\n";
+    }
 
-    buffer << "Non cached identifier lookups during expression resolve " << non_cached_identifier_lookups_during_expression_resolve.size() << '\n';
-    for (const auto & identifier_lookup : non_cached_identifier_lookups_during_expression_resolve)
-        buffer << "Identifier lookup " << identifier_lookup.dump() << '\n';
+    if (!non_cached_identifier_lookups_during_expression_resolve.empty())
+    {
+        buffer << "Non cached identifier lookups during expression resolve " << non_cached_identifier_lookups_during_expression_resolve.size() << '\n';
+        for (const auto & identifier_lookup : non_cached_identifier_lookups_during_expression_resolve)
+            buffer << "Identifier lookup " << identifier_lookup.dump() << " }\n";
+    }
 
-    buffer << "Table expression node to data " << table_expression_node_to_data.size() << '\n';
+    buffer << "Table expression node to data: " << table_expression_node_to_data.size() << '\n';
     for (const auto & [table_expression_node, table_expression_data] : table_expression_node_to_data)
-        buffer << "Table expression node " << table_expression_node->formatASTForErrorMessage() << " data " << table_expression_data.dump() << '\n';
+        buffer << " { " << table_expression_node->formatASTForErrorMessage() << " data:\n  " << table_expression_data.dump() << " }\n";
 
-    buffer << "Use identifier lookup to result cache " << use_identifier_lookup_to_result_cache << '\n';
     buffer << "Subquery depth " << subquery_depth << '\n';
 }
 

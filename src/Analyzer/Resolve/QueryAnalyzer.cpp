@@ -5458,7 +5458,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
       * In first join expression ON t1.id = t2.id t1.id is resolved into test_table.id column.
       * In second join expression ON t1.id = t3.id t1.id must be resolved into test_table.id column after first JOIN.
       */
-    scope.use_identifier_lookup_to_result_cache = false;
 
     if (query_node_typed.getJoinTree())
     {
@@ -5470,9 +5469,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
         resolveQueryJoinTreeNode(query_node_typed.getJoinTree(), scope, visitor);
     }
-
-    if (!scope.group_by_use_nulls)
-        scope.use_identifier_lookup_to_result_cache = true;
 
     /// Resolve query node sections.
 

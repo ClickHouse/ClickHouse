@@ -180,9 +180,6 @@ struct IdentifierResolveScope
       */
     QueryTreeNodePtrWithHashMap<QueryTreeNodePtr> join_columns_with_changed_types;
 
-    /// Use identifier lookup to result cache
-    bool use_identifier_lookup_to_result_cache = true;
-
     /// Apply nullability to aggregation keys
     bool group_by_use_nulls = false;
     /// Join retutns NULLs instead of default values
