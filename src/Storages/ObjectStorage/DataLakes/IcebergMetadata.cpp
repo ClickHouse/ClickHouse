@@ -54,7 +54,7 @@ extern const int LOGICAL_ERROR;
 
 IcebergMetadata::IcebergMetadata(
     ObjectStoragePtr object_storage_,
-    ConfigurationPtr configuration_,
+    ConfigurationObserverPtr configuration_,
     DB::ContextPtr context_,
     Int32 metadata_version_,
     Int32 format_version_,
@@ -619,14 +619,25 @@ std::pair<Int32, String> getMetadataFileAndVersion(
 }
 
 
-DataLakeMetadataPtr IcebergMetadata::create(
-    ObjectStoragePtr object_storage,
-    ConfigurationPtr configuration,
-    ContextPtr local_context)
+DataLakeMetadataPtr
+IcebergMetadata::create(ObjectStoragePtr object_storage, ConfigurationObserverPtr configuration, ContextPtr local_context)
 {
+<<<<<<< HEAD
     const auto [metadata_version, metadata_file_path] = getMetadataFileAndVersion(object_storage, *configuration);
     auto read_settings = local_context->getReadSettings();
     auto buf = object_storage->readObject(StoredObject(metadata_file_path), read_settings);
+=======
+    auto configuration_ptr = configuration.lock();
+
+    const auto [metadata_version, metadata_file_path] = getMetadataFileAndVersion(object_storage, *configuration_ptr);
+
+    auto log = getLogger("IcebergMetadata");
+    LOG_DEBUG(log, "Parse metadata {}", metadata_file_path);
+
+    StorageObjectStorageSource::ObjectInfo object_info(metadata_file_path);
+    auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log);
+
+>>>>>>> 7a393dc140a3da46162e3ae2a8b5ac8af2f42778
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, *buf);
 
@@ -648,15 +659,20 @@ DataLakeMetadataPtr IcebergMetadata::create(
         if (snapshot->getValue<Int64>("snapshot-id") == current_snapshot_id)
         {
             const auto path = snapshot->getValue<String>("manifest-list");
-            manifest_list_file = std::filesystem::path(configuration->getPath()) / "metadata" / std::filesystem::path(path).filename();
+            manifest_list_file = std::filesystem::path(configuration_ptr->getPath()) / "metadata" / std::filesystem::path(path).filename();
             break;
         }
     }
 
+<<<<<<< HEAD
     Int32 format_version = object->getValue<Int32>("format-version");
 
     return std::make_unique<IcebergMetadata>(
         object_storage, configuration, local_context, metadata_version, format_version, manifest_list_file, schema_id, schema_processor);
+=======
+    return std::make_unique<IcebergMetadata>(
+        object_storage, configuration_ptr, local_context, metadata_version, format_version, manifest_list_file, schema_id, schema);
+>>>>>>> 7a393dc140a3da46162e3ae2a8b5ac8af2f42778
 }
 
 /**
@@ -686,8 +702,14 @@ DataLakeMetadataPtr IcebergMetadata::create(
  */
 DataFileInfos IcebergMetadata::getDataFileInfos(const ActionsDAG * filter_dag) const
 {
+<<<<<<< HEAD
     // if (!data_file_infos.empty())
     //     return data_file_infos;
+=======
+    auto configuration_ptr = configuration.lock();
+    if (!data_files.empty())
+        return data_files;
+>>>>>>> 7a393dc140a3da46162e3ae2a8b5ac8af2f42778
 
     Strings manifest_files;
     if (manifest_list_file.empty())
@@ -718,7 +740,7 @@ DataFileInfos IcebergMetadata::getDataFileInfos(const ActionsDAG * filter_dag) c
     {
         const auto file_path = col_str->getDataAt(i).toView();
         const auto filename = std::filesystem::path(file_path).filename();
-        manifest_files.emplace_back(std::filesystem::path(configuration->getPath()) / "metadata" / filename);
+        manifest_files.emplace_back(std::filesystem::path(configuration_ptr->getPath()) / "metadata" / filename);
     }
 
     std::map<String, Int32> files;
@@ -918,9 +940,9 @@ DataFileInfos IcebergMetadata::getDataFileInfos(const ActionsDAG * filter_dag) c
 
             const auto status = status_int_column->getInt(i);
             const auto data_path = std::string(file_path_string_column->getDataAt(i).toView());
-            const auto pos = data_path.find(configuration->getPath());
+            const auto pos = data_path.find(configuration_ptr->getPath());
             if (pos == std::string::npos)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected to find {} in data path: {}", configuration->getPath(), data_path);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected to find {} in data path: {}", configuration_ptr->getPath(), data_path);
 
             const auto file_path = data_path.substr(pos);
 

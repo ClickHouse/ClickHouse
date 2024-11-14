@@ -1,5 +1,9 @@
 #pragma once
 
+#include "config.h"
+
+#if USE_PARQUET
+
 #include <Interpreters/Context_fwd.h>
 #include <Core/Types.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
@@ -14,13 +18,10 @@ namespace DB
 class DeltaLakeMetadata final : public IDataLakeMetadata
 {
 public:
-    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
+    using ConfigurationObserverPtr = StorageObjectStorage::ConfigurationObserverPtr;
     static constexpr auto name = "DeltaLake";
 
-    DeltaLakeMetadata(
-        ObjectStoragePtr object_storage_,
-        ConfigurationPtr configuration_,
-        ContextPtr context_);
+    DeltaLakeMetadata(ObjectStoragePtr object_storage_, ConfigurationObserverPtr configuration_, ContextPtr context_);
 
     DataFileInfos getDataFileInfos(const ActionsDAG *) const override { return data_files; }
 
@@ -38,10 +39,7 @@ public:
             && data_files == deltalake_metadata->data_files;
     }
 
-    static DataLakeMetadataPtr create(
-        ObjectStoragePtr object_storage,
-        ConfigurationPtr configuration,
-        ContextPtr local_context)
+    static DataLakeMetadataPtr create(ObjectStoragePtr object_storage, ConfigurationObserverPtr configuration, ContextPtr local_context)
     {
         return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
     }
@@ -54,3 +52,5 @@ private:
 };
 
 }
+
+#endif

@@ -658,16 +658,11 @@ protected:
     {
         if (!std::is_trivially_destructible_v<Cell>)
         {
-            for (iterator it = begin(), it_end = end(); it != it_end; ++it)
+            for (iterator it = begin(), it_end = end(); it != it_end;)
             {
-                it.ptr->~Cell();
-                /// In case of poison_in_dtor=1 it will be poisoned,
-                /// but it maybe used later, during iteration.
-                ///
-                /// NOTE, that technically this is UB [1], but OK for now.
-                ///
-                ///   [1]: https://github.com/google/sanitizers/issues/854#issuecomment-329661378
-                __msan_unpoison(it.ptr, sizeof(*it.ptr));
+                auto ptr = it.ptr;
+                ++it;
+                ptr->~Cell();
             }
 
             /// Everything had been destroyed in the loop above, reset the flag

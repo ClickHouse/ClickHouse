@@ -72,6 +72,26 @@ ColumnPtr ColumnFunction::cut(size_t start, size_t length) const
     return ColumnFunction::create(length, function, capture, is_short_circuit_argument, is_function_compiled);
 }
 
+Field ColumnFunction::operator[](size_t n) const
+{
+    Field res;
+    get(n, res);
+    return res;
+}
+
+void ColumnFunction::get(size_t n, Field & res) const
+{
+    const size_t tuple_size = captured_columns.size();
+
+    res = Tuple();
+    Tuple & res_tuple = res.safeGet<Tuple &>();
+    res_tuple.reserve(tuple_size);
+
+    for (size_t i = 0; i < tuple_size; ++i)
+        res_tuple.push_back((*captured_columns[i].column)[n]);
+}
+
+
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnFunction::insertFrom(const IColumn & src, size_t n)
 #else

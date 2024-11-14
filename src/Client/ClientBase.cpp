@@ -1454,8 +1454,22 @@ void ClientBase::resetOutput()
 
     /// Order is important: format, compression, file
 
-    if (output_format)
-        output_format->finalize();
+    try
+    {
+        if (output_format)
+            output_format->finalize();
+    }
+    catch (...)
+    {
+        /// We need to make sure we continue resetting output_format (will stop threads on parallel output)
+        /// as well as cleaning other output related setup
+        if (!have_error)
+        {
+            client_exception
+                = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
+            have_error = true;
+        }
+    }
     output_format.reset();
 
     logs_out_stream.reset();
@@ -1634,6 +1648,11 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     /// If INSERT data must be sent.
     auto * parsed_insert_query = parsed_query->as<ASTInsertQuery>();
     if (!parsed_insert_query)
+        return;
+
+    /// If it's clickhouse-local, and the input data reading is already baked into the query pipeline,
+    /// don't read the data again here. This happens in some cases (e.g. input() table function) but not others (e.g. INFILE).
+    if (!connection->isSendDataNeeded())
         return;
 
     bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(std_in);
@@ -2651,6 +2670,8 @@ void ClientBase::runInteractive()
         }
     }
 
+    history_max_entries = getClientConfiguration().getUInt("history_max_entries");
+
     LineReader::Patterns query_extenders = {"\\"};
     LineReader::Patterns query_delimiters = {";", "\\G", "\\G;"};
     char word_break_characters[] = " \t\v\f\a\b\r\n`~!@#$%^&*()-=+[{]}\\|;:'\",<.>/?";
@@ -2658,11 +2679,15 @@ void ClientBase::runInteractive()
 #if USE_REPLXX
     replxx::Replxx::highlighter_callback_t highlight_callback{};
     if (getClientConfiguration().getBool("highlight", true))
-        highlight_callback = highlight;
+        highlight_callback = [this](const String & query, std::vector<replxx::Replxx::Color> & colors)
+        {
+            highlight(query, colors, *client_context);
+        };
 
     ReplxxLineReader lr(
         *suggest,
         history_file,
+        history_max_entries,
         getClientConfiguration().has("multiline"),
         getClientConfiguration().getBool("ignore_shell_suspend", true),
         query_extenders,
