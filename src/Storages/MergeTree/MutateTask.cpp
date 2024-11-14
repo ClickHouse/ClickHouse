@@ -995,9 +995,6 @@ void finalizeMutatedPart(
             new_data_part->index_granularity = std::move(new_index_granularity);
     }
 
-    /// Just in case
-    new_data_part->index_granularity->shrinkToFitInMemory();
-
     /// Load rest projections which are hardlinked
     bool noop;
     new_data_part->loadProjections(false, false, noop, true /* if_not_loaded */);

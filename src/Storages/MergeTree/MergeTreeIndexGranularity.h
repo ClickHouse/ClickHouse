@@ -62,21 +62,20 @@ public:
     virtual void adjustLastMark(size_t rows_count) = 0;
     void addRowsToLastMark(size_t rows_count);
 
-    virtual void shrinkToFitInMemory() = 0;
     virtual uint64_t getBytesSize() const = 0;
     virtual uint64_t getBytesAllocated() const = 0;
 
     /// Possibly optimizes values in memory (for example, to constant value).
     /// Returns new optimized index granularity structure or nullptr if no optimization is not applicable.
-    virtual std::shared_ptr<MergeTreeIndexGranularity> optimize() const = 0;
+    virtual std::shared_ptr<MergeTreeIndexGranularity> optimize() = 0;
     virtual std::string describe() const = 0;
 };
 
 using MergeTreeIndexGranularityPtr = std::shared_ptr<MergeTreeIndexGranularity>;
 
-size_t computeIndexGranularityForBlock(
-    size_t rows_in_block,
-    size_t bytes_in_block,
+size_t computeIndexGranularity(
+    size_t rows,
+    size_t bytes_uncompressed,
     size_t index_granularity_bytes,
     size_t fixed_index_granularity_rows,
     bool blocks_are_granules,
@@ -86,8 +85,8 @@ struct MergeTreeSettings;
 struct MergeTreeIndexGranularityInfo;
 
 MergeTreeIndexGranularityPtr createMergeTreeIndexGranularity(
-    size_t rows_in_block,
-    size_t bytes_in_block,
+    size_t rows,
+    size_t bytes_uncompressed,
     const MergeTreeSettings & settings,
     const MergeTreeIndexGranularityInfo & info,
     bool blocks_are_granules);

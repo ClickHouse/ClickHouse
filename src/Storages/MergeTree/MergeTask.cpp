@@ -412,11 +412,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     };
 
     auto mutations_snapshot = global_ctx->data->getMutationsSnapshot(params);
-    const auto & storage_settings = *global_ctx->data->getSettings();
+    auto storage_settings = global_ctx->data->getSettings();
 
     SerializationInfo::Settings info_settings =
     {
-        .ratio_of_defaults_for_sparse = storage_settings[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+        .ratio_of_defaults_for_sparse = (*storage_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
         .choose_kind = true,
     };
 
@@ -510,7 +510,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     }
 
     bool use_adaptive_granularity = global_ctx->new_data_part->index_granularity_info.mark_type.adaptive;
-    bool use_const_adaptive_granularity = storage_settings[MergeTreeSetting::use_const_adaptive_granularity];
+    bool use_const_adaptive_granularity = (*storage_settings)[MergeTreeSetting::use_const_adaptive_granularity];
 
     /// If merge is vertical we cannot calculate it.
     /// If granularity is constant we don't need to calculate it.
@@ -561,11 +561,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     auto index_granularity_ptr = createMergeTreeIndexGranularity(
         ctx->sum_input_rows_upper_bound,
         ctx->sum_uncompressed_bytes_upper_bound,
-        storage_settings,
+        *storage_settings,
         global_ctx->new_data_part->index_granularity_info,
         ctx->blocks_are_granules_size);
 
-    bool save_marks_in_cache = storage_settings[MergeTreeSetting::prewarm_mark_cache] && global_ctx->context->getMarkCache();
+    bool save_marks_in_cache = (*storage_settings)[MergeTreeSetting::prewarm_mark_cache] && global_ctx->context->getMarkCache();
 
     global_ctx->to = std::make_shared<MergedBlockOutputStream>(
         global_ctx->new_data_part,

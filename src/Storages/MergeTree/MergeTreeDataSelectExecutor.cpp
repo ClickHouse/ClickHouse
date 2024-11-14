@@ -1044,7 +1044,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 {
     MarkRanges res;
 
-    size_t marks_count = part->index_granularity.getMarksCount();
+    size_t marks_count = part->index_granularity->getMarksCount();
     if (marks_count == 0)
         return res;
 

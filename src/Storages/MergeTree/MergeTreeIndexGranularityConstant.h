@@ -6,7 +6,7 @@ namespace DB
 
 /// Class that stores constant index granularity for whole part, except
 /// last non-zero granule and final granule which always has zero rows.
-class MergeTreeIndexGranularityConstant : public MergeTreeIndexGranularity
+class MergeTreeIndexGranularityConstant final : public MergeTreeIndexGranularity
 {
 private:
     size_t constant_granularity;
@@ -36,11 +36,10 @@ public:
     void appendMark(size_t rows_count) override;
     void adjustLastMark(size_t rows_count) override;
 
-    void shrinkToFitInMemory() override {}
     uint64_t getBytesSize() const override { return sizeof(size_t) * 3 + sizeof(bool); }
     uint64_t getBytesAllocated() const override { return getBytesSize(); }
 
-    std::shared_ptr<MergeTreeIndexGranularity> optimize() const override { return nullptr; }
+    std::shared_ptr<MergeTreeIndexGranularity> optimize() override { return nullptr; }
     std::string describe() const override;
 };
 

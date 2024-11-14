@@ -75,9 +75,9 @@ void MergeTreeIndexGranularity::addRowsToLastMark(size_t rows_count)
     }
 }
 
-size_t computeIndexGranularityForBlock(
-    size_t rows_in_block,
-    size_t bytes_in_block,
+size_t computeIndexGranularity(
+    size_t rows,
+    size_t bytes_uncompressed,
     size_t index_granularity_bytes,
     size_t fixed_index_granularity_rows,
     bool blocks_are_granules,
@@ -93,16 +93,16 @@ size_t computeIndexGranularityForBlock(
     {
         if (blocks_are_granules)
         {
-            index_granularity_for_block = rows_in_block;
+            index_granularity_for_block = rows;
         }
-        else if (bytes_in_block >= index_granularity_bytes)
+        else if (bytes_uncompressed >= index_granularity_bytes)
         {
-            size_t granules_in_block = bytes_in_block / index_granularity_bytes;
-            index_granularity_for_block = rows_in_block / granules_in_block;
+            size_t granules_in_block = bytes_uncompressed / index_granularity_bytes;
+            index_granularity_for_block = rows / granules_in_block;
         }
         else
         {
-            size_t size_of_row_in_bytes = std::max(bytes_in_block / rows_in_block, 1UL);
+            size_t size_of_row_in_bytes = std::max(bytes_uncompressed / rows, 1UL);
             index_granularity_for_block = index_granularity_bytes / size_of_row_in_bytes;
         }
     }
@@ -121,8 +121,8 @@ size_t computeIndexGranularityForBlock(
 }
 
 MergeTreeIndexGranularityPtr createMergeTreeIndexGranularity(
-    size_t rows_in_block,
-    size_t bytes_in_block,
+    size_t rows,
+    size_t bytes_uncompressed,
     const MergeTreeSettings & settings,
     const MergeTreeIndexGranularityInfo & info,
     bool blocks_are_granules)
@@ -134,9 +134,9 @@ MergeTreeIndexGranularityPtr createMergeTreeIndexGranularity(
     if (blocks_are_granules || is_compact_part || (use_adaptive_granularity && !use_const_adaptive_granularity))
         return std::make_shared<MergeTreeIndexGranularityAdaptive>();
 
-    size_t computed_granularity = computeIndexGranularityForBlock(
-        rows_in_block,
-        bytes_in_block,
+    size_t computed_granularity = computeIndexGranularity(
+        rows,
+        bytes_uncompressed,
         settings[MergeTreeSetting::index_granularity_bytes],
         settings[MergeTreeSetting::index_granularity],
         blocks_are_granules,

@@ -113,11 +113,6 @@ size_t MergeTreeIndexGranularityAdaptive::countRowsForRows(size_t from_mark, siz
     return getRowsCountInRange(from_mark, std::max(1UL, to_mark)) - offset_in_rows;
 }
 
-void MergeTreeIndexGranularityAdaptive::shrinkToFitInMemory()
-{
-    marks_rows_partial_sums.shrink_to_fit();
-}
-
 uint64_t MergeTreeIndexGranularityAdaptive::getBytesSize() const
 {
     return marks_rows_partial_sums.size() * sizeof(size_t);
@@ -128,7 +123,7 @@ uint64_t MergeTreeIndexGranularityAdaptive::getBytesAllocated() const
     return marks_rows_partial_sums.capacity() * sizeof(size_t);
 }
 
-std::shared_ptr<MergeTreeIndexGranularity> MergeTreeIndexGranularityAdaptive::optimize() const
+std::shared_ptr<MergeTreeIndexGranularity> MergeTreeIndexGranularityAdaptive::optimize()
 {
     size_t marks_count = getMarksCountWithoutFinal();
     if (marks_count == 0)
@@ -138,7 +133,11 @@ std::shared_ptr<MergeTreeIndexGranularity> MergeTreeIndexGranularityAdaptive::op
     for (size_t i = 1; i < marks_count - 1; ++i)
     {
         if (getMarkRows(i) != first_mark)
+        {
+            /// We cannot optimize to constant but at least optimize memory usage.
+            marks_rows_partial_sums.shrink_to_fit();
             return nullptr;
+        }
     }
 
     size_t last_mark = getMarkRows(marks_count - 1);

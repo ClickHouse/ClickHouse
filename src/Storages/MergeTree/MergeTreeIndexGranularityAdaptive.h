@@ -8,7 +8,7 @@ namespace DB
 /// Inside it contains vector of partial sums of rows after mark:
 /// |-----|---|----|----|
 /// |  5  | 8 | 12 | 16 |
-class MergeTreeIndexGranularityAdaptive : public MergeTreeIndexGranularity
+class MergeTreeIndexGranularityAdaptive final : public MergeTreeIndexGranularity
 {
 public:
     MergeTreeIndexGranularityAdaptive() = default;
@@ -28,11 +28,10 @@ public:
     void appendMark(size_t rows_count) override;
     void adjustLastMark(size_t rows_count) override;
 
-    void shrinkToFitInMemory() override;
     uint64_t getBytesSize() const override;
     uint64_t getBytesAllocated() const override;
 
-    std::shared_ptr<MergeTreeIndexGranularity> optimize() const override;
+    std::shared_ptr<MergeTreeIndexGranularity> optimize() override;
     std::string describe() const override;
 
 private:
