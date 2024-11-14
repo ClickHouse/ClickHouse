@@ -129,6 +129,8 @@ public:
         bool hasBrokenProjection(const String & name) const;
         bool isCompactPart() const;
 
+        const NamesAndTypesList & getColumns() const;
+
         void read(
             Stage & first_stage,
             QueryPlan & plan,
@@ -159,6 +161,8 @@ private:
         Settings settings_);
 
     void prepare(bool dry_run);
+
+    void prepareForProjection(bool dry_run);
 
     void initQueryPlan(Stage & first_stage, QueryPlan & query_plan);
     void prepareMutationStages(std::vector<Stage> &prepared_stages, bool dry_run);
