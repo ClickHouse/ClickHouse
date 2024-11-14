@@ -1,23 +1,23 @@
-#include "sql_catalog.h"
-#include "statement_generator.h"
+#include "SQLCatalog.h"
+#include "StatementGenerator.h"
 
-namespace buzzhouse
+namespace BuzzHouse
 {
 
-int StatementGenerator::GenerateArrayJoin(RandomGenerator & rg, sql_query_grammar::ArrayJoin * aj)
+int StatementGenerator::GenerateArrayJoin(RandomGenerator & rg, ArrayJoin * aj)
 {
     SQLRelation rel("");
     std::string cname = "c" + std::to_string(this->levels[this->current_level].aliases_counter++);
-    sql_query_grammar::ExprColAlias * eca = aj->mutable_constraint();
-    sql_query_grammar::Expr * expr = eca->mutable_expr();
+    ExprColAlias * eca = aj->mutable_constraint();
+    Expr * expr = eca->mutable_expr();
 
     aj->set_left(rg.NextBool());
     if (rg.NextSmallNumber() < 8)
     {
         const SQLRelation & rel1 = rg.PickRandomlyFromVector(this->levels[this->current_level].rels);
         const SQLRelationCol & col1 = rg.PickRandomlyFromVector(rel1.cols);
-        sql_query_grammar::ExprSchemaTableColumn * estc = expr->mutable_comp_expr()->mutable_expr_stc();
-        sql_query_grammar::ExprColumn * ecol = estc->mutable_col();
+        ExprSchemaTableColumn * estc = expr->mutable_comp_expr()->mutable_expr_stc();
+        ExprColumn * ecol = estc->mutable_col();
 
         if (rel1.name != "")
         {
@@ -41,8 +41,7 @@ int StatementGenerator::GenerateArrayJoin(RandomGenerator & rg, sql_query_gramma
     return 0;
 }
 
-int StatementGenerator::GenerateDerivedTable(
-    RandomGenerator & rg, SQLRelation & rel, const uint32_t allowed_clauses, sql_query_grammar::Select * sel)
+int StatementGenerator::GenerateDerivedTable(RandomGenerator & rg, SQLRelation & rel, const uint32_t allowed_clauses, Select * sel)
 {
     std::map<uint32_t, QueryLevel> levels_backup;
     uint32_t ncols = std::min(this->fc.max_width - this->width, (rg.NextMediumNumber() % UINT32_C(5)) + 1);
@@ -65,7 +64,7 @@ int StatementGenerator::GenerateDerivedTable(
 
     if (sel->has_select_core())
     {
-        const sql_query_grammar::SelectStatementCore & scc = sel->select_core();
+        const SelectStatementCore & scc = sel->select_core();
 
         for (int i = 0; i < scc.result_columns_size(); i++)
         {
@@ -74,7 +73,7 @@ int StatementGenerator::GenerateDerivedTable(
     }
     else if (sel->has_set_query())
     {
-        const sql_query_grammar::Select * aux = &sel->set_query().sel1();
+        const Select * aux = &sel->set_query().sel1();
 
         while (aux->has_set_query())
         {
@@ -82,7 +81,7 @@ int StatementGenerator::GenerateDerivedTable(
         }
         if (aux->has_select_core())
         {
-            const sql_query_grammar::SelectStatementCore & scc = aux->select_core();
+            const SelectStatementCore & scc = aux->select_core();
             for (int i = 0; i < scc.result_columns_size(); i++)
             {
                 rel.cols.push_back(SQLRelationCol(rel.name, scc.result_columns(i).eca().col_alias().column(), std::nullopt));
@@ -96,7 +95,7 @@ int StatementGenerator::GenerateDerivedTable(
     return 0;
 }
 
-int StatementGenerator::GenerateFromElement(RandomGenerator & rg, const uint32_t allowed_clauses, sql_query_grammar::TableOrSubquery * tos)
+int StatementGenerator::GenerateFromElement(RandomGenerator & rg, const uint32_t allowed_clauses, TableOrSubquery * tos)
 {
     std::string name;
     const uint32_t derived_table = 30 * static_cast<uint32_t>(this->depth < this->fc.max_depth && this->width < this->fc.max_width),
@@ -121,7 +120,7 @@ int StatementGenerator::GenerateFromElement(RandomGenerator & rg, const uint32_t
     if (derived_table && nopt < (derived_table + 1))
     {
         SQLRelation rel(name);
-        sql_query_grammar::JoinedDerivedQuery * jdq = tos->mutable_joined_derived_query();
+        JoinedDerivedQuery * jdq = tos->mutable_joined_derived_query();
 
         GenerateDerivedTable(rg, rel, allowed_clauses, jdq->mutable_select());
         jdq->mutable_table_alias()->set_table(name);
@@ -130,7 +129,7 @@ int StatementGenerator::GenerateFromElement(RandomGenerator & rg, const uint32_t
     else if (cte && nopt < (derived_table + cte + 1))
     {
         SQLRelation rel(name);
-        sql_query_grammar::JoinedTable * jt = tos->mutable_joined_table();
+        JoinedTable * jt = tos->mutable_joined_table();
         const auto & next_cte = rg.PickValueRandomlyFromMap(rg.PickValueRandomlyFromMap(this->ctes));
 
         jt->mutable_est()->mutable_table()->set_table(next_cte.name);
@@ -143,8 +142,8 @@ int StatementGenerator::GenerateFromElement(RandomGenerator & rg, const uint32_t
     }
     else if (table && nopt < (derived_table + cte + table + 1))
     {
-        sql_query_grammar::JoinedTable * jt = tos->mutable_joined_table();
-        sql_query_grammar::ExprSchemaTable * est = jt->mutable_est();
+        JoinedTable * jt = tos->mutable_joined_table();
+        ExprSchemaTable * est = jt->mutable_est();
         const SQLTable & t = rg.PickRandomlyFromVector(FilterCollection<SQLTable>(attached_tables));
 
         if (t.db)
@@ -159,8 +158,8 @@ int StatementGenerator::GenerateFromElement(RandomGenerator & rg, const uint32_t
     else if (view && nopt < (derived_table + cte + table + view + 1))
     {
         SQLRelation rel(name);
-        sql_query_grammar::JoinedTable * jt = tos->mutable_joined_table();
-        sql_query_grammar::ExprSchemaTable * est = jt->mutable_est();
+        JoinedTable * jt = tos->mutable_joined_table();
+        ExprSchemaTable * est = jt->mutable_est();
         const SQLView & v = rg.PickRandomlyFromVector(FilterCollection<SQLView>(
             [&](const SQLView & vv)
             {
@@ -186,14 +185,13 @@ int StatementGenerator::GenerateFromElement(RandomGenerator & rg, const uint32_t
         SQLRelation rel(name);
         std::map<uint32_t, QueryLevel> levels_backup;
         const uint32_t noption = rg.NextSmallNumber();
-        sql_query_grammar::Expr * limit = nullptr;
-        sql_query_grammar::JoinedTableFunction * jtf = tos->mutable_joined_table_function();
-        sql_query_grammar::TableFunction * tf = jtf->mutable_tfunc();
-        sql_query_grammar::GenerateSeriesFunc * gsf = tf->mutable_gseries();
-        sql_query_grammar::GenerateSeriesFunc_GSName val = static_cast<sql_query_grammar::GenerateSeriesFunc_GSName>(
-            (rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::GenerateSeriesFunc_GSName_GSName_MAX)) + 1);
-        const std::string & cname
-            = val == sql_query_grammar::GenerateSeriesFunc_GSName::GenerateSeriesFunc_GSName_numbers ? "number" : "generate_series";
+        Expr * limit = nullptr;
+        JoinedTableFunction * jtf = tos->mutable_joined_table_function();
+        TableFunction * tf = jtf->mutable_tfunc();
+        GenerateSeriesFunc * gsf = tf->mutable_gseries();
+        GenerateSeriesFunc_GSName val = static_cast<GenerateSeriesFunc_GSName>(
+            (rg.NextRandomUInt32() % static_cast<uint32_t>(GenerateSeriesFunc_GSName_GSName_MAX)) + 1);
+        const std::string & cname = val == GenerateSeriesFunc_GSName::GenerateSeriesFunc_GSName_numbers ? "number" : "generate_series";
 
         gsf->set_fname(val);
         for (const auto & entry : this->levels)
@@ -201,7 +199,7 @@ int StatementGenerator::GenerateFromElement(RandomGenerator & rg, const uint32_t
             levels_backup[entry.first] = std::move(entry.second);
         }
         this->levels.clear();
-        if (val == sql_query_grammar::GenerateSeriesFunc_GSName::GenerateSeriesFunc_GSName_numbers)
+        if (val == GenerateSeriesFunc_GSName::GenerateSeriesFunc_GSName_numbers)
         {
             if (noption < 4)
             {
@@ -277,7 +275,7 @@ int StatementGenerator::GenerateFromElement(RandomGenerator & rg, const uint32_t
     return 0;
 }
 
-int StatementGenerator::AddJoinClause(RandomGenerator & rg, sql_query_grammar::BinaryExpr * bexpr)
+int StatementGenerator::AddJoinClause(RandomGenerator & rg, BinaryExpr * bexpr)
 {
     const SQLRelation *rel1 = &rg.PickRandomlyFromVector(this->levels[this->current_level].rels),
                       *rel2 = &this->levels[this->current_level].rels.back();
@@ -294,14 +292,13 @@ int StatementGenerator::AddJoinClause(RandomGenerator & rg, sql_query_grammar::B
         rel2 = rel3;
     }
     bexpr->set_op(
-        rg.NextSmallNumber() < 9 ? sql_query_grammar::BinaryOperator::BINOP_EQ
-                                 : static_cast<sql_query_grammar::BinaryOperator>(
-                                       (rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::BinaryOperator::BINOP_LEGR)) + 1));
+        rg.NextSmallNumber() < 9
+            ? BinaryOperator::BINOP_EQ
+            : static_cast<BinaryOperator>((rg.NextRandomUInt32() % static_cast<uint32_t>(BinaryOperator::BINOP_LEGR)) + 1));
     const SQLRelationCol &col1 = rg.PickRandomlyFromVector(rel1->cols), &col2 = rg.PickRandomlyFromVector(rel2->cols);
-    sql_query_grammar::Expr *expr1 = bexpr->mutable_lhs(), *expr2 = bexpr->mutable_rhs();
-    sql_query_grammar::ExprSchemaTableColumn *estc1 = expr1->mutable_comp_expr()->mutable_expr_stc(),
-                                             *estc2 = expr2->mutable_comp_expr()->mutable_expr_stc();
-    sql_query_grammar::ExprColumn *ecol1 = estc1->mutable_col(), *ecol2 = estc2->mutable_col();
+    Expr *expr1 = bexpr->mutable_lhs(), *expr2 = bexpr->mutable_rhs();
+    ExprSchemaTableColumn *estc1 = expr1->mutable_comp_expr()->mutable_expr_stc(), *estc2 = expr2->mutable_comp_expr()->mutable_expr_stc();
+    ExprColumn *ecol1 = estc1->mutable_col(), *ecol2 = estc2->mutable_col();
 
     if (rel1->name != "")
     {
@@ -328,7 +325,7 @@ int StatementGenerator::AddJoinClause(RandomGenerator & rg, sql_query_grammar::B
     return 0;
 }
 
-int StatementGenerator::GenerateJoinConstraint(RandomGenerator & rg, const bool allow_using, sql_query_grammar::JoinConstraint * jc)
+int StatementGenerator::GenerateJoinConstraint(RandomGenerator & rg, const bool allow_using, JoinConstraint * jc)
 {
     if (rg.NextSmallNumber() < 9)
     {
@@ -353,13 +350,13 @@ int StatementGenerator::GenerateJoinConstraint(RandomGenerator & rg, const bool 
 
             if (!intersect.empty())
             {
-                sql_query_grammar::ExprColumnList * ecl = jc->mutable_using_expr()->mutable_col_list();
+                ExprColumnList * ecl = jc->mutable_using_expr()->mutable_col_list();
                 const uint32_t nclauses = std::min<uint32_t>(UINT32_C(3), (rg.NextRandomUInt32() % intersect.size()) + 1);
 
                 std::shuffle(intersect.begin(), intersect.end(), rg.gen);
                 for (uint32_t i = 0; i < nclauses; i++)
                 {
-                    sql_query_grammar::ExprColumn * ec = i == 0 ? ecl->mutable_col() : ecl->add_extra_cols();
+                    ExprColumn * ec = i == 0 ? ecl->mutable_col() : ecl->add_extra_cols();
 
                     ec->mutable_col()->set_column(intersect[i]);
                 }
@@ -370,7 +367,7 @@ int StatementGenerator::GenerateJoinConstraint(RandomGenerator & rg, const bool 
         {
             //joining clause
             const uint32_t nclauses = std::min(this->fc.max_width - this->width, rg.NextSmallNumber() % 3) + UINT32_C(1);
-            sql_query_grammar::BinaryExpr * bexpr = jc->mutable_on_expr()->mutable_comp_expr()->mutable_binary_expr();
+            BinaryExpr * bexpr = jc->mutable_on_expr()->mutable_comp_expr()->mutable_binary_expr();
 
             for (uint32_t i = 0; i < nclauses; i++)
             {
@@ -381,9 +378,7 @@ int StatementGenerator::GenerateJoinConstraint(RandomGenerator & rg, const bool 
                 else
                 {
                     AddJoinClause(rg, bexpr->mutable_lhs()->mutable_comp_expr()->mutable_binary_expr());
-                    bexpr->set_op(
-                        rg.NextSmallNumber() < 9 ? sql_query_grammar::BinaryOperator::BINOP_AND
-                                                 : sql_query_grammar::BinaryOperator::BINOP_OR);
+                    bexpr->set_op(rg.NextSmallNumber() < 9 ? BinaryOperator::BINOP_AND : BinaryOperator::BINOP_OR);
                     bexpr = bexpr->mutable_rhs()->mutable_comp_expr()->mutable_binary_expr();
                 }
             }
@@ -403,7 +398,7 @@ int StatementGenerator::GenerateJoinConstraint(RandomGenerator & rg, const bool 
     return 0;
 }
 
-int StatementGenerator::AddWhereSide(RandomGenerator & rg, const std::vector<GroupCol> & available_cols, sql_query_grammar::Expr * expr)
+int StatementGenerator::AddWhereSide(RandomGenerator & rg, const std::vector<GroupCol> & available_cols, Expr * expr)
 {
     if (rg.NextSmallNumber() < 3)
     {
@@ -416,7 +411,7 @@ int StatementGenerator::AddWhereSide(RandomGenerator & rg, const std::vector<Gro
     return 0;
 }
 
-int StatementGenerator::AddWhereFilter(RandomGenerator & rg, const std::vector<GroupCol> & available_cols, sql_query_grammar::Expr * expr)
+int StatementGenerator::AddWhereFilter(RandomGenerator & rg, const std::vector<GroupCol> & available_cols, Expr * expr)
 {
     const GroupCol & gcol = rg.PickRandomlyFromVector(available_cols);
     const uint32_t noption = rg.NextLargeNumber();
@@ -424,8 +419,8 @@ int StatementGenerator::AddWhereFilter(RandomGenerator & rg, const std::vector<G
     if (noption < 761)
     {
         //binary expr
-        sql_query_grammar::BinaryExpr * bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
-        sql_query_grammar::Expr *lexpr = bexpr->mutable_lhs(), *rexpr = bexpr->mutable_rhs();
+        BinaryExpr * bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
+        Expr *lexpr = bexpr->mutable_lhs(), *rexpr = bexpr->mutable_rhs();
 
         if (rg.NextSmallNumber() < 9)
         {
@@ -439,16 +434,15 @@ int StatementGenerator::AddWhereFilter(RandomGenerator & rg, const std::vector<G
         }
         bexpr->set_op(
             rg.NextSmallNumber() < 7
-                ? sql_query_grammar::BinaryOperator::BINOP_EQ
-                : static_cast<sql_query_grammar::BinaryOperator>(
-                      (rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::BinaryOperator::BINOP_LEGR)) + 1));
+                ? BinaryOperator::BINOP_EQ
+                : static_cast<BinaryOperator>((rg.NextRandomUInt32() % static_cast<uint32_t>(BinaryOperator::BINOP_LEGR)) + 1));
     }
     else if (noption < 901)
     {
         //between expr
         const uint32_t noption2 = rg.NextMediumNumber();
-        sql_query_grammar::ExprBetween * bexpr = expr->mutable_comp_expr()->mutable_expr_between();
-        sql_query_grammar::Expr *expr1 = bexpr->mutable_expr1(), *expr2 = bexpr->mutable_expr2(), *expr3 = bexpr->mutable_expr3();
+        ExprBetween * bexpr = expr->mutable_comp_expr()->mutable_expr_between();
+        Expr *expr1 = bexpr->mutable_expr1(), *expr2 = bexpr->mutable_expr2(), *expr3 = bexpr->mutable_expr3();
 
         bexpr->set_not_(rg.NextBool());
         if (noption2 < 34)
@@ -473,7 +467,7 @@ int StatementGenerator::AddWhereFilter(RandomGenerator & rg, const std::vector<G
     else if (noption < 971)
     {
         //is null expr
-        sql_query_grammar::ExprNullTests * enull = expr->mutable_comp_expr()->mutable_expr_null_tests();
+        ExprNullTests * enull = expr->mutable_comp_expr()->mutable_expr_null_tests();
 
         enull->set_not_(rg.NextBool());
         RefColumn(rg, gcol, enull->mutable_expr());
@@ -481,12 +475,12 @@ int StatementGenerator::AddWhereFilter(RandomGenerator & rg, const std::vector<G
     else if (noption < 981)
     {
         //like expr
-        sql_query_grammar::ExprLike * elike = expr->mutable_comp_expr()->mutable_expr_like();
-        sql_query_grammar::Expr * expr2 = elike->mutable_expr2();
+        ExprLike * elike = expr->mutable_comp_expr()->mutable_expr_like();
+        Expr * expr2 = elike->mutable_expr2();
 
         elike->set_not_(rg.NextBool());
-        elike->set_keyword(static_cast<sql_query_grammar::ExprLike_PossibleKeywords>(
-            (rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::ExprLike::PossibleKeywords_MAX)) + 1));
+        elike->set_keyword(
+            static_cast<ExprLike_PossibleKeywords>((rg.NextRandomUInt32() % static_cast<uint32_t>(ExprLike::PossibleKeywords_MAX)) + 1));
         RefColumn(rg, gcol, elike->mutable_expr1());
         if (rg.NextSmallNumber() < 5)
         {
@@ -503,8 +497,8 @@ int StatementGenerator::AddWhereFilter(RandomGenerator & rg, const std::vector<G
     {
         //in expr
         const uint32_t nclauses = rg.NextSmallNumber();
-        sql_query_grammar::ExprIn * ein = expr->mutable_comp_expr()->mutable_expr_in();
-        sql_query_grammar::ExprList * elist = ein->mutable_exprs();
+        ExprIn * ein = expr->mutable_comp_expr()->mutable_expr_in();
+        ExprList * elist = ein->mutable_exprs();
 
         ein->set_not_(rg.NextBool());
         ein->set_global(rg.NextBool());
@@ -522,7 +516,7 @@ int StatementGenerator::AddWhereFilter(RandomGenerator & rg, const std::vector<G
     return 0;
 }
 
-int StatementGenerator::GenerateWherePredicate(RandomGenerator & rg, sql_query_grammar::Expr * expr)
+int StatementGenerator::GenerateWherePredicate(RandomGenerator & rg, Expr * expr)
 {
     std::vector<GroupCol> available_cols;
     const uint32_t noption = rg.NextSmallNumber();
@@ -559,11 +553,10 @@ int StatementGenerator::GenerateWherePredicate(RandomGenerator & rg, sql_query_g
             }
             else
             {
-                sql_query_grammar::BinaryExpr * bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
+                BinaryExpr * bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
 
                 AddWhereFilter(rg, available_cols, bexpr->mutable_lhs());
-                bexpr->set_op(
-                    rg.NextSmallNumber() < 8 ? sql_query_grammar::BinaryOperator::BINOP_AND : sql_query_grammar::BinaryOperator::BINOP_OR);
+                bexpr->set_op(rg.NextSmallNumber() < 8 ? BinaryOperator::BINOP_AND : BinaryOperator::BINOP_OR);
                 expr = bexpr->mutable_rhs();
             }
         }
@@ -583,9 +576,9 @@ int StatementGenerator::GenerateWherePredicate(RandomGenerator & rg, sql_query_g
     return 0;
 }
 
-int StatementGenerator::GenerateFromStatement(RandomGenerator & rg, const uint32_t allowed_clauses, sql_query_grammar::FromStatement * ft)
+int StatementGenerator::GenerateFromStatement(RandomGenerator & rg, const uint32_t allowed_clauses, FromStatement * ft)
 {
-    sql_query_grammar::JoinClause * jc = ft->mutable_tos()->mutable_join_clause();
+    JoinClause * jc = ft->mutable_tos()->mutable_join_clause();
     const uint32_t njoined = std::min(this->fc.max_width - this->width, (rg.NextMediumNumber() % UINT32_C(4)) + 1);
 
     this->depth++;
@@ -593,7 +586,7 @@ int StatementGenerator::GenerateFromStatement(RandomGenerator & rg, const uint32
     GenerateFromElement(rg, allowed_clauses, jc->mutable_tos());
     for (uint32_t i = 1; i < njoined; i++)
     {
-        sql_query_grammar::JoinClauseCore * jcc = jc->add_clauses();
+        JoinClauseCore * jcc = jc->add_clauses();
 
         this->depth++;
         this->width++;
@@ -603,9 +596,8 @@ int StatementGenerator::GenerateFromStatement(RandomGenerator & rg, const uint32
         }
         else
         {
-            sql_query_grammar::JoinCore * core = jcc->mutable_core();
-            sql_query_grammar::JoinType jt = static_cast<sql_query_grammar::JoinType>(
-                (rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::JoinType_MAX)) + 1);
+            JoinCore * core = jcc->mutable_core();
+            JoinType jt = static_cast<JoinType>((rg.NextRandomUInt32() % static_cast<uint32_t>(JoinType_MAX)) + 1);
 
             core->set_global(rg.NextSmallNumber() < 3);
             core->set_join_op(jt);
@@ -613,17 +605,16 @@ int StatementGenerator::GenerateFromStatement(RandomGenerator & rg, const uint32
             {
                 switch (jt)
                 {
-                    case sql_query_grammar::JoinType::J_LEFT:
-                    case sql_query_grammar::JoinType::J_INNER:
-                        core->set_join_const(static_cast<sql_query_grammar::JoinConst>(
-                            (rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::JoinConst_MAX)) + 1));
+                    case JoinType::J_LEFT:
+                    case JoinType::J_INNER:
+                        core->set_join_const(static_cast<JoinConst>((rg.NextRandomUInt32() % static_cast<uint32_t>(JoinConst_MAX)) + 1));
                         break;
-                    case sql_query_grammar::JoinType::J_RIGHT:
-                        core->set_join_const(static_cast<sql_query_grammar::JoinConst>(
-                            (rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::JoinConst::J_ANTI)) + 1));
+                    case JoinType::J_RIGHT:
+                        core->set_join_const(
+                            static_cast<JoinConst>((rg.NextRandomUInt32() % static_cast<uint32_t>(JoinConst::J_ANTI)) + 1));
                         break;
-                    case sql_query_grammar::JoinType::J_FULL:
-                        core->set_join_const(sql_query_grammar::JoinConst::J_ALL);
+                    case JoinType::J_FULL:
+                        core->set_join_const(JoinConst::J_ALL);
                         break;
                     default:
                         break;
@@ -645,15 +636,15 @@ int StatementGenerator::GenerateGroupByExpr(
     const uint32_t ncols,
     const std::vector<SQLRelationCol> & available_cols,
     std::vector<GroupCol> & gcols,
-    sql_query_grammar::Expr * expr)
+    Expr * expr)
 {
     const uint32_t next_option = rg.NextSmallNumber();
 
     if (!available_cols.empty() && (enforce_having || next_option < 9))
     {
         const SQLRelationCol & rel_col = available_cols[offset];
-        sql_query_grammar::ExprSchemaTableColumn * estc = expr->mutable_comp_expr()->mutable_expr_stc();
-        sql_query_grammar::ExprColumn * ecol = estc->mutable_col();
+        ExprSchemaTableColumn * estc = expr->mutable_comp_expr()->mutable_expr_stc();
+        ExprColumn * ecol = estc->mutable_col();
 
         if (rel_col.rel_name != "")
         {
@@ -670,7 +661,7 @@ int StatementGenerator::GenerateGroupByExpr(
     }
     else if (next_option < 10)
     {
-        sql_query_grammar::LiteralValue * lv = expr->mutable_lit_val();
+        LiteralValue * lv = expr->mutable_lit_val();
 
         lv->mutable_int_lit()->set_uint_lit((rg.NextRandomUInt64() % ncols) + 1);
     }
@@ -682,11 +673,7 @@ int StatementGenerator::GenerateGroupByExpr(
 }
 
 int StatementGenerator::GenerateGroupBy(
-    RandomGenerator & rg,
-    const uint32_t ncols,
-    const bool enforce_having,
-    const bool allow_settings,
-    sql_query_grammar::GroupByStatement * gbs)
+    RandomGenerator & rg, const uint32_t ncols, const bool enforce_having, const bool allow_settings, GroupByStatement * gbs)
 {
     std::vector<SQLRelationCol> available_cols;
 
@@ -707,7 +694,7 @@ int StatementGenerator::GenerateGroupBy(
     {
         std::vector<GroupCol> gcols;
         const uint32_t next_opt = rg.NextMediumNumber();
-        sql_query_grammar::GroupByList * gbl = gbs->mutable_glist();
+        GroupByList * gbl = gbs->mutable_glist();
         const uint32_t nclauses = std::min<uint32_t>(
             this->fc.max_width - this->width,
             std::min<uint32_t>(
@@ -719,9 +706,8 @@ int StatementGenerator::GenerateGroupBy(
         if (no_grouping_sets)
         {
             //group list
-            sql_query_grammar::ExprList * elist = (!allow_settings || next_opt < 51)
-                ? gbl->mutable_exprs()
-                : ((next_opt < 71) ? gbl->mutable_rollup() : gbl->mutable_cube());
+            ExprList * elist = (!allow_settings || next_opt < 51) ? gbl->mutable_exprs()
+                                                                  : ((next_opt < 71) ? gbl->mutable_rollup() : gbl->mutable_cube());
 
             for (uint32_t i = 0; i < nclauses; i++)
             {
@@ -734,12 +720,12 @@ int StatementGenerator::GenerateGroupBy(
         {
             //grouping sets
             bool has_global = false;
-            sql_query_grammar::GroupingSets * gsets = gbl->mutable_sets();
+            GroupingSets * gsets = gbl->mutable_sets();
 
             for (uint32_t i = 0; i < nclauses; i++)
             {
                 const uint32_t nelems = rg.NextRandomUInt32() % (available_cols.empty() ? 3 : static_cast<uint32_t>(available_cols.size()));
-                sql_query_grammar::OptionalExprList * oel = i == 0 ? gsets->mutable_exprs() : gsets->add_other_exprs();
+                OptionalExprList * oel = i == 0 ? gsets->mutable_exprs() : gsets->add_other_exprs();
 
                 has_global |= nelems == 0;
                 this->width++;
@@ -758,8 +744,8 @@ int StatementGenerator::GenerateGroupBy(
 
         if (has_gsm)
         {
-            gbl->set_gsm(static_cast<sql_query_grammar::GroupByList_GroupingSetsModifier>(
-                (rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::GroupByList::GroupingSetsModifier_MAX)) + 1));
+            gbl->set_gsm(static_cast<GroupByList_GroupingSetsModifier>(
+                (rg.NextRandomUInt32() % static_cast<uint32_t>(GroupByList::GroupingSetsModifier_MAX)) + 1));
         }
         gbl->set_with_totals(has_totals);
 
@@ -781,8 +767,7 @@ int StatementGenerator::GenerateGroupBy(
     return 1;
 }
 
-int StatementGenerator::GenerateOrderBy(
-    RandomGenerator & rg, const uint32_t ncols, const bool allow_settings, sql_query_grammar::OrderByStatement * ob)
+int StatementGenerator::GenerateOrderBy(RandomGenerator & rg, const uint32_t ncols, const bool allow_settings, OrderByStatement * ob)
 {
     if (rg.NextSmallNumber() < 3)
     {
@@ -792,7 +777,7 @@ int StatementGenerator::GenerateOrderBy(
     {
         bool has_fill = false;
         std::vector<GroupCol> available_cols;
-        sql_query_grammar::OrderByList * olist = ob->mutable_olist();
+        OrderByList * olist = ob->mutable_olist();
 
         if (this->levels[this->current_level].group_by_all)
         {
@@ -829,8 +814,8 @@ int StatementGenerator::GenerateOrderBy(
 
         for (uint32_t i = 0; i < nclauses; i++)
         {
-            sql_query_grammar::ExprOrderingTerm * eot = i == 0 ? olist->mutable_ord_term() : olist->add_extra_ord_terms();
-            sql_query_grammar::Expr * expr = eot->mutable_expr();
+            ExprOrderingTerm * eot = i == 0 ? olist->mutable_ord_term() : olist->add_extra_ord_terms();
+            Expr * expr = eot->mutable_expr();
             const uint32_t next_option = rg.NextSmallNumber();
 
             this->width++;
@@ -840,7 +825,7 @@ int StatementGenerator::GenerateOrderBy(
             }
             else if (ncols && next_option < 10)
             {
-                sql_query_grammar::LiteralValue * lv = expr->mutable_lit_val();
+                LiteralValue * lv = expr->mutable_lit_val();
 
                 lv->mutable_int_lit()->set_uint_lit((rg.NextRandomUInt64() % ncols) + 1);
             }
@@ -853,8 +838,8 @@ int StatementGenerator::GenerateOrderBy(
                 if (rg.NextSmallNumber() < 7)
                 {
                     eot->set_asc_desc(
-                        rg.NextBool() ? sql_query_grammar::ExprOrderingTerm_AscDesc::ExprOrderingTerm_AscDesc_ASC
-                                      : sql_query_grammar::ExprOrderingTerm_AscDesc::ExprOrderingTerm_AscDesc_DESC);
+                        rg.NextBool() ? ExprOrderingTerm_AscDesc::ExprOrderingTerm_AscDesc_ASC
+                                      : ExprOrderingTerm_AscDesc::ExprOrderingTerm_AscDesc_DESC);
                 }
                 if (!this->fc.collations.empty() && rg.NextSmallNumber() < 3)
                 {
@@ -862,7 +847,7 @@ int StatementGenerator::GenerateOrderBy(
                 }
                 if (rg.NextSmallNumber() < 2)
                 {
-                    sql_query_grammar::ExprOrderingWithFill * eowf = eot->mutable_fill();
+                    ExprOrderingWithFill * eowf = eot->mutable_fill();
 
                     has_fill = true;
                     if (rg.NextSmallNumber() < 4)
@@ -896,7 +881,7 @@ int StatementGenerator::GenerateOrderBy(
             std::shuffle(nids.begin(), nids.end(), rg.gen);
             for (uint32_t i = 0; i < iclauses; i++)
             {
-                sql_query_grammar::InterpolateExpr * ie = olist->add_interpolate();
+                InterpolateExpr * ie = olist->add_interpolate();
 
                 ie->mutable_col()->set_column("c" + std::to_string(nids[i]));
                 GenerateExpression(rg, ie->mutable_expr());
@@ -908,7 +893,7 @@ int StatementGenerator::GenerateOrderBy(
     return 0;
 }
 
-int StatementGenerator::GenerateLimitExpr(RandomGenerator & rg, sql_query_grammar::Expr * expr)
+int StatementGenerator::GenerateLimitExpr(RandomGenerator & rg, Expr * expr)
 {
     if (this->depth >= this->fc.max_depth || rg.NextSmallNumber() < 8)
     {
@@ -946,8 +931,7 @@ int StatementGenerator::GenerateLimitExpr(RandomGenerator & rg, sql_query_gramma
     return 0;
 }
 
-int StatementGenerator::GenerateLimit(
-    RandomGenerator & rg, const bool has_order_by, const uint32_t ncols, sql_query_grammar::LimitStatement * ls)
+int StatementGenerator::GenerateLimit(RandomGenerator & rg, const bool has_order_by, const uint32_t ncols, LimitStatement * ls)
 {
     GenerateLimitExpr(rg, ls->mutable_limit());
     if (rg.NextBool())
@@ -957,11 +941,11 @@ int StatementGenerator::GenerateLimit(
     ls->set_with_ties(has_order_by && (!this->allow_not_deterministic || rg.NextSmallNumber() < 7));
     if (rg.NextSmallNumber() < 4)
     {
-        sql_query_grammar::Expr * expr = ls->mutable_limit_by();
+        Expr * expr = ls->mutable_limit_by();
 
         if (this->depth >= this->fc.max_depth || rg.NextSmallNumber() < 8)
         {
-            sql_query_grammar::LiteralValue * lv = expr->mutable_lit_val();
+            LiteralValue * lv = expr->mutable_lit_val();
 
             lv->mutable_int_lit()->set_uint_lit((rg.NextRandomUInt64() % ncols) + 1);
         }
@@ -975,13 +959,13 @@ int StatementGenerator::GenerateLimit(
     return 0;
 }
 
-int StatementGenerator::GenerateOffset(RandomGenerator & rg, sql_query_grammar::OffsetStatement * off)
+int StatementGenerator::GenerateOffset(RandomGenerator & rg, OffsetStatement * off)
 {
     GenerateLimitExpr(rg, off->mutable_row_count());
     off->set_rows(rg.NextBool());
     if (!this->allow_not_deterministic || rg.NextBool())
     {
-        sql_query_grammar::FetchStatement * fst = off->mutable_fetch();
+        FetchStatement * fst = off->mutable_fetch();
 
         GenerateLimitExpr(rg, fst->mutable_row_count());
         fst->set_rows(rg.NextBool());
@@ -991,14 +975,14 @@ int StatementGenerator::GenerateOffset(RandomGenerator & rg, sql_query_grammar::
     return 0;
 }
 
-int StatementGenerator::AddCTEs(RandomGenerator & rg, const uint32_t allowed_clauses, sql_query_grammar::CTEs * qctes)
+int StatementGenerator::AddCTEs(RandomGenerator & rg, const uint32_t allowed_clauses, CTEs * qctes)
 {
     const uint32_t nclauses = std::min<uint32_t>(this->fc.max_width - this->width, (rg.NextRandomUInt32() % 3) + 1);
 
     this->depth++;
     for (uint32_t i = 0; i < nclauses; i++)
     {
-        sql_query_grammar::CTEquery * cte = i == 0 ? qctes->mutable_cte() : qctes->add_other_ctes();
+        CTEquery * cte = i == 0 ? qctes->mutable_cte() : qctes->add_other_ctes();
         std::string name;
 
         name += "cte";
@@ -1018,7 +1002,7 @@ int StatementGenerator::AddCTEs(RandomGenerator & rg, const uint32_t allowed_cla
 }
 
 int StatementGenerator::GenerateSelect(
-    RandomGenerator & rg, const bool top, const uint32_t ncols, const uint32_t allowed_clauses, sql_query_grammar::Select * sel)
+    RandomGenerator & rg, const bool top, const uint32_t ncols, const uint32_t allowed_clauses, Select * sel)
 {
     int res = 0;
 
@@ -1028,11 +1012,10 @@ int StatementGenerator::GenerateSelect(
     }
     if ((allowed_clauses & allow_set) && this->depth<this->fc.max_depth && this->fc.max_width> this->width + 1 && rg.NextSmallNumber() < 3)
     {
-        sql_query_grammar::SetQuery * setq = sel->mutable_set_query();
+        SetQuery * setq = sel->mutable_set_query();
 
-        setq->set_set_op(static_cast<sql_query_grammar::SetQuery_SetOp>(
-            (rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::SetQuery::SetOp_MAX)) + 1));
-        setq->set_s_or_d(rg.NextBool() ? sql_query_grammar::AllOrDistinct::ALL : sql_query_grammar::AllOrDistinct::DISTINCT);
+        setq->set_set_op(static_cast<SetQuery_SetOp>((rg.NextRandomUInt32() % static_cast<uint32_t>(SetQuery::SetOp_MAX)) + 1));
+        setq->set_s_or_d(rg.NextBool() ? AllOrDistinct::ALL : AllOrDistinct::DISTINCT);
 
         this->depth++;
         this->current_level++;
@@ -1047,11 +1030,11 @@ int StatementGenerator::GenerateSelect(
     }
     else
     {
-        sql_query_grammar::SelectStatementCore * ssc = sel->mutable_select_core();
+        SelectStatementCore * ssc = sel->mutable_select_core();
 
         if ((allowed_clauses & allow_distinct) && rg.NextSmallNumber() < 3)
         {
-            ssc->set_s_or_d(rg.NextBool() ? sql_query_grammar::AllOrDistinct::ALL : sql_query_grammar::AllOrDistinct::DISTINCT);
+            ssc->set_s_or_d(rg.NextBool() ? AllOrDistinct::ALL : AllOrDistinct::DISTINCT);
         }
         if ((allowed_clauses & allow_from) && this->depth < this->fc.max_depth && this->width < this->fc.max_width
             && rg.NextSmallNumber() < 10)
@@ -1086,7 +1069,7 @@ int StatementGenerator::GenerateSelect(
         this->depth++;
         for (uint32_t i = 0; i < ncols; i++)
         {
-            sql_query_grammar::ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
+            ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
 
             this->width++;
             GenerateExpression(rg, eca->mutable_expr());
@@ -1129,7 +1112,7 @@ int StatementGenerator::GenerateSelect(
     return res;
 }
 
-int StatementGenerator::GenerateTopSelect(RandomGenerator & rg, const uint32_t allowed_clauses, sql_query_grammar::TopSelect * ts)
+int StatementGenerator::GenerateTopSelect(RandomGenerator & rg, const uint32_t allowed_clauses, TopSelect * ts)
 {
     int res = 0;
     const uint32_t ncols = std::max(std::min(this->fc.max_width - this->width, (rg.NextMediumNumber() % UINT32_C(5)) + 1), UINT32_C(1));
@@ -1142,8 +1125,7 @@ int StatementGenerator::GenerateTopSelect(RandomGenerator & rg, const uint32_t a
     }
     if (rg.NextSmallNumber() < 3)
     {
-        ts->set_format(static_cast<sql_query_grammar::OutFormat>(
-            (rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::OutFormat_MAX)) + 1));
+        ts->set_format(static_cast<OutFormat>((rg.NextRandomUInt32() % static_cast<uint32_t>(OutFormat_MAX)) + 1));
     }
     return res;
 }

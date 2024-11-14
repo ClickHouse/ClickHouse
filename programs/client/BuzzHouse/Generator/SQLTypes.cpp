@@ -1,10 +1,10 @@
-#include "sql_types.h"
-#include "fuzz_timezones.h"
-#include "hugeint.h"
-#include "statement_generator.h"
-#include "uhugeint.h"
+#include "SQLTypes.h"
+#include "FuzzTimezones.h"
+#include "Hugeint.h"
+#include "StatementGenerator.h"
+#include "UHugeint.h"
 
-namespace buzzhouse
+namespace BuzzHouse
 {
 
 const SQLType * TypeDeepCopy(const SQLType * tp)
@@ -136,8 +136,7 @@ const SQLType * TypeDeepCopy(const SQLType * tp)
     return nullptr;
 }
 
-std::tuple<const SQLType *, sql_query_grammar::Integers>
-StatementGenerator::RandomIntType(RandomGenerator & rg, const uint32_t allowed_types)
+std::tuple<const SQLType *, Integers> StatementGenerator::RandomIntType(RandomGenerator & rg, const uint32_t allowed_types)
 {
     assert(this->ids.empty());
 
@@ -173,49 +172,47 @@ StatementGenerator::RandomIntType(RandomGenerator & rg, const uint32_t allowed_t
     switch (nopt)
     {
         case 1:
-            return std::make_tuple(new IntType(8, true), sql_query_grammar::Integers::UInt8);
+            return std::make_tuple(new IntType(8, true), Integers::UInt8);
         case 2:
-            return std::make_tuple(new IntType(16, true), sql_query_grammar::Integers::UInt16);
+            return std::make_tuple(new IntType(16, true), Integers::UInt16);
         case 3:
-            return std::make_tuple(new IntType(32, true), sql_query_grammar::Integers::UInt32);
+            return std::make_tuple(new IntType(32, true), Integers::UInt32);
         case 4:
-            return std::make_tuple(new IntType(64, true), sql_query_grammar::Integers::UInt64);
+            return std::make_tuple(new IntType(64, true), Integers::UInt64);
         case 5:
-            return std::make_tuple(new IntType(128, true), sql_query_grammar::Integers::UInt128);
+            return std::make_tuple(new IntType(128, true), Integers::UInt128);
         case 6:
-            return std::make_tuple(new IntType(256, true), sql_query_grammar::Integers::UInt256);
+            return std::make_tuple(new IntType(256, true), Integers::UInt256);
         case 7:
-            return std::make_tuple(new IntType(8, false), sql_query_grammar::Integers::Int8);
+            return std::make_tuple(new IntType(8, false), Integers::Int8);
         case 8:
-            return std::make_tuple(new IntType(16, false), sql_query_grammar::Integers::Int16);
+            return std::make_tuple(new IntType(16, false), Integers::Int16);
         case 9:
-            return std::make_tuple(new IntType(32, false), sql_query_grammar::Integers::Int32);
+            return std::make_tuple(new IntType(32, false), Integers::Int32);
         case 10:
-            return std::make_tuple(new IntType(64, false), sql_query_grammar::Integers::Int64);
+            return std::make_tuple(new IntType(64, false), Integers::Int64);
         case 11:
-            return std::make_tuple(new IntType(128, false), sql_query_grammar::Integers::Int128);
+            return std::make_tuple(new IntType(128, false), Integers::Int128);
         case 12:
-            return std::make_tuple(new IntType(256, false), sql_query_grammar::Integers::Int256);
+            return std::make_tuple(new IntType(256, false), Integers::Int256);
         default:
             assert(0);
     }
 }
 
-std::tuple<const SQLType *, sql_query_grammar::FloatingPoints> StatementGenerator::RandomFloatType(RandomGenerator & rg)
+std::tuple<const SQLType *, FloatingPoints> StatementGenerator::RandomFloatType(RandomGenerator & rg)
 {
     const bool use32 = rg.NextBool();
-    return std::make_tuple(
-        new FloatType(use32 ? 32 : 64), use32 ? sql_query_grammar::FloatingPoints::Float32 : sql_query_grammar::FloatingPoints::Float64);
+    return std::make_tuple(new FloatType(use32 ? 32 : 64), use32 ? FloatingPoints::Float32 : FloatingPoints::Float64);
 }
 
-std::tuple<const SQLType *, sql_query_grammar::Dates> StatementGenerator::RandomDateType(RandomGenerator & rg, const uint32_t allowed_types)
+std::tuple<const SQLType *, Dates> StatementGenerator::RandomDateType(RandomGenerator & rg, const uint32_t allowed_types)
 {
     const bool use32 = (allowed_types & allow_date32) && rg.NextBool();
-    return std::make_tuple(new DateType(use32), use32 ? sql_query_grammar::Dates::Date32 : sql_query_grammar::Dates::Date);
+    return std::make_tuple(new DateType(use32), use32 ? Dates::Date32 : Dates::Date);
 }
 
-const SQLType *
-StatementGenerator::RandomDateTimeType(RandomGenerator & rg, const uint32_t allowed_types, sql_query_grammar::DateTimeTp * dt)
+const SQLType * StatementGenerator::RandomDateTimeType(RandomGenerator & rg, const uint32_t allowed_types, DateTimeTp * dt)
 {
     const bool use64 = (allowed_types & allow_datetime64) && rg.NextBool();
     std::optional<uint32_t> precision = std::nullopt;
@@ -223,7 +220,7 @@ StatementGenerator::RandomDateTimeType(RandomGenerator & rg, const uint32_t allo
 
     if (dt)
     {
-        dt->set_type(use64 ? sql_query_grammar::DateTimes::DateTime64 : sql_query_grammar::DateTimes::DateTime);
+        dt->set_type(use64 ? DateTimes::DateTime64 : DateTimes::DateTime);
     }
     if (use64 && rg.NextSmallNumber() < 5)
     {
@@ -244,8 +241,7 @@ StatementGenerator::RandomDateTimeType(RandomGenerator & rg, const uint32_t allo
     return new DateTimeType(use64, precision, timezone);
 }
 
-const SQLType * StatementGenerator::BottomType(
-    RandomGenerator & rg, const uint32_t allowed_types, const bool low_card, sql_query_grammar::BottomTypeName * tp)
+const SQLType * StatementGenerator::BottomType(RandomGenerator & rg, const uint32_t allowed_types, const bool low_card, BottomTypeName * tp)
 {
     const SQLType * res = nullptr;
 
@@ -270,7 +266,7 @@ const SQLType * StatementGenerator::BottomType(
 
     if (int_type && nopt < (int_type + 1))
     {
-        sql_query_grammar::Integers nint;
+        Integers nint;
 
         std::tie(res, nint) = RandomIntType(rg, allowed_types);
         if (tp)
@@ -280,7 +276,7 @@ const SQLType * StatementGenerator::BottomType(
     }
     else if (floating_point_type && nopt < (int_type + floating_point_type + 1))
     {
-        sql_query_grammar::FloatingPoints nflo;
+        FloatingPoints nflo;
 
         std::tie(res, nflo) = RandomFloatType(rg);
         if (tp)
@@ -290,7 +286,7 @@ const SQLType * StatementGenerator::BottomType(
     }
     else if (date_type && nopt < (int_type + floating_point_type + date_type + 1))
     {
-        sql_query_grammar::Dates dd;
+        Dates dd;
 
         std::tie(res, dd) = RandomDateType(rg, allowed_types);
         if (tp)
@@ -300,7 +296,7 @@ const SQLType * StatementGenerator::BottomType(
     }
     else if (datetime_type && nopt < (int_type + floating_point_type + date_type + datetime_type + 1))
     {
-        sql_query_grammar::DateTimeTp * dtp = tp ? tp->mutable_datetimes() : nullptr;
+        DateTimeTp * dtp = tp ? tp->mutable_datetimes() : nullptr;
 
         res = RandomDateTimeType(rg, low_card ? (allowed_types & ~(allow_datetime64)) : allowed_types, dtp);
     }
@@ -327,7 +323,7 @@ const SQLType * StatementGenerator::BottomType(
     }
     else if (decimal_type && nopt < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + 1))
     {
-        sql_query_grammar::Decimal * dec = tp ? tp->mutable_decimal() : nullptr;
+        Decimal * dec = tp ? tp->mutable_decimal() : nullptr;
         std::optional<uint32_t> precision = std::nullopt, scale = std::nullopt;
 
         if (rg.NextBool())
@@ -364,7 +360,7 @@ const SQLType * StatementGenerator::BottomType(
         const bool bits = rg.NextBool();
         std::vector<const EnumValue> evs;
         const uint32_t nvalues = (rg.NextLargeNumber() % enum_values.size()) + 1;
-        sql_query_grammar::EnumDef * edef = tp ? tp->mutable_enum_def() : nullptr;
+        EnumDef * edef = tp ? tp->mutable_enum_def() : nullptr;
 
         edef->set_bits(bits);
         std::shuffle(enum_values.begin(), enum_values.end(), rg.gen);
@@ -375,7 +371,7 @@ const SQLType * StatementGenerator::BottomType(
 
             if (edef)
             {
-                sql_query_grammar::EnumDefValue * edf = i == 0 ? edef->mutable_first_value() : edef->add_other_values();
+                EnumDefValue * edf = i == 0 ? edef->mutable_first_value() : edef->add_other_values();
 
                 edf->set_number(num);
                 edf->set_enumv(nval);
@@ -427,7 +423,7 @@ const SQLType * StatementGenerator::BottomType(
                + ipv4_type + ipv6_type + json_type + 1))
     {
         std::string desc = "";
-        sql_query_grammar::JsonDef * jdef = tp ? tp->mutable_json() : nullptr;
+        JsonDef * jdef = tp ? tp->mutable_json() : nullptr;
         const uint32_t nclauses = rg.NextMediumNumber() % 7;
 
         if (nclauses)
@@ -437,7 +433,7 @@ const SQLType * StatementGenerator::BottomType(
         for (uint32_t i = 0; i < nclauses; i++)
         {
             const uint32_t noption = rg.NextSmallNumber();
-            sql_query_grammar::JsonDefItem * jdi = tp ? jdef->add_spec() : nullptr;
+            JsonDefItem * jdi = tp ? jdef->add_spec() : nullptr;
 
             if (i != 0)
             {
@@ -466,12 +462,12 @@ const SQLType * StatementGenerator::BottomType(
                 desc += std::to_string(max_dtypes);
             } /*else if (this->depth >= this->fc.max_depth || noption < 9) {
                 const uint32_t nskips = (rg.NextMediumNumber() % 4) + 1;
-                sql_query_grammar::ColumnPath *cp = tp ? jdi->mutable_skip_path() : nullptr;
+                ColumnPath *cp = tp ? jdi->mutable_skip_path() : nullptr;
 
                 desc += "SKIP ";
                 for (uint32_t j = 0 ; j < nskips; j++) {
                     std::string nbuf;
-                    sql_query_grammar::Column *col = tp ? (j == 0 ? cp->mutable_col() : cp->add_sub_cols()) : nullptr;
+                    Column *col = tp ? (j == 0 ? cp->mutable_col() : cp->add_sub_cols()) : nullptr;
 
                     if (j != 0) {
                         desc += ".";
@@ -489,13 +485,13 @@ const SQLType * StatementGenerator::BottomType(
             {
                 uint32_t col_counter = 0;
                 const uint32_t ncols = (rg.NextMediumNumber() % 4) + 1;
-                sql_query_grammar::JsonPathType * jpt = tp ? jdi->mutable_path_type() : nullptr;
-                sql_query_grammar::ColumnPath * cp = tp ? jpt->mutable_col() : nullptr;
+                JsonPathType * jpt = tp ? jdi->mutable_path_type() : nullptr;
+                ColumnPath * cp = tp ? jpt->mutable_col() : nullptr;
 
                 for (uint32_t j = 0; j < ncols; j++)
                 {
                     std::string nbuf;
-                    sql_query_grammar::Column * col = tp ? (j == 0 ? cp->mutable_col() : cp->add_sub_cols()) : nullptr;
+                    Column * col = tp ? (j == 0 ? cp->mutable_col() : cp->add_sub_cols()) : nullptr;
 
                     if (j != 0)
                     {
@@ -530,7 +526,7 @@ const SQLType * StatementGenerator::BottomType(
             < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + enum_type + uuid_type
                + ipv4_type + ipv6_type + json_type + dynamic_type + 1))
     {
-        sql_query_grammar::Dynamic * dyn = tp ? tp->mutable_dynamic() : nullptr;
+        Dynamic * dyn = tp ? tp->mutable_dynamic() : nullptr;
         std::optional<uint32_t> ntypes = std::nullopt;
 
         if (rg.NextBool())
@@ -550,8 +546,8 @@ const SQLType * StatementGenerator::BottomType(
     return res;
 }
 
-const SQLType * StatementGenerator::GenerateArraytype(
-    RandomGenerator & rg, const uint32_t allowed_types, uint32_t & col_counter, sql_query_grammar::TopTypeName * tp)
+const SQLType *
+StatementGenerator::GenerateArraytype(RandomGenerator & rg, const uint32_t allowed_types, uint32_t & col_counter, TopTypeName * tp)
 {
     this->depth++;
     const SQLType * k = this->RandomNextType(rg, allowed_types, col_counter, tp);
@@ -566,8 +562,8 @@ const SQLType * StatementGenerator::GenerateArraytype(RandomGenerator & rg, cons
     return GenerateArraytype(rg, allowed_types, col_counter, nullptr);
 }
 
-const SQLType * StatementGenerator::RandomNextType(
-    RandomGenerator & rg, const uint32_t allowed_types, uint32_t & col_counter, sql_query_grammar::TopTypeName * tp)
+const SQLType *
+StatementGenerator::RandomNextType(RandomGenerator & rg, const uint32_t allowed_types, uint32_t & col_counter, TopTypeName * tp)
 {
     const uint32_t non_nullable_type = 50, nullable_type = 30 * static_cast<uint32_t>((allowed_types & allow_nullable) != 0),
                    array_type = 10 * static_cast<uint32_t>((allowed_types & allow_array) != 0 && this->depth < this->fc.max_depth),
@@ -612,7 +608,7 @@ const SQLType * StatementGenerator::RandomNextType(
     else if (map_type && nopt < (nullable_type + non_nullable_type + array_type + map_type + 1))
     {
         //map
-        sql_query_grammar::MapType * mt = tp ? tp->mutable_map() : nullptr;
+        MapTypeDef * mt = tp ? tp->mutable_map() : nullptr;
 
         this->depth++;
         const SQLType * k
@@ -628,9 +624,9 @@ const SQLType * StatementGenerator::RandomNextType(
         //tuple
         std::vector<const SubType> subtypes;
         const bool with_names = rg.NextBool();
-        sql_query_grammar::TupleType * tt = tp ? tp->mutable_tuple() : nullptr;
-        sql_query_grammar::TupleWithColumnNames * twcn = (tp && with_names) ? tt->mutable_with_names() : nullptr;
-        sql_query_grammar::TupleWithOutColumnNames * twocn = (tp && !with_names) ? tt->mutable_no_names() : nullptr;
+        TupleTypeDef * tt = tp ? tp->mutable_tuple() : nullptr;
+        TupleWithColumnNames * twcn = (tp && with_names) ? tt->mutable_with_names() : nullptr;
+        TupleWithOutColumnNames * twocn = (tp && !with_names) ? tt->mutable_no_names() : nullptr;
         const uint32_t ncols
             = this->width >= this->fc.max_width ? 0 : (rg.NextMediumNumber() % std::min<uint32_t>(5, this->fc.max_width - this->width));
 
@@ -638,8 +634,8 @@ const SQLType * StatementGenerator::RandomNextType(
         for (uint32_t i = 0; i < ncols; i++)
         {
             std::optional<uint32_t> opt_cname = std::nullopt;
-            sql_query_grammar::TypeColumnDef * tcd = twcn ? twcn->add_values() : nullptr;
-            sql_query_grammar::TopTypeName * ttn = twocn ? twocn->add_values() : nullptr;
+            TypeColumnDef * tcd = twcn ? twcn->add_values() : nullptr;
+            TopTypeName * ttn = twocn ? twocn->add_values() : nullptr;
 
             if (tcd)
             {
@@ -659,14 +655,14 @@ const SQLType * StatementGenerator::RandomNextType(
     {
         //variant
         std::vector<const SQLType *> subtypes;
-        sql_query_grammar::TupleWithOutColumnNames * twocn = tp ? tp->mutable_variant() : nullptr;
+        TupleWithOutColumnNames * twocn = tp ? tp->mutable_variant() : nullptr;
         const uint32_t ncols
             = this->width >= this->fc.max_width ? 0 : (rg.NextMediumNumber() % std::min<uint32_t>(5, this->fc.max_width - this->width));
 
         this->depth++;
         for (uint32_t i = 0; i < ncols; i++)
         {
-            sql_query_grammar::TopTypeName * ttn = tp ? twocn->add_values() : nullptr;
+            TopTypeName * ttn = tp ? twocn->add_values() : nullptr;
 
             subtypes.push_back(this->RandomNextType(
                 rg, allowed_types & ~(allow_nullable | allow_nested | allow_variant | allow_dynamic), col_counter, ttn));
@@ -679,14 +675,14 @@ const SQLType * StatementGenerator::RandomNextType(
     {
         //nested
         std::vector<const NestedSubType> subtypes;
-        sql_query_grammar::NestedType * nt = tp ? tp->mutable_nested() : nullptr;
+        NestedTypeDef * nt = tp ? tp->mutable_nested() : nullptr;
         const uint32_t ncols = (rg.NextMediumNumber() % (std::min<uint32_t>(5, this->fc.max_width - this->width))) + UINT32_C(1);
 
         this->depth++;
         for (uint32_t i = 0; i < ncols; i++)
         {
             const uint32_t cname = col_counter++;
-            sql_query_grammar::TypeColumnDef * tcd = tp ? ((i == 0) ? nt->mutable_type1() : nt->add_others()) : nullptr;
+            TypeColumnDef * tcd = tp ? ((i == 0) ? nt->mutable_type1() : nt->add_others()) : nullptr;
 
             if (tcd)
             {
@@ -704,8 +700,7 @@ const SQLType * StatementGenerator::RandomNextType(
         && nopt < (nullable_type + non_nullable_type + array_type + map_type + tuple_type + variant_type + nested_type + geo_type + 1))
     {
         //geo
-        const sql_query_grammar::GeoTypes gt = static_cast<sql_query_grammar::GeoTypes>(
-            (rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::GeoTypes_MAX)) + 1);
+        const GeoTypes gt = static_cast<GeoTypes>((rg.NextRandomUInt32() % static_cast<uint32_t>(GeoTypes_MAX)) + 1);
 
         if (tp)
         {
@@ -805,21 +800,21 @@ static inline void NextFloatingPoint(RandomGenerator & rg, std::string & ret)
     }
 }
 
-void AppendGeoValue(RandomGenerator & rg, std::string & ret, const sql_query_grammar::GeoTypes & geo_type)
+void AppendGeoValue(RandomGenerator & rg, std::string & ret, const GeoTypes & geo_type)
 {
     const uint32_t limit = rg.NextLargeNumber() % 10;
 
     switch (geo_type)
     {
-        case sql_query_grammar::GeoTypes::Point:
+        case GeoTypes::Point:
             ret += "(";
             NextFloatingPoint<false>(rg, ret);
             ret += ",";
             NextFloatingPoint<false>(rg, ret);
             ret += ")";
             break;
-        case sql_query_grammar::GeoTypes::Ring:
-        case sql_query_grammar::GeoTypes::LineString:
+        case GeoTypes::Ring:
+        case GeoTypes::LineString:
             ret += "[";
             for (uint32_t i = 0; i < limit; i++)
             {
@@ -835,8 +830,8 @@ void AppendGeoValue(RandomGenerator & rg, std::string & ret, const sql_query_gra
             }
             ret += "]";
             break;
-        case sql_query_grammar::GeoTypes::MultiLineString:
-        case sql_query_grammar::GeoTypes::Polygon:
+        case GeoTypes::MultiLineString:
+        case GeoTypes::Polygon:
             ret += "[";
             for (uint32_t i = 0; i < limit; i++)
             {
@@ -863,7 +858,7 @@ void AppendGeoValue(RandomGenerator & rg, std::string & ret, const sql_query_gra
             }
             ret += "]";
             break;
-        case sql_query_grammar::GeoTypes::MultiPolygon:
+        case GeoTypes::MultiPolygon:
             ret += "[";
             for (uint32_t i = 0; i < limit; i++)
             {

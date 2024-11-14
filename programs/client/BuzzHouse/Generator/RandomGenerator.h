@@ -9,7 +9,7 @@
 #include <string>
 #include <tuple>
 
-namespace buzzhouse
+namespace BuzzHouse
 {
 
 typedef struct TestSetting

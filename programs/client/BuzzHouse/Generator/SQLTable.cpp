@@ -1,7 +1,7 @@
-#include "sql_catalog.h"
-#include "statement_generator.h"
+#include "SQLCatalog.h"
+#include "StatementGenerator.h"
 
-namespace buzzhouse
+namespace BuzzHouse
 {
 
 void StatementGenerator::AddTableRelation(
@@ -58,18 +58,18 @@ void StatementGenerator::AddTableRelation(
     this->levels[this->current_level].rels.push_back(std::move(rel));
 }
 
-int StatementGenerator::GenerateNextStatistics(RandomGenerator & rg, sql_query_grammar::ColumnStatistics * cstats)
+int StatementGenerator::GenerateNextStatistics(RandomGenerator & rg, ColumnStatistics * cstats)
 {
-    const size_t nstats = (rg.NextMediumNumber() % static_cast<uint32_t>(sql_query_grammar::ColumnStat_MAX)) + 1;
+    const size_t nstats = (rg.NextMediumNumber() % static_cast<uint32_t>(ColumnStat_MAX)) + 1;
 
-    for (uint32_t i = 1; i <= sql_query_grammar::ColumnStat_MAX; i++)
+    for (uint32_t i = 1; i <= ColumnStat_MAX; i++)
     {
         ids.push_back(i);
     }
     std::shuffle(ids.begin(), ids.end(), rg.gen);
     for (size_t i = 0; i < nstats; i++)
     {
-        const sql_query_grammar::ColumnStat nstat = static_cast<sql_query_grammar::ColumnStat>(ids[i]);
+        const ColumnStat nstat = static_cast<ColumnStat>(ids[i]);
 
         if (i == 0)
         {
@@ -84,7 +84,7 @@ int StatementGenerator::GenerateNextStatistics(RandomGenerator & rg, sql_query_g
     return 0;
 }
 
-int StatementGenerator::PickUpNextCols(RandomGenerator & rg, const SQLTable & t, sql_query_grammar::ColumnList * clist)
+int StatementGenerator::PickUpNextCols(RandomGenerator & rg, const SQLTable & t, ColumnList * clist)
 {
     const NestedType * ntp = nullptr;
     const size_t ncols = (rg.NextMediumNumber() % std::min<uint32_t>(static_cast<uint32_t>(t.RealNumberOfColumns()), UINT32_C(4))) + 1;
@@ -107,7 +107,7 @@ int StatementGenerator::PickUpNextCols(RandomGenerator & rg, const SQLTable & t,
     std::shuffle(ids.begin(), ids.end(), rg.gen);
     for (size_t i = 0; i < ncols; i++)
     {
-        sql_query_grammar::Column * col = i == 0 ? clist->mutable_col() : clist->add_other_cols();
+        Column * col = i == 0 ? clist->mutable_col() : clist->add_other_cols();
 
         col->set_column("c" + std::to_string(ids[i]));
     }
@@ -115,81 +115,81 @@ int StatementGenerator::PickUpNextCols(RandomGenerator & rg, const SQLTable & t,
     return 0;
 }
 
-const std::vector<sql_query_grammar::SQLFunc> multicol_hash
-    = {sql_query_grammar::SQLFunc::FUNChalfMD5,
-       sql_query_grammar::SQLFunc::FUNCsipHash64,
-       sql_query_grammar::SQLFunc::FUNCsipHash128,
-       sql_query_grammar::SQLFunc::FUNCsipHash128Reference,
-       sql_query_grammar::SQLFunc::FUNCcityHash64,
-       sql_query_grammar::SQLFunc::FUNCfarmFingerprint64,
-       sql_query_grammar::SQLFunc::FUNCfarmHash64,
-       sql_query_grammar::SQLFunc::FUNCmetroHash64,
-       sql_query_grammar::SQLFunc::FUNCmurmurHash2_32,
-       sql_query_grammar::SQLFunc::FUNCmurmurHash2_64,
-       sql_query_grammar::SQLFunc::FUNCgccMurmurHash,
-       sql_query_grammar::SQLFunc::FUNCkafkaMurmurHash,
-       sql_query_grammar::SQLFunc::FUNCmurmurHash3_32,
-       sql_query_grammar::SQLFunc::FUNCmurmurHash3_64,
-       sql_query_grammar::SQLFunc::FUNCmurmurHash3_128};
+const std::vector<SQLFunc> multicol_hash
+    = {SQLFunc::FUNChalfMD5,
+       SQLFunc::FUNCsipHash64,
+       SQLFunc::FUNCsipHash128,
+       SQLFunc::FUNCsipHash128Reference,
+       SQLFunc::FUNCcityHash64,
+       SQLFunc::FUNCfarmFingerprint64,
+       SQLFunc::FUNCfarmHash64,
+       SQLFunc::FUNCmetroHash64,
+       SQLFunc::FUNCmurmurHash2_32,
+       SQLFunc::FUNCmurmurHash2_64,
+       SQLFunc::FUNCgccMurmurHash,
+       SQLFunc::FUNCkafkaMurmurHash,
+       SQLFunc::FUNCmurmurHash3_32,
+       SQLFunc::FUNCmurmurHash3_64,
+       SQLFunc::FUNCmurmurHash3_128};
 
-const std::vector<sql_query_grammar::SQLFunc> dates_hash
-    = {sql_query_grammar::SQLFunc::FUNCtoYear,
-       sql_query_grammar::SQLFunc::FUNCtoQuarter,
-       sql_query_grammar::SQLFunc::FUNCtoMonth,
-       sql_query_grammar::SQLFunc::FUNCtoDayOfYear,
-       sql_query_grammar::SQLFunc::FUNCtoDayOfMonth,
-       sql_query_grammar::SQLFunc::FUNCtoDayOfWeek,
-       sql_query_grammar::SQLFunc::FUNCtoHour,
-       sql_query_grammar::SQLFunc::FUNCtoMinute,
-       sql_query_grammar::SQLFunc::FUNCtoSecond,
-       sql_query_grammar::SQLFunc::FUNCtoMillisecond,
-       sql_query_grammar::SQLFunc::FUNCtoUnixTimestamp,
-       sql_query_grammar::SQLFunc::FUNCtoStartOfYear,
-       sql_query_grammar::SQLFunc::FUNCtoStartOfISOYear,
-       sql_query_grammar::SQLFunc::FUNCtoStartOfQuarter,
-       sql_query_grammar::SQLFunc::FUNCtoStartOfMonth,
-       sql_query_grammar::SQLFunc::FUNCtoLastDayOfMonth,
-       sql_query_grammar::SQLFunc::FUNCtoMonday,
-       sql_query_grammar::SQLFunc::FUNCtoStartOfWeek,
-       sql_query_grammar::SQLFunc::FUNCtoLastDayOfWeek,
-       sql_query_grammar::SQLFunc::FUNCtoStartOfDay,
-       sql_query_grammar::SQLFunc::FUNCtoStartOfHour,
-       sql_query_grammar::SQLFunc::FUNCtoStartOfMinute,
-       sql_query_grammar::SQLFunc::FUNCtoStartOfSecond,
-       sql_query_grammar::SQLFunc::FUNCtoStartOfMillisecond,
-       sql_query_grammar::SQLFunc::FUNCtoStartOfMicrosecond,
-       sql_query_grammar::SQLFunc::FUNCtoStartOfNanosecond,
-       sql_query_grammar::SQLFunc::FUNCtoStartOfFiveMinutes,
-       sql_query_grammar::SQLFunc::FUNCtoStartOfTenMinutes,
-       sql_query_grammar::SQLFunc::FUNCtoStartOfFifteenMinutes,
-       sql_query_grammar::SQLFunc::FUNCtoTime,
-       sql_query_grammar::SQLFunc::FUNCtoRelativeYearNum,
-       sql_query_grammar::SQLFunc::FUNCtoRelativeQuarterNum,
-       sql_query_grammar::SQLFunc::FUNCtoRelativeMonthNum,
-       sql_query_grammar::SQLFunc::FUNCtoRelativeWeekNum,
-       sql_query_grammar::SQLFunc::FUNCtoRelativeDayNum,
-       sql_query_grammar::SQLFunc::FUNCtoRelativeHourNum,
-       sql_query_grammar::SQLFunc::FUNCtoRelativeMinuteNum,
-       sql_query_grammar::SQLFunc::FUNCtoRelativeSecondNum,
-       sql_query_grammar::SQLFunc::FUNCtoISOYear,
-       sql_query_grammar::SQLFunc::FUNCtoISOWeek,
-       sql_query_grammar::SQLFunc::FUNCtoWeek,
-       sql_query_grammar::SQLFunc::FUNCtoYearWeek,
-       sql_query_grammar::SQLFunc::FUNCtoDaysSinceYearZero,
-       sql_query_grammar::SQLFunc::FUNCtoday,
-       sql_query_grammar::SQLFunc::FUNCyesterday,
-       sql_query_grammar::SQLFunc::FUNCtimeSlot,
-       sql_query_grammar::SQLFunc::FUNCtoYYYYMM,
-       sql_query_grammar::SQLFunc::FUNCtoYYYYMMDD,
-       sql_query_grammar::SQLFunc::FUNCtoYYYYMMDDhhmmss,
-       sql_query_grammar::SQLFunc::FUNCmonthName,
-       sql_query_grammar::SQLFunc::FUNCtoModifiedJulianDay,
-       sql_query_grammar::SQLFunc::FUNCtoModifiedJulianDayOrNull,
-       sql_query_grammar::SQLFunc::FUNCtoUTCTimestamp};
+const std::vector<SQLFunc> dates_hash
+    = {SQLFunc::FUNCtoYear,
+       SQLFunc::FUNCtoQuarter,
+       SQLFunc::FUNCtoMonth,
+       SQLFunc::FUNCtoDayOfYear,
+       SQLFunc::FUNCtoDayOfMonth,
+       SQLFunc::FUNCtoDayOfWeek,
+       SQLFunc::FUNCtoHour,
+       SQLFunc::FUNCtoMinute,
+       SQLFunc::FUNCtoSecond,
+       SQLFunc::FUNCtoMillisecond,
+       SQLFunc::FUNCtoUnixTimestamp,
+       SQLFunc::FUNCtoStartOfYear,
+       SQLFunc::FUNCtoStartOfISOYear,
+       SQLFunc::FUNCtoStartOfQuarter,
+       SQLFunc::FUNCtoStartOfMonth,
+       SQLFunc::FUNCtoLastDayOfMonth,
+       SQLFunc::FUNCtoMonday,
+       SQLFunc::FUNCtoStartOfWeek,
+       SQLFunc::FUNCtoLastDayOfWeek,
+       SQLFunc::FUNCtoStartOfDay,
+       SQLFunc::FUNCtoStartOfHour,
+       SQLFunc::FUNCtoStartOfMinute,
+       SQLFunc::FUNCtoStartOfSecond,
+       SQLFunc::FUNCtoStartOfMillisecond,
+       SQLFunc::FUNCtoStartOfMicrosecond,
+       SQLFunc::FUNCtoStartOfNanosecond,
+       SQLFunc::FUNCtoStartOfFiveMinutes,
+       SQLFunc::FUNCtoStartOfTenMinutes,
+       SQLFunc::FUNCtoStartOfFifteenMinutes,
+       SQLFunc::FUNCtoTime,
+       SQLFunc::FUNCtoRelativeYearNum,
+       SQLFunc::FUNCtoRelativeQuarterNum,
+       SQLFunc::FUNCtoRelativeMonthNum,
+       SQLFunc::FUNCtoRelativeWeekNum,
+       SQLFunc::FUNCtoRelativeDayNum,
+       SQLFunc::FUNCtoRelativeHourNum,
+       SQLFunc::FUNCtoRelativeMinuteNum,
+       SQLFunc::FUNCtoRelativeSecondNum,
+       SQLFunc::FUNCtoISOYear,
+       SQLFunc::FUNCtoISOWeek,
+       SQLFunc::FUNCtoWeek,
+       SQLFunc::FUNCtoYearWeek,
+       SQLFunc::FUNCtoDaysSinceYearZero,
+       SQLFunc::FUNCtoday,
+       SQLFunc::FUNCyesterday,
+       SQLFunc::FUNCtimeSlot,
+       SQLFunc::FUNCtoYYYYMM,
+       SQLFunc::FUNCtoYYYYMMDD,
+       SQLFunc::FUNCtoYYYYMMDDhhmmss,
+       SQLFunc::FUNCmonthName,
+       SQLFunc::FUNCtoModifiedJulianDay,
+       SQLFunc::FUNCtoModifiedJulianDayOrNull,
+       SQLFunc::FUNCtoUTCTimestamp};
 
-void StatementGenerator::InsertEntryRef(const InsertEntry & entry, sql_query_grammar::Expr * expr)
+void StatementGenerator::InsertEntryRef(const InsertEntry & entry, Expr * expr)
 {
-    sql_query_grammar::ExprColumn * ecol = expr->mutable_comp_expr()->mutable_expr_stc()->mutable_col();
+    ExprColumn * ecol = expr->mutable_comp_expr()->mutable_expr_stc()->mutable_col();
 
     ecol->mutable_col()->set_column("c" + std::to_string(entry.cname1));
     if (entry.cname2.has_value())
@@ -198,7 +198,7 @@ void StatementGenerator::InsertEntryRef(const InsertEntry & entry, sql_query_gra
     }
 }
 
-void StatementGenerator::InsertEntryRefCP(const InsertEntry & entry, sql_query_grammar::ColumnPath * cp)
+void StatementGenerator::InsertEntryRefCP(const InsertEntry & entry, ColumnPath * cp)
 {
     cp->mutable_col()->set_column("c" + std::to_string(entry.cname1));
     if (entry.cname2.has_value())
@@ -207,7 +207,7 @@ void StatementGenerator::InsertEntryRefCP(const InsertEntry & entry, sql_query_g
     }
 }
 
-int StatementGenerator::GenerateTableKey(RandomGenerator & rg, sql_query_grammar::TableKey * tkey)
+int StatementGenerator::GenerateTableKey(RandomGenerator & rg, TableKey * tkey)
 {
     if (!entries.empty() && rg.NextSmallNumber() < 7)
     {
@@ -217,7 +217,7 @@ int StatementGenerator::GenerateTableKey(RandomGenerator & rg, sql_query_grammar
         if (rg.NextSmallNumber() < 3)
         {
             //Use a single expression for the entire table
-            sql_query_grammar::SQLFuncCall * func_call = tkey->add_exprs()->mutable_comp_expr()->mutable_func_call();
+            SQLFuncCall * func_call = tkey->add_exprs()->mutable_comp_expr()->mutable_func_call();
 
             func_call->mutable_func()->set_catalog_func(rg.PickRandomlyFromVector(multicol_hash));
             for (size_t i = 0; i < ocols; i++)
@@ -234,7 +234,7 @@ int StatementGenerator::GenerateTableKey(RandomGenerator & rg, sql_query_grammar
                 if ((HasType<DateType, false>(entry.tp) || HasType<DateTimeType, false>(entry.tp)) && rg.NextBool())
                 {
                     //Use date functions for paritioning/keys
-                    sql_query_grammar::SQLFuncCall * func_call = tkey->add_exprs()->mutable_comp_expr()->mutable_func_call();
+                    SQLFuncCall * func_call = tkey->add_exprs()->mutable_comp_expr()->mutable_func_call();
 
                     func_call->mutable_func()->set_catalog_func(rg.PickRandomlyFromVector(dates_hash));
                     InsertEntryRef(entry, func_call->add_args()->mutable_expr());
@@ -242,10 +242,10 @@ int StatementGenerator::GenerateTableKey(RandomGenerator & rg, sql_query_grammar
                 else if (HasType<IntType, true>(entry.tp) && rg.NextBool())
                 {
                     //Use modulo function for paritioning/keys
-                    sql_query_grammar::BinaryExpr * bexpr = tkey->add_exprs()->mutable_comp_expr()->mutable_binary_expr();
+                    BinaryExpr * bexpr = tkey->add_exprs()->mutable_comp_expr()->mutable_binary_expr();
 
                     InsertEntryRef(entry, bexpr->mutable_lhs());
-                    bexpr->set_op(sql_query_grammar::BinaryOperator::BINOP_PERCENT);
+                    bexpr->set_op(BinaryOperator::BINOP_PERCENT);
                     bexpr->mutable_rhs()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(
                         rg.NextRandomUInt32() % (rg.NextBool() ? 1024 : 65536));
                 }
@@ -260,7 +260,7 @@ int StatementGenerator::GenerateTableKey(RandomGenerator & rg, sql_query_grammar
 }
 
 int StatementGenerator::GenerateMergeTreeEngineDetails(
-    RandomGenerator & rg, const sql_query_grammar::TableEngineValues teng, const bool add_pkey, sql_query_grammar::TableEngine * te)
+    RandomGenerator & rg, const TableEngineValues teng, const bool add_pkey, TableEngine * te)
 {
     if (rg.NextSmallNumber() < 6)
     {
@@ -269,7 +269,7 @@ int StatementGenerator::GenerateMergeTreeEngineDetails(
     if (te->order().exprs_size() && add_pkey && rg.NextSmallNumber() < 5)
     {
         //pkey is a subset of order by
-        sql_query_grammar::TableKey * tkey = te->mutable_primary_key();
+        TableKey * tkey = te->mutable_primary_key();
         std::uniform_int_distribution<uint32_t> table_order_by(1, te->order().exprs_size());
         const uint32_t pkey_size = table_order_by(rg.gen);
 
@@ -299,14 +299,14 @@ int StatementGenerator::GenerateMergeTreeEngineDetails(
 
             if (!entry.cname2.has_value() && (itp = dynamic_cast<const IntType *>(entry.tp)) && itp->is_unsigned)
             {
-                const sql_query_grammar::TableKey & tpk = te->primary_key();
+                const TableKey & tpk = te->primary_key();
 
                 //must be in pkey
                 for (size_t j = 0; j < npkey; j++)
                 {
                     if (tpk.exprs(j).has_comp_expr() && tpk.exprs(j).comp_expr().has_expr_stc())
                     {
-                        const sql_query_grammar::ExprColumn & oecol = tpk.exprs(j).comp_expr().expr_stc().col();
+                        const ExprColumn & oecol = tpk.exprs(j).comp_expr().expr_stc().col();
 
                         if (!oecol.has_subcol() && std::stoul(oecol.col().column().substr(1)) == entry.cname1)
                         {
@@ -319,20 +319,20 @@ int StatementGenerator::GenerateMergeTreeEngineDetails(
         }
         if (!this->ids.empty())
         {
-            sql_query_grammar::TableKey * tkey = te->mutable_sample_by();
+            TableKey * tkey = te->mutable_sample_by();
             const size_t ncols = (rg.NextMediumNumber() % std::min<size_t>(this->ids.size(), UINT32_C(3))) + 1;
 
             std::shuffle(ids.begin(), ids.end(), rg.gen);
             for (size_t i = 0; i < ncols; i++)
             {
-                sql_query_grammar::ExprColumn * ecol = tkey->add_exprs()->mutable_comp_expr()->mutable_expr_stc()->mutable_col();
+                ExprColumn * ecol = tkey->add_exprs()->mutable_comp_expr()->mutable_expr_stc()->mutable_col();
 
                 ecol->mutable_col()->set_column("c" + std::to_string(ids[i]));
             }
             this->ids.clear();
         }
     }
-    if (teng == sql_query_grammar::TableEngineValues::SummingMergeTree && rg.NextSmallNumber() < 4)
+    if (teng == TableEngineValues::SummingMergeTree && rg.NextSmallNumber() < 4)
     {
         const size_t ncols = (rg.NextMediumNumber() % std::min<uint32_t>(static_cast<uint32_t>(entries.size()), UINT32_C(4))) + 1;
 
@@ -347,14 +347,13 @@ int StatementGenerator::GenerateMergeTreeEngineDetails(
 
 const std::vector<std::string> & s3_compress = {"none", "gzip", "gz", "brotli", "br", "xz", "LZMA", "zstd", "zst"};
 
-int StatementGenerator::GenerateEngineDetails(RandomGenerator & rg, SQLBase & b, const bool add_pkey, sql_query_grammar::TableEngine * te)
+int StatementGenerator::GenerateEngineDetails(RandomGenerator & rg, SQLBase & b, const bool add_pkey, TableEngine * te)
 {
     if (b.IsMergeTreeFamily())
     {
         if (rg.NextSmallNumber() < 4)
         {
-            b.toption = supports_cloud_features && rg.NextBool() ? sql_query_grammar::TableEngineOption::TShared
-                                                                 : sql_query_grammar::TableEngineOption::TReplicated;
+            b.toption = supports_cloud_features && rg.NextBool() ? TableEngineOption::TShared : TableEngineOption::TReplicated;
             te->set_toption(b.toption.value());
         }
         GenerateMergeTreeEngineDetails(rg, b.teng, add_pkey, te);
@@ -362,7 +361,7 @@ int StatementGenerator::GenerateEngineDetails(RandomGenerator & rg, SQLBase & b,
     else if (b.IsFileEngine())
     {
         const uint32_t noption = rg.NextSmallNumber();
-        sql_query_grammar::TableEngineParam * tep = te->add_params();
+        TableEngineParam * tep = te->add_params();
 
         if (rg.NextSmallNumber() < 5)
         {
@@ -370,40 +369,34 @@ int StatementGenerator::GenerateEngineDetails(RandomGenerator & rg, SQLBase & b,
         }
         if (noption < 9)
         {
-            tep->set_in_out(static_cast<sql_query_grammar::InOutFormat>(
-                (rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::InOutFormat_MAX)) + 1));
+            tep->set_in_out(static_cast<InOutFormat>((rg.NextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1));
         }
         else if (noption == 9)
         {
-            tep->set_in(static_cast<sql_query_grammar::InFormat>(
-                (rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::InFormat_MAX)) + 1));
+            tep->set_in(static_cast<InFormat>((rg.NextRandomUInt32() % static_cast<uint32_t>(InFormat_MAX)) + 1));
         }
         else
         {
-            tep->set_out(static_cast<sql_query_grammar::OutFormat>(
-                (rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::OutFormat_MAX)) + 1));
+            tep->set_out(static_cast<OutFormat>((rg.NextRandomUInt32() % static_cast<uint32_t>(OutFormat_MAX)) + 1));
         }
     }
     else if (b.IsJoinEngine())
     {
         const size_t ncols = (rg.NextMediumNumber() % std::min<uint32_t>(static_cast<uint32_t>(entries.size()), UINT32_C(3))) + 1;
-        sql_query_grammar::JoinType jt
-            = static_cast<sql_query_grammar::JoinType>((rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::J_FULL)) + 1);
-        sql_query_grammar::TableEngineParam * tep = te->add_params();
+        JoinType jt = static_cast<JoinType>((rg.NextRandomUInt32() % static_cast<uint32_t>(J_FULL)) + 1);
+        TableEngineParam * tep = te->add_params();
 
         switch (jt)
         {
-            case sql_query_grammar::JoinType::J_LEFT:
-            case sql_query_grammar::JoinType::J_INNER:
-                tep->set_join_const(static_cast<sql_query_grammar::JoinConst>(
-                    (rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::JoinConst_MAX)) + 1));
+            case JoinType::J_LEFT:
+            case JoinType::J_INNER:
+                tep->set_join_const(static_cast<JoinConst>((rg.NextRandomUInt32() % static_cast<uint32_t>(JoinConst_MAX)) + 1));
                 break;
-            case sql_query_grammar::JoinType::J_RIGHT:
-                tep->set_join_const(static_cast<sql_query_grammar::JoinConst>(
-                    (rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::JoinConst::J_ANTI)) + 1));
+            case JoinType::J_RIGHT:
+                tep->set_join_const(static_cast<JoinConst>((rg.NextRandomUInt32() % static_cast<uint32_t>(JoinConst::J_ANTI)) + 1));
                 break;
-            case sql_query_grammar::JoinType::J_FULL:
-                tep->set_join_const(sql_query_grammar::JoinConst::J_ALL);
+            case JoinType::J_FULL:
+                tep->set_join_const(JoinConst::J_ALL);
                 break;
             default:
                 assert(0);
@@ -494,14 +487,14 @@ int StatementGenerator::GenerateEngineDetails(RandomGenerator & rg, SQLBase & b,
         }
 
         connections.CreateExternalDatabaseTable(
-            rg, b.IsMySQLEngine() ? IntegrationCall::MySQL : IntegrationCall::PostgreSQL, b.tname, entries);
+            rg, b.IsMySQLEngine() ? IntegrationCall::IntMySQL : IntegrationCall::IntPostgreSQL, b.tname, entries);
     }
     else if (b.IsSQLiteEngine())
     {
         te->add_params()->set_svalue(connections.GetSQLiteDBPath().generic_string());
         te->add_params()->set_svalue("t" + std::to_string(b.tname));
 
-        connections.CreateExternalDatabaseTable(rg, IntegrationCall::SQLite, b.tname, entries);
+        connections.CreateExternalDatabaseTable(rg, IntegrationCall::IntSQLite, b.tname, entries);
     }
     else if (b.IsMongoDBEngine())
     {
@@ -513,7 +506,7 @@ int StatementGenerator::GenerateEngineDetails(RandomGenerator & rg, SQLBase & b,
         te->add_params()->set_svalue(sc.user);
         te->add_params()->set_svalue(sc.password);
 
-        connections.CreateExternalDatabaseTable(rg, IntegrationCall::MongoDB, b.tname, entries);
+        connections.CreateExternalDatabaseTable(rg, IntegrationCall::IntMongoDB, b.tname, entries);
     }
     else if (b.IsRedisEngine())
     {
@@ -524,7 +517,7 @@ int StatementGenerator::GenerateEngineDetails(RandomGenerator & rg, SQLBase & b,
         te->add_params()->set_svalue(fc.redis_server.password);
         te->add_params()->set_num(rg.NextBool() ? 16 : rg.NextLargeNumber() % 33);
 
-        connections.CreateExternalDatabaseTable(rg, IntegrationCall::Redis, b.tname, entries);
+        connections.CreateExternalDatabaseTable(rg, IntegrationCall::IntRedis, b.tname, entries);
     }
     else if (b.IsAnyS3Engine() || b.IsHudiEngine() || b.IsDeltaLakeEngine() || b.IsIcebergEngine())
     {
@@ -536,8 +529,7 @@ int StatementGenerator::GenerateEngineDetails(RandomGenerator & rg, SQLBase & b,
         te->add_params()->set_svalue(sc.password);
         if (b.IsAnyS3Engine() || b.IsIcebergEngine())
         {
-            te->add_params()->set_in_out(static_cast<sql_query_grammar::InOutFormat>(
-                (rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::InOutFormat_MAX)) + 1));
+            te->add_params()->set_in_out(static_cast<InOutFormat>((rg.NextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1));
             if (rg.NextSmallNumber() < 4)
             {
                 te->add_params()->set_svalue(rg.PickRandomlyFromVector(s3_compress));
@@ -547,7 +539,7 @@ int StatementGenerator::GenerateEngineDetails(RandomGenerator & rg, SQLBase & b,
                 GenerateTableKey(rg, te->mutable_partition_by());
             }
         }
-        connections.CreateExternalDatabaseTable(rg, IntegrationCall::MinIO, b.tname, entries);
+        connections.CreateExternalDatabaseTable(rg, IntegrationCall::IntMinIO, b.tname, entries);
     }
     if ((b.IsRocksEngine() || b.IsRedisEngine()) && add_pkey && !entries.empty())
     {
@@ -564,7 +556,7 @@ int StatementGenerator::AddTableColumn(
     const bool modify,
     const bool is_pk,
     const ColumnSpecial special,
-    sql_query_grammar::ColumnDef * cd)
+    ColumnDef * cd)
 {
     SQLColumn col;
     const SQLType * tp = nullptr;
@@ -576,11 +568,11 @@ int StatementGenerator::AddTableColumn(
     {
         tp = new IntType(8, special == ColumnSpecial::IS_DELETED);
         cd->mutable_type()->mutable_type()->mutable_non_nullable()->set_integers(
-            special == ColumnSpecial::IS_DELETED ? sql_query_grammar::Integers::UInt8 : sql_query_grammar::Integers::Int8);
+            special == ColumnSpecial::IS_DELETED ? Integers::UInt8 : Integers::Int8);
     }
     else if (special == ColumnSpecial::VERSION && rg.NextBool())
     {
-        sql_query_grammar::Integers nint;
+        Integers nint;
 
         std::tie(tp, nint) = RandomIntType(rg, std::numeric_limits<uint32_t>::max());
         cd->mutable_type()->mutable_type()->mutable_non_nullable()->set_integers(nint);
@@ -589,7 +581,7 @@ int StatementGenerator::AddTableColumn(
     {
         if (rg.NextBool())
         {
-            sql_query_grammar::Dates dd;
+            Dates dd;
 
             std::tie(tp, dd) = RandomDateType(rg, std::numeric_limits<uint32_t>::max());
             cd->mutable_type()->mutable_type()->mutable_non_nullable()->set_dates(dd);
@@ -648,13 +640,12 @@ int StatementGenerator::AddTableColumn(
     }
     if (rg.NextSmallNumber() < 2)
     {
-        sql_query_grammar::DefaultModifier * def_value = cd->mutable_defaultv();
-        sql_query_grammar::DModifier dmod = static_cast<sql_query_grammar::DModifier>(
-            (rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::DModifier_MAX)) + 1);
+        DefaultModifier * def_value = cd->mutable_defaultv();
+        DModifier dmod = static_cast<DModifier>((rg.NextRandomUInt32() % static_cast<uint32_t>(DModifier_MAX)) + 1);
 
         def_value->set_dvalue(dmod);
-        col.dmod = std::optional<sql_query_grammar::DModifier>(dmod);
-        if (dmod != sql_query_grammar::DModifier::DEF_EPHEMERAL || rg.NextSmallNumber() < 4)
+        col.dmod = std::optional<DModifier>(dmod);
+        if (dmod != DModifier::DEF_EPHEMERAL || rg.NextSmallNumber() < 4)
         {
             this->allow_in_expression_alias = this->allow_subqueries = false;
             AddTableRelation(rg, false, "", t);
@@ -675,38 +666,38 @@ int StatementGenerator::AddTableColumn(
 
             for (uint32_t i = 0; i < ncodecs; i++)
             {
-                sql_query_grammar::CodecParam * cp = cd->add_codecs();
-                sql_query_grammar::CompressionCodec cc = static_cast<sql_query_grammar::CompressionCodec>(
-                    (rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::CompressionCodec_MAX)) + 1);
+                CodecParam * cp = cd->add_codecs();
+                CompressionCodec cc
+                    = static_cast<CompressionCodec>((rg.NextRandomUInt32() % static_cast<uint32_t>(CompressionCodec_MAX)) + 1);
 
                 cp->set_codec(cc);
                 switch (cc)
                 {
-                    case sql_query_grammar::COMP_LZ4HC:
-                    case sql_query_grammar::COMP_ZSTD_QAT:
+                    case COMP_LZ4HC:
+                    case COMP_ZSTD_QAT:
                         if (rg.NextBool())
                         {
                             std::uniform_int_distribution<uint32_t> next_dist(1, 12);
                             cp->add_params(next_dist(rg.gen));
                         }
                         break;
-                    case sql_query_grammar::COMP_ZSTD:
+                    case COMP_ZSTD:
                         if (rg.NextBool())
                         {
                             std::uniform_int_distribution<uint32_t> next_dist(1, 22);
                             cp->add_params(next_dist(rg.gen));
                         }
                         break;
-                    case sql_query_grammar::COMP_Delta:
-                    case sql_query_grammar::COMP_DoubleDelta:
-                    case sql_query_grammar::COMP_Gorilla:
+                    case COMP_Delta:
+                    case COMP_DoubleDelta:
+                    case COMP_Gorilla:
                         if (rg.NextBool())
                         {
                             std::uniform_int_distribution<uint32_t> next_dist(0, 3);
                             cp->add_params(UINT32_C(1) << next_dist(rg.gen));
                         }
                         break;
-                    case sql_query_grammar::COMP_FPC:
+                    case COMP_FPC:
                         if (rg.NextBool())
                         {
                             std::uniform_int_distribution<uint32_t> next_dist1(1, 28);
@@ -729,13 +720,12 @@ int StatementGenerator::AddTableColumn(
     return 0;
 }
 
-int StatementGenerator::AddTableIndex(RandomGenerator & rg, SQLTable & t, const bool staged, sql_query_grammar::IndexDef * idef)
+int StatementGenerator::AddTableIndex(RandomGenerator & rg, SQLTable & t, const bool staged, IndexDef * idef)
 {
     SQLIndex idx;
     const uint32_t iname = t.idx_counter++;
-    sql_query_grammar::Expr * expr = idef->mutable_expr();
-    sql_query_grammar::IndexType itpe
-        = static_cast<sql_query_grammar::IndexType>((rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::IndexType_MAX)) + 1);
+    Expr * expr = idef->mutable_expr();
+    IndexType itpe = static_cast<IndexType>((rg.NextRandomUInt32() % static_cast<uint32_t>(IndexType_MAX)) + 1);
     auto & to_add = staged ? t.staged_idxs : t.idxs;
 
     idx.iname = iname;
@@ -752,7 +742,7 @@ int StatementGenerator::AddTableIndex(RandomGenerator & rg, SQLTable & t, const 
             {
                 for (const auto & entry2 : ntp->subtypes)
                 {
-                    if (itpe < sql_query_grammar::IndexType::IDX_ngrambf_v1 || HasType<StringType, true>(entry2.subtype))
+                    if (itpe < IndexType::IDX_ngrambf_v1 || HasType<StringType, true>(entry2.subtype))
                     {
                         entries.push_back(InsertEntry(
                             entry.second.nullable,
@@ -764,7 +754,7 @@ int StatementGenerator::AddTableIndex(RandomGenerator & rg, SQLTable & t, const 
                     }
                 }
             }
-            else if (itpe < sql_query_grammar::IndexType::IDX_ngrambf_v1 || HasType<StringType, true>(entry.second.tp))
+            else if (itpe < IndexType::IDX_ngrambf_v1 || HasType<StringType, true>(entry.second.tp))
             {
                 entries.push_back(InsertEntry(
                     entry.second.nullable, entry.second.special, entry.second.cname, std::nullopt, entry.second.tp, entry.second.dmod));
@@ -775,20 +765,19 @@ int StatementGenerator::AddTableIndex(RandomGenerator & rg, SQLTable & t, const 
     {
         std::shuffle(entries.begin(), entries.end(), rg.gen);
 
-        if (itpe == sql_query_grammar::IndexType::IDX_hypothesis && entries.size() > 1 && rg.NextSmallNumber() < 9)
+        if (itpe == IndexType::IDX_hypothesis && entries.size() > 1 && rg.NextSmallNumber() < 9)
         {
-            sql_query_grammar::BinaryExpr * bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
-            sql_query_grammar::Expr *expr1 = bexpr->mutable_lhs(), *expr2 = bexpr->mutable_rhs();
-            sql_query_grammar::ExprSchemaTableColumn *estc1 = expr1->mutable_comp_expr()->mutable_expr_stc(),
-                                                     *estc2 = expr2->mutable_comp_expr()->mutable_expr_stc();
-            sql_query_grammar::ExprColumn *ecol1 = estc1->mutable_col(), *ecol2 = estc2->mutable_col();
+            BinaryExpr * bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
+            Expr *expr1 = bexpr->mutable_lhs(), *expr2 = bexpr->mutable_rhs();
+            ExprSchemaTableColumn *estc1 = expr1->mutable_comp_expr()->mutable_expr_stc(),
+                                  *estc2 = expr2->mutable_comp_expr()->mutable_expr_stc();
+            ExprColumn *ecol1 = estc1->mutable_col(), *ecol2 = estc2->mutable_col();
             const InsertEntry &entry1 = this->entries[0], &entry2 = this->entries[1];
 
             bexpr->set_op(
                 rg.NextSmallNumber() < 8
-                    ? sql_query_grammar::BinaryOperator::BINOP_EQ
-                    : static_cast<sql_query_grammar::BinaryOperator>(
-                          (rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::BinaryOperator::BINOP_LEGR)) + 1));
+                    ? BinaryOperator::BINOP_EQ
+                    : static_cast<BinaryOperator>((rg.NextRandomUInt32() % static_cast<uint32_t>(BinaryOperator::BINOP_LEGR)) + 1));
             ecol1->mutable_col()->set_column("c" + std::to_string(entry1.cname1));
             if (entry1.cname2.has_value())
             {
@@ -820,7 +809,7 @@ int StatementGenerator::AddTableIndex(RandomGenerator & rg, SQLTable & t, const 
     }
     switch (itpe)
     {
-        case sql_query_grammar::IndexType::IDX_set:
+        case IndexType::IDX_set:
             if (rg.NextSmallNumber() < 7)
             {
                 idef->add_params()->set_ival(0);
@@ -831,16 +820,16 @@ int StatementGenerator::AddTableIndex(RandomGenerator & rg, SQLTable & t, const 
                 idef->add_params()->set_ival(next_dist(rg.gen));
             }
             break;
-        case sql_query_grammar::IndexType::IDX_bloom_filter: {
+        case IndexType::IDX_bloom_filter: {
             std::uniform_int_distribution<uint32_t> next_dist(1, 1000);
             idef->add_params()->set_dval(static_cast<double>(next_dist(rg.gen)) / static_cast<double>(1000));
         }
         break;
-        case sql_query_grammar::IndexType::IDX_ngrambf_v1:
-        case sql_query_grammar::IndexType::IDX_tokenbf_v1: {
+        case IndexType::IDX_ngrambf_v1:
+        case IndexType::IDX_tokenbf_v1: {
             std::uniform_int_distribution<uint32_t> next_dist1(1, 1000), next_dist2(1, 5);
 
-            if (itpe == sql_query_grammar::IndexType::IDX_ngrambf_v1)
+            if (itpe == IndexType::IDX_ngrambf_v1)
             {
                 idef->add_params()->set_ival(next_dist1(rg.gen));
             }
@@ -849,14 +838,14 @@ int StatementGenerator::AddTableIndex(RandomGenerator & rg, SQLTable & t, const 
             idef->add_params()->set_ival(next_dist1(rg.gen));
         }
         break;
-        case sql_query_grammar::IndexType::IDX_full_text:
-        case sql_query_grammar::IndexType::IDX_inverted: {
+        case IndexType::IDX_full_text:
+        case IndexType::IDX_inverted: {
             std::uniform_int_distribution<uint32_t> next_dist(0, 10);
             idef->add_params()->set_ival(next_dist(rg.gen));
         }
         break;
-        case sql_query_grammar::IndexType::IDX_minmax:
-        case sql_query_grammar::IndexType::IDX_hypothesis:
+        case IndexType::IDX_minmax:
+        case IndexType::IDX_hypothesis:
             break;
     }
     if (rg.NextSmallNumber() < 7)
@@ -868,7 +857,7 @@ int StatementGenerator::AddTableIndex(RandomGenerator & rg, SQLTable & t, const 
     return 0;
 }
 
-int StatementGenerator::AddTableProjection(RandomGenerator & rg, SQLTable & t, const bool staged, sql_query_grammar::ProjectionDef * pdef)
+int StatementGenerator::AddTableProjection(RandomGenerator & rg, SQLTable & t, const bool staged, ProjectionDef * pdef)
 {
     const uint32_t pname = t.proj_counter++,
                    ncols = std::max(std::min(this->fc.max_width - this->width, (rg.NextMediumNumber() % UINT32_C(3)) + 1), UINT32_C(1));
@@ -884,14 +873,14 @@ int StatementGenerator::AddTableProjection(RandomGenerator & rg, SQLTable & t, c
     return 0;
 }
 
-int StatementGenerator::AddTableConstraint(RandomGenerator & rg, SQLTable & t, const bool staged, sql_query_grammar::ConstraintDef * cdef)
+int StatementGenerator::AddTableConstraint(RandomGenerator & rg, SQLTable & t, const bool staged, ConstraintDef * cdef)
 {
     const uint32_t crname = t.constr_counter++;
     auto & to_add = staged ? t.staged_constrs : t.constrs;
 
     cdef->mutable_constr()->set_constraint("c" + std::to_string(crname));
-    cdef->set_ctype(static_cast<sql_query_grammar::ConstraintDef_ConstraintType>(
-        (rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::ConstraintDef::ConstraintType_MAX)) + 1));
+    cdef->set_ctype(
+        static_cast<ConstraintDef_ConstraintType>((rg.NextRandomUInt32() % static_cast<uint32_t>(ConstraintDef::ConstraintType_MAX)) + 1));
     AddTableRelation(rg, false, "", t);
     this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = false;
     this->GenerateWherePredicate(rg, cdef->mutable_expr());
@@ -901,97 +890,97 @@ int StatementGenerator::AddTableConstraint(RandomGenerator & rg, SQLTable & t, c
     return 0;
 }
 
-sql_query_grammar::TableEngineValues StatementGenerator::GetNextTableEngine(RandomGenerator & rg, const bool use_external_integrations)
+TableEngineValues StatementGenerator::GetNextTableEngine(RandomGenerator & rg, const bool use_external_integrations)
 {
     if (rg.NextSmallNumber() < 9)
     {
-        std::uniform_int_distribution<uint32_t> table_engine(1, sql_query_grammar::TableEngineValues::VersionedCollapsingMergeTree);
-        return static_cast<sql_query_grammar::TableEngineValues>(table_engine(rg.gen));
+        std::uniform_int_distribution<uint32_t> table_engine(1, TableEngineValues::VersionedCollapsingMergeTree);
+        return static_cast<TableEngineValues>(table_engine(rg.gen));
     }
     assert(this->ids.empty());
-    this->ids.push_back(sql_query_grammar::MergeTree);
-    this->ids.push_back(sql_query_grammar::ReplacingMergeTree);
-    this->ids.push_back(sql_query_grammar::SummingMergeTree);
-    this->ids.push_back(sql_query_grammar::AggregatingMergeTree);
-    this->ids.push_back(sql_query_grammar::CollapsingMergeTree);
-    this->ids.push_back(sql_query_grammar::VersionedCollapsingMergeTree);
-    this->ids.push_back(sql_query_grammar::File);
-    this->ids.push_back(sql_query_grammar::Null);
-    this->ids.push_back(sql_query_grammar::Set);
-    this->ids.push_back(sql_query_grammar::Join);
-    this->ids.push_back(sql_query_grammar::Memory);
-    this->ids.push_back(sql_query_grammar::StripeLog);
-    this->ids.push_back(sql_query_grammar::Log);
-    this->ids.push_back(sql_query_grammar::TinyLog);
-    this->ids.push_back(sql_query_grammar::EmbeddedRocksDB);
+    this->ids.push_back(MergeTree);
+    this->ids.push_back(ReplacingMergeTree);
+    this->ids.push_back(SummingMergeTree);
+    this->ids.push_back(AggregatingMergeTree);
+    this->ids.push_back(CollapsingMergeTree);
+    this->ids.push_back(VersionedCollapsingMergeTree);
+    this->ids.push_back(File);
+    this->ids.push_back(Null);
+    this->ids.push_back(Set);
+    this->ids.push_back(Join);
+    this->ids.push_back(Memory);
+    this->ids.push_back(StripeLog);
+    this->ids.push_back(Log);
+    this->ids.push_back(TinyLog);
+    this->ids.push_back(EmbeddedRocksDB);
     if (CollectionHas<SQLTable>([](const SQLTable & t)
                                 { return t.db && t.db->attached == DetachStatus::ATTACHED && t.attached == DetachStatus::ATTACHED; })
         || CollectionHas<SQLView>([](const SQLView & v)
                                   { return v.db && v.db->attached == DetachStatus::ATTACHED && v.attached == DetachStatus::ATTACHED; }))
     {
-        this->ids.push_back(sql_query_grammar::Buffer);
+        this->ids.push_back(Buffer);
     }
     if (use_external_integrations)
     {
         if (connections.HasMySQLConnection())
         {
-            this->ids.push_back(sql_query_grammar::MySQL);
+            this->ids.push_back(MySQL);
         }
         if (connections.HasPostgreSQLConnection())
         {
-            this->ids.push_back(sql_query_grammar::PostgreSQL);
+            this->ids.push_back(PostgreSQL);
         }
         if (connections.HasSQLiteConnection())
         {
-            this->ids.push_back(sql_query_grammar::SQLite);
+            this->ids.push_back(SQLite);
         }
         if (connections.HasMongoDBConnection())
         {
-            this->ids.push_back(sql_query_grammar::MongoDB);
+            this->ids.push_back(MongoDB);
         }
         if (connections.HasRedisConnection())
         {
-            this->ids.push_back(sql_query_grammar::Redis);
+            this->ids.push_back(Redis);
         }
         if (connections.HasMinIOConnection())
         {
-            this->ids.push_back(sql_query_grammar::S3);
-            //this->ids.push_back(sql_query_grammar::S3Queue);
-            this->ids.push_back(sql_query_grammar::Hudi);
-            this->ids.push_back(sql_query_grammar::DeltaLake);
-            //this->ids.push_back(sql_query_grammar::IcebergS3);
+            this->ids.push_back(S3);
+            //this->ids.push_back(S3Queue);
+            this->ids.push_back(Hudi);
+            this->ids.push_back(DeltaLake);
+            //this->ids.push_back(IcebergS3);
         }
     }
 
-    const auto res = static_cast<sql_query_grammar::TableEngineValues>(rg.PickRandomlyFromVector(this->ids));
+    const auto res = static_cast<TableEngineValues>(rg.PickRandomlyFromVector(this->ids));
     this->ids.clear();
     return res;
 }
 
-const std::vector<sql_query_grammar::TableEngineValues> like_engs
-    = {sql_query_grammar::TableEngineValues::MergeTree,
-       sql_query_grammar::TableEngineValues::ReplacingMergeTree,
-       sql_query_grammar::TableEngineValues::SummingMergeTree,
-       sql_query_grammar::TableEngineValues::AggregatingMergeTree,
-       sql_query_grammar::TableEngineValues::File,
-       sql_query_grammar::TableEngineValues::Null,
-       sql_query_grammar::TableEngineValues::Set,
-       sql_query_grammar::TableEngineValues::Join,
-       sql_query_grammar::TableEngineValues::Memory,
-       sql_query_grammar::TableEngineValues::StripeLog,
-       sql_query_grammar::TableEngineValues::Log,
-       sql_query_grammar::TableEngineValues::TinyLog,
-       sql_query_grammar::TableEngineValues::EmbeddedRocksDB};
+const std::vector<TableEngineValues> like_engs
+    = {TableEngineValues::MergeTree,
+       TableEngineValues::ReplacingMergeTree,
+       TableEngineValues::SummingMergeTree,
+       TableEngineValues::AggregatingMergeTree,
+       TableEngineValues::File,
+       TableEngineValues::Null,
+       TableEngineValues::Set,
+       TableEngineValues::Join,
+       TableEngineValues::Memory,
+       TableEngineValues::StripeLog,
+       TableEngineValues::Log,
+       TableEngineValues::TinyLog,
+       TableEngineValues::EmbeddedRocksDB};
 
-int StatementGenerator::GenerateNextCreateTable(RandomGenerator & rg, sql_query_grammar::CreateTable * ct)
+int StatementGenerator::GenerateNextCreateTable(RandomGenerator & rg, CreateTable * ct)
 {
     SQLTable next;
     uint32_t tname = 0;
     bool added_pkey = false;
     const NestedType * ntp = nullptr;
-    sql_query_grammar::TableEngine * te = ct->mutable_engine();
-    sql_query_grammar::ExprSchemaTable * est = ct->mutable_est();
-    sql_query_grammar::SettingValues * svs = nullptr;
+    TableEngine * te = ct->mutable_engine();
+    ExprSchemaTable * est = ct->mutable_est();
+    SettingValues * svs = nullptr;
     const bool replace = CollectionCount<SQLTable>(attached_tables) > 3 && rg.NextMediumNumber() < 16;
 
     next.is_temp = rg.NextMediumNumber() < 22;
@@ -1020,13 +1009,12 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator & rg, sql_query_
     if (!CollectionHas<SQLTable>(attached_tables) || rg.NextSmallNumber() < 9)
     {
         //create table with definition
-        sql_query_grammar::TableDef * colsdef = ct->mutable_table_def();
+        TableDef * colsdef = ct->mutable_table_def();
 
         next.teng = GetNextTableEngine(rg, true);
         te->set_engine(next.teng);
         added_pkey |= (!next.IsMergeTreeFamily() && !next.IsRocksEngine() && !next.IsRedisEngine());
-        const bool add_version_to_replacing
-            = next.teng == sql_query_grammar::TableEngineValues::ReplacingMergeTree && rg.NextSmallNumber() < 4;
+        const bool add_version_to_replacing = next.teng == TableEngineValues::ReplacingMergeTree && rg.NextSmallNumber() < 4;
         uint32_t added_cols = 0, added_idxs = 0, added_projs = 0, added_consts = 0, added_sign = 0, added_is_deleted = 0, added_version = 0;
         const uint32_t to_addcols
             = (rg.NextMediumNumber() % (rg.NextBool() ? 5 : 30)) + 1,
@@ -1070,7 +1058,7 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator & rg, sql_query_
             else if (add_col && nopt < (add_idx + add_proj + add_const + add_col + 1))
             {
                 const bool add_pkey = !added_pkey && rg.NextMediumNumber() < 4;
-                sql_query_grammar::ColumnDef * cd = i == 0 ? colsdef->mutable_col_def() : colsdef->add_other_defs()->mutable_col_def();
+                ColumnDef * cd = i == 0 ? colsdef->mutable_col_def() : colsdef->add_other_defs()->mutable_col_def();
 
                 AddTableColumn(rg, next, next.col_counter++, false, false, add_pkey, ColumnSpecial::NONE, cd);
                 added_pkey |= add_pkey;
@@ -1081,7 +1069,7 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator & rg, sql_query_
                 const uint32_t cname = next.col_counter++;
                 const bool add_pkey = !added_pkey && rg.NextMediumNumber() < 4,
                            add_version_col = add_version && nopt < (add_idx + add_proj + add_const + add_col + add_version + 1);
-                sql_query_grammar::ColumnDef * cd = i == 0 ? colsdef->mutable_col_def() : colsdef->add_other_defs()->mutable_col_def();
+                ColumnDef * cd = i == 0 ? colsdef->mutable_col_def() : colsdef->add_other_defs()->mutable_col_def();
 
                 AddTableColumn(
                     rg,
@@ -1124,11 +1112,11 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator & rg, sql_query_
     else
     {
         //create table as
-        sql_query_grammar::CreateTableAs * cta = ct->mutable_table_as();
-        sql_query_grammar::ExprSchemaTable * aest = cta->mutable_est();
+        CreateTableAs * cta = ct->mutable_table_as();
+        ExprSchemaTable * aest = cta->mutable_est();
         const SQLTable & t = rg.PickRandomlyFromVector(FilterCollection<SQLTable>(attached_tables));
         std::uniform_int_distribution<size_t> table_engine(0, rg.NextSmallNumber() < 8 ? 3 : (like_engs.size() - 1));
-        sql_query_grammar::TableEngineValues val = like_engs[table_engine(rg.gen)];
+        TableEngineValues val = like_engs[table_engine(rg.gen)];
 
         next.teng = val;
         te->set_engine(val);
@@ -1192,16 +1180,16 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator & rg, sql_query_
         {
             svs = ct->mutable_settings();
         }
-        sql_query_grammar::SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+        SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
 
         if (next.IsMergeTreeFamily())
         {
             sv->set_property("allow_nullable_key");
             sv->set_value("1");
 
-            if (next.toption.has_value() && next.toption.value() == sql_query_grammar::TableEngineOption::TShared)
+            if (next.toption.has_value() && next.toption.value() == TableEngineOption::TShared)
             {
-                sql_query_grammar::SetValue * sv2 = svs->add_other_values();
+                SetValue * sv2 = svs->add_other_values();
 
                 sv2->set_property("storage_policy");
                 sv2->set_value("'s3_with_keeper'");
@@ -1213,7 +1201,7 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator & rg, sql_query_
             sv->set_value("0");
             if (next.IsS3QueueEngine())
             {
-                sql_query_grammar::SetValue * sv2 = svs->add_other_values();
+                SetValue * sv2 = svs->add_other_values();
 
                 sv2->set_property("mode");
                 sv2->set_value(rg.NextBool() ? "'ordered'" : "'unordered'");

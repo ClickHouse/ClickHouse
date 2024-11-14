@@ -1,12 +1,12 @@
 #pragma once
 
-#include "buzz-house/ast/sql_grammar.pb.h"
-#include "random_generator.h"
+#include "RandomGenerator.h"
+#include "SQLGrammar.pb.h"
 
 #include <memory>
 #include <optional>
 
-namespace buzzhouse
+namespace BuzzHouse
 {
 
 const constexpr uint32_t allow_bool = (1 << 0), allow_unsigned_int = (1 << 1), allow_int8 = (1 << 2), allow_hugeint = (1 << 3),
@@ -671,8 +671,8 @@ public:
 class GeoType : public SQLType
 {
 public:
-    const sql_query_grammar::GeoTypes geo_type;
-    GeoType(const sql_query_grammar::GeoTypes & gt) : geo_type(gt) { }
+    const GeoTypes geo_type;
+    GeoType(const GeoTypes & gt) : geo_type(gt) { }
 
     void TypeName(std::string & ret, const bool escape) const override
     {
@@ -998,6 +998,6 @@ void AppendDecimal(RandomGenerator & rg, std::string & ret, const uint32_t left,
 void StrBuildJSONArray(RandomGenerator & rg, const int jdepth, const int jwidth, std::string & ret);
 void StrBuildJSONElement(RandomGenerator & rg, std::string & ret);
 void StrBuildJSON(RandomGenerator & rg, const int jdepth, const int jwidth, std::string & ret);
-void AppendGeoValue(RandomGenerator & rg, std::string & ret, const sql_query_grammar::GeoTypes & geo_type);
+void AppendGeoValue(RandomGenerator & rg, std::string & ret, const GeoTypes & geo_type);
 
 }

@@ -1,4 +1,4 @@
-#include "external_integrations.h"
+#include "ExternalIntegrations.h"
 
 #include <array>
 #include <cctype>
@@ -13,12 +13,11 @@
 #include <unistd.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
-#include <sys/types.h>
 
-#include "hugeint.h"
-#include "uhugeint.h"
+#include "Hugeint.h"
+#include "UHugeint.h"
 
-namespace buzzhouse
+namespace BuzzHouse
 {
 
 static bool ExecuteCommand(const char * cmd, std::string & result)

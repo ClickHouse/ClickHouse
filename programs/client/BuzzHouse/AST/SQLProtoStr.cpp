@@ -4,16 +4,14 @@
 #include <limits>
 #include <random>
 
-#include "hugeint.h"
-#include "sql_query_proto_to_string.h"
-#include "uhugeint.h"
-
-using namespace sql_query_grammar;
+#include "Hugeint.h"
+#include "SQLProtoStr.h"
+#include "UHugeint.h"
 
 #define CONV_FN(TYPE, VAR_NAME) void TYPE##ToString(std::string & ret, const TYPE & VAR_NAME)
 #define CONV_FN_QUOTE(TYPE, VAR_NAME) void TYPE##ToString(std::string & ret, const bool quote, const TYPE & VAR_NAME)
 
-namespace buzzhouse
+namespace BuzzHouse
 {
 
 static constexpr char hex_digits[] = "0123456789ABCDEF";
@@ -21,8 +19,6 @@ static constexpr char digits[] = "0123456789";
 
 CONV_FN(Expr, expr);
 CONV_FN(Select, select);
-
-// ~~~~Numbered values to string~~~
 
 CONV_FN_QUOTE(Column, col)
 {
@@ -289,7 +285,6 @@ CONV_FN(ExprList, me)
     }
 }
 
-// ~~~~Expression stuff~~~~
 CONV_FN(NumericLiteral, nl)
 {
     ret += "(";
@@ -871,8 +866,8 @@ void BottomTypeNameToString(std::string & ret, const bool quote, const bool lcar
             ret += Dates_Name(btn.dates());
             break;
         case BottomTypeNameType::kDatetimes: {
-            const sql_query_grammar::DateTimeTp & dt = btn.datetimes();
-            const bool has_precision = dt.type() == sql_query_grammar::DateTimes::DateTime64 && dt.has_precision();
+            const DateTimeTp & dt = btn.datetimes();
+            const bool has_precision = dt.type() == DateTimes::DateTime64 && dt.has_precision();
 
             ret += DateTimes_Name(dt.type());
             if (has_precision || dt.has_timezone())
@@ -906,7 +901,7 @@ void BottomTypeNameToString(std::string & ret, const bool quote, const bool lcar
                 switch (btn.bottom_one_of_case())
                 {
                     case BottomTypeNameType::kDecimal: {
-                        const sql_query_grammar::Decimal & dec = btn.decimal();
+                        const Decimal & dec = btn.decimal();
                         ret += "Decimal";
                         if (dec.has_precision())
                         {
@@ -930,7 +925,7 @@ void BottomTypeNameToString(std::string & ret, const bool quote, const bool lcar
                         ret += "UUID";
                         break;
                     case BottomTypeNameType::kJson: {
-                        const sql_query_grammar::JsonDef & jdef = btn.json();
+                        const JsonDef & jdef = btn.json();
 
                         ret += "JSON";
                         if (jdef.spec_size() > 0)
@@ -938,7 +933,7 @@ void BottomTypeNameToString(std::string & ret, const bool quote, const bool lcar
                             ret += "(";
                             for (int i = 0; i < jdef.spec_size(); i++)
                             {
-                                const sql_query_grammar::JsonDefItem & jspec = jdef.spec(i);
+                                const JsonDefItem & jspec = jdef.spec(i);
 
                                 if (i != 0)
                                 {
@@ -961,7 +956,7 @@ void BottomTypeNameToString(std::string & ret, const bool quote, const bool lcar
                                 }
                                 else if (jspec.has_path_type())
                                 {
-                                    const sql_query_grammar::JsonPathType & jpt = jspec.path_type();
+                                    const JsonPathType & jpt = jspec.path_type();
 
                                     ColumnPathToString(ret, !quote, jpt.col());
                                     ret += " ";
@@ -986,7 +981,7 @@ void BottomTypeNameToString(std::string & ret, const bool quote, const bool lcar
                         }
                         break;
                     case BottomTypeNameType::kEnumDef: {
-                        const sql_query_grammar::EnumDef & edef = btn.enum_def();
+                        const EnumDef & edef = btn.enum_def();
 
                         ret += "Enum";
                         if (edef.has_bits())
@@ -1088,7 +1083,7 @@ CONV_FN_QUOTE(TopTypeName, ttn)
             ret += ")";
             break;
         case TopTypeNameType::kTuple: {
-            const sql_query_grammar::TupleType & tt = ttn.tuple();
+            const TupleTypeDef & tt = ttn.tuple();
 
             ret += "Tuple";
             if (tt.has_with_names())
@@ -1186,7 +1181,7 @@ CONV_FN(ExprBetween, ebetween)
 
 CONV_FN(ExprIn, ein)
 {
-    const sql_query_grammar::ExprList & elist = ein.expr();
+    const ExprList & elist = ein.expr();
 
     if (elist.extra_exprs_size() == 0)
     {
@@ -1222,7 +1217,7 @@ CONV_FN(ExprIn, ein)
 CONV_FN(ExprAny, eany)
 {
     ExprToString(ret, eany.expr());
-    BinaryOperatorToString(ret, static_cast<sql_query_grammar::BinaryOperator>(((static_cast<int>(eany.op()) % 8) + 1)));
+    BinaryOperatorToString(ret, static_cast<BinaryOperator>(((static_cast<int>(eany.op()) % 8) + 1)));
     ret += eany.anyall() ? "ALL" : "ANY";
     ret += "(";
     SelectToString(ret, eany.sel());
@@ -1338,7 +1333,7 @@ CONV_FN(SQLFuncCall, sfc)
     }
     for (int i = 0; i < sfc.args_size(); i++)
     {
-        const sql_query_grammar::SQLFuncArg & sfa = sfc.args(i);
+        const SQLFuncArg & sfa = sfc.args(i);
 
         if (i != 0)
         {
@@ -1415,7 +1410,7 @@ CONV_FN(OrderByList, ol)
     has_fill |= ol.ord_term().has_fill();
     for (int i = 0; i < ol.extra_ord_terms_size(); i++)
     {
-        const sql_query_grammar::ExprOrderingTerm & eot = ol.extra_ord_terms(i);
+        const ExprOrderingTerm & eot = ol.extra_ord_terms(i);
 
         ret += ", ";
         has_fill |= eot.has_fill();
@@ -1426,7 +1421,7 @@ CONV_FN(OrderByList, ol)
         ret += " INTERPOLATE(";
         for (int i = 0; i < ol.interpolate_size(); i++)
         {
-            const sql_query_grammar::InterpolateExpr & ie = ol.interpolate(i);
+            const InterpolateExpr & ie = ol.interpolate(i);
 
             if (i != 0)
             {
@@ -1478,7 +1473,7 @@ CONV_FN(FrameSpecSubLeftExpr, fssle)
 {
     std::string next = FrameSpecSubLeftExpr_Which_Name(fssle.which());
 
-    if (fssle.which() > sql_query_grammar::FrameSpecSubLeftExpr_Which_UNBOUNDED_PRECEDING && fssle.has_expr())
+    if (fssle.which() > FrameSpecSubLeftExpr_Which_UNBOUNDED_PRECEDING && fssle.has_expr())
     {
         ExprToString(ret, fssle.expr());
         ret += " ";
@@ -1491,7 +1486,7 @@ CONV_FN(FrameSpecSubRightExpr, fsslr)
 {
     std::string next = FrameSpecSubRightExpr_Which_Name(fsslr.which());
 
-    if (fsslr.which() > sql_query_grammar::FrameSpecSubRightExpr_Which_UNBOUNDED_FOLLOWING && fsslr.has_expr())
+    if (fsslr.which() > FrameSpecSubRightExpr_Which_UNBOUNDED_FOLLOWING && fsslr.has_expr())
     {
         ExprToString(ret, fsslr.expr());
         ret += " ";
@@ -1643,7 +1638,7 @@ CONV_FN(ComplicatedExpr, expr)
             IntervalExprToString(ret, expr.interval());
             break;
         case ExprType::kArray: {
-            const sql_query_grammar::ArraySequence & vals = expr.array();
+            const ArraySequence & vals = expr.array();
 
             ret += "[";
             for (int i = 0; i < vals.values_size(); i++)
@@ -1658,7 +1653,7 @@ CONV_FN(ComplicatedExpr, expr)
         }
         break;
         case ExprType::kTuple: {
-            const sql_query_grammar::TupleSequence & vals = expr.tuple();
+            const TupleSequence & vals = expr.tuple();
 
             ret += "(";
             for (int i = 0; i < vals.values_size(); i++)
@@ -1737,7 +1732,6 @@ CONV_FN(ExprColumnList, cl)
 
 CONV_FN(JoinConstraint, jc)
 {
-    // oneof
     if (jc.has_on_expr())
     {
         ret += " ON ";
@@ -1757,14 +1751,13 @@ CONV_FN(JoinConstraint, jc)
 
 CONV_FN(JoinCore, jcc)
 {
-    const bool has_cross_or_paste = jcc.join_op() > sql_query_grammar::JoinType::J_FULL;
+    const bool has_cross_or_paste = jcc.join_op() > JoinType::J_FULL;
 
     if (jcc.global())
     {
         ret += " GLOBAL";
     }
-    if (jcc.join_op() != sql_query_grammar::JoinType::J_INNER || !jcc.has_join_const()
-        || jcc.join_const() < sql_query_grammar::JoinConst::J_SEMI)
+    if (jcc.join_op() != JoinType::J_INNER || !jcc.has_join_const() || jcc.join_const() < JoinConst::J_SEMI)
     {
         ret += " ";
         ret += JoinType_Name(jcc.join_op()).substr(2);
@@ -2287,10 +2280,10 @@ CONV_FN(SettingValues, setv)
 
 CONV_FN(DatabaseEngine, deng)
 {
-    const sql_query_grammar::DatabaseEngineValues dengine = deng.engine();
+    const DatabaseEngineValues dengine = deng.engine();
 
     ret += DatabaseEngineValues_Name(dengine).substr(1);
-    if (dengine == sql_query_grammar::DatabaseEngineValues::DReplicated)
+    if (dengine == DatabaseEngineValues::DReplicated)
     {
         ret += "('/test/db";
         ret += std::to_string(deng.zoo_path());
@@ -2530,11 +2523,10 @@ CONV_FN(TableEngineParam, tep)
 
 CONV_FN(TableEngine, te)
 {
-    const sql_query_grammar::TableEngineValues tengine = te.engine();
+    const TableEngineValues tengine = te.engine();
 
     ret += " ENGINE = ";
-    if (te.has_toption() && tengine >= sql_query_grammar::TableEngineValues::MergeTree
-        && tengine <= sql_query_grammar::TableEngineValues::VersionedCollapsingMergeTree)
+    if (te.has_toption() && tengine >= TableEngineValues::MergeTree && tengine <= TableEngineValues::VersionedCollapsingMergeTree)
     {
         ret += TableEngineOption_Name(te.toption()).substr(1);
     }
@@ -2642,7 +2634,7 @@ CONV_FN(SQLObjectName, dt)
 
 CONV_FN(Drop, dt)
 {
-    const bool is_table = dt.sobject() == sql_query_grammar::SQLObject::TABLE;
+    const bool is_table = dt.sobject() == SQLObject::TABLE;
 
     ret += "DROP ";
     if (is_table && dt.is_temp())
@@ -3486,12 +3478,12 @@ CONV_FN(ExplainQuery, explain)
         ret += ExplainQuery_ExplainValues_Name(explain.expl());
         std::replace(ret.begin(), ret.end(), '_', ' ');
     }
-    if (explain.has_expl() && explain.expl() <= sql_query_grammar::ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_QUERY_TREE)
+    if (explain.has_expl() && explain.expl() <= ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_QUERY_TREE)
     {
         for (int i = 0; i < explain.opts_size(); i++)
         {
             std::string ostr = "";
-            const sql_query_grammar::ExplainOption & eopt = explain.opts(i);
+            const ExplainOption & eopt = explain.opts(i);
 
             if (i != 0)
             {
@@ -3500,14 +3492,14 @@ CONV_FN(ExplainQuery, explain)
             ret += " ";
             switch (explain.expl())
             {
-                case sql_query_grammar::ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_PLAN:
-                    ostr += ExpPlanOpt_Name(static_cast<sql_query_grammar::ExpPlanOpt>((eopt.opt() % 5) + 1));
+                case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_PLAN:
+                    ostr += ExpPlanOpt_Name(static_cast<ExpPlanOpt>((eopt.opt() % 5) + 1));
                     break;
-                case sql_query_grammar::ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_PIPELINE:
-                    ostr += ExpPipelineOpt_Name(static_cast<sql_query_grammar::ExpPipelineOpt>((eopt.opt() % 3) + 1));
+                case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_PIPELINE:
+                    ostr += ExpPipelineOpt_Name(static_cast<ExpPipelineOpt>((eopt.opt() % 3) + 1));
                     break;
-                case sql_query_grammar::ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_QUERY_TREE:
-                    ostr += ExpQueryTreeOpt_Name(static_cast<sql_query_grammar::ExpQueryTreeOpt>((eopt.opt() % 3) + 1));
+                case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_QUERY_TREE:
+                    ostr += ExpQueryTreeOpt_Name(static_cast<ExpQueryTreeOpt>((eopt.opt() % 3) + 1));
                     break;
                 default:
                     assert(0);
@@ -3523,7 +3515,6 @@ CONV_FN(ExplainQuery, explain)
     SQLQueryInnerToString(ret, explain.inner_query());
 }
 
-// ~~~~QUERY~~~~
 CONV_FN(SQLQuery, query)
 {
     using QueryType = SQLQuery::QueryOneofCase;

@@ -1,14 +1,14 @@
 #pragma once
 
-#include "buzz-house/ast/sql_grammar.pb.h"
-#include "fuzz_timezones.h"
-#include "random_generator.h"
+#include "FuzzTimezones.h"
+#include "RandomGenerator.h"
+#include "SQLGrammar.pb.h"
 
 #include <cstdint>
 #include <functional>
 #include <thread>
 
-namespace buzzhouse
+namespace BuzzHouse
 {
 
 const std::function<void(RandomGenerator &, std::string &)> TrueOrFalse
@@ -728,34 +728,33 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
         [](RandomGenerator & rg, std::string & ret)
         { ret += std::to_string(rg.RandomInt<uint32_t>(1, std::thread::hardware_concurrency())); }}};
 
-const std::map<sql_query_grammar::TableEngineValues, std::map<std::string, std::function<void(RandomGenerator &, std::string &)>>>
-    AllTableSettings
-    = {{sql_query_grammar::MergeTree, MergeTreeTableSettings},
-       {sql_query_grammar::ReplacingMergeTree, MergeTreeTableSettings},
-       {sql_query_grammar::SummingMergeTree, MergeTreeTableSettings},
-       {sql_query_grammar::AggregatingMergeTree, MergeTreeTableSettings},
-       {sql_query_grammar::CollapsingMergeTree, MergeTreeTableSettings},
-       {sql_query_grammar::VersionedCollapsingMergeTree, MergeTreeTableSettings},
-       {sql_query_grammar::File, FileTableSettings},
-       {sql_query_grammar::Null, {}},
-       {sql_query_grammar::Set, SetTableSettings},
-       {sql_query_grammar::Join, JoinTableSettings},
-       {sql_query_grammar::Memory, MemoryTableSettings},
-       {sql_query_grammar::StripeLog, {}},
-       {sql_query_grammar::Log, {}},
-       {sql_query_grammar::TinyLog, {}},
-       {sql_query_grammar::EmbeddedRocksDB, EmbeddedRocksDBTableSettings},
-       {sql_query_grammar::Buffer, {}},
-       {sql_query_grammar::MySQL, MySQLTableSettings},
-       {sql_query_grammar::PostgreSQL, {}},
-       {sql_query_grammar::SQLite, {}},
-       {sql_query_grammar::MongoDB, {}},
-       {sql_query_grammar::Redis, {}},
-       {sql_query_grammar::S3, S3TableSettings},
-       {sql_query_grammar::S3Queue, S3QueueTableSettings},
-       {sql_query_grammar::Hudi, {}},
-       {sql_query_grammar::DeltaLake, {}},
-       {sql_query_grammar::IcebergS3, {}}};
+const std::map<TableEngineValues, std::map<std::string, std::function<void(RandomGenerator &, std::string &)>>> AllTableSettings
+    = {{MergeTree, MergeTreeTableSettings},
+       {ReplacingMergeTree, MergeTreeTableSettings},
+       {SummingMergeTree, MergeTreeTableSettings},
+       {AggregatingMergeTree, MergeTreeTableSettings},
+       {CollapsingMergeTree, MergeTreeTableSettings},
+       {VersionedCollapsingMergeTree, MergeTreeTableSettings},
+       {File, FileTableSettings},
+       {Null, {}},
+       {Set, SetTableSettings},
+       {Join, JoinTableSettings},
+       {Memory, MemoryTableSettings},
+       {StripeLog, {}},
+       {Log, {}},
+       {TinyLog, {}},
+       {EmbeddedRocksDB, EmbeddedRocksDBTableSettings},
+       {Buffer, {}},
+       {MySQL, MySQLTableSettings},
+       {PostgreSQL, {}},
+       {SQLite, {}},
+       {MongoDB, {}},
+       {Redis, {}},
+       {S3, S3TableSettings},
+       {S3Queue, S3QueueTableSettings},
+       {Hudi, {}},
+       {DeltaLake, {}},
+       {IcebergS3, {}}};
 
 const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> MergeTreeColumnSettings
     = {{"min_compress_block_size",
@@ -763,39 +762,38 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
        {"max_compress_block_size",
         [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }}};
 
-const std::map<sql_query_grammar::TableEngineValues, std::map<std::string, std::function<void(RandomGenerator &, std::string &)>>>
-    AllColumnSettings
-    = {{sql_query_grammar::MergeTree, MergeTreeColumnSettings},
-       {sql_query_grammar::ReplacingMergeTree, MergeTreeColumnSettings},
-       {sql_query_grammar::SummingMergeTree, MergeTreeColumnSettings},
-       {sql_query_grammar::AggregatingMergeTree, MergeTreeColumnSettings},
-       {sql_query_grammar::CollapsingMergeTree, MergeTreeColumnSettings},
-       {sql_query_grammar::VersionedCollapsingMergeTree, MergeTreeColumnSettings},
-       {sql_query_grammar::File, {}},
-       {sql_query_grammar::Null, {}},
-       {sql_query_grammar::Set, {}},
-       {sql_query_grammar::Join, {}},
-       {sql_query_grammar::Memory, {}},
-       {sql_query_grammar::StripeLog, {}},
-       {sql_query_grammar::Log, {}},
-       {sql_query_grammar::TinyLog, {}},
-       {sql_query_grammar::EmbeddedRocksDB, {}},
-       {sql_query_grammar::Buffer, {}},
-       {sql_query_grammar::MySQL, {}},
-       {sql_query_grammar::PostgreSQL, {}},
-       {sql_query_grammar::SQLite, {}},
-       {sql_query_grammar::MongoDB, {}},
-       {sql_query_grammar::Redis, {}},
-       {sql_query_grammar::S3, {}},
-       {sql_query_grammar::S3Queue, {}},
-       {sql_query_grammar::Hudi, {}},
-       {sql_query_grammar::DeltaLake, {}},
-       {sql_query_grammar::IcebergS3, {}}};
+const std::map<TableEngineValues, std::map<std::string, std::function<void(RandomGenerator &, std::string &)>>> AllColumnSettings
+    = {{MergeTree, MergeTreeColumnSettings},
+       {ReplacingMergeTree, MergeTreeColumnSettings},
+       {SummingMergeTree, MergeTreeColumnSettings},
+       {AggregatingMergeTree, MergeTreeColumnSettings},
+       {CollapsingMergeTree, MergeTreeColumnSettings},
+       {VersionedCollapsingMergeTree, MergeTreeColumnSettings},
+       {File, {}},
+       {Null, {}},
+       {Set, {}},
+       {Join, {}},
+       {Memory, {}},
+       {StripeLog, {}},
+       {Log, {}},
+       {TinyLog, {}},
+       {EmbeddedRocksDB, {}},
+       {Buffer, {}},
+       {MySQL, {}},
+       {PostgreSQL, {}},
+       {SQLite, {}},
+       {MongoDB, {}},
+       {Redis, {}},
+       {S3, {}},
+       {S3Queue, {}},
+       {Hudi, {}},
+       {DeltaLake, {}},
+       {IcebergS3, {}}};
 
 void SetRandomSetting(
     RandomGenerator & rg,
     const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> & settings,
     std::string & ret,
-    sql_query_grammar::SetValue * set);
+    SetValue * set);
 
 }

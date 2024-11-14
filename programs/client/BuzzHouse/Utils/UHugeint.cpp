@@ -1,10 +1,10 @@
-#include "uhugeint.h"
-#include "hugeint.h"
+#include "UHugeint.h"
+#include "Hugeint.h"
 
 #include <cassert>
 #include <cmath>
 
-namespace buzzhouse
+namespace BuzzHouse
 {
 
 uhugeint_t::uhugeint_t(uint64_t value)

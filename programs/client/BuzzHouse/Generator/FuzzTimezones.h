@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-namespace buzzhouse
+namespace BuzzHouse
 {
 
 const std::vector<std::string> timezones

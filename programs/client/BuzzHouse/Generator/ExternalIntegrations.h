@@ -1,7 +1,7 @@
 #pragma once
 
-#include "fuzz_config.h"
-#include "sql_catalog.h"
+#include "FuzzConfig.h"
+#include "SQLCatalog.h"
 
 #if __has_include(<mysql.h>)
 #    include <mysql.h>
@@ -21,10 +21,10 @@
 #include <sqlite3.h>
 
 
-namespace buzzhouse
+namespace BuzzHouse
 {
 
-using IntegrationCall = enum IntegrationCall { MySQL = 1, PostgreSQL = 2, SQLite = 3, Redis = 4, MongoDB = 5, MinIO = 6 };
+using IntegrationCall = enum IntegrationCall { IntMySQL = 1, IntPostgreSQL = 2, IntSQLite = 3, IntRedis = 4, IntMongoDB = 5, IntMinIO = 6 };
 
 class ClickHouseIntegration
 {
@@ -620,22 +620,22 @@ public:
         requires_external_call_check = true;
         switch (dc)
         {
-            case IntegrationCall::MySQL:
+            case IntegrationCall::IntMySQL:
                 next_call_succeeded = mysql->PerformIntegration(rg, tname, entries);
                 break;
-            case IntegrationCall::PostgreSQL:
+            case IntegrationCall::IntPostgreSQL:
                 next_call_succeeded = postresql->PerformIntegration(rg, tname, entries);
                 break;
-            case IntegrationCall::SQLite:
+            case IntegrationCall::IntSQLite:
                 next_call_succeeded = sqlite->PerformIntegration(rg, tname, entries);
                 break;
-            case IntegrationCall::MongoDB:
+            case IntegrationCall::IntMongoDB:
                 next_call_succeeded = mongodb->PerformIntegration(rg, tname, entries);
                 break;
-            case IntegrationCall::Redis:
+            case IntegrationCall::IntRedis:
                 next_call_succeeded = redis->PerformIntegration(rg, tname, entries);
                 break;
-            case IntegrationCall::MinIO:
+            case IntegrationCall::IntMinIO:
                 next_call_succeeded = minio->PerformIntegration(rg, tname, entries);
                 break;
         }

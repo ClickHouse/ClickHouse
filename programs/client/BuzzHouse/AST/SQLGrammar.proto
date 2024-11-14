@@ -1,6 +1,6 @@
 syntax = "proto2";
 
-package sql_query_grammar;
+package BuzzHouse;
 
 enum SQLFunc {
     FUNCabs = 1;
@@ -2599,7 +2599,7 @@ message BottomTypeName {
     }
 }
 
-message MapType {
+message MapTypeDef {
     required TopTypeName key = 1;
     required TopTypeName value = 2;
 }
@@ -2617,14 +2617,14 @@ message TupleWithOutColumnNames {
     repeated TopTypeName values = 1;
 }
 
-message TupleType {
+message TupleTypeDef {
     oneof tuple_oneof {
         TupleWithColumnNames with_names = 1;
         TupleWithOutColumnNames no_names = 2;
     }
 }
 
-message NestedType {
+message NestedTypeDef {
     required TypeColumnDef type1 = 1;
     repeated TypeColumnDef others = 2;
 }
@@ -2645,9 +2645,9 @@ message TopTypeName {
         BottomTypeName non_nullable_lcard = 3;
         BottomTypeName nullable_lcard = 4;
         TopTypeName array = 5;
-        MapType map = 6;
-        TupleType tuple = 7;
-        NestedType nested = 8;
+        MapTypeDef map = 6;
+        TupleTypeDef tuple = 7;
+        NestedTypeDef nested = 8;
         TupleWithOutColumnNames variant = 9;
         GeoTypes geo = 10;
     }

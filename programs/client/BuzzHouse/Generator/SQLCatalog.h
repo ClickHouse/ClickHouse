@@ -1,8 +1,8 @@
 #pragma once
 
-#include "sql_types.h"
+#include "SQLTypes.h"
 
-namespace buzzhouse
+namespace BuzzHouse
 {
 
 using ColumnSpecial = enum ColumnSpecial { NONE = 0, SIGN = 1, IS_DELETED = 2, VERSION = 3 };
@@ -16,7 +16,7 @@ public:
     const SQLType * tp = nullptr;
     ColumnSpecial special = ColumnSpecial::NONE;
     std::optional<bool> nullable = std::nullopt;
-    std::optional<sql_query_grammar::DModifier> dmod = std::nullopt;
+    std::optional<DModifier> dmod = std::nullopt;
 
     SQLColumn() = default;
     SQLColumn(const SQLColumn & c)
@@ -50,14 +50,14 @@ public:
         this->cname = c.cname;
         this->special = c.special;
         this->nullable = c.nullable;
-        this->dmod = std::optional<sql_query_grammar::DModifier>(c.dmod);
+        this->dmod = std::optional<DModifier>(c.dmod);
         this->tp = c.tp;
         c.tp = nullptr;
         return *this;
     }
     ~SQLColumn() { delete tp; }
 
-    bool CanBeInserted() const { return !dmod.has_value() || dmod.value() == sql_query_grammar::DModifier::DEF_DEFAULT; }
+    bool CanBeInserted() const { return !dmod.has_value() || dmod.value() == DModifier::DEF_DEFAULT; }
 };
 
 struct SQLIndex
@@ -71,7 +71,7 @@ struct SQLDatabase
 public:
     DetachStatus attached = ATTACHED;
     uint32_t dname = 0;
-    sql_query_grammar::DatabaseEngineValues deng;
+    DatabaseEngineValues deng;
 };
 
 struct SQLBase
@@ -80,48 +80,47 @@ public:
     uint32_t tname = 0;
     std::shared_ptr<SQLDatabase> db = nullptr;
     DetachStatus attached = ATTACHED;
-    std::optional<sql_query_grammar::TableEngineOption> toption;
-    sql_query_grammar::TableEngineValues teng;
+    std::optional<TableEngineOption> toption;
+    TableEngineValues teng;
 
     bool IsMergeTreeFamily() const
     {
-        return teng >= sql_query_grammar::TableEngineValues::MergeTree
-            && teng <= sql_query_grammar::TableEngineValues::VersionedCollapsingMergeTree;
+        return teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree;
     }
 
-    bool IsFileEngine() const { return teng == sql_query_grammar::TableEngineValues::File; }
+    bool IsFileEngine() const { return teng == TableEngineValues::File; }
 
-    bool IsJoinEngine() const { return teng == sql_query_grammar::TableEngineValues::Join; }
+    bool IsJoinEngine() const { return teng == TableEngineValues::Join; }
 
-    bool IsNullEngine() const { return teng == sql_query_grammar::TableEngineValues::Null; }
+    bool IsNullEngine() const { return teng == TableEngineValues::Null; }
 
-    bool IsSetEngine() const { return teng == sql_query_grammar::TableEngineValues::Set; }
+    bool IsSetEngine() const { return teng == TableEngineValues::Set; }
 
-    bool IsBufferEngine() const { return teng == sql_query_grammar::TableEngineValues::Buffer; }
+    bool IsBufferEngine() const { return teng == TableEngineValues::Buffer; }
 
-    bool IsRocksEngine() const { return teng == sql_query_grammar::TableEngineValues::EmbeddedRocksDB; }
+    bool IsRocksEngine() const { return teng == TableEngineValues::EmbeddedRocksDB; }
 
-    bool IsMySQLEngine() const { return teng == sql_query_grammar::TableEngineValues::MySQL; }
+    bool IsMySQLEngine() const { return teng == TableEngineValues::MySQL; }
 
-    bool IsPostgreSQLEngine() const { return teng == sql_query_grammar::TableEngineValues::PostgreSQL; }
+    bool IsPostgreSQLEngine() const { return teng == TableEngineValues::PostgreSQL; }
 
-    bool IsSQLiteEngine() const { return teng == sql_query_grammar::TableEngineValues::SQLite; }
+    bool IsSQLiteEngine() const { return teng == TableEngineValues::SQLite; }
 
-    bool IsMongoDBEngine() const { return teng == sql_query_grammar::TableEngineValues::MongoDB; }
+    bool IsMongoDBEngine() const { return teng == TableEngineValues::MongoDB; }
 
-    bool IsRedisEngine() const { return teng == sql_query_grammar::TableEngineValues::Redis; }
+    bool IsRedisEngine() const { return teng == TableEngineValues::Redis; }
 
-    bool IsS3Engine() const { return teng == sql_query_grammar::TableEngineValues::S3; }
+    bool IsS3Engine() const { return teng == TableEngineValues::S3; }
 
-    bool IsS3QueueEngine() const { return teng == sql_query_grammar::TableEngineValues::S3Queue; }
+    bool IsS3QueueEngine() const { return teng == TableEngineValues::S3Queue; }
 
     bool IsAnyS3Engine() const { return IsS3Engine() || IsS3QueueEngine(); }
 
-    bool IsHudiEngine() const { return teng == sql_query_grammar::TableEngineValues::Hudi; }
+    bool IsHudiEngine() const { return teng == TableEngineValues::Hudi; }
 
-    bool IsDeltaLakeEngine() const { return teng == sql_query_grammar::TableEngineValues::DeltaLake; }
+    bool IsDeltaLakeEngine() const { return teng == TableEngineValues::DeltaLake; }
 
-    bool IsIcebergEngine() const { return teng == sql_query_grammar::TableEngineValues::IcebergS3; }
+    bool IsIcebergEngine() const { return teng == TableEngineValues::IcebergS3; }
 
     bool IsNotTruncableEngine() const
     {
@@ -161,18 +160,16 @@ public:
 
     bool SupportsFinal() const
     {
-        return (teng >= sql_query_grammar::TableEngineValues::ReplacingMergeTree
-                && teng <= sql_query_grammar::TableEngineValues::VersionedCollapsingMergeTree)
+        return (teng >= TableEngineValues::ReplacingMergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree)
             || this->IsBufferEngine();
     }
 
     bool HasSignColumn() const
     {
-        return teng >= sql_query_grammar::TableEngineValues::CollapsingMergeTree
-            && teng <= sql_query_grammar::TableEngineValues::VersionedCollapsingMergeTree;
+        return teng >= TableEngineValues::CollapsingMergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree;
     }
 
-    bool HasVersionColumn() const { return teng == sql_query_grammar::TableEngineValues::VersionedCollapsingMergeTree; }
+    bool HasVersionColumn() const { return teng == TableEngineValues::VersionedCollapsingMergeTree; }
 };
 
 struct SQLView : SQLBase
@@ -196,7 +193,7 @@ typedef struct InsertEntry
     uint32_t cname1 = 0;
     std::optional<uint32_t> cname2 = std::nullopt;
     const SQLType * tp = nullptr;
-    std::optional<sql_query_grammar::DModifier> dmod = std::nullopt;
+    std::optional<DModifier> dmod = std::nullopt;
 
     InsertEntry(
         const std::optional<bool> nu,
@@ -204,7 +201,7 @@ typedef struct InsertEntry
         const uint32_t c1,
         const std::optional<uint32_t> c2,
         const SQLType * t,
-        const std::optional<sql_query_grammar::DModifier> dm)
+        const std::optional<DModifier> dm)
         : nullable(nu), special(cs), cname1(c1), cname2(c2), tp(t), dmod(dm)
     {
     }

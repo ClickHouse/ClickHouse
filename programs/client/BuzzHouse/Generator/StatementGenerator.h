@@ -1,12 +1,12 @@
 #pragma once
 
-#include "external_integrations.h"
-#include "random_generator.h"
-#include "random_settings.h"
-#include "sql_catalog.h"
+#include "ExternalIntegrations.h"
+#include "RandomGenerator.h"
+#include "RandomSettings.h"
+#include "SQLCatalog.h"
 
 
-namespace buzzhouse
+namespace BuzzHouse
 {
 
 class QueryOracle;
@@ -40,10 +40,10 @@ class GroupCol
 {
 public:
     SQLRelationCol col;
-    sql_query_grammar::Expr * gexpr = nullptr;
+    Expr * gexpr = nullptr;
 
     GroupCol() { }
-    GroupCol(SQLRelationCol c, sql_query_grammar::Expr * g) : col(c), gexpr(g) { }
+    GroupCol(SQLRelationCol c, Expr * g) : col(c), gexpr(g) { }
 };
 
 class QueryLevel
@@ -219,8 +219,8 @@ public:
     }
 
 private:
-    void InsertEntryRef(const InsertEntry & entry, sql_query_grammar::Expr * expr);
-    void InsertEntryRefCP(const InsertEntry & entry, sql_query_grammar::ColumnPath * cp);
+    void InsertEntryRef(const InsertEntry & entry, Expr * expr);
+    void InsertEntryRefCP(const InsertEntry & entry, ColumnPath * cp);
     void AddTableRelation(RandomGenerator & rg, const bool allow_internal_cols, const std::string & rel_name, const SQLTable & t);
 
     void StrAppendBottomValue(RandomGenerator & rg, std::string & ret, const SQLType * tp);
@@ -232,8 +232,8 @@ private:
     void StrAppendAnyValueInternal(RandomGenerator & rg, std::string & ret, const SQLType * tp);
     void StrAppendAnyValue(RandomGenerator & rg, std::string & ret, const SQLType * tp);
 
-    int GenerateNextStatistics(RandomGenerator & rg, sql_query_grammar::ColumnStatistics * cstats);
-    int PickUpNextCols(RandomGenerator & rg, const SQLTable & t, sql_query_grammar::ColumnList * clist);
+    int GenerateNextStatistics(RandomGenerator & rg, ColumnStatistics * cstats);
+    int PickUpNextCols(RandomGenerator & rg, const SQLTable & t, ColumnList * clist);
     int AddTableColumn(
         RandomGenerator & rg,
         SQLTable & t,
@@ -242,63 +242,62 @@ private:
         const bool modify,
         const bool is_pk,
         const ColumnSpecial special,
-        sql_query_grammar::ColumnDef * cd);
-    int AddTableIndex(RandomGenerator & rg, SQLTable & t, const bool staged, sql_query_grammar::IndexDef * idef);
-    int AddTableProjection(RandomGenerator & rg, SQLTable & t, const bool staged, sql_query_grammar::ProjectionDef * pdef);
-    int AddTableConstraint(RandomGenerator & rg, SQLTable & t, const bool staged, sql_query_grammar::ConstraintDef * cdef);
-    int GenerateTableKey(RandomGenerator & rg, sql_query_grammar::TableKey * tkey);
-    int GenerateMergeTreeEngineDetails(
-        RandomGenerator & rg, const sql_query_grammar::TableEngineValues teng, const bool add_pkey, sql_query_grammar::TableEngine * te);
-    int GenerateEngineDetails(RandomGenerator & rg, SQLBase & b, const bool add_pkey, sql_query_grammar::TableEngine * te);
+        ColumnDef * cd);
+    int AddTableIndex(RandomGenerator & rg, SQLTable & t, const bool staged, IndexDef * idef);
+    int AddTableProjection(RandomGenerator & rg, SQLTable & t, const bool staged, ProjectionDef * pdef);
+    int AddTableConstraint(RandomGenerator & rg, SQLTable & t, const bool staged, ConstraintDef * cdef);
+    int GenerateTableKey(RandomGenerator & rg, TableKey * tkey);
+    int GenerateMergeTreeEngineDetails(RandomGenerator & rg, const TableEngineValues teng, const bool add_pkey, TableEngine * te);
+    int GenerateEngineDetails(RandomGenerator & rg, SQLBase & b, const bool add_pkey, TableEngine * te);
 
-    sql_query_grammar::TableEngineValues GetNextTableEngine(RandomGenerator & rg, const bool use_external_integrations);
+    TableEngineValues GetNextTableEngine(RandomGenerator & rg, const bool use_external_integrations);
 
-    int GenerateNextRefreshableView(RandomGenerator & rg, sql_query_grammar::RefreshableView * cv);
-    int GenerateNextCreateView(RandomGenerator & rg, sql_query_grammar::CreateView * cv);
-    int GenerateNextDrop(RandomGenerator & rg, sql_query_grammar::Drop * sq);
-    int GenerateNextInsert(RandomGenerator & rg, sql_query_grammar::Insert * sq);
-    int GenerateNextDelete(RandomGenerator & rg, sql_query_grammar::LightDelete * sq);
-    int GenerateNextTruncate(RandomGenerator & rg, sql_query_grammar::Truncate * sq);
-    int GenerateNextOptimizeTable(RandomGenerator & rg, sql_query_grammar::OptimizeTable * sq);
-    int GenerateNextCheckTable(RandomGenerator & rg, sql_query_grammar::CheckTable * sq);
-    int GenerateNextDescTable(RandomGenerator & rg, sql_query_grammar::DescTable * sq);
-    int GenerateNextExchangeTables(RandomGenerator & rg, sql_query_grammar::ExchangeTables * sq);
-    int GenerateUptDelWhere(RandomGenerator & rg, const SQLTable & t, sql_query_grammar::Expr * expr);
-    int GenerateAlterTable(RandomGenerator & rg, sql_query_grammar::AlterTable * at);
+    int GenerateNextRefreshableView(RandomGenerator & rg, RefreshableView * cv);
+    int GenerateNextCreateView(RandomGenerator & rg, CreateView * cv);
+    int GenerateNextDrop(RandomGenerator & rg, Drop * sq);
+    int GenerateNextInsert(RandomGenerator & rg, Insert * sq);
+    int GenerateNextDelete(RandomGenerator & rg, LightDelete * sq);
+    int GenerateNextTruncate(RandomGenerator & rg, Truncate * sq);
+    int GenerateNextOptimizeTable(RandomGenerator & rg, OptimizeTable * sq);
+    int GenerateNextCheckTable(RandomGenerator & rg, CheckTable * sq);
+    int GenerateNextDescTable(RandomGenerator & rg, DescTable * sq);
+    int GenerateNextExchangeTables(RandomGenerator & rg, ExchangeTables * sq);
+    int GenerateUptDelWhere(RandomGenerator & rg, const SQLTable & t, Expr * expr);
+    int GenerateAlterTable(RandomGenerator & rg, AlterTable * at);
     int GenerateSettingValues(
         RandomGenerator & rg,
         const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> & settings,
-        sql_query_grammar::SettingValues * vals);
+        SettingValues * vals);
     int GenerateSettingValues(
         RandomGenerator & rg,
         const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> & settings,
         const size_t nvalues,
-        sql_query_grammar::SettingValues * vals);
+        SettingValues * vals);
     int GenerateSettingList(
         RandomGenerator & rg,
         const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> & settings,
-        sql_query_grammar::SettingList * pl);
-    int GenerateAttach(RandomGenerator & rg, sql_query_grammar::Attach * att);
-    int GenerateDetach(RandomGenerator & rg, sql_query_grammar::Detach * det);
-    int GenerateNextCreateFunction(RandomGenerator & rg, sql_query_grammar::CreateFunction * cf);
+        SettingList * pl);
+    int GenerateAttach(RandomGenerator & rg, Attach * att);
+    int GenerateDetach(RandomGenerator & rg, Detach * det);
+    int GenerateNextCreateFunction(RandomGenerator & rg, CreateFunction * cf);
 
-    int AddFieldAccess(RandomGenerator & rg, sql_query_grammar::Expr * expr, const uint32_t nested_prob);
-    int AddColNestedAccess(RandomGenerator & rg, sql_query_grammar::ExprColumn * expr, const uint32_t nested_prob);
-    int RefColumn(RandomGenerator & rg, const GroupCol & gcol, sql_query_grammar::Expr * expr);
-    int GenerateSubquery(RandomGenerator & rg, sql_query_grammar::Select * sel);
-    int GenerateColRef(RandomGenerator & rg, sql_query_grammar::Expr * expr);
-    int GenerateLiteralValue(RandomGenerator & rg, sql_query_grammar::Expr * expr);
-    int GeneratePredicate(RandomGenerator & rg, sql_query_grammar::Expr * expr);
-    int GenerateFrameBound(RandomGenerator & rg, sql_query_grammar::Expr * expr);
-    int GenerateExpression(RandomGenerator & rg, sql_query_grammar::Expr * expr);
-    int GenerateLambdaCall(RandomGenerator & rg, const uint32_t nparams, sql_query_grammar::LambdaExpr * lexpr);
-    int GenerateFuncCall(RandomGenerator & rg, const bool allow_funcs, const bool allow_aggr, sql_query_grammar::SQLFuncCall * expr);
+    int AddFieldAccess(RandomGenerator & rg, Expr * expr, const uint32_t nested_prob);
+    int AddColNestedAccess(RandomGenerator & rg, ExprColumn * expr, const uint32_t nested_prob);
+    int RefColumn(RandomGenerator & rg, const GroupCol & gcol, Expr * expr);
+    int GenerateSubquery(RandomGenerator & rg, Select * sel);
+    int GenerateColRef(RandomGenerator & rg, Expr * expr);
+    int GenerateLiteralValue(RandomGenerator & rg, Expr * expr);
+    int GeneratePredicate(RandomGenerator & rg, Expr * expr);
+    int GenerateFrameBound(RandomGenerator & rg, Expr * expr);
+    int GenerateExpression(RandomGenerator & rg, Expr * expr);
+    int GenerateLambdaCall(RandomGenerator & rg, const uint32_t nparams, LambdaExpr * lexpr);
+    int GenerateFuncCall(RandomGenerator & rg, const bool allow_funcs, const bool allow_aggr, SQLFuncCall * expr);
 
-    int GenerateOrderBy(RandomGenerator & rg, const uint32_t ncols, const bool allow_settings, sql_query_grammar::OrderByStatement * ob);
+    int GenerateOrderBy(RandomGenerator & rg, const uint32_t ncols, const bool allow_settings, OrderByStatement * ob);
 
-    int GenerateLimitExpr(RandomGenerator & rg, sql_query_grammar::Expr * expr);
-    int GenerateLimit(RandomGenerator & rg, const bool has_order_by, const uint32_t ncols, sql_query_grammar::LimitStatement * ls);
-    int GenerateOffset(RandomGenerator & rg, sql_query_grammar::OffsetStatement * off);
+    int GenerateLimitExpr(RandomGenerator & rg, Expr * expr);
+    int GenerateLimit(RandomGenerator & rg, const bool has_order_by, const uint32_t ncols, LimitStatement * ls);
+    int GenerateOffset(RandomGenerator & rg, OffsetStatement * off);
     int GenerateGroupByExpr(
         RandomGenerator & rg,
         const bool enforce_having,
@@ -306,48 +305,40 @@ private:
         const uint32_t ncols,
         const std::vector<SQLRelationCol> & available_cols,
         std::vector<GroupCol> & gcols,
-        sql_query_grammar::Expr * expr);
+        Expr * expr);
     int GenerateGroupBy(
-        RandomGenerator & rg,
-        const uint32_t ncols,
-        const bool enforce_having,
-        const bool allow_settings,
-        sql_query_grammar::GroupByStatement * gb);
-    int AddWhereSide(RandomGenerator & rg, const std::vector<GroupCol> & available_cols, sql_query_grammar::Expr * expr);
-    int AddWhereFilter(RandomGenerator & rg, const std::vector<GroupCol> & available_cols, sql_query_grammar::Expr * expr);
-    int GenerateWherePredicate(RandomGenerator & rg, sql_query_grammar::Expr * expr);
-    int AddJoinClause(RandomGenerator & rg, sql_query_grammar::BinaryExpr * bexpr);
-    int GenerateArrayJoin(RandomGenerator & rg, sql_query_grammar::ArrayJoin * aj);
-    int GenerateFromElement(RandomGenerator & rg, const uint32_t allowed_clauses, sql_query_grammar::TableOrSubquery * tos);
-    int GenerateJoinConstraint(RandomGenerator & rg, const bool allow_using, sql_query_grammar::JoinConstraint * jc);
-    int GenerateDerivedTable(RandomGenerator & rg, SQLRelation & rel, const uint32_t allowed_clauses, sql_query_grammar::Select * sel);
-    int GenerateFromStatement(RandomGenerator & rg, const uint32_t allowed_clauses, sql_query_grammar::FromStatement * ft);
-    int AddCTEs(RandomGenerator & rg, const uint32_t allowed_clauses, sql_query_grammar::CTEs * qctes);
-    int GenerateSelect(
-        RandomGenerator & rg, const bool top, const uint32_t ncols, const uint32_t allowed_clauses, sql_query_grammar::Select * sel);
+        RandomGenerator & rg, const uint32_t ncols, const bool enforce_having, const bool allow_settings, GroupByStatement * gb);
+    int AddWhereSide(RandomGenerator & rg, const std::vector<GroupCol> & available_cols, Expr * expr);
+    int AddWhereFilter(RandomGenerator & rg, const std::vector<GroupCol> & available_cols, Expr * expr);
+    int GenerateWherePredicate(RandomGenerator & rg, Expr * expr);
+    int AddJoinClause(RandomGenerator & rg, BinaryExpr * bexpr);
+    int GenerateArrayJoin(RandomGenerator & rg, ArrayJoin * aj);
+    int GenerateFromElement(RandomGenerator & rg, const uint32_t allowed_clauses, TableOrSubquery * tos);
+    int GenerateJoinConstraint(RandomGenerator & rg, const bool allow_using, JoinConstraint * jc);
+    int GenerateDerivedTable(RandomGenerator & rg, SQLRelation & rel, const uint32_t allowed_clauses, Select * sel);
+    int GenerateFromStatement(RandomGenerator & rg, const uint32_t allowed_clauses, FromStatement * ft);
+    int AddCTEs(RandomGenerator & rg, const uint32_t allowed_clauses, CTEs * qctes);
+    int GenerateSelect(RandomGenerator & rg, const bool top, const uint32_t ncols, const uint32_t allowed_clauses, Select * sel);
 
-    int GenerateTopSelect(RandomGenerator & rg, const uint32_t allowed_clauses, sql_query_grammar::TopSelect * sq);
-    int GenerateNextExplain(RandomGenerator & rg, sql_query_grammar::ExplainQuery * sq);
-    int GenerateNextQuery(RandomGenerator & rg, sql_query_grammar::SQLQueryInner * sq);
+    int GenerateTopSelect(RandomGenerator & rg, const uint32_t allowed_clauses, TopSelect * sq);
+    int GenerateNextExplain(RandomGenerator & rg, ExplainQuery * sq);
+    int GenerateNextQuery(RandomGenerator & rg, SQLQueryInner * sq);
 
-    std::tuple<const SQLType *, sql_query_grammar::Integers> RandomIntType(RandomGenerator & rg, const uint32_t allowed_types);
-    std::tuple<const SQLType *, sql_query_grammar::FloatingPoints> RandomFloatType(RandomGenerator & rg);
-    std::tuple<const SQLType *, sql_query_grammar::Dates> RandomDateType(RandomGenerator & rg, const uint32_t allowed_types);
-    const SQLType * RandomDateTimeType(RandomGenerator & rg, const uint32_t allowed_types, sql_query_grammar::DateTimeTp * dt);
-    const SQLType *
-    BottomType(RandomGenerator & rg, const uint32_t allowed_types, const bool low_card, sql_query_grammar::BottomTypeName * tp);
+    std::tuple<const SQLType *, Integers> RandomIntType(RandomGenerator & rg, const uint32_t allowed_types);
+    std::tuple<const SQLType *, FloatingPoints> RandomFloatType(RandomGenerator & rg);
+    std::tuple<const SQLType *, Dates> RandomDateType(RandomGenerator & rg, const uint32_t allowed_types);
+    const SQLType * RandomDateTimeType(RandomGenerator & rg, const uint32_t allowed_types, DateTimeTp * dt);
+    const SQLType * BottomType(RandomGenerator & rg, const uint32_t allowed_types, const bool low_card, BottomTypeName * tp);
     const SQLType * GenerateArraytype(RandomGenerator & rg, const uint32_t allowed_types);
-    const SQLType *
-    GenerateArraytype(RandomGenerator & rg, const uint32_t allowed_types, uint32_t & col_counter, sql_query_grammar::TopTypeName * tp);
+    const SQLType * GenerateArraytype(RandomGenerator & rg, const uint32_t allowed_types, uint32_t & col_counter, TopTypeName * tp);
 
     const SQLType * RandomNextType(RandomGenerator & rg, const uint32_t allowed_types);
-    const SQLType *
-    RandomNextType(RandomGenerator & rg, const uint32_t allowed_types, uint32_t & col_counter, sql_query_grammar::TopTypeName * tp);
+    const SQLType * RandomNextType(RandomGenerator & rg, const uint32_t allowed_types, uint32_t & col_counter, TopTypeName * tp);
 
     void DropDatabase(const uint32_t dname);
 
     template <bool AllowParts>
-    int GenerateNextTablePartition(RandomGenerator & rg, const SQLTable & t, sql_query_grammar::PartitionExpr * pexpr)
+    int GenerateNextTablePartition(RandomGenerator & rg, const SQLTable & t, PartitionExpr * pexpr)
     {
         bool set_part = false;
 
@@ -410,11 +401,11 @@ public:
         buf.reserve(2048);
     }
 
-    int GenerateNextCreateTable(RandomGenerator & rg, sql_query_grammar::CreateTable * sq);
-    int GenerateNextCreateDatabase(RandomGenerator & rg, sql_query_grammar::CreateDatabase * cd);
-    int GenerateNextStatement(RandomGenerator & rg, sql_query_grammar::SQLQuery & sq);
+    int GenerateNextCreateTable(RandomGenerator & rg, CreateTable * sq);
+    int GenerateNextCreateDatabase(RandomGenerator & rg, CreateDatabase * cd);
+    int GenerateNextStatement(RandomGenerator & rg, SQLQuery & sq);
 
-    void UpdateGenerator(const sql_query_grammar::SQLQuery & sq, ExternalIntegrations & ei, bool success);
+    void UpdateGenerator(const SQLQuery & sq, ExternalIntegrations & ei, bool success);
 
     friend class QueryOracle;
 };

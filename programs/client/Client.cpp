@@ -50,9 +50,9 @@
 
 #include <Poco/Util/Application.h>
 
-#include "buzz-house/ast/sql_query_proto_to_string.h"
-#include "buzz-house/generator/query_oracle.h"
-#include "buzz-house/generator/statement_generator.h"
+#include "QueryOracle.h"
+#include "SQLProtoStr.h"
+#include "StatementGenerator.h"
 
 namespace fs = std::filesystem;
 using namespace std::literals;
@@ -1006,8 +1006,8 @@ bool Client::buzzHouse()
 {
     bool server_up = true;
     std::string full_query;
-    buzzhouse::FuzzConfig fc(this, buzz_house_options_path);
-    buzzhouse::ExternalIntegrations ei(fc);
+    BuzzHouse::FuzzConfig fc(this, buzz_house_options_path);
+    BuzzHouse::ExternalIntegrations ei(fc);
 
     full_query.reserve(8192);
     if (fc.read_log)
@@ -1024,9 +1024,9 @@ bool Client::buzzHouse()
     {
         std::string full_query2;
         bool has_cloud_features = false;
-        buzzhouse::RandomGenerator rg(fc.seed);
+        BuzzHouse::RandomGenerator rg(fc.seed);
         std::ofstream outf(fc.log_path, std::ios::out | std::ios::trunc);
-        sql_query_grammar::SQLQuery sq1, sq2, sq3, sq4;
+        BuzzHouse::SQLQuery sq1, sq2, sq3, sq4;
         int nsuccessfull_create_database = 0, total_create_database_tries = 0, nsuccessfull_create_table = 0, total_create_table_tries = 0;
 
         GOOGLE_PROTOBUF_VERIFY_VERSION;
@@ -1074,8 +1074,8 @@ bool Client::buzzHouse()
         fc.LoadCollations();
 
         full_query2.reserve(8192);
-        buzzhouse::StatementGenerator gen(fc, ei, has_cloud_features);
-        buzzhouse::QueryOracle qo(fc);
+        BuzzHouse::StatementGenerator gen(fc, ei, has_cloud_features);
+        BuzzHouse::QueryOracle qo(fc);
         while (server_up)
         {
             sq1.Clear();
@@ -1084,7 +1084,7 @@ bool Client::buzzHouse()
             if (total_create_database_tries < 10 && nsuccessfull_create_database < 3)
             {
                 (void)gen.GenerateNextCreateDatabase(rg, sq1.mutable_inner_query()->mutable_create_database());
-                buzzhouse::SQLQueryToString(full_query, sq1);
+                BuzzHouse::SQLQueryToString(full_query, sq1);
                 outf << full_query << std::endl;
                 server_up &= ProcessBuzzHouseQuery(full_query);
 
@@ -1093,11 +1093,11 @@ bool Client::buzzHouse()
                 total_create_database_tries++;
             }
             else if (
-                gen.CollectionHas<std::shared_ptr<buzzhouse::SQLDatabase>>(gen.attached_databases) && total_create_table_tries < 50
+                gen.CollectionHas<std::shared_ptr<BuzzHouse::SQLDatabase>>(gen.attached_databases) && total_create_table_tries < 50
                 && nsuccessfull_create_table < 10)
             {
                 (void)gen.GenerateNextCreateTable(rg, sq1.mutable_inner_query()->mutable_create_table());
-                buzzhouse::SQLQueryToString(full_query, sq1);
+                BuzzHouse::SQLQueryToString(full_query, sq1);
                 outf << full_query << std::endl;
                 server_up &= ProcessBuzzHouseQuery(full_query);
 
@@ -1113,7 +1113,7 @@ bool Client::buzzHouse()
                 {
                     //correctness test query
                     (void)qo.GenerateCorrectnessTestFirstQuery(rg, gen, sq1);
-                    buzzhouse::SQLQueryToString(full_query, sq1);
+                    BuzzHouse::SQLQueryToString(full_query, sq1);
                     outf << full_query << std::endl;
                     server_up &= ProcessBuzzHouseQuery(full_query);
                     (void)qo.ProcessOracleQueryResult(true, !have_error, "Correctness query");
@@ -1121,28 +1121,28 @@ bool Client::buzzHouse()
                     sq2.Clear();
                     full_query.resize(0);
                     (void)qo.GenerateCorrectnessTestSecondQuery(sq1, sq2);
-                    buzzhouse::SQLQueryToString(full_query, sq2);
+                    BuzzHouse::SQLQueryToString(full_query, sq2);
                     outf << full_query << std::endl;
                     server_up &= ProcessBuzzHouseQuery(full_query);
                     (void)qo.ProcessOracleQueryResult(false, !have_error, "Correctness query");
                 }
-                else if (gen.CollectionHas<buzzhouse::SQLTable>(gen.attached_tables_for_oracle) && noption < 36)
+                else if (gen.CollectionHas<BuzzHouse::SQLTable>(gen.attached_tables_for_oracle) && noption < 36)
                 {
                     bool second_success = true;
-                    const buzzhouse::SQLTable & t
-                        = rg.PickRandomlyFromVector(gen.FilterCollection<buzzhouse::SQLTable>(gen.attached_tables_for_oracle));
+                    const BuzzHouse::SQLTable & t
+                        = rg.PickRandomlyFromVector(gen.FilterCollection<BuzzHouse::SQLTable>(gen.attached_tables_for_oracle));
 
                     //test in and out formats
                     full_query2.resize(0);
                     (void)qo.DumpTableContent(rg, t, sq1);
-                    buzzhouse::SQLQueryToString(full_query2, sq1);
+                    BuzzHouse::SQLQueryToString(full_query2, sq1);
                     outf << full_query2 << std::endl;
                     server_up &= ProcessBuzzHouseQuery(full_query2);
                     (void)qo.ProcessOracleQueryResult(true, !have_error, "Dump and read table");
 
                     sq2.Clear();
                     (void)qo.GenerateExportQuery(rg, t, sq2);
-                    buzzhouse::SQLQueryToString(full_query, sq2);
+                    BuzzHouse::SQLQueryToString(full_query, sq2);
                     outf << full_query << std::endl;
                     server_up &= ProcessBuzzHouseQuery(full_query);
                     second_success &= !have_error;
@@ -1150,7 +1150,7 @@ bool Client::buzzHouse()
                     sq3.Clear();
                     full_query.resize(0);
                     (void)qo.GenerateClearQuery(t, sq3);
-                    buzzhouse::SQLQueryToString(full_query, sq3);
+                    BuzzHouse::SQLQueryToString(full_query, sq3);
                     outf << full_query << std::endl;
                     server_up &= ProcessBuzzHouseQuery(full_query);
                     second_success &= !have_error;
@@ -1158,7 +1158,7 @@ bool Client::buzzHouse()
                     sq4.Clear();
                     full_query.resize(0);
                     (void)qo.GenerateImportQuery(t, sq2, sq4);
-                    buzzhouse::SQLQueryToString(full_query, sq4);
+                    BuzzHouse::SQLQueryToString(full_query, sq4);
                     outf << full_query << std::endl;
                     server_up &= ProcessBuzzHouseQuery(full_query);
                     second_success &= !have_error;
@@ -1172,14 +1172,14 @@ bool Client::buzzHouse()
                 {
                     //test running query with different settings
                     (void)qo.GenerateFirstSetting(rg, sq1);
-                    buzzhouse::SQLQueryToString(full_query, sq1);
+                    BuzzHouse::SQLQueryToString(full_query, sq1);
                     outf << full_query << std::endl;
                     server_up &= ProcessBuzzHouseQuery(full_query);
 
                     sq2.Clear();
                     full_query2.resize(0);
                     (void)qo.GenerateSettingQuery(rg, gen, sq2);
-                    buzzhouse::SQLQueryToString(full_query2, sq2);
+                    BuzzHouse::SQLQueryToString(full_query2, sq2);
                     outf << full_query2 << std::endl;
                     server_up &= ProcessBuzzHouseQuery(full_query2);
                     (void)qo.ProcessOracleQueryResult(true, !have_error, "Multi setting query");
@@ -1187,7 +1187,7 @@ bool Client::buzzHouse()
                     sq3.Clear();
                     full_query.resize(0);
                     (void)qo.GenerateSecondSetting(sq1, sq3);
-                    buzzhouse::SQLQueryToString(full_query, sq3);
+                    BuzzHouse::SQLQueryToString(full_query, sq3);
                     outf << full_query << std::endl;
                     server_up &= ProcessBuzzHouseQuery(full_query);
 
@@ -1198,7 +1198,7 @@ bool Client::buzzHouse()
                 else
                 {
                     (void)gen.GenerateNextStatement(rg, sq1);
-                    buzzhouse::SQLQueryToString(full_query, sq1);
+                    BuzzHouse::SQLQueryToString(full_query, sq1);
                     outf << full_query << std::endl;
                     server_up &= ProcessBuzzHouseQuery(full_query);
 

@@ -1,13 +1,13 @@
-#include "random_settings.h"
+#include "RandomSettings.h"
 
-namespace buzzhouse
+namespace BuzzHouse
 {
 
 void SetRandomSetting(
     RandomGenerator & rg,
     const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> & settings,
     std::string & ret,
-    sql_query_grammar::SetValue * set)
+    SetValue * set)
 {
     std::string first;
     std::function<void(RandomGenerator &, std::string &)> second;

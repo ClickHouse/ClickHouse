@@ -8,7 +8,7 @@
 
 #include <Client/ClientBase.h>
 
-namespace buzzhouse
+namespace BuzzHouse
 {
 
 class ServerCredentials

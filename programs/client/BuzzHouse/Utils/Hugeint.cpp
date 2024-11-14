@@ -1,10 +1,10 @@
-#include "hugeint.h"
-#include "uhugeint.h"
+#include "Hugeint.h"
+#include "UHugeint.h"
 
 #include <cassert>
 #include <cmath>
 
-namespace buzzhouse
+namespace BuzzHouse
 {
 
 static void NegateInPlace(hugeint_t & input)

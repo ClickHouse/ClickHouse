@@ -3,9 +3,9 @@
 #include <cstdint>
 #include <string>
 
-#include "nlimits.h"
+#include "Nlimits.h"
 
-namespace buzzhouse
+namespace BuzzHouse
 {
 
 // Forward declaration to allow conversion between hugeint and uhugeint

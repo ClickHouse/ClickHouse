@@ -2,7 +2,7 @@
 
 #include <limits>
 
-namespace buzzhouse
+namespace BuzzHouse
 {
 
 template <class T>

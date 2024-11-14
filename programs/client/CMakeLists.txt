@@ -1,19 +1,19 @@
-PROTOBUF_GENERATE_CPP(GRAMMAR_SRC GRAMMAR_HDR buzz-house/ast/sql_grammar.proto)
+PROTOBUF_GENERATE_CPP(GRAMMAR_SRC GRAMMAR_HDR BuzzHouse/AST/SQLGrammar.proto)
 
 set (CLICKHOUSE_CLIENT_SOURCES
     Client.cpp
     # BuzzHouse
-    buzz-house/ast/sql_query_proto_to_string.cpp
-    buzz-house/generator/sql_query.cpp
-    buzz-house/generator/sql_expression.cpp
-    buzz-house/generator/sql_table.cpp
-    buzz-house/generator/sql_types.cpp
-    buzz-house/generator/statement_generator.cpp
-    buzz-house/generator/random_settings.cpp
-    buzz-house/generator/query_oracle.cpp
-    buzz-house/generator/external_integrations.cpp
-    buzz-house/include/hugeint.cpp
-    buzz-house/include/uhugeint.cpp
+    BuzzHouse/AST/SQLProtoStr.cpp
+    BuzzHouse/Generator/SQLQuery.cpp
+    BuzzHouse/Generator/SQLExpression.cpp
+    BuzzHouse/Generator/SQLTable.cpp
+    BuzzHouse/Generator/SQLTypes.cpp
+    BuzzHouse/Generator/StatementGenerator.cpp
+    BuzzHouse/Generator/RandomSettings.cpp
+    BuzzHouse/Generator/QueryOracle.cpp
+    BuzzHouse/Generator/ExternalIntegrations.cpp
+    BuzzHouse/Utils/Hugeint.cpp
+    BuzzHouse/Utils/UHugeint.cpp
     ${GRAMMAR_SRC}
 )
 set_source_files_properties(${CLICKHOUSE_CLIENT_SOURCES} PROPERTIES COMPILE_FLAGS "-Wno-reserved-identifier -Wno-extra-semi-stmt")
@@ -41,10 +41,11 @@ list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE readpassphrase)
 
 set (CLICKHOUSE_CLIENT_INCLUDE
     PRIVATE
-    buzz-house/ast
-    buzz-house/generator
-    buzz-house/include
+    BuzzHouse/AST
+    BuzzHouse/Generator
+    BuzzHouse/Utils
     "${CMAKE_CURRENT_BINARY_DIR}"
+    "${CMAKE_CURRENT_BINARY_DIR}/BuzzHouse/AST"
 )
 
 clickhouse_program_add(client)
