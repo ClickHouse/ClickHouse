@@ -46,11 +46,15 @@ public:
 
     virtual void finish(bool sync) = 0;
 
+    virtual size_t getNumberOfOpenStreams() const = 0;
+
     Columns releaseIndexColumns();
 
     PlainMarksByName releaseCachedMarks();
 
     const MergeTreeIndexGranularity & getIndexGranularity() const { return index_granularity; }
+
+    virtual Block getColumnsSample() const = 0;
 
 protected:
     SerializationPtr getSerialization(const String & column_name) const;

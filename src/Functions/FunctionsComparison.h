@@ -1033,6 +1033,9 @@ private:
             size_t tuple_size,
             size_t input_rows_count) const
     {
+        if (0 == tuple_size)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Comparison of zero-sized tuples is not implemented");
+
         ColumnsWithTypeAndName less_columns(tuple_size);
         ColumnsWithTypeAndName equal_columns(tuple_size - 1);
         ColumnsWithTypeAndName tmp_columns(2);
@@ -1171,7 +1174,7 @@ public:
 
         if (left_tuple && right_tuple)
         {
-            auto func = FunctionToOverloadResolverAdaptor(std::make_shared<FunctionComparison<Op, Name>>(check_decimal_overflow));
+            auto func = std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionComparison<Op, Name>>(check_decimal_overflow));
 
             bool has_nullable = false;
             bool has_null = false;
@@ -1181,7 +1184,7 @@ public:
             {
                 ColumnsWithTypeAndName args = {{nullptr, left_tuple->getElements()[i], ""},
                                                {nullptr, right_tuple->getElements()[i], ""}};
-                auto element_type = func.build(args)->getResultType();
+                auto element_type = func->build(args)->getResultType();
                 has_nullable = has_nullable || element_type->isNullable();
                 has_null = has_null || element_type->onlyNull();
             }

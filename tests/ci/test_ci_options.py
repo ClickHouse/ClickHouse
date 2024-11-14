@@ -10,7 +10,7 @@ from ci_settings import CiSettings
 _TEST_BODY_1 = """
 #### Run only:
 - [ ] <!---ci_set_required--> Some Set
-- [x] <!---ci_set_arm--> Integration tests (arm64)
+- [x] <!---ci_set_aarch64--> Integration tests (aarch64)
 - [x] <!---ci_include_foo--> Integration tests
 - [x] <!---ci_include_foo_Bar--> Integration tests
 - [ ] <!---ci_include_bar--> Integration tests
@@ -150,7 +150,7 @@ class TestCIOptions(unittest.TestCase):
         self.assertFalse(ci_options.no_ci_cache)
         self.assertTrue(ci_options.no_merge_commit)
         self.assertTrue(ci_options.woolen_wolfdog)
-        self.assertEqual(ci_options.ci_sets, ["ci_set_arm"])
+        self.assertEqual(ci_options.ci_sets, ["ci_set_aarch64"])
         self.assertCountEqual(ci_options.include_keywords, ["foo", "foo_bar"])
         self.assertCountEqual(ci_options.exclude_keywords, ["foo", "foo_bar"])
 
