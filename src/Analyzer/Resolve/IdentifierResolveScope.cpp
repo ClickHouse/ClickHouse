@@ -161,6 +161,14 @@ void dump_mapping(WriteBuffer & buffer, const String & mapping_name, const std::
     dump_mapping(buffer, "Alias name to expression node", aliases.alias_name_to_expression_node);
     dump_mapping(buffer, "Alias name to function node", aliases.alias_name_to_lambda_node);
     dump_mapping(buffer, "Alias name to table expression node", aliases.alias_name_to_table_expression_node);
+
+    if (!aliases.transitive_aliases.empty())
+    {
+        buffer << "Transitive aliases number: " << aliases.transitive_aliases.size() << '\n';
+        for (const auto & transitive_alias : aliases.transitive_aliases)
+            buffer << " { " << transitive_alias.first << " -> " << transitive_alias.second.getFullName() << " }\n";
+    }
+
     dump_mapping(buffer, "CTE name to query node", cte_name_to_query_node);
     dump_mapping(buffer, "WINDOW name to window node", window_name_to_window_node);
 
