@@ -41,6 +41,7 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsBool use_cache_for_count_from_files;
     extern const SettingsString filesystem_cache_name;
+    extern const SettingsUInt64 filesystem_cache_boundary_alignment;
 }
 
 namespace ErrorCodes
@@ -489,9 +490,7 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
                 return object_storage->readObject(StoredObject(path, "", object_size), modified_read_settings);
             };
 
-            /// Turn off boundary_alignment cache setting,
-            /// because it very significantly deteriorates read performance for some data formats.
-            modified_read_settings.filesystem_cache_boundary_alignment = 0;
+            modified_read_settings.filesystem_cache_boundary_alignment = settings[Setting::filesystem_cache_boundary_alignment];
 
             impl = std::make_unique<CachedOnDiskReadBufferFromFile>(
                 object_info.getPath(),
