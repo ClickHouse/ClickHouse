@@ -94,7 +94,7 @@ void MergeTreeSink::consume(Chunk & chunk)
     DelayedPartitions partitions;
 
     const Settings & settings = context->getSettingsRef();
-    size_t streams = 0;
+    size_t total_streams = 0;
     bool support_parallel_write = false;
 
     auto token_info = chunk.getChunkInfos().get<DeduplicationToken::TokenInfo>();
@@ -153,16 +153,18 @@ void MergeTreeSink::consume(Chunk & chunk)
             max_insert_delayed_streams_for_parallel_write = 0;
 
         /// In case of too much columns/parts in block, flush explicitly.
-        streams += temp_part.streams.size();
+        size_t current_streams = 0;
+        for (const auto & stream : temp_part.streams)
+            current_streams += stream.stream->getNumberOfOpenStreams();
 
-        if (streams > max_insert_delayed_streams_for_parallel_write)
+        if (total_streams + current_streams > max_insert_delayed_streams_for_parallel_write)
         {
             finishDelayedChunk();
             delayed_chunk = std::make_unique<MergeTreeSink::DelayedChunk>();
             delayed_chunk->partitions = std::move(partitions);
             finishDelayedChunk();
 
-            streams = 0;
+            total_streams = 0;
             support_parallel_write = false;
             partitions = DelayedPartitions{};
         }
@@ -174,6 +176,8 @@ void MergeTreeSink::consume(Chunk & chunk)
             .block_dedup_token = block_dedup_token,
             .part_counters = std::move(part_counters),
         });
+
+        total_streams += current_streams;
     }
 
     if (need_to_define_dedup_token)
