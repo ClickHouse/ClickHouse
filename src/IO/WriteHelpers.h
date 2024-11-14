@@ -10,11 +10,13 @@
 
 #include <pcg-random/pcg_random.hpp>
 
+#include "Common/logger_useful.h"
 #include <Common/StackTrace.h>
 #include <Common/formatIPv6.h>
 #include <Common/DateLUT.h>
 #include <Common/LocalDate.h>
 #include <Common/LocalDateTime.h>
+#include <Common/LocalTime.h>
 #include <Common/transformEndianness.h>
 #include <base/find_symbols.h>
 #include <base/StringRef.h>
@@ -819,20 +821,20 @@ inline void writeDateTime64FractionalText(typename DecimalType::NativeType fract
     char data[20] = {'0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0'};
     static_assert(sizeof(data) >= MaxScale);
 
-    for (Int32 pos = scale - 1; pos >= 0 && fractional; --pos, fractional /= DateTime64(10))
-        data[pos] += fractional % DateTime64(10);
+    for (Int32 pos = scale - 1; pos >= 0 && fractional; --pos, fractional /= 10)
+        data[pos] += fractional % 10;
 
     if constexpr (cut_trailing_zeros_align_to_groups_of_thousands)
     {
-        UInt32 last_none_zero_pos = 0;
+        UInt32 last_non_zero_pos = 0;
         for (UInt32 pos = 0; pos < scale; ++pos)
         {
             if (data[pos] != '0')
             {
-                last_none_zero_pos = pos;
+                last_non_zero_pos = pos;
             }
         }
-        size_t new_scale = (last_none_zero_pos >= 3 ? 6 : 3);
+        size_t new_scale = (last_non_zero_pos >= 3) ? 6 : 3;
         writeString(&data[0], new_scale, buf);
     }
     else
@@ -1057,6 +1059,88 @@ inline void writeDateTimeUnixTimestamp(DateTime64 datetime64, UInt32 scale, Writ
     }
 }
 
+template <
+    char delimiter1 = ':',
+    char delimiter2 = ':',
+    char fractional_delimiter = '.',
+    bool cut_trailing_zeros_align_to_groups_of_thousands = false>
+inline void writeTime64Text(const Time64 & time64, UInt32 scale, WriteBuffer & buf)
+{
+    static constexpr UInt32 MaxScale = DecimalUtils::max_precision<Time64>;
+    scale = scale > MaxScale ? MaxScale : scale;
+
+    auto components = DecimalUtils::split(time64, scale);
+
+    using T = typename Time64::NativeType;
+    if (time64.value < 0 && components.fractional)
+    {
+        components.fractional = DecimalUtils::scaleMultiplier<T>(scale) + (components.whole ? T(-1) : T(1)) * components.fractional;
+        --components.whole;
+    }
+
+    LocalTime local_time(components.whole);
+    writeTimeText<delimiter1>(local_time, buf);
+
+    if (scale > 0)
+    {
+        buf.write(fractional_delimiter);
+        writeDateTime64FractionalText<Time64, cut_trailing_zeros_align_to_groups_of_thousands>(
+            components.fractional, scale, buf);
+    }
+}
+
+inline void writeTime64Text(const Time64 & time64, UInt32 scale, WriteBuffer & buf)
+{
+    writeTime64Text<':', ':', '.', false>(time64, scale, buf);
+}
+
+inline void writeTime64TextCutTrailingZerosAlignToGroupOfThousands(const Time64 & time64, UInt32 scale, WriteBuffer & buf)
+{
+    writeTime64Text<':', ':', '.', true>(time64, scale, buf);
+}
+
+inline void writeText(const Time64 & x, WriteBuffer & buf)
+{
+    const UInt32 fixed_scale = 9;
+    writeTime64Text(x, fixed_scale, buf);
+}
+
+template <char delimiter1 = ':'>
+inline void writeTimeText(const LocalTime & local_time, WriteBuffer & buf)
+{
+    char buffer[9] = {
+        static_cast<char>('0' + ((local_time.hour() / 100) % 10)), // H
+        static_cast<char>('0' + ((local_time.hour() / 10) % 10)),  // H
+        static_cast<char>('0' + (local_time.hour() % 10)),         // H
+        delimiter1,
+        static_cast<char>('0' + (local_time.minute() / 10)),      // M
+        static_cast<char>('0' + (local_time.minute() % 10)),      // M
+        delimiter1,
+        static_cast<char>('0' + (local_time.second() / 10)),      // S
+        static_cast<char>('0' + (local_time.second() % 10))       // S
+    };
+
+
+    buf.write(buffer, 9);
+}
+
+inline void writeTimeText(const LocalTime & local_time, WriteBuffer & buf)
+{
+    writeTimeText<':'>(local_time, buf);
+}
+
+/// In the format HHH:MM:SS, according to the specified time zone.
+template <char time_delimiter = ':'>
+inline void writeTimeText(time_t time, WriteBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance())
+{
+    writeTimeText<time_delimiter>(LocalTime(time, time_zone), buf);
+}
+
+inline void writeTimeTextCutTrailingZerosAlignToGroupOfThousands(Time64 time64, UInt32 scale, WriteBuffer & buf, [[maybe_unused]]const DateLUTImpl & time_zone = DateLUT::instance())
+{
+    writeTime64Text<':', '.', true>(time64, scale, buf);
+}
+
 /// Methods for output in binary format.
 template <typename T>
 requires is_arithmetic_v<T>
@@ -1071,6 +1155,7 @@ inline void writeBinary(const Decimal128 & x, WriteBuffer & buf) { writePODBinar
 inline void writeBinary(const Decimal256 & x, WriteBuffer & buf) { writePODBinary(x.value, buf); }
 inline void writeBinary(const LocalDate & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const LocalDateTime & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const LocalTime & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const IPv4 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const IPv6 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
@@ -1108,6 +1193,7 @@ inline void writeText(std::string_view x, WriteBuffer & buf) { writeString(x.dat
 inline void writeText(const DayNum & x, WriteBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance()) { writeDateText(LocalDate(x, time_zone), buf); }
 inline void writeText(const LocalDate & x, WriteBuffer & buf) { writeDateText(x, buf); }
 inline void writeText(const LocalDateTime & x, WriteBuffer & buf) { writeDateTimeText(x, buf); }
+inline void writeText(const LocalTime & x, WriteBuffer & buf) { writeTimeText(x, buf); }
 inline void writeText(const UUID & x, WriteBuffer & buf) { writeUUIDText(x, buf); }
 inline void writeText(const IPv4 & x, WriteBuffer & buf) { writeIPv4Text(x, buf); }
 inline void writeText(const IPv6 & x, WriteBuffer & buf) { writeIPv6Text(x, buf); }

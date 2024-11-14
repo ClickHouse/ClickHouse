@@ -1230,7 +1230,7 @@ public:
 
     struct TimeComponents
     {
-        uint8_t hour;
+        uint64_t hour;
         uint8_t minute;
         uint8_t second;
     };
@@ -1278,6 +1278,27 @@ public:
         /// In case time was changed backwards at the start of next day, we will repeat the hour 23.
         if (unlikely(res.time.hour > 23))
             res.time.hour = 23;
+
+        return res;
+    }
+
+    TimeComponents toTimeComponents(Time t) const
+    {
+
+        TimeComponents res;
+
+        if (unlikely(t < 0))
+        {
+            res.second = 0;
+            res.minute = 0;
+            res.hour = 0;
+        }
+        else
+        {
+            res.second = t % 60;
+            res.minute = t / 60 % 60;
+            res.hour = t / 3600;
+        }
 
         return res;
     }

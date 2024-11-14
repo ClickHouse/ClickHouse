@@ -574,7 +574,7 @@ bool MakeTimeSpan::convertImpl(String & out, IParser::Pos & pos)
     datetime_str = "0000-00-00 " + datetime_str;
 
     out = std::format(
-        "CONCAT('{}',toString(SUBSTRING(toString(toTime(parseDateTime64BestEffortOrNull('{}', 9,'UTC'))),12)))", day, datetime_str);
+        "CONCAT('{}',toString(SUBSTRING(toString(totoTimeWithFixedDateTime(parseDateTime64BestEffortOrNull('{}', 9,'UTC'))),12)))", day, datetime_str);
     return true;
 }
 

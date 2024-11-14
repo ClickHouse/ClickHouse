@@ -38,7 +38,7 @@ bool canBeNativeType(const IDataType & type)
     }
 
     return data_type.isNativeInt() || data_type.isNativeUInt() || data_type.isFloat() || data_type.isDate()
-        || data_type.isDate32() || data_type.isDateTime() || data_type.isEnum();
+        || data_type.isDate32() || data_type.isDateTime() || data_type.isTime() || data_type.isEnum();
 }
 
 bool canBeNativeType(const DataTypePtr & type)
@@ -62,7 +62,7 @@ llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const IDataType & type)
         return builder.getInt8Ty();
     if (data_type.isInt16() || data_type.isUInt16() || data_type.isDate())
         return builder.getInt16Ty();
-    if (data_type.isInt32() || data_type.isUInt32() || data_type.isDate32() || data_type.isDateTime())
+    if (data_type.isInt32() || data_type.isUInt32() || data_type.isDate32() || data_type.isDateTime() || data_type.isTime())
         return builder.getInt32Ty();
     if (data_type.isInt64() || data_type.isUInt64())
         return builder.getInt64Ty();
@@ -178,7 +178,7 @@ llvm::Constant * getColumnNativeValue(llvm::IRBuilderBase & builder, const DataT
     {
         return llvm::ConstantFP::get(type, assert_cast<const ColumnVector<Float64> &>(column).getElement(index));
     }
-    if (column_data_type.isNativeUInt() || column_data_type.isDate() || column_data_type.isDateTime())
+    if (column_data_type.isNativeUInt() || column_data_type.isDate() || column_data_type.isDateTime() || column_data_type.isTime())
     {
         return llvm::ConstantInt::get(type, column.getUInt(index));
     }

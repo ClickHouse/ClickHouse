@@ -765,5 +765,6 @@ extern template class ColumnUnique<ColumnFloat64>;
 extern template class ColumnUnique<ColumnString>;
 extern template class ColumnUnique<ColumnFixedString>;
 extern template class ColumnUnique<ColumnDateTime64>;
+extern template class ColumnUnique<ColumnTime64>;
 
 }

@@ -819,6 +819,7 @@ toStartOfYear
 toString
 toStringCutToZero
 toTime
+toTimeWithFixedDate
 toTimezone
 toTypeName
 toUInt128

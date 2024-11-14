@@ -78,6 +78,8 @@ static bool callOnBasicType(TypeIndex number, F && f)
             case TypeIndex::Date32:       return f(TypePair<T, Int32>());
             case TypeIndex::DateTime:     return f(TypePair<T, UInt32>());
             case TypeIndex::DateTime64:   return f(TypePair<T, DateTime64>());
+            case TypeIndex::Time:         return f(TypePair<T, UInt32>());
+            case TypeIndex::Time64:       return f(TypePair<T, Time64>());
             default:
                 break;
         }
@@ -148,6 +150,8 @@ static inline bool callOnBasicTypes(TypeIndex type_num1, TypeIndex type_num2, F 
             case TypeIndex::Date32: return callOnBasicType<Int32, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
             case TypeIndex::DateTime: return callOnBasicType<UInt32, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
             case TypeIndex::DateTime64: return callOnBasicType<DateTime64, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
+            case TypeIndex::Time: return callOnBasicType<UInt32, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
+            case TypeIndex::Time64: return callOnBasicType<Time64, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
             default:
                 break;
         }
@@ -166,6 +170,8 @@ class DataTypeIPv4;
 class DataTypeIPv6;
 class DataTypeDateTime;
 class DataTypeDateTime64;
+class DataTypeTime;
+class DataTypeTime64;
 template <typename T> class DataTypeEnum;
 template <typename T> class DataTypeNumber;
 template <is_decimal T> class DataTypeDecimal;
@@ -202,6 +208,8 @@ static bool callOnIndexAndDataType(TypeIndex number, F && f, ExtraArgs && ... ar
         case TypeIndex::Date32:         return f(TypePair<DataTypeDate32, T>(), std::forward<ExtraArgs>(args)...);
         case TypeIndex::DateTime:       return f(TypePair<DataTypeDateTime, T>(), std::forward<ExtraArgs>(args)...);
         case TypeIndex::DateTime64:     return f(TypePair<DataTypeDateTime64, T>(), std::forward<ExtraArgs>(args)...);
+        case TypeIndex::Time:           return f(TypePair<DataTypeTime, T>(), std::forward<ExtraArgs>(args)...);
+        case TypeIndex::Time64:         return f(TypePair<DataTypeTime64, T>(), std::forward<ExtraArgs>(args)...);
 
         case TypeIndex::String:         return f(TypePair<DataTypeString, T>(), std::forward<ExtraArgs>(args)...);
         case TypeIndex::FixedString:    return f(TypePair<DataTypeFixedString, T>(), std::forward<ExtraArgs>(args)...);

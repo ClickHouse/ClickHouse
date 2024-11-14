@@ -553,18 +553,21 @@ template bool decimalEqual<Decimal64>(Decimal64 x, Decimal64 y, UInt32 x_scale, 
 template bool decimalEqual<Decimal128>(Decimal128 x, Decimal128 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalEqual<Decimal256>(Decimal256 x, Decimal256 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalEqual<DateTime64>(DateTime64 x, DateTime64 y, UInt32 x_scale, UInt32 y_scale);
+template bool decimalEqual<Time64>(Time64 x, Time64 y, UInt32 x_scale, UInt32 y_scale);
 
 template bool decimalLess<Decimal32>(Decimal32 x, Decimal32 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalLess<Decimal64>(Decimal64 x, Decimal64 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalLess<Decimal128>(Decimal128 x, Decimal128 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalLess<Decimal256>(Decimal256 x, Decimal256 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalLess<DateTime64>(DateTime64 x, DateTime64 y, UInt32 x_scale, UInt32 y_scale);
+template bool decimalLess<Time64>(Time64 x, Time64 y, UInt32 x_scale, UInt32 y_scale);
 
 template bool decimalLessOrEqual<Decimal32>(Decimal32 x, Decimal32 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalLessOrEqual<Decimal64>(Decimal64 x, Decimal64 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalLessOrEqual<Decimal128>(Decimal128 x, Decimal128 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalLessOrEqual<Decimal256>(Decimal256 x, Decimal256 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalLessOrEqual<DateTime64>(DateTime64 x, DateTime64 y, UInt32 x_scale, UInt32 y_scale);
+template bool decimalLessOrEqual<Time64>(Time64 x, Time64 y, UInt32 x_scale, UInt32 y_scale);
 
 
 void writeText(const Null & x, WriteBuffer & buf)
@@ -630,4 +633,5 @@ template class DecimalField<Decimal64>;
 template class DecimalField<Decimal128>;
 template class DecimalField<Decimal256>;
 template class DecimalField<DateTime64>;
+template class DecimalField<Time64>;
 }

@@ -2,7 +2,6 @@
 
 #include <Core/Types.h>
 #include <Core/DecimalFunctions.h>
-#include "Functions/DateTimeTransforms.h"
 
 namespace DB
 {
@@ -26,7 +25,7 @@ namespace DB
  * Where R could be of arbitrary type, in case of (3) if R is DecimalUtils::DecimalComponents<DateTime64>, result is re-assembed back into DateTime64.
 */
 template <typename Transform>
-class TransformDateTime64
+class TransformTime64
 {
 private:
     // Detect if Transform::execute is const or static method
@@ -45,34 +44,34 @@ public:
     static constexpr auto name = Transform::name;
 
     // non-explicit constructor to allow creating from scale value (or with no scale at all), indispensable in some contexts.
-    TransformDateTime64(UInt32 scale_ = 0) /// NOLINT
-        : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale_))
+    TransformTime64(UInt32 scale_ = 0) /// NOLINT
+        : scale_multiplier(DecimalUtils::scaleMultiplier<Time64::NativeType>(scale_))
     {}
 
-    TransformDateTime64(DateTime64::NativeType scale_multiplier_ = 1) /// NOLINT(google-explicit-constructor)
+    TransformTime64(Time64::NativeType scale_multiplier_ = 1) /// NOLINT(google-explicit-constructor)
         : scale_multiplier(scale_multiplier_)
     {}
 
     template <typename ... Args>
-    auto NO_SANITIZE_UNDEFINED execute(const DateTime64 & t, Args && ... args) const
+    auto NO_SANITIZE_UNDEFINED execute(const Time64 & t, Args && ... args) const
     {
         /// Type conversion from float to integer may be required.
         /// We are Ok with implementation specific result for out of range and denormals conversion.
 
-        if constexpr (TransformHasExecuteOverload_v<DateTime64, decltype(scale_multiplier), Args...>)
+        if constexpr (TransformHasExecuteOverload_v<Time64, decltype(scale_multiplier), Args...>)
         {
             return wrapped_transform.execute(t, scale_multiplier, std::forward<Args>(args)...);
         }
-        else if constexpr (TransformHasExecuteOverload_v<DecimalUtils::DecimalComponents<DateTime64>, Args...>)
+        else if constexpr (TransformHasExecuteOverload_v<DecimalUtils::DecimalComponents<Time64>, Args...>)
         {
             auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
 
             const auto result = wrapped_transform.execute(components, std::forward<Args>(args)...);
             using ResultType = std::decay_t<decltype(result)>;
 
-            if constexpr (std::is_same_v<DecimalUtils::DecimalComponents<DateTime64>, ResultType>)
+            if constexpr (std::is_same_v<DecimalUtils::DecimalComponents<Time64>, ResultType>)
             {
-                return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(result, scale_multiplier);
+                return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(result, scale_multiplier);
             }
             else
             {
@@ -89,14 +88,8 @@ public:
         }
     }
 
-    template <typename... Args>
-    auto NO_SANITIZE_UNDEFINED execute(const Time64 &, [[maybe_unused]] Args && ... args) const
-    {
-        throwTimeIsNotSupported(name);
-    }
-
     template <typename T, typename... Args>
-    requires(!std::same_as<T, DateTime64>)
+    requires(!std::same_as<T, Time64>)
     auto execute(const T & t, Args &&... args) const
     {
         return wrapped_transform.execute(t, std::forward<Args>(args)...);
@@ -104,25 +97,25 @@ public:
 
 
     template <typename ... Args>
-    auto NO_SANITIZE_UNDEFINED executeExtendedResult(const DateTime64 & t, Args && ... args) const
+    auto NO_SANITIZE_UNDEFINED executeExtendedResult(const Time64 & t, Args && ... args) const
     {
         /// Type conversion from float to integer may be required.
         /// We are Ok with implementation specific result for out of range and denormals conversion.
 
-        if constexpr (TransformHasExecuteOverload_v<DateTime64, decltype(scale_multiplier), Args...>)
+        if constexpr (TransformHasExecuteOverload_v<Time64, decltype(scale_multiplier), Args...>)
         {
             return wrapped_transform.executeExtendedResult(t, scale_multiplier, std::forward<Args>(args)...);
         }
-        else if constexpr (TransformHasExecuteOverload_v<DecimalUtils::DecimalComponents<DateTime64>, Args...>)
+        else if constexpr (TransformHasExecuteOverload_v<DecimalUtils::DecimalComponents<Time64>, Args...>)
         {
             auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
 
             const auto result = wrapped_transform.executeExtendedResult(components, std::forward<Args>(args)...);
             using ResultType = std::decay_t<decltype(result)>;
 
-            if constexpr (std::is_same_v<DecimalUtils::DecimalComponents<DateTime64>, ResultType>)
+            if constexpr (std::is_same_v<DecimalUtils::DecimalComponents<Time64>, ResultType>)
             {
-                return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(result, scale_multiplier);
+                return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(result, scale_multiplier);
             }
             else
             {
@@ -136,23 +129,17 @@ public:
         }
     }
 
-    template <typename ... Args>
-    auto NO_SANITIZE_UNDEFINED executeExtendedResult(const Time64 &, [[maybe_unused]] Args && ... args) const
-    {
-        throwTimeIsNotSupported(name);
-    }
-
     template <typename T, typename ... Args>
-    requires (!std::same_as<T, DateTime64>)
+    requires (!std::same_as<T, Time64>)
     auto executeExtendedResult(const T & t, Args && ... args) const
     {
         return wrapped_transform.executeExtendedResult(t, std::forward<Args>(args)...);
     }
 
-    DateTime64::NativeType getScaleMultiplier() const { return scale_multiplier; }
+    Time64::NativeType getScaleMultiplier() const { return scale_multiplier; }
 
 private:
-    DateTime64::NativeType scale_multiplier = 1;
+    Time64::NativeType scale_multiplier = 1;
     Transform wrapped_transform = {};
 };
 

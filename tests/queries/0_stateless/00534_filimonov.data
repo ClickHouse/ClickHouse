@@ -129,7 +129,7 @@ SELECT roundToExp2(NULL);
 SELECT cos(NULL);
 SELECT UUIDNumToString(NULL);
 SELECT log2(NULL);
-SELECT toTime(NULL);
+SELECT toTimeWithFixedDate(NULL);
 SELECT path(NULL);
 SELECT toUInt16(NULL);
 SELECT IPv4StringToNum(NULL);

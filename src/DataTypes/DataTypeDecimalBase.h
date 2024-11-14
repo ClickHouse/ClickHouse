@@ -212,5 +212,6 @@ extern template class DataTypeDecimalBase<Decimal64>;
 extern template class DataTypeDecimalBase<Decimal128>;
 extern template class DataTypeDecimalBase<Decimal256>;
 extern template class DataTypeDecimalBase<DateTime64>;
+extern template class DataTypeDecimalBase<Time64>;
 
 }

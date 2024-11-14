@@ -6,6 +6,8 @@
 
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
+#include <DataTypes/DataTypeTime.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeString.h>
@@ -56,6 +58,11 @@ struct AddNanosecondsImpl
         Int64 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(9 - scale);
         return DateTime64(DecimalUtils::multiplyAdd(t.value, multiplier, delta));
     }
+    static NO_SANITIZE_UNDEFINED Time64 execute(Time64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
+    {
+        Int64 multiplier = DecimalUtils::scaleMultiplier<Time64>(9 - scale);
+        return Time64(DecimalUtils::multiplyAdd(t.value, multiplier, delta));
+    }
     static NO_SANITIZE_UNDEFINED DateTime64 execute(UInt32 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         Int64 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(9);
@@ -86,6 +93,13 @@ struct AddMicrosecondsImpl
     {
         Int64 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(std::abs(6 - scale));
         return DateTime64(scale <= 6
+            ? DecimalUtils::multiplyAdd(t.value, multiplier, delta)
+            : DecimalUtils::multiplyAdd(delta, multiplier, t.value));
+    }
+    static NO_SANITIZE_UNDEFINED Time64 execute(Time64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
+    {
+        Int64 multiplier = DecimalUtils::scaleMultiplier<Time64>(std::abs(6 - scale));
+        return Time64(scale <= 6
             ? DecimalUtils::multiplyAdd(t.value, multiplier, delta)
             : DecimalUtils::multiplyAdd(delta, multiplier, t.value));
     }
@@ -122,6 +136,13 @@ struct AddMillisecondsImpl
             ? DecimalUtils::multiplyAdd(t.value, multiplier, delta)
             : DecimalUtils::multiplyAdd(delta, multiplier, t.value));
     }
+    static NO_SANITIZE_UNDEFINED Time64 execute(Time64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
+    {
+        Int64 multiplier = DecimalUtils::scaleMultiplier<Time64>(std::abs(3 - scale));
+        return Time64(scale <= 3
+            ? DecimalUtils::multiplyAdd(t.value, multiplier, delta)
+            : DecimalUtils::multiplyAdd(delta, multiplier, t.value));
+    }
     static NO_SANITIZE_UNDEFINED DateTime64 execute(UInt32 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         Int64 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(3);
@@ -151,6 +172,10 @@ struct AddSecondsImpl
     static NO_SANITIZE_UNDEFINED DateTime64 execute(DateTime64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
     {
         return DateTime64(DecimalUtils::multiplyAdd(delta, DecimalUtils::scaleMultiplier<DateTime64>(scale), t.value));
+    }
+    static NO_SANITIZE_UNDEFINED Time64 execute(Time64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
+    {
+        return DateTime64(DecimalUtils::multiplyAdd(delta, DecimalUtils::scaleMultiplier<Time64>(scale), t.value));
     }
     static NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
@@ -183,6 +208,10 @@ struct AddMinutesImpl
     {
         return t + 60 * delta * DecimalUtils::scaleMultiplier<DateTime64>(scale);
     }
+    static NO_SANITIZE_UNDEFINED Time64 execute(Time64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
+    {
+        return t + 60 * delta * DecimalUtils::scaleMultiplier<Time64>(scale);
+    }
     static NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         return static_cast<UInt32>(t + delta * 60);
@@ -213,6 +242,10 @@ struct AddHoursImpl
     static NO_SANITIZE_UNDEFINED DateTime64 execute(DateTime64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
     {
         return t + 3600 * delta * DecimalUtils::scaleMultiplier<DateTime64>(scale);
+    }
+    static NO_SANITIZE_UNDEFINED Time64 execute(Time64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
+    {
+        return t + 3600 * delta * DecimalUtils::scaleMultiplier<Time64>(scale);
     }
     static NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
@@ -247,6 +280,12 @@ struct AddDaysImpl
         auto d = std::div(t, multiplier);
         return time_zone.addDays(d.quot, delta) * multiplier + d.rem;
     }
+    static NO_SANITIZE_UNDEFINED Time64 execute(Time64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
+    {
+        auto multiplier = DecimalUtils::scaleMultiplier<Time64>(scale);
+        auto d = std::div(t, multiplier);
+        return time_zone.addDays(d.quot, delta) * multiplier + d.rem;
+    }
     static NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
         return static_cast<UInt32>(time_zone.addDays(t, delta));
@@ -275,6 +314,12 @@ struct AddWeeksImpl
     static NO_SANITIZE_UNDEFINED DateTime64 execute(DateTime64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
     {
         auto multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
+        auto d = std::div(t, multiplier);
+        return time_zone.addDays(d.quot, delta * 7) * multiplier + d.rem;
+    }
+    static NO_SANITIZE_UNDEFINED Time64 execute(Time64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
+    {
+        auto multiplier = DecimalUtils::scaleMultiplier<Time64>(scale);
         auto d = std::div(t, multiplier);
         return time_zone.addDays(d.quot, delta * 7) * multiplier + d.rem;
     }
@@ -309,6 +354,12 @@ struct AddMonthsImpl
         auto d = std::div(t, multiplier);
         return time_zone.addMonths(d.quot, delta) * multiplier + d.rem;
     }
+    static NO_SANITIZE_UNDEFINED Time64 execute(Time64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
+    {
+        auto multiplier = DecimalUtils::scaleMultiplier<Time64>(scale);
+        auto d = std::div(t, multiplier);
+        return time_zone.addMonths(d.quot, delta) * multiplier + d.rem;
+    }
     static NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
         return static_cast<UInt32>(time_zone.addMonths(t, delta));
@@ -340,6 +391,12 @@ struct AddQuartersImpl
         auto d = std::div(t, multiplier);
         return time_zone.addQuarters(d.quot, delta) * multiplier + d.rem;
     }
+    static NO_SANITIZE_UNDEFINED Time64 execute(Time64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
+    {
+        auto multiplier = DecimalUtils::scaleMultiplier<Time64>(scale);
+        auto d = std::div(t, multiplier);
+        return time_zone.addQuarters(d.quot, delta) * multiplier + d.rem;
+    }
     static UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
         return static_cast<UInt32>(time_zone.addQuarters(t, delta));
@@ -368,6 +425,12 @@ struct AddYearsImpl
     static NO_SANITIZE_UNDEFINED DateTime64 execute(DateTime64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
     {
         auto multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
+        auto d = std::div(t, multiplier);
+        return time_zone.addYears(d.quot, delta) * multiplier + d.rem;
+    }
+    static NO_SANITIZE_UNDEFINED Time64 execute(Time64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
+    {
+        auto multiplier = DecimalUtils::scaleMultiplier<Time64>(scale);
         auto d = std::div(t, multiplier);
         return time_zone.addYears(d.quot, delta) * multiplier + d.rem;
     }
@@ -579,6 +642,9 @@ namespace date_and_time_type_details
 // Compile-time mapping of value (DataType::FieldType) types to corresponding DataType
 template <typename FieldType> struct ResultDataTypeMap {};
 template <> struct ResultDataTypeMap<UInt16>     { using ResultDataType = DataTypeDate; };
+template <> struct ResultDataTypeMap<Int16>      { using ResultDataType = DataTypeTime; }; /// TODO
+template <> struct ResultDataTypeMap<Time64>     { using ResultDataType = DataTypeTime64; }; /// TODO
+template <> struct ResultDataTypeMap<UInt128>     { using ResultDataType = DataTypeTime64; }; /// TODO
 template <> struct ResultDataTypeMap<UInt32>     { using ResultDataType = DataTypeDateTime; };
 template <> struct ResultDataTypeMap<Int32>      { using ResultDataType = DataTypeDate32; };
 template <> struct ResultDataTypeMap<DateTime64> { using ResultDataType = DataTypeDateTime64; };
@@ -608,7 +674,7 @@ public:
 
         if (arguments.size() == 2)
         {
-            if (!isDateOrDate32OrDateTimeOrDateTime64(arguments[0].type) && !isString(arguments[0].type))
+            if (!isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(arguments[0].type) && !isString(arguments[0].type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}. "
                     "Must be a date, a date with time or a String", arguments[0].type->getName(), getName());
         }
@@ -634,6 +700,10 @@ public:
                 return resolveReturnType<DataTypeDate>(arguments);
             case TypeIndex::Date32:
                 return resolveReturnType<DataTypeDate32>(arguments);
+            case TypeIndex::Time:
+                return resolveReturnType<DataTypeTime>(arguments);
+            case TypeIndex::Time64:
+                return resolveReturnType<DataTypeTime64>(arguments);
             case TypeIndex::DateTime:
                 return resolveReturnType<DataTypeDateTime>(arguments);
             case TypeIndex::DateTime64:
@@ -666,6 +736,8 @@ public:
             return std::make_shared<DataTypeDate>();
         else if constexpr (std::is_same_v<ResultDataType, DataTypeDate32>)
             return std::make_shared<DataTypeDate32>();
+        else if constexpr (std::is_same_v<ResultDataType, DataTypeTime>)
+            return std::make_shared<DataTypeTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false));
         else if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime>)
             return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false));
         else if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime64>)
@@ -711,6 +783,16 @@ public:
         if (which.isDate32())
             return DateTimeAddIntervalImpl<DataTypeDate32, TransformResultDataType<DataTypeDate32>, Transform>::execute(
                 Transform{}, arguments, result_type, 0, input_rows_count);
+        if (which.isTime())
+            return DateTimeAddIntervalImpl<DataTypeTime, TransformResultDataType<DataTypeDateTime>, Transform>::execute(
+                Transform{}, arguments, result_type, 0, input_rows_count);
+        if (which.isTime64())
+        {
+            const auto * datetime64_type = assert_cast<const DataTypeDateTime64 *>(from_type);
+            auto from_scale = datetime64_type->getScale();
+            return DateTimeAddIntervalImpl<DataTypeTime64, TransformResultDataType<DataTypeDateTime64>, Transform>::execute(
+                Transform{}, arguments, result_type, from_scale, input_rows_count);
+        }
         if (which.isDateTime())
             return DateTimeAddIntervalImpl<DataTypeDateTime, TransformResultDataType<DataTypeDateTime>, Transform>::execute(
                 Transform{}, arguments, result_type, 0, input_rows_count);

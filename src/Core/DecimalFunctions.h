@@ -29,6 +29,7 @@ template <typename T> inline constexpr size_t max_precision = 0;
 template <> inline constexpr size_t max_precision<Decimal32> = 9;
 template <> inline constexpr size_t max_precision<Decimal64> = 18;
 template <> inline constexpr size_t max_precision<DateTime64> = 18;
+template <> inline constexpr size_t max_precision<Time64> = 18;
 template <> inline constexpr size_t max_precision<Decimal128> = 38;
 template <> inline constexpr size_t max_precision<Decimal256> = 76;
 
@@ -37,7 +38,7 @@ inline auto scaleMultiplier(UInt32 scale)
 {
     if constexpr (std::is_same_v<T, Int32> || std::is_same_v<T, Decimal32>)
         return common::exp10_i32(scale);
-    else if constexpr (std::is_same_v<T, Int64> || std::is_same_v<T, Decimal64> || std::is_same_v<T, DateTime64>)
+    else if constexpr (std::is_same_v<T, Int64> || std::is_same_v<T, Decimal64> || std::is_same_v<T, DateTime64> || std::is_same_v<T, Time64>)
         return common::exp10_i64(scale);
     else if constexpr (std::is_same_v<T, Int128> || std::is_same_v<T, Decimal128>)
         return common::exp10_i128(scale);

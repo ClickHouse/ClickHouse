@@ -4609,6 +4609,7 @@
 "toString"
 "toStringCutToZero"
 "toTime"
+"toTimeWithFixedDate"
 "toTimeZone"
 "toTimezone"
 "toTypeName"

@@ -426,6 +426,10 @@ struct WhichDataType
     constexpr bool isDateTime64() const { return idx == TypeIndex::DateTime64; }
     constexpr bool isDateTimeOrDateTime64() const { return isDateTime() || isDateTime64(); }
     constexpr bool isDateOrDate32OrDateTimeOrDateTime64() const { return isDateOrDate32() || isDateTimeOrDateTime64(); }
+    constexpr bool isTime() const { return idx == TypeIndex::Time; }
+    constexpr bool isTime64() const { return idx == TypeIndex::Time64; }
+    constexpr bool isTimeOrTime64() const { return isTime() || isTime64(); }
+    constexpr bool isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64() const { return isDateOrDate32() || isTimeOrTime64() || isDateTimeOrDateTime64(); }
 
     constexpr bool isString() const { return idx == TypeIndex::String; }
     constexpr bool isFixedString() const { return idx == TypeIndex::FixedString; }
@@ -502,6 +506,10 @@ bool isDateTime(TYPE data_type); \
 bool isDateTime64(TYPE data_type); \
 bool isDateTimeOrDateTime64(TYPE data_type); \
 bool isDateOrDate32OrDateTimeOrDateTime64(TYPE data_type); \
+bool isTime(TYPE data_type); \
+bool isTime64(TYPE data_type); \
+bool isTimeOrTime64(TYPE data_type); \
+bool isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(TYPE data_type); \
 \
 bool isString(TYPE data_type); \
 bool isFixedString(TYPE data_type); \
@@ -538,7 +546,7 @@ template <typename T, typename DataType>
 inline bool isColumnedAsDecimalT(const DataType & data_type)
 {
     const WhichDataType which(data_type);
-    return (which.isDecimal() || which.isDateTime64()) && which.idx == TypeToTypeIndex<T>;
+    return (which.isDecimal() || which.isDateTime64() || which.isTime64()) && which.idx == TypeToTypeIndex<T>;
 }
 
 inline bool isBool(const DataTypePtr & data_type)
@@ -554,6 +562,7 @@ inline bool isNullableOrLowCardinalityNullable(const DataTypePtr & data_type)
 template <typename DataType> constexpr bool IsDataTypeDecimal = false;
 template <typename DataType> constexpr bool IsDataTypeNumber = false;
 template <typename DataType> constexpr bool IsDataTypeDateOrDateTime = false;
+template <typename DataType> constexpr bool IsDataTypeDateOrDateTimeOrTime = false;
 template <typename DataType> constexpr bool IsDataTypeDate = false;
 template <typename DataType> constexpr bool IsDataTypeEnum = false;
 template <typename DataType> constexpr bool IsDataTypeStringOrFixedString = false;
@@ -570,6 +579,8 @@ class DataTypeDate;
 class DataTypeDate32;
 class DataTypeDateTime;
 class DataTypeDateTime64;
+class DataTypeTime;
+class DataTypeTime64;
 class DataTypeString;
 class DataTypeFixedString;
 
@@ -577,6 +588,7 @@ template <is_decimal T> constexpr bool IsDataTypeDecimal<DataTypeDecimal<T>> = t
 
 /// TODO: this is garbage, remove it.
 template <> inline constexpr bool IsDataTypeDecimal<DataTypeDateTime64> = true;
+template <> inline constexpr bool IsDataTypeDecimal<DataTypeTime64> = true;
 
 template <typename T> constexpr bool IsDataTypeNumber<DataTypeNumber<T>> = true;
 
@@ -587,6 +599,13 @@ template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDate> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDate32> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime64> = true;
+
+template <> inline constexpr bool IsDataTypeDateOrDateTimeOrTime<DataTypeDate> = true;
+template <> inline constexpr bool IsDataTypeDateOrDateTimeOrTime<DataTypeDate32> = true;
+template <> inline constexpr bool IsDataTypeDateOrDateTimeOrTime<DataTypeDateTime> = true;
+template <> inline constexpr bool IsDataTypeDateOrDateTimeOrTime<DataTypeDateTime64> = true;
+template <> inline constexpr bool IsDataTypeDateOrDateTimeOrTime<DataTypeTime> = true;
+template <> inline constexpr bool IsDataTypeDateOrDateTimeOrTime<DataTypeTime64> = true;
 
 template <> inline constexpr bool IsDataTypeStringOrFixedString<DataTypeString> = true;
 template <> inline constexpr bool IsDataTypeStringOrFixedString<DataTypeFixedString> = true;

@@ -3,6 +3,7 @@
 #include <base/arithmeticOverflow.h>
 #include <base/types.h>
 #include <Core/DecimalFunctions.h>
+#include "Common/logger_useful.h"
 #include <Common/Exception.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/DateLUT.h>
@@ -18,6 +19,8 @@
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeTime.h>
+#include <DataTypes/DataTypeTime64.h>
 
 
 namespace DB
@@ -55,11 +58,13 @@ constexpr time_t MAX_DATETIME64_TIMESTAMP = 10413791999LL;    //  1900-01-01 00:
 constexpr time_t MIN_DATETIME64_TIMESTAMP = -2208988800LL;    //  2299-12-31 23:59:59 UTC
 constexpr time_t MAX_DATETIME_TIMESTAMP = 0xFFFFFFFF;
 constexpr time_t MAX_DATE_TIMESTAMP = 5662310399;       // 2149-06-06 23:59:59 UTC
+constexpr time_t MAX_TIME_TIMETAMP = 3599999;
 constexpr time_t MAX_DATETIME_DAY_NUM =  49710;               // 2106-02-07
 
 [[noreturn]] void throwDateIsNotSupported(const char * name);
 [[noreturn]] void throwDate32IsNotSupported(const char * name);
 [[noreturn]] void throwDateTimeIsNotSupported(const char * name);
+[[noreturn]] void throwTimeIsNotSupported(const char * name);
 
 /// This factor transformation will say that the function is monotone everywhere.
 struct ZeroTransform
@@ -78,6 +83,11 @@ struct ToDateImpl
     static UInt16 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
         return execute(t.whole, time_zone);
+    }
+
+    static UInt16 execute(const DecimalUtils::DecimalComponents<Time64> &, const DateLUTImpl &)
+    {
+        throwTimeIsNotSupported(name);
     }
 
     static UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
@@ -125,6 +135,11 @@ struct ToDateImpl
         return {time_zone.toDayNum(t.whole), 0};
     }
 
+    static DecimalUtils::DecimalComponents<Time64> executeExtendedResult(const DecimalUtils::DecimalComponents<Time64> &, const DateLUTImpl &)
+    {
+        throwTimeIsNotSupported(name);
+    }
+
     using FactorTransform = ZeroTransform;
 };
 
@@ -161,6 +176,10 @@ struct ToStartOfDayImpl
     {
         return static_cast<UInt32>(time_zone.toDate(static_cast<time_t>(t.whole)));
     }
+    static UInt32 execute(const DecimalUtils::DecimalComponents<Time64> &, const DateLUTImpl &)
+    {
+        throwTimeIsNotSupported(name);
+    }
     static UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
         return static_cast<UInt32>(time_zone.toDate(t));
@@ -176,6 +195,10 @@ struct ToStartOfDayImpl
     static DecimalUtils::DecimalComponents<DateTime64> executeExtendedResult(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
         return {time_zone.toDate(t.whole), 0};
+    }
+    static DecimalUtils::DecimalComponents<Time64> executeExtendedResult(const DecimalUtils::DecimalComponents<Time64> &, const DateLUTImpl &)
+    {
+        throwTimeIsNotSupported(name);
     }
     static Int64 executeExtendedResult(Int32 d, const DateLUTImpl & time_zone)
     {
@@ -789,9 +812,13 @@ struct ToStartOfInterval<IntervalKind::Kind::Year>
 struct ToTimeImpl
 {
     /// When transforming to time, the date will be equated to 1970-01-02.
-    static constexpr auto name = "toTime";
+    static constexpr auto name = "toTimeWithFixedDate"; /// TODO
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
+    {
+        return static_cast<UInt32>(time_zone.toTime(t.whole) + 86400);
+    }
+    static UInt32 execute(const DecimalUtils::DecimalComponents<Time64> & t, const DateLUTImpl & time_zone)
     {
         return static_cast<UInt32>(time_zone.toTime(t.whole) + 86400);
     }
@@ -820,6 +847,10 @@ struct ToStartOfMinuteImpl
     {
         return static_cast<UInt32>(time_zone.toStartOfMinute(t.whole));
     }
+    static UInt32 execute(const DecimalUtils::DecimalComponents<Time64> &, const DateLUTImpl &)
+    {
+        throwTimeIsNotSupported(name);
+    }
     static UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toStartOfMinute(t);
@@ -835,6 +866,10 @@ struct ToStartOfMinuteImpl
     static DecimalUtils::DecimalComponents<DateTime64> executeExtendedResult(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
         return {time_zone.toStartOfMinute(t.whole), 0};
+    }
+    static DecimalUtils::DecimalComponents<Time64> executeExtendedResult(const DecimalUtils::DecimalComponents<Time64> &, const DateLUTImpl &)
+    {
+        throwTimeIsNotSupported(name);
     }
     static Int64 executeExtendedResult(Int32, const DateLUTImpl &)
     {
@@ -865,6 +900,11 @@ struct ToStartOfSecondImpl
             fractional_with_sign += scale_multiplier;
 
         return datetime64 - fractional_with_sign;
+    }
+
+    static Time64 execute(const Time64 &, Int64, const DateLUTImpl &)
+    {
+        throwTimeIsNotSupported(name);
     }
 
     static UInt32 execute(UInt32, const DateLUTImpl &)
@@ -914,6 +954,11 @@ struct ToStartOfMillisecondImpl
         return datetime64 - droppable_part_with_sign;
     }
 
+    static Time64 execute(const Time64 &, Int64, const DateLUTImpl &)
+    {
+        throwTimeIsNotSupported(name);
+    }
+
     static UInt32 execute(UInt32, const DateLUTImpl &)
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type DateTime of argument for function {}", name);
@@ -957,6 +1002,11 @@ struct ToStartOfMicrosecondImpl
         return datetime64 - droppable_part_with_sign;
     }
 
+    static Time64 execute(const Time64 &, Int64, const DateLUTImpl &)
+    {
+        throwTimeIsNotSupported(name);
+    }
+
     static UInt32 execute(UInt32, const DateLUTImpl &)
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type DateTime of argument for function {}", name);
@@ -993,6 +1043,11 @@ struct ToStartOfNanosecondImpl
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type of argument for function {}, DateTime64 expected", name);
     }
 
+    static Time64 execute(const Time64 &, Int64, const DateLUTImpl &)
+    {
+        throwTimeIsNotSupported(name);
+    }
+
     static UInt32 execute(UInt32, const DateLUTImpl &)
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type DateTime of argument for function {}", name);
@@ -1018,6 +1073,10 @@ struct ToStartOfFiveMinutesImpl
     {
         return static_cast<UInt32>(time_zone.toStartOfFiveMinutes(t.whole));
     }
+    static UInt32 execute(const DecimalUtils::DecimalComponents<Time64> &, const DateLUTImpl &)
+    {
+        throwTimeIsNotSupported(name);
+    }
     static UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toStartOfFiveMinutes(t);
@@ -1033,6 +1092,10 @@ struct ToStartOfFiveMinutesImpl
     static DecimalUtils::DecimalComponents<DateTime64> executeExtendedResult(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
         return {time_zone.toStartOfFiveMinutes(t.whole), 0};
+    }
+    static DecimalUtils::DecimalComponents<Time64> executeExtendedResult(const DecimalUtils::DecimalComponents<Time64> &, const DateLUTImpl &)
+    {
+        throwTimeIsNotSupported(name);
     }
     static Int64 executeExtendedResult(Int32, const DateLUTImpl &)
     {
@@ -1050,6 +1113,10 @@ struct ToStartOfTenMinutesImpl
     {
         return static_cast<UInt32>(time_zone.toStartOfTenMinutes(t.whole));
     }
+    static UInt32 execute(const DecimalUtils::DecimalComponents<Time64> &, const DateLUTImpl &)
+    {
+        throwTimeIsNotSupported(name);
+    }
     static UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toStartOfTenMinutes(t);
@@ -1065,6 +1132,10 @@ struct ToStartOfTenMinutesImpl
     static DecimalUtils::DecimalComponents<DateTime64> executeExtendedResult(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
         return {time_zone.toStartOfTenMinutes(t.whole), 0};
+    }
+    static DecimalUtils::DecimalComponents<Time64> executeExtendedResult(const DecimalUtils::DecimalComponents<Time64> &, const DateLUTImpl &)
+    {
+        throwTimeIsNotSupported(name);
     }
     static Int64 executeExtendedResult(Int32, const DateLUTImpl &)
     {
@@ -1082,6 +1153,10 @@ struct ToStartOfFifteenMinutesImpl
     {
         return static_cast<UInt32>(time_zone.toStartOfFifteenMinutes(t.whole));
     }
+    static UInt32 execute(const DecimalUtils::DecimalComponents<Time64> &, const DateLUTImpl &)
+    {
+        throwTimeIsNotSupported(name);
+    }
     static UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toStartOfFifteenMinutes(t);
@@ -1097,6 +1172,10 @@ struct ToStartOfFifteenMinutesImpl
     static DecimalUtils::DecimalComponents<DateTime64> executeExtendedResult(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
         return {time_zone.toStartOfFifteenMinutes(t.whole), 0};
+    }
+    static DecimalUtils::DecimalComponents<Time64> executeExtendedResult(const DecimalUtils::DecimalComponents<Time64> &, const DateLUTImpl &)
+    {
+        throwTimeIsNotSupported(name);
     }
     static Int64 executeExtendedResult(Int32, const DateLUTImpl &)
     {
@@ -1114,6 +1193,11 @@ struct TimeSlotImpl
     static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl &)
     {
         return static_cast<UInt32>(t.whole / 1800 * 1800);
+    }
+
+    static UInt32 execute(const DecimalUtils::DecimalComponents<Time64> &, const DateLUTImpl &)
+    {
+        throwTimeIsNotSupported(name);
     }
 
     static UInt32 execute(UInt32 t, const DateLUTImpl &)
@@ -1138,6 +1222,11 @@ struct TimeSlotImpl
         return {(t.whole + 1 - 1800) / 1800 * 1800, 0};
     }
 
+    static DecimalUtils::DecimalComponents<Time64> executeExtendedResult(const DecimalUtils::DecimalComponents<Time64> &, const DateLUTImpl &)
+    {
+        throwTimeIsNotSupported(name);
+    }
+
     static Int64 executeExtendedResult(Int32, const DateLUTImpl &)
     {
         throwDate32IsNotSupported(name);
@@ -1153,6 +1242,11 @@ struct ToStartOfHourImpl
     static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
         return static_cast<UInt32>(time_zone.toStartOfHour(t.whole));
+    }
+
+    static UInt32 execute(const DecimalUtils::DecimalComponents<Time64> &, const DateLUTImpl &)
+    {
+        throwTimeIsNotSupported(name);
     }
 
     static UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
@@ -1173,6 +1267,11 @@ struct ToStartOfHourImpl
     static DecimalUtils::DecimalComponents<DateTime64> executeExtendedResult(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
         return {time_zone.toStartOfHour(t.whole), 0};
+    }
+
+    static DecimalUtils::DecimalComponents<Time64> executeExtendedResult(const DecimalUtils::DecimalComponents<Time64> &, const DateLUTImpl &)
+    {
+        throwTimeIsNotSupported(name);
     }
 
     static Int64 executeExtendedResult(Int32, const DateLUTImpl &)
@@ -1584,6 +1683,11 @@ struct ToMillisecondImpl
         return time_zone.toMillisecond(datetime64, scale_multiplier);
     }
 
+    static UInt16 execute(const Time64 &, Int64, const DateLUTImpl &)
+    {
+        throwTimeIsNotSupported(name);
+    }
+
     static UInt16 execute(UInt32, const DateLUTImpl &)
     {
         return 0;
@@ -1974,6 +2078,10 @@ struct ToRelativeSubsecondNumImpl
             return t.value / (scale / scale_multiplier);
         return common::mulIgnoreOverflow(t.value, scale_multiplier / scale);
     }
+    static Int64 execute(const Time64 &, const Time64::NativeType, const DateLUTImpl &)
+    {
+        throwTimeIsNotSupported(name);
+    }
     static Int64 execute(UInt32 t, const DateLUTImpl &)
     {
         return common::mulIgnoreOverflow(static_cast<Int64>(t), scale_multiplier);
@@ -2198,6 +2306,7 @@ struct DateTimeTransformImpl
     static ColumnPtr execute(
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, const Transform & transform = {})
     {
+        LOG_TRACE(getLogger("TIME DEBUGGING4"), "{}", result_type->getName());
         using Op = Transformer<FromDataType, ToDataType, Transform, is_extended_result, Additions>;
 
         const ColumnPtr source_col = arguments[0].column;
@@ -2211,11 +2320,16 @@ struct DateTimeTransformImpl
                 vec_null_map_to = &col_null_map_to->getData();
             }
 
+            LOG_TRACE(getLogger("TIME DEBUGGING4.6"), "{}", result_type->getName());
+
             auto mutable_result_col = result_type->createColumn();
+            if (mutable_result_col)
+                LOG_TRACE(getLogger("TIME DEBUGGING4.61"), "mutable_result_col");
+            LOG_TRACE(getLogger("TIME DEBUGGING4.61"), "{}", mutable_result_col->dumpStructure());
             auto * col_to = assert_cast<typename ToDataType::ColumnType *>(mutable_result_col.get());
 
             WhichDataType result_data_type(result_type);
-            if (result_data_type.isDateTime() || result_data_type.isDateTime64())
+            if (result_data_type.isDateTime() || result_data_type.isDateTime64() || result_data_type.isTime() || result_data_type.isTime64())
             {
                 const auto & time_zone = dynamic_cast<const TimezoneMixin &>(*result_type).getTimeZone();
                 Op::vector(sources->getData(), col_to->getData(), time_zone, transform, vec_null_map_to, input_rows_count);
@@ -2223,7 +2337,7 @@ struct DateTimeTransformImpl
             else
             {
                 size_t time_zone_argument_position = 1;
-                if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+                if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>)
                     time_zone_argument_position = 2;
 
                 const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, time_zone_argument_position, 0);
@@ -2235,6 +2349,8 @@ struct DateTimeTransformImpl
                 if (vec_null_map_to)
                     return ColumnNullable::create(std::move(mutable_result_col), std::move(col_null_map_to));
             }
+
+            LOG_TRACE(getLogger("TIME DEBUGGING4.6"), "{}", mutable_result_col->dumpStructure());
 
             return mutable_result_col;
         }

@@ -1642,14 +1642,14 @@ Result:
 **See Also**
 - [date_trunc](#date_trunc)
 
-## toTime
+## toTimeWithFixedDate
 
 Converts a date with time to a certain fixed date, while preserving the time.
 
 **Syntax**
 
 ```sql
-toTime(date[,timezone])
+toTimeWithFixedDate(date[,timezone])
 ```
 
 **Arguments**
@@ -1671,7 +1671,7 @@ they will be dropped in the returned `DateTime` value with second-accuracy.
 Query:
 
 ```sql
-SELECT toTime(toDateTime64('1970-12-10 01:20:30.3000',3)) AS result, toTypeName(result);
+SELECT toTimeWithFixedDate(toDateTime64('1970-12-10 01:20:30.3000',3)) AS result, toTypeName(result);
 ```
 
 Result:

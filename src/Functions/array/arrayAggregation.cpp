@@ -16,6 +16,7 @@
 
 #include <Functions/FunctionFactory.h>
 
+#include "DataTypes/IDataType.h"
 #include "FunctionArrayMapped.h"
 
 
@@ -116,7 +117,7 @@ struct ArrayAggregateImpl
             using Types = std::decay_t<decltype(types)>;
             using DataType = typename Types::LeftType;
 
-            if constexpr (!IsDataTypeDateOrDateTime<DataType>)
+            if constexpr (!IsDataTypeDateOrDateTimeOrTime<DataType>)
             {
                 if constexpr (aggregate_operation == AggregateOperation::average || aggregate_operation == AggregateOperation::product)
                 {

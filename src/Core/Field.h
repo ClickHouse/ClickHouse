@@ -203,6 +203,7 @@ extern template class DecimalField<Decimal64>;
 extern template class DecimalField<Decimal128>;
 extern template class DecimalField<Decimal256>;
 extern template class DecimalField<DateTime64>;
+extern template class DecimalField<Time64>;
 
 template <typename T> constexpr bool is_decimal_field = false;
 template <> constexpr inline bool is_decimal_field<DecimalField<Decimal32>> = true;
@@ -252,11 +253,13 @@ template <> struct NearestFieldTypeImpl<Decimal64> { using Type = DecimalField<D
 template <> struct NearestFieldTypeImpl<Decimal128> { using Type = DecimalField<Decimal128>; };
 template <> struct NearestFieldTypeImpl<Decimal256> { using Type = DecimalField<Decimal256>; };
 template <> struct NearestFieldTypeImpl<DateTime64> { using Type = DecimalField<DateTime64>; };
+template <> struct NearestFieldTypeImpl<Time64> { using Type = DecimalField<Time64>; };
 template <> struct NearestFieldTypeImpl<DecimalField<Decimal32>> { using Type = DecimalField<Decimal32>; };
 template <> struct NearestFieldTypeImpl<DecimalField<Decimal64>> { using Type = DecimalField<Decimal64>; };
 template <> struct NearestFieldTypeImpl<DecimalField<Decimal128>> { using Type = DecimalField<Decimal128>; };
 template <> struct NearestFieldTypeImpl<DecimalField<Decimal256>> { using Type = DecimalField<Decimal256>; };
 template <> struct NearestFieldTypeImpl<DecimalField<DateTime64>> { using Type = DecimalField<DateTime64>; };
+template <> struct NearestFieldTypeImpl<DecimalField<Time64>> { using Type = DecimalField<Time64>; };
 template <> struct NearestFieldTypeImpl<Float32> { using Type = Float64; };
 template <> struct NearestFieldTypeImpl<Float64> { using Type = Float64; };
 template <> struct NearestFieldTypeImpl<const char *> { using Type = String; };
@@ -834,6 +837,7 @@ template <> struct Field::TypeToEnum<DecimalField<Decimal64>>{ static constexpr 
 template <> struct Field::TypeToEnum<DecimalField<Decimal128>>{ static constexpr Types::Which value = Types::Decimal128; };
 template <> struct Field::TypeToEnum<DecimalField<Decimal256>>{ static constexpr Types::Which value = Types::Decimal256; };
 template <> struct Field::TypeToEnum<DecimalField<DateTime64>>{ static constexpr Types::Which value = Types::Decimal64; };
+template <> struct Field::TypeToEnum<DecimalField<Time64>>{ static constexpr Types::Which value = Types::Decimal64; };
 template <> struct Field::TypeToEnum<AggregateFunctionStateData>{ static constexpr Types::Which value = Types::AggregateFunctionState; };
 template <> struct Field::TypeToEnum<CustomType>{ static constexpr Types::Which value = Types::CustomType; };
 template <> struct Field::TypeToEnum<bool>{ static constexpr Types::Which value = Types::Bool; };

@@ -1,5 +1,6 @@
 #pragma once
 #include <Functions/IFunctionDateOrDateTime.h>
+#include "Common/Logger.h"
 
 namespace DB
 {
@@ -19,6 +20,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
+        LOG_TRACE(getLogger("RETURNTYPEIMPL TIME"), "12");
         constexpr bool result_is_date_or_date32 = (std::is_same_v<ToDataType, DataTypeDate> || std::is_same_v<ToDataType, DataTypeDate32>);
         this->checkArguments(arguments, result_is_date_or_date32);
 
@@ -52,6 +54,22 @@ public:
 
             return std::make_shared<ToDataType>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, false));
         }
+        else if constexpr (std::is_same_v<ToDataType, DataTypeTime64>)
+        {
+            Int64 scale = DataTypeTime64::default_scale;
+            if (const auto * dt64 =  checkAndGetDataType<DataTypeTime64>(arguments[0].type.get()))
+                scale = dt64->getScale();
+            auto source_scale = scale;
+
+            if constexpr (std::is_same_v<ToStartOfMillisecondImpl, Transform>)
+                scale = std::max(source_scale, static_cast<Int64>(3));
+            else if constexpr (std::is_same_v<ToStartOfMicrosecondImpl, Transform>)
+                scale = std::max(source_scale, static_cast<Int64>(6));
+            else if constexpr (std::is_same_v<ToStartOfNanosecondImpl, Transform>)
+                scale = std::max(source_scale, static_cast<Int64>(9));
+
+            return std::make_shared<ToDataType>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, false));
+        }
         else
             return std::make_shared<ToDataType>();
     }
@@ -59,7 +77,7 @@ public:
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         /// If result type is DateTime or DateTime64 we don't know the timezone and scale without argument types.
-        if constexpr (!std::is_same_v<ToDataType, DataTypeDateTime> && !std::is_same_v<ToDataType, DataTypeDateTime64>)
+        if constexpr (!std::is_same_v<ToDataType, DataTypeDateTime> && !std::is_same_v<ToDataType, DataTypeTime> && !std::is_same_v<ToDataType, DataTypeDateTime64> && !std::is_same_v<ToDataType, DataTypeTime64>)
             return std::make_shared<ToDataType>();
         return nullptr;
     }
@@ -72,6 +90,15 @@ public:
             return DateTimeTransformImpl<DataTypeDate, ToDataType, Transform>::execute(arguments, result_type, input_rows_count);
         if (isDate32(from_type))
             return DateTimeTransformImpl<DataTypeDate32, ToDataType, Transform>::execute(arguments, result_type, input_rows_count);
+        if (isTime(from_type))
+            return DateTimeTransformImpl<DataTypeTime, ToDataType, Transform>::execute(arguments, result_type, input_rows_count);
+        if (isTime64(from_type))
+        {
+            const auto scale = static_cast<const DataTypeTime64 *>(from_type)->getScale();
+            const TransformTime64<Transform> transformer(scale);
+            return DateTimeTransformImpl<DataTypeTime64, ToDataType, decltype(transformer)>::execute(
+                arguments, result_type, input_rows_count, transformer);
+        }
         if (isDateTime(from_type))
             return DateTimeTransformImpl<DataTypeDateTime, ToDataType, Transform>::execute(arguments, result_type, input_rows_count);
         if (isDateTime64(from_type))

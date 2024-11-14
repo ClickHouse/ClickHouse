@@ -2,6 +2,7 @@
 
 #include <base/sort.h>
 #include <base/TypeName.h>
+#include <Common/assert_cast.h>
 #include <Core/Field.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/TypeId.h>
@@ -195,6 +196,7 @@ extern template class ColumnDecimal<Decimal64>;
 extern template class ColumnDecimal<Decimal128>;
 extern template class ColumnDecimal<Decimal256>;
 extern template class ColumnDecimal<DateTime64>;
+extern template class ColumnDecimal<Time64>;
 
 
 }

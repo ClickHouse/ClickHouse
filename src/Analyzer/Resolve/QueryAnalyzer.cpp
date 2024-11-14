@@ -3507,6 +3507,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         if (function_base->isSuitableForConstantFolding())
         {
             auto result_type = function_base->getResultType();
+            LOG_TRACE(getLogger("TIME DEBUGGING-3"), "{}", result_type->getName());
             auto executable_function = function_base->prepare(argument_columns);
 
             ColumnPtr column;

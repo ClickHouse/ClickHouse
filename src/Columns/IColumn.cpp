@@ -36,7 +36,8 @@ namespace ErrorCodes
 String IColumn::dumpStructure() const
 {
     WriteBufferFromOwnString res;
-    res << getFamilyName() << "(size = " << size();
+    res << getFamilyName();
+    res << "(size = " << size();
 
     forEachSubcolumn([&](const auto & subcolumn)
     {
@@ -454,6 +455,7 @@ template class IColumnHelper<ColumnDecimal<Decimal64>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnDecimal<Decimal128>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnDecimal<Decimal256>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnDecimal<DateTime64>, ColumnFixedSizeHelper>;
+template class IColumnHelper<ColumnDecimal<Time64>, ColumnFixedSizeHelper>;
 
 template class IColumnHelper<ColumnFixedString, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnString, IColumn>;

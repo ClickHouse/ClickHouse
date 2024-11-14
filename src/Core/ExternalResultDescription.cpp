@@ -2,6 +2,8 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeTime.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
@@ -79,14 +81,18 @@ void ExternalResultDescription::init(const Block & sample_block_)
             types.emplace_back(ValueType::vtDate32, is_nullable);
         else if (which.isDateTime())
             types.emplace_back(ValueType::vtDateTime, is_nullable);
+        else if (which.isDateTime64())
+            types.emplace_back(ValueType::vtDateTime64, is_nullable);
+        else if (which.isTime())
+            types.emplace_back(ValueType::vtTime, is_nullable);
+        else if (which.isTime64())
+            types.emplace_back(ValueType::vtTime64, is_nullable);
         else if (which.isUUID())
             types.emplace_back(ValueType::vtUUID, is_nullable);
         else if (which.isEnum8())
             types.emplace_back(ValueType::vtEnum8, is_nullable);
         else if (which.isEnum16())
             types.emplace_back(ValueType::vtEnum16, is_nullable);
-        else if (which.isDateTime64())
-            types.emplace_back(ValueType::vtDateTime64, is_nullable);
         else if (which.isDecimal32())
             types.emplace_back(ValueType::vtDecimal32, is_nullable);
         else if (which.isDecimal64())

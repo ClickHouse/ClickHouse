@@ -66,6 +66,8 @@ bool canBeSafelyCasted(const DataTypePtr & from_type, const DataTypePtr & to_typ
         case TypeIndex::Date32:
         case TypeIndex::DateTime:
         case TypeIndex::DateTime64:
+        case TypeIndex::Time:
+        case TypeIndex::Time64:
         case TypeIndex::FixedString:
         case TypeIndex::Enum8:
         case TypeIndex::Enum16:

@@ -10,6 +10,8 @@
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDecimalBase.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeTime.h>
+#include <DataTypes/DataTypeTime64.h>
 
 
 namespace DB

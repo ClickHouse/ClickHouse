@@ -68,6 +68,7 @@ inline constexpr bool is_arithmetic_v = is_arithmetic<T>::value;
     M(DataTypeDate) \
     M(DataTypeDate32) \
     M(DataTypeDateTime) \
+    M(DataTypeTime) \
     M(DataTypeInt8) \
     M(DataTypeUInt8) \
     M(DataTypeInt16) \
@@ -87,6 +88,7 @@ inline constexpr bool is_arithmetic_v = is_arithmetic<T>::value;
     M(DataTypeDate, X) \
     M(DataTypeDate32, X) \
     M(DataTypeDateTime, X) \
+    M(DataTypeTime, X) \
     M(DataTypeInt8, X) \
     M(DataTypeUInt8, X) \
     M(DataTypeInt16, X) \

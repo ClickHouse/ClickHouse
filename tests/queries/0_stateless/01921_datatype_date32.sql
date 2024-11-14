@@ -74,8 +74,8 @@ select '-------toRelativeMinuteNum---------';
 select toRelativeMinuteNum(x1, 'Asia/Istanbul') from t1;
 select '-------toRelativeSecondNum---------';
 select toRelativeSecondNum(x1, 'Asia/Istanbul') from t1;
-select '-------toTime---------';
-select toTime(x1) from t1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select '-------toTimeWithFixedDate---------';
+select toTimeWithFixedDate(x1) from t1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 select '-------toYYYYMM---------';
 select toYYYYMM(x1) from t1;
 select '-------toYYYYMMDD---------';

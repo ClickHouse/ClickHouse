@@ -81,7 +81,6 @@ void registerDataTypeNumbers(DataTypeFactory & factory)
     factory.registerAlias("BIGINT", "Int64", DataTypeFactory::Case::Insensitive);
     factory.registerAlias("SIGNED", "Int64", DataTypeFactory::Case::Insensitive);
     factory.registerAlias("BIGINT SIGNED", "Int64", DataTypeFactory::Case::Insensitive);
-    factory.registerAlias("TIME", "Int64", DataTypeFactory::Case::Insensitive);
 
     factory.registerAlias("TINYINT UNSIGNED", "UInt8", DataTypeFactory::Case::Insensitive);
     factory.registerAlias("INT1 UNSIGNED", "UInt8", DataTypeFactory::Case::Insensitive);
