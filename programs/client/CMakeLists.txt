@@ -12,8 +12,8 @@ set (CLICKHOUSE_CLIENT_SOURCES
     buzz-house/generator/random_settings.cpp
     buzz-house/generator/query_oracle.cpp
     buzz-house/generator/external_integrations.cpp
-    buzz-house/third_party/hugeint.cpp
-    buzz-house/third_party/uhugeint.cpp
+    buzz-house/include/hugeint.cpp
+    buzz-house/include/uhugeint.cpp
     ${GRAMMAR_SRC}
 )
 set_source_files_properties(${CLICKHOUSE_CLIENT_SOURCES} PROPERTIES COMPILE_FLAGS "-Wno-reserved-identifier -Wno-extra-semi-stmt")
@@ -43,7 +43,7 @@ set (CLICKHOUSE_CLIENT_INCLUDE
     PRIVATE
     buzz-house/ast
     buzz-house/generator
-    buzz-house/third_party
+    buzz-house/include
     "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
