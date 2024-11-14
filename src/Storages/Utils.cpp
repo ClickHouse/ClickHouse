@@ -25,7 +25,7 @@ namespace DB
         {
             return {CurrentMetrics::AttachedDictionary};
         }
-        if (auto * replicated_storage = typeid_cast<StorageReplicatedMergeTree *>(storage.get()))
+        if (typeid_cast<StorageReplicatedMergeTree *>(storage.get()) != nullptr)
         {
             return {CurrentMetrics::AttachedTable, CurrentMetrics::AttachedReplicatedTable};
         }
