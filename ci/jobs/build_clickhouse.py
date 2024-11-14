@@ -135,6 +135,24 @@ def main():
         )
         res = results[-1].is_ok()
 
+    if res and JobStages.UNSHALLOW in stages:
+        results.append(
+            Result.create_from_command_execution(
+                name="Repo Unshallow",
+                command="git fetch --depth 10000 --filter=tree:0",
+                with_log=True,
+            )
+        )
+        if results[-1].is_ok():
+            try:
+                version = CHVersion.get_version()
+                print(f"Got version from repo [{version}]")
+            except Exception as e:
+                results[-1].set_failed().set_info(
+                    "Failed to retrieve version from repo: ex [{e}]"
+                )
+        res = results[-1].is_ok()
+
     if res and JobStages.BUILD in stages:
         Shell.check("sccache --show-stats")
         results.append(
