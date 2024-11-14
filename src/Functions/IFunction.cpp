@@ -216,8 +216,8 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
         if (input_rows_count == 0)
             return result_type->createColumn();
 
-        IColumn::Filter mask(input_rows_count, 1);
-        MaskInfo mask_info = {.has_ones = true, .has_zeros = false};
+        auto result_null_map = ColumnUInt8::create(input_rows_count, 0);
+        auto & result_null_map_data = result_null_map->getData();
         bool all_columns_constant = true;
         for (const auto & arg : args)
         {
@@ -236,29 +236,27 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
                 }
                 else
                 {
-                    const auto & null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapColumnPtr();
-                    mask_info = extractInvertedMask(mask, null_map);
+                    const auto & null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapData();
+                    for (size_t i = 0; i < input_rows_count; ++i)
+                        result_null_map_data[i] |= null_map[i];
                 }
             }
-
-            /// Exit loop early if each row contains at least one null value
-            if (!mask_info.has_ones)
-                break;
         }
 
-        if (!mask_info.has_ones && !all_columns_constant)
+        size_t rows_with_nulls = countBytesInFilter(result_null_map_data.data(), 0, input_rows_count);
+        size_t rows_without_nulls = input_rows_count - rows_with_nulls;
+        ProfileEvents::increment(ProfileEvents::DefaultImplementationForNullsRows, input_rows_count);
+        ProfileEvents::increment(ProfileEvents::DefaultImplementationForNullsRowsWithNulls, rows_with_nulls);
+
+        if (rows_without_nulls == 0 && !all_columns_constant)
         {
             /// Don't need to evaluate function if each row contains at least one null value and not all input columns are constant.
             return result_type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
         }
 
-        size_t rows_without_nulls  = countBytesInFilter(mask.data(), 0, mask.size());
-        size_t rows_with_nulls = mask.size() - rows_without_nulls;
-        double null_ratio = rows_with_nulls / static_cast<double>(mask.size());
+        double null_ratio = rows_with_nulls / static_cast<double>(result_null_map_data.size());
         bool should_short_circuit = short_circuit_function_evaluation_for_nulls && !all_columns_constant
             && null_ratio >= short_circuit_function_evaluation_for_nulls_threshold;
-        ProfileEvents::increment(ProfileEvents::DefaultImplementationForNullsRows, mask.size());
-        ProfileEvents::increment(ProfileEvents::DefaultImplementationForNullsRowsWithNulls, rows_with_nulls);
 
         ColumnsWithTypeAndName temporary_columns = createBlockWithNestedColumns(args);
         auto temporary_result_type = removeNullable(result_type);
@@ -267,13 +265,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
         {
             /// Each row should be evaluated if there are no nulls or short circuiting is disabled.
             auto res = executeWithoutLowCardinalityColumns(temporary_columns, temporary_result_type, input_rows_count, dry_run);
-
-            /// Invert mask as null map
-            inverseMask(mask, mask_info);
-            auto null_map = ColumnUInt8::create();
-            null_map->getData() = std::move(mask);
-
-            auto new_res = wrapInNullable(res, std::move(null_map));
+            auto new_res = wrapInNullable(res, std::move(result_null_map));
             return new_res;
         }
         else
@@ -282,18 +274,13 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
 
             /// Filter every column by mask
             for (auto & col : temporary_columns)
-                col.column = col.column->filter(mask, rows_without_nulls);
+                col.column = col.column->filter(result_null_map_data, rows_without_nulls);
 
             auto res = executeWithoutLowCardinalityColumns(temporary_columns, temporary_result_type, rows_without_nulls, dry_run);
             auto mutable_res = IColumn::mutate(std::move(res));
-            mutable_res->expand(mask, false);
+            mutable_res->expand(result_null_map_data, false);
 
-            /// Invert mask as null map
-            inverseMask(mask, mask_info);
-            auto null_map = ColumnUInt8::create();
-            null_map->getData() = std::move(mask);
-
-            auto new_res = wrapInNullable(std::move(mutable_res), std::move(null_map));
+            auto new_res = wrapInNullable(std::move(mutable_res), std::move(result_null_map));
             return new_res;
         }
     }
