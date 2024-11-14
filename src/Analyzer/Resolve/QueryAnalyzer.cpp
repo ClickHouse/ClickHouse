@@ -1,3 +1,4 @@
+#include "Common/Logger.h"
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Common/FieldVisitorToString.h>
@@ -1173,6 +1174,8 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
     if (it == nullptr)
         return {};
 
+    LOG_DEBUG(&Poco::Logger::get("resolveFromAliases"), "Found alias for '{}'", identifier_lookup.dump());
+
     QueryTreeNodePtr alias_node = *it;
 
     auto node_type = alias_node->getNodeType();
@@ -1198,6 +1201,8 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
                 "Cyclic aliases for identifier '{}'. In scope {}",
                 identifier_lookup.identifier.getFullName(),
                 scope.scope_node->formatASTForErrorMessage());
+
+        LOG_DEBUG(&Poco::Logger::get("resolveFromAliases"), "Not part of the tree for '{}'", identifier_lookup.dump());
 
         scope.non_cached_identifier_lookups_during_expression_resolve.insert(identifier_lookup);
         return {};
@@ -1226,21 +1231,26 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
         auto & alias_identifier_node = alias_node->as<IdentifierNode &>();
         auto identifier = alias_identifier_node.getIdentifier();
         auto lookup_result = tryResolveIdentifier(IdentifierLookup{identifier, identifier_lookup.lookup_context}, *scope_to_resolve_alias_expression, identifier_resolve_context);
+
+        scope_to_resolve_alias_expression->popExpressionNode();
+
         if (!lookup_result.resolved_identifier)
         {
-            std::unordered_set<Identifier> valid_identifiers;
-            IdentifierResolver::collectScopeWithParentScopesValidIdentifiersForTypoCorrection(identifier, *scope_to_resolve_alias_expression, true, false, false, valid_identifiers);
-            auto hints = IdentifierResolver::collectIdentifierTypoHints(identifier, valid_identifiers);
+            LOG_DEBUG(&Poco::Logger::get("resolveFromAliases"), "Didn't resolved identifier '{}'", identifier.getFullName());
 
-            throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown {} identifier '{}'. In scope {}{}",
-                toStringLowercase(identifier_lookup.lookup_context),
-                identifier.getFullName(),
-                scope_to_resolve_alias_expression->scope_node->formatASTForErrorMessage(),
-                getHintsErrorMessageSuffix(hints));
+            // std::unordered_set<Identifier> valid_identifiers;
+            // IdentifierResolver::collectScopeWithParentScopesValidIdentifiersForTypoCorrection(identifier, *scope_to_resolve_alias_expression, true, false, false, valid_identifiers);
+            // auto hints = IdentifierResolver::collectIdentifierTypoHints(identifier, valid_identifiers);
+
+            // throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown {} identifier '{}'. In scope {}{}",
+            //     toStringLowercase(identifier_lookup.lookup_context),
+            //     identifier.getFullName(),
+            //     scope_to_resolve_alias_expression->scope_node->formatASTForErrorMessage(),
+            //     getHintsErrorMessageSuffix(hints));
+            return {};
         }
 
         alias_node = lookup_result.resolved_identifier;
-        scope_to_resolve_alias_expression->popExpressionNode();
     }
     else if (node_type == QueryTreeNodeType::FUNCTION)
     {
@@ -1478,6 +1488,8 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
                     prefer_column_name_to_alias = true;
             }
         }
+
+        LOG_DEBUG(getLogger("tryResolveIdentifier"), "already_in_resolve_process = {}", already_in_resolve_process);
 
         if (unlikely(prefer_column_name_to_alias))
         {
@@ -3611,7 +3623,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 {
     checkStackSize();
 
-    LOG_DEBUG(getLogger("resolveExpressionNode"), "Resolve node:\n{}", node->dumpTree());
+    LOG_DEBUG(getLogger("resolveExpressionNode"), "Resolve node (lambda: {}):\n{}", allow_lambda_expression, node->dumpTree());
 
     auto resolved_expression_it = resolved_expressions.find(node);
     if (resolved_expression_it != resolved_expressions.end())
