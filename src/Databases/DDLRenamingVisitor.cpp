@@ -86,19 +86,12 @@ namespace
             create.as_table = as_table_new.table;
         }
 
-        if (create.targets)
+        QualifiedTableName to_table{create.to_table_id.database_name, create.to_table_id.table_name};
+        if (!to_table.table.empty() && !to_table.database.empty())
         {
-            for (auto & target : create.targets->targets)
-            {
-                auto & table_id = target.table_id;
-                if (!table_id.database_name.empty() && !table_id.table_name.empty())
-                {
-                    QualifiedTableName target_name{table_id.database_name, table_id.table_name};
-                    auto new_target_name = data.renaming_map.getNewTableName(target_name);
-                    if (new_target_name != target_name)
-                        table_id = StorageID{new_target_name.database, new_target_name.table};
-                }
-            }
+            auto to_table_new = data.renaming_map.getNewTableName(to_table);
+            if (to_table_new != to_table)
+                create.to_table_id = StorageID{to_table_new.database, to_table_new.table};
         }
     }
 

@@ -59,19 +59,19 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const ColumnPtr column = arguments[0].column;
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
             auto col_res = ColumnString::create();
-            Impl::vector(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets(), input_rows_count);
+            Impl::vector(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets());
             return col_res;
         }
         else if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
             auto col_res = ColumnFixedString::create(col_fixed->getN());
-            Impl::vectorFixed(col_fixed->getChars(), col_fixed->getN(), col_res->getChars(), input_rows_count);
+            Impl::vectorFixed(col_fixed->getChars(), col_fixed->getN(), col_res->getChars());
             return col_res;
         }
         else

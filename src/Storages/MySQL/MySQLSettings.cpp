@@ -6,7 +6,6 @@
 #include <Interpreters/Context.h>
 #include <Parsers/formatAST.h>
 #include <Core/Field.h>
-#include <Core/Settings.h>
 
 
 namespace DB

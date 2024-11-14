@@ -4,7 +4,6 @@
 
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
-#include <Core/Settings.h>
 
 #include <Poco/String.h>
 
@@ -31,7 +30,7 @@ void FunctionFactory::registerFunction(
     const std::string & name,
     FunctionCreator creator,
     FunctionDocumentation doc,
-    Case case_sensitiveness)
+    CaseSensitiveness case_sensitiveness)
 {
     if (!functions.emplace(name, FunctionFactoryData{creator, doc}).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FunctionFactory: the function name '{}' is not unique", name);
@@ -41,7 +40,7 @@ void FunctionFactory::registerFunction(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FunctionFactory: the function name '{}' is already registered as alias",
                         name);
 
-    if (case_sensitiveness == Case::Insensitive)
+    if (case_sensitiveness == CaseInsensitive)
     {
         if (!case_insensitive_functions.emplace(function_name_lowercase, FunctionFactoryData{creator, doc}).second)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "FunctionFactory: the case insensitive function name '{}' is not unique",
@@ -54,7 +53,7 @@ void FunctionFactory::registerFunction(
     const std::string & name,
     FunctionSimpleCreator creator,
     FunctionDocumentation doc,
-    Case case_sensitiveness)
+    CaseSensitiveness case_sensitiveness)
 {
     registerFunction(name, [my_creator = std::move(creator)](ContextPtr context)
     {

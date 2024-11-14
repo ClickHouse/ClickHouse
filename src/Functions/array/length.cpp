@@ -16,38 +16,40 @@ struct LengthImpl
 {
     static constexpr auto is_fixed_to_constant = true;
 
-    static void vector(const ColumnString::Chars & /*data*/, const ColumnString::Offsets & offsets, PaddedPODArray<UInt64> & res, size_t input_rows_count)
+    static void vector(const ColumnString::Chars & /*data*/, const ColumnString::Offsets & offsets, PaddedPODArray<UInt64> & res)
     {
-        for (size_t i = 0; i < input_rows_count; ++i)
+        size_t size = offsets.size();
+        for (size_t i = 0; i < size; ++i)
             res[i] = offsets[i] - 1 - offsets[i - 1];
     }
 
-    static void vectorFixedToConstant(const ColumnString::Chars & /*data*/, size_t n, UInt64 & res, size_t)
+    static void vectorFixedToConstant(const ColumnString::Chars & /*data*/, size_t n, UInt64 & res)
     {
         res = n;
     }
 
-    static void vectorFixedToVector(const ColumnString::Chars & /*data*/, size_t /*n*/, PaddedPODArray<UInt64> & /*res*/, size_t)
+    static void vectorFixedToVector(const ColumnString::Chars & /*data*/, size_t /*n*/, PaddedPODArray<UInt64> & /*res*/)
     {
     }
 
-    static void array(const ColumnString::Offsets & offsets, PaddedPODArray<UInt64> & res, size_t input_rows_count)
+    static void array(const ColumnString::Offsets & offsets, PaddedPODArray<UInt64> & res)
     {
-        for (size_t i = 0; i < input_rows_count; ++i)
+        size_t size = offsets.size();
+        for (size_t i = 0; i < size; ++i)
             res[i] = offsets[i] - offsets[i - 1];
     }
 
-    [[noreturn]] static void uuid(const ColumnUUID::Container &, size_t &, PaddedPODArray<UInt64> &, size_t)
+    [[noreturn]] static void uuid(const ColumnUUID::Container &, size_t &, PaddedPODArray<UInt64> &)
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function length to UUID argument");
     }
 
-    [[noreturn]] static void ipv6(const ColumnIPv6::Container &, size_t &, PaddedPODArray<UInt64> &, size_t)
+    [[noreturn]] static void ipv6(const ColumnIPv6::Container &, size_t &, PaddedPODArray<UInt64> &)
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function length to IPv6 argument");
     }
 
-    [[noreturn]] static void ipv4(const ColumnIPv4::Container &, size_t &, PaddedPODArray<UInt64> &, size_t)
+    [[noreturn]] static void ipv4(const ColumnIPv4::Container &, size_t &, PaddedPODArray<UInt64> &)
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function length to IPv4 argument");
     }
@@ -98,8 +100,8 @@ It is ok to have ASCII NUL bytes in strings, and they will be counted as well.
                 },
             .categories{"String", "Array"}
         },
-        FunctionFactory::Case::Insensitive);
-    factory.registerAlias("OCTET_LENGTH", "length", FunctionFactory::Case::Insensitive);
+        FunctionFactory::CaseInsensitive);
+    factory.registerAlias("OCTET_LENGTH", "length", FunctionFactory::CaseInsensitive);
 }
 
 }

@@ -6,7 +6,7 @@ sidebar_label: VIEW
 
 # CREATE VIEW
 
-Creates a new view. Views can be [normal](#normal-view), [materialized](#materialized-view), [live](#live-view-deprecated), and [window](#window-view-experimental) (live view and window view are experimental features).
+Creates a new view. Views can be [normal](#normal-view), [materialized](#materialized-view), [live](#live-view-experimental), and [window](#window-view-experimental) (live view and window view are experimental features).
 
 ## Normal View
 
@@ -16,7 +16,6 @@ Syntax:
 CREATE [OR REPLACE] VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] 
 [DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | INVOKER | NONE }] 
 AS SELECT ...
-[COMMENT 'comment']
 ```
 
 Normal views do not store any data. They just perform a read from another table on each access. In other words, a normal view is nothing more than a saved query. When reading from a view, this saved query is used as a subquery in the [FROM](../../../sql-reference/statements/select/from.md) clause.
@@ -58,7 +57,6 @@ SELECT * FROM view(column1=value1, column2=value2 ...)
 CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER] [TO[db.]name] [ENGINE = engine] [POPULATE] 
 [DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | INVOKER | NONE }] 
 AS SELECT ...
-[COMMENT 'comment']
 ```
 
 :::tip
@@ -86,14 +84,6 @@ Also note, that `materialized_views_ignore_errors` set to `true` by default for 
 :::
 
 If you specify `POPULATE`, the existing table data is inserted into the view when creating it, as if making a `CREATE TABLE ... AS SELECT ...` . Otherwise, the query contains only the data inserted in the table after creating the view. We **do not recommend** using `POPULATE`, since data inserted in the table during the view creation will not be inserted in it.
-
-:::note
-Given that `POPULATE` works like `CREATE TABLE ... AS SELECT ...` it has limitations:
-- It is not supported with Replicated database
-- It is not supported in ClickHouse cloud
-
-Instead a separate `INSERT ... SELECT` can be used.  
-:::
 
 A `SELECT` query can contain `DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT`. Note that the corresponding conversions are performed independently on each block of inserted data. For example, if `GROUP BY` is set, data is aggregated during insertion, but only within a single packet of inserted data. The data won’t be further aggregated. The exception is when using an `ENGINE` that independently performs data aggregation, such as `SummingMergeTree`.
 
@@ -163,7 +153,6 @@ RANDOMIZE FOR interval
 DEPENDS ON [db.]name [, [db.]name [, ...]]
 [TO[db.]name] [(columns)] [ENGINE = engine] [EMPTY]
 AS SELECT ...
-[COMMENT 'comment']
 ```
 where `interval` is a sequence of simple intervals:
 ```sql
@@ -270,10 +259,7 @@ This is an experimental feature that may change in backwards-incompatible ways i
 :::
 
 ``` sql
-CREATE WINDOW VIEW [IF NOT EXISTS] [db.]table_name [TO [db.]table_name] [INNER ENGINE engine] [ENGINE engine] [WATERMARK strategy] [ALLOWED_LATENESS interval_function] [POPULATE]
-AS SELECT ...
-GROUP BY time_window_function
-[COMMENT 'comment']
+CREATE WINDOW VIEW [IF NOT EXISTS] [db.]table_name [TO [db.]table_name] [INNER ENGINE engine] [ENGINE engine] [WATERMARK strategy] [ALLOWED_LATENESS interval_function] [POPULATE] AS SELECT ... GROUP BY time_window_function
 ```
 
 Window view can aggregate data by time window and output the results when the window is ready to fire. It stores the partial aggregation results in an inner(or specified) table to reduce latency and can push the processing result to a specified table or push notifications using the WATCH query.
@@ -320,7 +306,7 @@ CREATE WINDOW VIEW test.wv TO test.dst WATERMARK=ASCENDING ALLOWED_LATENESS=INTE
 
 Note that elements emitted by a late firing should be treated as updated results of a previous computation. Instead of firing at the end of windows, the window view will fire immediately when the late event arrives. Thus, it will result in multiple outputs for the same window. Users need to take these duplicated results into account or deduplicate them.
 
-You can modify `SELECT` query that was specified in the window view by using `ALTER TABLE ... MODIFY QUERY` statement. The data structure resulting in a new `SELECT` query should be the same as the original `SELECT` query when with or without `TO [db.]name` clause. Note that the data in the current window will be lost because the intermediate state cannot be reused.
+You can modify `SELECT` query that was specified in the window view by using `ALTER TABLE … MODIFY QUERY` statement. The data structure resulting in a new `SELECT` query should be the same as the original `SELECT` query when with or without `TO [db.]name` clause. Note that the data in the current window will be lost because the intermediate state cannot be reused.
 
 ### Monitoring New Windows
 

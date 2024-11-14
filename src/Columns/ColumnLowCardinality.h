@@ -78,18 +78,10 @@ public:
     bool tryInsert(const Field & x) override;
     void insertDefault() override;
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn & src, size_t n) override;
-#else
-    void doInsertFrom(const IColumn & src, size_t n) override;
-#endif
     void insertFromFullColumn(const IColumn & src, size_t n);
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
-#else
-    void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
-#endif
     void insertRangeFromFullColumn(const IColumn & src, size_t start, size_t length);
     void insertRangeFromDictionaryEncodedColumn(const IColumn & keys, const IColumn & positions);
 
@@ -108,7 +100,7 @@ public:
 
     void updateHashWithValue(size_t n, SipHash & hash) const override
     {
-        getDictionary().updateHashWithValue(getIndexes().getUInt(n), hash);
+        return getDictionary().updateHashWithValue(getIndexes().getUInt(n), hash);
     }
 
     WeakHash32 getWeakHash32() const override;
@@ -135,11 +127,7 @@ public:
         return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().index(indexes_, limit));
     }
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
-#else
-    int doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
-#endif
 
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator &) const override;
 
@@ -157,8 +145,6 @@ public:
     void updatePermutationWithCollation(const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                         size_t limit, int nan_direction_hint, Permutation & res, EqualRanges& equal_ranges) const override;
 
-    size_t estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const override;
-
     ColumnPtr replicate(const Offsets & offsets) const override
     {
         return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().replicate(offsets));
@@ -168,7 +154,7 @@ public:
 
     void getExtremes(Field & min, Field & max) const override
     {
-        dictionary.getColumnUnique().getNestedColumn()->index(getIndexes(), 0)->getExtremes(min, max); /// TODO: optimize
+        return dictionary.getColumnUnique().getNestedColumn()->index(getIndexes(), 0)->getExtremes(min, max); /// TODO: optimize
     }
 
     void reserve(size_t n) override { idx.reserve(n); }
@@ -222,7 +208,7 @@ public:
 
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
     {
-        getIndexes().getIndicesOfNonDefaultRows(indices, from, limit);
+        return getIndexes().getIndicesOfNonDefaultRows(indices, from, limit);
     }
 
     bool valuesHaveFixedSize() const override { return getDictionary().valuesHaveFixedSize(); }

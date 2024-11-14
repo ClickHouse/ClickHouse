@@ -29,7 +29,7 @@ public:
 
     void setRowsBeforeLimit(size_t rows_before_limit) override;
 
-    void onCancel() noexcept override
+    void onCancel() override
     {
         queue.clearAndFinish();
     }

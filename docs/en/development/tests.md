@@ -1,6 +1,6 @@
 ---
 slug: /en/development/tests
-sidebar_position: 72
+sidebar_position: 71
 sidebar_label: Testing
 title: ClickHouse Testing
 description: Most of ClickHouse features can be tested with functional tests and they are mandatory to use for every change in ClickHouse code that can be tested that way.
@@ -28,7 +28,7 @@ run, for example, the test `01428_hash_set_nan_key`, change to the repository
 folder and run the following command:
 
 ```
-PATH=<path to clickhouse-client>:$PATH tests/clickhouse-test 01428_hash_set_nan_key
+PATH=$PATH:<path to clickhouse-client> tests/clickhouse-test 01428_hash_set_nan_key
 ```
 
 Test results (`stderr` and `stdout`) are written to files `01428_hash_set_nan_key.[stderr|stdout]` which
@@ -228,10 +228,6 @@ Clang has even more useful warnings - you can look for them with `-Weverything` 
 For production builds, clang is used, but we also test make gcc builds. For development, clang is usually more convenient to use. You can build on your own machine with debug mode (to save battery of your laptop), but please note that compiler is able to generate more warnings with `-O3` due to better control flow and inter-procedure analysis. When building with clang in debug mode, debug version of `libc++` is used that allows to catch more errors at runtime.
 
 ## Sanitizers {#sanitizers}
-
-:::note
-If the process (ClickHouse server or client) crashes at startup when running it locally, you might need to disable address space layout randomization: `sudo sysctl kernel.randomize_va_space=0`
-:::
 
 ### Address sanitizer
 We run functional, integration, stress and unit tests under ASan on per-commit basis.

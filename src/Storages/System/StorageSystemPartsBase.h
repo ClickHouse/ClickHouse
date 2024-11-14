@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Settings.h>
 #include <Formats/FormatSettings.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -116,7 +115,7 @@ protected:
 class StoragesInfoStream : public StoragesInfoStreamBase
 {
 public:
-    StoragesInfoStream(std::optional<ActionsDAG> filter_by_database, std::optional<ActionsDAG> filter_by_other_columns, ContextPtr context);
+    StoragesInfoStream(const ActionsDAGPtr & filter_by_database, const ActionsDAGPtr & filter_by_other_columns, ContextPtr context);
 };
 
 /** Implements system table 'parts' which allows to get information about data parts for tables of MergeTree family.
@@ -146,9 +145,9 @@ protected:
 
     StorageSystemPartsBase(const StorageID & table_id_, ColumnsDescription && columns);
 
-    virtual std::unique_ptr<StoragesInfoStreamBase> getStoragesInfoStream(std::optional<ActionsDAG> filter_by_database, std::optional<ActionsDAG> filter_by_other_columns, ContextPtr context)
+    virtual std::unique_ptr<StoragesInfoStreamBase> getStoragesInfoStream(const ActionsDAGPtr & filter_by_database, const ActionsDAGPtr & filter_by_other_columns, ContextPtr context)
     {
-        return std::make_unique<StoragesInfoStream>(std::move(filter_by_database), std::move(filter_by_other_columns), context);
+        return std::make_unique<StoragesInfoStream>(filter_by_database, filter_by_other_columns, context);
     }
 
     virtual void

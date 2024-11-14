@@ -17,10 +17,6 @@ void setJemallocProfileActive(bool value);
 
 std::string flushJemallocProfile(const std::string & file_prefix);
 
-void setJemallocBackgroundThreads(bool enabled);
-
-void setJemallocMaxBackgroundThreads(size_t max_threads);
-
 }
 
 #endif

@@ -142,7 +142,6 @@ void Settings::applyCompatibilitySetting(const String & compatibility_value)
         return;
 
     ClickHouseVersion version(compatibility_value);
-    const auto & settings_changes_history = getSettingsChangesHistory();
     /// Iterate through ClickHouse version in descending order and apply reversed
     /// changes for each version that is higher that version from compatibility setting
     for (auto it = settings_changes_history.rbegin(); it != settings_changes_history.rend(); ++it)

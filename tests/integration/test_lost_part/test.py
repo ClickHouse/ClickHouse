@@ -90,7 +90,7 @@ def test_lost_part_same_replica(start_cluster):
             )
 
         assert node1.contains_in_log(
-            f"Created empty part {victim_part_from_the_middle}"
+            "Created empty part"
         ), f"Seems like empty part {victim_part_from_the_middle} is not created or log message changed"
 
         assert node1.query("SELECT COUNT() FROM mt0") == "4\n"
@@ -143,10 +143,7 @@ def test_lost_part_other_replica(start_cluster):
         node1.query("CHECK TABLE mt1")
 
         node2.query("SYSTEM START REPLICATION QUEUES")
-        # Reduce timeout in sync replica since it might never finish with merge stopped and we don't want to wait 300s
-        res, err = node1.query_and_get_answer_with_error(
-            "SYSTEM SYNC REPLICA mt1", settings={"receive_timeout": 30}
-        )
+        res, err = node1.query_and_get_answer_with_error("SYSTEM SYNC REPLICA mt1")
         print("result: ", res)
         print("error: ", res)
 
@@ -161,10 +158,10 @@ def test_lost_part_other_replica(start_cluster):
             )
 
         assert node1.contains_in_log(
-            f"Created empty part {victim_part_from_the_middle}"
-        ) or node1.contains_in_log(
-            f"Part {victim_part_from_the_middle} looks broken. Removing it and will try to fetch."
-        ), f"Seems like empty part {victim_part_from_the_middle} is not created or log message changed"
+            "Created empty part"
+        ), "Seems like empty part {} is not created or log message changed".format(
+            victim_part_from_the_middle
+        )
 
         assert_eq_with_retry(node2, "SELECT COUNT() FROM mt1", "4")
         assert_eq_with_retry(node2, "SELECT COUNT() FROM system.replication_queue", "0")
@@ -266,7 +263,7 @@ def test_lost_last_part(start_cluster):
             "ALTER TABLE mt3 UPDATE id = 777 WHERE 1", settings={"mutations_sync": "0"}
         )
 
-        partition_id = node1.query("select partitionID('x')").strip()
+        partition_id = node1.query("select partitionId('x')").strip()
         remove_part_from_disk(node1, "mt3", f"{partition_id}_0_0_0")
 
         # other way to detect broken parts

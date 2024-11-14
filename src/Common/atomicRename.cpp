@@ -46,8 +46,6 @@ namespace ErrorCodes
         #define __NR_renameat2 357
     #elif defined(__riscv)
         #define __NR_renameat2 276
-    #elif defined(__loongarch64)
-        #define __NR_renameat2 276
     #else
         #error "Unsupported architecture"
     #endif

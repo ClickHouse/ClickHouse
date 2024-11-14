@@ -80,6 +80,7 @@ void SerializationUUID::deserializeTextQuoted(IColumn & column, ReadBuffer & ist
 bool SerializationUUID::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     UUID uuid;
+    String field;
     if (!checkChar('\'', istr) || !tryReadText(uuid, istr) || !checkChar('\'', istr))
         return false;
 

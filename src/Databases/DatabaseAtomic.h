@@ -1,8 +1,7 @@
 #pragma once
 
-#include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabasesCommon.h>
-#include <Storages/IStorage_fwd.h>
+#include <Databases/DatabaseOrdinary.h>
 
 
 namespace DB
@@ -47,7 +46,7 @@ public:
 
     void drop(ContextPtr /*context*/) override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) const override;
 
     void beforeLoadingMetadata(ContextMutablePtr context, LoadingStrictnessLevel mode) override;
 
@@ -75,9 +74,6 @@ protected:
     void assertDetachedTableNotInUse(const UUID & uuid) TSA_REQUIRES(mutex);
     using DetachedTables = std::unordered_map<UUID, StoragePtr>;
     [[nodiscard]] DetachedTables cleanupDetachedTables() TSA_REQUIRES(mutex);
-
-    std::atomic_flag database_atomic_directories_created = ATOMIC_FLAG_INIT;
-    void createDirectories();
 
     void tryCreateMetadataSymlink();
 

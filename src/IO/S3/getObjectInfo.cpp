@@ -25,10 +25,10 @@ namespace DB::S3
 namespace
 {
     Aws::S3::Model::HeadObjectOutcome headObject(
-        const S3::Client & client, const String & bucket, const String & key, const String & version_id)
+        const S3::Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3)
     {
         ProfileEvents::increment(ProfileEvents::S3HeadObject);
-        if (client.isClientForDisk())
+        if (for_disk_s3)
             ProfileEvents::increment(ProfileEvents::DiskS3HeadObject);
 
         S3::HeadObjectRequest req;
@@ -44,17 +44,16 @@ namespace
     /// Performs a request to get the size and last modification time of an object.
     std::pair<std::optional<ObjectInfo>, Aws::S3::S3Error> tryGetObjectInfo(
         const S3::Client & client, const String & bucket, const String & key, const String & version_id,
-        bool with_metadata)
+        const S3Settings::RequestSettings & /*request_settings*/, bool with_metadata, bool for_disk_s3)
     {
-        auto outcome = headObject(client, bucket, key, version_id);
+        auto outcome = headObject(client, bucket, key, version_id, for_disk_s3);
         if (!outcome.IsSuccess())
             return {std::nullopt, outcome.GetError()};
 
         const auto & result = outcome.GetResult();
         ObjectInfo object_info;
         object_info.size = static_cast<size_t>(result.GetContentLength());
-        object_info.last_modification_time = result.GetLastModified().Seconds();
-        object_info.etag = result.GetETag();
+        object_info.last_modification_time = result.GetLastModified().Millis() / 1000;
 
         if (with_metadata)
             object_info.metadata = result.GetMetadata();
@@ -74,10 +73,12 @@ ObjectInfo getObjectInfo(
     const String & bucket,
     const String & key,
     const String & version_id,
+    const S3Settings::RequestSettings & request_settings,
     bool with_metadata,
+    bool for_disk_s3,
     bool throw_on_error)
 {
-    auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, with_metadata);
+    auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, request_settings, with_metadata, for_disk_s3);
     if (object_info)
     {
         return *object_info;
@@ -96,18 +97,22 @@ size_t getObjectSize(
     const String & bucket,
     const String & key,
     const String & version_id,
+    const S3Settings::RequestSettings & request_settings,
+    bool for_disk_s3,
     bool throw_on_error)
 {
-    return getObjectInfo(client, bucket, key, version_id, {}, throw_on_error).size;
+    return getObjectInfo(client, bucket, key, version_id, request_settings, {}, for_disk_s3, throw_on_error).size;
 }
 
 bool objectExists(
     const S3::Client & client,
     const String & bucket,
     const String & key,
-    const String & version_id)
+    const String & version_id,
+    const S3Settings::RequestSettings & request_settings,
+    bool for_disk_s3)
 {
-    auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, {});
+    auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, request_settings, {}, for_disk_s3);
     if (object_info)
         return true;
 
@@ -124,9 +129,11 @@ void checkObjectExists(
     const String & bucket,
     const String & key,
     const String & version_id,
+    const S3Settings::RequestSettings & request_settings,
+    bool for_disk_s3,
     std::string_view description)
 {
-    auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, {});
+    auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, request_settings, {}, for_disk_s3);
     if (object_info)
         return;
     throw S3Exception(error.GetErrorType(), "{}Object {} in bucket {} suddenly disappeared: {}",

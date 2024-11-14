@@ -1,8 +1,7 @@
-#include <Storages/MergeTree/AsyncBlockIDsCache.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
+#include <Storages/MergeTree/AsyncBlockIDsCache.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 
 #include <unordered_set>
 

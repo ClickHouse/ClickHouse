@@ -117,3 +117,4 @@ u4_01292	local_directory	double_sha1_password	{}	['::/0']	[]	[]	[]	1	[]	['r1_012
 \N	u4_01292	\N	0	\N	\N	\N	\N	\N	default
 \N	u4_01292	\N	1	max_memory_usage	5000000	\N	\N	\N	\N
 \N	u4_01292	\N	2	readonly	1	\N	\N	\N	\N
+-- no passwords or hashes in query_log

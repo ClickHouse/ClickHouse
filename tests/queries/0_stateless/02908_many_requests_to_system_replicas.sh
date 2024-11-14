@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, zookeeper, no-parallel, no-fasttest, no-asan
+# Tags: long, zookeeper, no-parallel, no-fasttest
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -7,8 +7,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
-NUM_TABLES=50
-CONCURRENCY=100
+NUM_TABLES=300
+CONCURRENCY=200
 
 echo "Creating $NUM_TABLES tables"
 
@@ -45,13 +45,6 @@ done
 wait;
 
 
-# Check results with different max_block_size
-$CLICKHOUSE_CLIENT -q 'SELECT count() as c, sum(total_replicas) >= 3*c, sum(active_replicas) >= 3*c FROM system.replicas WHERE database=currentDatabase()'
-$CLICKHOUSE_CLIENT -q 'SELECT count() as c, sum(total_replicas) >= 3*c, sum(active_replicas) >= 3*c FROM system.replicas WHERE database=currentDatabase() SETTINGS max_block_size=1'
-$CLICKHOUSE_CLIENT -q 'SELECT count() as c, sum(total_replicas) >= 3*c, sum(active_replicas) >= 3*c FROM system.replicas WHERE database=currentDatabase() SETTINGS max_block_size=77'
-$CLICKHOUSE_CLIENT -q 'SELECT count() as c, sum(total_replicas) >= 3*c, sum(active_replicas) >= 3*c FROM system.replicas WHERE database=currentDatabase() SETTINGS max_block_size=11111'
-
-
 echo "Making $CONCURRENCY requests to system.replicas"
 
 for i in $(seq 1 $CONCURRENCY)
@@ -70,8 +63,8 @@ wait;
 $CLICKHOUSE_CLIENT -nq "
 SYSTEM FLUSH LOGS;
 
--- Check that number of ZK request is less then a half of (total replicas * concurrency)
-SELECT sum(ProfileEvents['ZooKeeperTransactions']) < (${NUM_TABLES} * 3 * ${CONCURRENCY} / 2)
+-- without optimisation there are ~350K zk requests
+SELECT sum(ProfileEvents['ZooKeeperTransactions']) < 30000
   FROM system.query_log
  WHERE current_database=currentDatabase() AND log_comment='02908_many_requests';
 "

@@ -3,7 +3,6 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/IQueryTreeNode.h>
-#include <Core/Settings.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 
@@ -12,6 +11,24 @@ namespace DB
 
 namespace
 {
+
+const std::unordered_set<String> possibly_injective_function_names
+{
+        "dictGet",
+        "dictGetString",
+        "dictGetUInt8",
+        "dictGetUInt16",
+        "dictGetUInt32",
+        "dictGetUInt64",
+        "dictGetInt8",
+        "dictGetInt16",
+        "dictGetInt32",
+        "dictGetInt64",
+        "dictGetFloat32",
+        "dictGetFloat64",
+        "dictGetDate",
+        "dictGetDateTime"
+};
 
 class OptimizeGroupByInjectiveFunctionsVisitor : public InDepthQueryTreeVisitorWithContext<OptimizeGroupByInjectiveFunctionsVisitor>
 {

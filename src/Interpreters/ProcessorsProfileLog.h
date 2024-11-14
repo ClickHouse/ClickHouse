@@ -25,11 +25,11 @@ struct ProcessorProfileLogElement
     String processor_name;
 
     /// Milliseconds spend in IProcessor::work()
-    UInt64 elapsed_us{};
+    UInt32 elapsed_us{};
     /// IProcessor::NeedData
-    UInt64 input_wait_elapsed_us{};
+    UInt32 input_wait_elapsed_us{};
     /// IProcessor::PortFull
-    UInt64 output_wait_elapsed_us{};
+    UInt32 output_wait_elapsed_us{};
 
     size_t input_rows{};
     size_t input_bytes{};

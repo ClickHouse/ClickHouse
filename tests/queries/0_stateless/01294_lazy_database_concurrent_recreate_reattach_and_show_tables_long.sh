@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest
+# Tags: long, no-parallel, no-fasttest
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -91,7 +91,7 @@ ${CLICKHOUSE_CLIENT} -n -q "
 "
 
 
-TIMEOUT=20
+TIMEOUT=30
 
 timeout $TIMEOUT bash -c recreate_lazy_func1 2> /dev/null &
 timeout $TIMEOUT bash -c recreate_lazy_func2 2> /dev/null &

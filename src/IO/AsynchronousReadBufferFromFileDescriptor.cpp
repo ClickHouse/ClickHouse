@@ -244,7 +244,7 @@ void AsynchronousReadBufferFromFileDescriptor::rewind()
     file_offset_of_buffer_end = 0;
 }
 
-std::optional<size_t> AsynchronousReadBufferFromFileDescriptor::tryGetFileSize()
+size_t AsynchronousReadBufferFromFileDescriptor::getFileSize()
 {
     return getSizeFromFileDescriptor(fd, getFileName());
 }

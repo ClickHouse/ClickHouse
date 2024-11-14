@@ -8,7 +8,7 @@ function wait_for_query_to_start() {
     while [[ $($CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" -d "SELECT sum(read_rows) FROM system.processes WHERE query_id = '$1'") == 0 ]]; do sleep 0.1; done
 }
 
-${CLICKHOUSE_CLIENT} --multiline --query "
+${CLICKHOUSE_CLIENT} --multiline --multiquery --query "
 drop table if exists simple;
 
 create table simple (i int, j int) engine = MergeTree order by i

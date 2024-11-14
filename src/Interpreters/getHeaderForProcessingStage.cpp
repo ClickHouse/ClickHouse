@@ -1,6 +1,5 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/Utils.h>
-#include <Core/Settings.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>

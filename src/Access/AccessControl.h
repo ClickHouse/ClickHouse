@@ -185,9 +185,6 @@ public:
     void setSettingsConstraintsReplacePrevious(bool enable) { settings_constraints_replace_previous = enable; }
     bool doesSettingsConstraintsReplacePrevious() const { return settings_constraints_replace_previous; }
 
-    void setTableEnginesRequireGrant(bool enable) { table_engines_require_grant = enable; }
-    bool doesTableEnginesRequireGrant() const { return table_engines_require_grant; }
-
     std::shared_ptr<const ContextAccess> getContextAccess(const ContextAccessParams & params) const;
 
     std::shared_ptr<const EnabledRoles> getEnabledRoles(
@@ -264,7 +261,6 @@ private:
     std::atomic_bool select_from_system_db_requires_grant = false;
     std::atomic_bool select_from_information_schema_requires_grant = false;
     std::atomic_bool settings_constraints_replace_previous = false;
-    std::atomic_bool table_engines_require_grant = false;
     std::atomic_int bcrypt_workfactor = 12;
     std::atomic<AuthenticationType> default_password_type = AuthenticationType::SHA256_PASSWORD;
 };

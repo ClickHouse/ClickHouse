@@ -174,7 +174,7 @@ bool DistributedAsyncInsertBatch::valid()
     {
         if (!fs::exists(file))
         {
-            LOG_WARNING(parent.log, "File {} does not exist, likely due abnormal shutdown", file);
+            LOG_WARNING(parent.log, "File {} does not exists, likely due abnormal shutdown", file);
             res = false;
         }
     }
@@ -197,16 +197,6 @@ void DistributedAsyncInsertBatch::readText(ReadBuffer & in)
         UInt64 idx;
         in >> idx >> "\n";
         files.push_back(std::filesystem::absolute(fmt::format("{}/{}.bin", parent.path, idx)).string());
-
-        ReadBufferFromFile header_buffer(files.back());
-        const DistributedAsyncInsertHeader & header = DistributedAsyncInsertHeader::read(header_buffer, parent.log);
-        total_bytes += total_bytes;
-
-        if (header.rows)
-        {
-            total_rows += header.rows;
-            total_bytes += header.bytes;
-        }
     }
 
     recovered = true;
@@ -214,9 +204,10 @@ void DistributedAsyncInsertBatch::readText(ReadBuffer & in)
 
 void DistributedAsyncInsertBatch::sendBatch(const SettingsChanges & settings_changes)
 {
-    IConnectionPool::Entry connection;
     std::unique_ptr<RemoteInserter> remote;
     bool compression_expected = false;
+
+    IConnectionPool::Entry connection;
 
     /// Since the batch is sent as a whole (in case of failure, the whole batch
     /// will be repeated), we need to mark the whole batch as failed in case of
@@ -243,10 +234,7 @@ void DistributedAsyncInsertBatch::sendBatch(const SettingsChanges & settings_cha
 
                 auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
                 auto results = parent.pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, parent.storage.remote_storage.getQualifiedName());
-                auto result = results.front();
-                if (parent.pool->isTryResultInvalid(result, insert_settings.distributed_insert_skip_read_only_replicas))
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Got an invalid connection result");
-
+                auto result = parent.pool->getValidTryResult(results, insert_settings.distributed_insert_skip_read_only_replicas);
                 connection = std::move(result.entry);
                 compression_expected = connection->getCompression() == Protocol::Compression::Enable;
 
@@ -305,10 +293,7 @@ void DistributedAsyncInsertBatch::sendSeparateFiles(const SettingsChanges & sett
 
             auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
             auto results = parent.pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, parent.storage.remote_storage.getQualifiedName());
-            auto result = results.front();
-            if (parent.pool->isTryResultInvalid(result, insert_settings.distributed_insert_skip_read_only_replicas))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Got an invalid connection result");
-
+            auto result = parent.pool->getValidTryResult(results, insert_settings.distributed_insert_skip_read_only_replicas);
             auto connection = std::move(result.entry);
             bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
 

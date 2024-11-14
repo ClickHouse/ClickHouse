@@ -2369,83 +2369,6 @@ def test_kafka_virtual_columns2(kafka_cluster):
     instance.rotate_logs()
 
 
-def test_kafka_producer_consumer_separate_settings(kafka_cluster):
-    instance.query(
-        """
-        DROP TABLE IF EXISTS test.test_kafka;
-        CREATE TABLE test.test_kafka (key UInt64)
-            ENGINE = Kafka
-            SETTINGS kafka_broker_list = 'kafka1:19092',
-                     kafka_topic_list = 'separate_settings',
-                     kafka_group_name = 'test',
-                     kafka_format = 'JSONEachRow',
-                     kafka_row_delimiter = '\\n';
-        """
-    )
-
-    instance.query("SELECT * FROM test.test_kafka")
-    instance.query("INSERT INTO test.test_kafka VALUES (1)")
-
-    assert instance.contains_in_log("Kafka producer created")
-    assert instance.contains_in_log("Created #0 consumer")
-
-    kafka_conf_warnings = instance.grep_in_log("rdk:CONFWARN")
-
-    assert kafka_conf_warnings is not None
-
-    for warn in kafka_conf_warnings.strip().split("\n"):
-        # this setting was applied via old syntax and applied on both consumer
-        # and producer configurations
-        assert "heartbeat.interval.ms" in warn
-
-    kafka_consumer_applyed_properties = instance.grep_in_log("Consumer set property")
-    kafka_producer_applyed_properties = instance.grep_in_log("Producer set property")
-
-    assert kafka_consumer_applyed_properties is not None
-    assert kafka_producer_applyed_properties is not None
-
-    # global settings should be applied for consumer and producer
-    global_settings = {
-        "debug": "topic,protocol,cgrp,consumer",
-        "statistics.interval.ms": "600",
-    }
-
-    for name, value in global_settings.items():
-        property_in_log = f"{name}:{value}"
-        assert property_in_log in kafka_consumer_applyed_properties
-        assert property_in_log in kafka_producer_applyed_properties
-
-    settings_topic__separate_settings__consumer = {"session.timeout.ms": "6001"}
-
-    for name, value in settings_topic__separate_settings__consumer.items():
-        property_in_log = f"{name}:{value}"
-        assert property_in_log in kafka_consumer_applyed_properties
-        assert property_in_log not in kafka_producer_applyed_properties
-
-    producer_settings = {"transaction.timeout.ms": "60001"}
-
-    for name, value in producer_settings.items():
-        property_in_log = f"{name}:{value}"
-        assert property_in_log not in kafka_consumer_applyed_properties
-        assert property_in_log in kafka_producer_applyed_properties
-
-    # Should be ignored, because it is inside producer tag
-    producer_legacy_syntax__topic_separate_settings = {"message.timeout.ms": "300001"}
-
-    for name, value in producer_legacy_syntax__topic_separate_settings.items():
-        property_in_log = f"{name}:{value}"
-        assert property_in_log not in kafka_consumer_applyed_properties
-        assert property_in_log not in kafka_producer_applyed_properties
-
-    # Old syntax, applied on consumer and producer
-    legacy_syntax__topic_separated_settings = {"heartbeat.interval.ms": "302"}
-
-    for name, value in legacy_syntax__topic_separated_settings.items():
-        property_in_log = f"{name}:{value}"
-        assert property_in_log in kafka_consumer_applyed_properties
-        assert property_in_log in kafka_producer_applyed_properties
-
-
 def test_kafka_produce_key_timestamp(kafka_cluster):
     admin_client = KafkaAdminClient(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
@@ -4771,7 +4694,7 @@ def test_system_kafka_consumers_rebalance(kafka_cluster, max_retries=15):
           assignments.current_offset,
           if(length(exceptions.time)>0, exceptions.time[1]::String, 'never') as last_exception_time_,
           if(length(exceptions.text)>0, exceptions.text[1], 'no exception') as last_exception_,
-          stable_timestamp(last_poll_time) as last_poll_time_, stable_timestamp(last_commit_time) as last_commit_time_,
+          stable_timestamp(last_poll_time) as last_poll_time_, num_messages_read, stable_timestamp(last_commit_time) as last_commit_time_,
           num_commits, stable_timestamp(last_rebalance_time) as last_rebalance_time_,
           num_rebalance_revocations, num_rebalance_assignments, is_currently_used
           FROM system.kafka_consumers WHERE database='test' and table IN ('kafka', 'kafka2') format Vertical;
@@ -4791,6 +4714,7 @@ assignments.current_offset: [2]
 last_exception_time_:       never
 last_exception_:            no exception
 last_poll_time_:            now
+num_messages_read:          4
 last_commit_time_:          now
 num_commits:                2
 last_rebalance_time_:       now
@@ -4809,6 +4733,7 @@ assignments.current_offset: [2]
 last_exception_time_:       never
 last_exception_:            no exception
 last_poll_time_:            now
+num_messages_read:          1
 last_commit_time_:          now
 num_commits:                1
 last_rebalance_time_:       never

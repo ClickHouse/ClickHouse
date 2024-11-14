@@ -32,11 +32,7 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
         context_)
     , extension(std::move(extension_))
     , mode(mode_)
-    , min_marks_per_task(pool_settings.min_marks_for_concurrent_read)
 {
-    for (const auto & info : per_part_infos)
-        min_marks_per_task = std::max(min_marks_per_task, info->min_marks_per_task);
-
     for (const auto & part : parts_ranges)
         request.push_back({part.data_part->info, MarkRanges{}});
 
@@ -80,8 +76,12 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
     if (no_more_tasks)
         return nullptr;
 
-    auto response
-        = extension.callback(ParallelReadRequest(mode, extension.number_of_current_replica, min_marks_per_task * request.size(), request));
+    auto response = extension.callback(ParallelReadRequest(
+        mode,
+        extension.number_of_current_replica,
+        pool_settings.min_marks_for_concurrent_read * request.size(),
+        request
+    ));
 
     if (!response || response->description.empty() || response->finish)
     {

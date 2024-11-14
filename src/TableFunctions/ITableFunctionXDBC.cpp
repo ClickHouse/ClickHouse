@@ -1,10 +1,8 @@
-#include <Core/ServerSettings.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <IO/ConnectionTimeouts.h>
 #include <IO/ReadHelpers.h>
-#include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
+#include <IO/ConnectionTimeouts.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>

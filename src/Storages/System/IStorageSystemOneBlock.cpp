@@ -5,7 +5,6 @@
 // #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
-#include <Storages/VirtualColumnUtils.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
@@ -45,7 +44,7 @@ public:
 private:
     std::shared_ptr<IStorageSystemOneBlock> storage;
     std::vector<UInt8> columns_mask;
-    std::optional<ActionsDAG> filter;
+    const ActionsDAG::Node * predicate = nullptr;
 };
 
 void IStorageSystemOneBlock::read(
@@ -80,9 +79,8 @@ void IStorageSystemOneBlock::read(
 
 void ReadFromSystemOneBlock::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    const Block & sample_block = getOutputStream().header;
+    const auto & sample_block = getOutputStream().header;
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
-    const ActionsDAG::Node * predicate = filter ? filter->getOutputs().at(0) : nullptr;
     storage->fillData(res_columns, context, predicate, std::move(columns_mask));
 
     UInt64 num_rows = res_columns.at(0)->size();
@@ -93,20 +91,9 @@ void ReadFromSystemOneBlock::initializePipeline(QueryPipelineBuilder & pipeline,
 
 void ReadFromSystemOneBlock::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
-
-    if (!filter_actions_dag)
-        return;
-
-    Block sample = storage->getFilterSampleBlock();
-    if (sample.columns() == 0)
-        return;
-
-    filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &sample);
-
-    /// Must prepare sets here, initializePipeline() would be too late, see comment on FutureSetFromSubquery.
-    if (filter)
-        VirtualColumnUtils::buildSetsForDAG(*filter, context);
+    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
+    if (filter_actions_dag)
+        predicate = filter_actions_dag->getOutputs().at(0);
 }
 
 }

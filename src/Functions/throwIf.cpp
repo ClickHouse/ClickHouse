@@ -4,7 +4,6 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnsCommon.h>
-#include <Core/Settings.h>
 #include <Common/ErrorCodes.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
@@ -152,7 +151,7 @@ private:
         return nullptr;
     }
 
-    const bool allow_custom_error_code_argument;
+    bool allow_custom_error_code_argument;
 };
 
 }

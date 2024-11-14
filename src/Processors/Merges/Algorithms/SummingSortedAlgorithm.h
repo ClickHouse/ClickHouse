@@ -65,9 +65,7 @@ public:
         using MergedData::insertRow;
 
     public:
-        SummingMergedData(UInt64 max_block_size_rows, UInt64 max_block_size_bytes_, ColumnsDefinition & def_);
-
-        void initialize(const Block & header, const IMergingAlgorithm::Inputs & inputs) override;
+        SummingMergedData(MutableColumns columns_, UInt64 max_block_size_rows, UInt64 max_block_size_bytes_, ColumnsDefinition & def_);
 
         void startGroup(ColumnRawPtrs & raw_columns, size_t row);
         void finishGroup();

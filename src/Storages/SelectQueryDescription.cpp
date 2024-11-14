@@ -100,17 +100,20 @@ void checkAllowedQueries(const ASTSelectQuery & query)
 /// check if only one single select query in SelectWithUnionQuery
 static bool isSingleSelect(const ASTPtr & select, ASTPtr & res)
 {
-    auto new_select = select->as<ASTSelectWithUnionQuery &>();
-    if (new_select.list_of_selects->children.size() != 1)
+    auto * new_select = select->as<ASTSelectWithUnionQuery>();
+    if (new_select == nullptr)
         return false;
-    auto & new_inner_query = new_select.list_of_selects->children.at(0);
+
+    if (new_select->list_of_selects->children.size() != 1)
+        return false;
+    auto & new_inner_query = new_select->list_of_selects->children.at(0);
     if (new_inner_query->as<ASTSelectQuery>())
     {
         res = new_inner_query;
         return true;
     }
-    else
-        return isSingleSelect(new_inner_query, res);
+
+    return isSingleSelect(new_inner_query, res);
 }
 
 SelectQueryDescription SelectQueryDescription::getSelectQueryFromASTForMatView(const ASTPtr & select, bool refreshable, ContextPtr context)

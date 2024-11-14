@@ -4,7 +4,7 @@
 
 namespace DB
 {
-    enum class FileSegmentState : uint8_t
+    enum class FileSegmentState
     {
         DOWNLOADED,
         /**
@@ -38,7 +38,7 @@ namespace DB
         DETACHED,
     };
 
-    enum class FileSegmentKind : uint8_t
+    enum class FileSegmentKind
     {
         /**
          * `Regular` file segment is still in cache after usage, and can be evicted
@@ -53,7 +53,7 @@ namespace DB
         Temporary,
     };
 
-    enum class FileCacheQueueEntryType : uint8_t
+    enum class FileCacheQueueEntryType
     {
         None,
         LRU,

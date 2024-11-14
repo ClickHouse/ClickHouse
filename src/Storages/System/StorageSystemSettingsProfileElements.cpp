@@ -6,7 +6,6 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
-#include <Core/Settings.h>
 #include <Access/AccessControl.h>
 #include <Access/Role.h>
 #include <Access/User.h>

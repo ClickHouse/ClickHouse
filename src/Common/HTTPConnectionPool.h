@@ -52,7 +52,7 @@ protected:
 
 };
 
-enum class HTTPConnectionGroupType : uint8_t
+enum class HTTPConnectionGroupType
 {
     DISK,
     STORAGE,

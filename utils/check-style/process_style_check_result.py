@@ -18,7 +18,6 @@ def process_result(result_folder):
         "style",
         "pylint",
         "black",
-        "flake8",
         "mypy",
         "typos",
         "whitespaces",

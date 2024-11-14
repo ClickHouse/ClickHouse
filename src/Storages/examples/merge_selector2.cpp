@@ -3,6 +3,7 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/Operators.h>
 #include <Storages/MergeTree/SimpleMergeSelector.h>
+#include <Storages/MergeTree/LevelMergeSelector.h>
 #include <Common/formatReadable.h>
 
 
@@ -21,8 +22,11 @@ int main(int, char **)
     IMergeSelector::PartsRanges partitions(1);
     IMergeSelector::PartsRange & parts = partitions.back();
 
-    SimpleMergeSelector::Settings settings;
-    SimpleMergeSelector selector(settings);
+/*    SimpleMergeSelector::Settings settings;
+    SimpleMergeSelector selector(settings);*/
+
+    LevelMergeSelector::Settings settings;
+    LevelMergeSelector selector(settings);
 
     ReadBufferFromFileDescriptor in(STDIN_FILENO);
 
@@ -36,7 +40,7 @@ int main(int, char **)
         IMergeSelector::Part part;
         in >> part.size >> "\t" >> part.age >> "\t" >> part.level >> "\t" >> part_names.back() >> "\n";
         part.data = part_names.back().data();
-        part.level = 0;
+//        part.level = 0;
         parts.emplace_back(part);
         sum_parts_size += part.size;
     }
@@ -84,7 +88,8 @@ int main(int, char **)
             if (in_range)
             {
                 sum_merged_size += parts[i].size;
-                max_level = std::max(parts[i].level, max_level);
+                if (parts[i].level > max_level)
+                    max_level = parts[i].level;
             }
 
             if (parts[i].data == selected_parts.back().data)

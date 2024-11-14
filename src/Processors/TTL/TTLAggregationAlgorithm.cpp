@@ -1,6 +1,5 @@
-#include <Core/Settings.h>
-#include <Interpreters/Context.h>
 #include <Processors/TTL/TTLAggregationAlgorithm.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {

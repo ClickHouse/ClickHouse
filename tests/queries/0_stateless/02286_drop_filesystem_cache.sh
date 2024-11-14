@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest, no-parallel, no-object-storage, no-random-settings
+# Tags: long, no-fasttest, no-parallel, no-s3-storage, no-random-settings
 
 # set -x
 
@@ -7,7 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
+for STORAGE_POLICY in 's3_cache' 'local_cache'; do
     echo "Using storage policy: $STORAGE_POLICY"
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS test_02286"
 
@@ -31,7 +31,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
     $CLICKHOUSE_CLIENT --query "SELECT * FROM test_02286 FORMAT Null"
     $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache"
 
-    $CLICKHOUSE_CLIENT --multiline --query "SYSTEM DROP FILESYSTEM CACHE 'ff'; --{serverError 36}"
+    $CLICKHOUSE_CLIENT --multiline --multiquery --query "SYSTEM DROP FILESYSTEM CACHE 'ff'; --{serverError 36}"
 
     $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache"
 

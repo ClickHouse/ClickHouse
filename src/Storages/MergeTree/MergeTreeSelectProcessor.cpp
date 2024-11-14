@@ -26,12 +26,14 @@ namespace ErrorCodes
 MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     MergeTreeReadPoolPtr pool_,
     MergeTreeSelectAlgorithmPtr algorithm_,
+    const StorageSnapshotPtr & storage_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
     const ExpressionActionsSettings & actions_settings_,
     const MergeTreeReadTask::BlockSizeParams & block_size_params_,
     const MergeTreeReaderSettings & reader_settings_)
     : pool(std::move(pool_))
     , algorithm(std::move(algorithm_))
+    , storage_snapshot(storage_snapshot_)
     , prewhere_info(prewhere_info_)
     , actions_settings(actions_settings_)
     , prewhere_actions(getPrewhereActions(prewhere_info, actions_settings, reader_settings_.enable_multiple_prewhere_read_steps))
@@ -59,7 +61,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
 
     if (prewhere_info)
         LOG_TEST(log, "Original PREWHERE DAG:\n{}\nPREWHERE actions:\n{}",
-            prewhere_info->prewhere_actions.dumpDAG(),
+            (prewhere_info->prewhere_actions ? prewhere_info->prewhere_actions->dumpDAG(): std::string("<nullptr>")),
             (!prewhere_actions.steps.empty() ? prewhere_actions.dump() : std::string("<nullptr>")));
 }
 
@@ -80,7 +82,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(PrewhereInfoPtr pr
             PrewhereExprStep row_level_filter_step
             {
                 .type = PrewhereExprStep::Filter,
-                .actions = std::make_shared<ExpressionActions>(prewhere_info->row_level_filter->clone(), actions_settings),
+                .actions = std::make_shared<ExpressionActions>(prewhere_info->row_level_filter, actions_settings),
                 .filter_column_name = prewhere_info->row_level_column_name,
                 .remove_filter_column = true,
                 .need_filter = true,
@@ -96,7 +98,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(PrewhereInfoPtr pr
             PrewhereExprStep prewhere_step
             {
                 .type = PrewhereExprStep::Filter,
-                .actions = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions.clone(), actions_settings),
+                .actions = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions, actions_settings),
                 .filter_column_name = prewhere_info->prewhere_column_name,
                 .remove_filter_column = prewhere_info->remove_prewhere_column,
                 .need_filter = prewhere_info->need_filter,
@@ -145,12 +147,8 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                 ordered_columns.push_back(res.block.getByName(name).column);
             }
 
-            auto chunk = Chunk(ordered_columns, res.row_count);
-            if (add_part_level)
-                chunk.getChunkInfos().add(std::make_shared<MergeTreePartLevelInfo>(task->getInfo().data_part->info.level));
-
             return ChunkAndProgress{
-                .chunk = std::move(chunk),
+                .chunk = Chunk(ordered_columns, res.row_count, add_part_level ? std::make_shared<MergeTreePartLevelInfo>(task->getInfo().data_part->info.level) : nullptr),
                 .num_read_rows = res.num_read_rows,
                 .num_read_bytes = res.num_read_bytes,
                 .is_finished = false};

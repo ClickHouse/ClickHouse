@@ -40,7 +40,8 @@ size_t shortest_literal_length(const Literals & literals)
     if (literals.empty()) return 0;
     size_t shortest = std::numeric_limits<size_t>::max();
     for (const auto & lit : literals)
-        shortest = std::min(shortest, lit.literal.size());
+        if (shortest > lit.literal.size())
+            shortest = lit.literal.size();
     return shortest;
 }
 
@@ -450,7 +451,7 @@ try
 {
     Literals alternative_literals;
     Literal required_literal;
-    analyzeImpl(regexp_, regexp_.data(), required_literal, is_trivial, alternative_literals); // NOLINT
+    analyzeImpl(regexp_, regexp_.data(), required_literal, is_trivial, alternative_literals);
     required_substring = std::move(required_literal.literal);
     required_substring_is_prefix = required_literal.prefix;
     for (auto & lit : alternative_literals)
@@ -648,7 +649,8 @@ unsigned OptimizedRegularExpression::match(const char * subject, size_t subject_
     if (limit == 0)
         return 0;
 
-    limit = std::min(limit, number_of_subpatterns + 1);
+    if (limit > number_of_subpatterns + 1)
+        limit = number_of_subpatterns + 1;
 
     if (is_trivial)
     {

@@ -68,8 +68,8 @@ protected:
         const auto & part_name_column = StorageMergeTreeIndex::part_name_column;
         const auto & mark_number_column = StorageMergeTreeIndex::mark_number_column;
         const auto & rows_in_granule_column = StorageMergeTreeIndex::rows_in_granule_column;
-        const auto & index = part->getIndex();
 
+        const auto & index = part->getIndex();
         Columns result_columns(num_columns);
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
@@ -79,19 +79,7 @@ protected:
             if (index_header.has(column_name))
             {
                 size_t index_position = index_header.getPositionByName(column_name);
-
-                /// Some of the columns from suffix of primary index may be not loaded
-                /// according to setting 'primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns'.
-                if (index_position < index->size())
-                {
-                    result_columns[pos] = index->at(index_position);
-                }
-                else
-                {
-                    const auto & index_type = index_header.getByPosition(index_position).type;
-                    auto index_column = index_type->createColumnConstWithDefaultValue(num_rows);
-                    result_columns[pos] = index_column->convertToFullColumnIfConst();
-                }
+                result_columns[pos] = index[index_position];
             }
             else if (column_name == part_name_column.name)
             {
@@ -275,24 +263,14 @@ public:
 private:
     std::shared_ptr<StorageMergeTreeIndex> storage;
     Poco::Logger * log;
-    ExpressionActionsPtr virtual_columns_filter;
+    const ActionsDAG::Node * predicate = nullptr;
 };
 
 void ReadFromMergeTreeIndex::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
-
+    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
     if (filter_actions_dag)
-    {
-        Block block_to_filter
-        {
-            { {}, std::make_shared<DataTypeString>(), StorageMergeTreeIndex::part_name_column.name },
-        };
-
-        auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter);
-        if (dag)
-            virtual_columns_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
-    }
+        predicate = filter_actions_dag->getOutputs().at(0);
 }
 
 void StorageMergeTreeIndex::read(
@@ -344,7 +322,7 @@ void StorageMergeTreeIndex::read(
 
 void ReadFromMergeTreeIndex::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto filtered_parts = storage->getFilteredDataParts(virtual_columns_filter);
+    auto filtered_parts = storage->getFilteredDataParts(predicate, context);
 
     LOG_DEBUG(log, "Reading index{}from {} parts of table {}",
         storage->with_marks ? " with marks " : " ",
@@ -354,9 +332,9 @@ void ReadFromMergeTreeIndex::initializePipeline(QueryPipelineBuilder & pipeline,
     pipeline.init(Pipe(std::make_shared<MergeTreeIndexSource>(getOutputStream().header, storage->key_sample_block, std::move(filtered_parts), context, storage->with_marks)));
 }
 
-MergeTreeData::DataPartsVector StorageMergeTreeIndex::getFilteredDataParts(const ExpressionActionsPtr & virtual_columns_filter) const
+MergeTreeData::DataPartsVector StorageMergeTreeIndex::getFilteredDataParts(const ActionsDAG::Node * predicate, const ContextPtr & context) const
 {
-    if (!virtual_columns_filter)
+    if (!predicate)
         return data_parts;
 
     auto all_part_names = ColumnString::create();
@@ -364,7 +342,7 @@ MergeTreeData::DataPartsVector StorageMergeTreeIndex::getFilteredDataParts(const
         all_part_names->insert(part->name);
 
     Block filtered_block{{std::move(all_part_names), std::make_shared<DataTypeString>(), part_name_column.name}};
-    VirtualColumnUtils::filterBlockWithExpression(virtual_columns_filter, filtered_block);
+    VirtualColumnUtils::filterBlockWithPredicate(predicate, filtered_block, context);
 
     if (!filtered_block.rows())
         return {};

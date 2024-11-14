@@ -6,7 +6,7 @@ import sys
 CURDIR = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, os.path.join(CURDIR, "helpers"))
 
-from pure_http_client import ClickHouseClient, requests_session_with_retries
+from pure_http_client import ClickHouseClient
 
 
 class Tester:
@@ -193,9 +193,9 @@ def main():
     url = os.environ["CLICKHOUSE_URL"] + "&max_threads=1"
 
     default_index_granularity = 10
-    total_rows = 7 * default_index_granularity
+    total_rows = 8 * default_index_granularity
     step = default_index_granularity
-    session = requests_session_with_retries()
+    session = requests.Session()
     for index_granularity in [
         default_index_granularity - 1,
         default_index_granularity,

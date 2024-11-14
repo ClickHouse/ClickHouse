@@ -28,10 +28,10 @@ def create_tables(cluster, table_name):
     node3.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
 
     node1.query(
-        f"CREATE TABLE IF NOT EXISTS {table_name} (key UInt64, value String) Engine=ReplicatedMergeTree('/test_parallel_replicas/shard1/{table_name}', 'r1') ORDER BY (key)"
+        f"CREATE TABLE IF NOT EXISTS {table_name} (key Int64, value String) Engine=ReplicatedMergeTree('/test_parallel_replicas/shard1/{table_name}', 'r1') ORDER BY (key)"
     )
     node3.query(
-        f"CREATE TABLE IF NOT EXISTS {table_name} (key UInt64, value String) Engine=ReplicatedMergeTree('/test_parallel_replicas/shard1/{table_name}', 'r3') ORDER BY (key)"
+        f"CREATE TABLE IF NOT EXISTS {table_name} (key Int64, value String) Engine=ReplicatedMergeTree('/test_parallel_replicas/shard1/{table_name}', 'r3') ORDER BY (key)"
     )
 
     # populate data
@@ -76,11 +76,11 @@ def test_parallel_replicas_custom_key_failover(
             f"SELECT key, count() FROM cluster('{cluster_name}', currentDatabase(), test_table) GROUP BY key ORDER BY key",
             settings={
                 "log_comment": log_comment,
+                "prefer_localhost_replica": prefer_localhost_replica,
                 "max_parallel_replicas": 4,
                 "parallel_replicas_custom_key": custom_key,
                 "parallel_replicas_custom_key_filter_type": filter_type,
                 "use_hedged_requests": use_hedged_requests,
-                "prefer_localhost_replica": prefer_localhost_replica,
                 # avoid considering replica delay on connection choice
                 # otherwise connection can be not distributed evenly among available nodes
                 # and so custom key secondary queries (we check it bellow)
@@ -100,19 +100,20 @@ def test_parallel_replicas_custom_key_failover(
     assert query_id != ""
     query_id = query_id[:-1]
 
-    assert (
-        node1.query(
-            f"SELECT 'subqueries', count() FROM clusterAllReplicas({cluster_name}, system.query_log) WHERE initial_query_id = '{query_id}' AND type ='QueryFinish' AND query_id != initial_query_id SETTINGS skip_unavailable_shards=1"
-        )
-        == "subqueries\t4\n"
-    )
-
-    # With enabled hedged requests, we can't guarantee exact query distribution among nodes
-    # In case of a replica being slow in terms of responsiveness, hedged connection can change initial replicas choice
-    if use_hedged_requests == 0:
+    if prefer_localhost_replica == 0:
         assert (
             node1.query(
-                f"SELECT h, count() FROM clusterAllReplicas({cluster_name}, system.query_log) WHERE initial_query_id = '{query_id}' AND type ='QueryFinish' GROUP BY hostname() as h ORDER BY h SETTINGS skip_unavailable_shards=1"
+                f"SELECT 'subqueries', count() FROM clusterAllReplicas({cluster_name}, system.query_log) WHERE initial_query_id = '{query_id}' AND type ='QueryFinish' AND query_id != initial_query_id SETTINGS skip_unavailable_shards=1"
             )
-            == "n1\t3\nn3\t2\n"
+            == "subqueries\t4\n"
         )
+
+        # With enabled hedged requests, we can't guarantee exact query distribution among nodes
+        # In case of a replica being slow in terms of responsiveness, hedged connection can change initial replicas choice
+        if use_hedged_requests == 0:
+            assert (
+                node1.query(
+                    f"SELECT h, count() FROM clusterAllReplicas({cluster_name}, system.query_log) WHERE initial_query_id = '{query_id}' AND type ='QueryFinish' GROUP BY hostname() as h ORDER BY h SETTINGS skip_unavailable_shards=1"
+                )
+                == "n1\t3\nn3\t2\n"
+            )

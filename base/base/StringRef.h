@@ -12,8 +12,6 @@
 #include <base/types.h>
 #include <base/unaligned.h>
 #include <base/simd.h>
-#include <fmt/core.h>
-#include <fmt/ostream.h>
 
 #include <city.h>
 
@@ -369,14 +367,16 @@ namespace PackedZeroTraits
 {
     template <typename Second, template <typename, typename> class PackedPairNoInit>
     inline bool check(const PackedPairNoInit<StringRef, Second> p)
-    { return 0 == p.key.size; }
+    {
+        return 0 == p.key.size;
+    }
 
     template <typename Second, template <typename, typename> class PackedPairNoInit>
     inline void set(PackedPairNoInit<StringRef, Second> & p)
-    { p.key.size = 0; }
+    {
+        p.key.size = 0;
+    }
 }
 
 
 std::ostream & operator<<(std::ostream & os, const StringRef & str);
-
-template<> struct fmt::formatter<StringRef> : fmt::ostream_formatter {};

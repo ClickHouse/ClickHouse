@@ -20,6 +20,7 @@
 #include <base/range.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <base/insertAtEnd.h>
+
 #include "config.h"
 
 namespace DB
@@ -64,7 +65,7 @@ namespace
             bool expect_hash = false;
             bool expect_ldap_server_name = false;
             bool expect_kerberos_realm = false;
-            bool expect_ssl_cert_subjects = false;
+            bool expect_common_names = false;
             bool expect_public_ssh_key = false;
             bool expect_http_auth_server = false;
 
@@ -81,7 +82,7 @@ namespace
                         else if (check_type == AuthenticationType::KERBEROS)
                             expect_kerberos_realm = true;
                         else if (check_type == AuthenticationType::SSL_CERTIFICATE)
-                            expect_ssl_cert_subjects = true;
+                            expect_common_names = true;
                         else if (check_type == AuthenticationType::SSH_KEY)
                             expect_public_ssh_key = true;
                         else if (check_type == AuthenticationType::HTTP)
@@ -121,10 +122,9 @@ namespace
 
             ASTPtr value;
             ASTPtr parsed_salt;
+            ASTPtr common_names;
             ASTPtr public_ssh_keys;
             ASTPtr http_auth_scheme;
-            ASTPtr ssl_cert_subjects;
-            std::optional<String> ssl_cert_subject_type;
 
             if (expect_password || expect_hash)
             {
@@ -153,19 +153,12 @@ namespace
                         return false;
                 }
             }
-            else if (expect_ssl_cert_subjects)
+            else if (expect_common_names)
             {
-                for (const Keyword &keyword : {Keyword::CN, Keyword::SAN})
-                    if (ParserKeyword{keyword}.ignore(pos, expected))
-                    {
-                        ssl_cert_subject_type = toStringView(keyword);
-                        break;
-                    }
-
-                if (!ssl_cert_subject_type)
+                if (!ParserKeyword{Keyword::CN}.ignore(pos, expected))
                     return false;
 
-                if (!ParserList{std::make_unique<ParserStringAndSubstitution>(), std::make_unique<ParserToken>(TokenType::Comma), false}.parse(pos, ssl_cert_subjects, expected))
+                if (!ParserList{std::make_unique<ParserStringAndSubstitution>(), std::make_unique<ParserToken>(TokenType::Comma), false}.parse(pos, common_names, expected))
                     return false;
             }
             else if (expect_public_ssh_key)
@@ -173,7 +166,7 @@ namespace
                 if (!ParserKeyword{Keyword::BY}.ignore(pos, expected))
                     return false;
 
-                if (!ParserList{std::make_unique<ParserPublicSSHKey>(), std::make_unique<ParserToken>(TokenType::Comma), false}.parse(pos, public_ssh_keys, expected))
+                if (!ParserList{std::make_unique<ParserPublicSSHKey>(), std::make_unique<ParserToken>(TokenType::Comma), false}.parse(pos, common_names, expected))
                     return false;
             }
             else if (expect_http_auth_server)
@@ -202,11 +195,8 @@ namespace
             if (parsed_salt)
                 auth_data->children.push_back(std::move(parsed_salt));
 
-            if (ssl_cert_subjects)
-            {
-                auth_data->ssl_cert_subject_type = ssl_cert_subject_type.value();
-                auth_data->children = std::move(ssl_cert_subjects->children);
-            }
+            if (common_names)
+                auth_data->children = std::move(common_names->children);
 
             if (public_ssh_keys)
                 auth_data->children = std::move(public_ssh_keys->children);

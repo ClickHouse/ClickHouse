@@ -21,8 +21,6 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 class Arena;
 
-class IWindowFunction;
-
 // Runtime data for computing one window function.
 struct WindowFunctionWorkspace
 {
@@ -50,7 +48,6 @@ struct WindowTransformBlock
 {
     Columns original_input_columns;
     Columns input_columns;
-    Columns casted_columns;
     MutableColumns output_columns;
 
     size_t rows = 0;

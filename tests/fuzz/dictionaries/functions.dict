@@ -1588,7 +1588,6 @@
 "groupBitmapXorResample"
 "groupBitmapXorSimpleState"
 "groupBitmapXorState"
-"groupConcat"
 "groupUniqArray"
 "groupUniqArrayArgMax"
 "groupUniqArrayArgMin"

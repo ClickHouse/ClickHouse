@@ -86,10 +86,7 @@ inline std::string_view toDescription(OvercommitResult result)
 
 bool shouldTrackAllocation(Float64 probability, void * ptr)
 {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wimplicit-const-int-float-conversion"
     return intHash64(uintptr_t(ptr)) < std::numeric_limits<uint64_t>::max() * probability;
-#pragma clang diagnostic pop
 }
 
 }
@@ -195,7 +192,7 @@ void MemoryTracker::debugLogBigAllocationWithoutCheck(Int64 size [[maybe_unused]
 {
     /// Big allocations through allocNoThrow (without checking memory limits) may easily lead to OOM (and it's hard to debug).
     /// Let's find them.
-#ifdef DEBUG_OR_SANITIZER_BUILD
+#ifdef ABORT_ON_LOGICAL_ERROR
     if (size < 0)
         return;
 

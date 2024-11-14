@@ -3,8 +3,6 @@
 #if USE_MYSQL
 
 #include <Storages/StorageMySQL.h>
-
-#include <Core/Settings.h>
 #include <Processors/Sources/MySQLSource.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>

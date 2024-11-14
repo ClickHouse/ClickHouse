@@ -292,7 +292,7 @@ bool ExecutingGraph::updateNode(uint64_t pid, Queue & queue, Queue & async_queue
                         }
                         else if (last_status == IProcessor::Status::NeedData && status != IProcessor::Status::NeedData)
                         {
-                            processor.input_wait_elapsed_ns += processor.input_wait_watch.elapsedNanoseconds();
+                            processor.input_wait_elapsed_us += processor.input_wait_watch.elapsedMicroseconds();
                         }
 
                         /// PortFull
@@ -302,7 +302,7 @@ bool ExecutingGraph::updateNode(uint64_t pid, Queue & queue, Queue & async_queue
                         }
                         else if (last_status == IProcessor::Status::PortFull && status != IProcessor::Status::PortFull)
                         {
-                            processor.output_wait_elapsed_ns += processor.output_wait_watch.elapsedNanoseconds();
+                            processor.output_wait_elapsed_us += processor.output_wait_watch.elapsedMicroseconds();
                         }
                     }
                 }

@@ -46,7 +46,6 @@ DatabaseMaterializedMySQL::DatabaseMaterializedMySQL(
     , settings(std::move(settings_))
     , materialize_thread(context_, database_name_, mysql_database_name_, std::move(pool_), std::move(client_), binlog_client_, settings.get())
 {
-    createDirectories();
 }
 
 void DatabaseMaterializedMySQL::rethrowExceptionIfNeeded() const
@@ -85,8 +84,7 @@ LoadTaskPtr DatabaseMaterializedMySQL::startupDatabaseAsync(AsyncLoader & async_
         [this, mode] (AsyncLoader &, const LoadJobPtr &)
         {
             LOG_TRACE(log, "Starting MaterializeMySQL database");
-            if (!settings->allow_startup_database_without_connection_to_mysql
-                && mode < LoadingStrictnessLevel::FORCE_ATTACH)
+            if (mode < LoadingStrictnessLevel::FORCE_ATTACH)
                 materialize_thread.assertMySQLAvailable();
 
             materialize_thread.startSynchronization();
@@ -171,7 +169,7 @@ void DatabaseMaterializedMySQL::drop(ContextPtr context_)
     fs::path metadata(getMetadataPath() + "/.metadata");
 
     if (fs::exists(metadata))
-        (void)fs::remove(metadata);
+        fs::remove(metadata);
 
     DatabaseAtomic::drop(context_);
 }
@@ -187,9 +185,9 @@ StoragePtr DatabaseMaterializedMySQL::tryGetTable(const String & name, ContextPt
 }
 
 DatabaseTablesIteratorPtr
-DatabaseMaterializedMySQL::getTablesIterator(ContextPtr context_, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const
+DatabaseMaterializedMySQL::getTablesIterator(ContextPtr context_, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const
 {
-    DatabaseTablesIteratorPtr iterator = DatabaseAtomic::getTablesIterator(context_, filter_by_table_name, skip_not_loaded);
+    DatabaseTablesIteratorPtr iterator = DatabaseAtomic::getTablesIterator(context_, filter_by_table_name);
     if (context_->isInternalQuery())
         return iterator;
     return std::make_unique<DatabaseMaterializedTablesIterator>(std::move(iterator), this);
@@ -203,6 +201,7 @@ void DatabaseMaterializedMySQL::checkIsInternalQuery(ContextPtr context_, const 
 
 void DatabaseMaterializedMySQL::stopReplication()
 {
+    stopLoading();
     materialize_thread.stopSynchronization();
     started_up = false;
 }

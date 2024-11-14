@@ -13,7 +13,6 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <Common/escapeForFileName.h>
-#include <Core/Settings.h>
 
 
 namespace DB

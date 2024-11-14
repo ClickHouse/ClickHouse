@@ -11,7 +11,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
-#include <Core/Settings.h>
 
 
 namespace DB

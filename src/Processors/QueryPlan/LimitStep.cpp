@@ -53,6 +53,7 @@ void LimitStep::describeActions(FormatSettings & settings) const
     {
         settings.out << prefix;
 
+        String str;
         if (with_ties)
             settings.out << "WITH TIES";
 

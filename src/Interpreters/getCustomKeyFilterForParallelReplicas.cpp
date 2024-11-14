@@ -1,7 +1,5 @@
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 
-#include <Core/Settings.h>
-
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSampleRatio.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -9,6 +7,7 @@
 
 #include <Interpreters/Context.h>
 
+#include <DataTypes/DataTypesNumber.h>
 
 #include <boost/rational.hpp>
 
@@ -19,19 +18,18 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
-    extern const int INVALID_SETTING_VALUE;
 }
 
 ASTPtr getCustomKeyFilterForParallelReplica(
     size_t replicas_count,
     size_t replica_num,
     ASTPtr custom_key_ast,
-    ParallelReplicasCustomKeyFilter filter,
+    ParallelReplicasCustomKeyFilterType filter_type,
     const ColumnsDescription & columns,
     const ContextPtr & context)
 {
     chassert(replicas_count > 1);
-    if (filter.filter_type == ParallelReplicasCustomKeyFilterType::DEFAULT)
+    if (filter_type == ParallelReplicasCustomKeyFilterType::DEFAULT)
     {
         // first we do modulo with replica count
         auto modulo_function = makeASTFunction("positiveModulo", custom_key_ast, std::make_shared<ASTLiteral>(replicas_count));
@@ -42,79 +40,34 @@ ASTPtr getCustomKeyFilterForParallelReplica(
         return equals_function;
     }
 
-    chassert(filter.filter_type == ParallelReplicasCustomKeyFilterType::RANGE);
+    assert(filter_type == ParallelReplicasCustomKeyFilterType::RANGE);
 
     KeyDescription custom_key_description
         = KeyDescription::getKeyFromAST(custom_key_ast, columns, context);
 
     using RelativeSize = boost::rational<ASTSampleRatio::BigNum>;
 
-    RelativeSize range_upper = RelativeSize(0);
-    RelativeSize range_lower = RelativeSize(filter.range_lower);
+    RelativeSize size_of_universum = 0;
     DataTypePtr custom_key_column_type = custom_key_description.data_types[0];
 
+    size_of_universum = RelativeSize(std::numeric_limits<UInt32>::max()) + RelativeSize(1);
     if (custom_key_description.data_types.size() == 1)
     {
         if (typeid_cast<const DataTypeUInt64 *>(custom_key_column_type.get()))
-        {
-            range_upper = filter.range_upper > 0 ? RelativeSize(filter.range_upper) + RelativeSize(1)
-                                                 : RelativeSize(std::numeric_limits<UInt64>::max()) + RelativeSize(1);
-            if (range_upper > RelativeSize(std::numeric_limits<UInt64>::max()) + RelativeSize(1))
-                throw Exception(
-                    ErrorCodes::INVALID_SETTING_VALUE,
-                    "Invalid custom key range upper bound: {}. Value must be smaller than custom key column type (UInt64) max value",
-                    range_upper);
-        }
+            size_of_universum = RelativeSize(std::numeric_limits<UInt64>::max()) + RelativeSize(1);
         else if (typeid_cast<const DataTypeUInt32 *>(custom_key_column_type.get()))
-        {
-            range_upper = filter.range_upper > 0 ? RelativeSize(filter.range_upper) + RelativeSize(1)
-                                                 : RelativeSize(std::numeric_limits<UInt32>::max()) + RelativeSize(1);
-            if (range_upper > RelativeSize(std::numeric_limits<UInt32>::max()) + RelativeSize(1))
-                throw Exception(
-                    ErrorCodes::INVALID_SETTING_VALUE,
-                    "Invalid custom key range upper bound: {}. Value must be smaller than custom key column type (UInt32) max value",
-                    range_upper);
-        }
+            size_of_universum = RelativeSize(std::numeric_limits<UInt32>::max()) + RelativeSize(1);
         else if (typeid_cast<const DataTypeUInt16 *>(custom_key_column_type.get()))
-        {
-            range_upper = filter.range_upper > 0 ? RelativeSize(filter.range_upper) + RelativeSize(1)
-                                                 : RelativeSize(std::numeric_limits<UInt16>::max()) + RelativeSize(1);
-            if (range_upper > RelativeSize(std::numeric_limits<UInt16>::max()) + RelativeSize(1))
-                throw Exception(
-                    ErrorCodes::INVALID_SETTING_VALUE,
-                    "Invalid custom key range upper bound: {}. Value must be smaller than custom key column type (UInt16) max value",
-                    range_upper);
-        }
+            size_of_universum = RelativeSize(std::numeric_limits<UInt16>::max()) + RelativeSize(1);
         else if (typeid_cast<const DataTypeUInt8 *>(custom_key_column_type.get()))
-        {
-            range_upper = filter.range_upper > 0 ? RelativeSize(filter.range_upper) + RelativeSize(1)
-                                                 : RelativeSize(std::numeric_limits<UInt8>::max()) + RelativeSize(1);
-            if (range_upper > RelativeSize(std::numeric_limits<UInt8>::max()) + RelativeSize(1))
-                throw Exception(
-                    ErrorCodes::INVALID_SETTING_VALUE,
-                    "Invalid custom key range upper bound: {}. Value must be smaller than custom key column type (UInt8) max value",
-                    range_upper);
-        }
+            size_of_universum = RelativeSize(std::numeric_limits<UInt8>::max()) + RelativeSize(1);
     }
 
-    if (range_upper == RelativeSize(0))
+    if (size_of_universum == RelativeSize(0))
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
             "Invalid custom key column type: {}. Must be one unsigned integer type",
             custom_key_column_type->getName());
-
-    if (range_lower >= range_upper)
-        throw Exception(
-            ErrorCodes::INVALID_SETTING_VALUE,
-            "Invalid custom key filter range: Range upper bound {} must be larger than range lower bound {}",
-            range_lower,
-            range_upper);
-
-    RelativeSize size_of_universum = range_upper - range_lower;
-
-    if (size_of_universum <= RelativeSize(replicas_count))
-        throw Exception(
-            ErrorCodes::INVALID_SETTING_VALUE, "Invalid custom key filter range: Range must be larger than than the number of replicas");
 
     RelativeSize relative_range_size = RelativeSize(1) / replicas_count;
     RelativeSize relative_range_offset = relative_range_size * RelativeSize(replica_num);
@@ -123,19 +76,19 @@ ASTPtr getCustomKeyFilterForParallelReplica(
     bool has_lower_limit = false;
     bool has_upper_limit = false;
 
-    RelativeSize lower_limit_rational = range_lower + relative_range_offset * size_of_universum;
-    RelativeSize upper_limit_rational = range_lower + (relative_range_offset + relative_range_size) * size_of_universum;
+    RelativeSize lower_limit_rational = relative_range_offset * size_of_universum;
+    RelativeSize upper_limit_rational = (relative_range_offset + relative_range_size) * size_of_universum;
 
     UInt64 lower = boost::rational_cast<ASTSampleRatio::BigNum>(lower_limit_rational);
     UInt64 upper = boost::rational_cast<ASTSampleRatio::BigNum>(upper_limit_rational);
 
-    if (lower_limit_rational > range_lower)
+    if (lower > 0)
         has_lower_limit = true;
 
-    if (upper_limit_rational < range_upper)
+    if (upper_limit_rational < size_of_universum)
         has_upper_limit = true;
 
-    chassert(has_lower_limit || has_upper_limit);
+    assert(has_lower_limit || has_upper_limit);
 
     /// Let's add the conditions to cut off something else when the index is scanned again and when the request is processed.
     std::shared_ptr<ASTFunction> lower_function;
@@ -157,7 +110,7 @@ ASTPtr getCustomKeyFilterForParallelReplica(
             return upper_function;
     }
 
-    chassert(upper_function && lower_function);
+    assert(upper_function && lower_function);
 
     return makeASTFunction("and", std::move(lower_function), std::move(upper_function));
 }

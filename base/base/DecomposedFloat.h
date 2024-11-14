@@ -51,9 +51,11 @@ struct DecomposedFloat
     /// Returns 0 for both +0. and -0.
     int sign() const
     {
-        if (exponent() == 0 && mantissa() == 0)
-            return 0;
-        return isNegative() ? -1 : 1;
+        return (exponent() == 0 && mantissa() == 0)
+            ? 0
+            : (isNegative()
+                ? -1
+                : 1);
     }
 
     uint16_t exponent() const

@@ -1,7 +1,6 @@
 #include <Storages/IStorageCluster.h>
 
 #include <Common/Exception.h>
-#include <Core/Settings.h>
 #include <Core/QueryProcessingStage.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/ConnectionTimeouts.h>
@@ -87,8 +86,7 @@ private:
 
 void ReadFromCluster::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
-
+    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);

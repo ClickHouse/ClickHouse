@@ -317,7 +317,7 @@ public:
                             ErrorCodes::ILLEGAL_COLUMN, "Expected Array column, found {}", column_array_ptr->getName());
 
                     column_array_ptr = recursiveRemoveLowCardinality(column_const_array->convertToFullColumn());
-                    column_array = &checkAndGetColumn<ColumnArray>(*column_array_ptr);
+                    column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
                 }
 
                 if (!array_type)

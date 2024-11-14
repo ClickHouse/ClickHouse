@@ -5,14 +5,14 @@
 
 #include <Common/Scheduler/Nodes/FairPolicy.h>
 #include <Common/Scheduler/Nodes/ThrottlerConstraint.h>
+#include "Common/Scheduler/ISchedulerNode.h"
+#include "Common/Scheduler/ResourceRequest.h"
 
 using namespace DB;
 
 using ResourceTest = ResourceTestClass;
 
-/// Tests disabled because of leaks in the test themselves: https://github.com/ClickHouse/ClickHouse/issues/67678
-
-TEST(DISABLED_SchedulerThrottlerConstraint, LeakyBucketConstraint)
+TEST(SchedulerThrottlerConstraint, LeakyBucketConstraint)
 {
     ResourceTest t;
     EventQueue::TimePoint start = std::chrono::system_clock::now();
@@ -42,7 +42,7 @@ TEST(DISABLED_SchedulerThrottlerConstraint, LeakyBucketConstraint)
     t.consumed("A", 10);
 }
 
-TEST(DISABLED_SchedulerThrottlerConstraint, Unlimited)
+TEST(SchedulerThrottlerConstraint, Unlimited)
 {
     ResourceTest t;
     EventQueue::TimePoint start = std::chrono::system_clock::now();
@@ -59,7 +59,7 @@ TEST(DISABLED_SchedulerThrottlerConstraint, Unlimited)
     }
 }
 
-TEST(DISABLED_SchedulerThrottlerConstraint, Pacing)
+TEST(SchedulerThrottlerConstraint, Pacing)
 {
     ResourceTest t;
     EventQueue::TimePoint start = std::chrono::system_clock::now();
@@ -79,7 +79,7 @@ TEST(DISABLED_SchedulerThrottlerConstraint, Pacing)
     }
 }
 
-TEST(DISABLED_SchedulerThrottlerConstraint, BucketFilling)
+TEST(SchedulerThrottlerConstraint, BucketFilling)
 {
     ResourceTest t;
     EventQueue::TimePoint start = std::chrono::system_clock::now();
@@ -113,7 +113,7 @@ TEST(DISABLED_SchedulerThrottlerConstraint, BucketFilling)
     t.consumed("A", 3);
 }
 
-TEST(DISABLED_SchedulerThrottlerConstraint, PeekAndAvgLimits)
+TEST(SchedulerThrottlerConstraint, PeekAndAvgLimits)
 {
     ResourceTest t;
     EventQueue::TimePoint start = std::chrono::system_clock::now();
@@ -141,7 +141,7 @@ TEST(DISABLED_SchedulerThrottlerConstraint, PeekAndAvgLimits)
     }
 }
 
-TEST(DISABLED_SchedulerThrottlerConstraint, ThrottlerAndFairness)
+TEST(SchedulerThrottlerConstraint, ThrottlerAndFairness)
 {
     ResourceTest t;
     EventQueue::TimePoint start = std::chrono::system_clock::now();

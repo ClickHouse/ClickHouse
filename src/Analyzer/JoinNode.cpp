@@ -1,14 +1,16 @@
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/ListNode.h>
-#include <Analyzer/Utils.h>
-#include <IO/Operators.h>
+
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
+#include <IO/Operators.h>
+
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Common/assert_cast.h>
+
+#include <Analyzer/Utils.h>
 
 namespace DB
 {
@@ -46,9 +48,15 @@ ASTPtr JoinNode::toASTTableJoin() const
         auto join_expression_ast = children[join_expression_child_index]->toAST();
 
         if (children[join_expression_child_index]->getNodeType() == QueryTreeNodeType::LIST)
-            join_ast->using_expression_list = std::move(join_expression_ast);
+        {
+            join_ast->using_expression_list = join_expression_ast;
+            join_ast->children.push_back(join_ast->using_expression_list);
+        }
         else
-            join_ast->on_expression = std::move(join_expression_ast);
+        {
+            join_ast->on_expression = join_expression_ast;
+            join_ast->children.push_back(join_ast->on_expression);
+        }
     }
 
     return join_ast;

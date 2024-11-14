@@ -21,7 +21,7 @@ Block SourceStepWithFilter::applyPrewhereActions(Block block, const PrewhereInfo
     {
         if (prewhere_info->row_level_filter)
         {
-            block = prewhere_info->row_level_filter->updateHeader(block);
+            block = prewhere_info->row_level_filter->updateHeader(std::move(block));
             auto & row_level_column = block.getByName(prewhere_info->row_level_column_name);
             if (!row_level_column.type->canBeUsedInBooleanContext())
             {
@@ -34,8 +34,9 @@ Block SourceStepWithFilter::applyPrewhereActions(Block block, const PrewhereInfo
             block.erase(prewhere_info->row_level_column_name);
         }
 
+        if (prewhere_info->prewhere_actions)
         {
-            block = prewhere_info->prewhere_actions.updateHeader(block);
+            block = prewhere_info->prewhere_actions->updateHeader(std::move(block));
 
             auto & prewhere_column = block.getByName(prewhere_info->prewhere_column_name);
             if (!prewhere_column.type->canBeUsedInBooleanContext())
@@ -79,7 +80,7 @@ Block SourceStepWithFilter::applyPrewhereActions(Block block, const PrewhereInfo
 
 void SourceStepWithFilter::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes, query_info.buildNodeNameToInputNodeColumn());
+    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
 }
 
 void SourceStepWithFilter::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
@@ -101,6 +102,7 @@ void SourceStepWithFilter::describeActions(FormatSettings & format_settings) con
         prefix.push_back(format_settings.indent_char);
         prefix.push_back(format_settings.indent_char);
 
+        if (prewhere_info->prewhere_actions)
         {
             format_settings.out << prefix << "Prewhere filter" << '\n';
             format_settings.out << prefix << "Prewhere filter column: " << prewhere_info->prewhere_column_name;
@@ -108,7 +110,7 @@ void SourceStepWithFilter::describeActions(FormatSettings & format_settings) con
                 format_settings.out << " (removed)";
             format_settings.out << '\n';
 
-            auto expression = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions.clone());
+            auto expression = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions);
             expression->describeActions(format_settings.out, prefix);
         }
 
@@ -117,7 +119,7 @@ void SourceStepWithFilter::describeActions(FormatSettings & format_settings) con
             format_settings.out << prefix << "Row level filter" << '\n';
             format_settings.out << prefix << "Row level filter column: " << prewhere_info->row_level_column_name << '\n';
 
-            auto expression = std::make_shared<ExpressionActions>(prewhere_info->row_level_filter->clone());
+            auto expression = std::make_shared<ExpressionActions>(prewhere_info->row_level_filter);
             expression->describeActions(format_settings.out, prefix);
         }
     }
@@ -130,11 +132,12 @@ void SourceStepWithFilter::describeActions(JSONBuilder::JSONMap & map) const
         std::unique_ptr<JSONBuilder::JSONMap> prewhere_info_map = std::make_unique<JSONBuilder::JSONMap>();
         prewhere_info_map->add("Need filter", prewhere_info->need_filter);
 
+        if (prewhere_info->prewhere_actions)
         {
             std::unique_ptr<JSONBuilder::JSONMap> prewhere_filter_map = std::make_unique<JSONBuilder::JSONMap>();
             prewhere_filter_map->add("Prewhere filter column", prewhere_info->prewhere_column_name);
             prewhere_filter_map->add("Prewhere filter remove filter column", prewhere_info->remove_prewhere_column);
-            auto expression = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions.clone());
+            auto expression = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions);
             prewhere_filter_map->add("Prewhere filter expression", expression->toTree());
 
             prewhere_info_map->add("Prewhere filter", std::move(prewhere_filter_map));
@@ -144,7 +147,7 @@ void SourceStepWithFilter::describeActions(JSONBuilder::JSONMap & map) const
         {
             std::unique_ptr<JSONBuilder::JSONMap> row_level_filter_map = std::make_unique<JSONBuilder::JSONMap>();
             row_level_filter_map->add("Row level filter column", prewhere_info->row_level_column_name);
-            auto expression = std::make_shared<ExpressionActions>(prewhere_info->row_level_filter->clone());
+            auto expression = std::make_shared<ExpressionActions>(prewhere_info->row_level_filter);
             row_level_filter_map->add("Row level filter expression", expression->toTree());
 
             prewhere_info_map->add("Row level filter", std::move(row_level_filter_map));

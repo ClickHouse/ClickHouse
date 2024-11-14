@@ -11,8 +11,6 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/LambdaNode.h>
 
-#include <Core/Settings.h>
-
 namespace DB
 {
 

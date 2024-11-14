@@ -8,7 +8,6 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
-#include <Core/Settings.h>
 
 namespace DB
 {

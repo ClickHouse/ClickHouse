@@ -1,6 +1,5 @@
 #pragma once
 #include <Storages/MergeTree/MergeTreeReadPoolBase.h>
-#include <Common/threadPoolCallbackRunner.h>
 #include <Common/ThreadPool_fwd.h>
 #include <IO/AsyncReadCounters.h>
 #include <boost/heap/priority_queue.hpp>
@@ -52,18 +51,18 @@ private:
     class PrefetchedReaders
     {
     public:
-        PrefetchedReaders(
-            ThreadPool & pool, MergeTreeReadTask::Readers readers_, Priority priority_, MergeTreePrefetchedReadPool & read_prefetch);
+        PrefetchedReaders() = default;
+        PrefetchedReaders(MergeTreeReadTask::Readers readers_, Priority priority_, MergeTreePrefetchedReadPool & pool_);
 
         void wait();
         MergeTreeReadTask::Readers get();
         bool valid() const { return is_valid; }
+        ~PrefetchedReaders();
 
     private:
         bool is_valid = false;
         MergeTreeReadTask::Readers readers;
-
-        ThreadPoolCallbackRunnerLocal<void> prefetch_runner;
+        std::vector<std::future<void>> prefetch_futures;
     };
 
     struct ThreadTask
@@ -109,7 +108,7 @@ private:
 
     void startPrefetches();
     void createPrefetchedReadersForTask(ThreadTask & task);
-    std::function<void()> createPrefetchedTask(IMergeTreeReader * reader, Priority priority);
+    std::future<void> createPrefetchedFuture(IMergeTreeReader * reader, Priority priority);
 
     MergeTreeReadTaskPtr stealTask(size_t thread, MergeTreeReadTask * previous_task);
     MergeTreeReadTaskPtr createTask(ThreadTask & thread_task, MergeTreeReadTask * previous_task);

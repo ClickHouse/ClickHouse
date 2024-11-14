@@ -276,10 +276,15 @@ def test_create_or_drop_tables_during_backup(db_engine, table_engine):
     for node in nodes:
         assert_eq_with_retry(
             node,
-            f"SELECT status, error from system.backups "
-            f"WHERE id IN {ids_list} AND ((status == 'CREATING_BACKUP') OR (status == 'BACKUP_FAILED'))",
+            f"SELECT status from system.backups WHERE id IN {ids_list} AND (status == 'CREATING_BACKUP')",
             "",
-            retry_count=100,
+        )
+
+    for node in nodes:
+        assert_eq_with_retry(
+            node,
+            f"SELECT status, error from system.backups WHERE id IN {ids_list} AND (status == 'BACKUP_FAILED')",
+            "",
         )
 
     backup_names = {}

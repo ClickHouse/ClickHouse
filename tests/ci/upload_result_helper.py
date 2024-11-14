@@ -57,6 +57,7 @@ def upload_results(
     s3_client: S3Helper,
     pr_number: int,
     commit_sha: str,
+    branch_name: str,
     test_results: TestResults,
     additional_files: Union[Sequence[Path], Sequence[str]],
     check_name: str,
@@ -73,8 +74,7 @@ def upload_results(
         process_logs(s3_client, additional_files, s3_path_prefix, test_results)
     )
 
-    branch_url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/commits/master"
-    branch_name = "master"
+    branch_url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/commits/{branch_name}"
     if pr_number != 0:
         branch_name = f"PR #{pr_number}"
         branch_url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/pull/{pr_number}"
@@ -92,21 +92,13 @@ def upload_results(
     else:
         raw_log_url = GITHUB_JOB_URL()
 
-    try:
-        job_url = GITHUB_JOB_URL()
-    except Exception:
-        print(
-            "ERROR: Failed to get job URL from GH API, job report will use run URL instead."
-        )
-        job_url = GITHUB_RUN_URL
-
     if test_results or not ready_report_url:
         html_report = create_test_html_report(
             check_name,
             test_results,
             raw_log_url,
             GITHUB_RUN_URL,
-            job_url,
+            GITHUB_JOB_URL(),
             branch_url,
             branch_name,
             commit_url,

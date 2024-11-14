@@ -1,7 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Core/Field.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
 

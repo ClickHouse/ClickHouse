@@ -6,7 +6,6 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
@@ -224,7 +223,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
 
                 auto file_name = *stream_name + ".bin";
                 checksums_data.files[file_name] = checksum_compressed_file(data_part_storage, file_name);
-            }, column.type, data_part->getColumnSample(column));
+            });
         }
     }
     else
@@ -255,7 +254,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             continue;
         }
 
-        /// Exclude files written by full-text index from check. No correct checksums are available for them currently.
+        /// Exclude files written by inverted index from check. No correct checksums are available for them currently.
         if (isGinFile(file_name))
             continue;
 
@@ -284,6 +283,11 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             return {};
 
         auto projection_file = name + ".proj";
+        if (!throw_on_broken_projection && projection->is_broken)
+        {
+            projections_on_disk.erase(projection_file);
+            checksums_txt.remove(projection_file);
+        }
 
         IMergeTreeDataPart::Checksums projection_checksums;
         try
@@ -300,19 +304,13 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             if (isRetryableException(std::current_exception()))
                 throw;
 
-            is_broken_projection = true;
-            projections_on_disk.erase(projection_file);
-            checksums_txt.remove(projection_file);
-
-            const auto exception_message = getCurrentExceptionMessage(true);
-
             if (!projection->is_broken)
             {
-                LOG_WARNING(log, "Marking projection {} as broken ({}). Reason: {}",
-                            name, projection_file, exception_message);
-                projection->setBrokenReason(exception_message, getCurrentExceptionCode());
+                LOG_TEST(log, "Marking projection {} as broken ({})", name, projection_file);
+                projection->setBrokenReason(getCurrentExceptionMessage(false), getCurrentExceptionCode());
             }
 
+            is_broken_projection = true;
             if (throw_on_broken_projection)
             {
                 if (!broken_projections_message.empty())
@@ -320,10 +318,12 @@ static IMergeTreeDataPart::Checksums checkDataPart(
 
                 broken_projections_message += fmt::format(
                     "Part {} has a broken projection {} (error: {})",
-                    data_part->name, name, exception_message);
+                    data_part->name, name, getCurrentExceptionMessage(false));
+                continue;
             }
 
-            continue;
+            projections_on_disk.erase(projection_file);
+            checksums_txt.remove(projection_file);
         }
 
         checksums_data.files[projection_file] = IMergeTreeDataPart::Checksums::Checksum(
@@ -354,7 +354,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         return {};
 
     if (require_checksums || !checksums_txt.files.empty())
-        checksums_txt.checkEqual(checksums_data, check_uncompressed, data_part->name);
+        checksums_txt.checkEqual(checksums_data, check_uncompressed);
 
     return checksums_data;
 }
@@ -387,17 +387,9 @@ IMergeTreeDataPart::Checksums checkDataPart(
             auto file_name = it->name();
             if (!data_part_storage.isDirectory(file_name))
             {
-                const bool is_projection_part = data_part->isProjectionPart();
-                auto remote_path = data_part_storage.getRemotePath(file_name, /* if_exists */is_projection_part);
-                if (remote_path.empty())
-                {
-                    chassert(is_projection_part);
-                    throw Exception(
-                        ErrorCodes::BROKEN_PROJECTION,
-                        "Remote path for {} does not exist for projection path. Projection {} is broken",
-                        file_name, data_part->name);
-                }
-                cache.removePathIfExists(remote_path, FileCache::getCommonUser().user_id);
+                auto remote_paths = data_part_storage.getRemotePaths(file_name);
+                for (const auto & remote_path : remote_paths)
+                    cache.removePathIfExists(remote_path, FileCache::getCommonUser().user_id);
             }
         }
 

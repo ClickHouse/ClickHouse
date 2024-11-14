@@ -89,12 +89,6 @@ void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatSt
                 password = true;
                 break;
             }
-            case AuthenticationType::JWT:
-            {
-                prefix = "CLAIMS";
-                parameter = true;
-                break;
-            }
             case AuthenticationType::LDAP:
             {
                 prefix = "SERVER";
@@ -112,7 +106,7 @@ void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatSt
             }
             case AuthenticationType::SSL_CERTIFICATE:
             {
-                prefix = ssl_cert_subject_type.value();
+                prefix = "CN";
                 parameters = true;
                 break;
             }
@@ -219,7 +213,8 @@ bool ASTAuthenticationData::hasSecretParts() const
     auto auth_type = *type;
     if ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD)
         || (auth_type == AuthenticationType::SHA256_PASSWORD)
-        || (auth_type == AuthenticationType::DOUBLE_SHA1_PASSWORD))
+        || (auth_type == AuthenticationType::DOUBLE_SHA1_PASSWORD)
+        || (auth_type == AuthenticationType::BCRYPT_PASSWORD))
         return true;
 
     return childrenHaveSecretParts();

@@ -10,11 +10,10 @@ struct ExtractURLParameterImpl
     static void vector(const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         std::string pattern,
-        ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets,
-        size_t input_rows_count)
+        ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets)
     {
         res_data.reserve(data.size() / 5);
-        res_offsets.resize(input_rows_count);
+        res_offsets.resize(offsets.size());
 
         pattern += '=';
         const char * param_str = pattern.c_str();
@@ -23,7 +22,7 @@ struct ExtractURLParameterImpl
         ColumnString::Offset prev_offset = 0;
         ColumnString::Offset res_offset = 0;
 
-        for (size_t i = 0; i < input_rows_count; ++i)
+        for (size_t i = 0; i < offsets.size(); ++i)
         {
             ColumnString::Offset cur_offset = offsets[i];
 

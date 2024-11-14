@@ -57,16 +57,14 @@ void CompressedWriteBuffer::nextImpl()
     }
 }
 
+CompressedWriteBuffer::~CompressedWriteBuffer()
+{
+    finalize();
+}
+
 CompressedWriteBuffer::CompressedWriteBuffer(WriteBuffer & out_, CompressionCodecPtr codec_, size_t buf_size)
     : BufferWithOwnMemory<WriteBuffer>(buf_size), out(out_), codec(std::move(codec_))
 {
 }
-
-CompressedWriteBuffer::~CompressedWriteBuffer()
-{
-    if (!canceled)
-        finalize();
-}
-
 
 }

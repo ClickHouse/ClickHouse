@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Interpreters/SystemLog.h>
-#include <Interpreters/PeriodicLog.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool_fwd.h>
@@ -10,6 +9,7 @@
 #include <Storages/ColumnsDescription.h>
 
 #include <vector>
+#include <atomic>
 #include <ctime>
 
 
@@ -33,12 +33,26 @@ struct MetricLogElement
     void appendToBlock(MutableColumns & columns) const;
 };
 
-class MetricLog : public PeriodicLog<MetricLogElement>
-{
-    using PeriodicLog<MetricLogElement>::PeriodicLog;
 
-protected:
-    void stepFunction(TimePoint current_time) override;
+class MetricLog : public SystemLog<MetricLogElement>
+{
+    using SystemLog<MetricLogElement>::SystemLog;
+
+public:
+    void shutdown() override;
+
+    /// Launches a background thread to collect metrics with interval
+    void startCollectMetric(size_t collect_interval_milliseconds_);
+
+    /// Stop background thread. Call before shutdown.
+    void stopCollectMetric();
+
+private:
+    void metricThreadFunction();
+
+    std::unique_ptr<ThreadFromGlobalPool> metric_flush_thread;
+    size_t collect_interval_milliseconds;
+    std::atomic<bool> is_shutdown_metric_thread{false};
 };
 
 }

@@ -21,17 +21,11 @@ echo 'regression test for overlap profile events snapshots between queries (clic
 $CLICKHOUSE_LOCAL --print-profile-events --profile-events-delay-ms=-1 -n -q 'select 1; select 1' |& grep -F -o '[ 0 ] SelectedRows: 1 (increment)'
 
 echo 'print everything'
-profile_events="$(
-  $CLICKHOUSE_CLIENT --max_block_size 1 --print-profile-events -q 'select sleep(1) from numbers(2) format Null' |&
-  $CLICKHOUSE_LOCAL --input-format LineAsString --query "SELECT sum(extract(line, 'SelectedRows: (\\d+)')::UInt64) FROM table WHERE line LIKE '%SelectedRows: %'"
-)"
+profile_events="$($CLICKHOUSE_CLIENT --max_block_size 1 --print-profile-events -q 'select sleep(1) from numbers(2) format Null' |& grep -c 'SelectedRows')"
 test "$profile_events" -gt 1 && echo OK || echo "FAIL ($profile_events)"
 
 echo 'print each 100 ms'
-profile_events="$(
-  $CLICKHOUSE_CLIENT --max_block_size 1 --print-profile-events --profile-events-delay-ms=100 -q 'select sleep(0.2) from numbers(10) format Null' |&
-  $CLICKHOUSE_LOCAL --input-format LineAsString --query "SELECT sum(extract(line, 'SelectedRows: (\\d+)')::UInt64) FROM table WHERE line LIKE '%SelectedRows: %'"
-)"
+profile_events="$($CLICKHOUSE_CLIENT --max_block_size 1 --print-profile-events --profile-events-delay-ms=100 -q 'select sleep(0.2) from numbers(10) format Null' |& grep -c 'SelectedRows')"
 test "$profile_events" -gt 1 && echo OK || echo "FAIL ($profile_events)"
 
 echo 'check that ProfileEvents is new for each query'

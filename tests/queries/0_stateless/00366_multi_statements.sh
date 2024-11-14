@@ -10,8 +10,8 @@ $CLICKHOUSE_CLIENT --query="SELECT 1; "
 $CLICKHOUSE_CLIENT --query="SELECT 1 ; "
 
 $CLICKHOUSE_CLIENT --query="SELECT 1; S" 2>&1 | grep -o 'Syntax error'
-$CLICKHOUSE_CLIENT --query="SELECT 1; SELECT 2"
-$CLICKHOUSE_CLIENT --query="SELECT 1; SELECT 2;"
+$CLICKHOUSE_CLIENT --query="SELECT 1; SELECT 2" 2>&1 | grep -o 'Syntax error'
+$CLICKHOUSE_CLIENT --query="SELECT 1; SELECT 2;" 2>&1 | grep -o 'Syntax error'
 $CLICKHOUSE_CLIENT --query="SELECT 1; SELECT 2; SELECT" 2>&1 | grep -o 'Syntax error'
 
 $CLICKHOUSE_CLIENT -n --query="SELECT 1; S" 2>&1 | grep -o 'Syntax error'

@@ -1,8 +1,8 @@
-#include <Core/Settings.h>
 #include <Dictionaries/HashedDictionary.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
 #include <Dictionaries/ClickHouseDictionarySource.h>
+
 #include <Interpreters/Context.h>
 
 namespace DB

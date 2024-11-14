@@ -364,15 +364,15 @@ template class DataTypeDecimal<Decimal256>;
 
 void registerDataTypeDecimal(DataTypeFactory & factory)
 {
-    factory.registerDataType("Decimal32", createExact<Decimal32>, DataTypeFactory::Case::Insensitive);
-    factory.registerDataType("Decimal64", createExact<Decimal64>, DataTypeFactory::Case::Insensitive);
-    factory.registerDataType("Decimal128", createExact<Decimal128>, DataTypeFactory::Case::Insensitive);
-    factory.registerDataType("Decimal256", createExact<Decimal256>, DataTypeFactory::Case::Insensitive);
+    factory.registerDataType("Decimal32", createExact<Decimal32>, DataTypeFactory::CaseInsensitive);
+    factory.registerDataType("Decimal64", createExact<Decimal64>, DataTypeFactory::CaseInsensitive);
+    factory.registerDataType("Decimal128", createExact<Decimal128>, DataTypeFactory::CaseInsensitive);
+    factory.registerDataType("Decimal256", createExact<Decimal256>, DataTypeFactory::CaseInsensitive);
 
-    factory.registerDataType("Decimal", create, DataTypeFactory::Case::Insensitive);
-    factory.registerAlias("DEC", "Decimal", DataTypeFactory::Case::Insensitive);
-    factory.registerAlias("NUMERIC", "Decimal", DataTypeFactory::Case::Insensitive);
-    factory.registerAlias("FIXED", "Decimal", DataTypeFactory::Case::Insensitive);
+    factory.registerDataType("Decimal", create, DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("DEC", "Decimal", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("NUMERIC", "Decimal", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("FIXED", "Decimal", DataTypeFactory::CaseInsensitive);
 }
 
 }

@@ -24,7 +24,7 @@ namespace DB
 struct User;
 class Credentials;
 class ExternalAuthenticators;
-enum class AuthenticationType : uint8_t;
+enum class AuthenticationType;
 class BackupEntriesCollector;
 class RestorerFromBackup;
 

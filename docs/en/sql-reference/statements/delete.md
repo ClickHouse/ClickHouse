@@ -36,10 +36,9 @@ If you anticipate frequent deletes, consider using a [custom partitioning key](/
 
 ## Limitations of lightweight `DELETE`
 
-### Lightweight `DELETE`s with projections
+### Lightweight `DELETE`s do not work with projections
 
-By default, `DELETE` does not work for tables with projections. This is because rows in a projection may be affected by a `DELETE` operation and may require the projection to be rebuilt, negatively affecting `DELETE` performance.
-However, there is an option to change this behavior. By changing setting `lightweight_mutation_projection_mode = 'drop'`, deletes will work with projections.
+Currently, `DELETE` does not work for tables with projections. This is because rows in a projection may be affected by a `DELETE` operation and may require the projection to be rebuilt, negatively affecting `DELETE` performance.
 
 ## Performance considerations when using lightweight `DELETE`
 
