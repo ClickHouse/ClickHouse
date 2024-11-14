@@ -121,8 +121,8 @@ bool isBooleanConstant(const QueryTreeNodePtr & node, bool expected_value)
     if (!constant_node || !constant_node->getResultType()->equals(DataTypeUInt8()))
         return false;
 
-    UInt64 constant_value;
-    return (constant_node->getValue().tryGet<UInt64>(constant_value) && constant_value == expected_value);
+    bool constant_value;
+    return (constant_node->getValue().tryGet<bool>(constant_value) && constant_value == expected_value);
 }
 
 /// Returns true if expression consists of only conjunctions of functions with the specified name or true constants
