@@ -256,6 +256,15 @@ select parseDateTimeInJodaSyntax('2024-10-09 10:30:10-8000', 'yyyy-MM-dd HH:mm:s
 select parseDateTimeInJodaSyntax('2024-10-09 10:30:10ABCD', 'yyyy-MM-dd HH:mm:ssz'); -- { serverError BAD_ARGUMENTS }
 
 -- The following is test of parseDateTime64InJodaSyntax[OrNull/OrZero]
+select 'parseDateTime64InJodaSyntax';
+select parseDateTime64InJodaSyntax('', ''); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+select parseDateTime64InJodaSyntax('2177-10-09 10:30:10.123', 'yyyy-MM-dd HH:mm:ss.SSS'); -- { serverError CANNOT_PARSE_DATETIME }
+select parseDateTime64InJodaSyntax('+0000', 'Z');
+select parseDateTime64InJodaSyntax('08:01', 'HH:ss');
+select parseDateTime64InJodaSyntax('2024-01-02', 'yyyy-MM-dd');
+select parseDateTime64InJodaSyntax('10:30:50', 'HH:mm:ss');
+select parseDateTime64InJodaSyntax('2024-12-31 23:30:10.123456-0800', 'yyyy-MM-dd HH:mm:ss.SSSSSSZ');
+select parseDateTime64InJodaSyntax('2024-01-01 00:00:01.123456+0800', 'yyyy-MM-dd HH:mm:ss.SSSSSSZ');
 select parseDateTime64InJodaSyntax('2021-01-04 23:12:34') = toDateTime64('2021-01-04 23:12:34', 0);
 select parseDateTime64InJodaSyntax('2021-01-04 23:12:34.331', 'yyyy-MM-dd HH:mm:ss.SSS') = toDateTime64('2021-01-04 23:12:34.331', 3);
 select parseDateTime64InJodaSyntax('2021/01/04 23:12:34.331', 'yyyy/MM/dd HH:mm:ss.SSS') = toDateTime64('2021-01-04 23:12:34.331', 3);
@@ -268,13 +277,44 @@ select parseDateTime64InJodaSyntax('2024-10-09 10:30:10.123456-0812', 'yyyy-MM-d
 select parseDateTime64InJodaSyntax('2024-10-09 10:30:10.123456-08123', 'yyyy-MM-dd HH:mm:ss.SSSSSSZZZ'); -- {serverError CANNOT_PARSE_DATETIME}
 select parseDateTime64InJodaSyntax('2024-10-09 10:30:10.123456EST', 'yyyy-MM-dd HH:mm:ss.SSSSSSz') = toDateTime64('2024-10-09 15:30:10.123456', 6);
 select parseDateTime64InJodaSyntax('2024-10-09 10:30:10.123456EST', 'yyyy-MM-dd HH:mm:ss.SSSSSSzzz') = toDateTime64('2024-10-09 15:30:10.123456', 6);
+select parseDateTime64InJodaSyntax('2024-11-05-0800 01:02:03.123456', 'yyyy-MM-ddZ HH:mm:ss.SSSSSS');
+select parseDateTime64InJodaSyntax('2024-10-09 10:30:10.123456America/Los_Angeles', 'yyyy-MM-dd HH:mm:ss.SSSSSSz');
+select parseDateTime64InJodaSyntax('2024-10-09 10:30:10.123456Australia/Adelaide', 'yyyy-MM-dd HH:mm:ss.SSSSSSz');
+select parseDateTime64InJodaSyntax('2024-10-09 10:30:10.123', 'yyyy-dd-MM HH:mm:ss.SSS');
+select parseDateTime64InJodaSyntax('999999 10-09-202410:30:10', 'SSSSSSSSS dd-MM-yyyyHH:mm:ss');
+select parseDateTime64InJodaSyntax('2024-10-09 10:30:10.123456-0845', 'yyyy-MM-dd HH:mm:ss.SSSSSSZ');
 -- incorrect timezone offset and timezone
 select parseDateTime64InJodaSyntax('2024-10-09 10:30:10.123456-8000', 'yyyy-MM-dd HH:mm:ss.SSSSSSZ'); -- { serverError CANNOT_PARSE_DATETIME }
 select parseDateTime64InJodaSyntax('2024-10-09 10:30:10.123456ABCD', 'yyyy-MM-dd HH:mm:ss.SSSSSSz'); -- { serverError BAD_ARGUMENTS }
+select parseDateTime64InJodaSyntax('2023-02-29 11:22:33Not/Timezone', 'yyyy-MM-dd HH:mm:ssz'); -- { serverError BAD_ARGUMENTS }
+--leap years and non-leap years
+select parseDateTime64InJodaSyntax('2024-02-29 11:23:34America/Los_Angeles', 'yyyy-MM-dd HH:mm:ssz');
+select parseDateTime64InJodaSyntax('2023-02-29 11:22:33America/Los_Angeles', 'yyyy-MM-dd HH:mm:ssz'); -- { serverError CANNOT_PARSE_DATETIME }
+select parseDateTime64InJodaSyntax('2024-02-28 23:22:33America/Los_Angeles', 'yyyy-MM-dd HH:mm:ssz');
+select parseDateTime64InJodaSyntax('2023-02-28 23:22:33America/Los_Angeles', 'yyyy-MM-dd HH:mm:ssz');
+select parseDateTime64InJodaSyntax('2024-03-01 00:22:33-8000', 'yyyy-MM-dd HH:mm:ssZ');
+select parseDateTime64InJodaSyntax('2023-03-01 00:22:33-8000', 'yyyy-MM-dd HH:mm:ssZ');
 -- Test for parseDateTime64InJodaSyntaxOrNull / parseDateTime64InJodaSyntaxOrZero
-select parseDateTime64InJodaSyntaxOrNull('2021-01-04 23:12:34.331') IS NULL;
-select parseDateTime64InJodaSyntaxOrNull('2021-01-04 23:12:34.331', 'yyyy-MM-dd HH:mm:ss.SS') IS NULL;
-select parseDateTime64InJodaSyntaxOrZero('2021-01-04 23:12:34.331') = toDateTime64('1970-01-01 00:00:00', 0);
-select parseDateTime64InJodaSyntaxOrZero('2021-01-04 23:12:34.331', 'yyyy-MM-dd HH:mm:ss.SS') = toDateTime64('1970-01-01 00:00:00', 0);
+select 'parseDateTime64InJodaSyntaxOrNull';
+select parseDateTime64InJodaSyntaxOrNull('2024-10-09 10:30:10.123', 'yyyy-MM-dd HH:mm:ss.SSS');
+select parseDateTime64InJodaSyntaxOrNull('2024-10-09 10:30:10.123456', 'yyyy-MM-dd HH:mm:ss.SSSSSS');
+select parseDateTime64InJodaSyntaxOrNull('2024-10-09 10:30:10.123456789', 'yyyy-MM-dd HH:mm:ss.SSSSSSSSS');
+select parseDateTime64InJodaSyntaxOrNull('2024-10-09 10:30:10.123456-0800', 'yyyy-MM-dd HH:mm:ss.SSSSSSZ');
+select parseDateTime64InJodaSyntaxOrNull('2024-10-09 10:30:10.123456America/Los_Angeles', 'yyyy-MM-dd HH:mm:ss.SSSSSSz');
+select parseDateTime64InJodaSyntaxOrNull('2024-10-09 10:30:10.123', 'yyyy-dd-MM HH:mm:ss.SSS');
+select parseDateTime64InJodaSyntaxOrNull('2023-02-29 11:22:33America/Los_Angeles', 'yyyy-MM-dd HH:mm:ssz');
+select parseDateTime64InJodaSyntaxOrNull('', '');
+select parseDateTime64InJodaSyntaxOrNull('2177-10-09 10:30:10.123', 'yyyy-MM-dd HH:mm:ss.SSS');
+select 'parseDateTime64InJodaSyntaxOrZero';
+select parseDateTime64InJodaSyntaxOrZero('2024-10-09 10:30:10.123', 'yyyy-MM-dd HH:mm:ss.SSS');
+select parseDateTime64InJodaSyntaxOrZero('2024-10-09 10:30:10.123456', 'yyyy-MM-dd HH:mm:ss.SSSSSS');
+select parseDateTime64InJodaSyntaxOrZero('2024-10-09 10:30:10.123456789', 'yyyy-MM-dd HH:mm:ss.SSSSSSSSS');
+select parseDateTime64InJodaSyntaxOrZero('2024-10-09 10:30:10.123456-0800', 'yyyy-MM-dd HH:mm:ss.SSSSSSZ');
+select parseDateTime64InJodaSyntaxOrZero('2024-10-09 10:30:10.123456America/Los_Angeles', 'yyyy-MM-dd HH:mm:ss.SSSSSSz');
+select parseDateTime64InJodaSyntaxOrZero('2024-10-09 10:30:10.123', 'yyyy-dd-MM HH:mm:ss.SSS');
+select parseDateTime64InJodaSyntaxOrZero('wrong value', 'yyyy-dd-MM HH:mm:ss.SSS');
+select parseDateTime64InJodaSyntaxOrZero('2023-02-29 11:22:33America/Los_Angeles', 'yyyy-MM-dd HH:mm:ssz');
+select parseDateTime64InJodaSyntaxOrZero('', '');
+select parseDateTime64InJodaSyntaxOrZero('2177-10-09 10:30:10.123', 'yyyy-MM-dd HH:mm:ss.SSS');
 
 -- { echoOff }
