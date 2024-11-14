@@ -1332,7 +1332,6 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
     if (identifier_lookup.isFunctionLookup())
         return resolve_result;
 
-    bool dependent_column = false;
     QueryTreeNodes nodes_to_process = { resolved_identifier };
     while (!nodes_to_process.empty())
     {
@@ -1342,9 +1341,13 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
         {
             if (isDependentColumn(&scope, current_column->getColumnSource()))
             {
-                LOG_DEBUG(&Poco::Logger::get("resolveInParentScope"), "Found dependency for indetifier '{}'\nresult column: {}", identifier_lookup.dump(), current_column->getColumnName());
-                dependent_column = true;
-                break;
+                LOG_DEBUG(&Poco::Logger::get("resolveInParentScope"), "Found dependent column for indetifier '{}': {}", identifier_lookup.dump(), current_column->dumpTree());
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                    "Resolved identifier '{}' in parent scope to expression '{}' with corellated column '{}'. In scope {}",
+                    identifier_lookup.identifier.getFullName(),
+                    resolved_identifier->formatASTForErrorMessage(),
+                    current_column->getColumnName(),
+                    scope.scope_node->formatASTForErrorMessage());
             }
         }
 
@@ -1355,15 +1358,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
         }
     }
 
-    if (!dependent_column)
-        return resolve_result;
-
-    throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-        "Resolve identifier '{}' from parent scope only supported for constants and CTE. Actual {} node type {}. In scope {}",
-        identifier_lookup.identifier.getFullName(),
-        resolved_identifier->formatASTForErrorMessage(),
-        resolved_identifier->getNodeTypeName(),
-        scope.scope_node->formatASTForErrorMessage());
+    return resolve_result;
 }
 
 /** Resolve identifier in scope.
@@ -3918,13 +3913,13 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
     if (!in_aggregate_function_scope)
     {
-        LOG_DEBUG(getLogger("resolveExpressionNode"), "Looking for GROUP BY key:\n{}", node->dumpTree());
+        // LOG_DEBUG(getLogger("resolveExpressionNode"), "Looking for GROUP BY key:\n{}", node->dumpTree());
         for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
         {
             auto it = scope_ptr->nullable_group_by_keys.find(node);
             if (it != scope_ptr->nullable_group_by_keys.end())
             {
-                LOG_DEBUG(getLogger("resolveExpressionNode"), "Found GROUP BY key");
+                // LOG_DEBUG(getLogger("resolveExpressionNode"), "Found GROUP BY key");
 
                 node = it->node->clone();
                 node->convertToNullable();

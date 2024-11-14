@@ -208,6 +208,14 @@ bool isQueryOrUnionNode(const QueryTreeNodePtr & node)
 
 bool isDependentColumn(IdentifierResolveScope * scope_to_check, const QueryTreeNodePtr & column_source)
 {
+    /// The case of lambda argument. Example:
+    /// arrayMap(X -> X + Y, [0])
+    ///
+    /// X would have lambda as a source node
+    /// Y comes from outter scope and requires ordinary check.
+    if (column_source->getNodeType() == QueryTreeNodeType::LAMBDA)
+        return false;
+
     while (scope_to_check != nullptr)
     {
         if (scope_to_check->table_expression_node_to_data.contains(column_source))

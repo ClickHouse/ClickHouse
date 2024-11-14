@@ -186,8 +186,6 @@ struct IdentifierResolveContext
     /// Allow to resolve subquery during identifier resolution
     bool allow_to_resolve_subquery_during_identifier_resolution = true;
 
-    bool allow_to_resolve_result_node = true;
-
     IdentifierResolveScope * scope_to_resolve_alias_expression = nullptr;
 
     IdentifierResolveContext resolveAliasesAt(IdentifierResolveScope * scope_to_resolve_alias_expression_) const
