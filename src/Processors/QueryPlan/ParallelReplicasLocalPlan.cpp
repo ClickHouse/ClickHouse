@@ -64,21 +64,15 @@ std::pair<std::unique_ptr<QueryPlan>, bool> createLocalPlanForParallelReplicas(
         if (reading)
             break;
 
-        const JoinStep * join = typeid_cast<JoinStep*>(node->step.get());
-        if (join)
+        if (!node->children.empty())
         {
-            chassert(node->children.size() == 2);
-
-            const auto kind = join->getJoin()->getTableJoin().kind();
-            if (kind == JoinKind::Right)
+            // in case of RIGHT JOIN, - reading from right table is parallelized among replicas
+            const JoinStep * join = typeid_cast<JoinStep*>(node->step.get());
+            if (join && join->getJoin()->getTableJoin().kind() == JoinKind::Right)
                 node = node->children.at(1);
             else
                 node = node->children.at(0);
-            continue;
         }
-
-        if (!node->children.empty())
-            node = node->children.at(0);
         else
             node = nullptr;
     }
