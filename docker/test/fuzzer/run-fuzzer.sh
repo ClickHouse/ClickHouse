@@ -260,7 +260,7 @@ function fuzz
 
     if [[ "$FUZZER_TO_RUN" = "AST Fuzzer" ]];
     then
-        QUERIES_FILE=$(ls -1 ch/tests/queries/0_stateless/*.sql | sort -R)
+        QUERIES_FILE=$(find ch/tests/queries/0_stateless -type f -name "*.sql" | sort -R)
         FUZZER_ARGS="--query-fuzzer-runs=1000 --create-query-fuzzer-runs=50 --queries-file $QUERIES_FILE $NEW_TESTS_OPT"
     elif [ "$FUZZER_TO_RUN" = "BuzzHouse" ]
     then
