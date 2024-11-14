@@ -1,6 +1,7 @@
 #include <Common/SignalHandlers.h>
 #include <Common/config_version.h>
 #include <Common/getHashOfLoadedBinary.h>
+#include <Common/ShellCommandsHolder.h>
 #include <Common/CurrentThread.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/SentryWriter.h>
@@ -312,7 +313,7 @@ void SignalListener::run()
         {
             pid_t child_pid = 0;
             readBinary(child_pid, in);
-            Context::getGlobalContextInstance()->removeBackgroundShellCommand(child_pid);
+            ShellCommandsHolder::instance().removeCommand(child_pid);
         }
         else
         {

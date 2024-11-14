@@ -302,7 +302,7 @@ struct ShellCommand::tryWaitResult
 
 int ShellCommand::tryWait()
 {
-    return tryWaitImpl(false).retcode;
+    return tryWaitImpl(true).retcode;
 }
 
 ShellCommand::tryWaitResult ShellCommand::tryWaitImpl(bool blocking)
@@ -311,15 +311,18 @@ ShellCommand::tryWaitResult ShellCommand::tryWaitImpl(bool blocking)
 
     ShellCommand::tryWaitResult result;
 
-    int options = ((blocking) ? WNOHANG : 0);
+    int options = ((!blocking) ? WNOHANG : 0);
     int status = 0;
     int waitpid_retcode = -1;
 
     while (waitpid_retcode < 0)
     {
         waitpid_retcode = waitpid(pid, &status, options);
-
-        if (blocking && !waitpid_retcode)
+        if (waitpid_retcode > 0)
+        {
+            break;
+        }
+        if (!blocking && !waitpid_retcode)
         {
             result.is_process_terminated = false;
             return result;
@@ -385,7 +388,7 @@ void ShellCommand::handleProcessRetcode(int retcode) const
 
 bool ShellCommand::waitIfProccesTerminated()
 {
-    auto proc_status = tryWaitImpl(true);
+    auto proc_status = tryWaitImpl(false);
     if (proc_status.is_process_terminated)
     {
         handleProcessRetcode(proc_status.retcode);
@@ -396,7 +399,7 @@ bool ShellCommand::waitIfProccesTerminated()
 
 void ShellCommand::wait()
 {
-    int retcode = tryWaitImpl(false).retcode;
+    int retcode = tryWaitImpl(true).retcode;
     handleProcessRetcode(retcode);
 }
 

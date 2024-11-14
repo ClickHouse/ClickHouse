@@ -15,6 +15,8 @@ namespace DB
 class ShellCommandsHolder final : public boost::noncopyable
 {
 public:
+    static ShellCommandsHolder & instance();
+
     void removeCommand(pid_t pid);
     void addCommand(std::unique_ptr<ShellCommand> command);
 

@@ -5,6 +5,12 @@
 namespace DB
 {
 
+ShellCommandsHolder & ShellCommandsHolder::instance()
+{
+    static ShellCommandsHolder instance;
+    return instance;
+}
+
 LoggerPtr ShellCommandsHolder::getLogger()
 {
     return ::getLogger("ShellCommandsHolder");
