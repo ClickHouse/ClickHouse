@@ -90,7 +90,11 @@ public:
         return current_metadata->getSchemaTransformer(data_path);
     }
 
-    bool hasExternalDynamicMetadata() override { return current_metadata && current_metadata->supportsExternalMetadataChange(); }
+    bool hasExternalDynamicMetadata() override
+    {
+        return StorageObjectStorage::Configuration::allow_dynamic_metadata_for_data_lakes && current_metadata
+            && current_metadata->supportsExternalMetadataChange();
+    }
 
     ColumnsDescription updateAndGetCurrentSchema(ObjectStoragePtr object_storage, ContextPtr context) override
     {

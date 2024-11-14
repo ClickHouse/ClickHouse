@@ -24,6 +24,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include "Databases/LoadingStrictnessLevel.h"
 #include "Storages/ColumnsDescription.h"
+#include "Storages/ObjectStorage/StorageObjectStorageSettings.h"
 
 #include <Poco/Logger.h>
 
@@ -41,6 +42,11 @@ namespace ErrorCodes
     extern const int DATABASE_ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+}
+
+namespace StorageObjectStorageSetting
+{
+extern const StorageObjectStorageSettingsBool allow_dynamic_metadata_for_data_lakes;
 }
 
 String StorageObjectStorage::getPathSample(StorageInMemoryMetadata metadata, ContextPtr context)
@@ -533,7 +539,8 @@ void StorageObjectStorage::Configuration::initialize(
     Configuration & configuration,
     ASTs & engine_args,
     ContextPtr local_context,
-    bool with_table_structure)
+    bool with_table_structure,
+    std::unique_ptr<StorageObjectStorageSettings> settings)
 {
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
         configuration.fromNamedCollection(*named_collection, local_context);
@@ -557,6 +564,9 @@ void StorageObjectStorage::Configuration::initialize(
     else
         FormatFactory::instance().checkFormatName(configuration.format);
 
+    if (settings)
+        configuration.allow_dynamic_metadata_for_data_lakes
+            = (*settings)[StorageObjectStorageSetting::allow_dynamic_metadata_for_data_lakes];
     configuration.initialized = true;
 }
 

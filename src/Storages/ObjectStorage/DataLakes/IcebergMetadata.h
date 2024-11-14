@@ -20,6 +20,10 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+}
 
 /**
  * Iceberg supports the next data types (see https://iceberg.apache.org/spec/#schemas-and-data-types):

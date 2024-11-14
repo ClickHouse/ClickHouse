@@ -79,6 +79,8 @@ At the moment, with the help of CH, you can read iceberg tables, the schema of w
 
 Currently, it is not possible to change nested structures or the types of elements within arrays and maps.
 
+To read a table where the schema has changed after its creation with dynamic schema inference, set allow_dynamic_metadata_for_data_lakes = true when creating the table.
+
 ### Data cache {#data-cache}
 
 `Iceberg` table engine and table function support data caching same as `S3`, `AzureBlobStorage`, `HDFS` storages. See [here](../../../engines/table-engines/integrations/s3.md#data-cache).

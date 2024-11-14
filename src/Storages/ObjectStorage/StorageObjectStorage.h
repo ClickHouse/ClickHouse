@@ -5,6 +5,7 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/IStorage.h>
 #include <Storages/ObjectStorage/DataLakes/PartitionColumns.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include "Interpreters/ActionsDAG.h"
@@ -167,7 +168,8 @@ public:
         Configuration & configuration,
         ASTs & engine_args,
         ContextPtr local_context,
-        bool with_table_structure);
+        bool with_table_structure,
+        std::unique_ptr<StorageObjectStorageSettings> settings);
 
     /// Storage type: s3, hdfs, azure, local.
     virtual ObjectStorageType getType() const = 0;
@@ -252,6 +254,8 @@ protected:
 
     bool initialized = false;
     DataLakePartitionColumns partition_columns;
+
+    bool allow_dynamic_metadata_for_data_lakes;
 };
 
 }
