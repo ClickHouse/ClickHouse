@@ -65,9 +65,7 @@ def is_valid_utc_datetime(datetime_str):
         return True
     except ValueError:
         try:
-            datetime.strptime(
-                datetime_str, "%Y-%m-%dT%H:%M:%SZ"
-            )
+            datetime.strptime(datetime_str, "%Y-%m-%dT%H:%M:%SZ")
             return True
         except ValueError:
             return False
