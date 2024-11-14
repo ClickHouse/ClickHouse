@@ -590,8 +590,7 @@ namespace
         }
     };
 
-    /// _FUNC_(str[, format, timezone])          /// for ReturnType::DateTime
-    /// _FUNC_(str, scale[, format, timezone]).  /// for ReturnType::DateTime64
+    /// _FUNC_(str[, format, timezone])
     template <typename Name, ParseSyntax parse_syntax, ReturnType return_type, ErrorHandling error_handling>
     class FunctionParseDateTimeImpl : public IFunction
     {
