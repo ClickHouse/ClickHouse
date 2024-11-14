@@ -1,6 +1,8 @@
 #include <Databases/Iceberg/DatabaseIceberg.h>
 
 #if USE_AVRO
+#include <Access/Common/HTTPAuthenticationScheme.h>
+
 #include <Databases/DatabaseFactory.h>
 #include <Databases/Iceberg/RestCatalog.h>
 #include <DataTypes/DataTypeString.h>
@@ -27,6 +29,7 @@ namespace DB
 namespace DatabaseIcebergSetting
 {
     extern const DatabaseIcebergSettingsString storage_endpoint;
+    extern const DatabaseIcebergSettingsString auth_header;
     extern const DatabaseIcebergSettingsDatabaseIcebergCatalogType catalog_type;
     extern const DatabaseIcebergSettingsDatabaseIcebergStorageType storage_type;
 }
@@ -52,6 +55,20 @@ namespace
         auto namespace_name = name.substr(0, name.size() - table_name.size() - 1);
         return {namespace_name, table_name};
     }
+
+    void setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri)
+    {
+        const auto & user_info = request_uri.getUserInfo();
+        if (!user_info.empty())
+        {
+            std::size_t n = user_info.find(':');
+            if (n != std::string::npos)
+            {
+                credentials.setUsername(user_info.substr(0, n));
+                credentials.setPassword(user_info.substr(n + 1));
+            }
+        }
+    }
 }
 
 DatabaseIceberg::DatabaseIceberg(
@@ -65,6 +82,17 @@ DatabaseIceberg::DatabaseIceberg(
     , database_engine_definition(database_engine_definition_)
     , log(getLogger("DatabaseIceberg(" + database_name_ + ")"))
 {
+    setCredentials(credentials, Poco::URI(url));
+
+    const auto auth_header = settings[DatabaseIcebergSetting::auth_header].value;
+    if (!auth_header.empty())
+    {
+        auto pos = auth_header.find(':');
+        if (pos == std::string::npos)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected format of auth header");
+        headers.emplace_back(auth_header.substr(0, pos), auth_header.substr(pos + 1));
+    }
+
 }
 
 std::unique_ptr<Iceberg::ICatalog> DatabaseIceberg::getCatalog(ContextPtr context_) const

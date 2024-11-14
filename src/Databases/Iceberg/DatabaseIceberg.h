@@ -6,6 +6,7 @@
 #include <Databases/Iceberg/DatabaseIcebergSettings.h>
 #include <Databases/Iceberg/ICatalog.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Poco/Net/HTTPBasicCredentials.h>
 
 namespace DB
 {
@@ -53,8 +54,10 @@ private:
     const DatabaseIcebergSettings settings;
     /// Database engine definition taken from initial CREATE DATABASE query.
     const ASTPtr database_engine_definition;
-
     const LoggerPtr log;
+    /// Crendetials to authenticate Iceberg Catalog.
+    Poco::Net::HTTPBasicCredentials credentials;
+    HTTPHeaderEntries headers;
 
     std::unique_ptr<Iceberg::ICatalog> getCatalog(ContextPtr context_) const;
     std::shared_ptr<StorageObjectStorage::Configuration> getConfiguration() const;
