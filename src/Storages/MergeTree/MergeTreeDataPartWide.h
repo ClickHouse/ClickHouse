@@ -51,6 +51,8 @@ public:
 
     std::optional<time_t> getColumnModificationTime(const String & column_name) const override;
 
+    void loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const override;
+
 protected:
     static void loadIndexGranularityImpl(
         MergeTreeIndexGranularity & index_granularity_, MergeTreeIndexGranularityInfo & index_granularity_info_,
@@ -62,9 +64,9 @@ private:
     /// Loads marks index granularity into memory
     void loadIndexGranularity() override;
 
-    ColumnSize getColumnSizeImpl(const NameAndTypePair & column, std::unordered_set<String> * processed_substreams) const;
+    ColumnSize getColumnSizeImpl(const NameAndTypePair & column, std::unordered_set<String> * processed_substreams, std::optional<Block> columns_sample) const;
 
-    void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
+    void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size, std::optional<Block> columns_sample) const override;
 
 };
 

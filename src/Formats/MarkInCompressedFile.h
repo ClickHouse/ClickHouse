@@ -119,4 +119,6 @@ private:
     std::tuple<const BlockInfo *, size_t> lookUpMark(size_t idx) const;
 };
 
+using PlainMarksByName = std::unordered_map<String, std::unique_ptr<MarksInCompressedFile::PlainArray>>;
+
 }

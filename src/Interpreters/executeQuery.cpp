@@ -81,6 +81,7 @@
 #include <base/EnumReflection.h>
 #include <base/demangle.h>
 
+#include <chrono>
 #include <memory>
 #include <random>
 
@@ -116,7 +117,6 @@ namespace Setting
     extern const SettingsOverflowMode join_overflow_mode;
     extern const SettingsString log_comment;
     extern const SettingsBool log_formatted_queries;
-    extern const SettingsBool log_processors_profiles;
     extern const SettingsBool log_profile_events;
     extern const SettingsUInt64 log_queries_cut_to_length;
     extern const SettingsBool log_queries;
@@ -460,7 +460,7 @@ QueryLogElement logQueryStart(
     return elem;
 }
 
-void logQueryMetricLogFinish(ContextPtr context, bool internal, String query_id, QueryStatusInfoPtr info)
+void logQueryMetricLogFinish(ContextPtr context, bool internal, String query_id, std::chrono::system_clock::time_point finish_time, QueryStatusInfoPtr info)
 {
     if (auto query_metric_log = context->getQueryMetricLog(); query_metric_log && !internal)
     {
@@ -475,11 +475,11 @@ void logQueryMetricLogFinish(ContextPtr context, bool internal, String query_id,
             /// to query the final state in query_log.
             auto collect_on_finish = info->elapsed_microseconds > interval_milliseconds * 1000;
             auto query_info = collect_on_finish ? info : nullptr;
-            query_metric_log->finishQuery(query_id, query_info);
+            query_metric_log->finishQuery(query_id, finish_time, query_info);
         }
         else
         {
-            query_metric_log->finishQuery(query_id, nullptr);
+            query_metric_log->finishQuery(query_id, finish_time, nullptr);
         }
     }
 }
@@ -503,7 +503,9 @@ void logQueryFinish(
         /// Update performance counters before logging to query_log
         CurrentThread::finalizePerformanceCounters();
 
+        auto time_now = std::chrono::system_clock::now();
         QueryStatusInfo info = process_list_elem->getInfo(true, settings[Setting::log_profile_events]);
+        logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, time_now, std::make_shared<QueryStatusInfo>(info));
         elem.type = QueryLogElementType::QUERY_FINISH;
 
         addStatusInfoToQueryLogElement(elem, info, query_ast, context);
@@ -549,55 +551,10 @@ void logQueryFinish(
             if (auto query_log = context->getQueryLog())
                 query_log->add(elem);
         }
-        if (settings[Setting::log_processors_profiles])
-        {
-            if (auto processors_profile_log = context->getProcessorsProfileLog())
-            {
-                ProcessorProfileLogElement processor_elem;
-                processor_elem.event_time = elem.event_time;
-                processor_elem.event_time_microseconds = elem.event_time_microseconds;
-                processor_elem.initial_query_id = elem.client_info.initial_query_id;
-                processor_elem.query_id = elem.client_info.current_query_id;
 
-                auto get_proc_id = [](const IProcessor & proc) -> UInt64 { return reinterpret_cast<std::uintptr_t>(&proc); };
+        logProcessorProfile(context, query_pipeline.getProcessors());
 
-                for (const auto & processor : query_pipeline.getProcessors())
-                {
-                    std::vector<UInt64> parents;
-                    for (const auto & port : processor->getOutputs())
-                    {
-                        if (!port.isConnected())
-                            continue;
-                        const IProcessor & next = port.getInputPort().getProcessor();
-                        parents.push_back(get_proc_id(next));
-                    }
-
-                    processor_elem.id = get_proc_id(*processor);
-                    processor_elem.parent_ids = std::move(parents);
-
-                    processor_elem.plan_step = reinterpret_cast<std::uintptr_t>(processor->getQueryPlanStep());
-                    processor_elem.plan_step_name = processor->getPlanStepName();
-                    processor_elem.plan_step_description = processor->getPlanStepDescription();
-                    processor_elem.plan_group = processor->getQueryPlanStepGroup();
-
-                    processor_elem.processor_name = processor->getName();
-
-                    processor_elem.elapsed_us = static_cast<UInt64>(processor->getElapsedNs() / 1000U);
-                    processor_elem.input_wait_elapsed_us = static_cast<UInt64>(processor->getInputWaitElapsedNs() / 1000U);
-                    processor_elem.output_wait_elapsed_us = static_cast<UInt64>(processor->getOutputWaitElapsedNs() / 1000U);
-
-                    auto stats = processor->getProcessorDataStats();
-                    processor_elem.input_rows = stats.input_rows;
-                    processor_elem.input_bytes = stats.input_bytes;
-                    processor_elem.output_rows = stats.output_rows;
-                    processor_elem.output_bytes = stats.output_bytes;
-
-                    processors_profile_log->add(processor_elem);
-                }
-            }
-        }
-
-        logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, std::make_shared<QueryStatusInfo>(info));
+        logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, time_now, std::make_shared<QueryStatusInfo>(info));
     }
 
     if (query_span)
@@ -667,6 +624,7 @@ void logQueryException(
     {
         elem.query_duration_ms = start_watch.elapsedMilliseconds();
     }
+    logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, time_now, info);
 
     elem.query_cache_usage = QueryCache::Usage::None;
 
@@ -696,8 +654,6 @@ void logQueryException(
         query_span->addAttribute("clickhouse.exception_code", elem.exception_code);
         query_span->finish();
     }
-
-    logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, info);
 }
 
 void logExceptionBeforeStart(
@@ -751,6 +707,8 @@ void logExceptionBeforeStart(
 
     elem.client_info = context->getClientInfo();
 
+    logQueryMetricLogFinish(context, false, elem.client_info.current_query_id, std::chrono::system_clock::now(), nullptr);
+
     elem.log_comment = settings[Setting::log_comment];
     if (elem.log_comment.size() > settings[Setting::max_query_size])
         elem.log_comment.resize(settings[Setting::max_query_size]);
@@ -795,8 +753,6 @@ void logExceptionBeforeStart(
             ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
         }
     }
-
-    logQueryMetricLogFinish(context, false, elem.client_info.current_query_id, nullptr);
 }
 
 void validateAnalyzerSettings(ASTPtr ast, bool context_value)
