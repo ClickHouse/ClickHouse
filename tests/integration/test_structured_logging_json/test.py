@@ -73,7 +73,6 @@ def validate_log_config_relation(config, logs, config_type):
 
     if config_type == "config_no_keys":
         keys_in_config.add("date_time")
-        keys_in_config.add("date_time_utc")
         keys_in_config.add("thread_name")
         keys_in_config.add("thread_id")
         keys_in_config.add("level")
