@@ -24,7 +24,7 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool use_parallel_replicas;
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
@@ -152,14 +152,13 @@ StoragePtr TableFunctionURL::getStorage(
 
     const auto & settings = global_context->getSettingsRef();
     auto parallel_replicas_cluster_name = settings[Setting::cluster_for_parallel_replicas].toString();
-    auto can_use_parallel_replicas = settings[Setting::use_parallel_replicas]
+    auto can_use_parallel_replicas = settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0
         && settings[Setting::parallel_replicas_for_cluster_engines]
         && settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
         && !parallel_replicas_cluster_name.empty();
 
     if (can_use_parallel_replicas)
     {
-        LOG_DEBUG(&Poco::Logger::get("TableFunctionURL"), "TableFunctionURL::getStorage wrapped to cluster version");
         return std::make_shared<StorageURLCluster>(
             global_context,
             settings[Setting::cluster_for_parallel_replicas],
