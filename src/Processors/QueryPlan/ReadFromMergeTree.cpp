@@ -27,6 +27,7 @@
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ReverseTransform.h>
 #include <Processors/Transforms/SelectByIndicesTransform.h>
+#include <Processors/Transforms/VirtualRowTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeIndexLegacyVectorSimilarity.h>
@@ -175,7 +176,9 @@ namespace Setting
     extern const SettingsBool use_skip_indexes;
     extern const SettingsBool use_skip_indexes_if_final;
     extern const SettingsBool use_uncompressed_cache;
+    extern const SettingsBool query_plan_merge_filters;
     extern const SettingsUInt64 merge_tree_min_read_task_size;
+    extern const SettingsBool read_in_order_use_virtual_row;
 }
 
 namespace MergeTreeSetting
@@ -206,6 +209,7 @@ static MergeTreeReaderSettings getMergeTreeReaderSettings(
         .use_asynchronous_read_from_pool = settings[Setting::allow_asynchronous_read_from_io_pool_for_merge_tree]
             && (settings[Setting::max_streams_to_max_threads_ratio] > 1 || settings[Setting::max_streams_for_merge_tree_reading] > 1),
         .enable_multiple_prewhere_read_steps = settings[Setting::enable_multiple_prewhere_read_steps],
+        .force_short_circuit_execution = settings[Setting::query_plan_merge_filters]
     };
 }
 
@@ -680,7 +684,34 @@ Pipe ReadFromMergeTree::readInOrder(
         if (set_total_rows_approx)
             source->addTotalRowsApprox(total_rows);
 
-        pipes.emplace_back(std::move(source));
+        Pipe pipe(source);
+
+        if (virtual_row_conversion && (read_type == ReadType::InOrder))
+        {
+            const auto & index = part_with_ranges.data_part->getIndex();
+            const auto & primary_key = storage_snapshot->metadata->primary_key;
+            size_t mark_range_begin = part_with_ranges.ranges.front().begin;
+
+            ColumnsWithTypeAndName pk_columns;
+            size_t num_columns = virtual_row_conversion->getRequiredColumnsWithTypes().size();
+            pk_columns.reserve(num_columns);
+
+            for (size_t j = 0; j < num_columns; ++j)
+            {
+                auto column = primary_key.data_types[j]->createColumn()->cloneEmpty();
+                column->insert((*(*index)[j])[mark_range_begin]);
+                pk_columns.push_back({std::move(column), primary_key.data_types[j], primary_key.column_names[j]});
+            }
+
+            Block pk_block(std::move(pk_columns));
+
+            pipe.addSimpleTransform([&](const Block & header)
+            {
+                return std::make_shared<VirtualRowTransform>(header, pk_block, virtual_row_conversion);
+            });
+        }
+
+        pipes.emplace_back(std::move(pipe));
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
@@ -1140,7 +1171,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
             if (pipe.numOutputPorts() > 1)
             {
                 auto transform = std::make_shared<MergingSortedTransform>(
-                    pipe.getHeader(), pipe.numOutputPorts(), sort_description, block_size.max_block_size_rows, /*max_block_size_bytes=*/0, SortingQueueStrategy::Batch);
+                    pipe.getHeader(), pipe.numOutputPorts(), sort_description, block_size.max_block_size_rows, /*max_block_size_bytes=*/0, SortingQueueStrategy::Batch,
+                    0, false, nullptr, false, /*apply_virtual_row_conversions*/ false);
 
                 pipe.addTransform(std::move(transform));
             }
@@ -1799,7 +1831,7 @@ void ReadFromMergeTree::updateSortDescription()
         enable_vertical_final);
 }
 
-bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit)
+bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, std::optional<ActionsDAG> virtual_row_conversion_)
 {
     /// if dirction is not set, use current one
     if (!direction)
@@ -1821,6 +1853,10 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     /// All *InOrder optimization rely on an assumption that output stream is sorted, but vertical FINAL breaks this rule
     /// Let prefer in-order optimization over vertical FINAL for now
     enable_vertical_final = false;
+
+    /// Disable virtual row for FINAL.
+    if (virtual_row_conversion_ && !isQueryWithFinal() && context->getSettingsRef()[Setting::read_in_order_use_virtual_row])
+        virtual_row_conversion = std::make_shared<ExpressionActions>(std::move(*virtual_row_conversion_));
 
     updateSortDescription();
 
@@ -2238,6 +2274,12 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
             expression->describeActions(format_settings.out, prefix);
         }
     }
+
+    if (virtual_row_conversion)
+    {
+        format_settings.out << prefix << "Virtual row conversions" << '\n';
+        virtual_row_conversion->describeActions(format_settings.out, prefix);
+    }
 }
 
 void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
@@ -2277,6 +2319,9 @@ void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
 
         map.add("Prewhere info", std::move(prewhere_info_map));
     }
+
+    if (virtual_row_conversion)
+        map.add("Virtual row conversions", virtual_row_conversion->toTree());
 }
 
 void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
