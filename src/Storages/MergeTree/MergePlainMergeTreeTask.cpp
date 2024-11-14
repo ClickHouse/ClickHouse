@@ -152,6 +152,12 @@ void MergePlainMergeTreeTask::finish()
     ThreadFuzzer::maybeInjectSleep();
     ThreadFuzzer::maybeInjectMemoryLimitException();
 
+    if (auto * mark_cache = storage.getContext()->getMarkCache().get())
+    {
+        auto marks = merge_task->releaseCachedMarks();
+        addMarksToCache(*new_part, marks, mark_cache);
+    }
+
     write_part_log({});
     StorageMergeTree::incrementMergedPartsProfileEvent(new_part->getType());
     transfer_profile_counters_to_initial_query();
@@ -163,7 +169,6 @@ void MergePlainMergeTreeTask::finish()
         ThreadFuzzer::maybeInjectSleep();
         ThreadFuzzer::maybeInjectMemoryLimitException();
     }
-
 }
 
 ContextMutablePtr MergePlainMergeTreeTask::createTaskContext() const

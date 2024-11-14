@@ -304,6 +304,15 @@ public:
         variant_column_ptr->protect();
     }
 
+    ColumnCheckpointPtr getCheckpoint() const override
+    {
+        return variant_column_ptr->getCheckpoint();
+    }
+
+    void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
+
+    void rollback(const ColumnCheckpoint & checkpoint) override;
+
     void forEachSubcolumn(MutableColumnCallback callback) override
     {
         callback(variant_column);
