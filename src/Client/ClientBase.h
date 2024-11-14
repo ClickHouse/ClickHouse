@@ -208,6 +208,9 @@ private:
     void initQueryIdFormats();
     bool addMergeTreeSettings(ASTCreateQuery & ast_create);
 
+    void startKeystrokeInterceptorIfExists();
+    void stopKeystrokeInterceptorIfExists();
+
 protected:
 
     class QueryInterruptHandler : private boost::noncopyable

@@ -1166,34 +1166,8 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
 
     std::exception_ptr local_format_error;
 
-    if (keystroke_interceptor)
-    {
-        progress_table_toggle_on = false;
-        try
-        {
-            keystroke_interceptor->startIntercept();
-        }
-        catch (const DB::Exception &)
-        {
-            error_stream << getCurrentExceptionMessage(false);
-            keystroke_interceptor.reset();
-        }
-    }
-
-    SCOPE_EXIT({
-        if (keystroke_interceptor)
-        {
-            try
-            {
-                keystroke_interceptor->stopIntercept();
-            }
-            catch (...)
-            {
-                error_stream << getCurrentExceptionMessage(false);
-                keystroke_interceptor.reset();
-            }
-        }
-    });
+    startKeystrokeInterceptorIfExists();
+    SCOPE_EXIT({ stopKeystrokeInterceptorIfExists(); });
 
     while (true)
     {
@@ -1655,6 +1629,9 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
 
     if (send_external_tables)
         sendExternalTables(parsed_query);
+
+    startKeystrokeInterceptorIfExists();
+    SCOPE_EXIT({ stopKeystrokeInterceptorIfExists(); });
 
     /// Receive description of table structure.
     Block sample;
@@ -2660,6 +2637,39 @@ bool ClientBase::addMergeTreeSettings(ASTCreateQuery & ast_create)
     }
 
     return added_new_setting;
+}
+
+void ClientBase::startKeystrokeInterceptorIfExists()
+{
+    if (keystroke_interceptor)
+    {
+        progress_table_toggle_on = false;
+        try
+        {
+            keystroke_interceptor->startIntercept();
+        }
+        catch (const DB::Exception &)
+        {
+            error_stream << getCurrentExceptionMessage(false);
+            keystroke_interceptor.reset();
+        }
+    }
+}
+
+void ClientBase::stopKeystrokeInterceptorIfExists()
+{
+    if (keystroke_interceptor)
+    {
+        try
+        {
+            keystroke_interceptor->stopIntercept();
+        }
+        catch (...)
+        {
+            error_stream << getCurrentExceptionMessage(false);
+            keystroke_interceptor.reset();
+        }
+    }
 }
 
 void ClientBase::runInteractive()
