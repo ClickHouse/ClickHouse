@@ -212,7 +212,7 @@ bool isDependentColumn(IdentifierResolveScope * scope_to_check, const QueryTreeN
     /// arrayMap(X -> X + Y, [0])
     ///
     /// X would have lambda as a source node
-    /// Y comes from outter scope and requires ordinary check.
+    /// Y comes from outer scope and requires ordinary check.
     if (column_source->getNodeType() == QueryTreeNodeType::LAMBDA)
         return false;
 
