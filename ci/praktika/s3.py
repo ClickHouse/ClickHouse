@@ -117,15 +117,21 @@ class S3:
         return res
 
     @classmethod
-    def copy_file_from_s3(cls, s3_path, local_path):
+    def copy_file_from_s3(
+        cls, s3_path, local_path, recursive=False, include_pattern=""
+    ):
         assert Path(s3_path), f"Invalid S3 Path [{s3_path}]"
         if Path(local_path).is_dir():
-            local_path = Path(local_path) / Path(s3_path).name
+            pass
         else:
             assert Path(
                 local_path
             ).parent.is_dir(), f"Parent path for [{local_path}] does not exist"
         cmd = f"aws s3 cp s3://{s3_path}  {local_path}"
+        if recursive:
+            cmd += " --recursive"
+        if include_pattern:
+            cmd += f" --include {include_pattern}"
         res = cls.run_command_with_retries(cmd)
         return res
 
