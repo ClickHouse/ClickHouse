@@ -1546,7 +1546,10 @@ struct WindowFunctionRank final : public StatelessWindowFunction
 
     RowNumber firstRequiredRowInFrame(const WindowTransform * transform) const override
     {
-        return transform->peer_group_start;
+        if (transform->window_description.frame.begin_type == WindowFrame::BoundaryType::Unbounded
+            && transform->window_description.frame.end_type == WindowFrame::BoundaryType::Current)
+            return transform->peer_group_start;
+        return transform->frame_start;
     }
 };
 
@@ -1569,7 +1572,10 @@ struct WindowFunctionDenseRank final : public StatelessWindowFunction
 
     RowNumber firstRequiredRowInFrame(const WindowTransform * transform) const override
     {
-        return transform->peer_group_start;
+        if (transform->window_description.frame.begin_type == WindowFrame::BoundaryType::Unbounded
+            && transform->window_description.frame.end_type == WindowFrame::BoundaryType::Current)
+            return transform->peer_group_start;
+        return transform->frame_start;
     }
 };
 
@@ -2050,8 +2056,13 @@ struct WindowFunctionRowNumber final : public StatelessWindowFunction
     RowNumber firstRequiredRowInFrame(const WindowTransform * transform) const override
     {
         /// Current block is the only one required to be kept in memory.
-        auto [row, _] = transform->moveRowNumber(transform->current_row, -1);
-        return row;
+        if (transform->window_description.frame.begin_type == WindowFrame::BoundaryType::Unbounded
+            && transform->window_description.frame.end_type == WindowFrame::BoundaryType::Current)
+        {
+            auto [row, _] = transform->moveRowNumber(transform->current_row, -1);
+            return row;
+        }
+        return transform->frame_start;
     }
 };
 
