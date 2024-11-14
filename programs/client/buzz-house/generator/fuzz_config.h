@@ -4,8 +4,7 @@
 #include <fstream>
 #include <string>
 
-#include "../third_party/json.h"
-using json = nlohmann::json;
+#include "simdjson.h"
 
 #include <Client/ClientBase.h>
 
@@ -78,45 +77,46 @@ public:
     }
 };
 
-static const ServerCredentials LoadServerCredentials(const json & val, const std::string & sname, const uint32_t & default_port)
+static const ServerCredentials
+LoadServerCredentials(const simdjson::dom::object & jobj, const std::string & sname, const uint32_t & default_port)
 {
     uint32_t port = default_port;
     std::string hostname = "localhost", unix_socket = "", user = "test", password = "", database = "test";
     std::filesystem::path query_log_file = std::filesystem::temp_directory_path() / (sname + ".sql");
 
-    for (const auto & [key, value] : val.items())
+    for (const auto [key, value] : jobj)
     {
         if (key == "hostname")
         {
-            hostname = static_cast<std::string>(value);
+            hostname = std::string(value.get_c_str());
         }
         else if (key == "port")
         {
-            port = static_cast<uint32_t>(value);
+            port = static_cast<uint32_t>(value.get_int64());
         }
         else if (key == "unix_socket")
         {
-            unix_socket = static_cast<std::string>(value);
+            unix_socket = std::string(value.get_c_str());
         }
         else if (key == "user")
         {
-            user = static_cast<std::string>(value);
+            user = std::string(value.get_c_str());
         }
         else if (key == "password")
         {
-            password = static_cast<std::string>(value);
+            password = std::string(value.get_c_str());
         }
         else if (key == "database")
         {
-            database = static_cast<std::string>(value);
+            database = std::string(value.get_c_str());
         }
         else if (key == "query_log_file")
         {
-            query_log_file = std::filesystem::path(static_cast<std::string>(value));
+            query_log_file = std::filesystem::path(std::string(value.get_c_str()));
         }
         else
         {
-            throw std::runtime_error("Unknown option: " + key);
+            throw std::runtime_error("Unknown option: " + std::string(key));
         }
     }
     return ServerCredentials(hostname, port, unix_socket, user, password, database, query_log_file);
@@ -143,84 +143,89 @@ public:
 
     FuzzConfig(DB::ClientBase * c, const std::string & path) : cb(c)
     {
-        std::ifstream ifs(path);
-        const json jdata = json::parse(ifs);
+        simdjson::dom::parser parser;
+        simdjson::dom::object object;
 
         buf.reserve(512);
-        for (const auto & [key, value] : jdata.items())
+        auto error = parser.load(path).get(object);
+        if (error)
+        {
+            throw std::runtime_error("Could not parse BuzzHouse configuration file: " + parser.get_error_message());
+        }
+        for (const auto [key, value] : object)
         {
             if (key == "db_file_path")
             {
-                db_file_path = std::filesystem::path(value);
+                db_file_path = std::filesystem::path(std::string(value.get_c_str()));
                 fuzz_out = db_file_path / "fuzz.data";
             }
             else if (key == "log_path")
             {
-                log_path = std::filesystem::path(value);
+                log_path = std::filesystem::path(std::string(value.get_c_str()));
             }
             else if (key == "read_log")
             {
-                read_log = static_cast<bool>(value);
+                read_log = value.get_bool();
             }
             else if (key == "seed")
             {
-                seed = static_cast<uint32_t>(value);
+                seed = static_cast<uint32_t>(value.get_int64());
             }
             else if (key == "max_depth")
             {
-                max_depth = static_cast<uint32_t>(value);
+                max_depth = static_cast<uint32_t>(value.get_int64());
             }
             else if (key == "max_width")
             {
-                max_width = static_cast<uint32_t>(value);
+                max_width = static_cast<uint32_t>(value.get_int64());
             }
             else if (key == "max_databases")
             {
-                max_databases = static_cast<uint32_t>(value);
+                max_databases = static_cast<uint32_t>(value.get_int64());
             }
             else if (key == "max_functions")
             {
-                max_functions = static_cast<uint32_t>(value);
+                max_functions = static_cast<uint32_t>(value.get_int64());
             }
             else if (key == "max_tables")
             {
-                max_tables = static_cast<uint32_t>(value);
+                max_tables = static_cast<uint32_t>(value.get_int64());
             }
             else if (key == "max_views")
             {
-                max_views = static_cast<uint32_t>(value);
+                max_views = static_cast<uint32_t>(value.get_int64());
             }
             else if (key == "fuzz_floating_points")
             {
-                fuzz_floating_points = static_cast<bool>(value);
+                fuzz_floating_points = value.get_bool();
             }
             else if (key == "mysql")
             {
-                mysql_server = LoadServerCredentials(value, key, 33060);
+                mysql_server = LoadServerCredentials(value, "mysql", 33060);
             }
             else if (key == "postgresql")
             {
-                postgresql_server = LoadServerCredentials(value, key, 5432);
+                postgresql_server = LoadServerCredentials(value, "postgresql", 5432);
             }
             else if (key == "sqlite")
             {
-                sqlite_server = LoadServerCredentials(value, key, 0);
+                sqlite_server = LoadServerCredentials(value, "sqlite", 0);
             }
             else if (key == "mongodb")
             {
-                mongodb_server = LoadServerCredentials(value, key, 27017);
+                mongodb_server = LoadServerCredentials(value, "mongodb", 27017);
             }
             else if (key == "redis")
             {
-                redis_server = LoadServerCredentials(value, key, 6379);
+                redis_server = LoadServerCredentials(value, "redis", 6379);
             }
             else if (key == "minio")
             {
-                minio_server = LoadServerCredentials(value, key, 9000);
+                minio_server = LoadServerCredentials(value, "minio", 9000);
             }
             else
             {
-                throw std::runtime_error("Unknown option: " + key);
+                throw std::runtime_error("Unknown option: " + std::string(key));
             }
         }
     }

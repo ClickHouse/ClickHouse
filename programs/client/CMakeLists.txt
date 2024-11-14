@@ -16,7 +16,7 @@ set (CLICKHOUSE_CLIENT_SOURCES
     buzz-house/third_party/uhugeint.cpp
     ${GRAMMAR_SRC}
 )
-set_source_files_properties(${CLICKHOUSE_CLIENT_SOURCES} PROPERTIES COMPILE_FLAGS "-Wno-reserved-identifier -Wno-extra-semi-stmt -Wno-used-but-marked-unused -Wno-covered-switch-default")
+set_source_files_properties(${CLICKHOUSE_CLIENT_SOURCES} PROPERTIES COMPILE_FLAGS "-Wno-reserved-identifier -Wno-extra-semi-stmt")
 
 set (CLICKHOUSE_CLIENT_LINK
     PRIVATE
