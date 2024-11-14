@@ -40,7 +40,7 @@ public:
     bool isDisconnected();
     bool isClosed();
 
-    /// Must bse called from event loop thread
+    /// Must be called from event loop thread
     bool connect();
 
     void disconnect();

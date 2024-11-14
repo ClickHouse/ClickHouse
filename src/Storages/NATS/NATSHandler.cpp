@@ -30,35 +30,30 @@ NATSHandler::NATSHandler(LoggerPtr log_)
 
 void NATSHandler::runLoop()
 {
-    if (loop_state.load() != Loop::CREATED)
     {
-        return;
+        std::lock_guard lock(loop_state_mutex);
+        if (loop_state != Loop::CREATED)
+        {
+            return;
+        }
+
+        natsLibuv_Init();
+        natsLibuv_SetThreadLocalLoop(loop.getLoop());
+
+        SCOPE_EXIT(nats_ReleaseThreadMemory());
+
+        loop_state = Loop::RUN;
     }
-
-    natsLibuv_Init();
-    natsLibuv_SetThreadLocalLoop(loop.getLoop());
-
-    SCOPE_EXIT(nats_ReleaseThreadMemory());
-
-    loop_state.store(Loop::RUN);
 
     LOG_DEBUG(log, "Background loop started");
 
-    std::size_t num_pending_tasks = 0;
-    {
-        std::lock_guard<std::mutex> lock(tasks_mutex);
-        num_pending_tasks = tasks.size();
-    }
-
     int num_pending_callbacks = 0;
-    while (loop_state.load() == Loop::RUN || num_pending_callbacks != 0 || num_pending_tasks != 0)
+    while (isRunning() || num_pending_callbacks != 0)
     {
         std::queue<Task> executed_tasks;
         {
             std::lock_guard<std::mutex> lock(tasks_mutex);
             std::swap(executed_tasks, tasks);
-
-            num_pending_tasks = tasks.size();
         }
 
         while (!executed_tasks.empty())
@@ -71,29 +66,35 @@ void NATSHandler::runLoop()
         //std::this_thread::sleep_for(std::chrono::milliseconds(50));
         num_pending_callbacks = uv_run(loop.getLoop(), UV_RUN_NOWAIT);
     }
-    loop_state.store(Loop::CLOSED);
+
+    {
+        std::lock_guard lock(loop_state_mutex);
+        loop_state = Loop::CLOSED;
+    }
 
     LOG_DEBUG(log, "Background loop ended");
 }
 
 void NATSHandler::stopLoop()
 {
-    if (loop_state.load() != Loop::RUN)
+    std::lock_guard lock(loop_state_mutex);
+
+    if (loop_state != Loop::RUN)
     {
         return;
     }
 
     LOG_DEBUG(log, "Implicit loop stop");
-    loop_state.store(Loop::STOP);
+    loop_state = Loop::STOP;
 }
 
 void NATSHandler::post(Task task)
 {
-    const auto current_state = loop_state.load();
-    if (current_state != Loop::CREATED && current_state != Loop::RUN)
+    std::scoped_lock lock(loop_state_mutex, tasks_mutex);
+
+    if (loop_state != Loop::CREATED && loop_state != Loop::RUN)
         throw Exception(ErrorCodes::INVALID_STATE, "Can not post task to event loop: event loop stopped");
 
-    std::lock_guard<std::mutex> lock(tasks_mutex);
     tasks.push(std::move(task));
 }
 
@@ -107,9 +108,6 @@ std::future<NATSConnectionPtr> NATSHandler::createConnection(const NATSConfigura
         {
             try
             {
-                if (loop_state.load() != Loop::RUN)
-                    throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Cannot connect to NATS: Event loop is not running");
-
                 for (UInt64 i = 0; i < configuration.max_connect_tries; ++i)
                 {
                     auto connection = std::make_shared<NATSConnection>(configuration, log, createOptions());
@@ -175,6 +173,12 @@ NATSOptionsPtr NATSHandler::createOptions()
     natsOptions_SetSendAsap(result.get(), true);
 
     return result;
+}
+
+bool NATSHandler::isRunning()
+{
+    std::scoped_lock lock(loop_state_mutex, tasks_mutex);
+    return loop_state == Loop::RUN || tasks.size() != 0;
 }
 
 }

@@ -35,10 +35,13 @@ private:
 
     NATSOptionsPtr createOptions();
 
+    bool isRunning();
+
     UVLoop loop;
     LoggerPtr log;
 
-    std::atomic<UInt8> loop_state;
+    std::mutex loop_state_mutex;
+    UInt8 loop_state;
 
     std::mutex tasks_mutex;
     std::queue<Task> tasks;
