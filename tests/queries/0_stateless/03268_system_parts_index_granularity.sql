@@ -1,4 +1,5 @@
--- Tags: no-random-settings, no-random-merge-tree-settings
+-- Tags: no-random-settings, no-random-merge-tree-settings, no-debug
+-- no-debug: We are keeping the old vector around for debugging purposes
 DROP TABLE IF EXISTS t;
 
 CREATE TABLE t (
