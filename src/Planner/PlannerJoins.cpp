@@ -613,9 +613,10 @@ JoinClausesAndActions buildJoinClausesAndActions(
         join_right_table_expressions,
         join_node);
 
-    const auto is_inequal_join = std::any_of(result.join_clauses.begin(), result.join_clauses.end(), [](const JoinClause& clause) {
-         return !clause.getMixedFilterConditionNodes().empty();
-    });
+    const auto is_inequal_join = std::any_of(
+        result.join_clauses.begin(),
+        result.join_clauses.end(),
+        [](const JoinClause & clause) { return !clause.getMixedFilterConditionNodes().empty(); });
 
     auto and_function = FunctionFactory::instance().get("and", planner_context->getQueryContext());
 
