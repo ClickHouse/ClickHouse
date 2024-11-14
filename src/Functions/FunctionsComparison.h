@@ -1033,6 +1033,9 @@ private:
             size_t tuple_size,
             size_t input_rows_count) const
     {
+        if (0 == tuple_size)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Comparison of zero-sized tuples is not implemented");
+
         ColumnsWithTypeAndName less_columns(tuple_size);
         ColumnsWithTypeAndName equal_columns(tuple_size - 1);
         ColumnsWithTypeAndName tmp_columns(2);
