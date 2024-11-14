@@ -16,13 +16,14 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 
-#include <Analyzer/Utils.h>
-#include <Analyzer/FunctionNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
-#include <Analyzer/TableNode.h>
-#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/JoinNode.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/Utils.h>
 
 #include <Dictionaries/IDictionary.h>
 #include <Interpreters/IKeyValueEntity.h>
@@ -40,8 +41,9 @@
 #include <Planner/PlannerContext.h>
 #include <Planner/Utils.h>
 
-#include <Core/Settings.h>
+#include <Core/Joins.h>
 #include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
@@ -126,6 +128,55 @@ String JoinClause::dump() const
     return buffer.str();
 }
 
+JoinClause JoinClause::concatClauses(const JoinClause & lhs, const JoinClause & rhs)
+{
+    const auto concat_ptrs_into = [](const ActionsDAG::NodeRawConstPtrs & lhs_ptrs,
+                                     const ActionsDAG::NodeRawConstPtrs & rhs_ptrs,
+                                     ActionsDAG::NodeRawConstPtrs & result)
+    {
+        result.insert(result.end(), lhs_ptrs.begin(), lhs_ptrs.end());
+        result.insert(result.end(), rhs_ptrs.begin(), rhs_ptrs.end());
+    };
+
+    JoinClause result;
+    const auto lhs_key_size = lhs.left_key_nodes.size();
+    const auto rhs_key_size = rhs.left_key_nodes.size();
+
+    result.left_key_nodes.reserve(lhs_key_size + rhs_key_size);
+    concat_ptrs_into(lhs.left_key_nodes, rhs.left_key_nodes, result.left_key_nodes);
+
+    result.right_key_nodes.reserve(lhs_key_size + rhs_key_size);
+    concat_ptrs_into(lhs.right_key_nodes, rhs.right_key_nodes, result.right_key_nodes);
+
+    result.left_filter_condition_nodes.reserve(lhs.left_filter_condition_nodes.size() + rhs.left_filter_condition_nodes.size());
+    concat_ptrs_into(lhs.left_filter_condition_nodes, rhs.left_filter_condition_nodes, result.left_filter_condition_nodes);
+
+    result.right_filter_condition_nodes.reserve(lhs.right_filter_condition_nodes.size() + rhs.right_filter_condition_nodes.size());
+    concat_ptrs_into(lhs.right_filter_condition_nodes, rhs.right_filter_condition_nodes, result.right_filter_condition_nodes);
+
+    result.mixed_filter_condition_nodes.reserve(lhs.mixed_filter_condition_nodes.size() + rhs.mixed_filter_condition_nodes.size());
+    concat_ptrs_into(lhs.mixed_filter_condition_nodes, rhs.mixed_filter_condition_nodes, result.mixed_filter_condition_nodes);
+
+    result.asof_conditions.reserve(lhs.asof_conditions.size() + rhs.asof_conditions.size());
+    // We can keep the indices from left hand side, because their position remain the same
+    result.asof_conditions = lhs.asof_conditions;
+    // And offset the indices from rhs according to lhs size
+    std::transform(
+        rhs.asof_conditions.begin(),
+        rhs.asof_conditions.end(),
+        std::back_inserter(result.asof_conditions),
+        [&lhs_key_size](const ASOFCondition & asof_condition)
+        { return ASOFCondition{asof_condition.key_index + lhs_key_size, asof_condition.asof_inequality}; });
+
+    // The same with null-safe comparisons
+    result.nullsafe_compare_key_indexes = lhs.nullsafe_compare_key_indexes;
+    // And offset the indices from rhs according to lhs size
+    for (const auto key_index : rhs.nullsafe_compare_key_indexes)
+        result.nullsafe_compare_key_indexes.insert(key_index + lhs_key_size);
+
+    return result;
+}
+
 namespace
 {
 
@@ -206,7 +257,7 @@ const ActionsDAG::Node * appendExpression(
     return join_expression_dag_node_raw_pointers[0];
 }
 
-void buildJoinClause(
+void buildSimpleJoinClause(
     ActionsDAG & left_dag,
     ActionsDAG & right_dag,
     ActionsDAG & mixed_dag,
@@ -222,25 +273,8 @@ void buildJoinClause(
     if (function_node)
         function_name = function_node->getFunction()->getName();
 
-    /// For 'and' function go into children
-    if (function_name == "and")
-    {
-        for (const auto & child : function_node->getArguments())
-        {
-            buildJoinClause(
-                left_dag,
-                right_dag,
-                mixed_dag,
-                planner_context,
-                child,
-                left_table_expressions,
-                right_table_expressions,
-                join_node,
-                join_clause);
-        }
-
-        return;
-    }
+    if (function_name == "and" || function_name == "or")
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot build simple join clause for AND or OR functions");
 
     auto asof_inequality = getASOFJoinInequality(function_name);
     bool is_asof_join_inequality = join_node.getStrictness() == JoinStrictness::Asof && asof_inequality != ASOFJoinInequality::None;
@@ -250,19 +284,16 @@ void buildJoinClause(
         const auto left_child = function_node->getArguments().getNodes().at(0);
         const auto right_child = function_node->getArguments().getNodes().at(1);
 
-        auto left_expression_sides = extractJoinTableSidesFromExpression(left_child.get(),
-            left_table_expressions,
-            right_table_expressions,
-            join_node);
+        auto left_expression_sides
+            = extractJoinTableSidesFromExpression(left_child.get(), left_table_expressions, right_table_expressions, join_node);
 
-        auto right_expression_sides = extractJoinTableSidesFromExpression(right_child.get(),
-            left_table_expressions,
-            right_table_expressions,
-            join_node);
+        auto right_expression_sides
+            = extractJoinTableSidesFromExpression(right_child.get(), left_table_expressions, right_table_expressions, join_node);
 
         if (left_expression_sides.empty() && right_expression_sides.empty())
         {
-            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+            throw Exception(
+                ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
                 "JOIN {} ON expression expected non-empty left and right table expressions",
                 join_node.formatASTForErrorMessage());
         }
@@ -327,7 +358,8 @@ void buildJoinClause(
         }
         else
         {
-            auto support_mixed_join_condition = planner_context->getQueryContext()->getSettingsRef()[Setting::allow_experimental_join_condition];
+            auto support_mixed_join_condition
+                = planner_context->getQueryContext()->getSettingsRef()[Setting::allow_experimental_join_condition];
             auto join_use_nulls = planner_context->getQueryContext()->getSettingsRef()[Setting::join_use_nulls];
             /// If join_use_nulls = true, the columns' nullability will be changed later which make this expression not right.
             if (support_mixed_join_condition && !join_use_nulls)
@@ -349,10 +381,9 @@ void buildJoinClause(
     }
     else
     {
-        auto expression_sides = extractJoinTableSidesFromExpression(join_expression.get(),
-            left_table_expressions,
-            right_table_expressions,
-            join_node);
+        auto expression_sides
+            = extractJoinTableSidesFromExpression(join_expression.get(), left_table_expressions, right_table_expressions, join_node);
+
         // expression_sides.empty() = true, the expression is constant
         if (expression_sides.empty() || expression_sides.size() == 1)
         {
@@ -363,7 +394,8 @@ void buildJoinClause(
         }
         else
         {
-            auto support_mixed_join_condition = planner_context->getQueryContext()->getSettingsRef()[Setting::allow_experimental_join_condition];
+            auto support_mixed_join_condition
+                = planner_context->getQueryContext()->getSettingsRef()[Setting::allow_experimental_join_condition];
             auto join_use_nulls = planner_context->getQueryContext()->getSettingsRef()[Setting::join_use_nulls];
             /// If join_use_nulls = true, the columns' nullability will be changed later which make this expression not right.
             if (support_mixed_join_condition && !join_use_nulls)
@@ -376,11 +408,128 @@ void buildJoinClause(
             {
                 throw Exception(
                     ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                    "JOIN {} join expression contains column from left and right table, you may try experimental support of this feature by `SET allow_experimental_join_condition = 1`",
+                    "JOIN {} join expression contains column from left and right table, you may try experimental support of this feature "
+                    "by `SET allow_experimental_join_condition = 1`",
                     join_node.formatASTForErrorMessage());
             }
         }
     }
+}
+
+JoinClauses makeCrossProduct(const JoinClauses & lhs, const JoinClauses & rhs)
+{
+    JoinClauses result;
+    for (const auto & rhs_clause : rhs)
+    {
+        for (const auto & lhs_clause : lhs)
+        {
+            result.emplace_back(JoinClause::concatClauses(lhs_clause, rhs_clause));
+        }
+    }
+
+    return result;
+}
+
+JoinClauses buildJoinClauses(
+    ActionsDAG & left_dag,
+    ActionsDAG & right_dag,
+    ActionsDAG & mixed_dag,
+    const PlannerContextPtr & planner_context,
+    const QueryTreeNodePtr & join_expression,
+    const TableExpressionSet & left_table_expressions,
+    const TableExpressionSet & right_table_expressions,
+    const JoinNode & join_node)
+{
+    if (join_expression->getNodeType() != QueryTreeNodeType::FUNCTION)
+    {
+        JoinClauses result;
+        result.emplace_back();
+        buildSimpleJoinClause(
+            left_dag,
+            right_dag,
+            mixed_dag,
+            planner_context,
+            join_expression,
+            left_table_expressions,
+            right_table_expressions,
+            join_node,
+            result.front());
+        return result;
+    }
+
+    std::unordered_map<IQueryTreeNode *, JoinClauses> built_clauses;
+    std::stack<QueryTreeNodePtr> nodes_to_process;
+    nodes_to_process.push(join_expression);
+
+    while (!nodes_to_process.empty())
+    {
+        auto node = nodes_to_process.top();
+        const auto node_type = node->getNodeType();
+        if (node_type == QueryTreeNodeType::FUNCTION)
+        {
+            auto & function_node = node->as<FunctionNode &>();
+            const auto & function_name = function_node.getFunctionName();
+            if (function_name == "and" || function_name == "or")
+            {
+                auto & arguments = function_node.getArguments().getNodes();
+                auto * first_argument = arguments.front().get();
+                if (const auto it = built_clauses.find(first_argument); it == built_clauses.end())
+                {
+                    for (auto & argument : arguments)
+                        nodes_to_process.push(argument);
+
+                    continue;
+                }
+
+                nodes_to_process.pop();
+                JoinClauses result;
+                if (function_name == "or")
+                {
+                    for (auto & argument : arguments)
+                    {
+                        auto & child_res = built_clauses.at(argument.get());
+                        result.insert(result.end(), std::make_move_iterator(child_res.begin()), std::make_move_iterator(child_res.end()));
+                    }
+                }
+                else
+                {
+                    auto it = arguments.begin();
+                    {
+                        auto & child_res = built_clauses.at(it->get());
+                        result.insert(result.end(), std::make_move_iterator(child_res.begin()), std::make_move_iterator(child_res.end()));
+                    }
+                    it++;
+
+                    for (; it != arguments.end(); it++)
+                    {
+                        auto & child_res = built_clauses.at(it->get());
+                        result = makeCrossProduct(result, child_res);
+                    }
+                }
+
+                built_clauses.emplace(node.get(), std::move(result));
+            }
+            else
+            {
+                nodes_to_process.pop();
+                JoinClauses clauses;
+                clauses.emplace_back();
+                buildSimpleJoinClause(
+                    left_dag,
+                    right_dag,
+                    mixed_dag,
+                    planner_context,
+                    node,
+                    left_table_expressions,
+                    right_table_expressions,
+                    join_node,
+                    clauses.front());
+
+                built_clauses.emplace(node.get(), std::move(clauses));
+            }
+        }
+    }
+    return std::move(built_clauses.at(join_expression.get()));
 }
 
 JoinClausesAndActions buildJoinClausesAndActions(
@@ -454,43 +603,19 @@ JoinClausesAndActions buildJoinClausesAndActions(
 
     JoinClausesAndActions result;
 
-    bool is_inequal_join = false;
-    const auto & function_name = function_node->getFunction()->getName();
-    if (function_name == "or")
-    {
-        for (const auto & child : function_node->getArguments())
-        {
-            result.join_clauses.emplace_back();
+    result.join_clauses = buildJoinClauses(
+        left_join_actions,
+        right_join_actions,
+        mixed_join_actions,
+        planner_context,
+        join_expression,
+        join_left_table_expressions,
+        join_right_table_expressions,
+        join_node);
 
-            buildJoinClause(
-                left_join_actions,
-                right_join_actions,
-                mixed_join_actions,
-                planner_context,
-                child,
-                join_left_table_expressions,
-                join_right_table_expressions,
-                join_node,
-                result.join_clauses.back());
-            is_inequal_join |= !result.join_clauses.back().getMixedFilterConditionNodes().empty();
-        }
-    }
-    else
-    {
-        result.join_clauses.emplace_back();
-
-        buildJoinClause(
-                left_join_actions,
-                right_join_actions,
-                mixed_join_actions,
-                planner_context,
-                join_expression,
-                join_left_table_expressions,
-                join_right_table_expressions,
-                join_node,
-                result.join_clauses.back());
-        is_inequal_join |= !result.join_clauses.back().getMixedFilterConditionNodes().empty();
-    }
+    const auto is_inequal_join = std::any_of(result.join_clauses.begin(), result.join_clauses.end(), [](const JoinClause& clause) {
+         return !clause.getMixedFilterConditionNodes().empty();
+    });
 
     auto and_function = FunctionFactory::instance().get("and", planner_context->getQueryContext());
 

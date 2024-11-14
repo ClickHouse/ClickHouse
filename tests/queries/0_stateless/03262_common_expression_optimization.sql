@@ -80,8 +80,8 @@ INSERT INTO y SELECT x, A%2 AS A, B%2 AS B, C%2 AS C, D%2 AS D, E%2 AS E, F%2 AS
 
 -- JOIN expressions
 -- As the optimization code is shared between ON and WHERE, it is enough to test that the optimization is done also in ON
-SELECT * FROM x INNER JOIN y ON ((x.A = y.A ) AND x.B = 1) OR ((x.A = y.A) AND y.C = 1) ORDER BY ALL LIMIT 10 SETTINGS allow_experimental_join_condition = 1, optimize_extract_common_expressions = 0;
-SELECT * FROM x INNER JOIN y ON ((x.A = y.A ) AND x.B = 1) OR ((x.A = y.A) AND y.C = 1) ORDER BY ALL LIMIT 10 SETTINGS allow_experimental_join_condition = 1, optimize_extract_common_expressions = 1;
+SELECT * FROM x INNER JOIN y ON ((x.A = y.A ) AND x.B = 1) OR ((x.A = y.A) AND y.C = 1) ORDER BY ALL LIMIT 10 SETTINGS optimize_extract_common_expressions = 0;
+SELECT * FROM x INNER JOIN y ON ((x.A = y.A ) AND x.B = 1) OR ((x.A = y.A) AND y.C = 1) ORDER BY ALL LIMIT 10 SETTINGS optimize_extract_common_expressions = 1;
 EXPLAIN QUERY TREE SELECT count() FROM x INNER JOIN y ON ((x.A = y.A ) AND x.B = 1) OR ((x.A = y.A) AND y.C = 1);
 
 -- Check that optimization only happen on top level, (x.C = y.C AND x.D = y.D) OR (x.C = y.C AND x.E = y.E) shouldn't be optimized
