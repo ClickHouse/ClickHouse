@@ -4,6 +4,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/FileCacheUtils.h>
 #include <base/getThreadId.h>
 #include <base/hex.h>
 #include <Common/CurrentThread.h>
@@ -629,6 +630,36 @@ void FileSegment::completePartAndResetDownloader()
     LOG_TEST(log, "Complete batch. ({})", getInfoForLogUnlocked(lk));
 }
 
+size_t FileSegment::getSizeForBackgroundDownload() const
+{
+    auto lk = lock();
+    return getSizeForBackgroundDownloadUnlocked(lk);
+}
+
+size_t FileSegment::getSizeForBackgroundDownloadUnlocked(const FileSegmentGuard::Lock &) const
+{
+    if (!background_download_enabled
+        || !downloaded_size
+        || !remote_file_reader)
+    {
+        return 0;
+    }
+
+    chassert(downloaded_size <= range().size());
+
+    const size_t background_download_max_file_segment_size = cache->getBackgroundDownloadMaxFileSegmentSize();
+    size_t desired_size;
+    if (downloaded_size >= background_download_max_file_segment_size)
+        desired_size = FileCacheUtils::roundUpToMultiple(downloaded_size, cache->getBoundaryAlignment());
+    else
+        desired_size = FileCacheUtils::roundUpToMultiple(background_download_max_file_segment_size, cache->getBoundaryAlignment());
+
+    desired_size = std::min(desired_size, range().size());
+    chassert(desired_size >= downloaded_size);
+
+    return desired_size - downloaded_size;
+}
+
 void FileSegment::complete(bool allow_background_download)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentCompleteMicroseconds);
@@ -708,7 +739,8 @@ void FileSegment::complete(bool allow_background_download)
             if (is_last_holder)
             {
                 bool added_to_download_queue = false;
-                if (allow_background_download && background_download_enabled && remote_file_reader)
+                size_t background_download_size = allow_background_download ? getSizeForBackgroundDownloadUnlocked(segment_lock) : 0;
+                if (background_download_size)
                 {
                     ProfileEvents::increment(ProfileEvents::FilesystemCacheBackgroundDownloadQueuePush);
                     added_to_download_queue = locked_key->addToDownloadQueue(offset(), segment_lock); /// Finish download in background.

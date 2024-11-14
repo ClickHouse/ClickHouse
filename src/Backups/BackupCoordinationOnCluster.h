@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Backups/IBackupCoordination.h>
-#include <Backups/BackupConcurrencyCheck.h>
 #include <Backups/BackupCoordinationCleaner.h>
 #include <Backups/BackupCoordinationFileInfos.h>
 #include <Backups/BackupCoordinationReplicatedAccess.h>
@@ -20,7 +19,7 @@ class BackupCoordinationOnCluster : public IBackupCoordination
 {
 public:
     /// Empty string as the current host is used to mark the initiator of a BACKUP ON CLUSTER query.
-    static const constexpr std::string_view kInitiator;
+    static const constexpr std::string_view kInitiator = BackupCoordinationStageSync::kInitiator;
 
     BackupCoordinationOnCluster(
         const UUID & backup_uuid_,
@@ -37,13 +36,13 @@ public:
 
     ~BackupCoordinationOnCluster() override;
 
+    void setBackupQueryIsSentToOtherHosts() override;
+    bool isBackupQuerySentToOtherHosts() const override;
     Strings setStage(const String & new_stage, const String & message, bool sync) override;
-    void setBackupQueryWasSentToOtherHosts() override;
-    bool trySetError(std::exception_ptr exception) override;
-    void finish() override;
-    bool tryFinishAfterError() noexcept override;
-    void waitForOtherHostsToFinish() override;
-    bool tryWaitForOtherHostsToFinishAfterError() noexcept override;
+    bool setError(std::exception_ptr exception, bool throw_if_error) override;
+    bool waitOtherHostsFinish(bool throw_if_error) const override;
+    bool finish(bool throw_if_error) override;
+    bool cleanup(bool throw_if_error) override;
 
     void addReplicatedPartNames(
         const String & table_zk_path,
@@ -110,11 +109,10 @@ private:
     const bool plain_backup;
     LoggerPtr const log;
 
+    /// The order is important: `stage_sync` must be initialized after `with_retries` and `cleaner`.
     const WithRetries with_retries;
-    BackupConcurrencyCheck concurrency_check;
-    BackupCoordinationStageSync stage_sync;
     BackupCoordinationCleaner cleaner;
-    std::atomic<bool> backup_query_was_sent_to_other_hosts = false;
+    BackupCoordinationStageSync stage_sync;
 
     mutable std::optional<BackupCoordinationReplicatedTables> replicated_tables TSA_GUARDED_BY(replicated_tables_mutex);
     mutable std::optional<BackupCoordinationReplicatedAccess> replicated_access TSA_GUARDED_BY(replicated_access_mutex);
