@@ -6,7 +6,7 @@ title: "Functions for Working with Geohash"
 
 ## Geohash
 
-[Geohash](https://en.wikipedia.org/wiki/Geohash) is the geocode system, which subdivides Earth’s surface into buckets of grid shape and encodes each cell into a short string of letters and digits. It is a hierarchical data structure, so the longer is the geohash string, the more precise is the geographic location.
+[Geohash](https://en.wikipedia.org/wiki/Geohash) is the geocode system, which subdivides Earth’s surface into buckets of grid shape and encodes each cell into a short string of letters and digits. It is a hierarchical data structure, so the longer the geohash string is, the more precise the geographic location will be.
 
 If you need to manually convert geographic coordinates to geohash strings, you can use [geohash.org](http://geohash.org/).
 
@@ -14,25 +14,36 @@ If you need to manually convert geographic coordinates to geohash strings, you c
 
 Encodes latitude and longitude as a [geohash](#geohash)-string.
 
+**Syntax**
+
 ``` sql
 geohashEncode(longitude, latitude, [precision])
 ```
 
 **Input values**
 
-- longitude - longitude part of the coordinate you want to encode. Floating in range`[-180°, 180°]`
-- latitude - latitude part of the coordinate you want to encode. Floating in range `[-90°, 90°]`
-- precision - Optional, length of the resulting encoded string, defaults to `12`. Integer in range `[1, 12]`. Any value less than `1` or greater than `12` is silently converted to `12`.
+- `longitude` — Longitude part of the coordinate you want to encode. Floating in range`[-180°, 180°]`. [Float](../../data-types/float.md). 
+- `latitude` — Latitude part of the coordinate you want to encode. Floating in range `[-90°, 90°]`. [Float](../../data-types/float.md).
+- `precision` (optional) — Length of the resulting encoded string. Defaults to `12`. Integer in the range `[1, 12]`. [Int8](../../data-types/int-uint.md).
+
+:::note
+- All coordinate parameters must be of the same type: either `Float32` or `Float64`.
+- For the `precision` parameter, any value less than `1` or greater than `12` is silently converted to `12`.
+:::
 
 **Returned values**
 
-- alphanumeric `String` of encoded coordinate (modified version of the base32-encoding alphabet is used).
+- Alphanumeric string of the encoded coordinate (modified version of the base32-encoding alphabet is used). [String](../../data-types/string.md).
 
 **Example**
+
+Query:
 
 ``` sql
 SELECT geohashEncode(-5.60302734375, 42.593994140625, 0) AS res;
 ```
+
+Result:
 
 ``` text
 ┌─res──────────┐
@@ -44,13 +55,19 @@ SELECT geohashEncode(-5.60302734375, 42.593994140625, 0) AS res;
 
 Decodes any [geohash](#geohash)-encoded string into longitude and latitude.
 
+**Syntax**
+
+```sql
+geohashDecode(hash_str)
+```
+
 **Input values**
 
-- encoded string - geohash-encoded string.
+- `hash_str` — Geohash-encoded string.
 
 **Returned values**
 
-- (longitude, latitude) - 2-tuple of `Float64` values of longitude and latitude.
+- Tuple `(longitude, latitude)` of `Float64` values of longitude and latitude. [Tuple](../../data-types/tuple.md)([Float64](../../data-types/float.md))
 
 **Example**
 

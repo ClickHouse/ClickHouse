@@ -151,9 +151,13 @@ public:
 
         Block read();
 
-        ReadBufferFromFile in_file_buf;
-        CompressedReadBuffer in_compressed_buf;
-        NativeReader in_reader;
+        const std::string path;
+        const size_t size;
+        const std::optional<Block> header;
+
+        std::unique_ptr<ReadBufferFromFileBase> in_file_buf;
+        std::unique_ptr<CompressedReadBuffer> in_compressed_buf;
+        std::unique_ptr<NativeReader> in_reader;
     };
 
     struct Stat

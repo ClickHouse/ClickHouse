@@ -42,6 +42,8 @@ public:
 
     bool isStoredOnDisk() const override { return true; }
 
+    bool isStoredOnReadonlyDisk() const override;
+
     bool isStoredOnRemoteDisk() const override;
 
     bool isStoredOnRemoteDiskWithZeroCopySupport() const override;
@@ -51,6 +53,8 @@ public:
     std::optional<time_t> getColumnModificationTime(const String & column_name) const override;
 
     std::optional<String> getFileNameForColumn(const NameAndTypePair & /* column */) const override { return DATA_FILE_NAME; }
+
+    void loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const override;
 
     ~MergeTreeDataPartCompact() override;
 
@@ -65,8 +69,8 @@ private:
      /// Loads marks index granularity into memory
      void loadIndexGranularity() override;
 
-     /// Compact parts doesn't support per column size, only total size
-     void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
+     /// Compact parts don't support per column size, only total size
+     void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size, std::optional<Block> columns_sample) const override;
 };
 
 }

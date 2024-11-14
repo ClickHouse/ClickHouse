@@ -44,15 +44,15 @@ struct IdnaEncode
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets,
+        size_t input_rows_count)
     {
-        const size_t rows = offsets.size();
         res_data.reserve(data.size()); /// just a guess, assuming the input is all-ASCII
-        res_offsets.reserve(rows);
+        res_offsets.reserve(input_rows_count);
 
         size_t prev_offset = 0;
         std::string ascii;
-        for (size_t row = 0; row < rows; ++row)
+        for (size_t row = 0; row < input_rows_count; ++row)
         {
             const char * value = reinterpret_cast<const char *>(&data[prev_offset]);
             const size_t value_length = offsets[row] - prev_offset - 1;
@@ -85,7 +85,7 @@ struct IdnaEncode
         }
     }
 
-    [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
+    [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &, size_t)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Arguments of type FixedString are not allowed");
     }
@@ -99,15 +99,15 @@ struct IdnaDecode
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets,
+        size_t input_rows_count)
     {
-        const size_t rows = offsets.size();
         res_data.reserve(data.size()); /// just a guess, assuming the input is all-ASCII
-        res_offsets.reserve(rows);
+        res_offsets.reserve(input_rows_count);
 
         size_t prev_offset = 0;
         std::string unicode;
-        for (size_t row = 0; row < rows; ++row)
+        for (size_t row = 0; row < input_rows_count; ++row)
         {
             const char * ascii = reinterpret_cast<const char *>(&data[prev_offset]);
             const size_t ascii_length = offsets[row] - prev_offset - 1;
@@ -124,7 +124,7 @@ struct IdnaDecode
         }
     }
 
-    [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
+    [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &, size_t)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Arguments of type FixedString are not allowed");
     }

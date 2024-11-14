@@ -1,5 +1,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -11,6 +12,14 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
+    extern const SettingsBool print_pretty_type_names;
+    extern const SettingsBool implicit_select;
+}
 
 namespace ErrorCodes
 {
@@ -38,10 +47,12 @@ public:
     FunctionFormatQuery(ContextPtr context, String name_, OutputFormatting output_formatting_, ErrorHandling error_handling_)
         : name(name_), output_formatting(output_formatting_), error_handling(error_handling_)
     {
-        const Settings & settings = context->getSettings();
-        max_query_size = settings.max_query_size;
-        max_parser_depth = settings.max_parser_depth;
-        max_parser_backtracks = settings.max_parser_backtracks;
+        const Settings & settings = context->getSettingsRef();
+        max_query_size = settings[Setting::max_query_size];
+        max_parser_depth = settings[Setting::max_parser_depth];
+        max_parser_backtracks = settings[Setting::max_parser_backtracks];
+        print_pretty_type_names = settings[Setting::print_pretty_type_names];
+        implicit_select = settings[Setting::implicit_select];
     }
 
     String getName() const override { return name; }
@@ -54,13 +65,12 @@ public:
         FunctionArgumentDescriptors args{
             {"query", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
         };
-        validateFunctionArgumentTypes(*this, arguments, args);
+        validateFunctionArguments(*this, arguments, args);
 
         DataTypePtr string_type = std::make_shared<DataTypeString>();
         if (error_handling == ErrorHandling::Null)
             return std::make_shared<DataTypeNullable>(string_type);
-        else
-            return string_type;
+        return string_type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -74,15 +84,13 @@ public:
         if (const ColumnString * col_query_string = checkAndGetColumn<ColumnString>(col_query.get()))
         {
             auto col_res = ColumnString::create();
-            formatVector(col_query_string->getChars(), col_query_string->getOffsets(), col_res->getChars(), col_res->getOffsets(), col_null_map);
+            formatVector(col_query_string->getChars(), col_query_string->getOffsets(), col_res->getChars(), col_res->getOffsets(), col_null_map, input_rows_count);
 
             if (error_handling == ErrorHandling::Null)
                 return ColumnNullable::create(std::move(col_res), std::move(col_null_map));
-            else
-                return col_res;
+            return col_res;
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", col_query->getName(), getName());
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", col_query->getName(), getName());
     }
 
 private:
@@ -91,21 +99,21 @@ private:
         const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets,
-        ColumnUInt8::MutablePtr & res_null_map) const
+        ColumnUInt8::MutablePtr & res_null_map,
+        size_t input_rows_count) const
     {
-        const size_t size = offsets.size();
-        res_offsets.resize(size);
+        res_offsets.resize(input_rows_count);
         res_data.resize(data.size());
 
         size_t prev_offset = 0;
         size_t res_data_size = 0;
 
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             const char * begin = reinterpret_cast<const char *>(&data[prev_offset]);
             const char * end = begin + offsets[i] - prev_offset - 1;
 
-            ParserQuery parser(end);
+            ParserQuery parser(end, false, implicit_select);
             ASTPtr ast;
             WriteBufferFromOwnString buf;
 
@@ -131,13 +139,15 @@ private:
 
                     continue;
                 }
-                else
-                {
-                    throw;
-                }
+
+                throw;
             }
 
-            formatAST(*ast, buf, /*hilite*/ false, /*single_line*/ output_formatting == OutputFormatting::SingleLine);
+            IAST::FormatSettings settings(buf, output_formatting == OutputFormatting::SingleLine, /*hilite*/ false);
+            settings.show_secrets = true;
+            settings.print_pretty_type_names = print_pretty_type_names;
+            ast->format(settings);
+
             auto formatted = buf.stringView();
 
             const size_t res_data_new_size = res_data_size + formatted.size() + 1;
@@ -164,6 +174,8 @@ private:
     size_t max_query_size;
     size_t max_parser_depth;
     size_t max_parser_backtracks;
+    bool print_pretty_type_names;
+    bool implicit_select;
 };
 
 }

@@ -28,6 +28,7 @@ public:
         TemporaryDataOnDiskScopePtr tmp_data = nullptr;
         size_t min_free_disk_space = 0;
         size_t max_block_bytes = 0;
+        size_t read_in_order_use_buffering = 0;
 
         explicit Settings(const Context & context);
         explicit Settings(size_t max_block_size_);
@@ -35,24 +36,23 @@ public:
 
     /// Full
     SortingStep(
-        const DataStream & input_stream,
+        const Header & input_header,
         SortDescription description_,
         UInt64 limit_,
         const Settings & settings_,
-        bool optimize_sorting_by_input_stream_properties_);
+        bool is_sorting_for_merge_join_ = false);
 
     /// Full with partitioning
     SortingStep(
-        const DataStream & input_stream,
+        const Header & input_header,
         const SortDescription & description_,
         const SortDescription & partition_by_description_,
         UInt64 limit_,
-        const Settings & settings_,
-        bool optimize_sorting_by_input_stream_properties_);
+        const Settings & settings_);
 
     /// FinishSorting
     SortingStep(
-        const DataStream & input_stream_,
+        const Header & input_header,
         SortDescription prefix_description_,
         SortDescription result_description_,
         size_t max_block_size_,
@@ -60,7 +60,7 @@ public:
 
     /// MergingSorted
     SortingStep(
-        const DataStream & input_stream,
+        const Header & input_header,
         SortDescription sort_description_,
         size_t max_block_size_,
         UInt64 limit_ = 0,
@@ -78,9 +78,13 @@ public:
     /// Add limit or change it to lower value.
     void updateLimit(size_t limit_);
 
-    const SortDescription & getSortDescription() const { return result_description; }
+    const SortDescription & getSortDescription() const override { return result_description; }
 
-    void convertToFinishSorting(SortDescription prefix_description);
+    bool hasPartitions() const { return !partition_by_description.empty(); }
+
+    bool isSortingForMergeJoin() const { return is_sorting_for_merge_join; }
+
+    void convertToFinishSorting(SortDescription prefix_description, bool use_buffering_, bool apply_virtual_row_conversions_);
 
     Type getType() const { return type; }
     const Settings & getSettings() const { return sort_settings; }
@@ -94,7 +98,7 @@ public:
 
 private:
     void scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline);
-    void updateOutputStream() override;
+    void updateOutputHeader() override;
 
     static void mergeSorting(
         QueryPipelineBuilder & pipeline,
@@ -124,12 +128,15 @@ private:
 
     SortDescription partition_by_description;
 
+    /// See `findQueryForParallelReplicas`
+    bool is_sorting_for_merge_join = false;
+
     UInt64 limit;
     bool always_read_till_end = false;
+    bool use_buffering = false;
+    bool apply_virtual_row_conversions = false;
 
     Settings sort_settings;
-
-    const bool optimize_sorting_by_input_stream_properties = false;
 };
 
 }

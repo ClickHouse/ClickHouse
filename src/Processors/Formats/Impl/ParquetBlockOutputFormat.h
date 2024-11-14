@@ -112,7 +112,7 @@ private:
     void consume(Chunk) override;
     void finalizeImpl() override;
     void resetFormatterImpl() override;
-    void onCancel() override;
+    void onCancel() noexcept override;
 
     void writeRowGroup(std::vector<Chunk> chunks);
     void writeUsingArrow(std::vector<Chunk> chunks);
@@ -138,6 +138,8 @@ private:
     Parquet::WriteOptions options;
     Parquet::SchemaElements schema;
     std::vector<parquet::format::RowGroup> row_groups_complete;
+    std::vector<std::vector<parquet::format::ColumnIndex>> column_indexes;
+    std::vector<std::vector<parquet::format::OffsetIndex>> offset_indexes;
     size_t base_offset = 0;
 
 

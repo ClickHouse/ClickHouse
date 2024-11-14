@@ -341,34 +341,32 @@ Token Lexer::nextTokenImpl()
                     ++pos;
                     return comment_until_end_of_line();
                 }
-                else
+
+                ++pos;
+
+                /// Nested multiline comments are supported according to the SQL standard.
+                size_t nesting_level = 1;
+
+                while (pos + 2 <= end)
                 {
-                    ++pos;
-
-                    /// Nested multiline comments are supported according to the SQL standard.
-                    size_t nesting_level = 1;
-
-                    while (pos + 2 <= end)
+                    if (pos[0] == '/' && pos[1] == '*')
                     {
-                        if (pos[0] == '/' && pos[1] == '*')
-                        {
-                            pos += 2;
-                            ++nesting_level;
-                        }
-                        else if (pos[0] == '*' && pos[1] == '/')
-                        {
-                            pos += 2;
-                            --nesting_level;
-
-                            if (nesting_level == 0)
-                                return Token(TokenType::Comment, token_begin, pos);
-                        }
-                        else
-                            ++pos;
+                        pos += 2;
+                        ++nesting_level;
                     }
-                    pos = end;
-                    return Token(TokenType::ErrorMultilineCommentIsNotClosed, token_begin, pos);
+                    else if (pos[0] == '*' && pos[1] == '/')
+                    {
+                        pos += 2;
+                        --nesting_level;
+
+                        if (nesting_level == 0)
+                            return Token(TokenType::Comment, token_begin, pos);
+                    }
+                    else
+                        ++pos;
                 }
+                pos = end;
+                return Token(TokenType::ErrorMultilineCommentIsNotClosed, token_begin, pos);
             }
             return Token(TokenType::Slash, token_begin, pos);
         }
@@ -423,6 +421,8 @@ Token Lexer::nextTokenImpl()
         }
         case '?':
             return Token(TokenType::QuestionMark, token_begin, ++pos);
+        case '^':
+            return Token(TokenType::Caret, token_begin, ++pos);
         case ':':
         {
             ++pos;
@@ -513,15 +513,12 @@ Token Lexer::nextTokenImpl()
                     ++pos;
                 return Token(TokenType::BareWord, token_begin, pos);
             }
-            else
-            {
-                /// We will also skip unicode whitespaces in UTF-8 to support for queries copy-pasted from MS Word and similar.
-                pos = skipWhitespacesUTF8(pos, end);
-                if (pos > token_begin)
-                    return Token(TokenType::Whitespace, token_begin, pos);
-                else
-                    return Token(TokenType::Error, token_begin, ++pos);
-            }
+
+            /// We will also skip unicode whitespaces in UTF-8 to support for queries copy-pasted from MS Word and similar.
+            pos = skipWhitespacesUTF8(pos, end);
+            if (pos > token_begin)
+                return Token(TokenType::Whitespace, token_begin, pos);
+            return Token(TokenType::Error, token_begin, ++pos);
     }
 }
 

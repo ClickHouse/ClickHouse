@@ -2,6 +2,7 @@
 #include <Columns/FilterDescription.h>
 #include <Columns/IColumn.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/ConcurrentHashJoin.h>
@@ -16,17 +17,42 @@
 #include <Parsers/parseQuery.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Common/ThreadPool.h>
 #include <Common/WeakHash.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 
+namespace ProfileEvents
+{
+extern const Event HashJoinPreallocatedElementsInHashTables;
+}
+
 namespace CurrentMetrics
 {
 extern const Metric ConcurrentHashJoinPoolThreads;
 extern const Metric ConcurrentHashJoinPoolThreadsActive;
 extern const Metric ConcurrentHashJoinPoolThreadsScheduled;
+}
+
+namespace
+{
+
+void updateStatistics(const auto & hash_joins, const DB::StatsCollectingParams & params)
+{
+    if (!params.isCollectionAndUseEnabled())
+        return;
+
+    std::vector<size_t> sizes(hash_joins.size());
+    for (size_t i = 0; i < hash_joins.size(); ++i)
+        sizes[i] = hash_joins[i]->data->getTotalRowCount();
+    const auto median_size = sizes.begin() + sizes.size() / 2; // not precisely though...
+    std::nth_element(sizes.begin(), median_size, sizes.end());
+    if (auto sum_of_sizes = std::accumulate(sizes.begin(), sizes.end(), 0ull))
+        DB::getHashTablesStatistics().update(sum_of_sizes, *median_size, params);
+}
+
 }
 
 namespace DB
@@ -46,7 +72,12 @@ static UInt32 toPowerOfTwo(UInt32 x)
 }
 
 ConcurrentHashJoin::ConcurrentHashJoin(
-    ContextPtr context_, std::shared_ptr<TableJoin> table_join_, size_t slots_, const Block & right_sample_block, bool any_take_last_row_)
+    ContextPtr context_,
+    std::shared_ptr<TableJoin> table_join_,
+    size_t slots_,
+    const Block & right_sample_block,
+    const StatsCollectingParams & stats_collecting_params_,
+    bool any_take_last_row_)
     : context(context_)
     , table_join(table_join_)
     , slots(toPowerOfTwo(std::min<UInt32>(static_cast<UInt32>(slots_), 256)))
@@ -54,7 +85,10 @@ ConcurrentHashJoin::ConcurrentHashJoin(
           CurrentMetrics::ConcurrentHashJoinPoolThreads,
           CurrentMetrics::ConcurrentHashJoinPoolThreadsActive,
           CurrentMetrics::ConcurrentHashJoinPoolThreadsScheduled,
-          slots))
+          /*max_threads_*/ slots,
+          /*max_free_threads_*/ 0,
+          /*queue_size_*/ slots))
+    , stats_collecting_params(stats_collecting_params_)
 {
     hash_joins.resize(slots);
 
@@ -74,9 +108,14 @@ ConcurrentHashJoin::ConcurrentHashJoin(
                         CurrentThread::attachToGroupIfDetached(thread_group);
                     setThreadName("ConcurrentJoin");
 
+                    size_t reserve_size = 0;
+                    if (auto hint = getSizeHint(stats_collecting_params, slots))
+                        reserve_size = hint->median_size;
+                    ProfileEvents::increment(ProfileEvents::HashJoinPreallocatedElementsInHashTables, reserve_size);
+
                     auto inner_hash_join = std::make_shared<InternalHashJoin>();
                     inner_hash_join->data = std::make_unique<HashJoin>(
-                        table_join_, right_sample_block, any_take_last_row_, 0, fmt::format("concurrent{}", idx));
+                        table_join_, right_sample_block, any_take_last_row_, reserve_size, fmt::format("concurrent{}", idx));
                     /// Non zero `max_joined_block_rows` allows to process block partially and return not processed part.
                     /// TODO: It's not handled properly in ConcurrentHashJoin case, so we set it to 0 to disable this feature.
                     inner_hash_join->data->setMaxJoinedBlockRows(0);
@@ -97,6 +136,8 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
 {
     try
     {
+        updateStatistics(hash_joins, stats_collecting_params);
+
         for (size_t i = 0; i < slots; ++i)
         {
             // Hash tables destruction may be very time-consuming.
@@ -271,7 +312,7 @@ IColumn::Selector ConcurrentHashJoin::selectDispatchBlock(const Strings & key_co
     {
         const auto & key_col = from_block.getByName(key_name).column->convertToFullColumnIfConst();
         const auto & key_col_no_lc = recursiveRemoveLowCardinality(recursiveRemoveSparse(key_col));
-        key_col_no_lc->updateWeakHash32(hash);
+        hash.update(key_col_no_lc->getWeakHash32());
     }
     return hashToSelector(hash, num_shards);
 }
@@ -300,4 +341,16 @@ Blocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_names, cons
     return result;
 }
 
+UInt64 calculateCacheKey(std::shared_ptr<TableJoin> & table_join, const QueryTreeNodePtr & right_table_expression)
+{
+    IQueryTreeNode::HashState hash;
+    chassert(right_table_expression);
+    hash.update(right_table_expression->getTreeHash());
+    chassert(table_join && table_join->oneDisjunct());
+    const auto keys
+        = NameOrderedSet{table_join->getClauses().at(0).key_names_right.begin(), table_join->getClauses().at(0).key_names_right.end()};
+    for (const auto & name : keys)
+        hash.update(name);
+    return hash.get64();
+}
 }

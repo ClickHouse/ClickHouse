@@ -58,19 +58,24 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeString>();
+    }
+
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         ColumnPtr res;
-        if (!((res = executeType<UInt8>(arguments))
-            || (res = executeType<UInt16>(arguments))
-            || (res = executeType<UInt32>(arguments))
-            || (res = executeType<UInt64>(arguments))
-            || (res = executeType<Int8>(arguments))
-            || (res = executeType<Int16>(arguments))
-            || (res = executeType<Int32>(arguments))
-            || (res = executeType<Int64>(arguments))))
+        if (!((res = executeType<UInt8>(arguments, input_rows_count))
+            || (res = executeType<UInt16>(arguments, input_rows_count))
+            || (res = executeType<UInt32>(arguments, input_rows_count))
+            || (res = executeType<UInt64>(arguments, input_rows_count))
+            || (res = executeType<Int8>(arguments, input_rows_count))
+            || (res = executeType<Int16>(arguments, input_rows_count))
+            || (res = executeType<Int32>(arguments, input_rows_count))
+            || (res = executeType<Int64>(arguments, input_rows_count))))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
                             arguments[0].column->getName(), getName());
 
@@ -98,7 +103,7 @@ private:
     }
 
     template <typename T>
-    ColumnPtr executeType(const ColumnsWithTypeAndName & columns) const
+    ColumnPtr executeType(const ColumnsWithTypeAndName & columns, size_t input_rows_count) const
     {
         if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(columns[0].column.get()))
         {
@@ -107,13 +112,12 @@ private:
             const typename ColumnVector<T>::Container & vec_from = col_from->getData();
             ColumnString::Chars & data_to = col_to->getChars();
             ColumnString::Offsets & offsets_to = col_to->getOffsets();
-            size_t size = vec_from.size();
-            data_to.resize(size * 2);
-            offsets_to.resize(size);
+            data_to.resize(input_rows_count * 2);
+            offsets_to.resize(input_rows_count);
 
             WriteBufferFromVector<ColumnString::Chars> buf_to(data_to);
 
-            for (size_t i = 0; i < size; ++i)
+            for (size_t i = 0; i < input_rows_count; ++i)
             {
                 writeBitmask<T>(vec_from[i], buf_to);
                 writeChar(0, buf_to);
@@ -189,10 +193,8 @@ public:
             out_column = ColumnArray::create(std::move(col_values), std::move(col_offsets));
             return true;
         }
-        else
-        {
-            return false;
-        }
+
+        return false;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
@@ -241,10 +243,15 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
+    }
+
     bool useDefaultImplementationForConstants() const override { return true; }
 
     template <typename T>
-    ColumnPtr executeType(const IColumn * column) const
+    ColumnPtr executeType(const IColumn * column, size_t input_rows_count) const
     {
         const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(column);
         if (!col_from)
@@ -257,13 +264,12 @@ public:
         auto & result_array_offsets_data = result_array_offsets->getData();
 
         auto & vec_from = col_from->getData();
-        size_t size = vec_from.size();
-        result_array_offsets_data.resize(size);
-        result_array_values_data.reserve(size * 2);
+        result_array_offsets_data.resize(input_rows_count);
+        result_array_values_data.reserve(input_rows_count * 2);
 
         using UnsignedType = make_unsigned_t<T>;
 
-        for (size_t row = 0; row < size; ++row)
+        for (size_t row = 0; row < input_rows_count; ++row)
         {
             UnsignedType x = static_cast<UnsignedType>(vec_from[row]);
 
@@ -284,7 +290,12 @@ public:
             {
                 while (x)
                 {
-                    result_array_values_data.push_back(std::countr_zero(x));
+                    /// С++20 char8_t is not an unsigned integral type anymore https://godbolt.org/z/Mqcb7qn58
+                    /// and thus you cannot use std::countr_zero on it.
+                    if constexpr (std::is_same_v<UnsignedType, UInt8>)
+                        result_array_values_data.push_back(std::countr_zero(static_cast<unsigned char>(x)));
+                    else
+                        result_array_values_data.push_back(std::countr_zero(x));
                     x &= (x - 1);
                 }
             }
@@ -297,24 +308,24 @@ public:
         return result_column;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const IColumn * in_column = arguments[0].column.get();
         ColumnPtr result_column;
 
-        if (!((result_column = executeType<UInt8>(in_column))
-              || (result_column = executeType<UInt16>(in_column))
-              || (result_column = executeType<UInt32>(in_column))
-              || (result_column = executeType<UInt32>(in_column))
-              || (result_column = executeType<UInt64>(in_column))
-              || (result_column = executeType<UInt128>(in_column))
-              || (result_column = executeType<UInt256>(in_column))
-              || (result_column = executeType<Int8>(in_column))
-              || (result_column = executeType<Int16>(in_column))
-              || (result_column = executeType<Int32>(in_column))
-              || (result_column = executeType<Int64>(in_column))
-              || (result_column = executeType<Int128>(in_column))
-              || (result_column = executeType<Int256>(in_column))))
+        if (!((result_column = executeType<UInt8>(in_column, input_rows_count))
+              || (result_column = executeType<UInt16>(in_column, input_rows_count))
+              || (result_column = executeType<UInt32>(in_column, input_rows_count))
+              || (result_column = executeType<UInt32>(in_column, input_rows_count))
+              || (result_column = executeType<UInt64>(in_column, input_rows_count))
+              || (result_column = executeType<UInt128>(in_column, input_rows_count))
+              || (result_column = executeType<UInt256>(in_column, input_rows_count))
+              || (result_column = executeType<Int8>(in_column, input_rows_count))
+              || (result_column = executeType<Int16>(in_column, input_rows_count))
+              || (result_column = executeType<Int32>(in_column, input_rows_count))
+              || (result_column = executeType<Int64>(in_column, input_rows_count))
+              || (result_column = executeType<Int128>(in_column, input_rows_count))
+              || (result_column = executeType<Int256>(in_column, input_rows_count))))
         {
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                             "Illegal column {} of first argument of function {}",
@@ -336,4 +347,3 @@ REGISTER_FUNCTION(BitToArray)
 }
 
 }
-

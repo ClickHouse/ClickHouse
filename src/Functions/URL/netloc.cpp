@@ -3,6 +3,8 @@
 #include <Functions/FunctionStringToString.h>
 #include <Functions/StringHelpers.h>
 
+#include <algorithm>
+
 
 namespace DB
 {
@@ -124,15 +126,14 @@ struct ExtractNetloc
                 case '[':
                 case ']':
                     return pos > start_of_host
-                        ? std::string_view(start_of_host, std::min(std::min(pos, question_mark_pos), slash_pos) - start_of_host)
+                        ? std::string_view(start_of_host, std::min({pos, question_mark_pos, slash_pos}) - start_of_host)
                         : std::string_view();
             }
         }
 
         if (has_identification)
             return std::string_view(start_of_host, pos - start_of_host);
-        else
-            return std::string_view(start_of_host, std::min(std::min(std::min(pos, question_mark_pos), slash_pos), hostname_end) - start_of_host);
+        return std::string_view(start_of_host, std::min({pos, question_mark_pos, slash_pos, hostname_end}) - start_of_host);
     }
 
     static void execute(Pos data, size_t size, Pos & res_data, size_t & res_size)

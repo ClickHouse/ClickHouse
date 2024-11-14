@@ -106,10 +106,10 @@ public:
         const ReadBufferFromFileBase::ProfileCallback & profile_callback_) const = 0;
 
     virtual bool isStoredOnDisk() const = 0;
-
+    virtual bool isStoredOnReadonlyDisk() const = 0;
     virtual bool isStoredOnRemoteDisk() const = 0;
-
     virtual bool isStoredOnRemoteDiskWithZeroCopySupport() const = 0;
+
 
     /// NOTE: Returns zeros if column files are not found in checksums.
     /// Otherwise return information about column size on disk.
@@ -128,7 +128,7 @@ public:
     ColumnSize getTotalColumnsSize() const { return total_columns_size; }
 
     /// Return information about secondary indexes size on disk for all indexes in part
-    IndexSize getTotalSeconaryIndicesSize() const { return total_secondary_indices_size; }
+    IndexSize getTotalSecondaryIndicesSize() const { return total_secondary_indices_size; }
 
     virtual std::optional<String> getFileNameForColumn(const NameAndTypePair & column) const = 0;
 
@@ -181,6 +181,9 @@ public:
 
     void loadRowsCountFileForUnexpectedPart();
 
+    /// Loads marks and saves them into mark cache for specified columns.
+    virtual void loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const = 0;
+
     String getMarksFileExtension() const { return index_granularity_info.mark_type.getFileExtension(); }
 
     /// Generate the new name for this part according to `new_part_info` and min/max dates from the old name.
@@ -197,7 +200,9 @@ public:
 
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
     /// If no checksums are present returns the name of the first physically existing column.
-    String getColumnNameWithMinimumCompressedSize(bool with_subcolumns) const;
+    /// We pass a list of available columns since the ones available in the current storage snapshot might be smaller
+    /// than the one the table has (e.g a DROP COLUMN happened) and we don't want to get a column not in the snapshot
+    String getColumnNameWithMinimumCompressedSize(const NamesAndTypesList & available_columns) const;
 
     bool contains(const IMergeTreeDataPart & other) const { return info.contains(other.info); }
 
@@ -211,6 +216,7 @@ public:
 
     /// Compute part block id for zero level part. Otherwise throws an exception.
     /// If token is not empty, block id is calculated based on it instead of block data
+    UInt128 getPartBlockIDHash() const;
     String getZeroLevelPartBlockID(std::string_view token) const;
 
     void setName(const String & new_name);
@@ -370,10 +376,13 @@ public:
     void setIndex(const Columns & cols_);
     void setIndex(Columns && cols_);
     void unloadIndex();
+    bool isIndexLoaded() const;
 
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
     UInt64 getIndexSizeInAllocatedBytes() const;
+    UInt64 getIndexGranularityBytes() const;
+    UInt64 getIndexGranularityAllocatedBytes() const;
     UInt64 getMarksCount() const;
     UInt64 getIndexSizeFromFile() const;
 
@@ -420,7 +429,7 @@ public:
     bool shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const;
 
     /// Calculate column and secondary indices sizes on disk.
-    void calculateColumnsAndSecondaryIndicesSizesOnDisk();
+    void calculateColumnsAndSecondaryIndicesSizesOnDisk(std::optional<Block> columns_sample = std::nullopt);
 
     std::optional<String> getRelativePathForPrefix(const String & prefix, bool detached = false, bool broken = false) const;
 
@@ -628,7 +637,7 @@ protected:
 
     /// Fill each_columns_size and total_size with sizes from columns files on
     /// disk using columns and checksums.
-    virtual void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const = 0;
+    virtual void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size, std::optional<Block> columns_sample) const = 0;
 
     std::optional<String> getRelativePathForDetachedPart(const String & prefix, bool broken) const;
 
@@ -710,7 +719,7 @@ private:
 
     void loadPartitionAndMinMaxIndex();
 
-    void calculateColumnsSizesOnDisk();
+    void calculateColumnsSizesOnDisk(std::optional<Block> columns_sample = std::nullopt);
 
     void calculateSecondaryIndicesSizesOnDisk();
 
@@ -751,7 +760,6 @@ bool isCompactPart(const MergeTreeDataPartPtr & data_part);
 bool isWidePart(const MergeTreeDataPartPtr & data_part);
 
 inline String getIndexExtension(bool is_compressed_primary_key) { return is_compressed_primary_key ? ".cidx" : ".idx"; }
-std::optional<String> getIndexExtensionFromFilesystem(const IDataPartStorage & data_part_storage);
 bool isCompressedFromIndexExtension(const String & index_extension);
 
 using MergeTreeDataPartsVector = std::vector<MergeTreeDataPartPtr>;

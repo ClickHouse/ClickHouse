@@ -17,11 +17,11 @@ namespace ErrorCodes
 namespace
 {
 
-const DB::DataStream & getChildOutputStream(DB::QueryPlan::Node & node)
+const DB::Header & getChildOutputHeader(DB::QueryPlan::Node & node)
 {
     if (node.children.size() != 1)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Node \"{}\" is expected to have only one child.", node.step->getName());
-    return node.children.front()->step->getOutputStream();
+    return node.children.front()->step->getOutputHeader();
 }
 
 }
@@ -66,13 +66,13 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
     NameSet sort_columns;
     for (const auto & col : sorting_step->getSortDescription())
         sort_columns.insert(col.column_name);
-    auto [needed_for_sorting, unneeded_for_sorting, _] = expression_step->getExpression()->splitActionsBySortingDescription(sort_columns);
+    auto [needed_for_sorting, unneeded_for_sorting, _] = expression_step->getExpression().splitActionsBySortingDescription(sort_columns);
 
     // No calculations can be postponed.
-    if (unneeded_for_sorting->trivial())
+    if (unneeded_for_sorting.trivial())
         return 0;
 
-    if (!areNodesConvertableToBlock(needed_for_sorting->getOutputs()) || !areNodesConvertableToBlock(unneeded_for_sorting->getInputs()))
+    if (!areNodesConvertableToBlock(needed_for_sorting.getOutputs()) || !areNodesConvertableToBlock(unneeded_for_sorting.getInputs()))
         return 0;
 
     // Sorting (parent_node) -> Expression (child_node)
@@ -80,17 +80,17 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
     std::swap(node_with_needed.children, child_node->children);
     child_node->children = {&node_with_needed};
 
-    node_with_needed.step = std::make_unique<ExpressionStep>(getChildOutputStream(node_with_needed), std::move(needed_for_sorting));
+    node_with_needed.step = std::make_unique<ExpressionStep>(getChildOutputHeader(node_with_needed), std::move(needed_for_sorting));
     node_with_needed.step->setStepDescription(child_step->getStepDescription());
     // Sorting (parent_node) -> so far the origin Expression (child_node) -> NeededCalculations (node_with_needed)
 
     std::swap(parent_step, child_step);
     // so far the origin Expression (parent_node) -> Sorting (child_node) -> NeededCalculations (node_with_needed)
 
-    sorting_step->updateInputStream(getChildOutputStream(*child_node));
+    sorting_step->updateInputHeader(getChildOutputHeader(*child_node));
 
     auto description = parent_step->getStepDescription();
-    parent_step = std::make_unique<DB::ExpressionStep>(child_step->getOutputStream(), std::move(unneeded_for_sorting));
+    parent_step = std::make_unique<DB::ExpressionStep>(child_step->getOutputHeader(), std::move(unneeded_for_sorting));
     parent_step->setStepDescription(description + " [lifted up part]");
     // UneededCalculations (parent_node) -> Sorting (child_node) -> NeededCalculations (node_with_needed)
 

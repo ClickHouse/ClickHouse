@@ -4,12 +4,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Data preparation.
-# Now we can get the user_files_path by use the table file function for trick. also we can get it by query as:
-#  "insert into function file('exist.txt', 'CSV', 'val1 char') values ('aaaa'); select _path from file('exist.txt', 'CSV', 'val1 char')"
-user_files_path=$($CLICKHOUSE_CLIENT_BINARY --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
-
-logs_dir=${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}
+logs_dir=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}
 
 rm -rf ${logs_dir}
 
@@ -20,7 +15,7 @@ do
 	echo $i >> ${logs_dir}/a.txt
 done
 
-${CLICKHOUSE_CLIENT} -n --query="
+${CLICKHOUSE_CLIENT} --query="
 DROP TABLE IF EXISTS file_log;
 DROP TABLE IF EXISTS table_to_store_data;
 DROP TABLE IF EXISTS file_log_mv;
@@ -74,7 +69,7 @@ done
 
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM table_to_store_data ORDER BY id;"
 
-${CLICKHOUSE_CLIENT} -n --query="
+${CLICKHOUSE_CLIENT} --query="
 DROP TABLE file_log;
 DROP TABLE table_to_store_data;
 DROP TABLE file_log_mv;

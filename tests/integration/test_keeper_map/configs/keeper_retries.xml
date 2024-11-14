@@ -1,0 +1,14 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <insert_keeper_max_retries>0</insert_keeper_max_retries>
+            <keeper_max_retries>0</keeper_max_retries>
+        </default>
+    </profiles>
+    <users>
+        <default>
+            <password></password>
+            <profile>default</profile>
+        </default>
+    </users>
+</clickhouse>

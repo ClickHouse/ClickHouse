@@ -46,7 +46,7 @@ public:
         auto column_source_node = column_node->getColumnSource();
         auto column_source_node_type = column_source_node->getNodeType();
 
-        if (column_source_node_type == QueryTreeNodeType::LAMBDA)
+        if (column_source_node_type == QueryTreeNodeType::LAMBDA || column_source_node_type == QueryTreeNodeType::INTERPOLATE)
             return;
 
         /// JOIN using expression
@@ -88,16 +88,16 @@ public:
 
                 auto column_identifier = planner_context->getGlobalPlannerContext()->createColumnIdentifier(node);
 
-                ActionsDAGPtr alias_column_actions_dag = std::make_shared<ActionsDAG>();
+                ActionsDAG alias_column_actions_dag;
                 PlannerActionsVisitor actions_visitor(planner_context, false);
-                auto outputs = actions_visitor.visit(*alias_column_actions_dag, column_node->getExpression());
+                auto outputs = actions_visitor.visit(alias_column_actions_dag, column_node->getExpression());
                 if (outputs.size() != 1)
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Expected single output in actions dag for alias column {}. Actual {}", column_node->dumpTree(), outputs.size());
                 const auto & column_name = column_node->getColumnName();
-                const auto & alias_node = alias_column_actions_dag->addAlias(*outputs[0], column_name);
-                alias_column_actions_dag->addOrReplaceInOutputs(alias_node);
-                table_expression_data.addAliasColumn(column_node->getColumn(), column_identifier, alias_column_actions_dag, select_added_columns);
+                const auto & alias_node = alias_column_actions_dag.addAlias(*outputs[0], column_name);
+                alias_column_actions_dag.addOrReplaceInOutputs(alias_node);
+                table_expression_data.addAliasColumn(column_node->getColumn(), column_identifier, std::move(alias_column_actions_dag), select_added_columns);
             }
 
             return;
@@ -335,22 +335,22 @@ void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr
         collect_source_columns_visitor.setKeepAliasColumns(false);
         collect_source_columns_visitor.visit(query_node_typed.getPrewhere());
 
-        auto prewhere_actions_dag = std::make_shared<ActionsDAG>();
+        ActionsDAG prewhere_actions_dag;
 
         QueryTreeNodePtr query_tree_node = query_node_typed.getPrewhere();
 
         PlannerActionsVisitor visitor(planner_context, false /*use_column_identifier_as_action_node_name*/);
-        auto expression_nodes = visitor.visit(*prewhere_actions_dag, query_tree_node);
+        auto expression_nodes = visitor.visit(prewhere_actions_dag, query_tree_node);
         if (expression_nodes.size() != 1)
             throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
                 "Invalid PREWHERE. Expected single boolean expression. In query {}",
                 query_node->formatASTForErrorMessage());
 
-        prewhere_actions_dag->getOutputs().push_back(expression_nodes.back());
+        prewhere_actions_dag.getOutputs().push_back(expression_nodes.back());
 
-        for (const auto & prewhere_input_node : prewhere_actions_dag->getInputs())
+        for (const auto & prewhere_input_node : prewhere_actions_dag.getInputs())
             if (required_column_names_without_prewhere.contains(prewhere_input_node->result_name))
-                prewhere_actions_dag->getOutputs().push_back(prewhere_input_node);
+                prewhere_actions_dag.getOutputs().push_back(prewhere_input_node);
 
         table_expression_data.setPrewhereFilterActions(std::move(prewhere_actions_dag));
     }

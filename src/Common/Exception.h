@@ -7,10 +7,10 @@
 #include <Common/Logger.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/StackTrace.h>
+#include <Core/LogsLevel.h>
 
 #include <cerrno>
 #include <exception>
-#include <memory>
 #include <vector>
 
 #include <fmt/core.h>
@@ -24,8 +24,6 @@ namespace DB
 {
 
 class AtomicLogger;
-
-[[noreturn]] void abortOnFailedAssertion(const String & description);
 
 /// This flag can be set for testing purposes - to check that no exceptions are thrown.
 extern bool terminate_on_any_exception;
@@ -51,14 +49,14 @@ public:
     {
         if (terminate_on_any_exception)
             std::terminate();
-        capture_thread_frame_pointers = thread_frame_pointers;
+        capture_thread_frame_pointers = getThreadFramePointers();
     }
 
     Exception(const PreformattedMessage & msg, int code): Exception(msg.text, code)
     {
         if (terminate_on_any_exception)
             std::terminate();
-        capture_thread_frame_pointers = thread_frame_pointers;
+        capture_thread_frame_pointers = getThreadFramePointers();
         message_format_string = msg.format_string;
         message_format_string_args = msg.format_string_args;
     }
@@ -67,18 +65,36 @@ public:
     {
         if (terminate_on_any_exception)
             std::terminate();
-        capture_thread_frame_pointers = thread_frame_pointers;
+        capture_thread_frame_pointers = getThreadFramePointers();
         message_format_string = msg.format_string;
         message_format_string_args = msg.format_string_args;
     }
 
     /// Collect call stacks of all previous jobs' schedulings leading to this thread job's execution
     static thread_local bool enable_job_stack_trace;
-    static thread_local std::vector<StackTrace::FramePointers> thread_frame_pointers;
+    static thread_local bool can_use_thread_frame_pointers;
+    /// Because of unknown order of static destructor calls,
+    /// thread_frame_pointers can already be uninitialized when a different destructor generates an exception.
+    /// To prevent such scenarios, a wrapper class is created and a function that will return empty vector
+    /// if its destructor is already called
+    using ThreadFramePointersBase = std::vector<StackTrace::FramePointers>;
+    struct ThreadFramePointers
+    {
+        ThreadFramePointers();
+        ~ThreadFramePointers();
+
+        ThreadFramePointersBase frame_pointers;
+    };
+
+    static ThreadFramePointersBase getThreadFramePointers();
+    static void setThreadFramePointers(ThreadFramePointersBase frame_pointers);
+
     /// Callback for any exception
     static std::function<void(const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)> callback;
 
 protected:
+    static thread_local ThreadFramePointers thread_frame_pointers;
+
     // used to remove the sensitive information from exceptions if query_masking_rules is configured
     struct MessageMasked
     {
@@ -167,6 +183,8 @@ protected:
     mutable std::vector<StackTrace::FramePointers> capture_thread_frame_pointers;
 };
 
+[[noreturn]] void abortOnFailedAssertion(const String & description, void * const * trace, size_t trace_offset, size_t trace_size);
+[[noreturn]] void abortOnFailedAssertion(const String & description);
 
 std::string getExceptionStackTraceString(const std::exception & e);
 std::string getExceptionStackTraceString(std::exception_ptr e);
@@ -178,7 +196,7 @@ class ErrnoException : public Exception
 public:
     ErrnoException(std::string && msg, int code, int with_errno) : Exception(msg, code), saved_errno(with_errno)
     {
-        capture_thread_frame_pointers = thread_frame_pointers;
+        capture_thread_frame_pointers = getThreadFramePointers();
         addMessage(", {}", errnoToString(saved_errno));
     }
 
@@ -187,7 +205,7 @@ public:
     requires std::is_convertible_v<T, String>
     ErrnoException(int code, T && message) : Exception(message, code), saved_errno(errno)
     {
-        capture_thread_frame_pointers = thread_frame_pointers;
+        capture_thread_frame_pointers = getThreadFramePointers();
         addMessage(", {}", errnoToString(saved_errno));
     }
 
@@ -244,16 +262,25 @@ private:
     const char * className() const noexcept override { return "DB::ErrnoException"; }
 };
 
+/// An exception to use in unit tests to test interfaces.
+/// It is distinguished from others, so it does not have to be logged.
+class TestException : public Exception
+{
+public:
+    using Exception::Exception;
+};
+
+
 using Exceptions = std::vector<std::exception_ptr>;
 
 /** Try to write an exception to the log (and forget about it).
   * Can be used in destructors in the catch-all block.
   */
 /// TODO: Logger leak constexpr overload
-void tryLogCurrentException(const char * log_name, const std::string & start_of_message = "");
-void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message = "");
-void tryLogCurrentException(LoggerPtr logger, const std::string & start_of_message = "");
-void tryLogCurrentException(const AtomicLogger & logger, const std::string & start_of_message = "");
+void tryLogCurrentException(const char * log_name, const std::string & start_of_message = "", LogsLevel level = LogsLevel::error);
+void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message = "", LogsLevel level = LogsLevel::error);
+void tryLogCurrentException(LoggerPtr logger, const std::string & start_of_message = "", LogsLevel level = LogsLevel::error);
+void tryLogCurrentException(const AtomicLogger & logger, const std::string & start_of_message = "", LogsLevel level = LogsLevel::error);
 
 
 /** Prints current exception in canonical format.
@@ -303,7 +330,7 @@ void tryLogException(std::exception_ptr e, const AtomicLogger & logger, const st
 
 std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace = false);
 PreformattedMessage getExceptionMessageAndPattern(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace = false);
-std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace);
+std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace, bool check_embedded_stacktrace = false);
 
 
 template <typename T>

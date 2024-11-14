@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest, no-parallel, no-s3-storage, no-random-settings
+# Tags: long, no-fasttest, no-parallel, no-object-storage, no-random-settings
 
 # set -x
 
@@ -11,7 +11,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
     echo "Using storage policy: $STORAGE_POLICY"
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS test_02286"
 
-    $CLICKHOUSE_CLIENT -n --query "CREATE TABLE test_02286 (key UInt32, value String)
+    $CLICKHOUSE_CLIENT --query "CREATE TABLE test_02286 (key UInt32, value String)
                                    Engine=MergeTree()
                                    ORDER BY key
                                    SETTINGS storage_policy='$STORAGE_POLICY', min_bytes_for_wide_part = 10485760"
@@ -31,14 +31,14 @@ for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
     $CLICKHOUSE_CLIENT --query "SELECT * FROM test_02286 FORMAT Null"
     $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache"
 
-    $CLICKHOUSE_CLIENT --multiline --multiquery --query "SYSTEM DROP FILESYSTEM CACHE 'ff'; --{serverError 36}"
+    $CLICKHOUSE_CLIENT --multiline --query "SYSTEM DROP FILESYSTEM CACHE 'ff'; --{serverError 36}"
 
     $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache"
 
     $CLICKHOUSE_CLIENT --query "SELECT * FROM test_02286 FORMAT Null"
     $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache"
 
-    $CLICKHOUSE_CLIENT -n --query "SELECT count()
+    $CLICKHOUSE_CLIENT --query "SELECT count()
                                    FROM (
                                        SELECT
                                            arrayJoin(cache_paths) AS cache_path,
@@ -54,7 +54,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
     $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache"
 
     $CLICKHOUSE_CLIENT --query "SELECT cache_path FROM system.filesystem_cache"
-    $CLICKHOUSE_CLIENT -n --query "SELECT cache_path, local_path
+    $CLICKHOUSE_CLIENT --query "SELECT cache_path, local_path
                                    FROM (
                                        SELECT
                                            arrayJoin(cache_paths) AS cache_path,

@@ -53,13 +53,11 @@ void FinishAggregatingInOrderAlgorithm::consume(Input & input, size_t source_num
     if (!input.chunk.hasRows())
         return;
 
-    const auto & info = input.chunk.getChunkInfo();
-    if (!info)
+    if (input.chunk.getChunkInfos().empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk info was not set for chunk in FinishAggregatingInOrderAlgorithm");
 
     Int64 allocated_bytes = 0;
-    /// Will be set by AggregatingInOrderTransform during local aggregation; will be nullptr during merging on initiator.
-    if (const auto * arenas_info = typeid_cast<const ChunkInfoWithAllocatedBytes *>(info.get()))
+    if (auto arenas_info = input.chunk.getChunkInfos().get<ChunkInfoWithAllocatedBytes>())
         allocated_bytes = arenas_info->allocated_bytes;
 
     states[source_num] = State{input.chunk, description, allocated_bytes};
@@ -128,6 +126,9 @@ IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()
 
 Chunk FinishAggregatingInOrderAlgorithm::prepareToMerge()
 {
+    total_merged_rows += accumulated_rows;
+    total_merged_bytes += accumulated_bytes;
+
     accumulated_rows = 0;
     accumulated_bytes = 0;
 
@@ -136,7 +137,7 @@ Chunk FinishAggregatingInOrderAlgorithm::prepareToMerge()
     info->chunk_num = chunk_num++;
 
     Chunk chunk;
-    chunk.setChunkInfo(std::move(info));
+    chunk.getChunkInfos().add(std::move(info));
     return chunk;
 }
 
@@ -163,7 +164,7 @@ void FinishAggregatingInOrderAlgorithm::addToAggregation()
             chunks.emplace_back(std::move(new_columns), current_rows);
         }
 
-        chunks.back().setChunkInfo(std::make_shared<AggregatedChunkInfo>());
+        chunks.back().getChunkInfos().add(std::make_shared<AggregatedChunkInfo>());
         states[i].current_row = states[i].to_row;
 
         /// We assume that sizes in bytes of rows are almost the same.

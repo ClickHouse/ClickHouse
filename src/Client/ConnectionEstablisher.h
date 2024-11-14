@@ -24,7 +24,13 @@ public:
                           const QualifiedTableName * table_to_check = nullptr);
 
     /// Establish connection and save it in result, write possible exception message in fail_message.
-    void run(TryResult & result, std::string & fail_message);
+    /// The connection is returned from connection pool and it can be stale. Use force_connected flag to ensure that connection is working one.
+    /// NOTE: force_connected is false by default due to the following consideration ...
+    ///      When true, it implies sending a Ping packet to another peer and, if it fails - reestablishing the connection.
+    ///      Ping-Pong round trip can be unnecessary in case of connection is still alive.
+    ///      So, the optimistic approach is used by default. In this case, stale connections can be handled by retrying,
+    ///      - see ConnectionPoolWithFailover, as example
+    void run(TryResult & result, std::string & fail_message, bool force_connected = false);
 
     /// Set async callback that will be called when reading from socket blocks.
     void setAsyncCallback(AsyncCallback async_callback_) { async_callback = std::move(async_callback_); }

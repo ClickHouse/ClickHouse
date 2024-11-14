@@ -21,6 +21,7 @@ def test_extra_yaml_mix():
         "configs/config.d/part_log.xml",
         "configs/config.d/path.yaml",
         "configs/config.d/query_masking_rules.xml",
+        "configs/config.d/query_metric_log.xml",
         "configs/config.d/tcp_with_proxy.yaml",
         "configs/config.d/test_cluster_with_incorrect_pw.xml",
         "configs/config.d/text_log.yaml",

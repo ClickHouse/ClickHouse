@@ -8,6 +8,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/Statistics/Statistics.h>
+#include <Storages/MarkCache.h>
 
 namespace DB
 {
@@ -122,6 +123,8 @@ public:
         written_offset_columns = written_offset_columns_;
     }
 
+    Block getColumnsSample() const override { return block_sample; }
+
 protected:
      /// Count index_granularity for block and store in `index_granularity`
     size_t computeIndexGranularity(const Block & block) const;
@@ -153,6 +156,14 @@ protected:
     /// Get unique non ordered skip indices column.
     Names getSkipIndicesColumns() const;
 
+    virtual void addStreams(const NameAndTypePair & name_and_type, const ColumnPtr & column, const ASTPtr & effective_codec_desc) = 0;
+
+    /// On first block create all required streams for columns with dynamic subcolumns and remember the block sample.
+    /// On each next block check if dynamic structure of the columns equals to the dynamic structure of the same
+    /// columns in the sample block. If for some column dynamic structure is different, adjust it so it matches
+    /// the structure from the sample.
+    void initOrAdjustDynamicStructureIfNeeded(Block & block);
+
     const MergeTreeIndices skip_indices;
 
     const ColumnsStatistics stats;
@@ -173,8 +184,8 @@ protected:
     std::unique_ptr<HashingWriteBuffer> index_source_hashing_stream;
     bool compress_primary_key;
 
-    /// Index columns from the last block
-    /// It's written to index file in the `writeSuffixAndFinalizePart` method
+    /// Last block with index columns.
+    /// It's written to index file in the `writeSuffixAndFinalizePart` method.
     Block last_index_block;
     Serializations index_serializations;
 
@@ -187,6 +198,10 @@ protected:
     size_t current_mark = 0;
 
     GinIndexStoreFactory::GinIndexStores gin_index_stores;
+
+    bool is_dynamic_streams_initialized = false;
+    Block block_sample;
+
 private:
     void initSkipIndices();
     void initPrimaryIndex();

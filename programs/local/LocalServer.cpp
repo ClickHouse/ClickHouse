@@ -1,6 +1,7 @@
 #include "LocalServer.h"
 
 #include <sys/resource.h>
+#include <Common/Config/getLocalConfigPath.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 #include <Core/UUID.h>
@@ -13,6 +14,7 @@
 #include <Databases/registerDatabases.h>
 #include <Databases/DatabaseFilesystem.h>
 #include <Databases/DatabaseMemory.h>
+#include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabasesOverlay.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
@@ -21,7 +23,6 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/registerInterpreters.h>
-#include <base/getFQDNOrHostName.h>
 #include <Access/AccessControl.h>
 #include <Common/PoolId.h>
 #include <Common/Exception.h>
@@ -30,8 +31,8 @@
 #include <Common/ThreadStatus.h>
 #include <Common/TLDListsHolder.h>
 #include <Common/quoteString.h>
-#include <Common/randomSeed.h>
 #include <Common/ThreadPool.h>
+#include <Common/CurrentMetrics.h>
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
 #include <IO/ReadBufferFromFile.h>
@@ -48,7 +49,6 @@
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Formats/registerFormats.h>
-#include <boost/algorithm/string/replace.hpp>
 #include <boost/program_options/options_description.hpp>
 #include <base/argsToConfig.h>
 #include <filesystem>
@@ -59,11 +59,59 @@
 #   include <azure/storage/common/internal/xml_wrapper.hpp>
 #endif
 
+
 namespace fs = std::filesystem;
 
+namespace CurrentMetrics
+{
+    extern const Metric MemoryTracking;
+}
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool allow_introspection_functions;
+    extern const SettingsBool implicit_select;
+    extern const SettingsLocalFSReadMethod storage_file_read_method;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsDouble cache_size_to_ram_max_ratio;
+    extern const ServerSettingsUInt64 compiled_expression_cache_elements_size;
+    extern const ServerSettingsUInt64 compiled_expression_cache_size;
+    extern const ServerSettingsUInt64 database_catalog_drop_table_concurrency;
+    extern const ServerSettingsString default_database;
+    extern const ServerSettingsString index_mark_cache_policy;
+    extern const ServerSettingsUInt64 index_mark_cache_size;
+    extern const ServerSettingsDouble index_mark_cache_size_ratio;
+    extern const ServerSettingsString index_uncompressed_cache_policy;
+    extern const ServerSettingsUInt64 index_uncompressed_cache_size;
+    extern const ServerSettingsDouble index_uncompressed_cache_size_ratio;
+    extern const ServerSettingsUInt64 io_thread_pool_queue_size;
+    extern const ServerSettingsString mark_cache_policy;
+    extern const ServerSettingsUInt64 mark_cache_size;
+    extern const ServerSettingsDouble mark_cache_size_ratio;
+    extern const ServerSettingsUInt64 max_active_parts_loading_thread_pool_size;
+    extern const ServerSettingsUInt64 max_io_thread_pool_free_size;
+    extern const ServerSettingsUInt64 max_io_thread_pool_size;
+    extern const ServerSettingsUInt64 max_outdated_parts_loading_thread_pool_size;
+    extern const ServerSettingsUInt64 max_parts_cleaning_thread_pool_size;
+    extern const ServerSettingsUInt64 max_server_memory_usage;
+    extern const ServerSettingsDouble max_server_memory_usage_to_ram_ratio;
+    extern const ServerSettingsUInt64 max_thread_pool_free_size;
+    extern const ServerSettingsUInt64 max_thread_pool_size;
+    extern const ServerSettingsUInt64 max_unexpected_parts_loading_thread_pool_size;
+    extern const ServerSettingsUInt64 mmap_cache_size;
+    extern const ServerSettingsBool show_addresses_in_stack_traces;
+    extern const ServerSettingsUInt64 thread_pool_queue_size;
+    extern const ServerSettingsString uncompressed_cache_policy;
+    extern const ServerSettingsUInt64 uncompressed_cache_size;
+    extern const ServerSettingsDouble uncompressed_cache_size_ratio;
+    extern const ServerSettingsBool use_legacy_mongodb_integration;
+}
 
 namespace ErrorCodes
 {
@@ -74,10 +122,11 @@ namespace ErrorCodes
 
 void applySettingsOverridesForLocal(ContextMutablePtr context)
 {
-    Settings settings = context->getSettings();
+    Settings settings = context->getSettingsCopy();
 
-    settings.allow_introspection_functions = true;
-    settings.storage_file_read_method = LocalFSReadMethod::mmap;
+    settings[Setting::allow_introspection_functions] = true;
+    settings[Setting::storage_file_read_method] = LocalFSReadMethod::mmap;
+    settings[Setting::implicit_select] = true;
 
     context->setSettings(settings);
 }
@@ -121,21 +170,33 @@ void LocalServer::initialize(Poco::Util::Application & self)
 {
     Poco::Util::Application::initialize(self);
 
+    const char * home_path_cstr = getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
+    if (home_path_cstr)
+        home_path = home_path_cstr;
+
     /// Load config files if exists
-    if (getClientConfiguration().has("config-file") || fs::exists("config.xml"))
+    std::string config_path;
+    if (getClientConfiguration().has("config-file"))
+        config_path = getClientConfiguration().getString("config-file");
+    else if (config_path.empty() && fs::exists("config.xml"))
+        config_path = "config.xml";
+    else if (config_path.empty())
+        config_path = getLocalConfigPath(home_path).value_or("");
+
+    if (fs::exists(config_path))
     {
-        const auto config_path = getClientConfiguration().getString("config-file", "config.xml");
-        ConfigProcessor config_processor(config_path, false, true);
+        ConfigProcessor config_processor(config_path);
         ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
         auto loaded_config = config_processor.loadConfig();
         getClientConfiguration().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
 
+    server_settings.loadSettingsFromConfig(config());
+
     GlobalThreadPool::initialize(
-        getClientConfiguration().getUInt("max_thread_pool_size", 10000),
-        getClientConfiguration().getUInt("max_thread_pool_free_size", 1000),
-        getClientConfiguration().getUInt("thread_pool_queue_size", 10000)
-    );
+        server_settings[ServerSetting::max_thread_pool_size],
+        server_settings[ServerSetting::max_thread_pool_free_size],
+        server_settings[ServerSetting::thread_pool_queue_size]);
 
 #if USE_AZURE_BLOB_STORAGE
     /// See the explanation near the same line in Server.cpp
@@ -146,18 +207,17 @@ void LocalServer::initialize(Poco::Util::Application & self)
 #endif
 
     getIOThreadPool().initialize(
-        getClientConfiguration().getUInt("max_io_thread_pool_size", 100),
-        getClientConfiguration().getUInt("max_io_thread_pool_free_size", 0),
-        getClientConfiguration().getUInt("io_thread_pool_queue_size", 10000));
+        server_settings[ServerSetting::max_io_thread_pool_size],
+        server_settings[ServerSetting::max_io_thread_pool_free_size],
+        server_settings[ServerSetting::io_thread_pool_queue_size]);
 
-
-    const size_t active_parts_loading_threads = getClientConfiguration().getUInt("max_active_parts_loading_thread_pool_size", 64);
+    const size_t active_parts_loading_threads = server_settings[ServerSetting::max_active_parts_loading_thread_pool_size];
     getActivePartsLoadingThreadPool().initialize(
         active_parts_loading_threads,
         0, // We don't need any threads one all the parts will be loaded
         active_parts_loading_threads);
 
-    const size_t outdated_parts_loading_threads = getClientConfiguration().getUInt("max_outdated_parts_loading_thread_pool_size", 32);
+    const size_t outdated_parts_loading_threads = server_settings[ServerSetting::max_outdated_parts_loading_thread_pool_size];
     getOutdatedPartsLoadingThreadPool().initialize(
         outdated_parts_loading_threads,
         0, // We don't need any threads one all the parts will be loaded
@@ -165,7 +225,7 @@ void LocalServer::initialize(Poco::Util::Application & self)
 
     getOutdatedPartsLoadingThreadPool().setMaxTurboThreads(active_parts_loading_threads);
 
-    const size_t unexpected_parts_loading_threads = getClientConfiguration().getUInt("max_unexpected_parts_loading_thread_pool_size", 32);
+    const size_t unexpected_parts_loading_threads = server_settings[ServerSetting::max_unexpected_parts_loading_thread_pool_size];
     getUnexpectedPartsLoadingThreadPool().initialize(
         unexpected_parts_loading_threads,
         0, // We don't need any threads one all the parts will be loaded
@@ -173,11 +233,16 @@ void LocalServer::initialize(Poco::Util::Application & self)
 
     getUnexpectedPartsLoadingThreadPool().setMaxTurboThreads(active_parts_loading_threads);
 
-    const size_t cleanup_threads = getClientConfiguration().getUInt("max_parts_cleaning_thread_pool_size", 128);
+    const size_t cleanup_threads = server_settings[ServerSetting::max_parts_cleaning_thread_pool_size];
     getPartsCleaningThreadPool().initialize(
         cleanup_threads,
         0, // We don't need any threads one all the parts will be deleted
         cleanup_threads);
+
+    getDatabaseCatalogDropTablesThreadPool().initialize(
+        server_settings[ServerSetting::database_catalog_drop_table_concurrency],
+        0, // We don't need any threads if there are no DROP queries.
+        server_settings[ServerSetting::database_catalog_drop_table_concurrency]);
 }
 
 
@@ -193,12 +258,12 @@ static DatabasePtr createMemoryDatabaseIfNotExists(ContextPtr context, const Str
     return system_database;
 }
 
-static DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPtr context_)
+static DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPtr context)
 {
-    auto databaseCombiner = std::make_shared<DatabasesOverlay>(name_, context_);
-    databaseCombiner->registerNextDatabase(std::make_shared<DatabaseFilesystem>(name_, "", context_));
-    databaseCombiner->registerNextDatabase(std::make_shared<DatabaseMemory>(name_, context_));
-    return databaseCombiner;
+    auto overlay = std::make_shared<DatabasesOverlay>(name_, context);
+    overlay->registerNextDatabase(std::make_shared<DatabaseAtomic>(name_, fs::weakly_canonical(context->getPath()), UUIDHelpers::generateV4(), context));
+    overlay->registerNextDatabase(std::make_shared<DatabaseFilesystem>(name_, "", context));
+    return overlay;
 }
 
 /// If path is specified and not empty, will try to setup server environment and load existing metadata
@@ -268,8 +333,13 @@ void LocalServer::tryInitPath()
 
     global_context->setUserFilesPath(""); /// user's files are everywhere
 
-    std::string user_scripts_path = getClientConfiguration().getString("user_scripts_path", fs::path(path) / "user_scripts/");
+    std::string user_scripts_path = getClientConfiguration().getString("user_scripts_path", fs::path(path) / "user_scripts" / "");
     global_context->setUserScriptsPath(user_scripts_path);
+
+    /// Set path for filesystem caches
+    String filesystem_caches_path(getClientConfiguration().getString("filesystem_caches_path", fs::path(path) / "cache" / ""));
+    if (!filesystem_caches_path.empty())
+        global_context->setFilesystemCachesPath(filesystem_caches_path);
 
     /// top_level_domains_lists
     const std::string & top_level_domains_path = getClientConfiguration().getString("top_level_domains_path", fs::path(path) / "top_level_domains/");
@@ -288,6 +358,8 @@ void LocalServer::cleanup()
         /// We should reset it before resetting global_context.
         if (suggest)
             suggest.reset();
+
+        client_context.reset();
 
         if (global_context)
         {
@@ -342,7 +414,7 @@ std::string LocalServer::getInitialCreateTableQuery()
     else
         table_structure = "(" + table_structure + ")";
 
-    return fmt::format("CREATE TABLE {} {} ENGINE = File({}, {});",
+    return fmt::format("CREATE TEMPORARY TABLE {} {} ENGINE = File({}, {});",
                        table_name, table_structure, data_format, table_file);
 }
 
@@ -370,6 +442,7 @@ void LocalServer::setupUsers()
         "            </networks>"
         "            <profile>default</profile>"
         "            <quota>default</quota>"
+        "            <named_collection_control>1</named_collection_control>"
         "        </default>"
         "    </users>"
         "    <quotas>"
@@ -416,6 +489,7 @@ void LocalServer::connect()
 {
     connection_parameters = ConnectionParameters(getClientConfiguration(), "localhost");
 
+    /// This is needed for table function input(...).
     ReadBuffer * in;
     auto table_file = getClientConfiguration().getString("table-file", "-");
     if (table_file == "-" || table_file == "stdin")
@@ -428,7 +502,7 @@ void LocalServer::connect()
         in = input.get();
     }
     connection = LocalConnection::createConnection(
-        connection_parameters, global_context, in, need_render_progress, need_render_profile_events, server_display_name);
+        connection_parameters, client_context, in, need_render_progress, need_render_profile_events, server_display_name);
 }
 
 
@@ -438,7 +512,7 @@ try
     UseSSL use_ssl;
     thread_status.emplace();
 
-    StackTrace::setShowAddresses(getClientConfiguration().getBool("show_addresses_in_stack_traces", true));
+    StackTrace::setShowAddresses(server_settings[ServerSetting::show_addresses_in_stack_traces]);
 
     setupSignalHandler();
 
@@ -475,10 +549,10 @@ try
     /// Don't initialize DateLUT
     registerFunctions();
     registerAggregateFunctions();
-    registerTableFunctions();
+    registerTableFunctions(server_settings[ServerSetting::use_legacy_mongodb_integration]);
     registerDatabases();
-    registerStorages();
-    registerDictionaries();
+    registerStorages(server_settings[ServerSetting::use_legacy_mongodb_integration]);
+    registerDictionaries(server_settings[ServerSetting::use_legacy_mongodb_integration]);
     registerDisks(/* global_skip_access_check= */ true);
     registerFormats();
 
@@ -486,10 +560,10 @@ try
 
     SCOPE_EXIT({ cleanup(); });
 
-    initTTYBuffer(toProgressOption(getClientConfiguration().getString("progress", "default")));
+    initTTYBuffer(toProgressOption(getClientConfiguration().getString("progress", "default")),
+        toProgressOption(config().getString("progress-table", "default")));
+    initKeystrokeInterceptor();
     ASTAlterCommand::setFormatAlterCommandsWithParentheses(true);
-
-    applyCmdSettings(global_context);
 
     /// try to load user defined executable functions, throw on error and die
     try
@@ -501,6 +575,11 @@ try
         tryLogCurrentException(&logger(), "Caught exception while loading user defined executable functions.");
         throw;
     }
+
+    /// Must be called after we stopped initializing the global context and changing its settings.
+    /// After this point the global context must be stayed almost unchanged till shutdown,
+    /// and all necessary changes must be made to the client context instead.
+    createClientContext();
 
     if (is_interactive)
     {
@@ -537,12 +616,14 @@ catch (const DB::Exception & e)
 {
     bool need_print_stack_trace = getClientConfiguration().getBool("stacktrace", false);
     std::cerr << getExceptionMessage(e, need_print_stack_trace, true) << std::endl;
-    return e.code() ? e.code() : -1;
+    auto code = DB::getCurrentExceptionCode();
+    return static_cast<UInt8>(code) ? code : 1;
 }
 catch (...)
 {
-    std::cerr << getCurrentExceptionMessage(false) << std::endl;
-    return getCurrentExceptionCode();
+    std::cerr << DB::getCurrentExceptionMessage(true) << '\n';
+    auto code = DB::getCurrentExceptionCode();
+    return static_cast<UInt8>(code) ? code : 1;
 }
 
 void LocalServer::updateLoggerLevel(const String & logs_level)
@@ -555,9 +636,6 @@ void LocalServer::processConfig()
 {
     if (!queries.empty() && getClientConfiguration().has("queries-file"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--query' and '--queries-file' cannot be specified at the same time");
-
-    if (getClientConfiguration().has("multiquery"))
-        is_multiquery = true;
 
     pager = getClientConfiguration().getString("pager", "");
 
@@ -624,12 +702,43 @@ void LocalServer::processConfig()
     global_context->getProcessList().setMaxSize(0);
 
     const size_t physical_server_memory = getMemoryAmount();
-    const double cache_size_to_ram_max_ratio = getClientConfiguration().getDouble("cache_size_to_ram_max_ratio", 0.5);
+
+    size_t max_server_memory_usage = server_settings[ServerSetting::max_server_memory_usage];
+    double max_server_memory_usage_to_ram_ratio = server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio];
+
+    size_t default_max_server_memory_usage = static_cast<size_t>(physical_server_memory * max_server_memory_usage_to_ram_ratio);
+
+    if (max_server_memory_usage == 0)
+    {
+        max_server_memory_usage = default_max_server_memory_usage;
+        LOG_INFO(log, "Setting max_server_memory_usage was set to {}"
+                      " ({} available * {:.2f} max_server_memory_usage_to_ram_ratio)",
+                 formatReadableSizeWithBinarySuffix(max_server_memory_usage),
+                 formatReadableSizeWithBinarySuffix(physical_server_memory),
+                 max_server_memory_usage_to_ram_ratio);
+    }
+    else if (max_server_memory_usage > default_max_server_memory_usage)
+    {
+        max_server_memory_usage = default_max_server_memory_usage;
+        LOG_INFO(log, "Setting max_server_memory_usage was lowered to {}"
+                      " because the system has low amount of memory. The amount was"
+                      " calculated as {} available"
+                      " * {:.2f} max_server_memory_usage_to_ram_ratio",
+                 formatReadableSizeWithBinarySuffix(max_server_memory_usage),
+                 formatReadableSizeWithBinarySuffix(physical_server_memory),
+                 max_server_memory_usage_to_ram_ratio);
+    }
+
+    total_memory_tracker.setHardLimit(max_server_memory_usage);
+    total_memory_tracker.setDescription("(total)");
+    total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
+
+    const double cache_size_to_ram_max_ratio = server_settings[ServerSetting::cache_size_to_ram_max_ratio];
     const size_t max_cache_size = static_cast<size_t>(physical_server_memory * cache_size_to_ram_max_ratio);
 
-    String uncompressed_cache_policy = getClientConfiguration().getString("uncompressed_cache_policy", DEFAULT_UNCOMPRESSED_CACHE_POLICY);
-    size_t uncompressed_cache_size = getClientConfiguration().getUInt64("uncompressed_cache_size", DEFAULT_UNCOMPRESSED_CACHE_MAX_SIZE);
-    double uncompressed_cache_size_ratio = getClientConfiguration().getDouble("uncompressed_cache_size_ratio", DEFAULT_UNCOMPRESSED_CACHE_SIZE_RATIO);
+    String uncompressed_cache_policy = server_settings[ServerSetting::uncompressed_cache_policy];
+    size_t uncompressed_cache_size = server_settings[ServerSetting::uncompressed_cache_size];
+    double uncompressed_cache_size_ratio = server_settings[ServerSetting::uncompressed_cache_size_ratio];
     if (uncompressed_cache_size > max_cache_size)
     {
         uncompressed_cache_size = max_cache_size;
@@ -637,9 +746,9 @@ void LocalServer::processConfig()
     }
     global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size, uncompressed_cache_size_ratio);
 
-    String mark_cache_policy = getClientConfiguration().getString("mark_cache_policy", DEFAULT_MARK_CACHE_POLICY);
-    size_t mark_cache_size = getClientConfiguration().getUInt64("mark_cache_size", DEFAULT_MARK_CACHE_MAX_SIZE);
-    double mark_cache_size_ratio = getClientConfiguration().getDouble("mark_cache_size_ratio", DEFAULT_MARK_CACHE_SIZE_RATIO);
+    String mark_cache_policy = server_settings[ServerSetting::mark_cache_policy];
+    size_t mark_cache_size = server_settings[ServerSetting::mark_cache_size];
+    double mark_cache_size_ratio = server_settings[ServerSetting::mark_cache_size_ratio];
     if (!mark_cache_size)
         LOG_ERROR(log, "Too low mark cache size will lead to severe performance degradation.");
     if (mark_cache_size > max_cache_size)
@@ -649,31 +758,31 @@ void LocalServer::processConfig()
     }
     global_context->setMarkCache(mark_cache_policy, mark_cache_size, mark_cache_size_ratio);
 
-    String index_uncompressed_cache_policy = getClientConfiguration().getString("index_uncompressed_cache_policy", DEFAULT_INDEX_UNCOMPRESSED_CACHE_POLICY);
-    size_t index_uncompressed_cache_size = getClientConfiguration().getUInt64("index_uncompressed_cache_size", DEFAULT_INDEX_UNCOMPRESSED_CACHE_MAX_SIZE);
-    double index_uncompressed_cache_size_ratio = getClientConfiguration().getDouble("index_uncompressed_cache_size_ratio", DEFAULT_INDEX_UNCOMPRESSED_CACHE_SIZE_RATIO);
+    String index_uncompressed_cache_policy = server_settings[ServerSetting::index_uncompressed_cache_policy];
+    size_t index_uncompressed_cache_size = server_settings[ServerSetting::index_uncompressed_cache_size];
+    double index_uncompressed_cache_size_ratio = server_settings[ServerSetting::index_uncompressed_cache_size_ratio];
     if (index_uncompressed_cache_size > max_cache_size)
     {
         index_uncompressed_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered index uncompressed cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
+        LOG_INFO(log, "Lowered index uncompressed cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(index_uncompressed_cache_size));
     }
     global_context->setIndexUncompressedCache(index_uncompressed_cache_policy, index_uncompressed_cache_size, index_uncompressed_cache_size_ratio);
 
-    String index_mark_cache_policy = getClientConfiguration().getString("index_mark_cache_policy", DEFAULT_INDEX_MARK_CACHE_POLICY);
-    size_t index_mark_cache_size = getClientConfiguration().getUInt64("index_mark_cache_size", DEFAULT_INDEX_MARK_CACHE_MAX_SIZE);
-    double index_mark_cache_size_ratio = getClientConfiguration().getDouble("index_mark_cache_size_ratio", DEFAULT_INDEX_MARK_CACHE_SIZE_RATIO);
+    String index_mark_cache_policy = server_settings[ServerSetting::index_mark_cache_policy];
+    size_t index_mark_cache_size = server_settings[ServerSetting::index_mark_cache_size];
+    double index_mark_cache_size_ratio = server_settings[ServerSetting::index_mark_cache_size_ratio];
     if (index_mark_cache_size > max_cache_size)
     {
         index_mark_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered index mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
+        LOG_INFO(log, "Lowered index mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(index_mark_cache_size));
     }
     global_context->setIndexMarkCache(index_mark_cache_policy, index_mark_cache_size, index_mark_cache_size_ratio);
 
-    size_t mmap_cache_size = getClientConfiguration().getUInt64("mmap_cache_size", DEFAULT_MMAP_CACHE_MAX_SIZE);
+    size_t mmap_cache_size = server_settings[ServerSetting::mmap_cache_size];
     if (mmap_cache_size > max_cache_size)
     {
         mmap_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered mmap file cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
+        LOG_INFO(log, "Lowered mmap file cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(mmap_cache_size));
     }
     global_context->setMMappedFileCache(mmap_cache_size);
 
@@ -681,8 +790,8 @@ void LocalServer::processConfig()
     global_context->setQueryCache(0, 0, 0, 0);
 
 #if USE_EMBEDDED_COMPILER
-    size_t compiled_expression_cache_max_size_in_bytes = getClientConfiguration().getUInt64("compiled_expression_cache_size", DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE);
-    size_t compiled_expression_cache_max_elements = getClientConfiguration().getUInt64("compiled_expression_cache_elements_size", DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES);
+    size_t compiled_expression_cache_max_size_in_bytes = server_settings[ServerSetting::compiled_expression_cache_size];
+    size_t compiled_expression_cache_max_elements = server_settings[ServerSetting::compiled_expression_cache_elements_size];
     CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_max_size_in_bytes, compiled_expression_cache_max_elements);
 #endif
 
@@ -696,11 +805,19 @@ void LocalServer::processConfig()
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(getClientConfiguration());
 
+    /// Command-line parameters can override settings from the default profile.
+    applyCmdSettings(global_context);
+
     /// We load temporary database first, because projections need it.
     DatabaseCatalog::instance().initializeAndLoadTemporaryDatabase();
 
-    std::string default_database = getClientConfiguration().getString("default_database", "default");
-    DatabaseCatalog::instance().attachDatabase(default_database, createClickHouseLocalDatabaseOverlay(default_database, global_context));
+    std::string default_database = server_settings[ServerSetting::default_database];
+    {
+        DatabasePtr database = createClickHouseLocalDatabaseOverlay(default_database, global_context);
+        if (UUID uuid = database->getUUID(); uuid != UUIDHelpers::Nil)
+            DatabaseCatalog::instance().addUUIDMapping(uuid);
+        DatabaseCatalog::instance().attachDatabase(default_database, database);
+    }
     global_context->setCurrentDatabase(default_database);
 
     if (getClientConfiguration().has("path"))
@@ -712,11 +829,11 @@ void LocalServer::processConfig()
         status.emplace(fs::path(path) / "status", StatusFile::write_full_info);
 
         LOG_DEBUG(log, "Loading metadata from {}", path);
-        auto startup_system_tasks = loadMetadataSystem(global_context);
+        auto load_system_metadata_tasks = loadMetadataSystem(global_context);
         attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false);
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
-        waitLoad(TablesLoaderForegroundPoolId, startup_system_tasks);
+        waitLoad(TablesLoaderForegroundPoolId, load_system_metadata_tasks);
 
         if (!getClientConfiguration().has("only-system-tables"))
         {
@@ -739,10 +856,6 @@ void LocalServer::processConfig()
 
     server_display_name = getClientConfiguration().getString("display_name", "");
     prompt_by_server_display_name = getClientConfiguration().getRawString("prompt_by_server_display_name.default", ":) ");
-
-    global_context->setQueryKindInitial();
-    global_context->setQueryKind(query_kind);
-    global_context->setQueryParameters(query_parameters);
 }
 
 
@@ -789,6 +902,7 @@ void LocalServer::addOptions(OptionsDescription & options_description)
 {
     options_description.main_description->add_options()
         ("table,N", po::value<std::string>(), "name of the initial table")
+        ("copy", "shortcut for format conversion, equivalent to: --query 'SELECT * FROM table'")
 
         /// If structure argument is omitted then initial query is not generated
         ("structure,S", po::value<std::string>(), "structure of the initial table (list of column and type names)")
@@ -818,6 +932,16 @@ void LocalServer::applyCmdOptions(ContextMutablePtr context)
 {
     context->setDefaultFormat(getClientConfiguration().getString("output-format", getClientConfiguration().getString("format", is_interactive ? "PrettyCompact" : "TSV")));
     applyCmdSettings(context);
+}
+
+
+void LocalServer::createClientContext()
+{
+    /// In case of clickhouse-local it's necessary to use a separate context for client-related purposes.
+    /// We can't just change the global context because it is used in background tasks (for example, in merges)
+    /// which don't expect that the global context can suddenly change.
+    client_context = Context::createCopy(global_context);
+    initClientContext();
 }
 
 
@@ -851,6 +975,12 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
         getClientConfiguration().setString("send_logs_level", options["send_logs_level"].as<std::string>());
     if (options.count("wait_for_suggestions_to_load"))
         getClientConfiguration().setBool("wait_for_suggestions_to_load", true);
+    if (options.count("copy"))
+    {
+        if (!queries.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--copy' and '--query' cannot be specified at the same time");
+        queries.emplace_back("SELECT * FROM table");
+    }
 }
 
 void LocalServer::readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> &, std::vector<Arguments> &)
@@ -883,13 +1013,6 @@ void LocalServer::readArguments(int argc, char ** argv, Arguments & common_argum
                 query_parameters.emplace(param_continuation.substr(0, equal_pos), param_continuation.substr(equal_pos + 1));
             }
         }
-        else if (arg == "--multiquery" && (arg_num + 1) < argc && !std::string_view(argv[arg_num + 1]).starts_with('-'))
-        {
-            /// Transform the abbreviated syntax '--multiquery <SQL>' into the full syntax '--multiquery -q <SQL>'
-            ++arg_num;
-            arg = argv[arg_num];
-            addMultiquery(arg, common_arguments);
-        }
         else
         {
             common_arguments.emplace_back(arg);
@@ -914,7 +1037,7 @@ int mainEntryClickHouseLocal(int argc, char ** argv)
     {
         std::cerr << DB::getExceptionMessage(e, false) << std::endl;
         auto code = DB::getCurrentExceptionCode();
-        return code ? code : 1;
+        return static_cast<UInt8>(code) ? code : 1;
     }
     catch (const boost::program_options::error & e)
     {
@@ -925,6 +1048,6 @@ int mainEntryClickHouseLocal(int argc, char ** argv)
     {
         std::cerr << DB::getCurrentExceptionMessage(true) << '\n';
         auto code = DB::getCurrentExceptionCode();
-        return code ? code : 1;
+        return static_cast<UInt8>(code) ? code : 1;
     }
 }

@@ -2,6 +2,7 @@
 
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/Settings.h>
 #include <Databases/IDatabase.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -27,6 +28,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsBool parallel_replicas_allow_in_with_subquery;
+    extern const SettingsBool prefer_global_in_and_join;
+}
 
 namespace ErrorCodes
 {
@@ -205,7 +212,7 @@ private:
     static void visit(ASTFunction & func, ASTPtr &, Data & data)
     {
         const Settings & settings = data.getContext()->getSettingsRef();
-        const bool prefer_global = settings.prefer_global_in_and_join;
+        const bool prefer_global = settings[Setting::prefer_global_in_and_join];
         const bool enable_parallel_processing_of_joins = data.getContext()->canUseParallelReplicasOnInitiator();
 
         if (((prefer_global || enable_parallel_processing_of_joins)
@@ -216,15 +223,15 @@ private:
             if (enable_parallel_processing_of_joins)
             {
                 /// We don't enable parallel replicas for IN (subquery)
-                if (!settings.parallel_replicas_allow_in_with_subquery && ast->as<ASTSubquery>())
+                if (!settings[Setting::parallel_replicas_allow_in_with_subquery] && ast->as<ASTSubquery>())
                 {
-                    if (settings.allow_experimental_parallel_reading_from_replicas == 1)
+                    if (settings[Setting::allow_experimental_parallel_reading_from_replicas] == 1)
                     {
                         LOG_DEBUG(getLogger("GlobalSubqueriesMatcher"), "IN with subquery is not supported with parallel replicas");
                         data.getContext()->getQueryContext()->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
                         return;
                     }
-                    else if (settings.allow_experimental_parallel_reading_from_replicas >= 2)
+                    if (settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
                         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "IN with subquery is not supported with parallel replicas");
                 }
             }
@@ -253,7 +260,7 @@ private:
     static void visit(ASTTablesInSelectQueryElement & table_elem, ASTPtr &, Data & data)
     {
         const Settings & settings = data.getContext()->getSettingsRef();
-        const bool prefer_global = settings.prefer_global_in_and_join;
+        const bool prefer_global = settings[Setting::prefer_global_in_and_join];
         const bool enable_parallel_processing_of_joins = data.getContext()->canUseParallelReplicasOnInitiator();
 
         if (table_elem.table_join
@@ -276,13 +283,13 @@ private:
 
                 if (!is_subquery)
                 {
-                    if (settings.allow_experimental_parallel_reading_from_replicas == 1)
+                    if (settings[Setting::allow_experimental_parallel_reading_from_replicas] == 1)
                     {
                         LOG_DEBUG(getLogger("GlobalSubqueriesMatcher"), "JOIN with parallel replicas is only supported with subqueries");
                         data.getContext()->getQueryContext()->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
                         return;
                     }
-                    else if (settings.allow_experimental_parallel_reading_from_replicas >= 2)
+                    if (settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
                         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JOIN with parallel replicas is only supported with subqueries");
                 }
             }
@@ -295,7 +302,7 @@ private:
             {
                 auto joined_block_actions = data.table_join->createJoinedBlockActions(data.getContext());
                 NamesWithAliases required_columns_with_aliases = data.table_join->getRequiredColumns(
-                    Block(joined_block_actions->getResultColumns()), joined_block_actions->getRequiredColumns().getNames());
+                    Block(joined_block_actions.getResultColumns()), joined_block_actions.getRequiredColumns().getNames());
 
                 for (auto & pr : required_columns_with_aliases)
                     required_columns.push_back(pr.first);

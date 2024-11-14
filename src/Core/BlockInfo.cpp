@@ -58,36 +58,4 @@ void BlockInfo::read(ReadBuffer & in)
     }
 }
 
-void BlockMissingValues::setBit(size_t column_idx, size_t row_idx)
-{
-    RowsBitMask & mask = rows_mask_by_column_id[column_idx];
-    mask.resize(row_idx + 1);
-    mask[row_idx] = true;
-}
-
-void BlockMissingValues::setBits(size_t column_idx, size_t rows)
-{
-    RowsBitMask & mask = rows_mask_by_column_id[column_idx];
-    mask.resize(rows);
-    std::fill(mask.begin(), mask.end(), true);
-}
-
-const BlockMissingValues::RowsBitMask & BlockMissingValues::getDefaultsBitmask(size_t column_idx) const
-{
-    static RowsBitMask none;
-    auto it = rows_mask_by_column_id.find(column_idx);
-    if (it != rows_mask_by_column_id.end())
-        return it->second;
-    return none;
-}
-
-bool BlockMissingValues::hasDefaultBits(size_t column_idx) const
-{
-    auto it = rows_mask_by_column_id.find(column_idx);
-    if (it == rows_mask_by_column_id.end())
-        return false;
-
-    const auto & col_mask = it->second;
-    return std::find(col_mask.begin(), col_mask.end(), true) != col_mask.end();
-}
 }

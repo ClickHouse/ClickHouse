@@ -3,51 +3,21 @@
 #include <IO/Progress.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/IStorage.h>
-#include <Storages/MaterializedView/RefreshTask_fwd.h>
 #include <Common/CurrentMetrics.h>
+#include <list>
 
 namespace DB
 {
 
-using DatabaseAndTableNameSet = std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
-
-enum class RefreshState : RefreshTaskStateUnderlying
-{
-    Disabled = 0,
-    Scheduled,
-    WaitingForDependencies,
-    Running,
-};
-
-enum class LastRefreshResult : RefreshTaskStateUnderlying
-{
-    Unknown = 0,
-    Cancelled,
-    Exception,
-    Finished
-};
-
-struct RefreshInfo
-{
-    StorageID view_id = StorageID::createEmpty();
-    RefreshState state = RefreshState::Scheduled;
-    LastRefreshResult last_refresh_result = LastRefreshResult::Unknown;
-    std::optional<UInt32> last_attempt_time;
-    std::optional<UInt32> last_success_time;
-    UInt64 last_attempt_duration_ms = 0;
-    UInt32 next_refresh_time = 0;
-    UInt64 refresh_count = 0;
-    String exception_message; // if last_refresh_result is Exception
-    std::vector<StorageID> remaining_dependencies;
-    ProgressValues progress;
-};
+class RefreshTask;
+using RefreshTaskPtr = std::shared_ptr<RefreshTask>;
+using RefreshTaskList = std::list<RefreshTaskPtr>;
 
 /// Set of refreshable views
 class RefreshSet
 {
 public:
-    /// RAII thing that unregisters a task and its dependencies in destructor.
-    /// Storage IDs must be unique. Not thread safe.
+    /// RAII thing that unregisters a task and its dependencies in destructor. Not thread safe.
     class Handle
     {
         friend class RefreshSet;
@@ -59,7 +29,7 @@ public:
 
         ~Handle();
 
-        void rename(StorageID new_id);
+        void rename(StorageID new_id, std::optional<StorageID> new_inner_table_id);
         void changeDependencies(std::vector<StorageID> deps);
 
         void reset();
@@ -72,28 +42,36 @@ public:
     private:
         RefreshSet * parent_set = nullptr;
         StorageID id = StorageID::createEmpty();
+        std::optional<StorageID> inner_table_id;
         std::vector<StorageID> dependencies;
+        RefreshTaskList::iterator iter; // in parent_set->tasks[id]
+        RefreshTaskList::iterator inner_table_iter; // in parent_set->inner_tables[inner_table_id]
         std::optional<CurrentMetrics::Increment> metric_increment;
 
-        Handle(RefreshSet * parent_set_, StorageID id_, std::vector<StorageID> dependencies_);
+        Handle(RefreshSet * parent_set_, StorageID id_, std::optional<StorageID> inner_table_id, RefreshTaskList::iterator iter_, RefreshTaskList::iterator inner_table_iter_, std::vector<StorageID> dependencies_);
     };
-
-    using InfoContainer = std::vector<RefreshInfo>;
 
     RefreshSet();
 
-    void emplace(StorageID id, const std::vector<StorageID> & dependencies, RefreshTaskHolder task);
+    void emplace(StorageID id, std::optional<StorageID> inner_table_id, const std::vector<StorageID> & dependencies, RefreshTaskPtr task);
 
-    RefreshTaskHolder getTask(const StorageID & id) const;
+    /// Finds active refreshable view(s) by database and table name.
+    /// Normally there's at most one, but we allow name collisions here, just in case.
+    RefreshTaskList findTasks(const StorageID & id) const;
+    std::vector<RefreshTaskPtr> getTasks() const;
 
-    InfoContainer getInfo() const;
+    RefreshTaskPtr tryGetTaskForInnerTable(const StorageID & inner_table_id) const;
 
-    /// Get tasks that depend on the given one.
-    std::vector<RefreshTaskHolder> getDependents(const StorageID & id) const;
+    /// Calls notify() on all tasks that depend on `id`.
+    void notifyDependents(const StorageID & id) const;
+
+    void setRefreshesStopped(bool stopped);
+    bool refreshesStopped() const;
 
 private:
-    using TaskMap = std::unordered_map<StorageID, RefreshTaskHolder, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
-    using DependentsMap = std::unordered_map<StorageID, DatabaseAndTableNameSet, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
+    using TaskMap = std::unordered_map<StorageID, RefreshTaskList, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
+    using DependentsMap = std::unordered_map<StorageID, std::unordered_set<RefreshTaskPtr>, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
+    using InnerTableMap = std::unordered_map<StorageID, RefreshTaskList, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
 
     /// Protects the two maps below, not locked for any nontrivial operations (e.g. operations that
     /// block or lock other mutexes).
@@ -101,9 +79,16 @@ private:
 
     TaskMap tasks;
     DependentsMap dependents;
+    InnerTableMap inner_tables;
 
-    void addDependenciesLocked(const StorageID & id, const std::vector<StorageID> & dependencies);
-    void removeDependenciesLocked(const StorageID & id, const std::vector<StorageID> & dependencies);
+    std::atomic<bool> refreshes_stopped {false};
+
+    RefreshTaskList::iterator addTaskLocked(StorageID id, RefreshTaskPtr task);
+    void removeTaskLocked(StorageID id, RefreshTaskList::iterator iter);
+    RefreshTaskList::iterator addInnerTableLocked(StorageID inner_table_id, RefreshTaskPtr task);
+    void removeInnerTableLocked(StorageID inner_table_id, RefreshTaskList::iterator inner_table_iter);
+    void addDependenciesLocked(RefreshTaskPtr task, const std::vector<StorageID> & dependencies);
+    void removeDependenciesLocked(RefreshTaskPtr task, const std::vector<StorageID> & dependencies);
 };
 
 }

@@ -20,7 +20,7 @@ using FunctionReplaceRegexpAll = FunctionStringReplace<ReplaceRegexpImpl<NameRep
 REGISTER_FUNCTION(ReplaceRegexpAll)
 {
     factory.registerFunction<FunctionReplaceRegexpAll>();
-    factory.registerAlias("REGEXP_REPLACE", NameReplaceRegexpAll::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("REGEXP_REPLACE", NameReplaceRegexpAll::name, FunctionFactory::Case::Insensitive);
 }
 
 }

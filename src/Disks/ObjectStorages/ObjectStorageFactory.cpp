@@ -7,25 +7,24 @@
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/ObjectStorages/S3/diskSettings.h>
 #endif
-#if USE_HDFS && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
+#if USE_HDFS
 #include <Disks/ObjectStorages/HDFS/HDFSObjectStorage.h>
 #include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 #endif
-#if USE_AZURE_BLOB_STORAGE && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
+#if USE_AZURE_BLOB_STORAGE
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
-#include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageAuth.h>
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #endif
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 #include <Disks/ObjectStorages/Web/WebObjectStorage.h>
 #include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Disks/loadLocalDiskConfig.h>
-#endif
 #include <Disks/ObjectStorages/MetadataStorageFactory.h>
 #include <Disks/ObjectStorages/PlainObjectStorage.h>
 #include <Disks/ObjectStorages/PlainRewritableObjectStorage.h>
 #include <Disks/ObjectStorages/createMetadataStorageMetrics.h>
 #include <Interpreters/Context.h>
 #include <Common/Macros.h>
+#include <Core/Settings.h>
 
 #include <filesystem>
 
@@ -33,6 +32,11 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 hdfs_replication;
+}
+
 namespace ErrorCodes
 {
     extern const int NO_ELEMENTS_IN_CONFIG;
@@ -72,7 +76,7 @@ ObjectStoragePtr createObjectStorage(
 {
     if (isPlainStorage(type, config, config_prefix))
         return std::make_shared<PlainObjectStorage<BaseObjectStorage>>(std::forward<Args>(args)...);
-    else if (isPlainRewritableStorage(type, config, config_prefix))
+    if (isPlainRewritableStorage(type, config, config_prefix))
     {
         /// HDFS object storage currently does not support iteration and does not implement listObjects method.
         /// StaticWeb object storage is read-only and works with its dedicated metadata type.
@@ -90,8 +94,7 @@ ObjectStoragePtr createObjectStorage(
         return std::make_shared<PlainRewritableObjectStorage<BaseObjectStorage>>(
             std::move(metadata_storage_metrics), std::forward<Args>(args)...);
     }
-    else
-        return std::make_shared<BaseObjectStorage>(std::forward<Args>(args)...);
+    return std::make_shared<BaseObjectStorage>(std::forward<Args>(args)...);
 }
 }
 
@@ -155,21 +158,6 @@ S3::URI getS3URI(const Poco::Util::AbstractConfiguration & config, const std::st
     return uri;
 }
 
-void checkS3Capabilities(
-    S3ObjectStorage & storage, const S3Capabilities s3_capabilities, const String & name)
-{
-    /// If `support_batch_delete` is turned on (default), check and possibly switch it off.
-    if (s3_capabilities.support_batch_delete && !checkBatchRemove(storage))
-    {
-        LOG_WARNING(
-            getLogger("S3ObjectStorage"),
-            "Storage for disk {} does not support batch delete operations, "
-            "so `s3_capabilities.support_batch_delete` was automatically turned off during the access check. "
-            "To remove this message set `s3_capabilities.support_batch_delete` for the disk to `false`.",
-            name);
-        storage.setCapabilitiesSupportBatchDelete(false);
-    }
-}
 }
 
 static std::string getEndpoint(
@@ -189,7 +177,7 @@ void registerS3ObjectStorage(ObjectStorageFactory & factory)
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ContextPtr & context,
-        bool skip_access_check) -> ObjectStoragePtr
+        bool /* skip_access_check */) -> ObjectStoragePtr
     {
         auto uri = getS3URI(config, config_prefix, context);
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
@@ -200,10 +188,6 @@ void registerS3ObjectStorage(ObjectStorageFactory & factory)
 
         auto object_storage = createObjectStorage<S3ObjectStorage>(
             ObjectStorageType::S3, config, config_prefix, std::move(client), std::move(settings), uri, s3_capabilities, key_generator, name);
-
-        /// NOTE: should we still perform this check for clickhouse-disks?
-        if (!skip_access_check)
-            checkS3Capabilities(*dynamic_cast<S3ObjectStorage *>(object_storage.get()), s3_capabilities, name);
 
         return object_storage;
     });
@@ -218,7 +202,7 @@ void registerS3PlainObjectStorage(ObjectStorageFactory & factory)
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ContextPtr & context,
-        bool skip_access_check) -> ObjectStoragePtr
+        bool /* skip_access_check */) -> ObjectStoragePtr
     {
         /// send_metadata changes the filenames (includes revision), while
         /// s3_plain do not care about this, and expect that the file name
@@ -238,10 +222,6 @@ void registerS3PlainObjectStorage(ObjectStorageFactory & factory)
         auto object_storage = std::make_shared<PlainObjectStorage<S3ObjectStorage>>(
             std::move(client), std::move(settings), uri, s3_capabilities, key_generator, name);
 
-        /// NOTE: should we still perform this check for clickhouse-disks?
-        if (!skip_access_check)
-            checkS3Capabilities(*dynamic_cast<S3ObjectStorage *>(object_storage.get()), s3_capabilities, name);
-
         return object_storage;
     });
 }
@@ -256,7 +236,7 @@ void registerS3PlainRewritableObjectStorage(ObjectStorageFactory & factory)
            const Poco::Util::AbstractConfiguration & config,
            const std::string & config_prefix,
            const ContextPtr & context,
-           bool skip_access_check) -> ObjectStoragePtr
+           bool /* skip_access_check */) -> ObjectStoragePtr
         {
             /// send_metadata changes the filenames (includes revision), while
             /// s3_plain_rewritable does not support file renaming.
@@ -274,17 +254,13 @@ void registerS3PlainRewritableObjectStorage(ObjectStorageFactory & factory)
             auto object_storage = std::make_shared<PlainRewritableObjectStorage<S3ObjectStorage>>(
                 std::move(metadata_storage_metrics), std::move(client), std::move(settings), uri, s3_capabilities, key_generator, name);
 
-            /// NOTE: should we still perform this check for clickhouse-disks?
-            if (!skip_access_check)
-                checkS3Capabilities(*dynamic_cast<S3ObjectStorage *>(object_storage.get()), s3_capabilities, name);
-
             return object_storage;
         });
 }
 
 #endif
 
-#if USE_HDFS && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
+#if USE_HDFS
 void registerHDFSObjectStorage(ObjectStorageFactory & factory)
 {
     factory.registerObjectStorageType(
@@ -301,15 +277,14 @@ void registerHDFSObjectStorage(ObjectStorageFactory & factory)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "HDFS path must ends with '/', but '{}' doesn't.", uri);
 
             std::unique_ptr<HDFSObjectStorageSettings> settings = std::make_unique<HDFSObjectStorageSettings>(
-                config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
-                context->getSettingsRef().hdfs_replication);
+                config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024), context->getSettingsRef()[Setting::hdfs_replication]);
 
             return createObjectStorage<HDFSObjectStorage>(ObjectStorageType::HDFS, config, config_prefix, uri, std::move(settings), config, /* lazy_initialize */false);
         });
 }
 #endif
 
-#if USE_AZURE_BLOB_STORAGE && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
+#if USE_AZURE_BLOB_STORAGE
 void registerAzureObjectStorage(ObjectStorageFactory & factory)
 {
     auto creator = [](
@@ -319,21 +294,27 @@ void registerAzureObjectStorage(ObjectStorageFactory & factory)
         const ContextPtr & context,
         bool /* skip_access_check */) -> ObjectStoragePtr
     {
-        AzureBlobStorageEndpoint endpoint = processAzureBlobStorageEndpoint(config, config_prefix);
+        auto azure_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context);
+
+        AzureBlobStorage::ConnectionParams params
+        {
+            .endpoint = AzureBlobStorage::processEndpoint(config, config_prefix),
+            .auth_method = AzureBlobStorage::getAuthMethod(config, config_prefix),
+            .client_options = AzureBlobStorage::getClientOptions(*azure_settings, /*for_disk=*/ true),
+        };
 
         return createObjectStorage<AzureObjectStorage>(
             ObjectStorageType::Azure, config, config_prefix, name,
-            getAzureBlobContainerClient(config, config_prefix),
-            getAzureBlobStorageSettings(config, config_prefix, context),
-            endpoint.prefix.empty() ? endpoint.container_name : endpoint.container_name + "/" + endpoint.prefix,
-            endpoint.getEndpointWithoutContainer());
+            AzureBlobStorage::getContainerClient(params, /*readonly=*/ false), std::move(azure_settings),
+            params.endpoint.prefix.empty() ? params.endpoint.container_name : params.endpoint.container_name + "/" + params.endpoint.prefix,
+            params.endpoint.getEndpointWithoutContainer());
     };
+
     factory.registerObjectStorageType("azure_blob_storage", creator);
     factory.registerObjectStorageType("azure", creator);
 }
 #endif
 
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 void registerWebObjectStorage(ObjectStorageFactory & factory)
 {
     factory.registerObjectStorageType("web", [](
@@ -381,7 +362,6 @@ void registerLocalObjectStorage(ObjectStorageFactory & factory)
     factory.registerObjectStorageType("local_blob_storage", creator);
     factory.registerObjectStorageType("local", creator);
 }
-#endif
 
 void registerObjectStorages()
 {
@@ -393,18 +373,16 @@ void registerObjectStorages()
     registerS3PlainRewritableObjectStorage(factory);
 #endif
 
-#if USE_HDFS && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
+#if USE_HDFS
     registerHDFSObjectStorage(factory);
 #endif
 
-#if USE_AZURE_BLOB_STORAGE && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
+#if USE_AZURE_BLOB_STORAGE
     registerAzureObjectStorage(factory);
 #endif
 
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
     registerWebObjectStorage(factory);
     registerLocalObjectStorage(factory);
-#endif
 }
 
 }

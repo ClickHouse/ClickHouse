@@ -12,9 +12,7 @@ Functions for [searching](string-search-functions.md) in strings and for [replac
 
 ## empty
 
-Checks whether the input string is empty.
-
-A string is considered non-empty if it contains at least one byte, even if this byte is a space or the null byte.
+Checks whether the input string is empty. A string is considered non-empty if it contains at least one byte, even if this byte is a space or the null byte.
 
 The function is also available for [arrays](array-functions.md#function-empty) and [UUIDs](uuid-functions.md#empty).
 
@@ -48,9 +46,7 @@ Result:
 
 ## notEmpty
 
-Checks whether the input string is non-empty.
-
-A string is considered non-empty if it contains at least one byte, even if this byte is a space or the null byte.
+Checks whether the input string is non-empty. A string is considered non-empty if it contains at least one byte, even if this byte is a space or the null byte.
 
 The function is also available for [arrays](array-functions.md#function-notempty) and [UUIDs](uuid-functions.md#notempty).
 
@@ -96,7 +92,7 @@ length(s)
 
 **Parameters**
 
-- `s`: An input string or array. [String](../data-types/string)/[Array](../data-types/array).
+- `s` — An input string or array. [String](../data-types/string)/[Array](../data-types/array).
 
 **Returned value**
 
@@ -149,7 +145,7 @@ lengthUTF8(s)
 
 **Parameters**
 
-- `s`: String containing valid UTF-8 encoded text. [String](../data-types/string).
+- `s` — String containing valid UTF-8 encoded text. [String](../data-types/string).
 
 **Returned value**
 
@@ -183,8 +179,8 @@ left(s, offset)
 
 **Parameters**
 
-- `s`: The string to calculate a substring from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `offset`: The number of bytes of the offset. [UInt*](../data-types/int-uint).
+- `s` — The string to calculate a substring from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- `offset` — The number of bytes of the offset. [UInt*](../data-types/int-uint).
 
 **Returned value**
 
@@ -230,8 +226,8 @@ leftUTF8(s, offset)
 
 **Parameters**
 
-- `s`: The UTF-8 encoded string to calculate a substring from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `offset`: The number of bytes of the offset. [UInt*](../data-types/int-uint).
+- `s` — The UTF-8 encoded string to calculate a substring from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- `offset` — The number of bytes of the offset. [UInt*](../data-types/int-uint).
 
 **Returned value**
 
@@ -347,8 +343,8 @@ right(s, offset)
 
 **Parameters**
 
-- `s`: The string to calculate a substring from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `offset`: The number of bytes of the offset. [UInt*](../data-types/int-uint).
+- `s` — The string to calculate a substring from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- `offset` — The number of bytes of the offset. [UInt*](../data-types/int-uint).
 
 **Returned value**
 
@@ -394,8 +390,8 @@ rightUTF8(s, offset)
 
 **Parameters**
 
-- `s`: The UTF-8 encoded string to calculate a substring from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `offset`: The number of bytes of the offset. [UInt*](../data-types/int-uint).
+- `s` — The UTF-8 encoded string to calculate a substring from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- `offset` — The number of bytes of the offset. [UInt*](../data-types/int-uint).
 
 **Returned value**
 
@@ -547,7 +543,7 @@ Alias: `ucase`
 
 **Parameters**
 
-- `input`: A string type [String](../data-types/string.md).
+- `input` — A string type [String](../data-types/string.md).
 
 **Returned value**
 
@@ -571,17 +567,47 @@ SELECT upper('clickhouse');
 
 Converts a string to lowercase, assuming that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
 
-Does not detect the language, e.g. for Turkish the result might not be exactly correct (i/İ vs. i/I).
+:::note
+Does not detect the language, e.g. for Turkish the result might not be exactly correct (i/İ vs. i/I). If the length of the UTF-8 byte sequence is different for upper and lower case of a code point (such as `ẞ` and `ß`), the result may be incorrect for this code point.
+:::
 
-If the length of the UTF-8 byte sequence is different for upper and lower case of a code point, the result may be incorrect for this code point.
+**Syntax**
+
+```sql
+lowerUTF8(input)
+```
+
+**Parameters**
+
+- `input` — A string type [String](../data-types/string.md).
+
+**Returned value**
+
+- A [String](../data-types/string.md) data type value.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT lowerUTF8('MÜNCHEN') as Lowerutf8;
+```
+
+Result:
+
+``` response
+┌─Lowerutf8─┐
+│ münchen   │
+└───────────┘
+```
 
 ## upperUTF8
 
 Converts a string to uppercase, assuming that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
 
-Does not detect the language, e.g. for Turkish the result might not be exactly correct (i/İ vs. i/I).
-
-If the length of the UTF-8 byte sequence is different for upper and lower case of a code point, the result may be incorrect for this code point.
+:::note
+Does not detect the language, e.g. for Turkish the result might not be exactly correct (i/İ vs. i/I). If the length of the UTF-8 byte sequence is different for upper and lower case of a code point (such as `ẞ` and `ß`), the result may be incorrect for this code point.
+:::
 
 **Syntax**
 
@@ -591,7 +617,7 @@ upperUTF8(input)
 
 **Parameters**
 
-- `input`: A string type [String](../data-types/string.md).
+- `input` — A string type [String](../data-types/string.md).
 
 **Returned value**
 
@@ -605,6 +631,8 @@ Query:
 SELECT upperUTF8('München') as Upperutf8;
 ```
 
+Result:
+
 ``` response
 ┌─Upperutf8─┐
 │ MÜNCHEN   │
@@ -614,6 +642,34 @@ SELECT upperUTF8('München') as Upperutf8;
 ## isValidUTF8
 
 Returns 1, if the set of bytes constitutes valid UTF-8-encoded text, otherwise 0.
+
+**Syntax**
+
+``` sql
+isValidUTF8(input)
+```
+
+**Parameters**
+
+- `input` — A string type [String](../data-types/string.md).
+
+**Returned value**
+
+- Returns `1`, if the set of bytes constitutes valid UTF-8-encoded text, otherwise `0`.
+
+Query:
+
+``` sql
+SELECT isValidUTF8('\xc3\xb1') AS valid, isValidUTF8('\xc3\x28') AS invalid;
+```
+
+Result:
+
+``` response
+┌─valid─┬─invalid─┐
+│     1 │       0 │
+└───────┴─────────┘
+```
 
 ## toValidUTF8
 
@@ -736,7 +792,7 @@ concat(s1, s2, ...)
 
 **Arguments**
 
-At least one value of arbitrary type.
+Values of arbitrary type.
 
 Arguments which are not of types [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md) are converted to strings using their default serialization. As this decreases performance, it is not recommended to use non-String/FixedString arguments.
 
@@ -884,7 +940,7 @@ Returns the substring of a string `s` which starts at the specified byte index `
 substring(s, offset[, length])
 ```
 
-Alias:
+Aliases:
 - `substr`
 - `mid`
 - `byteSlice`
@@ -927,9 +983,9 @@ substringUTF8(s, offset[, length])
 
 **Arguments**
 
-- `s`: The string to calculate a substring from. [String](../data-types/string.md), [FixedString](../data-types/fixedstring.md) or [Enum](../data-types/enum.md)
-- `offset`: The starting position of the substring in `s` . [(U)Int*](../data-types/int-uint.md).
-- `length`: The maximum length of the substring. [(U)Int*](../data-types/int-uint.md). Optional.
+- `s` — The string to calculate a substring from. [String](../data-types/string.md), [FixedString](../data-types/fixedstring.md) or [Enum](../data-types/enum.md)
+- `offset` — The starting position of the substring in `s` . [(U)Int*](../data-types/int-uint.md).
+- `length` — The maximum length of the substring. [(U)Int*](../data-types/int-uint.md). Optional.
 
 **Returned value**
 
@@ -965,9 +1021,9 @@ Alias: `SUBSTRING_INDEX`
 
 **Arguments**
 
-- s: The string to extract substring from. [String](../data-types/string.md).
-- delim: The character to split. [String](../data-types/string.md).
-- count: The number of occurrences of the delimiter to count before extracting the substring. If count is positive, everything to the left of the final delimiter (counting from the left) is returned. If count is negative, everything to the right of the final delimiter (counting from the right) is returned. [UInt or Int](../data-types/int-uint.md)
+- s — The string to extract substring from. [String](../data-types/string.md).
+- delim — The character to split. [String](../data-types/string.md).
+- count — The number of occurrences of the delimiter to count before extracting the substring. If count is positive, everything to the left of the final delimiter (counting from the left) is returned. If count is negative, everything to the right of the final delimiter (counting from the right) is returned. [UInt or Int](../data-types/int-uint.md)
 
 **Example**
 
@@ -996,9 +1052,9 @@ substringIndexUTF8(s, delim, count)
 
 **Arguments**
 
-- `s`: The string to extract substring from. [String](../data-types/string.md).
-- `delim`: The character to split. [String](../data-types/string.md).
-- `count`: The number of occurrences of the delimiter to count before extracting the substring. If count is positive, everything to the left of the final delimiter (counting from the left) is returned. If count is negative, everything to the right of the final delimiter (counting from the right) is returned. [UInt or Int](../data-types/int-uint.md)
+- `s` — The string to extract substring from. [String](../data-types/string.md).
+- `delim` — The character to split. [String](../data-types/string.md).
+- `count` — The number of occurrences of the delimiter to count before extracting the substring. If count is positive, everything to the left of the final delimiter (counting from the left) is returned. If count is negative, everything to the right of the final delimiter (counting from the right) is returned. [UInt or Int](../data-types/int-uint.md)
 
 **Returned value**
 
@@ -1040,7 +1096,7 @@ convertCharset(s, from, to)
 
 ## base58Encode
 
-Encodes a String using [Base58](https://datatracker.ietf.org/doc/html/draft-msporny-base58) in the "Bitcoin" alphabet.
+Encodes a string using [Base58](https://datatracker.ietf.org/doc/html/draft-msporny-base58) in the "Bitcoin" alphabet.
 
 **Syntax**
 
@@ -1054,7 +1110,7 @@ base58Encode(plaintext)
 
 **Returned value**
 
-- A string containing the encoded value of the argument. [String](../data-types/string.md).
+- A string containing the encoded value of the argument. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 
 **Example**
 
@@ -1072,7 +1128,7 @@ Result:
 
 ## base58Decode
 
-Accepts a String and decodes it using [Base58](https://datatracker.ietf.org/doc/html/draft-msporny-base58) encoding scheme using "Bitcoin" alphabet.
+Accepts a string and decodes it using [Base58](https://datatracker.ietf.org/doc/html/draft-msporny-base58) encoding scheme using "Bitcoin" alphabet.
 
 **Syntax**
 
@@ -1082,7 +1138,7 @@ base58Decode(encoded)
 
 **Arguments**
 
-- `encoded` — [String](../data-types/string.md) column or constant. If the string is not a valid Base58-encoded value, an exception is thrown.
+- `encoded` — [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md). If the string is not a valid Base58-encoded value, an exception is thrown.
 
 **Returned value**
 
@@ -1114,7 +1170,7 @@ tryBase58Decode(encoded)
 
 **Parameters**
 
-- `encoded`: [String](../data-types/string.md) column or constant. If the string is not a valid Base58-encoded value, returns an empty string in case of error.
+- `encoded`: [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md). If the string is not a valid Base58-encoded value, returns an empty string in case of error.
 
 **Returned value**
 
@@ -1278,7 +1334,7 @@ tryBase64Decode(encoded)
 
 **Arguments**
 
-- `encoded`: [String](../data-types/string.md) column or constant. If the string is not a valid Base64-encoded value, returns an empty string.
+- `encoded` — [String](../data-types/string.md) column or constant. If the string is not a valid Base64-encoded value, returns an empty string.
 
 **Returned value**
 
@@ -1310,7 +1366,7 @@ tryBase64URLDecode(encodedUrl)
 
 **Parameters**
 
-- `encodedURL`: [String](../data-types/string.md) column or constant. If the string is not a valid Base64-encoded value with URL-specific modifications, returns an empty string.
+- `encodedURL` — [String](../data-types/string.md) column or constant. If the string is not a valid Base64-encoded value with URL-specific modifications, returns an empty string.
 
 **Returned value**
 
@@ -1556,7 +1612,7 @@ The result type is UInt64.
 
 ## normalizeQuery
 
-Replaces literals, sequences of literals and complex aliases with placeholders.
+Replaces literals, sequences of literals and complex aliases (containing whitespace, more than two digits or at least 36 bytes long such as UUIDs) with placeholder `?`.
 
 **Syntax**
 
@@ -1574,6 +1630,8 @@ normalizeQuery(x)
 
 **Example**
 
+Query:
+
 ``` sql
 SELECT normalizeQuery('[1, 2, 3, x]') AS query;
 ```
@@ -1586,9 +1644,44 @@ Result:
 └──────────┘
 ```
 
+## normalizeQueryKeepNames
+
+Replaces literals, sequences of literals with placeholder `?` but does not replace complex aliases (containing whitespace, more than two digits
+or at least 36 bytes long such as UUIDs). This helps better analyze complex query logs.
+
+**Syntax**
+
+``` sql
+normalizeQueryKeepNames(x)
+```
+
+**Arguments**
+
+- `x` — Sequence of characters. [String](../data-types/string.md).
+
+**Returned value**
+
+- Sequence of characters with placeholders. [String](../data-types/string.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT normalizeQuery('SELECT 1 AS aComplexName123'), normalizeQueryKeepNames('SELECT 1 AS aComplexName123');
+```
+
+Result:
+
+```result
+┌─normalizeQuery('SELECT 1 AS aComplexName123')─┬─normalizeQueryKeepNames('SELECT 1 AS aComplexName123')─┐
+│ SELECT ? AS `?`                               │ SELECT ? AS aComplexName123                            │
+└───────────────────────────────────────────────┴────────────────────────────────────────────────────────┘
+```
+
 ## normalizedQueryHash
 
-Returns identical 64bit hash values without the values of literals for similar queries. Can be helpful to analyze query log.
+Returns identical 64bit hash values without the values of literals for similar queries. Can be helpful to analyze query logs.
 
 **Syntax**
 
@@ -1606,6 +1699,8 @@ normalizedQueryHash(x)
 
 **Example**
 
+Query:
+
 ``` sql
 SELECT normalizedQueryHash('SELECT 1 AS `xyz`') != normalizedQueryHash('SELECT 1 AS `abc`') AS res;
 ```
@@ -1616,6 +1711,43 @@ Result:
 ┌─res─┐
 │   1 │
 └─────┘
+```
+
+## normalizedQueryHashKeepNames
+
+Like [normalizedQueryHash](#normalizedqueryhash) it returns identical 64bit hash values without the values of literals for similar queries but it does not replace complex aliases (containing whitespace, more than two digits
+or at least 36 bytes long such as UUIDs) with a placeholder before hashing. Can be helpful to analyze query logs.
+
+**Syntax**
+
+``` sql
+normalizedQueryHashKeepNames(x)
+```
+
+**Arguments**
+
+- `x` — Sequence of characters. [String](../data-types/string.md).
+
+**Returned value**
+
+- Hash value. [UInt64](../data-types/int-uint.md#uint-ranges).
+
+**Example**
+
+``` sql
+SELECT normalizedQueryHash('SELECT 1 AS `xyz123`') != normalizedQueryHash('SELECT 1 AS `abc123`') AS normalizedQueryHash;
+SELECT normalizedQueryHashKeepNames('SELECT 1 AS `xyz123`') != normalizedQueryHashKeepNames('SELECT 1 AS `abc123`') AS normalizedQueryHashKeepNames;
+```
+
+Result:
+
+```result
+┌─normalizedQueryHash─┐
+│                   0 │
+└─────────────────────┘
+┌─normalizedQueryHashKeepNames─┐
+│                            1 │
+└──────────────────────────────┘
 ```
 
 ## normalizeUTF8NFC
@@ -1936,7 +2068,7 @@ soundex(val)
 
 **Arguments**
 
-- `val` - Input value. [String](../data-types/string.md)
+- `val` — Input value. [String](../data-types/string.md)
 
 **Returned value**
 
@@ -1969,7 +2101,7 @@ punycodeEncode(val)
 
 **Arguments**
 
-- `val` - Input value. [String](../data-types/string.md)
+- `val` — Input value. [String](../data-types/string.md)
 
 **Returned value**
 
@@ -2002,7 +2134,7 @@ punycodeEncode(val)
 
 **Arguments**
 
-- `val` - Punycode-encoded string. [String](../data-types/string.md)
+- `val` — Punycode-encoded string. [String](../data-types/string.md)
 
 **Returned value**
 
@@ -2028,7 +2160,7 @@ Like `punycodeDecode` but returns an empty string if no valid Punycode-encoded s
 
 ## idnaEncode
 
-Returns the the ASCII representation (ToASCII algorithm) of a domain name according to the [Internationalized Domain Names in Applications](https://en.wikipedia.org/wiki/Internationalized_domain_name#Internationalizing_Domain_Names_in_Applications) (IDNA) mechanism.
+Returns the ASCII representation (ToASCII algorithm) of a domain name according to the [Internationalized Domain Names in Applications](https://en.wikipedia.org/wiki/Internationalized_domain_name#Internationalizing_Domain_Names_in_Applications) (IDNA) mechanism.
 The input string must be UTF-encoded and translatable to an ASCII string, otherwise an exception is thrown.
 Note: No percent decoding or trimming of tabs, spaces or control characters is performed.
 
@@ -2040,7 +2172,7 @@ idnaEncode(val)
 
 **Arguments**
 
-- `val` - Input value. [String](../data-types/string.md)
+- `val` — Input value. [String](../data-types/string.md)
 
 **Returned value**
 
@@ -2066,7 +2198,7 @@ Like `idnaEncode` but returns an empty string in case of an error instead of thr
 
 ## idnaDecode
 
-Returns the the Unicode (UTF-8) representation (ToUnicode algorithm) of a domain name according to the [Internationalized Domain Names in Applications](https://en.wikipedia.org/wiki/Internationalized_domain_name#Internationalizing_Domain_Names_in_Applications) (IDNA) mechanism.
+Returns the Unicode (UTF-8) representation (ToUnicode algorithm) of a domain name according to the [Internationalized Domain Names in Applications](https://en.wikipedia.org/wiki/Internationalized_domain_name#Internationalizing_Domain_Names_in_Applications) (IDNA) mechanism.
 In case of an error (e.g. because the input is invalid), the input string is returned.
 Note that repeated application of `idnaEncode()` and `idnaDecode()` does not necessarily return the original string due to case normalization.
 
@@ -2078,7 +2210,7 @@ idnaDecode(val)
 
 **Arguments**
 
-- `val` - Input value. [String](../data-types/string.md)
+- `val` — Input value. [String](../data-types/string.md)
 
 **Returned value**
 
@@ -2122,7 +2254,7 @@ Result:
 └───────────────────────────────────────────┘
 ```
 
-Alias: mismatches
+Alias: `mismatches`
 
 ## stringJaccardIndex
 
@@ -2176,7 +2308,7 @@ Result:
 └─────────────────────────────────────┘
 ```
 
-Alias: levenshteinDistance
+Alias: `levenshteinDistance`
 
 ## editDistanceUTF8
 
@@ -2202,7 +2334,7 @@ Result:
 └─────────────────────────────────────┘
 ```
 
-Alias: levenshteinDistanceUTF8
+Alias: `levenshteinDistanceUTF8`
 
 ## damerauLevenshteinDistance
 
@@ -2280,13 +2412,93 @@ Result:
 
 Convert the first letter of each word to upper case and the rest to lower case. Words are sequences of alphanumeric characters separated by non-alphanumeric characters.
 
+:::note
+Because `initCap` converts only the first letter of each word to upper case you may observe unexpected behaviour for words containing apostrophes or capital letters. For example:
+
+```sql
+SELECT initCap('mother''s daughter'), initCap('joe McAdam');
+```
+
+will return
+
+```response
+┌─initCap('mother\'s daughter')─┬─initCap('joe McAdam')─┐
+│ Mother'S Daughter             │ Joe Mcadam            │
+└───────────────────────────────┴───────────────────────┘
+```
+
+This is a known behaviour, with no plans currently to fix it.
+:::
+
+**Syntax**
+
+```sql
+initcap(val)
+```
+
+**Arguments**
+
+- `val` — Input value. [String](../data-types/string.md).
+
+**Returned value**
+
+- `val` with the first letter of each word converted to upper case. [String](../data-types/string.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT initcap('building for fast');
+```
+
+Result:
+
+```text
+┌─initcap('building for fast')─┐
+│ Building For Fast            │
+└──────────────────────────────┘
+```
+
 ## initcapUTF8
 
-Like [initcap](#initcap), assuming that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
+Like [initcap](#initcap), `initcapUTF8` converts the first letter of each word to upper case and the rest to lower case. Assumes that the string contains valid UTF-8 encoded text. 
+If this assumption is violated, no exception is thrown and the result is undefined.
 
-Does not detect the language, e.g. for Turkish the result might not be exactly correct (i/İ vs. i/I).
-
+:::note
+This function does not detect the language, e.g. for Turkish the result might not be exactly correct (i/İ vs. i/I).
 If the length of the UTF-8 byte sequence is different for upper and lower case of a code point, the result may be incorrect for this code point.
+:::
+
+**Syntax**
+
+```sql
+initcapUTF8(val)
+```
+
+**Arguments**
+
+- `val` — Input value. [String](../data-types/string.md).
+
+**Returned value**
+
+- `val` with the first letter of each word converted to upper case. [String](../data-types/string.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT initcapUTF8('не тормозит');
+```
+
+Result:
+
+```text
+┌─initcapUTF8('не тормозит')─┐
+│ Не Тормозит                │
+└────────────────────────────┘
+```
 
 ## firstLine
 
@@ -2300,7 +2512,7 @@ firstLine(val)
 
 **Arguments**
 
-- `val` - Input value. [String](../data-types/string.md)
+- `val` — Input value. [String](../data-types/string.md)
 
 **Returned value**
 

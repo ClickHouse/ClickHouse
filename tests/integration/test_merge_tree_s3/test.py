@@ -1,15 +1,18 @@
 import logging
-import time
 import os
+import time
 import uuid
 
 import pytest
+
 from helpers.cluster import ClickHouseCluster
-from helpers.mock_servers import start_s3_mock, start_mock_servers
-from helpers.utility import generate_values, replace_config, SafeThread
-from helpers.wait_for_helpers import wait_for_delete_inactive_parts
-from helpers.wait_for_helpers import wait_for_delete_empty_parts
-from helpers.wait_for_helpers import wait_for_merges
+from helpers.mock_servers import start_mock_servers, start_s3_mock
+from helpers.utility import SafeThread, generate_values, replace_config
+from helpers.wait_for_helpers import (
+    wait_for_delete_empty_parts,
+    wait_for_delete_inactive_parts,
+    wait_for_merges,
+)
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -962,7 +965,7 @@ def test_s3_engine_heavy_write_check_mem(
         "INSERT INTO s3_test SELECT number, toString(number) FROM numbers(50000000)"
         f" SETTINGS "
         f" max_memory_usage={2*memory}"
-        f", max_threads=1"  # ParallelFormattingOutputFormat consumption depends on it
+        ", max_threads=1, optimize_trivial_insert_select=1"  # ParallelFormattingOutputFormat consumption depends on it
         f", s3_max_inflight_parts_for_one_file={in_flight}",
         query_id=query_id,
     )
@@ -1010,9 +1013,10 @@ def test_s3_disk_heavy_write_check_mem(cluster, broken_s3, node_name):
     node.query(
         "INSERT INTO s3_test SELECT number, toString(number) FROM numbers(50000000)"
         f" SETTINGS max_memory_usage={2*memory}"
-        f", max_insert_block_size=50000000"
-        f", min_insert_block_size_rows=50000000"
-        f", min_insert_block_size_bytes=1000000000000",
+        ", max_insert_block_size=50000000"
+        ", min_insert_block_size_rows=50000000"
+        ", min_insert_block_size_bytes=1000000000000"
+        ", optimize_trivial_insert_select=1",
         query_id=query_id,
     )
 

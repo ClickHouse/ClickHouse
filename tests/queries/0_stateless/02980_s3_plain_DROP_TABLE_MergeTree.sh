@@ -19,7 +19,7 @@ $CLICKHOUSE_CLIENT --allow_deprecated_database_ordinary=1 -q "create database $n
 CLICKHOUSE_CLIENT=${CLICKHOUSE_CLIENT/--database=$CLICKHOUSE_DATABASE/--database=$new_database}
 CLICKHOUSE_DATABASE="$new_database"
 
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -m -q "
     drop table if exists data;
     create table data (key Int) engine=MergeTree() order by key;
     insert into data values (1);
@@ -29,7 +29,7 @@ $CLICKHOUSE_CLIENT -nm -q "
 # suppress output
 $CLICKHOUSE_CLIENT -q "backup table data to S3('http://localhost:11111/test/s3_plain/backups/$CLICKHOUSE_DATABASE', 'test', 'testtest')" > /dev/null
 
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -m -q "
     drop table data;
     attach table data (key Int) engine=MergeTree() order by key
     settings
@@ -49,11 +49,11 @@ path=$($CLICKHOUSE_CLIENT -q "SELECT replace(data_paths[1], 's3_plain', '') FROM
 path=${path%/}
 
 echo "Files before DETACH TABLE"
-clickhouse-disks -C "$config" --disk s3_plain_disk list --recursive "${path:?}" | tail -n+2
+clickhouse-disks -C "$config" --disk s3_plain_disk --query "list --recursive $path" | tail -n+2
 
 $CLICKHOUSE_CLIENT -q "detach table data"
 echo "Files after DETACH TABLE"
-clickhouse-disks -C "$config" --disk s3_plain_disk list --recursive "$path" | tail -n+2
+clickhouse-disks -C "$config" --disk s3_plain_disk --query "list --recursive $path" | tail -n+2
 
 # metadata file is left
 $CLICKHOUSE_CLIENT --force_remove_data_recursively_on_drop=1 -q "drop database if exists $CLICKHOUSE_DATABASE"

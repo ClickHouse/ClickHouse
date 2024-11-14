@@ -1,4 +1,4 @@
--- Tags: no-s3-storage
+-- Tags: no-object-storage
 
 -- produces different pipeline if enabled
 set enable_memory_bound_merging_of_aggregation_results = 0;
@@ -13,11 +13,9 @@ set allow_prefetched_read_pool_for_local_filesystem = 0;
 
 -- { echoOn }
 
-explain pipeline select * from (select * from numbers(1e8) group by number) group by number;
-
-explain pipeline select * from (select * from numbers_mt(1e8) group by number) group by number;
-
-explain pipeline select * from (select * from numbers_mt(1e8) group by number) order by number;
+explain pipeline select * from (select * from numbers(1e8) group by number) group by number settings max_rows_to_read = 0;
+explain pipeline select * from (select * from numbers_mt(1e8) group by number) group by number settings max_rows_to_read = 0;
+explain pipeline select * from (select * from numbers_mt(1e8) group by number) order by number settings max_rows_to_read = 0;
 
 explain pipeline select number from remote('127.0.0.{1,2,3}', system, numbers_mt) group by number settings distributed_aggregation_memory_efficient = 1;
 

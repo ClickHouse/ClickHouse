@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2120
 
-# Don't check for ODR violation, since we may test shared build with ASAN
-export ASAN_OPTIONS=detect_odr_violation=0
-
 # If ClickHouse was built with coverage - dump the coverage information at exit
 # (in other cases this environment variable has no effect)
 export CLICKHOUSE_WRITE_COVERAGE="coverage"
@@ -54,8 +51,16 @@ export CLICKHOUSE_OBFUSCATOR=${CLICKHOUSE_OBFUSCATOR:="${CLICKHOUSE_BINARY}-obfu
 export CLICKHOUSE_COMPRESSOR=${CLICKHOUSE_COMPRESSOR:="${CLICKHOUSE_BINARY}-compressor"}
 export CLICKHOUSE_GIT_IMPORT=${CLICKHOUSE_GIT_IMPORT="${CLICKHOUSE_BINARY}-git-import"}
 
+export CLICKHOUSE_CONFIG_DIR=${CLICKHOUSE_CONFIG_DIR:="/etc/clickhouse-server"}
 export CLICKHOUSE_CONFIG=${CLICKHOUSE_CONFIG:="/etc/clickhouse-server/config.xml"}
 export CLICKHOUSE_CONFIG_CLIENT=${CLICKHOUSE_CONFIG_CLIENT:="/etc/clickhouse-client/config.xml"}
+
+export CLICKHOUSE_USER_FILES=${CLICKHOUSE_USER_FILES:="/var/lib/clickhouse/user_files"}
+export CLICKHOUSE_USER_FILES_UNIQUE=${CLICKHOUSE_USER_FILES_UNIQUE:="${CLICKHOUSE_USER_FILES}/${CLICKHOUSE_TEST_UNIQUE_NAME}"}
+# synonym
+export USER_FILES_PATH=$CLICKHOUSE_USER_FILES
+
+export CLICKHOUSE_SCHEMA_FILES=${CLICKHOUSE_SCHEMA_FILES:="/var/lib/clickhouse/format_schemas"}
 
 [ -x "${CLICKHOUSE_BINARY}-extract-from-config" ] && CLICKHOUSE_EXTRACT_CONFIG=${CLICKHOUSE_EXTRACT_CONFIG:="$CLICKHOUSE_BINARY-extract-from-config --config=$CLICKHOUSE_CONFIG"}
 [ -x "${CLICKHOUSE_BINARY}" ] && CLICKHOUSE_EXTRACT_CONFIG=${CLICKHOUSE_EXTRACT_CONFIG:="$CLICKHOUSE_BINARY extract-from-config --config=$CLICKHOUSE_CONFIG"}
@@ -124,7 +129,7 @@ export CLICKHOUSE_URL_INTERSERVER=${CLICKHOUSE_URL_INTERSERVER:="${CLICKHOUSE_PO
 export CLICKHOUSE_CURL_COMMAND=${CLICKHOUSE_CURL_COMMAND:="curl"}
 # The queries in CI are prone to sudden delays, and we often don't check for curl
 # errors, so it makes sense to set a relatively generous timeout.
-export CLICKHOUSE_CURL_TIMEOUT=${CLICKHOUSE_CURL_TIMEOUT:="60"}
+export CLICKHOUSE_CURL_TIMEOUT=${CLICKHOUSE_CURL_TIMEOUT:="120"}
 export CLICKHOUSE_CURL=${CLICKHOUSE_CURL:="${CLICKHOUSE_CURL_COMMAND} -q -s --max-time ${CLICKHOUSE_CURL_TIMEOUT}"}
 export CLICKHOUSE_TMP=${CLICKHOUSE_TMP:="."}
 mkdir -p ${CLICKHOUSE_TMP}

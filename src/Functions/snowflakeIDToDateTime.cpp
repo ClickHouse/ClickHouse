@@ -9,11 +9,16 @@
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/DecimalFunctions.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_nonconst_timezone_arguments;
+}
 
 namespace ErrorCodes
 {
@@ -38,7 +43,7 @@ public:
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionSnowflakeIDToDateTime>(context); }
     explicit FunctionSnowflakeIDToDateTime(ContextPtr context)
-        : allow_nonconst_timezone_arguments(context->getSettings().allow_nonconst_timezone_arguments)
+        : allow_nonconst_timezone_arguments(context->getSettingsRef()[Setting::allow_nonconst_timezone_arguments])
     {}
 
     String getName() const override { return name; }
@@ -56,7 +61,7 @@ public:
             {"epoch", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), isColumnConst, "const UInt*"},
             {"time_zone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
         };
-        validateFunctionArgumentTypes(*this, arguments, args, optional_args);
+        validateFunctionArguments(*this, arguments, args, optional_args);
 
         String timezone;
         if (arguments.size() == 3)
@@ -109,7 +114,7 @@ public:
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionSnowflakeIDToDateTime64>(context); }
     explicit FunctionSnowflakeIDToDateTime64(ContextPtr context)
-        : allow_nonconst_timezone_arguments(context->getSettings().allow_nonconst_timezone_arguments)
+        : allow_nonconst_timezone_arguments(context->getSettingsRef()[Setting::allow_nonconst_timezone_arguments])
     {}
 
     String getName() const override { return name; }
@@ -127,7 +132,7 @@ public:
             {"epoch", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), isColumnConst, "const UInt*"},
             {"time_zone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
         };
-        validateFunctionArgumentTypes(*this, arguments, args, optional_args);
+        validateFunctionArguments(*this, arguments, args, optional_args);
 
         String timezone;
         if (arguments.size() == 3)

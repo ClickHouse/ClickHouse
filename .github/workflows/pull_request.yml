@@ -25,17 +25,14 @@ jobs:
     outputs:
       data: ${{ steps.runconfig.outputs.CI_DATA }}
     steps:
-      - name: DebugInfo
-        uses: hmarr/debug-action@f7318c783045ac39ed9bb497e22ce835fdafbfe6
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
         with:
           clear-repository: true # to ensure correct digests
           fetch-depth: 0 # to get a version
           filter: tree:0
-      - name: Cancel previous Sync PR workflow
-        run: |
-          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --cancel-previous-run
+      - name: Debug Info
+        uses: ./.github/actions/debug
       - name: Set pending Sync status
         run: |
           python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --set-pending-status
@@ -48,10 +45,6 @@ jobs:
           cd "$GITHUB_WORKSPACE/tests/ci"
           echo "Testing the main ci directory"
           python3 -m unittest discover -s . -p 'test_*.py'
-          for dir in *_lambda/; do
-            echo "Testing $dir"
-            python3 -m unittest discover -s "$dir" -p 'test_*.py'
-          done
       - name: PrepareRunConfig
         id: runconfig
         run: |
@@ -72,7 +65,7 @@ jobs:
   BuildDockers:
     needs: [RunConfig]
     if: ${{ !failure() && !cancelled() && toJson(fromJson(needs.RunConfig.outputs.data).docker_data.missing_multi) != '[]' }}
-    uses: ./.github/workflows/reusable_docker.yml
+    uses: ./.github/workflows/docker_test_images.yml
     with:
       data: ${{ needs.RunConfig.outputs.data }}
   StyleCheck:
@@ -127,27 +120,32 @@ jobs:
       stage: Builds_2
       data: ${{ needs.RunConfig.outputs.data }}
   # stage for running non-required checks without being blocked by required checks (Test_1) if corresponding settings is selected
-  Tests_2:
+  Tests_2_ww:
     needs: [RunConfig, Builds_1]
+    if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Tests_2_ww') }}
+    uses: ./.github/workflows/reusable_test_stage.yml
+    with:
+      stage: Tests_2_ww
+      data: ${{ needs.RunConfig.outputs.data }}
+  Tests_2:
+    needs: [RunConfig, Builds_1, Tests_1]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Tests_2') }}
     uses: ./.github/workflows/reusable_test_stage.yml
     with:
       stage: Tests_2
-      data: ${{ needs.RunConfig.outputs.data }}
-  Tests_3:
-    needs: [RunConfig, Builds_1, Tests_1]
-    if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Tests_3') }}
-    uses: ./.github/workflows/reusable_test_stage.yml
-    with:
-      stage: Tests_3
       data: ${{ needs.RunConfig.outputs.data }}
 
   ################################# Reports #################################
   # Reports should run even if Builds_1/2 fail - run them separately (not in Tests_1/2/3)
   Builds_Report:
     # run report check for failed builds to indicate the CI error
-    if: ${{ !cancelled() && needs.RunConfig.result == 'success' && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'Builds') }}
-    needs: [RunConfig, StyleCheck, Builds_1, Builds_2]
+    if: ${{ !cancelled()
+      && needs.RunConfig.result == 'success'
+      && needs.StyleCheck.result != 'failure'
+      && needs.FastTest.result != 'failure'
+      && needs.BuildDockers.result != 'failure'
+      && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'Builds') }}
+    needs: [RunConfig, BuildDockers, StyleCheck, FastTest, Builds_1, Builds_2]
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Builds
@@ -155,9 +153,10 @@ jobs:
       data: ${{ needs.RunConfig.outputs.data }}
 
   CheckReadyForMerge:
-    if: ${{ !cancelled() && needs.StyleCheck.result == 'success' }}
-    # Test_2 or Test_3 must not have jobs required for Mergeable check
-    needs: [RunConfig, BuildDockers, StyleCheck, FastTest, Builds_1, Builds_2, Builds_Report, Tests_1]
+    if: ${{ !cancelled() }}
+    # Test_2 or Test_3 do not have the jobs required for Mergeable check,
+    #  however, set them as "needs" to get all checks results before the automatic merge occurs.
+    needs: [RunConfig, BuildDockers, StyleCheck, FastTest, Builds_1, Builds_2, Builds_Report, Tests_1, Tests_2_ww, Tests_2]
     runs-on: [self-hosted, style-checker-aarch64]
     steps:
       - name: Check out repository code
@@ -165,15 +164,24 @@ jobs:
         with:
           filter: tree:0
       - name: Check and set merge status
+        if: ${{ needs.StyleCheck.result == 'success' }}
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 merge_pr.py --set-ci-status --wf-status ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
+          export WORKFLOW_RESULT_FILE="/tmp/workflow_results.json"
+          cat > "$WORKFLOW_RESULT_FILE" << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          python3 merge_pr.py --set-ci-status
+      - name: Check Workflow results
+        uses: ./.github/actions/check_workflow
+        with:
+          needs: ${{ toJson(needs) }}
 
   ################################# Stage Final #################################
   #
   FinishCheck:
-    if: ${{ !cancelled() }}
-    needs: [RunConfig, BuildDockers, StyleCheck, FastTest, Builds_1, Builds_2, Builds_Report, Tests_1, Tests_2, Tests_3]
+    if: ${{ !failure() && !cancelled() }}
+    needs: [RunConfig, BuildDockers, StyleCheck, FastTest, Builds_1, Builds_2, Builds_Report, Tests_1, Tests_2_ww, Tests_2]
     runs-on: [self-hosted, style-checker-aarch64]
     steps:
       - name: Check out repository code

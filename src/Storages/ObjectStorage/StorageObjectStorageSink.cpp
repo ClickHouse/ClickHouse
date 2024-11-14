@@ -2,10 +2,18 @@
 #include <Formats/FormatFactory.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Common/isValidUTF8.h>
+#include <Core/Settings.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <base/defines.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 output_format_compression_level;
+    extern const SettingsUInt64 output_format_compression_zstd_window_log;
+}
+
 namespace ErrorCodes
 {
     extern const int CANNOT_PARSE_TEXT;
@@ -30,42 +38,27 @@ StorageObjectStorageSink::StorageObjectStorageSink(
         StoredObject(path), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
 
     write_buf = wrapWriteBufferWithCompressionMethod(
-                    std::move(buffer),
-                    chosen_compression_method,
-                    static_cast<int>(settings.output_format_compression_level),
-                    static_cast<int>(settings.output_format_compression_zstd_window_log));
+        std::move(buffer),
+        chosen_compression_method,
+        static_cast<int>(settings[Setting::output_format_compression_level]),
+        static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]));
 
     writer = FormatFactory::instance().getOutputFormatParallelIfPossible(
         configuration->format, *write_buf, sample_block, context, format_settings_);
 }
 
-void StorageObjectStorageSink::consume(Chunk chunk)
+void StorageObjectStorageSink::consume(Chunk & chunk)
 {
-    std::lock_guard lock(cancel_mutex);
-    if (cancelled)
+    if (isCancelled())
         return;
-    writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
-}
-
-void StorageObjectStorageSink::onCancel()
-{
-    std::lock_guard lock(cancel_mutex);
-    cancelBuffers();
-    releaseBuffers();
-    cancelled = true;
-}
-
-void StorageObjectStorageSink::onException(std::exception_ptr)
-{
-    std::lock_guard lock(cancel_mutex);
-    cancelBuffers();
-    releaseBuffers();
+    writer->write(getHeader().cloneWithColumns(chunk.getColumns()));
 }
 
 void StorageObjectStorageSink::onFinish()
 {
-    std::lock_guard lock(cancel_mutex);
+    chassert(!isCancelled());
     finalizeBuffers();
+    releaseBuffers();
 }
 
 void StorageObjectStorageSink::finalizeBuffers()
@@ -117,6 +110,12 @@ PartitionedStorageObjectStorageSink::PartitionedStorageObjectStorageSink(
     , sample_block(sample_block_)
     , context(context_)
 {
+}
+
+StorageObjectStorageSink::~StorageObjectStorageSink()
+{
+    if (isCancelled())
+        cancelBuffers();
 }
 
 SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String & partition_id)

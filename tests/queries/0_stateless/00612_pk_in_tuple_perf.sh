@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 
 
-$CLICKHOUSE_CLIENT --multiquery <<EOF
+$CLICKHOUSE_CLIENT <<EOF
 DROP TABLE IF EXISTS pk_in_tuple_perf;
 CREATE TABLE pk_in_tuple_perf
 (
@@ -27,7 +27,7 @@ $CLICKHOUSE_CLIENT --query "$query FORMAT JSON" | grep "rows_read"
 
 ## Test with non-const args in tuple
 
-$CLICKHOUSE_CLIENT --multiquery <<EOF
+$CLICKHOUSE_CLIENT <<EOF
 DROP TABLE IF EXISTS pk_in_tuple_perf_non_const;
 CREATE TABLE pk_in_tuple_perf_non_const
 (

@@ -157,7 +157,7 @@ void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, s
 namespace
 {
 
-KeyCondition buildCondition(const IndexDescription & index, const ActionsDAGPtr & filter_actions_dag, ContextPtr context)
+KeyCondition buildCondition(const IndexDescription & index, const ActionsDAG * filter_actions_dag, ContextPtr context)
 {
     return KeyCondition{filter_actions_dag, context, index.column_names, index.expression};
 }
@@ -165,7 +165,7 @@ KeyCondition buildCondition(const IndexDescription & index, const ActionsDAGPtr 
 }
 
 MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
-    const IndexDescription & index, const ActionsDAGPtr & filter_actions_dag, ContextPtr context)
+    const IndexDescription & index, const ActionsDAG * filter_actions_dag, ContextPtr context)
     : index_data_types(index.data_types)
     , condition(buildCondition(index, filter_actions_dag, context))
 {
@@ -198,16 +198,16 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexMinMax::createIndexAggregator(const Me
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexMinMax::createIndexCondition(
-    const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const
+    const ActionsDAG * filter_actions_dag, ContextPtr context) const
 {
     return std::make_shared<MergeTreeIndexConditionMinMax>(index, filter_actions_dag, context);
 }
 
 MergeTreeIndexFormat MergeTreeIndexMinMax::getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & relative_path_prefix) const
 {
-    if (data_part_storage.exists(relative_path_prefix + ".idx2"))
+    if (data_part_storage.existsFile(relative_path_prefix + ".idx2"))
         return {2, ".idx2"};
-    else if (data_part_storage.exists(relative_path_prefix + ".idx"))
+    if (data_part_storage.existsFile(relative_path_prefix + ".idx"))
         return {1, ".idx"};
     return {0 /* unknown */, ""};
 }

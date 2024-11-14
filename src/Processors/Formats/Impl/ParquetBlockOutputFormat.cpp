@@ -179,7 +179,9 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
                 columns[i]->insertRangeFrom(*concatenated.getColumns()[i], offset, count);
 
             Chunks piece;
-            piece.emplace_back(std::move(columns), count, concatenated.getChunkInfo());
+            piece.emplace_back(std::move(columns), count);
+            piece.back().setChunkInfos(concatenated.getChunkInfos());
+
             writeRowGroup(std::move(piece));
         }
     }
@@ -227,6 +229,8 @@ void ParquetBlockOutputFormat::finalizeImpl()
             base_offset = out.count();
             writeFileHeader(out);
         }
+        if (format_settings.parquet.write_page_index)
+            writePageIndex(column_indexes, offset_indexes, row_groups_complete, out, base_offset);
         writeFileFooter(std::move(row_groups_complete), schema, options, out);
     }
     else
@@ -262,13 +266,15 @@ void ParquetBlockOutputFormat::resetFormatterImpl()
     task_queue.clear();
     row_groups.clear();
     file_writer.reset();
+    column_indexes.clear();
+    offset_indexes.clear();
     row_groups_complete.clear();
     staging_chunks.clear();
     staging_rows = 0;
     staging_bytes = 0;
 }
 
-void ParquetBlockOutputFormat::onCancel()
+void ParquetBlockOutputFormat::onCancel() noexcept
 {
     is_stopped = true;
 }
@@ -366,12 +372,17 @@ void ParquetBlockOutputFormat::writeRowGroupInOneThread(Chunk chunk)
         base_offset = out.count();
         writeFileHeader(out);
     }
-
+    auto & rg_column_index = column_indexes.emplace_back();
+    auto & rg_offset_index = offset_indexes.emplace_back();
     std::vector<parquet::format::ColumnChunk> column_chunks;
     for (auto & s : columns_to_write)
     {
         size_t offset = out.count() - base_offset;
         writeColumnChunkBody(s, options, out);
+        for (auto & location : s.offset_index.page_locations)
+            location.offset -= base_offset;
+        rg_column_index.emplace_back(std::move(s.column_index));
+        rg_offset_index.emplace_back(std::move(s.offset_index));
         auto c = finalizeColumnChunkAndWriteFooter(offset, std::move(s), options, out);
         column_chunks.push_back(std::move(c));
     }
@@ -434,16 +445,20 @@ void ParquetBlockOutputFormat::reapCompletedRowGroups(std::unique_lock<std::mute
             writeFileHeader(out);
         }
 
+        auto & rg_column_index = column_indexes.emplace_back();
+        auto & rg_offset_index = offset_indexes.emplace_back();
         std::vector<parquet::format::ColumnChunk> metadata;
         for (auto & cols : r.column_chunks)
         {
             for (ColumnChunk & col : cols)
             {
                 size_t offset = out.count() - base_offset;
-
+                for (auto & location : col.state.offset_index.page_locations)
+                    location.offset += offset;
                 out.write(col.serialized.data(), col.serialized.size());
+                rg_column_index.emplace_back(std::move(col.state.column_index));
+                rg_offset_index.emplace_back(std::move(col.state.offset_index));
                 auto m = finalizeColumnChunkAndWriteFooter(offset, std::move(col.state), options, out);
-
                 metadata.push_back(std::move(m));
             }
         }

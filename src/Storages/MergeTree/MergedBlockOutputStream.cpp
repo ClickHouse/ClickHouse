@@ -4,6 +4,7 @@
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Parsers/queryToString.h>
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 
 
 namespace DB
@@ -24,6 +25,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     CompressionCodecPtr default_codec_,
     TransactionID tid,
     bool reset_columns_,
+    bool save_marks_in_cache,
     bool blocks_are_granules_size,
     const WriteSettings & write_settings_,
     const MergeTreeIndexGranularity & computed_index_granularity)
@@ -33,11 +35,12 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     , write_settings(write_settings_)
 {
     MergeTreeWriterSettings writer_settings(
-        data_part->storage.getContext()->getSettings(),
+        data_part->storage.getContext()->getSettingsRef(),
         write_settings,
         storage_settings,
         data_part->index_granularity_info.mark_type.adaptive,
         /* rewrite_primary_key = */ true,
+        save_marks_in_cache,
         blocks_are_granules_size);
 
     /// TODO: looks like isStoredOnDisk() is always true for MergeTreeDataPart
@@ -93,6 +96,7 @@ struct MergedBlockOutputStream::Finalizer::Impl
 void MergedBlockOutputStream::Finalizer::finish()
 {
     std::unique_ptr<Impl> to_finish = std::move(impl);
+    impl.reset();
     if (to_finish)
         to_finish->finish();
 }
@@ -130,7 +134,19 @@ MergedBlockOutputStream::Finalizer::Finalizer(Finalizer &&) noexcept = default;
 MergedBlockOutputStream::Finalizer & MergedBlockOutputStream::Finalizer::operator=(Finalizer &&) noexcept = default;
 MergedBlockOutputStream::Finalizer::Finalizer(std::unique_ptr<Impl> impl_) : impl(std::move(impl_)) {}
 
-MergedBlockOutputStream::Finalizer::~Finalizer() = default;
+MergedBlockOutputStream::Finalizer::~Finalizer()
+{
+    try
+    {
+        if (impl)
+            finish();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
 
 void MergedBlockOutputStream::finalizePart(
     const MergeTreeMutableDataPartPtr & new_part,
@@ -191,7 +207,9 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
     new_part->setBytesUncompressedOnDisk(checksums.getTotalSizeUncompressedOnDisk());
     new_part->index_granularity = writer->getIndexGranularity();
-    new_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
+    /// Just in case
+    new_part->index_granularity.shrinkToFitInMemory();
+    new_part->calculateColumnsAndSecondaryIndicesSizesOnDisk(writer->getColumnsSample());
 
     /// In mutation, existing_rows_count is already calculated in PartMergerWriter
     /// In merge situation, lightweight deleted rows was physically deleted, existing_rows_count equals rows_count

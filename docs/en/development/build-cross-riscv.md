@@ -11,7 +11,7 @@ This is for the case when you have Linux machine and want to use it to build `cl
 
 The cross-build for RISC-V 64 is based on the [Build instructions](../development/build.md), follow them first.
 
-## Install Clang-16
+## Install Clang-18
 
 Follow the instructions from https://apt.llvm.org/ for your Ubuntu or Debian setup or do
 ```

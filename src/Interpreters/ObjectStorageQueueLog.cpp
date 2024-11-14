@@ -36,7 +36,6 @@ ColumnsDescription ObjectStorageQueueLogElement::getColumnsDescription()
         {"status", status_datatype, "Status of the processing file"},
         {"processing_start_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "Time of the start of processing the file"},
         {"processing_end_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "Time of the end of processing the file"},
-        {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>()), "Profile events collected while loading this file"},
         {"exception", std::make_shared<DataTypeString>(), "Exception message if happened"},
     };
 }
@@ -63,8 +62,6 @@ void ObjectStorageQueueLogElement::appendToBlock(MutableColumns & columns) const
         columns[i++]->insert(processing_end_time);
     else
         columns[i++]->insertDefault();
-
-    ProfileEvents::dumpToMapColumn(counters_snapshot, columns[i++].get(), true);
 
     columns[i++]->insert(exception);
 }

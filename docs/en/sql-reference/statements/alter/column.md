@@ -36,7 +36,7 @@ These actions are described in detail below.
 ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after | FIRST]
 ```
 
-Adds a new column to the table with the specified `name`, `type`, [`codec`](../create/table.md/#codecs) and `default_expr` (see the section [Default expressions](/docs/en/sql-reference/statements/create/table.md/#create-default-values)).
+Adds a new column to the table with the specified `name`, `type`, [`codec`](../create/table.md/#column_compression_codec) and `default_expr` (see the section [Default expressions](/docs/en/sql-reference/statements/create/table.md/#create-default-values)).
 
 If the `IF NOT EXISTS` clause is included, the query won’t return an error if the column already exists. If you specify `AFTER name_after` (the name of another column), the column is added after the specified one in the list of table columns. If you want to add a column to the beginning of the table use the `FIRST` clause. Otherwise, the column is added to the end of the table. For a chain of actions, `name_after` can be the name of a column that is added in one of the previous actions.
 
@@ -155,7 +155,7 @@ This query changes the `name` column properties:
 
 - Column-level Settings
 
-For examples of columns compression CODECS modifying, see [Column Compression Codecs](../create/table.md/#codecs).
+For examples of columns compression CODECS modifying, see [Column Compression Codecs](../create/table.md/#column_compression_codec).
 
 For examples of columns TTL modifying, see [Column TTL](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#mergetree-column-ttl).
 
@@ -272,15 +272,14 @@ ALTER TABLE table_name MODIFY COLUMN column_name RESET SETTING max_compress_bloc
 
 ## MATERIALIZE COLUMN
 
-Materializes a column with a `DEFAULT` or `MATERIALIZED` value expression.
-This statement can be used to rewrite existing column data after a `DEFAULT` or `MATERIALIZED` expression has been added or updated (which only updates the metadata but does not change existing data).
+Materializes a column with a `DEFAULT` or `MATERIALIZED` value expression. When adding a materialized column using `ALTER TABLE table_name ADD COLUMN column_name MATERIALIZED`, existing rows without materialized values are not automatically filled. `MATERIALIZE COLUMN` statement can be used to rewrite existing column data after a `DEFAULT` or `MATERIALIZED` expression has been added or updated (which only updates the metadata but does not change existing data).
 Implemented as a [mutation](/docs/en/sql-reference/statements/alter/index.md#mutations).
 
 For columns with a new or updated `MATERIALIZED` value expression, all existing rows are rewritten.
 
 For columns with a new or updated `DEFAULT` value expression, the behavior depends on the ClickHouse version:
 - In ClickHouse < v24.2, all existing rows are rewritten.
-- ClickHouse >= v24.2 distinguishes if a row value in a column with `DEFAULT` value expression was explicitly specified when it was inserted, or not, i.e. calculated from the `DEFAULT` value expression. If the value was explicitly specified, ClickHouse keeps it as is. If the value was was calculated, ClickHouse changes it to the new or updated `MATERIALIZED` value expression.
+- ClickHouse >= v24.2 distinguishes if a row value in a column with `DEFAULT` value expression was explicitly specified when it was inserted, or not, i.e. calculated from the `DEFAULT` value expression. If the value was explicitly specified, ClickHouse keeps it as is. If the value was calculated, ClickHouse changes it to the new or updated `MATERIALIZED` value expression.
 
 Syntax:
 

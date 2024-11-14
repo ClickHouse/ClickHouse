@@ -48,6 +48,8 @@ private:
     ColumnUnique(const ColumnUnique & other);
 
 public:
+    std::string getName() const override { return "Unique(" + getNestedColumn()->getName() + ")"; }
+
     MutableColumnPtr cloneEmpty() const override;
 
     const ColumnPtr & getNestedColumn() const override;
@@ -90,7 +92,11 @@ public:
         return getNestedColumn()->updateHashWithValue(n, hash_func);
     }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
+#else
+    int doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
+#endif
 
     void getExtremes(Field & min, Field & max) const override { column_holder->getExtremes(min, max); }
     bool valuesHaveFixedSize() const override { return column_holder->valuesHaveFixedSize(); }
@@ -488,7 +494,11 @@ const char * ColumnUnique<ColumnType>::skipSerializedInArena(const char *) const
 }
 
 template <typename ColumnType>
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 int ColumnUnique<ColumnType>::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
+#else
+int ColumnUnique<ColumnType>::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
+#endif
 {
     if (is_nullable)
     {
@@ -500,8 +510,7 @@ int ColumnUnique<ColumnType>::compareAt(size_t n, size_t m, const IColumn & rhs,
         {
             if (lval_is_null && rval_is_null)
                 return 0;
-            else
-                return lval_is_null ? nan_direction_hint : -nan_direction_hint;
+            return lval_is_null ? nan_direction_hint : -nan_direction_hint;
         }
     }
 

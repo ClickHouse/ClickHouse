@@ -1,6 +1,7 @@
 #pragma once
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -16,6 +17,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_deprecated_error_prone_window_functions;
+}
 
 namespace ErrorCodes
 {
@@ -139,7 +144,7 @@ public:
 
     static FunctionPtr create(ContextPtr context)
     {
-        if (!context->getSettingsRef().allow_deprecated_error_prone_window_functions)
+        if (!context->getSettingsRef()[Setting::allow_deprecated_error_prone_window_functions])
             throw Exception(
                 ErrorCodes::DEPRECATED_FUNCTION,
                 "Function {} is deprecated since its usage is error-prone (see docs)."
@@ -221,8 +226,7 @@ public:
 
         if (null_map_column)
             return ColumnNullable::create(std::move(res_column), null_map_column);
-        else
-            return res_column;
+        return res_column;
     }
 };
 

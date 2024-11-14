@@ -86,12 +86,19 @@ namespace
             create.as_table = as_table_new.table;
         }
 
-        QualifiedTableName to_table{create.to_table_id.database_name, create.to_table_id.table_name};
-        if (!to_table.table.empty() && !to_table.database.empty())
+        if (create.targets)
         {
-            auto to_table_new = data.renaming_map.getNewTableName(to_table);
-            if (to_table_new != to_table)
-                create.to_table_id = StorageID{to_table_new.database, to_table_new.table};
+            for (auto & target : create.targets->targets)
+            {
+                auto & table_id = target.table_id;
+                if (!table_id.database_name.empty() && !table_id.table_name.empty())
+                {
+                    QualifiedTableName target_name{table_id.database_name, table_id.table_name};
+                    auto new_target_name = data.renaming_map.getNewTableName(target_name);
+                    if (new_target_name != target_name)
+                        table_id = StorageID{new_target_name.database, new_target_name.table};
+                }
+            }
         }
     }
 
@@ -173,7 +180,7 @@ namespace
 
         if (database_name_field && table_name_field)
         {
-            QualifiedTableName qualified_name{database_name_field->get<String>(), table_name_field->get<String>()};
+            QualifiedTableName qualified_name{database_name_field->safeGet<String>(), table_name_field->safeGet<String>()};
             if (!qualified_name.database.empty() && !qualified_name.table.empty())
             {
                 auto new_qualified_name = data.renaming_map.getNewTableName(qualified_name);
@@ -200,7 +207,7 @@ namespace
             if (literal->value.getType() != Field::Types::String)
                 return;
 
-            auto maybe_qualified_name = QualifiedTableName::tryParseFromString(literal->value.get<String>());
+            auto maybe_qualified_name = QualifiedTableName::tryParseFromString(literal->value.safeGet<String>());
             /// Just return if name if invalid
             if (!maybe_qualified_name || maybe_qualified_name->database.empty() || maybe_qualified_name->table.empty())
                 return;
@@ -240,7 +247,7 @@ namespace
         if (!literal || (literal->value.getType() != Field::Types::String))
             return;
 
-        auto database_name = literal->value.get<String>();
+        auto database_name = literal->value.safeGet<String>();
         if (database_name.empty())
             return;
 

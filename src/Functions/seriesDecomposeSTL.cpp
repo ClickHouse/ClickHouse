@@ -45,12 +45,12 @@ public:
             {"time_series", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
             {"period", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), nullptr, "Unsigned Integer"},
         };
-        validateFunctionArgumentTypes(*this, arguments, args);
+        validateFunctionArguments(*this, arguments, args);
 
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat32>()));
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         ColumnPtr array_ptr = arguments[0].column;
         const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
@@ -79,7 +79,7 @@ public:
 
         ColumnArray::Offset prev_src_offset = 0;
 
-        for (size_t i = 0; i < src_offsets.size(); ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             UInt64 period;
             auto period_ptr = arguments[1].column->convertToFullColumnIfConst();

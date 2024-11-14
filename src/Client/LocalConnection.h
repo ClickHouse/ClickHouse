@@ -120,6 +120,8 @@ public:
 
     void sendData(const Block & block, const String & name/* = "" */, bool scalar/* = false */) override;
 
+    bool isSendDataNeeded() const override;
+
     void sendExternalTablesData(ExternalTablesData &) override;
 
     void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
@@ -151,7 +153,10 @@ private:
 
     void sendProfileEvents();
 
+    /// Returns true on executor timeout, meaning a retryable error.
     bool pollImpl();
+
+    bool needSendProgressOrMetrics();
 
     ContextMutablePtr query_context;
     Session session;
@@ -172,4 +177,5 @@ private:
 
     ReadBuffer * in;
 };
+
 }

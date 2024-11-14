@@ -34,6 +34,8 @@ public:
 
     void updateFromSQL(const ASTAlterNamedCollectionQuery & query);
 
+    bool usesReplicatedStorage();
+
     void loadIfNot();
 
     void shutdown();

@@ -1,4 +1,5 @@
--- Tags: no-s3-storage, no-replicated-database
+-- Tags: no-object-storage, no-replicated-database, no-shared-merge-tree
+-- no-shared-merge-tree: custom disk
 
 DROP TABLE IF EXISTS test;
 
