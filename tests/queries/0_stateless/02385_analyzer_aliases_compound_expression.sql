@@ -6,7 +6,7 @@ SELECT '--';
 
 WITH (x -> x + 1) AS lambda SELECT lambda(1);
 
-WITH (x -> x + 1) AS lambda SELECT lambda.nested(1); -- { serverError UNKNOWN_FUNCTION }
+WITH (x -> x + 1) AS lambda SELECT lambda.nested(1); -- { serverError UNKNOWN_IDENTIFIER }
 
 SELECT '--';
 
