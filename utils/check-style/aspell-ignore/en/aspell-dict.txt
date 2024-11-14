@@ -186,7 +186,6 @@ ComplexKeyCache
 ComplexKeyDirect
 ComplexKeyHashed
 Composable
-composable
 ConcurrencyControlAcquired
 ConcurrencyControlSoftLimit
 Config
@@ -405,12 +404,12 @@ ITION
 Identifiant
 IdentifierQuotingRule
 IdentifierQuotingStyle
-Incrementing
-IndexesAreNeighbors
-InfluxDB
 InJodaSyntax
 InJodaSyntaxOrNull
 InJodaSyntaxOrZero
+Incrementing
+IndexesAreNeighbors
+InfluxDB
 Instana
 IntN
 Integrations
@@ -1475,6 +1474,7 @@ combinator
 combinators
 comparising
 composable
+composable
 compressability
 concat
 concatAssumeInjective
@@ -1811,6 +1811,7 @@ geocode
 geohash
 geohashDecode
 geohashEncode
+geohashes
 geohashesInBox
 geoip
 geospatial
@@ -2355,6 +2356,7 @@ parsedatetime
 parsers
 partitionID
 partitionId
+partsupp
 pathFull
 pclmulqdq
 pcre

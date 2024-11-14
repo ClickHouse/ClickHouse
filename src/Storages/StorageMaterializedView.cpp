@@ -392,6 +392,7 @@ void StorageMaterializedView::read(
         }
 
         query_plan.addStorageHolder(storage);
+        query_plan.addInterpreterContext(context);
         query_plan.addTableLock(std::move(lock));
     }
 }
@@ -415,6 +416,7 @@ SinkToStoragePtr StorageMaterializedView::write(const ASTPtr & query, const Stor
 
     auto sink = storage->write(query, metadata_snapshot, context, async_insert);
 
+    sink->addInterpreterContext(context);
     sink->addTableLock(lock);
     return sink;
 }

@@ -102,6 +102,9 @@ public:
     std::string describe() const;
 
     void shrinkToFitInMemory();
+
+    uint64_t getBytesSize() const;
+    uint64_t getBytesAllocated() const;
 };
 
 }
