@@ -61,10 +61,14 @@ def validate_log_level(config, logs):
 
 def is_valid_utc_datetime(datetime_str):
     try:
-        datetime_obj = datetime.strptime(datetime_str, "%Y-%m-%dT%H:%M:%S.%fZ")
-        return datetime_obj.tzinfo is None
+        datetime.strptime(datetime_str, "%Y-%m-%dT%H:%M:%S.%fZ")
+        return True
     except ValueError:
-        return False
+        try:
+            datetime.strptime(datetime_str, "%Y-%m-%dT%H:%M:%SZ")  # Without milliseconds
+            return True
+        except ValueError:
+            return False
 
 
 def validate_log_config_relation(config, logs, config_type):
@@ -73,6 +77,7 @@ def validate_log_config_relation(config, logs, config_type):
 
     if config_type == "config_no_keys":
         keys_in_config.add("date_time")
+        keys_in_config.add("date_time_utc")
         keys_in_config.add("thread_name")
         keys_in_config.add("thread_id")
         keys_in_config.add("level")
