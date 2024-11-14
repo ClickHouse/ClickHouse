@@ -544,7 +544,7 @@ jobs:
       - RegressionTestsRelease
       - RegressionTestsAarch64
       - SignRelease
-    runs-on: [self-hosted, altinity-on-demand, altinity-type-cax11, altinity-arm-system-ubuntu-22.04]
+    runs-on: [self-hosted, altinity-on-demand, altinity-type-cax11, altinity-image-arm-system-ubuntu-22.04]
     steps:
       - name: Check out repository code
         uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f6
