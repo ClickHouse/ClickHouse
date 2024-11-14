@@ -10,7 +10,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 opts=(
     --enable_analyzer=1
-    --join_algorithm='parallel_hash'
     --max_threads=4
 )
 
@@ -23,6 +22,8 @@ $CLICKHOUSE_CLIENT -q "
   ORDER BY a;
 
   INSERT INTO t SELECT number FROM numbers_mt(1e6);
+
+  OPTIMIZE TABLE t FINAL;
 "
 
 query="
@@ -35,14 +36,14 @@ query="
 	FROM t
 	WHERE a IN (t0)
 	GROUP BY a
-	ORDER BY a;
+	ORDER BY a
 "
 
 $CLICKHOUSE_CLIENT "${opts[@]}" -q "EXPLAIN json=1 $query"
 
 printf "\n\n"
 
-$CLICKHOUSE_CLIENT "${opts[@]}" -q "EXPLAIN PIPELINE compact=0,graph=1 $query"
+$CLICKHOUSE_CLIENT "${opts[@]}" -q "SELECT replaceRegexpAll(explain, '(\w+)\(.*\)', '\\1') FROM (EXPLAIN PIPELINE compact=0,graph=1 $query)"
 
 printf "\n\n"
 
@@ -52,7 +53,7 @@ $CLICKHOUSE_CLIENT "${opts[@]}" --log_processors_profiles=1 --query_id="$query_i
 $CLICKHOUSE_CLIENT -q "
   SYSTEM FLUSH LOGS;
 
-  SELECT DISTINCT (processor_uniq_id, step_uniq_id)
+  SELECT DISTINCT (replaceRegexpAll(processor_uniq_id, '(\w+)\(.*\)', '\\1'), step_uniq_id)
   FROM system.processors_profile_log
   WHERE query_id = '$query_id'
   ORDER BY ALL;
