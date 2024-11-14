@@ -4,11 +4,15 @@ from praktika.result import Result
 from praktika.settings import Settings
 from praktika.utils import MetaClasses, Shell, Utils
 
+from ci.jobs.scripts.clickhouse_version import CHVersion
+
 
 class JobStages(metaclass=MetaClasses.WithIter):
     CHECKOUT_SUBMODULES = "checkout"
     CMAKE = "cmake"
+    UNSHALLOW = "unshallow"
     BUILD = "build"
+    PACKAGE = "package"
 
 
 def parse_args():
@@ -92,6 +96,24 @@ def main():
     res = True
     results = []
 
+    if res and JobStages.UNSHALLOW in stages:
+        results.append(
+            Result.create_from_command_execution(
+                name="Repo Unshallow",
+                command="git rev-parse --is-shallow-repository | grep -q true && git fetch --filter=tree:0 --depth=5000 origin $(git rev-parse --abbrev-ref HEAD)",
+                with_log=True,
+            )
+        )
+        if results[-1].is_ok():
+            try:
+                version = CHVersion.get_version()
+                print(f"Got version from repo [{version}]")
+            except Exception as e:
+                results[-1].set_failed().set_info(
+                    f"Failed to retrieve version from repo: ex [{e}]"
+                )
+        res = results[-1].is_ok()
+
     if res and JobStages.CHECKOUT_SUBMODULES in stages:
         Shell.check(f"rm -rf {build_dir} && mkdir -p {build_dir}")
         results.append(
@@ -125,6 +147,32 @@ def main():
         )
         Shell.check("sccache --show-stats")
         Shell.check(f"ls -l {build_dir}/programs/")
+        res = results[-1].is_ok()
+
+    if res and JobStages.PACKAGE in stages:
+        if "debug" in build_type:
+            package_type = "debug"
+        elif "release" in build_type:
+            package_type = "release"
+        elif "asan" in build_type:
+            package_type = "asan"
+        else:
+            assert False, "TODO"
+
+        output_dir = "/tmp/praktika/output/"
+        assert Shell.check(f"rm -f {output_dir}/*.deb")
+
+        results.append(
+            Result.create_from_command_execution(
+                name="Build Packages",
+                command=[
+                    f"DESTDIR={build_dir}/root ninja programs/install",
+                    f"ln -sf {build_dir}/root {Utils.cwd()}/packages/root && cd {Utils.cwd()}/packages/ && OUTPUT_DIR={output_dir} BUILD_TYPE={package_type} VERSION_STRING={version} ./build --deb",
+                ],
+                workdir=build_dir,
+                with_log=True,
+            )
+        )
         res = results[-1].is_ok()
 
     Result.create_from(results=results, stopwatch=stop_watch).complete_job()

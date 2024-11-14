@@ -1,3 +1,5 @@
+import glob
+import json
 import os
 import re
 import sys
@@ -58,6 +60,9 @@ class Runner:
             workflow_config.digest_dockers[docker.name] = Digest().calc_docker_digest(
                 docker, workflow.dockers
             )
+
+        # work around for old clickhouse jobs
+        os.environ["DOCKER_TAG"] = json.dumps(workflow_config.digest_dockers)
         workflow_config.dump()
 
         Result.generate_pending(job.name).dump()
@@ -119,8 +124,21 @@ class Runner:
         else:
             prefixes = [env.get_s3_prefix()] * len(required_artifacts)
         for artifact, prefix in zip(required_artifacts, prefixes):
-            s3_path = f"{Settings.S3_ARTIFACT_PATH}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/{Path(artifact.path).name}"
-            assert S3.copy_file_from_s3(s3_path=s3_path, local_path=Settings.INPUT_DIR)
+            recursive = False
+            include_pattern = ""
+            if "*" in artifact.path:
+                s3_path = f"{Settings.S3_ARTIFACT_PATH}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/"
+                recursive = True
+                include_pattern = Path(artifact.path).name
+                assert "*" in include_pattern
+            else:
+                s3_path = f"{Settings.S3_ARTIFACT_PATH}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/{Path(artifact.path).name}"
+            assert S3.copy_file_from_s3(
+                s3_path=s3_path,
+                local_path=Settings.INPUT_DIR,
+                recursive=recursive,
+                include_pattern=include_pattern,
+            )
 
         return 0
 
@@ -262,10 +280,11 @@ class Runner:
                             f"ls -l {artifact.path}", verbose=True
                         ), f"Artifact {artifact.path} not found"
                         s3_path = f"{Settings.S3_ARTIFACT_PATH}/{env.get_s3_prefix()}/{Utils.normalize_string(env.JOB_NAME)}"
-                        link = S3.copy_file_to_s3(
-                            s3_path=s3_path, local_path=artifact.path
-                        )
-                        result.set_link(link)
+                        for file_path in glob.glob(artifact.path):
+                            link = S3.copy_file_to_s3(
+                                s3_path=s3_path, local_path=file_path
+                            )
+                            result.set_link(link)
                     except Exception as e:
                         error = (
                             f"ERROR: Failed to upload artifact [{artifact}], ex [{e}]"

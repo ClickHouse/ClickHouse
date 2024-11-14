@@ -16,6 +16,11 @@ class ArtifactNames:
     CH_ARM_RELEASE = "CH_ARM_RELEASE"
     CH_ARM_ASAN = "CH_ARM_ASAN"
 
+    DEB_AMD_DEBUG = "DEB_AMD_DEBUG"
+    DEB_AMD_RELEASE = "DEB_AMD_RELEASE"
+    DEB_ARM_RELEASE = "DEB_ARM_RELEASE"
+    DEB_ARM_ASAN = "DEB_ARM_ASAN"
+
 
 style_check_job = Job.Config(
     name=JobNames.STYLE_CHECK,
@@ -41,7 +46,7 @@ fast_test_job = Job.Config(
 build_jobs = Job.Config(
     name=JobNames.BUILD,
     runs_on=["...from params..."],
-    requires=[JobNames.FAST_TEST],
+    requires=[],
     command="python3 ./ci/jobs/build_clickhouse.py --build-type {PARAMETER}",
     run_in_docker="clickhouse/fasttest",
     timeout=3600 * 2,
@@ -63,10 +68,10 @@ build_jobs = Job.Config(
 ).parametrize(
     parameter=["amd_debug", "amd_release", "arm_release", "arm_asan"],
     provides=[
-        [ArtifactNames.CH_AMD_DEBUG],
-        [ArtifactNames.CH_AMD_RELEASE],
-        [ArtifactNames.CH_ARM_RELEASE],
-        [ArtifactNames.CH_ARM_ASAN],
+        [ArtifactNames.CH_AMD_DEBUG, ArtifactNames.DEB_AMD_DEBUG],
+        [ArtifactNames.CH_AMD_RELEASE, ArtifactNames.DEB_AMD_RELEASE],
+        [ArtifactNames.CH_ARM_RELEASE, ArtifactNames.DEB_ARM_RELEASE],
+        [ArtifactNames.CH_ARM_ASAN, ArtifactNames.DEB_ARM_ASAN],
     ],
     runs_on=[
         [RunnerLabels.BUILDER_AMD],
@@ -169,6 +174,26 @@ workflow = Workflow.Config(
             name=ArtifactNames.CH_ARM_ASAN,
             type=Artifact.Type.S3,
             path=f"{Settings.TEMP_DIR}/build/programs/clickhouse",
+        ),
+        Artifact.Config(
+            name=ArtifactNames.DEB_AMD_DEBUG,
+            type=Artifact.Type.S3,
+            path=f"{Settings.TEMP_DIR}/output/*.deb",
+        ),
+        Artifact.Config(
+            name=ArtifactNames.DEB_AMD_RELEASE,
+            type=Artifact.Type.S3,
+            path=f"{Settings.TEMP_DIR}/output/*.deb",
+        ),
+        Artifact.Config(
+            name=ArtifactNames.DEB_ARM_RELEASE,
+            type=Artifact.Type.S3,
+            path=f"{Settings.TEMP_DIR}/output/*.deb",
+        ),
+        Artifact.Config(
+            name=ArtifactNames.DEB_ARM_ASAN,
+            type=Artifact.Type.S3,
+            path=f"{Settings.TEMP_DIR}/output/*.deb",
         ),
     ],
     dockers=DOCKERS,
