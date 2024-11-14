@@ -255,6 +255,7 @@
     M(PartsActive, "Active data part, used by current and upcoming SELECTs.") \
     M(AttachedDatabase, "Active databases.") \
     M(AttachedTable, "Active tables.") \
+    M(AttachedReplicatedTable, "Active replicated tables.") \
     M(AttachedView, "Active views.") \
     M(AttachedDictionary, "Active dictionaries.") \
     M(PartsOutdated, "Not active data part, but could be used by only current SELECTs, could be deleted after SELECTs finishes.") \

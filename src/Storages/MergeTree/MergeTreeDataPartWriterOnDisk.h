@@ -130,7 +130,10 @@ public:
         written_offset_columns = written_offset_columns_;
     }
 
+
     void cancel() noexcept override;
+
+    Block getColumnsSample() const override { return block_sample; }
 
 protected:
      /// Count index_granularity for block and store in `index_granularity`
