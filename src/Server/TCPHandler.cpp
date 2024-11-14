@@ -154,7 +154,7 @@ namespace DB::ErrorCodes
     // We have to distinguish the case when query is killed by `KILL QUERY` statement
     // and when it is killed by `Protocol::Client::Cancel` packet.
 
-    // When query is illed by `KILL QUERY` statement we have to end the execution
+    // When query is killed by `KILL QUERY` statement we have to end the execution
     // and send the exception to the actual client which initiated the TCP connection.
 
     // When query is killed by `Protocol::Client::Cancel` packet we just stop execution,

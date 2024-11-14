@@ -87,12 +87,10 @@ StatusFile::StatusFile(std::string path_, FillFunction fill_)
         try
         {
             fill(out);
-            /// Finalize here to avoid throwing exceptions in destructor.
             out.finalize();
         }
         catch (...)
         {
-            /// Finalize in case of exception to avoid throwing exceptions in destructor
             out.cancel();
             throw;
         }

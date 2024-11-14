@@ -449,12 +449,10 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     }
     catch (const NetException &)
     {
-        //std::cerr << "write throw NetException exception: " << getCurrentExceptionMessage(true) << '\n';
         throw;
     }
     catch (const ErrnoException &)
     {
-        //std::cerr << "write throw ErrnoException exception: " << getCurrentExceptionMessage(true) << '\n';
         throw;
     }
     catch (const Exception &)
@@ -555,7 +553,6 @@ try
 
             ShellCommand::Config config(pager);
             config.pipe_stdin_only = true;
-            //std::cerr << "create pager cmd " << config.command << std::endl;
             pager_cmd = ShellCommand::execute(config);
             out_buf = &pager_cmd->in;
         }

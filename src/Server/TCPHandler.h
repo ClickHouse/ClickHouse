@@ -119,8 +119,6 @@ struct QueryState
     /// Timeouts setter for current query
     std::unique_ptr<TimeoutSetter> timeout_setter;
 
-    std::mutex mutex;
-
     void finalizeOut(std::shared_ptr<WriteBufferFromPocoSocketChunked> & raw_out) const
     {
         if (maybe_compressed_out && maybe_compressed_out.get() != raw_out.get())
@@ -241,8 +239,8 @@ private:
     std::optional<UInt64> nonce;
     String cluster;
 
-    /// `callback_mutex` protects using `out` (WriteBuffer) and `in` (ReadBuffer) inside callback.
-    /// So it is used for method sendData(), sendProgress(), sendLogs() along with all callbacks which interact with that buffers
+    /// `callback_mutex` protects using `out` (WriteBuffer), `in` (ReadBuffer) and other members concurrent inside callbacks.
+    /// All the methods which are run inside callbacks are marked with TSA_REQUIRES.
     std::mutex callback_mutex;
 
     /// Last block input parameters are saved to be able to receive unexpected data packet sent after exception.
@@ -272,7 +270,6 @@ private:
     String receiveReadTaskResponse(QueryState & state) TSA_REQUIRES(callback_mutex);
     std::optional<ParallelReadResponse> receivePartitionMergeTreeReadTaskResponse(QueryState & state) TSA_REQUIRES(callback_mutex);
 
-    //bool receivePacket(std::optional<QueryState> & state);
     void processCancel(QueryState & state, bool throw_exception = true) TSA_REQUIRES(callback_mutex);
     void processQuery(std::optional<QueryState> & state);
     void processIgnoredPartUUIDs();

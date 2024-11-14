@@ -892,7 +892,6 @@ void Connection::sendQuery(
 
 void Connection::sendCancel()
 {
-    LOG_DEBUG(log_wrapper.get(), "send cancel from {}", StackTrace().toString());
     /// If we already disconnected.
     if (!out)
         return;
