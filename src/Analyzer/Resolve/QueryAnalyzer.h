@@ -249,7 +249,7 @@ private:
     void resolveUnion(const QueryTreeNodePtr & union_node, IdentifierResolveScope & scope);
 
     /// Lambdas that are currently in resolve process
-    std::unordered_set<IQueryTreeNode *> lambdas_in_resolve_process;
+    QueryTreeNodePtrWithHashSet lambdas_in_resolve_process;
 
     /// CTEs that are currently in resolve process
     std::unordered_set<std::string_view> ctes_in_resolve_process;
