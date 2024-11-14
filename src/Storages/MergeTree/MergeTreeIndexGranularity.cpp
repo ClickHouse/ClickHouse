@@ -65,11 +65,11 @@ size_t MergeTreeIndexGranularity::getMarkStartingRow(size_t mark_index) const
     if (compressed)
     {
         size_t value;
-        if (mark_index < compressed)
+        if (mark_index <= compressed)
             value = mark_index * uncompressed_marks_partial_sums[0];
         else
         {
-            value = marks_rows_partial_sums[mark_index];
+            value = uncompressed_marks_partial_sums[mark_index - compressed];
         }
 #ifdef DEBUG_MARKS
         size_t uncompressed_value = mark_index == 0 ? 0 : marks_rows_partial_sums[mark_index - 1];
@@ -116,7 +116,8 @@ size_t MergeTreeIndexGranularity::getTotalRows() const
 {
     if (compressed)
     {
-        size_t value = uncompressed_marks_partial_sums.back();
+        size_t value = uncompressed_marks_partial_sums.size() == 1 ? uncompressed_marks_partial_sums.front() * compressed
+                                                                   : uncompressed_marks_partial_sums.back();
 
 #ifdef DEBUG_MARKS
         size_t uncompressed_value = marks_rows_partial_sums.empty() ? 0 : marks_rows_partial_sums.back();
@@ -240,8 +241,10 @@ size_t MergeTreeIndexGranularity::getMarkForRow(size_t row) const
         }
         else
         {
-            auto it = std::upper_bound(uncompressed_marks_partial_sums.begin() + 1, uncompressed_marks_partial_sums.end(), row);
-            result = it - uncompressed_marks_partial_sums.begin() + compressed;
+            /// Skip the first element, which saves the granularity of the compressed marks
+            auto start = uncompressed_marks_partial_sums.begin() + 1;
+            auto it = std::upper_bound(start, uncompressed_marks_partial_sums.end(), row);
+            result = it - start + compressed;
         }
 
 #ifdef DEBUG_MARKS
