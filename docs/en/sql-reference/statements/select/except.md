@@ -30,7 +30,7 @@ The condition could be any expression based on your requirements.
 Additionally, `EXCEPT()` can be used to exclude columns from a result in the same table, as is possible with BigQuery (Google Cloud), using the following syntax:
 
 ```sql
-SELECT column1 [, column2 ] EXCEPT(column3 [, column4]) 
+SELECT column1 [, column2 ] EXCEPT (column3 [, column4]) 
 FROM table1 
 [WHERE condition]
 ```
