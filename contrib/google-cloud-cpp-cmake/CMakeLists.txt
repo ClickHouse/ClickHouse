@@ -24,6 +24,32 @@ set(GOOGLE_CLOUD_PUBLIC_INCLUDES)
 set(GOOGLE_CLOUD_PRIVATE_INCLUDES)
 set(GOOGLE_CLOUD_PRIVATE_LIBS)
 
+# -- The build needs protobuf files. The original build scripts download them from a remote server (see target 'googleapis_download').
+#    This is too unreliable in the context of ClickHouse ... we instead ship the downloaded archive with the ClickHouse source and
+#    extract it into the build directory directly.
+
+# Note: The hash must match the Google Cloud Api version, otherwise funny things will happen.
+# Find the right hash in "strip-prefix" in MODULE.bazel in the subrepository
+set(PB_HASH "e60db19f11f94175ac682c5898cce0f77cc508ea")
+set(PB_ARCHIVE "${PB_HASH}.tar.gz")
+set(PB_DIR "googleapis-${PB_HASH}")
+
+# Terrible CMake below but it works.
+file(COPY "${ClickHouse_SOURCE_DIR}/contrib/google-cloud-cpp-cmake/${PB_ARCHIVE}"
+    DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/../../external/googleapis/src/"
+)
+
+file(ARCHIVE_EXTRACT INPUT
+    "${CMAKE_CURRENT_BINARY_DIR}/../../external/googleapis/src/${PB_ARCHIVE}"
+    DESTINATION
+    "${CMAKE_CURRENT_BINARY_DIR}/../../external/googleapis/src")
+
+file(RENAME
+    "${CMAKE_CURRENT_BINARY_DIR}/../../external/googleapis/src/${PB_DIR}"
+    "${CMAKE_CURRENT_BINARY_DIR}/../../external/googleapis/src/googleapis_download"
+)
+# ---
+
 # Directories.
 SET(GOOGLE_CLOUD_DIR "${ClickHouse_SOURCE_DIR}/contrib/google-cloud-cpp" )
 list(APPEND GOOGLE_CLOUD_PRIVATE_INCLUDES "${GOOGLE_CLOUD_DIR}")
