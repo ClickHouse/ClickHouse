@@ -45,6 +45,10 @@ void Expected::highlight(HighlightedRange range)
         return;
 
     auto it = highlights.lower_bound(range);
+
+    if (it != highlights.begin())
+        it = std::prev(it);
+
     while (it != highlights.end() && range.begin < it->end)
     {
         if (intersects(range.begin, range.end, it->begin, it->end))
