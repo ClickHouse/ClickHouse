@@ -1160,7 +1160,6 @@ argMax
 argMin
 argmax
 argmin
-arrayAUC
 arrayAll
 arrayAvg
 arrayCompact
@@ -1211,6 +1210,7 @@ arrayReverse
 arrayReverseFill
 arrayReverseSort
 arrayReverseSplit
+arrayRocAUC
 arrayRotateLeft
 arrayRotateRight
 arrayShiftLeft
