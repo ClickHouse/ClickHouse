@@ -666,7 +666,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
     bool is_single_table_expression,
     bool wrap_read_columns_in_subquery)
 {
-    auto query_context = planner_context->getQueryContext();
+    const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
 
     auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
@@ -923,7 +923,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         columns_names,
                         storage_snapshot,
                         table_expression_query_info,
-                        mutable_context,
+                        std::move(mutable_context),
                         from_stage,
                         max_block_size,
                         max_streams);
