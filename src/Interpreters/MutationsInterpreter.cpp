@@ -53,6 +53,7 @@ namespace Setting
     extern const SettingsBool allow_nondeterministic_mutations;
     extern const SettingsUInt64 max_block_size;
     extern const SettingsBool use_concurrency_control;
+    extern const SettingsBool validate_mutation_query;
 }
 
 namespace MergeTreeSetting
@@ -1383,6 +1384,18 @@ void MutationsInterpreter::validate()
                                 "Cannot update column {} with type {}: updates of columns with dynamic subcolumns are not supported",
                                 backQuote(column_name), storage_columns.getColumn(GetColumnsOptions::Ordinary, column_name).type->getName());
             }
+        }
+    }
+
+    // Make sure the mutation query is valid
+    if (context->getSettingsRef()[Setting::validate_mutation_query])
+    {
+        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            prepareQueryAffectedQueryTree(commands, source.getStorage(), context);
+        else
+        {
+            ASTPtr select_query = prepareQueryAffectedAST(commands, source.getStorage(), context);
+            InterpreterSelectQuery(select_query, context, source.getStorage(), metadata_snapshot);
         }
     }
 
