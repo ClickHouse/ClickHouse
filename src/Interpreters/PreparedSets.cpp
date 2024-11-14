@@ -1,21 +1,22 @@
 #include <chrono>
 #include <variant>
-#include <Interpreters/PreparedSets.h>
-#include <Interpreters/Set.h>
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
-#include <IO/Operators.h>
-#include <Common/logger_useful.h>
+#include <Core/Block.h>
 #include <Core/Settings.h>
-#include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <IO/Operators.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/PreparedSets.h>
+#include <Interpreters/ProcessorsProfileLog.h>
+#include <Interpreters/Set.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Sinks/NullSink.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Core/Block.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/SizeLimits.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -255,6 +256,8 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     /// the pipeline without setting `set_and_key->set->is_created` to true.
     if (!set_and_key->set->isCreated())
         return nullptr;
+
+    logProcessorProfile(context, pipeline.getProcessors());
 
     return set_and_key->set;
 }

@@ -1059,8 +1059,6 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     if (start_mark >= end_mark)
         return res;
 
-    const auto & index = part->getIndex();
-
     bool key_condition_useful = !key_condition.alwaysUnknownOrTrue();
     bool part_offset_condition_useful = part_offset_condition && !part_offset_condition->alwaysUnknownOrTrue();
 
@@ -1079,14 +1077,19 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     auto index_columns = std::make_shared<ColumnsWithTypeAndName>();
     const auto & key_indices = key_condition.getKeyIndices();
     DataTypes key_types;
-    for (size_t i : key_indices)
+    if (!key_indices.empty())
     {
-        if (i < index->size())
-            index_columns->emplace_back(index->at(i), primary_key.data_types[i], primary_key.column_names[i]);
-        else
-            index_columns->emplace_back(); /// The column of the primary key was not loaded in memory - we'll skip it.
+        const auto & index = part->getIndex();
 
-        key_types.emplace_back(primary_key.data_types[i]);
+        for (size_t i : key_indices)
+        {
+            if (i < index->size())
+                index_columns->emplace_back(index->at(i), primary_key.data_types[i], primary_key.column_names[i]);
+            else
+                index_columns->emplace_back(); /// The column of the primary key was not loaded in memory - we'll skip it.
+
+            key_types.emplace_back(primary_key.data_types[i]);
+        }
     }
 
     /// If there are no monotonic functions, there is no need to save block reference.
