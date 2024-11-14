@@ -6,14 +6,15 @@
 namespace DB
 {
 
-NamesAndTypesList StorageSystemDatabaseEngines::getNamesAndTypes()
+ColumnsDescription StorageSystemDatabaseEngines::getColumnsDescription()
 {
-    return {
-        {"name", std::make_shared<DataTypeString>()},
+    return ColumnsDescription
+    {
+        {"name", std::make_shared<DataTypeString>(), "The name of database engine."},
     };
 }
 
-void StorageSystemDatabaseEngines::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
+void StorageSystemDatabaseEngines::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     for (const auto & [engine, _] : DatabaseFactory::instance().getDatabaseEngines())
     {

@@ -33,7 +33,7 @@ PasteJoinAlgorithm::PasteJoinAlgorithm(
     size_t max_block_size_)
     : table_join(table_join_)
     , max_block_size(max_block_size_)
-    , log(&Poco::Logger::get("PasteJoinAlgorithm"))
+    , log(getLogger("PasteJoinAlgorithm"))
 {
     if (input_headers.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "PasteJoinAlgorithm requires exactly two inputs");
@@ -56,6 +56,16 @@ static void prepareChunk(Chunk & chunk)
     auto columns = chunk.detachColumns();
 
     chunk.setColumns(std::move(columns), num_rows);
+}
+
+IMergingAlgorithm::MergedStats PasteJoinAlgorithm::getMergedStats() const
+{
+    return
+    {
+        .bytes = stat.num_bytes[0] + stat.num_bytes[1],
+        .rows = stat.num_rows[0] + stat.num_rows[1],
+        .blocks = stat.num_blocks[0] + stat.num_blocks[1],
+    };
 }
 
 void PasteJoinAlgorithm::initialize(Inputs inputs)
@@ -117,7 +127,7 @@ PasteJoinTransform::PasteJoinTransform(
         /* always_read_till_end_= */ false,
         /* empty_chunk_on_finish_= */ true,
         table_join, input_headers, max_block_size)
-    , log(&Poco::Logger::get("PasteJoinTransform"))
+    , log(getLogger("PasteJoinTransform"))
 {
     LOG_TRACE(log, "Use PasteJoinTransform");
 }

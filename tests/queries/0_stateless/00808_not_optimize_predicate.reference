@@ -24,6 +24,6 @@ FROM
         n,
         finalizeAggregation(s)
     FROM test_00808_push_down_with_finalizeAggregation
-    PREWHERE (n <= 5) AND (n >= 2)
+    WHERE (n <= 5) AND (n >= 2)
 )
 WHERE (n >= 2) AND (n <= 5)

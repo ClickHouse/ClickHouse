@@ -24,7 +24,7 @@ public:
         : table_join(table_join_)
         , right_sample_block(right_sample_block_)
     {
-        LOG_TRACE(&Poco::Logger::get("PasteJoin"), "Will use paste join");
+        LOG_TRACE(getLogger("PasteJoin"), "Will use paste join");
     }
 
     std::string getName() const override { return "PasteJoin"; }

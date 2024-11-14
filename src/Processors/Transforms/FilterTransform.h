@@ -22,11 +22,8 @@ public:
         const Block & header_, ExpressionActionsPtr expression_, String filter_column_name_,
         bool remove_filter_column_, bool on_totals_ = false, std::shared_ptr<std::atomic<size_t>> rows_filtered_ = nullptr);
 
-    static Block transformHeader(
-            Block header,
-            const ActionsDAG * expression,
-            const String & filter_column_name,
-            bool remove_filter_column);
+    static Block
+    transformHeader(const Block & header, const ActionsDAG * expression, const String & filter_column_name, bool remove_filter_column);
 
     String getName() const override { return "FilterTransform"; }
 
@@ -51,7 +48,7 @@ private:
     bool are_prepared_sets_initialized = false;
 
     void doTransform(Chunk & chunk);
-    void removeFilterIfNeed(Chunk & chunk) const;
+    void removeFilterIfNeed(Columns & columns) const;
 };
 
 }

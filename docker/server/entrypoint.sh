@@ -4,17 +4,28 @@ set -eo pipefail
 shopt -s nullglob
 
 DO_CHOWN=1
-if [ "${CLICKHOUSE_DO_NOT_CHOWN:-0}" = "1" ]; then
+if [[ "${CLICKHOUSE_RUN_AS_ROOT:=0}" = "1" || "${CLICKHOUSE_DO_NOT_CHOWN:-0}" = "1" ]]; then
     DO_CHOWN=0
 fi
 
-CLICKHOUSE_UID="${CLICKHOUSE_UID:-"$(id -u clickhouse)"}"
-CLICKHOUSE_GID="${CLICKHOUSE_GID:-"$(id -g clickhouse)"}"
+# CLICKHOUSE_UID and CLICKHOUSE_GID are kept for backward compatibility, but deprecated
+# One must use either "docker run --user" or CLICKHOUSE_RUN_AS_ROOT=1 to run the process as
+# FIXME: Remove ALL CLICKHOUSE_UID CLICKHOUSE_GID before 25.3
+if [[ "${CLICKHOUSE_UID:-}" || "${CLICKHOUSE_GID:-}" ]]; then
+    echo 'WARNING: Support for CLICKHOUSE_UID/CLICKHOUSE_GID will be removed in a couple of releases.' >&2
+    echo 'WARNING: Either use a proper "docker run --user=xxx:xxxx" argument instead of CLICKHOUSE_UID/CLICKHOUSE_GID' >&2
+    echo 'WARNING: or set "CLICKHOUSE_RUN_AS_ROOT=1" ENV to run the clickhouse-server as root:root' >&2
+fi
 
-# support --user
-if [ "$(id -u)" = "0" ]; then
-    USER=$CLICKHOUSE_UID
-    GROUP=$CLICKHOUSE_GID
+# support `docker run --user=xxx:xxxx`
+if [[ "$(id -u)" = "0" ]]; then
+    if [[ "$CLICKHOUSE_RUN_AS_ROOT" = 1 ]]; then
+        USER=0
+        GROUP=0
+    else
+        USER="${CLICKHOUSE_UID:-"$(id -u clickhouse)"}"
+        GROUP="${CLICKHOUSE_GID:-"$(id -g clickhouse)"}"
+    fi
 else
     USER="$(id -u)"
     GROUP="$(id -g)"
@@ -41,31 +52,28 @@ readarray -t DISKS_PATHS < <(clickhouse extract-from-config --config-file "$CLIC
 readarray -t DISKS_METADATA_PATHS < <(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key='storage_configuration.disks.*.metadata_path' || true)
 
 CLICKHOUSE_USER="${CLICKHOUSE_USER:-default}"
+CLICKHOUSE_PASSWORD_FILE="${CLICKHOUSE_PASSWORD_FILE:-}"
+if [[ -n "${CLICKHOUSE_PASSWORD_FILE}" && -f "${CLICKHOUSE_PASSWORD_FILE}" ]]; then
+  CLICKHOUSE_PASSWORD="$(cat "${CLICKHOUSE_PASSWORD_FILE}")"
+fi
 CLICKHOUSE_PASSWORD="${CLICKHOUSE_PASSWORD:-}"
 CLICKHOUSE_DB="${CLICKHOUSE_DB:-}"
 CLICKHOUSE_ACCESS_MANAGEMENT="${CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT:-0}"
 
-for dir in "$DATA_DIR" \
-  "$ERROR_LOG_DIR" \
-  "$LOG_DIR" \
-  "$TMP_DIR" \
-  "$USER_PATH" \
-  "$FORMAT_SCHEMA_PATH" \
-  "${DISKS_PATHS[@]}" \
-  "${DISKS_METADATA_PATHS[@]}"
-do
+function create_directory_and_do_chown() {
+    local dir=$1
     # check if variable not empty
-    [ -z "$dir" ] && continue
+    [ -z "$dir" ] && return
     # ensure directories exist
     if [ "$DO_CHOWN" = "1" ]; then
-        mkdir="mkdir"
+        mkdir=( mkdir )
     else
         # if DO_CHOWN=0 it means that the system does not map root user to "admin" permissions
         # it mainly happens on NFS mounts where root==nobody for security reasons
         # thus mkdir MUST run with user id/gid and not from nobody that has zero permissions
-        mkdir="/usr/bin/clickhouse su "${USER}:${GROUP}" mkdir"
+        mkdir=( clickhouse su "${USER}:${GROUP}" mkdir )
     fi
-    if ! $mkdir -p "$dir"; then
+    if ! "${mkdir[@]}" -p "$dir"; then
         echo "Couldn't create necessary directory: $dir"
         exit 1
     fi
@@ -77,6 +85,23 @@ do
             chown -R "$USER:$GROUP" "$dir"
         fi
     fi
+}
+
+create_directory_and_do_chown "$DATA_DIR"
+
+# Change working directory to $DATA_DIR in case there're paths relative to $DATA_DIR, also avoids running
+# clickhouse-server at root directory.
+cd "$DATA_DIR"
+
+for dir in "$ERROR_LOG_DIR" \
+  "$LOG_DIR" \
+  "$TMP_DIR" \
+  "$USER_PATH" \
+  "$FORMAT_SCHEMA_PATH" \
+  "${DISKS_PATHS[@]}" \
+  "${DISKS_METADATA_PATHS[@]}"
+do
+    create_directory_and_do_chown "$dir"
 done
 
 # if clickhouse user is defined - create it (user "default" already exists out of box)
@@ -95,7 +120,7 @@ if [ -n "$CLICKHOUSE_USER" ] && [ "$CLICKHOUSE_USER" != "default" ] || [ -n "$CL
           <networks>
             <ip>::/0</ip>
           </networks>
-          <password>${CLICKHOUSE_PASSWORD}</password>
+          <password><![CDATA[${CLICKHOUSE_PASSWORD//]]>/]]]]><![CDATA[>}]]></password>
           <quota>default</quota>
           <access_management>${CLICKHOUSE_ACCESS_MANAGEMENT}</access_management>
         </${CLICKHOUSE_USER}>
@@ -104,13 +129,19 @@ if [ -n "$CLICKHOUSE_USER" ] && [ "$CLICKHOUSE_USER" != "default" ] || [ -n "$CL
 EOT
 fi
 
+CLICKHOUSE_ALWAYS_RUN_INITDB_SCRIPTS="${CLICKHOUSE_ALWAYS_RUN_INITDB_SCRIPTS:-}"
+
 # checking $DATA_DIR for initialization
 if [ -d "${DATA_DIR%/}/data" ]; then
     DATABASE_ALREADY_EXISTS='true'
 fi
 
-# only run initialization on an empty data directory
-if [ -z "${DATABASE_ALREADY_EXISTS}" ]; then
+# run initialization if flag CLICKHOUSE_ALWAYS_RUN_INITDB_SCRIPTS is not empty or data directory is empty
+if [[ -n "${CLICKHOUSE_ALWAYS_RUN_INITDB_SCRIPTS}" || -z "${DATABASE_ALREADY_EXISTS}" ]]; then
+  RUN_INITDB_SCRIPTS='true'
+fi
+
+if [ -n "${RUN_INITDB_SCRIPTS}" ]; then
     if [ -n "$(ls /docker-entrypoint-initdb.d/)" ] || [ -n "$CLICKHOUSE_DB" ]; then
         # port is needed to check if clickhouse-server is ready for connections
         HTTP_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=http_port --try)"
@@ -123,7 +154,7 @@ if [ -z "${DATABASE_ALREADY_EXISTS}" ]; then
         fi
 
         # Listen only on localhost until the initialization is done
-        /usr/bin/clickhouse su "${USER}:${GROUP}" /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" -- --listen_host=127.0.0.1 &
+        clickhouse su "${USER}:${GROUP}" clickhouse-server --config-file="$CLICKHOUSE_CONFIG" -- --listen_host=127.0.0.1 &
         pid="$!"
 
         # check if clickhouse is ready to accept connections
@@ -131,7 +162,7 @@ if [ -z "${DATABASE_ALREADY_EXISTS}" ]; then
         tries=${CLICKHOUSE_INIT_TIMEOUT:-1000}
         while ! wget --spider --no-check-certificate -T 1 -q "$URL" 2>/dev/null; do
             if [ "$tries" -le "0" ]; then
-                echo >&2 'ClickHouse init process failed.'
+                echo >&2 'ClickHouse init process timeout.'
                 exit 1
             fi
             tries=$(( tries-1 ))
@@ -183,18 +214,8 @@ if [[ $# -lt 1 ]] || [[ "$1" == "--"* ]]; then
     CLICKHOUSE_WATCHDOG_ENABLE=${CLICKHOUSE_WATCHDOG_ENABLE:-0}
     export CLICKHOUSE_WATCHDOG_ENABLE
 
-    # An option for easy restarting and replacing clickhouse-server in a container, especially in Kubernetes.
-    # For example, you can replace the clickhouse-server binary to another and restart it while keeping the container running.
-    if [[ "${CLICKHOUSE_DOCKER_RESTART_ON_EXIT:-0}" -eq "1" ]]; then
-        while true; do
-            # This runs the server as a child process of the shell script:
-            /usr/bin/clickhouse su "${USER}:${GROUP}" /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" "$@" ||:
-            echo >&2 'ClickHouse Server exited, and the environment variable CLICKHOUSE_DOCKER_RESTART_ON_EXIT is set to 1. Restarting the server.'
-        done
-    else
-        # This replaces the shell script with the server:
-        exec /usr/bin/clickhouse su "${USER}:${GROUP}" /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" "$@"
-    fi
+    # This replaces the shell script with the server:
+    exec clickhouse su "${USER}:${GROUP}" clickhouse-server --config-file="$CLICKHOUSE_CONFIG" "$@"
 fi
 
 # Otherwise, we assume the user want to run his own process, for example a `bash` shell to explore this image

@@ -48,10 +48,10 @@ private:
             set(b);
         }
 
-        MemoryToken(MemoryToken && t)
+        MemoryToken(MemoryToken && t) /// NOLINT
           : parent(std::exchange(t.parent, nullptr)), bytes(std::exchange(t.bytes, 0)) {}
 
-        MemoryToken & operator=(MemoryToken && t)
+        MemoryToken & operator=(MemoryToken && t) /// NOLINT
         {
             parent = std::exchange(t.parent, nullptr);
             bytes = std::exchange(t.bytes, 0);
@@ -79,7 +79,7 @@ private:
 
         MemoryToken mem;
 
-        ColumnChunk(ParquetBlockOutputFormat * p) : mem(p) {}
+        explicit ColumnChunk(ParquetBlockOutputFormat * p) : mem(p) {}
     };
 
     struct RowGroupState
@@ -112,7 +112,7 @@ private:
     void consume(Chunk) override;
     void finalizeImpl() override;
     void resetFormatterImpl() override;
-    void onCancel() override;
+    void onCancel() noexcept override;
 
     void writeRowGroup(std::vector<Chunk> chunks);
     void writeUsingArrow(std::vector<Chunk> chunks);
@@ -138,6 +138,8 @@ private:
     Parquet::WriteOptions options;
     Parquet::SchemaElements schema;
     std::vector<parquet::format::RowGroup> row_groups_complete;
+    std::vector<std::vector<parquet::format::ColumnIndex>> column_indexes;
+    std::vector<std::vector<parquet::format::OffsetIndex>> offset_indexes;
     size_t base_offset = 0;
 
 

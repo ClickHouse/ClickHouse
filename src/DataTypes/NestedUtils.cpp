@@ -3,7 +3,7 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include "Columns/IColumn.h"
 
 #include <DataTypes/DataTypeArray.h>
@@ -16,6 +16,7 @@
 #include <Columns/ColumnConst.h>
 
 #include <Parsers/IAST.h>
+#include <Storages/ColumnsDescription.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
 
@@ -294,6 +295,12 @@ Names getAllNestedColumnsForTable(const Block & block, const std::string & table
     return names;
 }
 
+bool isSubcolumnOfNested(const String & column_name, const ColumnsDescription & columns)
+{
+    auto nested_subcolumn = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+    return nested_subcolumn && isNested(nested_subcolumn->getTypeInStorage()) && nested_subcolumn->isSubcolumn() && isArray(nested_subcolumn->type);
+}
+
 }
 
 NestedColumnExtractHelper::NestedColumnExtractHelper(const Block & block_, bool case_insentive_)
@@ -345,10 +352,8 @@ std::optional<ColumnWithTypeAndName> NestedColumnExtractHelper::extractColumn(
                 column.name = original_column_name;
             return {std::move(column)};
         }
-        else
-        {
-            return {};
-        }
+
+        return {};
     }
 
     if (!nested_table->has(new_column_name_prefix, case_insentive))

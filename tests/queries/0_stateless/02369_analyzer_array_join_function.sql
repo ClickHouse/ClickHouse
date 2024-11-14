@@ -1,4 +1,4 @@
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 SELECT arrayJoin([1, 2, 3]);
 
@@ -22,9 +22,9 @@ SELECT '--';
 
 SELECT arrayMap(x -> arrayJoin([1, 2, 3]), [1, 2, 3]);
 
-SELECT arrayMap(x -> arrayJoin(x), [[1, 2, 3]]); -- { serverError 36 }
+SELECT arrayMap(x -> arrayJoin(x), [[1, 2, 3]]); -- { serverError BAD_ARGUMENTS }
 
-SELECT arrayMap(x -> arrayJoin(cast(x, 'Array(UInt8)')), [[1, 2, 3]]); -- { serverError 36 }
+SELECT arrayMap(x -> arrayJoin(cast(x, 'Array(UInt8)')), [[1, 2, 3]]); -- { serverError BAD_ARGUMENTS }
 
 SELECT '--';
 

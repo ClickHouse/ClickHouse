@@ -2,6 +2,7 @@ import logging
 import sys
 
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 
@@ -93,10 +94,18 @@ def test_join_s3(cluster):
         "CREATE TABLE testLocalJoin(`id` UInt64, `val` String) ENGINE = Join(ANY, LEFT, id)"
     )
     node.query(
-        "CREATE TABLE testS3Join(`id` UInt64, `val` String) ENGINE = Join(ANY, LEFT, id) SETTINGS disk='s3'"
+        "CREATE TABLE testS3Join(`id` UInt64, `val` String) ENGINE = Join(ANY, LEFT, id) SETTINGS disk='s3', join_any_take_last_row = 1"
     )
 
     node.query("INSERT INTO testLocalJoin VALUES (1, 'a')")
+    for i in range(1, 10):
+        c = chr(ord("a") + i)
+        node.query(f"INSERT INTO testLocalJoin VALUES (1, '{c}')")
+
+    # because of `join_any_take_last_row = 1` we expect the last row with 'a' value
+    for i in range(1, 10):
+        c = chr(ord("a") + i)
+        node.query(f"INSERT INTO testS3Join VALUES (1, '{c}')")
     node.query("INSERT INTO testS3Join VALUES (1, 'a')")
 
     assert (
@@ -105,7 +114,7 @@ def test_join_s3(cluster):
         )
         == "\t\na\ta\n\t\n"
     )
-    assert_objects_count(cluster, 1)
+    assert_objects_count(cluster, 10)
 
     node.query("INSERT INTO testLocalJoin VALUES (2, 'b')")
     node.query("INSERT INTO testS3Join VALUES (2, 'b')")
@@ -116,7 +125,7 @@ def test_join_s3(cluster):
         )
         == "\t\na\ta\nb\tb\n"
     )
-    assert_objects_count(cluster, 2)
+    assert_objects_count(cluster, 11)
 
     node.restart_clickhouse()
     assert (

@@ -9,6 +9,7 @@
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadSettings.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Compression/CompressedReadBufferFromFile.h>
@@ -23,7 +24,7 @@ static void checkByCompressedReadBuffer(const std::string & mrk_path, const std:
     DB::CompressedReadBufferFromFile bin_in(DB::createReadBufferFromFileBase(bin_path, /* settings= */ {}));
 
     DB::WriteBufferFromFileDescriptor out(STDOUT_FILENO);
-    bool mrk2_format = boost::algorithm::ends_with(mrk_path, ".mrk2");
+    bool mrk2_format = mrk_path.ends_with(".mrk2");
 
     for (size_t mark_num = 0; !mrk_in.eof(); ++mark_num)
     {

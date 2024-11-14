@@ -3,6 +3,9 @@ connect_timeout	Seconds	10
 connect_timeout_with_failover_ms	Milliseconds	2000
 connect_timeout_with_failover_secure_ms	Milliseconds	3000
 external_storage_connect_timeout_sec	UInt64	10
+s3_connect_timeout_ms	UInt64	1000
 filesystem_prefetch_max_memory_usage	UInt64	1073741824
+max_memory_usage	UInt64	5000000000
+max_memory_usage_for_user	UInt64	32000000000
 max_untracked_memory	UInt64	1048576
 memory_profiler_step	UInt64	1048576

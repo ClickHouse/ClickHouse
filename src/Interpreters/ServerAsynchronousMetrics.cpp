@@ -9,6 +9,8 @@
 #include <Interpreters/Cache/QueryCache.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 
+#include <Common/PageCache.h>
+
 #include <Databases/IDatabase.h>
 
 #include <IO/UncompressedCache.h>
@@ -51,11 +53,15 @@ void calculateMaxAndSum(Max & max, Sum & sum, T x)
 
 ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     ContextPtr global_context_,
-    int update_period_seconds,
-    int heavy_metrics_update_period_seconds,
-    const ProtocolServerMetricsFunc & protocol_server_metrics_func_)
+    unsigned update_period_seconds,
+    bool update_heavy_metrics_,
+    unsigned heavy_metrics_update_period_seconds,
+    const ProtocolServerMetricsFunc & protocol_server_metrics_func_,
+    bool update_jemalloc_epoch_,
+    bool update_rss_)
     : WithContext(global_context_)
-    , AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_)
+    , AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_, update_jemalloc_epoch_, update_rss_)
+    , update_heavy_metrics(update_heavy_metrics_)
     , heavy_metric_update_period(heavy_metrics_update_period_seconds)
 {
     /// sanity check
@@ -69,12 +75,22 @@ ServerAsynchronousMetrics::~ServerAsynchronousMetrics()
     stop();
 }
 
-void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values, TimePoint update_time, TimePoint current_time)
+void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint current_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values)
 {
     if (auto mark_cache = getContext()->getMarkCache())
     {
         new_values["MarkCacheBytes"] = { mark_cache->sizeInBytes(), "Total size of mark cache in bytes" };
         new_values["MarkCacheFiles"] = { mark_cache->count(), "Total number of mark files cached in the mark cache" };
+    }
+
+    if (auto page_cache = getContext()->getPageCache())
+    {
+        auto rss = page_cache->getResidentSetSize();
+        new_values["PageCacheBytes"] = { rss.page_cache_rss, "Userspace page cache memory usage in bytes" };
+        new_values["PageCachePinnedBytes"] = { page_cache->getPinnedSize(), "Userspace page cache memory that's currently in use and can't be evicted" };
+
+        if (rss.unreclaimable_rss.has_value())
+            new_values["UnreclaimableRSS"] = { *rss.unreclaimable_rss, "The amount of physical memory used by the server process, in bytes, excluding memory reclaimable by the OS (MADV_FREE)" };
     }
 
     if (auto uncompressed_cache = getContext()->getUncompressedCache())
@@ -198,27 +214,47 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
             auto total = disk->getTotalSpace();
 
             /// Some disks don't support information about the space.
-            if (!total)
-                continue;
-
-            auto available = disk->getAvailableSpace();
-            auto unreserved = disk->getUnreservedSpace();
-
-            new_values[fmt::format("DiskTotal_{}", name)] = { *total,
-                "The total size in bytes of the disk (virtual filesystem). Remote filesystems may not provide this information." };
-
-            if (available)
+            if (total)
             {
-                new_values[fmt::format("DiskUsed_{}", name)] = { *total - *available,
-                    "Used bytes on the disk (virtual filesystem). Remote filesystems not always provide this information." };
+                auto available = disk->getAvailableSpace();
+                auto unreserved = disk->getUnreservedSpace();
 
-                new_values[fmt::format("DiskAvailable_{}", name)] = { *available,
-                    "Available bytes on the disk (virtual filesystem). Remote filesystems may not provide this information." };
+                new_values[fmt::format("DiskTotal_{}", name)] = { *total,
+                    "The total size in bytes of the disk (virtual filesystem). Remote filesystems may not provide this information." };
+
+                if (available)
+                {
+                    new_values[fmt::format("DiskUsed_{}", name)] = { *total - *available,
+                        "Used bytes on the disk (virtual filesystem). Remote filesystems not always provide this information." };
+
+                    new_values[fmt::format("DiskAvailable_{}", name)] = { *available,
+                        "Available bytes on the disk (virtual filesystem). Remote filesystems may not provide this information." };
+                }
+
+                if (unreserved)
+                    new_values[fmt::format("DiskUnreserved_{}", name)] = { *unreserved,
+                        "Available bytes on the disk (virtual filesystem) without the reservations for merges, fetches, and moves. Remote filesystems may not provide this information." };
             }
 
-            if (unreserved)
-                new_values[fmt::format("DiskUnreserved_{}", name)] = { *unreserved,
-                    "Available bytes on the disk (virtual filesystem) without the reservations for merges, fetches, and moves. Remote filesystems may not provide this information." };
+#if USE_AWS_S3
+            if (auto s3_client = disk->tryGetS3StorageClient())
+            {
+                if (auto put_throttler = s3_client->getPutRequestThrottler())
+                {
+                    new_values[fmt::format("DiskPutObjectThrottlerRPS_{}", name)] = { put_throttler->getMaxSpeed(),
+                        "PutObject Request throttling limit on the disk in requests per second (virtual filesystem). Local filesystems may not provide this information." };
+                    new_values[fmt::format("DiskPutObjectThrottlerAvailable_{}", name)] = { put_throttler->getAvailable(),
+                        "Number of PutObject requests that can be currently issued without hitting throttling limit on the disk (virtual filesystem). Local filesystems may not provide this information." };
+                }
+                if (auto get_throttler = s3_client->getGetRequestThrottler())
+                {
+                    new_values[fmt::format("DiskGetObjectThrottlerRPS_{}", name)] = { get_throttler->getMaxSpeed(),
+                        "GetObject Request throttling limit on the disk in requests per second (virtual filesystem). Local filesystems may not provide this information." };
+                    new_values[fmt::format("DiskGetObjectThrottlerAvailable_{}", name)] = { get_throttler->getAvailable(),
+                        "Number of GetObject requests that can be currently issued without hitting throttling limit on the disk (virtual filesystem). Local filesystems may not provide this information." };
+                }
+            }
+#endif
         }
     }
 
@@ -239,7 +275,7 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
         size_t max_part_count_for_partition = 0;
 
         size_t number_of_databases = 0;
-        for (auto [db_name, _] : databases)
+        for (const auto & [db_name, _] : databases)
             if (db_name != DatabaseCatalog::TEMPORARY_DATABASE)
                 ++number_of_databases; /// filter out the internal database for temporary tables, system table "system.databases" behaves the same way
 
@@ -266,7 +302,8 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
 
             bool is_system = db.first == DatabaseCatalog::SYSTEM_DATABASE;
 
-            for (auto iterator = db.second->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
+            // Note that we skip not yet loaded tables, so metrics could possibly be lower than expected on fully loaded database just after server start if `async_load_databases = true`.
+            for (auto iterator = db.second->getTablesIterator(getContext(), {}, /*skip_not_loaded=*/true); iterator->isValid(); iterator->next())
             {
                 ++total_number_of_tables;
                 if (is_system)
@@ -377,7 +414,8 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
     }
 #endif
 
-    updateHeavyMetricsIfNeeded(current_time, update_time, new_values);
+    if (update_heavy_metrics)
+        updateHeavyMetricsIfNeeded(current_time, update_time, force_update, first_run, new_values);
 }
 
 void ServerAsynchronousMetrics::logImpl(AsynchronousMetricValues & new_values)
@@ -396,7 +434,7 @@ void ServerAsynchronousMetrics::updateDetachedPartsStats()
         if (!db.second->canContainMergeTreeTables())
             continue;
 
-        for (auto iterator = db.second->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
+        for (auto iterator = db.second->getTablesIterator(getContext(), {}, true); iterator->isValid(); iterator->next())
         {
             const auto & table = iterator->table();
             if (!table)
@@ -421,19 +459,19 @@ void ServerAsynchronousMetrics::updateDetachedPartsStats()
     detached_parts_stats = current_values;
 }
 
-void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_time, TimePoint update_time, AsynchronousMetricValues & new_values)
+void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_time, TimePoint update_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values)
 {
-    const auto time_after_previous_update = current_time - heavy_metric_previous_update_time;
-    const bool update_heavy_metric = time_after_previous_update >= heavy_metric_update_period || first_run;
+    const auto time_since_previous_update = current_time - heavy_metric_previous_update_time;
+    const bool need_update_heavy_metrics = (time_since_previous_update >= heavy_metric_update_period) || force_update || first_run;
 
     Stopwatch watch;
-    if (update_heavy_metric)
+    if (need_update_heavy_metrics)
     {
         heavy_metric_previous_update_time = update_time;
         if (first_run)
             heavy_update_interval = heavy_metric_update_period.count();
         else
-            heavy_update_interval = std::chrono::duration_cast<std::chrono::microseconds>(time_after_previous_update).count() / 1e6;
+            heavy_update_interval = std::chrono::duration_cast<std::chrono::microseconds>(time_since_previous_update).count() / 1e6;
 
         /// Test shows that listing 100000 entries consuming around 0.15 sec.
         updateDetachedPartsStats();

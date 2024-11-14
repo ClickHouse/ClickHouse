@@ -35,6 +35,11 @@ public:
         statistics.applied_limit = true;
         statistics.rows_before_limit = rows_before_limit_;
     }
+    void setRowsBeforeAggregation(size_t rows_before_aggregation_) override
+    {
+        statistics.applied_aggregation = true;
+        statistics.rows_before_aggregation = rows_before_aggregation_;
+    }
 
 protected:
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;

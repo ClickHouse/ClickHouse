@@ -46,7 +46,9 @@ Message::Message(const std::string& source, const std::string& text, Priority pr
 }
 
 
-Message::Message(const std::string& source, const std::string& text, Priority prio, const char* file, int line, std::string_view fmt_str):
+Message::Message(
+        const std::string& source, const std::string& text, Priority prio, const char* file, int line,
+        std::string_view fmt_str, const std::vector<std::string>& fmt_str_args):
 	_source(source), 
 	_text(text), 
 	_prio(prio), 
@@ -54,13 +56,16 @@ Message::Message(const std::string& source, const std::string& text, Priority pr
 	_file(file),
 	_line(line),
 	_pMap(0),
-    _fmt_str(fmt_str)
+	_fmt_str(fmt_str),
+	_fmt_str_args(fmt_str_args)
 {
 	init();
 }
 
 
-Message::Message(std::string && source, std::string && text, Priority prio, const char * file, int line, std::string_view fmt_str):
+Message::Message(
+        std::string && source, std::string && text, Priority prio, const char * file, int line,
+        std::string_view fmt_str, std::vector<std::string> && fmt_str_args):
     _source(std::move(source)),
     _text(std::move(text)),
     _prio(prio),
@@ -68,7 +73,8 @@ Message::Message(std::string && source, std::string && text, Priority prio, cons
     _file(file),
     _line(line),
     _pMap(0),
-    _fmt_str(fmt_str)
+    _fmt_str(fmt_str),
+    _fmt_str_args(std::move(fmt_str_args))
 {
     init();
 }
@@ -83,7 +89,8 @@ Message::Message(const Message& msg):
 	_pid(msg._pid),
 	_file(msg._file),
 	_line(msg._line),
-    _fmt_str(msg._fmt_str)
+	_fmt_str(msg._fmt_str),
+	_fmt_str_args(msg._fmt_str_args)
 {
 	if (msg._pMap)
 		_pMap = new StringMap(*msg._pMap);
@@ -102,7 +109,8 @@ Message::Message(const Message& msg, const std::string& text):
 	_pid(msg._pid),
 	_file(msg._file),
 	_line(msg._line),
-    _fmt_str(msg._fmt_str)
+	_fmt_str(msg._fmt_str),
+	_fmt_str_args(msg._fmt_str_args)
 {
 	if (msg._pMap)
 		_pMap = new StringMap(*msg._pMap);
@@ -154,6 +162,7 @@ void Message::swap(Message& msg)
 	swap(_line, msg._line);
 	swap(_pMap, msg._pMap);
 	swap(_fmt_str, msg._fmt_str);
+	swap(_fmt_str_args, msg._fmt_str_args);
 }
 
 
@@ -224,6 +233,17 @@ std::string_view Message::getFormatString() const
 void Message::setFormatString(std::string_view fmt_str)
 {
     _fmt_str = fmt_str;
+}
+
+
+const std::vector<std::string>& Message::getFormatStringArgs() const
+{
+    return _fmt_str_args;
+}
+
+void Message::setFormatStringArgs(const std::vector<std::string>& fmt_str_args)
+{
+    _fmt_str_args = fmt_str_args;
 }
 
 

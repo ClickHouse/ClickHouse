@@ -42,9 +42,8 @@ private:
     ASTPtr tryLoadObject(UserDefinedSQLObjectType object_type, const String & object_name, const String & file_path, bool check_file_exists);
     String getFilePath(UserDefinedSQLObjectType object_type, const String & object_name) const;
 
-    ContextPtr global_context;
     String dir_path;
-    Poco::Logger * log;
+    LoggerPtr log;
     std::atomic<bool> objects_loaded = false;
 };
 

@@ -17,7 +17,7 @@ const char * S3_LOGGER_TAG_NAMES[][2] = {
 
 const std::pair<DB::LogsLevel, Poco::Message::Priority> & convertLogLevel(Aws::Utils::Logging::LogLevel log_level)
 {
-    /// We map levels to our own logger 1 to 1 except WARN+ levels. In most cases we failover such errors with retries
+    /// We map levels to our own logger 1 to 1 except INFO+ levels. In most cases we fail over such errors with retries
     /// and don't want to see them as Errors in our logs.
     static const std::unordered_map<Aws::Utils::Logging::LogLevel, std::pair<DB::LogsLevel, Poco::Message::Priority>> mapping =
     {
@@ -25,7 +25,7 @@ const std::pair<DB::LogsLevel, Poco::Message::Priority> & convertLogLevel(Aws::U
         {Aws::Utils::Logging::LogLevel::Fatal, {DB::LogsLevel::information, Poco::Message::PRIO_INFORMATION}},
         {Aws::Utils::Logging::LogLevel::Error, {DB::LogsLevel::information, Poco::Message::PRIO_INFORMATION}},
         {Aws::Utils::Logging::LogLevel::Warn, {DB::LogsLevel::information, Poco::Message::PRIO_INFORMATION}},
-        {Aws::Utils::Logging::LogLevel::Info, {DB::LogsLevel::information, Poco::Message::PRIO_INFORMATION}},
+        {Aws::Utils::Logging::LogLevel::Info, {DB::LogsLevel::debug, Poco::Message::PRIO_DEBUG}},
         {Aws::Utils::Logging::LogLevel::Debug, {DB::LogsLevel::debug, Poco::Message::PRIO_TEST}},
         {Aws::Utils::Logging::LogLevel::Trace, {DB::LogsLevel::trace, Poco::Message::PRIO_TEST}},
     };
@@ -41,7 +41,7 @@ AWSLogger::AWSLogger(bool enable_s3_requests_logging_)
     : enable_s3_requests_logging(enable_s3_requests_logging_)
 {
     for (auto [tag, name] : S3_LOGGER_TAG_NAMES)
-        tag_loggers[tag] = &Poco::Logger::get(name);
+        tag_loggers[tag] = getLogger(name);
 
     default_logger = tag_loggers[S3_LOGGER_TAG_NAMES[0][0]];
 }
@@ -50,8 +50,7 @@ Aws::Utils::Logging::LogLevel AWSLogger::GetLogLevel() const
 {
     if (enable_s3_requests_logging)
         return Aws::Utils::Logging::LogLevel::Trace;
-    else
-        return Aws::Utils::Logging::LogLevel::Info;
+    return Aws::Utils::Logging::LogLevel::Info;
 }
 
 void AWSLogger::Log(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * format_str, ...) // NOLINT

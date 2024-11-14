@@ -1,6 +1,6 @@
 #include <Parsers/Access/ParserPublicSSHKey.h>
-#include <Parsers/Access/ASTPublicSSHKey.h>
 
+#include <Parsers/Access/ASTPublicSSHKey.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 
@@ -15,11 +15,11 @@ namespace
         return IParserBase::wrapParseImpl(pos, [&]
         {
             String key_base64;
-            if (!ParserKeyword{"KEY"}.ignore(pos, expected) || !parseIdentifierOrStringLiteral(pos, expected, key_base64))
+            if (!ParserKeyword{Keyword::KEY}.ignore(pos, expected) || !parseIdentifierOrStringLiteral(pos, expected, key_base64))
                 return false;
 
             String type;
-            if (!ParserKeyword{"TYPE"}.ignore(pos, expected) || !parseIdentifierOrStringLiteral(pos, expected, type))
+            if (!ParserKeyword{Keyword::TYPE}.ignore(pos, expected) || !parseIdentifierOrStringLiteral(pos, expected, type))
                 return false;
 
             ast = std::make_shared<ASTPublicSSHKey>();

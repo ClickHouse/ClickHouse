@@ -48,7 +48,13 @@ class Foundation_API ThreadPool
 /// from the pool.
 {
 public:
-    ThreadPool(int minCapacity = 2, int maxCapacity = 16, int idleTime = 60, int stackSize = POCO_THREAD_STACK_SIZE);
+    explicit ThreadPool(
+        int minCapacity = 2,
+        int maxCapacity = 16,
+        int idleTime = 60,
+        int stackSize = POCO_THREAD_STACK_SIZE,
+        size_t global_profiler_real_time_period_ns_ = 0,
+        size_t global_profiler_cpu_time_period_ns_ = 0);
     /// Creates a thread pool with minCapacity threads.
     /// If required, up to maxCapacity threads are created
     /// a NoThreadAvailableException exception is thrown.
@@ -56,8 +62,14 @@ public:
     /// and more than minCapacity threads are running, the thread
     /// is killed. Threads are created with given stack size.
 
-    ThreadPool(
-        const std::string & name, int minCapacity = 2, int maxCapacity = 16, int idleTime = 60, int stackSize = POCO_THREAD_STACK_SIZE);
+    explicit ThreadPool(
+        const std::string & name,
+        int minCapacity = 2,
+        int maxCapacity = 16,
+        int idleTime = 60,
+        int stackSize = POCO_THREAD_STACK_SIZE,
+        size_t global_profiler_real_time_period_ns_ = 0,
+        size_t global_profiler_cpu_time_period_ns_ = 0);
     /// Creates a thread pool with the given name and minCapacity threads.
     /// If required, up to maxCapacity threads are created
     /// a NoThreadAvailableException exception is thrown.
@@ -171,6 +183,8 @@ private:
     int _serial;
     int _age;
     int _stackSize;
+    size_t _globalProfilerRealTimePeriodNs;
+    size_t _globalProfilerCPUTimePeriodNs;
     ThreadVec _threads;
     mutable FastMutex _mutex;
 };

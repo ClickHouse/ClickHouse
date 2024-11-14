@@ -11,6 +11,17 @@
                 <common_name>client3</common_name>
             </ssl_certificates>
         </lucy>
+        <jerome>
+            <ssl_certificates>
+                <subject_alt_name>URI:spiffe://foo.com/bar</subject_alt_name>
+                <subject_alt_name>URI:spiffe://foo.com/baz</subject_alt_name>
+            </ssl_certificates>
+        </jerome>
+        <stewie>
+            <ssl_certificates>
+                <subject_alt_name>URI:spiffe://bar.com/foo/*/far</subject_alt_name>
+            </ssl_certificates>
+        </stewie>
         <peter>
             <no_password/>
         </peter>

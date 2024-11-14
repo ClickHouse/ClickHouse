@@ -1,0 +1,3324 @@
+-- { echoOn }
+Select sum(number + 1) from numbers(10);
+55
+Select sum(1 + number) from numbers(10);
+55
+Select sum(number - 1) from numbers(10);
+35
+Select sum(1 - number) from numbers(10);
+-35
+EXPLAIN QUERY TREE (Select sum(number + 1) from numbers(10));
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(plus(number, 1)) UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
+            FUNCTION id: 8, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 9, nodes: 2
+                  CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+                  FUNCTION id: 11, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 12, nodes: 1
+                        COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
+  JOIN TREE
+    TABLE_FUNCTION id: 7, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 13, nodes: 1
+          CONSTANT id: 14, constant_value: UInt64_10, constant_value_type: UInt8
+EXPLAIN QUERY TREE (Select sum(1 + number) from numbers(10));
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(plus(1, number)) UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  CONSTANT id: 6, constant_value: UInt64_1, constant_value_type: UInt8
+                  FUNCTION id: 7, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 8, nodes: 1
+                        COLUMN id: 9, column_name: number, result_type: UInt64, source_id: 10
+            FUNCTION id: 11, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 12, nodes: 1
+                  COLUMN id: 9, column_name: number, result_type: UInt64, source_id: 10
+  JOIN TREE
+    TABLE_FUNCTION id: 10, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 13, nodes: 1
+          CONSTANT id: 14, constant_value: UInt64_10, constant_value_type: UInt8
+EXPLAIN QUERY TREE (Select sum(number - 1) from numbers(10));
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(minus(number, 1)) Int64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
+            FUNCTION id: 8, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 9, nodes: 2
+                  CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+                  FUNCTION id: 11, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 12, nodes: 1
+                        COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
+  JOIN TREE
+    TABLE_FUNCTION id: 7, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 13, nodes: 1
+          CONSTANT id: 14, constant_value: UInt64_10, constant_value_type: UInt8
+EXPLAIN QUERY TREE (Select sum(1 - number) from numbers(10));
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(minus(1, number)) Int64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  CONSTANT id: 6, constant_value: UInt64_1, constant_value_type: UInt8
+                  FUNCTION id: 7, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 8, nodes: 1
+                        COLUMN id: 9, column_name: number, result_type: UInt64, source_id: 10
+            FUNCTION id: 11, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 12, nodes: 1
+                  COLUMN id: 9, column_name: number, result_type: UInt64, source_id: 10
+  JOIN TREE
+    TABLE_FUNCTION id: 10, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 13, nodes: 1
+          CONSTANT id: 14, constant_value: UInt64_10, constant_value_type: UInt8
+WITH 1::Nullable(UInt64) as my_literal Select sum(number + my_literal) from numbers(0);
+\N
+WITH 1::Nullable(UInt64) as my_literal Select sum(number) + my_literal * count() from numbers(0);
+0
+EXPLAIN QUERY TREE (WITH 1::Nullable(UInt64) as my_literal Select sum(number + my_literal) from numbers(0));
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(plus(number, my_literal)) Nullable(UInt64)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: sum, function_type: aggregate, result_type: Nullable(UInt64)
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            FUNCTION id: 4, function_name: plus, function_type: ordinary, result_type: Nullable(UInt64)
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
+                  CONSTANT id: 8, constant_value: UInt64_1, constant_value_type: Nullable(UInt64)
+                    EXPRESSION
+                      FUNCTION id: 9, alias: my_literal, function_name: CAST, function_type: ordinary, result_type: Nullable(UInt64)
+                        ARGUMENTS
+                          LIST id: 10, nodes: 2
+                            CONSTANT id: 11, constant_value: \'1\', constant_value_type: String
+                            CONSTANT id: 12, constant_value: \'Nullable(UInt64)\', constant_value_type: String
+  JOIN TREE
+    TABLE_FUNCTION id: 7, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 13, nodes: 1
+          CONSTANT id: 14, constant_value: UInt64_0, constant_value_type: UInt8
+EXPLAIN QUERY TREE (WITH 1::Nullable(UInt64) as my_literal Select sum(number) + my_literal * count() from numbers(0));
+QUERY id: 0
+  PROJECTION COLUMNS
+    plus(sum(number), multiply(my_literal, count())) Nullable(UInt64)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Nullable(UInt64)
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
+            FUNCTION id: 8, function_name: multiply, function_type: ordinary, result_type: Nullable(UInt64)
+              ARGUMENTS
+                LIST id: 9, nodes: 2
+                  CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: Nullable(UInt64)
+                    EXPRESSION
+                      FUNCTION id: 11, alias: my_literal, function_name: CAST, function_type: ordinary, result_type: Nullable(UInt64)
+                        ARGUMENTS
+                          LIST id: 12, nodes: 2
+                            CONSTANT id: 13, constant_value: \'1\', constant_value_type: String
+                            CONSTANT id: 14, constant_value: \'Nullable(UInt64)\', constant_value_type: String
+                  FUNCTION id: 15, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE_FUNCTION id: 7, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 16, nodes: 1
+          CONSTANT id: 17, constant_value: UInt64_0, constant_value_type: UInt8
+-- { echoOn }
+SELECT sum(uint64 + 1 AS i) from test_table where i > 0;
+20
+SELECT sum(uint64 + 1) AS j from test_table having j > 0;
+20
+SELECT sum(uint64 + 1 AS i) j from test_table where i > 0 having j > 0;
+20
+SELECT sum((uint64 AS m) + (1 AS n)) j from test_table where m > 0 and n > 0 having j > 0;
+20
+SELECT sum(((uint64 AS m) + (1 AS n)) AS i) j from test_table where m > 0 and n > 0 and i > 0 having j > 0;
+20
+EXPLAIN QUERY TREE (SELECT sum(uint64 + 1 AS i) from test_table where i > 0);
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(i) UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+            FUNCTION id: 8, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 9, nodes: 2
+                  CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+                  FUNCTION id: 11, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 12, nodes: 1
+                        COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+  JOIN TREE
+    TABLE id: 7, alias: __table1, table_name: default.test_table
+  WHERE
+    FUNCTION id: 13, function_name: greater, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 14, nodes: 2
+          FUNCTION id: 15, function_name: plus, function_type: ordinary, result_type: UInt64
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+                CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+          CONSTANT id: 17, constant_value: UInt64_0, constant_value_type: UInt8
+EXPLAIN QUERY TREE (SELECT sum(uint64 + 1) AS j from test_table having j > 0);
+QUERY id: 0
+  PROJECTION COLUMNS
+    j UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+            FUNCTION id: 8, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 9, nodes: 2
+                  CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+                  FUNCTION id: 11, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 12, nodes: 1
+                        COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+  JOIN TREE
+    TABLE id: 7, alias: __table1, table_name: default.test_table
+  HAVING
+    FUNCTION id: 13, function_name: greater, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 14, nodes: 2
+          FUNCTION id: 15, function_name: plus, function_type: ordinary, result_type: UInt64
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                FUNCTION id: 17, function_name: sum, function_type: aggregate, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 18, nodes: 1
+                      COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+                FUNCTION id: 19, function_name: multiply, function_type: ordinary, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 20, nodes: 2
+                      CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+                      FUNCTION id: 21, function_name: count, function_type: aggregate, result_type: UInt64
+                        ARGUMENTS
+                          LIST id: 22, nodes: 1
+                            COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+          CONSTANT id: 23, constant_value: UInt64_0, constant_value_type: UInt8
+EXPLAIN QUERY TREE (SELECT sum(uint64 + 1 AS i) j from test_table where i > 0 having j > 0);
+QUERY id: 0
+  PROJECTION COLUMNS
+    j UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+            FUNCTION id: 8, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 9, nodes: 2
+                  CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+                  FUNCTION id: 11, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 12, nodes: 1
+                        COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+  JOIN TREE
+    TABLE id: 7, alias: __table1, table_name: default.test_table
+  WHERE
+    FUNCTION id: 13, function_name: greater, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 14, nodes: 2
+          FUNCTION id: 15, function_name: plus, function_type: ordinary, result_type: UInt64
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+                CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+          CONSTANT id: 17, constant_value: UInt64_0, constant_value_type: UInt8
+  HAVING
+    FUNCTION id: 18, function_name: greater, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 19, nodes: 2
+          FUNCTION id: 20, function_name: plus, function_type: ordinary, result_type: UInt64
+            ARGUMENTS
+              LIST id: 21, nodes: 2
+                FUNCTION id: 22, function_name: sum, function_type: aggregate, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 23, nodes: 1
+                      COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+                FUNCTION id: 24, function_name: multiply, function_type: ordinary, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 25, nodes: 2
+                      CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+                      FUNCTION id: 26, function_name: count, function_type: aggregate, result_type: UInt64
+                        ARGUMENTS
+                          LIST id: 27, nodes: 1
+                            COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+          CONSTANT id: 28, constant_value: UInt64_0, constant_value_type: UInt8
+EXPLAIN QUERY TREE (SELECT sum((uint64 AS m) + (1 AS n)) j from test_table where m > 0 and n > 0 having j > 0);
+QUERY id: 0
+  PROJECTION COLUMNS
+    j UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+            FUNCTION id: 8, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 9, nodes: 2
+                  CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+                  FUNCTION id: 11, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 12, nodes: 1
+                        COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+  JOIN TREE
+    TABLE id: 7, alias: __table1, table_name: default.test_table
+  WHERE
+    FUNCTION id: 13, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 14, nodes: 2
+          FUNCTION id: 15, function_name: greater, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+                CONSTANT id: 17, constant_value: UInt64_0, constant_value_type: UInt8
+          CONSTANT id: 18, constant_value: UInt64_1, constant_value_type: UInt8
+            EXPRESSION
+              FUNCTION id: 19, function_name: greater, function_type: ordinary, result_type: UInt8
+                ARGUMENTS
+                  LIST id: 20, nodes: 2
+                    CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+                    CONSTANT id: 21, constant_value: UInt64_0, constant_value_type: UInt8
+  HAVING
+    FUNCTION id: 22, function_name: greater, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 23, nodes: 2
+          FUNCTION id: 24, function_name: plus, function_type: ordinary, result_type: UInt64
+            ARGUMENTS
+              LIST id: 25, nodes: 2
+                FUNCTION id: 26, function_name: sum, function_type: aggregate, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 27, nodes: 1
+                      COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+                FUNCTION id: 28, function_name: multiply, function_type: ordinary, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 29, nodes: 2
+                      CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+                      FUNCTION id: 30, function_name: count, function_type: aggregate, result_type: UInt64
+                        ARGUMENTS
+                          LIST id: 31, nodes: 1
+                            COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+          CONSTANT id: 32, constant_value: UInt64_0, constant_value_type: UInt8
+EXPLAIN QUERY TREE (SELECT sum(((uint64 AS m) + (1 AS n)) AS i) j from test_table where m > 0 and n > 0 and i > 0 having j > 0);
+QUERY id: 0
+  PROJECTION COLUMNS
+    j UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+            FUNCTION id: 8, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 9, nodes: 2
+                  CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+                  FUNCTION id: 11, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 12, nodes: 1
+                        COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+  JOIN TREE
+    TABLE id: 7, alias: __table1, table_name: default.test_table
+  WHERE
+    FUNCTION id: 13, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 14, nodes: 3
+          FUNCTION id: 15, function_name: greater, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+                CONSTANT id: 17, constant_value: UInt64_0, constant_value_type: UInt8
+          CONSTANT id: 18, constant_value: UInt64_1, constant_value_type: UInt8
+            EXPRESSION
+              FUNCTION id: 19, function_name: greater, function_type: ordinary, result_type: UInt8
+                ARGUMENTS
+                  LIST id: 20, nodes: 2
+                    CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+                    CONSTANT id: 21, constant_value: UInt64_0, constant_value_type: UInt8
+          FUNCTION id: 22, function_name: greater, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 23, nodes: 2
+                FUNCTION id: 24, function_name: plus, function_type: ordinary, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 25, nodes: 2
+                      COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+                      CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+                CONSTANT id: 26, constant_value: UInt64_0, constant_value_type: UInt8
+  HAVING
+    FUNCTION id: 27, function_name: greater, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 28, nodes: 2
+          FUNCTION id: 29, function_name: plus, function_type: ordinary, result_type: UInt64
+            ARGUMENTS
+              LIST id: 30, nodes: 2
+                FUNCTION id: 31, function_name: sum, function_type: aggregate, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 32, nodes: 1
+                      COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+                FUNCTION id: 33, function_name: multiply, function_type: ordinary, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 34, nodes: 2
+                      CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+                      FUNCTION id: 35, function_name: count, function_type: aggregate, result_type: UInt64
+                        ARGUMENTS
+                          LIST id: 36, nodes: 1
+                            COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+          CONSTANT id: 37, constant_value: UInt64_0, constant_value_type: UInt8
+SELECT sum(1 + uint64 AS i) from test_table where i > 0;
+20
+SELECT sum(1 + uint64) AS j from test_table having j > 0;
+20
+SELECT sum(1 + uint64 AS i) j from test_table where i > 0 having j > 0;
+20
+SELECT sum((1 AS m) + (uint64 AS n)) j from test_table where m > 0 and n > 0 having j > 0;
+20
+SELECT sum(((1 AS m) + (uint64 AS n)) AS i) j from test_table where m > 0 and n > 0 and i > 0 having j > 0;
+20
+EXPLAIN QUERY TREE (SELECT sum(1 + uint64 AS i) from test_table where i > 0);
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(i) UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  CONSTANT id: 6, constant_value: UInt64_1, constant_value_type: UInt8
+                  FUNCTION id: 7, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 8, nodes: 1
+                        COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+            FUNCTION id: 11, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 12, nodes: 1
+                  COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+  JOIN TREE
+    TABLE id: 10, alias: __table1, table_name: default.test_table
+  WHERE
+    FUNCTION id: 13, function_name: greater, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 14, nodes: 2
+          FUNCTION id: 15, function_name: plus, function_type: ordinary, result_type: UInt64
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                CONSTANT id: 6, constant_value: UInt64_1, constant_value_type: UInt8
+                COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+          CONSTANT id: 17, constant_value: UInt64_0, constant_value_type: UInt8
+EXPLAIN QUERY TREE (SELECT sum(1 + uint64) AS j from test_table having j > 0);
+QUERY id: 0
+  PROJECTION COLUMNS
+    j UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  CONSTANT id: 6, constant_value: UInt64_1, constant_value_type: UInt8
+                  FUNCTION id: 7, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 8, nodes: 1
+                        COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+            FUNCTION id: 11, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 12, nodes: 1
+                  COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+  JOIN TREE
+    TABLE id: 10, alias: __table1, table_name: default.test_table
+  HAVING
+    FUNCTION id: 13, function_name: greater, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 14, nodes: 2
+          FUNCTION id: 15, function_name: plus, function_type: ordinary, result_type: UInt64
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                FUNCTION id: 17, function_name: multiply, function_type: ordinary, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 18, nodes: 2
+                      CONSTANT id: 6, constant_value: UInt64_1, constant_value_type: UInt8
+                      FUNCTION id: 19, function_name: count, function_type: aggregate, result_type: UInt64
+                        ARGUMENTS
+                          LIST id: 20, nodes: 1
+                            COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+                FUNCTION id: 21, function_name: sum, function_type: aggregate, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 22, nodes: 1
+                      COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+          CONSTANT id: 23, constant_value: UInt64_0, constant_value_type: UInt8
+EXPLAIN QUERY TREE (SELECT sum(1 + uint64 AS i) j from test_table where i > 0 having j > 0);
+QUERY id: 0
+  PROJECTION COLUMNS
+    j UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  CONSTANT id: 6, constant_value: UInt64_1, constant_value_type: UInt8
+                  FUNCTION id: 7, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 8, nodes: 1
+                        COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+            FUNCTION id: 11, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 12, nodes: 1
+                  COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+  JOIN TREE
+    TABLE id: 10, alias: __table1, table_name: default.test_table
+  WHERE
+    FUNCTION id: 13, function_name: greater, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 14, nodes: 2
+          FUNCTION id: 15, function_name: plus, function_type: ordinary, result_type: UInt64
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                CONSTANT id: 6, constant_value: UInt64_1, constant_value_type: UInt8
+                COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+          CONSTANT id: 17, constant_value: UInt64_0, constant_value_type: UInt8
+  HAVING
+    FUNCTION id: 18, function_name: greater, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 19, nodes: 2
+          FUNCTION id: 20, function_name: plus, function_type: ordinary, result_type: UInt64
+            ARGUMENTS
+              LIST id: 21, nodes: 2
+                FUNCTION id: 22, function_name: multiply, function_type: ordinary, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 23, nodes: 2
+                      CONSTANT id: 6, constant_value: UInt64_1, constant_value_type: UInt8
+                      FUNCTION id: 24, function_name: count, function_type: aggregate, result_type: UInt64
+                        ARGUMENTS
+                          LIST id: 25, nodes: 1
+                            COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+                FUNCTION id: 26, function_name: sum, function_type: aggregate, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 27, nodes: 1
+                      COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+          CONSTANT id: 28, constant_value: UInt64_0, constant_value_type: UInt8
+EXPLAIN QUERY TREE (SELECT sum((1 AS m) + (uint64 AS n)) j from test_table where m > 0 and n > 0 having j > 0);
+QUERY id: 0
+  PROJECTION COLUMNS
+    j UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  CONSTANT id: 6, constant_value: UInt64_1, constant_value_type: UInt8
+                  FUNCTION id: 7, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 8, nodes: 1
+                        COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+            FUNCTION id: 11, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 12, nodes: 1
+                  COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+  JOIN TREE
+    TABLE id: 10, alias: __table1, table_name: default.test_table
+  WHERE
+    FUNCTION id: 13, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 14, nodes: 2
+          CONSTANT id: 15, constant_value: UInt64_1, constant_value_type: UInt8
+            EXPRESSION
+              FUNCTION id: 16, function_name: greater, function_type: ordinary, result_type: UInt8
+                ARGUMENTS
+                  LIST id: 17, nodes: 2
+                    CONSTANT id: 6, constant_value: UInt64_1, constant_value_type: UInt8
+                    CONSTANT id: 18, constant_value: UInt64_0, constant_value_type: UInt8
+          FUNCTION id: 19, function_name: greater, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 20, nodes: 2
+                COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+                CONSTANT id: 21, constant_value: UInt64_0, constant_value_type: UInt8
+  HAVING
+    FUNCTION id: 22, function_name: greater, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 23, nodes: 2
+          FUNCTION id: 24, function_name: plus, function_type: ordinary, result_type: UInt64
+            ARGUMENTS
+              LIST id: 25, nodes: 2
+                FUNCTION id: 26, function_name: multiply, function_type: ordinary, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 27, nodes: 2
+                      CONSTANT id: 6, constant_value: UInt64_1, constant_value_type: UInt8
+                      FUNCTION id: 28, function_name: count, function_type: aggregate, result_type: UInt64
+                        ARGUMENTS
+                          LIST id: 29, nodes: 1
+                            COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+                FUNCTION id: 30, function_name: sum, function_type: aggregate, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 31, nodes: 1
+                      COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+          CONSTANT id: 32, constant_value: UInt64_0, constant_value_type: UInt8
+EXPLAIN QUERY TREE (SELECT sum(((1 AS m) + (uint64 AS n)) AS i) j from test_table where m > 0 and n > 0 and i > 0 having j > 0);
+QUERY id: 0
+  PROJECTION COLUMNS
+    j UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  CONSTANT id: 6, constant_value: UInt64_1, constant_value_type: UInt8
+                  FUNCTION id: 7, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 8, nodes: 1
+                        COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+            FUNCTION id: 11, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 12, nodes: 1
+                  COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+  JOIN TREE
+    TABLE id: 10, alias: __table1, table_name: default.test_table
+  WHERE
+    FUNCTION id: 13, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 14, nodes: 3
+          CONSTANT id: 15, constant_value: UInt64_1, constant_value_type: UInt8
+            EXPRESSION
+              FUNCTION id: 16, function_name: greater, function_type: ordinary, result_type: UInt8
+                ARGUMENTS
+                  LIST id: 17, nodes: 2
+                    CONSTANT id: 6, constant_value: UInt64_1, constant_value_type: UInt8
+                    CONSTANT id: 18, constant_value: UInt64_0, constant_value_type: UInt8
+          FUNCTION id: 19, function_name: greater, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 20, nodes: 2
+                COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+                CONSTANT id: 21, constant_value: UInt64_0, constant_value_type: UInt8
+          FUNCTION id: 22, function_name: greater, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 23, nodes: 2
+                FUNCTION id: 24, function_name: plus, function_type: ordinary, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 25, nodes: 2
+                      CONSTANT id: 6, constant_value: UInt64_1, constant_value_type: UInt8
+                      COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+                CONSTANT id: 26, constant_value: UInt64_0, constant_value_type: UInt8
+  HAVING
+    FUNCTION id: 27, function_name: greater, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 28, nodes: 2
+          FUNCTION id: 29, function_name: plus, function_type: ordinary, result_type: UInt64
+            ARGUMENTS
+              LIST id: 30, nodes: 2
+                FUNCTION id: 31, function_name: multiply, function_type: ordinary, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 32, nodes: 2
+                      CONSTANT id: 6, constant_value: UInt64_1, constant_value_type: UInt8
+                      FUNCTION id: 33, function_name: count, function_type: aggregate, result_type: UInt64
+                        ARGUMENTS
+                          LIST id: 34, nodes: 1
+                            COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+                FUNCTION id: 35, function_name: sum, function_type: aggregate, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 36, nodes: 1
+                      COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+          CONSTANT id: 37, constant_value: UInt64_0, constant_value_type: UInt8
+SELECT sum(uint64 - 1 AS i) from test_table where i > 0;
+10
+SELECT sum(uint64 - 1) AS j from test_table having j > 0;
+10
+SELECT sum(uint64 - 1 AS i) j from test_table where i > 0 having j > 0;
+10
+SELECT sum((uint64 AS m) - (1 AS n)) j from test_table where m > 0 and n > 0 having j > 0;
+10
+SELECT sum(((uint64 AS m) - (1 AS n)) AS i) j from test_table where m > 0 and n > 0 and i > 0 having j > 0;
+10
+EXPLAIN QUERY TREE (SELECT sum(uint64 - 1 AS i) from test_table where i > 0);
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(i) Int64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+            FUNCTION id: 8, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 9, nodes: 2
+                  CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+                  FUNCTION id: 11, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 12, nodes: 1
+                        COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+  JOIN TREE
+    TABLE id: 7, alias: __table1, table_name: default.test_table
+  WHERE
+    FUNCTION id: 13, function_name: greater, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 14, nodes: 2
+          FUNCTION id: 15, function_name: minus, function_type: ordinary, result_type: Int64
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+                CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+          CONSTANT id: 17, constant_value: UInt64_0, constant_value_type: UInt8
+EXPLAIN QUERY TREE (SELECT sum(uint64 - 1) AS j from test_table having j > 0);
+QUERY id: 0
+  PROJECTION COLUMNS
+    j Int64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+            FUNCTION id: 8, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 9, nodes: 2
+                  CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+                  FUNCTION id: 11, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 12, nodes: 1
+                        COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+  JOIN TREE
+    TABLE id: 7, alias: __table1, table_name: default.test_table
+  HAVING
+    FUNCTION id: 13, function_name: greater, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 14, nodes: 2
+          FUNCTION id: 15, function_name: minus, function_type: ordinary, result_type: Int64
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                FUNCTION id: 17, function_name: sum, function_type: aggregate, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 18, nodes: 1
+                      COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+                FUNCTION id: 19, function_name: multiply, function_type: ordinary, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 20, nodes: 2
+                      CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+                      FUNCTION id: 21, function_name: count, function_type: aggregate, result_type: UInt64
+                        ARGUMENTS
+                          LIST id: 22, nodes: 1
+                            COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+          CONSTANT id: 23, constant_value: UInt64_0, constant_value_type: UInt8
+EXPLAIN QUERY TREE (SELECT sum(uint64 - 1 AS i) j from test_table where i > 0 having j > 0);
+QUERY id: 0
+  PROJECTION COLUMNS
+    j Int64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+            FUNCTION id: 8, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 9, nodes: 2
+                  CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+                  FUNCTION id: 11, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 12, nodes: 1
+                        COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+  JOIN TREE
+    TABLE id: 7, alias: __table1, table_name: default.test_table
+  WHERE
+    FUNCTION id: 13, function_name: greater, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 14, nodes: 2
+          FUNCTION id: 15, function_name: minus, function_type: ordinary, result_type: Int64
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+                CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+          CONSTANT id: 17, constant_value: UInt64_0, constant_value_type: UInt8
+  HAVING
+    FUNCTION id: 18, function_name: greater, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 19, nodes: 2
+          FUNCTION id: 20, function_name: minus, function_type: ordinary, result_type: Int64
+            ARGUMENTS
+              LIST id: 21, nodes: 2
+                FUNCTION id: 22, function_name: sum, function_type: aggregate, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 23, nodes: 1
+                      COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+                FUNCTION id: 24, function_name: multiply, function_type: ordinary, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 25, nodes: 2
+                      CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+                      FUNCTION id: 26, function_name: count, function_type: aggregate, result_type: UInt64
+                        ARGUMENTS
+                          LIST id: 27, nodes: 1
+                            COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+          CONSTANT id: 28, constant_value: UInt64_0, constant_value_type: UInt8
+EXPLAIN QUERY TREE (SELECT sum((uint64 AS m) - (1 AS n)) j from test_table where m > 0 and n > 0 having j > 0);
+QUERY id: 0
+  PROJECTION COLUMNS
+    j Int64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+            FUNCTION id: 8, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 9, nodes: 2
+                  CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+                  FUNCTION id: 11, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 12, nodes: 1
+                        COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+  JOIN TREE
+    TABLE id: 7, alias: __table1, table_name: default.test_table
+  WHERE
+    FUNCTION id: 13, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 14, nodes: 2
+          FUNCTION id: 15, function_name: greater, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+                CONSTANT id: 17, constant_value: UInt64_0, constant_value_type: UInt8
+          CONSTANT id: 18, constant_value: UInt64_1, constant_value_type: UInt8
+            EXPRESSION
+              FUNCTION id: 19, function_name: greater, function_type: ordinary, result_type: UInt8
+                ARGUMENTS
+                  LIST id: 20, nodes: 2
+                    CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+                    CONSTANT id: 21, constant_value: UInt64_0, constant_value_type: UInt8
+  HAVING
+    FUNCTION id: 22, function_name: greater, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 23, nodes: 2
+          FUNCTION id: 24, function_name: minus, function_type: ordinary, result_type: Int64
+            ARGUMENTS
+              LIST id: 25, nodes: 2
+                FUNCTION id: 26, function_name: sum, function_type: aggregate, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 27, nodes: 1
+                      COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+                FUNCTION id: 28, function_name: multiply, function_type: ordinary, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 29, nodes: 2
+                      CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+                      FUNCTION id: 30, function_name: count, function_type: aggregate, result_type: UInt64
+                        ARGUMENTS
+                          LIST id: 31, nodes: 1
+                            COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+          CONSTANT id: 32, constant_value: UInt64_0, constant_value_type: UInt8
+EXPLAIN QUERY TREE (SELECT sum(((uint64 AS m) - (1 AS n)) AS i) j from test_table where m > 0 and n > 0 and i > 0 having j > 0);
+QUERY id: 0
+  PROJECTION COLUMNS
+    j Int64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+            FUNCTION id: 8, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 9, nodes: 2
+                  CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+                  FUNCTION id: 11, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 12, nodes: 1
+                        COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+  JOIN TREE
+    TABLE id: 7, alias: __table1, table_name: default.test_table
+  WHERE
+    FUNCTION id: 13, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 14, nodes: 3
+          FUNCTION id: 15, function_name: greater, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+                CONSTANT id: 17, constant_value: UInt64_0, constant_value_type: UInt8
+          CONSTANT id: 18, constant_value: UInt64_1, constant_value_type: UInt8
+            EXPRESSION
+              FUNCTION id: 19, function_name: greater, function_type: ordinary, result_type: UInt8
+                ARGUMENTS
+                  LIST id: 20, nodes: 2
+                    CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+                    CONSTANT id: 21, constant_value: UInt64_0, constant_value_type: UInt8
+          FUNCTION id: 22, function_name: greater, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 23, nodes: 2
+                FUNCTION id: 24, function_name: minus, function_type: ordinary, result_type: Int64
+                  ARGUMENTS
+                    LIST id: 25, nodes: 2
+                      COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+                      CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+                CONSTANT id: 26, constant_value: UInt64_0, constant_value_type: UInt8
+  HAVING
+    FUNCTION id: 27, function_name: greater, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 28, nodes: 2
+          FUNCTION id: 29, function_name: minus, function_type: ordinary, result_type: Int64
+            ARGUMENTS
+              LIST id: 30, nodes: 2
+                FUNCTION id: 31, function_name: sum, function_type: aggregate, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 32, nodes: 1
+                      COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+                FUNCTION id: 33, function_name: multiply, function_type: ordinary, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 34, nodes: 2
+                      CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+                      FUNCTION id: 35, function_name: count, function_type: aggregate, result_type: UInt64
+                        ARGUMENTS
+                          LIST id: 36, nodes: 1
+                            COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+          CONSTANT id: 37, constant_value: UInt64_0, constant_value_type: UInt8
+SELECT sum(1 - uint64 AS i) from test_table;
+-10
+SELECT sum(1 - uint64) AS j from test_table;
+-10
+SELECT sum(1 - uint64 AS i) j from test_table;
+-10
+SELECT sum((1 AS m) - (uint64 AS n)) j from test_table;
+-10
+SELECT sum(((1 AS m) - (uint64 AS n)) AS i) j from test_table;
+-10
+EXPLAIN QUERY TREE (SELECT sum(1 - uint64 AS i) from test_table where i > 0);
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(i) Int64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  CONSTANT id: 6, constant_value: UInt64_1, constant_value_type: UInt8
+                  FUNCTION id: 7, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 8, nodes: 1
+                        COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+            FUNCTION id: 11, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 12, nodes: 1
+                  COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+  JOIN TREE
+    TABLE id: 10, alias: __table1, table_name: default.test_table
+  WHERE
+    FUNCTION id: 13, function_name: greater, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 14, nodes: 2
+          FUNCTION id: 15, function_name: minus, function_type: ordinary, result_type: Int64
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                CONSTANT id: 6, constant_value: UInt64_1, constant_value_type: UInt8
+                COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+          CONSTANT id: 17, constant_value: UInt64_0, constant_value_type: UInt8
+EXPLAIN QUERY TREE (SELECT sum(1 - uint64) AS j from test_table having j < 0);
+QUERY id: 0
+  PROJECTION COLUMNS
+    j Int64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  CONSTANT id: 6, constant_value: UInt64_1, constant_value_type: UInt8
+                  FUNCTION id: 7, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 8, nodes: 1
+                        COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+            FUNCTION id: 11, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 12, nodes: 1
+                  COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+  JOIN TREE
+    TABLE id: 10, alias: __table1, table_name: default.test_table
+  HAVING
+    FUNCTION id: 13, function_name: less, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 14, nodes: 2
+          FUNCTION id: 15, function_name: minus, function_type: ordinary, result_type: Int64
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                FUNCTION id: 17, function_name: multiply, function_type: ordinary, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 18, nodes: 2
+                      CONSTANT id: 6, constant_value: UInt64_1, constant_value_type: UInt8
+                      FUNCTION id: 19, function_name: count, function_type: aggregate, result_type: UInt64
+                        ARGUMENTS
+                          LIST id: 20, nodes: 1
+                            COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+                FUNCTION id: 21, function_name: sum, function_type: aggregate, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 22, nodes: 1
+                      COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+          CONSTANT id: 23, constant_value: UInt64_0, constant_value_type: UInt8
+EXPLAIN QUERY TREE (SELECT sum(1 - uint64 AS i) j from test_table where i > 0 having j < 0);
+QUERY id: 0
+  PROJECTION COLUMNS
+    j Int64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  CONSTANT id: 6, constant_value: UInt64_1, constant_value_type: UInt8
+                  FUNCTION id: 7, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 8, nodes: 1
+                        COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+            FUNCTION id: 11, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 12, nodes: 1
+                  COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+  JOIN TREE
+    TABLE id: 10, alias: __table1, table_name: default.test_table
+  WHERE
+    FUNCTION id: 13, function_name: greater, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 14, nodes: 2
+          FUNCTION id: 15, function_name: minus, function_type: ordinary, result_type: Int64
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                CONSTANT id: 6, constant_value: UInt64_1, constant_value_type: UInt8
+                COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+          CONSTANT id: 17, constant_value: UInt64_0, constant_value_type: UInt8
+  HAVING
+    FUNCTION id: 18, function_name: less, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 19, nodes: 2
+          FUNCTION id: 20, function_name: minus, function_type: ordinary, result_type: Int64
+            ARGUMENTS
+              LIST id: 21, nodes: 2
+                FUNCTION id: 22, function_name: multiply, function_type: ordinary, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 23, nodes: 2
+                      CONSTANT id: 6, constant_value: UInt64_1, constant_value_type: UInt8
+                      FUNCTION id: 24, function_name: count, function_type: aggregate, result_type: UInt64
+                        ARGUMENTS
+                          LIST id: 25, nodes: 1
+                            COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+                FUNCTION id: 26, function_name: sum, function_type: aggregate, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 27, nodes: 1
+                      COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+          CONSTANT id: 28, constant_value: UInt64_0, constant_value_type: UInt8
+EXPLAIN QUERY TREE (SELECT sum((1 AS m) - (uint64 AS n)) j from test_table where m > 0 and n > 0 having j < 0);
+QUERY id: 0
+  PROJECTION COLUMNS
+    j Int64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  CONSTANT id: 6, constant_value: UInt64_1, constant_value_type: UInt8
+                  FUNCTION id: 7, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 8, nodes: 1
+                        COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+            FUNCTION id: 11, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 12, nodes: 1
+                  COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+  JOIN TREE
+    TABLE id: 10, alias: __table1, table_name: default.test_table
+  WHERE
+    FUNCTION id: 13, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 14, nodes: 2
+          CONSTANT id: 15, constant_value: UInt64_1, constant_value_type: UInt8
+            EXPRESSION
+              FUNCTION id: 16, function_name: greater, function_type: ordinary, result_type: UInt8
+                ARGUMENTS
+                  LIST id: 17, nodes: 2
+                    CONSTANT id: 6, constant_value: UInt64_1, constant_value_type: UInt8
+                    CONSTANT id: 18, constant_value: UInt64_0, constant_value_type: UInt8
+          FUNCTION id: 19, function_name: greater, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 20, nodes: 2
+                COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+                CONSTANT id: 21, constant_value: UInt64_0, constant_value_type: UInt8
+  HAVING
+    FUNCTION id: 22, function_name: less, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 23, nodes: 2
+          FUNCTION id: 24, function_name: minus, function_type: ordinary, result_type: Int64
+            ARGUMENTS
+              LIST id: 25, nodes: 2
+                FUNCTION id: 26, function_name: multiply, function_type: ordinary, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 27, nodes: 2
+                      CONSTANT id: 6, constant_value: UInt64_1, constant_value_type: UInt8
+                      FUNCTION id: 28, function_name: count, function_type: aggregate, result_type: UInt64
+                        ARGUMENTS
+                          LIST id: 29, nodes: 1
+                            COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+                FUNCTION id: 30, function_name: sum, function_type: aggregate, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 31, nodes: 1
+                      COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+          CONSTANT id: 32, constant_value: UInt64_0, constant_value_type: UInt8
+EXPLAIN QUERY TREE (SELECT sum(((1 AS m) - (uint64 AS n)) AS i) j from test_table where m > 0 and n > 0 and i < 0 having j < 0);
+QUERY id: 0
+  PROJECTION COLUMNS
+    j Int64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  CONSTANT id: 6, constant_value: UInt64_1, constant_value_type: UInt8
+                  FUNCTION id: 7, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 8, nodes: 1
+                        COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+            FUNCTION id: 11, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 12, nodes: 1
+                  COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+  JOIN TREE
+    TABLE id: 10, alias: __table1, table_name: default.test_table
+  WHERE
+    FUNCTION id: 13, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 14, nodes: 3
+          CONSTANT id: 15, constant_value: UInt64_1, constant_value_type: UInt8
+            EXPRESSION
+              FUNCTION id: 16, function_name: greater, function_type: ordinary, result_type: UInt8
+                ARGUMENTS
+                  LIST id: 17, nodes: 2
+                    CONSTANT id: 6, constant_value: UInt64_1, constant_value_type: UInt8
+                    CONSTANT id: 18, constant_value: UInt64_0, constant_value_type: UInt8
+          FUNCTION id: 19, function_name: greater, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 20, nodes: 2
+                COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+                CONSTANT id: 21, constant_value: UInt64_0, constant_value_type: UInt8
+          FUNCTION id: 22, function_name: less, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 23, nodes: 2
+                FUNCTION id: 24, function_name: minus, function_type: ordinary, result_type: Int64
+                  ARGUMENTS
+                    LIST id: 25, nodes: 2
+                      CONSTANT id: 6, constant_value: UInt64_1, constant_value_type: UInt8
+                      COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+                CONSTANT id: 26, constant_value: UInt64_0, constant_value_type: UInt8
+  HAVING
+    FUNCTION id: 27, function_name: less, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 28, nodes: 2
+          FUNCTION id: 29, function_name: minus, function_type: ordinary, result_type: Int64
+            ARGUMENTS
+              LIST id: 30, nodes: 2
+                FUNCTION id: 31, function_name: multiply, function_type: ordinary, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 32, nodes: 2
+                      CONSTANT id: 6, constant_value: UInt64_1, constant_value_type: UInt8
+                      FUNCTION id: 33, function_name: count, function_type: aggregate, result_type: UInt64
+                        ARGUMENTS
+                          LIST id: 34, nodes: 1
+                            COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+                FUNCTION id: 35, function_name: sum, function_type: aggregate, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 36, nodes: 1
+                      COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+          CONSTANT id: 37, constant_value: UInt64_0, constant_value_type: UInt8
+SELECT sum(uint64 + 2.11) From test_table;
+25.549999999999997
+SELECT sum(2.11 + uint64) From test_table;
+25.549999999999997
+SELECT sum(uint64 - 2.11) From test_table;
+4.450000000000001
+SELECT sum(2.11 - uint64) From test_table;
+-4.450000000000001
+SELECT sum(uint64) + 2.11 * count(uint64) From test_table;
+25.549999999999997
+SELECT 2.11 * count(uint64) + sum(uint64) From test_table;
+25.549999999999997
+SELECT sum(uint64) - 2.11 * count(uint64) From test_table;
+4.450000000000001
+SELECT 2.11 * count(uint64) - sum(uint64) From test_table;
+-4.450000000000001
+EXPLAIN QUERY TREE (SELECT sum(uint64 + 2.11) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(plus(uint64, 2.11)) Float64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+            FUNCTION id: 8, function_name: multiply, function_type: ordinary, result_type: Float64
+              ARGUMENTS
+                LIST id: 9, nodes: 2
+                  CONSTANT id: 10, constant_value: Float64_2.11, constant_value_type: Float64
+                  FUNCTION id: 11, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 12, nodes: 1
+                        COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+  JOIN TREE
+    TABLE id: 7, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT sum(2.11 + uint64) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(plus(2.11, uint64)) Float64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: multiply, function_type: ordinary, result_type: Float64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  CONSTANT id: 6, constant_value: Float64_2.11, constant_value_type: Float64
+                  FUNCTION id: 7, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 8, nodes: 1
+                        COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+            FUNCTION id: 11, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 12, nodes: 1
+                  COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+  JOIN TREE
+    TABLE id: 10, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT sum(uint64 - 2.11) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(minus(uint64, 2.11)) Float64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+            FUNCTION id: 8, function_name: multiply, function_type: ordinary, result_type: Float64
+              ARGUMENTS
+                LIST id: 9, nodes: 2
+                  CONSTANT id: 10, constant_value: Float64_2.11, constant_value_type: Float64
+                  FUNCTION id: 11, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 12, nodes: 1
+                        COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+  JOIN TREE
+    TABLE id: 7, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT sum(2.11 - uint64) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(minus(2.11, uint64)) Float64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: multiply, function_type: ordinary, result_type: Float64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  CONSTANT id: 6, constant_value: Float64_2.11, constant_value_type: Float64
+                  FUNCTION id: 7, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 8, nodes: 1
+                        COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+            FUNCTION id: 11, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 12, nodes: 1
+                  COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+  JOIN TREE
+    TABLE id: 10, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT sum(uint64) + 2.11 * count(uint64) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    plus(sum(uint64), multiply(2.11, count(uint64))) Float64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+            FUNCTION id: 8, function_name: multiply, function_type: ordinary, result_type: Float64
+              ARGUMENTS
+                LIST id: 9, nodes: 2
+                  CONSTANT id: 10, constant_value: Float64_2.11, constant_value_type: Float64
+                  FUNCTION id: 11, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 12, nodes: 1
+                        COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+  JOIN TREE
+    TABLE id: 7, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT 2.11 * count(uint64) + sum(uint64) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    plus(multiply(2.11, count(uint64)), sum(uint64)) Float64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: multiply, function_type: ordinary, result_type: Float64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  CONSTANT id: 6, constant_value: Float64_2.11, constant_value_type: Float64
+                  FUNCTION id: 7, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 8, nodes: 1
+                        COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+            FUNCTION id: 11, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 12, nodes: 1
+                  COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+  JOIN TREE
+    TABLE id: 10, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT sum(uint64) - 2.11 * count(uint64) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    minus(sum(uint64), multiply(2.11, count(uint64))) Float64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+            FUNCTION id: 8, function_name: multiply, function_type: ordinary, result_type: Float64
+              ARGUMENTS
+                LIST id: 9, nodes: 2
+                  CONSTANT id: 10, constant_value: Float64_2.11, constant_value_type: Float64
+                  FUNCTION id: 11, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 12, nodes: 1
+                        COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+  JOIN TREE
+    TABLE id: 7, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT 2.11 * count(uint64) - sum(uint64) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    minus(multiply(2.11, count(uint64)), sum(uint64)) Float64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: multiply, function_type: ordinary, result_type: Float64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  CONSTANT id: 6, constant_value: Float64_2.11, constant_value_type: Float64
+                  FUNCTION id: 7, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 8, nodes: 1
+                        COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+            FUNCTION id: 11, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 12, nodes: 1
+                  COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+  JOIN TREE
+    TABLE id: 10, alias: __table1, table_name: default.test_table
+SELECT sum(uint64 + 2) From test_table;
+25
+SELECT sum(2 + uint64) From test_table;
+25
+SELECT sum(uint64 - 2) From test_table;
+5
+SELECT sum(2 - uint64) From test_table;
+-5
+SELECT sum(uint64) + 2 * count(uint64) From test_table;
+25
+SELECT 2 * count(uint64) + sum(uint64) From test_table;
+25
+SELECT sum(uint64) - 2 * count(uint64) From test_table;
+5
+SELECT 2 * count(uint64) - sum(uint64) From test_table;
+-5
+EXPLAIN QUERY TREE (SELECT sum(uint64 + 2) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(plus(uint64, 2)) UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+            FUNCTION id: 8, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 9, nodes: 2
+                  CONSTANT id: 10, constant_value: UInt64_2, constant_value_type: UInt8
+                  FUNCTION id: 11, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 12, nodes: 1
+                        COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+  JOIN TREE
+    TABLE id: 7, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT sum(2 + uint64) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(plus(2, uint64)) UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  CONSTANT id: 6, constant_value: UInt64_2, constant_value_type: UInt8
+                  FUNCTION id: 7, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 8, nodes: 1
+                        COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+            FUNCTION id: 11, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 12, nodes: 1
+                  COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+  JOIN TREE
+    TABLE id: 10, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT sum(uint64 - 2) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(minus(uint64, 2)) Int64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+            FUNCTION id: 8, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 9, nodes: 2
+                  CONSTANT id: 10, constant_value: UInt64_2, constant_value_type: UInt8
+                  FUNCTION id: 11, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 12, nodes: 1
+                        COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+  JOIN TREE
+    TABLE id: 7, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT sum(2 - uint64) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(minus(2, uint64)) Int64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  CONSTANT id: 6, constant_value: UInt64_2, constant_value_type: UInt8
+                  FUNCTION id: 7, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 8, nodes: 1
+                        COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+            FUNCTION id: 11, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 12, nodes: 1
+                  COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+  JOIN TREE
+    TABLE id: 10, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT sum(uint64) + 2 * count(uint64) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    plus(sum(uint64), multiply(2, count(uint64))) UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+            FUNCTION id: 8, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 9, nodes: 2
+                  CONSTANT id: 10, constant_value: UInt64_2, constant_value_type: UInt8
+                  FUNCTION id: 11, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 12, nodes: 1
+                        COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+  JOIN TREE
+    TABLE id: 7, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT 2 * count(uint64) + sum(uint64) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    plus(multiply(2, count(uint64)), sum(uint64)) UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  CONSTANT id: 6, constant_value: UInt64_2, constant_value_type: UInt8
+                  FUNCTION id: 7, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 8, nodes: 1
+                        COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+            FUNCTION id: 11, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 12, nodes: 1
+                  COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+  JOIN TREE
+    TABLE id: 10, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT sum(uint64) - 2 * count(uint64) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    minus(sum(uint64), multiply(2, count(uint64))) Int64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+            FUNCTION id: 8, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 9, nodes: 2
+                  CONSTANT id: 10, constant_value: UInt64_2, constant_value_type: UInt8
+                  FUNCTION id: 11, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 12, nodes: 1
+                        COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
+  JOIN TREE
+    TABLE id: 7, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT 2 * count(uint64) - sum(uint64) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    minus(multiply(2, count(uint64)), sum(uint64)) Int64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  CONSTANT id: 6, constant_value: UInt64_2, constant_value_type: UInt8
+                  FUNCTION id: 7, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 8, nodes: 1
+                        COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+            FUNCTION id: 11, function_name: sum, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 12, nodes: 1
+                  COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
+  JOIN TREE
+    TABLE id: 10, alias: __table1, table_name: default.test_table
+SELECT sum(float64 + 2) From test_table;
+26.875
+SELECT sum(2 + float64) From test_table;
+26.875
+SELECT sum(float64 - 2) From test_table;
+6.875
+SELECT sum(2 - float64) From test_table;
+-6.875
+SELECT sum(float64) + 2 * count(float64) From test_table;
+26.875
+SELECT 2 * count(float64) + sum(float64) From test_table;
+26.875
+SELECT sum(float64) - 2 * count(float64) From test_table;
+6.875
+SELECT 2 * count(float64) - sum(float64) From test_table;
+-6.875
+EXPLAIN QUERY TREE (SELECT sum(float64 + 2) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(plus(float64, 2)) Float64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: sum, function_type: aggregate, result_type: Float64
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: float64, result_type: Float64, source_id: 7
+            FUNCTION id: 8, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 9, nodes: 2
+                  CONSTANT id: 10, constant_value: UInt64_2, constant_value_type: UInt8
+                  FUNCTION id: 11, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 12, nodes: 1
+                        COLUMN id: 6, column_name: float64, result_type: Float64, source_id: 7
+  JOIN TREE
+    TABLE id: 7, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT sum(2 + float64) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(plus(2, float64)) Float64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  CONSTANT id: 6, constant_value: UInt64_2, constant_value_type: UInt8
+                  FUNCTION id: 7, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 8, nodes: 1
+                        COLUMN id: 9, column_name: float64, result_type: Float64, source_id: 10
+            FUNCTION id: 11, function_name: sum, function_type: aggregate, result_type: Float64
+              ARGUMENTS
+                LIST id: 12, nodes: 1
+                  COLUMN id: 9, column_name: float64, result_type: Float64, source_id: 10
+  JOIN TREE
+    TABLE id: 10, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT sum(float64 - 2) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(minus(float64, 2)) Float64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: sum, function_type: aggregate, result_type: Float64
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: float64, result_type: Float64, source_id: 7
+            FUNCTION id: 8, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 9, nodes: 2
+                  CONSTANT id: 10, constant_value: UInt64_2, constant_value_type: UInt8
+                  FUNCTION id: 11, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 12, nodes: 1
+                        COLUMN id: 6, column_name: float64, result_type: Float64, source_id: 7
+  JOIN TREE
+    TABLE id: 7, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT sum(2 - float64) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(minus(2, float64)) Float64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  CONSTANT id: 6, constant_value: UInt64_2, constant_value_type: UInt8
+                  FUNCTION id: 7, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 8, nodes: 1
+                        COLUMN id: 9, column_name: float64, result_type: Float64, source_id: 10
+            FUNCTION id: 11, function_name: sum, function_type: aggregate, result_type: Float64
+              ARGUMENTS
+                LIST id: 12, nodes: 1
+                  COLUMN id: 9, column_name: float64, result_type: Float64, source_id: 10
+  JOIN TREE
+    TABLE id: 10, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT sum(float64) + 2 * count(float64) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    plus(sum(float64), multiply(2, count(float64))) Float64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: sum, function_type: aggregate, result_type: Float64
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: float64, result_type: Float64, source_id: 7
+            FUNCTION id: 8, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 9, nodes: 2
+                  CONSTANT id: 10, constant_value: UInt64_2, constant_value_type: UInt8
+                  FUNCTION id: 11, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 12, nodes: 1
+                        COLUMN id: 6, column_name: float64, result_type: Float64, source_id: 7
+  JOIN TREE
+    TABLE id: 7, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT 2 * count(float64) + sum(float64) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    plus(multiply(2, count(float64)), sum(float64)) Float64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  CONSTANT id: 6, constant_value: UInt64_2, constant_value_type: UInt8
+                  FUNCTION id: 7, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 8, nodes: 1
+                        COLUMN id: 9, column_name: float64, result_type: Float64, source_id: 10
+            FUNCTION id: 11, function_name: sum, function_type: aggregate, result_type: Float64
+              ARGUMENTS
+                LIST id: 12, nodes: 1
+                  COLUMN id: 9, column_name: float64, result_type: Float64, source_id: 10
+  JOIN TREE
+    TABLE id: 10, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT sum(float64) - 2 * count(float64) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    minus(sum(float64), multiply(2, count(float64))) Float64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: sum, function_type: aggregate, result_type: Float64
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: float64, result_type: Float64, source_id: 7
+            FUNCTION id: 8, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 9, nodes: 2
+                  CONSTANT id: 10, constant_value: UInt64_2, constant_value_type: UInt8
+                  FUNCTION id: 11, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 12, nodes: 1
+                        COLUMN id: 6, column_name: float64, result_type: Float64, source_id: 7
+  JOIN TREE
+    TABLE id: 7, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT 2 * count(float64) - sum(float64) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    minus(multiply(2, count(float64)), sum(float64)) Float64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  CONSTANT id: 6, constant_value: UInt64_2, constant_value_type: UInt8
+                  FUNCTION id: 7, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 8, nodes: 1
+                        COLUMN id: 9, column_name: float64, result_type: Float64, source_id: 10
+            FUNCTION id: 11, function_name: sum, function_type: aggregate, result_type: Float64
+              ARGUMENTS
+                LIST id: 12, nodes: 1
+                  COLUMN id: 9, column_name: float64, result_type: Float64, source_id: 10
+  JOIN TREE
+    TABLE id: 10, alias: __table1, table_name: default.test_table
+SELECT sum(decimal32 + 2) From test_table;
+26.65
+SELECT sum(2 + decimal32) From test_table;
+26.65
+SELECT sum(decimal32 - 2) From test_table;
+6.65
+SELECT sum(2 - decimal32) From test_table;
+-6.65
+SELECT sum(decimal32) + 2 * count(decimal32) From test_table;
+26.65
+SELECT 2 * count(decimal32) + sum(decimal32) From test_table;
+26.65
+SELECT sum(decimal32) - 2 * count(decimal32) From test_table;
+6.65
+SELECT 2 * count(decimal32) - sum(decimal32) From test_table;
+-6.65
+EXPLAIN QUERY TREE (SELECT sum(decimal32 + 2) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(plus(decimal32, 2)) Decimal(38, 5)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Decimal(38, 5)
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: decimal32, result_type: Decimal(9, 5), source_id: 7
+            FUNCTION id: 8, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 9, nodes: 2
+                  CONSTANT id: 10, constant_value: UInt64_2, constant_value_type: UInt8
+                  FUNCTION id: 11, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 12, nodes: 1
+                        COLUMN id: 6, column_name: decimal32, result_type: Decimal(9, 5), source_id: 7
+  JOIN TREE
+    TABLE id: 7, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT sum(2 + decimal32) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(plus(2, decimal32)) Decimal(38, 5)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Decimal(38, 5)
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  CONSTANT id: 6, constant_value: UInt64_2, constant_value_type: UInt8
+                  FUNCTION id: 7, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 8, nodes: 1
+                        COLUMN id: 9, column_name: decimal32, result_type: Decimal(9, 5), source_id: 10
+            FUNCTION id: 11, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+              ARGUMENTS
+                LIST id: 12, nodes: 1
+                  COLUMN id: 9, column_name: decimal32, result_type: Decimal(9, 5), source_id: 10
+  JOIN TREE
+    TABLE id: 10, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT sum(decimal32 - 2) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(minus(decimal32, 2)) Decimal(38, 5)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: decimal32, result_type: Decimal(9, 5), source_id: 7
+            FUNCTION id: 8, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 9, nodes: 2
+                  CONSTANT id: 10, constant_value: UInt64_2, constant_value_type: UInt8
+                  FUNCTION id: 11, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 12, nodes: 1
+                        COLUMN id: 6, column_name: decimal32, result_type: Decimal(9, 5), source_id: 7
+  JOIN TREE
+    TABLE id: 7, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT sum(2 - decimal32) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(minus(2, decimal32)) Decimal(38, 5)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  CONSTANT id: 6, constant_value: UInt64_2, constant_value_type: UInt8
+                  FUNCTION id: 7, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 8, nodes: 1
+                        COLUMN id: 9, column_name: decimal32, result_type: Decimal(9, 5), source_id: 10
+            FUNCTION id: 11, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+              ARGUMENTS
+                LIST id: 12, nodes: 1
+                  COLUMN id: 9, column_name: decimal32, result_type: Decimal(9, 5), source_id: 10
+  JOIN TREE
+    TABLE id: 10, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT sum(decimal32) + 2 * count(decimal32) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    plus(sum(decimal32), multiply(2, count(decimal32))) Decimal(38, 5)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Decimal(38, 5)
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: decimal32, result_type: Decimal(9, 5), source_id: 7
+            FUNCTION id: 8, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 9, nodes: 2
+                  CONSTANT id: 10, constant_value: UInt64_2, constant_value_type: UInt8
+                  FUNCTION id: 11, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 12, nodes: 1
+                        COLUMN id: 6, column_name: decimal32, result_type: Decimal(9, 5), source_id: 7
+  JOIN TREE
+    TABLE id: 7, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT 2 * count(decimal32) + sum(decimal32) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    plus(multiply(2, count(decimal32)), sum(decimal32)) Decimal(38, 5)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Decimal(38, 5)
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  CONSTANT id: 6, constant_value: UInt64_2, constant_value_type: UInt8
+                  FUNCTION id: 7, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 8, nodes: 1
+                        COLUMN id: 9, column_name: decimal32, result_type: Decimal(9, 5), source_id: 10
+            FUNCTION id: 11, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+              ARGUMENTS
+                LIST id: 12, nodes: 1
+                  COLUMN id: 9, column_name: decimal32, result_type: Decimal(9, 5), source_id: 10
+  JOIN TREE
+    TABLE id: 10, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT sum(decimal32) - 2 * count(decimal32) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    minus(sum(decimal32), multiply(2, count(decimal32))) Decimal(38, 5)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: decimal32, result_type: Decimal(9, 5), source_id: 7
+            FUNCTION id: 8, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 9, nodes: 2
+                  CONSTANT id: 10, constant_value: UInt64_2, constant_value_type: UInt8
+                  FUNCTION id: 11, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 12, nodes: 1
+                        COLUMN id: 6, column_name: decimal32, result_type: Decimal(9, 5), source_id: 7
+  JOIN TREE
+    TABLE id: 7, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT 2 * count(decimal32) - sum(decimal32) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    minus(multiply(2, count(decimal32)), sum(decimal32)) Decimal(38, 5)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  CONSTANT id: 6, constant_value: UInt64_2, constant_value_type: UInt8
+                  FUNCTION id: 7, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 8, nodes: 1
+                        COLUMN id: 9, column_name: decimal32, result_type: Decimal(9, 5), source_id: 10
+            FUNCTION id: 11, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+              ARGUMENTS
+                LIST id: 12, nodes: 1
+                  COLUMN id: 9, column_name: decimal32, result_type: Decimal(9, 5), source_id: 10
+  JOIN TREE
+    TABLE id: 10, alias: __table1, table_name: default.test_table
+SELECT sum(uint64 + 2) + sum(uint64 + 3) From test_table;
+55
+SELECT sum(uint64 + 2) - sum(uint64 + 3) From test_table;
+-5
+SELECT sum(uint64 - 2) - sum(uint64 - 3) From test_table;
+5
+SELECT sum(2 - uint64) - sum(3 - uint64) From test_table;
+-5
+SELECT (sum(uint64) + 2 * count(uint64)) + (sum(uint64) + 3 * count(uint64)) From test_table;
+55
+SELECT (sum(uint64) + 2 * count(uint64)) - (sum(uint64) + 3 * count(uint64)) From test_table;
+-5
+SELECT (sum(uint64) - 2 * count(uint64)) + (sum(uint64) - 3 * count(uint64)) From test_table;
+5
+SELECT (sum(uint64) - 2 * count(uint64)) - (sum(uint64) - 3 * count(uint64)) From test_table;
+5
+SELECT (2 * count(uint64) - sum(uint64)) + (3 * count(uint64) - sum(uint64)) From test_table;
+-5
+EXPLAIN QUERY TREE (SELECT sum(uint64 + 2) + sum(uint64 + 3) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    plus(sum(plus(uint64, 2)), sum(plus(uint64, 3))) UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: plus, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  FUNCTION id: 6, function_name: sum, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 7, nodes: 1
+                        COLUMN id: 8, column_name: uint64, result_type: UInt64, source_id: 9
+                  FUNCTION id: 10, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 11, nodes: 2
+                        CONSTANT id: 12, constant_value: UInt64_2, constant_value_type: UInt8
+                        FUNCTION id: 13, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 14, nodes: 1
+                              COLUMN id: 8, column_name: uint64, result_type: UInt64, source_id: 9
+            FUNCTION id: 15, function_name: plus, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 16, nodes: 2
+                  FUNCTION id: 17, function_name: sum, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 18, nodes: 1
+                        COLUMN id: 8, column_name: uint64, result_type: UInt64, source_id: 9
+                  FUNCTION id: 19, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 20, nodes: 2
+                        CONSTANT id: 21, constant_value: UInt64_3, constant_value_type: UInt8
+                        FUNCTION id: 22, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 23, nodes: 1
+                              COLUMN id: 8, column_name: uint64, result_type: UInt64, source_id: 9
+  JOIN TREE
+    TABLE id: 9, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT sum(uint64 + 2) - sum(uint64 + 3) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    minus(sum(plus(uint64, 2)), sum(plus(uint64, 3))) Int64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: plus, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  FUNCTION id: 6, function_name: sum, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 7, nodes: 1
+                        COLUMN id: 8, column_name: uint64, result_type: UInt64, source_id: 9
+                  FUNCTION id: 10, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 11, nodes: 2
+                        CONSTANT id: 12, constant_value: UInt64_2, constant_value_type: UInt8
+                        FUNCTION id: 13, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 14, nodes: 1
+                              COLUMN id: 8, column_name: uint64, result_type: UInt64, source_id: 9
+            FUNCTION id: 15, function_name: plus, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 16, nodes: 2
+                  FUNCTION id: 17, function_name: sum, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 18, nodes: 1
+                        COLUMN id: 8, column_name: uint64, result_type: UInt64, source_id: 9
+                  FUNCTION id: 19, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 20, nodes: 2
+                        CONSTANT id: 21, constant_value: UInt64_3, constant_value_type: UInt8
+                        FUNCTION id: 22, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 23, nodes: 1
+                              COLUMN id: 8, column_name: uint64, result_type: UInt64, source_id: 9
+  JOIN TREE
+    TABLE id: 9, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT sum(uint64 - 2) + sum(uint64 - 3) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    plus(sum(minus(uint64, 2)), sum(minus(uint64, 3))) Int64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: minus, function_type: ordinary, result_type: Int64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  FUNCTION id: 6, function_name: sum, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 7, nodes: 1
+                        COLUMN id: 8, column_name: uint64, result_type: UInt64, source_id: 9
+                  FUNCTION id: 10, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 11, nodes: 2
+                        CONSTANT id: 12, constant_value: UInt64_2, constant_value_type: UInt8
+                        FUNCTION id: 13, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 14, nodes: 1
+                              COLUMN id: 8, column_name: uint64, result_type: UInt64, source_id: 9
+            FUNCTION id: 15, function_name: minus, function_type: ordinary, result_type: Int64
+              ARGUMENTS
+                LIST id: 16, nodes: 2
+                  FUNCTION id: 17, function_name: sum, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 18, nodes: 1
+                        COLUMN id: 8, column_name: uint64, result_type: UInt64, source_id: 9
+                  FUNCTION id: 19, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 20, nodes: 2
+                        CONSTANT id: 21, constant_value: UInt64_3, constant_value_type: UInt8
+                        FUNCTION id: 22, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 23, nodes: 1
+                              COLUMN id: 8, column_name: uint64, result_type: UInt64, source_id: 9
+  JOIN TREE
+    TABLE id: 9, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT sum(uint64 - 2) - sum(uint64 - 3) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    minus(sum(minus(uint64, 2)), sum(minus(uint64, 3))) Int64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: minus, function_type: ordinary, result_type: Int64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  FUNCTION id: 6, function_name: sum, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 7, nodes: 1
+                        COLUMN id: 8, column_name: uint64, result_type: UInt64, source_id: 9
+                  FUNCTION id: 10, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 11, nodes: 2
+                        CONSTANT id: 12, constant_value: UInt64_2, constant_value_type: UInt8
+                        FUNCTION id: 13, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 14, nodes: 1
+                              COLUMN id: 8, column_name: uint64, result_type: UInt64, source_id: 9
+            FUNCTION id: 15, function_name: minus, function_type: ordinary, result_type: Int64
+              ARGUMENTS
+                LIST id: 16, nodes: 2
+                  FUNCTION id: 17, function_name: sum, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 18, nodes: 1
+                        COLUMN id: 8, column_name: uint64, result_type: UInt64, source_id: 9
+                  FUNCTION id: 19, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 20, nodes: 2
+                        CONSTANT id: 21, constant_value: UInt64_3, constant_value_type: UInt8
+                        FUNCTION id: 22, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 23, nodes: 1
+                              COLUMN id: 8, column_name: uint64, result_type: UInt64, source_id: 9
+  JOIN TREE
+    TABLE id: 9, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT sum(2 - uint64) - sum(3 - uint64) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    minus(sum(minus(2, uint64)), sum(minus(3, uint64))) Int64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: minus, function_type: ordinary, result_type: Int64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  FUNCTION id: 6, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 7, nodes: 2
+                        CONSTANT id: 8, constant_value: UInt64_2, constant_value_type: UInt8
+                        FUNCTION id: 9, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 10, nodes: 1
+                              COLUMN id: 11, column_name: uint64, result_type: UInt64, source_id: 12
+                  FUNCTION id: 13, function_name: sum, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 14, nodes: 1
+                        COLUMN id: 11, column_name: uint64, result_type: UInt64, source_id: 12
+            FUNCTION id: 15, function_name: minus, function_type: ordinary, result_type: Int64
+              ARGUMENTS
+                LIST id: 16, nodes: 2
+                  FUNCTION id: 17, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 18, nodes: 2
+                        CONSTANT id: 19, constant_value: UInt64_3, constant_value_type: UInt8
+                        FUNCTION id: 20, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 21, nodes: 1
+                              COLUMN id: 11, column_name: uint64, result_type: UInt64, source_id: 12
+                  FUNCTION id: 22, function_name: sum, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 23, nodes: 1
+                        COLUMN id: 11, column_name: uint64, result_type: UInt64, source_id: 12
+  JOIN TREE
+    TABLE id: 12, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT (sum(uint64) + 2 * count(uint64)) + (sum(uint64) + 3 * count(uint64)) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    plus(plus(sum(uint64), multiply(2, count(uint64))), plus(sum(uint64), multiply(3, count(uint64)))) UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: plus, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  FUNCTION id: 6, function_name: sum, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 7, nodes: 1
+                        COLUMN id: 8, column_name: uint64, result_type: UInt64, source_id: 9
+                  FUNCTION id: 10, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 11, nodes: 2
+                        CONSTANT id: 12, constant_value: UInt64_2, constant_value_type: UInt8
+                        FUNCTION id: 13, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 14, nodes: 1
+                              COLUMN id: 8, column_name: uint64, result_type: UInt64, source_id: 9
+            FUNCTION id: 15, function_name: plus, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 16, nodes: 2
+                  FUNCTION id: 17, function_name: sum, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 18, nodes: 1
+                        COLUMN id: 8, column_name: uint64, result_type: UInt64, source_id: 9
+                  FUNCTION id: 19, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 20, nodes: 2
+                        CONSTANT id: 21, constant_value: UInt64_3, constant_value_type: UInt8
+                        FUNCTION id: 22, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 23, nodes: 1
+                              COLUMN id: 8, column_name: uint64, result_type: UInt64, source_id: 9
+  JOIN TREE
+    TABLE id: 9, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT (sum(uint64) + 2 * count(uint64)) - (sum(uint64) + 3 * count(uint64)) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    minus(plus(sum(uint64), multiply(2, count(uint64))), plus(sum(uint64), multiply(3, count(uint64)))) Int64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: plus, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  FUNCTION id: 6, function_name: sum, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 7, nodes: 1
+                        COLUMN id: 8, column_name: uint64, result_type: UInt64, source_id: 9
+                  FUNCTION id: 10, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 11, nodes: 2
+                        CONSTANT id: 12, constant_value: UInt64_2, constant_value_type: UInt8
+                        FUNCTION id: 13, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 14, nodes: 1
+                              COLUMN id: 8, column_name: uint64, result_type: UInt64, source_id: 9
+            FUNCTION id: 15, function_name: plus, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 16, nodes: 2
+                  FUNCTION id: 17, function_name: sum, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 18, nodes: 1
+                        COLUMN id: 8, column_name: uint64, result_type: UInt64, source_id: 9
+                  FUNCTION id: 19, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 20, nodes: 2
+                        CONSTANT id: 21, constant_value: UInt64_3, constant_value_type: UInt8
+                        FUNCTION id: 22, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 23, nodes: 1
+                              COLUMN id: 8, column_name: uint64, result_type: UInt64, source_id: 9
+  JOIN TREE
+    TABLE id: 9, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT (sum(uint64) - 2 * count(uint64)) + (sum(uint64) - 3 * count(uint64)) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    plus(minus(sum(uint64), multiply(2, count(uint64))), minus(sum(uint64), multiply(3, count(uint64)))) Int64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: minus, function_type: ordinary, result_type: Int64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  FUNCTION id: 6, function_name: sum, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 7, nodes: 1
+                        COLUMN id: 8, column_name: uint64, result_type: UInt64, source_id: 9
+                  FUNCTION id: 10, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 11, nodes: 2
+                        CONSTANT id: 12, constant_value: UInt64_2, constant_value_type: UInt8
+                        FUNCTION id: 13, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 14, nodes: 1
+                              COLUMN id: 8, column_name: uint64, result_type: UInt64, source_id: 9
+            FUNCTION id: 15, function_name: minus, function_type: ordinary, result_type: Int64
+              ARGUMENTS
+                LIST id: 16, nodes: 2
+                  FUNCTION id: 17, function_name: sum, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 18, nodes: 1
+                        COLUMN id: 8, column_name: uint64, result_type: UInt64, source_id: 9
+                  FUNCTION id: 19, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 20, nodes: 2
+                        CONSTANT id: 21, constant_value: UInt64_3, constant_value_type: UInt8
+                        FUNCTION id: 22, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 23, nodes: 1
+                              COLUMN id: 8, column_name: uint64, result_type: UInt64, source_id: 9
+  JOIN TREE
+    TABLE id: 9, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT (sum(uint64) - 2 * count(uint64)) - (sum(uint64) - 3 * count(uint64)) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    minus(minus(sum(uint64), multiply(2, count(uint64))), minus(sum(uint64), multiply(3, count(uint64)))) Int64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: minus, function_type: ordinary, result_type: Int64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  FUNCTION id: 6, function_name: sum, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 7, nodes: 1
+                        COLUMN id: 8, column_name: uint64, result_type: UInt64, source_id: 9
+                  FUNCTION id: 10, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 11, nodes: 2
+                        CONSTANT id: 12, constant_value: UInt64_2, constant_value_type: UInt8
+                        FUNCTION id: 13, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 14, nodes: 1
+                              COLUMN id: 8, column_name: uint64, result_type: UInt64, source_id: 9
+            FUNCTION id: 15, function_name: minus, function_type: ordinary, result_type: Int64
+              ARGUMENTS
+                LIST id: 16, nodes: 2
+                  FUNCTION id: 17, function_name: sum, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 18, nodes: 1
+                        COLUMN id: 8, column_name: uint64, result_type: UInt64, source_id: 9
+                  FUNCTION id: 19, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 20, nodes: 2
+                        CONSTANT id: 21, constant_value: UInt64_3, constant_value_type: UInt8
+                        FUNCTION id: 22, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 23, nodes: 1
+                              COLUMN id: 8, column_name: uint64, result_type: UInt64, source_id: 9
+  JOIN TREE
+    TABLE id: 9, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT (2 * count(uint64) - sum(uint64)) + (3 * count(uint64) - sum(uint64)) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    plus(minus(multiply(2, count(uint64)), sum(uint64)), minus(multiply(3, count(uint64)), sum(uint64))) Int64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: minus, function_type: ordinary, result_type: Int64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  FUNCTION id: 6, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 7, nodes: 2
+                        CONSTANT id: 8, constant_value: UInt64_2, constant_value_type: UInt8
+                        FUNCTION id: 9, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 10, nodes: 1
+                              COLUMN id: 11, column_name: uint64, result_type: UInt64, source_id: 12
+                  FUNCTION id: 13, function_name: sum, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 14, nodes: 1
+                        COLUMN id: 11, column_name: uint64, result_type: UInt64, source_id: 12
+            FUNCTION id: 15, function_name: minus, function_type: ordinary, result_type: Int64
+              ARGUMENTS
+                LIST id: 16, nodes: 2
+                  FUNCTION id: 17, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 18, nodes: 2
+                        CONSTANT id: 19, constant_value: UInt64_3, constant_value_type: UInt8
+                        FUNCTION id: 20, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 21, nodes: 1
+                              COLUMN id: 11, column_name: uint64, result_type: UInt64, source_id: 12
+                  FUNCTION id: 22, function_name: sum, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 23, nodes: 1
+                        COLUMN id: 11, column_name: uint64, result_type: UInt64, source_id: 12
+  JOIN TREE
+    TABLE id: 12, alias: __table1, table_name: default.test_table
+SELECT sum(float64 + 2) + sum(float64 + 3) From test_table;
+58.75
+SELECT sum(float64 + 2) - sum(float64 + 3) From test_table;
+-5
+SELECT sum(float64 - 2) + sum(float64 - 3) From test_table;
+8.75
+SELECT sum(float64 - 2) - sum(float64 - 3) From test_table;
+5
+SELECT sum(2 - float64) - sum(3 - float64) From test_table;
+-5
+SELECT (sum(float64) + 2 * count(float64)) + (sum(float64) + 3 * count(float64)) From test_table;
+58.75
+SELECT (sum(float64) + 2 * count(float64)) - (sum(float64) + 3 * count(float64)) From test_table;
+-5
+SELECT (sum(float64) - 2 * count(float64)) + (sum(float64) - 3 * count(float64)) From test_table;
+8.75
+SELECT (sum(float64) - 2 * count(float64)) - (sum(float64) - 3 * count(float64)) From test_table;
+5
+SELECT (2 * count(float64) - sum(float64)) + (3 * count(float64) - sum(float64)) From test_table;
+-8.75
+EXPLAIN QUERY TREE (SELECT sum(float64 + 2) + sum(float64 + 3) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    plus(sum(plus(float64, 2)), sum(plus(float64, 3))) Float64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: plus, function_type: ordinary, result_type: Float64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  FUNCTION id: 6, function_name: sum, function_type: aggregate, result_type: Float64
+                    ARGUMENTS
+                      LIST id: 7, nodes: 1
+                        COLUMN id: 8, column_name: float64, result_type: Float64, source_id: 9
+                  FUNCTION id: 10, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 11, nodes: 2
+                        CONSTANT id: 12, constant_value: UInt64_2, constant_value_type: UInt8
+                        FUNCTION id: 13, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 14, nodes: 1
+                              COLUMN id: 8, column_name: float64, result_type: Float64, source_id: 9
+            FUNCTION id: 15, function_name: plus, function_type: ordinary, result_type: Float64
+              ARGUMENTS
+                LIST id: 16, nodes: 2
+                  FUNCTION id: 17, function_name: sum, function_type: aggregate, result_type: Float64
+                    ARGUMENTS
+                      LIST id: 18, nodes: 1
+                        COLUMN id: 8, column_name: float64, result_type: Float64, source_id: 9
+                  FUNCTION id: 19, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 20, nodes: 2
+                        CONSTANT id: 21, constant_value: UInt64_3, constant_value_type: UInt8
+                        FUNCTION id: 22, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 23, nodes: 1
+                              COLUMN id: 8, column_name: float64, result_type: Float64, source_id: 9
+  JOIN TREE
+    TABLE id: 9, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT sum(float64 + 2) - sum(float64 + 3) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    minus(sum(plus(float64, 2)), sum(plus(float64, 3))) Float64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: plus, function_type: ordinary, result_type: Float64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  FUNCTION id: 6, function_name: sum, function_type: aggregate, result_type: Float64
+                    ARGUMENTS
+                      LIST id: 7, nodes: 1
+                        COLUMN id: 8, column_name: float64, result_type: Float64, source_id: 9
+                  FUNCTION id: 10, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 11, nodes: 2
+                        CONSTANT id: 12, constant_value: UInt64_2, constant_value_type: UInt8
+                        FUNCTION id: 13, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 14, nodes: 1
+                              COLUMN id: 8, column_name: float64, result_type: Float64, source_id: 9
+            FUNCTION id: 15, function_name: plus, function_type: ordinary, result_type: Float64
+              ARGUMENTS
+                LIST id: 16, nodes: 2
+                  FUNCTION id: 17, function_name: sum, function_type: aggregate, result_type: Float64
+                    ARGUMENTS
+                      LIST id: 18, nodes: 1
+                        COLUMN id: 8, column_name: float64, result_type: Float64, source_id: 9
+                  FUNCTION id: 19, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 20, nodes: 2
+                        CONSTANT id: 21, constant_value: UInt64_3, constant_value_type: UInt8
+                        FUNCTION id: 22, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 23, nodes: 1
+                              COLUMN id: 8, column_name: float64, result_type: Float64, source_id: 9
+  JOIN TREE
+    TABLE id: 9, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT sum(float64 - 2) + sum(float64 - 3) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    plus(sum(minus(float64, 2)), sum(minus(float64, 3))) Float64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: minus, function_type: ordinary, result_type: Float64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  FUNCTION id: 6, function_name: sum, function_type: aggregate, result_type: Float64
+                    ARGUMENTS
+                      LIST id: 7, nodes: 1
+                        COLUMN id: 8, column_name: float64, result_type: Float64, source_id: 9
+                  FUNCTION id: 10, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 11, nodes: 2
+                        CONSTANT id: 12, constant_value: UInt64_2, constant_value_type: UInt8
+                        FUNCTION id: 13, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 14, nodes: 1
+                              COLUMN id: 8, column_name: float64, result_type: Float64, source_id: 9
+            FUNCTION id: 15, function_name: minus, function_type: ordinary, result_type: Float64
+              ARGUMENTS
+                LIST id: 16, nodes: 2
+                  FUNCTION id: 17, function_name: sum, function_type: aggregate, result_type: Float64
+                    ARGUMENTS
+                      LIST id: 18, nodes: 1
+                        COLUMN id: 8, column_name: float64, result_type: Float64, source_id: 9
+                  FUNCTION id: 19, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 20, nodes: 2
+                        CONSTANT id: 21, constant_value: UInt64_3, constant_value_type: UInt8
+                        FUNCTION id: 22, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 23, nodes: 1
+                              COLUMN id: 8, column_name: float64, result_type: Float64, source_id: 9
+  JOIN TREE
+    TABLE id: 9, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT sum(float64 - 2) - sum(float64 - 3) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    minus(sum(minus(float64, 2)), sum(minus(float64, 3))) Float64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: minus, function_type: ordinary, result_type: Float64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  FUNCTION id: 6, function_name: sum, function_type: aggregate, result_type: Float64
+                    ARGUMENTS
+                      LIST id: 7, nodes: 1
+                        COLUMN id: 8, column_name: float64, result_type: Float64, source_id: 9
+                  FUNCTION id: 10, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 11, nodes: 2
+                        CONSTANT id: 12, constant_value: UInt64_2, constant_value_type: UInt8
+                        FUNCTION id: 13, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 14, nodes: 1
+                              COLUMN id: 8, column_name: float64, result_type: Float64, source_id: 9
+            FUNCTION id: 15, function_name: minus, function_type: ordinary, result_type: Float64
+              ARGUMENTS
+                LIST id: 16, nodes: 2
+                  FUNCTION id: 17, function_name: sum, function_type: aggregate, result_type: Float64
+                    ARGUMENTS
+                      LIST id: 18, nodes: 1
+                        COLUMN id: 8, column_name: float64, result_type: Float64, source_id: 9
+                  FUNCTION id: 19, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 20, nodes: 2
+                        CONSTANT id: 21, constant_value: UInt64_3, constant_value_type: UInt8
+                        FUNCTION id: 22, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 23, nodes: 1
+                              COLUMN id: 8, column_name: float64, result_type: Float64, source_id: 9
+  JOIN TREE
+    TABLE id: 9, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT sum(2 - float64) - sum(3 - float64) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    minus(sum(minus(2, float64)), sum(minus(3, float64))) Float64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: minus, function_type: ordinary, result_type: Float64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  FUNCTION id: 6, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 7, nodes: 2
+                        CONSTANT id: 8, constant_value: UInt64_2, constant_value_type: UInt8
+                        FUNCTION id: 9, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 10, nodes: 1
+                              COLUMN id: 11, column_name: float64, result_type: Float64, source_id: 12
+                  FUNCTION id: 13, function_name: sum, function_type: aggregate, result_type: Float64
+                    ARGUMENTS
+                      LIST id: 14, nodes: 1
+                        COLUMN id: 11, column_name: float64, result_type: Float64, source_id: 12
+            FUNCTION id: 15, function_name: minus, function_type: ordinary, result_type: Float64
+              ARGUMENTS
+                LIST id: 16, nodes: 2
+                  FUNCTION id: 17, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 18, nodes: 2
+                        CONSTANT id: 19, constant_value: UInt64_3, constant_value_type: UInt8
+                        FUNCTION id: 20, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 21, nodes: 1
+                              COLUMN id: 11, column_name: float64, result_type: Float64, source_id: 12
+                  FUNCTION id: 22, function_name: sum, function_type: aggregate, result_type: Float64
+                    ARGUMENTS
+                      LIST id: 23, nodes: 1
+                        COLUMN id: 11, column_name: float64, result_type: Float64, source_id: 12
+  JOIN TREE
+    TABLE id: 12, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT (sum(float64) + 2 * count(float64)) + (sum(float64) + 3 * count(float64)) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    plus(plus(sum(float64), multiply(2, count(float64))), plus(sum(float64), multiply(3, count(float64)))) Float64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: plus, function_type: ordinary, result_type: Float64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  FUNCTION id: 6, function_name: sum, function_type: aggregate, result_type: Float64
+                    ARGUMENTS
+                      LIST id: 7, nodes: 1
+                        COLUMN id: 8, column_name: float64, result_type: Float64, source_id: 9
+                  FUNCTION id: 10, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 11, nodes: 2
+                        CONSTANT id: 12, constant_value: UInt64_2, constant_value_type: UInt8
+                        FUNCTION id: 13, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 14, nodes: 1
+                              COLUMN id: 8, column_name: float64, result_type: Float64, source_id: 9
+            FUNCTION id: 15, function_name: plus, function_type: ordinary, result_type: Float64
+              ARGUMENTS
+                LIST id: 16, nodes: 2
+                  FUNCTION id: 17, function_name: sum, function_type: aggregate, result_type: Float64
+                    ARGUMENTS
+                      LIST id: 18, nodes: 1
+                        COLUMN id: 8, column_name: float64, result_type: Float64, source_id: 9
+                  FUNCTION id: 19, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 20, nodes: 2
+                        CONSTANT id: 21, constant_value: UInt64_3, constant_value_type: UInt8
+                        FUNCTION id: 22, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 23, nodes: 1
+                              COLUMN id: 8, column_name: float64, result_type: Float64, source_id: 9
+  JOIN TREE
+    TABLE id: 9, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT (sum(float64) + 2 * count(float64)) - (sum(float64) + 3 * count(float64)) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    minus(plus(sum(float64), multiply(2, count(float64))), plus(sum(float64), multiply(3, count(float64)))) Float64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: plus, function_type: ordinary, result_type: Float64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  FUNCTION id: 6, function_name: sum, function_type: aggregate, result_type: Float64
+                    ARGUMENTS
+                      LIST id: 7, nodes: 1
+                        COLUMN id: 8, column_name: float64, result_type: Float64, source_id: 9
+                  FUNCTION id: 10, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 11, nodes: 2
+                        CONSTANT id: 12, constant_value: UInt64_2, constant_value_type: UInt8
+                        FUNCTION id: 13, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 14, nodes: 1
+                              COLUMN id: 8, column_name: float64, result_type: Float64, source_id: 9
+            FUNCTION id: 15, function_name: plus, function_type: ordinary, result_type: Float64
+              ARGUMENTS
+                LIST id: 16, nodes: 2
+                  FUNCTION id: 17, function_name: sum, function_type: aggregate, result_type: Float64
+                    ARGUMENTS
+                      LIST id: 18, nodes: 1
+                        COLUMN id: 8, column_name: float64, result_type: Float64, source_id: 9
+                  FUNCTION id: 19, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 20, nodes: 2
+                        CONSTANT id: 21, constant_value: UInt64_3, constant_value_type: UInt8
+                        FUNCTION id: 22, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 23, nodes: 1
+                              COLUMN id: 8, column_name: float64, result_type: Float64, source_id: 9
+  JOIN TREE
+    TABLE id: 9, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT (sum(float64) - 2 * count(float64)) + (sum(float64) - 3 * count(float64)) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    plus(minus(sum(float64), multiply(2, count(float64))), minus(sum(float64), multiply(3, count(float64)))) Float64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: minus, function_type: ordinary, result_type: Float64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  FUNCTION id: 6, function_name: sum, function_type: aggregate, result_type: Float64
+                    ARGUMENTS
+                      LIST id: 7, nodes: 1
+                        COLUMN id: 8, column_name: float64, result_type: Float64, source_id: 9
+                  FUNCTION id: 10, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 11, nodes: 2
+                        CONSTANT id: 12, constant_value: UInt64_2, constant_value_type: UInt8
+                        FUNCTION id: 13, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 14, nodes: 1
+                              COLUMN id: 8, column_name: float64, result_type: Float64, source_id: 9
+            FUNCTION id: 15, function_name: minus, function_type: ordinary, result_type: Float64
+              ARGUMENTS
+                LIST id: 16, nodes: 2
+                  FUNCTION id: 17, function_name: sum, function_type: aggregate, result_type: Float64
+                    ARGUMENTS
+                      LIST id: 18, nodes: 1
+                        COLUMN id: 8, column_name: float64, result_type: Float64, source_id: 9
+                  FUNCTION id: 19, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 20, nodes: 2
+                        CONSTANT id: 21, constant_value: UInt64_3, constant_value_type: UInt8
+                        FUNCTION id: 22, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 23, nodes: 1
+                              COLUMN id: 8, column_name: float64, result_type: Float64, source_id: 9
+  JOIN TREE
+    TABLE id: 9, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT (sum(float64) - 2 * count(float64)) - (sum(float64) - 3 * count(float64)) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    minus(minus(sum(float64), multiply(2, count(float64))), minus(sum(float64), multiply(3, count(float64)))) Float64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: minus, function_type: ordinary, result_type: Float64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  FUNCTION id: 6, function_name: sum, function_type: aggregate, result_type: Float64
+                    ARGUMENTS
+                      LIST id: 7, nodes: 1
+                        COLUMN id: 8, column_name: float64, result_type: Float64, source_id: 9
+                  FUNCTION id: 10, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 11, nodes: 2
+                        CONSTANT id: 12, constant_value: UInt64_2, constant_value_type: UInt8
+                        FUNCTION id: 13, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 14, nodes: 1
+                              COLUMN id: 8, column_name: float64, result_type: Float64, source_id: 9
+            FUNCTION id: 15, function_name: minus, function_type: ordinary, result_type: Float64
+              ARGUMENTS
+                LIST id: 16, nodes: 2
+                  FUNCTION id: 17, function_name: sum, function_type: aggregate, result_type: Float64
+                    ARGUMENTS
+                      LIST id: 18, nodes: 1
+                        COLUMN id: 8, column_name: float64, result_type: Float64, source_id: 9
+                  FUNCTION id: 19, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 20, nodes: 2
+                        CONSTANT id: 21, constant_value: UInt64_3, constant_value_type: UInt8
+                        FUNCTION id: 22, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 23, nodes: 1
+                              COLUMN id: 8, column_name: float64, result_type: Float64, source_id: 9
+  JOIN TREE
+    TABLE id: 9, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT (2 * count(float64) - sum(float64)) + (3 * count(float64) - sum(float64)) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    plus(minus(multiply(2, count(float64)), sum(float64)), minus(multiply(3, count(float64)), sum(float64))) Float64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: minus, function_type: ordinary, result_type: Float64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  FUNCTION id: 6, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 7, nodes: 2
+                        CONSTANT id: 8, constant_value: UInt64_2, constant_value_type: UInt8
+                        FUNCTION id: 9, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 10, nodes: 1
+                              COLUMN id: 11, column_name: float64, result_type: Float64, source_id: 12
+                  FUNCTION id: 13, function_name: sum, function_type: aggregate, result_type: Float64
+                    ARGUMENTS
+                      LIST id: 14, nodes: 1
+                        COLUMN id: 11, column_name: float64, result_type: Float64, source_id: 12
+            FUNCTION id: 15, function_name: minus, function_type: ordinary, result_type: Float64
+              ARGUMENTS
+                LIST id: 16, nodes: 2
+                  FUNCTION id: 17, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 18, nodes: 2
+                        CONSTANT id: 19, constant_value: UInt64_3, constant_value_type: UInt8
+                        FUNCTION id: 20, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 21, nodes: 1
+                              COLUMN id: 11, column_name: float64, result_type: Float64, source_id: 12
+                  FUNCTION id: 22, function_name: sum, function_type: aggregate, result_type: Float64
+                    ARGUMENTS
+                      LIST id: 23, nodes: 1
+                        COLUMN id: 11, column_name: float64, result_type: Float64, source_id: 12
+  JOIN TREE
+    TABLE id: 12, alias: __table1, table_name: default.test_table
+SELECT sum(decimal32 + 2) + sum(decimal32 + 3) From test_table;
+58.3
+SELECT sum(decimal32 + 2) - sum(decimal32 + 3) From test_table;
+-5
+SELECT sum(decimal32 - 2) + sum(decimal32 - 3) From test_table;
+8.3
+SELECT sum(decimal32 - 2) - sum(decimal32 - 3) From test_table;
+5
+SELECT sum(2 - decimal32) - sum(3 - decimal32) From test_table;
+-5
+SELECT (sum(decimal32) + 2 * count(decimal32)) + (sum(decimal32) + 3 * count(decimal32)) From test_table;
+58.3
+SELECT (sum(decimal32) + 2 * count(decimal32)) - (sum(decimal32) + 3 * count(decimal32)) From test_table;
+-5
+SELECT (sum(decimal32) - 2 * count(decimal32)) + (sum(decimal32) - 3 * count(decimal32)) From test_table;
+8.3
+SELECT (sum(decimal32) - 2 * count(decimal32)) - (sum(decimal32) - 3 * count(decimal32)) From test_table;
+5
+SELECT (2 * count(decimal32) - sum(decimal32)) + (3 * count(decimal32) - sum(decimal32)) From test_table;
+-8.3
+EXPLAIN QUERY TREE (SELECT sum(decimal32 + 2) + sum(decimal32 + 3) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    plus(sum(plus(decimal32, 2)), sum(plus(decimal32, 3))) Decimal(38, 5)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Decimal(38, 5)
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: plus, function_type: ordinary, result_type: Decimal(38, 5)
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  FUNCTION id: 6, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+                    ARGUMENTS
+                      LIST id: 7, nodes: 1
+                        COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
+                  FUNCTION id: 10, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 11, nodes: 2
+                        CONSTANT id: 12, constant_value: UInt64_2, constant_value_type: UInt8
+                        FUNCTION id: 13, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 14, nodes: 1
+                              COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
+            FUNCTION id: 15, function_name: plus, function_type: ordinary, result_type: Decimal(38, 5)
+              ARGUMENTS
+                LIST id: 16, nodes: 2
+                  FUNCTION id: 17, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+                    ARGUMENTS
+                      LIST id: 18, nodes: 1
+                        COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
+                  FUNCTION id: 19, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 20, nodes: 2
+                        CONSTANT id: 21, constant_value: UInt64_3, constant_value_type: UInt8
+                        FUNCTION id: 22, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 23, nodes: 1
+                              COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
+  JOIN TREE
+    TABLE id: 9, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT sum(decimal32 + 2) - sum(decimal32 + 3) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    minus(sum(plus(decimal32, 2)), sum(plus(decimal32, 3))) Decimal(38, 5)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: plus, function_type: ordinary, result_type: Decimal(38, 5)
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  FUNCTION id: 6, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+                    ARGUMENTS
+                      LIST id: 7, nodes: 1
+                        COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
+                  FUNCTION id: 10, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 11, nodes: 2
+                        CONSTANT id: 12, constant_value: UInt64_2, constant_value_type: UInt8
+                        FUNCTION id: 13, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 14, nodes: 1
+                              COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
+            FUNCTION id: 15, function_name: plus, function_type: ordinary, result_type: Decimal(38, 5)
+              ARGUMENTS
+                LIST id: 16, nodes: 2
+                  FUNCTION id: 17, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+                    ARGUMENTS
+                      LIST id: 18, nodes: 1
+                        COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
+                  FUNCTION id: 19, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 20, nodes: 2
+                        CONSTANT id: 21, constant_value: UInt64_3, constant_value_type: UInt8
+                        FUNCTION id: 22, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 23, nodes: 1
+                              COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
+  JOIN TREE
+    TABLE id: 9, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT sum(decimal32 - 2) + sum(decimal32 - 3) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    plus(sum(minus(decimal32, 2)), sum(minus(decimal32, 3))) Decimal(38, 5)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Decimal(38, 5)
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  FUNCTION id: 6, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+                    ARGUMENTS
+                      LIST id: 7, nodes: 1
+                        COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
+                  FUNCTION id: 10, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 11, nodes: 2
+                        CONSTANT id: 12, constant_value: UInt64_2, constant_value_type: UInt8
+                        FUNCTION id: 13, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 14, nodes: 1
+                              COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
+            FUNCTION id: 15, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
+              ARGUMENTS
+                LIST id: 16, nodes: 2
+                  FUNCTION id: 17, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+                    ARGUMENTS
+                      LIST id: 18, nodes: 1
+                        COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
+                  FUNCTION id: 19, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 20, nodes: 2
+                        CONSTANT id: 21, constant_value: UInt64_3, constant_value_type: UInt8
+                        FUNCTION id: 22, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 23, nodes: 1
+                              COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
+  JOIN TREE
+    TABLE id: 9, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT sum(decimal32 - 2) - sum(decimal32 - 3) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    minus(sum(minus(decimal32, 2)), sum(minus(decimal32, 3))) Decimal(38, 5)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  FUNCTION id: 6, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+                    ARGUMENTS
+                      LIST id: 7, nodes: 1
+                        COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
+                  FUNCTION id: 10, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 11, nodes: 2
+                        CONSTANT id: 12, constant_value: UInt64_2, constant_value_type: UInt8
+                        FUNCTION id: 13, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 14, nodes: 1
+                              COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
+            FUNCTION id: 15, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
+              ARGUMENTS
+                LIST id: 16, nodes: 2
+                  FUNCTION id: 17, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+                    ARGUMENTS
+                      LIST id: 18, nodes: 1
+                        COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
+                  FUNCTION id: 19, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 20, nodes: 2
+                        CONSTANT id: 21, constant_value: UInt64_3, constant_value_type: UInt8
+                        FUNCTION id: 22, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 23, nodes: 1
+                              COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
+  JOIN TREE
+    TABLE id: 9, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT sum(2 - decimal32) - sum(3 - decimal32) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    minus(sum(minus(2, decimal32)), sum(minus(3, decimal32))) Decimal(38, 5)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  FUNCTION id: 6, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 7, nodes: 2
+                        CONSTANT id: 8, constant_value: UInt64_2, constant_value_type: UInt8
+                        FUNCTION id: 9, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 10, nodes: 1
+                              COLUMN id: 11, column_name: decimal32, result_type: Decimal(9, 5), source_id: 12
+                  FUNCTION id: 13, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+                    ARGUMENTS
+                      LIST id: 14, nodes: 1
+                        COLUMN id: 11, column_name: decimal32, result_type: Decimal(9, 5), source_id: 12
+            FUNCTION id: 15, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
+              ARGUMENTS
+                LIST id: 16, nodes: 2
+                  FUNCTION id: 17, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 18, nodes: 2
+                        CONSTANT id: 19, constant_value: UInt64_3, constant_value_type: UInt8
+                        FUNCTION id: 20, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 21, nodes: 1
+                              COLUMN id: 11, column_name: decimal32, result_type: Decimal(9, 5), source_id: 12
+                  FUNCTION id: 22, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+                    ARGUMENTS
+                      LIST id: 23, nodes: 1
+                        COLUMN id: 11, column_name: decimal32, result_type: Decimal(9, 5), source_id: 12
+  JOIN TREE
+    TABLE id: 12, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT (sum(decimal32) + 2 * count(decimal32)) + (sum(decimal32) + 3 * count(decimal32)) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    plus(plus(sum(decimal32), multiply(2, count(decimal32))), plus(sum(decimal32), multiply(3, count(decimal32)))) Decimal(38, 5)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Decimal(38, 5)
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: plus, function_type: ordinary, result_type: Decimal(38, 5)
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  FUNCTION id: 6, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+                    ARGUMENTS
+                      LIST id: 7, nodes: 1
+                        COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
+                  FUNCTION id: 10, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 11, nodes: 2
+                        CONSTANT id: 12, constant_value: UInt64_2, constant_value_type: UInt8
+                        FUNCTION id: 13, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 14, nodes: 1
+                              COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
+            FUNCTION id: 15, function_name: plus, function_type: ordinary, result_type: Decimal(38, 5)
+              ARGUMENTS
+                LIST id: 16, nodes: 2
+                  FUNCTION id: 17, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+                    ARGUMENTS
+                      LIST id: 18, nodes: 1
+                        COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
+                  FUNCTION id: 19, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 20, nodes: 2
+                        CONSTANT id: 21, constant_value: UInt64_3, constant_value_type: UInt8
+                        FUNCTION id: 22, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 23, nodes: 1
+                              COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
+  JOIN TREE
+    TABLE id: 9, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT (sum(decimal32) + 2 * count(decimal32)) - (sum(decimal32) + 3 * count(decimal32)) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    minus(plus(sum(decimal32), multiply(2, count(decimal32))), plus(sum(decimal32), multiply(3, count(decimal32)))) Decimal(38, 5)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: plus, function_type: ordinary, result_type: Decimal(38, 5)
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  FUNCTION id: 6, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+                    ARGUMENTS
+                      LIST id: 7, nodes: 1
+                        COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
+                  FUNCTION id: 10, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 11, nodes: 2
+                        CONSTANT id: 12, constant_value: UInt64_2, constant_value_type: UInt8
+                        FUNCTION id: 13, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 14, nodes: 1
+                              COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
+            FUNCTION id: 15, function_name: plus, function_type: ordinary, result_type: Decimal(38, 5)
+              ARGUMENTS
+                LIST id: 16, nodes: 2
+                  FUNCTION id: 17, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+                    ARGUMENTS
+                      LIST id: 18, nodes: 1
+                        COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
+                  FUNCTION id: 19, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 20, nodes: 2
+                        CONSTANT id: 21, constant_value: UInt64_3, constant_value_type: UInt8
+                        FUNCTION id: 22, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 23, nodes: 1
+                              COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
+  JOIN TREE
+    TABLE id: 9, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT (sum(decimal32) - 2 * count(decimal32)) + (sum(decimal32) - 3 * count(decimal32)) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    plus(minus(sum(decimal32), multiply(2, count(decimal32))), minus(sum(decimal32), multiply(3, count(decimal32)))) Decimal(38, 5)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Decimal(38, 5)
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  FUNCTION id: 6, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+                    ARGUMENTS
+                      LIST id: 7, nodes: 1
+                        COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
+                  FUNCTION id: 10, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 11, nodes: 2
+                        CONSTANT id: 12, constant_value: UInt64_2, constant_value_type: UInt8
+                        FUNCTION id: 13, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 14, nodes: 1
+                              COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
+            FUNCTION id: 15, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
+              ARGUMENTS
+                LIST id: 16, nodes: 2
+                  FUNCTION id: 17, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+                    ARGUMENTS
+                      LIST id: 18, nodes: 1
+                        COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
+                  FUNCTION id: 19, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 20, nodes: 2
+                        CONSTANT id: 21, constant_value: UInt64_3, constant_value_type: UInt8
+                        FUNCTION id: 22, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 23, nodes: 1
+                              COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
+  JOIN TREE
+    TABLE id: 9, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT (sum(decimal32) - 2 * count(decimal32)) - (sum(decimal32) - 3 * count(decimal32)) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    minus(minus(sum(decimal32), multiply(2, count(decimal32))), minus(sum(decimal32), multiply(3, count(decimal32)))) Decimal(38, 5)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  FUNCTION id: 6, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+                    ARGUMENTS
+                      LIST id: 7, nodes: 1
+                        COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
+                  FUNCTION id: 10, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 11, nodes: 2
+                        CONSTANT id: 12, constant_value: UInt64_2, constant_value_type: UInt8
+                        FUNCTION id: 13, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 14, nodes: 1
+                              COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
+            FUNCTION id: 15, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
+              ARGUMENTS
+                LIST id: 16, nodes: 2
+                  FUNCTION id: 17, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+                    ARGUMENTS
+                      LIST id: 18, nodes: 1
+                        COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
+                  FUNCTION id: 19, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 20, nodes: 2
+                        CONSTANT id: 21, constant_value: UInt64_3, constant_value_type: UInt8
+                        FUNCTION id: 22, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 23, nodes: 1
+                              COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
+  JOIN TREE
+    TABLE id: 9, alias: __table1, table_name: default.test_table
+EXPLAIN QUERY TREE (SELECT (2 * count(decimal32) - sum(decimal32)) + (3 * count(decimal32) - sum(decimal32)) From test_table);
+QUERY id: 0
+  PROJECTION COLUMNS
+    plus(minus(multiply(2, count(decimal32)), sum(decimal32)), minus(multiply(3, count(decimal32)), sum(decimal32))) Decimal(38, 5)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Decimal(38, 5)
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  FUNCTION id: 6, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 7, nodes: 2
+                        CONSTANT id: 8, constant_value: UInt64_2, constant_value_type: UInt8
+                        FUNCTION id: 9, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 10, nodes: 1
+                              COLUMN id: 11, column_name: decimal32, result_type: Decimal(9, 5), source_id: 12
+                  FUNCTION id: 13, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+                    ARGUMENTS
+                      LIST id: 14, nodes: 1
+                        COLUMN id: 11, column_name: decimal32, result_type: Decimal(9, 5), source_id: 12
+            FUNCTION id: 15, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
+              ARGUMENTS
+                LIST id: 16, nodes: 2
+                  FUNCTION id: 17, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 18, nodes: 2
+                        CONSTANT id: 19, constant_value: UInt64_3, constant_value_type: UInt8
+                        FUNCTION id: 20, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 21, nodes: 1
+                              COLUMN id: 11, column_name: decimal32, result_type: Decimal(9, 5), source_id: 12
+                  FUNCTION id: 22, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+                    ARGUMENTS
+                      LIST id: 23, nodes: 1
+                        COLUMN id: 11, column_name: decimal32, result_type: Decimal(9, 5), source_id: 12
+  JOIN TREE
+    TABLE id: 12, alias: __table1, table_name: default.test_table

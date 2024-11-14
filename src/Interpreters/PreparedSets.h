@@ -90,9 +90,18 @@ private:
 
 using FutureSetFromTuplePtr = std::shared_ptr<FutureSetFromTuple>;
 
-/// Set from subquery can be built inplace for PK or in CreatingSet step.
-/// If use_index_for_in_with_subqueries_max_values is reached, set for PK won't be created,
-/// but ordinary set would be created instead.
+/// Set from subquery can be filled (by running the subquery) in one of two ways:
+///  1. During query analysis. Specifically, inside `SourceStepWithFilter::applyFilters()`.
+///     Useful if the query plan depends on the set contents, e.g. to determine which files to read.
+///  2. During query execution. This is the preferred way.
+///     Sets are created by CreatingSetStep, which runs before other steps.
+/// Be careful: to build the set during query analysis, the `buildSetInplace()` call must happen
+/// inside `SourceStepWithFilter::applyFilters()`. Calling it later, e.g. from `initializePipeline()`
+/// will result in LOGICAL_ERROR "Not-ready Set is passed" (because a CreatingSetStep was already
+/// added to pipeline but hasn't executed yet).
+///
+/// If use_index_for_in_with_subqueries_max_values is reached, the built set won't be suitable for
+/// key analysis, but will work with function IN (the set will contain only hashes of elements).
 class FutureSetFromSubquery final : public FutureSet
 {
 public:
@@ -101,13 +110,14 @@ public:
         std::unique_ptr<QueryPlan> source_,
         StoragePtr external_table_,
         std::shared_ptr<FutureSetFromSubquery> external_table_set_,
-        const Settings & settings,
-        bool in_subquery_);
+        const Settings & settings);
 
     FutureSetFromSubquery(
         String key,
         QueryTreeNodePtr query_tree_,
         const Settings & settings);
+
+    ~FutureSetFromSubquery() override;
 
     SetPtr get() const override;
     DataTypes getTypes() const override;
@@ -118,8 +128,6 @@ public:
 
     QueryTreeNodePtr detachQueryTree() { return std::move(query_tree); }
     void setQueryPlan(std::unique_ptr<QueryPlan> source_);
-    void markAsINSubquery() { in_subquery = true; }
-    bool isINSubquery() const { return in_subquery; }
 
 private:
     SetAndKeyPtr set_and_key;
@@ -128,11 +136,6 @@ private:
 
     std::unique_ptr<QueryPlan> source;
     QueryTreeNodePtr query_tree;
-    bool in_subquery = false; // subquery used in IN operator
-                              // the flag can be removed after enabling new analyzer and removing interpreter
-                              // or after enabling support IN operator with subqueries in parallel replicas
-                              // Note: it's necessary with interpreter since prepared sets used also for GLOBAL JOINs,
-                              //       with new analyzer it's not a case
 };
 
 using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
@@ -160,8 +163,7 @@ public:
         std::unique_ptr<QueryPlan> source,
         StoragePtr external_table,
         FutureSetFromSubqueryPtr external_table_set,
-        const Settings & settings,
-        bool in_subquery = false);
+        const Settings & settings);
 
     FutureSetFromSubqueryPtr addFromSubquery(
         const Hash & key,
@@ -171,7 +173,6 @@ public:
     FutureSetFromTuplePtr findTuple(const Hash & key, const DataTypes & types) const;
     FutureSetFromStoragePtr findStorage(const Hash & key) const;
     FutureSetFromSubqueryPtr findSubquery(const Hash & key) const;
-    void markAsINSubquery(const Hash & key);
 
     using Subqueries = std::vector<FutureSetFromSubqueryPtr>;
     Subqueries getSubqueries() const;

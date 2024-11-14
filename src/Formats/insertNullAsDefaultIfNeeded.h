@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
+#include <Core/BlockMissingValues.h>
 
 namespace DB
 {

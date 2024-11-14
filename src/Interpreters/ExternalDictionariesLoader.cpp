@@ -5,6 +5,8 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
+#include <Common/Config/AbstractConfigurationComparison.h>
+#include <Core/Settings.h>
 
 #include "config.h"
 
@@ -14,6 +16,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool log_queries;
+}
 
 namespace ErrorCodes
 {
@@ -22,15 +28,16 @@ namespace ErrorCodes
 
 /// Must not acquire Context lock in constructor to avoid possibility of deadlocks.
 ExternalDictionariesLoader::ExternalDictionariesLoader(ContextPtr global_context_)
-    : ExternalLoader("external dictionary", &Poco::Logger::get("ExternalDictionariesLoader"))
+    : ExternalLoader("external dictionary", getLogger("ExternalDictionariesLoader"))
     , WithContext(global_context_)
 {
     setConfigSettings({"dictionary", "name", "database", "uuid"});
     enableAsyncLoading(true);
-    enablePeriodicUpdates(true);
+    if (getContext()->getApplicationType() == Context::ApplicationType::SERVER)
+        enablePeriodicUpdates(true);
 }
 
-ExternalLoader::LoadablePtr ExternalDictionariesLoader::create(
+ExternalLoader::LoadableMutablePtr ExternalDictionariesLoader::createObject(
         const std::string & name, const Poco::Util::AbstractConfiguration & config,
         const std::string & key_in_config, const std::string & repository_name) const
 {
@@ -40,24 +47,58 @@ ExternalLoader::LoadablePtr ExternalDictionariesLoader::create(
     return DictionaryFactory::instance().create(name, config, key_in_config, getContext(), created_from_ddl);
 }
 
+bool ExternalDictionariesLoader::doesConfigChangeRequiresReloadingObject(const Poco::Util::AbstractConfiguration & old_config, const String & old_key_in_config,
+                                                                         const Poco::Util::AbstractConfiguration & new_config, const String & new_key_in_config) const
+{
+    std::unordered_set<std::string_view> ignore_keys;
+    ignore_keys.insert("comment"); /// We always can change the comment without reloading a dictionary.
+
+    /// If the database is atomic then a dictionary can be renamed without reloading.
+    if (!old_config.getString(old_key_in_config + ".uuid", "").empty() && !new_config.getString(new_key_in_config + ".uuid", "").empty())
+    {
+        ignore_keys.insert("name");
+        ignore_keys.insert("database");
+    }
+
+    return !isSameConfiguration(old_config, old_key_in_config, new_config, new_key_in_config, ignore_keys);
+}
+
+void ExternalDictionariesLoader::updateObjectFromConfigWithoutReloading(IExternalLoadable & object, const Poco::Util::AbstractConfiguration & config, const String & key_in_config) const
+{
+    IDictionary & dict = static_cast<IDictionary &>(object);
+
+    auto new_dictionary_id = StorageID::fromDictionaryConfig(config, key_in_config);
+    auto old_dictionary_id = dict.getDictionaryID();
+    if ((new_dictionary_id.table_name != old_dictionary_id.table_name) || (new_dictionary_id.database_name != old_dictionary_id.database_name))
+    {
+        /// We can update the dictionary ID without reloading only if it's in the atomic database.
+        if ((new_dictionary_id.uuid == old_dictionary_id.uuid) && (new_dictionary_id.uuid != UUIDHelpers::Nil))
+            dict.updateDictionaryID(new_dictionary_id);
+    }
+
+    dict.updateDictionaryComment(config.getString(key_in_config + ".comment", ""));
+}
+
 ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::getDictionary(const std::string & dictionary_name, ContextPtr local_context) const
 {
     std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
+    auto dictionary = std::static_pointer_cast<const IDictionary>(load(resolved_dictionary_name));
 
-    if (local_context->hasQueryContext() && local_context->getSettingsRef().log_queries)
-        local_context->addQueryFactoriesInfo(Context::QueryLogFactories::Dictionary, resolved_dictionary_name);
+    if (local_context->hasQueryContext() && local_context->getSettingsRef()[Setting::log_queries])
+        local_context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Dictionary, dictionary->getQualifiedName());
 
-    return std::static_pointer_cast<const IDictionary>(load(resolved_dictionary_name));
+    return dictionary;
 }
 
 ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::tryGetDictionary(const std::string & dictionary_name, ContextPtr local_context) const
 {
     std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
+    auto dictionary = std::static_pointer_cast<const IDictionary>(tryLoad(resolved_dictionary_name));
 
-    if (local_context->hasQueryContext() && local_context->getSettingsRef().log_queries)
-        local_context->addQueryFactoriesInfo(Context::QueryLogFactories::Dictionary, resolved_dictionary_name);
+    if (local_context->hasQueryContext() && local_context->getSettingsRef()[Setting::log_queries] && dictionary)
+        local_context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Dictionary, dictionary->getQualifiedName());
 
-    return std::static_pointer_cast<const IDictionary>(tryLoad(resolved_dictionary_name));
+    return dictionary;
 }
 
 

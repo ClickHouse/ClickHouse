@@ -98,8 +98,7 @@ public:
 
         /// Execute transform.
         ColumnsWithTypeAndName transform_args{args.front(), src_array_col, dst_array_col, args.back()};
-        return FunctionFactory::instance().get("transform", context)->build(transform_args)
-            ->execute(transform_args, result_type, input_rows_count);
+        return FunctionFactory::instance().get("transform", context)->build(transform_args)->execute(transform_args, result_type, input_rows_count);
     }
 
 private:
@@ -113,9 +112,7 @@ REGISTER_FUNCTION(CaseWithExpression)
     factory.registerFunction<FunctionCaseWithExpression>();
 
     /// These are obsolete function names.
-    factory.registerFunction<FunctionCaseWithExpression>("caseWithExpr");
+    factory.registerAlias("caseWithExpr", "caseWithExpression");
 }
 
 }
-
-

@@ -5,14 +5,14 @@
 #include <Common/LRUCachePolicy.h>
 #include <Common/SLRUCachePolicy.h>
 
+#include <base/UUID.h>
+#include <base/defines.h>
+
 #include <atomic>
-#include <cassert>
-#include <chrono>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <unordered_map>
-
-#include <base/defines.h>
 
 
 namespace DB
@@ -197,6 +197,12 @@ public:
         cache_policy->remove(key);
     }
 
+    void remove(std::function<bool(const Key&, const MappedPtr &)> predicate)
+    {
+        std::lock_guard lock(mutex);
+        cache_policy->remove(predicate);
+    }
+
     size_t sizeInBytes() const
     {
         std::lock_guard lock(mutex);
@@ -227,10 +233,10 @@ public:
         cache_policy->setMaxSizeInBytes(max_size_in_bytes);
     }
 
-    void setQuotaForUser(const String & user_name, size_t max_size_in_bytes, size_t max_entries)
+    void setQuotaForUser(const UUID & user_id, size_t max_size_in_bytes, size_t max_entries)
     {
         std::lock_guard lock(mutex);
-        cache_policy->setQuotaForUser(user_name, max_size_in_bytes, max_entries);
+        cache_policy->setQuotaForUser(user_id, max_size_in_bytes, max_entries);
     }
 
     virtual ~CacheBase() = default;

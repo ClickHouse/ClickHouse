@@ -33,7 +33,7 @@
 ///  * `def` and `rep` arrays can be longer than `primitive_column`, because they include nulls and
 ///    empty arrays; the values in primitive_column correspond to positions where def[i] == max_def.
 ///
-/// If you do want to learn it, dremel paper: https://research.google/pubs/pub36632/
+/// If you do want to learn it, see dremel paper: https://research.google/pubs/pub36632/
 /// Instead of reading the whole paper, try staring at figures 2-3 for a while - it might be enough.
 /// (Why does Parquet do all this instead of just storing array lengths and null masks? I'm not
 /// really sure.)
@@ -430,13 +430,16 @@ void prepareColumnNullable(
 
     if (schemas[child_schema_idx].repetition_type == parq::FieldRepetitionType::REQUIRED)
     {
-        /// Normal case: we just slap a FieldRepetitionType::OPTIONAL onto the nested column.
+        /// Normal case: the column inside Nullable is a primitive type (not Nullable/Array/Map).
+        /// Just slap a FieldRepetitionType::OPTIONAL onto it.
         schemas[child_schema_idx].repetition_type = parq::FieldRepetitionType::OPTIONAL;
     }
     else
     {
         /// Weird case: Nullable(Nullable(...)). Or Nullable(Tuple(Nullable(...))), etc.
         /// This is probably not allowed in ClickHouse, but let's support it just in case.
+        /// The nested column already has a nontrivial repetition type, so we have to wrap it in a
+        /// group and assign repetition type OPTIONAL to the group.
         auto & schema = *schemas.insert(schemas.begin() + child_schema_idx, {});
         schema.__set_repetition_type(parq::FieldRepetitionType::OPTIONAL);
         schema.__set_name("nullable");

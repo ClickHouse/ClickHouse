@@ -19,7 +19,7 @@ struct BitNotImpl
     using ResultType = typename NumberTraits::ResultOfBitNot<A>::Type;
     static constexpr bool allow_string_or_fixed_string = true;
 
-    static inline ResultType NO_SANITIZE_UNDEFINED apply(A a)
+    static ResultType NO_SANITIZE_UNDEFINED apply(A a)
     {
         return ~static_cast<ResultType>(a);
     }
@@ -27,7 +27,7 @@ struct BitNotImpl
 #if USE_EMBEDDED_COMPILER
     static constexpr bool compilable = true;
 
-    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * arg, bool)
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * arg, bool)
     {
         if (!arg->getType()->isIntegerTy())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "BitNotImpl expected an integral type");

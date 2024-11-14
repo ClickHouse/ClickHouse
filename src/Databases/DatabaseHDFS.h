@@ -6,7 +6,7 @@
 
 #include <mutex>
 #include <Databases/IDatabase.h>
-#include <Parsers/IAST.h>
+#include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <base/types.h>
 
@@ -45,7 +45,7 @@ public:
     void shutdown() override;
 
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const override;
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr, const FilterByNameFunction &) const override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr, const FilterByNameFunction &, bool) const override;
 
 protected:
     StoragePtr getTableImpl(const String & name, ContextPtr context) const;
@@ -60,7 +60,7 @@ private:
     const String source;
 
     mutable Tables loaded_tables TSA_GUARDED_BY(mutex);
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 }

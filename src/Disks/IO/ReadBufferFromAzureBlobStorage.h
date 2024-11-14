@@ -42,7 +42,11 @@ public:
 
     bool supportsRightBoundedReads() const override { return true; }
 
-    size_t getFileSize() override;
+    std::optional<size_t> tryGetFileSize() override;
+
+    size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const override;
+
+    bool supportsReadAt() override { return true; }
 
 private:
 
@@ -73,7 +77,7 @@ private:
     char * data_ptr;
     size_t data_capacity;
 
-    Poco::Logger * log = &Poco::Logger::get("ReadBufferFromAzureBlobStorage");
+    LoggerPtr log = getLogger("ReadBufferFromAzureBlobStorage");
 };
 
 }

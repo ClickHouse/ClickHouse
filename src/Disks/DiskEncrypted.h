@@ -31,22 +31,22 @@ public:
 
     ReservationPtr reserve(UInt64 bytes) override;
 
-    bool exists(const String & path) const override
+    bool existsFile(const String & path) const override
     {
         auto wrapped_path = wrappedPath(path);
-        return delegate->exists(wrapped_path);
+        return delegate->existsFile(wrapped_path);
     }
 
-    bool isFile(const String & path) const override
+    bool existsDirectory(const String & path) const override
     {
         auto wrapped_path = wrappedPath(path);
-        return delegate->isFile(wrapped_path);
+        return delegate->existsDirectory(wrapped_path);
     }
 
-    bool isDirectory(const String & path) const override
+    bool existsFileOrDirectory(const String & path) const override
     {
         auto wrapped_path = wrappedPath(path);
-        return delegate->isDirectory(wrapped_path);
+        return delegate->existsFileOrDirectory(wrapped_path);
     }
 
     size_t getFileSize(const String & path) const override;
@@ -312,10 +312,10 @@ public:
         {
             return std::make_shared<FakeDiskTransaction>(*this);
         }
-        else
-        {
-            return createEncryptedTransaction();
-        }
+
+        /// Need to overwrite explicetly because this disk change
+        /// a lot of "delegate" methods.
+        return createEncryptedTransaction();
     }
 
     std::optional<UInt64> getTotalSpace() const override
@@ -349,6 +349,21 @@ public:
     {
         return delegate;
     }
+
+    UInt32 getRefCount(const String & path) const override
+    {
+        auto wrapped_path = wrappedPath(path);
+        return delegate->getRefCount(wrapped_path);
+    }
+
+#if USE_AWS_S3
+    std::shared_ptr<const S3::Client> getS3StorageClient() const override
+    {
+        return delegate->getS3StorageClient();
+    }
+
+    std::shared_ptr<const S3::Client> tryGetS3StorageClient() const override { return delegate->tryGetS3StorageClient(); }
+#endif
 
 private:
     String wrappedPath(const String & path) const

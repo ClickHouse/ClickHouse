@@ -10,7 +10,7 @@ function wait_query_started()
     local query_id="$1"
     timeout=60
     start=$EPOCHSECONDS
-    while [[ $($CLICKHOUSE_CLIENT --query="SELECT count() FROM system.processes WHERE query_id='$query_id'") == 0 ]]; do
+    while [[ $($CLICKHOUSE_CLIENT --query="SELECT count() FROM system.processes WHERE query_id='$query_id' SETTINGS use_query_cache=0") == 0 ]]; do
           if ((EPOCHSECONDS-start > timeout )); then
              echo "Timeout while waiting for query $query_id to start"
              exit 1
@@ -26,7 +26,7 @@ function kill_query()
     $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id='$query_id'" >/dev/null
     timeout=60
     start=$EPOCHSECONDS
-    while [[ $($CLICKHOUSE_CLIENT --query="SELECT count() FROM system.processes WHERE query_id='$query_id'") != 0 ]]; do
+    while [[ $($CLICKHOUSE_CLIENT --query="SELECT count() FROM system.processes WHERE query_id='$query_id' SETTINGS use_query_cache=0") != 0 ]]; do
           if ((EPOCHSECONDS-start > timeout )); then
              echo "Timeout while waiting for query $query_id to cancel"
              exit 1
@@ -49,4 +49,4 @@ echo "Cancelling query"
 kill_query "$sleep_query_id"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS;"
-$CLICKHOUSE_CLIENT --query "SELECT exception FROM system.query_log WHERE query_id='$sleep_query_id' AND current_database = currentDatabase()" | grep -oF "QUERY_WAS_CANCELLED"
+$CLICKHOUSE_CLIENT --query "SELECT exception FROM system.query_log WHERE query_id='$sleep_query_id' AND current_database = '$CLICKHOUSE_DATABASE'" | grep -oF "QUERY_WAS_CANCELLED"

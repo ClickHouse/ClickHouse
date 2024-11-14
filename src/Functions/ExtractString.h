@@ -1,6 +1,6 @@
 #pragma once
 #include <Common/PODArray.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
 
 #include <algorithm>
@@ -20,7 +20,7 @@ namespace DB
 // includes extracting ASCII ngram, UTF8 ngram, ASCII word and UTF8 word
 struct ExtractStringImpl
 {
-    static ALWAYS_INLINE inline const UInt8 * readOneWord(const UInt8 *& pos, const UInt8 * end)
+    static const UInt8 * readOneWord(const UInt8 *& pos, const UInt8 * end)
     {
         // jump separators
         while (pos < end && isUTF8Sep(*pos))

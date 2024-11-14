@@ -14,7 +14,8 @@ SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 function curl_with_retry
 {
     for _ in 1 2 3 4 5 6 7 8 9 10; do
-        if curl --fail --head "$1";then
+        if curl --fail --head "$1"
+        then
             return 0
         else
             sleep 1
@@ -117,8 +118,8 @@ then
     # far in the future and have unrelated test changes.
     base=$(git -C right/ch merge-base pr origin/master)
     git -C right/ch diff --name-only "$base" pr -- . | tee all-changed-files.txt
-    git -C right/ch diff --name-only "$base" pr -- tests/performance | tee changed-test-definitions.txt
-    git -C right/ch diff --name-only "$base" pr -- :!tests/performance :!docker/test/performance-comparison | tee other-changed-files.txt
+    git -C right/ch diff --name-only --diff-filter=d "$base" pr -- tests/performance/*.xml | tee changed-test-definitions.txt
+    git -C right/ch diff --name-only "$base" pr -- :!tests/performance/*.xml :!docker/test/performance-comparison | tee other-changed-files.txt
 fi
 
 # Set python output encoding so that we can print queries with non-ASCII letters.
@@ -151,7 +152,7 @@ cat /proc/sys/kernel/core_pattern
 {
     time $SCRIPT_DIR/download.sh "$REF_PR" "$REF_SHA" "$PR_TO_TEST" "$SHA_TO_TEST" && \
     time stage=configure "$script_path"/compare.sh ; \
-} 2>&1 | ts "$(printf '%%Y-%%m-%%d %%H:%%M:%%S\t')" | tee compare.log
+} 2>&1 | ts "$(printf '%%Y-%%m-%%d %%H:%%M:%%S\t')" | tee -a compare.log
 
 # Stop the servers to free memory. Normally they are restarted before getting
 # the profile info, so they shouldn't use much, but if the comparison script

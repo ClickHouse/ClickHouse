@@ -1,5 +1,6 @@
-if (APPLE OR SANITIZE STREQUAL "undefined" OR SANITIZE STREQUAL "memory")
-    # llvm-tblgen, that is used during LLVM build, doesn't work with UBSan.
+if (APPLE OR SANITIZE STREQUAL "memory")
+    # llvm-tblgen, that is used during LLVM build, will throw MSAN errors when running (breaking the build)
+    # TODO: Retest when upgrading LLVM or build only llvm-tblgen without sanitizers
     set (ENABLE_EMBEDDED_COMPILER_DEFAULT OFF)
     set (ENABLE_DWARF_PARSER_DEFAULT OFF)
 else()
@@ -138,6 +139,12 @@ if (CMAKE_CROSSCOMPILING)
     set (LLVM_HOST_TRIPLE "${CMAKE_C_COMPILER_TARGET}" CACHE INTERNAL "")
     message (STATUS "CROSS COMPILING SET LLVM HOST TRIPLE ${LLVM_HOST_TRIPLE}")
 endif()
+
+# llvm-project/llvm/cmake/config-ix.cmake does a weird thing: it defines _LARGEFILE64_SOURCE,
+# then checks if lseek64() function exists, then undefines _LARGEFILE64_SOURCE.
+# Then the actual code that uses this function *doesn't* define _LARGEFILE64_SOURCE, so lseek64()
+# may not exist and compilation fails. This happens with musl.
+add_compile_definitions("_LARGEFILE64_SOURCE")
 
 add_subdirectory ("${LLVM_SOURCE_DIR}" "${LLVM_BINARY_DIR}")
 

@@ -49,7 +49,7 @@ slug: /ru/operations/system-tables/replication_queue
 
 -   `last_attempt_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — дата и время последней попытки выполнить задачу.
 
--   `num_postponed` ([UInt32](../../sql-reference/data-types/int-uint.md)) — количество отложенных задач.
+-   `num_postponed` ([UInt32](../../sql-reference/data-types/int-uint.md)) — количество откладываний запуска задачи.
 
 -   `postpone_reason` ([String](../../sql-reference/data-types/string.md)) — причина, по которой была отложена задача.
 

@@ -78,18 +78,20 @@ void ExecutionSpeedLimits::throttle(
                     read_bytes / elapsed_seconds,
                     min_execution_bps);
 
-            /// If the predicted execution time is longer than `max_execution_time`.
-            if (max_execution_time != 0 && total_rows_to_read && read_rows)
+            /// If the predicted execution time is longer than `max_estimated_execution_time`.
+            if (max_estimated_execution_time != 0 && total_rows_to_read && read_rows)
             {
                 double estimated_execution_time_seconds = elapsed_seconds * (static_cast<double>(total_rows_to_read) / read_rows);
 
-                if (timeout_overflow_mode == OverflowMode::THROW && estimated_execution_time_seconds > max_execution_time.totalSeconds())
+                if (timeout_overflow_mode == OverflowMode::THROW && estimated_execution_time_seconds > max_estimated_execution_time.totalSeconds())
                     throw Exception(
                         ErrorCodes::TOO_SLOW,
-                        "Estimated query execution time ({} seconds) is too long. Maximum: {}. Estimated rows to process: {}",
+                        "Estimated query execution time ({:.5f} seconds) is too long. Maximum: {}. Estimated rows to process: {} ({} read in {:.5f} seconds).",
                         estimated_execution_time_seconds,
-                        max_execution_time.totalSeconds(),
-                        total_rows_to_read);
+                        max_estimated_execution_time.totalSeconds(),
+                        total_rows_to_read,
+                        read_rows,
+                        elapsed_seconds);
             }
 
             if (max_execution_rps && rows_per_second >= max_execution_rps)
@@ -113,7 +115,7 @@ static bool handleOverflowMode(OverflowMode mode, int code, FormatStringHelper<A
             ProfileEvents::increment(ProfileEvents::OverflowBreak);
             return false;
         default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: unknown overflow mode");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown overflow mode");
     }
 }
 

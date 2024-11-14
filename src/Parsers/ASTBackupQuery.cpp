@@ -180,7 +180,7 @@ namespace
         if (settings)
             changes = assert_cast<ASTSetQuery *>(settings.get())->changes;
 
-        boost::remove_erase_if(
+        std::erase_if(
             changes,
             [](const SettingChange & change)
             {
@@ -261,23 +261,24 @@ ASTPtr ASTBackupQuery::clone() const
     if (settings)
         res->settings = settings->clone();
 
+    cloneOutputOptions(*res);
+
     return res;
 }
 
 
-void ASTBackupQuery::formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const
+void ASTBackupQuery::formatQueryImpl(const FormatSettings & fs, FormatState &, FormatStateStacked) const
 {
-    format.ostr << (format.hilite ? hilite_keyword : "") << ((kind == Kind::BACKUP) ? "BACKUP " : "RESTORE ")
-                << (format.hilite ? hilite_none : "");
+    fs.ostr << (fs.hilite ? hilite_keyword : "") << ((kind == Kind::BACKUP) ? "BACKUP " : "RESTORE ") << (fs.hilite ? hilite_none : "");
 
-    formatElements(elements, format);
-    formatOnCluster(format);
+    formatElements(elements, fs);
+    formatOnCluster(fs);
 
-    format.ostr << (format.hilite ? hilite_keyword : "") << ((kind == Kind::BACKUP) ? " TO " : " FROM ") << (format.hilite ? hilite_none : "");
-    backup_name->format(format);
+    fs.ostr << (fs.hilite ? hilite_keyword : "") << ((kind == Kind::BACKUP) ? " TO " : " FROM ") << (fs.hilite ? hilite_none : "");
+    backup_name->format(fs);
 
     if (settings || base_backup_name)
-        formatSettings(settings, base_backup_name, cluster_host_ids, format);
+        formatSettings(settings, base_backup_name, cluster_host_ids, fs);
 }
 
 ASTPtr ASTBackupQuery::getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const

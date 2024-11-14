@@ -12,7 +12,7 @@
 
 #include <Common/Arena.h>
 #include <Common/HashTable/HashMap.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -47,7 +47,6 @@ public:
         HashMap<UInt16, Float64> map;
     };
 
-public:
     using Map = HashMap<StringRef, Float64>;
     using Container = std::vector<Language>;
 

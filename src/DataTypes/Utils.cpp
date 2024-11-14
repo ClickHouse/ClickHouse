@@ -216,6 +216,7 @@ bool canBeSafelyCasted(const DataTypePtr & from_type, const DataTypePtr & to_typ
             return false;
         }
         case TypeIndex::String:
+        case TypeIndex::ObjectDeprecated:
         case TypeIndex::Object:
         case TypeIndex::Set:
         case TypeIndex::Interval:
@@ -223,6 +224,8 @@ bool canBeSafelyCasted(const DataTypePtr & from_type, const DataTypePtr & to_typ
         case TypeIndex::AggregateFunction:
         case TypeIndex::Nothing:
         case TypeIndex::JSONPaths:
+        case TypeIndex::Variant:
+        case TypeIndex::Dynamic:
             return false;
     }
 

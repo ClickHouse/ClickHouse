@@ -3,7 +3,7 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadBuffer.h>
 #include <IO/SeekableReadBuffer.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Common/ArenaWithFreeLists.h>
 
 namespace DB
@@ -28,12 +28,12 @@ private:
     bool nextImpl() override;
 
 public:
-    ParallelReadBuffer(SeekableReadBuffer & input, ThreadPoolCallbackRunner<void> schedule_, size_t max_working_readers, size_t range_step_, size_t file_size);
+    ParallelReadBuffer(SeekableReadBuffer & input, ThreadPoolCallbackRunnerUnsafe<void> schedule_, size_t max_working_readers, size_t range_step_, size_t file_size);
 
     ~ParallelReadBuffer() override { finishAndWait(); }
 
     off_t seek(off_t off, int whence) override;
-    size_t getFileSize() override;
+    std::optional<size_t> tryGetFileSize() override;
     off_t getPosition() override;
 
     const SeekableReadBuffer & getReadBuffer() const { return input; }
@@ -63,7 +63,7 @@ private:
     size_t max_working_readers;
     std::atomic_size_t active_working_readers{0};
 
-    ThreadPoolCallbackRunner<void> schedule;
+    ThreadPoolCallbackRunnerUnsafe<void> schedule;
 
     SeekableReadBuffer & input;
     size_t file_size;
@@ -94,7 +94,7 @@ private:
 /// If `buf` is a SeekableReadBuffer with supportsReadAt() == true, creates a ParallelReadBuffer
 /// from it. Otherwise returns nullptr;
 std::unique_ptr<ParallelReadBuffer> wrapInParallelReadBufferIfSupported(
-    ReadBuffer & buf, ThreadPoolCallbackRunner<void> schedule, size_t max_working_readers,
+    ReadBuffer & buf, ThreadPoolCallbackRunnerUnsafe<void> schedule, size_t max_working_readers,
     size_t range_step, size_t file_size);
 
 }

@@ -1,15 +1,15 @@
 ---
 slug: /zh/faq/integration/oracle-odbc
-title: What if I have a problem with encodings when using Oracle via ODBC?
+title: 使用 Oracle ODBC 时遇到编码问题怎么办？
 toc_hidden: true
 sidebar_position: 20
 ---
 
-# What If I Have a Problem with Encodings When Using Oracle Via ODBC? {#oracle-odbc-encodings}
+# 使用 Oracle ODBC 时遇到编码问题怎么办？ {#oracle-odbc-encodings}
 
-If you use Oracle as a source of ClickHouse external dictionaries via Oracle ODBC driver, you need to set the correct value for the `NLS_LANG` environment variable in `/etc/default/clickhouse`. For more information, see the [Oracle NLS_LANG FAQ](https://www.oracle.com/technetwork/products/globalization/nls-lang-099431.html).
+如果您使用 Oracle 作为 ClickHouse 外部字典的数据源，并通过 Oracle ODBC 驱动程序，您需要在 `/etc/default/clickhouse` 中为 `NLS_LANG` 环境变量设置正确的值。更多信息，请参阅 [Oracle NLS_LANG FAQ](https://www.oracle.com/technetwork/products/globalization/nls-lang-099431.html)。
 
-**Example**
+**示例**
 
 ``` sql
 NLS_LANG=RUSSIAN_RUSSIA.UTF8

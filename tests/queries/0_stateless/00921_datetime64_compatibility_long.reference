@@ -241,82 +241,82 @@ SELECT toYYYYMMDDhhmmss(N, \'Asia/Istanbul\')
 SELECT addYears(N, 1, \'Asia/Istanbul\')
 Code: 43
 "DateTime('Asia/Istanbul')","2020-09-16 19:20:11"
-Code: 43
+"DateTime64(3, 'Asia/Istanbul')","2020-09-16 19:20:11.234"
 ------------------------------------------
 SELECT addMonths(N, 1, \'Asia/Istanbul\')
 Code: 43
 "DateTime('Asia/Istanbul')","2019-10-16 19:20:11"
-Code: 43
+"DateTime64(3, 'Asia/Istanbul')","2019-10-16 19:20:11.234"
 ------------------------------------------
 SELECT addWeeks(N, 1, \'Asia/Istanbul\')
 Code: 43
 "DateTime('Asia/Istanbul')","2019-09-23 19:20:11"
-Code: 43
+"DateTime64(3, 'Asia/Istanbul')","2019-09-23 19:20:11.234"
 ------------------------------------------
 SELECT addDays(N, 1, \'Asia/Istanbul\')
 Code: 43
 "DateTime('Asia/Istanbul')","2019-09-17 19:20:11"
-Code: 43
+"DateTime64(3, 'Asia/Istanbul')","2019-09-17 19:20:11.234"
 ------------------------------------------
 SELECT addHours(N, 1, \'Asia/Istanbul\')
 Code: 43
 "DateTime('Asia/Istanbul')","2019-09-16 20:20:11"
-Code: 43
+"DateTime64(3, 'Asia/Istanbul')","2019-09-16 20:20:11.234"
 ------------------------------------------
 SELECT addMinutes(N, 1, \'Asia/Istanbul\')
 Code: 43
 "DateTime('Asia/Istanbul')","2019-09-16 19:21:11"
-Code: 43
+"DateTime64(3, 'Asia/Istanbul')","2019-09-16 19:21:11.234"
 ------------------------------------------
 SELECT addSeconds(N, 1, \'Asia/Istanbul\')
 Code: 43
 "DateTime('Asia/Istanbul')","2019-09-16 19:20:12"
-Code: 43
+"DateTime64(3, 'Asia/Istanbul')","2019-09-16 19:20:12.234"
 ------------------------------------------
 SELECT addQuarters(N, 1, \'Asia/Istanbul\')
 Code: 43
 "DateTime('Asia/Istanbul')","2019-12-16 19:20:11"
-Code: 43
+"DateTime64(3, 'Asia/Istanbul')","2019-12-16 19:20:11.234"
 ------------------------------------------
 SELECT subtractYears(N, 1, \'Asia/Istanbul\')
 Code: 43
 "DateTime('Asia/Istanbul')","2018-09-16 19:20:11"
-Code: 43
+"DateTime64(3, 'Asia/Istanbul')","2018-09-16 19:20:11.234"
 ------------------------------------------
 SELECT subtractMonths(N, 1, \'Asia/Istanbul\')
 Code: 43
 "DateTime('Asia/Istanbul')","2019-08-16 19:20:11"
-Code: 43
+"DateTime64(3, 'Asia/Istanbul')","2019-08-16 19:20:11.234"
 ------------------------------------------
 SELECT subtractWeeks(N, 1, \'Asia/Istanbul\')
 Code: 43
 "DateTime('Asia/Istanbul')","2019-09-09 19:20:11"
-Code: 43
+"DateTime64(3, 'Asia/Istanbul')","2019-09-09 19:20:11.234"
 ------------------------------------------
 SELECT subtractDays(N, 1, \'Asia/Istanbul\')
 Code: 43
 "DateTime('Asia/Istanbul')","2019-09-15 19:20:11"
-Code: 43
+"DateTime64(3, 'Asia/Istanbul')","2019-09-15 19:20:11.234"
 ------------------------------------------
 SELECT subtractHours(N, 1, \'Asia/Istanbul\')
 Code: 43
 "DateTime('Asia/Istanbul')","2019-09-16 18:20:11"
-Code: 43
+"DateTime64(3, 'Asia/Istanbul')","2019-09-16 18:20:11.234"
 ------------------------------------------
 SELECT subtractMinutes(N, 1, \'Asia/Istanbul\')
 Code: 43
 "DateTime('Asia/Istanbul')","2019-09-16 19:19:11"
-Code: 43
+"DateTime64(3, 'Asia/Istanbul')","2019-09-16 19:19:11.234"
 ------------------------------------------
 SELECT subtractSeconds(N, 1, \'Asia/Istanbul\')
 Code: 43
 "DateTime('Asia/Istanbul')","2019-09-16 19:20:10"
-Code: 43
+"DateTime64(3, 'Asia/Istanbul')","2019-09-16 19:20:10.234"
 ------------------------------------------
 SELECT subtractQuarters(N, 1, \'Asia/Istanbul\')
 Code: 43
 "DateTime('Asia/Istanbul')","2019-06-16 19:20:11"
-Code: 43
+"DateTime64(3, 'Asia/Istanbul')","2019-06-16 19:20:11.234"
 ------------------------------------------
 SELECT CAST(N as DateTime(\'Europe/Minsk\'))
 "DateTime('Europe/Minsk')","2019-09-16 00:00:00"

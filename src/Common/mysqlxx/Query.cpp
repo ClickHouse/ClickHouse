@@ -52,7 +52,7 @@ void Query::executeImpl()
 {
     MYSQL* mysql_driver = conn->getDriver();
 
-    LOG_TRACE(&Poco::Logger::get("mysqlxx::Query"), "Running MySQL query using connection {}", mysql_thread_id(mysql_driver));
+    LOG_TRACE(getLogger("mysqlxx::Query"), "Running MySQL query using connection {}", mysql_thread_id(mysql_driver));
     if (mysql_real_query(mysql_driver, query.data(), query.size()))
     {
         const auto err_no = mysql_errno(mysql_driver);

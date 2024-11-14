@@ -25,7 +25,8 @@ AS
      minState( toUInt64(-1) ) as fastest_session,
      maxState( toUInt64(0) ) as biggest_inactivity_period
 FROM numbers(50000)
-GROUP BY id;
+GROUP BY id
+SETTINGS max_insert_threads=1;
 
 -- source table #1
 

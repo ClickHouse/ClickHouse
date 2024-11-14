@@ -11,13 +11,15 @@ GIT_ROOT=${GIT_ROOT:-.}
 CONFIG="$GIT_ROOT/tests/ci/.mypy.ini"
 DIRS=("$GIT_ROOT/tests/ci/" "$GIT_ROOT/tests/ci/"*/)
 tmp=$(mktemp)
+
 for dir in "${DIRS[@]}"; do
   if ! compgen -G "$dir"/*.py > /dev/null; then
     continue
   fi
-  if ! mypy --config-file="$CONFIG" --sqlite-cache "$dir"/*.py > "$tmp" 2>&1; then
+  if ! mypy --config-file="$CONFIG" --sqlite-cache $(find "$dir" -maxdepth 1 -name "*.py" | grep -v "test_")  > "$tmp" 2>&1; then
     echo "Errors while processing $dir":
     cat "$tmp"
   fi
 done
+
 rm -rf "$tmp"

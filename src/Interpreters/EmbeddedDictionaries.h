@@ -24,7 +24,7 @@ class GeoDictionariesLoader;
 class EmbeddedDictionaries : WithContext
 {
 private:
-    Poco::Logger * log;
+    LoggerPtr log;
 
     MultiVersion<RegionsHierarchies> regions_hierarchies;
     MultiVersion<RegionsNames> regions_names;

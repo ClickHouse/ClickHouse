@@ -24,7 +24,10 @@ namespace ErrorCodes
 }
 
 ArrowBlockInputFormat::ArrowBlockInputFormat(ReadBuffer & in_, const Block & header_, bool stream_, const FormatSettings & format_settings_)
-    : IInputFormat(header_, &in_), stream{stream_}, format_settings(format_settings_)
+    : IInputFormat(header_, &in_)
+    , stream(stream_)
+    , block_missing_values(getPort().getHeader().columns())
+    , format_settings(format_settings_)
 {
 }
 
@@ -86,7 +89,7 @@ Chunk ArrowBlockInputFormat::read()
     /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
     /// Otherwise fill the missing columns with zero values of its type.
     BlockMissingValues * block_missing_values_ptr = format_settings.defaults_for_omitted_fields ? &block_missing_values : nullptr;
-    arrow_column_to_ch_column->arrowTableToCHChunk(res, *table_result, (*table_result)->num_rows(), block_missing_values_ptr);
+    res = arrow_column_to_ch_column->arrowTableToCHChunk(*table_result, (*table_result)->num_rows(), block_missing_values_ptr);
 
     /// There is no easy way to get original record batch size from Arrow metadata.
     /// Let's just use the number of bytes read from read buffer.
@@ -108,14 +111,16 @@ void ArrowBlockInputFormat::resetParser()
     block_missing_values.clear();
 }
 
-const BlockMissingValues & ArrowBlockInputFormat::getMissingValues() const
+const BlockMissingValues * ArrowBlockInputFormat::getMissingValues() const
 {
-    return block_missing_values;
+    return &block_missing_values;
 }
 
 static std::shared_ptr<arrow::RecordBatchReader> createStreamReader(ReadBuffer & in)
 {
-    auto stream_reader_status = arrow::ipc::RecordBatchStreamReader::Open(std::make_unique<ArrowInputStreamFromReadBuffer>(in));
+    auto options = arrow::ipc::IpcReadOptions::Defaults();
+    options.memory_pool = ArrowMemoryPool::instance();
+    auto stream_reader_status = arrow::ipc::RecordBatchStreamReader::Open(std::make_unique<ArrowInputStreamFromReadBuffer>(in), options);
     if (!stream_reader_status.ok())
         throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
                         "Error while opening a table: {}", stream_reader_status.status().ToString());
@@ -128,7 +133,9 @@ static std::shared_ptr<arrow::ipc::RecordBatchFileReader> createFileReader(ReadB
     if (is_stopped)
         return nullptr;
 
-    auto file_reader_status = arrow::ipc::RecordBatchFileReader::Open(arrow_file);
+    auto options = arrow::ipc::IpcReadOptions::Defaults();
+    options.memory_pool = ArrowMemoryPool::instance();
+    auto file_reader_status = arrow::ipc::RecordBatchFileReader::Open(arrow_file, options);
     if (!file_reader_status.ok())
         throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
             "Error while opening a table: {}", file_reader_status.status().ToString());
@@ -200,8 +207,11 @@ NamesAndTypesList ArrowSchemaReader::readSchema()
         schema = file_reader->schema();
 
     auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(
-        *schema, stream ? "ArrowStream" : "Arrow", format_settings.arrow.skip_columns_with_unsupported_types_in_schema_inference);
-    if (format_settings.schema_inference_make_columns_nullable)
+        *schema,
+        stream ? "ArrowStream" : "Arrow",
+        format_settings.arrow.skip_columns_with_unsupported_types_in_schema_inference,
+        format_settings.schema_inference_make_columns_nullable != 0);
+    if (format_settings.schema_inference_make_columns_nullable == 1)
         return getNamesAndRecursivelyNullableTypes(header);
     return header.getNamesAndTypesList();
 }

@@ -14,18 +14,12 @@ namespace DB
 class IdentifierQuoteHandler : public HTTPRequestHandler, WithContext
 {
 public:
-    IdentifierQuoteHandler(size_t keep_alive_timeout_, ContextPtr context_)
-        : WithContext(context_)
-        , log(&Poco::Logger::get("IdentifierQuoteHandler"))
-        , keep_alive_timeout(keep_alive_timeout_)
-    {
-    }
+    explicit IdentifierQuoteHandler(ContextPtr context_) : WithContext(context_), log(getLogger("IdentifierQuoteHandler")) { }
 
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
 private:
-    Poco::Logger * log;
-    size_t keep_alive_timeout;
+    LoggerPtr log;
 };
 
 }

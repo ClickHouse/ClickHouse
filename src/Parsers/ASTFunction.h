@@ -46,7 +46,7 @@ public:
 
     NullsAction nulls_action = NullsAction::EMPTY;
 
-    /// do not print empty parentheses if there are no args - compatibility with new AST for data types and engine names.
+    /// do not print empty parentheses if there are no args - compatibility with engine names.
     bool no_empty_args = false;
 
     /// Specifies where this function-like expression is used.
@@ -58,6 +58,8 @@ public:
         TABLE_ENGINE,
         DATABASE_ENGINE,
         BACKUP_NAME,
+        CODEC,
+        STATISTICS,
     };
     Kind kind = Kind::ORDINARY_FUNCTION;
 
@@ -110,5 +112,8 @@ bool tryGetFunctionNameInto(const IAST * ast, String & name);
 inline String getFunctionName(const ASTPtr & ast) { return getFunctionName(ast.get()); }
 inline std::optional<String> tryGetFunctionName(const ASTPtr & ast) { return tryGetFunctionName(ast.get()); }
 inline bool tryGetFunctionNameInto(const ASTPtr & ast, String & name) { return tryGetFunctionNameInto(ast.get(), name); }
+
+/// Checks if function is a lambda function definition `lambda((x, y), x + y)`
+bool isASTLambdaFunction(const ASTFunction & function);
 
 }

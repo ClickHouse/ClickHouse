@@ -1,8 +1,8 @@
+#include <base/getThreadId.h>
+#include <base/defines.h> /// THREAD_SANITIZER
 #include <Common/checkStackSize.h>
 #include <Common/Exception.h>
-#include <base/getThreadId.h>
-#include <base/scope_guard.h>
-#include <base/defines.h> /// THREAD_SANITIZER
+#include <Common/Fiber.h>
 #include <sys/resource.h>
 #include <pthread.h>
 #include <unistd.h>
@@ -63,8 +63,7 @@ static size_t getStackSize(void ** out_address)
             /// Most likely procfs is not mounted.
             return 0;
         }
-        else
-            throw ErrnoException(ErrorCodes::CANNOT_PTHREAD_ATTR, "Cannot pthread_getattr_np");
+        throw ErrnoException(ErrorCodes::CANNOT_PTHREAD_ATTR, "Cannot pthread_getattr_np");
     }
 #   endif
 
@@ -114,6 +113,10 @@ __attribute__((__weak__)) void checkStackSize()
 {
     using namespace DB;
 
+    /// Not implemented for coroutines.
+    if (Fiber::getCurrentFiber())
+        return;
+
     if (!stack_address)
         max_stack_size = getStackSize(&stack_address);
 
@@ -136,7 +139,7 @@ __attribute__((__weak__)) void checkStackSize()
 
     /// We assume that stack grows towards lower addresses. And that it starts to grow from the end of a chunk of memory of max_stack_size.
     if (int_frame_address > int_stack_address + max_stack_size)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: frame address is greater than stack begin address");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Frame address is greater than stack begin address");
 
     size_t stack_size = int_stack_address + max_stack_size - int_frame_address;
     size_t max_stack_size_allowed = static_cast<size_t>(max_stack_size * STACK_SIZE_FREE_RATIO);

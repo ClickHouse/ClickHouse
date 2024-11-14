@@ -831,7 +831,7 @@ public:
         [[maybe_unused]] Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address) override
     {
-        return setPassword(user_name, "", session, address);
+        setPassword(user_name, "", session, address);
     }
 
     AuthenticationType getType() const override
@@ -855,7 +855,7 @@ public:
         if (type == Messaging::FrontMessageType::PASSWORD_MESSAGE)
         {
             std::unique_ptr<Messaging::PasswordMessage> password = mt.receive<Messaging::PasswordMessage>();
-            return setPassword(user_name, password->password, session, address);
+            setPassword(user_name, password->password, session, address);
         }
         else
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
@@ -872,7 +872,7 @@ public:
 class AuthenticationManager
 {
 private:
-    Poco::Logger * log = &Poco::Logger::get("AuthenticationManager");
+    LoggerPtr log = getLogger("AuthenticationManager");
     std::unordered_map<AuthenticationType, std::shared_ptr<AuthenticationMethod>> type_to_method = {};
 
 public:
@@ -890,16 +890,19 @@ public:
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address)
     {
-        AuthenticationType user_auth_type;
         try
         {
-            user_auth_type = session.getAuthenticationTypeOrLogInFailure(user_name);
-            if (type_to_method.find(user_auth_type) != type_to_method.end())
+            const auto user_authentication_types = session.getAuthenticationTypesOrLogInFailure(user_name);
+
+            for (auto user_authentication_type : user_authentication_types)
             {
-                type_to_method[user_auth_type]->authenticate(user_name, session, mt, address);
-                mt.send(Messaging::AuthenticationOk(), true);
-                LOG_DEBUG(log, "Authentication for user {} was successful.", user_name);
-                return;
+                if (type_to_method.find(user_authentication_type) != type_to_method.end())
+                {
+                    type_to_method[user_authentication_type]->authenticate(user_name, session, mt, address);
+                    mt.send(Messaging::AuthenticationOk(), true);
+                    LOG_DEBUG(log, "Authentication for user {} was successful.", user_name);
+                    return;
+                }
             }
         }
         catch (const Exception&)
@@ -913,7 +916,7 @@ public:
         mt.send(Messaging::ErrorOrNoticeResponse(Messaging::ErrorOrNoticeResponse::ERROR, "0A000", "Authentication method is not supported"),
                 true);
 
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Authentication method is not supported: {}", user_auth_type);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "None of the authentication methods registered for the user are supported");
     }
 };
 }

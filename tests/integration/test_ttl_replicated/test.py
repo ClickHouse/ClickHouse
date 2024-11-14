@@ -1,12 +1,14 @@
 import time
 
-import helpers.client as client
 import pytest
-from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV, exec_query_with_retry
-from helpers.wait_for_helpers import wait_for_delete_inactive_parts
-from helpers.wait_for_helpers import wait_for_delete_empty_parts
-from helpers.test_tools import assert_eq_with_retry
+
+import helpers.client as client
+from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
+from helpers.test_tools import TSV, assert_eq_with_retry, exec_query_with_retry
+from helpers.wait_for_helpers import (
+    wait_for_delete_empty_parts,
+    wait_for_delete_inactive_parts,
+)
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance("node1", with_zookeeper=True)
@@ -16,39 +18,36 @@ node3 = cluster.add_instance("node3", with_zookeeper=True)
 node4 = cluster.add_instance(
     "node4",
     with_zookeeper=True,
-    image="yandex/clickhouse-server",
-    tag="20.8.11.17",
+    image="clickhouse/clickhouse-server",
+    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     stay_alive=True,
     with_installed_binary=True,
     main_configs=[
         "configs/compat.xml",
     ],
-    allow_analyzer=False,
 )
 
 node5 = cluster.add_instance(
     "node5",
     with_zookeeper=True,
-    image="yandex/clickhouse-server",
-    tag="20.8.11.17",
+    image="clickhouse/clickhouse-server",
+    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     stay_alive=True,
     with_installed_binary=True,
     main_configs=[
         "configs/compat.xml",
     ],
-    allow_analyzer=False,
 )
 node6 = cluster.add_instance(
     "node6",
     with_zookeeper=True,
-    image="yandex/clickhouse-server",
-    tag="20.8.11.17",
+    image="clickhouse/clickhouse-server",
+    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     stay_alive=True,
     with_installed_binary=True,
     main_configs=[
         "configs/compat.xml",
     ],
-    allow_analyzer=False,
 )
 
 
@@ -328,7 +327,7 @@ def optimize_with_retry(node, table_name, retry=20):
                 settings={"optimize_throw_if_noop": "1"},
             )
             break
-        except e:
+        except:
             time.sleep(0.5)
 
 

@@ -3,9 +3,14 @@
 #include <Storages/StorageMergeTree.h>
 #include <Interpreters/TransactionLog.h>
 #include <Common/ProfileEventsScope.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool enable_sharing_sets_for_mutations;
+}
 
 namespace ErrorCodes
 {
@@ -34,6 +39,10 @@ void MutatePlainMergeTreeTask::prepare()
         future_part,
         task_context);
 
+    storage.writePartLog(
+        PartLogElement::MUTATE_PART_START, {}, 0,
+        future_part->name, new_part, future_part->parts, merge_list_entry.get(), {});
+
     stopwatch = std::make_unique<Stopwatch>();
 
     write_part_log = [this] (const ExecutionStatus & execution_status)
@@ -51,7 +60,7 @@ void MutatePlainMergeTreeTask::prepare()
             std::move(profile_counters_snapshot));
     };
 
-    if (task_context->getSettingsRef().enable_sharing_sets_for_mutations)
+    if (task_context->getSettingsRef()[Setting::enable_sharing_sets_for_mutations])
     {
         /// If we have a prepared sets cache for this mutations, we will use it.
         auto mutation_id = future_part->part_info.mutation;
@@ -97,10 +106,12 @@ bool MutatePlainMergeTreeTask::executeStep()
 
                 MergeTreeData::Transaction transaction(storage, merge_mutate_entry->txn.get());
                 /// FIXME Transactions: it's too optimistic, better to lock parts before starting transaction
-                storage.renameTempPartAndReplace(new_part, transaction);
+                storage.renameTempPartAndReplace(new_part, transaction, /*rename_in_transaction=*/ true);
+                transaction.renameParts();
                 transaction.commit();
 
                 storage.updateMutationEntriesErrors(future_part, true, "");
+                mutate_task->updateProfileEvents();
                 write_part_log({});
 
                 state = State::NEED_FINISH;
@@ -111,8 +122,9 @@ bool MutatePlainMergeTreeTask::executeStep()
                 if (merge_mutate_entry->txn)
                     merge_mutate_entry->txn->onException();
                 PreformattedMessage exception_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false);
-                LOG_ERROR(&Poco::Logger::get("MutatePlainMergeTreeTask"), exception_message);
+                LOG_ERROR(getLogger("MutatePlainMergeTreeTask"), exception_message);
                 storage.updateMutationEntriesErrors(future_part, false, exception_message.text);
+                mutate_task->updateProfileEvents();
                 write_part_log(ExecutionStatus::fromCurrentException("", true));
                 tryLogCurrentException(__PRETTY_FUNCTION__);
                 return false;
@@ -136,9 +148,10 @@ bool MutatePlainMergeTreeTask::executeStep()
 ContextMutablePtr MutatePlainMergeTreeTask::createTaskContext() const
 {
     auto context = Context::createCopy(storage.getContext());
-    context->makeQueryContext();
+    context->makeQueryContextForMutate(*storage.getSettings());
     auto queryId = getQueryId();
     context->setCurrentQueryId(queryId);
+    context->setBackgroundOperationTypeForContext(ClientInfo::BackgroundOperationType::MUTATION);
     return context;
 }
 

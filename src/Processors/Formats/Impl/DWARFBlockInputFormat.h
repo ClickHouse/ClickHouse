@@ -32,7 +32,7 @@ public:
 protected:
     Chunk read() override;
 
-    void onCancel() override
+    void onCancel() noexcept override
     {
         is_stopped = 1;
     }
@@ -124,7 +124,7 @@ private:
 class DWARFSchemaReader : public ISchemaReader
 {
 public:
-    DWARFSchemaReader(ReadBuffer & in_);
+    explicit DWARFSchemaReader(ReadBuffer & in_);
 
     NamesAndTypesList readSchema() override;
 };

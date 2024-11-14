@@ -1,3 +1,4 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterCreateSettingsProfileQuery.h>
 
 #include <Access/AccessControl.h>
@@ -89,7 +90,7 @@ BlockIO InterpreterCreateSettingsProfileQuery::execute()
 
     if (query.alter)
     {
-        auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
+        auto update_func = [&](const AccessEntityPtr & entity, const UUID &) -> AccessEntityPtr
         {
             auto updated_profile = typeid_cast<std::shared_ptr<SettingsProfile>>(entity->clone());
             updateSettingsProfileFromQueryImpl(*updated_profile, query, {}, settings_from_query, roles_from_query);
@@ -138,4 +139,14 @@ void InterpreterCreateSettingsProfileQuery::updateSettingsProfileFromQuery(Setti
 {
     updateSettingsProfileFromQueryImpl(SettingsProfile, query, {}, {}, {});
 }
+
+void registerInterpreterCreateSettingsProfileQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterCreateSettingsProfileQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterCreateSettingsProfileQuery", create_fn);
+}
+
 }

@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/median
-sidebar_position: 212
+sidebar_position: 167
 ---
 
 # median
@@ -18,6 +18,7 @@ Functions:
 - `medianTDigest` — Alias for [quantileTDigest](../../../sql-reference/aggregate-functions/reference/quantiletdigest.md#quantiletdigest).
 - `medianTDigestWeighted` — Alias for [quantileTDigestWeighted](../../../sql-reference/aggregate-functions/reference/quantiletdigestweighted.md#quantiletdigestweighted).
 - `medianBFloat16` — Alias for [quantileBFloat16](../../../sql-reference/aggregate-functions/reference/quantilebfloat16.md#quantilebfloat16).
+- `medianDD` — Alias for [quantileDD](../../../sql-reference/aggregate-functions/reference/quantileddsketch.md#quantileddsketch).
 
 **Example**
 

@@ -51,7 +51,7 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
     bool schema_as_a_part_of_table_name_,
     StorageInfos storages_info_,
     const String & name_for_logger)
-    : log(&Poco::Logger::get("PostgreSQLReplicaConsumer(" + name_for_logger + ")"))
+    : log(getLogger("PostgreSQLReplicaConsumer(" + name_for_logger + ")"))
     , context(context_)
     , replication_slot_name(replication_slot_name_)
     , publication_name(publication_name_)
@@ -76,7 +76,7 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
 }
 
 
-MaterializedPostgreSQLConsumer::StorageData::StorageData(const StorageInfo & storage_info, Poco::Logger * log_)
+MaterializedPostgreSQLConsumer::StorageData::StorageData(const StorageInfo & storage_info, LoggerPtr log_)
     : storage(storage_info.storage)
     , table_description(storage_info.storage->getInMemoryMetadataPtr()->getSampleBlock())
     , columns_attributes(storage_info.attributes)
@@ -313,7 +313,7 @@ void MaterializedPostgreSQLConsumer::readTupleData(
                 Int32 col_len = readInt32(message, pos, size);
                 String value;
                 for (Int32 i = 0; i < col_len; ++i)
-                    value += readInt8(message, pos, size);
+                    value += static_cast<char>(readInt8(message, pos, size));
 
                 insertValue(storage_data, value, column_idx);
                 break;
@@ -697,7 +697,13 @@ void MaterializedPostgreSQLConsumer::syncTables()
                     insert->table_id = storage->getStorageID();
                     insert->columns = std::make_shared<ASTExpressionList>(buffer->columns_ast);
 
-                    InterpreterInsertQuery interpreter(insert, insert_context, true);
+                    InterpreterInsertQuery interpreter(
+                        insert,
+                        insert_context,
+                        /* allow_materialized */ true,
+                        /* no_squash */ false,
+                        /* no_destination */ false,
+                        /* async_isnert */ false);
                     auto io = interpreter.execute();
                     auto input = std::make_shared<SourceFromSingleChunk>(
                         result_rows.cloneEmpty(), Chunk(result_rows.getColumns(), result_rows.rows()));
@@ -719,7 +725,7 @@ void MaterializedPostgreSQLConsumer::syncTables()
             }
         }
 
-        tables_to_sync.erase(tables_to_sync.begin());
+        tables_to_sync.erase(table_name);
     }
 
     LOG_DEBUG(log, "Table sync end for {} tables, last lsn: {} = {}, (attempted lsn {})",

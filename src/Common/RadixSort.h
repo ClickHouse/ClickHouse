@@ -15,6 +15,7 @@
 
 #include <base/bit_cast.h>
 #include <base/extended_types.h>
+#include <base/sort.h>
 #include <Core/Defines.h>
 
 
@@ -114,6 +115,11 @@ struct RadixSortFloatTraits
     {
         return x < y;
     }
+
+    static bool greater(Key x, Key y)
+    {
+        return x > y;
+    }
 };
 
 
@@ -147,6 +153,11 @@ struct RadixSortUIntTraits
     static bool less(Key x, Key y)
     {
         return x < y;
+    }
+
+    static bool greater(Key x, Key y)
+    {
+        return x > y;
     }
 };
 
@@ -182,6 +193,11 @@ struct RadixSortIntTraits
     {
         return x < y;
     }
+
+    static bool greater(Key x, Key y)
+    {
+        return x > y;
+    }
 };
 
 
@@ -213,6 +229,22 @@ private:
 
     static KeyBits keyToBits(Key x) { return bit_cast<KeyBits>(x); }
     static Key bitsToKey(KeyBits x) { return bit_cast<Key>(x); }
+
+    struct LessComparator
+    {
+        ALWAYS_INLINE bool operator()(Element & lhs, Element & rhs)
+        {
+            return Traits::less(Traits::extractKey(lhs), Traits::extractKey(rhs));
+        }
+    };
+
+    struct GreaterComparator
+    {
+        ALWAYS_INLINE bool operator()(Element & lhs, Element & rhs)
+        {
+            return Traits::greater(Traits::extractKey(lhs), Traits::extractKey(rhs));
+        }
+    };
 
     static ALWAYS_INLINE KeyBits getPart(size_t N, KeyBits x)
     {
@@ -353,7 +385,7 @@ private:
      * PASS is counted from least significant (0), so the first pass is NUM_PASSES - 1.
      */
     template <size_t PASS>
-    static inline void radixSortMSDInternal(Element * arr, size_t size, size_t limit)
+    static void radixSortMSDInternal(Element * arr, size_t size, size_t limit)
     {
         /// The beginning of every i-1-th bucket. 0th element will be equal to 1st.
         /// Last element will point to array end.
@@ -496,12 +528,30 @@ private:
 
     // A helper to choose sorting algorithm based on array length
     template <size_t PASS>
-    static inline void radixSortMSDInternalHelper(Element * arr, size_t size, size_t limit)
+    static void radixSortMSDInternalHelper(Element * arr, size_t size, size_t limit)
     {
         if (size <= INSERTION_SORT_THRESHOLD)
             insertionSortInternal(arr, size);
         else
             radixSortMSDInternal<PASS>(arr, size, limit);
+    }
+
+    template <bool DIRECT_WRITE_TO_DESTINATION, typename Comparator>
+    static void executeLSDWithTrySortInternal(Element * arr, size_t size, bool reverse, Comparator comparator, Result * destination)
+    {
+        bool try_sort = ::trySort(arr, arr + size, comparator);
+        if (try_sort)
+        {
+            if constexpr (DIRECT_WRITE_TO_DESTINATION)
+            {
+                for (size_t i = 0; i < size; ++i)
+                    destination[i] = Traits::extractResult(arr[i]);
+            }
+
+            return;
+        }
+
+        radixSortLSDInternal<DIRECT_WRITE_TO_DESTINATION>(arr, size, reverse, destination);
     }
 
 public:
@@ -527,6 +577,34 @@ public:
     static void executeLSD(Element * arr, size_t size, bool reverse, Result * destination)
     {
         radixSortLSDInternal<true>(arr, size, reverse, destination);
+    }
+
+    /** Tries to fast sort elements for common sorting patterns (unstable).
+      * If fast sort cannot be performed, execute least significant digit radix sort.
+      */
+    static void executeLSDWithTrySort(Element * arr, size_t size)
+    {
+        return executeLSDWithTrySort(arr, size, false);
+    }
+
+    static void executeLSDWithTrySort(Element * arr, size_t size, bool reverse)
+    {
+        return executeLSDWithTrySort(arr, size, reverse, nullptr);
+    }
+
+    static void executeLSDWithTrySort(Element * arr, size_t size, bool reverse, Result * destination)
+    {
+        if (reverse)
+        {
+
+            if (destination)
+                return executeLSDWithTrySortInternal<true>(arr, size, reverse, GreaterComparator(), destination);
+            return executeLSDWithTrySortInternal<false>(arr, size, reverse, GreaterComparator(), destination);
+        }
+
+        if (destination)
+            return executeLSDWithTrySortInternal<true>(arr, size, reverse, LessComparator(), destination);
+        return executeLSDWithTrySortInternal<false>(arr, size, reverse, LessComparator(), destination);
     }
 
     /* Most significant digit radix sort
