@@ -237,8 +237,14 @@ AggregateFunctionPtr createAggregateFunctionDeltaSumTimestamp(
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}, "
                         "must be Int, Float, Date, DateTime", arguments[1]->getName(), name);
 
-    return AggregateFunctionPtr(createWithTwoTypes<AggregationFunctionDeltaSumTimestamp>(
+    auto res = AggregateFunctionPtr(createWithTwoTypes<AggregationFunctionDeltaSumTimestamp>(
         *arguments[0], *arguments[1], arguments, params));
+
+    if (!res)
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}, "
+            "this type is not supported", arguments[0]->getName(), name);
+
+    return res;
 }
 }
 
