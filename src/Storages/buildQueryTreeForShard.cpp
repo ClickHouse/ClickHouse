@@ -336,7 +336,7 @@ QueryTreeNodePtr getSubqueryFromTableExpression(
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Expected JOIN right table expression to be table, table function, query or union node. Actual {}",
+            "Expected JOIN table expression to be table, table function, query or union node. Actual {}",
             join_table_expression->formatASTForErrorMessage());
     }
 
@@ -366,8 +366,7 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
         {
             QueryTreeNodePtr join_table_expression;
             const auto join_kind = join_node->getKind();
-            // const auto join_strictness = join_node->getStrictness();
-            if (join_kind == JoinKind::Left || (join_kind == JoinKind::Inner /* && join_strictness == JoinStrictness::All*/))
+            if (join_kind == JoinKind::Left || join_kind == JoinKind::Inner)
             {
                 join_table_expression = join_node->getRightTableExpression();
             }
