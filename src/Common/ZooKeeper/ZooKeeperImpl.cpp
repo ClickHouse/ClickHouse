@@ -440,7 +440,9 @@ void ZooKeeper::connect(
     if (nodes.empty())
         throw Exception::fromMessage(Error::ZBADARGUMENTS, "No nodes passed to ZooKeeper constructor");
 
-    static constexpr size_t num_tries = 3;
+    /// We always have at least one attempt to connect.
+    size_t num_tries = args.num_connection_retries + 1;
+
     bool connected = false;
     bool dns_error = false;
 

@@ -39,6 +39,7 @@ struct ZooKeeperArgs
     String sessions_path = "/clickhouse/sessions";
     String client_availability_zone;
     int32_t connection_timeout_ms = Coordination::DEFAULT_CONNECTION_TIMEOUT_MS;
+    UInt64 num_connection_retries = 2;
     int32_t session_timeout_ms = Coordination::DEFAULT_SESSION_TIMEOUT_MS;
     int32_t operation_timeout_ms = Coordination::DEFAULT_OPERATION_TIMEOUT_MS;
     bool enable_fault_injections_during_startup = false;
