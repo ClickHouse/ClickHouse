@@ -191,7 +191,7 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const RangesInDataParts & parts_ran
 
         is_part_on_remote_disk.push_back(part_with_ranges.data_part->isStoredOnRemoteDisk());
         std::tie(read_task_info.min_marks_per_task, read_task_info.approx_size_of_mark)
-            = calculateMinMarksPerTask(part_with_ranges, column_names, read_task_info.task_columns.pre_columns, pool_settings, merge_tree_determine_task_size_by_prewhere_columns, merge_tree_min_bytes_per_task_for_remote_reading, merge_tree_min_read_task_size);
+            = calculateMinMarksPerTask(part_with_ranges, column_names, read_task_info.task_columns.pre_columns, pool_settings, merge_tree_determine_task_size_by_prewhere_columns, merge_tree_min_read_task_size, merge_tree_min_bytes_per_task_for_remote_reading);
         per_part_infos.push_back(std::make_shared<MergeTreeReadTaskInfo>(std::move(read_task_info)));
     }
 }
