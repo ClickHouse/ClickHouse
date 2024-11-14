@@ -90,7 +90,6 @@ alphaTokens
 and
 appendTrailingCharIfAbsent
 array
-arrayAUC
 arrayAll
 arrayAvg
 arrayCompact
@@ -135,6 +134,7 @@ arrayReverse
 arrayReverseFill
 arrayReverseSort
 arrayReverseSplit
+arrayRocAUC
 arraySlice
 arraySort
 arraySplit
