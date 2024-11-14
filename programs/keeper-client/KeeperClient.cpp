@@ -448,7 +448,8 @@ int mainEntryClickHouseKeeperClient(int argc, char ** argv)
     catch (const DB::Exception & e)
     {
         std::cerr << DB::getExceptionMessage(e, false) << std::endl;
-        return 1;
+        auto code = DB::getCurrentExceptionCode();
+        return static_cast<UInt8>(code) ? code : 1;
     }
     catch (const boost::program_options::error & e)
     {
@@ -458,6 +459,7 @@ int mainEntryClickHouseKeeperClient(int argc, char ** argv)
     catch (...)
     {
         std::cerr << DB::getCurrentExceptionMessage(true) << std::endl;
-        return 1;
+        auto code = DB::getCurrentExceptionCode();
+        return static_cast<UInt8>(code) ? code : 1;
     }
 }

@@ -874,7 +874,13 @@ In CREATE TABLE statement allows specifying Variant type with similar variant ty
     DECLARE(Bool, allow_suspicious_primary_key, false, R"(
 Allow suspicious `PRIMARY KEY`/`ORDER BY` for MergeTree (i.e. SimpleAggregateFunction).
 )", 0) \
-    DECLARE(Bool, compile_expressions, true, R"(
+    DECLARE(Bool, allow_suspicious_types_in_group_by, false, R"(
+Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) and [Dynamic](../../sql-reference/data-types/dynamic.md) types in GROUP BY keys.
+)", 0) \
+    DECLARE(Bool, allow_suspicious_types_in_order_by, false, R"(
+Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) and [Dynamic](../../sql-reference/data-types/dynamic.md) types in ORDER BY keys.
+)", 0) \
+    DECLARE(Bool, compile_expressions, false, R"(
 Compile some scalar functions and operators to native code. Due to a bug in the LLVM compiler infrastructure, on AArch64 machines, it is known to lead to a nullptr dereference and, consequently, server crash. Do not enable this setting.
 )", 0) \
     DECLARE(UInt64, min_count_to_compile_expression, 1, R"(
@@ -2863,7 +2869,7 @@ Limit on size of multipart/form-data content. This setting cannot be parsed from
     DECLARE(Bool, calculate_text_stack_trace, true, R"(
 Calculate text stack trace in case of exceptions during query execution. This is the default. It requires symbol lookups that may slow down fuzzing tests when a huge amount of wrong queries are executed. In normal cases, you should not disable this option.
 )", 0) \
-    DECLARE(Bool, enable_job_stack_trace, false, R"(
+    DECLARE(Bool, enable_job_stack_trace, true, R"(
 Output stack trace of a job creator when job results in exception
 )", 0) \
     DECLARE(Bool, allow_ddl, true, R"(
@@ -2886,6 +2892,9 @@ Possible values:
 **See Also**
 
 - [ORDER BY Clause](../../sql-reference/statements/select/order-by.md/#optimize_read_in_order)
+)", 0) \
+    DECLARE(Bool, read_in_order_use_virtual_row, false, R"(
+Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only relevant ones are touched.
 )", 0) \
     DECLARE(Bool, optimize_read_in_window_order, true, R"(
 Enable ORDER BY optimization in window clause for reading data in corresponding order in MergeTree tables.
@@ -3661,6 +3670,11 @@ Given that, for example, dictionaries, can be out of sync across nodes, mutation
 </profiles>
 ```
 )", 0) \
+ DECLARE(Bool, validate_mutation_query, true, R"(
+Validate mutation queries before accepting them. Mutations are executed in the background, and running an invalid query will cause mutations to get stuck, requiring manual intervention.
+
+Only change this setting if you encounter a backward-incompatible bug.
+)", 0) \
     DECLARE(Seconds, lock_acquire_timeout, DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC, R"(
 Defines how many seconds a locking request waits before failing.
 
@@ -4236,7 +4250,7 @@ Rewrite aggregate functions with if expression as argument when logically equiva
 For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, col)`. It may improve performance.
 
 :::note
-Supported only with experimental analyzer (`enable_analyzer = 1`).
+Supported only with the analyzer (`enable_analyzer = 1`).
 :::
 )", 0) \
     DECLARE(Bool, optimize_rewrite_array_exists_to_has, false, R"(
@@ -4551,7 +4565,7 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
-    DECLARE(Bool, query_plan_merge_filters, false, R"(
+    DECLARE(Bool, query_plan_merge_filters, true, R"(
 Allow to merge filters in the query plan
 )", 0) \
     DECLARE(Bool, query_plan_filter_push_down, true, R"(
@@ -4852,9 +4866,9 @@ Allows to record the filesystem caching log for each query
     DECLARE(Bool, read_from_filesystem_cache_if_exists_otherwise_bypass_cache, false, R"(
 Allow to use the filesystem cache in passive mode - benefit from the existing cache entries, but don't put more entries into the cache. If you set this setting for heavy ad-hoc queries and leave it disabled for short real-time queries, this will allows to avoid cache threshing by too heavy queries and to improve the overall system efficiency.
 )", 0) \
-    DECLARE(Bool, skip_download_if_exceeds_query_cache, true, R"(
+    DECLARE(Bool, filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit, true, R"(
 Skip download from remote filesystem if exceeds query cache size
-)", 0) \
+)", 0)  ALIAS(skip_download_if_exceeds_query_cache) \
     DECLARE(UInt64, filesystem_cache_max_download_size, (128UL * 1024 * 1024 * 1024), R"(
 Max remote filesystem cache size that can be downloaded by a single query
 )", 0) \
@@ -4866,6 +4880,9 @@ Limit on size of a single batch of file segments that a read buffer can request 
 )", 0) \
     DECLARE(UInt64, filesystem_cache_reserve_space_wait_lock_timeout_milliseconds, 1000, R"(
 Wait time to lock cache for space reservation in filesystem cache
+)", 0) \
+    DECLARE(Bool, filesystem_cache_prefer_bigger_buffer_size, true, R"(
+Prefer bigger buffer size if filesystem cache is enabled to avoid writing small file segments which deteriorate cache performance. On the other hand, enabling this setting might increase memory usage.
 )", 0) \
     DECLARE(UInt64, temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds, (10 * 60 * 1000), R"(
 Wait time to lock cache for space reservation for temporary data in filesystem cache
@@ -5130,6 +5147,12 @@ Only in ClickHouse Cloud. A window for sending ACK for DataPacket sequence in a 
     DECLARE(Bool, distributed_cache_discard_connection_if_unread_data, true, R"(
 Only in ClickHouse Cloud. Discard connection if some data is unread.
 )", 0) \
+    DECLARE(Bool, filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage, true, R"(
+Only in ClickHouse Cloud. Wait time to lock cache for space reservation in filesystem cache
+)", 0) \
+    DECLARE(Bool, filesystem_cache_enable_background_download_during_fetch, true, R"(
+Only in ClickHouse Cloud. Wait time to lock cache for space reservation in filesystem cache
+)", 0) \
     \
     DECLARE(Bool, parallelize_output_from_storages, true, R"(
 Parallelize output for reading step from storage. It allows parallelization of  query processing right after reading from storage if possible
@@ -5138,6 +5161,7 @@ Parallelize output for reading step from storage. It allows parallelization of  
 The setting allows a user to provide own deduplication semantic in MergeTree/ReplicatedMergeTree
 For example, by providing a unique value for the setting in each INSERT statement,
 user can avoid the same inserted data being deduplicated.
+
 
 Possible values:
 
@@ -5613,7 +5637,7 @@ If true, and JOIN can be executed with parallel replicas algorithm, and all stor
     DECLARE(UInt64, parallel_replicas_mark_segment_size, 0, R"(
 Parts virtually divided into segments to be distributed between replicas for parallel reading. This setting controls the size of these segments. Not recommended to change until you're absolutely sure in what you're doing. Value should be in range [128; 16384]
 )", BETA) \
-    DECLARE(Bool, parallel_replicas_local_plan, false, R"(
+    DECLARE(Bool, parallel_replicas_local_plan, true, R"(
 Build local plan for local replica
 )", BETA) \
     \
@@ -5695,6 +5719,8 @@ If enabled, MongoDB tables will return an error when a MongoDB query cannot be b
 )", 0) \
     DECLARE(Bool, implicit_select, false, R"(
 Allow writing simple SELECT queries without the leading SELECT keyword, which makes it simple for calculator-style usage, e.g. `1 + 2` becomes a valid query.
+
+In `clickhouse-local` it is enabled by default and can be explicitly disabled.
 )", 0) \
     \
     \
@@ -5852,7 +5878,7 @@ Experimental data deduplication for SELECT queries based on part UUIDs
 // Please add settings related to formats in Core/FormatFactorySettings.h, move obsolete settings to OBSOLETE_SETTINGS and obsolete format settings to OBSOLETE_FORMAT_SETTINGS.
 
 #define OBSOLETE_SETTINGS(M, ALIAS) \
-    /** Obsolete settings that do nothing but left for compatibility reasons. Remove each one after half a year of obsolescence. */ \
+    /** Obsolete settings which are kept around for compatibility reasons. They have no effect anymore. */ \
     MAKE_OBSOLETE(M, Bool, update_insert_deduplication_token_in_dependent_materialized_views, 0) \
     MAKE_OBSOLETE(M, UInt64, max_memory_usage_for_all_queries, 0) \
     MAKE_OBSOLETE(M, UInt64, multiple_joins_rewriter_version, 0) \
