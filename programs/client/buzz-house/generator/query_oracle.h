@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../third_party/md5.h"
+#include "../third_party/md5_impl.h"
 #include "random_generator.h"
 #include "statement_generator.h"
 
@@ -11,7 +11,7 @@ class QueryOracle
 {
 private:
     const FuzzConfig & fc;
-    MD5 md5_hash;
+    MD5Impl md5_hash;
     bool first_success = false, second_sucess = false;
     uint8_t first_digest[16], second_digest[16];
     std::string buf;
