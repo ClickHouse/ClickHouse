@@ -2528,7 +2528,10 @@ class ClickHouseCluster:
 
     def wait_mongo_to_start(self, timeout=30, secure=False):
         connection_str = "mongodb://{user}:{password}@{host}:{port}".format(
-            host="localhost", port=self.mongo_port, user=mongo_user, password=mongo_pass
+            host="localhost",
+            port=self.mongo_port if not secure else self.mongo_secure_port,
+            user=mongo_user,
+            password=mongo_pass,
         )
         if secure:
             connection_str += "/?tls=true&tlsAllowInvalidCertificates=true"
@@ -2995,6 +2998,7 @@ class ClickHouseCluster:
                 run_and_check(self.base_mongo_cmd + common_opts)
                 self.up_called = True
                 self.wait_mongo_to_start(30)
+                self.wait_mongo_to_start(30, secure=True)
 
             if self.with_coredns and self.base_coredns_cmd:
                 logging.debug("Setup coredns")
