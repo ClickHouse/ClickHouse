@@ -262,7 +262,25 @@ async function custom()
         selector: simpleMerges(),
         pool_size: 1000,
     }
-    const mt = await customScenario(scenario);
+
+    let show_postponed = false;
+    function showMergeTree({sim, mt}) {
+        showSimulation({mt}, true);
+        if (!show_postponed)
+        {
+            show_postponed = true;
+            sim.postpone("show", async () => {
+                show_postponed = false;
+                await delayMs(10);
+            });
+        }
+    }
+    const signals = {
+        //on_merge_begin: showMergeTree,
+        on_merge_end: showMergeTree,
+        //on_insert: showMergeTree,
+    };
+    const mt = await customScenario(scenario, signals);
     showSimulation({mt}, true);
 }
 

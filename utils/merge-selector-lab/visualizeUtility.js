@@ -106,7 +106,7 @@ export function visualizeUtility(mt, container)
         .attr("y", d => pxt(yScale(d.bottom) - part_dy))
         .attr("width", d => pxr(xScale(d.left + d.bytes) - xScale(d.left)))
         .attr("height", d => pxb(part_dy))
-        .attr("fill", "black");
+        .attr("fill", d => d.part.merging ? "grey" : "black");
 
     // Append marks for parts begin
     svgContainer.append("g").selectAll("rect")
@@ -117,7 +117,7 @@ export function visualizeUtility(mt, container)
         .attr("y", d => pxt(yScale(d.bottom) - part_dy))
         .attr("width", d => pxr(Math.min(part_dx, xScale(d.left + d.bytes) - xScale(d.left))))
         .attr("height", d => pxb(part_dy))
-        .attr("fill", "yellow");
+        .attr("fill", d => d.part.merging ? "orange" : "yellow");
 
     // Determine the tick step based on maxValue
     const tickStep = determineTickStep(maxXValue);

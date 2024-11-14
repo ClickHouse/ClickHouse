@@ -1,12 +1,13 @@
 // MergeTreeMerger is used with EventSimulator to run MergeTree merges in parallel using WorkerPool
 export class MergeTreeMerger
 {
-    constructor(sim, mt, pool, selector)
+    constructor(sim, mt, pool, selector, signals = {})
     {
         this.sim = sim; // EventSimulator
         this.mt = mt; // MergeTree
         this.pool = pool; // WorkerPool
         this.selector = selector;
+        this.signals = signals;
         this.merges_running = 0;
         if (mt.active_part_count == 0) // Hack to start only after initial parts are inserted
             this.sim.postpone("PostponeMergerInit", () => this.#iterateSelector());
@@ -30,7 +31,10 @@ export class MergeTreeMerger
                     value_to_send = this.mt;
                     break;
                 case 'merge':
-                    this.#beginMerge(value.parts_to_merge);
+                    const {parts_to_merge} = value;
+                    this.#beginMerge(parts_to_merge);
+                    if (this.signals.on_merge_begin)
+                        this.signals.on_merge_begin({sim: this.sim, mt: this.mt, parts_to_merge});
                     break;
                 case 'wait':
                     if (this.merges_running == 0)
@@ -63,7 +67,9 @@ export class MergeTreeMerger
     #onMergeEnd(parts_to_merge)
     {
         this.mt.advanceTime(this.sim.time);
-        this.mt.finishMergeParts(parts_to_merge);
+        let part = this.mt.finishMergeParts(parts_to_merge);
+        if (this.signals.on_merge_end)
+            this.signals.on_merge_end({sim: this.sim, mt: this.mt, part, parts_to_merge});
         this.merges_running--;
         this.#iterateSelector();
     }

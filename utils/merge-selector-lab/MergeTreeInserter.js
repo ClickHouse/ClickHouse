@@ -1,11 +1,12 @@
 // MergeTreeInserter is used with EventSimulator to INSERT new part according to given `inserter` schedule
 export class MergeTreeInserter
 {
-    constructor(sim, mt, inserter)
+    constructor(sim, mt, inserter, signals = {})
     {
         this.sim = sim; // EventSimulator
         this.mt = mt; // MergeTree
         this.inserter = inserter;
+        this.signals = signals;
         this.#iterateInserter();
     }
 
@@ -19,7 +20,9 @@ export class MergeTreeInserter
             switch (value.type)
             {
                 case 'insert':
-                    this.mt.insertPart(value.bytes);
+                    const part = this.mt.insertPart(value.bytes);
+                    if (this.signals.on_insert)
+                        this.signals.on_insert({sim: this.sim, mt: this.mt, part});
                     break;
                 case 'sleep':
                     if (value.delay > 0)
