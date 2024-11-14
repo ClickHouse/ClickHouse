@@ -182,12 +182,12 @@ def get_creation_expression(
     cluster,
     format="Parquet",
     table_function=False,
-    allow_dynamic_metadata_for_datalakes=False,
+    allow_dynamic_metadata_for_data_lakes=False,
     **kwargs,
 ):
     allow_dynamic_metadata_for_datalakes_suffix = (
-        " SETTINGS allow_dynamic_metadata_for_datalakes = 1"
-        if allow_dynamic_metadata_for_datalakes
+        " SETTINGS allow_dynamic_metadata_for_data_lakes = 1"
+        if allow_dynamic_metadata_for_data_lakes
         else ""
     )
 
@@ -654,7 +654,7 @@ def test_evolved_schema_simple(
         TABLE_NAME,
         started_cluster,
         table_function=is_table_function,
-        allow_dynamic_metadata_for_datalakes=True,
+        allow_dynamic_metadata_for_data_lakes=True,
     )
 
     table_select_expression = (
@@ -1008,7 +1008,7 @@ def test_not_evolved_schema(started_cluster, format_version, storage_type):
             TABLE_NAME,
             started_cluster,
             table_function=False,
-            allow_dynamic_metadata_for_datalakes=False,
+            allow_dynamic_metadata_for_data_lakes=False,
         )
     )
 

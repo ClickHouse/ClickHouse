@@ -17,16 +17,6 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 
-template <>
-struct std::hash<std::pair<Int32, Int32>>
-{
-    size_t operator()(const std::pair<Int32, Int32> & p) const
-    {
-        std::hash<uint64_t> hash;
-        return hash(static_cast<uint64_t>(p.first) << 32 | static_cast<uint64_t>(p.second));
-    }
-};
-
 namespace DB
 {
 
@@ -98,7 +88,7 @@ public:
 private:
     std::unordered_map<Int32, Poco::JSON::Object::Ptr> iceberg_table_schemas_by_ids;
     std::unordered_map<Int32, std::shared_ptr<NamesAndTypesList>> clickhouse_table_schemas_by_ids;
-    std::unordered_map<std::pair<Int32, Int32>, std::shared_ptr<ActionsDAG>> transform_dags_by_ids;
+    std::map<std::pair<Int32, Int32>, std::shared_ptr<ActionsDAG>> transform_dags_by_ids;
 
     NamesAndTypesList getSchemaType(const Poco::JSON::Object::Ptr & schema);
     DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type);

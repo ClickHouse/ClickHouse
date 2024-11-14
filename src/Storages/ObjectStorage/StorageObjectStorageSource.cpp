@@ -374,7 +374,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         Block initial_header = read_from_format_info.format_header;
 
-        auto relative_path = object_info->relative_path;
         if (auto initial_schema = configuration->getInitialSchemaByPath(object_info->getPath()))
         {
             Block sample_header;
