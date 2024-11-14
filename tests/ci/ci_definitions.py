@@ -506,7 +506,7 @@ class CommonJobConfigs:
         runner_type=Runners.FUZZER_UNIT_TESTER,
     )
     BUZZHOUSE_TEST = JobConfig(
-        job_name_keyword="ast",
+        job_name_keyword="buzzhouse",
         digest=DigestConfig(
             include_paths=[
                 "./tests/ci/ci_fuzzer_check.py",
