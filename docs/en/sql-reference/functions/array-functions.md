@@ -2142,15 +2142,17 @@ Result:
 ```
 
 
-## arrayAUC
+## arrayRocAUC
 
-Calculate AUC (Area Under the Curve, which is a concept in machine learning, see more details: <https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve>).
+Calculate AUC (Area Under the Curve) for the Receiver Operating Characteristic (ROC) curve. The AUC is a concept in machine learning, see more details: <https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve>.
 
 **Syntax**
 
 ``` sql
-arrayAUC(arr_scores, arr_labels[, scale])
+arrayRocAUC(arr_scores, arr_labels[, scale])
 ```
+
+Alias: `arrayAUC`
 
 **Arguments**
 
@@ -2160,22 +2162,22 @@ arrayAUC(arr_scores, arr_labels[, scale])
 
 **Returned value**
 
-Returns AUC value with type Float64.
+Returns ROC AUC value with type Float64.
 
 **Example**
 
 Query:
 
 ``` sql
-select arrayAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
+select arrayRocAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
 ```
 
 Result:
 
 ``` text
-┌─arrayAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])─┐
-│                                          0.75 │
-└───────────────────────────────────────────────┘
+┌─arrayRocAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])─┐
+│                                             0.75 │
+└──────────────────────────────────────────────────┘
 ```
 
 ## arrayPrAUC

@@ -1204,15 +1204,17 @@ SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1]);
 └──────────────────────────────────────┘
 ```
 
-## arrayAUC {#arrayauc}
+## arrayRocAUC {#arrayrocauc}
 
 计算AUC (ROC曲线下的面积，这是机器学习中的一个概念，更多细节请查看：https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve)。
 
 **语法**
 
 ``` sql
-arrayAUC(arr_scores, arr_labels)
+arrayRocAUC(arr_scores, arr_labels)
 ```
+
+别名: `arrayAUC`.
 
 **参数**
 
@@ -1228,15 +1230,15 @@ arrayAUC(arr_scores, arr_labels)
 查询语句:
 
 ``` sql
-select arrayAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
+select arrayRocAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
 ```
 
 结果:
 
 ``` text
-┌─arrayAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])─┐
-│                                          0.75 │
-└───────────────────────────────────────────────┘
+┌─arrayRocAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])─┐
+│                                             0.75 │
+└──────────────────────────────────────────────────┘
 ```
 
 ## arrayMap(func, arr1, ...) {#array-map}
