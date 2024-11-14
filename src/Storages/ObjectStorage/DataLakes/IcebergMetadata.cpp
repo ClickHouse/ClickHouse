@@ -702,14 +702,8 @@ IcebergMetadata::create(ObjectStoragePtr object_storage, ConfigurationObserverPt
  */
 DataFileInfos IcebergMetadata::getDataFileInfos(const ActionsDAG * filter_dag) const
 {
-<<<<<<< HEAD
     // if (!data_file_infos.empty())
     //     return data_file_infos;
-=======
-    auto configuration_ptr = configuration.lock();
-    if (!data_files.empty())
-        return data_files;
->>>>>>> 7a393dc140a3da46162e3ae2a8b5ac8af2f42778
 
     Strings manifest_files;
     if (manifest_list_file.empty())
@@ -1052,7 +1046,6 @@ DataFileInfos IcebergMetadata::getDataFileInfos(const ActionsDAG * filter_dag) c
 
     return data_file_infos;
 }
-
 }
 
 #endif

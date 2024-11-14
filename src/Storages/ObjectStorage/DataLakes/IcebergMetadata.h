@@ -252,7 +252,7 @@ public:
 
     /// Get data files. On first request it reads manifest_list file and iterates through manifest files to find all data files.
     /// All subsequent calls will return saved list of files (because it cannot be changed without changing metadata file)
-    DataFileInfos getDataFileInfos(const ActionsDAG * filter_dag) const override;
+    Strings getDataFileInfos() const override;
 
     /// Get table schema parsed from metadata.
     NamesAndTypesList getTableSchema() const override { return schema; }
