@@ -1,4 +1,4 @@
--- Tags: no-random-settings
+-- Tags: no-random-settings, no-fasttest
 
 set allow_experimental_dynamic_type = 1;
 set allow_experimental_json_type = 1;
