@@ -13,9 +13,9 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 
-#    include <Poco/JSON/Array.h>
-#    include <Poco/JSON/Object.h>
-#    include <Poco/JSON/Parser.h>
+#include <Poco/JSON/Array.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
 
 namespace DB
 {
