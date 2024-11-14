@@ -58,7 +58,7 @@ DEFAULT_SCHEMA = Schema(
     ),
 )
 
-DEFAULT_CREATE_TABLE = "CREATE TABLE {}.`{}.{}`\\n(\\n    `datetime` Nullable(DateTime64(6)),\\n    `symbol` Nullable(String),\\n    `bid` Nullable(Float64),\\n    `ask` Nullable(Float64),\\n    `details` Tuple(created_by Nullable(String))\\n)\\nENGINE = Iceberg(\\'http://minio:9000/warehouse/data\\', \\'minio\\', \\'[HIDDEN]\\')\n"
+DEFAULT_CREATE_TABLE = "CREATE TABLE {}.`{}.{}`\\n(\\n    `datetime` Nullable(DateTime64(6)),\\n    `symbol` Nullable(String),\\n    `bid` Nullable(Float64),\\n    `ask` Nullable(Float64),\\n    `details` Tuple(created_by Nullable(String))\\n)\\nENGINE = Iceberg(\\'http://minio:9000/warehouse/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
 
 DEFAULT_PARTITION_SPEC = PartitionSpec(
     PartitionField(
@@ -170,9 +170,9 @@ def started_cluster():
 def test_list_tables(started_cluster):
     node = started_cluster.instances["node1"]
 
-    root_namespace = "clickhouse"
-    namespace_1 = "clickhouse.testA.A"
-    namespace_2 = "clickhouse.testB.B"
+    root_namespace = f"clickhouse_{uuid.uuid4()}"
+    namespace_1 = f"{root_namespace}.testA.A"
+    namespace_2 = f"{root_namespace}.testB.B"
     namespace_1_tables = ["tableA", "tableB"]
     namespace_2_tables = ["tableC", "tableD"]
 
@@ -181,8 +181,19 @@ def test_list_tables(started_cluster):
     for namespace in [namespace_1, namespace_2]:
         catalog.create_namespace(namespace)
 
-    assert root_namespace in list_namespaces()["namespaces"][0][0]
-    assert [(root_namespace,)] == catalog.list_namespaces()
+    found = False
+    for namespace_list in list_namespaces()["namespaces"]:
+        if root_namespace == namespace_list[0]:
+            found = True
+            break
+    assert found
+
+    found = False
+    for namespace_list in catalog.list_namespaces():
+        if root_namespace == namespace_list[0]:
+            found = True
+            break
+    assert found
 
     for namespace in [namespace_1, namespace_2]:
         assert len(catalog.list_tables(namespace)) == 0
@@ -205,14 +216,14 @@ def test_list_tables(started_cluster):
     assert (
         tables_list
         == node.query(
-            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' ORDER BY name"
+            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' and name ILIKE '{root_namespace}%' ORDER BY name"
         ).strip()
     )
     node.restart_clickhouse()
     assert (
         tables_list
         == node.query(
-            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' ORDER BY name"
+            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' and name ILIKE '{root_namespace}%' ORDER BY name"
         ).strip()
     )
 
@@ -224,16 +235,18 @@ def test_list_tables(started_cluster):
 
 def test_many_namespaces(started_cluster):
     node = started_cluster.instances["node1"]
+    root_namespace_1 = f"A_{uuid.uuid4()}"
+    root_namespace_2 = f"B_{uuid.uuid4()}"
     namespaces = [
-        "A",
-        "A.B.C",
-        "A.B.C.D",
-        "A.B.C.D.E",
-        "A.B.C.D.E.F",
-        "A.B.C.D.E.FF",
-        "B",
-        "B.C",
-        "B.CC",
+        f"{root_namespace_1}",
+        f"{root_namespace_1}.B.C",
+        f"{root_namespace_1}.B.C.D",
+        f"{root_namespace_1}.B.C.D.E",
+        f"{root_namespace_1}.B.C.D.E.F",
+        f"{root_namespace_1}.B.C.D.E.FF",
+        f"{root_namespace_2}",
+        f"{root_namespace_2}.C",
+        f"{root_namespace_2}.CC",
     ]
     tables = ["A", "B", "C", "D", "E", "F"]
     catalog = load_catalog_impl(started_cluster)
@@ -258,7 +271,7 @@ def test_many_namespaces(started_cluster):
 def test_select(started_cluster):
     node = started_cluster.instances["node1"]
 
-    test_ref = "test_list_tables"
+    test_ref = f"test_list_tables_{uuid.uuid4()}"
     table_name = f"{test_ref}_table"
     root_namespace = f"{test_ref}_namespace"
 
