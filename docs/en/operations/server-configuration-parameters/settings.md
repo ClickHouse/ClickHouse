@@ -597,6 +597,30 @@ If number of tables is greater than this value, server will throw an exception. 
 <max_table_num_to_throw>400</max_table_num_to_throw>
 ```
 
+## max\_replicated\_table\_num\_to\_throw {#max-replicated-table-num-to-throw}
+If number of replicated tables is greater than this value, server will throw an exception. 0 means no limitation. Only count table in Atomic/Ordinary/Replicated/Lazy database engine.
+
+**Example**
+```xml
+<max_replicated_table_num_to_throw>400</max_replicated_table_num_to_throw>
+```
+
+## max\_dictionary\_num\_to\_throw {#max-dictionary-num-to-throw}
+If number of dictionaries is greater than this value, server will throw an exception. 0 means no limitation. Only count table in Atomic/Ordinary/Replicated/Lazy database engine.
+
+**Example**
+```xml
+<max_dictionary_num_to_throw>400</max_dictionary_num_to_throw>
+```
+
+## max\_view\_num\_to\_throw {#max-view-num-to-throw}
+If number of views is greater than this value, server will throw an exception. 0 means no limitation. Only count table in Atomic/Ordinary/Replicated/Lazy database engine.
+
+**Example**
+```xml
+<max_view_num_to_throw>400</max_view_num_to_throw>
+```
+
 ## max\_database\_num\_to\_throw {#max-table-num-to-throw}
 If number of _database is greater than this value, server will throw an exception. 0 means no limitation.
 Default value: 0

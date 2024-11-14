@@ -407,6 +407,8 @@ def test_failed_retry(started_cluster, mode, engine_name):
         additional_settings={
             "s3queue_loading_retries": retries_num,
             "keeper_path": keeper_path,
+            "polling_max_timeout_ms": 5000,
+            "polling_backoff_ms": 1000,
         },
         engine_name=engine_name,
     )
@@ -852,6 +854,8 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
             additional_settings={
                 "keeper_path": keeper_path,
                 "s3queue_buckets": 2,
+                "polling_max_timeout_ms": 2000,
+                "polling_backoff_ms": 1000,
                 **({"s3queue_processing_threads_num": 1} if mode == "ordered" else {}),
             },
         )
@@ -929,6 +933,8 @@ def test_max_set_age(started_cluster):
             "cleanup_interval_min_ms": max_age / 3,
             "cleanup_interval_max_ms": max_age / 3,
             "loading_retries": 0,
+            "polling_max_timeout_ms": 5000,
+            "polling_backoff_ms": 1000,
             "processing_threads_num": 1,
             "loading_retries": 0,
         },
@@ -1423,6 +1429,8 @@ def test_shards_distributed(started_cluster, mode, processing_threads):
                 "keeper_path": keeper_path,
                 "s3queue_processing_threads_num": processing_threads,
                 "s3queue_buckets": shards_num,
+                "polling_max_timeout_ms": 1000,
+                "polling_backoff_ms": 0,
             },
         )
         i += 1
@@ -1673,6 +1681,8 @@ def test_processed_file_setting_distributed(started_cluster, processing_threads)
                 "s3queue_processing_threads_num": processing_threads,
                 "s3queue_last_processed_path": f"{files_path}/test_5.csv",
                 "s3queue_buckets": 2,
+                "polling_max_timeout_ms": 2000,
+                "polling_backoff_ms": 1000,
             },
         )
 
