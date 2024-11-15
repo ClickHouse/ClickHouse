@@ -168,4 +168,87 @@ def test_allowed_feature_tier_in_mergetree_settings(start_cluster):
 
 
 def test_allowed_feature_tier_in_user(start_cluster):
-    pass
+    instance.query("DROP USER IF EXISTS user_experimental")
+
+    assert "0" == get_current_tier_value(instance)
+    instance.query("DROP TABLE IF EXISTS test_experimental")
+
+    # Disable experimental settings
+    instance.replace_in_config(config_path, "0", "1")
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert "1" == get_current_tier_value(instance)
+
+    output, error = instance.query_and_get_answer_with_error(
+        "CREATE USER user_experimental IDENTIFIED WITH no_password SETTINGS allow_experimental_time_series_table = 1"
+    )
+    assert output == ""
+    assert "Changes to EXPERIMENTAL settings are disabled" in error
+
+    # Go back to normal and create the user to restart the server and verify it works
+    instance.replace_in_config(config_path, "1", "0")
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert "0" == get_current_tier_value(instance)
+
+    output, error = instance.query_and_get_answer_with_error(
+        "CREATE USER user_experimental IDENTIFIED WITH no_password SETTINGS allow_experimental_time_series_table = 1"
+    )
+    assert output == ""
+    assert error == ""
+
+    # Default user = 0
+    output, error = instance.query_and_get_answer_with_error(
+        "SELECT value FROM system.settings WHERE name = 'allow_experimental_time_series_table'"
+    )
+    assert output.strip() == "0"
+    assert error == ""
+
+    # New user = 1
+    output, error = instance.query_and_get_answer_with_error(
+        "SELECT value FROM system.settings WHERE name = 'allow_experimental_time_series_table'",
+        user="user_experimental",
+    )
+    assert output.strip() == "1"
+    assert error == ""
+
+    # Change back to block experimental features and restart to confirm everything is working as expected (only new changes are blocked)
+    instance.replace_in_config(config_path, "0", "1")
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert "1" == get_current_tier_value(instance)
+
+    instance.restart_clickhouse()
+
+    # Default user = 0
+    output, error = instance.query_and_get_answer_with_error(
+        "SELECT value FROM system.settings WHERE name = 'allow_experimental_time_series_table'"
+    )
+    assert output.strip() == "0"
+    assert error == ""
+
+    # New user = 1
+    output, error = instance.query_and_get_answer_with_error(
+        "SELECT value FROM system.settings WHERE name = 'allow_experimental_time_series_table'",
+        user="user_experimental",
+    )
+    assert output.strip() == "1"
+    assert error == ""
+
+    # But note that they can't change the value either
+    # 1 - 1 => OK
+    output, error = instance.query_and_get_answer_with_error(
+        "SELECT 1 SETTINGS allow_experimental_time_series_table=1",
+        user="user_experimental",
+    )
+    assert output.strip() == "1"
+    assert error == ""
+    # 1 - 0 => KO
+    output, error = instance.query_and_get_answer_with_error(
+        "SELECT 1 SETTINGS allow_experimental_time_series_table=0",
+        user="user_experimental",
+    )
+    assert output == ""
+    assert "Changes to EXPERIMENTAL settings are disabled" in error
+
+    instance.replace_in_config(config_path, "1", "0")
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert "0" == get_current_tier_value(instance)
+    instance.query("DROP USER IF EXISTS user_experimental")
