@@ -426,7 +426,7 @@ SortingInputOrder buildInputOrderFromSortDescription(
         /// Since sorting key columns are always sorted with NULLS LAST, reading in order
         /// supported only for ASC NULLS LAST ("in order"), and DESC NULLS FIRST ("reverse")
         const auto column_is_nullable = sorting_key.data_types[next_sort_key]->isNullable();
-        if (column_is_nullable && sort_column_description.nulls_direction != 1)
+        if (column_is_nullable && sort_column_description.nulls_direction != sort_column_description.direction)
             break;
 
         /// Direction for current sort key.
