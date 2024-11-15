@@ -312,6 +312,21 @@ void ColumnMap::getExtremes(Field & min, Field & max) const
     max = std::move(map_max_value);
 }
 
+ColumnCheckpointPtr ColumnMap::getCheckpoint() const
+{
+    return nested->getCheckpoint();
+}
+
+void ColumnMap::updateCheckpoint(ColumnCheckpoint & checkpoint) const
+{
+    nested->updateCheckpoint(checkpoint);
+}
+
+void ColumnMap::rollback(const ColumnCheckpoint & checkpoint)
+{
+    nested->rollback(checkpoint);
+}
+
 void ColumnMap::forEachSubcolumn(MutableColumnCallback callback)
 {
     callback(nested);
@@ -327,6 +342,13 @@ bool ColumnMap::structureEquals(const IColumn & rhs) const
 {
     if (const auto * rhs_map = typeid_cast<const ColumnMap *>(&rhs))
         return nested->structureEquals(*rhs_map->nested);
+    return false;
+}
+
+bool ColumnMap::dynamicStructureEquals(const IColumn & rhs) const
+{
+    if (const auto * rhs_map = typeid_cast<const ColumnMap *>(&rhs))
+        return nested->dynamicStructureEquals(*rhs_map->nested);
     return false;
 }
 

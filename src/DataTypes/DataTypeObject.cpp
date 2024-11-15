@@ -1,6 +1,9 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeObjectDeprecated.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/Serializations/SerializationJSON.h>
 #include <DataTypes/Serializations/SerializationObjectTypedPath.h>
 #include <DataTypes/Serializations/SerializationObjectDynamicPath.h>
@@ -228,6 +231,15 @@ MutableColumnPtr DataTypeObject::createColumn() const
         typed_path_columns[path] = type->createColumn();
 
     return ColumnObject::create(std::move(typed_path_columns), max_dynamic_paths, max_dynamic_types);
+}
+
+void DataTypeObject::forEachChild(const ChildCallback & callback) const
+{
+    for (const auto & [path, type] : typed_paths)
+    {
+        callback(*type);
+        type->forEachChild(callback);
+    }
 }
 
 namespace
@@ -520,6 +532,13 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
 
     std::sort(path_regexps_to_skip.begin(), path_regexps_to_skip.end());
     return std::make_shared<DataTypeObject>(schema_format, std::move(typed_paths), std::move(paths_to_skip), std::move(path_regexps_to_skip), max_dynamic_paths, max_dynamic_types);
+}
+
+const DataTypePtr & DataTypeObject::getTypeOfSharedData()
+{
+    /// Array(Tuple(String, String))
+    static const DataTypePtr type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()}, Names{"paths", "values"}));
+    return type;
 }
 
 static DataTypePtr createJSON(const ASTPtr & arguments)

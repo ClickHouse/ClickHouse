@@ -82,7 +82,7 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWideWriter(
 /// Takes into account the fact that several columns can e.g. share their .size substreams.
 /// When calculating totals these should be counted only once.
 ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
-    const NameAndTypePair & column, std::unordered_set<String> * processed_substreams) const
+    const NameAndTypePair & column, std::unordered_set<String> * processed_substreams, std::optional<Block> columns_sample) const
 {
     ColumnSize size;
     if (checksums.empty())
@@ -108,7 +108,7 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
         auto mrk_checksum = checksums.files.find(*stream_name + getMarksFileExtension());
         if (mrk_checksum != checksums.files.end())
             size.marks += mrk_checksum->second.file_size;
-    });
+    }, column.type, columns_sample && columns_sample->has(column.name) ? columns_sample->getByName(column.name).column : getColumnSample(column));
 
     return size;
 }
@@ -182,6 +182,47 @@ void MergeTreeDataPartWide::loadIndexGranularity()
     loadIndexGranularityImpl(index_granularity, index_granularity_info, getDataPartStorage(), *any_column_filename);
 }
 
+void MergeTreeDataPartWide::loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const
+{
+    if (column_names.empty() || !mark_cache)
+        return;
+
+    std::vector<std::unique_ptr<MergeTreeMarksLoader>> loaders;
+
+    auto context = storage.getContext();
+    auto read_settings = context->getReadSettings();
+    auto * load_marks_threadpool = read_settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
+    auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), std::make_shared<AlterConversions>());
+
+    LOG_TEST(getLogger("MergeTreeDataPartWide"), "Loading marks into mark cache for columns {} of part {}", toString(column_names), name);
+
+    for (const auto & column_name : column_names)
+    {
+        auto serialization = getSerialization(column_name);
+        serialization->enumerateStreams([&](const auto & subpath)
+        {
+            auto stream_name = getStreamNameForColumn(column_name, subpath, checksums);
+            if (!stream_name)
+                return;
+
+            loaders.emplace_back(std::make_unique<MergeTreeMarksLoader>(
+                info_for_read,
+                mark_cache,
+                index_granularity_info.getMarksFilePath(*stream_name),
+                index_granularity.getMarksCount(),
+                index_granularity_info,
+                /*save_marks_in_cache=*/ true,
+                read_settings,
+                load_marks_threadpool,
+                /*num_columns_in_mark=*/ 1));
+
+            loaders.back()->startAsyncLoad();
+        });
+    }
+
+    for (auto & loader : loaders)
+        loader->loadMarks();
+}
 
 bool MergeTreeDataPartWide::isStoredOnRemoteDisk() const
 {
@@ -200,7 +241,14 @@ bool MergeTreeDataPartWide::isStoredOnRemoteDiskWithZeroCopySupport() const
 
 MergeTreeDataPartWide::~MergeTreeDataPartWide()
 {
-    removeIfNeeded();
+    try
+    {
+        removeIfNeeded();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
@@ -326,12 +374,12 @@ std::optional<String> MergeTreeDataPartWide::getFileNameForColumn(const NameAndT
     return filename;
 }
 
-void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const
+void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size, std::optional<Block> columns_sample) const
 {
     std::unordered_set<String> processed_substreams;
     for (const auto & column : columns)
     {
-        ColumnSize size = getColumnSizeImpl(column, &processed_substreams);
+        ColumnSize size = getColumnSizeImpl(column, &processed_substreams, columns_sample);
         each_columns_size[column.name] = size;
         total_size.add(size);
 

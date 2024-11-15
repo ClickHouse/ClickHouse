@@ -80,11 +80,13 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+            ref: ${{{{ github.head_ref }}}}
 {JOB_ADDONS}
       - name: Prepare env script
         run: |
-          export PYTHONPATH=.:$PYTHONPATH
           cat > {ENV_SETUP_SCRIPT} << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.
 {SETUP_ENVS}
           cat > {WORKFLOW_CONFIG_FILE} << 'EOF'
           ${{{{ needs.{WORKFLOW_CONFIG_JOB_NAME}.outputs.data }}}}
@@ -100,8 +102,13 @@ jobs:
       - name: Run
         id: run
         run: |
+          . /tmp/praktika_setup_env.sh
           set -o pipefail
-          {PYTHON} -m praktika run --job '''{JOB_NAME}''' --workflow "{WORKFLOW_NAME}" --ci |& tee {RUN_LOG}
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run --job '''{JOB_NAME}''' --workflow "{WORKFLOW_NAME}" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+          else
+            python3 -m praktika run --job '''{JOB_NAME}''' --workflow "{WORKFLOW_NAME}" --ci |& tee /tmp/praktika/praktika_run.log
+          fi
 {UPLOADS_GITHUB}\
 """
 
@@ -183,12 +190,10 @@ jobs:
                     False
                 ), f"Workflow event not yet supported [{workflow_config.event}]"
 
-            with ContextManager.cd():
-                with open(self._get_workflow_file_name(workflow_config.name), "w") as f:
-                    f.write(yaml_workflow_str)
+            with open(self._get_workflow_file_name(workflow_config.name), "w") as f:
+                f.write(yaml_workflow_str)
 
-        with ContextManager.cd():
-            Shell.check("git add ./.github/workflows/*.yaml")
+        Shell.check("git add ./.github/workflows/*.yaml")
 
 
 class PullRequestPushYamlGen:

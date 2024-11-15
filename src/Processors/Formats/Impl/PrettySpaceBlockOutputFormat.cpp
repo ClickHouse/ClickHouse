@@ -1,4 +1,5 @@
 #include <Formats/FormatFactory.h>
+#include <Formats/PrettyFormatHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/Formats/Impl/PrettySpaceBlockOutputFormat.h>
@@ -102,7 +103,8 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
             writeValueWithPadding(
                 *columns[column], *serializations[column], row, cur_width, max_widths[column], cut_to_width, type.shouldAlignRightInPrettyFormats(), isNumber(type));
         }
-        writeReadableNumberTip(chunk);
+        if (readable_number_tip)
+            writeReadableNumberTipIfSingleValue(out, chunk, format_settings, color);
         writeChar('\n', out);
     }
 
