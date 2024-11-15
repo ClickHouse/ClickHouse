@@ -184,17 +184,21 @@ BackupCoordinationOnCluster::BackupCoordinationOnCluster(
     , plain_backup(is_plain_backup_)
     , log(getLogger("BackupCoordinationOnCluster"))
     , with_retries(log, get_zookeeper_, keeper_settings, process_list_element_, [root_zookeeper_path_](Coordination::ZooKeeperWithFaultInjection::Ptr zk) { zk->sync(root_zookeeper_path_); })
-    , concurrency_check(backup_uuid_, /* is_restore = */ false, /* on_cluster = */ true, allow_concurrent_backup_, concurrency_counters_)
-    , stage_sync(/* is_restore = */ false, fs::path{zookeeper_path} / "stage", current_host, all_hosts, allow_concurrent_backup_, with_retries, schedule_, process_list_element_, log)
-    , cleaner(zookeeper_path, with_retries, log)
+    , cleaner(/* is_restore = */ false, zookeeper_path, with_retries, log)
+    , stage_sync(/* is_restore = */ false, fs::path{zookeeper_path} / "stage", current_host, all_hosts, allow_concurrent_backup_, concurrency_counters_, with_retries, schedule_, process_list_element_, log)
 {
-    createRootNodes();
+    try
+    {
+        createRootNodes();
+    }
+    catch (...)
+    {
+        stage_sync.setError(std::current_exception(), /* throw_if_error = */ false);
+        throw;
+    }
 }
 
-BackupCoordinationOnCluster::~BackupCoordinationOnCluster()
-{
-    tryFinishImpl();
-}
+BackupCoordinationOnCluster::~BackupCoordinationOnCluster() = default;
 
 void BackupCoordinationOnCluster::createRootNodes()
 {
@@ -217,69 +221,52 @@ void BackupCoordinationOnCluster::createRootNodes()
     });
 }
 
+void BackupCoordinationOnCluster::setBackupQueryIsSentToOtherHosts()
+{
+    stage_sync.setQueryIsSentToOtherHosts();
+}
+
+bool BackupCoordinationOnCluster::isBackupQuerySentToOtherHosts() const
+{
+    return stage_sync.isQuerySentToOtherHosts();
+}
+
 Strings BackupCoordinationOnCluster::setStage(const String & new_stage, const String & message, bool sync)
 {
     stage_sync.setStage(new_stage, message);
-
-    if (!sync)
-        return {};
-
-    return stage_sync.waitForHostsToReachStage(new_stage, all_hosts_without_initiator);
+    if (sync)
+        return stage_sync.waitHostsReachStage(all_hosts_without_initiator, new_stage);
+    return {};
 }
 
-void BackupCoordinationOnCluster::setBackupQueryWasSentToOtherHosts()
+bool BackupCoordinationOnCluster::setError(std::exception_ptr exception, bool throw_if_error)
 {
-    backup_query_was_sent_to_other_hosts = true;
+    return stage_sync.setError(exception, throw_if_error);
 }
 
-bool BackupCoordinationOnCluster::trySetError(std::exception_ptr exception)
+bool BackupCoordinationOnCluster::waitOtherHostsFinish(bool throw_if_error) const
 {
-    return stage_sync.trySetError(exception);
+    return stage_sync.waitOtherHostsFinish(throw_if_error);
 }
 
-void BackupCoordinationOnCluster::finish()
+bool BackupCoordinationOnCluster::finish(bool throw_if_error)
 {
-    bool other_hosts_also_finished = false;
-    stage_sync.finish(other_hosts_also_finished);
-
-    if ((current_host == kInitiator) && (other_hosts_also_finished || !backup_query_was_sent_to_other_hosts))
-        cleaner.cleanup();
+    return stage_sync.finish(throw_if_error);
 }
 
-bool BackupCoordinationOnCluster::tryFinishAfterError() noexcept
+bool BackupCoordinationOnCluster::cleanup(bool throw_if_error)
 {
-    return tryFinishImpl();
-}
-
-bool BackupCoordinationOnCluster::tryFinishImpl() noexcept
-{
-    bool other_hosts_also_finished = false;
-    if (!stage_sync.tryFinishAfterError(other_hosts_also_finished))
-        return false;
-
-    if ((current_host == kInitiator) && (other_hosts_also_finished || !backup_query_was_sent_to_other_hosts))
+    /// All the hosts must finish before we remove the coordination nodes.
+    bool expect_other_hosts_finished = stage_sync.isQuerySentToOtherHosts() || !stage_sync.isErrorSet();
+    bool all_hosts_finished = stage_sync.finished() && (stage_sync.otherHostsFinished() || !expect_other_hosts_finished);
+    if (!all_hosts_finished)
     {
-        if (!cleaner.tryCleanupAfterError())
-            return false;
-    }
-
-    return true;
-}
-
-void BackupCoordinationOnCluster::waitForOtherHostsToFinish()
-{
-    if ((current_host != kInitiator) || !backup_query_was_sent_to_other_hosts)
-        return;
-    stage_sync.waitForOtherHostsToFinish();
-}
-
-bool BackupCoordinationOnCluster::tryWaitForOtherHostsToFinishAfterError() noexcept
-{
-    if (current_host != kInitiator)
+        auto unfinished_hosts = expect_other_hosts_finished ? stage_sync.getUnfinishedHosts() : Strings{current_host};
+        LOG_INFO(log, "Skipping removing nodes from ZooKeeper because hosts {} didn't finish",
+                 BackupCoordinationStageSync::getHostsDesc(unfinished_hosts));
         return false;
-    if (!backup_query_was_sent_to_other_hosts)
-        return true;
-    return stage_sync.tryWaitForOtherHostsToFinishAfterError();
+    }
+    return cleaner.cleanup(throw_if_error);
 }
 
 ZooKeeperRetriesInfo BackupCoordinationOnCluster::getOnClusterInitializationKeeperRetriesInfo() const

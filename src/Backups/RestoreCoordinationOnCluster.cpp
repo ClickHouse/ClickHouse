@@ -35,17 +35,21 @@ RestoreCoordinationOnCluster::RestoreCoordinationOnCluster(
     , current_host_index(BackupCoordinationOnCluster::findCurrentHostIndex(current_host, all_hosts))
     , log(getLogger("RestoreCoordinationOnCluster"))
     , with_retries(log, get_zookeeper_, keeper_settings, process_list_element_, [root_zookeeper_path_](Coordination::ZooKeeperWithFaultInjection::Ptr zk) { zk->sync(root_zookeeper_path_); })
-    , concurrency_check(restore_uuid_, /* is_restore = */ true, /* on_cluster = */ true, allow_concurrent_restore_, concurrency_counters_)
-    , stage_sync(/* is_restore = */ true, fs::path{zookeeper_path} / "stage", current_host, all_hosts, allow_concurrent_restore_, with_retries, schedule_, process_list_element_, log)
-    , cleaner(zookeeper_path, with_retries, log)
+    , cleaner(/* is_restore = */ true, zookeeper_path, with_retries, log)
+    , stage_sync(/* is_restore = */ true, fs::path{zookeeper_path} / "stage", current_host, all_hosts, allow_concurrent_restore_, concurrency_counters_, with_retries, schedule_, process_list_element_, log)
 {
-    createRootNodes();
+    try
+    {
+        createRootNodes();
+    }
+    catch (...)
+    {
+        stage_sync.setError(std::current_exception(), /* throw_if_error = */ false);
+        throw;
+    }
 }
 
-RestoreCoordinationOnCluster::~RestoreCoordinationOnCluster()
-{
-    tryFinishImpl();
-}
+RestoreCoordinationOnCluster::~RestoreCoordinationOnCluster() = default;
 
 void RestoreCoordinationOnCluster::createRootNodes()
 {
@@ -66,69 +70,52 @@ void RestoreCoordinationOnCluster::createRootNodes()
         });
 }
 
+void RestoreCoordinationOnCluster::setRestoreQueryIsSentToOtherHosts()
+{
+    stage_sync.setQueryIsSentToOtherHosts();
+}
+
+bool RestoreCoordinationOnCluster::isRestoreQuerySentToOtherHosts() const
+{
+    return stage_sync.isQuerySentToOtherHosts();
+}
+
 Strings RestoreCoordinationOnCluster::setStage(const String & new_stage, const String & message, bool sync)
 {
     stage_sync.setStage(new_stage, message);
-
-    if (!sync)
-        return {};
-
-    return stage_sync.waitForHostsToReachStage(new_stage, all_hosts_without_initiator);
+    if (sync)
+        return stage_sync.waitHostsReachStage(all_hosts_without_initiator, new_stage);
+    return {};
 }
 
-void RestoreCoordinationOnCluster::setRestoreQueryWasSentToOtherHosts()
+bool RestoreCoordinationOnCluster::setError(std::exception_ptr exception, bool throw_if_error)
 {
-    restore_query_was_sent_to_other_hosts = true;
+    return stage_sync.setError(exception, throw_if_error);
 }
 
-bool RestoreCoordinationOnCluster::trySetError(std::exception_ptr exception)
+bool RestoreCoordinationOnCluster::waitOtherHostsFinish(bool throw_if_error) const
 {
-    return stage_sync.trySetError(exception);
+    return stage_sync.waitOtherHostsFinish(throw_if_error);
 }
 
-void RestoreCoordinationOnCluster::finish()
+bool RestoreCoordinationOnCluster::finish(bool throw_if_error)
 {
-    bool other_hosts_also_finished = false;
-    stage_sync.finish(other_hosts_also_finished);
-
-    if ((current_host == kInitiator) && (other_hosts_also_finished || !restore_query_was_sent_to_other_hosts))
-        cleaner.cleanup();
+    return stage_sync.finish(throw_if_error);
 }
 
-bool RestoreCoordinationOnCluster::tryFinishAfterError() noexcept
+bool RestoreCoordinationOnCluster::cleanup(bool throw_if_error)
 {
-    return tryFinishImpl();
-}
-
-bool RestoreCoordinationOnCluster::tryFinishImpl() noexcept
-{
-    bool other_hosts_also_finished = false;
-    if (!stage_sync.tryFinishAfterError(other_hosts_also_finished))
-        return false;
-
-    if ((current_host == kInitiator) && (other_hosts_also_finished || !restore_query_was_sent_to_other_hosts))
+    /// All the hosts must finish before we remove the coordination nodes.
+    bool expect_other_hosts_finished = stage_sync.isQuerySentToOtherHosts() || !stage_sync.isErrorSet();
+    bool all_hosts_finished = stage_sync.finished() && (stage_sync.otherHostsFinished() || !expect_other_hosts_finished);
+    if (!all_hosts_finished)
     {
-        if (!cleaner.tryCleanupAfterError())
-            return false;
-    }
-
-    return true;
-}
-
-void RestoreCoordinationOnCluster::waitForOtherHostsToFinish()
-{
-    if ((current_host != kInitiator) || !restore_query_was_sent_to_other_hosts)
-        return;
-    stage_sync.waitForOtherHostsToFinish();
-}
-
-bool RestoreCoordinationOnCluster::tryWaitForOtherHostsToFinishAfterError() noexcept
-{
-    if (current_host != kInitiator)
+        auto unfinished_hosts = expect_other_hosts_finished ? stage_sync.getUnfinishedHosts() : Strings{current_host};
+        LOG_INFO(log, "Skipping removing nodes from ZooKeeper because hosts {} didn't finish",
+                 BackupCoordinationStageSync::getHostsDesc(unfinished_hosts));
         return false;
-    if (!restore_query_was_sent_to_other_hosts)
-        return true;
-    return stage_sync.tryWaitForOtherHostsToFinishAfterError();
+    }
+    return cleaner.cleanup(throw_if_error);
 }
 
 ZooKeeperRetriesInfo RestoreCoordinationOnCluster::getOnClusterInitializationKeeperRetriesInfo() const

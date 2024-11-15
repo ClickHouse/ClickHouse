@@ -69,7 +69,7 @@ struct ReadSettings
     std::shared_ptr<PageCache> page_cache;
 
     size_t filesystem_cache_max_download_size = (128UL * 1024 * 1024 * 1024);
-    bool skip_download_if_exceeds_query_cache = true;
+    bool filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit = true;
 
     size_t remote_read_min_bytes_for_seek = DBMS_DEFAULT_BUFFER_SIZE;
 
