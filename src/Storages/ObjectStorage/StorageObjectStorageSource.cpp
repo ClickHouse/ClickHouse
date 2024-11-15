@@ -305,7 +305,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     {
         object_info = file_iterator->next(processor);
 
-        if (!object_info)
+        if (!object_info || object_info->getPath().empty())
             return {};
 
         if (!object_info->metadata)
