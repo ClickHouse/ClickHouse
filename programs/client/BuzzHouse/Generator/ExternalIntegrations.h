@@ -199,7 +199,11 @@ class MySQLIntegration : public ClickHouseIntegration
 public:
     MySQLIntegration() : ClickHouseIntegration() { }
 
-    static MySQLIntegration * TestAndAddMySQLIntegration(const FuzzConfig &) { return nullptr; }
+    static MySQLIntegration * TestAndAddMySQLIntegration(const FuzzConfig &)
+    {
+        std::cout << "ClickHouse not compiled with MySQL connector, skipping MySQL integration" << std::endl;
+        return nullptr;
+    }
 
     bool performIntegration(RandomGenerator &, const uint32_t, std::vector<InsertEntry> &) override { return false; }
 
@@ -344,7 +348,11 @@ class PostgreSQLIntegration : public ClickHouseIntegration
 public:
     PostgreSQLIntegration() : ClickHouseIntegration() { }
 
-    static PostgreSQLIntegration * TestAndAddPostgreSQLIntegration(const FuzzConfig &) { return nullptr; }
+    static PostgreSQLIntegration * TestAndAddPostgreSQLIntegration(const FuzzConfig &)
+    {
+        std::cout << "ClickHouse not compiled with PostgreSQL connector, skipping PostgreSQL integration" << std::endl;
+        return nullptr;
+    }
 
     bool performIntegration(RandomGenerator &, const uint32_t, std::vector<InsertEntry> &) override { return false; }
 
@@ -430,7 +438,11 @@ public:
 
     SQLiteIntegration() : ClickHouseIntegration() { }
 
-    static SQLiteIntegration * TestAndAddSQLiteIntegration(const FuzzConfig &) { return nullptr; }
+    static SQLiteIntegration * TestAndAddSQLiteIntegration(const FuzzConfig &)
+    {
+        std::cout << "ClickHouse not compiled with SQLite connector, skipping SQLite integration" << std::endl;
+        return nullptr;
+    }
 
     bool performIntegration(RandomGenerator &, const uint32_t, std::vector<InsertEntry> &) override { return false; }
 
@@ -588,7 +600,11 @@ class MongoDBIntegration : public ClickHouseIntegration
 public:
     MongoDBIntegration() : ClickHouseIntegration() { }
 
-    static MongoDBIntegration * TestAndAddMongoDBIntegration(const FuzzConfig &) { return nullptr; }
+    static MongoDBIntegration * TestAndAddMongoDBIntegration(const FuzzConfig &)
+    {
+        std::cout << "ClickHouse not compiled with MongoDB connector, skipping MongoDB integration" << std::endl;
+        return nullptr;
+    }
 
     bool performIntegration(RandomGenerator &, const uint32_t, std::vector<InsertEntry> &) override { return false; }
 
