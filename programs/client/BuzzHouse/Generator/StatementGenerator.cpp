@@ -1427,11 +1427,11 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, AlterTable * at
             {
                 FreezePartition * fp = ati->mutable_unfreeze_partition();
                 const uint32_t fname = rg.PickKeyRandomlyFromMap(t.frozen_partitions);
-                const std::string & partition_name = t.frozen_partitions[fname];
+                const std::string & partition_id = t.frozen_partitions[fname];
 
-                if (partition_name != "")
+                if (partition_id != "")
                 {
-                    fp->mutable_partition()->set_partition_id(partition_name);
+                    fp->mutable_partition()->set_partition_id(partition_id);
                 }
                 fp->set_fname(fname);
             }
@@ -2042,7 +2042,7 @@ void StatementGenerator::UpdateGenerator(const SQLQuery & sq, ExternalIntegratio
                 {
                     const FreezePartition & fp = ati.freeze_partition();
 
-                    t.frozen_partitions[fp.fname()] = fp.has_partition() ? fp.partition().partition() : "";
+                    t.frozen_partitions[fp.fname()] = fp.has_partition() ? fp.partition().partition_id() : "";
                 }
                 else if (ati.has_unfreeze_partition() && success)
                 {

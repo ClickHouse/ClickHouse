@@ -272,12 +272,7 @@ public:
         }
         buf += "\"table\" = '";
         buf += table;
-        buf += "' AND \"partition";
-        if constexpr (IsDetached)
-        {
-            buf += "_id";
-        }
-        buf += "\" != 'tuple()' INTO OUTFILE '";
+        buf += "' AND \"partition_id\" != 'all' INTO OUTFILE '";
         buf += fuzz_out.generic_string();
         buf += "' TRUNCATE FORMAT CSV;";
         this->ProcessServerQuery(buf);
@@ -299,11 +294,7 @@ public:
         buf += "SELECT z.y FROM (SELECT (row_number() OVER () - 1) AS x, \"";
         if constexpr (IsPartition)
         {
-            buf += "partition";
-            if constexpr (IsDetached)
-            {
-                buf += "_id";
-            }
+            buf += "partition_id";
         }
         else
         {
@@ -327,12 +318,7 @@ public:
         }
         buf += "\"table\" = '";
         buf += table;
-        buf += "' AND \"partition";
-        if constexpr (IsDetached)
-        {
-            buf += "_id";
-        }
-        buf += "\" != 'tuple()') AS z WHERE z.x = (SELECT rand() % (max2(count(), 1)::Int) FROM \"system\".\"";
+        buf += "' AND \"partition_id\" != 'all') AS z WHERE z.x = (SELECT rand() % (max2(count(), 1)::Int) FROM \"system\".\"";
         if constexpr (IsDetached)
         {
             buf += "detached_parts";

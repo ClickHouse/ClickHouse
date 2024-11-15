@@ -2765,14 +2765,14 @@ CONV_FN(PartitionExpr, pexpr)
             ret += "'";
             break;
         case PartitionType::kPartition:
-            ret += "PARTITION '";
+            ret += "PARTITION $piddef$";
             ret += pexpr.partition();
-            ret += "'";
+            ret += "$piddef$";
             break;
         case PartitionType::kPartitionId:
-            ret += "PARTITION ID $piddef$";
+            ret += "PARTITION ID '";
             ret += pexpr.partition_id();
-            ret += "$piddef$";
+            ret += "'";
             break;
         case PartitionType::kAll:
             ret += "PARTITION ALL";
