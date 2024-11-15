@@ -110,22 +110,34 @@ std::shared_ptr<StorageObjectStorage::Configuration> DatabaseIceberg::getConfigu
 {
     switch (settings[DatabaseIcebergSetting::storage_type].value)
     {
+#if USE_AWS_S3
         case DB::DatabaseIcebergStorageType::S3:
         {
             return std::make_shared<StorageS3IcebergConfiguration>();
         }
+#endif
+#if USE_AZURE_BLOB_STORAGE
         case DB::DatabaseIcebergStorageType::Azure:
         {
             return std::make_shared<StorageAzureIcebergConfiguration>();
         }
+#endif
+#if USE_HDFS
         case DB::DatabaseIcebergStorageType::HDFS:
         {
             return std::make_shared<StorageHDFSIcebergConfiguration>();
         }
+#endif
         case DB::DatabaseIcebergStorageType::Local:
         {
             return std::make_shared<StorageLocalIcebergConfiguration>();
         }
+#if !USE_AWS_S3 || !USE_AZURE_BLOB_STORAGE || !USE_HDFS
+        default:
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Server does not contain support for storage type {}",
+                            settings[DatabaseIcebergSetting::storage_type].value);
+#endif
     }
 }
 

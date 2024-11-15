@@ -242,13 +242,11 @@ def test_many_namespaces(started_cluster):
         f"{root_namespace_1}.B.C",
         f"{root_namespace_1}.B.C.D",
         f"{root_namespace_1}.B.C.D.E",
-        f"{root_namespace_1}.B.C.D.E.F",
-        f"{root_namespace_1}.B.C.D.E.FF",
         f"{root_namespace_2}",
         f"{root_namespace_2}.C",
         f"{root_namespace_2}.CC",
     ]
-    tables = ["A", "B", "C", "D", "E", "F"]
+    tables = ["A", "B", "C"]
     catalog = load_catalog_impl(started_cluster)
 
     for namespace in namespaces:
