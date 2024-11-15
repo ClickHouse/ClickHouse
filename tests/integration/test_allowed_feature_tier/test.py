@@ -6,6 +6,9 @@ cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
     main_configs=["configs/allowed_feature_tier.xml"],
+    user_configs=[
+        "configs/users.d/users.xml",
+    ],
     stay_alive=True,
 )
 
@@ -252,3 +255,43 @@ def test_allowed_feature_tier_in_user(start_cluster):
     instance.query("SYSTEM RELOAD CONFIG")
     assert "0" == get_current_tier_value(instance)
     instance.query("DROP USER IF EXISTS user_experimental")
+
+
+def test_it_is_possible_to_enable_experimental_settings_in_default_profile(
+    start_cluster,
+):
+    # You can disable changing experimental settings but changing the default value via global config file is ok
+    # It will just make the default value different and block changes
+    instance.replace_in_config(config_path, "0", "2")
+
+    # Change default user config
+    instance.replace_in_config(
+        "/etc/clickhouse-server/users.d/users.xml",
+        "allow_experimental_time_series_table>.",
+        "allow_experimental_time_series_table>1",
+    )
+
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert "2" == get_current_tier_value(instance)
+    output, error = instance.query_and_get_answer_with_error(
+        "SELECT value FROM system.settings WHERE name = 'allow_experimental_time_series_table'"
+    )
+    assert output.strip() == "1"
+    assert error == ""
+
+    # But it won't be possible to change it
+    output, error = instance.query_and_get_answer_with_error(
+        "SELECT 1 SETTINGS allow_experimental_time_series_table=0"
+    )
+    assert output == ""
+    assert "Changes to EXPERIMENTAL settings are disabled" in error
+
+    instance.replace_in_config(config_path, "2", "0")
+    instance.replace_in_config(
+        "/etc/clickhouse-server/users.d/users.xml",
+        "allow_experimental_time_series_table>.",
+        "allow_experimental_time_series_table>0",
+    )
+
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert "0" == get_current_tier_value(instance)
