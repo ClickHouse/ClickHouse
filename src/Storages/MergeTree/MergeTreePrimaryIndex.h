@@ -22,6 +22,7 @@ public:
     bool empty() const { return columns.empty(); }
     size_t getNumColumns() const { return columns.size(); }
     size_t getNumRows() const { return num_rows; }
+    const IIndexColumn & getIndexColumn(size_t idx) const { return *columns.at(idx); }
 
     size_t bytes() const;
     size_t allocatedBytes() const;

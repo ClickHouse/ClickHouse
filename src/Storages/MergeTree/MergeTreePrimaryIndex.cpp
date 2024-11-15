@@ -99,7 +99,7 @@ Field PrimaryIndex::get(size_t col_idx, size_t row_idx) const
 
 void PrimaryIndex::get(size_t col_idx, size_t row_idx, Field & field) const
 {
-    return columns.at(col_idx)->get(row_idx, field);
+    columns.at(col_idx)->get(row_idx, field);
 }
 
 }

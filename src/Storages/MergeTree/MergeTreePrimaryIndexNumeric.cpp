@@ -75,7 +75,7 @@ IndexBlockPtr buildRLEBlock(size_t rle_offset_bytes, const Column & column, size
 }
 
 template <typename U>
-void buildDelta(PaddedPODArray<UInt64> & delta, UInt8 bit_size, const PaddedPODArray<U> & data, size_t from, size_t to)
+void buildDelta(PaddedPODArray<UInt64> & delta, UInt8 bit_size, U base, const PaddedPODArray<U> & data, size_t from, size_t to)
 {
     size_t total_bits = (to - from) * bit_size;
     size_t total_elements = getNumberOfElementsForBits(total_bits);
@@ -85,7 +85,7 @@ void buildDelta(PaddedPODArray<UInt64> & delta, UInt8 bit_size, const PaddedPODA
 
     for (size_t i = from; i < to; ++i)
     {
-        UInt64 delta_elem = data[i] - data[from];
+        U delta_elem = data[i] - base;
         chassert((delta_elem & maskLowBits<UInt64>(bit_size)) == delta_elem);
 
         writeBitsPacked(delta.begin(), bit_offset, delta_elem);
@@ -94,13 +94,13 @@ void buildDelta(PaddedPODArray<UInt64> & delta, UInt8 bit_size, const PaddedPODA
 }
 
 template <typename U>
-IndexBlockPtr buildDeltaBlock(UInt8 bit_size, const PaddedPODArray<U> & data, size_t from, size_t to)
+IndexBlockPtr buildDeltaBlock(UInt8 bit_size, U base, const PaddedPODArray<U> & data, size_t from, size_t to)
 {
     auto block = std::make_unique<IndexBlockDelta<U>>();
 
-    block->base = data[from];
+    block->base = base;
     block->bit_size = bit_size;
-    buildDelta(block->delta, block->bit_size, data, from, to);
+    buildDelta(block->delta, block->bit_size, base, data, from, to);
 
     return block;
 }
@@ -109,7 +109,10 @@ struct ChosenCompression
 {
     IIndexBlock::Type type = IIndexBlock::Type::Raw;
     UInt64 compressed_size = 0;
+
+    UInt64 delta_base = 0;
     UInt8 delta_bit_size = 0;
+
     UInt8 rle_offset_bytes = 0;
 };
 
@@ -156,6 +159,7 @@ ChosenCompression chooseCompression(const PaddedPODArray<U> & data, size_t from,
     {
         chosen.type = Type::Delta;
         chosen.compressed_size = delta_enconding_bytes;
+        chosen.delta_base = static_cast<UInt64>(min_value);
         chosen.delta_bit_size = delta_bit_size;
     }
 
@@ -211,7 +215,7 @@ IndexBlocks buildBlocks(const Column & column, size_t block_size, double max_rat
         }
         else if (compressions[i].type == Type::Delta)
         {
-            block = buildDeltaBlock(compressions[i].delta_bit_size, data, from, to);
+            block = buildDeltaBlock(compressions[i].delta_bit_size, static_cast<U>(compressions[i].delta_base), data, from, to);
         }
         else if (compressions[i].type == Type::RLE)
         {

@@ -951,22 +951,17 @@ void IMergeTreeDataPart::optimizeIndexColumns(size_t marks_count, ColumnsVector 
     if (drop_primary_key_suffix || primary_index_settings.compress)
     {
         chassert(marks_count > 0);
-
-        std::vector<UInt8> is_border(marks_count);
         num_equal_ranges.assign(key_size, 1);
 
         for (size_t j = 0; j < key_size; ++j)
         {
             for (size_t i = 1; i < marks_count; ++i)
             {
-                if (is_border[i] || index_columns[j]->compareAt(i, i - 1, *index_columns[j], 0) != 0)
-                {
+                if (index_columns[j]->compareAt(i, i - 1, *index_columns[j], 0) != 0)
                     ++num_equal_ranges[j];
-                    is_border[i] = 1;
-                }
             }
 
-            if (static_cast<Float64>(num_equal_ranges[j]) / marks_count >= ratio_to_drop_suffix_columns)
+            if (drop_primary_key_suffix && static_cast<Float64>(num_equal_ranges[j]) / marks_count >= ratio_to_drop_suffix_columns)
             {
                 key_size = j + 1;
                 index_columns.resize(key_size);
@@ -1019,14 +1014,14 @@ void IMergeTreeDataPart::loadIndex() const
         std::vector<size_t> num_equal_ranges;
         optimizeIndexColumns(marks_count, loaded_index, num_equal_ranges);
 
-        for (size_t i = 0; i < key_size; ++i)
+        for (const auto & index_column : loaded_index)
         {
-            loaded_index[i]->shrinkToFit();
-            loaded_index[i]->protect();
+            index_column->shrinkToFit();
+            index_column->protect();
 
-            if (loaded_index[i]->size() != marks_count)
+            if (index_column->size() != marks_count)
                 throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all data from index file {}(expected size: "
-                    "{}, read: {})", index_path, marks_count, loaded_index[i]->size());
+                    "{}, read: {})", index_path, marks_count, index_column->size());
         }
 
         Columns index_columns(std::make_move_iterator(loaded_index.begin()), std::make_move_iterator(loaded_index.end()));

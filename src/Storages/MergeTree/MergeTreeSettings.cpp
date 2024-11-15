@@ -236,9 +236,9 @@ namespace ErrorCodes
     DECLARE(UInt64, primary_key_compress_block_size, 65536, "Primary compress block size, the actual size of the block to compress.", 0) \
     DECLARE(Bool, primary_key_lazy_load, true, "Load primary key in memory on first use instead of on table initialization. This can save memory in the presence of a large number of tables.", 0) \
     DECLARE(Float, primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns, 0.9f, "If the value of a column of the primary key in data part changes at least in this ratio of times, skip loading next columns in memory. This allows to save memory usage by not loading useless columns of the primary key.", 0) \
-    DECLARE(Bool, primary_key_compress_in_memory, true, "KEK", 0) \
-    DECLARE(UInt64, primary_key_min_compressed_block_size_in_memory, 32, "KEK", 0) \
-    DECLARE(Float, primary_key_max_ratio_to_compress_in_memory, 0.7f, "KEK", 0) \
+    DECLARE(Bool, primary_key_compress_in_memory, true, "Compress primary index in memory", 0) \
+    DECLARE(UInt64, primary_key_min_compressed_block_size_in_memory, 32, "Minimal size of block for compression of primary index in memory", 0) \
+    DECLARE(Float, primary_key_max_ratio_to_compress_in_memory, 0.7f, "If compression of primary index in memory gives only ratio higher than this value, do not compress index at all", 0) \
     DECLARE(Bool, prewarm_mark_cache, false, "If true mark cache will be prewarmed by saving marks to mark cache on inserts, merges, fetches and on startup of server", 0) \
     DECLARE(String, columns_to_prewarm_mark_cache, "", "List of columns to prewarm mark cache for (if enabled). Empty means all columns", 0) \
     /** Projection settings. */ \

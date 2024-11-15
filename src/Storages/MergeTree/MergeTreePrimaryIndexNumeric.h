@@ -1,9 +1,6 @@
 #pragma once
-#include <type_traits>
 #include <Storages/MergeTree/MergeTreePrimaryIndexColumn.h>
-#include "Common/PODArray_fwd.h"
 #include <Common/PODArray.h>
-#include "base/types.h"
 
 namespace DB
 {

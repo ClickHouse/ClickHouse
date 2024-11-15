@@ -29,6 +29,26 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+static ColumnPtr convertIndexColumnToFull(const PrimaryIndex & index, const IDataType & type, size_t pos)
+{
+    const auto & index_column = index.getIndexColumn(pos);
+    if (!index_column.isCompressed())
+        return index_column.getRawColumn();
+
+    size_t num_rows = index.getNumRows();
+    auto column = type.createColumn();
+    column->reserve(num_rows);
+
+    for (size_t row = 0; row < num_rows; ++row)
+    {
+        Field field;
+        index_column.get(row, field);
+        column->insert(field);
+    }
+
+    return column;
+}
+
 class MergeTreeIndexSource : public ISource, WithContext
 {
 public:
@@ -68,8 +88,7 @@ protected:
         const auto & part_name_column = StorageMergeTreeIndex::part_name_column;
         const auto & mark_number_column = StorageMergeTreeIndex::mark_number_column;
         const auto & rows_in_granule_column = StorageMergeTreeIndex::rows_in_granule_column;
-        // const auto index = part->getIndex();
-        const auto index_columns = part->getIndex()->getRawColumns();
+        const auto index = part->getIndex();
 
         Columns result_columns(num_columns);
         for (size_t pos = 0; pos < num_columns; ++pos)
@@ -83,14 +102,13 @@ protected:
 
                 /// Some of the columns from suffix of primary index may be not loaded
                 /// according to setting 'primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns'.
-                if (index_position < index_columns.size())
+                if (index_position < index->getNumColumns())
                 {
-                    result_columns[pos] = index_columns.at(index_position);
+                    result_columns[pos] = convertIndexColumnToFull(*index, *column_type, index_position);
                 }
                 else
                 {
-                    const auto & index_type = index_header.getByPosition(index_position).type;
-                    auto index_column = index_type->createColumnConstWithDefaultValue(num_rows);
+                    auto index_column = column_type->createColumnConstWithDefaultValue(num_rows);
                     result_columns[pos] = index_column->convertToFullColumnIfConst();
                 }
             }
