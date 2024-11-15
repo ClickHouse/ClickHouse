@@ -357,14 +357,7 @@ private:
                 else
                 {
                     fc.TableGetRandomPartitionOrPart<false, true>(dname, tname, buf);
-                    if (rg.NextBool())
-                    {
-                        pexpr->set_partition(buf);
-                    }
-                    else
-                    {
-                        pexpr->set_partition_id(buf);
-                    }
+                    pexpr->set_partition_id(buf);
                 }
                 set_part = true;
             }

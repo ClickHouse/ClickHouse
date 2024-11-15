@@ -1244,7 +1244,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, AlterTable * at
                 if (table_has_partitions && nopt2 < 5)
                 {
                     fc.TableGetRandomPartitionOrPart<false, true>(dname, tname, buf);
-                    pexpr->set_partition(buf);
+                    pexpr->set_partition_id(buf);
                 }
                 else if (table_has_partitions && nopt2 < 9)
                 {
@@ -1271,7 +1271,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, AlterTable * at
                 if (table_has_partitions && nopt2 < 5)
                 {
                     fc.TableGetRandomPartitionOrPart<false, true>(dname, tname, buf);
-                    pexpr->set_partition(buf);
+                    pexpr->set_partition_id(buf);
                 }
                 else if (table_has_partitions && nopt2 < 9)
                 {
@@ -1299,7 +1299,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, AlterTable * at
                 if (table_has_detached_partitions && nopt2 < 5)
                 {
                     fc.TableGetRandomPartitionOrPart<true, true>(dname, tname, buf);
-                    pexpr->set_partition(buf);
+                    pexpr->set_partition_id(buf);
                 }
                 else if (table_has_detached_partitions && nopt2 < 9)
                 {
@@ -1324,7 +1324,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, AlterTable * at
                 PartitionExpr * pexpr = ati->mutable_forget_partition();
 
                 fc.TableGetRandomPartitionOrPart<false, true>(dname, tname, buf);
-                pexpr->set_partition(buf);
+                pexpr->set_partition_id(buf);
             }
             else if (
                 attach_partition
@@ -1343,7 +1343,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, AlterTable * at
                 if (table_has_detached_partitions && nopt2 < 5)
                 {
                     fc.TableGetRandomPartitionOrPart<true, true>(dname, tname, buf);
-                    pexpr->set_partition(buf);
+                    pexpr->set_partition_id(buf);
                 }
                 else if (table_has_detached_partitions && nopt2 < 9)
                 {
@@ -1371,7 +1371,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, AlterTable * at
                 const SQLTable & t2 = rg.PickRandomlyFromVector(FilterCollection<SQLTable>(attached_tables));
 
                 fc.TableGetRandomPartitionOrPart<false, true>(dname, tname, buf);
-                pexpr->set_partition(buf);
+                pexpr->set_partition_id(buf);
                 if (t2.db)
                 {
                     est2->mutable_database()->set_database("d" + std::to_string(t2.db->dname));
@@ -1392,7 +1392,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, AlterTable * at
                 PartitionExpr * pexpr = ccip->mutable_partition();
 
                 fc.TableGetRandomPartitionOrPart<false, true>(dname, tname, buf);
-                pexpr->set_partition(buf);
+                pexpr->set_partition_id(buf);
                 ccip->mutable_col()->set_column("c" + std::to_string(rg.PickKeyRandomlyFromMap(t.cols)));
             }
             else if (
@@ -1410,7 +1410,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, AlterTable * at
                 if (table_has_partitions && rg.NextSmallNumber() < 9)
                 {
                     fc.TableGetRandomPartitionOrPart<false, true>(dname, tname, buf);
-                    fp->mutable_partition()->set_partition(buf);
+                    fp->mutable_partition()->set_partition_id(buf);
                 }
                 fp->set_fname(t.freeze_counter++);
             }
@@ -1431,7 +1431,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, AlterTable * at
 
                 if (partition_name != "")
                 {
-                    fp->mutable_partition()->set_partition(partition_name);
+                    fp->mutable_partition()->set_partition_id(partition_name);
                 }
                 fp->set_fname(fname);
             }
@@ -1450,7 +1450,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, AlterTable * at
                 PartitionExpr * pexpr = ccip->mutable_partition();
 
                 fc.TableGetRandomPartitionOrPart<false, true>(dname, tname, buf);
-                pexpr->set_partition(buf);
+                pexpr->set_partition_id(buf);
                 ccip->mutable_idx()->set_index("i" + std::to_string(rg.PickKeyRandomlyFromMap(t.idxs)));
             }
             else
