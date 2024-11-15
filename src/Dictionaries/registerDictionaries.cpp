@@ -20,7 +20,6 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & source_factory
 void registerDictionarySourceExecutable(DictionarySourceFactory & source_factory);
 void registerDictionarySourceExecutablePool(DictionarySourceFactory & source_factory);
 void registerDictionarySourceHTTP(DictionarySourceFactory & source_factory);
-void registerDictionarySourceLibrary(DictionarySourceFactory & source_factory);
 void registerDictionarySourceYAMLRegExpTree(DictionarySourceFactory & source_factory);
 
 class DictionaryFactory;
@@ -58,7 +57,6 @@ void registerDictionaries(bool use_legacy_mongodb_integration)
         registerDictionarySourceExecutable(source_factory);
         registerDictionarySourceExecutablePool(source_factory);
         registerDictionarySourceHTTP(source_factory);
-        registerDictionarySourceLibrary(source_factory);
         registerDictionarySourceYAMLRegExpTree(source_factory);
     }
 
