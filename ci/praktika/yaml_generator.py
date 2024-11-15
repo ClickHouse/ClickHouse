@@ -80,8 +80,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-            ref: ${{{{ github.head_ref }}}}
 {JOB_ADDONS}
       - name: Prepare env script
         run: |
@@ -104,11 +102,7 @@ jobs:
         run: |
           . /tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run --job '''{JOB_NAME}''' --workflow "{WORKFLOW_NAME}" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
-          else
-            python3 -m praktika run --job '''{JOB_NAME}''' --workflow "{WORKFLOW_NAME}" --ci |& tee /tmp/praktika/praktika_run.log
-          fi
+          {PYTHON} -m praktika run --job '''{JOB_NAME}''' --workflow "{WORKFLOW_NAME}" --ci |& tee {RUN_LOG}
 {UPLOADS_GITHUB}\
 """
 
@@ -190,10 +184,12 @@ jobs:
                     False
                 ), f"Workflow event not yet supported [{workflow_config.event}]"
 
-            with open(self._get_workflow_file_name(workflow_config.name), "w") as f:
-                f.write(yaml_workflow_str)
+            with ContextManager.cd():
+                with open(self._get_workflow_file_name(workflow_config.name), "w") as f:
+                    f.write(yaml_workflow_str)
 
-        Shell.check("git add ./.github/workflows/*.yaml")
+        with ContextManager.cd():
+            Shell.check("git add ./.github/workflows/*.yaml")
 
 
 class PullRequestPushYamlGen:

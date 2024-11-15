@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from typing import Any, Dict, List, Type
 
 from praktika import Workflow
-from praktika.settings import Settings
+from praktika._settings import _Settings
 from praktika.utils import MetaClasses, T
 
 
@@ -30,12 +30,13 @@ class _Environment(MetaClasses.Serializable):
     INSTANCE_ID: str
     INSTANCE_LIFE_CYCLE: str
     LOCAL_RUN: bool = False
+    PARAMETER: Any = None
     REPORT_INFO: List[str] = dataclasses.field(default_factory=list)
     name = "environment"
 
     @classmethod
     def file_name_static(cls, _name=""):
-        return f"{Settings.TEMP_DIR}/{cls.name}.json"
+        return f"{_Settings.TEMP_DIR}/{cls.name}.json"
 
     @classmethod
     def from_dict(cls: Type[T], obj: Dict[str, Any]) -> T:
@@ -66,12 +67,12 @@ class _Environment(MetaClasses.Serializable):
 
     @staticmethod
     def get_needs_statuses():
-        if Path(Settings.WORKFLOW_STATUS_FILE).is_file():
-            with open(Settings.WORKFLOW_STATUS_FILE, "r", encoding="utf8") as f:
+        if Path(_Settings.WORKFLOW_STATUS_FILE).is_file():
+            with open(_Settings.WORKFLOW_STATUS_FILE, "r", encoding="utf8") as f:
                 return json.load(f)
         else:
             print(
-                f"ERROR: Status file [{Settings.WORKFLOW_STATUS_FILE}] does not exist"
+                f"ERROR: Status file [{_Settings.WORKFLOW_STATUS_FILE}] does not exist"
             )
             raise RuntimeError()
 
@@ -158,8 +159,7 @@ class _Environment(MetaClasses.Serializable):
     @classmethod
     def get_s3_prefix_static(cls, pr_number, branch, sha, latest=False):
         prefix = ""
-        assert sha or latest
-        if pr_number and pr_number > 0:
+        if pr_number > 0:
             prefix += f"{pr_number}"
         else:
             prefix += f"{branch}"
@@ -171,15 +171,18 @@ class _Environment(MetaClasses.Serializable):
 
     # TODO: find a better place for the function. This file should not import praktika.settings
     #   as it's requires reading users config, that's why imports nested inside the function
-    def get_report_url(self, settings, latest=False):
+    def get_report_url(self):
         import urllib
 
-        path = settings.HTML_S3_PATH
-        for bucket, endpoint in settings.S3_BUCKET_TO_HTTP_ENDPOINT.items():
+        from praktika.settings import Settings
+        from praktika.utils import Utils
+
+        path = Settings.HTML_S3_PATH
+        for bucket, endpoint in Settings.S3_BUCKET_TO_HTTP_ENDPOINT.items():
             if bucket in path:
                 path = path.replace(bucket, endpoint)
                 break
-        REPORT_URL = f"https://{path}/{Path(settings.HTML_PAGE_FILE).name}?PR={self.PR_NUMBER}&sha={'latest' if latest else self.SHA}&name_0={urllib.parse.quote(self.WORKFLOW_NAME, safe='')}&name_1={urllib.parse.quote(self.JOB_NAME, safe='')}"
+        REPORT_URL = f"https://{path}/{Path(Settings.HTML_PAGE_FILE).name}?PR={self.PR_NUMBER}&sha={self.SHA}&name_0={urllib.parse.quote(self.WORKFLOW_NAME, safe='')}&name_1={urllib.parse.quote(self.JOB_NAME, safe='')}"
         return REPORT_URL
 
     def is_local_run(self):
