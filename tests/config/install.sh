@@ -13,6 +13,7 @@ if [ $# -ge 2 ]; then
 fi
 
 FAST_TEST=0
+
 NO_AZURE=0
 
 while [[ "$#" -gt 0 ]]; do
@@ -88,7 +89,7 @@ ln -sf $SRC_PATH/config.d/serverwide_trace_collector.xml $DEST_SERVER_PATH/confi
 ln -sf $SRC_PATH/config.d/rocksdb.xml $DEST_SERVER_PATH/config.d/
 
 # Not supported with fasttest.
-if [ "${DEST_SERVER_PATH}" = "/etc/clickhouse-server" ] || [ "$FAST_TEST" != "1" ]; then
+if [ "$FAST_TEST" != "1" ]; then
    ln -sf "$SRC_PATH/config.d/legacy_geobase.xml" "$DEST_SERVER_PATH/config.d/"
 fi
 

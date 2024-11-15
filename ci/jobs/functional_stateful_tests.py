@@ -97,7 +97,8 @@ def main():
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-local",
             f"rm -rf {Settings.TEMP_DIR}/etc/ && mkdir -p {Settings.TEMP_DIR}/etc/clickhouse-client {Settings.TEMP_DIR}/etc/clickhouse-server",
             f"cp programs/server/config.xml programs/server/users.xml {Settings.TEMP_DIR}/etc/clickhouse-server/",
-            f"./tests/config/install.sh {Settings.TEMP_DIR}/etc/clickhouse-server {Settings.TEMP_DIR}/etc/clickhouse-client --s3-storage",
+            # TODO: find a way to work with Azure secret so it's ok for local tests as well, for now keep azure disabled
+            f"./tests/config/install.sh {Settings.TEMP_DIR}/etc/clickhouse-server {Settings.TEMP_DIR}/etc/clickhouse-client --s3-storage --no-azure",
             # clickhouse benchmark segfaults with --config-path, so provide client config by its default location
             f"cp {Settings.TEMP_DIR}/etc/clickhouse-client/* /etc/clickhouse-client/",
             # update_path_ch_config,
