@@ -57,10 +57,9 @@ void optimizeJoin(QueryPlan::Node & node, QueryPlan::Nodes &)
 
     const auto & table_join = join->getTableJoin();
 
-    if (table_join.kind() != JoinKind::Inner
-     && table_join.kind() != JoinKind::Left
-     && table_join.kind() != JoinKind::Right
-     && table_join.kind() != JoinKind::Full)
+    /// Algorithms other than HashJoin may not support all JOIN kinds, so changing from LEFT to RIGHT is not always possible
+    bool allow_outer_join = typeid_cast<const HashJoin *>(join.get());
+    if (table_join.kind() != JoinKind::Inner && !allow_outer_join)
         return;
 
     /// fixme: USING clause handled specially in join algorithm, so swap breaks it
