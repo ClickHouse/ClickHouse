@@ -110,7 +110,7 @@ int StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_t
             })),
                    tudf = 5, prob_space = derived_table + cte + table + view + tudf;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
-    const uint32_t nopt = next_dist(rg.gen);
+    const uint32_t nopt = next_dist(rg.generator);
 
     name += "t";
     name += std::to_string(this->levels[this->current_level].rels.size());
@@ -353,7 +353,7 @@ int StatementGenerator::generateJoinConstraint(RandomGenerator & rg, const bool 
                 ExprColumnList * ecl = jc->mutable_using_expr()->mutable_col_list();
                 const uint32_t nclauses = std::min<uint32_t>(UINT32_C(3), (rg.nextRandomUInt32() % intersect.size()) + 1);
 
-                std::shuffle(intersect.begin(), intersect.end(), rg.gen);
+                std::shuffle(intersect.begin(), intersect.end(), rg.generator);
                 for (uint32_t i = 0; i < nclauses; i++)
                 {
                     ExprColumn * ec = i == 0 ? ecl->mutable_col() : ecl->add_extra_cols();
@@ -683,7 +683,7 @@ int StatementGenerator::generateGroupBy(
         {
             available_cols.insert(available_cols.end(), entry.cols.begin(), entry.cols.end());
         }
-        std::shuffle(available_cols.begin(), available_cols.end(), rg.gen);
+        std::shuffle(available_cols.begin(), available_cols.end(), rg.generator);
     }
     if (enforce_having && available_cols.empty())
     {
@@ -735,7 +735,7 @@ int StatementGenerator::generateGroupBy(
                     generateGroupByExpr(rg, enforce_having, j, ncols, available_cols, gcols, oel->add_exprs());
                 }
                 this->width -= nelems;
-                std::shuffle(available_cols.begin(), available_cols.end(), rg.gen);
+                std::shuffle(available_cols.begin(), available_cols.end(), rg.generator);
             }
             this->levels[this->current_level].global_aggregate |= gcols.empty() && has_global;
         }
@@ -806,7 +806,7 @@ int StatementGenerator::generateOrderBy(RandomGenerator & rg, const uint32_t nco
         }
         if (!available_cols.empty())
         {
-            std::shuffle(available_cols.begin(), available_cols.end(), rg.gen);
+            std::shuffle(available_cols.begin(), available_cols.end(), rg.generator);
         }
         const uint32_t nclauses = std::min<uint32_t>(
             this->fc.max_width - this->width,
@@ -878,7 +878,7 @@ int StatementGenerator::generateOrderBy(RandomGenerator & rg, const uint32_t nco
 
             nids.insert(
                 nids.end(), this->levels[this->current_level].projections.begin(), this->levels[this->current_level].projections.end());
-            std::shuffle(nids.begin(), nids.end(), rg.gen);
+            std::shuffle(nids.begin(), nids.end(), rg.generator);
             for (uint32_t i = 0; i < iclauses; i++)
             {
                 InterpolateExpr * ie = olist->add_interpolate();

@@ -224,7 +224,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const st
         else
         {
             std::uniform_int_distribution<uint32_t> next_dist(0, 30);
-            const uint32_t left = next_dist(rg.gen), right = next_dist(rg.gen);
+            const uint32_t left = next_dist(rg.generator), right = next_dist(rg.generator);
 
             appendDecimal(rg, buf, left, right);
         }
@@ -407,7 +407,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const st
         std::uniform_int_distribution<int> dopt(1, 10), wopt(1, 10);
 
         buf.resize(0);
-        strBuildJSON(rg, dopt(rg.gen), wopt(rg.gen), buf);
+        strBuildJSON(rg, dopt(rg.generator), wopt(rg.generator), buf);
         if constexpr (std::is_same<T, bsoncxx::v_noabi::builder::stream::document>::value)
         {
             output << cname << buf;

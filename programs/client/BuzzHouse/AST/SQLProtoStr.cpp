@@ -330,11 +330,11 @@ CONV_FN(NumericLiteral, nl)
     ret += ")";
 }
 
-static void buildJSON(std::string & ret, const int depth, const int width, std::mt19937 & gen);
-static void addJSONArray(std::string & ret, const int depth, const int width, std::mt19937 & gen);
-static void addJSONElement(std::string & ret, std::mt19937 & gen);
+static void buildJSON(std::string & ret, const int depth, const int width, std::mt19937 & generator);
+static void addJSONArray(std::string & ret, const int depth, const int width, std::mt19937 & generator);
+static void addJSONElement(std::string & ret, std::mt19937 & generator);
 
-static void addJSONArray(std::string & ret, const int depth, const int width, std::mt19937 & gen)
+static void addJSONArray(std::string & ret, const int depth, const int width, std::mt19937 & generator)
 {
     std::uniform_int_distribution<int> jopt(1, 3);
     int nelems = 0, next_width = 0;
@@ -342,7 +342,7 @@ static void addJSONArray(std::string & ret, const int depth, const int width, st
     if (width)
     {
         std::uniform_int_distribution<int> alen(1, width);
-        nelems = alen(gen);
+        nelems = alen(generator);
     }
     ret += "[";
     next_width = nelems;
@@ -354,18 +354,18 @@ static void addJSONArray(std::string & ret, const int depth, const int width, st
         }
         if (depth)
         {
-            const int noption = jopt(gen);
+            const int noption = jopt(generator);
 
             switch (noption)
             {
                 case 1: //object
-                    buildJSON(ret, depth - 1, next_width, gen);
+                    buildJSON(ret, depth - 1, next_width, generator);
                     break;
                 case 2: //array
-                    addJSONArray(ret, depth - 1, next_width, gen);
+                    addJSONArray(ret, depth - 1, next_width, generator);
                     break;
                 case 3: //others
-                    addJSONElement(ret, gen);
+                    addJSONElement(ret, generator);
                     break;
                 default:
                     assert(0);
@@ -373,17 +373,17 @@ static void addJSONArray(std::string & ret, const int depth, const int width, st
         }
         else
         {
-            addJSONElement(ret, gen);
+            addJSONElement(ret, generator);
         }
         next_width--;
     }
     ret += "]";
 }
 
-static void addJSONElement(std::string & ret, std::mt19937 & gen)
+static void addJSONElement(std::string & ret, std::mt19937 & generator)
 {
     std::uniform_int_distribution<int> opts(1, 10);
-    const int noption = opts(gen);
+    const int noption = opts(generator);
 
     switch (noption)
     {
@@ -401,7 +401,7 @@ static void addJSONElement(std::string & ret, std::mt19937 & gen)
         case 6:
         case 7: { //number
             std::uniform_int_distribution<int> numbers(-1000, 1000);
-            ret += std::to_string(numbers(gen));
+            ret += std::to_string(numbers(generator));
         }
         break;
         case 8:
@@ -409,12 +409,12 @@ static void addJSONElement(std::string & ret, std::mt19937 & gen)
         case 10: { //string
             std::uniform_int_distribution<int> slen(0, 200);
             std::uniform_int_distribution<uint8_t> chars(32, 127);
-            const int nlen = slen(gen);
+            const int nlen = slen(generator);
 
             ret += '"';
             for (int i = 0; i < nlen; i++)
             {
-                const uint8_t nchar = chars(gen);
+                const uint8_t nchar = chars(generator);
 
                 switch (nchar)
                 {
@@ -439,37 +439,37 @@ static void addJSONElement(std::string & ret, std::mt19937 & gen)
     }
 }
 
-static void buildJSON(std::string & ret, const int depth, const int width, std::mt19937 & gen)
+static void buildJSON(std::string & ret, const int depth, const int width, std::mt19937 & generator)
 {
     ret += "{";
     if (depth)
     {
         std::uniform_int_distribution<int> childd(1, 10);
-        const int nchildren = childd(gen);
+        const int nchildren = childd(generator);
 
         for (int i = 0; i < nchildren; i++)
         {
             std::uniform_int_distribution<int> copt(0, 5);
             std::uniform_int_distribution<int> jopt(1, 3);
-            const int noption = jopt(gen);
+            const int noption = jopt(generator);
 
             if (i != 0)
             {
                 ret += ",";
             }
             ret += "\"c";
-            ret += std::to_string(copt(gen));
+            ret += std::to_string(copt(generator));
             ret += "\":";
             switch (noption)
             {
                 case 1: //object
-                    buildJSON(ret, depth - 1, width, gen);
+                    buildJSON(ret, depth - 1, width, generator);
                     break;
                 case 2: //array
-                    addJSONArray(ret, depth - 1, width, gen);
+                    addJSONArray(ret, depth - 1, width, generator);
                     break;
                 case 3: //others
-                    addJSONElement(ret, gen);
+                    addJSONElement(ret, generator);
                     break;
                 default:
                     assert(0);
@@ -559,11 +559,11 @@ CONV_FN(LiteralValue, lit_val)
         case LitValType::kJvalue:
         case LitValType::kJstr: {
             const bool is_jvalue = lit_val.lit_val_oneof_case() == LitValType::kJvalue;
-            std::mt19937 gen(is_jvalue ? lit_val.jvalue() : lit_val.jstr());
+            std::mt19937 generator(is_jvalue ? lit_val.jvalue() : lit_val.jstr());
             std::uniform_int_distribution<int> dopt(1, 3), wopt(1, 3);
 
             ret += "$jstr$";
-            buildJSON(ret, dopt(gen), wopt(gen), gen);
+            buildJSON(ret, dopt(generator), wopt(generator), generator);
             ret += "$jstr$";
             if (is_jvalue)
             {

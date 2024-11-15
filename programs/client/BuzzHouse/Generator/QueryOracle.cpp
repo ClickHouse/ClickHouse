@@ -13,7 +13,7 @@ SELECT COUNT(*) FROM <FROM_CLAUSE> WHERE <PRED>;
 or
 SELECT COUNT(*) FROM <FROM_CLAUSE> WHERE <PRED1> GROUP BY <GROUP_BY CLAUSE> HAVING <PRED2>;
 */
-int QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq1)
+int QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, StatementGenerator & generator, SQLQuery & sq1)
 {
     const std::filesystem::path & qfile = fc.db_file_path / "query.data";
     TopSelect * ts = sq1.mutable_inner_query()->mutable_select();
@@ -21,34 +21,34 @@ int QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Stateme
     SelectStatementCore * ssc = ts->mutable_sel()->mutable_select_core();
     const uint32_t combination = 0; //TODO fix this rg.nextLargeNumber() % 3; /* 0 WHERE, 1 HAVING, 2 WHERE + HAVING */
 
-    gen.setAllowNotDetermistic(false);
-    gen.enforceFinal(true);
-    gen.levels[gen.current_level] = QueryLevel(gen.current_level);
-    gen.generateFromStatement(rg, std::numeric_limits<uint32_t>::max(), ssc->mutable_from());
+    generator.setAllowNotDetermistic(false);
+    generator.enforceFinal(true);
+    generator.levels[generator.current_level] = QueryLevel(generator.current_level);
+    generator.generateFromStatement(rg, std::numeric_limits<uint32_t>::max(), ssc->mutable_from());
 
-    const bool prev_allow_aggregates = gen.levels[gen.current_level].allow_aggregates,
-               prev_allow_window_funcs = gen.levels[gen.current_level].allow_window_funcs;
-    gen.levels[gen.current_level].allow_aggregates = gen.levels[gen.current_level].allow_window_funcs = false;
+    const bool prev_allow_aggregates = generator.levels[generator.current_level].allow_aggregates,
+               prev_allow_window_funcs = generator.levels[generator.current_level].allow_window_funcs;
+    generator.levels[generator.current_level].allow_aggregates = generator.levels[generator.current_level].allow_window_funcs = false;
     if (combination != 1)
     {
         BinaryExpr * bexpr = ssc->mutable_where()->mutable_expr()->mutable_expr()->mutable_comp_expr()->mutable_binary_expr();
 
         bexpr->set_op(BinaryOperator::BINOP_EQ);
         bexpr->mutable_rhs()->mutable_lit_val()->set_special_val(SpecialVal::VAL_TRUE);
-        gen.generateWherePredicate(rg, bexpr->mutable_lhs());
+        generator.generateWherePredicate(rg, bexpr->mutable_lhs());
     }
     if (combination != 0)
     {
-        gen.generateGroupBy(rg, 1, true, true, ssc->mutable_groupby());
+        generator.generateGroupBy(rg, 1, true, true, ssc->mutable_groupby());
     }
-    gen.levels[gen.current_level].allow_aggregates = prev_allow_aggregates;
-    gen.levels[gen.current_level].allow_window_funcs = prev_allow_window_funcs;
+    generator.levels[generator.current_level].allow_aggregates = prev_allow_aggregates;
+    generator.levels[generator.current_level].allow_window_funcs = prev_allow_window_funcs;
 
     ssc->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func(
         FUNCcount);
-    gen.levels.erase(gen.current_level);
-    gen.setAllowNotDetermistic(true);
-    gen.enforceFinal(false);
+    generator.levels.erase(generator.current_level);
+    generator.setAllowNotDetermistic(true);
+    generator.enforceFinal(false);
 
     ts->set_format(OutFormat::OUT_CSV);
     sif->set_path(qfile.generic_string());
@@ -512,15 +512,15 @@ int QueryOracle::generateSecondSetting(const SQLQuery & sq1, SQLQuery & sq3)
     return 0;
 }
 
-int QueryOracle::generateSettingQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq2)
+int QueryOracle::generateSettingQuery(RandomGenerator & rg, StatementGenerator & generator, SQLQuery & sq2)
 {
     const std::filesystem::path & qfile = fc.db_file_path / "query.data";
     TopSelect * ts = sq2.mutable_inner_query()->mutable_select();
     SelectIntoFile * sif = ts->mutable_intofile();
 
-    gen.setAllowNotDetermistic(false);
-    gen.generateTopSelect(rg, std::numeric_limits<uint32_t>::max(), ts);
-    gen.setAllowNotDetermistic(true);
+    generator.setAllowNotDetermistic(false);
+    generator.generateTopSelect(rg, std::numeric_limits<uint32_t>::max(), ts);
+    generator.setAllowNotDetermistic(true);
 
     Select * osel = ts->release_sel();
     SelectStatementCore * nsel = ts->mutable_sel()->mutable_select_core();

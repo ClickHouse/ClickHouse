@@ -99,7 +99,7 @@ private:
     const std::vector<std::string> jcols{"c0", "c1", "c0.c1", "😆", "😉😉"};
 
 public:
-    std::mt19937 gen;
+    std::mt19937 generator;
 
     RandomGenerator(const uint32_t in_seed)
         : ints8(std::numeric_limits<int8_t>::min(), std::numeric_limits<int8_t>::max())
@@ -127,43 +127,43 @@ public:
         std::random_device rand_dev;
 
         seed = in_seed ? in_seed : rand_dev();
-        gen = std::mt19937(seed);
+        generator = std::mt19937(seed);
     }
 
     uint32_t getSeed() const { return seed; }
 
-    uint32_t nextSmallNumber() { return dist1(gen); }
+    uint32_t nextSmallNumber() { return dist1(generator); }
 
-    uint32_t nextMediumNumber() { return dist2(gen); }
+    uint32_t nextMediumNumber() { return dist2(generator); }
 
-    uint32_t nextLargeNumber() { return dist3(gen); }
+    uint32_t nextLargeNumber() { return dist3(generator); }
 
-    uint8_t nextRandomUInt8() { return uints8(gen); }
+    uint8_t nextRandomUInt8() { return uints8(generator); }
 
-    int8_t nextRandomInt8() { return ints8(gen); }
+    int8_t nextRandomInt8() { return ints8(generator); }
 
-    uint16_t nextRandomUInt16() { return uints16(gen); }
+    uint16_t nextRandomUInt16() { return uints16(generator); }
 
-    int16_t nextRandomInt16() { return ints16(gen); }
+    int16_t nextRandomInt16() { return ints16(generator); }
 
-    uint32_t nextRandomUInt32() { return uints32(gen); }
+    uint32_t nextRandomUInt32() { return uints32(generator); }
 
-    int32_t nextRandomInt32() { return ints32(gen); }
+    int32_t nextRandomInt32() { return ints32(generator); }
 
-    uint64_t nextRandomUInt64() { return uints64(gen); }
+    uint64_t nextRandomUInt64() { return uints64(generator); }
 
-    int64_t nextRandomInt64() { return ints64(gen); }
+    int64_t nextRandomInt64() { return ints64(generator); }
 
-    char nextDigit() { return static_cast<char>(digits(gen)); }
+    char nextDigit() { return static_cast<char>(digits(generator)); }
 
-    bool nextBool() { return dist4(gen) == 2; }
+    bool nextBool() { return dist4(generator) == 2; }
 
     //range [1970-01-01, 2149-06-06]
     void nextDate(std::string & ret)
     {
-        const uint32_t month = months(gen), day = days[month - 1](gen);
+        const uint32_t month = months(generator), day = days[month - 1](generator);
 
-        ret += std::to_string(1970 + date_years(gen));
+        ret += std::to_string(1970 + date_years(generator));
         ret += "-";
         if (month < 10)
         {
@@ -181,9 +181,9 @@ public:
     //range [1900-01-01, 2299-12-31]
     void nextDate32(std::string & ret)
     {
-        const uint32_t month = months(gen), day = days[month - 1](gen);
+        const uint32_t month = months(generator), day = days[month - 1](generator);
 
-        ret += std::to_string(1900 + datetime64_years(gen));
+        ret += std::to_string(1900 + datetime64_years(generator));
         ret += "-";
         if (month < 10)
         {
@@ -201,9 +201,10 @@ public:
     //range [1970-01-01 00:00:00, 2106-02-07 06:28:15]
     void nextDateTime(std::string & ret)
     {
-        const uint32_t month = months(gen), day = days[month - 1](gen), hour = hours(gen), minute = minutes(gen), second = minutes(gen);
+        const uint32_t month = months(generator), day = days[month - 1](generator), hour = hours(generator), minute = minutes(generator),
+                       second = minutes(generator);
 
-        ret += std::to_string(1970 + datetime_years(gen));
+        ret += std::to_string(1970 + datetime_years(generator));
         ret += "-";
         if (month < 10)
         {
@@ -239,9 +240,10 @@ public:
     //range [1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999]
     void nextDateTime64(std::string & ret)
     {
-        const uint32_t month = months(gen), day = days[month - 1](gen), hour = hours(gen), minute = minutes(gen), second = minutes(gen);
+        const uint32_t month = months(generator), day = days[month - 1](generator), hour = hours(generator), minute = minutes(generator),
+                       second = minutes(generator);
 
-        ret += std::to_string(1900 + datetime64_years(gen));
+        ret += std::to_string(1900 + datetime64_years(generator));
         ret += "-";
         if (month < 10)
         {
@@ -277,7 +279,7 @@ public:
     template <typename T>
     T thresholdGenerator(const double always_on_prob, const double always_off_prob, T min_val, T max_val)
     {
-        const double tmp = zero_one(gen);
+        const double tmp = zero_one(generator);
 
         if (tmp <= always_on_prob)
         {
@@ -290,12 +292,12 @@ public:
         if constexpr (std::is_same<T, uint32_t>::value)
         {
             std::uniform_int_distribution<uint32_t> d{min_val, max_val};
-            return d(gen);
+            return d(generator);
         }
         if constexpr (std::is_same<T, double>::value)
         {
             std::uniform_real_distribution<double> d{min_val, max_val};
-            return d(gen);
+            return d(generator);
         }
         assert(0);
         return 0;
@@ -304,23 +306,23 @@ public:
     double RandomGauss(const double mean, const double stddev)
     {
         std::normal_distribution d{mean, stddev};
-        return d(gen);
+        return d(generator);
     }
 
-    double RandomZeroOne() { return zero_one(gen); }
+    double RandomZeroOne() { return zero_one(generator); }
 
     template <typename T>
     T RandomInt(const T min, const T max)
     {
         std::uniform_int_distribution<T> d(min, max);
-        return d(gen);
+        return d(generator);
     }
 
     template <typename T>
     const T & pickRandomlyFromVector(const std::vector<T> & vals)
     {
         std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
-        return vals[d(gen)];
+        return vals[d(generator)];
     }
 
     template <typename T>
@@ -328,7 +330,7 @@ public:
     {
         std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
         auto it = vals.begin();
-        std::advance(it, d(gen));
+        std::advance(it, d(generator));
         return *it;
     }
 
@@ -337,7 +339,7 @@ public:
     {
         std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
         auto it = vals.begin();
-        std::advance(it, d(gen));
+        std::advance(it, d(generator));
         return it->first;
     }
 
@@ -346,7 +348,7 @@ public:
     {
         std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
         auto it = vals.begin();
-        std::advance(it, d(gen));
+        std::advance(it, d(generator));
         return it->second;
     }
 
@@ -355,7 +357,7 @@ public:
     {
         std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
         auto it = vals.begin();
-        std::advance(it, d(gen));
+        std::advance(it, d(generator));
         return std::make_tuple(it->first, it->second);
     }
 
@@ -421,27 +423,27 @@ public:
     {
         for (uint32_t i = 0; i < 8; i++)
         {
-            ret += hex_digits[hex_digits_dist(gen)];
+            ret += hex_digits[hex_digits_dist(generator)];
         }
         ret += "-";
         for (uint32_t i = 0; i < 4; i++)
         {
-            ret += hex_digits[hex_digits_dist(gen)];
+            ret += hex_digits[hex_digits_dist(generator)];
         }
         ret += "-";
         for (uint32_t i = 0; i < 4; i++)
         {
-            ret += hex_digits[hex_digits_dist(gen)];
+            ret += hex_digits[hex_digits_dist(generator)];
         }
         ret += "-";
         for (uint32_t i = 0; i < 4; i++)
         {
-            ret += hex_digits[hex_digits_dist(gen)];
+            ret += hex_digits[hex_digits_dist(generator)];
         }
         ret += "-";
         for (uint32_t i = 0; i < 12; i++)
         {
-            ret += hex_digits[hex_digits_dist(gen)];
+            ret += hex_digits[hex_digits_dist(generator)];
         }
     }
 
@@ -460,7 +462,7 @@ public:
     {
         for (uint32_t i = 0; i < 8; i++)
         {
-            ret += hex_digits[hex_digits_dist(gen)];
+            ret += hex_digits[hex_digits_dist(generator)];
             if (i < 7)
             {
                 ret += ":";

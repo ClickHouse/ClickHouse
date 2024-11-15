@@ -209,7 +209,7 @@ int StatementGenerator::generateNextDrop(RandomGenerator & rg, Drop * dp)
                    drop_function = 1 * static_cast<uint32_t>(!functions.empty()),
                    prob_space = drop_table + drop_view + drop_database + drop_function;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
-    const uint32_t nopt = next_dist(rg.gen);
+    const uint32_t nopt = next_dist(rg.generator);
 
     if (drop_table && nopt < (drop_table + 1))
     {
@@ -316,7 +316,7 @@ int StatementGenerator::generateNextOptimizeTable(RandomGenerator & rg, Optimize
                         entry.second.nullable, entry.second.special, entry.second.cname, std::nullopt, entry.second.tp, entry.second.dmod));
                 }
             }
-            std::shuffle(entries.begin(), entries.end(), rg.gen);
+            std::shuffle(entries.begin(), entries.end(), rg.generator);
             for (uint32_t i = 0; i < ocols; i++)
             {
                 const InsertEntry & entry = this->entries[i];
@@ -428,7 +428,7 @@ int StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
             }
         }
     }
-    std::shuffle(this->entries.begin(), this->entries.end(), rg.gen);
+    std::shuffle(this->entries.begin(), this->entries.end(), rg.generator);
 
     for (const auto & entry : this->entries)
     {
@@ -573,7 +573,7 @@ int StatementGenerator::generateNextTruncate(RandomGenerator & rg, Truncate * tr
                    trunc_db_tables = 15 * static_cast<uint32_t>(trunc_database), trunc_db = 5 * static_cast<uint32_t>(trunc_database),
                    prob_space = trunc_table + trunc_db_tables + trunc_db;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
-    const uint32_t nopt = next_dist(rg.gen);
+    const uint32_t nopt = next_dist(rg.generator);
 
     if (trunc_table && nopt < (trunc_table + 1))
     {
@@ -617,7 +617,7 @@ int StatementGenerator::generateNextExchangeTables(RandomGenerator & rg, Exchang
     {
         this->ids.push_back(entry.get().tname);
     }
-    std::shuffle(this->ids.begin(), this->ids.end(), rg.gen);
+    std::shuffle(this->ids.begin(), this->ids.end(), rg.generator);
     const SQLTable &t1 = this->tables[this->ids[0]], &t2 = this->tables[this->ids[1]];
 
     if (t1.db)
@@ -661,7 +661,7 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                            prob_space = alter_refresh + alter_query;
             AlterTableItem * ati = i == 0 ? at->mutable_alter() : at->add_other_alters();
             std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
-            const uint32_t nopt = next_dist(rg.gen);
+            const uint32_t nopt = next_dist(rg.generator);
 
             if (alter_refresh && nopt < (alter_refresh + 1))
             {
@@ -751,7 +751,7 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 + clear_index_partition;
             AlterTableItem * ati = i == 0 ? at->mutable_alter() : at->add_other_alters();
             std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
-            const uint32_t nopt = next_dist(rg.gen);
+            const uint32_t nopt = next_dist(rg.generator);
 
             if (alter_order_by && nopt < (alter_order_by + 1))
             {
@@ -935,7 +935,7 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                     const uint32_t nupdates
                         = (rg.nextMediumNumber() % std::min<uint32_t>(static_cast<uint32_t>(this->entries.size()), UINT32_C(4))) + 1;
 
-                    std::shuffle(this->entries.begin(), this->entries.end(), rg.gen);
+                    std::shuffle(this->entries.begin(), this->entries.end(), rg.generator);
                     for (uint32_t j = 0; j < nupdates; j++)
                     {
                         insertEntryRefCP(
@@ -1474,7 +1474,7 @@ int StatementGenerator::generateAttach(RandomGenerator & rg, Attach * att)
                    attach_database = 2 * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(detached_databases)),
                    prob_space = attach_table + attach_view + attach_database;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
-    const uint32_t nopt = next_dist(rg.gen);
+    const uint32_t nopt = next_dist(rg.generator);
 
     if (attach_table && nopt < (attach_table + 1))
     {
@@ -1523,7 +1523,7 @@ int StatementGenerator::generateDetach(RandomGenerator & rg, Detach * det)
                    detach_database = 2 * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases)),
                    prob_space = detach_table + detach_view + detach_database;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
-    const uint32_t nopt = next_dist(rg.gen);
+    const uint32_t nopt = next_dist(rg.generator);
 
     if (detach_table && nopt < (detach_table + 1))
     {
@@ -1611,7 +1611,7 @@ int StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner * 
                    prob_space = create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table
         + desc_table + exchange_tables + alter_table + set_values + attach + detach + create_database + create_function + select_query;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
-    const uint32_t nopt = next_dist(rg.gen);
+    const uint32_t nopt = next_dist(rg.generator);
 
     assert(this->ids.empty());
     if (create_table && nopt < (create_table + 1))
@@ -1766,7 +1766,7 @@ int StatementGenerator::generateNextExplain(RandomGenerator & rg, ExplainQuery *
             if (!this->ids.empty())
             {
                 const size_t noptions = (static_cast<size_t>(rg.nextMediumNumber()) % this->ids.size()) + 1;
-                std::shuffle(ids.begin(), ids.end(), rg.gen);
+                std::shuffle(ids.begin(), ids.end(), rg.generator);
 
                 for (size_t i = 0; i < noptions; i++)
                 {
@@ -1790,7 +1790,7 @@ int StatementGenerator::generateNextStatement(RandomGenerator & rg, SQLQuery & s
                    commit = 50 * static_cast<uint32_t>(supports_cloud_features && this->in_transaction), explain_query = 10,
                    run_query = 120, prob_space = start_transaction + commit + explain_query + run_query;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
-    const uint32_t nopt = next_dist(rg.gen);
+    const uint32_t nopt = next_dist(rg.generator);
 
     if (start_transaction && nopt < (start_transaction + 1))
     {

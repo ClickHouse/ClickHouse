@@ -66,7 +66,7 @@ int StatementGenerator::generateNextStatistics(RandomGenerator & rg, ColumnStati
     {
         ids.push_back(i);
     }
-    std::shuffle(ids.begin(), ids.end(), rg.gen);
+    std::shuffle(ids.begin(), ids.end(), rg.generator);
     for (size_t i = 0; i < nstats; i++)
     {
         const ColumnStat nstat = static_cast<ColumnStat>(ids[i]);
@@ -104,7 +104,7 @@ int StatementGenerator::pickUpNextCols(RandomGenerator & rg, const SQLTable & t,
             ids.push_back(entry.first);
         }
     }
-    std::shuffle(ids.begin(), ids.end(), rg.gen);
+    std::shuffle(ids.begin(), ids.end(), rg.generator);
     for (size_t i = 0; i < ncols; i++)
     {
         Column * col = i == 0 ? clist->mutable_col() : clist->add_other_cols();
@@ -213,7 +213,7 @@ int StatementGenerator::generateTableKey(RandomGenerator & rg, TableKey * tkey)
     {
         const size_t ocols = (rg.nextMediumNumber() % std::min<size_t>(entries.size(), UINT32_C(3))) + 1;
 
-        std::shuffle(entries.begin(), entries.end(), rg.gen);
+        std::shuffle(entries.begin(), entries.end(), rg.generator);
         if (rg.nextSmallNumber() < 3)
         {
             //Use a single expression for the entire table
@@ -271,7 +271,7 @@ int StatementGenerator::generateMergeTreeEngineDetails(
         //pkey is a subset of order by
         TableKey * tkey = te->mutable_primary_key();
         std::uniform_int_distribution<uint32_t> table_order_by(1, te->order().exprs_size());
-        const uint32_t pkey_size = table_order_by(rg.gen);
+        const uint32_t pkey_size = table_order_by(rg.generator);
 
         for (uint32_t i = 0; i < pkey_size; i++)
         {
@@ -322,7 +322,7 @@ int StatementGenerator::generateMergeTreeEngineDetails(
             TableKey * tkey = te->mutable_sample_by();
             const size_t ncols = (rg.nextMediumNumber() % std::min<size_t>(this->ids.size(), UINT32_C(3))) + 1;
 
-            std::shuffle(ids.begin(), ids.end(), rg.gen);
+            std::shuffle(ids.begin(), ids.end(), rg.generator);
             for (size_t i = 0; i < ncols; i++)
             {
                 ExprColumn * ecol = tkey->add_exprs()->mutable_comp_expr()->mutable_expr_stc()->mutable_col();
@@ -336,7 +336,7 @@ int StatementGenerator::generateMergeTreeEngineDetails(
     {
         const size_t ncols = (rg.nextMediumNumber() % std::min<uint32_t>(static_cast<uint32_t>(entries.size()), UINT32_C(4))) + 1;
 
-        std::shuffle(entries.begin(), entries.end(), rg.gen);
+        std::shuffle(entries.begin(), entries.end(), rg.generator);
         for (size_t i = 0; i < ncols; i++)
         {
             insertEntryRefCP(entries[i], te->add_params()->mutable_cols());
@@ -404,7 +404,7 @@ int StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b,
         }
         te->add_params()->set_join_op(jt);
 
-        std::shuffle(entries.begin(), entries.end(), rg.gen);
+        std::shuffle(entries.begin(), entries.end(), rg.generator);
         for (size_t i = 0; i < ncols; i++)
         {
             insertEntryRefCP(entries[i], te->add_params()->mutable_cols());
@@ -675,14 +675,14 @@ int StatementGenerator::addTableColumn(
                         if (rg.nextBool())
                         {
                             std::uniform_int_distribution<uint32_t> next_dist(1, 12);
-                            cp->add_params(next_dist(rg.gen));
+                            cp->add_params(next_dist(rg.generator));
                         }
                         break;
                     case COMP_ZSTD:
                         if (rg.nextBool())
                         {
                             std::uniform_int_distribution<uint32_t> next_dist(1, 22);
-                            cp->add_params(next_dist(rg.gen));
+                            cp->add_params(next_dist(rg.generator));
                         }
                         break;
                     case COMP_Delta:
@@ -691,14 +691,14 @@ int StatementGenerator::addTableColumn(
                         if (rg.nextBool())
                         {
                             std::uniform_int_distribution<uint32_t> next_dist(0, 3);
-                            cp->add_params(UINT32_C(1) << next_dist(rg.gen));
+                            cp->add_params(UINT32_C(1) << next_dist(rg.generator));
                         }
                         break;
                     case COMP_FPC:
                         if (rg.nextBool())
                         {
                             std::uniform_int_distribution<uint32_t> next_dist1(1, 28);
-                            cp->add_params(next_dist1(rg.gen));
+                            cp->add_params(next_dist1(rg.generator));
                             cp->add_params(rg.nextBool() ? 4 : 9);
                         }
                         break;
@@ -760,7 +760,7 @@ int StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const 
     }
     if (!entries.empty())
     {
-        std::shuffle(entries.begin(), entries.end(), rg.gen);
+        std::shuffle(entries.begin(), entries.end(), rg.generator);
 
         if (itpe == IndexType::IDX_hypothesis && entries.size() > 1 && rg.nextSmallNumber() < 9)
         {
@@ -814,12 +814,12 @@ int StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const 
             else
             {
                 std::uniform_int_distribution<uint32_t> next_dist(1, 1000);
-                idef->add_params()->set_ival(next_dist(rg.gen));
+                idef->add_params()->set_ival(next_dist(rg.generator));
             }
             break;
         case IndexType::IDX_bloom_filter: {
             std::uniform_int_distribution<uint32_t> next_dist(1, 1000);
-            idef->add_params()->set_dval(static_cast<double>(next_dist(rg.gen)) / static_cast<double>(1000));
+            idef->add_params()->set_dval(static_cast<double>(next_dist(rg.generator)) / static_cast<double>(1000));
         }
         break;
         case IndexType::IDX_ngrambf_v1:
@@ -828,17 +828,17 @@ int StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const 
 
             if (itpe == IndexType::IDX_ngrambf_v1)
             {
-                idef->add_params()->set_ival(next_dist1(rg.gen));
+                idef->add_params()->set_ival(next_dist1(rg.generator));
             }
-            idef->add_params()->set_ival(next_dist1(rg.gen));
-            idef->add_params()->set_ival(next_dist2(rg.gen));
-            idef->add_params()->set_ival(next_dist1(rg.gen));
+            idef->add_params()->set_ival(next_dist1(rg.generator));
+            idef->add_params()->set_ival(next_dist2(rg.generator));
+            idef->add_params()->set_ival(next_dist1(rg.generator));
         }
         break;
         case IndexType::IDX_full_text:
         case IndexType::IDX_inverted: {
             std::uniform_int_distribution<uint32_t> next_dist(0, 10);
-            idef->add_params()->set_ival(next_dist(rg.gen));
+            idef->add_params()->set_ival(next_dist(rg.generator));
         }
         break;
         case IndexType::IDX_minmax:
@@ -848,7 +848,7 @@ int StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const 
     if (rg.nextSmallNumber() < 7)
     {
         std::uniform_int_distribution<uint32_t> next_dist(1, 1000);
-        idef->set_granularity(next_dist(rg.gen));
+        idef->set_granularity(next_dist(rg.generator));
     }
     to_add[iname] = std::move(idx);
     return 0;
@@ -892,7 +892,7 @@ TableEngineValues StatementGenerator::getNextTableEngine(RandomGenerator & rg, c
     if (rg.nextSmallNumber() < 9)
     {
         std::uniform_int_distribution<uint32_t> table_engine(1, TableEngineValues::VersionedCollapsingMergeTree);
-        return static_cast<TableEngineValues>(table_engine(rg.gen));
+        return static_cast<TableEngineValues>(table_engine(rg.generator));
     }
     assert(this->ids.empty());
     this->ids.push_back(MergeTree);
@@ -1035,7 +1035,7 @@ int StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTabl
                 = 2 * static_cast<uint32_t>(added_is_deleted < to_add_is_deleted && added_version == to_add_version),
                            prob_space = add_idx + add_proj + add_const + add_col + add_sign + add_version + add_is_deleted;
             std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
-            const uint32_t nopt = next_dist(rg.gen);
+            const uint32_t nopt = next_dist(rg.generator);
 
             if (add_idx && nopt < (add_idx + 1))
             {
@@ -1113,7 +1113,7 @@ int StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTabl
         ExprSchemaTable * aest = cta->mutable_est();
         const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(attached_tables));
         std::uniform_int_distribution<size_t> table_engine(0, rg.nextSmallNumber() < 8 ? 3 : (like_engs.size() - 1));
-        TableEngineValues val = like_engs[table_engine(rg.gen)];
+        TableEngineValues val = like_engs[table_engine(rg.generator)];
 
         next.teng = val;
         te->set_engine(val);

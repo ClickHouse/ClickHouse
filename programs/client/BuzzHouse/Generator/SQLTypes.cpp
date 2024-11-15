@@ -262,7 +262,7 @@ const SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint3
         prob_space = int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + enum_type
         + uuid_type + ipv4_type + ipv6_type + j_type + dynamic_type;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
-    const uint32_t nopt = next_dist(rg.gen);
+    const uint32_t nopt = next_dist(rg.generator);
 
     if (int_type && nopt < (int_type + 1))
     {
@@ -363,7 +363,7 @@ const SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint3
         EnumDef * edef = tp ? tp->mutable_enum_def() : nullptr;
 
         edef->set_bits(bits);
-        std::shuffle(enum_values.begin(), enum_values.end(), rg.gen);
+        std::shuffle(enum_values.begin(), enum_values.end(), rg.generator);
         for (uint32_t i = 0; i < nvalues; i++)
         {
             const std::string & nval = enum_values[i];
@@ -558,7 +558,7 @@ StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_t allowed_
                    prob_space
         = nullable_type + non_nullable_type + array_type + map_type + tuple_type + variant_type + nested_type + geo_type;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
-    const uint32_t nopt = next_dist(rg.gen);
+    const uint32_t nopt = next_dist(rg.generator);
 
     if (non_nullable_type && nopt < (non_nullable_type + 1))
     {
@@ -708,7 +708,7 @@ void appendDecimal(RandomGenerator & rg, std::string & ret, const uint32_t left,
     if (left > 0)
     {
         std::uniform_int_distribution<uint32_t> next_dist(1, left);
-        const uint32_t nlen = next_dist(rg.gen);
+        const uint32_t nlen = next_dist(rg.generator);
 
         ret += std::max<char>(rg.nextDigit(), '1');
         for (uint32_t j = 1; j < nlen; j++)
@@ -724,7 +724,7 @@ void appendDecimal(RandomGenerator & rg, std::string & ret, const uint32_t left,
     if (right > 0)
     {
         std::uniform_int_distribution<uint32_t> next_dist(1, right);
-        const uint32_t nlen = next_dist(rg.gen);
+        const uint32_t nlen = next_dist(rg.generator);
 
         for (uint32_t j = 0; j < nlen; j++)
         {
@@ -777,7 +777,7 @@ static inline void nextFloatingPoint(RandomGenerator & rg, std::string & ret)
     else
     {
         std::uniform_int_distribution<uint32_t> next_dist(0, 30);
-        const uint32_t left = next_dist(rg.gen), right = next_dist(rg.gen);
+        const uint32_t left = next_dist(rg.generator), right = next_dist(rg.generator);
 
         appendDecimal(rg, ret, left, right);
     }
@@ -1082,7 +1082,7 @@ void strBuildJSONArray(RandomGenerator & rg, const int jdepth, const int jwidth,
     if (jwidth)
     {
         std::uniform_int_distribution<int> alen(0, jwidth);
-        nelems = alen(rg.gen);
+        nelems = alen(rg.generator);
     }
     ret += "[";
     next_width = nelems;
@@ -1094,7 +1094,7 @@ void strBuildJSONArray(RandomGenerator & rg, const int jdepth, const int jwidth,
         }
         if (jdepth)
         {
-            switch (jopt(rg.gen))
+            switch (jopt(rg.generator))
             {
                 case 1: //object
                     strBuildJSON(rg, jdepth - 1, next_width, ret);
@@ -1122,7 +1122,7 @@ void strBuildJSONElement(RandomGenerator & rg, std::string & ret)
 {
     std::uniform_int_distribution<int> opts(1, 20);
 
-    switch (opts(rg.gen))
+    switch (opts(rg.generator))
     {
         case 1:
             ret += "false";
@@ -1143,13 +1143,13 @@ void strBuildJSONElement(RandomGenerator & rg, std::string & ret)
         case 7:
         case 8: { //small number
             std::uniform_int_distribution<int> numbers(-1000, 1000);
-            ret += std::to_string(numbers(rg.gen));
+            ret += std::to_string(numbers(rg.generator));
         }
         break;
         case 9:
         case 10: { //decimal
             std::uniform_int_distribution<uint32_t> next_dist(0, 30);
-            const uint32_t left = next_dist(rg.gen), right = next_dist(rg.gen);
+            const uint32_t left = next_dist(rg.generator), right = next_dist(rg.generator);
 
             appendDecimal(rg, ret, left, right);
         }
@@ -1205,7 +1205,7 @@ void strBuildJSON(RandomGenerator & rg, const int jdepth, const int jwidth, std:
     if (jdepth && jwidth && rg.nextSmallNumber() < 9)
     {
         std::uniform_int_distribution<int> childd(1, jwidth);
-        const int nchildren = childd(rg.gen);
+        const int nchildren = childd(rg.generator);
 
         for (int i = 0; i < nchildren; i++)
         {
@@ -1218,7 +1218,7 @@ void strBuildJSON(RandomGenerator & rg, const int jdepth, const int jwidth, std:
             ret += "\"";
             rg.nextJSONCol(ret);
             ret += "\":";
-            switch (jopt(rg.gen))
+            switch (jopt(rg.generator))
             {
                 case 1: //object
                     strBuildJSON(rg, jdepth - 1, jwidth, ret);
@@ -1279,7 +1279,7 @@ void StatementGenerator::strAppendAnyValueInternal(RandomGenerator & rg, std::st
         std::uniform_int_distribution<int> dopt(1, this->fc.max_depth), wopt(1, this->fc.max_width);
 
         ret += "'";
-        strBuildJSON(rg, dopt(rg.gen), wopt(rg.gen), ret);
+        strBuildJSON(rg, dopt(rg.generator), wopt(rg.generator), ret);
         ret += "'";
     }
     else if (dynamic_cast<const DynamicType *>(tp))

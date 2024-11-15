@@ -809,8 +809,6 @@ const std::vector<const CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCextractTextFromHTML, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCascii, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCsoundex, 0, 0, 1, 1),
-    CHFunction(SQLFunc::FUNCpunycodeEncode, 0, 0, 1, 1),
-    CHFunction(SQLFunc::FUNCpunycodeDecode, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCtryPunycodeDecode, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCidnaEncode, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCtryIdnaEncode, 0, 0, 1, 1),

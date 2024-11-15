@@ -244,7 +244,7 @@ int StatementGenerator::generateLiteralValue(RandomGenerator & rg, Expr * expr)
     else if (noption < 501)
     {
         std::uniform_int_distribution<uint32_t> next_dist(0, 30);
-        const uint32_t left = next_dist(rg.gen), right = next_dist(rg.gen);
+        const uint32_t left = next_dist(rg.generator), right = next_dist(rg.generator);
 
         buf.resize(0);
         buf += "(";
@@ -331,7 +331,7 @@ int StatementGenerator::generateLiteralValue(RandomGenerator & rg, Expr * expr)
 
         buf.resize(0);
         buf += "'";
-        strBuildJSON(rg, dopt(rg.gen), wopt(rg.gen), buf);
+        strBuildJSON(rg, dopt(rg.generator), wopt(rg.generator), buf);
         buf += "'::JSON";
         lv->set_no_quote_str(buf);
     }
@@ -592,7 +592,7 @@ int StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow_
     uint32_t generated_params = 0;
 
     assert(allow_funcs || allow_aggr);
-    const uint32_t nopt = next_dist(rg.gen);
+    const uint32_t nopt = next_dist(rg.generator);
     if (!allow_funcs || nopt >= funcs_size)
     {
         //aggregate
@@ -609,7 +609,7 @@ int StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow_
         if (max_params > 0 && max_params >= agg.min_params)
         {
             std::uniform_int_distribution<uint32_t> nparams(agg.min_params, max_params);
-            const uint32_t nagg_params = nparams(rg.gen);
+            const uint32_t nagg_params = nparams(rg.generator);
 
             for (uint32_t i = 0; i < nagg_params; i++)
             {
@@ -629,7 +629,7 @@ int StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow_
         if (max_args > 0 && max_args >= agg.min_args)
         {
             std::uniform_int_distribution<uint32_t> nparams(agg.min_args, max_args);
-            const uint32_t nagg_args = nparams(rg.gen);
+            const uint32_t nagg_args = nparams(rg.generator);
 
             for (uint32_t i = 0; i < nagg_args; i++)
             {
@@ -727,7 +727,7 @@ int StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow_
         if (max_args > 0 && max_args >= min_args)
         {
             std::uniform_int_distribution<uint32_t> nparams(min_args, max_args);
-            const uint32_t nfunc_args = nparams(rg.gen);
+            const uint32_t nfunc_args = nparams(rg.generator);
 
             for (uint32_t i = 0; i < nfunc_args; i++)
             {

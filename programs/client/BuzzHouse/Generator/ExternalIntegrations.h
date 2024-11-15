@@ -82,7 +82,7 @@ public:
 
             if (rg.nextSmallNumber() < 7)
             {
-                std::shuffle(entries.begin(), entries.end(), rg.gen);
+                std::shuffle(entries.begin(), entries.end(), rg.generator);
             }
             for (size_t i = 0; i < entries.size(); i++)
             {
@@ -543,7 +543,7 @@ public:
 
                 if (permute && rg.nextSmallNumber() < 4)
                 {
-                    std::shuffle(entries.begin(), entries.end(), rg.gen);
+                    std::shuffle(entries.begin(), entries.end(), rg.generator);
                 }
                 for (size_t i = 0; i < entries.size(); i++)
                 {

@@ -23,7 +23,7 @@ public:
     int processOracleQueryResult(const bool first, const bool success, const std::string & oracle_name);
 
     /* Correctness query oracle */
-    int generateCorrectnessTestFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq);
+    int generateCorrectnessTestFirstQuery(RandomGenerator & rg, StatementGenerator & generator, SQLQuery & sq);
     int generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & sq2);
 
     /* Dump and read table oracle */
@@ -34,7 +34,7 @@ public:
 
     /* Run query with different settings oracle */
     int generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1);
-    int generateSettingQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq2);
+    int generateSettingQuery(RandomGenerator & rg, StatementGenerator & generator, SQLQuery & sq2);
     int generateSecondSetting(const SQLQuery & sq1, SQLQuery & sq3);
 };
 
