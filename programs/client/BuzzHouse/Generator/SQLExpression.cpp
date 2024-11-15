@@ -649,7 +649,7 @@ int StatementGenerator::GenerateFuncCall(RandomGenerator & rg, const bool allow_
         for (uint32_t i = 0; i < ncombinators; i++)
         {
             SQLFuncCall_AggregateCombinator comb = static_cast<SQLFuncCall_AggregateCombinator>(
-                (rg.NextRandomUInt32() % static_cast<uint32_t>(SQLFuncCall::AggregateCombinator_MAX)) + 1);
+                (rg.NextRandomUInt32() % static_cast<uint32_t>(this->allow_not_deterministic ? SQLFuncCall::AggregateCombinator_MAX : SQLFuncCall::ArgMax)) + 1);
 
             switch (comb)
             {

@@ -1887,16 +1887,17 @@ message SQLFuncCall {
         If = 1;
         Array = 2;
         Map = 3;
-        SimpleState = 4;
-        State = 5;
-        Merge = 6;
-        MergeState = 7;
-        ForEach = 8;
-        Distinct = 9;
-        OrDefault = 10;
-        OrNull = 11;
-        ArgMin = 12;
-        ArgMax = 13;
+        ForEach = 4;
+        Distinct = 5;
+        OrDefault = 6;
+        OrNull = 7;
+        ArgMin = 8;
+        ArgMax = 9;
+        //Not deterministic maybe?
+        SimpleState = 10;
+        State = 11;
+        Merge = 12;
+        MergeState = 13;
     }
     required SQLFuncName func = 1;
     repeated AggregateCombinator combinators = 2;
