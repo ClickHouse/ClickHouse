@@ -341,7 +341,9 @@ static const std::vector<TestSetting> test_settings{
     TestSetting("http_wait_end_of_query", {"0", "1"}),
     TestSetting("input_format_import_nested_json", {"0", "1"}),
     TestSetting("input_format_parallel_parsing", {"0", "1"}),
-    TestSetting("insert_null_as_default", {"0", "1"}),
+    TestSetting("input_format_parquet_bloom_filter_push_down", {"0", "1"}),
+    TestSetting("input_format_parquet_filter_push_down", {"0", "1"}),
+    TestSetting("input_format_orc_filter_push_down", {"0", "1"}),
     TestSetting(
         "join_algorithm",
         {"'default'",
