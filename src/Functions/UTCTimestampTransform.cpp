@@ -88,10 +88,20 @@ namespace
                 {
                     UInt32 date_time_val = date_time_col.getElement(i);
                     auto time_zone_offset = time_zone.timezoneOffset(date_time_val);
-                    if constexpr (toUTC)
+                    if constexpr (toUTC) {
                         result_data[i] = date_time_val - static_cast<UInt32>(time_zone_offset);
-                    else
+                        if (result_data[i] > date_time_val) {
+                            // Overflow occured
+                            result_data[i] = UINT32_MAX;
+                        }
+                    }
+                    else {
                         result_data[i] = date_time_val + static_cast<UInt32>(time_zone_offset);
+                        if (result_data[i] < date_time_val) {
+                            // Underflow occurred
+                            result_data[i] = 0;
+                        }
+                    }
                 }
                 return result_column;
             }
