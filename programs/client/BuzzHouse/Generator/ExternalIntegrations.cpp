@@ -207,32 +207,35 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const st
     }
     else if (dynamic_cast<const FloatType *>(tp))
     {
-        double value = 0;
         const uint32_t next_option = rg.nextLargeNumber();
 
+        buf.resize(0);
         if (next_option < 25)
         {
-            value = std::numeric_limits<double>::quiet_NaN();
+            buf += "nan";
         }
         else if (next_option < 49)
         {
-            value = std::numeric_limits<double>::infinity();
+            buf += "inf";
         }
         else if (next_option < 73)
         {
-            value = 0.0;
+            buf += "0.0";
         }
         else
         {
-            value = rg.nextRandomDouble();
+            std::uniform_int_distribution<uint32_t> next_dist(0, 30);
+            const uint32_t left = next_dist(rg.gen), right = next_dist(rg.gen);
+
+            appendDecimal(rg, buf, left, right);
         }
         if constexpr (std::is_same<T, bsoncxx::v_noabi::builder::stream::document>::value)
         {
-            output << cname << value;
+            output << cname << buf;
         }
         else
         {
-            output << value;
+            output << buf;
         }
     }
     else if ((dtp = dynamic_cast<const DateType *>(tp)))

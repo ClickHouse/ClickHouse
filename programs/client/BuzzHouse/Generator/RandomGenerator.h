@@ -46,7 +46,7 @@ private:
 
     std::uniform_int_distribution<uint64_t> uints64;
 
-    std::uniform_real_distribution<double> doubles, zero_one;
+    std::uniform_real_distribution<double> zero_one;
 
     std::uniform_int_distribution<uint32_t> days[12]
         = {std::uniform_int_distribution<uint32_t>(1, 31),
@@ -122,7 +122,6 @@ public:
         , minutes(0, 59)
         , ints64(std::numeric_limits<int64_t>::min(), std::numeric_limits<int64_t>::max())
         , uints64(std::numeric_limits<uint64_t>::min(), std::numeric_limits<uint64_t>::max())
-        , doubles(std::numeric_limits<double>::min(), std::numeric_limits<double>::max())
         , zero_one(0, 1)
     {
         std::random_device rand_dev;
@@ -156,8 +155,6 @@ public:
     int64_t nextRandomInt64() { return ints64(gen); }
 
     char nextDigit() { return static_cast<char>(digits(gen)); }
-
-    double nextRandomDouble() { return doubles(gen); }
 
     bool nextBool() { return dist4(gen) == 2; }
 
