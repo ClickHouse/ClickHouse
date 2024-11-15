@@ -18,10 +18,6 @@
 
 set(GOOGLE_CLOUD_COMMON_DIR "${GOOGLE_CLOUD_DIR}/google/cloud")
 
-# if (NOT WIN32)
-#     find_package(OpenSSL REQUIRED)
-# endif ()
-
 # Generate the version information from the CMake values.
 # configure_file(${GOOGLE_CLOUD_COMMON_DIR}/internal/version_info.h.in
 #                ${CMAKE_CURRENT_SOURCE_DIR}/internal/version_info.h)
@@ -200,20 +196,6 @@ else ()
     target_link_libraries(google_cloud_cpp_common PUBLIC OpenSSL::Crypto ch_contrib::re2)
 endif ()
 
-if (opentelemetry IN_LIST GOOGLE_CLOUD_CPP_ENABLE)
-    find_package(opentelemetry-cpp CONFIG)
-    if (opentelemetry-cpp_FOUND)
-        target_link_libraries(google_cloud_cpp_common
-                              PUBLIC opentelemetry-cpp::api)
-        target_compile_definitions(
-            google_cloud_cpp_common
-            PUBLIC # Enable OpenTelemetry features in google-cloud-cpp
-                   GOOGLE_CLOUD_CPP_HAVE_OPENTELEMETRY)
-        set(GOOGLE_CLOUD_CPP_FIND_OPTIONAL_DEPENDENCIES
-            "find_dependency(opentelemetry-cpp)")
-        set(GOOGLE_CLOUD_CPP_OPENTELEMETRY_API "opentelemetry_api")
-    endif ()
-endif ()
 google_cloud_cpp_add_common_options(google_cloud_cpp_common)
 target_include_directories(
     google_cloud_cpp_common PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>
