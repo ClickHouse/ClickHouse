@@ -443,13 +443,7 @@ class RedisIntegration : public ClickHouseIntegration
 public:
     RedisIntegration() : ClickHouseIntegration() { }
 
-    bool performIntegration(RandomGenerator & rg, const uint32_t tname, std::vector<InsertEntry> & entries) override
-    {
-        (void)rg;
-        (void)tname;
-        (void)entries;
-        return true;
-    }
+    bool performIntegration(RandomGenerator &, const uint32_t, std::vector<InsertEntry> &) override { return true; }
 
     ~RedisIntegration() override = default;
 };
@@ -611,10 +605,8 @@ private:
 public:
     MinIOIntegration(const FuzzConfig & fc) : ClickHouseIntegration(), sc(fc.minio_server) { }
 
-    bool performIntegration(RandomGenerator & rg, const uint32_t tname, std::vector<InsertEntry> & entries) override
+    bool performIntegration(RandomGenerator &, const uint32_t tname, std::vector<InsertEntry> &) override
     {
-        (void)rg;
-        (void)entries;
         return sendRequest(sc.database + "/file" + std::to_string(tname));
     }
 

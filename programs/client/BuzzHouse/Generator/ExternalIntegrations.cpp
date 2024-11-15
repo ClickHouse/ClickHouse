@@ -156,7 +156,6 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const st
     const EnumType * etp;
     const GeoType * gtp;
 
-    (void)cname;
     if ((itp = dynamic_cast<const IntType *>(tp)))
     {
         switch (itp->size)

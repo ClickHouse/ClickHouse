@@ -787,15 +787,15 @@ int StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
 
     if (noption < (this->inside_projection ? 76 : 151))
     {
-        (void)this->generateLiteralValue(rg, expr);
+        generateLiteralValue(rg, expr);
     }
     else if (this->depth >= this->fc.max_depth || noption < 401)
     {
-        (void)this->generateColRef(rg, expr);
+        generateColRef(rg, expr);
     }
     else if (noption < 451)
     {
-        (void)this->generatePredicate(rg, expr);
+        generatePredicate(rg, expr);
     }
     else if (noption < 501)
     {
