@@ -705,7 +705,7 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
             insertAtEnd(required_access, access_restorer->getRequiredAccess());
     }
 
-    /// We convert to AccessRights to check if we have the permissions contains in our access.
+    /// We convert to AccessRights to check if we have the rights contained in our current access.
     /// This handles the situation when restoring partial revoked grants:
     /// GRANT SELECT ON *.*
     /// REVOKE SELECT FROM systems.*
