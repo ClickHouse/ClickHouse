@@ -26,7 +26,7 @@ public:
     hugeint_t & operator=(const hugeint_t & rhs) = default;
     hugeint_t & operator=(hugeint_t && rhs) = default;
 
-    void ToString(std::string & res) const;
+    void toString(std::string & res) const;
 
     // comparison operators
     bool operator==(const hugeint_t & rhs) const;

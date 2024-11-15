@@ -3,7 +3,7 @@
 namespace BuzzHouse
 {
 
-void SetRandomSetting(
+void setRandomSetting(
     RandomGenerator & rg,
     const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> & settings,
     std::string & ret,
@@ -11,7 +11,7 @@ void SetRandomSetting(
 {
     std::string first;
     std::function<void(RandomGenerator &, std::string &)> second;
-    std::tie(first, second) = rg.PickPairRandomlyFromMap(settings);
+    std::tie(first, second) = rg.pickPairRandomlyFromMap(settings);
 
     set->set_property(first);
     ret.resize(0);

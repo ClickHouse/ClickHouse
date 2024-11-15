@@ -494,13 +494,13 @@ static void BuildJson(std::string & ret, const int depth, const int width, std::
 CONV_FN(HugeInt, huge)
 {
     hugeint_t val(huge.lower(), huge.upper());
-    val.ToString(ret);
+    val.toString(ret);
 }
 
 CONV_FN(UHugeInt, uhuge)
 {
     uhugeint_t val(uhuge.lower(), uhuge.upper());
-    val.ToString(ret);
+    val.toString(ret);
 }
 
 CONV_FN(IntLiteral, int_val)

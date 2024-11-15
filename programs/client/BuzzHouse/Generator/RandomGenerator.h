@@ -20,15 +20,6 @@ typedef struct TestSetting
     TestSetting(const std::string & sett, const std::set<std::string> & noptions) : tsetting(sett), options(noptions) { }
 } TestSetting;
 
-static inline std::tm make_tm(int year, int month, int day)
-{
-    std::tm tm;
-    tm.tm_year = year - 1900; // years count from 1900
-    tm.tm_mon = month - 1; // months count from January=0
-    tm.tm_mday = day; // days count from 1
-    return tm;
-}
-
 const constexpr int seconds_per_day = 60 * 60 * 24;
 
 const constexpr char hex_digits[] = "0123456789abcdef";
@@ -140,38 +131,38 @@ public:
         gen = std::mt19937(seed);
     }
 
-    uint32_t GetSeed() const { return seed; }
+    uint32_t getSeed() const { return seed; }
 
-    uint32_t NextSmallNumber() { return dist1(gen); }
+    uint32_t nextSmallNumber() { return dist1(gen); }
 
-    uint32_t NextMediumNumber() { return dist2(gen); }
+    uint32_t nextMediumNumber() { return dist2(gen); }
 
-    uint32_t NextLargeNumber() { return dist3(gen); }
+    uint32_t nextLargeNumber() { return dist3(gen); }
 
-    uint8_t NextRandomUInt8() { return uints8(gen); }
+    uint8_t nextRandomUInt8() { return uints8(gen); }
 
-    int8_t NextRandomInt8() { return ints8(gen); }
+    int8_t nextRandomInt8() { return ints8(gen); }
 
-    uint16_t NextRandomUInt16() { return uints16(gen); }
+    uint16_t nextRandomUInt16() { return uints16(gen); }
 
-    int16_t NextRandomInt16() { return ints16(gen); }
+    int16_t nextRandomInt16() { return ints16(gen); }
 
-    uint32_t NextRandomUInt32() { return uints32(gen); }
+    uint32_t nextRandomUInt32() { return uints32(gen); }
 
-    int32_t NextRandomInt32() { return ints32(gen); }
+    int32_t nextRandomInt32() { return ints32(gen); }
 
-    uint64_t NextRandomUInt64() { return uints64(gen); }
+    uint64_t nextRandomUInt64() { return uints64(gen); }
 
-    int64_t NextRandomInt64() { return ints64(gen); }
+    int64_t nextRandomInt64() { return ints64(gen); }
 
-    char NextDigit() { return static_cast<char>(digits(gen)); }
+    char nextDigit() { return static_cast<char>(digits(gen)); }
 
-    double NextRandomDouble() { return doubles(gen); }
+    double nextRandomDouble() { return doubles(gen); }
 
-    bool NextBool() { return dist4(gen) == 2; }
+    bool nextBool() { return dist4(gen) == 2; }
 
     //range [1970-01-01, 2149-06-06]
-    void NextDate(std::string & ret)
+    void nextDate(std::string & ret)
     {
         const uint32_t month = months(gen), day = days[month - 1](gen);
 
@@ -191,7 +182,7 @@ public:
     }
 
     //range [1900-01-01, 2299-12-31]
-    void NextDate32(std::string & ret)
+    void nextDate32(std::string & ret)
     {
         const uint32_t month = months(gen), day = days[month - 1](gen);
 
@@ -211,7 +202,7 @@ public:
     }
 
     //range [1970-01-01 00:00:00, 2106-02-07 06:28:15]
-    void NextDateTime(std::string & ret)
+    void nextDateTime(std::string & ret)
     {
         const uint32_t month = months(gen), day = days[month - 1](gen), hour = hours(gen), minute = minutes(gen), second = minutes(gen);
 
@@ -249,7 +240,7 @@ public:
     }
 
     //range [1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999]
-    void NextDateTime64(std::string & ret)
+    void nextDateTime64(std::string & ret)
     {
         const uint32_t month = months(gen), day = days[month - 1](gen), hour = hours(gen), minute = minutes(gen), second = minutes(gen);
 
@@ -287,7 +278,7 @@ public:
     }
 
     template <typename T>
-    T ThresholdGenerator(const double always_on_prob, const double always_off_prob, T min_val, T max_val)
+    T thresholdGenerator(const double always_on_prob, const double always_off_prob, T min_val, T max_val)
     {
         const double tmp = zero_one(gen);
 
@@ -329,14 +320,14 @@ public:
     }
 
     template <typename T>
-    const T & PickRandomlyFromVector(const std::vector<T> & vals)
+    const T & pickRandomlyFromVector(const std::vector<T> & vals)
     {
         std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
         return vals[d(gen)];
     }
 
     template <typename T>
-    const T & PickRandomlyFromSet(const std::set<T> & vals)
+    const T & pickRandomlyFromSet(const std::set<T> & vals)
     {
         std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
         auto it = vals.begin();
@@ -345,7 +336,7 @@ public:
     }
 
     template <typename K, typename V>
-    const K & PickKeyRandomlyFromMap(const std::map<K, V> & vals)
+    const K & pickKeyRandomlyFromMap(const std::map<K, V> & vals)
     {
         std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
         auto it = vals.begin();
@@ -354,7 +345,7 @@ public:
     }
 
     template <typename K, typename V>
-    const V & PickValueRandomlyFromMap(const std::map<K, V> & vals)
+    const V & pickValueRandomlyFromMap(const std::map<K, V> & vals)
     {
         std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
         auto it = vals.begin();
@@ -363,7 +354,7 @@ public:
     }
 
     template <typename K, typename V>
-    std::tuple<K, V> PickPairRandomlyFromMap(const std::map<K, V> & vals)
+    std::tuple<K, V> pickPairRandomlyFromMap(const std::map<K, V> & vals)
     {
         std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
         auto it = vals.begin();
@@ -371,43 +362,43 @@ public:
         return std::make_tuple(it->first, it->second);
     }
 
-    void NextJsonCol(std::string & ret)
+    void nextJsonCol(std::string & ret)
     {
-        const std::string & pick = PickRandomlyFromVector(json_cols);
+        const std::string & pick = pickRandomlyFromVector(json_cols);
 
         ret += pick;
     }
 
-    void NextString(std::string & ret, const std::string & delimiter, const bool allow_nasty, const uint32_t limit)
+    void nextString(std::string & ret, const std::string & delimiter, const bool allow_nasty, const uint32_t limit)
     {
         bool use_bad_utf8 = false;
 
-        if (delimiter == "'" && this->NextMediumNumber() < 4)
+        if (delimiter == "'" && this->nextMediumNumber() < 4)
         {
             ret += "x";
             use_bad_utf8 = true;
         }
         ret += delimiter;
-        const std::string & pick = PickRandomlyFromVector(
+        const std::string & pick = pickRandomlyFromVector(
             use_bad_utf8
                 ? bad_utf8
-                : (allow_nasty && this->NextSmallNumber() < 3 ? nasty_strings : (this->NextBool() ? common_english : common_chinese)));
+                : (allow_nasty && this->nextSmallNumber() < 3 ? nasty_strings : (this->nextBool() ? common_english : common_chinese)));
 
         if ((pick.length() >> (use_bad_utf8 ? 1 : 0)) < limit)
         {
             ret += pick;
             /* A few times, generate a large string */
-            if (this->NextLargeNumber() < 4)
+            if (this->nextLargeNumber() < 4)
             {
                 uint32_t i = 0, len = pick.size();
-                const uint32_t max_iterations = this->NextBool() ? 10000 : this->NextMediumNumber();
+                const uint32_t max_iterations = this->nextBool() ? 10000 : this->nextMediumNumber();
 
                 while (i < max_iterations)
                 {
-                    const std::string & npick = PickRandomlyFromVector(
+                    const std::string & npick = pickRandomlyFromVector(
                         use_bad_utf8 ? bad_utf8
-                                     : (allow_nasty && this->NextSmallNumber() < 3 ? nasty_strings
-                                                                                   : (this->NextBool() ? common_english : common_chinese)));
+                                     : (allow_nasty && this->nextSmallNumber() < 3 ? nasty_strings
+                                                                                   : (this->nextBool() ? common_english : common_chinese)));
 
                     len += (npick.length() >> (use_bad_utf8 ? 1 : 0));
                     if (len < limit)
@@ -429,7 +420,7 @@ public:
         ret += delimiter;
     }
 
-    void NextUUID(std::string & ret)
+    void nextUUID(std::string & ret)
     {
         for (uint32_t i = 0; i < 8; i++)
         {
@@ -457,18 +448,18 @@ public:
         }
     }
 
-    void NextIPv4(std::string & ret)
+    void nextIPv4(std::string & ret)
     {
-        ret += std::to_string(this->NextRandomUInt8());
+        ret += std::to_string(this->nextRandomUInt8());
         ret += ".";
-        ret += std::to_string(this->NextRandomUInt8());
+        ret += std::to_string(this->nextRandomUInt8());
         ret += ".";
-        ret += std::to_string(this->NextRandomUInt8());
+        ret += std::to_string(this->nextRandomUInt8());
         ret += ".";
-        ret += std::to_string(this->NextRandomUInt8());
+        ret += std::to_string(this->nextRandomUInt8());
     }
 
-    void NextIPv6(std::string & ret)
+    void nextIPv6(std::string & ret)
     {
         for (uint32_t i = 0; i < 8; i++)
         {

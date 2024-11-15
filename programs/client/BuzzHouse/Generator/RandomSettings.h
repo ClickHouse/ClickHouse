@@ -11,60 +11,60 @@
 namespace BuzzHouse
 {
 
-const std::function<void(RandomGenerator &, std::string &)> TrueOrFalse
-    = [](RandomGenerator & rg, std::string & ret) { ret += rg.NextBool() ? "1" : "0"; };
+const std::function<void(RandomGenerator &, std::string &)> trueOrFalse
+    = [](RandomGenerator & rg, std::string & ret) { ret += rg.nextBool() ? "1" : "0"; };
 
-const std::function<void(RandomGenerator &, std::string &)> ZeroOneTwo
+const std::function<void(RandomGenerator &, std::string &)> zeroOneTwo
     = [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.RandomInt<uint32_t>(0, 2)); };
 
-const std::function<void(RandomGenerator &, std::string &)> ZeroToThree
+const std::function<void(RandomGenerator &, std::string &)> zeroToThree
     = [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.RandomInt<uint32_t>(0, 3)); };
 
-const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> ServerSettings = {
-    {"aggregate_functions_null_for_empty", TrueOrFalse},
+const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> serverSettings = {
+    {"aggregate_functions_null_for_empty", trueOrFalse},
     {"aggregation_in_order_max_block_bytes",
-     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
-    {"allow_aggregate_partitions_independently", TrueOrFalse},
-    {"allow_experimental_parallel_reading_from_replicas", ZeroOneTwo},
-    {"allow_experimental_shared_set_join", TrueOrFalse},
-    {"allow_introspection_functions", TrueOrFalse},
-    {"allow_prefetched_read_pool_for_remote_filesystem", TrueOrFalse},
-    {"allow_reorder_prewhere_conditions", TrueOrFalse},
-    {"allow_suspicious_low_cardinality_types", TrueOrFalse},
-    {"alter_sync", ZeroOneTwo},
-    {"any_join_distinct_right_table_keys", TrueOrFalse},
-    {"async_insert", TrueOrFalse},
-    {"async_insert_deduplicate", TrueOrFalse},
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
+    {"allow_aggregate_partitions_independently", trueOrFalse},
+    {"allow_experimental_parallel_reading_from_replicas", zeroOneTwo},
+    {"allow_experimental_shared_set_join", trueOrFalse},
+    {"allow_introspection_functions", trueOrFalse},
+    {"allow_prefetched_read_pool_for_remote_filesystem", trueOrFalse},
+    {"allow_reorder_prewhere_conditions", trueOrFalse},
+    {"allow_suspicious_low_cardinality_types", trueOrFalse},
+    {"alter_sync", zeroOneTwo},
+    {"any_join_distinct_right_table_keys", trueOrFalse},
+    {"async_insert", trueOrFalse},
+    {"async_insert_deduplicate", trueOrFalse},
     {"async_insert_threads",
      [](RandomGenerator & rg, std::string & ret)
      { ret += std::to_string(rg.RandomInt<uint32_t>(0, std::thread::hardware_concurrency())); }},
-    {"async_insert_use_adaptive_busy_timeout", TrueOrFalse},
-    {"cast_keep_nullable", TrueOrFalse},
-    {"cast_string_to_dynamic_use_inference", TrueOrFalse},
-    {"check_query_single_value_result", TrueOrFalse},
-    {"checksum_on_read", TrueOrFalse},
-    {"compile_aggregate_expressions", TrueOrFalse},
-    {"compile_expressions", TrueOrFalse},
-    {"compile_sort_description", TrueOrFalse},
+    {"async_insert_use_adaptive_busy_timeout", trueOrFalse},
+    {"cast_keep_nullable", trueOrFalse},
+    {"cast_string_to_dynamic_use_inference", trueOrFalse},
+    {"check_query_single_value_result", trueOrFalse},
+    {"checksum_on_read", trueOrFalse},
+    {"compile_aggregate_expressions", trueOrFalse},
+    {"compile_expressions", trueOrFalse},
+    {"compile_sort_description", trueOrFalse},
     {"cross_join_min_bytes_to_compress",
      [](RandomGenerator & rg, std::string & ret)
      {
          const std::vector<std::string> & choices = {"0", "1", "100000000"};
-         ret += rg.PickRandomlyFromVector(choices);
+         ret += rg.pickRandomlyFromVector(choices);
      }},
     {"cross_join_min_rows_to_compress",
      [](RandomGenerator & rg, std::string & ret)
      {
          const std::vector<std::string> & choices = {"0", "1", "100000000"};
-         ret += rg.PickRandomlyFromVector(choices);
+         ret += rg.pickRandomlyFromVector(choices);
      }},
-    //{"deduplicate_blocks_in_dependent_materialized_views", TrueOrFalse},
-    {"date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands", TrueOrFalse},
+    //{"deduplicate_blocks_in_dependent_materialized_views", trueOrFalse},
+    {"date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands", trueOrFalse},
     {"date_time_input_format",
      [](RandomGenerator & rg, std::string & ret)
      {
          ret += "'";
-         ret += rg.NextBool() ? "best_effort" : "basic";
+         ret += rg.nextBool() ? "best_effort" : "basic";
          ret += "'";
      }},
     {"date_time_output_format",
@@ -72,50 +72,50 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
      {
          const std::vector<std::string> & choices = {"simple", "iso", "unix_timestamp"};
          ret += "'";
-         ret += rg.PickRandomlyFromVector(choices);
+         ret += rg.pickRandomlyFromVector(choices);
          ret += "'";
      }},
-    {"describe_include_subcolumns", TrueOrFalse},
-    {"dictionary_use_async_executor", TrueOrFalse},
-    {"distributed_aggregation_memory_efficient", TrueOrFalse},
-    {"distributed_background_insert_batch", TrueOrFalse},
-    {"distributed_background_insert_split_batch_on_failure", TrueOrFalse},
-    {"distributed_foreground_insert", TrueOrFalse},
-    {"distributed_group_by_no_merge", ZeroOneTwo},
-    {"enable_analyzer", TrueOrFalse},
-    {"enable_deflate_qpl_codec", TrueOrFalse},
-    {"enable_early_constant_folding", TrueOrFalse},
-    {"enable_extended_results_for_datetime_functions", TrueOrFalse},
-    {"enable_http_compression", TrueOrFalse},
-    {"enable_memory_bound_merging_of_aggregation_results", TrueOrFalse},
-    {"enable_multiple_prewhere_read_steps", TrueOrFalse},
-    {"enable_named_columns_in_function_tuple", TrueOrFalse},
-    {"enable_optimize_predicate_expression", TrueOrFalse},
-    {"enable_optimize_predicate_expression_to_final_subquery", TrueOrFalse},
-    {"enable_parallel_replicas", TrueOrFalse},
-    {"enable_parsing_to_custom_serialization", TrueOrFalse},
-    {"enable_reads_from_query_cache", TrueOrFalse},
-    {"enable_scalar_subquery_optimization", TrueOrFalse},
-    {"enable_sharing_sets_for_mutations", TrueOrFalse},
-    {"enable_software_prefetch_in_aggregation", TrueOrFalse},
-    {"enable_unaligned_array_join", TrueOrFalse},
-    {"enable_vertical_final", TrueOrFalse},
-    {"enable_writes_to_query_cache", TrueOrFalse},
-    {"exact_rows_before_limit", TrueOrFalse},
-    {"extremes", TrueOrFalse},
-    {"final", TrueOrFalse},
+    {"describe_include_subcolumns", trueOrFalse},
+    {"dictionary_use_async_executor", trueOrFalse},
+    {"distributed_aggregation_memory_efficient", trueOrFalse},
+    {"distributed_background_insert_batch", trueOrFalse},
+    {"distributed_background_insert_split_batch_on_failure", trueOrFalse},
+    {"distributed_foreground_insert", trueOrFalse},
+    {"distributed_group_by_no_merge", zeroOneTwo},
+    {"enable_analyzer", trueOrFalse},
+    {"enable_deflate_qpl_codec", trueOrFalse},
+    {"enable_early_constant_folding", trueOrFalse},
+    {"enable_extended_results_for_datetime_functions", trueOrFalse},
+    {"enable_http_compression", trueOrFalse},
+    {"enable_memory_bound_merging_of_aggregation_results", trueOrFalse},
+    {"enable_multiple_prewhere_read_steps", trueOrFalse},
+    {"enable_named_columns_in_function_tuple", trueOrFalse},
+    {"enable_optimize_predicate_expression", trueOrFalse},
+    {"enable_optimize_predicate_expression_to_final_subquery", trueOrFalse},
+    {"enable_parallel_replicas", trueOrFalse},
+    {"enable_parsing_to_custom_serialization", trueOrFalse},
+    {"enable_reads_from_query_cache", trueOrFalse},
+    {"enable_scalar_subquery_optimization", trueOrFalse},
+    {"enable_sharing_sets_for_mutations", trueOrFalse},
+    {"enable_software_prefetch_in_aggregation", trueOrFalse},
+    {"enable_unaligned_array_join", trueOrFalse},
+    {"enable_vertical_final", trueOrFalse},
+    {"enable_writes_to_query_cache", trueOrFalse},
+    {"exact_rows_before_limit", trueOrFalse},
+    {"extremes", trueOrFalse},
+    {"final", trueOrFalse},
     {"filesystem_cache_segments_batch_size",
      [](RandomGenerator & rg, std::string & ret)
      {
          std::vector<uint32_t> choices{0, 3, 10, 50};
-         ret += std::to_string(rg.PickRandomlyFromVector(choices));
+         ret += std::to_string(rg.pickRandomlyFromVector(choices));
      }},
     {"filesystem_prefetch_max_memory_usage",
      [](RandomGenerator & rg, std::string & ret)
      {
          const std::vector<std::string> & choices = {"32Mi", "64Mi", "128Mi"};
          ret += "'";
-         ret += rg.PickRandomlyFromVector(choices);
+         ret += rg.pickRandomlyFromVector(choices);
          ret += "'";
      }},
     {"filesystem_prefetch_min_bytes_for_single_read_task",
@@ -123,141 +123,141 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
      {
          const std::vector<std::string> & choices = {"1Mi", "8Mi", "16Mi"};
          ret += "'";
-         ret += rg.PickRandomlyFromVector(choices);
+         ret += rg.pickRandomlyFromVector(choices);
          ret += "'";
      }},
     {"filesystem_prefetch_step_bytes",
      [](RandomGenerator & rg, std::string & ret)
      {
          ret += "'";
-         ret += rg.NextBool() ? "0" : "100Mi";
+         ret += rg.nextBool() ? "0" : "100Mi";
          ret += "'";
      }},
-    {"filesystem_prefetch_step_marks", [](RandomGenerator & rg, std::string & ret) { ret += rg.NextBool() ? "0" : "50"; }},
-    {"filesystem_prefetches_limit", [](RandomGenerator & rg, std::string & ret) { ret += rg.NextBool() ? "0" : "10"; }},
-    {"flatten_nested", TrueOrFalse},
-    {"force_aggregate_partitions_independently", TrueOrFalse},
-    {"force_optimize_projection", TrueOrFalse},
-    {"format_capn_proto_use_autogenerated_schema", TrueOrFalse},
-    {"format_csv_allow_double_quotes", TrueOrFalse},
-    {"format_csv_allow_single_quotes", TrueOrFalse},
-    {"format_display_secrets_in_show_and_select", TrueOrFalse},
-    {"format_protobuf_use_autogenerated_schema", TrueOrFalse},
-    {"format_regexp_skip_unmatched", TrueOrFalse},
-    {"fsync_metadata", TrueOrFalse},
+    {"filesystem_prefetch_step_marks", [](RandomGenerator & rg, std::string & ret) { ret += rg.nextBool() ? "0" : "50"; }},
+    {"filesystem_prefetches_limit", [](RandomGenerator & rg, std::string & ret) { ret += rg.nextBool() ? "0" : "10"; }},
+    {"flatten_nested", trueOrFalse},
+    {"force_aggregate_partitions_independently", trueOrFalse},
+    {"force_optimize_projection", trueOrFalse},
+    {"format_capn_proto_use_autogenerated_schema", trueOrFalse},
+    {"format_csv_allow_double_quotes", trueOrFalse},
+    {"format_csv_allow_single_quotes", trueOrFalse},
+    {"format_display_secrets_in_show_and_select", trueOrFalse},
+    {"format_protobuf_use_autogenerated_schema", trueOrFalse},
+    {"format_regexp_skip_unmatched", trueOrFalse},
+    {"fsync_metadata", trueOrFalse},
     /*{"group_by_overflow_mode",
      [](RandomGenerator & rg, std::string & ret)
      {
          const std::vector<std::string> & choices = {"throw", "break", "any"};
          ret += "'";
-         ret += rg.PickRandomlyFromVector(choices);
+         ret += rg.pickRandomlyFromVector(choices);
          ret += "'";
      }},*/
     {"group_by_two_level_threshold",
-     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.2, 0.2, 1, 100000)); }},
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 1, 100000)); }},
     {"group_by_two_level_threshold_bytes",
-     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.2, 0.2, 1, 500000)); }},
-    {"group_by_use_nulls", TrueOrFalse},
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 1, 500000)); }},
+    {"group_by_use_nulls", trueOrFalse},
     {"http_response_buffer_size",
-     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
-    {"http_wait_end_of_query", TrueOrFalse},
-    {"input_format_allow_seeks", TrueOrFalse},
-    {"input_format_arrow_allow_missing_columns", TrueOrFalse},
-    {"input_format_arrow_case_insensitive_column_matching", TrueOrFalse},
-    {"input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference", TrueOrFalse},
-    {"input_format_avro_allow_missing_fields", TrueOrFalse},
-    {"input_format_avro_null_as_default", TrueOrFalse},
-    {"input_format_binary_decode_types_in_binary_format", TrueOrFalse},
-    {"input_format_binary_read_json_as_string", TrueOrFalse},
-    {"input_format_bson_skip_fields_with_unsupported_types_in_schema_inference", TrueOrFalse},
-    {"input_format_capn_proto_skip_fields_with_unsupported_types_in_schema_inference", TrueOrFalse},
-    {"input_format_csv_allow_cr_end_of_line", TrueOrFalse},
-    {"input_format_csv_allow_variable_number_of_columns", TrueOrFalse},
-    {"input_format_csv_allow_whitespace_or_tab_as_delimiter", TrueOrFalse},
-    {"input_format_csv_arrays_as_nested_csv", TrueOrFalse},
-    {"input_format_csv_deserialize_separate_columns_into_tuple", TrueOrFalse},
-    {"input_format_csv_empty_as_default", TrueOrFalse},
-    {"input_format_csv_enum_as_number", TrueOrFalse},
-    {"input_format_csv_skip_trailing_empty_lines", TrueOrFalse},
-    {"input_format_csv_trim_whitespaces", TrueOrFalse},
-    {"input_format_csv_try_infer_numbers_from_strings", TrueOrFalse},
-    {"input_format_csv_try_infer_strings_from_quoted_tuples", TrueOrFalse},
-    {"input_format_csv_use_best_effort_in_schema_inference", TrueOrFalse},
-    {"input_format_csv_use_default_on_bad_values", TrueOrFalse},
-    {"input_format_custom_allow_variable_number_of_columns", TrueOrFalse},
-    {"input_format_custom_skip_trailing_empty_lines", TrueOrFalse},
-    {"input_format_defaults_for_omitted_fields", TrueOrFalse},
-    {"input_format_force_null_for_omitted_fields", TrueOrFalse},
-    {"input_format_hive_text_allow_variable_number_of_columns", TrueOrFalse},
-    {"input_format_import_nested_json", TrueOrFalse},
-    {"input_format_ipv4_default_on_conversion_error", TrueOrFalse},
-    {"input_format_ipv6_default_on_conversion_error", TrueOrFalse},
-    {"input_format_json_compact_allow_variable_number_of_columns", TrueOrFalse},
-    {"input_format_json_defaults_for_missing_elements_in_named_tuple", TrueOrFalse},
-    {"input_format_json_empty_as_default", TrueOrFalse},
-    {"input_format_json_ignore_unknown_keys_in_named_tuple", TrueOrFalse},
-    {"input_format_json_ignore_unnecessary_fields", TrueOrFalse},
-    {"input_format_json_infer_incomplete_types_as_strings", TrueOrFalse},
-    {"input_format_json_named_tuples_as_objects", TrueOrFalse},
-    {"input_format_json_read_arrays_as_strings", TrueOrFalse},
-    {"input_format_json_read_bools_as_numbers", TrueOrFalse},
-    {"input_format_json_read_bools_as_strings", TrueOrFalse},
-    {"input_format_json_read_numbers_as_strings", TrueOrFalse},
-    {"input_format_json_read_objects_as_strings", TrueOrFalse},
-    {"input_format_json_throw_on_bad_escape_sequence", TrueOrFalse},
-    {"input_format_json_try_infer_named_tuples_from_objects", TrueOrFalse},
-    {"input_format_json_try_infer_numbers_from_strings", TrueOrFalse},
-    {"input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects", TrueOrFalse},
-    {"input_format_json_validate_types_from_metadata", TrueOrFalse},
-    {"input_format_mysql_dump_map_column_names", TrueOrFalse},
-    {"input_format_native_allow_types_conversion", TrueOrFalse},
-    {"input_format_native_decode_types_in_binary_format", TrueOrFalse},
-    {"input_format_null_as_default", TrueOrFalse},
-    {"input_format_orc_allow_missing_columns", TrueOrFalse},
-    {"input_format_orc_case_insensitive_column_matching", TrueOrFalse},
-    {"input_format_orc_dictionary_as_low_cardinality", TrueOrFalse},
-    {"input_format_orc_filter_push_down", TrueOrFalse},
-    {"input_format_orc_skip_columns_with_unsupported_types_in_schema_inference", TrueOrFalse},
-    {"input_format_orc_use_fast_decoder", TrueOrFalse},
-    {"input_format_parallel_parsing", TrueOrFalse},
-    {"input_format_parquet_allow_missing_columns", TrueOrFalse},
-    {"input_format_parquet_bloom_filter_push_down", TrueOrFalse},
-    {"input_format_parquet_case_insensitive_column_matching", TrueOrFalse},
-    {"input_format_parquet_enable_row_group_prefetch", TrueOrFalse},
-    {"input_format_parquet_filter_push_down", TrueOrFalse},
-    {"input_format_parquet_preserve_order", TrueOrFalse},
-    {"input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference", TrueOrFalse},
-    {"input_format_protobuf_flatten_google_wrappers", TrueOrFalse},
-    {"input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference", TrueOrFalse},
-    {"input_format_skip_unknown_fields", TrueOrFalse},
-    {"input_format_try_infer_dates", TrueOrFalse},
-    {"input_format_try_infer_datetimes", TrueOrFalse},
-    {"input_format_try_infer_datetimes_only_datetime64", TrueOrFalse},
-    {"input_format_try_infer_exponent_floats", TrueOrFalse},
-    {"input_format_try_infer_integers", TrueOrFalse},
-    {"input_format_try_infer_variants", TrueOrFalse},
-    {"input_format_tsv_allow_variable_number_of_columns", TrueOrFalse},
-    {"input_format_tsv_crlf_end_of_line", TrueOrFalse},
-    {"input_format_tsv_empty_as_default", TrueOrFalse},
-    {"input_format_tsv_enum_as_number", TrueOrFalse},
-    {"input_format_tsv_skip_trailing_empty_lines", TrueOrFalse},
-    {"input_format_tsv_use_best_effort_in_schema_inference", TrueOrFalse},
-    {"input_format_values_accurate_types_of_literals", TrueOrFalse},
-    {"input_format_values_deduce_templates_of_expressions", TrueOrFalse},
-    {"input_format_values_interpret_expressions", TrueOrFalse},
-    {"input_format_with_names_use_header", TrueOrFalse},
-    {"input_format_with_types_use_header", TrueOrFalse},
-    {"insert_allow_materialized_columns", TrueOrFalse},
-    {"insert_deduplicate", TrueOrFalse},
-    {"insert_distributed_one_random_shard", TrueOrFalse},
-    {"insert_null_as_default", TrueOrFalse},
-    {"insert_quorum", ZeroOneTwo},
-    {"insert_quorum_parallel", TrueOrFalse},
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
+    {"http_wait_end_of_query", trueOrFalse},
+    {"input_format_allow_seeks", trueOrFalse},
+    {"input_format_arrow_allow_missing_columns", trueOrFalse},
+    {"input_format_arrow_case_insensitive_column_matching", trueOrFalse},
+    {"input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference", trueOrFalse},
+    {"input_format_avro_allow_missing_fields", trueOrFalse},
+    {"input_format_avro_null_as_default", trueOrFalse},
+    {"input_format_binary_decode_types_in_binary_format", trueOrFalse},
+    {"input_format_binary_read_json_as_string", trueOrFalse},
+    {"input_format_bson_skip_fields_with_unsupported_types_in_schema_inference", trueOrFalse},
+    {"input_format_capn_proto_skip_fields_with_unsupported_types_in_schema_inference", trueOrFalse},
+    {"input_format_csv_allow_cr_end_of_line", trueOrFalse},
+    {"input_format_csv_allow_variable_number_of_columns", trueOrFalse},
+    {"input_format_csv_allow_whitespace_or_tab_as_delimiter", trueOrFalse},
+    {"input_format_csv_arrays_as_nested_csv", trueOrFalse},
+    {"input_format_csv_deserialize_separate_columns_into_tuple", trueOrFalse},
+    {"input_format_csv_empty_as_default", trueOrFalse},
+    {"input_format_csv_enum_as_number", trueOrFalse},
+    {"input_format_csv_skip_trailing_empty_lines", trueOrFalse},
+    {"input_format_csv_trim_whitespaces", trueOrFalse},
+    {"input_format_csv_try_infer_numbers_from_strings", trueOrFalse},
+    {"input_format_csv_try_infer_strings_from_quoted_tuples", trueOrFalse},
+    {"input_format_csv_use_best_effort_in_schema_inference", trueOrFalse},
+    {"input_format_csv_use_default_on_bad_values", trueOrFalse},
+    {"input_format_custom_allow_variable_number_of_columns", trueOrFalse},
+    {"input_format_custom_skip_trailing_empty_lines", trueOrFalse},
+    {"input_format_defaults_for_omitted_fields", trueOrFalse},
+    {"input_format_force_null_for_omitted_fields", trueOrFalse},
+    {"input_format_hive_text_allow_variable_number_of_columns", trueOrFalse},
+    {"input_format_import_nested_json", trueOrFalse},
+    {"input_format_ipv4_default_on_conversion_error", trueOrFalse},
+    {"input_format_ipv6_default_on_conversion_error", trueOrFalse},
+    {"input_format_json_compact_allow_variable_number_of_columns", trueOrFalse},
+    {"input_format_json_defaults_for_missing_elements_in_named_tuple", trueOrFalse},
+    {"input_format_json_empty_as_default", trueOrFalse},
+    {"input_format_json_ignore_unknown_keys_in_named_tuple", trueOrFalse},
+    {"input_format_json_ignore_unnecessary_fields", trueOrFalse},
+    {"input_format_json_infer_incomplete_types_as_strings", trueOrFalse},
+    {"input_format_json_named_tuples_as_objects", trueOrFalse},
+    {"input_format_json_read_arrays_as_strings", trueOrFalse},
+    {"input_format_json_read_bools_as_numbers", trueOrFalse},
+    {"input_format_json_read_bools_as_strings", trueOrFalse},
+    {"input_format_json_read_numbers_as_strings", trueOrFalse},
+    {"input_format_json_read_objects_as_strings", trueOrFalse},
+    {"input_format_json_throw_on_bad_escape_sequence", trueOrFalse},
+    {"input_format_json_try_infer_named_tuples_from_objects", trueOrFalse},
+    {"input_format_json_try_infer_numbers_from_strings", trueOrFalse},
+    {"input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects", trueOrFalse},
+    {"input_format_json_validate_types_from_metadata", trueOrFalse},
+    {"input_format_mysql_dump_map_column_names", trueOrFalse},
+    {"input_format_native_allow_types_conversion", trueOrFalse},
+    {"input_format_native_decode_types_in_binary_format", trueOrFalse},
+    {"input_format_null_as_default", trueOrFalse},
+    {"input_format_orc_allow_missing_columns", trueOrFalse},
+    {"input_format_orc_case_insensitive_column_matching", trueOrFalse},
+    {"input_format_orc_dictionary_as_low_cardinality", trueOrFalse},
+    {"input_format_orc_filter_push_down", trueOrFalse},
+    {"input_format_orc_skip_columns_with_unsupported_types_in_schema_inference", trueOrFalse},
+    {"input_format_orc_use_fast_decoder", trueOrFalse},
+    {"input_format_parallel_parsing", trueOrFalse},
+    {"input_format_parquet_allow_missing_columns", trueOrFalse},
+    {"input_format_parquet_bloom_filter_push_down", trueOrFalse},
+    {"input_format_parquet_case_insensitive_column_matching", trueOrFalse},
+    {"input_format_parquet_enable_row_group_prefetch", trueOrFalse},
+    {"input_format_parquet_filter_push_down", trueOrFalse},
+    {"input_format_parquet_preserve_order", trueOrFalse},
+    {"input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference", trueOrFalse},
+    {"input_format_protobuf_flatten_google_wrappers", trueOrFalse},
+    {"input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference", trueOrFalse},
+    {"input_format_skip_unknown_fields", trueOrFalse},
+    {"input_format_try_infer_dates", trueOrFalse},
+    {"input_format_try_infer_datetimes", trueOrFalse},
+    {"input_format_try_infer_datetimes_only_datetime64", trueOrFalse},
+    {"input_format_try_infer_exponent_floats", trueOrFalse},
+    {"input_format_try_infer_integers", trueOrFalse},
+    {"input_format_try_infer_variants", trueOrFalse},
+    {"input_format_tsv_allow_variable_number_of_columns", trueOrFalse},
+    {"input_format_tsv_crlf_end_of_line", trueOrFalse},
+    {"input_format_tsv_empty_as_default", trueOrFalse},
+    {"input_format_tsv_enum_as_number", trueOrFalse},
+    {"input_format_tsv_skip_trailing_empty_lines", trueOrFalse},
+    {"input_format_tsv_use_best_effort_in_schema_inference", trueOrFalse},
+    {"input_format_values_accurate_types_of_literals", trueOrFalse},
+    {"input_format_values_deduce_templates_of_expressions", trueOrFalse},
+    {"input_format_values_interpret_expressions", trueOrFalse},
+    {"input_format_with_names_use_header", trueOrFalse},
+    {"input_format_with_types_use_header", trueOrFalse},
+    {"insert_allow_materialized_columns", trueOrFalse},
+    {"insert_deduplicate", trueOrFalse},
+    {"insert_distributed_one_random_shard", trueOrFalse},
+    {"insert_null_as_default", trueOrFalse},
+    {"insert_quorum", zeroOneTwo},
+    {"insert_quorum_parallel", trueOrFalse},
     {"interval_output_format",
      [](RandomGenerator & rg, std::string & ret)
      {
          ret += "'";
-         ret += rg.NextBool() ? "kusto" : "numeric";
+         ret += rg.nextBool() ? "kusto" : "numeric";
          ret += "'";
      }},
     {"join_algorithm",
@@ -275,77 +275,77 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
                 "full_sorting_merge",
                 "prefer_partial_merge"};
          ret += "'";
-         ret += rg.PickRandomlyFromVector(choices);
+         ret += rg.pickRandomlyFromVector(choices);
          ret += "'";
      }},
-    {"join_any_take_last_row", TrueOrFalse},
+    {"join_any_take_last_row", trueOrFalse},
     {"join_default_strictness",
      [](RandomGenerator & rg, std::string & ret)
      {
          const std::vector<std::string> & choices = {"ALL", "ANY", "ASOF"}; /*Don't use empty case*/
          ret += "'";
-         ret += rg.PickRandomlyFromVector(choices);
+         ret += rg.pickRandomlyFromVector(choices);
          ret += "'";
      }},
     /*{"join_overflow_mode",
      [](RandomGenerator & rg, std::string & ret)
      {
          ret += "'";
-         ret += rg.NextBool() ? "throw" : "break";
+         ret += rg.nextBool() ? "throw" : "break";
          ret += "'";
      }},*/
-    {"join_use_nulls", TrueOrFalse},
-    {"lightweight_deletes_sync", ZeroOneTwo},
+    {"join_use_nulls", trueOrFalse},
+    {"lightweight_deletes_sync", zeroOneTwo},
     {"local_filesystem_read_method",
      [](RandomGenerator & rg, std::string & ret)
      {
          const std::vector<std::string> & choices = {"read", "pread", "mmap", "pread_threadpool", "io_uring"};
          ret += "'";
-         ret += rg.PickRandomlyFromVector(choices);
+         ret += rg.pickRandomlyFromVector(choices);
          ret += "'";
      }},
-    {"local_filesystem_read_prefetch", TrueOrFalse},
-    {"log_queries", TrueOrFalse},
-    {"log_query_threads", TrueOrFalse},
-    {"low_cardinality_allow_in_native_format", TrueOrFalse},
+    {"local_filesystem_read_prefetch", trueOrFalse},
+    {"log_queries", trueOrFalse},
+    {"log_query_threads", trueOrFalse},
+    {"low_cardinality_allow_in_native_format", trueOrFalse},
     {"low_cardinality_max_dictionary_size",
-     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
-    {"low_cardinality_use_single_dictionary_for_part", TrueOrFalse},
-    {"materialize_skip_indexes_on_insert", TrueOrFalse},
-    {"materialize_statistics_on_insert", TrueOrFalse},
-    {"max_block_size", [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
+    {"low_cardinality_use_single_dictionary_for_part", trueOrFalse},
+    {"materialize_skip_indexes_on_insert", trueOrFalse},
+    {"materialize_statistics_on_insert", trueOrFalse},
+    {"max_block_size", [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
     {"max_bytes_before_external_group_by",
      [](RandomGenerator & rg, std::string & ret)
      {
          ret += std::to_string(
-             rg.ThresholdGenerator<uint32_t>(0.3, 0.5, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
+             rg.thresholdGenerator<uint32_t>(0.3, 0.5, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
      }},
     {"max_bytes_before_external_sort",
      [](RandomGenerator & rg, std::string & ret)
      {
          ret += std::to_string(
-             rg.ThresholdGenerator<uint32_t>(0.3, 0.5, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
+             rg.thresholdGenerator<uint32_t>(0.3, 0.5, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
      }},
     {"max_bytes_before_remerge_sort",
-     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
     /*{"max_bytes_in_distinct",
-     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
     {"max_bytes_in_join",
-     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
     {"max_bytes_in_set",
-     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
     {"max_bytes_to_read",
-     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
     {"max_bytes_to_read_leaf",
-     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
     {"max_bytes_to_sort",
-     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
     {"max_bytes_to_transfer",
-     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
     {"max_columns_to_read",
-     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 6)); }},*/
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 6)); }},*/
     {"max_compress_block_size",
-     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
     {"max_final_threads",
      [](RandomGenerator & rg, std::string & ret)
      { ret += std::to_string(rg.RandomInt<uint32_t>(0, std::thread::hardware_concurrency())); }},
@@ -353,47 +353,47 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
      [](RandomGenerator & rg, std::string & ret)
      { ret += std::to_string(rg.RandomInt<uint32_t>(0, std::thread::hardware_concurrency())); }},
     {"max_joined_block_size_rows",
-     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
     /*{"max_memory_usage",
-     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << ((rg.NextLargeNumber() % 8) + 15)); }},
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << ((rg.nextLargeNumber() % 8) + 15)); }},
     {"max_memory_usage_for_user",
-     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << ((rg.NextLargeNumber() % 8) + 15)); }},*/
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << ((rg.nextLargeNumber() % 8) + 15)); }},*/
     {"max_number_of_partitions_for_independent_aggregation",
-     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 15)); }},
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 15)); }},
     {"max_parsing_threads",
      [](RandomGenerator & rg, std::string & ret)
      {
          const std::vector<std::string> & choices = {"0", "1", "10"};
-         ret += rg.PickRandomlyFromVector(choices);
+         ret += rg.pickRandomlyFromVector(choices);
      }},
     {"max_parts_to_move",
-     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.2, 0.5, 1, UINT32_C(4096))); }},
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.5, 1, UINT32_C(4096))); }},
     {"max_read_buffer_size",
-     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
     /*{"max_result_bytes",
-     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
     {"max_result_rows",
-     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
     {"max_rows_in_distinct",
-     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
     {"max_rows_in_join",
-     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
     {"max_rows_in_set",
-     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
     {"max_rows_to_group_by",
-     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
     {"max_rows_to_read",
-     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
     {"max_rows_to_read_leaf",
-     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
     {"max_rows_to_sort",
-     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
     {"max_rows_to_transfer",
-     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
     {"max_temporary_columns",
-     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 6)); }},
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 6)); }},
     {"max_temporary_non_const_columns",
-     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 6)); }},*/
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 6)); }},*/
     {"max_threads",
      [](RandomGenerator & rg, std::string & ret)
      { ret += std::to_string(rg.RandomInt<uint32_t>(1, std::thread::hardware_concurrency())); }},
@@ -407,319 +407,319 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
      [](RandomGenerator & rg, std::string & ret)
      {
          ret += std::to_string(
-             rg.ThresholdGenerator<uint32_t>(0.2, 0.5, 1, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
+             rg.thresholdGenerator<uint32_t>(0.2, 0.5, 1, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
      }},
     {"min_bytes_to_use_mmap_io",
      [](RandomGenerator & rg, std::string & ret)
      {
          ret += std::to_string(
-             rg.ThresholdGenerator<uint32_t>(0.2, 0.5, 1, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
+             rg.thresholdGenerator<uint32_t>(0.2, 0.5, 1, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
      }},
     {"min_chunk_bytes_for_parallel_parsing",
      [](RandomGenerator & rg, std::string & ret)
      { ret += std::to_string(std::max(1024, static_cast<int>(rg.RandomGauss(10 * 1024 * 1024, 5 * 1000 * 1000)))); }},
     {"min_compress_block_size",
-     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
-    {"min_count_to_compile_aggregate_expression", ZeroToThree},
-    {"min_count_to_compile_expression", ZeroToThree},
-    {"min_count_to_compile_sort_description", ZeroToThree},
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
+    {"min_count_to_compile_aggregate_expression", zeroToThree},
+    {"min_count_to_compile_expression", zeroToThree},
+    {"min_count_to_compile_sort_description", zeroToThree},
     {"min_external_table_block_size_bytes",
      [](RandomGenerator & rg, std::string & ret)
      {
          const std::vector<std::string> & choices = {"0", "1", "100000000"};
-         ret += rg.PickRandomlyFromVector(choices);
+         ret += rg.pickRandomlyFromVector(choices);
      }},
-    {"move_all_conditions_to_prewhere", TrueOrFalse},
-    {"move_primary_key_columns_to_end_of_prewhere", TrueOrFalse},
-    {"mutations_sync", ZeroOneTwo},
-    {"optimize_aggregation_in_order", TrueOrFalse},
-    {"optimize_aggregators_of_group_by_keys", TrueOrFalse},
-    {"optimize_append_index", TrueOrFalse},
-    {"optimize_arithmetic_operations_in_aggregate_functions", TrueOrFalse},
-    {"optimize_count_from_files", TrueOrFalse},
-    {"optimize_distinct_in_order", TrueOrFalse},
-    {"optimize_group_by_constant_keys", TrueOrFalse},
-    {"optimize_group_by_function_keys", TrueOrFalse},
-    {"optimize_functions_to_subcolumns", TrueOrFalse},
-    {"optimize_if_chain_to_multiif", TrueOrFalse},
-    {"optimize_if_transform_strings_to_enum", TrueOrFalse},
-    {"optimize_injective_functions_in_group_by", TrueOrFalse},
-    {"optimize_injective_functions_inside_uniq", TrueOrFalse},
-    {"optimize_move_to_prewhere", TrueOrFalse},
-    {"optimize_move_to_prewhere_if_final", TrueOrFalse},
-    {"optimize_multiif_to_if", TrueOrFalse},
-    {"optimize_normalize_count_variants", TrueOrFalse},
-    {"optimize_on_insert", TrueOrFalse},
-    {"optimize_or_like_chain", TrueOrFalse},
-    {"optimize_read_in_order", TrueOrFalse},
-    {"optimize_redundant_functions_in_order_by", TrueOrFalse},
-    {"optimize_rewrite_aggregate_function_with_if", TrueOrFalse},
-    {"optimize_rewrite_array_exists_to_has", TrueOrFalse},
-    {"optimize_rewrite_sum_if_to_count_if", TrueOrFalse},
-    {"optimize_skip_merged_partitions", TrueOrFalse},
-    {"optimize_skip_unused_shards", TrueOrFalse},
-    {"optimize_sorting_by_input_stream_properties", TrueOrFalse},
-    {"optimize_substitute_columns", TrueOrFalse},
-    {"optimize_syntax_fuse_functions", TrueOrFalse},
-    {"optimize_time_filter_with_preimage", TrueOrFalse},
-    {"optimize_trivial_approximate_count_query", TrueOrFalse},
-    {"optimize_trivial_count_query", TrueOrFalse},
-    {"optimize_trivial_insert_select", TrueOrFalse},
-    {"optimize_uniq_to_count", TrueOrFalse},
-    {"optimize_use_implicit_projections", TrueOrFalse},
-    {"optimize_use_projections", TrueOrFalse},
-    {"optimize_using_constraints", TrueOrFalse},
+    {"move_all_conditions_to_prewhere", trueOrFalse},
+    {"move_primary_key_columns_to_end_of_prewhere", trueOrFalse},
+    {"mutations_sync", zeroOneTwo},
+    {"optimize_aggregation_in_order", trueOrFalse},
+    {"optimize_aggregators_of_group_by_keys", trueOrFalse},
+    {"optimize_append_index", trueOrFalse},
+    {"optimize_arithmetic_operations_in_aggregate_functions", trueOrFalse},
+    {"optimize_count_from_files", trueOrFalse},
+    {"optimize_distinct_in_order", trueOrFalse},
+    {"optimize_group_by_constant_keys", trueOrFalse},
+    {"optimize_group_by_function_keys", trueOrFalse},
+    {"optimize_functions_to_subcolumns", trueOrFalse},
+    {"optimize_if_chain_to_multiif", trueOrFalse},
+    {"optimize_if_transform_strings_to_enum", trueOrFalse},
+    {"optimize_injective_functions_in_group_by", trueOrFalse},
+    {"optimize_injective_functions_inside_uniq", trueOrFalse},
+    {"optimize_move_to_prewhere", trueOrFalse},
+    {"optimize_move_to_prewhere_if_final", trueOrFalse},
+    {"optimize_multiif_to_if", trueOrFalse},
+    {"optimize_normalize_count_variants", trueOrFalse},
+    {"optimize_on_insert", trueOrFalse},
+    {"optimize_or_like_chain", trueOrFalse},
+    {"optimize_read_in_order", trueOrFalse},
+    {"optimize_redundant_functions_in_order_by", trueOrFalse},
+    {"optimize_rewrite_aggregate_function_with_if", trueOrFalse},
+    {"optimize_rewrite_array_exists_to_has", trueOrFalse},
+    {"optimize_rewrite_sum_if_to_count_if", trueOrFalse},
+    {"optimize_skip_merged_partitions", trueOrFalse},
+    {"optimize_skip_unused_shards", trueOrFalse},
+    {"optimize_sorting_by_input_stream_properties", trueOrFalse},
+    {"optimize_substitute_columns", trueOrFalse},
+    {"optimize_syntax_fuse_functions", trueOrFalse},
+    {"optimize_time_filter_with_preimage", trueOrFalse},
+    {"optimize_trivial_approximate_count_query", trueOrFalse},
+    {"optimize_trivial_count_query", trueOrFalse},
+    {"optimize_trivial_insert_select", trueOrFalse},
+    {"optimize_uniq_to_count", trueOrFalse},
+    {"optimize_use_implicit_projections", trueOrFalse},
+    {"optimize_use_projections", trueOrFalse},
+    {"optimize_using_constraints", trueOrFalse},
     {"output_format_arrow_compression_method",
      [](RandomGenerator & rg, std::string & ret)
      {
          const std::vector<std::string> & choices = {"lz4_frame", "zstd", "none"};
          ret += "'";
-         ret += rg.PickRandomlyFromVector(choices);
+         ret += rg.pickRandomlyFromVector(choices);
          ret += "'";
      }},
-    {"output_format_arrow_fixed_string_as_fixed_byte_array", TrueOrFalse},
-    {"output_format_arrow_low_cardinality_as_dictionary", TrueOrFalse},
-    {"output_format_arrow_string_as_string", TrueOrFalse},
-    {"output_format_arrow_use_64_bit_indexes_for_dictionary", TrueOrFalse},
-    {"output_format_arrow_use_signed_indexes_for_dictionary", TrueOrFalse},
-    {"output_format_binary_encode_types_in_binary_format", TrueOrFalse},
-    {"output_format_binary_write_json_as_string", TrueOrFalse},
-    {"output_format_bson_string_as_string", TrueOrFalse},
-    {"output_format_csv_crlf_end_of_line", TrueOrFalse},
-    {"output_format_csv_serialize_tuple_into_separate_columns", TrueOrFalse},
-    {"output_format_decimal_trailing_zeros", TrueOrFalse},
-    {"output_format_enable_streaming", TrueOrFalse},
+    {"output_format_arrow_fixed_string_as_fixed_byte_array", trueOrFalse},
+    {"output_format_arrow_low_cardinality_as_dictionary", trueOrFalse},
+    {"output_format_arrow_string_as_string", trueOrFalse},
+    {"output_format_arrow_use_64_bit_indexes_for_dictionary", trueOrFalse},
+    {"output_format_arrow_use_signed_indexes_for_dictionary", trueOrFalse},
+    {"output_format_binary_encode_types_in_binary_format", trueOrFalse},
+    {"output_format_binary_write_json_as_string", trueOrFalse},
+    {"output_format_bson_string_as_string", trueOrFalse},
+    {"output_format_csv_crlf_end_of_line", trueOrFalse},
+    {"output_format_csv_serialize_tuple_into_separate_columns", trueOrFalse},
+    {"output_format_decimal_trailing_zeros", trueOrFalse},
+    {"output_format_enable_streaming", trueOrFalse},
     {"output_format_avro_codec",
      [](RandomGenerator & rg, std::string & ret)
      {
          const std::vector<std::string> & choices = {"null", "deflate", "snappy", "zstd"};
          ret += "'";
-         ret += rg.PickRandomlyFromVector(choices);
+         ret += rg.pickRandomlyFromVector(choices);
          ret += "'";
      }},
-    {"output_format_json_array_of_rows", TrueOrFalse},
-    {"output_format_json_escape_forward_slashes", TrueOrFalse},
-    {"output_format_json_named_tuples_as_objects", TrueOrFalse},
-    {"output_format_json_quote_64bit_floats", TrueOrFalse},
-    {"output_format_json_quote_64bit_integers", TrueOrFalse},
-    {"output_format_json_quote_decimals", TrueOrFalse},
-    {"output_format_json_quote_denormals", TrueOrFalse},
-    {"output_format_json_skip_null_value_in_named_tuples", TrueOrFalse},
-    {"output_format_json_validate_utf8", TrueOrFalse},
-    {"output_format_markdown_escape_special_characters", TrueOrFalse},
-    {"output_format_native_encode_types_in_binary_format", TrueOrFalse},
-    {"output_format_native_write_json_as_string", TrueOrFalse},
+    {"output_format_json_array_of_rows", trueOrFalse},
+    {"output_format_json_escape_forward_slashes", trueOrFalse},
+    {"output_format_json_named_tuples_as_objects", trueOrFalse},
+    {"output_format_json_quote_64bit_floats", trueOrFalse},
+    {"output_format_json_quote_64bit_integers", trueOrFalse},
+    {"output_format_json_quote_decimals", trueOrFalse},
+    {"output_format_json_quote_denormals", trueOrFalse},
+    {"output_format_json_skip_null_value_in_named_tuples", trueOrFalse},
+    {"output_format_json_validate_utf8", trueOrFalse},
+    {"output_format_markdown_escape_special_characters", trueOrFalse},
+    {"output_format_native_encode_types_in_binary_format", trueOrFalse},
+    {"output_format_native_write_json_as_string", trueOrFalse},
     {"output_format_orc_compression_method",
      [](RandomGenerator & rg, std::string & ret)
      {
          const std::vector<std::string> & choices = {"lz4", "snappy", "zlib", "zstd", "none"};
          ret += "'";
-         ret += rg.PickRandomlyFromVector(choices);
+         ret += rg.pickRandomlyFromVector(choices);
          ret += "'";
      }},
-    {"output_format_orc_string_as_string", TrueOrFalse},
-    {"output_format_parallel_formatting", TrueOrFalse},
-    {"output_format_parquet_compliant_nested_types", TrueOrFalse},
+    {"output_format_orc_string_as_string", trueOrFalse},
+    {"output_format_parallel_formatting", trueOrFalse},
+    {"output_format_parquet_compliant_nested_types", trueOrFalse},
     {"output_format_parquet_compression_method",
      [](RandomGenerator & rg, std::string & ret)
      {
          const std::vector<std::string> & choices = {"snappy", "lz4", "brotli", "zstd", "gzip", "none"};
          ret += "'";
-         ret += rg.PickRandomlyFromVector(choices);
+         ret += rg.pickRandomlyFromVector(choices);
          ret += "'";
      }},
-    {"output_format_parquet_fixed_string_as_fixed_byte_array", TrueOrFalse},
-    {"output_format_parquet_parallel_encoding", TrueOrFalse},
-    {"output_format_parquet_string_as_string", TrueOrFalse},
-    {"output_format_parquet_use_custom_encoder", TrueOrFalse},
+    {"output_format_parquet_fixed_string_as_fixed_byte_array", trueOrFalse},
+    {"output_format_parquet_parallel_encoding", trueOrFalse},
+    {"output_format_parquet_string_as_string", trueOrFalse},
+    {"output_format_parquet_use_custom_encoder", trueOrFalse},
     {"output_format_parquet_version",
      [](RandomGenerator & rg, std::string & ret)
      {
          const std::vector<std::string> & choices = {"1.0", "2.4", "2.6", "2.latest"};
          ret += "'";
-         ret += rg.PickRandomlyFromVector(choices);
+         ret += rg.pickRandomlyFromVector(choices);
          ret += "'";
      }},
-    {"output_format_parquet_write_page_index", TrueOrFalse},
+    {"output_format_parquet_write_page_index", trueOrFalse},
     {"output_format_pretty_color",
      [](RandomGenerator & rg, std::string & ret)
      {
          const std::vector<std::string> & choices = {"0", "1", "auto"};
          ret += "'";
-         ret += rg.PickRandomlyFromVector(choices);
+         ret += rg.pickRandomlyFromVector(choices);
          ret += "'";
      }},
     {"output_format_pretty_grid_charset",
      [](RandomGenerator & rg, std::string & ret)
      {
          ret += "'";
-         ret += rg.NextBool() ? "UTF-8" : "ASCII";
+         ret += rg.nextBool() ? "UTF-8" : "ASCII";
          ret += "'";
      }},
-    {"output_format_pretty_highlight_digit_groups", TrueOrFalse},
-    {"output_format_pretty_row_numbers", TrueOrFalse},
-    {"output_format_protobuf_nullables_with_google_wrappers", TrueOrFalse},
-    {"output_format_sql_insert_include_column_names", TrueOrFalse},
-    {"output_format_sql_insert_quote_names", TrueOrFalse},
-    {"output_format_sql_insert_use_replace", TrueOrFalse},
-    {"output_format_tsv_crlf_end_of_line", TrueOrFalse},
-    {"output_format_values_escape_quote_with_quote", TrueOrFalse},
-    {"output_format_write_statistics", TrueOrFalse},
-    {"page_cache_inject_eviction", TrueOrFalse},
-    {"parallel_distributed_insert_select", ZeroOneTwo},
-    {"parallel_replicas_allow_in_with_subquery", TrueOrFalse},
-    {"parallel_replicas_for_non_replicated_merge_tree", TrueOrFalse},
-    {"parallel_replicas_local_plan", TrueOrFalse},
-    {"parallel_replicas_prefer_local_join", TrueOrFalse},
-    {"parallel_view_processing", TrueOrFalse},
-    {"parallelize_output_from_storages", TrueOrFalse},
-    {"partial_merge_join_optimizations", TrueOrFalse},
-    {"precise_float_parsing", TrueOrFalse},
+    {"output_format_pretty_highlight_digit_groups", trueOrFalse},
+    {"output_format_pretty_row_numbers", trueOrFalse},
+    {"output_format_protobuf_nullables_with_google_wrappers", trueOrFalse},
+    {"output_format_sql_insert_include_column_names", trueOrFalse},
+    {"output_format_sql_insert_quote_names", trueOrFalse},
+    {"output_format_sql_insert_use_replace", trueOrFalse},
+    {"output_format_tsv_crlf_end_of_line", trueOrFalse},
+    {"output_format_values_escape_quote_with_quote", trueOrFalse},
+    {"output_format_write_statistics", trueOrFalse},
+    {"page_cache_inject_eviction", trueOrFalse},
+    {"parallel_distributed_insert_select", zeroOneTwo},
+    {"parallel_replicas_allow_in_with_subquery", trueOrFalse},
+    {"parallel_replicas_for_non_replicated_merge_tree", trueOrFalse},
+    {"parallel_replicas_local_plan", trueOrFalse},
+    {"parallel_replicas_prefer_local_join", trueOrFalse},
+    {"parallel_view_processing", trueOrFalse},
+    {"parallelize_output_from_storages", trueOrFalse},
+    {"partial_merge_join_optimizations", trueOrFalse},
+    {"precise_float_parsing", trueOrFalse},
     {"prefer_external_sort_block_bytes",
      [](RandomGenerator & rg, std::string & ret)
      {
          const std::vector<std::string> & choices = {"0", "1", "100000000"};
-         ret += rg.PickRandomlyFromVector(choices);
+         ret += rg.pickRandomlyFromVector(choices);
      }},
-    {"prefer_localhost_replica", TrueOrFalse},
-    {"query_plan_aggregation_in_order", TrueOrFalse},
-    {"query_plan_convert_outer_join_to_inner_join", TrueOrFalse},
-    {"query_plan_enable_multithreading_after_window_functions", TrueOrFalse},
-    {"query_plan_enable_optimizations", TrueOrFalse},
-    {"query_plan_execute_functions_after_sorting", TrueOrFalse},
-    {"query_plan_filter_push_down", TrueOrFalse},
-    {"query_plan_lift_up_array_join", TrueOrFalse},
-    {"query_plan_lift_up_union", TrueOrFalse},
-    {"query_plan_merge_expressions", TrueOrFalse},
-    {"query_plan_merge_filters", TrueOrFalse},
-    {"query_plan_optimize_prewhere", TrueOrFalse},
-    {"query_plan_push_down_limit", TrueOrFalse},
-    {"query_plan_read_in_order", TrueOrFalse},
-    {"query_plan_remove_redundant_distinct", TrueOrFalse},
-    {"query_plan_remove_redundant_sorting", TrueOrFalse},
-    {"query_plan_reuse_storage_ordering_for_window_functions", TrueOrFalse},
-    {"query_plan_split_filter", TrueOrFalse},
-    {"read_from_filesystem_cache_if_exists_otherwise_bypass_cache", TrueOrFalse},
+    {"prefer_localhost_replica", trueOrFalse},
+    {"query_plan_aggregation_in_order", trueOrFalse},
+    {"query_plan_convert_outer_join_to_inner_join", trueOrFalse},
+    {"query_plan_enable_multithreading_after_window_functions", trueOrFalse},
+    {"query_plan_enable_optimizations", trueOrFalse},
+    {"query_plan_execute_functions_after_sorting", trueOrFalse},
+    {"query_plan_filter_push_down", trueOrFalse},
+    {"query_plan_lift_up_array_join", trueOrFalse},
+    {"query_plan_lift_up_union", trueOrFalse},
+    {"query_plan_merge_expressions", trueOrFalse},
+    {"query_plan_merge_filters", trueOrFalse},
+    {"query_plan_optimize_prewhere", trueOrFalse},
+    {"query_plan_push_down_limit", trueOrFalse},
+    {"query_plan_read_in_order", trueOrFalse},
+    {"query_plan_remove_redundant_distinct", trueOrFalse},
+    {"query_plan_remove_redundant_sorting", trueOrFalse},
+    {"query_plan_reuse_storage_ordering_for_window_functions", trueOrFalse},
+    {"query_plan_split_filter", trueOrFalse},
+    {"read_from_filesystem_cache_if_exists_otherwise_bypass_cache", trueOrFalse},
     {"read_in_order_two_level_merge_threshold",
      [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.RandomInt<uint32_t>(0, 100)); }},
-    {"read_in_order_use_buffering", TrueOrFalse},
-    {"regexp_dict_allow_hyperscan", TrueOrFalse},
-    {"regexp_dict_flag_case_insensitive", TrueOrFalse},
-    {"regexp_dict_flag_dotall", TrueOrFalse},
+    {"read_in_order_use_buffering", trueOrFalse},
+    {"regexp_dict_allow_hyperscan", trueOrFalse},
+    {"regexp_dict_flag_case_insensitive", trueOrFalse},
+    {"regexp_dict_flag_dotall", trueOrFalse},
     {"remote_filesystem_read_method",
      [](RandomGenerator & rg, std::string & ret)
      {
          ret += "'";
-         ret += rg.NextBool() ? "read" : "threadpool";
+         ret += rg.nextBool() ? "read" : "threadpool";
          ret += "'";
      }},
-    {"remote_filesystem_read_prefetch", TrueOrFalse},
-    {"rows_before_aggregation", TrueOrFalse},
-    {"select_sequential_consistency", TrueOrFalse},
+    {"remote_filesystem_read_prefetch", trueOrFalse},
+    {"rows_before_aggregation", trueOrFalse},
+    {"select_sequential_consistency", trueOrFalse},
     {"send_logs_level",
      [](RandomGenerator & rg, std::string & ret)
      {
          const std::vector<std::string> & choices = {"debug", "information", "trace", "error", "test", "warning", "fatal", "none"};
          ret += "'";
-         ret += rg.PickRandomlyFromVector(choices);
+         ret += rg.pickRandomlyFromVector(choices);
          ret += "'";
      }},
     {"session_timezone",
      [](RandomGenerator & rg, std::string & ret)
      {
          ret += "'";
-         ret += rg.PickRandomlyFromVector(timezones);
+         ret += rg.pickRandomlyFromVector(timezones);
          ret += "'";
      }},
     /*{"set_overflow_mode",
      [](RandomGenerator & rg, std::string & ret)
      {
          ret += "'";
-         ret += rg.NextBool() ? "break" : "throw";
+         ret += rg.nextBool() ? "break" : "throw";
          ret += "'";
      }},*/
-    {"throw_on_error_from_cache_on_write_operations", TrueOrFalse},
+    {"throw_on_error_from_cache_on_write_operations", trueOrFalse},
     {"totals_mode",
      [](RandomGenerator & rg, std::string & ret)
      {
          const std::vector<std::string> & choices
              = {"before_having", "after_having_exclusive", "after_having_inclusive", "after_having_auto"};
          ret += "'";
-         ret += rg.PickRandomlyFromVector(choices);
+         ret += rg.pickRandomlyFromVector(choices);
          ret += "'";
      }},
-    {"transform_null_in", TrueOrFalse},
-    {"type_json_skip_duplicated_paths", TrueOrFalse},
-    {"update_insert_deduplication_token_in_dependent_materialized_views", TrueOrFalse},
-    {"use_cache_for_count_from_files", TrueOrFalse},
-    {"use_concurrency_control", TrueOrFalse},
-    {"use_json_alias_for_old_object_type", TrueOrFalse},
-    {"use_local_cache_for_remote_storage", TrueOrFalse},
-    {"use_page_cache_for_disks_without_file_cache", TrueOrFalse},
+    {"transform_null_in", trueOrFalse},
+    {"type_json_skip_duplicated_paths", trueOrFalse},
+    {"update_insert_deduplication_token_in_dependent_materialized_views", trueOrFalse},
+    {"use_cache_for_count_from_files", trueOrFalse},
+    {"use_concurrency_control", trueOrFalse},
+    {"use_json_alias_for_old_object_type", trueOrFalse},
+    {"use_local_cache_for_remote_storage", trueOrFalse},
+    {"use_page_cache_for_disks_without_file_cache", trueOrFalse},
     {"use_query_cache",
      [](RandomGenerator & rg, std::string & ret)
      {
          const std::vector<std::string> & choices
              = {"1, set_overflow_mode = 'throw', group_by_overflow_mode = 'throw', join_overflow_mode = 'throw'",
                 "0, set_overflow_mode = 'break', group_by_overflow_mode = 'break', join_overflow_mode = 'break'"};
-         ret += rg.PickRandomlyFromVector(choices);
+         ret += rg.pickRandomlyFromVector(choices);
      }},
-    {"use_skip_indexes", TrueOrFalse},
-    {"use_skip_indexes_if_final", TrueOrFalse},
-    {"use_structure_from_insertion_table_in_table_functions", ZeroOneTwo},
-    {"use_uncompressed_cache", TrueOrFalse},
-    {"use_variant_as_common_type", TrueOrFalse},
-    {"use_with_fill_by_sorting_prefix", TrueOrFalse},
-    {"validate_experimental_and_suspicious_types_inside_nested_types", TrueOrFalse}};
+    {"use_skip_indexes", trueOrFalse},
+    {"use_skip_indexes_if_final", trueOrFalse},
+    {"use_structure_from_insertion_table_in_table_functions", zeroOneTwo},
+    {"use_uncompressed_cache", trueOrFalse},
+    {"use_variant_as_common_type", trueOrFalse},
+    {"use_with_fill_by_sorting_prefix", trueOrFalse},
+    {"validate_experimental_and_suspicious_types_inside_nested_types", trueOrFalse}};
 
 const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> MergeTreeTableSettings
     = {{"adaptive_write_buffer_initial_size",
         [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.RandomInt<uint32_t>(1, 32 * 1024 * 1024)); }},
-       {"allow_experimental_block_number_column", TrueOrFalse},
-       {"allow_experimental_replacing_merge_with_cleanup", TrueOrFalse},
-       {"allow_floating_point_partition_key", TrueOrFalse},
-       {"allow_remote_fs_zero_copy_replication", TrueOrFalse},
-       {"allow_suspicious_indices", TrueOrFalse},
-       {"allow_vertical_merges_from_compact_to_wide_parts", TrueOrFalse},
-       {"always_use_copy_instead_of_hardlinks", TrueOrFalse},
-       {"always_fetch_merged_part", TrueOrFalse},
-       {"assign_part_uuids", TrueOrFalse},
-       {"cache_populated_by_fetch", TrueOrFalse},
-       {"check_sample_column_is_correct", TrueOrFalse},
+       {"allow_experimental_block_number_column", trueOrFalse},
+       {"allow_experimental_replacing_merge_with_cleanup", trueOrFalse},
+       {"allow_floating_point_partition_key", trueOrFalse},
+       {"allow_remote_fs_zero_copy_replication", trueOrFalse},
+       {"allow_suspicious_indices", trueOrFalse},
+       {"allow_vertical_merges_from_compact_to_wide_parts", trueOrFalse},
+       {"always_use_copy_instead_of_hardlinks", trueOrFalse},
+       {"always_fetch_merged_part", trueOrFalse},
+       {"assign_part_uuids", trueOrFalse},
+       {"cache_populated_by_fetch", trueOrFalse},
+       {"check_sample_column_is_correct", trueOrFalse},
        {"compact_parts_max_bytes_to_buffer",
         [](RandomGenerator & rg, std::string & ret)
         { ret += std::to_string(rg.RandomInt<uint32_t>(1024, UINT32_C(512) * UINT32_C(1024) * UINT32_C(1024))); }},
        {"compact_parts_max_granules_to_buffer",
-        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.15, 0.15, 1, 256)); }},
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.15, 0.15, 1, 256)); }},
        {"compact_parts_merge_max_bytes_to_prefetch_part",
         [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.RandomInt<uint32_t>(1, 32 * 1024 * 1024)); }},
-       {"compatibility_allow_sampling_expression_not_in_primary_key", TrueOrFalse},
-       {"compress_marks", TrueOrFalse},
-       {"compress_primary_key", TrueOrFalse},
+       {"compatibility_allow_sampling_expression_not_in_primary_key", trueOrFalse},
+       {"compress_marks", trueOrFalse},
+       {"compress_primary_key", trueOrFalse},
        {"concurrent_part_removal_threshold",
-        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.2, 0.3, 0, 100)); }},
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.3, 0, 100)); }},
        {"deduplicate_merge_projection_mode",
         [](RandomGenerator & rg, std::string & ret)
         {
             const std::vector<std::string> & choices = {"throw", "drop", "rebuild"};
             ret += "'";
-            ret += rg.PickRandomlyFromVector(choices);
+            ret += rg.pickRandomlyFromVector(choices);
             ret += "'";
         }},
-       {"detach_not_byte_identical_parts", TrueOrFalse},
-       {"disable_detach_partition_for_zero_copy_replication", TrueOrFalse},
-       {"disable_fetch_partition_for_zero_copy_replication", TrueOrFalse},
-       {"disable_freeze_partition_for_zero_copy_replication", TrueOrFalse},
-       {"enable_block_number_column", TrueOrFalse},
-       {"enable_block_offset_column", TrueOrFalse},
-       {"enable_mixed_granularity_parts", TrueOrFalse},
-       {"enable_vertical_merge_algorithm", TrueOrFalse},
-       {"exclude_deleted_rows_for_part_size_in_merge", TrueOrFalse},
-       {"force_read_through_cache_for_merges", TrueOrFalse},
-       {"fsync_after_insert", TrueOrFalse},
-       {"fsync_part_directory", TrueOrFalse},
+       {"detach_not_byte_identical_parts", trueOrFalse},
+       {"disable_detach_partition_for_zero_copy_replication", trueOrFalse},
+       {"disable_fetch_partition_for_zero_copy_replication", trueOrFalse},
+       {"disable_freeze_partition_for_zero_copy_replication", trueOrFalse},
+       {"enable_block_number_column", trueOrFalse},
+       {"enable_block_offset_column", trueOrFalse},
+       {"enable_mixed_granularity_parts", trueOrFalse},
+       {"enable_vertical_merge_algorithm", trueOrFalse},
+       {"exclude_deleted_rows_for_part_size_in_merge", trueOrFalse},
+       {"force_read_through_cache_for_merges", trueOrFalse},
+       {"fsync_after_insert", trueOrFalse},
+       {"fsync_part_directory", trueOrFalse},
        {"index_granularity",
-        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
        {"index_granularity_bytes",
         [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.RandomInt<uint32_t>(1024, 30 * 1024 * 1024)); }},
        {"lightweight_mutation_projection_mode",
@@ -727,164 +727,164 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
         {
             const std::vector<std::string> & choices = {"throw", "drop", "rebuild"};
             ret += "'";
-            ret += rg.PickRandomlyFromVector(choices);
+            ret += rg.pickRandomlyFromVector(choices);
             ret += "'";
         }},
-       {"load_existing_rows_count_for_old_parts", TrueOrFalse},
+       {"load_existing_rows_count_for_old_parts", trueOrFalse},
        {"marks_compress_block_size",
-        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
        {"max_bytes_to_merge_at_max_space_in_pool",
         [](RandomGenerator & rg, std::string & ret)
         {
             ret += std::to_string(
-                rg.ThresholdGenerator<uint32_t>(0.25, 0.25, 1, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
+                rg.thresholdGenerator<uint32_t>(0.25, 0.25, 1, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
         }},
        {"max_bytes_to_merge_at_min_space_in_pool",
         [](RandomGenerator & rg, std::string & ret)
         {
             ret += std::to_string(
-                rg.ThresholdGenerator<uint32_t>(0.25, 0.25, 1, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
+                rg.thresholdGenerator<uint32_t>(0.25, 0.25, 1, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
         }},
        {"max_file_name_length",
-        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.3, 0.3, 0, 128)); }},
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 0, 128)); }},
        {"max_number_of_mutations_for_replica",
-        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.2, 0.3, 1, 100)); }},
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.3, 1, 100)); }},
        {"max_parts_to_merge_at_once",
-        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.2, 0.3, 0, 1000)); }},
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.3, 0, 1000)); }},
        {"max_replicated_merges_in_queue",
-        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.3, 0.3, 1, 100)); }},
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 1, 100)); }},
        {"max_replicated_mutations_in_queue",
-        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.3, 0.3, 1, 100)); }},
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 1, 100)); }},
        {"merge_max_block_size",
-        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
        {"merge_max_block_size_bytes",
         [](RandomGenerator & rg, std::string & ret)
-        { ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.3, 0.3, 0, 128 * 1024 * 1024)); }},
-       {"min_age_to_force_merge_on_partition_only", TrueOrFalse},
+        { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 0, 128 * 1024 * 1024)); }},
+       {"min_age_to_force_merge_on_partition_only", trueOrFalse},
        {"min_bytes_for_full_part_storage",
         [](RandomGenerator & rg, std::string & ret)
-        { ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.3, 0.3, 0, 512 * 1024 * 1024)); }},
+        { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 0, 512 * 1024 * 1024)); }},
        {"min_bytes_for_wide_part",
         [](RandomGenerator & rg, std::string & ret)
-        { ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.3, 0.3, 0, UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024))); }},
+        { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 0, UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024))); }},
        {"min_compressed_bytes_to_fsync_after_fetch",
         [](RandomGenerator & rg, std::string & ret)
-        { ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.3, 0.3, 0, 128 * 1024 * 1024)); }},
+        { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 0, 128 * 1024 * 1024)); }},
        {"min_compressed_bytes_to_fsync_after_merge",
         [](RandomGenerator & rg, std::string & ret)
-        { ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.3, 0.3, 0, 128 * 1024 * 1024)); }},
+        { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 0, 128 * 1024 * 1024)); }},
        {"min_index_granularity_bytes",
         [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.RandomInt<uint32_t>(1024, 30 * 1024 * 1024)); }},
        {"min_merge_bytes_to_use_direct_io",
         [](RandomGenerator & rg, std::string & ret)
         {
             ret += std::to_string(
-                rg.ThresholdGenerator<uint32_t>(0.25, 0.25, 1, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
+                rg.thresholdGenerator<uint32_t>(0.25, 0.25, 1, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
         }},
        {"min_rows_for_full_part_storage",
-        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.3, 0.3, 0, 1000)); }},
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 0, 1000)); }},
        {"min_rows_to_fsync_after_merge",
-        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.3, 0.3, 0, 1000)); }},
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 0, 1000)); }},
        {"min_rows_for_wide_part",
-        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.3, 0.3, 0, 1000)); }},
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 0, 1000)); }},
        {"non_replicated_deduplication_window",
-        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.3, 0.3, 0, 1000)); }},
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 0, 1000)); }},
        {"number_of_free_entries_in_pool_to_lower_max_size_of_merge",
-        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.2, 0.3, 1, 100)); }},
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.3, 1, 100)); }},
        {"number_of_free_entries_in_pool_to_execute_mutation",
-        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.2, 0.3, 1, 100)); }},
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.3, 1, 100)); }},
        {"number_of_free_entries_in_pool_to_execute_optimize_entire_partition",
-        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.2, 0.3, 1, 100)); }},
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.3, 1, 100)); }},
        {"old_parts_lifetime",
-        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.2, 0.3, 10, 8 * 60)); }},
-       {"optimize_row_order", TrueOrFalse},
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.3, 10, 8 * 60)); }},
+       {"optimize_row_order", trueOrFalse},
        {"prefer_fetch_merged_part_size_threshold",
         [](RandomGenerator & rg, std::string & ret)
         {
             ret += std::to_string(
-                rg.ThresholdGenerator<uint32_t>(0.2, 0.5, 1, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
+                rg.thresholdGenerator<uint32_t>(0.2, 0.5, 1, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
         }},
        {"primary_key_compress_block_size",
-        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
-       {"primary_key_lazy_load", TrueOrFalse},
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
+       {"primary_key_lazy_load", trueOrFalse},
        {"primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns",
-        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.ThresholdGenerator<double>(0.3, 0.5, 0.0, 1.0)); }},
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<double>(0.3, 0.5, 0.0, 1.0)); }},
        {"ratio_of_defaults_for_sparse_serialization",
-        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.ThresholdGenerator<double>(0.3, 0.5, 0.0, 1.0)); }},
-       {"remote_fs_zero_copy_path_compatible_mode", TrueOrFalse},
-       {"remove_empty_parts", TrueOrFalse},
-       {"remove_rolled_back_parts_immediately", TrueOrFalse},
-       {"replace_long_file_name_to_hash", TrueOrFalse},
-       {"replicated_can_become_leader", TrueOrFalse},
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<double>(0.3, 0.5, 0.0, 1.0)); }},
+       {"remote_fs_zero_copy_path_compatible_mode", trueOrFalse},
+       {"remove_empty_parts", trueOrFalse},
+       {"remove_rolled_back_parts_immediately", trueOrFalse},
+       {"replace_long_file_name_to_hash", trueOrFalse},
+       {"replicated_can_become_leader", trueOrFalse},
        {"replicated_max_mutations_in_one_entry",
-        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.2, 0.3, 0, 10000)); }},
-       {"s3_create_new_file_on_insert", TrueOrFalse},
-       {"s3_skip_empty_files", TrueOrFalse},
-       {"s3_truncate_on_insert", TrueOrFalse},
-       {"ttl_only_drop_parts", TrueOrFalse},
-       {"use_adaptive_write_buffer_for_dynamic_subcolumns", TrueOrFalse},
-       {"use_async_block_ids_cache", TrueOrFalse},
-       {"use_compact_variant_discriminators_serialization", TrueOrFalse},
-       {"use_index_for_in_with_subqueries", TrueOrFalse},
-       {"use_minimalistic_part_header_in_zookeeper", TrueOrFalse},
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.3, 0, 10000)); }},
+       {"s3_create_new_file_on_insert", trueOrFalse},
+       {"s3_skip_empty_files", trueOrFalse},
+       {"s3_truncate_on_insert", trueOrFalse},
+       {"ttl_only_drop_parts", trueOrFalse},
+       {"use_adaptive_write_buffer_for_dynamic_subcolumns", trueOrFalse},
+       {"use_async_block_ids_cache", trueOrFalse},
+       {"use_compact_variant_discriminators_serialization", trueOrFalse},
+       {"use_index_for_in_with_subqueries", trueOrFalse},
+       {"use_minimalistic_part_header_in_zookeeper", trueOrFalse},
        {"vertical_merge_algorithm_min_bytes_to_activate",
-        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.4, 0.4, 1, 10000)); }},
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.4, 0.4, 1, 10000)); }},
        {"vertical_merge_algorithm_min_columns_to_activate",
-        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.4, 0.4, 1, 100)); }},
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.4, 0.4, 1, 100)); }},
        {"vertical_merge_algorithm_min_rows_to_activate",
-        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.4, 0.4, 1, 10000)); }}};
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.4, 0.4, 1, 10000)); }}};
 
-const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> MemoryTableSettings
+const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> memoryTableSettings
     = {{"min_bytes_to_keep",
-        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
        {"max_bytes_to_keep",
-        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
        {"min_rows_to_keep",
-        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
        {"max_rows_to_keep",
-        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }}};
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }}};
 
-const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> SetTableSettings = {{"persistent", TrueOrFalse}};
+const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> setTableSettings = {{"persistent", trueOrFalse}};
 
-const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> JoinTableSettings = {{"persistent", TrueOrFalse}};
+const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> joinTableSettings = {{"persistent", trueOrFalse}};
 
-const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> EmbeddedRocksDBTableSettings = {
-    {"optimize_for_bulk_insert", TrueOrFalse},
+const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> embeddedRocksDBTableSettings = {
+    {"optimize_for_bulk_insert", trueOrFalse},
     {"bulk_insert_block_size",
-     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
 };
 
-const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> MySQLTableSettings
+const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> mySQLTableSettings
     = {{"connection_pool_size",
-        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 7)); }},
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 7)); }},
        {"connection_max_tries", [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.RandomInt<uint32_t>(1, 16)); }},
-       {"connection_auto_close", TrueOrFalse}};
+       {"connection_auto_close", trueOrFalse}};
 
-const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> FileTableSettings
-    = {{"engine_file_allow_create_multiple_files", TrueOrFalse},
-       {"engine_file_empty_if_not_exists", TrueOrFalse},
-       {"engine_file_skip_empty_files", TrueOrFalse},
-       {"engine_file_truncate_on_insert", TrueOrFalse},
+const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> fileTableSettings
+    = {{"engine_file_allow_create_multiple_files", trueOrFalse},
+       {"engine_file_empty_if_not_exists", trueOrFalse},
+       {"engine_file_skip_empty_files", trueOrFalse},
+       {"engine_file_truncate_on_insert", trueOrFalse},
        {"storage_file_read_method",
         [](RandomGenerator & rg, std::string & ret)
         {
             const std::vector<std::string> & choices = {"read", "pread", "mmap"};
             ret += "'";
-            ret += rg.PickRandomlyFromVector(choices);
+            ret += rg.pickRandomlyFromVector(choices);
             ret += "'";
         }}};
 
 const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> S3TableSettings
-    = {{"enable_filesystem_cache", TrueOrFalse},
+    = {{"enable_filesystem_cache", trueOrFalse},
        {"filesystem_cache_name",
         [](RandomGenerator & rg, std::string & ret)
         {
             const std::vector<std::string> & choices = {"cache_for_s3"};
             ret += "'";
-            ret += rg.PickRandomlyFromVector(choices);
+            ret += rg.pickRandomlyFromVector(choices);
             ret += "'";
         }},
-       {"s3_skip_empty_files", TrueOrFalse}};
+       {"s3_skip_empty_files", trueOrFalse}};
 
 const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> S3QueueTableSettings
     = {{"after_processing",
@@ -892,32 +892,32 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
         {
             const std::vector<std::string> & choices = {"", "keep", "delete"};
             ret += "'";
-            ret += rg.PickRandomlyFromVector(choices);
+            ret += rg.pickRandomlyFromVector(choices);
             ret += "'";
         }},
-       {"enable_logging_to_s3queue_log", TrueOrFalse},
+       {"enable_logging_to_s3queue_log", trueOrFalse},
        {"processing_threads_num",
         [](RandomGenerator & rg, std::string & ret)
         { ret += std::to_string(rg.RandomInt<uint32_t>(1, std::thread::hardware_concurrency())); }}};
 
-const std::map<TableEngineValues, std::map<std::string, std::function<void(RandomGenerator &, std::string &)>>> AllTableSettings
+const std::map<TableEngineValues, std::map<std::string, std::function<void(RandomGenerator &, std::string &)>>> allTableSettings
     = {{MergeTree, MergeTreeTableSettings},
        {ReplacingMergeTree, MergeTreeTableSettings},
        {SummingMergeTree, MergeTreeTableSettings},
        {AggregatingMergeTree, MergeTreeTableSettings},
        {CollapsingMergeTree, MergeTreeTableSettings},
        {VersionedCollapsingMergeTree, MergeTreeTableSettings},
-       {File, FileTableSettings},
+       {File, fileTableSettings},
        {Null, {}},
-       {Set, SetTableSettings},
-       {Join, JoinTableSettings},
-       {Memory, MemoryTableSettings},
+       {Set, setTableSettings},
+       {Join, joinTableSettings},
+       {Memory, memoryTableSettings},
        {StripeLog, {}},
        {Log, {}},
        {TinyLog, {}},
-       {EmbeddedRocksDB, EmbeddedRocksDBTableSettings},
+       {EmbeddedRocksDB, embeddedRocksDBTableSettings},
        {Buffer, {}},
-       {MySQL, MySQLTableSettings},
+       {MySQL, mySQLTableSettings},
        {PostgreSQL, {}},
        {SQLite, {}},
        {MongoDB, {}},
@@ -928,19 +928,19 @@ const std::map<TableEngineValues, std::map<std::string, std::function<void(Rando
        {DeltaLake, {}},
        {IcebergS3, {}}};
 
-const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> MergeTreeColumnSettings
+const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> mergeTreeColumnSettings
     = {{"min_compress_block_size",
-        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
        {"max_compress_block_size",
-        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }}};
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }}};
 
-const std::map<TableEngineValues, std::map<std::string, std::function<void(RandomGenerator &, std::string &)>>> AllColumnSettings
-    = {{MergeTree, MergeTreeColumnSettings},
-       {ReplacingMergeTree, MergeTreeColumnSettings},
-       {SummingMergeTree, MergeTreeColumnSettings},
-       {AggregatingMergeTree, MergeTreeColumnSettings},
-       {CollapsingMergeTree, MergeTreeColumnSettings},
-       {VersionedCollapsingMergeTree, MergeTreeColumnSettings},
+const std::map<TableEngineValues, std::map<std::string, std::function<void(RandomGenerator &, std::string &)>>> allColumnSettings
+    = {{MergeTree, mergeTreeColumnSettings},
+       {ReplacingMergeTree, mergeTreeColumnSettings},
+       {SummingMergeTree, mergeTreeColumnSettings},
+       {AggregatingMergeTree, mergeTreeColumnSettings},
+       {CollapsingMergeTree, mergeTreeColumnSettings},
+       {VersionedCollapsingMergeTree, mergeTreeColumnSettings},
        {File, {}},
        {Null, {}},
        {Set, {}},
@@ -962,7 +962,7 @@ const std::map<TableEngineValues, std::map<std::string, std::function<void(Rando
        {DeltaLake, {}},
        {IcebergS3, {}}};
 
-void SetRandomSetting(
+void setRandomSetting(
     RandomGenerator & rg,
     const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> & settings,
     std::string & ret,

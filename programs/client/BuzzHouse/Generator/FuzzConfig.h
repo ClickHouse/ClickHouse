@@ -78,7 +78,7 @@ public:
 };
 
 static const ServerCredentials
-LoadServerCredentials(const simdjson::dom::object & jobj, const std::string & sname, const uint32_t & default_port)
+loadServerCredentials(const simdjson::dom::object & jobj, const std::string & sname, const uint32_t & default_port)
 {
     uint32_t port = default_port;
     std::string hostname = "localhost", unix_socket = "", user = "test", password = "", database = "test";
@@ -201,27 +201,27 @@ public:
             }
             else if (key == "mysql")
             {
-                mysql_server = LoadServerCredentials(value, "mysql", 33060);
+                mysql_server = loadServerCredentials(value, "mysql", 33060);
             }
             else if (key == "postgresql")
             {
-                postgresql_server = LoadServerCredentials(value, "postgresql", 5432);
+                postgresql_server = loadServerCredentials(value, "postgresql", 5432);
             }
             else if (key == "sqlite")
             {
-                sqlite_server = LoadServerCredentials(value, "sqlite", 0);
+                sqlite_server = loadServerCredentials(value, "sqlite", 0);
             }
             else if (key == "mongodb")
             {
-                mongodb_server = LoadServerCredentials(value, "mongodb", 27017);
+                mongodb_server = loadServerCredentials(value, "mongodb", 27017);
             }
             else if (key == "redis")
             {
-                redis_server = LoadServerCredentials(value, "redis", 6379);
+                redis_server = loadServerCredentials(value, "redis", 6379);
             }
             else if (key == "minio")
             {
-                minio_server = LoadServerCredentials(value, "minio", 9000);
+                minio_server = loadServerCredentials(value, "minio", 9000);
             }
             else
             {
@@ -230,15 +230,15 @@ public:
         }
     }
 
-    void ProcessServerQuery(const std::string & input) const { this->cb->processTextAsSingleQuery(input); }
+    void processServerQuery(const std::string & input) const { this->cb->processTextAsSingleQuery(input); }
 
-    void LoadCollations()
+    void loadCollations()
     {
         buf.resize(0);
         buf += "SELECT \"name\" FROM system.collations INTO OUTFILE '";
         buf += fuzz_out.generic_string();
         buf += "' TRUNCATE FORMAT TabSeparated;";
-        this->ProcessServerQuery(buf);
+        this->processServerQuery(buf);
 
         std::ifstream infile(fuzz_out);
         buf.resize(0);
@@ -251,7 +251,7 @@ public:
     }
 
     template <bool IsDetached>
-    bool TableHasPartitions(const std::string & database, const std::string & table)
+    bool tableHasPartitions(const std::string & database, const std::string & table)
     {
         buf.resize(0);
         buf += "SELECT count() FROM \"system\".\"";
@@ -275,7 +275,7 @@ public:
         buf += "' AND \"partition_id\" != 'all' INTO OUTFILE '";
         buf += fuzz_out.generic_string();
         buf += "' TRUNCATE FORMAT CSV;";
-        this->ProcessServerQuery(buf);
+        this->processServerQuery(buf);
 
         std::ifstream infile(fuzz_out);
         buf.resize(0);
@@ -287,7 +287,7 @@ public:
     }
 
     template <bool IsDetached, bool IsPartition>
-    void TableGetRandomPartitionOrPart(const std::string & database, const std::string & table, std::string & res)
+    void tableGetRandomPartitionOrPart(const std::string & database, const std::string & table, std::string & res)
     {
         //system.parts doesn't support sampling, so pick up a random part with a window function
         buf.resize(0);
@@ -339,7 +339,7 @@ public:
         buf += "') INTO OUTFILE '";
         buf += fuzz_out.generic_string();
         buf += "' TRUNCATE FORMAT RawBlob;";
-        this->ProcessServerQuery(buf);
+        this->processServerQuery(buf);
 
         res.resize(0);
         std::ifstream infile(fuzz_out, std::ios::in);

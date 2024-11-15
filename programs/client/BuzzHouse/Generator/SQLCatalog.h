@@ -83,49 +83,49 @@ public:
     std::optional<TableEngineOption> toption;
     TableEngineValues teng;
 
-    bool IsMergeTreeFamily() const
+    bool isMergeTreeFamily() const
     {
         return teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree;
     }
 
-    bool IsFileEngine() const { return teng == TableEngineValues::File; }
+    bool isFileEngine() const { return teng == TableEngineValues::File; }
 
-    bool IsJoinEngine() const { return teng == TableEngineValues::Join; }
+    bool isJoinEngine() const { return teng == TableEngineValues::Join; }
 
-    bool IsNullEngine() const { return teng == TableEngineValues::Null; }
+    bool isNullEngine() const { return teng == TableEngineValues::Null; }
 
-    bool IsSetEngine() const { return teng == TableEngineValues::Set; }
+    bool isSetEngine() const { return teng == TableEngineValues::Set; }
 
-    bool IsBufferEngine() const { return teng == TableEngineValues::Buffer; }
+    bool isBufferEngine() const { return teng == TableEngineValues::Buffer; }
 
-    bool IsRocksEngine() const { return teng == TableEngineValues::EmbeddedRocksDB; }
+    bool isRocksEngine() const { return teng == TableEngineValues::EmbeddedRocksDB; }
 
-    bool IsMySQLEngine() const { return teng == TableEngineValues::MySQL; }
+    bool isMySQLEngine() const { return teng == TableEngineValues::MySQL; }
 
-    bool IsPostgreSQLEngine() const { return teng == TableEngineValues::PostgreSQL; }
+    bool isPostgreSQLEngine() const { return teng == TableEngineValues::PostgreSQL; }
 
-    bool IsSQLiteEngine() const { return teng == TableEngineValues::SQLite; }
+    bool isSQLiteEngine() const { return teng == TableEngineValues::SQLite; }
 
-    bool IsMongoDBEngine() const { return teng == TableEngineValues::MongoDB; }
+    bool isMongoDBEngine() const { return teng == TableEngineValues::MongoDB; }
 
-    bool IsRedisEngine() const { return teng == TableEngineValues::Redis; }
+    bool isRedisEngine() const { return teng == TableEngineValues::Redis; }
 
-    bool IsS3Engine() const { return teng == TableEngineValues::S3; }
+    bool isS3Engine() const { return teng == TableEngineValues::S3; }
 
-    bool IsS3QueueEngine() const { return teng == TableEngineValues::S3Queue; }
+    bool isS3QueueEngine() const { return teng == TableEngineValues::S3Queue; }
 
-    bool IsAnyS3Engine() const { return IsS3Engine() || IsS3QueueEngine(); }
+    bool isAnyS3Engine() const { return isS3Engine() || isS3QueueEngine(); }
 
-    bool IsHudiEngine() const { return teng == TableEngineValues::Hudi; }
+    bool isHudiEngine() const { return teng == TableEngineValues::Hudi; }
 
-    bool IsDeltaLakeEngine() const { return teng == TableEngineValues::DeltaLake; }
+    bool isDeltaLakeEngine() const { return teng == TableEngineValues::DeltaLake; }
 
-    bool IsIcebergEngine() const { return teng == TableEngineValues::IcebergS3; }
+    bool isIcebergEngine() const { return teng == TableEngineValues::IcebergS3; }
 
-    bool IsNotTruncableEngine() const
+    bool isNotTruncableEngine() const
     {
-        return IsNullEngine() || IsSetEngine() || IsMySQLEngine() || IsPostgreSQLEngine() || IsSQLiteEngine() || IsRedisEngine()
-            || IsMongoDBEngine() || IsAnyS3Engine() || IsHudiEngine() || IsDeltaLakeEngine() || IsIcebergEngine();
+        return isNullEngine() || isSetEngine() || isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isRedisEngine()
+            || isMongoDBEngine() || isAnyS3Engine() || isHudiEngine() || isDeltaLakeEngine() || isIcebergEngine();
     }
 };
 
@@ -139,7 +139,7 @@ public:
     std::set<uint32_t> projs, staged_projs, constrs, staged_constrs;
     std::map<uint32_t, std::string> frozen_partitions;
 
-    size_t RealNumberOfColumns() const
+    size_t realNumberOfColumns() const
     {
         size_t res = 0;
         const NestedType * ntp = nullptr;
@@ -158,18 +158,18 @@ public:
         return res;
     }
 
-    bool SupportsFinal() const
+    bool supportsFinal() const
     {
         return (teng >= TableEngineValues::ReplacingMergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree)
-            || this->IsBufferEngine();
+            || this->isBufferEngine();
     }
 
-    bool HasSignColumn() const
+    bool hasSignColumn() const
     {
         return teng >= TableEngineValues::CollapsingMergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree;
     }
 
-    bool HasVersionColumn() const { return teng == TableEngineValues::VersionedCollapsingMergeTree; }
+    bool hasVersionColumn() const { return teng == TableEngineValues::VersionedCollapsingMergeTree; }
 };
 
 struct SQLView : SQLBase

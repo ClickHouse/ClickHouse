@@ -20,7 +20,7 @@
 namespace BuzzHouse
 {
 
-static bool ExecuteCommand(const char * cmd, std::string & result)
+static bool executeCommand(const char * cmd, std::string & result)
 {
     char buffer[1024];
     FILE * pp = popen(cmd, "r");
@@ -43,7 +43,7 @@ static bool ExecuteCommand(const char * cmd, std::string & result)
     return true;
 }
 
-bool MinIOIntegration::SendRequest(const std::string & resource)
+bool MinIOIntegration::sendRequest(const std::string & resource)
 {
     struct tm ttm;
     std::string sign;
@@ -115,7 +115,7 @@ bool MinIOIntegration::SendRequest(const std::string & resource)
     sign_cmd << R"(printf "PUT\n\napplication/octet-stream\n)" << buffer << "\\n"
              << resource << "\""
              << " | openssl sha1 -hmac " << sc.password << " -binary | base64";
-    if (!ExecuteCommand(sign_cmd.str().c_str(), sign))
+    if (!executeCommand(sign_cmd.str().c_str(), sign))
     {
         close(sock);
         return false;
@@ -147,7 +147,7 @@ bool MinIOIntegration::SendRequest(const std::string & resource)
 }
 
 template <typename T>
-void MongoDBIntegration::DocumentAppendBottomType(RandomGenerator & rg, const std::string & cname, T & output, const SQLType * tp)
+void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const std::string & cname, T & output, const SQLType * tp)
 {
     const IntType * itp;
     const DateType * dtp;
@@ -165,7 +165,7 @@ void MongoDBIntegration::DocumentAppendBottomType(RandomGenerator & rg, const st
             case 8:
             case 16:
             case 32: {
-                const int32_t val = rg.NextRandomInt32();
+                const int32_t val = rg.nextRandomInt32();
 
                 if constexpr (std::is_same<T, bsoncxx::v_noabi::builder::stream::document>::value)
                 {
@@ -178,7 +178,7 @@ void MongoDBIntegration::DocumentAppendBottomType(RandomGenerator & rg, const st
             }
             break;
             case 64: {
-                const int64_t val = rg.NextRandomInt64();
+                const int64_t val = rg.nextRandomInt64();
 
                 if constexpr (std::is_same<T, bsoncxx::v_noabi::builder::stream::document>::value)
                 {
@@ -191,10 +191,10 @@ void MongoDBIntegration::DocumentAppendBottomType(RandomGenerator & rg, const st
             }
             break;
             default: {
-                hugeint_t val(rg.NextRandomInt64(), rg.NextRandomUInt64());
+                hugeint_t val(rg.nextRandomInt64(), rg.nextRandomUInt64());
 
                 buf.resize(0);
-                val.ToString(buf);
+                val.toString(buf);
                 if constexpr (std::is_same<T, bsoncxx::v_noabi::builder::stream::document>::value)
                 {
                     output << cname << buf;
@@ -209,7 +209,7 @@ void MongoDBIntegration::DocumentAppendBottomType(RandomGenerator & rg, const st
     else if (dynamic_cast<const FloatType *>(tp))
     {
         double value = 0;
-        const uint32_t next_option = rg.NextLargeNumber();
+        const uint32_t next_option = rg.nextLargeNumber();
 
         if (next_option < 25)
         {
@@ -225,7 +225,7 @@ void MongoDBIntegration::DocumentAppendBottomType(RandomGenerator & rg, const st
         }
         else
         {
-            value = rg.NextRandomDouble();
+            value = rg.nextRandomDouble();
         }
         if constexpr (std::is_same<T, bsoncxx::v_noabi::builder::stream::document>::value)
         {
@@ -239,7 +239,7 @@ void MongoDBIntegration::DocumentAppendBottomType(RandomGenerator & rg, const st
     else if ((dtp = dynamic_cast<const DateType *>(tp)))
     {
         const bsoncxx::types::b_date val(
-            {std::chrono::milliseconds(rg.NextBool() ? static_cast<uint64_t>(rg.NextRandomUInt32()) : rg.NextRandomUInt64())});
+            {std::chrono::milliseconds(rg.nextBool() ? static_cast<uint64_t>(rg.nextRandomUInt32()) : rg.nextRandomUInt64())});
 
         if constexpr (std::is_same<T, bsoncxx::v_noabi::builder::stream::document>::value)
         {
@@ -255,11 +255,11 @@ void MongoDBIntegration::DocumentAppendBottomType(RandomGenerator & rg, const st
         buf.resize(0);
         if (dttp->extended)
         {
-            rg.NextDateTime64(buf);
+            rg.nextDateTime64(buf);
         }
         else
         {
-            rg.NextDateTime(buf);
+            rg.nextDateTime(buf);
         }
         if constexpr (std::is_same<T, bsoncxx::v_noabi::builder::stream::document>::value)
         {
@@ -275,8 +275,8 @@ void MongoDBIntegration::DocumentAppendBottomType(RandomGenerator & rg, const st
         const uint32_t right = detp->scale.value_or(0), left = detp->precision.value_or(10) - right;
 
         buf.resize(0);
-        AppendDecimal(rg, buf, left, right);
-        if (rg.NextBool())
+        appendDecimal(rg, buf, left, right);
+        if (rg.nextBool())
         {
             bsoncxx::types::b_decimal128 decimal_value(buf.c_str());
 
@@ -300,13 +300,13 @@ void MongoDBIntegration::DocumentAppendBottomType(RandomGenerator & rg, const st
     }
     else if ((stp = dynamic_cast<const StringType *>(tp)))
     {
-        const uint32_t limit = stp->precision.value_or((rg.NextRandomUInt32() % 10000) + 1);
+        const uint32_t limit = stp->precision.value_or((rg.nextRandomUInt32() % 10000) + 1);
 
-        if (rg.NextBool())
+        if (rg.nextBool())
         {
             for (uint32_t i = 0; i < limit; i++)
             {
-                binary_data.push_back(static_cast<char>(rg.NextRandomInt8()));
+                binary_data.push_back(static_cast<char>(rg.nextRandomInt8()));
             }
             bsoncxx::types::b_binary val{
                 bsoncxx::binary_sub_type::k_binary, limit, reinterpret_cast<const std::uint8_t *>(binary_data.data())};
@@ -323,7 +323,7 @@ void MongoDBIntegration::DocumentAppendBottomType(RandomGenerator & rg, const st
         else
         {
             buf.resize(0);
-            rg.NextString(buf, "", true, limit);
+            rg.nextString(buf, "", true, limit);
             if constexpr (std::is_same<T, bsoncxx::v_noabi::builder::stream::document>::value)
             {
                 output << cname << buf;
@@ -336,7 +336,7 @@ void MongoDBIntegration::DocumentAppendBottomType(RandomGenerator & rg, const st
     }
     else if (dynamic_cast<const BoolType *>(tp))
     {
-        const bool val = rg.NextBool();
+        const bool val = rg.nextBool();
 
         if constexpr (std::is_same<T, bsoncxx::v_noabi::builder::stream::document>::value)
         {
@@ -349,7 +349,7 @@ void MongoDBIntegration::DocumentAppendBottomType(RandomGenerator & rg, const st
     }
     else if ((etp = dynamic_cast<const EnumType *>(tp)))
     {
-        const EnumValue & nvalue = rg.PickRandomlyFromVector(etp->values);
+        const EnumValue & nvalue = rg.pickRandomlyFromVector(etp->values);
 
         buf.resize(0);
         buf += nvalue.val;
@@ -365,7 +365,7 @@ void MongoDBIntegration::DocumentAppendBottomType(RandomGenerator & rg, const st
     else if (dynamic_cast<const UUIDType *>(tp))
     {
         buf.resize(0);
-        rg.NextUUID(buf);
+        rg.nextUUID(buf);
         if constexpr (std::is_same<T, bsoncxx::v_noabi::builder::stream::document>::value)
         {
             output << cname << buf;
@@ -378,7 +378,7 @@ void MongoDBIntegration::DocumentAppendBottomType(RandomGenerator & rg, const st
     else if (dynamic_cast<const IPv4Type *>(tp))
     {
         buf.resize(0);
-        rg.NextIPv4(buf);
+        rg.nextIPv4(buf);
         if constexpr (std::is_same<T, bsoncxx::v_noabi::builder::stream::document>::value)
         {
             output << cname << buf;
@@ -391,7 +391,7 @@ void MongoDBIntegration::DocumentAppendBottomType(RandomGenerator & rg, const st
     else if (dynamic_cast<const IPv6Type *>(tp))
     {
         buf.resize(0);
-        rg.NextIPv6(buf);
+        rg.nextIPv6(buf);
         if constexpr (std::is_same<T, bsoncxx::v_noabi::builder::stream::document>::value)
         {
             output << cname << buf;
@@ -406,7 +406,7 @@ void MongoDBIntegration::DocumentAppendBottomType(RandomGenerator & rg, const st
         std::uniform_int_distribution<int> dopt(1, 10), wopt(1, 10);
 
         buf.resize(0);
-        StrBuildJSON(rg, dopt(rg.gen), wopt(rg.gen), buf);
+        strBuildJSON(rg, dopt(rg.gen), wopt(rg.gen), buf);
         if constexpr (std::is_same<T, bsoncxx::v_noabi::builder::stream::document>::value)
         {
             output << cname << buf;
@@ -419,7 +419,7 @@ void MongoDBIntegration::DocumentAppendBottomType(RandomGenerator & rg, const st
     else if ((gtp = dynamic_cast<const GeoType *>(tp)))
     {
         buf.resize(0);
-        AppendGeoValue(rg, buf, gtp->geo_type);
+        strAppendGeoValue(rg, buf, gtp->geo_type);
         if constexpr (std::is_same<T, bsoncxx::v_noabi::builder::stream::document>::value)
         {
             output << cname << buf;
@@ -435,10 +435,10 @@ void MongoDBIntegration::DocumentAppendBottomType(RandomGenerator & rg, const st
     }
 }
 
-void MongoDBIntegration::DocumentAppendArray(
+void MongoDBIntegration::documentAppendArray(
     RandomGenerator & rg, const std::string & cname, bsoncxx::builder::stream::document & document, const ArrayType * at)
 {
-    const uint32_t limit = rg.NextLargeNumber() % 100;
+    const uint32_t limit = rg.nextLargeNumber() % 100;
     auto array = document << cname << bsoncxx::builder::stream::open_array; // Array
     const SQLType * tp = at->subtype;
     const Nullable * nl;
@@ -448,7 +448,7 @@ void MongoDBIntegration::DocumentAppendArray(
 
     for (uint32_t i = 0; i < limit; i++)
     {
-        const uint32_t nopt = rg.NextLargeNumber();
+        const uint32_t nopt = rg.nextLargeNumber();
 
         if (nopt < 31)
         {
@@ -473,22 +473,22 @@ void MongoDBIntegration::DocumentAppendArray(
             || dynamic_cast<const IPv4Type *>(tp) || dynamic_cast<const IPv6Type *>(tp) || dynamic_cast<const JSONType *>(tp)
             || dynamic_cast<const GeoType *>(tp))
         {
-            DocumentAppendBottomType<decltype(array)>(rg, "", array, at->subtype);
+            documentAppendBottomType<decltype(array)>(rg, "", array, at->subtype);
         }
         else if ((lc = dynamic_cast<const LowCardinality *>(tp)))
         {
             if ((nl = dynamic_cast<const Nullable *>(lc->subtype)))
             {
-                DocumentAppendBottomType<decltype(array)>(rg, "", array, nl->subtype);
+                documentAppendBottomType<decltype(array)>(rg, "", array, nl->subtype);
             }
             else
             {
-                DocumentAppendBottomType<decltype(array)>(rg, "", array, lc->subtype);
+                documentAppendBottomType<decltype(array)>(rg, "", array, lc->subtype);
             }
         }
         else if ((nl = dynamic_cast<const Nullable *>(tp)))
         {
-            DocumentAppendBottomType<decltype(array)>(rg, "", array, nl->subtype);
+            documentAppendBottomType<decltype(array)>(rg, "", array, nl->subtype);
         }
         else if ((att = dynamic_cast<const ArrayType *>(tp)))
         {
@@ -509,14 +509,14 @@ void MongoDBIntegration::DocumentAppendArray(
     array << bsoncxx::builder::stream::close_array;
 }
 
-void MongoDBIntegration::DocumentAppendAnyValue(
+void MongoDBIntegration::documentAppendAnyValue(
     RandomGenerator & rg, const std::string & cname, bsoncxx::builder::stream::document & document, const SQLType * tp)
 {
     const Nullable * nl;
     const ArrayType * at;
     const VariantType * vtp;
     const LowCardinality * lc;
-    const uint32_t nopt = rg.NextLargeNumber();
+    const uint32_t nopt = rg.nextLargeNumber();
 
     if (nopt < 31)
     {
@@ -541,19 +541,19 @@ void MongoDBIntegration::DocumentAppendAnyValue(
         || dynamic_cast<const IPv4Type *>(tp) || dynamic_cast<const IPv6Type *>(tp) || dynamic_cast<const JSONType *>(tp)
         || dynamic_cast<const GeoType *>(tp))
     {
-        DocumentAppendBottomType<bsoncxx::v_noabi::builder::stream::document>(rg, cname, document, tp);
+        documentAppendBottomType<bsoncxx::v_noabi::builder::stream::document>(rg, cname, document, tp);
     }
     else if ((lc = dynamic_cast<const LowCardinality *>(tp)))
     {
-        DocumentAppendAnyValue(rg, cname, document, lc->subtype);
+        documentAppendAnyValue(rg, cname, document, lc->subtype);
     }
     else if ((nl = dynamic_cast<const Nullable *>(tp)))
     {
-        DocumentAppendAnyValue(rg, cname, document, nl->subtype);
+        documentAppendAnyValue(rg, cname, document, nl->subtype);
     }
     else if ((at = dynamic_cast<const ArrayType *>(tp)))
     {
-        DocumentAppendArray(rg, cname, document, at);
+        documentAppendArray(rg, cname, document, at);
     }
     else if ((vtp = dynamic_cast<const VariantType *>(tp)))
     {
@@ -563,7 +563,7 @@ void MongoDBIntegration::DocumentAppendAnyValue(
         }
         else
         {
-            DocumentAppendAnyValue(rg, cname, document, rg.PickRandomlyFromVector(vtp->subtypes));
+            documentAppendAnyValue(rg, cname, document, rg.pickRandomlyFromVector(vtp->subtypes));
         }
     }
     else

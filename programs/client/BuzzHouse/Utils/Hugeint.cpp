@@ -7,13 +7,13 @@
 namespace BuzzHouse
 {
 
-static void NegateInPlace(hugeint_t & input)
+static void negateInPlace(hugeint_t & input)
 {
     input.lower = std::numeric_limits<uint64_t>::max() - input.lower + 1ull;
     input.upper = -1 - input.upper + (input.lower == 0);
 }
 
-static uint8_t PositiveHugeintHighestBit(hugeint_t bits)
+static uint8_t positiveHugeintHighestBit(hugeint_t bits)
 {
     uint8_t out = 0;
     if (bits.upper)
@@ -38,7 +38,7 @@ static uint8_t PositiveHugeintHighestBit(hugeint_t bits)
     return out;
 }
 
-static bool PositiveHugeintIsBitSet(hugeint_t lhs, uint8_t bit_position)
+static bool positiveHugeintIsBitSet(hugeint_t lhs, uint8_t bit_position)
 {
     if (bit_position < 64)
     {
@@ -50,7 +50,7 @@ static bool PositiveHugeintIsBitSet(hugeint_t lhs, uint8_t bit_position)
     }
 }
 
-static hugeint_t PositiveHugeintLeftShift(hugeint_t lhs, uint32_t amount)
+static hugeint_t positiveHugeintLeftShift(hugeint_t lhs, uint32_t amount)
 {
     assert(amount > 0 && amount < 64);
     hugeint_t result;
@@ -59,10 +59,10 @@ static hugeint_t PositiveHugeintLeftShift(hugeint_t lhs, uint32_t amount)
     return result;
 }
 
-static hugeint_t DivModPositive(hugeint_t lhs, uint64_t rhs, uint64_t & remainder)
+static hugeint_t divModPositive(hugeint_t lhs, uint64_t rhs, uint64_t & remainder)
 {
     assert(lhs.upper >= 0);
-    // DivMod code adapted from:
+    // divMod code adapted from:
     // https://github.com/calccrypto/uint128_t/blob/master/uint128_t.cpp
 
     // initialize the result and remainder to 0
@@ -71,15 +71,15 @@ static hugeint_t DivModPositive(hugeint_t lhs, uint64_t rhs, uint64_t & remainde
     div_result.upper = 0;
     remainder = 0;
 
-    uint8_t highest_bit_set = PositiveHugeintHighestBit(lhs);
+    uint8_t highest_bit_set = positiveHugeintHighestBit(lhs);
     // now iterate over the amount of bits that are set in the LHS
     for (uint8_t x = highest_bit_set; x > 0; x--)
     {
         // left-shift the current result and remainder by 1
-        div_result = PositiveHugeintLeftShift(div_result, 1);
+        div_result = positiveHugeintLeftShift(div_result, 1);
         remainder <<= 1;
         // we get the value of the bit at position X, where position 0 is the least-significant bit
-        if (PositiveHugeintIsBitSet(lhs, x - 1))
+        if (positiveHugeintIsBitSet(lhs, x - 1))
         {
             // increment the remainder
             remainder++;
@@ -99,20 +99,20 @@ static hugeint_t DivModPositive(hugeint_t lhs, uint64_t rhs, uint64_t & remainde
     return div_result;
 }
 
-int Sign(hugeint_t n)
+int sign(hugeint_t n)
 {
     return ((n > 0) - (n < 0));
 }
 
-hugeint_t Abs(hugeint_t n)
+hugeint_t abs(hugeint_t n)
 {
     assert(n != NumericLimits<hugeint_t>::Minimum());
-    return (n * Sign(n));
+    return (n * sign(n));
 }
 
-static hugeint_t DivMod(hugeint_t lhs, hugeint_t rhs, hugeint_t & remainder);
+static hugeint_t divMod(hugeint_t lhs, hugeint_t rhs, hugeint_t & remainder);
 
-static hugeint_t DivModMinimum(hugeint_t lhs, hugeint_t rhs, hugeint_t & remainder)
+static hugeint_t divModMinimum(hugeint_t lhs, hugeint_t rhs, hugeint_t & remainder)
 {
     assert(lhs == NumericLimits<hugeint_t>::Minimum() || rhs == NumericLimits<hugeint_t>::Minimum());
     if (rhs == NumericLimits<hugeint_t>::Minimum())
@@ -126,13 +126,13 @@ static hugeint_t DivModMinimum(hugeint_t lhs, hugeint_t rhs, hugeint_t & remaind
         return 0;
     }
 
-    // Add 1 to minimum and run through DivMod again
-    hugeint_t result = DivMod(NumericLimits<hugeint_t>::Minimum() + 1, rhs, remainder);
+    // Add 1 to minimum and run through divMod again
+    hugeint_t result = divMod(NumericLimits<hugeint_t>::Minimum() + 1, rhs, remainder);
 
     // If the 1 mattered we need to adjust the result, otherwise the remainder
-    if (Abs(remainder) + 1 == Abs(rhs))
+    if (abs(remainder) + 1 == abs(rhs))
     {
-        result -= Sign(rhs);
+        result -= sign(rhs);
         remainder = 0;
     }
     else
@@ -142,7 +142,7 @@ static hugeint_t DivModMinimum(hugeint_t lhs, hugeint_t rhs, hugeint_t & remaind
     return result;
 }
 
-static hugeint_t DivMod(hugeint_t lhs, hugeint_t rhs, hugeint_t & remainder)
+static hugeint_t divMod(hugeint_t lhs, hugeint_t rhs, hugeint_t & remainder)
 {
     if (rhs == 0)
     {
@@ -153,20 +153,20 @@ static hugeint_t DivMod(hugeint_t lhs, hugeint_t rhs, hugeint_t & remainder)
     // Check if one of the sides is hugeint_t minimum, as that can't be negated.
     if (lhs == NumericLimits<hugeint_t>::Minimum() || rhs == NumericLimits<hugeint_t>::Minimum())
     {
-        return DivModMinimum(lhs, rhs, remainder);
+        return divModMinimum(lhs, rhs, remainder);
     }
 
     bool lhs_negative = lhs.upper < 0;
     bool rhs_negative = rhs.upper < 0;
     if (lhs_negative)
     {
-        NegateInPlace(lhs);
+        negateInPlace(lhs);
     }
     if (rhs_negative)
     {
-        NegateInPlace(rhs);
+        negateInPlace(rhs);
     }
-    // DivMod code adapted from:
+    // divMod code adapted from:
     // https://github.com/calccrypto/uint128_t/blob/master/uint128_t.cpp
 
     // initialize the result and remainder to 0
@@ -176,16 +176,16 @@ static hugeint_t DivMod(hugeint_t lhs, hugeint_t rhs, hugeint_t & remainder)
     remainder.lower = 0;
     remainder.upper = 0;
 
-    uint8_t highest_bit_set = PositiveHugeintHighestBit(lhs);
+    uint8_t highest_bit_set = positiveHugeintHighestBit(lhs);
     // now iterate over the amount of bits that are set in the LHS
     for (uint8_t x = highest_bit_set; x > 0; x--)
     {
         // left-shift the current result and remainder by 1
-        div_result = PositiveHugeintLeftShift(div_result, 1);
-        remainder = PositiveHugeintLeftShift(remainder, 1);
+        div_result = positiveHugeintLeftShift(div_result, 1);
+        remainder = positiveHugeintLeftShift(remainder, 1);
 
         // we get the value of the bit at position X, where position 0 is the least-significant bit
-        if (PositiveHugeintIsBitSet(lhs, x - 1))
+        if (positiveHugeintIsBitSet(lhs, x - 1))
         {
             remainder += 1;
         }
@@ -198,40 +198,40 @@ static hugeint_t DivMod(hugeint_t lhs, hugeint_t rhs, hugeint_t & remainder)
     }
     if (lhs_negative ^ rhs_negative)
     {
-        NegateInPlace(div_result);
+        negateInPlace(div_result);
     }
     if (lhs_negative)
     {
-        NegateInPlace(remainder);
+        negateInPlace(remainder);
     }
     return div_result;
 }
 
-static hugeint_t Divide(hugeint_t lhs, hugeint_t rhs)
+static hugeint_t divide(hugeint_t lhs, hugeint_t rhs)
 {
     hugeint_t remainder;
-    return DivMod(lhs, rhs, remainder);
+    return divMod(lhs, rhs, remainder);
 }
 
-static hugeint_t Modulo(hugeint_t lhs, hugeint_t rhs)
+static hugeint_t modulo(hugeint_t lhs, hugeint_t rhs)
 {
     hugeint_t remainder;
-    (void)DivMod(lhs, rhs, remainder);
+    (void)divMod(lhs, rhs, remainder);
     return remainder;
 }
 
-static hugeint_t Multiply(hugeint_t lhs, hugeint_t rhs)
+static hugeint_t multiply(hugeint_t lhs, hugeint_t rhs)
 {
     hugeint_t result;
     bool lhs_negative = lhs.upper < 0;
     bool rhs_negative = rhs.upper < 0;
     if (lhs_negative)
     {
-        NegateInPlace(lhs);
+        negateInPlace(lhs);
     }
     if (rhs_negative)
     {
-        NegateInPlace(rhs);
+        negateInPlace(rhs);
     }
 
 #if ((__GNUC__ >= 5) || defined(__clang__)) && defined(__SIZEOF_INT128__)
@@ -243,7 +243,7 @@ static hugeint_t Multiply(hugeint_t lhs, hugeint_t rhs)
     result.upper = int64_t(upper);
     result.lower = uint64_t(result_i128 & 0xffffffffffffffff);
 #else
-    // Multiply code adapted from:
+    // multiply code adapted from:
     // https://github.com/calccrypto/uint128_t/blob/master/uint128_t.cpp
 
     // split values into 4 32-bit parts
@@ -295,13 +295,13 @@ static hugeint_t Multiply(hugeint_t lhs, hugeint_t rhs)
 #endif
     if (lhs_negative ^ rhs_negative)
     {
-        NegateInPlace(result);
+        negateInPlace(result);
     }
     return result;
 }
 
 template <class DST>
-hugeint_t HugeintConvertInteger(DST input)
+hugeint_t hugeintConvertInteger(DST input)
 {
     hugeint_t result;
     result.lower = static_cast<uint64_t>(input);
@@ -311,7 +311,7 @@ hugeint_t HugeintConvertInteger(DST input)
 
 hugeint_t::hugeint_t(int64_t value)
 {
-    auto result = HugeintConvertInteger<int64_t>(value);
+    auto result = hugeintConvertInteger<int64_t>(value);
     this->lower = result.lower;
     this->upper = result.upper;
 }
@@ -381,18 +381,18 @@ hugeint_t hugeint_t::operator*(const hugeint_t & rhs) const
 
 hugeint_t hugeint_t::operator/(const hugeint_t & rhs) const
 {
-    return Divide(*this, rhs);
+    return divide(*this, rhs);
 }
 
 hugeint_t hugeint_t::operator%(const hugeint_t & rhs) const
 {
-    return Modulo(*this, rhs);
+    return modulo(*this, rhs);
 }
 
 hugeint_t hugeint_t::operator-() const
 {
     hugeint_t input = *this;
-    NegateInPlace(input);
+    negateInPlace(input);
     return input;
 }
 
@@ -509,17 +509,17 @@ hugeint_t & hugeint_t::operator-=(const hugeint_t & rhs)
 }
 hugeint_t & hugeint_t::operator*=(const hugeint_t & rhs)
 {
-    *this = Multiply(*this, rhs);
+    *this = multiply(*this, rhs);
     return *this;
 }
 hugeint_t & hugeint_t::operator/=(const hugeint_t & rhs)
 {
-    *this = Divide(*this, rhs);
+    *this = divide(*this, rhs);
     return *this;
 }
 hugeint_t & hugeint_t::operator%=(const hugeint_t & rhs)
 {
-    *this = Modulo(*this, rhs);
+    *this = modulo(*this, rhs);
     return *this;
 }
 hugeint_t & hugeint_t::operator>>=(const hugeint_t & rhs)
@@ -561,7 +561,7 @@ hugeint_t::operator bool() const
     return *this != 0;
 }
 
-void hugeint_t::ToString(std::string & res) const
+void hugeint_t::toString(std::string & res) const
 {
     std::string in;
     uint64_t remainder;
@@ -576,7 +576,7 @@ void hugeint_t::ToString(std::string & res) const
     if (negative)
     {
         res += "-";
-        NegateInPlace(input);
+        negateInPlace(input);
     }
     while (true)
     {
@@ -584,7 +584,7 @@ void hugeint_t::ToString(std::string & res) const
         {
             break;
         }
-        input = DivModPositive(input, 10, remainder);
+        input = divModPositive(input, 10, remainder);
         in.insert(0, std::string(1, static_cast<char>('0' + remainder)));
     }
     if (in.empty())

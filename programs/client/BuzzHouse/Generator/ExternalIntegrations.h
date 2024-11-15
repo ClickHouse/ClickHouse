@@ -33,7 +33,7 @@ public:
 
     ClickHouseIntegration() { buf.reserve(4096); }
 
-    virtual bool PerformIntegration(RandomGenerator & rg, const uint32_t tname, std::vector<InsertEntry> & entries) = 0;
+    virtual bool performIntegration(RandomGenerator & rg, const uint32_t tname, std::vector<InsertEntry> & entries) = 0;
 
     virtual ~ClickHouseIntegration() = default;
 };
@@ -47,29 +47,29 @@ public:
     {
     }
 
-    virtual bool PerformQuery(const std::string & buf) = 0;
+    virtual bool performQuery(const std::string & buf) = 0;
 
-    virtual std::string GetTableName(const uint32_t tname) = 0;
+    virtual std::string getTableName(const uint32_t tname) = 0;
 
-    virtual void GetTypeString(RandomGenerator & rg, const SQLType * tp, std::string & out) const = 0;
+    virtual void getTypeString(RandomGenerator & rg, const SQLType * tp, std::string & out) const = 0;
 
-    bool PerformIntegration(RandomGenerator & rg, const uint32_t tname, std::vector<InsertEntry> & entries) override
+    bool performIntegration(RandomGenerator & rg, const uint32_t tname, std::vector<InsertEntry> & entries) override
     {
-        const std::string str_tname = GetTableName(tname);
+        const std::string str_tname = getTableName(tname);
 
         buf.resize(0);
         buf += "DROP TABLE IF EXISTS ";
         buf += str_tname;
         buf += ";";
 
-        if (PerformQuery(buf))
+        if (performQuery(buf))
         {
             buf.resize(0);
             buf += "CREATE TABLE ";
             buf += str_tname;
             buf += "(";
 
-            if (rg.NextSmallNumber() < 7)
+            if (rg.nextSmallNumber() < 7)
             {
                 std::shuffle(entries.begin(), entries.end(), rg.gen);
             }
@@ -84,7 +84,7 @@ public:
                 buf += "c";
                 buf += std::to_string(entry.cname1);
                 buf += " ";
-                GetTypeString(rg, entry.tp, buf);
+                getTypeString(rg, entry.tp, buf);
                 if (entry.nullable.has_value())
                 {
                     buf += " ";
@@ -94,7 +94,7 @@ public:
                 assert(!entry.cname2.has_value());
             }
             buf += ");";
-            return PerformQuery(buf);
+            return performQuery(buf);
         }
         return false;
     }
@@ -139,8 +139,8 @@ public:
             MySQLIntegration * mysql = new MySQLIntegration(fc.mysql_server.query_log_file, mcon);
 
             if (fc.read_log
-                || (mysql->PerformQuery("DROP SCHEMA IF EXISTS " + fc.mysql_server.database + ";")
-                    && mysql->PerformQuery("CREATE SCHEMA " + fc.mysql_server.database + ";")))
+                || (mysql->performQuery("DROP SCHEMA IF EXISTS " + fc.mysql_server.database + ";")
+                    && mysql->performQuery("CREATE SCHEMA " + fc.mysql_server.database + ";")))
             {
                 std::cout << "Connected to MySQL" << std::endl;
                 return mysql;
@@ -153,9 +153,9 @@ public:
         return nullptr;
     }
 
-    std::string GetTableName(const uint32_t tname) override { return "test.t" + std::to_string(tname); }
+    std::string getTableName(const uint32_t tname) override { return "test.t" + std::to_string(tname); }
 
-    bool PerformQuery(const std::string & query) override
+    bool performQuery(const std::string & query) override
     {
         if (!mysql_connection)
         {
@@ -171,7 +171,7 @@ public:
         return true;
     }
 
-    void GetTypeString(RandomGenerator & rg, const SQLType * tp, std::string & out) const override { tp->MySQLTypeName(rg, out, false); }
+    void getTypeString(RandomGenerator & rg, const SQLType * tp, std::string & out) const override { tp->MySQLtypeName(rg, out, false); }
 
     ~MySQLIntegration() override
     {
@@ -258,7 +258,7 @@ public:
             else
             {
                 psql = new PostgreSQLIntegration(fc.postgresql_server.query_log_file, pcon);
-                if (fc.read_log || (psql->PerformQuery("DROP SCHEMA IF EXISTS test CASCADE;") && psql->PerformQuery("CREATE SCHEMA test;")))
+                if (fc.read_log || (psql->performQuery("DROP SCHEMA IF EXISTS test CASCADE;") && psql->performQuery("CREATE SCHEMA test;")))
                 {
                     std::cout << "Connected to PostgreSQL" << std::endl;
                     return psql;
@@ -280,14 +280,14 @@ public:
         return nullptr;
     }
 
-    std::string GetTableName(const uint32_t tname) override { return "test.t" + std::to_string(tname); }
+    std::string getTableName(const uint32_t tname) override { return "test.t" + std::to_string(tname); }
 
-    void GetTypeString(RandomGenerator & rg, const SQLType * tp, std::string & out) const override
+    void getTypeString(RandomGenerator & rg, const SQLType * tp, std::string & out) const override
     {
-        tp->PostgreSQLTypeName(rg, out, false);
+        tp->PostgreSQLtypeName(rg, out, false);
     }
 
-    bool PerformQuery(const std::string & query) override
+    bool performQuery(const std::string & query) override
     {
         if (!postgres_connection)
         {
@@ -351,11 +351,11 @@ public:
         }
     }
 
-    std::string GetTableName(const uint32_t tname) override { return "t" + std::to_string(tname); }
+    std::string getTableName(const uint32_t tname) override { return "t" + std::to_string(tname); }
 
-    void GetTypeString(RandomGenerator & rg, const SQLType * tp, std::string & out) const override { tp->SQLiteTypeName(rg, out, false); }
+    void getTypeString(RandomGenerator & rg, const SQLType * tp, std::string & out) const override { tp->SQLitetypeName(rg, out, false); }
 
-    bool PerformQuery(const std::string & query) override
+    bool performQuery(const std::string & query) override
     {
         char * err_msg = NULL;
 
@@ -388,7 +388,7 @@ class RedisIntegration : public ClickHouseIntegration
 public:
     RedisIntegration() : ClickHouseIntegration() { }
 
-    bool PerformIntegration(RandomGenerator & rg, const uint32_t tname, std::vector<InsertEntry> & entries) override
+    bool performIntegration(RandomGenerator & rg, const uint32_t tname, std::vector<InsertEntry> & entries) override
     {
         (void)rg;
         (void)tname;
@@ -410,11 +410,11 @@ private:
     mongocxx::database database;
 
     template <typename T>
-    void DocumentAppendBottomType(RandomGenerator & rg, const std::string & cname, T & output, const SQLType * tp);
+    void documentAppendBottomType(RandomGenerator & rg, const std::string & cname, T & output, const SQLType * tp);
 
-    void DocumentAppendArray(
+    void documentAppendArray(
         RandomGenerator & rg, const std::string & cname, bsoncxx::builder::stream::document & document, const ArrayType * tp);
-    void DocumentAppendAnyValue(
+    void documentAppendAnyValue(
         RandomGenerator & rg, const std::string & cname, bsoncxx::builder::stream::document & document, const SQLType * tp);
 
 public:
@@ -478,12 +478,12 @@ public:
         }
     }
 
-    bool PerformIntegration(RandomGenerator & rg, const uint32_t tname, std::vector<InsertEntry> & entries) override
+    bool performIntegration(RandomGenerator & rg, const uint32_t tname, std::vector<InsertEntry> & entries) override
     {
         try
         {
-            const bool permute = rg.NextBool(), miss_cols = rg.NextBool();
-            const uint32_t ndocuments = rg.NextMediumNumber();
+            const bool permute = rg.nextBool(), miss_cols = rg.nextBool();
+            const uint32_t ndocuments = rg.nextMediumNumber();
             const std::string str_tname = "t" + std::to_string(tname);
             mongocxx::collection coll = database[str_tname];
 
@@ -491,13 +491,13 @@ public:
             {
                 bsoncxx::builder::stream::document document{};
 
-                if (permute && rg.NextSmallNumber() < 4)
+                if (permute && rg.nextSmallNumber() < 4)
                 {
                     std::shuffle(entries.begin(), entries.end(), rg.gen);
                 }
                 for (size_t i = 0; i < entries.size(); i++)
                 {
-                    if (miss_cols && rg.NextSmallNumber() < 4)
+                    if (miss_cols && rg.nextSmallNumber() < 4)
                     { //sometimes the column is missing
                         const InsertEntry & entry = entries[i];
 
@@ -509,7 +509,7 @@ public:
                             buf2 += ".c";
                             buf2 += std::to_string(entry.cname2.value());
                         }
-                        DocumentAppendAnyValue(rg, buf2, document, entry.tp);
+                        documentAppendAnyValue(rg, buf2, document, entry.tp);
                     }
                 }
                 documents.push_back(document << bsoncxx::builder::stream::finalize);
@@ -537,16 +537,16 @@ class MinIOIntegration : public ClickHouseIntegration
 {
 private:
     const ServerCredentials & sc;
-    bool SendRequest(const std::string & resource);
+    bool sendRequest(const std::string & resource);
 
 public:
     MinIOIntegration(const FuzzConfig & fc) : ClickHouseIntegration(), sc(fc.minio_server) { }
 
-    bool PerformIntegration(RandomGenerator & rg, const uint32_t tname, std::vector<InsertEntry> & entries) override
+    bool performIntegration(RandomGenerator & rg, const uint32_t tname, std::vector<InsertEntry> & entries) override
     {
         (void)rg;
         (void)entries;
-        return SendRequest(sc.database + "/file" + std::to_string(tname));
+        return sendRequest(sc.database + "/file" + std::to_string(tname));
     }
 
     ~MinIOIntegration() override = default;
@@ -565,25 +565,25 @@ private:
     bool requires_external_call_check = false, next_call_succeeded = false;
 
 public:
-    bool GetRequiresExternalCallCheck() const { return requires_external_call_check; }
+    bool getRequiresExternalCallCheck() const { return requires_external_call_check; }
 
-    bool GetNextExternalCallSucceeded() const { return next_call_succeeded; }
+    bool getNextExternalCallSucceeded() const { return next_call_succeeded; }
 
-    bool HasMySQLConnection() const { return mysql != nullptr; }
+    bool hasMySQLConnection() const { return mysql != nullptr; }
 
-    bool HasPostgreSQLConnection() const { return postresql != nullptr; }
+    bool hasPostgreSQLConnection() const { return postresql != nullptr; }
 
-    bool HasSQLiteConnection() const { return sqlite != nullptr; }
+    bool hasSQLiteConnection() const { return sqlite != nullptr; }
 
-    bool HasMongoDBConnection() const { return mongodb != nullptr; }
+    bool hasMongoDBConnection() const { return mongodb != nullptr; }
 
-    bool HasRedisConnection() const { return redis != nullptr; }
+    bool hasRedisConnection() const { return redis != nullptr; }
 
-    bool HasMinIOConnection() const { return minio != nullptr; }
+    bool hasMinIOConnection() const { return minio != nullptr; }
 
-    const std::filesystem::path & GetSQLiteDBPath() { return sqlite->sqlite_path; }
+    const std::filesystem::path & getSQLiteDBPath() { return sqlite->sqlite_path; }
 
-    void ResetExternalStatus()
+    void resetExternalStatus()
     {
         requires_external_call_check = false;
         next_call_succeeded = false;
@@ -615,28 +615,28 @@ public:
     }
 
     void
-    CreateExternalDatabaseTable(RandomGenerator & rg, const IntegrationCall dc, const uint32_t tname, std::vector<InsertEntry> & entries)
+    createExternalDatabaseTable(RandomGenerator & rg, const IntegrationCall dc, const uint32_t tname, std::vector<InsertEntry> & entries)
     {
         requires_external_call_check = true;
         switch (dc)
         {
             case IntegrationCall::IntMySQL:
-                next_call_succeeded = mysql->PerformIntegration(rg, tname, entries);
+                next_call_succeeded = mysql->performIntegration(rg, tname, entries);
                 break;
             case IntegrationCall::IntPostgreSQL:
-                next_call_succeeded = postresql->PerformIntegration(rg, tname, entries);
+                next_call_succeeded = postresql->performIntegration(rg, tname, entries);
                 break;
             case IntegrationCall::IntSQLite:
-                next_call_succeeded = sqlite->PerformIntegration(rg, tname, entries);
+                next_call_succeeded = sqlite->performIntegration(rg, tname, entries);
                 break;
             case IntegrationCall::IntMongoDB:
-                next_call_succeeded = mongodb->PerformIntegration(rg, tname, entries);
+                next_call_succeeded = mongodb->performIntegration(rg, tname, entries);
                 break;
             case IntegrationCall::IntRedis:
-                next_call_succeeded = redis->PerformIntegration(rg, tname, entries);
+                next_call_succeeded = redis->performIntegration(rg, tname, entries);
                 break;
             case IntegrationCall::IntMinIO:
-                next_call_succeeded = minio->PerformIntegration(rg, tname, entries);
+                next_call_succeeded = minio->performIntegration(rg, tname, entries);
                 break;
         }
     }

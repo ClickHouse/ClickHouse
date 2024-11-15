@@ -26,7 +26,7 @@ public:
     uhugeint_t & operator=(const uhugeint_t & rhs) = default;
     uhugeint_t & operator=(uhugeint_t && rhs) = default;
 
-    void ToString(std::string & res) const;
+    void toString(std::string & res) const;
 
     // comparison operators
     bool operator==(const uhugeint_t & rhs) const;

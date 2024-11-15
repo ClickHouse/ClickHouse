@@ -172,7 +172,7 @@ uhugeint_t & uhugeint_t::operator-=(const uhugeint_t & rhs)
     return *this;
 }
 
-static uhugeint_t Multiply(uhugeint_t lhs, uhugeint_t rhs)
+static uhugeint_t multiply(uhugeint_t lhs, uhugeint_t rhs)
 {
     uhugeint_t result;
 #if ((__GNUC__ >= 5) || defined(__clang__)) && defined(__SIZEOF_INT128__)
@@ -236,7 +236,7 @@ static uhugeint_t Multiply(uhugeint_t lhs, uhugeint_t rhs)
 
 uhugeint_t & uhugeint_t::operator*=(const uhugeint_t & rhs)
 {
-    *this = Multiply(*this, rhs);
+    *this = multiply(*this, rhs);
     return *this;
 }
 
@@ -261,7 +261,7 @@ static uint8_t Bits(uhugeint_t x)
     return out;
 }
 
-static uhugeint_t DivMod(uhugeint_t lhs, uhugeint_t rhs, uhugeint_t & remainder)
+static uhugeint_t divMod(uhugeint_t lhs, uhugeint_t rhs, uhugeint_t & remainder)
 {
     if (rhs == 0)
     {
@@ -304,42 +304,42 @@ static uhugeint_t DivMod(uhugeint_t lhs, uhugeint_t rhs, uhugeint_t & remainder)
     return result;
 }
 
-static uhugeint_t Divide(uhugeint_t lhs, uhugeint_t rhs)
+static uhugeint_t divide(uhugeint_t lhs, uhugeint_t rhs)
 {
     uhugeint_t remainder;
-    return DivMod(lhs, rhs, remainder);
+    return divMod(lhs, rhs, remainder);
 }
 
-static uhugeint_t Modulo(uhugeint_t lhs, uhugeint_t rhs)
+static uhugeint_t modulo(uhugeint_t lhs, uhugeint_t rhs)
 {
     uhugeint_t remainder;
-    (void)DivMod(lhs, rhs, remainder);
+    (void)divMod(lhs, rhs, remainder);
     return remainder;
 }
 
 uhugeint_t & uhugeint_t::operator/=(const uhugeint_t & rhs)
 {
-    *this = Divide(*this, rhs);
+    *this = divide(*this, rhs);
     return *this;
 }
 
 uhugeint_t & uhugeint_t::operator%=(const uhugeint_t & rhs)
 {
-    *this = Modulo(*this, rhs);
+    *this = modulo(*this, rhs);
     return *this;
 }
 
 uhugeint_t uhugeint_t::operator/(const uhugeint_t & rhs) const
 {
-    return Divide(*this, rhs);
+    return divide(*this, rhs);
 }
 
 uhugeint_t uhugeint_t::operator%(const uhugeint_t & rhs) const
 {
-    return Modulo(*this, rhs);
+    return modulo(*this, rhs);
 }
 
-static uhugeint_t NegateInPlace(const uhugeint_t & input)
+static uhugeint_t negateInPlace(const uhugeint_t & input)
 {
     uhugeint_t result = 0;
     result -= input;
@@ -348,7 +348,7 @@ static uhugeint_t NegateInPlace(const uhugeint_t & input)
 
 uhugeint_t uhugeint_t::operator-() const
 {
-    return NegateInPlace(*this);
+    return negateInPlace(*this);
 }
 
 uhugeint_t & uhugeint_t::operator>>=(const uhugeint_t & rhs)
@@ -394,7 +394,7 @@ uhugeint_t::operator bool() const
     return *this != 0;
 }
 
-void uhugeint_t::ToString(std::string & res) const
+void uhugeint_t::toString(std::string & res) const
 {
     std::string in;
     uhugeint_t input = *this, remainder;
@@ -405,7 +405,7 @@ void uhugeint_t::ToString(std::string & res) const
         {
             break;
         }
-        input = DivMod(input, 10, remainder);
+        input = divMod(input, 10, remainder);
         in.insert(0, std::string(1, static_cast<char>('0' + remainder.lower)));
     }
     if (in.empty())

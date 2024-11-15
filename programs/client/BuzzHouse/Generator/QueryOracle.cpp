@@ -13,18 +13,18 @@ SELECT COUNT(*) FROM <FROM_CLAUSE> WHERE <PRED>;
 or
 SELECT COUNT(*) FROM <FROM_CLAUSE> WHERE <PRED1> GROUP BY <GROUP_BY CLAUSE> HAVING <PRED2>;
 */
-int QueryOracle::GenerateCorrectnessTestFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq1)
+int QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq1)
 {
     const std::filesystem::path & qfile = fc.db_file_path / "query.data";
     TopSelect * ts = sq1.mutable_inner_query()->mutable_select();
     SelectIntoFile * sif = ts->mutable_intofile();
     SelectStatementCore * ssc = ts->mutable_sel()->mutable_select_core();
-    const uint32_t combination = 0; //TODO fix this rg.NextLargeNumber() % 3; /* 0 WHERE, 1 HAVING, 2 WHERE + HAVING */
+    const uint32_t combination = 0; //TODO fix this rg.nextLargeNumber() % 3; /* 0 WHERE, 1 HAVING, 2 WHERE + HAVING */
 
-    gen.SetAllowNotDetermistic(false);
-    gen.EnforceFinal(true);
+    gen.setAllowNotDetermistic(false);
+    gen.enforceFinal(true);
     gen.levels[gen.current_level] = QueryLevel(gen.current_level);
-    gen.GenerateFromStatement(rg, std::numeric_limits<uint32_t>::max(), ssc->mutable_from());
+    gen.generateFromStatement(rg, std::numeric_limits<uint32_t>::max(), ssc->mutable_from());
 
     const bool prev_allow_aggregates = gen.levels[gen.current_level].allow_aggregates,
                prev_allow_window_funcs = gen.levels[gen.current_level].allow_window_funcs;
@@ -35,11 +35,11 @@ int QueryOracle::GenerateCorrectnessTestFirstQuery(RandomGenerator & rg, Stateme
 
         bexpr->set_op(BinaryOperator::BINOP_EQ);
         bexpr->mutable_rhs()->mutable_lit_val()->set_special_val(SpecialVal::VAL_TRUE);
-        gen.GenerateWherePredicate(rg, bexpr->mutable_lhs());
+        gen.generateWherePredicate(rg, bexpr->mutable_lhs());
     }
     if (combination != 0)
     {
-        gen.GenerateGroupBy(rg, 1, true, true, ssc->mutable_groupby());
+        gen.generateGroupBy(rg, 1, true, true, ssc->mutable_groupby());
     }
     gen.levels[gen.current_level].allow_aggregates = prev_allow_aggregates;
     gen.levels[gen.current_level].allow_window_funcs = prev_allow_window_funcs;
@@ -47,8 +47,8 @@ int QueryOracle::GenerateCorrectnessTestFirstQuery(RandomGenerator & rg, Stateme
     ssc->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func(
         FUNCcount);
     gen.levels.erase(gen.current_level);
-    gen.SetAllowNotDetermistic(true);
-    gen.EnforceFinal(false);
+    gen.setAllowNotDetermistic(true);
+    gen.enforceFinal(false);
 
     ts->set_format(OutFormat::OUT_CSV);
     sif->set_path(qfile.generic_string());
@@ -61,7 +61,7 @@ SELECT ifNull(SUM(PRED),0) FROM <FROM_CLAUSE>;
 or
 SELECT ifNull(SUM(PRED2),0) FROM <FROM_CLAUSE> WHERE <PRED1> GROUP BY <GROUP_BY CLAUSE>;
 */
-int QueryOracle::GenerateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & sq2)
+int QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & sq2)
 {
     const std::filesystem::path & qfile = fc.db_file_path / "query.data";
     TopSelect * ts = sq2.mutable_inner_query()->mutable_select();
@@ -99,7 +99,7 @@ int QueryOracle::GenerateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & s
 /*
 Dump and read table oracle
 */
-int QueryOracle::DumpTableContent(RandomGenerator & rg, const SQLTable & t, SQLQuery & sq1)
+int QueryOracle::dumpTableContent(RandomGenerator & rg, const SQLTable & t, SQLQuery & sq1)
 {
     bool first = true;
     const std::filesystem::path & qfile = fc.db_file_path / "query.data";
@@ -115,7 +115,7 @@ int QueryOracle::DumpTableContent(RandomGenerator & rg, const SQLTable & t, SQLQ
         est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
     }
     est->mutable_table()->set_table("t" + std::to_string(t.tname));
-    jt->set_final(t.SupportsFinal());
+    jt->set_final(t.supportsFinal());
     for (const auto & entry : t.cols)
     {
         if (entry.second.CanBeInserted())
@@ -125,10 +125,10 @@ int QueryOracle::DumpTableContent(RandomGenerator & rg, const SQLTable & t, SQLQ
 
             sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_col()->set_column(cname);
             eot->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_col()->set_column(cname);
-            if (rg.NextBool())
+            if (rg.nextBool())
             {
                 eot->set_asc_desc(
-                    rg.NextBool() ? ExprOrderingTerm_AscDesc::ExprOrderingTerm_AscDesc_ASC
+                    rg.nextBool() ? ExprOrderingTerm_AscDesc::ExprOrderingTerm_AscDesc_ASC
                                   : ExprOrderingTerm_AscDesc::ExprOrderingTerm_AscDesc_DESC);
             }
             first = false;
@@ -183,14 +183,14 @@ static const std::map<OutFormat, InFormat> out_in{
     //{OutFormat::OUT_RawBLOB, InFormat::IN_RawBLOB}, outputs as a single value
     {OutFormat::OUT_MsgPack, InFormat::IN_MsgPack}};
 
-int QueryOracle::GenerateExportQuery(RandomGenerator & rg, const SQLTable & t, SQLQuery & sq2)
+int QueryOracle::generateExportQuery(RandomGenerator & rg, const SQLTable & t, SQLQuery & sq2)
 {
     bool first = true;
     Insert * ins = sq2.mutable_inner_query()->mutable_insert();
     FileFunc * ff = ins->mutable_tfunction()->mutable_file();
     SelectStatementCore * sel = ins->mutable_select()->mutable_select_core();
     const std::filesystem::path & nfile = fc.db_file_path / "table.data";
-    OutFormat outf = rg.PickKeyRandomlyFromMap(out_in);
+    OutFormat outf = rg.pickKeyRandomlyFromMap(out_in);
 
     if (std::filesystem::exists(nfile))
     {
@@ -211,7 +211,7 @@ int QueryOracle::GenerateExportQuery(RandomGenerator & rg, const SQLTable & t, S
             }
             buf += cname;
             buf += " ";
-            entry.second.tp->TypeName(buf, true);
+            entry.second.tp->typeName(buf, true);
             if (entry.second.nullable.has_value())
             {
                 buf += entry.second.nullable.value() ? "" : " NOT";
@@ -228,9 +228,9 @@ int QueryOracle::GenerateExportQuery(RandomGenerator & rg, const SQLTable & t, S
     }
     ff->set_outformat(outf);
     ff->set_structure(buf);
-    if (rg.NextSmallNumber() < 4)
+    if (rg.nextSmallNumber() < 4)
     {
-        ff->set_fcomp(static_cast<FileCompression>((rg.NextRandomUInt32() % static_cast<uint32_t>(FileCompression_MAX)) + 1));
+        ff->set_fcomp(static_cast<FileCompression>((rg.nextRandomUInt32() % static_cast<uint32_t>(FileCompression_MAX)) + 1));
     }
 
     //Set the table on select
@@ -242,11 +242,11 @@ int QueryOracle::GenerateExportQuery(RandomGenerator & rg, const SQLTable & t, S
         est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
     }
     est->mutable_table()->set_table("t" + std::to_string(t.tname));
-    jt->set_final(t.SupportsFinal());
+    jt->set_final(t.supportsFinal());
     return 0;
 }
 
-int QueryOracle::GenerateClearQuery(const SQLTable & t, SQLQuery & sq3)
+int QueryOracle::generateClearQuery(const SQLTable & t, SQLQuery & sq3)
 {
     Truncate * trunc = sq3.mutable_inner_query()->mutable_trunc();
     ExprSchemaTable * est = trunc->mutable_est();
@@ -259,7 +259,7 @@ int QueryOracle::GenerateClearQuery(const SQLTable & t, SQLQuery & sq3)
     return 0;
 }
 
-int QueryOracle::GenerateImportQuery(const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4)
+int QueryOracle::generateImportQuery(const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4)
 {
     Insert * ins = sq4.mutable_inner_query()->mutable_insert();
     InsertIntoTable * iit = ins->mutable_itable();
@@ -462,21 +462,21 @@ static const std::vector<TestSetting> test_settings{
     TestSetting("use_uncompressed_cache", {"0", "1"}),
     TestSetting("use_variant_as_common_type", {"0", "1"})};
 
-int QueryOracle::GenerateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
+int QueryOracle::generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
 {
-    const uint32_t nsets = rg.NextBool() ? 1 : ((rg.NextSmallNumber() % 3) + 1);
+    const uint32_t nsets = rg.nextBool() ? 1 : ((rg.nextSmallNumber() % 3) + 1);
     SettingValues * sv = sq1.mutable_inner_query()->mutable_setting_values();
 
     nsettings.clear();
     for (uint32_t i = 0; i < nsets; i++)
     {
-        const TestSetting & ts = rg.PickRandomlyFromVector(test_settings);
+        const TestSetting & ts = rg.pickRandomlyFromVector(test_settings);
         SetValue * setv = i == 0 ? sv->mutable_set_value() : sv->add_other_values();
 
         setv->set_property(ts.tsetting);
         if (ts.options.size() == 2)
         {
-            if (rg.NextBool())
+            if (rg.nextBool())
             {
                 setv->set_value(*ts.options.begin());
                 nsettings.push_back(*std::next(ts.options.begin(), 1));
@@ -489,14 +489,14 @@ int QueryOracle::GenerateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
         }
         else
         {
-            setv->set_value(rg.PickRandomlyFromSet(ts.options));
-            nsettings.push_back(rg.PickRandomlyFromSet(ts.options));
+            setv->set_value(rg.pickRandomlyFromSet(ts.options));
+            nsettings.push_back(rg.pickRandomlyFromSet(ts.options));
         }
     }
     return 0;
 }
 
-int QueryOracle::GenerateSecondSetting(const SQLQuery & sq1, SQLQuery & sq3)
+int QueryOracle::generateSecondSetting(const SQLQuery & sq1, SQLQuery & sq3)
 {
     const SettingValues & osv = sq1.inner_query().setting_values();
     SettingValues * sv = sq3.mutable_inner_query()->mutable_setting_values();
@@ -512,15 +512,15 @@ int QueryOracle::GenerateSecondSetting(const SQLQuery & sq1, SQLQuery & sq3)
     return 0;
 }
 
-int QueryOracle::GenerateSettingQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq2)
+int QueryOracle::generateSettingQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq2)
 {
     const std::filesystem::path & qfile = fc.db_file_path / "query.data";
     TopSelect * ts = sq2.mutable_inner_query()->mutable_select();
     SelectIntoFile * sif = ts->mutable_intofile();
 
-    gen.SetAllowNotDetermistic(false);
-    gen.GenerateTopSelect(rg, std::numeric_limits<uint32_t>::max(), ts);
-    gen.SetAllowNotDetermistic(true);
+    gen.setAllowNotDetermistic(false);
+    gen.generateTopSelect(rg, std::numeric_limits<uint32_t>::max(), ts);
+    gen.setAllowNotDetermistic(true);
 
     Select * osel = ts->release_sel();
     SelectStatementCore * nsel = ts->mutable_sel()->mutable_select_core();
@@ -532,7 +532,7 @@ int QueryOracle::GenerateSettingQuery(RandomGenerator & rg, StatementGenerator &
     return 0;
 }
 
-int QueryOracle::ProcessOracleQueryResult(const bool first, const bool success, const std::string & oracle_name)
+int QueryOracle::processOracleQueryResult(const bool first, const bool success, const std::string & oracle_name)
 {
     bool & res = first ? first_success : second_sucess;
 
