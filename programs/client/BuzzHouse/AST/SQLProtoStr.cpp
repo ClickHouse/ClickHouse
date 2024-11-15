@@ -2147,10 +2147,6 @@ CONV_FN(SelectStatementCore, ssc)
         ret += " ";
         GroupByStatementToString(ret, ssc.groupby());
     }
-    /*if (ssc.has_window()) {
-ret += WindowStatementToString(ssc.window());
-ret += " ";
-}*/
     if (ssc.has_orderby())
     {
         ret += " ";

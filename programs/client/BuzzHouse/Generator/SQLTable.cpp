@@ -481,9 +481,6 @@ int StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b,
             const uint32_t first_optional_value = rg.nextBool() ? 1 : 0;
 
             te->add_params()->set_num(first_optional_value);
-            /*if (b.isMySQLEngine() && !first_optional_value && rg.nextBool()) {
-                te->add_params()->set_svalue(rg.nextBool() ? "replace_query" : "on_duplicate_clause");
-            }*/
         }
 
         connections.createExternalDatabaseTable(

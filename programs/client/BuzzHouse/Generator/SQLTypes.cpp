@@ -460,27 +460,7 @@ const SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint3
                 }
                 desc += "max_dynamic_types=";
                 desc += std::to_string(max_dtypes);
-            } /*else if (this->depth >= this->fc.max_depth || noption < 9) {
-                const uint32_t nskips = (rg.nextMediumNumber() % 4) + 1;
-                ColumnPath *cp = tp ? jdi->mutable_skip_path() : nullptr;
-
-                desc += "SKIP ";
-                for (uint32_t j = 0 ; j < nskips; j++) {
-                    std::string nbuf;
-                    Column *col = tp ? (j == 0 ? cp->mutable_col() : cp->add_sub_cols()) : nullptr;
-
-                    if (j != 0) {
-                        desc += ".";
-                    }
-                    desc += '`';
-                    rg.nextJSONCol(nbuf);
-                    desc += nbuf;
-                    desc += '`';
-                    if (tp) {
-                        col->set_column(std::move(nbuf));
-                    }
-                }
-            }*/
+            }
             else
             {
                 uint32_t col_counter = 0;
