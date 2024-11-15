@@ -21,10 +21,8 @@ private:
     void writeProgress();
 
     Progress progress;
-    std::vector<String> progress_lines;
-    std::mutex progress_lines_mutex;
-    /// To not lock mutex and check progress_lines every row,
-    /// we will use atomic flag that progress_lines is not empty.
+    std::mutex progress_mutex;
+    std::unique_lock<std::mutex> progress_lock{progress_mutex, std::defer_lock};
     std::atomic_bool has_progress = false;
 };
 
