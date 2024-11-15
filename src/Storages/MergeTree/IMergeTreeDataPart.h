@@ -373,8 +373,8 @@ public:
     int32_t metadata_version;
 
     IndexPtr getIndex() const;
-    void setIndex(const Columns & cols_);
-    void setIndex(Columns && cols_);
+    void setIndex(const Columns & raw_columns);
+    void setIndex(Columns && raw_columns);
     void unloadIndex();
     bool isIndexLoaded() const;
 

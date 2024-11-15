@@ -699,7 +699,7 @@ Pipe ReadFromMergeTree::readInOrder(
             for (size_t j = 0; j < num_columns; ++j)
             {
                 auto column = primary_key.data_types[j]->createColumn()->cloneEmpty();
-                column->insert((*(*index)[j])[mark_range_begin]);
+                column->insert(index->get(j, mark_range_begin));
                 pk_columns.push_back({std::move(column), primary_key.data_types[j], primary_key.column_names[j]});
             }
 

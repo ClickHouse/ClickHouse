@@ -1081,6 +1081,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     {
         Columns raw_index_columns;
         index = part->getIndex();
+        is_index_compressed = index->isCompressed();
 
         if (!is_index_compressed)
         {
