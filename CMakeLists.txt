@@ -157,7 +157,7 @@ endif()
 no_warning(enum-constexpr-conversion) # breaks Protobuf in clang-16
 
 option(ENABLE_TESTS "Provide unit_test_dbms target with Google.Test unit tests" ON)
-option(ENABLE_EXAMPLES "Build all example programs in 'examples' subdirectories" OFF)
+option(ENABLE_EXAMPLES "Build all example programs in 'examples' subdirectories" ON)
 option(ENABLE_BENCHMARKS "Build all benchmark programs in 'benchmarks' subdirectories" OFF)
 
 if (OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64) AND NOT USE_MUSL)
