@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 CREATE TABLE counters (value UInt64) ENGINE = MergeTree() ORDER BY value;
 
 INSERT INTO counters SELECT sum(value) FROM system.errors WHERE name = 'ILLEGAL_TYPE_OF_ARGUMENT';
