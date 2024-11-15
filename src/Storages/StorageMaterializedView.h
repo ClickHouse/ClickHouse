@@ -67,6 +67,7 @@ public:
 
     void renameInMemory(const StorageID & new_table_id) override;
 
+    void pushDependencies() override;
     void startup() override;
     void shutdown(bool is_drop) override;
 
@@ -115,6 +116,8 @@ private:
     /// If false, inner table is replaced on each refresh. In that case, target_table_id doesn't
     /// have UUID, and we do inner table lookup by name instead.
     bool fixed_uuid = true;
+
+    bool dependencies_are_tracked = false;
 
     friend class RefreshTask;
 
