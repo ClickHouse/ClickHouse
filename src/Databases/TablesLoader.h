@@ -44,6 +44,7 @@ struct ParsedTablesMetadata
 
     /// For logging
     size_t total_dictionaries = 0;
+    size_t total_materialized_views = 0;
 };
 
 /// Loads tables (and dictionaries) from specified databases

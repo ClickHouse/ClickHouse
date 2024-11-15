@@ -242,3 +242,24 @@ def test_async_load_system_database(started_cluster):
     for i in range(id - 1):
         node2.query(f"drop table if exists system.text_log_{i + 1}_test")
         node2.query(f"drop table if exists system.query_log_{i + 1}_test")
+
+def test_materialzed_views(started_cluster):
+    query = instance.query
+    query("create database test_mv")
+    query("create table test_mv.t (Id UInt64) engine=MergeTree order by Id")
+    query("create table test_mv.a (Id UInt64) engine=MergeTree order by Id")
+    query("create table test_mv.z (Id UInt64) engine=MergeTree order by Id")
+    query("create materialized view t_to_a to test_mv.a as select Id from test_mv.t")
+    query("create materialized view t_to_z to test_mv.z as select Id from test_mv.t")
+
+    instance.restart_clickhouse()
+    query("insert into test_mv.t values(42)")
+    assert query("select * from test_mv.a Format CSV") == "42\n"
+    assert query("select * from test_mv.z Format CSV") == "42\n"
+
+    query("drop materialized view t_to_a")
+    query("drop materialized view t_to_z")
+    query("drop table test_mv.t")
+    query("drop table test_mv.a")
+    query("drop table test_mv.z")
+    query("drop database test_mv")
