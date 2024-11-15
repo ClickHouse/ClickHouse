@@ -1679,10 +1679,8 @@ message LiteralValue {
         bytes string_lit = 3;
         bytes hex_string = 4;
         bytes heredoc = 5;
-        int64 jvalue = 6;
-        int64 jstr = 7;
-        SpecialVal special_val = 8;
-        string no_quote_str = 9;
+        SpecialVal special_val = 6;
+        string no_quote_str = 7;
     }
 }
 

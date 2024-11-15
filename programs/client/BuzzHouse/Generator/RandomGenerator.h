@@ -9,6 +9,9 @@
 #include <string>
 #include <tuple>
 
+#include <pcg_random.hpp>
+#include <Common/randomSeed.h>
+
 namespace BuzzHouse
 {
 
@@ -99,7 +102,7 @@ private:
     const std::vector<std::string> jcols{"c0", "c1", "c0.c1", "😆", "😉😉"};
 
 public:
-    std::mt19937_64 generator;
+    pcg64_fast generator;
 
     RandomGenerator(const uint32_t in_seed)
         : ints8(std::numeric_limits<int8_t>::min(), std::numeric_limits<int8_t>::max())
@@ -123,9 +126,8 @@ public:
         , ints64(std::numeric_limits<int64_t>::min(), std::numeric_limits<int64_t>::max())
         , uints64(std::numeric_limits<uint64_t>::min(), std::numeric_limits<uint64_t>::max())
         , zero_one(0, 1)
+        , generator(in_seed ? in_seed : randomSeed())
     {
-        seed = in_seed ? in_seed : std::random_device{}();
-        generator.seed(seed);
     }
 
     uint32_t getSeed() const { return seed; }
