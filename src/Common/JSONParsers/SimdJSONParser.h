@@ -3,6 +3,7 @@
 #include "config.h"
 
 #if USE_SIMDJSON
+#    include <Common/logger_useful.h>
 #    include <base/types.h>
 #    include <Common/Exception.h>
 #    include <base/defines.h>
@@ -18,7 +19,18 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_ALLOCATE_MEMORY;
+    extern const int JSON_PARSE_ERROR;
 }
+
+#define SIMDJSON_ASSIGN_OR_THROW_IMPL(_result, _lhs, _rexpr) \
+    auto && _result = (_rexpr);                               \
+    if (_result.error() != ::simdjson::SUCCESS)                \
+        throw DB::ErrnoException(ErrorCodes::JSON_PARSE_ERROR, "simdjson error: {}", std::string(::simdjson::error_message(_result.error()))); \
+    _lhs = std::move(_result).value_unsafe()
+
+#define SIMDJSON_ASSIGN_OR_THROW(_lhs, _rexpr) \
+    SIMDJSON_ASSIGN_OR_THROW_IMPL(               \
+        DB_ANONYMOUS_VARIABLE(_simdjson_sesult), _lhs, _rexpr)
 
 /// Format elements of basic types into string.
 /// The original implementation is mini_formatter in simdjson.h. But it is not public API, so we
@@ -264,13 +276,93 @@ public:
         format.key(kv.key);
         append(kv.value);
     }
+
+    void append(simdjson::ondemand::value value)
+    {
+        switch (value.type())
+        {
+            case simdjson::ondemand::json_type::array:
+                append(value.get_array());
+                break;
+            case simdjson::ondemand::json_type::object:
+                append(value.get_object());
+                break;
+            case simdjson::ondemand::json_type::number:
+            {
+
+                simdjson::ondemand::number_type nt{};
+                auto res = value.get_number_type().get(nt);
+                chassert(res == simdjson::SUCCESS);
+                switch(nt)
+                {
+                    case simdjson::ondemand::number_type::signed_integer:
+                        format.number(value.get_int64().value_unsafe());
+                        break;
+                    case simdjson::ondemand::number_type::unsigned_integer:
+                        format.number(value.get_uint64().value_unsafe());
+                        break;
+                    case simdjson::ondemand::number_type::floating_point_number:
+                        format.number(value.get_double().value_unsafe());
+                        break;
+                    case simdjson::ondemand::number_type::big_integer:
+                        format.string(value.get_string().value_unsafe());
+                        break;
+                }
+                break;
+            }
+            case simdjson::ondemand::json_type::string:
+                format.string(value.get_string().value_unsafe());
+                break;
+            case simdjson::ondemand::json_type::boolean:
+                if (value.get_bool().value_unsafe())
+                    format.trueAtom();
+                else
+                    format.falseAtom();
+                break;
+            case simdjson::ondemand::json_type::null:
+                format.nullAtom();
+                break;
+        }
+    }
+
+    void append(simdjson::ondemand::array array)
+    {
+        format.startArray();
+        int i = 0;
+        for (simdjson::ondemand::value value : array)
+        {
+            if (i++ != 0)
+                format.comma();
+            append(value);
+        }
+        format.endArray();
+    }
+
+    void append(simdjson::ondemand::object object)
+    {
+        format.startObject();
+        int i = 0;
+        for (simdjson::ondemand::field field : object)
+        {
+            if (i++ != 0)
+                format.comma();
+            append(field);
+        }
+        format.endObject();
+    }
+
+    void append(simdjson::ondemand::field field)
+    {
+        format.key(field.unescaped_key());
+        append(field.value());
+    }
 private:
     SimdJSONBasicFormatter format;
 };
 
 /// This class can be used as an argument for the template class FunctionJSON.
 /// It provides ability to parse JSONs using simdjson library.
-struct SimdJSONParser
+struct DomSimdJSONParser
 {
     class Array;
     class Object;
@@ -419,15 +511,214 @@ private:
     simdjson::dom::parser parser;
 };
 
-inline ALWAYS_INLINE SimdJSONParser::Array SimdJSONParser::Element::getArray() const
+inline ALWAYS_INLINE DomSimdJSONParser::Array DomSimdJSONParser::Element::getArray() const
 {
     return element.get_array().value_unsafe();
 }
 
-inline ALWAYS_INLINE SimdJSONParser::Object SimdJSONParser::Element::getObject() const
+inline ALWAYS_INLINE DomSimdJSONParser::Object DomSimdJSONParser::Element::getObject() const
 {
     return element.get_object().value_unsafe();
 }
+
+struct OnDemandSimdJSONParser
+{
+    class Array;
+    class Object;
+
+    /// References an element in a JSON document, representing a JSON null, boolean, string, number,
+    /// array or object.
+    class Element
+    {
+    public:
+        ALWAYS_INLINE Element() {} /// NOLINT
+        ALWAYS_INLINE Element(simdjson::ondemand::value && value_) { value = std::move(value_); }
+        ALWAYS_INLINE Element & operator=(const simdjson::ondemand::value & value_) { value = value_; return *this; }
+
+        ALWAYS_INLINE ElementType type() const
+        {
+            if (value.type() == simdjson::ondemand::json_type::object)
+                return ElementType::OBJECT;
+            if (value.type() == simdjson::ondemand::json_type::array)
+                return ElementType::ARRAY;
+            if (value.type() == simdjson::ondemand::json_type::boolean)
+                return ElementType::BOOL;
+            if (value.type() == simdjson::ondemand::json_type::string)
+                return ElementType::STRING;
+            if (value.type() == simdjson::ondemand::json_type::number)
+            {
+                auto res = value.get_number_type();
+                if (res.error())
+                    return ElementType::NULL_VALUE;
+                if (res.value() == simdjson::ondemand::number_type::signed_integer)
+                    return ElementType::INT64;
+                if (res.value() == simdjson::ondemand::number_type::unsigned_integer)
+                    return ElementType::UINT64;
+                if (res.value() == simdjson::ondemand::number_type::floating_point_number)
+                    return ElementType::DOUBLE;
+            }
+            return ElementType::NULL_VALUE;
+        }
+
+        ALWAYS_INLINE bool isInt64() const { auto res = value.get_number_type(); return !res.error() && res.value() == simdjson::ondemand::number_type::signed_integer; }
+        ALWAYS_INLINE bool isUInt64() const { auto res = value.get_number_type(); return !res.error() && res.value() == simdjson::ondemand::number_type::unsigned_integer; }
+        ALWAYS_INLINE bool isDouble() const { auto res = value.get_number_type(); return !res.error() && res.value() == simdjson::ondemand::number_type::floating_point_number; }
+        ALWAYS_INLINE bool isString() const { auto r = value.type(); return !r.error() && r.value() == simdjson::ondemand::json_type::string; }
+        ALWAYS_INLINE bool isArray() const
+        {
+            auto r = value.type();
+            return !r.error() && r.value() == simdjson::ondemand::json_type::array;
+        }
+        ALWAYS_INLINE bool isObject() const
+        {
+            auto r = value.type();
+            return !r.error() && r.value() == simdjson::ondemand::json_type::object;
+        }
+        ALWAYS_INLINE bool isBool() const { return value.type() == simdjson::ondemand::json_type::boolean; }
+        ALWAYS_INLINE bool isNull() const { return value.type() == simdjson::ondemand::json_type::null; }
+
+        ALWAYS_INLINE Int64 getInt64() const { return value.get_int64().value(); }
+        ALWAYS_INLINE UInt64 getUInt64() const { return value.get_uint64().value(); }
+        ALWAYS_INLINE double getDouble() const { return value.get_double().value(); }
+        ALWAYS_INLINE bool getBool() const { return value.get_bool().value(); }
+        ALWAYS_INLINE std::string_view getString() const
+        {
+            auto r = value.get_string();
+            if (r.error())
+                return {};
+            return r.value();
+        }
+        ALWAYS_INLINE Array getArray() const
+        {
+            return value.get_array().value();
+        }
+        ALWAYS_INLINE Object getObject() const
+        {
+            return value.get_object().value();
+        }
+
+        ALWAYS_INLINE simdjson::ondemand::value getElement() const { return value; }
+
+    private:
+        mutable simdjson::ondemand::value value;
+    };
+
+    /// References an array in a JSON document.
+    class Array
+    {
+    public:
+        class Iterator
+        {
+        public:
+            ALWAYS_INLINE Iterator(const simdjson::ondemand::array_iterator & it_) : it(it_) {} /// NOLINT
+            ALWAYS_INLINE Element operator*() const { return (*it).value(); }
+            ALWAYS_INLINE Iterator & operator++() { ++it; return *this; }
+            ALWAYS_INLINE friend bool operator!=(const Iterator & left, const Iterator & right) { return left.it != right.it; }
+            ALWAYS_INLINE friend bool operator==(const Iterator & left, const Iterator & right) { return !(left != right); }
+        private:
+            mutable simdjson::ondemand::array_iterator it;
+        };
+
+        ALWAYS_INLINE Array(const simdjson::ondemand::array & array_) : array(array_) {} /// NOLINT
+        ALWAYS_INLINE Iterator begin() const { return array.begin().value(); }
+        ALWAYS_INLINE Iterator end() const { return array.end().value(); }
+        ALWAYS_INLINE size_t size() const { return array.count_elements().value(); }
+        ALWAYS_INLINE Element operator[](size_t index) const { return array.at(index).value(); }
+
+    private:
+        mutable simdjson::ondemand::array array;
+    };
+
+    using KeyValuePair = std::pair<std::string_view, Element>;
+
+    /// References an object in a JSON document.
+    class Object
+    {
+    public:
+        class Iterator
+        {
+        public:
+            ALWAYS_INLINE Iterator(const simdjson::ondemand::object_iterator & it_) : it(it_) {} /// NOLINT
+
+            ALWAYS_INLINE KeyValuePair operator*() const
+            {
+                SIMDJSON_ASSIGN_OR_THROW(auto field_wrapper, *it);
+                SIMDJSON_ASSIGN_OR_THROW(std::string_view key, field_wrapper.unescaped_key());
+                ::simdjson::ondemand::value v = field_wrapper.value();
+                return {key, Element(std::move(v))};
+            }
+
+            ALWAYS_INLINE Iterator & operator++() { ++it; return *this; }
+            ALWAYS_INLINE friend bool operator!=(const Iterator & left, const Iterator & right) { return left.it != right.it; }
+            ALWAYS_INLINE friend bool operator==(const Iterator & left, const Iterator & right) { return !(left != right); }
+        private:
+            mutable simdjson::ondemand::object_iterator it;
+        };
+
+        ALWAYS_INLINE Object(const simdjson::ondemand::object & object_) : object(object_) {} /// NOLINT
+        ALWAYS_INLINE Iterator begin() const { return object.begin().value(); }
+        ALWAYS_INLINE Iterator end() const { return object.end().value(); }
+        ///NOTE: call size() before iterate
+        ALWAYS_INLINE size_t size() const
+        {
+            return object.count_fields().value();
+        }
+
+        bool find(std::string_view key, Element & result) const
+        {
+            auto x = object.find_field_unordered(key);
+            if (x.error())
+                return false;
+
+            result = x.value_unsafe();
+            return true;
+        }
+
+        /// Optional: Provides access to an object's element by index.
+        KeyValuePair operator[](size_t index) const
+        {
+            ///SIMDJSON_ASSIGN_OR_THROW(auto b, object.reset());
+            ///(void)b;
+            SIMDJSON_ASSIGN_OR_THROW(auto it, object.begin());
+            while (index--)
+            {
+                (void)*(it); /// NEED TO DO THIS TO ITERATE
+                ++it;
+            }
+            SIMDJSON_ASSIGN_OR_THROW(auto field, *it);
+            std::string_view key = field.unescaped_key().value();
+            simdjson::ondemand::value value = field.value();
+            return {key, Element(std::move(value))};
+        }
+
+    private:
+        mutable simdjson::ondemand::object object;
+    };
+
+    /// Parses a JSON document, returns the reference to its root element if succeeded.
+    bool parse(std::string_view json, Element & result)
+    {
+        padstr = json;
+        auto res = parser.iterate(padstr);
+        if (res.error())
+            return false;
+
+        document = std::move(res.value());
+        auto v = document.get_value();
+        if (v.error())
+            return false;
+
+        result = v.value();
+        return true;
+    }
+
+private:
+    simdjson::ondemand::parser parser;
+    simdjson::ondemand::document document{};
+    simdjson::padded_string padstr;
+};
+
+using SimdJSONParser = OnDemandSimdJSONParser;
 
 }
 

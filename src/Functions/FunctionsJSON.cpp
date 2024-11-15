@@ -273,12 +273,13 @@ private:
         if (element.isArray())
         {
             auto array = element.getArray();
+            size_t array_size = array.size();
             if (index >= 0)
                 --index;
             else
-                index += array.size();
+                index += array_size;
 
-            if (static_cast<size_t>(index) >= array.size())
+            if (static_cast<size_t>(index) >= array_size)
                 return false;
             element = array[index];
             out_key = {};
@@ -290,12 +291,13 @@ private:
             if (element.isObject())
             {
                 auto object = element.getObject();
+                size_t object_size = object.size();
                 if (index >= 0)
                     --index;
                 else
-                    index += object.size();
+                    index += object_size;
 
-                if (static_cast<size_t>(index) >= object.size())
+                if (static_cast<size_t>(index) >= object_size)
                     return false;
                 std::tie(out_key, element) = object[index];
                 return true;
@@ -621,7 +623,7 @@ public:
 
     static bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view, const FormatSettings &, String &)
     {
-        size_t size;
+        size_t size{};
         if (element.isArray())
             size = element.getArray().size();
         else if (element.isObject())
@@ -984,10 +986,13 @@ public:
         auto array = element.getArray();
         ColumnArray & col_res = assert_cast<ColumnArray &>(dest);
 
+        size_t size = 0;
         for (auto value : array)
+        {
+            ++size;
             JSONExtractRawImpl<JSONParser>::insertResultToColumn(col_res.getData(), value, {}, format_settings, error);
-
-        col_res.getOffsets().push_back(col_res.getOffsets().back() + array.size());
+        }
+        col_res.getOffsets().push_back(col_res.getOffsets().back() + size);
         return true;
     }
 };
@@ -1020,13 +1025,15 @@ public:
         auto & col_key = assert_cast<ColumnString &>(col_tuple.getColumn(0));
         auto & col_value = assert_cast<ColumnString &>(col_tuple.getColumn(1));
 
+        size_t size = 0;
         for (const auto & [key, value] : object)
         {
             col_key.insertData(key.data(), key.size());
             JSONExtractRawImpl<JSONParser>::insertResultToColumn(col_value, value, {}, format_settings, error);
+            ++size;
         }
 
-        col_arr.getOffsets().push_back(col_arr.getOffsets().back() + object.size());
+        col_arr.getOffsets().push_back(col_arr.getOffsets().back() + size);
         return true;
     }
 };
@@ -1054,12 +1061,14 @@ public:
         ColumnArray & col_res = assert_cast<ColumnArray &>(dest);
         auto & col_key = assert_cast<ColumnString &>(col_res.getData());
 
+        size_t count = 0;
         for (const auto & [key, value] : object)
         {
+            ++count;
             col_key.insertData(key.data(), key.size());
         }
 
-        col_res.getOffsets().push_back(col_res.getOffsets().back() + object.size());
+        col_res.getOffsets().push_back(col_res.getOffsets().back() + count);
         return true;
     }
 };

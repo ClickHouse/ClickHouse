@@ -1210,9 +1210,9 @@ public:
             auto array = element.getArray();
             auto it = array.begin();
 
-            for (size_t index = 0; (index != nested.size()) && (it != array.end()); ++index)
+            for (size_t index = 0; (index != nested.size()) && (it != array.end()); ++index, ++it)
             {
-                if (nested[index]->insertResultToColumn(tuple.getColumn(index), *it++, insert_settings, format_settings, error))
+                if (nested[index]->insertResultToColumn(tuple.getColumn(index), *it, insert_settings, format_settings, error))
                 {
                     were_valid_elements = true;
                 }
@@ -1238,9 +1238,9 @@ public:
             if (name_to_index_map.empty())
             {
                 auto it = object.begin();
-                for (size_t index = 0; (index != nested.size()) && (it != object.end()); ++index)
+                for (size_t index = 0; (index != nested.size()) && (it != object.end()); ++index, ++it)
                 {
-                    if (nested[index]->insertResultToColumn(tuple.getColumn(index), (*it++).second, insert_settings, format_settings, error))
+                    if (nested[index]->insertResultToColumn(tuple.getColumn(index), (*it).second, insert_settings, format_settings, error))
                     {
                         were_valid_elements = true;
                     }
@@ -1315,18 +1315,18 @@ public:
             error = fmt::format("cannot read Map value from JSON element: {}", jsonElementToString<JSONParser>(element, format_settings));
             return false;
         }
-
         auto & map_col = assert_cast<ColumnMap &>(column);
         auto & offsets = map_col.getNestedColumn().getOffsets();
         auto & tuple_col = map_col.getNestedData();
         auto & key_col = tuple_col.getColumn(0);
         auto & value_col = tuple_col.getColumn(1);
         size_t old_size = tuple_col.size();
-
         auto object = element.getObject();
         auto it = object.begin();
+        size_t object_size{};
         for (; it != object.end(); ++it)
         {
+            ++object_size;
             auto pair = *it;
 
             /// Insert key
@@ -1349,7 +1349,7 @@ public:
             }
         }
 
-        offsets.push_back(old_size + object.size());
+        offsets.push_back(old_size + object_size);
         return true;
     }
 
