@@ -583,7 +583,7 @@ struct CallPointInPolygon<Type, Types ...>
     template <typename PointInPolygonImpl>
     static ColumnPtr call(const IColumn & x, const IColumn & y, PointInPolygonImpl && impl)
     {
-        using Impl = TypeListChangeRoot<CallPointInPolygon, TypeListIntAndFloat>;
+        using Impl = TypeListChangeRoot<CallPointInPolygon, TypeListNativeNumber>;
         if (auto column = typeid_cast<const ColumnVector<Type> *>(&x))
             return Impl::template call<Type>(*column, y, impl);
         return CallPointInPolygon<Types ...>::call(x, y, impl);
@@ -609,7 +609,7 @@ struct CallPointInPolygon<>
 template <typename PointInPolygonImpl>
 NO_INLINE ColumnPtr pointInPolygon(const IColumn & x, const IColumn & y, PointInPolygonImpl && impl)
 {
-    using Impl = TypeListChangeRoot<CallPointInPolygon, TypeListIntAndFloat>;
+    using Impl = TypeListChangeRoot<CallPointInPolygon, TypeListNativeNumber>;
     return Impl::call(x, y, impl);
 }
 

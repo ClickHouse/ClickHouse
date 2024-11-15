@@ -541,7 +541,7 @@ namespace
 
                 case FieldTypeId::TYPE_ENUM:
                 {
-                    if (std::is_floating_point_v<NumberType>)
+                    if (is_floating_point<NumberType>)
                         incompatibleColumnType(TypeName<NumberType>);
 
                     write_function = [this](NumberType value)
