@@ -343,7 +343,7 @@ int mainEntryClickHouseServer(int argc, char ** argv)
     {
         std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
         auto code = DB::getCurrentExceptionCode();
-        return code ? code : 1;
+        return static_cast<UInt8>(code) ? code : 1;
     }
 }
 
@@ -1353,9 +1353,11 @@ try
     }
 
     FailPointInjection::enableFromGlobalConfig(config());
+#endif
 
     memory_worker.start();
 
+#if defined(OS_LINUX)
     int default_oom_score = 0;
 
 #if !defined(NDEBUG)
@@ -2341,6 +2343,7 @@ try
 
 #if USE_SSL
         CertificateReloader::instance().tryLoad(config());
+        CertificateReloader::instance().tryLoadClient(config());
 #endif
 
         /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
@@ -2534,7 +2537,7 @@ catch (...)
     /// Poco does not provide stacktrace.
     tryLogCurrentException("Application");
     auto code = getCurrentExceptionCode();
-    return code ? code : -1;
+    return static_cast<UInt8>(code) ? code : -1;
 }
 
 std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
