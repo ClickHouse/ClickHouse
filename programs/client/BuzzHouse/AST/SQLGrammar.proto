@@ -1631,8 +1631,9 @@ enum Integers {
 }
 
 enum FloatingPoints {
-    Float32 = 1;
-    Float64 = 2;
+    BFloat16 = 1;
+    Float32 = 2;
+    Float64 = 3;
 }
 
 enum Dates {

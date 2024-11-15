@@ -202,8 +202,8 @@ std::tuple<const SQLType *, Integers> StatementGenerator::RandomIntType(RandomGe
 
 std::tuple<const SQLType *, FloatingPoints> StatementGenerator::RandomFloatType(RandomGenerator & rg)
 {
-    const bool use32 = rg.NextBool();
-    return std::make_tuple(new FloatType(use32 ? 32 : 64), use32 ? FloatingPoints::Float32 : FloatingPoints::Float64);
+    const uint32_t nopt = (rg.NextSmallNumber() % 3) + 1; //1 to 3
+    return std::make_tuple(new FloatType(1 << (nopt + 3)), static_cast<FloatingPoints>(nopt));
 }
 
 std::tuple<const SQLType *, Dates> StatementGenerator::RandomDateType(RandomGenerator & rg, const uint32_t allowed_types)

@@ -136,6 +136,10 @@ public:
     void TypeName(std::string & ret, const bool escape) const override
     {
         (void)escape;
+        if (size == 16)
+        {
+            ret += "B";
+        }
         ret += "Float";
         ret += std::to_string(size);
     }
