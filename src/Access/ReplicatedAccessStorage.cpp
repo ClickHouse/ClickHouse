@@ -287,7 +287,7 @@ bool ReplicatedAccessStorage::removeImpl(const UUID & id, bool throw_if_not_exis
 }
 
 
-bool ReplicatedAccessStorage::removeZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id, bool throw_if_not_exists)
+bool ReplicatedAccessStorage::removeZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id, const bool throw_if_not_exists)
 {
     const String entity_uuid = toString(id);
     const String entity_path = zookeeper_path + "/uuid/" + entity_uuid;
@@ -310,9 +310,22 @@ bool ReplicatedAccessStorage::removeZooKeeper(const zkutil::ZooKeeperPtr & zooke
 
     const String entity_name_path = zookeeper_path + "/" + type_info.unique_char + "/" + escapeForFileName(name);
 
+    String entity_name_definition;
+    Coordination::Stat entity_name_stat;
+    const bool entity_name_exists = zookeeper->tryGet(entity_name_path, entity_name_definition, &entity_name_stat);
+
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeRemoveRequest(entity_path, entity_stat.version));
-    ops.emplace_back(zkutil::makeRemoveRequest(entity_name_path, -1));
+    if (entity_name_exists)
+    {
+        ops.emplace_back(zkutil::makeRemoveRequest(entity_name_path, entity_name_stat.version));
+    }
+    else
+    {
+        LOG_WARNING(
+            getLogger(),
+            "Although uuid entity was founded, name entity doesn't exist. Data partially removed. Need to remove uuid entity.");
+    }
 
     /// If this fails, then we'll just retry from the start.
     zookeeper->multi(ops);

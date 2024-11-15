@@ -175,6 +175,39 @@ def test_rename_replicated(started_cluster, entity):
     node1.query(f"DROP {entity.keyword} {entity.name}2 {entity.options}")
 
 
+def test_create_broken_and_delete_replicated(started_cluster):
+    def name_user_zk_path(name: str) -> str:
+        return f"/clickhouse/access/U/{name}/"
+    
+    def uuid_user_zk_path(uuid: str) -> str:
+        return f"/clickhouse/access/uuid/{uuid}/"
+    
+    zk = cluster.get_kazoo_client("zoo1")
+    
+    user_name = "theuser_drop_name"
+    node1.query(f"CREATE USER {user_name}")
+    uuid = node1.query(f"SELECT id FROM system.users WHERE name='{user_name}' AND storage='replicated'").strip()
+    name_zk_path = name_user_zk_path(user_name)
+    uuid_zk_path = uuid_user_zk_path(uuid)
+    assert zk.exists(name_zk_path)
+    assert zk.exists(uuid_zk_path)
+    zk.delete(name_zk_path)
+    node1.query_with_retry(f"DROP USER {user_name}")
+    assert not zk.exists(name_zk_path)
+    assert not zk.exists(uuid_zk_path)
+
+    user_name = "theuser_drop_uuid"
+    node1.query(f"CREATE USER {user_name}")
+    uuid = node1.query(f"SELECT id FROM system.users WHERE name='{user_name}' AND storage='replicated'").strip()
+    name_zk_path = name_user_zk_path(user_name)
+    uuid_zk_path = uuid_user_zk_path(uuid)
+    assert zk.exists(name_zk_path)
+    assert zk.exists(uuid_zk_path)
+    zk.delete(uuid_zk_path)
+    assert f"There is no user `{user_name}` in user directories" in node1.query_and_get_error(f"DROP USER {user_name}")
+    assert zk.exists(name_zk_path)
+
+
 # ReplicatedAccessStorage must be able to continue working after reloading ZooKeeper.
 def test_reload_zookeeper(started_cluster):
     node1.query("CREATE USER u1")
