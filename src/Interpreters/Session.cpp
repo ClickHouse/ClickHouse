@@ -383,13 +383,15 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
 
 void Session::checkIfUserIsStillValid()
 {
-    if (const auto valid_until = user_authenticated_with.getValidUntil())
-    {
-        const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
+    if (const auto not_before = user_authenticated_with.getNotBefore())
+        if (now < not_before)
+            throw Exception(ErrorCodes::USER_EXPIRED, "Authentication method used has TODO");
+
+    if (const auto valid_until = user_authenticated_with.getValidUntil())
         if (now > valid_until)
             throw Exception(ErrorCodes::USER_EXPIRED, "Authentication method used has expired");
-    }
 }
 
 void Session::onAuthenticationFailure(const std::optional<String> & user_name, const Poco::Net::SocketAddress & address_, const Exception & e)

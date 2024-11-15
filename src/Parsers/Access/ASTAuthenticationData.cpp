@@ -21,6 +21,12 @@ namespace
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " VALID UNTIL " << (settings.hilite ? IAST::hilite_none : "");
         valid_until.format(settings);
     }
+
+    void formatNotBefore(const IAST & not_before, const IAST::FormatSettings & settings)
+    {
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " NOT BEFORE " << (settings.hilite ? IAST::hilite_none : "");
+        not_before.format(settings);
+    }
 }
 
 std::optional<String> ASTAuthenticationData::getPassword() const
@@ -57,9 +63,10 @@ void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatSt
                       << (settings.hilite ? IAST::hilite_none : "");
 
         if (valid_until)
-        {
             formatValidUntil(*valid_until, settings);
-        }
+
+        if (not_before)
+            formatNotBefore(*not_before, settings);
 
         return;
     }
@@ -221,9 +228,10 @@ void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatSt
     }
 
     if (valid_until)
-    {
         formatValidUntil(*valid_until, settings);
-    }
+
+    if (not_before)
+        formatNotBefore(*not_before, settings);
 
 }
 

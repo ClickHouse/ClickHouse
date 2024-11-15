@@ -63,6 +63,7 @@ public:
     std::shared_ptr<ASTDatabaseOrNone> default_database;
 
     ASTPtr global_valid_until;
+    ASTPtr global_not_before;
 
     String getID(char) const override;
     ASTPtr clone() const override;

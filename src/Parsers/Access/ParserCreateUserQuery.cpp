@@ -1,26 +1,28 @@
+#include "config.h"
+
+#include <base/insertAtEnd.h>
+#include <base/range.h>
+#include <boost/algorithm/string/predicate.hpp>
+
 #include <Access/IAccessStorage.h>
-#include <Parsers/Access/ParserCreateUserQuery.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/Access/ASTAuthenticationData.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTSettingsProfileElement.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
-#include <Parsers/Access/ASTAuthenticationData.h>
+#include <Parsers/Access/ParserCreateUserQuery.h>
+#include <Parsers/Access/ParserPublicSSHKey.h>
 #include <Parsers/Access/ParserRolesOrUsersSet.h>
 #include <Parsers/Access/ParserSettingsProfileElement.h>
 #include <Parsers/Access/ParserUserNameWithHost.h>
-#include <Parsers/Access/ParserPublicSSHKey.h>
 #include <Parsers/Access/parseUserName.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserDatabaseOrNone.h>
 #include <Parsers/ParserStringAndSubstitution.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
-#include <base/range.h>
-#include <boost/algorithm/string/predicate.hpp>
-#include <base/insertAtEnd.h>
-#include "config.h"
 
 namespace DB
 {
@@ -53,6 +55,19 @@ namespace
             ParserStringAndSubstitution until_p;
 
             return until_p.parse(pos, valid_until, expected);
+        });
+    }
+
+    bool parseNotBefore(IParserBase::Pos & pos, Expected & expected, ASTPtr & not_before)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (!ParserKeyword{Keyword::NOT_BEFORE}.ignore(pos, expected))
+                return false;
+
+            ParserStringAndSubstitution before_p;
+
+            return before_p.parse(pos, not_before, expected);
         });
     }
 
@@ -237,6 +252,7 @@ namespace
                 auth_data->children.push_back(std::move(http_auth_scheme));
 
             parseValidUntil(pos, expected, auth_data->valid_until);
+            parseNotBefore(pos, expected, auth_data->not_before);
 
             return true;
         });
@@ -299,6 +315,7 @@ namespace
                 authentication_methods.back()->type = AuthenticationType::NO_PASSWORD;
 
                 parseValidUntil(pos, expected, authentication_methods.back()->valid_until);
+                parseNotBefore(pos, expected, authentication_methods.back()->not_before);
 
                 return true;
             }
@@ -559,6 +576,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     std::shared_ptr<ASTRolesOrUsersSet> grantees;
     std::shared_ptr<ASTDatabaseOrNone> default_database;
     ASTPtr global_valid_until;
+    ASTPtr global_not_before;
     String cluster;
     String storage_name;
     bool reset_authentication_methods_to_new = false;
@@ -652,12 +670,12 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             continue;
 
         if (auth_data.empty() && !global_valid_until)
-        {
             if (parseValidUntil(pos, expected, global_valid_until))
-            {
                 continue;
-            }
-        }
+
+        if (auth_data.empty() && !global_not_before)
+            if (parseNotBefore(pos, expected, global_not_before))
+                continue;
 
         break;
     }
@@ -694,6 +712,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->grantees = std::move(grantees);
     query->default_database = std::move(default_database);
     query->global_valid_until = std::move(global_valid_until);
+    query->global_not_before = std::move(global_not_before);
     query->storage_name = std::move(storage_name);
     query->reset_authentication_methods_to_new = reset_authentication_methods_to_new;
     query->add_identified_with = parsed_add_identified_with;
@@ -706,6 +725,8 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     if (query->global_valid_until)
         query->children.push_back(query->global_valid_until);
+    if (query->global_not_before)
+        query->children.push_back(query->global_not_before);
 
     return true;
 }

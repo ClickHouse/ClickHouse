@@ -118,7 +118,8 @@ bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs)
 #endif
         && (lhs.http_auth_scheme == rhs.http_auth_scheme)
         && (lhs.http_auth_server_name == rhs.http_auth_server_name)
-        && (lhs.valid_until == rhs.valid_until);
+        && (lhs.valid_until == rhs.valid_until)
+        && (lhs.not_before == rhs.not_before);
 }
 
 
@@ -398,6 +399,14 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
         node->valid_until = std::make_shared<ASTLiteral>(out.str());
     }
 
+    if (not_before)
+    {
+        WriteBufferFromOwnString out;
+        writeDateTimeText(not_before, out);
+
+        node->not_before = std::make_shared<ASTLiteral>(out.str());
+    }
+
     return node;
 }
 
@@ -405,16 +414,19 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
 AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & query, ContextPtr context, bool validate)
 {
     time_t valid_until = 0;
+    time_t not_before = 0;
 
     if (query.valid_until)
-    {
         valid_until = getValidUntilFromAST(query.valid_until, context);
-    }
+
+    if (query.not_before)
+        not_before = getNotBeforeFromAST(query.not_before, context);
 
     if (query.type && query.type == AuthenticationType::NO_PASSWORD)
     {
         AuthenticationData auth_data;
         auth_data.setValidUntil(valid_until);
+        auth_data.setNotBefore(not_before);
         return auth_data;
     }
 
@@ -444,6 +456,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 
         auth_data.setSSHKeys(std::move(keys));
         auth_data.setValidUntil(valid_until);
+        auth_data.setNotBefore(not_before);
         return auth_data;
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without libssh");
@@ -478,6 +491,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
         AuthenticationData auth_data(current_type);
 
         auth_data.setValidUntil(valid_until);
+        auth_data.setNotBefore(not_before);
 
         if (validate)
             context->getAccessControl().checkPasswordComplexityRules(value);
@@ -523,6 +537,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 
     AuthenticationData auth_data(*query.type);
     auth_data.setValidUntil(valid_until);
+    auth_data.setNotBefore(not_before);
 
     if (query.contains_hash)
     {

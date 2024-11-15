@@ -5,5 +5,6 @@
 
 namespace DB
 {
-    time_t getValidUntilFromAST(ASTPtr valid_until, ContextPtr context);
+    time_t getValidUntilFromAST(ASTPtr, ContextPtr);
+    time_t getNotBeforeFromAST(ASTPtr, ContextPtr);
 }

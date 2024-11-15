@@ -46,6 +46,7 @@ namespace
         const std::optional<SettingsProfileElements> & override_settings,
         const std::optional<RolesOrUsersSet> & override_grantees,
         const std::optional<time_t> & global_valid_until,
+        const std::optional<time_t> & global_not_before,
         bool reset_authentication_methods,
         bool replace_authentication_methods,
         bool allow_implicit_no_password,
@@ -113,6 +114,11 @@ namespace
             if (global_valid_until)
             {
                 authentication_method.setValidUntil(*global_valid_until);
+            }
+
+            if (global_not_before)
+            {
+                authentication_method.setNotBefore(*global_not_before);
             }
 
             if (authentication_method.getType() == AuthenticationType::NO_PASSWORD)
@@ -205,8 +211,11 @@ BlockIO InterpreterCreateUserQuery::execute()
     }
 
     std::optional<time_t> global_valid_until;
+    std::optional<time_t> global_not_before;
     if (query.global_valid_until)
         global_valid_until = getValidUntilFromAST(query.global_valid_until, getContext());
+    if (query.global_not_before)
+        global_not_before = getValidUntilFromAST(query.global_not_before, getContext());
 
     std::optional<RolesOrUsersSet> default_roles_from_query;
     if (query.default_roles)
@@ -252,7 +261,7 @@ BlockIO InterpreterCreateUserQuery::execute()
             auto updated_user = typeid_cast<std::shared_ptr<User>>(entity->clone());
             updateUserFromQueryImpl(
                 *updated_user, query, authentication_methods, {}, default_roles_from_query, settings_from_query, grantees_from_query,
-                global_valid_until, query.reset_authentication_methods_to_new, query.replace_authentication_methods,
+                global_valid_until, global_not_before, query.reset_authentication_methods_to_new, query.replace_authentication_methods,
                 implicit_no_password_allowed, no_password_allowed,
                 plaintext_password_allowed, getContext()->getServerSettings()[ServerSetting::max_authentication_methods_per_user]);
             return updated_user;
@@ -274,7 +283,7 @@ BlockIO InterpreterCreateUserQuery::execute()
             auto new_user = std::make_shared<User>();
             updateUserFromQueryImpl(
                 *new_user, query, authentication_methods, name, default_roles_from_query, settings_from_query, RolesOrUsersSet::AllTag{},
-                global_valid_until, query.reset_authentication_methods_to_new, query.replace_authentication_methods,
+                global_valid_until, global_not_before, query.reset_authentication_methods_to_new, query.replace_authentication_methods,
                 implicit_no_password_allowed, no_password_allowed,
                 plaintext_password_allowed, getContext()->getServerSettings()[ServerSetting::max_authentication_methods_per_user]);
             new_users.emplace_back(std::move(new_user));
@@ -330,8 +339,11 @@ void InterpreterCreateUserQuery::updateUserFromQuery(
     }
 
     std::optional<time_t> global_valid_until;
+    std::optional<time_t> global_not_before;
     if (query.global_valid_until)
         global_valid_until = getValidUntilFromAST(query.global_valid_until, {});
+    if (query.global_not_before)
+        global_not_before = getValidUntilFromAST(query.global_not_before, {});
 
     updateUserFromQueryImpl(
         user,
@@ -342,6 +354,7 @@ void InterpreterCreateUserQuery::updateUserFromQuery(
         {},
         {},
         global_valid_until,
+        global_not_before,
         query.reset_authentication_methods_to_new,
         query.replace_authentication_methods,
         allow_no_password,

@@ -41,7 +41,9 @@ public:
 
     bool contains_password = false;
     bool contains_hash = false;
+
     ASTPtr valid_until;
+    ASTPtr not_before;
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;

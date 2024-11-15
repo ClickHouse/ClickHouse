@@ -34,4 +34,32 @@ namespace DB
 
         return time;
     }
+
+    time_t getNotBeforeFromAST(ASTPtr not_before, ContextPtr context)
+    {
+        if (context)
+            not_before = evaluateConstantExpressionAsLiteral(not_before, context);
+
+        const String not_before_str = checkAndGetLiteralArgument<String>(not_before, "not_before");
+
+        if (not_before_str == "infinity")
+            return 0;
+
+        time_t time = 0;
+        ReadBufferFromString in(not_before_str);
+
+        if (context)
+        {
+            const auto & time_zone = DateLUT::instance("");
+            const auto & utc_time_zone = DateLUT::instance("UTC");
+
+            parseDateTimeBestEffort(time, in, time_zone, utc_time_zone);
+        }
+        else
+        {
+            readDateTimeText(time, in);
+        }
+
+        return time;
+    }
 }

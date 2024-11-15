@@ -46,6 +46,12 @@ namespace
         valid_until.format(settings);
     }
 
+    void formatNotBefore(const IAST & not_before, const IAST::FormatSettings & settings)
+    {
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " NOT BEFORE " << (settings.hilite ? IAST::hilite_none : "");
+        not_before.format(settings);
+    }
+
     void formatHosts(const char * prefix, const AllowedClientHosts & hosts, const IAST::FormatSettings & settings)
     {
         if (prefix)
@@ -261,9 +267,9 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
     }
 
     if (global_valid_until)
-    {
         formatValidUntil(*global_valid_until, format);
-    }
+    if (global_not_before)
+        formatNotBefore(*global_not_before, format);
 
     if (hosts)
         formatHosts(nullptr, *hosts, format);
