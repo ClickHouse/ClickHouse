@@ -422,7 +422,9 @@ class JobReport:
         current_dir = os.path.dirname(os.path.abspath(__file__))
         if current_dir in sys.path:
             sys.path.remove(current_dir)
-        from praktika.result import Result
+        from praktika.result import (  # pylint: disable=import-error,import-outside-toplevel
+            Result,
+        )
 
         if self.start_time:
             dt = datetime.datetime.strptime(self.start_time, "%Y-%m-%d %H:%M:%S")
@@ -448,7 +450,9 @@ class JobReport:
             start_time=timestamp,
             duration=self.duration,
             results=sub_results,
-            files=[f for f in self.additional_files],
+            files=(
+                [str(f) for f in self.additional_files] if self.additional_files else []
+            ),
         )
 
     @staticmethod

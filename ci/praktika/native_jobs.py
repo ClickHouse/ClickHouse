@@ -310,7 +310,7 @@ def _finish_workflow(workflow, job_name):
     print(env.get_needs_statuses())
 
     print("Check Workflow results")
-    _ResultS3.copy_result_from_s3(
+    version = _ResultS3.copy_result_from_s3_with_version(
         Result.file_name_static(workflow.name),
     )
     workflow_result = Result.from_fs(workflow.name)
@@ -358,9 +358,7 @@ def _finish_workflow(workflow, job_name):
         env.add_info(ResultInfo.GH_STATUS_ERROR)
 
     if update_final_report:
-        _ResultS3.copy_result_to_s3(
-            workflow_result,
-        )
+        _ResultS3.copy_result_to_s3_with_version(workflow_result, version + 1)
 
     Result.from_fs(job_name).set_status(Result.Status.SUCCESS)
 

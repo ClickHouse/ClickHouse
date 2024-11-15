@@ -131,7 +131,9 @@ def main():
         res = res and CH.start()
         res = res and CH.wait_ready()
         # TODO: Use --database-replicated optionally
-        res = res and Shell.check(f"./ci/jobs/scripts/functional_tests/setup_ch_cluster.sh")
+        res = res and Shell.check(
+            f"./ci/jobs/scripts/functional_tests/setup_ch_cluster.sh"
+        )
         if res:
             print("ch started")
         logs_to_attach += [

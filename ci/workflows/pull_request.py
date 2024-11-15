@@ -73,10 +73,26 @@ build_jobs = Job.Config(
 ).parametrize(
     parameter=["amd_debug", "amd_release", "arm_release", "arm_asan"],
     provides=[
-        [ArtifactNames.CH_AMD_DEBUG, ArtifactNames.DEB_AMD_DEBUG, ArtifactNames.CH_ODBC_B_AMD_DEBUG],
-        [ArtifactNames.CH_AMD_RELEASE, ArtifactNames.DEB_AMD_RELEASE, ArtifactNames.CH_ODBC_B_AMD_RELEASE],
-        [ArtifactNames.CH_ARM_RELEASE, ArtifactNames.DEB_ARM_RELEASE, ArtifactNames.CH_ODBC_B_ARM_RELEASE],
-        [ArtifactNames.CH_ARM_ASAN, ArtifactNames.DEB_ARM_ASAN, ArtifactNames.CH_ODBC_B_ARM_ASAN],
+        [
+            ArtifactNames.CH_AMD_DEBUG,
+            ArtifactNames.DEB_AMD_DEBUG,
+            ArtifactNames.CH_ODBC_B_AMD_DEBUG,
+        ],
+        [
+            ArtifactNames.CH_AMD_RELEASE,
+            ArtifactNames.DEB_AMD_RELEASE,
+            ArtifactNames.CH_ODBC_B_AMD_RELEASE,
+        ],
+        [
+            ArtifactNames.CH_ARM_RELEASE,
+            ArtifactNames.DEB_ARM_RELEASE,
+            ArtifactNames.CH_ODBC_B_ARM_RELEASE,
+        ],
+        [
+            ArtifactNames.CH_ARM_ASAN,
+            ArtifactNames.DEB_ARM_ASAN,
+            ArtifactNames.CH_ODBC_B_ARM_ASAN,
+        ],
     ],
     runs_on=[
         [RunnerLabels.BUILDER_AMD],
@@ -188,24 +204,26 @@ workflow = Workflow.Config(
             name="...",
             type=Artifact.Type.S3,
             path=f"{Settings.TEMP_DIR}/build/programs/clickhouse",
-        ).parametrize(names=[
-            ArtifactNames.CH_AMD_DEBUG,
-            ArtifactNames.CH_AMD_RELEASE,
-            ArtifactNames.CH_ARM_RELEASE,
-            ArtifactNames.CH_ARM_ASAN,
-        ]),
-
+        ).parametrize(
+            names=[
+                ArtifactNames.CH_AMD_DEBUG,
+                ArtifactNames.CH_AMD_RELEASE,
+                ArtifactNames.CH_ARM_RELEASE,
+                ArtifactNames.CH_ARM_ASAN,
+            ]
+        ),
         *Artifact.Config(
             name="...",
             type=Artifact.Type.S3,
             path=f"{Settings.TEMP_DIR}/build/programs/clickhouse-odbc-bridge",
-        ).parametrize(names=[
-            ArtifactNames.CH_ODBC_B_AMD_DEBUG,
-            ArtifactNames.CH_ODBC_B_AMD_RELEASE,
-            ArtifactNames.CH_ODBC_B_ARM_RELEASE,
-            ArtifactNames.CH_ODBC_B_ARM_ASAN,
-        ]),
-
+        ).parametrize(
+            names=[
+                ArtifactNames.CH_ODBC_B_AMD_DEBUG,
+                ArtifactNames.CH_ODBC_B_AMD_RELEASE,
+                ArtifactNames.CH_ODBC_B_ARM_RELEASE,
+                ArtifactNames.CH_ODBC_B_ARM_ASAN,
+            ]
+        ),
         Artifact.Config(
             name=ArtifactNames.DEB_AMD_DEBUG,
             type=Artifact.Type.S3,
