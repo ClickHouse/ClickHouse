@@ -6867,9 +6867,53 @@ Same as for [parseDateTimeInJodaSyntax](#parsedatetimeinjodasyntax) except that 
 
 Same as for [parseDateTimeInJodaSyntax](#parsedatetimeinjodasyntax) except that it returns `NULL` when it encounters a date format that cannot be processed.
 
+## parseDateTime64
+
+Converts a [String](../data-types/string.md) to [DateTime64](../data-types/datetime64.md) according to a [MySQL format string](https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format).
+
+**Syntax**
+
+``` sql
+parseDateTime64(str[, format[, timezone]])
+```
+
+**Arguments**
+
+- `str` — The String to be parsed.
+- `format` — The format string. Optional. `%Y-%m-%d %H:%i:%s.%f` if not specified.
+- `timezone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md#timezone). Optional.
+
+**Returned value(s)**
+
+Returns [DateTime64](../data-types/datetime64.md) type values parsed from input string according to a MySQL style format string.
+
+## parseDateTime64OrZero
+
+Same as for [parseDateTime64](#parsedatetime64) except that it returns zero date when it encounters a date format that cannot be processed.
+
+## parseDateTime64OrNull
+
+Same as for [parseDateTime64](#parsedatetime64) except that it returns `NULL` when it encounters a date format that cannot be processed.
+
 ## parseDateTime64InJodaSyntax
 
-Similar to [parseDateTimeInJodaSyntax](#parsedatetimeinjodasyntax). Differently, it returns a value of type [DateTime64](../data-types/datetime64.md).
+Converts a [String](../data-types/string.md) to [DateTime64](../data-types/datetime64.md) according to a [Joda format string](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html).
+
+**Syntax**
+
+``` sql
+parseDateTime64InJodaSyntax(str[, format[, timezone]])
+```
+
+**Arguments**
+
+- `str` — The String to be parsed.
+- `format` — The format string. Optional. `yyyy-MM-dd HH:mm:ss` if not specified.
+- `timezone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md#timezone). Optional.
+
+**Returned value(s)**
+
+Returns [DateTime64](../data-types/datetime64.md) type values parsed from input string according to a joda style format string.
 
 ## parseDateTime64InJodaSyntaxOrZero
 
