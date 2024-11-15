@@ -202,11 +202,11 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
 
     new_part->rows_count = rows_count;
     new_part->modification_time = time(nullptr);
-    new_part->setIndex(writer->releaseIndexColumns());
     new_part->checksums = checksums;
     new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
     new_part->setBytesUncompressedOnDisk(checksums.getTotalSizeUncompressedOnDisk());
     new_part->index_granularity = writer->getIndexGranularity();
+    new_part->setIndex(writer->releaseIndexColumns());
     /// Just in case
     new_part->index_granularity.shrinkToFitInMemory();
     new_part->calculateColumnsAndSecondaryIndicesSizesOnDisk(writer->getColumnsSample());

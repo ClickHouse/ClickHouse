@@ -390,13 +390,8 @@ IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::getIndex() const
 
 void IMergeTreeDataPart::setIndex(const Columns & raw_columns)
 {
-    std::scoped_lock lock(index_mutex);
-
-    if (!index->empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The index of data part can be set only once");
-
-    index = std::make_shared<PrimaryIndex>(raw_columns, primary_index_settings);
-    index_loaded = true;
+    auto raw_columns_copy = raw_columns;
+    setIndex(std::move(raw_columns_copy));
 }
 
 void IMergeTreeDataPart::setIndex(Columns && raw_columns)
@@ -406,7 +401,17 @@ void IMergeTreeDataPart::setIndex(Columns && raw_columns)
     if (!index->empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The index of data part can be set only once");
 
-    index = std::make_shared<PrimaryIndex>(std::move(raw_columns), primary_index_settings);
+    std::vector<size_t> num_equal_ranges;
+    optimizeIndexColumns(index_granularity.getMarksCount(), raw_columns, num_equal_ranges);
+
+    index = std::make_shared<PrimaryIndex>(std::move(raw_columns), std::move(num_equal_ranges), primary_index_settings);
+    index_loaded = true;
+}
+
+void IMergeTreeDataPart::setIndex(IndexPtr new_index)
+{
+    std::scoped_lock lock(index_mutex);
+    index = std::move(new_index);
     index_loaded = true;
 }
 
@@ -934,6 +939,44 @@ void IMergeTreeDataPart::appendFilesOfIndexGranularity(Strings & /* files */) co
 {
 }
 
+template <typename ColumnsVector>
+void IMergeTreeDataPart::optimizeIndexColumns(size_t marks_count, ColumnsVector & index_columns, std::vector<size_t> & num_equal_ranges) const
+{
+    size_t key_size = index_columns.size();
+
+    /// Cut useless suffix columns, if necessary.
+    Float64 ratio_to_drop_suffix_columns = (*storage.getSettings())[MergeTreeSetting::primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns];
+    bool drop_primary_key_suffix = ratio_to_drop_suffix_columns > 0 && ratio_to_drop_suffix_columns < 1;
+
+    if (drop_primary_key_suffix || primary_index_settings.compress)
+    {
+        chassert(marks_count > 0);
+
+        std::vector<UInt8> is_border(marks_count);
+        num_equal_ranges.assign(key_size, 1);
+
+        for (size_t j = 0; j < key_size; ++j)
+        {
+            for (size_t i = 1; i < marks_count; ++i)
+            {
+                if (is_border[i] || index_columns[j]->compareAt(i, i - 1, *index_columns[j], 0) != 0)
+                {
+                    ++num_equal_ranges[j];
+                    is_border[i] = 1;
+                }
+            }
+
+            if (static_cast<Float64>(num_equal_ranges[j]) / marks_count >= ratio_to_drop_suffix_columns)
+            {
+                key_size = j + 1;
+                index_columns.resize(key_size);
+                num_equal_ranges.resize(key_size);
+                break;
+            }
+        }
+    }
+}
+
 void IMergeTreeDataPart::loadIndex() const
 {
     /// Memory for index must not be accounted as memory usage for query, because it belongs to a table.
@@ -942,6 +985,7 @@ void IMergeTreeDataPart::loadIndex() const
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
     if (parent_part)
         metadata_snapshot = metadata_snapshot->projections.get(name).metadata;
+
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     size_t key_size = primary_key.column_names.size();
 
@@ -969,38 +1013,11 @@ void IMergeTreeDataPart::loadIndex() const
             for (size_t j = 0; j < key_size; ++j)
                 key_serializations[j]->deserializeBinary(*loaded_index[j], *index_file, {});
 
-        /// Cut useless suffix columns, if necessary.
-        Float64 ratio_to_drop_suffix_columns = (*storage.getSettings())[MergeTreeSetting::primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns];
-        bool drop_primary_key_suffix = ratio_to_drop_suffix_columns > 0 && ratio_to_drop_suffix_columns < 1;
-        std::vector<UInt64> num_equal_ranges;
+        if (!index_file->eof())
+            throw Exception(ErrorCodes::EXPECTED_END_OF_FILE, "Index file {} is unexpectedly long", index_path);
 
-        if (drop_primary_key_suffix || primary_index_settings.compress)
-        {
-            chassert(marks_count > 0);
-
-            std::vector<UInt8> is_border(marks_count);
-            num_equal_ranges.assign(key_size, 1);
-
-            for (size_t j = 0; j < key_size; ++j)
-            {
-                for (size_t i = 1; i < marks_count; ++i)
-                {
-                    if (is_border[i] || loaded_index[j]->compareAt(i, i - 1, *loaded_index[j], 0) != 0)
-                    {
-                        ++num_equal_ranges[j];
-                        is_border[i] = 1;
-                    }
-                }
-
-                if (static_cast<Float64>(num_equal_ranges[j]) / marks_count >= ratio_to_drop_suffix_columns)
-                {
-                    key_size = j + 1;
-                    loaded_index.resize(key_size);
-                    num_equal_ranges.resize(key_size);
-                    break;
-                }
-            }
-        }
+        std::vector<size_t> num_equal_ranges;
+        optimizeIndexColumns(marks_count, loaded_index, num_equal_ranges);
 
         for (size_t i = 0; i < key_size; ++i)
         {
@@ -1012,15 +1029,8 @@ void IMergeTreeDataPart::loadIndex() const
                     "{}, read: {})", index_path, marks_count, loaded_index[i]->size());
         }
 
-        if (!index_file->eof())
-            throw Exception(ErrorCodes::EXPECTED_END_OF_FILE, "Index file {} is unexpectedly long", index_path);
-
         Columns index_columns(std::make_move_iterator(loaded_index.begin()), std::make_move_iterator(loaded_index.end()));
-
-        if (num_equal_ranges.empty())
-            index = std::make_shared<PrimaryIndex>(std::move(index_columns), primary_index_settings);
-        else
-            index = std::make_shared<PrimaryIndex>(std::move(index_columns), std::move(num_equal_ranges), primary_index_settings);
+        index = std::make_shared<PrimaryIndex>(std::move(index_columns), std::move(num_equal_ranges), primary_index_settings);
     }
 }
 

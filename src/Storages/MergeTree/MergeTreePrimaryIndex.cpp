@@ -15,14 +15,23 @@ PrimaryIndex::PrimaryIndex(Columns raw_columns, const Settings & settings)
 
 PrimaryIndex::PrimaryIndex(Columns raw_columns, std::vector<size_t> num_equal_ranges, const Settings & settings)
     : num_rows(raw_columns.empty() ? 0 : raw_columns[0]->size())
-    , block_sizes(raw_columns.size())
 {
-    for (size_t i = 0; i < block_sizes.size(); ++i)
+    if (num_equal_ranges.empty())
     {
-        if (num_equal_ranges[i] == 1)
-            block_sizes[i] = num_rows;
-        else
-            block_sizes[i] = std::max(settings.min_block_size, num_rows / (num_equal_ranges[i] + 1));
+        block_sizes.assign(raw_columns.size(), settings.min_block_size);
+    }
+    else
+    {
+        chassert(raw_columns.size() == num_equal_ranges.size());
+        block_sizes.resize(raw_columns.size());
+
+        for (size_t i = 0; i < block_sizes.size(); ++i)
+        {
+            if (num_equal_ranges[i] == 1)
+                block_sizes[i] = num_rows;
+            else
+                block_sizes[i] = std::max(settings.min_block_size, num_rows / (num_equal_ranges[i] + 1));
+        }
     }
 
     init(std::move(raw_columns), settings);
@@ -32,7 +41,7 @@ void PrimaryIndex::init(Columns raw_columns, const Settings & settings)
 {
     for (size_t i = 0; i < raw_columns.size(); ++i)
     {
-        if (!settings.compress)
+        if (!settings.compress || num_rows == 0)
         {
             columns.push_back(createIndexColumnRaw(std::move(raw_columns[i])));
         }

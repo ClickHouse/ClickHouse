@@ -1129,19 +1129,18 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
     /// NOTE Creating temporary Field objects to pass to KeyCondition.
     size_t used_key_size = key_indices.size();
+    size_t num_key_columns = index ? index->getNumColumns() : 0;
+
     std::vector<FieldRef> index_left(used_key_size);
     std::vector<FieldRef> index_right(used_key_size);
 
     /// For _part_offset and _part virtual columns
-    DataTypes part_offset_types
-        = {std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())};
+    DataTypes part_offset_types{std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())};
     std::vector<FieldRef> part_offset_left(2);
     std::vector<FieldRef> part_offset_right(2);
 
     auto check_in_range = [&](const MarkRange & range, BoolMask initial_mask = {})
     {
-        size_t num_key_columns = index->getNumColumns();
-
         auto check_key_condition = [&]()
         {
             if (range.end == marks_count)

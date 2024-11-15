@@ -15,7 +15,7 @@ public:
         double max_ratio_to_compress = 0.7;
     };
 
-    PrimaryIndex() : num_rows(0) {}
+    PrimaryIndex() = default;
     PrimaryIndex(Columns raw_columns, const Settings & settings);
     PrimaryIndex(Columns raw_columns, std::vector<size_t> num_equal_ranges, const Settings & settings);
 
@@ -35,7 +35,7 @@ public:
 private:
     void init(Columns raw_columns, const Settings & settings);
 
-    size_t num_rows;
+    size_t num_rows = 0;
     IndexColumns columns;
     std::vector<size_t> block_sizes;
 };

@@ -375,6 +375,7 @@ public:
     IndexPtr getIndex() const;
     void setIndex(const Columns & raw_columns);
     void setIndex(Columns && raw_columns);
+    void setIndex(IndexPtr new_index);
     void unloadIndex();
     bool isIndexLoaded() const;
 
@@ -699,6 +700,9 @@ private:
 
     /// Loads the index file.
     void loadIndex() const TSA_REQUIRES(index_mutex);
+
+    template <typename ColumnsVector>
+    void optimizeIndexColumns(size_t marks_count, ColumnsVector & index_columns, std::vector<size_t> & num_equal_ranges) const;
 
     void appendFilesOfIndex(Strings & files) const;
 
