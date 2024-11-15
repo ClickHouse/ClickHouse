@@ -1,24 +1,35 @@
 #pragma once
 
+#include "config.h"
+
 #include "FuzzConfig.h"
 #include "SQLCatalog.h"
 
-#if __has_include(<mysql.h>)
-#    include <mysql.h>
-#else
-#    include <mysql/mysql.h>
+#ifdef USE_MYSQL
+#    if __has_include(<mysql.h>)
+#        include <mysql.h>
+#    else
+#        include <mysql/mysql.h>
+#    endif
 #endif
 
-#include <bsoncxx/builder/stream/array.hpp>
-#include <bsoncxx/builder/stream/document.hpp>
-#include <bsoncxx/json.hpp>
-#include <bsoncxx/types.hpp>
-#include <mongocxx/client.hpp>
-#include <mongocxx/collection.hpp>
-#include <mongocxx/database.hpp>
+#ifdef USE_MONGODB
+#    include <bsoncxx/builder/stream/array.hpp>
+#    include <bsoncxx/builder/stream/document.hpp>
+#    include <bsoncxx/json.hpp>
+#    include <bsoncxx/types.hpp>
+#    include <mongocxx/client.hpp>
+#    include <mongocxx/collection.hpp>
+#    include <mongocxx/database.hpp>
+#endif
 
-#include <pqxx/pqxx>
-#include <sqlite3.h>
+#ifdef USE_LIBPQXX
+#    include <pqxx/pqxx>
+#endif
+
+#ifdef USE_SQLITE
+#    include <sqlite3.h>
+#endif
 
 
 namespace BuzzHouse
@@ -102,6 +113,7 @@ public:
     ~ClickHouseIntegratedDatabase() override = default;
 };
 
+#ifdef USE_MYSQL
 class MySQLIntegration : public ClickHouseIntegratedDatabase
 {
 private:
@@ -181,7 +193,21 @@ public:
         }
     }
 };
+#else
+class MySQLIntegration : public ClickHouseIntegration
+{
+public:
+    MySQLIntegration() : ClickHouseIntegration() { }
 
+    static MySQLIntegration * TestAndAddMySQLIntegration(const FuzzConfig &) { return nullptr; }
+
+    bool performIntegration(RandomGenerator &, const uint32_t, std::vector<InsertEntry> &) override { return false; }
+
+    ~MySQLIntegration() override = default;
+};
+#endif
+
+#ifdef USE_LIBPQXX
 class PostgreSQLIntegration : public ClickHouseIntegratedDatabase
 {
 private:
@@ -312,7 +338,21 @@ public:
 
     ~PostgreSQLIntegration() override { delete postgres_connection; }
 };
+#else
+class PostgreSQLIntegration : public ClickHouseIntegration
+{
+public:
+    PostgreSQLIntegration() : ClickHouseIntegration() { }
 
+    static PostgreSQLIntegration * TestAndAddPostgreSQLIntegration(const FuzzConfig &) { return nullptr; }
+
+    bool performIntegration(RandomGenerator &, const uint32_t, std::vector<InsertEntry> &) override { return false; }
+
+    ~PostgreSQLIntegration() override = default;
+};
+#endif
+
+#ifdef USE_SQLITE
 class SQLiteIntegration : public ClickHouseIntegratedDatabase
 {
 private:
@@ -382,6 +422,21 @@ public:
         }
     }
 };
+#else
+class SQLiteIntegration : public ClickHouseIntegration
+{
+public:
+    const std::filesystem::path sqlite_path = "";
+
+    SQLiteIntegration() : ClickHouseIntegration() { }
+
+    static SQLiteIntegration * TestAndAddSQLiteIntegration(const FuzzConfig &) { return nullptr; }
+
+    bool performIntegration(RandomGenerator &, const uint32_t, std::vector<InsertEntry> &) override { return false; }
+
+    ~SQLiteIntegration() override = default;
+};
+#endif
 
 class RedisIntegration : public ClickHouseIntegration
 {
@@ -399,6 +454,7 @@ public:
     ~RedisIntegration() override = default;
 };
 
+#ifdef USE_MONGODB
 class MongoDBIntegration : public ClickHouseIntegration
 {
 private:
@@ -532,6 +588,19 @@ public:
 
     ~MongoDBIntegration() override = default;
 };
+#else
+class MongoDBIntegration : public ClickHouseIntegration
+{
+public:
+    MongoDBIntegration() : ClickHouseIntegration() { }
+
+    static MongoDBIntegration * TestAndAddMongoDBIntegration(const FuzzConfig &) { return nullptr; }
+
+    bool performIntegration(RandomGenerator &, const uint32_t, std::vector<InsertEntry> &) override { return false; }
+
+    ~MongoDBIntegration() override = default;
+};
+#endif
 
 class MinIOIntegration : public ClickHouseIntegration
 {
