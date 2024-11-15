@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 
+#include <Access/AccessControl.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Utils.h>
@@ -461,7 +462,12 @@ MergeTreeData::MergeTreeData(
 
     /// Check sanity of MergeTreeSettings. Only when table is created.
     if (sanity_checks)
-        settings->sanityCheck(getContext()->getMergeMutateExecutor()->getMaxTasksCount());
+    {
+        const auto & ac = getContext()->getAccessControl();
+        bool allow_experimental = ac.getAllowExperimentalTierSettings();
+        bool allow_beta = ac.getAllowBetaTierSettings();
+        settings->sanityCheck(getContext()->getMergeMutateExecutor()->getMaxTasksCount(), allow_experimental, allow_beta);
+    }
 
     if (!date_column_name.empty())
     {
@@ -3895,7 +3901,10 @@ void MergeTreeData::changeSettings(
         /// Reset to default settings before applying existing.
         auto copy = getDefaultSettings();
         copy->applyChanges(new_changes);
-        copy->sanityCheck(getContext()->getMergeMutateExecutor()->getMaxTasksCount());
+        const auto & ac = getContext()->getAccessControl();
+        bool allow_experimental = ac.getAllowExperimentalTierSettings();
+        bool allow_beta = ac.getAllowBetaTierSettings();
+        copy->sanityCheck(getContext()->getMergeMutateExecutor()->getMaxTasksCount(), allow_experimental, allow_beta);
 
         storage_settings.set(std::move(copy));
         StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
