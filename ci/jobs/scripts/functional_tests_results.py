@@ -1,6 +1,7 @@
 import dataclasses
 from typing import List
 
+from praktika.environment import Environment
 from praktika.result import Result
 
 OK_SIGN = "[ OK "
@@ -232,8 +233,6 @@ class FTResultsProcessor:
         else:
             pass
 
-        info = f"Total: {s.total - s.skipped}, Failed: {s.failed}"
-
         # TODO: !!!
         # def test_result_comparator(item):
         #     # sort by status then by check name
@@ -251,11 +250,10 @@ class FTResultsProcessor:
         # test_results.sort(key=test_result_comparator)
 
         return Result.create_from(
-            name="Tests",
+            name=Environment.JOB_NAME,
             results=test_results,
             status=state,
             files=[self.tests_output_file],
-            info=info,
             with_info_from_results=False,
         )
 
