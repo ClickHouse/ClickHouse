@@ -228,6 +228,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
 {
     size_t prev_tables_count = metadata.parsed_tables.size();
     size_t prev_total_dictionaries = metadata.total_dictionaries;
+    size_t prev_total_materialized_views = metadata.total_materialized_views;
 
     auto process_metadata = [&metadata, is_startup, local_context, this](const String & file_name)
     {
@@ -295,6 +296,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                 std::lock_guard lock{metadata.mutex};
                 metadata.parsed_tables[qualified_name] = ParsedTableMetadata{full_path.string(), ast};
                 metadata.total_dictionaries += create_query->is_dictionary;
+                metadata.total_materialized_views += create_query->is_materialized_view;
             }
         }
         catch (Exception & e)
@@ -308,10 +310,17 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
 
     size_t objects_in_database = metadata.parsed_tables.size() - prev_tables_count;
     size_t dictionaries_in_database = metadata.total_dictionaries - prev_total_dictionaries;
+    size_t materialized_views_in_database = metadata.total_materialized_views - prev_total_materialized_views;
     size_t tables_in_database = objects_in_database - dictionaries_in_database;
 
-    LOG_INFO(log, "Metadata processed, database {} has {} tables and {} dictionaries in total.",
-             TSA_SUPPRESS_WARNING_FOR_READ(database_name), tables_in_database, dictionaries_in_database);
+    LOG_INFO(log, "Metadata processed, database {} has {} tables, {} dictionaries and {} materialized views in total.",
+             TSA_SUPPRESS_WARNING_FOR_READ(database_name), tables_in_database, dictionaries_in_database, materialized_views_in_database);
+
+    // if (materialized_views_in_database)
+    // {
+
+    // }
+
 }
 
 void DatabaseOrdinary::loadTableFromMetadata(
@@ -336,6 +345,8 @@ void DatabaseOrdinary::loadTableFromMetadata(
             mode);
 
         attachTable(local_context, table_name, table, getTableDataPath(query));
+
+        table->pushDependencies();
     }
     catch (Exception & e)
     {
