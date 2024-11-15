@@ -44,6 +44,7 @@ file(ARCHIVE_EXTRACT INPUT
     DESTINATION
     "${CMAKE_CURRENT_BINARY_DIR}/../../external/googleapis/src")
 
+file(REMOVE_RECURSE "${CMAKE_CURRENT_BINARY_DIR}/../../external/googleapis/src/googleapis_download")
 file(RENAME
     "${CMAKE_CURRENT_BINARY_DIR}/../../external/googleapis/src/${PB_DIR}"
     "${CMAKE_CURRENT_BINARY_DIR}/../../external/googleapis/src/googleapis_download"
