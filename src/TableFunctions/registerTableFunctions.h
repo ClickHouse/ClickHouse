@@ -73,6 +73,6 @@ void registerDataLakeTableFunctions(TableFunctionFactory & factory);
 
 void registerTableFunctionTimeSeries(TableFunctionFactory & factory);
 
-void registerTableFunctions(bool use_legacy_mongodb_integration [[maybe_unused]]);
+void registerTableFunctions();
 
 }
