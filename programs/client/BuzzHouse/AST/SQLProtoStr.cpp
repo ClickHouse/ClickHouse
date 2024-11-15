@@ -330,11 +330,11 @@ CONV_FN(NumericLiteral, nl)
     ret += ")";
 }
 
-static void buildJSON(std::string & ret, const int depth, const int width, std::mt19937 & generator);
-static void addJSONArray(std::string & ret, const int depth, const int width, std::mt19937 & generator);
-static void addJSONElement(std::string & ret, std::mt19937 & generator);
+static void buildJSON(std::string & ret, const int depth, const int width, std::mt19937_64 & generator);
+static void addJSONArray(std::string & ret, const int depth, const int width, std::mt19937_64 & generator);
+static void addJSONElement(std::string & ret, std::mt19937_64 & generator);
 
-static void addJSONArray(std::string & ret, const int depth, const int width, std::mt19937 & generator)
+static void addJSONArray(std::string & ret, const int depth, const int width, std::mt19937_64 & generator)
 {
     std::uniform_int_distribution<int> jopt(1, 3);
     int nelems = 0, next_width = 0;
@@ -380,7 +380,7 @@ static void addJSONArray(std::string & ret, const int depth, const int width, st
     ret += "]";
 }
 
-static void addJSONElement(std::string & ret, std::mt19937 & generator)
+static void addJSONElement(std::string & ret, std::mt19937_64 & generator)
 {
     std::uniform_int_distribution<int> opts(1, 10);
     const int noption = opts(generator);
@@ -439,7 +439,7 @@ static void addJSONElement(std::string & ret, std::mt19937 & generator)
     }
 }
 
-static void buildJSON(std::string & ret, const int depth, const int width, std::mt19937 & generator)
+static void buildJSON(std::string & ret, const int depth, const int width, std::mt19937_64 & generator)
 {
     ret += "{";
     if (depth)
@@ -559,7 +559,7 @@ CONV_FN(LiteralValue, lit_val)
         case LitValType::kJvalue:
         case LitValType::kJstr: {
             const bool is_jvalue = lit_val.lit_val_oneof_case() == LitValType::kJvalue;
-            std::mt19937 generator(is_jvalue ? lit_val.jvalue() : lit_val.jstr());
+            std::mt19937_64 generator(is_jvalue ? lit_val.jvalue() : lit_val.jstr());
             std::uniform_int_distribution<int> dopt(1, 3), wopt(1, 3);
 
             ret += "$jstr$";

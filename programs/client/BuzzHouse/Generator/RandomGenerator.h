@@ -75,10 +75,10 @@ private:
     const std::vector<std::string> common_chinese{
         "认识你很高兴", "美国", "叫", "名字", "你们", "日本", "哪国人", "爸爸", "兄弟姐妹", "漂亮", "照片", "😉"};
 
-    const std::vector<std::string> nasty_strings{"a\"a", "b\\tb", "c\\nc", "d\\'d", "e e", "",     "😉",   "\"",   "\\'",  "\\t",
-                                                 "\\n",  " ",     "--",    "0",     "1",   "-1",   "{",    "}",    "(",    ")",
-                                                 "[",    "]",     ",",     ".",     ";",   ":",    "\\\\", "/",    "_",    "%",
-                                                 "*",    "\\0",   "{}",    "[]",    "()",  "null", "NULL", "TRUE", "FALSE"};
+    const std::vector<std::string> nasty_strings{"a\"a", "b\\tb", "c\\nc", "d\\'d", "e e",  "",     "😉",   "\"",   "\\'", "\\t",
+                                                 "\\n",  "--",    "0",     "1",     "-1",   "{",    "}",    "(",    ")",   "[",
+                                                 "]",    ",",     ".",     ";",     ":",    "\\\\", "/",    "_",    "%",   "*",
+                                                 "\\0",  "{}",    "[]",    "()",    "null", "NULL", "TRUE", "FALSE"};
 
     /* use bad_utf8 on x' strings! */
     const std::vector<std::string> bad_utf8{
@@ -99,7 +99,7 @@ private:
     const std::vector<std::string> jcols{"c0", "c1", "c0.c1", "😆", "😉😉"};
 
 public:
-    std::mt19937 generator;
+    std::mt19937_64 generator;
 
     RandomGenerator(const uint32_t in_seed)
         : ints8(std::numeric_limits<int8_t>::min(), std::numeric_limits<int8_t>::max())
@@ -124,10 +124,8 @@ public:
         , uints64(std::numeric_limits<uint64_t>::min(), std::numeric_limits<uint64_t>::max())
         , zero_one(0, 1)
     {
-        std::random_device rand_dev;
-
-        seed = in_seed ? in_seed : rand_dev();
-        generator = std::mt19937(seed);
+        seed = in_seed ? in_seed : std::random_device{}();
+        generator.seed(seed);
     }
 
     uint32_t getSeed() const { return seed; }
