@@ -27,7 +27,7 @@ int StatementGenerator::addFieldAccess(RandomGenerator & rg, Expr * expr, const 
         else if (this->depth >= this->fc.max_depth || noption < 81)
         {
             buf.resize(0);
-            rg.nextJsonCol(buf);
+            rg.nextJSONCol(buf);
             fa->mutable_array_key()->set_column(buf);
         }
         else
@@ -59,23 +59,23 @@ int StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * ex
             this->width++;
             if (noption2 < 31)
             {
-                jcol->set_json_col(true);
+                jcol->set_jcol(true);
             }
             else if (noption2 < 61)
             {
-                jcol->set_json_array(0);
+                jcol->set_jarray(0);
             }
             buf.resize(0);
-            rg.nextJsonCol(buf);
+            rg.nextJSONCol(buf);
             jcol->mutable_col()->set_column(buf);
         }
         if (noption < 4)
         {
-            tpn = subcols->mutable_json_cast();
+            tpn = subcols->mutable_jcast();
         }
         else if (noption < 8)
         {
-            tpn = subcols->mutable_json_reinterpret();
+            tpn = subcols->mutable_jreinterpret();
         }
         this->width -= nvalues;
         if (tpn)

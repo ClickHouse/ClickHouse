@@ -52,7 +52,7 @@ bool MinIOIntegration::sendRequest(const std::string & resource)
     int sock = -1, error = 0;
     char buffer[1024], found_ip[1024];
     const std::time_t time = std::time({});
-    std::stringstream http_request, sign_cmd;
+    DB::WriteBufferFromOwnString http_request, sign_cmd;
     struct addrinfo hints = {}, *result = nullptr;
 
     hints.ai_family = AF_INET;
@@ -121,14 +121,12 @@ bool MinIOIntegration::sendRequest(const std::string & resource)
         return false;
     }
 
-    http_request << "PUT " << resource << " HTTP/1.1" << std::endl
-                 << "Host: " << found_ip << ":" << std::to_string(sc.port) << std::endl
-                 << "Accept: */*" << std::endl
-                 << "Date: " << buffer << std::endl
-                 << "Content-Type: application/octet-stream" << std::endl
-                 << "Authorization: AWS " << sc.user << ":" << sign << "Content-Length: 0" << std::endl
-                 << std::endl
-                 << std::endl;
+    http_request << "PUT " << resource << " HTTP/1.1\n"
+                 << "Host: " << found_ip << ":" << std::to_string(sc.port) << "\n"
+                 << "Accept: */*\n"
+                 << "Date: " << buffer << "\n"
+                 << "Content-Type: application/octet-stream\n"
+                 << "Authorization: AWS " << sc.user << ":" << sign << "Content-Length: 0\n\n\n";
 
     if (send(sock, http_request.str().c_str(), http_request.str().length(), 0) != static_cast<int>(http_request.str().length()))
     {

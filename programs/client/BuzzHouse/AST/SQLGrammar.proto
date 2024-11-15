@@ -647,7 +647,7 @@ enum SQLFunc {
     FUNCJSONHas = 642;
     FUNCJSONKey = 643;
     FUNCJSONLength = 644;
-    FUNCjsonMergePatch = 645;
+    FUNCJSONMergePatch = 645;
     FUNCJSONSharedDataPaths = 646;
     FUNCJSONSharedDataPathsWithTypes = 647;
     FUNCJSONType = 648;
@@ -1679,8 +1679,8 @@ message LiteralValue {
         bytes string_lit = 3;
         bytes hex_string = 4;
         bytes heredoc = 5;
-        int64 json_value = 6;
-        int64 json_string = 7;
+        int64 jvalue = 6;
+        int64 jstr = 7;
         SpecialVal special_val = 8;
         string no_quote_str = 9;
     }
@@ -1689,8 +1689,8 @@ message LiteralValue {
 message JSONColumn {
     required Column col = 1;
     oneof jcol_oneof {
-        bool json_col = 2;
-        uint32 json_array = 3;
+        bool jcol = 2;
+        uint32 jarray = 3;
     }
 }
 
@@ -1698,8 +1698,8 @@ message JSONColumns {
     required JSONColumn jcol = 1;
     repeated JSONColumn other_jcols = 2;
     oneof jcol_oneof {
-        TypeName json_cast = 3;
-        TypeName json_reinterpret = 4;
+        TypeName jcast = 3;
+        TypeName jreinterpret = 4;
     }
 }
 
@@ -1864,7 +1864,7 @@ message LambdaExpr {
 }
 
 message SQLFuncArg {
-    oneof sqlfunc_arg_oneof {
+    oneof func_arg_oneof {
         LambdaExpr lambda = 1;
         Expr expr = 2;
     }
@@ -1876,7 +1876,7 @@ enum FuncNulls {
 }
 
 message SQLFuncName {
-    oneof sqlfunc_arg_oneof {
+    oneof func_arg_oneof {
         SQLFunc catalog_func = 1;
         Function function = 2;
     }
@@ -2549,22 +2549,22 @@ message ColumnPath {
     repeated Column sub_cols = 2;
 }
 
-message JsonPathType {
+message JSONPathType {
     required ColumnPath col = 1;
     required TopTypeName type = 2;
 }
 
-message JsonDefItem {
-    oneof json_spec_oneof {
+message JSONDefItem {
+    oneof JSON_spec_oneof {
         uint32 max_dynamic_paths = 1;
         uint32 max_dynamic_types = 2;
         ColumnPath skip_path = 3;
-        JsonPathType path_type = 4;
+        JSONPathType path_type = 4;
     }
 }
 
-message JsonDef {
-    repeated JsonDefItem spec = 1;
+message JSONDef {
+    repeated JSONDefItem spec = 1;
 }
 
 message EnumDefValue {
@@ -2586,14 +2586,14 @@ message BottomTypeName {
     oneof bottom_one_of {
         Integers integers = 1;
         FloatingPoints floats = 2;
-        bool sql_string = 3;
+        bool standard_string = 3;
         uint32 fixed_string = 4;
         Dates dates = 5;
         DateTimeTp datetimes = 6;
         Decimal decimal = 7;
         bool boolean = 8;
         bool uuid = 9;
-        JsonDef json = 10;
+        JSONDef jdef = 10;
         Dynamic dynamic = 11;
         EnumDef enum_def = 12;
         bool IPv4 = 13;

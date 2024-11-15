@@ -73,19 +73,7 @@ CONV_FN(ExprColAlias, eca)
     }
 }
 
-/*CONV_FN(Schema, schema) {
-if (schema.main()) {
-return "main";
-}
-if (schema.temp()) {
-return "temp";
-}
-std::string ret("Schema");
-ret += std::to_string(schema.schema() % kMaxSchemaNumber);
-return ret;
-}*/
-
-void ConvertToSqlString(std::string & ret, const std::string & s)
+void convertToSQLString(std::string & ret, const std::string & s)
 {
     for (size_t i = 0; i < s.length(); i++)
     {
@@ -157,14 +145,14 @@ CONV_FN_QUOTE(TopTypeName, top);
 CONV_FN(JSONColumn, jcol)
 {
     ret += ".";
-    if (jcol.has_json_col())
+    if (jcol.has_jcol())
     {
         ret += "^";
     }
     ColumnToString(ret, true, jcol.col());
-    if (jcol.has_json_array())
+    if (jcol.has_jarray())
     {
-        const uint32_t limit = (jcol.json_array() % 4) + 1;
+        const uint32_t limit = (jcol.jarray() % 4) + 1;
 
         for (uint32_t j = 0; j < limit; j++)
         {
@@ -180,15 +168,15 @@ CONV_FN(JSONColumns, jcols)
     {
         JSONColumnToString(ret, jcols.other_jcols(i));
     }
-    if (jcols.has_json_cast())
+    if (jcols.has_jcast())
     {
         ret += "::";
-        TypeNameToString(ret, false, jcols.json_cast());
+        TypeNameToString(ret, false, jcols.jcast());
     }
-    else if (jcols.has_json_reinterpret())
+    else if (jcols.has_jreinterpret())
     {
         ret += ".:`";
-        TypeNameToString(ret, true, jcols.json_reinterpret());
+        TypeNameToString(ret, true, jcols.jreinterpret());
         ret += "`";
     }
 }
@@ -342,11 +330,11 @@ CONV_FN(NumericLiteral, nl)
     ret += ")";
 }
 
-static void BuildJson(std::string & ret, const int depth, const int width, std::mt19937 & gen);
-static void AddJsonArray(std::string & ret, const int depth, const int width, std::mt19937 & gen);
-static void AddJsonElement(std::string & ret, std::mt19937 & gen);
+static void buildJSON(std::string & ret, const int depth, const int width, std::mt19937 & gen);
+static void addJSONArray(std::string & ret, const int depth, const int width, std::mt19937 & gen);
+static void addJSONElement(std::string & ret, std::mt19937 & gen);
 
-static void AddJsonArray(std::string & ret, const int depth, const int width, std::mt19937 & gen)
+static void addJSONArray(std::string & ret, const int depth, const int width, std::mt19937 & gen)
 {
     std::uniform_int_distribution<int> jopt(1, 3);
     int nelems = 0, next_width = 0;
@@ -371,13 +359,13 @@ static void AddJsonArray(std::string & ret, const int depth, const int width, st
             switch (noption)
             {
                 case 1: //object
-                    BuildJson(ret, depth - 1, next_width, gen);
+                    buildJSON(ret, depth - 1, next_width, gen);
                     break;
                 case 2: //array
-                    AddJsonArray(ret, depth - 1, next_width, gen);
+                    addJSONArray(ret, depth - 1, next_width, gen);
                     break;
                 case 3: //others
-                    AddJsonElement(ret, gen);
+                    addJSONElement(ret, gen);
                     break;
                 default:
                     assert(0);
@@ -385,14 +373,14 @@ static void AddJsonArray(std::string & ret, const int depth, const int width, st
         }
         else
         {
-            AddJsonElement(ret, gen);
+            addJSONElement(ret, gen);
         }
         next_width--;
     }
     ret += "]";
 }
 
-static void AddJsonElement(std::string & ret, std::mt19937 & gen)
+static void addJSONElement(std::string & ret, std::mt19937 & gen)
 {
     std::uniform_int_distribution<int> opts(1, 10);
     const int noption = opts(gen);
@@ -451,7 +439,7 @@ static void AddJsonElement(std::string & ret, std::mt19937 & gen)
     }
 }
 
-static void BuildJson(std::string & ret, const int depth, const int width, std::mt19937 & gen)
+static void buildJSON(std::string & ret, const int depth, const int width, std::mt19937 & gen)
 {
     ret += "{";
     if (depth)
@@ -475,13 +463,13 @@ static void BuildJson(std::string & ret, const int depth, const int width, std::
             switch (noption)
             {
                 case 1: //object
-                    BuildJson(ret, depth - 1, width, gen);
+                    buildJSON(ret, depth - 1, width, gen);
                     break;
                 case 2: //array
-                    AddJsonArray(ret, depth - 1, width, gen);
+                    addJSONArray(ret, depth - 1, width, gen);
                     break;
                 case 3: //others
-                    AddJsonElement(ret, gen);
+                    addJSONElement(ret, gen);
                     break;
                 default:
                     assert(0);
@@ -565,19 +553,19 @@ CONV_FN(LiteralValue, lit_val)
             break;
         case LitValType::kStringLit:
             ret += '\'';
-            ConvertToSqlString(ret, lit_val.string_lit());
+            convertToSQLString(ret, lit_val.string_lit());
             ret += '\'';
             break;
-        case LitValType::kJsonValue:
-        case LitValType::kJsonString: {
-            const bool is_json_value = lit_val.lit_val_oneof_case() == LitValType::kJsonValue;
-            std::mt19937 gen(is_json_value ? lit_val.json_value() : lit_val.json_string());
+        case LitValType::kJvalue:
+        case LitValType::kJstr: {
+            const bool is_jvalue = lit_val.lit_val_oneof_case() == LitValType::kJvalue;
+            std::mt19937 gen(is_jvalue ? lit_val.jvalue() : lit_val.jstr());
             std::uniform_int_distribution<int> dopt(1, 3), wopt(1, 3);
 
             ret += "$jstr$";
-            BuildJson(ret, dopt(gen), wopt(gen), gen);
+            buildJSON(ret, dopt(gen), wopt(gen), gen);
             ret += "$jstr$";
-            if (is_json_value)
+            if (is_jvalue)
             {
                 ret += "::JSON";
             }
@@ -854,7 +842,7 @@ void BottomTypeNameToString(std::string & ret, const bool quote, const bool lcar
         case BottomTypeNameType::kFloats:
             ret += FloatingPoints_Name(btn.floats());
             break;
-        case BottomTypeNameType::kSqlString:
+        case BottomTypeNameType::kStandardString:
             ret += "String";
             break;
         case BottomTypeNameType::kFixedString:
@@ -924,8 +912,8 @@ void BottomTypeNameToString(std::string & ret, const bool quote, const bool lcar
                     case BottomTypeNameType::kUuid:
                         ret += "UUID";
                         break;
-                    case BottomTypeNameType::kJson: {
-                        const JsonDef & jdef = btn.json();
+                    case BottomTypeNameType::kJdef: {
+                        const JSONDef & jdef = btn.jdef();
 
                         ret += "JSON";
                         if (jdef.spec_size() > 0)
@@ -933,7 +921,7 @@ void BottomTypeNameToString(std::string & ret, const bool quote, const bool lcar
                             ret += "(";
                             for (int i = 0; i < jdef.spec_size(); i++)
                             {
-                                const JsonDefItem & jspec = jdef.spec(i);
+                                const JSONDefItem & jspec = jdef.spec(i);
 
                                 if (i != 0)
                                 {
@@ -956,7 +944,7 @@ void BottomTypeNameToString(std::string & ret, const bool quote, const bool lcar
                                 }
                                 else if (jspec.has_path_type())
                                 {
-                                    const JsonPathType & jpt = jspec.path_type();
+                                    const JSONPathType & jpt = jspec.path_type();
 
                                     ColumnPathToString(ret, !quote, jpt.col());
                                     ret += " ";

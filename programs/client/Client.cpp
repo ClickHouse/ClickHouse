@@ -953,7 +953,7 @@ bool Client::processWithFuzzing(const String & full_query)
     return true;
 }
 
-void Client::ProcessQueryAndLog(std::ofstream & outf, const std::string & full_query)
+void Client::processQueryAndLog(std::ofstream & outf, const std::string & full_query)
 {
     processTextAsSingleQuery(full_query);
     outf << full_query << std::endl;
@@ -1040,7 +1040,7 @@ bool Client::buzzHouse()
         processTextAsSingleQuery("DROP DATABASE IF EXISTS fuzztest;");
 
         outf << "--Session seed: " << rg.getSeed() << std::endl;
-        ProcessQueryAndLog(
+        processQueryAndLog(
             outf,
             "SET engine_file_truncate_on_insert = 1, allow_aggregate_partitions_independently = 1, allow_archive_path_syntax = 1, "
             "allow_asynchronous_read_from_io_pool_for_merge_tree = 1, allow_changing_replica_until_first_data_packet = 1, "
@@ -1068,7 +1068,7 @@ bool Client::buzzHouse()
             "allow_suspicious_variant_types = 1, allow_suspicious_types_in_group_by = 1, allow_suspicious_types_in_order_by = 1, "
             "allow_unrestricted_reads_from_keeper = 1, enable_analyzer = 1, enable_deflate_qpl_codec = 1, enable_zstd_qat_codec = 1, "
             "type_json_skip_duplicated_paths = 1, allow_experimental_s3queue = 1;");
-        ProcessQueryAndLog(outf, rg.nextBool() ? "SET s3_truncate_on_insert = 1;" : "SET s3_create_new_file_on_insert = 1;");
+        processQueryAndLog(outf, rg.nextBool() ? "SET s3_truncate_on_insert = 1;" : "SET s3_create_new_file_on_insert = 1;");
 
         //Load collations
         fc.loadCollations();

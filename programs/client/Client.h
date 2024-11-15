@@ -52,7 +52,7 @@ protected:
 private:
     void printChangedSettings() const;
     void showWarnings();
-    void ProcessQueryAndLog(std::ofstream & outf, const std::string & full_query);
+    void processQueryAndLog(std::ofstream & outf, const std::string & full_query);
     bool processBuzzHouseQuery(const std::string & full_query);
     void parseConnectionsCredentials(Poco::Util::AbstractConfiguration & config, const std::string & connection_name);
     std::vector<String> loadWarningMessages();

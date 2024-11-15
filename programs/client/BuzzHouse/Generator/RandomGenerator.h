@@ -82,21 +82,21 @@ private:
 
     /* use bad_utf8 on x' strings! */
     const std::vector<std::string> bad_utf8{
-        "ff",
-        "c328",
-        "a0a1",
-        "e228a1",
-        "e28228",
-        "f0288cbc",
-        "f09028bc",
-        "f0288c28",
-        "c328a0a1",
-        "e28228ff",
-        "f0288cbcf0288cbc",
-        "c328ff",
-        "aac328"};
+        "FF",
+        "C328",
+        "A0A1",
+        "E228A1",
+        "E28228",
+        "F0288CBC",
+        "F09028BC",
+        "F0288C28",
+        "C328A0A1",
+        "E28228FF",
+        "F0288CBCF0288CBC",
+        "C328FF",
+        "AAC328"};
 
-    const std::vector<std::string> json_cols{"c0", "c1", "c0.c1", "😆", "😉😉"};
+    const std::vector<std::string> jcols{"c0", "c1", "c0.c1", "😆", "😉😉"};
 
 public:
     std::mt19937 gen;
@@ -125,9 +125,9 @@ public:
         , doubles(std::numeric_limits<double>::min(), std::numeric_limits<double>::max())
         , zero_one(0, 1)
     {
-        std::random_device rd;
+        std::random_device rand_dev;
 
-        seed = in_seed ? in_seed : rd();
+        seed = in_seed ? in_seed : rand_dev();
         gen = std::mt19937(seed);
     }
 
@@ -362,9 +362,9 @@ public:
         return std::make_tuple(it->first, it->second);
     }
 
-    void nextJsonCol(std::string & ret)
+    void nextJSONCol(std::string & ret)
     {
-        const std::string & pick = pickRandomlyFromVector(json_cols);
+        const std::string & pick = pickRandomlyFromVector(jcols);
 
         ret += pick;
     }

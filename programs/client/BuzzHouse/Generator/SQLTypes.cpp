@@ -257,10 +257,10 @@ const SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint3
         uuid_type = 10 * static_cast<uint32_t>(!low_card && (allowed_types & allow_uuid) != 0),
         ipv4_type = 5 * static_cast<uint32_t>(!low_card && (allowed_types & allow_ipv4) != 0),
         ipv6_type = 5 * static_cast<uint32_t>(!low_card && (allowed_types & allow_ipv6) != 0),
-        json_type = 20 * static_cast<uint32_t>(!low_card && (allowed_types & allow_json) != 0),
+        j_type = 20 * static_cast<uint32_t>(!low_card && (allowed_types & allow_JSON) != 0),
         dynamic_type = 30 * static_cast<uint32_t>(!low_card && (allowed_types & allow_dynamic) != 0),
         prob_space = int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + enum_type
-        + uuid_type + ipv4_type + ipv6_type + json_type + dynamic_type;
+        + uuid_type + ipv4_type + ipv6_type + j_type + dynamic_type;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.gen);
 
@@ -308,7 +308,7 @@ const SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint3
         {
             if (tp)
             {
-                tp->set_sql_string(true);
+                tp->set_standard_string(true);
             }
         }
         else
@@ -417,13 +417,13 @@ const SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint3
         res = new IPv6Type();
     }
     else if (
-        json_type
+        j_type
         && nopt
             < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + enum_type + uuid_type
-               + ipv4_type + ipv6_type + json_type + 1))
+               + ipv4_type + ipv6_type + j_type + 1))
     {
         std::string desc = "";
-        JsonDef * jdef = tp ? tp->mutable_json() : nullptr;
+        JSONDef * jdef = tp ? tp->mutable_jdef() : nullptr;
         const uint32_t nclauses = rg.nextMediumNumber() % 7;
 
         if (nclauses)
@@ -433,7 +433,7 @@ const SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint3
         for (uint32_t i = 0; i < nclauses; i++)
         {
             const uint32_t noption = rg.nextSmallNumber();
-            JsonDefItem * jdi = tp ? jdef->add_spec() : nullptr;
+            JSONDefItem * jdi = tp ? jdef->add_spec() : nullptr;
 
             if (i != 0)
             {
@@ -473,7 +473,7 @@ const SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint3
                         desc += ".";
                     }
                     desc += '`';
-                    rg.nextJsonCol(nbuf);
+                    rg.nextJSONCol(nbuf);
                     desc += nbuf;
                     desc += '`';
                     if (tp) {
@@ -485,7 +485,7 @@ const SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint3
             {
                 uint32_t col_counter = 0;
                 const uint32_t ncols = (rg.nextMediumNumber() % 4) + 1;
-                JsonPathType * jpt = tp ? jdi->mutable_path_type() : nullptr;
+                JSONPathType * jpt = tp ? jdi->mutable_path_type() : nullptr;
                 ColumnPath * cp = tp ? jpt->mutable_col() : nullptr;
 
                 for (uint32_t j = 0; j < ncols; j++)
@@ -498,7 +498,7 @@ const SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint3
                         desc += ".";
                     }
                     desc += '`';
-                    rg.nextJsonCol(nbuf);
+                    rg.nextJSONCol(nbuf);
                     desc += nbuf;
                     desc += '`';
                     if (tp)
@@ -524,7 +524,7 @@ const SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint3
         dynamic_type
         && nopt
             < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + enum_type + uuid_type
-               + ipv4_type + ipv6_type + json_type + dynamic_type + 1))
+               + ipv4_type + ipv6_type + j_type + dynamic_type + 1))
     {
         Dynamic * dyn = tp ? tp->mutable_dynamic() : nullptr;
         std::optional<uint32_t> ntypes = std::nullopt;
@@ -594,7 +594,7 @@ StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_t allowed_
         const bool lcard = (allowed_types & allow_low_cardinality) && rg.nextMediumNumber() < 18;
         const SQLType * res = new Nullable(bottomType(
             rg,
-            allowed_types & ~(allow_dynamic | allow_json),
+            allowed_types & ~(allow_dynamic | allow_JSON),
             lcard,
             tp ? (lcard ? tp->mutable_nullable_lcard() : tp->mutable_nullable()) : nullptr));
         return lcard ? new LowCardinality(res) : res;
@@ -1233,7 +1233,7 @@ void strBuildJSON(RandomGenerator & rg, const int jdepth, const int jwidth, std:
                 ret += ",";
             }
             ret += "\"";
-            rg.nextJsonCol(ret);
+            rg.nextJSONCol(ret);
             ret += "\":";
             switch (jopt(rg.gen))
             {
@@ -1302,7 +1302,7 @@ void StatementGenerator::strAppendAnyValueInternal(RandomGenerator & rg, std::st
     else if (dynamic_cast<const DynamicType *>(tp))
     {
         uint32_t col_counter = 0;
-        const SQLType * next = randomNextType(rg, allow_nullable | allow_json, col_counter, nullptr);
+        const SQLType * next = randomNextType(rg, allow_nullable | allow_JSON, col_counter, nullptr);
 
         strAppendAnyValueInternal(rg, ret, next);
         delete next;

@@ -552,7 +552,7 @@ const std::vector<const CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCJSON_VALUE, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCtoJSONString, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCJSONArrayLength, 0, 0, 1, 1),
-    CHFunction(SQLFunc::FUNCjsonMergePatch, 0, 0, 2, ulimited_params),
+    CHFunction(SQLFunc::FUNCJSONMergePatch, 0, 0, 2, ulimited_params),
     CHFunction(SQLFunc::FUNCJSONAllPaths, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCJSONAllPathsWithTypes, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCJSONDynamicPaths, 0, 0, 1, 1),

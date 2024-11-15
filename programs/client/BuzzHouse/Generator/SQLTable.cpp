@@ -599,20 +599,20 @@ int StatementGenerator::addTableColumn(
         if (t.isMySQLEngine())
         {
             possible_types
-                = ~(allow_hugeint | allow_date32 | allow_datetime64 | allow_enum | allow_dynamic | allow_json | allow_low_cardinality
+                = ~(allow_hugeint | allow_date32 | allow_datetime64 | allow_enum | allow_dynamic | allow_JSON | allow_low_cardinality
                     | allow_array | allow_map | allow_tuple | allow_variant | allow_nested | allow_ipv4 | allow_ipv6 | allow_geo);
         }
         else if (t.isPostgreSQLEngine())
         {
             possible_types = ~(
-                allow_unsigned_int | allow_int8 | allow_hugeint | allow_date32 | allow_datetime64 | allow_enum | allow_dynamic | allow_json
+                allow_unsigned_int | allow_int8 | allow_hugeint | allow_date32 | allow_datetime64 | allow_enum | allow_dynamic | allow_JSON
                 | allow_low_cardinality | allow_map | allow_tuple | allow_variant | allow_nested | allow_ipv4 | allow_ipv6 | allow_geo);
         }
         else if (t.isSQLiteEngine())
         {
             possible_types
                 = ~(allow_unsigned_int | allow_hugeint | allow_floating_points | allow_dates | allow_datetimes | allow_enum | allow_dynamic
-                    | allow_json | allow_low_cardinality | allow_array | allow_map | allow_tuple | allow_variant | allow_nested | allow_ipv4
+                    | allow_JSON | allow_low_cardinality | allow_array | allow_map | allow_tuple | allow_variant | allow_nested | allow_ipv4
                     | allow_ipv6 | allow_geo);
         }
         else if (t.isMongoDBEngine())
