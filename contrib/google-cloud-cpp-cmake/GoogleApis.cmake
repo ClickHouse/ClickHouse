@@ -349,8 +349,8 @@ external_googleapis_add_library(
     "google/iam/credentials/v1/iamcredentials.proto" api_annotations_protos
     api_client_protos iam_credentials_v1_common_protos)
 
-google_cloud_cpp_load_protolist(cloud_common_list "${GOOGLE_CLOUD_DIR}/external/googleapis/protolists/common.list")
-google_cloud_cpp_load_protodeps(cloud_common_deps "${GOOGLE_CLOUD_DIR}/external/googleapis/protodeps/common.deps")
+google_cloud_cpp_load_protolist(cloud_common_list "${GOOGLE_CLOUD_CPP_DIR}/external/googleapis/protolists/common.list")
+google_cloud_cpp_load_protodeps(cloud_common_deps "${GOOGLE_CLOUD_CPP_DIR}/external/googleapis/protodeps/common.deps")
 google_cloud_cpp_grpcpp_library(
     google_cloud_cpp_cloud_common_common_protos ${cloud_common_list}
     PROTO_PATH_DIRECTORIES "${EXTERNAL_GOOGLEAPIS_SOURCE}"

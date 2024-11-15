@@ -1,28 +1,38 @@
-set(ENABLE_GOOGLE_CLOUD_DEFAULT OFF)
+set(ENABLE_GOOGLE_CLOUD_CPP_DEFAULT OFF)
 
-if(ENABLE_LIBRARIES AND (OS_LINUX OR OS_DARWIN) AND TARGET OpenSSL::Crypto)
-    set(ENABLE_GOOGLE_CLOUD_DEFAULT ON)
+if(ENABLE_LIBRARIES AND OS_LINUX)
+    set(ENABLE_GOOGLE_CLOUD_CPP_DEFAULT ON)
 endif()
 
-option(ENABLE_GOOGLE_CLOUD "Enable Google Cloud SDK" ${ENABLE_GOOGLE_CLOUD_DEFAULT})
+option(ENABLE_GOOGLE_CLOUD_CPP "Enable Google Cloud Cpp" ${ENABLE_GOOGLE_CLOUD_CPP_DEFAULT})
 
-if(NOT ENABLE_GOOGLE_CLOUD)
-    message(STATUS "Not using Google Cloud")
+if(NOT ENABLE_GOOGLE_CLOUD_CPP)
+    message(STATUS "Not using Google Cloud Cpp")
     return()
 endif()
 
 if(NOT ENABLE_GRPC)
-    message (${RECONFIGURE_MESSAGE_LEVEL} "Can't use Google Cloud without gRPC")
+    message (${RECONFIGURE_MESSAGE_LEVEL} "Can't use Google Cloud Cpp without gRPC")
 endif()
 if (NOT ENABLE_PROTOBUF)
-    message( ${RECONFIGURE_MESSAGE_LEVEL} "Can't use Google Cloud without protobuf")
+    message( ${RECONFIGURE_MESSAGE_LEVEL} "Can't use Google Cloud Cpp without protobuf")
 endif()
 
 # Gather sources and options.
-set(GOOGLE_CLOUD_SOURCES)
-set(GOOGLE_CLOUD_PUBLIC_INCLUDES)
-set(GOOGLE_CLOUD_PRIVATE_INCLUDES)
-set(GOOGLE_CLOUD_PRIVATE_LIBS)
+set(GOOGLE_CLOUD_CPP_SOURCES)
+set(GOOGLE_CLOUD_CPP_PUBLIC_INCLUDES)
+set(GOOGLE_CLOUD_CPP_PRIVATE_INCLUDES)
+set(GOOGLE_CLOUD_CPP_PRIVATE_LIBS)
+
+# Directories.
+SET(GOOGLE_CLOUD_CPP_DIR "${ClickHouse_SOURCE_DIR}/contrib/google-cloud-cpp" )
+list(APPEND GOOGLE_CLOUD_CPP_PRIVATE_INCLUDES "${GOOGLE_CLOUD_CPP_DIR}")
+
+# Set the PROJECT_SOURCE_DIR so that all Google Cloud cmake files work
+set(PROJECT_SOURCE_DIR_BAK ${PROJECT_SOURCE_DIR})
+set(PROJECT_SOURCE_DIR ${GOOGLE_CLOUD_CPP_DIR})
+
+list(APPEND CMAKE_MODULE_PATH "${GOOGLE_CLOUD_CPP_DIR}/cmake")
 
 # -- The build needs protobuf files. The original build scripts download them from a remote server (see target 'googleapis_download').
 #    This is too unreliable in the context of ClickHouse ... we instead ship the downloaded archive with the ClickHouse source and
@@ -51,16 +61,6 @@ file(RENAME
 )
 # ---
 
-# Directories.
-SET(GOOGLE_CLOUD_DIR "${ClickHouse_SOURCE_DIR}/contrib/google-cloud-cpp" )
-list(APPEND GOOGLE_CLOUD_PRIVATE_INCLUDES "${GOOGLE_CLOUD_DIR}")
-
-# Set the PROJECT_SOURCE_DIR so that all Google Cloud cmake files work
-set(PROJECT_SOURCE_DIR_BAK ${PROJECT_SOURCE_DIR})
-set(PROJECT_SOURCE_DIR ${GOOGLE_CLOUD_DIR})
-
-list(APPEND CMAKE_MODULE_PATH "${GOOGLE_CLOUD_DIR}/cmake")
-
 # Building this target results in all protobufs being compiled.
 add_custom_target(google-cloud-cpp-protos)
 
@@ -84,25 +84,25 @@ google_cloud_cpp_add_library_protos(kms)
 include(google_cloud_cpp_common.cmake)
 include(google_cloud_cpp_grpc_utils.cmake)
 
-SET(GOOGLE_CLOUD_KMS_DIR "${GOOGLE_CLOUD_DIR}/google/cloud/kms")
+SET(GOOGLE_CLOUD_CPP_KMS_DIR "${GOOGLE_CLOUD_CPP_DIR}/google/cloud/kms")
 
-file(GLOB GOOGLE_CLOUD_KMS_SRC
-    "${GOOGLE_CLOUD_KMS_DIR}/v1/*.cc"
-    "${GOOGLE_CLOUD_KMS_DIR}/v1/internal/*.cc"
-    "${GOOGLE_CLOUD_KMS_DIR}/inventory/v1/*.cc"
+file(GLOB GOOGLE_CLOUD_CPP_KMS_SRC
+    "${GOOGLE_CLOUD_CPP_KMS_DIR}/v1/*.cc"
+    "${GOOGLE_CLOUD_CPP_KMS_DIR}/v1/internal/*.cc"
+    "${GOOGLE_CLOUD_CPP_KMS_DIR}/inventory/v1/*.cc"
 )
 
-list(APPEND GOOGLE_CLOUD_SOURCES ${GOOGLE_CLOUD_KMS_SRC})
-list(APPEND GOOGLE_CLOUD_PUBLIC_INCLUDES "${GOOGLE_CLOUD_DIR}" "${CMAKE_CURRENT_BINARY_DIR}")
+list(APPEND GOOGLE_CLOUD_CPP_SOURCES ${GOOGLE_CLOUD_CPP_KMS_SRC})
+list(APPEND GOOGLE_CLOUD_CPP_PUBLIC_INCLUDES "${GOOGLE_CLOUD_CPP_DIR}" "${CMAKE_CURRENT_BINARY_DIR}")
 
 set(GRPC_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/grpc")
-list(APPEND GOOGLE_CLOUD_PUBLIC_INCLUDES "${GRPC_INCLUDE_DIR}/include" "${GRPC_INCLUDE_DIR}/spm-cpp-include")
+list(APPEND GOOGLE_CLOUD_CPP_PUBLIC_INCLUDES "${GRPC_INCLUDE_DIR}/include" "${GRPC_INCLUDE_DIR}/spm-cpp-include")
 
 # Restore the PROJECT_SOURCE_DIR.
 set(PROJECT_SOURCE_DIR ${PROJECT_SOURCE_DIR_BAK})
 
 # Link against external libraries.
-list(APPEND GOOGLE_CLOUD_PRIVATE_LIBS
+list(APPEND GOOGLE_CLOUD_CPP_PRIVATE_LIBS
     google_cloud_cpp_common
     google_cloud_cpp_grpc_utils
     google_cloud_cpp_kms_protos
@@ -112,21 +112,21 @@ list(APPEND GOOGLE_CLOUD_PRIVATE_LIBS
     absl::optional
 )
 
-list(APPEND GOOGLE_CLOUD_PUBLIC_LIBS
+list(APPEND GOOGLE_CLOUD_CPP_PUBLIC_LIBS
     absl::optional
     gRPC::grpc++
 )
 
 # Add library.
-add_library(_gcloud ${GOOGLE_CLOUD_SOURCES})
+add_library(_gcloud ${GOOGLE_CLOUD_CPP_SOURCES})
 
-target_include_directories(_gcloud SYSTEM PUBLIC ${GOOGLE_CLOUD_PUBLIC_INCLUDES})
-target_include_directories(_gcloud SYSTEM PRIVATE ${GOOGLE_CLOUD_PRIVATE_INCLUDES})
-target_link_libraries(_gcloud PRIVATE ${GOOGLE_CLOUD_PRIVATE_LIBS})
+target_include_directories(_gcloud SYSTEM PUBLIC ${GOOGLE_CLOUD_CPP_PUBLIC_INCLUDES})
+target_include_directories(_gcloud SYSTEM PRIVATE ${GOOGLE_CLOUD_CPP_PRIVATE_INCLUDES})
+target_link_libraries(_gcloud PRIVATE ${GOOGLE_CLOUD_CPP_PRIVATE_LIBS})
 
 # The library is large - avoid bloat.
 if (OMIT_HEAVY_DEBUG_SYMBOLS)
-    target_compile_options (_gcloud PRIVATE -g0)
+    target_compile_options(_gcloud PRIVATE -g0)
 endif()
 
-add_library(ch_contrib::google_cloud ALIAS _gcloud)
+add_library(ch_contrib::google_cloud_cpp ALIAS _gcloud)
