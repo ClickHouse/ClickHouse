@@ -131,7 +131,9 @@ MergeTreeIndexGranularityPtr createMergeTreeIndexGranularity(
     bool use_const_adaptive_granularity = settings[MergeTreeSetting::use_const_adaptive_granularity];
     bool is_compact_part = info.mark_type.part_type == MergeTreeDataPartType::Compact;
 
-    if (blocks_are_granules || is_compact_part || (use_adaptive_granularity && !use_const_adaptive_granularity))
+    /// Compact parts cannot work without adaptive granularity.
+    /// If part is empty create adaptive granularity because constant granularity doesn't support this corner case.
+    if (rows == 0 || blocks_are_granules || is_compact_part || (use_adaptive_granularity && !use_const_adaptive_granularity))
         return std::make_shared<MergeTreeIndexGranularityAdaptive>();
 
     size_t computed_granularity = computeIndexGranularity(
