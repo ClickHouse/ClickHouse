@@ -15,6 +15,7 @@ from docker_images_helper import DockerImage, get_docker_image, pull_image
 from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
 from get_robot_token import get_parameter_from_ssm
 from pr_info import PRInfo
+from praktika.utils import Shell
 from report import ERROR, JobReport, TestResults, read_test_results
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
@@ -154,12 +155,19 @@ def run_stress_test(upgrade_check: bool = False) -> None:
 
     pr_info = PRInfo()
 
-    docker_image = pull_image(get_docker_image("clickhouse/stress-test"))
+    docker_image = pull_image(get_docker_image("clickhouse/stateful-test"))
 
     packages_path = temp_path / "packages"
     packages_path.mkdir(parents=True, exist_ok=True)
 
-    download_all_deb_packages(check_name, reports_path, packages_path)
+    if check_name in ("amd_release", "amd_debug", "arm_release"):
+        # this is praktika based CI
+        print("Copy input *.deb artifacts")
+        assert Shell.check(
+            f"cp /tmp/praktika/input/*.deb {packages_path}", verbose=True
+        )
+    else:
+        download_all_deb_packages(check_name, reports_path, packages_path)
 
     server_log_path = temp_path / "server_log"
     server_log_path.mkdir(parents=True, exist_ok=True)
@@ -201,6 +209,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
         result_path, server_log_path, run_log_path
     )
 
+    Shell.check("pwd", verbose=True)
     JobReport(
         description=description,
         test_results=test_results,
@@ -208,7 +217,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
         start_time=stopwatch.start_time_str,
         duration=stopwatch.duration_seconds,
         additional_files=additional_logs,
-    ).dump()
+    ).dump().to_praktika_result(job_name=f"Stress tests ({check_name})").dump()
 
     if state == "failure":
         sys.exit(1)

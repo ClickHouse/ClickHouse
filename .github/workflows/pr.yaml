@@ -580,11 +580,11 @@ jobs:
             python3 -m praktika run --job '''Stateless tests (arm_asan,non-parallel)''' --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
           fi
 
-  stateful_tests_amd_debugparallel:
+  stateful_tests_amd_releaseparallel:
     runs-on: [builder]
     needs: [config_workflow, docker_builds, build_amd_debug]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVmdWwgdGVzdHMgKGFtZF9kZWJ1ZyxwYXJhbGxlbCk=') }}
-    name: "Stateful tests (amd_debug,parallel)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVmdWwgdGVzdHMgKGFtZF9yZWxlYXNlLHBhcmFsbGVsKQ==') }}
+    name: "Stateful tests (amd_release,parallel)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -615,14 +615,54 @@ jobs:
           . /tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run --job '''Stateful tests (amd_debug,parallel)''' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run --job '''Stateful tests (amd_release,parallel)''' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
           else
-            python3 -m praktika run --job '''Stateful tests (amd_debug,parallel)''' --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run --job '''Stateful tests (amd_release,parallel)''' --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+          fi
+
+  stress_tests_arm_release:
+    runs-on: [func-tester-aarch64]
+    needs: [config_workflow, docker_builds, build_arm_release]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RyZXNzIHRlc3RzIChhcm1fcmVsZWFzZSk=') }}
+    name: "Stress tests (arm_release)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+            ref: ${{ github.head_ref }}
+
+      - name: Prepare env script
+        run: |
+          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.
+
+          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
+          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
+
+      - name: Run
+        id: run
+        run: |
+          . /tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run --job '''Stress tests (arm_release)''' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+          else
+            python3 -m praktika run --job '''Stress tests (arm_release)''' --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
           fi
 
   finish_workflow:
     runs-on: [ci_services]
-    needs: [config_workflow, docker_builds, style_check, fast_test, build_amd_debug, build_amd_release, build_arm_release, build_arm_asan, stateless_tests_amd_debugparallel, stateless_tests_amd_debugnon_parallel, stateless_tests_amd_releaseparallel, stateless_tests_amd_releasenon_parallel, stateless_tests_arm_asanparallel, stateless_tests_arm_asannon_parallel, stateful_tests_amd_debugparallel]
+    needs: [config_workflow, docker_builds, style_check, fast_test, build_amd_debug, build_amd_release, build_arm_release, build_arm_asan, stateless_tests_amd_debugparallel, stateless_tests_amd_debugnon_parallel, stateless_tests_amd_releaseparallel, stateless_tests_amd_releasenon_parallel, stateless_tests_arm_asanparallel, stateless_tests_arm_asannon_parallel, stateful_tests_amd_releaseparallel, stress_tests_arm_release]
     if: ${{ !cancelled() }}
     name: "Finish Workflow"
     outputs:

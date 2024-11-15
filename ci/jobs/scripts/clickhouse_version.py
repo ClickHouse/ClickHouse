@@ -32,5 +32,7 @@ class CHVersion:
             versions[name] = value
 
         version_sha = versions["githash"]
-        tweak = int(Shell.get_output(f"git rev-list --count {version_sha}..HEAD", verbose=True))
+        tweak = int(
+            Shell.get_output(f"git rev-list --count {version_sha}..HEAD", verbose=True)
+        )
         return f"{versions['major']}.{versions['minor']}.{versions['patch']}.{tweak}"

@@ -333,7 +333,7 @@ def _finish_workflow(workflow, job_name):
             # dump workflow result after update - to have an updated result in post
             workflow_result.dump()
             # add error into env - should apper in the report
-            env.add_info(ResultInfo.NOT_FINALIZED + f" [{result.name}]")
+            env.add_info(f"{result.name}: {ResultInfo.NOT_FINALIZED}")
             update_final_report = True
         job = workflow.get_job(result.name)
         if not job or not job.allow_merge_on_failure:

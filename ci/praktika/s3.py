@@ -2,6 +2,7 @@ import dataclasses
 import json
 from pathlib import Path
 from typing import Dict
+from urllib.parse import quote
 
 from praktika._environment import _Environment
 from praktika.settings import Settings
@@ -55,7 +56,7 @@ class S3:
         bucket = s3_path.split("/")[0]
         endpoint = Settings.S3_BUCKET_TO_HTTP_ENDPOINT[bucket]
         assert endpoint
-        return f"https://{s3_full_path}".replace(bucket, endpoint)
+        return quote(f"https://{s3_full_path}".replace(bucket, endpoint), safe=":/?&=")
 
     @classmethod
     def put(cls, s3_path, local_path, text=False, metadata=None, if_none_matched=False):

@@ -1,3 +1,5 @@
+import glob
+import json
 import os
 import re
 import sys
@@ -255,9 +257,11 @@ class Runner:
             info = f"ERROR: {ResultInfo.KILLED}"
             print(info)
             result.set_info(info).set_status(Result.Status.ERROR).dump()
+        else:
+            # TODO: add setting with different ways of storing general praktika log: always, on error, never.
+            #   now let's store it on error only
+            result.files = [file for file in result.files if file != Settings.RUN_LOG]
 
-        if not result.is_ok():
-            result.set_files(files=[Settings.RUN_LOG])
         result.update_duration().dump()
 
         if run_exit_code == 0:

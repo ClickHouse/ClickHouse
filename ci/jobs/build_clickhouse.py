@@ -37,8 +37,7 @@ CMAKE_CMD = """cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA \
 -DCMAKE_INSTALL_SYSCONFDIR=/etc -DCMAKE_INSTALL_LOCALSTATEDIR=/var -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON \
 {AUX_DEFS} \
 -DCMAKE_C_COMPILER=clang-18 -DCMAKE_CXX_COMPILER=clang++-18 \
--DCOMPILER_CACHE={CACHE_TYPE} \
--DENABLE_BUILD_PROFILING=1 {DIR}"""
+-DCOMPILER_CACHE={CACHE_TYPE} -DENABLE_BUILD_PROFILING=1 {DIR}"""
 
 
 def main():
@@ -95,24 +94,27 @@ def main():
 
     res = True
     results = []
+    version = ""
 
     if res and JobStages.UNSHALLOW in stages:
         results.append(
             Result.create_from_command_execution(
                 name="Repo Unshallow",
-                command="git rev-parse --is-shallow-repository | grep -q true && git fetch --filter=tree:0 --depth=5000 origin $(git rev-parse --abbrev-ref HEAD)",
+                command="git rev-parse --is-shallow-repository | grep -q true && git fetch --depth 10000 --no-tags --filter=tree:0 origin $(git rev-parse --abbrev-ref HEAD)",
                 with_log=True,
             )
         )
-        if results[-1].is_ok():
+        res = results[-1].is_ok()
+        if res:
             try:
                 version = CHVersion.get_version()
+                assert version
                 print(f"Got version from repo [{version}]")
             except Exception as e:
                 results[-1].set_failed().set_info(
-                    f"Failed to retrieve version from repo: ex [{e}]"
+                    f"Failed to get version from repo, ex [{e}]"
                 )
-        res = results[-1].is_ok()
+                res = False
 
     if res and JobStages.CHECKOUT_SUBMODULES in stages:
         Shell.check(f"rm -rf {build_dir} && mkdir -p {build_dir}")
@@ -133,24 +135,6 @@ def main():
                 with_log=True,
             )
         )
-        res = results[-1].is_ok()
-
-    if res and JobStages.UNSHALLOW in stages:
-        results.append(
-            Result.create_from_command_execution(
-                name="Repo Unshallow",
-                command="git fetch --depth 10000 --filter=tree:0",
-                with_log=True,
-            )
-        )
-        if results[-1].is_ok():
-            try:
-                version = CHVersion.get_version()
-                print(f"Got version from repo [{version}]")
-            except Exception as e:
-                results[-1].set_failed().set_info(
-                    "Failed to retrieve version from repo: ex [{e}]"
-                )
         res = results[-1].is_ok()
 
     if res and JobStages.BUILD in stages:
@@ -177,6 +161,11 @@ def main():
         else:
             assert False, "TODO"
 
+        if "amd" in build_type:
+            deb_arch = "amd64"
+        else:
+            deb_arch = "arm64"
+
         output_dir = "/tmp/praktika/output/"
         assert Shell.check(f"rm -f {output_dir}/*.deb")
 
@@ -185,7 +174,8 @@ def main():
                 name="Build Packages",
                 command=[
                     f"DESTDIR={build_dir}/root ninja programs/install",
-                    f"ln -sf {build_dir}/root {Utils.cwd()}/packages/root && cd {Utils.cwd()}/packages/ && OUTPUT_DIR={output_dir} BUILD_TYPE={package_type} VERSION_STRING={version} ./build --deb",
+                    f"ln -sf {build_dir}/root {Utils.cwd()}/packages/root",
+                    f"cd {Utils.cwd()}/packages/ && OUTPUT_DIR={output_dir} BUILD_TYPE={package_type} VERSION_STRING={version} DEB_ARCH={deb_arch} ./build --deb",
                 ],
                 workdir=build_dir,
                 with_log=True,

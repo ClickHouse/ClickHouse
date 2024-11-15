@@ -128,6 +128,9 @@ class HtmlRunnerHooks:
         for job in _workflow.jobs:
             if job.name not in skip_jobs:
                 result = Result.generate_pending(job.name)
+                # Preemptively add the general job log to the result directory to ensure
+                #   the post-job handler can upload it, even if the job is terminated unexpectedly
+                result.set_files([Settings.RUN_LOG])
             else:
                 result = Result.generate_skipped(job.name, job_cache_records[job.name])
             results.append(result)
