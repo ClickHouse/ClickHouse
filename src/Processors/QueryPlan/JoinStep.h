@@ -16,6 +16,26 @@ using DynamiclyFilteredPartsRangesPtr = std::shared_ptr<DynamiclyFilteredPartsRa
 
 class ColumnSet;
 
+/// This structure is used to filter left table by the right one after HashJoin is filled.
+struct DynamicJoinFilters
+{
+    struct Clause
+    {
+        ColumnSet * set;
+        Names keys;
+    };
+
+    std::vector<Clause> clauses;
+    DynamiclyFilteredPartsRangesPtr parts;
+    ActionsDAG actions;
+    ContextPtr context;
+    StorageMetadataPtr metadata;
+
+    void filterDynamicPartsByFilledJoin(const IJoin & join);
+};
+
+using DynamicJoinFiltersPtr = std::shared_ptr<DynamicJoinFilters>;
+
 /// Join two data streams.
 class JoinStep : public IQueryPlanStep
 {
@@ -41,12 +61,7 @@ public:
     void setJoin(JoinPtr join_) { join = std::move(join_); }
     bool allowPushDownToRight() const;
 
-    void setDynamicParts(
-        DynamiclyFilteredPartsRangesPtr dynamic_parts_,
-        ActionsDAG dynamic_filter_,
-        ColumnSet * column_set_,
-        ContextPtr context_,
-        StorageMetadataPtr metdata_);
+    void setDynamicFilter(DynamicJoinFiltersPtr dynamic_filter_);
 
 private:
     void updateOutputHeader() override;
@@ -56,11 +71,7 @@ private:
     size_t max_streams;
     bool keep_left_read_in_order;
 
-    DynamiclyFilteredPartsRangesPtr dynamic_parts;
-    ActionsDAG dynamic_filter;
-    ColumnSet * column_set;
-    ContextPtr context;
-    StorageMetadataPtr metadata;
+    DynamicJoinFiltersPtr dynamic_filter;
 };
 
 /// Special step for the case when Join is already filled.

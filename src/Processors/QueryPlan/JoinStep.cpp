@@ -39,7 +39,109 @@ std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join)
     return description;
 }
 
+ColumnsWithTypeAndName squashBlocks(const Names & keys, const BlocksList & blocks)
+{
+    ColumnsWithTypeAndName squashed;
+    std::vector<size_t> positions;
+
+    // std::cerr << "===== " << blocks.front().dumpStructure() << std::endl;
+    for (const auto & name : keys)
+    {
+        // std::cerr << ".... " << name << std::endl;
+        positions.push_back(blocks.front().getPositionByName(name));
+    }
+
+    bool first = true;
+    for (const auto & block : blocks)
+    {
+        if (first)
+        {
+            first = false;
+            for (size_t pos : positions)
+                squashed.push_back(blocks.front().getByPosition(pos));
+            continue;
+        }
+
+        for (size_t i = 0; i < positions.size(); ++i)
+        {
+            auto & sq_col = squashed[i];
+            auto col_mutable = IColumn::mutate(std::move(sq_col.column));
+
+            const auto & rhs_col = block.getByPosition(positions[i]);
+            size_t rows = rhs_col.column->size();
+
+            col_mutable->insertRangeFrom(*rhs_col.column, 0, rows);
+            sq_col.column = std::move(col_mutable);
+        }
+    }
+
+    return squashed;
 }
+
+}
+
+void DynamicJoinFilters::filterDynamicPartsByFilledJoin(const IJoin & join)
+{
+    if (!parts)
+        return;
+
+    const auto * hash_join = typeid_cast<const HashJoin *>(&join);
+    if (!hash_join)
+        return;
+
+    const auto & blocks = hash_join->getJoinedData()->right_key_columns_for_filter;
+    if (blocks.empty())
+        return;
+
+    const auto & settings = context->getSettingsRef();
+
+    for (const auto & clause : clauses)
+    {
+        auto squashed = squashBlocks(clause.keys, blocks);
+
+        // std::cerr << "Right join data rows " << squashed.front().column->size() << std::endl;
+
+        auto set = std::make_shared<FutureSetFromTuple>(squashed, settings);
+        clause.set->setData(std::move(set));
+    }
+
+    // std::cerr << ".... ccc " << reinterpret_cast<const void *>(col_set) << std::endl;
+
+    const auto & primary_key = metadata->getPrimaryKey();
+    const Names & primary_key_column_names = primary_key.column_names;
+
+    KeyCondition key_condition(&actions, context, primary_key_column_names, primary_key.expression);
+    // std::cerr << "======== " << key_condition.toString() << std::endl;
+
+    auto log = getLogger("DynamicJoinFilter");
+
+    auto parts_with_lock = parts->parts_ranges_ptr->get();
+    for (auto & part_range : parts_with_lock.parts_ranges)
+    {
+        MarkRanges filtered_ranges;
+        for (auto & range : part_range.ranges)
+        {
+            // std::cerr << "Range " << range.begin << ' ' << range.end << std::endl;
+            auto new_ranges = MergeTreeDataSelectExecutor::markRangesFromPKRange(
+                part_range.data_part,
+                range.begin,
+                range.end,
+                metadata,
+                key_condition,
+                {}, nullptr, settings, log);
+
+            for (auto & new_range : new_ranges)
+            {
+                // std::cerr << "New Range " << new_range.begin << ' ' << new_range.end << std::endl;
+                if (new_range.getNumberOfMarks())
+                    filtered_ranges.push_back(new_range);
+            }
+        }
+
+        part_range.ranges = std::move(filtered_ranges);
+    }
+}
+
 
 JoinStep::JoinStep(
     const Header & left_header_,
@@ -53,18 +155,9 @@ JoinStep::JoinStep(
     updateInputHeaders({left_header_, right_header_});
 }
 
-void JoinStep::setDynamicParts(
-    DynamiclyFilteredPartsRangesPtr dynamic_parts_,
-    ActionsDAG dynamic_filter_,
-    ColumnSet * column_set_,
-    ContextPtr context_,
-    StorageMetadataPtr metadata_)
+void JoinStep::setDynamicFilter(DynamicJoinFiltersPtr dynamic_filter_)
 {
-    dynamic_parts = std::move(dynamic_parts_);
     dynamic_filter = std::move(dynamic_filter_);
-    column_set = column_set_;
-    context = std::move(context_);
-    metadata = std::move(metadata_);
 }
 
 QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
@@ -80,105 +173,9 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         return joined_pipeline;
     }
 
-    auto finish_callback = [
-        algo = this->join,
-        parts = this->dynamic_parts,
-        col_set = this->column_set,
-        filter = std::make_shared<ActionsDAG>(std::move(this->dynamic_filter)),
-        ctx = this->context,
-        metadata_snapshot = this->metadata]()
+    auto finish_callback = [filter = this->dynamic_filter, algo = this->join]()
     {
-        if (!parts)
-            return;
-
-        const auto * hash_join = typeid_cast<const HashJoin *>(algo.get());
-        if (!hash_join)
-            return;
-
-        const auto & blocks = hash_join->getJoinedData()->right_key_columns_for_filter;
-        if (blocks.empty())
-            return;
-
-        ColumnsWithTypeAndName squashed;
-        std::vector<size_t> positions;
-        const auto & table_join = hash_join->getTableJoin();
-        const auto & clause = table_join.getClauses().front();
-        // std::cerr << "===== " << blocks.front().dumpStructure() << std::endl;
-        for (const auto & name : clause.key_names_right)
-        {
-            // std::cerr << ".... " << name << std::endl;
-            if (blocks.front().has(name))
-                positions.push_back(blocks.front().getPositionByName(name));
-        }
-
-        if (positions.empty())
-            return;
-
-        bool first = true;
-        for (const auto & block : blocks)
-        {
-            if (first)
-            {
-                first = false;
-                for (size_t pos : positions)
-                    squashed.push_back(blocks.front().getByPosition(pos));
-                continue;
-            }
-
-            for (size_t i = 0; i < positions.size(); ++i)
-            {
-                auto & sq_col = squashed[i];
-                auto col_mutable = IColumn::mutate(std::move(sq_col.column));
-
-                const auto & rhs_col = block.getByPosition(positions[i]);
-                size_t rows = rhs_col.column->size();
-
-                col_mutable->insertRangeFrom(*rhs_col.column, 0, rows);
-                sq_col.column = std::move(col_mutable);
-            }
-        }
-
-        // std::cerr << "Right join data rows " << squashed.front().column->size() << std::endl;
-
-        auto set = std::make_shared<FutureSetFromTuple>(squashed, ctx->getSettingsRef());
-        col_set->setData(std::move(set));
-
-        // std::cerr << ".... ccc " << reinterpret_cast<const void *>(col_set) << std::endl;
-
-        const auto & primary_key = metadata_snapshot->getPrimaryKey();
-        const Names & primary_key_column_names = primary_key.column_names;
-
-        KeyCondition key_condition(filter.get(), ctx, primary_key_column_names, primary_key.expression);
-        // std::cerr << "======== " << key_condition.toString() << std::endl;
-
-        const auto & settings = ctx->getSettingsRef();
-        auto log = getLogger("DynamicJoinFilter");
-
-        auto parts_with_lock = parts->parts_ranges_ptr->get();
-        for (auto & part_range : parts_with_lock.parts_ranges)
-        {
-            MarkRanges filtered_ranges;
-            for (auto & range : part_range.ranges)
-            {
-                // std::cerr << "Range " << range.begin << ' ' << range.end << std::endl;
-                auto new_ranges = MergeTreeDataSelectExecutor::markRangesFromPKRange(
-                    part_range.data_part,
-                    range.begin,
-                    range.end,
-                    metadata_snapshot,
-                    key_condition,
-                    {}, nullptr, settings, log);
-
-                for (auto & new_range : new_ranges)
-                {
-                    // std::cerr << "New Range " << new_range.begin << ' ' << new_range.end << std::endl;
-                    if (new_range.getNumberOfMarks())
-                        filtered_ranges.push_back(new_range);
-                }
-            }
-
-            part_range.ranges = std::move(filtered_ranges);
-        }
+        filter->filterDynamicPartsByFilledJoin(*algo);
     };
 
     return QueryPipelineBuilder::joinPipelinesRightLeft(
@@ -210,10 +207,10 @@ void JoinStep::describeActions(FormatSettings & settings) const
     for (const auto & [name, value] : describeJoinActions(join))
         settings.out << prefix << name << ": " << value << '\n';
 
-    if (dynamic_parts)
+    if (dynamic_filter)
     {
         settings.out << prefix << "Dynamic Filter\n";
-        auto expression = std::make_shared<ExpressionActions>(dynamic_filter.clone());
+        auto expression = std::make_shared<ExpressionActions>(dynamic_filter->actions.clone());
         expression->describeActions(settings.out, prefix);
     }
 }
