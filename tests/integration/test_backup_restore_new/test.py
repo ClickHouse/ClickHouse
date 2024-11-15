@@ -1846,7 +1846,7 @@ def test_tables_dependency():
     drop()
 
 
-def test_restore_access():
+def test_required_privileges_with_partial_revokes():
     backup_name = new_backup_name()
     instance.query("CREATE USER u1")
     instance.query("GRANT SELECT ON *.* TO u1")
