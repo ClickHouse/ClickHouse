@@ -1,7 +1,12 @@
 #pragma once
+
+#include <Common/CurrentThread.h>
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
+#include <Interpreters/Context.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+
+#include <fmt/core.h>
 
 namespace DB
 {
@@ -26,6 +31,8 @@ using Headers = std::vector<Header>;
 class IQueryPlanStep
 {
 public:
+    IQueryPlanStep();
+
     virtual ~IQueryPlanStep() = default;
 
     virtual String getName() const = 0;
@@ -77,6 +84,8 @@ public:
 
     /// Updates the input streams of the given step. Used during query plan optimizations.
     /// It won't do any validation of new streams, so it is your responsibility to ensure that this update doesn't break anything
+    String getUniqID() const { return fmt::format("{}_{}", getName(), step_index); }
+
     /// (e.g. you correctly remove / add columns).
     void updateInputHeaders(Headers input_headers_);
     void updateInputHeader(Header input_header, size_t idx = 0);
@@ -95,6 +104,9 @@ protected:
     Processors processors;
 
     static void describePipeline(const Processors & processors, FormatSettings & settings);
+
+private:
+    size_t step_index = 0;
 };
 
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
