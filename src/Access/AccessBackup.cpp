@@ -358,9 +358,8 @@ AccessRightsElements AccessRestorerFromBackup::getRequiredAccess() const
                 auto elements = user.access.getElements();
                 for (auto & element : elements)
                 {
-                    if (element.is_partial_revoke)
-                        continue;
-                    element.grant_option = true;
+                    if (!element.is_partial_revoke)
+                        element.grant_option = true;
                     res.emplace_back(element);
                 }
                 if (!user.granted_roles.isEmpty())
@@ -375,9 +374,8 @@ AccessRightsElements AccessRestorerFromBackup::getRequiredAccess() const
                 auto elements = role.access.getElements();
                 for (auto & element : elements)
                 {
-                    if (element.is_partial_revoke)
-                        continue;
-                    element.grant_option = true;
+                    if (!element.is_partial_revoke)
+                        element.grant_option = true;
                     res.emplace_back(element);
                 }
                 if (!role.granted_roles.isEmpty())
