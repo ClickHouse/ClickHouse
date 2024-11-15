@@ -8,7 +8,9 @@ set -x -e
 DEST_SERVER_PATH="${1:-/etc/clickhouse-server}"
 DEST_CLIENT_PATH="${2:-/etc/clickhouse-client}"
 SRC_PATH="$( cd "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
-
+if [ $# -ge 2 ]; then
+    shift 2
+fi
 
 FAST_TEST=0
 NO_AZURE=0
