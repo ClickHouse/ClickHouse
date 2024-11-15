@@ -86,7 +86,7 @@ void buildDelta(PaddedPODArray<UInt64> & delta, UInt8 bit_size, U base, const Pa
     for (size_t i = from; i < to; ++i)
     {
         U delta_elem = data[i] - base;
-        chassert((delta_elem & maskLowBits<UInt64>(bit_size)) == delta_elem);
+        chassert((delta_elem & maskLowBits<UInt64>(bit_size)) == static_cast<UInt64>(delta_elem));
 
         writeBitsPacked(delta.begin(), bit_offset, delta_elem);
         bit_offset += bit_size;
