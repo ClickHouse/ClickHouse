@@ -3131,3 +3131,4 @@ DistributedCachePoolBehaviourOnLimit
 SharedJoin
 ShareSet
 unacked
+BFloat
