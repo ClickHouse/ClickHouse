@@ -72,8 +72,8 @@ private:
     void createRootNodes();
 
     /// Atomically creates both 'start' and 'alive' nodes and also checks that there is no concurrent backup or restore if `allow_concurrency` is false.
-    void createStartAndAliveNodes();
-    void createStartAndAliveNodes(Coordination::ZooKeeperWithFaultInjection::Ptr zookeeper);
+    void createStartAndAliveNodesAndCheckConcurrency(BackupConcurrencyCounters & concurrency_counters_);
+    void createStartAndAliveNodesAndCheckConcurrency(Coordination::ZooKeeperWithFaultInjection::Ptr zookeeper);
 
     /// Deserialize the version of a node stored in the 'start' node.
     int parseStartNode(const String & start_node_contents, const String & host) const;
@@ -171,7 +171,7 @@ private:
     const String alive_node_path;
     const String alive_tracker_node_path;
 
-    std::optional<BackupConcurrencyCheck> concurrency_check;
+    std::optional<BackupConcurrencyCheck> local_concurrency_check;
 
     std::shared_ptr<Poco::Event> zk_nodes_changed;
 

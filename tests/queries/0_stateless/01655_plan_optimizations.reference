@@ -163,6 +163,7 @@ Filter column: notEquals(__table1.y, 2_UInt8)
 > filter is pushed down before CreatingSets
 CreatingSets
 Filter
+Filter
 1
 3
 > one condition of filter is pushed down before LEFT JOIN
