@@ -7,7 +7,6 @@
 #include <condition_variable>
 #include <mutex>
 
-#include "config.h"
 
 namespace DB
 {
