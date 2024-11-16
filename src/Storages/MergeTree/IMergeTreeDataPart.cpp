@@ -988,6 +988,8 @@ void IMergeTreeDataPart::loadIndex() const
                     "{}, read: {})", index_path, marks_count, loaded_index[i]->size());
         }
 
+        LOG_TEST(storage.log, "Loaded primary key index for part {}, {} columns are kept in memory", name, key_size);
+
         if (!index_file->eof())
             throw Exception(ErrorCodes::EXPECTED_END_OF_FILE, "Index file {} is unexpectedly long", index_path);
 
