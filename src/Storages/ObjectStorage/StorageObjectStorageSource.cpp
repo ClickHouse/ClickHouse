@@ -552,7 +552,7 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::IIterator::next(
 
     if (object_info)
     {
-        LOG_TEST(logger, "Next key: {}", object_info->getFileName());
+        LOG_TEST(logger, "Next key: {}", object_info->getPath());
     }
 
     return object_info;
@@ -658,7 +658,7 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::GlobIterator::ne
             new_batch = std::move(result.value());
             for (auto it = new_batch.begin(); it != new_batch.end();)
             {
-                if (!recursive && !re2::RE2::FullMatch((*it)->getPath(), *matcher))
+                if (!recursive && (!re2::RE2::FullMatch((*it)->getPath(), *matcher) || (*it)->getFileName().empty()))
                     it = new_batch.erase(it);
                 else
                     ++it;
