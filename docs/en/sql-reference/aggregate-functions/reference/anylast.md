@@ -18,9 +18,9 @@ anyLast(column) [RESPECT NULLS]
 
 :::note
 
-Supports the `RESPECT NULLS` modifier after the function name. Using this modifier will ensure the function selects the last value passed, regardless of whether it is `NULL` or not.
+By default, the `anyLast` function never returns `NULL`. However, it supports the `RESPECT NULLS `modifier after the function name, which will ensure the function selects the last value passed, regardless of whether it is `NULL` or not.
 
-Alias: `anyLastRepectNulls`  
+Alias: `anyLastRespectNulls`  
 :::
 
 **Returned value**
@@ -36,11 +36,11 @@ CREATE TABLE any_last_nulls (city Nullable(String)) ENGINE=Log;
 
 INSERT INTO any_last_nulls (city) VALUES ('Amsterdam'),(NULL),('New York'),('Tokyo'),('Valencia'),(NULL);
 
-SELECT anyLast(city) FROM any_last_nulls;
+SELECT anyLast(city), anyLastRespectNulls(city) FROM any_last_nulls;
 ```
 
 ```response
-┌─anyLast(city)─┐
-│ Valencia      │
-└───────────────┘
+┌─anyLast(city)─┬─anyLastRespectNulls(city)─┐
+│ Valencia      │ ᴺᵁᴸᴸ                      │
+└───────────────┴───────────────────────────┘
 ```

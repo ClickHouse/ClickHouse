@@ -21,7 +21,9 @@ Aliases: `any_value`, [`first_value`](../reference/first_value.md).
 **Returned value**
 
 :::note
-Supports the `RESPECT NULLS` modifier after the function name. Using this modifier will ensure the function selects the first value passed, regardless of whether it is `NULL` or not.
+By default, the `anyLast` function never returns `NULL`. However, it supports the `RESPECT NULLS` modifier after the function name. Using this modifier will ensure the function selects the first value passed, regardless of whether it is `NULL` or not.
+
+Alias: `anyRespectNulls`
 :::
 
 :::note
@@ -48,11 +50,11 @@ CREATE TABLE any_nulls (city Nullable(String)) ENGINE=Log;
 
 INSERT INTO any_nulls (city) VALUES (NULL), ('Amsterdam'), ('New York'), ('Tokyo'), ('Valencia'), (NULL);
 
-SELECT any(city) FROM any_nulls;
+SELECT any(city), anyRespectNulls(city) FROM any_nulls;
 ```
 
 ```response
-┌─any(city)─┐
-│ Amsterdam │
-└───────────┘
+┌─any(city)─┬─anyRespectNulls(city)─┐
+│ Amsterdam │ ᴺᵁᴸᴸ                  │
+└───────────┴───────────────────────┘
 ```
