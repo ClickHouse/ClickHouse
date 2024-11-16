@@ -122,7 +122,7 @@ Default value: `0`.
 
 ### s3queue_polling_min_timeout_ms {#polling_min_timeout_ms}
 
-Minimal timeout before next polling (in milliseconds).
+Specifies the minimum time, in milliseconds, that ClickHouse waits before making the next polling attempt.
 
 Possible values:
 
@@ -132,7 +132,7 @@ Default value: `1000`.
 
 ### s3queue_polling_max_timeout_ms {#polling_max_timeout_ms}
 
-Maximum timeout before next polling (in milliseconds).
+Defines the maximum time, in milliseconds, that ClickHouse waits before initiating the next polling attempt.
 
 Possible values:
 
@@ -142,7 +142,7 @@ Default value: `10000`.
 
 ### s3queue_polling_backoff_ms {#polling_backoff_ms}
 
-Polling backoff (in milliseconds).
+Determines the additional wait time added to the previous polling interval when no new files are found. The next poll occurs after the sum of the previous interval and this backoff value, or the maximum interval, whichever is lower.
 
 Possible values:
 
