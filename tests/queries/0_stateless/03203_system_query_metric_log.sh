@@ -84,17 +84,17 @@ check_log 123
 # query_metric_log_interval=0 disables the collection altogether
 $CLICKHOUSE_CLIENT -m -q """
     SELECT '--Check that a query_metric_log_interval=0 disables the collection';
-    SELECT count() FROM system.query_metric_log WHERE event_date >= yesterday() AND query_id = '${query_prefix}_0'
+    SELECT count() == 0 FROM system.query_metric_log WHERE event_date >= yesterday() AND query_id = '${query_prefix}_0'
 """
 
 # a quick query that takes less than query_metric_log_interval is never collected
 $CLICKHOUSE_CLIENT -m -q """
     SELECT '-Check that a query which execution time is less than query_metric_log_interval is never collected';
-    SELECT count() FROM system.query_metric_log WHERE event_date >= yesterday() AND query_id = '${query_prefix}_fast'
+    SELECT count() == 0 FROM system.query_metric_log WHERE event_date >= yesterday() AND query_id = '${query_prefix}_fast'
 """
 
 # a query that takes more than query_metric_log_interval is collected including the final row
 $CLICKHOUSE_CLIENT -m -q """
     SELECT '--Check that there is a final event when queries finish';
-    SELECT count() FROM system.query_metric_log WHERE event_date >= yesterday() AND query_id = '${query_prefix}_1000'
+    SELECT count() > 2 FROM system.query_metric_log WHERE event_date >= yesterday() AND query_id = '${query_prefix}_1000'
 """

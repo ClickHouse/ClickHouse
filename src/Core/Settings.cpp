@@ -1794,7 +1794,7 @@ Possible values:
 
 - 0 — Disabled.
 - 1 — Enabled.
-)", 0) \
+)", 1) \
     DECLARE(Int64, http_zlib_compression_level, 3, R"(
 Sets the level of data compression in the response to an HTTP request if [enable_http_compression = 1](#enable_http_compression).
 
@@ -3670,6 +3670,11 @@ Given that, for example, dictionaries, can be out of sync across nodes, mutation
 </profiles>
 ```
 )", 0) \
+ DECLARE(Bool, validate_mutation_query, true, R"(
+Validate mutation queries before accepting them. Mutations are executed in the background, and running an invalid query will cause mutations to get stuck, requiring manual intervention.
+
+Only change this setting if you encounter a backward-incompatible bug.
+)", 0) \
     DECLARE(Seconds, lock_acquire_timeout, DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC, R"(
 Defines how many seconds a locking request waits before failing.
 
@@ -4560,7 +4565,7 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
-    DECLARE(Bool, query_plan_merge_filters, false, R"(
+    DECLARE(Bool, query_plan_merge_filters, true, R"(
 Allow to merge filters in the query plan
 )", 0) \
     DECLARE(Bool, query_plan_filter_push_down, true, R"(
@@ -4861,9 +4866,9 @@ Allows to record the filesystem caching log for each query
     DECLARE(Bool, read_from_filesystem_cache_if_exists_otherwise_bypass_cache, false, R"(
 Allow to use the filesystem cache in passive mode - benefit from the existing cache entries, but don't put more entries into the cache. If you set this setting for heavy ad-hoc queries and leave it disabled for short real-time queries, this will allows to avoid cache threshing by too heavy queries and to improve the overall system efficiency.
 )", 0) \
-    DECLARE(Bool, skip_download_if_exceeds_query_cache, true, R"(
+    DECLARE(Bool, filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit, true, R"(
 Skip download from remote filesystem if exceeds query cache size
-)", 0) \
+)", 0)  ALIAS(skip_download_if_exceeds_query_cache) \
     DECLARE(UInt64, filesystem_cache_max_download_size, (128UL * 1024 * 1024 * 1024), R"(
 Max remote filesystem cache size that can be downloaded by a single query
 )", 0) \
@@ -5737,7 +5742,10 @@ Enable experimental functions for natural language processing.
 Enable experimental hash functions
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_object_type, false, R"(
-Allow Object and JSON data types
+Allow the obsolete Object data type
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_bfloat16_type, false, R"(
+Allow BFloat16 data type (under development).
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_time_series_table, false, R"(
 Allows creation of tables with the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine.

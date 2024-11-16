@@ -1,6 +1,7 @@
 #include <base/getFQDNOrHostName.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/LockGuard.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -16,13 +17,21 @@
 
 #include <chrono>
 #include <fmt/chrono.h>
-#include <mutex>
 
 
 namespace DB
 {
 
 static auto logger = getLogger("QueryMetricLog");
+
+String timePointToString(QueryMetricLog::TimePoint time)
+{
+    /// fmtlib supports subsecond formatting in 10.0.0. We're in 9.1.0, so we need to add the milliseconds ourselves.
+    auto seconds = std::chrono::time_point_cast<std::chrono::seconds>(time);
+    auto microseconds = std::chrono::duration_cast<std::chrono::microseconds>(time - seconds).count();
+
+    return fmt::format("{:%Y.%m.%d %H:%M:%S}.{:06}", seconds, microseconds);
+}
 
 ColumnsDescription QueryMetricLogElement::getColumnsDescription()
 {
@@ -87,36 +96,73 @@ void QueryMetricLog::shutdown()
     Base::shutdown();
 }
 
-void QueryMetricLog::startQuery(const String & query_id, TimePoint start_time, UInt64 interval_milliseconds)
+void QueryMetricLog::collectMetric(const ProcessList & process_list, String query_id)
 {
-    QueryMetricLogStatus status;
-    status.interval_milliseconds = interval_milliseconds;
-    status.next_collect_time = start_time + std::chrono::milliseconds(interval_milliseconds);
+    auto current_time = std::chrono::system_clock::now();
+    const auto query_info = process_list.getQueryInfo(query_id, false, true, false);
+    if (!query_info)
+    {
+        /// TODO: remove trace before 24.11 release after checking everything is fine on the CI
+        LOG_TRACE(logger, "Query {} is not running anymore, so we couldn't get its QueryStatusInfo", query_id);
+        return;
+    }
+
+    LockGuard global_lock(queries_mutex);
+    auto it = queries.find(query_id);
+
+    /// The query might have finished while the scheduled task is running.
+    if (it == queries.end())
+    {
+        global_lock.unlock();
+        /// TODO: remove trace before 24.11 release after checking everything is fine on the CI
+        LOG_TRACE(logger, "Query {} not found in the list. Finished while this collecting task was running", query_id);
+        return;
+    }
+
+    auto & query_status = it->second;
+    if (!query_status.mutex)
+    {
+        global_lock.unlock();
+        /// TODO: remove trace before 24.11 release after checking everything is fine on the CI
+        LOG_TRACE(logger, "Query {} finished while this collecting task was running", query_id);
+        return;
+    }
+
+    LockGuard query_lock(query_status.getMutex());
+    global_lock.unlock();
+
+    auto elem = query_status.createLogMetricElement(query_id, *query_info, current_time);
+    if (elem)
+        add(std::move(elem.value()));
+}
+
+/// We use TSA_NO_THREAD_SAFETY_ANALYSIS to prevent TSA complaining that we're modifying the query_status fields
+/// without locking the mutex. Since we're building it from scratch, there's no harm in not holding it.
+/// If we locked it to make TSA happy, TSAN build would falsely complain about
+///     lock-order-inversion (potential deadlock)
+/// which is not a real issue since QueryMetricLogStatus's mutex cannot be locked by anything else
+/// until we add it to the queries map.
+void QueryMetricLog::startQuery(const String & query_id, TimePoint start_time, UInt64 interval_milliseconds) TSA_NO_THREAD_SAFETY_ANALYSIS
+{
+    QueryMetricLogStatus query_status;
+    QueryMetricLogStatusInfo & info = query_status.info;
+    info.interval_milliseconds = interval_milliseconds;
+    info.next_collect_time = start_time;
 
     auto context = getContext();
     const auto & process_list = context->getProcessList();
-    status.task = context->getSchedulePool().createTask("QueryMetricLog", [this, &process_list, query_id] {
-        auto current_time = std::chrono::system_clock::now();
-        const auto query_info = process_list.getQueryInfo(query_id, false, true, false);
-        if (!query_info)
-        {
-            LOG_TRACE(logger, "Query {} is not running anymore, so we couldn't get its QueryStatusInfo", query_id);
-            return;
-        }
-
-        auto elem = createLogMetricElement(query_id, *query_info, current_time);
-        if (elem)
-            add(std::move(elem.value()));
+    info.task = context->getSchedulePool().createTask("QueryMetricLog", [this, &process_list, query_id] {
+        collectMetric(process_list, query_id);
     });
 
-    std::lock_guard lock(queries_mutex);
-    status.task->scheduleAfter(interval_milliseconds);
-    queries.emplace(query_id, std::move(status));
+    LockGuard global_lock(queries_mutex);
+    query_status.scheduleNext(query_id);
+    queries.emplace(query_id, std::move(query_status));
 }
 
 void QueryMetricLog::finishQuery(const String & query_id, TimePoint finish_time, QueryStatusInfoPtr query_info)
 {
-    std::unique_lock lock(queries_mutex);
+    LockGuard global_lock(queries_mutex);
     auto it = queries.find(query_id);
 
     /// finishQuery may be called from logExceptionBeforeStart when the query has not even started
@@ -124,9 +170,19 @@ void QueryMetricLog::finishQuery(const String & query_id, TimePoint finish_time,
     if (it == queries.end())
         return;
 
+    auto & query_status = it->second;
+    decltype(query_status.mutex) query_mutex;
+    LockGuard query_lock(query_status.getMutex());
+
+    /// Move the query mutex here so that we hold it until the end, after removing the query from queries.
+    query_mutex = std::move(query_status.mutex);
+    query_status.mutex = {};
+
+    global_lock.unlock();
+
     if (query_info)
     {
-        auto elem = createLogMetricElement(query_id, *query_info, finish_time, false);
+        auto elem = query_status.createLogMetricElement(query_id, *query_info, finish_time, false);
         if (elem)
             add(std::move(elem.value()));
     }
@@ -139,51 +195,58 @@ void QueryMetricLog::finishQuery(const String & query_id, TimePoint finish_time,
     /// that order.
     {
         /// Take ownership of the task so that we can destroy it in this scope after unlocking `queries_mutex`.
-        auto task = std::move(it->second.task);
+        auto task = std::move(query_status.info.task);
 
         /// Build an empty task for the old task to make sure it does not lock any mutex on its destruction.
-        it->second.task = {};
+        query_status.info.task = {};
+        query_lock.unlock();
 
+        global_lock.lock();
         queries.erase(query_id);
 
         /// Ensure `queries_mutex` is unlocked before calling task's destructor at the end of this
         /// scope which will lock `exec_mutex`.
-        lock.unlock();
+        global_lock.unlock();
     }
 }
 
-std::optional<QueryMetricLogElement> QueryMetricLog::createLogMetricElement(const String & query_id, const QueryStatusInfo & query_info, TimePoint query_info_time, bool schedule_next)
+void QueryMetricLogStatus::scheduleNext(String query_id)
 {
-    /// fmtlib supports subsecond formatting in 10.0.0. We're in 9.1.0, so we need to add the milliseconds ourselves.
-    auto seconds = std::chrono::time_point_cast<std::chrono::seconds>(query_info_time);
-    auto microseconds = std::chrono::duration_cast<std::chrono::microseconds>(query_info_time - seconds).count();
-    LOG_DEBUG(logger, "Collecting query_metric_log for query {} with QueryStatusInfo from {:%Y.%m.%d %H:%M:%S}.{:06}. Schedule next: {}", query_id, seconds, microseconds, schedule_next);
-
-    std::unique_lock lock(queries_mutex);
-    auto query_status_it = queries.find(query_id);
-
-    /// The query might have finished while the scheduled task is running.
-    if (query_status_it == queries.end())
+    info.next_collect_time += std::chrono::milliseconds(info.interval_milliseconds);
+    const auto now = std::chrono::system_clock::now();
+    if (info.next_collect_time > now)
     {
-        lock.unlock();
-        LOG_TRACE(logger, "Query {} finished already while this collecting task was running", query_id);
-        return {};
+        const auto wait_time = std::chrono::duration_cast<std::chrono::milliseconds>(info.next_collect_time - now).count();
+        info.task->scheduleAfter(wait_time);
     }
-
-    auto & query_status = query_status_it->second;
-    if (query_info_time <= query_status.last_collect_time)
+    else
     {
-        lock.unlock();
+        LOG_TRACE(logger, "The next collecting task for query {} should have already run at {}. Scheduling it right now",
+            query_id, timePointToString(info.next_collect_time));
+        info.task->schedule();
+    }
+}
+
+std::optional<QueryMetricLogElement> QueryMetricLogStatus::createLogMetricElement(const String & query_id, const QueryStatusInfo & query_info, TimePoint query_info_time, bool schedule_next)
+{
+    /// TODO: remove trace before 24.11 release after checking everything is fine on the CI
+    LOG_TRACE(logger, "Collecting query_metric_log for query {} and interval {} ms with QueryStatusInfo from {}. Next collection time: {}",
+        query_id, info.interval_milliseconds, timePointToString(query_info_time),
+        schedule_next ? timePointToString(info.next_collect_time + std::chrono::milliseconds(info.interval_milliseconds)) : "finished");
+
+    if (query_info_time <= info.last_collect_time)
+    {
+        /// TODO: remove trace before 24.11 release after checking everything is fine on the CI
         LOG_TRACE(logger, "Query {} has a more recent metrics collected. Skipping this one", query_id);
         return {};
     }
 
-    query_status.last_collect_time = query_info_time;
+    info.last_collect_time = query_info_time;
 
     QueryMetricLogElement elem;
     elem.event_time = timeInSeconds(query_info_time);
     elem.event_time_microseconds = timeInMicroseconds(query_info_time);
-    elem.query_id = query_status_it->first;
+    elem.query_id = query_id;
     elem.memory_usage = query_info.memory_usage > 0 ? query_info.memory_usage : 0;
     elem.peak_memory_usage = query_info.peak_memory_usage > 0 ? query_info.peak_memory_usage : 0;
 
@@ -192,7 +255,7 @@ std::optional<QueryMetricLogElement> QueryMetricLog::createLogMetricElement(cons
         for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
         {
             const auto & new_value = (*(query_info.profile_counters))[i];
-            auto & old_value = query_status.last_profile_events[i];
+            auto & old_value = info.last_profile_events[i];
 
             /// Profile event counters are supposed to be monotonic. However, at least the `NetworkReceiveBytes` can be inaccurate.
             /// So, since in the future the counter should always have a bigger value than in the past, we skip this event.
@@ -208,16 +271,13 @@ std::optional<QueryMetricLogElement> QueryMetricLog::createLogMetricElement(cons
     }
     else
     {
-        LOG_TRACE(logger, "Query {} has no profile counters", query_id);
+        /// TODO: remove trace before 24.11 release after checking everything is fine on the CI
+        LOG_DEBUG(logger, "Query {} has no profile counters", query_id);
         elem.profile_events = std::vector<ProfileEvents::Count>(ProfileEvents::end());
     }
 
     if (schedule_next)
-    {
-        query_status.next_collect_time += std::chrono::milliseconds(query_status.interval_milliseconds);
-        const auto wait_time = std::chrono::duration_cast<std::chrono::milliseconds>(query_status.next_collect_time - std::chrono::system_clock::now()).count();
-        query_status.task->scheduleAfter(wait_time);
-    }
+        scheduleNext(query_id);
 
     return elem;
 }

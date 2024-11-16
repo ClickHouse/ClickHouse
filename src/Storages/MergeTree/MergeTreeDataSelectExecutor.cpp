@@ -1045,7 +1045,6 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     MarkRanges res;
 
     size_t marks_count = part->index_granularity.getMarksCount();
-    const auto & index = part->getIndex();
     if (marks_count == 0)
         return res;
 
@@ -1073,14 +1072,19 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     auto index_columns = std::make_shared<ColumnsWithTypeAndName>();
     const auto & key_indices = key_condition.getKeyIndices();
     DataTypes key_types;
-    for (size_t i : key_indices)
+    if (!key_indices.empty())
     {
-        if (i < index->size())
-            index_columns->emplace_back(index->at(i), primary_key.data_types[i], primary_key.column_names[i]);
-        else
-            index_columns->emplace_back(); /// The column of the primary key was not loaded in memory - we'll skip it.
+        const auto & index = part->getIndex();
 
-        key_types.emplace_back(primary_key.data_types[i]);
+        for (size_t i : key_indices)
+        {
+            if (i < index->size())
+                index_columns->emplace_back(index->at(i), primary_key.data_types[i], primary_key.column_names[i]);
+            else
+                index_columns->emplace_back(); /// The column of the primary key was not loaded in memory - we'll skip it.
+
+            key_types.emplace_back(primary_key.data_types[i]);
+        }
     }
 
     /// If there are no monotonic functions, there is no need to save block reference.
