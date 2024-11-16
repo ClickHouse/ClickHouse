@@ -34,11 +34,6 @@
 #include <Interpreters/HashJoin/HashJoinMethods.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
 
-namespace CurrentMetrics
-{
-extern const Metric TemporaryFilesForJoin;
-}
-
 namespace DB
 {
 
