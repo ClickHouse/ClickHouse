@@ -760,6 +760,7 @@ extern template class ColumnUnique<ColumnInt128>;
 extern template class ColumnUnique<ColumnUInt128>;
 extern template class ColumnUnique<ColumnInt256>;
 extern template class ColumnUnique<ColumnUInt256>;
+extern template class ColumnUnique<ColumnBFloat16>;
 extern template class ColumnUnique<ColumnFloat32>;
 extern template class ColumnUnique<ColumnFloat64>;
 extern template class ColumnUnique<ColumnString>;
