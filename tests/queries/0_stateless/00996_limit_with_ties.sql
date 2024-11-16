@@ -35,4 +35,24 @@ select count() from (select number, number < 100 from numbers(2000) order by num
 SET max_block_size = 5;
 select count() from (select number < 100, number from numbers(2000) order by number < 100 desc limit 10 with ties);
 
+SELECT count() FROM (WITH data AS (
+    SELECT * FROM numbers(0, 10)
+    UNION ALL
+    SELECT * FROM numbers(10, 10)
+)
+SELECT number div 10 AS ten, number
+FROM data
+ORDER BY ten
+LIMIT 8,6 WITH TIES);
+
+SELECT count() FROM (WITH data AS (
+    SELECT * FROM numbers(0, 10)
+    UNION ALL
+    SELECT * FROM numbers(10, 10)
+)
+SELECT number div 11 AS eleven, number
+FROM data
+ORDER BY eleven
+LIMIT 8,6 WITH TIES);
+
 DROP TABLE ties;

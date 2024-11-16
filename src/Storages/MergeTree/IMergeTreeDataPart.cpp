@@ -624,6 +624,15 @@ UInt64 IMergeTreeDataPart::getIndexSizeInAllocatedBytes() const
     return res;
 }
 
+UInt64 IMergeTreeDataPart::getIndexGranularityBytes() const
+{
+    return index_granularity.getBytesSize();
+}
+UInt64 IMergeTreeDataPart::getIndexGranularityAllocatedBytes() const
+{
+    return index_granularity.getBytesAllocated();
+}
+
 void IMergeTreeDataPart::assertState(const std::initializer_list<MergeTreeDataPartState> & affordable_states) const
 {
     if (!checkState(affordable_states))
@@ -735,7 +744,9 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
             loadUUID();
         loadColumns(require_columns_checksums);
         loadChecksums(require_columns_checksums);
+
         loadIndexGranularity();
+        index_granularity.shrinkToFitInMemory();
 
         if (!(*storage.getSettings())[MergeTreeSetting::primary_key_lazy_load])
             getIndex();
@@ -833,7 +844,7 @@ MergeTreeDataPartBuilder IMergeTreeDataPart::getProjectionPartBuilder(const Stri
 {
     const char * projection_extension = is_temp_projection ? ".tmp_proj" : ".proj";
     auto projection_storage = getDataPartStorage().getProjection(projection_name + projection_extension, !is_temp_projection);
-    MergeTreeDataPartBuilder builder(storage, projection_name, projection_storage);
+    MergeTreeDataPartBuilder builder(storage, projection_name, projection_storage, getReadSettings());
     return builder.withPartInfo(MergeListElement::FAKE_RESULT_PART_FOR_PROJECTION).withParentPart(this);
 }
 
@@ -976,6 +987,8 @@ void IMergeTreeDataPart::loadIndex() const
                 throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all data from index file {}(expected size: "
                     "{}, read: {})", index_path, marks_count, loaded_index[i]->size());
         }
+
+        LOG_TEST(storage.log, "Loaded primary key index for part {}, {} columns are kept in memory", name, key_size);
 
         if (!index_file->eof())
             throw Exception(ErrorCodes::EXPECTED_END_OF_FILE, "Index file {} is unexpectedly long", index_path);
@@ -2252,18 +2265,18 @@ void IMergeTreeDataPart::checkConsistencyWithProjections(bool require_part_metad
         proj_part->checkConsistency(require_part_metadata);
 }
 
-void IMergeTreeDataPart::calculateColumnsAndSecondaryIndicesSizesOnDisk()
+void IMergeTreeDataPart::calculateColumnsAndSecondaryIndicesSizesOnDisk(std::optional<Block> columns_sample)
 {
-    calculateColumnsSizesOnDisk();
+    calculateColumnsSizesOnDisk(columns_sample);
     calculateSecondaryIndicesSizesOnDisk();
 }
 
-void IMergeTreeDataPart::calculateColumnsSizesOnDisk()
+void IMergeTreeDataPart::calculateColumnsSizesOnDisk(std::optional<Block> columns_sample)
 {
     if (getColumns().empty() || checksums.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot calculate columns sizes when columns or checksums are not initialized");
 
-    calculateEachColumnSizes(columns_sizes, total_columns_size);
+    calculateEachColumnSizes(columns_sizes, total_columns_size, columns_sample);
 }
 
 void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk()
@@ -2510,22 +2523,24 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
 
     StorageMetadataPtr metadata_ptr = storage.getInMemoryMetadataPtr();
     StorageSnapshotPtr storage_snapshot_ptr = std::make_shared<StorageSnapshot>(storage, metadata_ptr);
+    MergeTreeReaderSettings settings;
+    settings.can_read_part_without_marks = true;
 
     MergeTreeReaderPtr reader = getReader(
         cols,
         storage_snapshot_ptr,
-        MarkRanges{MarkRange(0, 1)},
+        MarkRanges{MarkRange(0, total_mark)},
         /*virtual_fields=*/ {},
         /*uncompressed_cache=*/{},
         storage.getContext()->getMarkCache().get(),
         std::make_shared<AlterConversions>(),
-        MergeTreeReaderSettings{},
+        settings,
         ValueSizeMap{},
         ReadBufferFromFileBase::ProfileCallback{});
 
     Columns result;
     result.resize(1);
-    reader->readRows(0, 1, false, 0, result);
+    reader->readRows(0, total_mark, false, 0, result);
     return result[0];
 }
 
