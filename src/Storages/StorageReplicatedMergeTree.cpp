@@ -5640,10 +5640,7 @@ void StorageReplicatedMergeTree::readLocalImpl(
     const size_t max_block_size,
     const size_t num_streams)
 {
-    const bool enable_parallel_reading = local_context->canUseParallelReplicasOnFollower()
-        && (!local_context->getSettingsRef()[Setting::allow_experimental_analyzer]
-            || query_info.current_table_chosen_for_reading_with_parallel_replicas);
-
+    const bool enable_parallel_reading = local_context->canUseParallelReplicasOnFollower();
     auto plan = reader.read(
         column_names, storage_snapshot, query_info,
         local_context, max_block_size, num_streams,

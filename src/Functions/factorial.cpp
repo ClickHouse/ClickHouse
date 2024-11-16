@@ -21,7 +21,7 @@ struct FactorialImpl
 
     static NO_SANITIZE_UNDEFINED ResultType apply(A a)
     {
-        if constexpr (std::is_floating_point_v<A> || is_over_big_int<A>)
+        if constexpr (is_floating_point<A> || is_over_big_int<A>)
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type of argument of function factorial, should not be floating point or big int");
