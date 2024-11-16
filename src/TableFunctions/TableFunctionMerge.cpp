@@ -31,7 +31,7 @@ namespace
     throw Exception(
         ErrorCodes::BAD_ARGUMENTS,
         "Error while executing table function merge. Either there is no database, which matches regular expression `{}`, or there are "
-        "no tables in database matches `{}`, which fit tables expression: {}",
+        "no tables in the database matches `{}`, which fit tables expression: {}",
         source_database_regexp,
         source_database_regexp,
         source_table_regexp);
