@@ -147,6 +147,9 @@ Chunk IRowInputFormat::read()
                 size_t max_column_in_block_size_bytes = 0;
                 for (const auto & col : cols)
                 {
+                    if (col->getDataType() == TypeIndex::ObjectDeprecated)
+                        return false;
+
                     block_size_bytes += col->byteSize();
                     max_column_in_block_size_bytes = std::max(max_column_in_block_size_bytes, col->byteSize());
 
