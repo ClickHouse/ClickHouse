@@ -1,13 +1,11 @@
 #pragma once
 
-#include <condition_variable>
 #include <memory>
-#include <optional>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>
 #include <base/defines.h>
 #include <base/types.h>
@@ -16,6 +14,8 @@
 
 namespace DB
 {
+
+struct SelectQueryInfo;
 
 /**
  * Can run addBlockToJoin() parallelly to speedup the join process. On test, it almose linear speedup by
@@ -82,5 +82,6 @@ private:
     Blocks dispatchBlock(const Strings & key_columns_names, const Block & from_block);
 };
 
-UInt64 calculateCacheKey(std::shared_ptr<TableJoin> & table_join, const QueryTreeNodePtr & right_table_expression);
+UInt64 calculateCacheKey(
+    std::shared_ptr<TableJoin> & table_join, const QueryTreeNodePtr & right_table_expression, const SelectQueryInfo & select_query_info);
 }
