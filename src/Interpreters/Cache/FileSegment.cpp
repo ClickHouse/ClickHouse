@@ -4,6 +4,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/FileCacheUtils.h>
 #include <base/getThreadId.h>
 #include <base/hex.h>
 #include <Common/CurrentThread.h>
@@ -360,11 +361,14 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
                 "Expected DOWNLOADING state, got {}", stateToString(download_state));
 
         const size_t first_non_downloaded_offset = getCurrentWriteOffset();
+
         if (offset_in_file != first_non_downloaded_offset)
+        {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Attempt to write {} bytes to offset: {}, but current write offset is {}",
                 size, offset_in_file, first_non_downloaded_offset);
+        }
 
         const size_t current_downloaded_size = getDownloadedSize();
         chassert(reserved_size >= current_downloaded_size);
@@ -375,8 +379,19 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
                 ErrorCodes::LOGICAL_ERROR,
                 "Not enough space is reserved. Available: {}, expected: {}", free_reserved_size, size);
 
-        if (!is_unbound && current_downloaded_size == range().size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "File segment is already fully downloaded");
+        if (!is_unbound)
+        {
+            if (current_downloaded_size == range().size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "File segment is already fully downloaded");
+
+            if (current_downloaded_size + size > range().size())
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Cannot download beyond file segment boundaries: {}. Write offset: {}, size: {}, downloaded size: {}",
+                    range().size(), first_non_downloaded_offset, size, current_downloaded_size);
+            }
+        }
 
         if (!cache_writer && current_downloaded_size > 0)
             throw Exception(
@@ -629,6 +644,36 @@ void FileSegment::completePartAndResetDownloader()
     LOG_TEST(log, "Complete batch. ({})", getInfoForLogUnlocked(lk));
 }
 
+size_t FileSegment::getSizeForBackgroundDownload() const
+{
+    auto lk = lock();
+    return getSizeForBackgroundDownloadUnlocked(lk);
+}
+
+size_t FileSegment::getSizeForBackgroundDownloadUnlocked(const FileSegmentGuard::Lock &) const
+{
+    if (!background_download_enabled
+        || !downloaded_size
+        || !remote_file_reader)
+    {
+        return 0;
+    }
+
+    chassert(downloaded_size <= range().size());
+
+    const size_t background_download_max_file_segment_size = cache->getBackgroundDownloadMaxFileSegmentSize();
+    size_t desired_size;
+    if (downloaded_size >= background_download_max_file_segment_size)
+        desired_size = FileCacheUtils::roundUpToMultiple(downloaded_size, cache->getBoundaryAlignment());
+    else
+        desired_size = FileCacheUtils::roundUpToMultiple(background_download_max_file_segment_size, cache->getBoundaryAlignment());
+
+    desired_size = std::min(desired_size, range().size());
+    chassert(desired_size >= downloaded_size);
+
+    return desired_size - downloaded_size;
+}
+
 void FileSegment::complete(bool allow_background_download)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentCompleteMicroseconds);
@@ -708,7 +753,8 @@ void FileSegment::complete(bool allow_background_download)
             if (is_last_holder)
             {
                 bool added_to_download_queue = false;
-                if (allow_background_download && background_download_enabled && remote_file_reader)
+                size_t background_download_size = allow_background_download ? getSizeForBackgroundDownloadUnlocked(segment_lock) : 0;
+                if (background_download_size)
                 {
                     ProfileEvents::increment(ProfileEvents::FilesystemCacheBackgroundDownloadQueuePush);
                     added_to_download_queue = locked_key->addToDownloadQueue(offset(), segment_lock); /// Finish download in background.
@@ -862,7 +908,12 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
             chassert(downloaded_size == reserved_size);
             chassert(downloaded_size == range().size());
             chassert(downloaded_size > 0);
-            chassert(fs::file_size(getPath()) > 0);
+
+            auto file_size = fs::file_size(getPath());
+            UNUSED(file_size);
+
+            chassert(file_size == range().size());
+            chassert(downloaded_size == range().size());
 
             chassert(queue_iterator || on_delayed_removal);
             check_iterator(queue_iterator);
@@ -884,7 +935,13 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
 
             chassert(reserved_size >= downloaded_size);
             chassert(downloaded_size > 0);
-            chassert(fs::file_size(getPath()) > 0);
+
+            auto file_size = fs::file_size(getPath());
+            UNUSED(file_size);
+
+            chassert(file_size > 0);
+            chassert(file_size <= range().size());
+            chassert(downloaded_size <= range().size());
 
             chassert(queue_iterator);
             check_iterator(queue_iterator);

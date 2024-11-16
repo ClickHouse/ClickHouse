@@ -1,7 +1,6 @@
 #pragma once
 
 #include <memory>
-#include <vector>
 
 #include <Columns/IColumn.h>
 #include <Core/Block.h>

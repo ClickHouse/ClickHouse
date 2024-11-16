@@ -15,6 +15,8 @@
 namespace DB
 {
 
+struct SelectQueryInfo;
+
 /**
  * Can run addBlockToJoin() parallelly to speedup the join process. On test, it almose linear speedup by
  * the degree of parallelism.
@@ -82,5 +84,6 @@ private:
     ScatteredBlocks dispatchBlock(const Strings & key_columns_names, Block && from_block);
 };
 
-UInt64 calculateCacheKey(std::shared_ptr<TableJoin> & table_join, const QueryTreeNodePtr & right_table_expression);
+UInt64 calculateCacheKey(
+    std::shared_ptr<TableJoin> & table_join, const QueryTreeNodePtr & right_table_expression, const SelectQueryInfo & select_query_info);
 }

@@ -14,10 +14,12 @@
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/createBlockSelector.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/parseQuery.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
@@ -431,16 +433,29 @@ ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_na
                                   : scatterBlocksByCopying(num_shards, selector, from_block);
 }
 
-UInt64 calculateCacheKey(std::shared_ptr<TableJoin> & table_join, const QueryTreeNodePtr & right_table_expression)
+UInt64 calculateCacheKey(
+    std::shared_ptr<TableJoin> & table_join, const QueryTreeNodePtr & right_table_expression, const SelectQueryInfo & select_query_info)
 {
+    const auto * select = select_query_info.query->as<DB::ASTSelectQuery>();
+    if (!select)
+        return 0;
+
     IQueryTreeNode::HashState hash;
+
+    if (const auto prewhere = select->prewhere())
+        hash.update(prewhere->getTreeHash(/*ignore_aliases=*/true));
+    if (const auto where = select->where())
+        hash.update(where->getTreeHash(/*ignore_aliases=*/true));
+
     chassert(right_table_expression);
     hash.update(right_table_expression->getTreeHash());
+
     chassert(table_join && table_join->oneDisjunct());
     const auto keys
         = NameOrderedSet{table_join->getClauses().at(0).key_names_right.begin(), table_join->getClauses().at(0).key_names_right.end()};
     for (const auto & name : keys)
         hash.update(name);
+
     return hash.get64();
 }
 }
