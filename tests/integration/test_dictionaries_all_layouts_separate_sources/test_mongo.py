@@ -105,9 +105,7 @@ def test_simple(secure_connection, started_cluster, layout_name, simple_tester):
 
 @pytest.mark.parametrize("secure_connection", [False], indirect=["secure_connection"])
 @pytest.mark.parametrize("layout_name", sorted(LAYOUTS_COMPLEX))
-def test_complex(
-    secure_connection, started_cluster, layout_name, complex_tester
-):
+def test_complex(secure_connection, started_cluster, layout_name, complex_tester):
     complex_tester.execute(layout_name, started_cluster.instances["node1"])
 
 
@@ -119,7 +117,5 @@ def test_ranged(secure_connection, started_cluster, layout_name, ranged_tester):
 
 @pytest.mark.parametrize("secure_connection", [True], indirect=["secure_connection"])
 @pytest.mark.parametrize("layout_name", sorted(LAYOUTS_SIMPLE))
-def test_simple_ssl(
-    secure_connection, started_cluster, layout_name, simple_tester
-):
+def test_simple_ssl(secure_connection, started_cluster, layout_name, simple_tester):
     simple_tester.execute(layout_name, started_cluster.instances["node1"])

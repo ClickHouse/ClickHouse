@@ -78,7 +78,5 @@ def test_simple(secure_connection, started_cluster, simple_tester, layout_name):
 
 @pytest.mark.parametrize("secure_connection", [True], indirect=["secure_connection"])
 @pytest.mark.parametrize("layout_name", ["flat"])
-def test_simple_ssl(
-    secure_connection, started_cluster, simple_tester, layout_name
-):
+def test_simple_ssl(secure_connection, started_cluster, simple_tester, layout_name):
     simple_tester.execute(layout_name, started_cluster.instances["uri_node"])
