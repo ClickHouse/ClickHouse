@@ -32,11 +32,9 @@ void JSONEachRowWithProgressRowOutputFormat::onProgress(const Progress & value)
     progress.incrementPiecewiseAtomically(value);
     has_progress = true;
 
-    if (progress_lock.try_lock())
-    {
+    std::unique_lock lock(progress_mutex, std::try_to_lock);
+    if (lock)
         writeProgress();
-        progress_lock.unlock();
-    }
 }
 
 void JSONEachRowWithProgressRowOutputFormat::flush()
