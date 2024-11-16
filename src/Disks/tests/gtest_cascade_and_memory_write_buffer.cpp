@@ -69,7 +69,7 @@ static void testCascadeBufferRedability(
         auto rbuf = wbuf_readable.tryGetReadBuffer();
         ASSERT_FALSE(!rbuf);
 
-        concat.appendBuffer(wrapReadBufferPointer(std::move(rbuf)));
+        concat.appendBuffer(std::move(rbuf));
     }
 
     std::string decoded_data;

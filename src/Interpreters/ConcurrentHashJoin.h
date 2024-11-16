@@ -1,8 +1,6 @@
 #pragma once
 
-#include <condition_variable>
 #include <memory>
-#include <optional>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
