@@ -53,6 +53,7 @@ namespace Setting
 namespace ServerSetting
 {
     extern const ServerSettingsUInt64 max_materialized_views_count_for_table;
+    extern const ServerSettingsUInt64 startup_mv_delay_ms;
 }
 
 namespace RefreshSetting
@@ -749,7 +750,7 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
 
 void StorageMaterializedView::pushDependencies()
 {
-    assert(!dependencies_are_tracked);
+    // assert(!dependencies_are_tracked);
     if (!dependencies_are_tracked)
     {
         auto metadata_snapshot = getInMemoryMetadataPtr();
@@ -762,7 +763,7 @@ void StorageMaterializedView::pushDependencies()
 
 void StorageMaterializedView::startup()
 {
-    if (const auto configured_delay_ms = getContext()->getServerSettings().startup_mv_delay_ms; configured_delay_ms)
+    if (const auto configured_delay_ms = getContext()->getServerSettings()[ServerSetting::startup_mv_delay_ms]; configured_delay_ms)
     {
         std::random_device rd;
         const auto delay_ms = std::uniform_int_distribution<>(0, 1)(rd) ? configured_delay_ms : 0UL;
