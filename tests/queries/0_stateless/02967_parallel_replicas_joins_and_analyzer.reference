@@ -251,25 +251,21 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub2 r any right join sub1 l on l.y = r.y),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, l.y, y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
-select * from sub5 order by all;
-Expression
-  Sorting
-    Union
+select * from sub5;
+Union
+  Expression
+    Join
       Expression
-        Sorting
+        Join
           Expression
-            Join
-              Expression
-                Join
-                  Expression
-                    ReadFromMemoryStorage
-                  Expression
-                    Expression
-                      ReadFromMergeTree
-              Expression
-                ReadFromMemoryStorage
+            ReadFromMemoryStorage
+          Expression
+            Expression
+              ReadFromMergeTree
       Expression
-        ReadFromRemoteParallelReplicas
+        ReadFromMemoryStorage
+  Expression
+    ReadFromRemoteParallelReplicas
 --
 -- RIGHT JOIN in sub5: sub5 -> WithMergableStage
 with sub1 as (select x, y from tab1 where x != 2),
@@ -690,27 +686,23 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub2 r any right join sub1 l on l.y = r.y),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, l.y, y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
-select * from sub5 order by all;
-Expression
-  Sorting
-    Union
+select * from sub5;
+Union
+  Expression
+    Join
       Expression
-        Sorting
+        Join
           Expression
-            Join
-              Expression
-                Join
-                  Expression
-                    Expression
-                      ReadFromMergeTree
-                  Expression
-                    Expression
-                      ReadFromMergeTree
-              Expression
-                Expression
-                  ReadFromMergeTree
+            Expression
+              ReadFromMergeTree
+          Expression
+            Expression
+              ReadFromMergeTree
       Expression
-        ReadFromRemoteParallelReplicas
+        Expression
+          ReadFromMergeTree
+  Expression
+    ReadFromRemoteParallelReplicas
 --
 -- RIGHT JOIN in sub5: sub5 -> WithMergableStage
 with sub1 as (select x, y from tab1 where x != 2),
