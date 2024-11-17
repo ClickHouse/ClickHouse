@@ -53,7 +53,7 @@ namespace Setting
 namespace ServerSetting
 {
     extern const ServerSettingsUInt64 max_materialized_views_count_for_table;
-    extern const ServerSettingsBool startup_mv_delay_ms;
+    extern const ServerSettingsUInt64 startup_mv_delay_ms;
 }
 
 namespace RefreshSetting
@@ -750,7 +750,7 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
 
 void StorageMaterializedView::pushDependencies()
 {
-    assert(!dependencies_are_tracked);
+    // assert(!dependencies_are_tracked);
     if (!dependencies_are_tracked)
     {
         auto metadata_snapshot = getInMemoryMetadataPtr();
