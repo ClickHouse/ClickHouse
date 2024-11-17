@@ -446,9 +446,10 @@ def create_mysql_table(conn, table_name):
 def test_background_dictionary_reconnect(started_cluster):
     mysql_connection = get_mysql_conn(started_cluster)
 
+    execute_mysql_query(mysql_connection, "DROP TABLE IF EXISTS test.dict;")
     execute_mysql_query(
         mysql_connection,
-        "CREATE TABLE IF NOT EXISTS test.dict (id Integer, value Text);",
+        "CREATE TABLE test.dict (id Integer, value Text);",
     )
     execute_mysql_query(
         mysql_connection, "INSERT INTO test.dict VALUES (1, 'Value_1');"
@@ -457,6 +458,7 @@ def test_background_dictionary_reconnect(started_cluster):
     query = instance.query
     query(
         f"""
+    DROP DICTIONARY IF EXISTS dict;
     CREATE DICTIONARY dict
     (
         id UInt64,
@@ -508,9 +510,9 @@ def test_background_dictionary_reconnect(started_cluster):
         except Exception as e:
             pass
 
+    query("DROP DICTIONARY IF EXISTS dict;")
+    execute_mysql_query(mysql_connection, "DROP TABLE IF EXISTS test.dict;")
+
     assert (
         counter >= 4 and counter <= 7
     ), f"Connection reistablisher didn't meet anticipated time interval [4..7]: {counter}"
-
-    query("DROP DICTIONARY dict;")
-    execute_mysql_query(mysql_connection, "DROP TABLE test.dict;")

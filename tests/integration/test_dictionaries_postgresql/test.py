@@ -597,9 +597,10 @@ def test_background_dictionary_reconnect(started_cluster):
         port=started_cluster.postgres_port,
     )
 
+    postgres_conn.cursor().execute("DROP TABLE IF EXISTS dict")
     postgres_conn.cursor().execute(
         f"""
-    CREATE TABLE IF NOT EXISTS dict (
+    CREATE TABLE dict (
     id integer NOT NULL, value text NOT NULL, PRIMARY KEY (id))
     """
     )
@@ -609,6 +610,7 @@ def test_background_dictionary_reconnect(started_cluster):
     query = node1.query
     query(
         f"""
+    DROP DICTIONARY IF EXISTS dict;
     CREATE DICTIONARY dict
     (
         id UInt64,
@@ -660,12 +662,12 @@ def test_background_dictionary_reconnect(started_cluster):
         except Exception as e:
             pass
 
+    query("DROP DICTIONARY IF EXISTS dict;")
+    postgres_conn.cursor().execute("DROP TABLE IF EXISTS dict")
+
     assert (
         counter >= 4 and counter <= 7
     ), f"Connection reistablisher didn't meet anticipated time interval [4..7]: {counter}"
-
-    query("DROP DICTIONARY dict;")
-    postgres_conn.cursor().execute("DROP TABLE dict")
 
 
 if __name__ == "__main__":
