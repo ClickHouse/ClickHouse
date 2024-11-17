@@ -80,8 +80,11 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         keep_left_read_in_order,
         &processors);
 
-    pipeline->addSimpleTransform([&](const Block & header)
-                                 { return std::make_shared<SimpleSquashingChunksTransform>(header, 0, min_block_size_bytes); });
+    if (join->supportParallelJoin())
+    {
+        pipeline->addSimpleTransform([&](const Block & header)
+                                     { return std::make_shared<SimpleSquashingChunksTransform>(header, 0, min_block_size_bytes); });
+    }
 
     return pipeline;
 }
