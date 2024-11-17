@@ -19,7 +19,7 @@ using namespace mysqlxx;
 
 auto connectionReistablisher(std::weak_ptr<Pool> pool)
 {
-    return [weak_pool = pool]()
+    return [weak_pool = pool](UInt64 interval_milliseconds)
     {
         auto shared_pool = weak_pool.lock();
         if (!shared_pool)
@@ -34,11 +34,13 @@ auto connectionReistablisher(std::weak_ptr<Pool> pool)
             }
             catch (const Poco::Exception & e)
             {
-                Poco::Util::Application::instance().logger().warning("Reistablishing connection to " + shared_pool->getDescription() + " has failed: " + e.displayText());
+                if (interval_milliseconds >= 1000)
+                    Poco::Util::Application::instance().logger().warning("Reistablishing connection to " + shared_pool->getDescription() + " has failed: " + e.displayText());
             }
             catch (...)
             {
-                Poco::Util::Application::instance().logger().warning("Reistablishing connection to " + shared_pool->getDescription() + " has failed.");
+                if (interval_milliseconds >= 1000)
+                    Poco::Util::Application::instance().logger().warning("Reistablishing connection to " + shared_pool->getDescription() + " has failed.");
             }
         }
 

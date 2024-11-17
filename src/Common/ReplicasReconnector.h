@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/ServerSettings.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>
 #include <boost/noncopyable.hpp>
@@ -19,10 +20,15 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 bg_reconnect_mysql_dict_interval;
+}
+
 class ReplicasReconnector : private boost::noncopyable
 {
 public:
-    using Reconnector = std::function<bool()>;
+    using Reconnector = std::function<bool(UInt64)>;
     using ReconnectorsList = std::list<Reconnector>;
 
     ReplicasReconnector(const ReplicasReconnector &) = delete;
@@ -91,12 +97,13 @@ private:
 
     void run()
     {
+        auto interval_milliseconds = Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::bg_reconnect_mysql_dict_interval];
         std::unique_lock lock(mutex);
 
         for (auto it = reconnectors.cbegin(); !emergency_stop && it != reconnectors.end();)
         {
             lock.unlock();
-            bool res = (*it)();
+            bool res = (*it)(interval_milliseconds);
             lock.lock();
 
             if (res)
@@ -106,7 +113,7 @@ private:
         }
 
         if (!reconnectors.empty())
-            task_handle->scheduleAfter(5000);
+            task_handle->scheduleAfter(Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::bg_reconnect_mysql_dict_interval]);
     }
 };
 
