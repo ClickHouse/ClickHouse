@@ -777,11 +777,6 @@ void StorageMaterializedView::startup()
 
     pushDependencies();
 
-    auto metadata_snapshot = getInMemoryMetadataPtr();
-    const auto & select_query = metadata_snapshot->getSelectQuery();
-    if (!select_query.select_table_id.empty())
-        DatabaseCatalog::instance().addViewDependency(select_query.select_table_id, getStorageID());
-
     if (refresher)
         refresher->startup();
 }
