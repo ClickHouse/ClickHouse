@@ -651,9 +651,9 @@ def test_background_dictionary_reconnect(started_cluster):
                 pass
 
     counter = 0
-    # Based on bg_reconnect_mysql_dict_interval = 5000 in "configs/bg_reconnect.xml":
-    # connection should not be available for about 5 seconds
-    while counter <= 7:
+    # Based on bg_reconnect_mysql_dict_interval = 7000 in "configs/bg_reconnect.xml":
+    # connection should not be available for about 5-7 seconds
+    while counter <= 8:
         try:
             counter += 1
             time.sleep(1)
@@ -666,8 +666,8 @@ def test_background_dictionary_reconnect(started_cluster):
     postgres_conn.cursor().execute("DROP TABLE IF EXISTS dict")
 
     assert (
-        counter >= 4 and counter <= 7
-    ), f"Connection reistablisher didn't meet anticipated time interval [4..7]: {counter}"
+        counter >= 4 and counter <= 8
+    ), f"Connection reistablisher didn't meet anticipated time interval [4..8]: {counter}"
 
 
 if __name__ == "__main__":
