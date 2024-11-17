@@ -597,7 +597,6 @@ def test_background_dictionary_reconnect(started_cluster):
         port=started_cluster.postgres_port,
     )
 
-
     postgres_conn.cursor().execute(
         f"""
     CREATE TABLE IF NOT EXISTS dict (
@@ -605,10 +604,8 @@ def test_background_dictionary_reconnect(started_cluster):
     """
     )
 
-    postgres_conn.cursor().execute(
-        "INSERT INTO dict VALUES (1, 'Value_1')"
-    )
-    
+    postgres_conn.cursor().execute("INSERT INTO dict VALUES (1, 'Value_1')")
+
     query = node1.query
     query(
         f"""
@@ -629,9 +626,7 @@ def test_background_dictionary_reconnect(started_cluster):
     """
     )
 
-    result = query(
-        "SELECT value FROM dict WHERE id = 1"
-    )
+    result = query("SELECT value FROM dict WHERE id = 1")
     assert result == "Value_1\n"
 
     class PostgreSQL_Instance:
@@ -649,9 +644,7 @@ def test_background_dictionary_reconnect(started_cluster):
         # Exhaust possible connection pool and initiate reconnection attempts
         for _ in range(5):
             try:
-                result = query(
-                    "SELECT value FROM dict WHERE id = 1"
-                )
+                result = query("SELECT value FROM dict WHERE id = 1")
             except Exception as e:
                 pass
 
@@ -662,14 +655,14 @@ def test_background_dictionary_reconnect(started_cluster):
         try:
             counter += 1
             time.sleep(1)
-            result = query(
-                "SELECT value FROM dict WHERE id = 1"
-            )
+            result = query("SELECT value FROM dict WHERE id = 1")
             break
         except Exception as e:
             pass
-    
-    assert counter >= 4 and counter <= 7, f"Connection reistablisher didn't meet anticipated time interval [4..7]: {counter}"
+
+    assert (
+        counter >= 4 and counter <= 7
+    ), f"Connection reistablisher didn't meet anticipated time interval [4..7]: {counter}"
 
     query("DROP DICTIONARY dict;")
     postgres_conn.cursor().execute("DROP TABLE dict")

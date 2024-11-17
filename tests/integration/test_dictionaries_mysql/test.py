@@ -10,7 +10,11 @@ from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 
 DICTS = ["configs/dictionaries/mysql_dict1.xml", "configs/dictionaries/mysql_dict2.xml"]
-CONFIG_FILES = ["configs/remote_servers.xml", "configs/named_collections.xml", "configs/bg_reconnect.xml"]
+CONFIG_FILES = [
+    "configs/remote_servers.xml",
+    "configs/named_collections.xml",
+    "configs/bg_reconnect.xml",
+]
 USER_CONFIGS = ["configs/users.xml"]
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -438,6 +442,7 @@ def create_mysql_table(conn, table_name):
     with conn.cursor() as cursor:
         cursor.execute(create_table_mysql_template.format(table_name))
 
+
 def test_background_dictionary_reconnect(started_cluster):
     mysql_connection = get_mysql_conn(started_cluster)
 
@@ -448,7 +453,7 @@ def test_background_dictionary_reconnect(started_cluster):
     execute_mysql_query(
         mysql_connection, "INSERT INTO test.dict VALUES (1, 'Value_1');"
     )
-    
+
     query = instance.query
     query(
         f"""
@@ -469,9 +474,7 @@ def test_background_dictionary_reconnect(started_cluster):
     """
     )
 
-    result = query(
-        "SELECT value FROM dict WHERE id = 1"
-    )
+    result = query("SELECT value FROM dict WHERE id = 1")
     assert result == "Value_1\n"
 
     class MySQL_Instance:
@@ -489,9 +492,7 @@ def test_background_dictionary_reconnect(started_cluster):
         # Exhaust possible connection pool and initiate reconnection attempts
         for _ in range(5):
             try:
-                result = query(
-                    "SELECT value FROM dict WHERE id = 1"
-                )
+                result = query("SELECT value FROM dict WHERE id = 1")
             except Exception as e:
                 pass
 
@@ -502,14 +503,14 @@ def test_background_dictionary_reconnect(started_cluster):
         try:
             counter += 1
             time.sleep(1)
-            result = query(
-                "SELECT value FROM dict WHERE id = 1"
-            )
+            result = query("SELECT value FROM dict WHERE id = 1")
             break
         except Exception as e:
             pass
-    
-    assert counter >= 4 and counter <= 7, f"Connection reistablisher didn't meet anticipated time interval [4..7]: {counter}"
+
+    assert (
+        counter >= 4 and counter <= 7
+    ), f"Connection reistablisher didn't meet anticipated time interval [4..7]: {counter}"
 
     query("DROP DICTIONARY dict;")
     execute_mysql_query(mysql_connection, "DROP TABLE test.dict;")
