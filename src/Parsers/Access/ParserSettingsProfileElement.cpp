@@ -334,9 +334,9 @@ bool ParserAlterSettingsProfileElements::parseImpl(Pos & pos, ASTPtr & node, Exp
                     submode = "ALL PROFILES";
                 else if (ParserKeyword{Keyword::ALL_SETTINGS}.ignore(pos, expected))
                     submode = "ALL SETTINGS";
-                else if (ParserKeyword{Keyword::PROFILES}.ignore(pos, expected) || ParserKeyword{"PROFILE"}.ignore(pos, expected))
+                else if (ParserKeyword{Keyword::PROFILES}.ignore(pos, expected) || ParserKeyword{Keyword::PROFILE}.ignore(pos, expected))
                     submode = "PROFILES";
-                else if (ParserKeyword{Keyword::SETTINGS}.ignore(pos, expected) || ParserKeyword{"SETTING"}.ignore(pos, expected))
+                else if (ParserKeyword{Keyword::SETTINGS}.ignore(pos, expected) || ParserKeyword{Keyword::SETTING}.ignore(pos, expected))
                     submode = "SETTINGS";
             }
 
