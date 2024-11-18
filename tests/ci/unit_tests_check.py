@@ -15,7 +15,7 @@ from report import ERROR, FAIL, FAILURE, OK, SUCCESS, JobReport, TestResult, Tes
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
-IMAGE_NAME = "clickhouse/unit-test"
+IMAGE_NAME = "altinityinfra/unit-test"
 
 
 def get_test_name(line):

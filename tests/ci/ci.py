@@ -1301,7 +1301,7 @@ def main() -> int:
                 job_report.check_name or _get_ext_check_name(args.job_name),
             )
             ch_helper.insert_events_into(
-                db="default", table="checks", events=prepared_events
+                db="gh-data", table="checks", events=prepared_events
             )
 
             if "DockerServerImage" in args.job_name and indata is not None:

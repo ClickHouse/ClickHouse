@@ -63,7 +63,7 @@ jobs:
       GITHUB_JOB_OVERRIDDEN: ${{inputs.test_name}}
     steps:
       - name: Check out repository code
-        uses: ClickHouse/checkout@v1
+        uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f6
         with:
           clear-repository: true
           ref: ${{ inputs.git_ref }}
