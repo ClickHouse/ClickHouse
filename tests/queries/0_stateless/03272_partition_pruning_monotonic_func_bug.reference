@@ -1,7 +1,7 @@
 1
 2
-Expression ((Project names + (Projection + Change column names to column identifiers)))
-  ReadFromMergeTree (default.tt)
+Expression
+  ReadFromMergeTree
   Indexes:
     PrimaryKey
       Keys: 
