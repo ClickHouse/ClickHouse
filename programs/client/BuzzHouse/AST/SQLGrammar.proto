@@ -1952,10 +1952,15 @@ message ExprOrderingTerm {
         ASC = 1;
         DESC = 2;
     }
+    enum NullsOrder {
+        FIRST = 1;
+        LAST = 2;
+    }
     required Expr expr = 1;
     optional AscDesc asc_desc = 2;
-    optional string collation = 3;
-    optional ExprOrderingWithFill fill = 4;
+    optional NullsOrder nulls_order = 3;
+    optional string collation = 4;
+    optional ExprOrderingWithFill fill = 5;
 }
 
 message InterpolateExpr {

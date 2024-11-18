@@ -586,7 +586,7 @@ int StatementGenerator::generateLambdaCall(RandomGenerator & rg, const uint32_t 
 
 int StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow_funcs, const bool allow_aggr, SQLFuncCall * func_call)
 {
-    const size_t funcs_size = this->allow_not_deterministic ? CHFuncs.size() : (CHFuncs.size() - 60);
+    const size_t funcs_size = this->allow_not_deterministic ? CHFuncs.size() : (CHFuncs.size() - 61);
     const bool nallow_funcs = allow_funcs && (!allow_aggr || rg.nextSmallNumber() < 8);
     const uint32_t nfuncs = static_cast<uint32_t>((nallow_funcs ? funcs_size : 0) + (allow_aggr ? CHAggrs.size() : 0));
     std::uniform_int_distribution<uint32_t> next_dist(0, nfuncs - 1);

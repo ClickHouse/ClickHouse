@@ -131,6 +131,12 @@ int QueryOracle::dumpTableContent(RandomGenerator & rg, const SQLTable & t, SQLQ
                     rg.nextBool() ? ExprOrderingTerm_AscDesc::ExprOrderingTerm_AscDesc_ASC
                                   : ExprOrderingTerm_AscDesc::ExprOrderingTerm_AscDesc_DESC);
             }
+            if (rg.nextBool())
+            {
+                eot->set_nulls_order(
+                    rg.nextBool() ? ExprOrderingTerm_NullsOrder::ExprOrderingTerm_NullsOrder_FIRST
+                                  : ExprOrderingTerm_NullsOrder::ExprOrderingTerm_NullsOrder_LAST);
+            }
             first = false;
         }
     }
@@ -168,7 +174,6 @@ static const std::map<OutFormat, InFormat> out_in{
     {OutFormat::OUT_Arrow, InFormat::IN_Arrow},
     {OutFormat::OUT_ArrowStream, InFormat::IN_ArrowStream},
     {OutFormat::OUT_ORC, InFormat::IN_ORC},
-    {OutFormat::OUT_Npy, InFormat::IN_Npy},
     {OutFormat::OUT_RowBinary, InFormat::IN_RowBinary},
     {OutFormat::OUT_RowBinaryWithNames, InFormat::IN_RowBinaryWithNames},
     {OutFormat::OUT_RowBinaryWithNamesAndTypes, InFormat::IN_RowBinaryWithNamesAndTypes},

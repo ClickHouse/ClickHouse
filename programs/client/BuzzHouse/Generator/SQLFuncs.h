@@ -1020,7 +1020,6 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCUUIDToNum, 0, 0, 1, 2),
     CHFunction(SQLFunc::FUNCUUIDv7ToDateTime, 0, 0, 1, 2),
     CHFunction(SQLFunc::FUNCserverUUID, 0, 0, 0, 0),
-    CHFunction(SQLFunc::FUNCgenerateSnowflakeID, 0, 0, 0, 2),
     CHFunction(SQLFunc::FUNCsnowflakeToDateTime, 0, 0, 1, 2),
     CHFunction(SQLFunc::FUNCsnowflakeToDateTime64, 0, 0, 1, 2),
     CHFunction(SQLFunc::FUNCdateTimeToSnowflake, 0, 0, 1, 1),
@@ -1181,6 +1180,7 @@ const std::vector<CHFunction> CHFuncs = {
     //UUID
     CHFunction(SQLFunc::FUNCgenerateUUIDv4, 0, 0, 1, 2),
     CHFunction(SQLFunc::FUNCgenerateUUIDv7, 0, 0, 1, 2),
+    CHFunction(SQLFunc::FUNCgenerateSnowflakeID, 0, 0, 0, 2),
     //ULID
     CHFunction(SQLFunc::FUNCgenerateULID, 0, 0, 1, 2),
     //time

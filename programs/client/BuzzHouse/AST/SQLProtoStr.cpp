@@ -1213,6 +1213,11 @@ CONV_FN(ExprOrderingTerm, eot)
         ret += " ";
         ret += ExprOrderingTerm_AscDesc_Name(eot.asc_desc());
     }
+    if (eot.has_nulls_order())
+    {
+        ret += " NULLS ";
+        ret += ExprOrderingTerm_NullsOrder_Name(eot.nulls_order());
+    }
     if (eot.has_collation())
     {
         ret += " COLLATE '";

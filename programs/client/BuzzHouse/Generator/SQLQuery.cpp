@@ -600,6 +600,10 @@ int StatementGenerator::generateFromStatement(RandomGenerator & rg, const uint32
             JoinCore * core = jcc->mutable_core();
             JoinType jt = static_cast<JoinType>((rg.nextRandomUInt32() % static_cast<uint32_t>(JoinType_MAX)) + 1);
 
+            if (!this->allow_not_deterministic && jt == JoinType::J_PASTE)
+            {
+                jt = JoinType::J_INNER;
+            }
             core->set_global(rg.nextSmallNumber() < 3);
             core->set_join_op(jt);
             if (rg.nextSmallNumber() < 4)
@@ -842,6 +846,12 @@ int StatementGenerator::generateOrderBy(RandomGenerator & rg, const uint32_t nco
                     eot->set_asc_desc(
                         rg.nextBool() ? ExprOrderingTerm_AscDesc::ExprOrderingTerm_AscDesc_ASC
                                       : ExprOrderingTerm_AscDesc::ExprOrderingTerm_AscDesc_DESC);
+                }
+                if (rg.nextSmallNumber() < 7)
+                {
+                    eot->set_nulls_order(
+                        rg.nextBool() ? ExprOrderingTerm_NullsOrder::ExprOrderingTerm_NullsOrder_FIRST
+                                      : ExprOrderingTerm_NullsOrder::ExprOrderingTerm_NullsOrder_LAST);
                 }
                 if (!this->fc.collations.empty() && rg.nextSmallNumber() < 3)
                 {
