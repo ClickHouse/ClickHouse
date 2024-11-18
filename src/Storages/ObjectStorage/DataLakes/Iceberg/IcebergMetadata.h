@@ -69,7 +69,6 @@ enum class PartitionTransform
     Month,
     Day,
     Hour,
-    Identity,
     Unsupported
 };
 
