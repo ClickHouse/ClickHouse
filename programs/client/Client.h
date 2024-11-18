@@ -52,8 +52,10 @@ protected:
 private:
     void printChangedSettings() const;
     void showWarnings();
+#ifdef BUZZHOUSE_ENABLED
     void processQueryAndLog(std::ofstream & outf, const std::string & full_query);
     bool processBuzzHouseQuery(const std::string & full_query);
+#endif
     void parseConnectionsCredentials(Poco::Util::AbstractConfiguration & config, const std::string & connection_name);
     std::vector<String> loadWarningMessages();
 };

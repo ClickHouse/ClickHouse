@@ -956,6 +956,8 @@ bool Client::processWithFuzzing(const String & full_query)
     return true;
 }
 
+#ifdef BUZZHOUSE_ENABLED
+
 void Client::processQueryAndLog(std::ofstream & outf, const std::string & full_query)
 {
     processTextAsSingleQuery(full_query);
@@ -1020,7 +1022,6 @@ static void finishBuzzHouse(int num)
 /// Returns false when server is not available.
 bool Client::buzzHouse()
 {
-#ifdef BUZZHOUSE_ENABLED
     bool server_up = true;
     std::string full_query;
     BuzzHouse::FuzzConfig fc(this, buzz_house_options_path);
@@ -1232,10 +1233,13 @@ bool Client::buzzHouse()
         }
     }
     return server_up;
-#else
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clickhouse was compiled without BuzzHouse enabled");
-#endif
 }
+#else
+bool Client::buzzHouse()
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clickhouse was compiled without BuzzHouse enabled");
+}
+#endif
 
 void Client::printHelpMessage(const OptionsDescription & options_description, bool verbose)
 {

@@ -1607,7 +1607,7 @@ int StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner * 
                                 || collectionHas<std::shared_ptr<SQLDatabase>>(detached_databases)),
                    detach = 2
         * static_cast<uint32_t>(collectionCount<SQLTable>(attached_tables) > 3 || collectionCount<SQLView>(attached_views) > 3
-                              || collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3),
+                                || collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3),
                    create_database = 2 * static_cast<uint32_t>(static_cast<uint32_t>(databases.size()) < this->fc.max_databases),
                    create_function = 5 * static_cast<uint32_t>(static_cast<uint32_t>(functions.size()) < this->fc.max_functions),
                    select_query = 350,
