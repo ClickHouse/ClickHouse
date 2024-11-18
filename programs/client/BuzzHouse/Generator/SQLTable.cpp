@@ -207,16 +207,17 @@ void StatementGenerator::insertEntryRefCP(const InsertEntry & entry, ColumnPath 
     }
 }
 
-int StatementGenerator::generateTableKey(RandomGenerator & rg, TableKey * tkey)
+int StatementGenerator::generateTableKey(RandomGenerator & rg, const TableEngineValues teng, TableKey * tkey)
 {
     if (!entries.empty() && rg.nextSmallNumber() < 7)
     {
         const size_t ocols = (rg.nextMediumNumber() % std::min<size_t>(entries.size(), UINT32_C(3))) + 1;
 
         std::shuffle(entries.begin(), entries.end(), rg.generator);
-        if (rg.nextSmallNumber() < 3)
+        if (teng != TableEngineValues::SummingMergeTree && rg.nextSmallNumber() < 3)
         {
             //Use a single expression for the entire table
+            //See https://github.com/ClickHouse/ClickHouse/issues/72043 for SummingMergeTree exception
             SQLFuncCall * func_call = tkey->add_exprs()->mutable_comp_expr()->mutable_func_call();
 
             func_call->mutable_func()->set_catalog_func(rg.pickRandomlyFromVector(multicol_hash));
@@ -249,6 +250,14 @@ int StatementGenerator::generateTableKey(RandomGenerator & rg, TableKey * tkey)
                     bexpr->mutable_rhs()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(
                         rg.nextRandomUInt32() % (rg.nextBool() ? 1024 : 65536));
                 }
+                else if (teng != TableEngineValues::SummingMergeTree && rg.nextMediumNumber() < 6)
+                {
+                    //Use hash
+                    SQLFuncCall * func_call = tkey->add_exprs()->mutable_comp_expr()->mutable_func_call();
+
+                    func_call->mutable_func()->set_catalog_func(rg.pickRandomlyFromVector(multicol_hash));
+                    insertEntryRef(entry, func_call->add_args()->mutable_expr());
+                }
                 else
                 {
                     insertEntryRef(entry, tkey->add_exprs());
@@ -264,7 +273,7 @@ int StatementGenerator::generateMergeTreeEngineDetails(
 {
     if (rg.nextSmallNumber() < 6)
     {
-        generateTableKey(rg, te->mutable_order());
+        generateTableKey(rg, teng, te->mutable_order());
     }
     if (te->order().exprs_size() && add_pkey && rg.nextSmallNumber() < 5)
     {
@@ -280,11 +289,11 @@ int StatementGenerator::generateMergeTreeEngineDetails(
     }
     else if (!te->order().exprs_size() && add_pkey)
     {
-        generateTableKey(rg, te->mutable_primary_key());
+        generateTableKey(rg, teng, te->mutable_primary_key());
     }
     if (rg.nextBool())
     {
-        generateTableKey(rg, te->mutable_partition_by());
+        generateTableKey(rg, teng, te->mutable_partition_by());
     }
 
     const int npkey = te->primary_key().exprs_size();
@@ -365,7 +374,7 @@ int StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b,
 
         if (rg.nextSmallNumber() < 5)
         {
-            generateTableKey(rg, te->mutable_partition_by());
+            generateTableKey(rg, b.teng, te->mutable_partition_by());
         }
         if (noption < 9)
         {
@@ -533,7 +542,7 @@ int StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b,
             }
             if (b.isAnyS3Engine() && rg.nextSmallNumber() < 5)
             {
-                generateTableKey(rg, te->mutable_partition_by());
+                generateTableKey(rg, b.teng, te->mutable_partition_by());
             }
         }
         connections.createExternalDatabaseTable(rg, IntegrationCall::IntMinIO, b.tname, entries);

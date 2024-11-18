@@ -198,6 +198,7 @@ std::tuple<const SQLType *, Integers> StatementGenerator::randomIntType(RandomGe
         default:
             assert(0);
     }
+    return std::make_tuple(new IntType(32, false), Integers::Int32);
 }
 
 std::tuple<const SQLType *, FloatingPoints> StatementGenerator::randomFloatType(RandomGenerator & rg)

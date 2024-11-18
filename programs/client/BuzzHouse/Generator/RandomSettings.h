@@ -174,7 +174,6 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
     {"input_format_csv_allow_cr_end_of_line", trueOrFalse},
     {"input_format_csv_allow_variable_number_of_columns", trueOrFalse},
     {"input_format_csv_allow_whitespace_or_tab_as_delimiter", trueOrFalse},
-    {"input_format_csv_arrays_as_nested_csv", trueOrFalse},
     {"input_format_csv_deserialize_separate_columns_into_tuple", trueOrFalse},
     {"input_format_csv_empty_as_default", trueOrFalse},
     {"input_format_csv_enum_as_number", trueOrFalse},

@@ -791,7 +791,7 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                                 entry.second.dmod));
                         }
                     }
-                    generateTableKey(rg, tkey);
+                    generateTableKey(rg, t.teng, tkey);
                     this->entries.clear();
                 }
             }
@@ -1578,7 +1578,7 @@ int StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner * 
         * static_cast<uint32_t>(
                               collectionCount<SQLTable>(attached_tables) > 3 || collectionCount<SQLView>(attached_views) > 3
                               || collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3 || functions.size() > 3),
-                   insert = 100 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables)),
+                   insert = 120 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables)),
                    light_delete = 6 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables)),
                    truncate = 2
         * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases)
@@ -1610,7 +1610,7 @@ int StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner * 
                                 || collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3),
                    create_database = 2 * static_cast<uint32_t>(static_cast<uint32_t>(databases.size()) < this->fc.max_databases),
                    create_function = 5 * static_cast<uint32_t>(static_cast<uint32_t>(functions.size()) < this->fc.max_functions),
-                   select_query = 350,
+                   select_query = 450,
                    prob_space = create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table
         + desc_table + exchange_tables + alter_table + set_values + attach + detach + create_database + create_function + select_query;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
