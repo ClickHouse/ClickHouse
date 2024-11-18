@@ -19,6 +19,50 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 
 
 /** The function takes two arrays: scores and labels.
+  * Label can be one of two values: positive and negative.
+  * Score can be arbitrary number.
+  *
+  * These values are considered as the output of classifier. We have some true labels for objects.
+  * And classifier assigns some scores to objects that predict these labels in the following way:
+  * - we can define arbitrary threshold on score and predict that the label is positive if the score is greater than the threshold:
+  *
+  * f(object) = score
+  * predicted_label = score > threshold
+  *
+  * This way classifier may predict positive or negative value correctly - true positive (tp) or true negative (tn) or have false positive (fp) or false negative (fn) result.
+  * Varying the threshold we can get different probabilities of false positive or false negatives or true positives, etc...
+  *
+  * We can also calculate the Precision and the Recall:
+  *
+  * Precision is the ratio `tp / (tp + fp)` where `tp` is the number of true positives and fp `the` number of false positives.
+  * It represents how often the classifier is correct when giving a positive result.
+  * Precision = P(label = positive | prediction = positive)
+  *
+  * Recall is the ratio `tp / (tp + fn)` where `tp` is the number of true positives and `fn` the number of false negatives.
+  * It represents the probability of the classifier to give positive result if the object has positive label.
+  * Recall = P(score > threshold | label = positive)
+  *
+  * We can draw a curve of values of Precision and Recall with different threshold on [0..1] x [0..1] unit square.
+  * This curve is named "Precision Recall curve" (PR). For the curve we can calculate, literally, Area Under the Curve, that will be in the range of [0..1].
+  *
+  * Let's look at the example:
+  * arrayPrAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
+  *
+  * 1. We have pairs: (-, 0.1), (-, 0.4), (+, 0.35), (+, 0.8)
+  *
+  * 2. Let's sort by score descending: (+, 0.8), (-, 0.4), (+, 0.35), (-, 0.1)
+  *
+  * 3. Let's draw the points:
+  *
+  * threshold = 0.8,  TP = 0, FP = 0, FN = 2, Recall = 0.0, Precision = 1
+  * threshold = 0.4,  TP = 1, FP = 0, FN = 1, Recall = 0.5, Precision = 1
+  * threshold = 0.35, TP = 1, FP = 1, FN = 1, Recall = 0.5, Precision = 0.5
+  * threshold = 0.1,  TP = 2, FP = 1, FN = 0, Recall = 1.0, Precision = 0.666
+  * threshold = 0,    TP = 2, FP = 2, FN = 0, Recall = 1.0, Precision = 0.5
+  *
+  * The "curve" will be present by a line that moves one step either towards right or top on each threshold change.
+  * This implementation is not interpolated and does not use the trapezoidal rule. 
+  * Each increment in area is calculated using `(R_n - R_{n-1}) * P_n`, which is equivalent to the right Riemann sum.
   */
 
 class FunctionArrayPrAUC : public IFunction
@@ -50,14 +94,17 @@ private:
         /// Sorting scores in descending order to traverse the Precision Recall curve from left to right
         std::sort(sorted_labels.begin(), sorted_labels.end(), [](const auto & lhs, const auto & rhs) { return lhs.score > rhs.score; });
 
-        size_t prev_tp = 0;
-        size_t curr_fp = 0, curr_tp = 0;
+        size_t prev_tp = 0, curr_tp = 0;
+        size_t curr_p = 0;
+
+        Float64 prev_score = sorted_labels[0].score;
         Float64 curr_precision = 1.0;
+
         Float64 area = 0.0;
 
         for (size_t i = 0; i < size; ++i)
         {
-            if (curr_tp != prev_tp)
+            if (sorted_labels[i].score != prev_score)
             {
                 /* Precision = TP / (TP + FP) and Recall = TP / (TP + FN)
                  *
@@ -65,29 +112,25 @@ private:
                  *      d_Area = Precision_n * (Recall_n - Recall_{n-1}), 
                  *  we can calculate 
                  *      d_Area = Precision_n * (TP_n - TP_{n-1}) 
-                 *  and later divide it by (TP + FN), since 
+                 *  and later divide it by (TP + FN), since (TP + FN) is constant and equal to total positive labels.
                  */
-                curr_precision = static_cast<Float64>(curr_tp) / (curr_tp + curr_fp);
+                curr_precision = static_cast<Float64>(curr_tp) / curr_p;
                 area += curr_precision * (curr_tp - prev_tp);
                 prev_tp = curr_tp;
             }
 
             if (sorted_labels[i].label)
                 curr_tp += 1;
-            else
-                curr_fp += 1;
+            curr_p += 1;
         }
 
-        curr_precision = (curr_tp + curr_fp) > 0 ? static_cast<Float64>(curr_tp) / (curr_tp + curr_fp) : 1.0;
+        curr_precision = curr_p > 0 ? static_cast<Float64>(curr_tp) / curr_p : 1.0;
         area += curr_precision * (curr_tp - prev_tp);
 
-        /// If there were no labels, return NaN
-        if (curr_tp == 0 && curr_fp == 0)
-            return std::numeric_limits<Float64>::quiet_NaN();
-        /// If there were no positive labels, the only point of the curve is (0, 1) and AUC is 0
+        /// If there were no positive labels, Recall did not change and the area is 0
         if (curr_tp == 0)
             return 0.0;
-        /// Finally, divide it by total number of positive labels (TP + FN)
+        /// Finally, we assume that we've traversed the whole curve and total positive labels (TP + FN) is curr_tp
         return area / curr_tp;
     }
 
