@@ -591,13 +591,21 @@ def test_cluster_table_function(started_cluster, format_version, storage_type):
     table_function_expr = get_creation_expression(
         storage_type, TABLE_NAME, started_cluster, table_function=True
     )
-    select_regular = instance.query(f"SELECT * FROM {table_function_expr}").strip().split()
+    select_regular = (
+        instance.query(f"SELECT * FROM {table_function_expr}").strip().split()
+    )
 
     # Cluster Query with node1 as coordinator
     table_function_expr_cluster = get_creation_expression(
-        storage_type, TABLE_NAME, started_cluster, table_function=True, run_on_cluster=True
+        storage_type,
+        TABLE_NAME,
+        started_cluster,
+        table_function=True,
+        run_on_cluster=True,
     )
-    select_cluster = instance.query(f"SELECT * FROM {table_function_expr_cluster}").strip().split()
+    select_cluster = (
+        instance.query(f"SELECT * FROM {table_function_expr_cluster}").strip().split()
+    )
 
     # Simple size check
     assert len(select_regular) == 600
@@ -611,8 +619,9 @@ def test_cluster_table_function(started_cluster, format_version, storage_type):
         replica.query("SYSTEM FLUSH LOGS")
 
     for node_name, replica in started_cluster.instances.items():
-        cluster_secondary_queries = replica.query(
-            f"""
+        cluster_secondary_queries = (
+            replica.query(
+                f"""
                 SELECT query, type, is_initial_query, read_rows, read_bytes FROM system.query_log
                 WHERE
                     type = 'QueryStart' AND
@@ -621,9 +630,14 @@ def test_cluster_table_function(started_cluster, format_version, storage_type):
                     position(query, 'system.query_log') = 0 AND
                     NOT is_initial_query
             """
-        ).strip().split("\n")
+            )
+            .strip()
+            .split("\n")
+        )
 
-        logging.info(f"[{node_name}] cluster_secondary_queries: {cluster_secondary_queries}")
+        logging.info(
+            f"[{node_name}] cluster_secondary_queries: {cluster_secondary_queries}"
+        )
         assert len(cluster_secondary_queries) == 1
 
 
