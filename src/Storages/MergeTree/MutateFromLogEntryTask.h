@@ -31,7 +31,7 @@ public:
         {}
 
 
-    Priority getPriority() const override { return priority; }
+    Priority getPriority(SchedulingGoal goal) const override { return scheduling.getPriority(goal); }
 
 private:
 
@@ -44,7 +44,7 @@ private:
         return mutate_task->execute();
     }
 
-    Priority priority;
+    MergeTask::SchedulingParameters scheduling;
 
     TableLockHolder table_lock_holder{nullptr};
     ReservationSharedPtr reserved_space{nullptr};

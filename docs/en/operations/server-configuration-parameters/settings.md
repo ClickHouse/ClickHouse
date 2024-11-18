@@ -101,7 +101,7 @@ Default: 2
 
 ## background_merges_mutations_scheduling_policy
 
-The policy on how to perform a scheduling for background merges and mutations. Possible values are: `round_robin` and `shortest_task_first`.
+The policy on how to perform a scheduling for background merges and mutations. Possible values are: `round_robin`, `shortest_task_first` and `minimize_part_count`.
 
 Algorithm used to select next merge or mutation to be executed by background thread pool. Policy may be changed at runtime without server restart.
 Could be applied from the `default` profile for backward compatibility.
@@ -110,6 +110,7 @@ Possible values:
 
 - "round_robin" — Every concurrent merge and mutation is executed in round-robin order to ensure starvation-free operation. Smaller merges are completed faster than bigger ones just because they have fewer blocks to merge.
 - "shortest_task_first" — Always execute smaller merge or mutation. Merges and mutations are assigned priorities based on their resulting size. Merges with smaller sizes are strictly preferred over bigger ones. This policy ensures the fastest possible merge of small parts but can lead to indefinite starvation of big merges in partitions heavily overloaded by INSERTs.
+- "minimize_part_count" — Always execute merges of smaller source parts. Merges and mutations are assigned dynamic priorities based on the remaining work divided by the decrease in part count resulting from the operation. This policy minimizes the average over time total number of parts, but it can lead to indefinite starvation of big merges in partitions heavily overloaded by INSERTs.
 
 Type: String
 

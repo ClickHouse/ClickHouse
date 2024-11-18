@@ -29,6 +29,13 @@ namespace ErrorCodes
 class IExecutableTask
 {
 public:
+    /// Priority of a task depend on the goal we are trying to achieve with scheduling
+    enum class SchedulingGoal
+    {
+        ShortestTaskFirst,
+        MinimizePartCount,
+    };
+
     using TaskResultCallback = std::function<void(bool)>;
 
     virtual bool executeStep() = 0;
@@ -43,7 +50,7 @@ public:
     virtual void onCompleted() = 0;
     virtual StorageID getStorageID() const = 0;
     virtual String getQueryId() const = 0;
-    virtual Priority getPriority() const = 0;
+    virtual Priority getPriority(SchedulingGoal goal) const = 0;
     virtual ~IExecutableTask() = default;
 };
 
@@ -74,7 +81,7 @@ public:
 
     void onCompleted() override { job_result_callback(!res); }
     StorageID getStorageID() const override { return id; }
-    Priority getPriority() const override
+    Priority getPriority(SchedulingGoal) const override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "getPriority() method is not supported by LambdaAdapter");
     }

@@ -31,16 +31,15 @@ public:
         , cleanup(cleanup_)
         , merge_mutate_entry(std::move(merge_mutate_entry_))
         , table_lock_holder(std::move(table_lock_holder_))
+        , scheduling(merge_mutate_entry->future_part->parts)
         , task_result_callback(task_result_callback_)
     {
-        for (auto & item : merge_mutate_entry->future_part->parts)
-            priority.value += item->getBytesOnDisk();
     }
 
     bool executeStep() override;
     void onCompleted() override;
     StorageID getStorageID() const override;
-    Priority getPriority() const override { return priority; }
+    Priority getPriority(SchedulingGoal goal) const override { return scheduling.getPriority(goal); }
     String getQueryId() const override { return getStorageID().getShortName() + "::" + merge_mutate_entry->future_part->name; }
 
     void setCurrentTransaction(MergeTreeTransactionHolder && txn_holder_, MergeTreeTransactionPtr && txn_)
@@ -78,7 +77,7 @@ private:
     using MergeListEntryPtr = std::unique_ptr<MergeListEntry>;
     MergeListEntryPtr merge_list_entry;
 
-    Priority priority;
+    MergeTask::SchedulingParameters scheduling;
 
     std::function<void(const ExecutionStatus &)> write_part_log;
     std::function<void()> transfer_profile_counters_to_initial_query;

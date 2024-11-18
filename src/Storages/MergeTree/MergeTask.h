@@ -142,6 +142,44 @@ public:
 
     bool execute();
 
+    struct SchedulingParameters
+    {
+        Int64 total_work = 0;
+        Int64 remaining_work = 0;
+        Int64 weight = 1;
+
+        SchedulingParameters() = default;
+
+        explicit SchedulingParameters(MergeTreeData::DataPartsVector & parts)
+        {
+            /// Work is proportional to number of bytes to process
+            for (auto & item : parts)
+                total_work += item->getBytesOnDisk();
+
+            remaining_work = total_work;
+
+            /// Weight for scheduling equals decrease in total number of parts after execution:
+            /// `parts.size()` parts are removed and 1 resulting part is added
+            /// NOTE: weight must be non-zero
+            weight = std::max<UInt64>(2, parts.size()) - 1;
+        }
+
+        // TODO(serxa): call this function
+        void decreaseRemainingWork(UInt64 value)
+        {
+            remaining_work = std::max<Int64>(0, remaining_work - value);
+        }
+
+        Priority getPriority(IExecutableTask::SchedulingGoal goal) const
+        {
+            switch (goal)
+            {
+                case IExecutableTask::SchedulingGoal::ShortestTaskFirst: return Priority{total_work};
+                case IExecutableTask::SchedulingGoal::MinimizePartCount: return Priority{remaining_work / weight};
+            }
+        }
+    };
+
 private:
     struct IStage;
     using StagePtr = std::shared_ptr<IStage>;

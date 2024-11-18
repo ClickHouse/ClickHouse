@@ -363,6 +363,7 @@ void MergeTreeBackgroundExecutor<Queue>::threadFunction()
 
 
 template class MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>;
-template class MergeTreeBackgroundExecutor<PriorityRuntimeQueue>;
+template class MergeTreeBackgroundExecutor<ShortestTaskFirstQueue>;
+template class MergeTreeBackgroundExecutor<MinimizePartCountQueue>;
 template class MergeTreeBackgroundExecutor<DynamicRuntimeQueue>;
 }

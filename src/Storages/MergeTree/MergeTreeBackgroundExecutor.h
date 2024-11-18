@@ -110,6 +110,7 @@ private:
 };
 
 /// Uses a heap to pop a task with minimal priority.
+template <IExecutableTask::SchedulingGoal goal>
 class PriorityRuntimeQueue
 {
 public:
@@ -123,7 +124,7 @@ public:
 
     void push(TaskRuntimeDataPtr item)
     {
-        item->priority = item->task->getPriority();
+        item->priority = item->task->getPriority(goal);
         buffer.push_back(std::move(item));
         std::push_heap(buffer.begin(), buffer.end(), TaskRuntimeData::comparePtrByPriority);
     }
@@ -142,10 +143,18 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updatePolicy() is not implemented");
     }
 
-    static constexpr std::string_view name = "shortest_task_first";
-
 private:
     std::vector<TaskRuntimeDataPtr> buffer;
+};
+
+struct ShortestTaskFirstQueue : PriorityRuntimeQueue<IExecutableTask::SchedulingGoal::ShortestTaskFirst>
+{
+    static constexpr std::string_view name = "shortest_task_first";
+};
+
+struct MinimizePartCountQueue : PriorityRuntimeQueue<IExecutableTask::SchedulingGoal::MinimizePartCount>
+{
+    static constexpr std::string_view name = "minimize_part_count";
 };
 
 /// Queue that can dynamically change scheduling policy
@@ -216,7 +225,7 @@ private:
 };
 
 // Avoid typedef and alias to facilitate forward declaration
-class DynamicRuntimeQueue : public DynamicRuntimeQueueImpl<RoundRobinRuntimeQueue, PriorityRuntimeQueue> {};
+class DynamicRuntimeQueue : public DynamicRuntimeQueueImpl<RoundRobinRuntimeQueue, ShortestTaskFirstQueue, MinimizePartCountQueue> {};
 
 /**
  *  Executor for a background MergeTree related operations such as merges, mutations, fetches and so on.
@@ -243,9 +252,15 @@ class DynamicRuntimeQueue : public DynamicRuntimeQueueImpl<RoundRobinRuntimeQueu
  *  1) RoundRobinRuntimeQueue. Uses boost::circular_buffer as FIFO-queue. Next task is taken from queue's head and after one step
  *     enqueued into queue's tail. With this architecture all merges / mutations are fairly scheduled and never starved.
  *     All decisions regarding priorities are left to components creating tasks (e.g. SimpleMergeSelector).
- *  2) PriorityRuntimeQueue. Uses heap to select task with smallest priority value.
+ *  2) ShortestTaskFirstQueue. Uses heap to select task with smallest size of resulting part.
  *     With this architecture all small merges / mutations will be executed faster, than bigger ones.
  *     WARNING: Starvation is possible in case of overload.
+ *  3) MinimizePartCountQueue. Uses heap to select task with smallest priority value.
+ *     Priority is computed as amount of `remaining_work` divided by `weight`. (see Smith's rule)
+ *     This is optimal strategy that solves scheduling problem of minimization weighted sum of completion times on single CPU.
+ *     With this architecture all merges / mutations of larger number of smaller parts will be executed faster.
+ *     NOTE: it is consistent with merge selector that tries to minimize part count.
+ *     WARNING: Starvation is possible in case of overload, but using remaining work instead of total work enhances situation.
  *
  *  We use boost::circular_buffer as a container for active queue to avoid allocations.
  *  Another nuisance that we face is that background operations always interact with an associated Storage.
@@ -311,7 +326,8 @@ private:
 };
 
 extern template class MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>;
-extern template class MergeTreeBackgroundExecutor<PriorityRuntimeQueue>;
+extern template class MergeTreeBackgroundExecutor<ShortestTaskFirstQueue>;
+extern template class MergeTreeBackgroundExecutor<MinimizePartCountQueue>;
 extern template class MergeTreeBackgroundExecutor<DynamicRuntimeQueue>;
 
 }
