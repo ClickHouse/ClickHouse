@@ -17,6 +17,7 @@
 
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromVector.h>
+#include "Common/logger_useful.h"
 
 
 namespace DB
@@ -155,7 +156,10 @@ StoragePtr TableFunctionURL::getStorage(
     auto can_use_parallel_replicas = settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0
         && settings[Setting::parallel_replicas_for_cluster_engines]
         && settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
-        && !parallel_replicas_cluster_name.empty();
+        && !parallel_replicas_cluster_name.empty()
+        && !global_context->isDistributed();
+
+    LOG_DEBUG(&Poco::Logger::get("TableFunctionURL"), "Is distributed: {}", global_context->isDistributed());
 
     if (can_use_parallel_replicas)
     {
