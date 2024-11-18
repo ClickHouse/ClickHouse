@@ -1,5 +1,6 @@
 #include "config.h"
 
+
 #if USE_AVRO
 
 #    include <Columns/ColumnString.h>
@@ -87,6 +88,7 @@ enum class DataFileContent : uint8_t
     POSITION_DELETES = 1,
     EQUALITY_DELETES = 2,
 };
+
 
 /**
  * Iceberg supports the next data types (see https://iceberg.apache.org/spec/#schemas-and-data-types):
@@ -307,7 +309,7 @@ parseTableSchema(const Poco::JSON::Object::Ptr & metadata_object, int format_ver
         /// Field "schemas" is optional for version 1, but after version 2 was introduced,
         /// in most cases this field is added for new tables in version 1 as well.
         if (!ignore_schema_evolution && metadata_object->has("schemas")
-            && metadata_object->get("schemas").extract<Poco::JSON::Array::Ptr>()->size() > 1)
+            && metadata_object->get("schemas").extract<Poco::JSON::Array::Ptr>()->size() > 1§)
             throw Exception(
                 ErrorCodes::UNSUPPORTED_METHOD,
                 "Cannot read Iceberg table: the table schema has been changed at least 1 time, reading tables with evolved schema is not "

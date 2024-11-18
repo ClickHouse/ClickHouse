@@ -88,7 +88,7 @@ struct SpecificSchemaPartitionInfo
 class PartitionPruningProcessor
 {
 public:
-    CommonPartitionInfo getCommonPartitionInfo(Poco::JSON::Array::Ptr partition_specification, const ColumnTuple * big_partition_tuple);
+    CommonPartitionInfo addCommonPartitionInfo(Poco::JSON::Array::Ptr partition_specification, const ColumnTuple * big_partition_tuple);
 
     SpecificSchemaPartitionInfo getSpecificPartitionPruning(
         const CommonPartitionInfo & common_info,
@@ -96,6 +96,8 @@ public:
         const std::unordered_map<Int32, NameAndTypePair> & name_and_type_by_source_id);
 
     std::vector<bool> getPruningMask(const SpecificSchemaPartitionInfo & specific_info, const ActionsDAG * filter_dag, ContextPtr context);
+
+    std::vector<bool> getAllFilesMask(const ActionsDAG * filter_dag, ContextPtr context);
 
 private:
     static PartitionTransform getTransform(const String & transform_name)
@@ -189,6 +191,8 @@ private:
 
     std::unordered_map<String, CommonPartitionInfo> common_partition_info_by_manifest_file;
     std::map<std::pair<String, Int32>, SpecificSchemaPartitionInfo> specific_partition_info_by_manifest_file_and_schema;
+
+    std::vector<CommonPartitionInfo> common_partition_infos;
 };
 
 
@@ -259,6 +263,8 @@ private:
 
     mutable Strings data_files;
     mutable Strings manifest_files;
+
+    PartitionPruningProcessor pruning_processor;
 };
 
 }
