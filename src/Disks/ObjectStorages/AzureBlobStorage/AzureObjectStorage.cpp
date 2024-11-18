@@ -277,19 +277,6 @@ void AzureObjectStorage::removeObjectImpl(const StoredObject & object, const Sha
     }
 }
 
-/// Remove file. Throws exception if file doesn't exists or it's a directory.
-void AzureObjectStorage::removeObject(const StoredObject & object)
-{
-    removeObjectImpl(object, client.get(), false);
-}
-
-void AzureObjectStorage::removeObjects(const StoredObjects & objects)
-{
-    auto client_ptr = client.get();
-    for (const auto & object : objects)
-        removeObjectImpl(object, client_ptr, false);
-}
-
 void AzureObjectStorage::removeObjectIfExists(const StoredObject & object)
 {
     removeObjectImpl(object, client.get(), true);

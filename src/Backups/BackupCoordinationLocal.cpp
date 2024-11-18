@@ -11,12 +11,11 @@ namespace DB
 {
 
 BackupCoordinationLocal::BackupCoordinationLocal(
-    const UUID & backup_uuid_,
     bool is_plain_backup_,
     bool allow_concurrent_backup_,
     BackupConcurrencyCounters & concurrency_counters_)
     : log(getLogger("BackupCoordinationLocal"))
-    , concurrency_check(backup_uuid_, /* is_restore = */ false, /* on_cluster = */ false, allow_concurrent_backup_, concurrency_counters_)
+    , concurrency_check(/* is_restore = */ false, /* on_cluster = */ false, /* zookeeper_path = */ "", allow_concurrent_backup_, concurrency_counters_)
     , file_infos(is_plain_backup_)
 {
 }
