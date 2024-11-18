@@ -151,8 +151,6 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration>::executeImpl(
         && !parallel_replicas_cluster_name.empty()
         && !context->isDistributed();
 
-    LOG_DEBUG(&Poco::Logger::get("TableFunctionObjectStorage"), "Is distributed: {}", context->isDistributed());
-
     if (can_use_parallel_replicas)
     {
         storage = std::make_shared<StorageObjectStorageCluster>(
