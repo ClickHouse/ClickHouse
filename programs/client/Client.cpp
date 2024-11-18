@@ -50,9 +50,11 @@
 
 #include <Poco/Util/Application.h>
 
-#include "QueryOracle.h"
-#include "SQLProtoStr.h"
-#include "StatementGenerator.h"
+#ifdef BUZZHOUSE_ENABLED
+#    include "QueryOracle.h"
+#    include "SQLProtoStr.h"
+#    include "StatementGenerator.h"
+#endif
 
 namespace fs = std::filesystem;
 using namespace std::literals;
@@ -1004,6 +1006,7 @@ bool Client::processBuzzHouseQuery(const std::string & full_query)
 /// Returns false when server is not available.
 bool Client::buzzHouse()
 {
+#ifdef BUZZHOUSE_ENABLED
     bool server_up = true;
     std::string full_query;
     BuzzHouse::FuzzConfig fc(this, buzz_house_options_path);
@@ -1208,6 +1211,9 @@ bool Client::buzzHouse()
         }
     }
     return false;
+#else
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clickhouse was compiled without BuzzHouse enabled");
+#endif
 }
 
 void Client::printHelpMessage(const OptionsDescription & options_description, bool verbose)
