@@ -37,7 +37,8 @@ SELECT arrayPrAUC([0, 1, 1], [0, 1, 1]);
 SELECT arrayPrAUC([0, 1, 1], [0, 0, 1]);
 
 -- negative tests
--- select arrayPrAUC([0, 0, 1, 1]); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
--- select arrayPrAUC([0.1, 0.35], [0, 0, 1, 1]); -- { serverError BAD_ARGUMENTS }
--- select arrayPrAUC([0.1, 0.4, 0.35, 0.8], [0.0, 0.0, 1.0, 1.0]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
--- select arrayPrAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1], [1, 1, 0, 1]); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+select arrayPrAUC([], []); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select arrayPrAUC([0, 0, 1, 1]); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+select arrayPrAUC([0.1, 0.35], [0, 0, 1, 1]); -- { serverError BAD_ARGUMENTS }
+select arrayPrAUC([0.1, 0.4, 0.35, 0.8], []); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select arrayPrAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1], [1, 1, 0, 1]); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
