@@ -119,3 +119,8 @@ def test_cluster_discovery_startup_and_stop(start_cluster):
     check_nodes_count(
         [nodes["node1"], nodes["node2"]], 2, cluster_name="two_shards", retries=1
     )
+
+    # cleanup
+    nodes["node0"].query(
+        "DROP TABLE tbl ON CLUSTER 'test_auto_cluster' SYNC"
+    )
