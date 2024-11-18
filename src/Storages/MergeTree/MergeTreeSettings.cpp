@@ -376,9 +376,9 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
 #undef ADD_IF_ABSENT
 }
 
-void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allowed_experimental, bool allowed_beta) const
+void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta) const
 {
-    if (!allowed_experimental || !allowed_beta)
+    if (!allow_experimental || !allow_beta)
     {
         for (const auto & setting : all())
         {
@@ -386,7 +386,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
                 continue;
 
             auto tier = setting.getTier();
-            if (!allowed_experimental && tier == EXPERIMENTAL)
+            if (!allow_experimental && tier == EXPERIMENTAL)
             {
                 throw Exception(
                     ErrorCodes::READONLY,
@@ -394,7 +394,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
                     "('allowed_feature_tier')",
                     setting.getName());
             }
-            if (!allowed_beta && tier == BETA)
+            if (!allow_beta && tier == BETA)
             {
                 throw Exception(
                     ErrorCodes::READONLY,
