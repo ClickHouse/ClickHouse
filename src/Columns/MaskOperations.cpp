@@ -91,50 +91,32 @@ static size_t extractMaskNumericImpl(
     size_t ones_count = 0;
     size_t mask_size = mask.size();
 
-    if (!null_bytemap)
+    for (size_t i = 0; i != mask_size; ++i)
     {
-        /// Fast path when null_bytemap is not provided.
-        for (size_t i = 0; i != mask_size; ++i)
+        // Change mask only where value is 1.
+        if (!mask[i])
+            continue;
+
+        UInt8 value;
+        if (null_bytemap && (*null_bytemap)[i])
         {
-            UInt8 value;
-            if constexpr (!inverted)
-                value = static_cast<bool>(data[i]);
-            else
-                value = !static_cast<bool>(data[i]);
-
-            ones_count += value;
-            mask[i] &= value;
+            value = null_value;
+            if (nulls)
+                (*nulls)[i] = 1;
         }
-        return ones_count;
+        else
+            value = static_cast<bool>(data[i]);
+
+        if constexpr (inverted)
+            value = !value;
+
+        if (value)
+            ++ones_count;
+
+        mask[i] = value;
     }
-    else
-    {
-        for (size_t i = 0; i != mask_size; ++i)
-        {
-            // Change mask only where value is 1.
-            if (!mask[i])
-                continue;
 
-            UInt8 value;
-            if (null_bytemap && (*null_bytemap)[i])
-            {
-                value = null_value;
-                if (nulls)
-                    (*nulls)[i] = 1;
-            }
-            else
-                value = static_cast<bool>(data[i]);
-
-            if constexpr (inverted)
-                value = !value;
-
-            if (value)
-                ++ones_count;
-
-            mask[i] = value;
-        }
-        return ones_count;
-    }
+    return ones_count;
 }
 
 template <bool inverted, typename NumericType>
