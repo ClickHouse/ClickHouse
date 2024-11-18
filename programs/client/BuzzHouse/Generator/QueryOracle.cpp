@@ -141,15 +141,9 @@ int QueryOracle::dumpTableContent(RandomGenerator & rg, const SQLTable & t, SQLQ
 }
 
 static const std::map<OutFormat, InFormat> out_in{
-    {OutFormat::OUT_TabSeparated, InFormat::IN_TabSeparated},
-    {OutFormat::OUT_TabSeparatedWithNames, InFormat::IN_TabSeparatedWithNames},
-    {OutFormat::OUT_TabSeparatedWithNamesAndTypes, InFormat::IN_TabSeparatedWithNamesAndTypes},
     {OutFormat::OUT_CSV, InFormat::IN_CSV},
     {OutFormat::OUT_CSVWithNames, InFormat::IN_CSVWithNames},
     {OutFormat::OUT_CSVWithNamesAndTypes, InFormat::IN_CSVWithNamesAndTypes},
-    {OutFormat::OUT_CustomSeparated, InFormat::IN_CustomSeparated},
-    {OutFormat::OUT_CustomSeparatedWithNames, InFormat::IN_CustomSeparatedWithNames},
-    {OutFormat::OUT_CustomSeparatedWithNamesAndTypes, InFormat::IN_CustomSeparatedWithNamesAndTypes},
     {OutFormat::OUT_Values, InFormat::IN_Values},
     {OutFormat::OUT_JSON, InFormat::IN_JSON},
     {OutFormat::OUT_JSONColumns, InFormat::IN_JSONColumns},
@@ -169,7 +163,6 @@ static const std::map<OutFormat, InFormat> out_in{
     {OutFormat::OUT_TSKV, InFormat::IN_TSKV},
     {OutFormat::OUT_Protobuf, InFormat::IN_Protobuf},
     {OutFormat::OUT_ProtobufSingle, InFormat::IN_ProtobufSingle},
-    //{OutFormat::OUT_ProtobufList, InFormat::IN_ProtobufList},
     {OutFormat::OUT_Avro, InFormat::IN_Avro},
     {OutFormat::OUT_Parquet, InFormat::IN_Parquet},
     {OutFormat::OUT_Arrow, InFormat::IN_Arrow},
@@ -180,7 +173,6 @@ static const std::map<OutFormat, InFormat> out_in{
     {OutFormat::OUT_RowBinaryWithNames, InFormat::IN_RowBinaryWithNames},
     {OutFormat::OUT_RowBinaryWithNamesAndTypes, InFormat::IN_RowBinaryWithNamesAndTypes},
     {OutFormat::OUT_Native, InFormat::IN_Native},
-    //{OutFormat::OUT_RawBLOB, InFormat::IN_RawBLOB}, outputs as a single value
     {OutFormat::OUT_MsgPack, InFormat::IN_MsgPack}};
 
 int QueryOracle::generateExportQuery(RandomGenerator & rg, const SQLTable & t, SQLQuery & sq2)

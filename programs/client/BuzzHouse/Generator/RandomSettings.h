@@ -193,7 +193,6 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
     {"input_format_ipv6_default_on_conversion_error", trueOrFalse},
     {"input_format_json_compact_allow_variable_number_of_columns", trueOrFalse},
     {"input_format_json_defaults_for_missing_elements_in_named_tuple", trueOrFalse},
-    {"input_format_json_empty_as_default", trueOrFalse},
     {"input_format_json_ignore_unknown_keys_in_named_tuple", trueOrFalse},
     {"input_format_json_ignore_unnecessary_fields", trueOrFalse},
     {"input_format_json_infer_incomplete_types_as_strings", trueOrFalse},

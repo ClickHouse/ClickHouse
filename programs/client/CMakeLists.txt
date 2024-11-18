@@ -43,6 +43,18 @@ if (ENABLE_BUZZHOUSE)
     if (TARGET OpenSSL::Crypto)
         list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE OpenSSL::Crypto)
     endif()
+    if (TARGET ch_contrib::mariadbclient)
+        list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE ch_contrib::mariadbclient)
+    endif()
+    if (TARGET ch_contrib::libpqxx)
+        list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE ch_contrib::libpqxx)
+    endif()
+    if (TARGET ch_contrib::sqlite)
+        list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE ch_contrib::sqlite)
+    endif()
+    if (TARGET ch_contrib::mongocxx)
+        list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE ch_contrib::mongocxx)
+    endif()
 
     set (CLICKHOUSE_CLIENT_INCLUDE
         PRIVATE
