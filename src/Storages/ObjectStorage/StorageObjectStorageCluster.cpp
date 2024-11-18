@@ -86,7 +86,9 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     const DB::StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context)
 {
-    ASTExpressionList * expression_list = extractTableFunctionArgumentsFromSelectQuery(query);
+    auto * table_function = extractTableFunctionFromSelectQuery(query);
+    auto * expression_list = table_function->arguments->as<ASTExpressionList>();
+
     if (!expression_list)
     {
         throw Exception(
@@ -105,10 +107,16 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
             configuration->getEngineName());
     }
 
-    ASTPtr cluster_name_arg = args.front();
-    args.erase(args.begin());
-    configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context);
-    args.insert(args.begin(), cluster_name_arg);
+    if (table_function->name == configuration->getTypeName())
+        configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context);
+    else
+    {
+        ASTPtr cluster_name_arg = args.front();
+        args.erase(args.begin());
+        configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context);
+        args.insert(args.begin(), cluster_name_arg);
+    }
+
 }
 
 RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExtension(

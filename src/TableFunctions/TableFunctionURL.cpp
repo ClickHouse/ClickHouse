@@ -159,8 +159,6 @@ StoragePtr TableFunctionURL::getStorage(
         && !parallel_replicas_cluster_name.empty()
         && !global_context->isDistributed();
 
-    LOG_DEBUG(&Poco::Logger::get("TableFunctionURL"), "Is distributed: {}", global_context->isDistributed());
-
     if (can_use_parallel_replicas)
     {
         return std::make_shared<StorageURLCluster>(

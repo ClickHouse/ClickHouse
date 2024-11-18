@@ -35,7 +35,7 @@ public:
         if (args.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected empty list of arguments for {}Cluster table function", Base::name);
 
-        if (table_function-> name == Base::name)
+        if (table_function->name == Base::name)
             Base::updateStructureAndFormatArgumentsIfNeeded(args, structure_, format_, context);
         else
         {
