@@ -81,15 +81,6 @@ ScatteredBlock HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
         join_on_keys.emplace_back(block, key_names, onexprs[i].condColumnNames().first, join.key_sizes[i]);
     }
 
-    /** If you use FULL or RIGHT JOIN, then the columns from the "left" table must be materialized.
-      * Because if they are constants, then in the "not joined" rows, they may have different values
-      *  - default values, which can differ from the values of these constants.
-      */
-    if constexpr (join_features.right || join_features.full)
-    {
-        materializeBlockInplace(block);
-    }
-
     auto & source_block = block.getSourceBlock();
 
     /** For LEFT/INNER JOIN, the saved blocks do not contain keys.

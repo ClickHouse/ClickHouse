@@ -83,6 +83,7 @@ JoinStep::JoinStep(
     bool use_new_analyzer_)
     : join(std::move(join_))
     , max_block_size(max_block_size_)
+    , min_block_size_bytes(min_block_size_bytes_)
     , max_streams(max_streams_)
     , required_output(std::move(required_output_))
     , keep_left_read_in_order(keep_left_read_in_order_)
@@ -117,6 +118,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
             join,
             join_algorithm_header,
             max_block_size,
+            min_block_size_bytes,
             max_streams,
             keep_left_read_in_order,
             &processors);
@@ -136,11 +138,11 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
 
     if (join->supportParallelJoin())
     {
-        pipeline->addSimpleTransform([&](const Block & header)
+        joined_pipeline->addSimpleTransform([&](const Block & header)
                                      { return std::make_shared<SimpleSquashingChunksTransform>(header, 0, min_block_size_bytes); });
     }
 
-    return pipeline;
+    return joined_pipeline;
 }
 
 bool JoinStep::allowPushDownToRight() const
