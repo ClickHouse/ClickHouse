@@ -88,7 +88,7 @@ public:
             }
             for (const auto & entry : entries)
             {
-                if (first)
+                if (!first)
                 {
                     buf += ", ";
                 }

@@ -587,17 +587,17 @@ int StatementGenerator::generateLambdaCall(RandomGenerator & rg, const uint32_t 
 int StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow_funcs, const bool allow_aggr, SQLFuncCall * func_call)
 {
     const size_t funcs_size = this->allow_not_deterministic ? CHFuncs.size() : (CHFuncs.size() - 60);
-    const uint32_t nfuncs = static_cast<uint32_t>(
-        ((allow_funcs && (!allow_aggr || rg.nextSmallNumber() < 8)) ? funcs_size : 0) + (allow_aggr ? CHAggrs.size() : 0));
+    const bool nallow_funcs = allow_funcs && (!allow_aggr || rg.nextSmallNumber() < 8);
+    const uint32_t nfuncs = static_cast<uint32_t>((nallow_funcs ? funcs_size : 0) + (allow_aggr ? CHAggrs.size() : 0));
     std::uniform_int_distribution<uint32_t> next_dist(0, nfuncs - 1);
     uint32_t generated_params = 0;
 
-    assert(allow_funcs || allow_aggr);
+    assert(nallow_funcs || allow_aggr);
     const uint32_t nopt = next_dist(rg.generator);
-    if (!allow_funcs || nopt >= static_cast<uint32_t>(funcs_size))
+    if (!nallow_funcs || nopt >= static_cast<uint32_t>(funcs_size))
     {
         //aggregate
-        const CHAggregate & agg = CHAggrs[nopt - static_cast<uint32_t>(allow_funcs ? funcs_size : 0)];
+        const CHAggregate & agg = CHAggrs[nopt - static_cast<uint32_t>(nallow_funcs ? funcs_size : 0)];
         const uint32_t max_params = std::min(this->fc.max_width - this->width, std::min(agg.max_params, UINT32_C(5))),
                        max_args = std::min(this->fc.max_width - this->width, std::min(agg.max_args, UINT32_C(5))),
                        ncombinators
