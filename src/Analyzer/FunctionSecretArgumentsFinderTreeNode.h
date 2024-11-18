@@ -7,6 +7,9 @@
 #include <Analyzer/IdentifierNode.h>
 
 
+namespace DB
+{
+
 namespace
 {
 
@@ -14,37 +17,37 @@ template <typename FunctionNodeType>
 inline String getFunctionNameImpl(const FunctionNodeType *);
 
 template <>
-inline String getFunctionNameImpl<DB::FunctionNode>(const DB::FunctionNode * function)
+inline String getFunctionNameImpl<FunctionNode>(const FunctionNode * function)
 {
     return function->getFunctionName();
 }
 
 template <>
-inline String getFunctionNameImpl<DB::TableFunctionNode>(const DB::TableFunctionNode * function)
+inline String getFunctionNameImpl<TableFunctionNode>(const TableFunctionNode * function)
 {
     return function->getTableFunctionName();
 }
 
 template <typename FunctionNodeType>
-class FunctionTreeNodeImpl : public DB::AbstractFunction
+class FunctionTreeNodeImpl : public AbstractFunction
 {
 public:
     class ArgumentTreeNode : public Argument
     {
     public:
-        explicit ArgumentTreeNode(const DB::IQueryTreeNode * argument_) : argument(argument_) {}
+        explicit ArgumentTreeNode(const IQueryTreeNode * argument_) : argument(argument_) {}
         std::unique_ptr<AbstractFunction> getFunction() const override
         {
             if (const auto * f = argument->as<FunctionNodeType>())
                 return std::make_unique<FunctionTreeNodeImpl>(*f);
             return nullptr;
         }
-        bool isIdentifier() const override { return argument->as<DB::IdentifierNode>(); }
+        bool isIdentifier() const override { return argument->as<IdentifierNode>(); }
         bool tryGetString(String * res, bool allow_identifier) const override
         {
-            if (const auto * literal = argument->as<DB::ConstantNode>())
+            if (const auto * literal = argument->as<ConstantNode>())
             {
-                if (literal->getValue().getType() != DB::Field::Types::String)
+                if (literal->getValue().getType() != Field::Types::String)
                     return false;
                 if (res)
                     *res = literal->getValue().safeGet<String>();
@@ -53,7 +56,7 @@ public:
 
             if (allow_identifier)
             {
-                if (const auto * id = argument->as<DB::IdentifierNode>())
+                if (const auto * id = argument->as<IdentifierNode>())
                 {
                     if (res)
                         *res = id->getIdentifier().getFullName();
@@ -64,17 +67,17 @@ public:
             return false;
         }
     private:
-        const DB::IQueryTreeNode * argument = nullptr;
+        const IQueryTreeNode * argument = nullptr;
     };
 
     class ArgumentsTreeNode : public Arguments
     {
     public:
-        explicit ArgumentsTreeNode(const DB::QueryTreeNodes * arguments_) : arguments(arguments_) {}
+        explicit ArgumentsTreeNode(const QueryTreeNodes * arguments_) : arguments(arguments_) {}
         size_t size() const override { return arguments ? arguments->size() : 0; }
         std::unique_ptr<Argument> at(size_t n) const override { return std::make_unique<ArgumentTreeNode>(arguments->at(n).get()); }
     private:
-        const DB::QueryTreeNodes * arguments = nullptr;
+        const QueryTreeNodes * arguments = nullptr;
     };
 
     explicit FunctionTreeNodeImpl(const FunctionNodeType & function_) : function(&function_)
@@ -90,7 +93,7 @@ private:
 /// Finds arguments of a specified function which should not be displayed for most users for security reasons.
 /// That involves passwords and secret keys.
 template <typename FunctionNodeType>
-class FunctionSecretArgumentsFinderTreeNodeImpl : public DB::FunctionSecretArgumentsFinder
+class FunctionSecretArgumentsFinderTreeNodeImpl : public FunctionSecretArgumentsFinder
 {
 public:
     explicit FunctionSecretArgumentsFinderTreeNodeImpl(const FunctionNodeType & function_)
@@ -106,10 +109,6 @@ public:
 };
 
 }
-
-
-namespace DB
-{
 
 using FunctionSecretArgumentsFinderTreeNode = FunctionSecretArgumentsFinderTreeNodeImpl<FunctionNode>;
 using TableFunctionSecretArgumentsFinderTreeNode = FunctionSecretArgumentsFinderTreeNodeImpl<TableFunctionNode>;
