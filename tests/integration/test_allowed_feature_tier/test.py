@@ -12,7 +12,7 @@ instance = cluster.add_instance(
     stay_alive=True,
 )
 
-config_path = "/etc/clickhouse-server/config.d/allowed_feature_tier.xml"
+feature_tier_path = "/etc/clickhouse-server/config.d/allowed_feature_tier.xml"
 
 
 @pytest.fixture(scope="module")
@@ -33,7 +33,7 @@ def get_current_tier_value(instance):
 
 def test_allowed_feature_tier_in_general_settings(start_cluster):
     # We use these settings as an example. If it fails in the future because you've changed the tier of the setting
-    # please change it to another setting in the same tier. If there is none, feel free to comment the test for that tier
+    # please change it to another setting in the same tier. If there is none, feel free to comment out the test for that tier
     query_with_experimental_setting = (
         "SELECT 1 SETTINGS allow_experimental_time_series_table=1"
     )
@@ -47,7 +47,7 @@ def test_allowed_feature_tier_in_general_settings(start_cluster):
     assert "1" == output.strip()
 
     # Disable experimental settings
-    instance.replace_in_config(config_path, "0", "1")
+    instance.replace_in_config(feature_tier_path, "0", "1")
     instance.query("SYSTEM RELOAD CONFIG")
     assert "1" == get_current_tier_value(instance)
 
@@ -62,7 +62,7 @@ def test_allowed_feature_tier_in_general_settings(start_cluster):
     assert "1" == output.strip()
 
     # Disable experimental and beta settings
-    instance.replace_in_config(config_path, "1", "2")
+    instance.replace_in_config(feature_tier_path, "1", "2")
     instance.query("SYSTEM RELOAD CONFIG")
     assert "2" == get_current_tier_value(instance)
 
@@ -77,7 +77,7 @@ def test_allowed_feature_tier_in_general_settings(start_cluster):
     assert "Changes to BETA settings are disabled" in error
 
     # Leave the server as it was
-    instance.replace_in_config(config_path, "2", "0")
+    instance.replace_in_config(feature_tier_path, "2", "0")
     instance.query("SYSTEM RELOAD CONFIG")
     assert "0" == get_current_tier_value(instance)
 
@@ -87,7 +87,7 @@ def test_allowed_feature_tier_in_mergetree_settings(start_cluster):
     instance.query("DROP TABLE IF EXISTS test_experimental")
 
     # Disable experimental settings
-    instance.replace_in_config(config_path, "0", "1")
+    instance.replace_in_config(feature_tier_path, "0", "1")
     instance.query("SYSTEM RELOAD CONFIG")
     assert "1" == get_current_tier_value(instance)
 
@@ -105,7 +105,7 @@ def test_allowed_feature_tier_in_mergetree_settings(start_cluster):
     assert "Changes to EXPERIMENTAL settings are disabled" in error
 
     # Go back
-    instance.replace_in_config(config_path, "1", "0")
+    instance.replace_in_config(feature_tier_path, "1", "0")
     instance.query("SYSTEM RELOAD CONFIG")
     assert "0" == get_current_tier_value(instance)
 
@@ -121,7 +121,7 @@ def test_allowed_feature_tier_in_mergetree_settings(start_cluster):
     assert "allow_experimental_replacing_merge_with_cleanup" in output
 
     # We now disable experimental settings and restart the server to confirm it boots correctly
-    instance.replace_in_config(config_path, "0", "1")
+    instance.replace_in_config(feature_tier_path, "0", "1")
     instance.query("SYSTEM RELOAD CONFIG")
     assert "1" == get_current_tier_value(instance)
 
@@ -164,7 +164,7 @@ def test_allowed_feature_tier_in_mergetree_settings(start_cluster):
     assert "Changes to EXPERIMENTAL settings are disabled" in error
     instance.query("DROP TABLE IF EXISTS test_experimental_new")
 
-    instance.replace_in_config(config_path, "1", "0")
+    instance.replace_in_config(feature_tier_path, "1", "0")
     instance.query("SYSTEM RELOAD CONFIG")
     assert "0" == get_current_tier_value(instance)
     instance.query("DROP TABLE IF EXISTS test_experimental")
@@ -172,12 +172,10 @@ def test_allowed_feature_tier_in_mergetree_settings(start_cluster):
 
 def test_allowed_feature_tier_in_user(start_cluster):
     instance.query("DROP USER IF EXISTS user_experimental")
-
     assert "0" == get_current_tier_value(instance)
-    instance.query("DROP TABLE IF EXISTS test_experimental")
 
     # Disable experimental settings
-    instance.replace_in_config(config_path, "0", "1")
+    instance.replace_in_config(feature_tier_path, "0", "1")
     instance.query("SYSTEM RELOAD CONFIG")
     assert "1" == get_current_tier_value(instance)
 
@@ -188,7 +186,7 @@ def test_allowed_feature_tier_in_user(start_cluster):
     assert "Changes to EXPERIMENTAL settings are disabled" in error
 
     # Go back to normal and create the user to restart the server and verify it works
-    instance.replace_in_config(config_path, "1", "0")
+    instance.replace_in_config(feature_tier_path, "1", "0")
     instance.query("SYSTEM RELOAD CONFIG")
     assert "0" == get_current_tier_value(instance)
 
@@ -214,7 +212,7 @@ def test_allowed_feature_tier_in_user(start_cluster):
     assert error == ""
 
     # Change back to block experimental features and restart to confirm everything is working as expected (only new changes are blocked)
-    instance.replace_in_config(config_path, "0", "1")
+    instance.replace_in_config(feature_tier_path, "0", "1")
     instance.query("SYSTEM RELOAD CONFIG")
     assert "1" == get_current_tier_value(instance)
 
@@ -251,7 +249,7 @@ def test_allowed_feature_tier_in_user(start_cluster):
     assert output == ""
     assert "Changes to EXPERIMENTAL settings are disabled" in error
 
-    instance.replace_in_config(config_path, "1", "0")
+    instance.replace_in_config(feature_tier_path, "1", "0")
     instance.query("SYSTEM RELOAD CONFIG")
     assert "0" == get_current_tier_value(instance)
     instance.query("DROP USER IF EXISTS user_experimental")
@@ -262,7 +260,7 @@ def test_it_is_possible_to_enable_experimental_settings_in_default_profile(
 ):
     # You can disable changing experimental settings but changing the default value via global config file is ok
     # It will just make the default value different and block changes
-    instance.replace_in_config(config_path, "0", "2")
+    instance.replace_in_config(feature_tier_path, "0", "2")
 
     # Change default user config
     instance.replace_in_config(
@@ -286,7 +284,7 @@ def test_it_is_possible_to_enable_experimental_settings_in_default_profile(
     assert output == ""
     assert "Changes to EXPERIMENTAL settings are disabled" in error
 
-    instance.replace_in_config(config_path, "2", "0")
+    instance.replace_in_config(feature_tier_path, "2", "0")
     instance.replace_in_config(
         "/etc/clickhouse-server/users.d/users.xml",
         "allow_experimental_time_series_table>.",
