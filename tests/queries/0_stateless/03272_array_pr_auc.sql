@@ -22,6 +22,19 @@ select arrayPrAUC([0.1, 0.35, 0.4, 0.4, 0.8], [1, 0, 1, 0, 0]);
 select arrayPrAUC([0, 3, 5, 6, 7.5, 8], [1, 0, 1, 0, 0, 0]);
 select arrayPrAUC([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], [1, 0, 1, 0, 0, 0, 1, 0, 0, 1]);
 select arrayPrAUC([0, 1, 1, 2, 2, 2, 3, 3, 3, 3], [1, 0, 1, 0, 0, 0, 1, 0, 0, 1]);
+-- edge cases
+SELECT arrayPrAUC([1], [1]);
+SELECT arrayPrAUC([1], [0]);
+SELECT arrayPrAUC([0], [0]);
+SELECT arrayPrAUC([0], [1]);
+SELECT arrayPrAUC([1, 1], [1, 1]);
+SELECT arrayPrAUC([1, 1], [0, 0]);
+SELECT arrayPrAUC([1, 1], [0, 1]);
+SELECT arrayPrAUC([0, 1], [0, 1]);
+SELECT arrayPrAUC([1, 0], [0, 1]);
+SELECT arrayPrAUC([0, 0, 1], [0, 1, 1]);
+SELECT arrayPrAUC([0, 1, 1], [0, 1, 1]);
+SELECT arrayPrAUC([0, 1, 1], [0, 0, 1]);
 
 -- negative tests
 -- select arrayPrAUC([0, 0, 1, 1]); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
