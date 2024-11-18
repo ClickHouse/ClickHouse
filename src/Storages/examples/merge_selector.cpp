@@ -1,7 +1,8 @@
 #include <iostream>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
-#include <Storages/MergeTree/SimpleMergeSelector.h>
+#include <Storages/MergeTree/MergeSelectors/SimpleMergeSelector.h>
+#include <Storages/MergeTree/MergeSelectors/TrivialMergeSelector.h>
 
 
 /** This program tests merge-selecting algorithm.
@@ -17,15 +18,12 @@ int main(int, char **)
     IMergeSelector::PartsRanges partitions(1);
     IMergeSelector::PartsRange & parts = partitions.back();
 
-    SimpleMergeSelector::Settings settings;
+/*    SimpleMergeSelector::Settings settings;
 //    settings.base = 2;
-//    settings.max_parts_to_merge_at_once = 10;
-    SimpleMergeSelector selector(settings);
+    settings.max_parts_to_merge_at_once = 10;
+    SimpleMergeSelector selector(settings);*/
 
-/*    LevelMergeSelector::Settings settings;
-    settings.min_parts_to_merge = 8;
-    settings.max_parts_to_merge = 16;
-    LevelMergeSelector selector(settings);*/
+    TrivialMergeSelector selector;
 
     ReadBufferFromFileDescriptor in(STDIN_FILENO);
 
@@ -57,10 +55,11 @@ int main(int, char **)
 
         if (selected_parts.empty())
         {
-            std::cout << '.';
-            for (auto & part : parts)
+            //std::cout << '.';
+            /*for (auto & part : parts)
                 ++part.age;
-            continue;
+            continue;*/
+            break;
         }
         std::cout << '\n';
 
@@ -82,8 +81,7 @@ int main(int, char **)
             if (in_range)
             {
                 sum_merged_size += parts[i].size;
-                if (parts[i].level > max_level)
-                    max_level = parts[i].level;
+                max_level = std::max(parts[i].level, max_level);
             }
 
             if (parts[i].data == selected_parts.back().data)

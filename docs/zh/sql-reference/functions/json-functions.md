@@ -56,7 +56,7 @@ slug: /zh/sql-reference/functions/json-functions
 
 以下函数基于[simdjson](https://github.com/lemire/simdjson)，专为更复杂的JSON解析要求而设计。但上述假设2仍然适用。
 
-## JSONHas(json\[, indices_or_keys\]…) {#jsonhasjson-indices-or-keys}
+## JSONHas(json\[, indices_or_keys\]...) {#jsonhasjson-indices-or-keys}
 
 如果JSON中存在该值，则返回`1`。
 
@@ -83,7 +83,7 @@ slug: /zh/sql-reference/functions/json-functions
     select JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', -2) = 'a'
     select JSONExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 1) = 'hello'
 
-## JSONLength(json\[, indices_or_keys\]…) {#jsonlengthjson-indices-or-keys}
+## JSONLength(json\[, indices_or_keys\]...) {#jsonlengthjson-indices-or-keys}
 
 返回JSON数组或JSON对象的长度。
 
@@ -94,7 +94,7 @@ slug: /zh/sql-reference/functions/json-functions
     select JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 3
     select JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}') = 2
 
-## JSONType(json\[, indices_or_keys\]…) {#jsontypejson-indices-or-keys}
+## JSONType(json\[, indices_or_keys\]...) {#jsontypejson-indices-or-keys}
 
 返回JSON值的类型。
 
@@ -106,13 +106,13 @@ slug: /zh/sql-reference/functions/json-functions
     select JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'a') = 'String'
     select JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 'Array'
 
-## JSONExtractUInt(json\[, indices_or_keys\]…) {#jsonextractuintjson-indices-or-keys}
+## JSONExtractUInt(json\[, indices_or_keys\]...) {#jsonextractuintjson-indices-or-keys}
 
-## JSONExtractInt(json\[, indices_or_keys\]…) {#jsonextractintjson-indices-or-keys}
+## JSONExtractInt(json\[, indices_or_keys\]...) {#jsonextractintjson-indices-or-keys}
 
-## JSONExtractFloat(json\[, indices_or_keys\]…) {#jsonextractfloatjson-indices-or-keys}
+## JSONExtractFloat(json\[, indices_or_keys\]...) {#jsonextractfloatjson-indices-or-keys}
 
-## JSONExtractBool(json\[, indices_or_keys\]…) {#jsonextractbooljson-indices-or-keys}
+## JSONExtractBool(json\[, indices_or_keys\]...) {#jsonextractbooljson-indices-or-keys}
 
 解析JSON并提取值。这些函数类似于`visitParam*`函数。
 
@@ -124,7 +124,7 @@ slug: /zh/sql-reference/functions/json-functions
     select JSONExtractFloat('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 2) = 200.0
     select JSONExtractUInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', -1) = 300
 
-## JSONExtractString(json\[, indices_or_keys\]…) {#jsonextractstringjson-indices-or-keys}
+## JSONExtractString(json\[, indices_or_keys\]...) {#jsonextractstringjson-indices-or-keys}
 
 解析JSON并提取字符串。此函数类似于`visitParamExtractString`函数。
 
@@ -140,11 +140,11 @@ slug: /zh/sql-reference/functions/json-functions
     select JSONExtractString('{"abc":"\\u263"}', 'abc') = ''
     select JSONExtractString('{"abc":"hello}', 'abc') = ''
 
-## JSONExtract(json\[, indices_or_keys…\], Return_type) {#jsonextractjson-indices-or-keys-return-type}
+## JSONExtract(json\[, indices_or_keys...\], Return_type) {#jsonextractjson-indices-or-keys-return-type}
 
 解析JSON并提取给定ClickHouse数据类型的值。
 
-这是以前的`JSONExtract<type>函数的变体。 这意味着`JSONExtract(…, ‘String’)`返回与`JSONExtractString()`返回完全相同。`JSONExtract(…, ‘Float64’)`返回于`JSONExtractFloat()\`返回完全相同。
+这是以前的`JSONExtract<type>函数的变体。 这意味着`JSONExtract(..., ‘String’)`返回与`JSONExtractString()`返回完全相同。`JSONExtract(..., ‘Float64’)`返回于`JSONExtractFloat()\`返回完全相同。
 
 示例:
 
@@ -156,7 +156,7 @@ slug: /zh/sql-reference/functions/json-functions
     SELECT JSONExtract('{"day": "Thursday"}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday\' = 1, \'Tuesday\' = 2, \'Wednesday\' = 3, \'Thursday\' = 4, \'Friday\' = 5, \'Saturday\' = 6)') = 'Thursday'
     SELECT JSONExtract('{"day": 5}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday\' = 1, \'Tuesday\' = 2, \'Wednesday\' = 3, \'Thursday\' = 4, \'Friday\' = 5, \'Saturday\' = 6)') = 'Friday'
 
-## JSONExtractKeysAndValues(json\[, indices_or_keys…\], Value_type) {#jsonextractkeysandvaluesjson-indices-or-keys-value-type}
+## JSONExtractKeysAndValues(json\[, indices_or_keys...\], Value_type) {#jsonextractkeysandvaluesjson-indices-or-keys-value-type}
 
 从JSON中解析键值对，其中值是给定的ClickHouse数据类型。
 
@@ -164,7 +164,7 @@ slug: /zh/sql-reference/functions/json-functions
 
     SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8') = [('a',5),('b',7),('c',11)];
 
-## JSONExtractRaw(json\[, indices_or_keys\]…) {#jsonextractrawjson-indices-or-keys}
+## JSONExtractRaw(json\[, indices_or_keys\]...) {#jsonextractrawjson-indices-or-keys}
 
 返回JSON的部分。
 

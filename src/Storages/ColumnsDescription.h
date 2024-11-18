@@ -7,6 +7,7 @@
 #include <Core/NamesAndAliases.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ColumnDefault.h>
+#include <Common/SettingsChanges.h>
 #include <Storages/StatisticsDescription.h>
 #include <Common/Exception.h>
 
@@ -28,10 +29,19 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+enum class VirtualsKind : UInt8
+{
+    None = 0,
+    Ephemeral = 1,
+    Persistent = 2,
+    All = Ephemeral | Persistent,
+};
+
 struct GetColumnsOptions
 {
     enum Kind : UInt8
     {
+        None = 0,
         Ordinary = 1,
         Materialized = 2,
         Aliases = 4,
@@ -42,7 +52,7 @@ struct GetColumnsOptions
         All = AllPhysical | Aliases | Ephemeral,
     };
 
-    GetColumnsOptions(Kind kind_) : kind(kind_) {}
+    GetColumnsOptions(Kind kind_) : kind(kind_) {} /// NOLINT(google-explicit-constructor)
 
     GetColumnsOptions & withSubcolumns(bool value = true)
     {
@@ -50,9 +60,9 @@ struct GetColumnsOptions
         return *this;
     }
 
-    GetColumnsOptions & withVirtuals(bool value = true)
+    GetColumnsOptions & withVirtuals(VirtualsKind value = VirtualsKind::All)
     {
-        with_virtuals = value;
+        virtuals_kind = value;
         return *this;
     }
 
@@ -62,17 +72,11 @@ struct GetColumnsOptions
         return *this;
     }
 
-    GetColumnsOptions & withSystemColumns(bool value = true)
-    {
-        with_system_columns = value;
-        return *this;
-    }
-
     Kind kind;
+    VirtualsKind virtuals_kind = VirtualsKind::None;
+
     bool with_subcolumns = false;
-    bool with_virtuals = false;
     bool with_extended_objects = false;
-    bool with_system_columns = false;
 };
 
 /// Description of a single table column (in CREATE TABLE for example).
@@ -83,18 +87,24 @@ struct ColumnDescription
     ColumnDefault default_desc;
     String comment;
     ASTPtr codec;
+    SettingsChanges settings;
     ASTPtr ttl;
-    std::optional<StatisticDescription> stat;
+    ColumnStatisticsDescription statistics;
 
     ColumnDescription() = default;
-    ColumnDescription(ColumnDescription &&) = default;
-    ColumnDescription(const ColumnDescription &) = default;
+    ColumnDescription(const ColumnDescription & other) { *this = other; }
+    ColumnDescription & operator=(const ColumnDescription & other);
+    ColumnDescription(ColumnDescription && other) noexcept { *this = std::move(other); }
+    ColumnDescription & operator=(ColumnDescription && other) noexcept;
+
     ColumnDescription(String name_, DataTypePtr type_);
+    ColumnDescription(String name_, DataTypePtr type_, String comment_);
+    ColumnDescription(String name_, DataTypePtr type_, ASTPtr codec_, String comment_);
 
     bool operator==(const ColumnDescription & other) const;
     bool operator!=(const ColumnDescription & other) const { return !(*this == other); }
 
-    void writeText(WriteBuffer & buf) const;
+    void writeText(WriteBuffer & buf, IAST::FormatState & state, bool include_comment) const;
     void readText(ReadBuffer & buf);
 };
 
@@ -105,13 +115,15 @@ class ColumnsDescription : public IHints<>
 public:
     ColumnsDescription() = default;
 
-    ColumnsDescription(std::initializer_list<NameAndTypePair> ordinary);
-
-    explicit ColumnsDescription(NamesAndTypes ordinary);
+    static ColumnsDescription fromNamesAndTypes(NamesAndTypes ordinary);
 
     explicit ColumnsDescription(NamesAndTypesList ordinary);
 
+    ColumnsDescription(std::initializer_list<ColumnDescription> ordinary);
+
     explicit ColumnsDescription(NamesAndTypesList ordinary, NamesAndAliases aliases);
+
+    void setAliases(NamesAndAliases aliases);
 
     /// `after_column` can be a Nested column name;
     void add(ColumnDescription column, const String & after_column = String(), bool first = false, bool add_subcolumns = true);
@@ -125,7 +137,7 @@ public:
     /// NOTE Must correspond with Nested::flatten function.
     void flattenNested(); /// TODO: remove, insert already flattened Nested columns.
 
-    bool operator==(const ColumnsDescription & other) const { return columns == other.columns; }
+    bool operator==(const ColumnsDescription & other) const { return toString(false) == other.toString(false); }
     bool operator!=(const ColumnsDescription & other) const { return !(*this == other); }
 
     auto begin() const { return columns.begin(); }
@@ -154,6 +166,7 @@ public:
     bool hasNested(const String & column_name) const;
     bool hasSubcolumn(const String & column_name) const;
     const ColumnDescription & get(const String & column_name) const;
+    const ColumnDescription * tryGet(const String & column_name) const;
 
     template <typename F>
     void modify(const String & column_name, F && f)
@@ -207,11 +220,8 @@ public:
 
     /// Does column has non default specified compression codec
     bool hasCompressionCodec(const String & column_name) const;
-    CompressionCodecPtr getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
-    CompressionCodecPtr getCodecOrDefault(const String & column_name) const;
-    ASTPtr getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
 
-    String toString() const;
+    String toString(bool include_comments = true) const;
     static ColumnsDescription parse(const String & str);
 
     size_t size() const
@@ -258,9 +268,21 @@ private:
     void removeSubcolumns(const String & name_in_storage);
 };
 
+class ASTColumnDeclaration;
+
+struct DefaultExpressionsInfo
+{
+    ASTPtr expr_list = nullptr;
+    bool has_columns_with_default_without_type = false;
+};
+
+void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const DataTypePtr & data_type, DefaultExpressionsInfo & info);
+
 /// Validate default expressions and corresponding types compatibility, i.e.
 /// default expression result can be casted to column_type. Also checks, that we
 /// don't have strange constructions in default expression like SELECT query or
 /// arrayJoin function.
+void validateColumnsDefaults(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context);
 Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context);
+
 }

@@ -3,24 +3,24 @@ Collapsing
 0
 id	UInt64					
 s	Int8					
-data	Tuple(_dummy UInt8)					
+data	Tuple(\n    _dummy UInt8)					
 DELETE all
 2
 1
 id	UInt64					
-data	Tuple(k1 String, k2 String)					
+data	Tuple(\n    k1 String,\n    k2 String)					
 0
 0
 id	UInt64					
-data	Tuple(_dummy UInt8)					
+data	Tuple(\n    _dummy UInt8)					
 TTL
 1
 1
 id	UInt64					
 d	Date					
-data	Tuple(k1 String, k2 String)					
+data	Tuple(\n    k1 String,\n    k2 String)					
 0
 0
 id	UInt64					
 d	Date					
-data	Tuple(_dummy UInt8)					
+data	Tuple(\n    _dummy UInt8)					

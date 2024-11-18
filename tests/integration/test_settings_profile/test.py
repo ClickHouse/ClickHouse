@@ -1,9 +1,12 @@
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance("instance")
+
+# `randomize_settings` is set tot `False` to maake result of `SHOW CREATE SETTINGS PROFILE` consistent
+instance = cluster.add_instance("instance", randomize_settings=False)
 
 
 def system_settings_profile(profile_name):
@@ -68,7 +71,7 @@ def test_smoke():
     )
     assert (
         instance.query("SHOW CREATE SETTINGS PROFILE xyz")
-        == "CREATE SETTINGS PROFILE xyz SETTINGS max_memory_usage = 100000001 MIN 90000000 MAX 110000000 TO robin\n"
+        == "CREATE SETTINGS PROFILE `xyz` SETTINGS max_memory_usage = 100000001 MIN 90000000 MAX 110000000 TO robin\n"
     )
     assert (
         instance.query(
@@ -108,7 +111,7 @@ def test_smoke():
     instance.query("ALTER SETTINGS PROFILE xyz TO NONE")
     assert (
         instance.query("SHOW CREATE SETTINGS PROFILE xyz")
-        == "CREATE SETTINGS PROFILE xyz SETTINGS max_memory_usage = 100000001 MIN 90000000 MAX 110000000\n"
+        == "CREATE SETTINGS PROFILE `xyz` SETTINGS max_memory_usage = 100000001 MIN 90000000 MAX 110000000\n"
     )
     assert (
         instance.query(
@@ -128,7 +131,7 @@ def test_smoke():
     instance.query("ALTER USER robin SETTINGS PROFILE xyz")
     assert (
         instance.query("SHOW CREATE USER robin")
-        == "CREATE USER robin SETTINGS PROFILE xyz\n"
+        == "CREATE USER robin IDENTIFIED WITH no_password SETTINGS PROFILE `xyz`\n"
     )
     assert (
         instance.query(
@@ -152,7 +155,10 @@ def test_smoke():
     ]
 
     instance.query("ALTER USER robin SETTINGS NONE")
-    assert instance.query("SHOW CREATE USER robin") == "CREATE USER robin\n"
+    assert (
+        instance.query("SHOW CREATE USER robin")
+        == "CREATE USER robin IDENTIFIED WITH no_password\n"
+    )
     assert (
         instance.query(
             "SELECT value FROM system.settings WHERE name = 'max_memory_usage'",
@@ -174,11 +180,11 @@ def test_settings_from_granted_role():
     instance.query("GRANT worker TO robin")
     assert (
         instance.query("SHOW CREATE SETTINGS PROFILE xyz")
-        == "CREATE SETTINGS PROFILE xyz SETTINGS max_memory_usage = 100000001 MAX 110000000, max_ast_depth = 2000\n"
+        == "CREATE SETTINGS PROFILE `xyz` SETTINGS max_memory_usage = 100000001 MAX 110000000, max_ast_depth = 2000\n"
     )
     assert (
         instance.query("SHOW CREATE ROLE worker")
-        == "CREATE ROLE worker SETTINGS PROFILE xyz\n"
+        == "CREATE ROLE worker SETTINGS PROFILE `xyz`\n"
     )
     assert (
         instance.query(
@@ -260,7 +266,7 @@ def test_settings_from_granted_role():
     instance.query("ALTER SETTINGS PROFILE xyz TO worker")
     assert (
         instance.query("SHOW CREATE SETTINGS PROFILE xyz")
-        == "CREATE SETTINGS PROFILE xyz SETTINGS max_memory_usage = 100000001 MAX 110000000, max_ast_depth = 2000 TO worker\n"
+        == "CREATE SETTINGS PROFILE `xyz` SETTINGS max_memory_usage = 100000001 MAX 110000000, max_ast_depth = 2000 TO worker\n"
     )
     assert (
         instance.query(
@@ -282,7 +288,7 @@ def test_settings_from_granted_role():
     instance.query("ALTER SETTINGS PROFILE xyz TO NONE")
     assert (
         instance.query("SHOW CREATE SETTINGS PROFILE xyz")
-        == "CREATE SETTINGS PROFILE xyz SETTINGS max_memory_usage = 100000001 MAX 110000000, max_ast_depth = 2000\n"
+        == "CREATE SETTINGS PROFILE `xyz` SETTINGS max_memory_usage = 100000001 MAX 110000000, max_ast_depth = 2000\n"
     )
     assert (
         instance.query(
@@ -304,11 +310,11 @@ def test_inheritance():
     instance.query("CREATE SETTINGS PROFILE alpha SETTINGS PROFILE xyz TO robin")
     assert (
         instance.query("SHOW CREATE SETTINGS PROFILE xyz")
-        == "CREATE SETTINGS PROFILE xyz SETTINGS max_memory_usage = 100000002 CONST\n"
+        == "CREATE SETTINGS PROFILE `xyz` SETTINGS max_memory_usage = 100000002 CONST\n"
     )
     assert (
         instance.query("SHOW CREATE SETTINGS PROFILE alpha")
-        == "CREATE SETTINGS PROFILE alpha SETTINGS INHERIT xyz TO robin\n"
+        == "CREATE SETTINGS PROFILE `alpha` SETTINGS INHERIT `xyz` TO robin\n"
     )
     assert (
         instance.query(
@@ -453,23 +459,44 @@ def test_show_profiles():
     assert instance.query("SHOW SETTINGS PROFILES") == "default\nreadonly\nxyz\n"
     assert instance.query("SHOW PROFILES") == "default\nreadonly\nxyz\n"
 
-    assert instance.query("SHOW CREATE PROFILE xyz") == "CREATE SETTINGS PROFILE xyz\n"
     assert (
-        instance.query("SHOW CREATE SETTINGS PROFILE default")
-        == "CREATE SETTINGS PROFILE default\n"
-    )
-    assert (
-        instance.query("SHOW CREATE PROFILES") == "CREATE SETTINGS PROFILE default\n"
-        "CREATE SETTINGS PROFILE readonly SETTINGS readonly = 1\n"
-        "CREATE SETTINGS PROFILE xyz\n"
+        instance.query("SHOW CREATE PROFILE xyz") == "CREATE SETTINGS PROFILE `xyz`\n"
     )
 
-    expected_access = (
-        "CREATE SETTINGS PROFILE default\n"
-        "CREATE SETTINGS PROFILE readonly SETTINGS readonly = 1\n"
-        "CREATE SETTINGS PROFILE xyz\n"
+    query_possible_response = [
+        "CREATE SETTINGS PROFILE `default`\n",
+        "CREATE SETTINGS PROFILE `default` SETTINGS enable_analyzer = true\n",
+    ]
+    assert (
+        instance.query("SHOW CREATE SETTINGS PROFILE default")
+        in query_possible_response
     )
-    assert expected_access in instance.query("SHOW ACCESS")
+
+    query_possible_response = [
+        "CREATE SETTINGS PROFILE `default`\n"
+        "CREATE SETTINGS PROFILE `readonly` SETTINGS readonly = 1\n"
+        "CREATE SETTINGS PROFILE `xyz`\n",
+        "CREATE SETTINGS PROFILE `default` SETTINGS enable_analyzer = true\n"
+        "CREATE SETTINGS PROFILE `readonly` SETTINGS readonly = 1\n"
+        "CREATE SETTINGS PROFILE `xyz`\n",
+    ]
+    assert instance.query("SHOW CREATE PROFILES") in query_possible_response
+
+    expected_access = (
+        "CREATE SETTINGS PROFILE `default`\n"
+        "CREATE SETTINGS PROFILE `readonly` SETTINGS readonly = 1\n"
+        "CREATE SETTINGS PROFILE `xyz`\n"
+    )
+    expected_access_analyzer = (
+        "CREATE SETTINGS PROFILE `default` SETTINGS enable_analyzer = true\n"
+        "CREATE SETTINGS PROFILE `readonly` SETTINGS readonly = 1\n"
+        "CREATE SETTINGS PROFILE `xyz`\n"
+    )
+
+    query_response = instance.query("SHOW ACCESS")
+    assert (
+        expected_access in query_response or expected_access_analyzer in query_response
+    )
 
 
 def test_set_profile():
@@ -600,6 +627,7 @@ def test_allow_ddl():
     )
 
     instance.query("GRANT CREATE ON tbl TO robin")
+    instance.query("GRANT TABLE ENGINE ON Log TO robin")
     instance.query("CREATE TABLE tbl(a Int32) ENGINE=Log", user="robin")
     instance.query("DROP TABLE tbl")
 

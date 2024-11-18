@@ -23,7 +23,7 @@ public:
             DictionaryLifetime dict_lifetime_,
             Configuration configuration_);
 
-    std::shared_ptr<const IExternalLoadable> clone() const override;
+    std::shared_ptr<IExternalLoadable> clone() const override;
 
 private:
     bool find(const Point & point, size_t & polygon_index) const override;
@@ -47,7 +47,7 @@ public:
             int min_intersections_,
             int max_depth_);
 
-    std::shared_ptr<const IExternalLoadable> clone() const override;
+    std::shared_ptr<IExternalLoadable> clone() const override;
 
     static constexpr size_t kMinIntersectionsDefault = 1;
     static constexpr size_t kMaxDepthDefault = 5;
@@ -75,7 +75,7 @@ public:
             size_t min_intersections_,
             size_t max_depth_);
 
-    std::shared_ptr<const IExternalLoadable> clone() const override;
+    std::shared_ptr<IExternalLoadable> clone() const override;
 
     static constexpr size_t kMinIntersectionsDefault = 1;
     static constexpr size_t kMaxDepthDefault = 5;

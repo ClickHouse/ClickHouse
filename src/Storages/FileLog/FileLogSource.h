@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/StreamingHandleErrorMode.h>
 #include <Processors/ISource.h>
 #include <Storages/FileLog/FileLogConsumer.h>
 #include <Storages/FileLog/StorageFileLog.h>
@@ -30,7 +31,7 @@ public:
 
     void onFinish();
 
-    virtual ~FileLogSource() override;
+    ~FileLogSource() override;
 
 protected:
     Chunk generate() override;

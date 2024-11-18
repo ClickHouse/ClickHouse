@@ -2,7 +2,12 @@
 
 set basedir [file dirname $argv0]
 set basename [file tail $argv0]
-exp_internal -f $env(CLICKHOUSE_TMP)/$basename.debuglog 0
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
 
 log_user 0
 set timeout 20
@@ -15,8 +20,8 @@ expect_after {
     -i $any_spawn_id timeout { exit 1 }
 }
 
-system "echo \"drop table if exists t; create table t(i String) engine=Memory; insert into t select 'test string'\" > $env(CLICKHOUSE_TMP)/file_02112"
-spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_LOCAL --disable_suggestion --interactive --queries-file $env(CLICKHOUSE_TMP)/file_02112"
+system "echo \"drop table if exists t; create table t(i String) engine=Memory; insert into t select 'test string'\" > $CLICKHOUSE_TMP/file_02112"
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_LOCAL --disable_suggestion --enable-progress-table-toggle=0 --interactive --queries-file $CLICKHOUSE_TMP/file_02112"
 expect ":) "
 
 send -- "select \* from t format TSV\r"

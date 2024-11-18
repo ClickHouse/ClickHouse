@@ -1,14 +1,25 @@
 #include "DateLUT.h"
 
+#include <Interpreters/Context.h>
+#include <Common/CurrentThread.h>
+#include <Common/DateLUTImpl.h>
+#include <Common/filesystemHelpers.h>
+#include <Core/Settings.h>
+
 #include <Poco/DigestStream.h>
 #include <Poco/Exception.h>
 #include <Poco/SHA1Engine.h>
-#include <Common/filesystemHelpers.h>
 
 #include <filesystem>
 #include <fstream>
-#include <Interpreters/Context.h>
 
+namespace DB
+{
+namespace Setting
+{
+    extern const SettingsTimezone session_timezone;
+}
+}
 
 namespace
 {
@@ -140,6 +151,38 @@ std::string determineDefaultTimeZone()
 
 }
 
+const DateLUTImpl & DateLUT::instance()
+{
+    const auto & date_lut = getInstance();
+
+    if (DB::CurrentThread::isInitialized())
+    {
+        std::string timezone_from_context;
+        const DB::ContextPtr query_context = DB::CurrentThread::get().getQueryContext();
+
+        if (query_context)
+        {
+            timezone_from_context = extractTimezoneFromContext(query_context);
+
+            if (!timezone_from_context.empty())
+                return date_lut.getImplementation(timezone_from_context);
+        }
+
+        /// On the server side, timezone is passed in query_context,
+        /// but on CH-client side we have no query context,
+        /// and each time we modify client's global context
+        const DB::ContextPtr global_context = DB::CurrentThread::get().getGlobalContext();
+        if (global_context)
+        {
+            timezone_from_context = extractTimezoneFromContext(global_context);
+
+            if (!timezone_from_context.empty())
+                return date_lut.getImplementation(timezone_from_context);
+        }
+    }
+    return serverTimezoneInstance();
+}
+
 DateLUT::DateLUT()
 {
     /// Initialize the pointer to the default DateLUTImpl.
@@ -167,5 +210,5 @@ DateLUT & DateLUT::getInstance()
 
 std::string DateLUT::extractTimezoneFromContext(DB::ContextPtr query_context)
 {
-    return query_context->getSettingsRef().session_timezone.value;
+    return query_context->getSettingsRef()[DB::Setting::session_timezone].value;
 }

@@ -49,7 +49,7 @@ std::string ReadBufferFromFileDescriptor::getFileName() const
 }
 
 
-size_t ReadBufferFromFileDescriptor::readImpl(char * to, size_t min_bytes, size_t max_bytes, size_t offset)
+size_t ReadBufferFromFileDescriptor::readImpl(char * to, size_t min_bytes, size_t max_bytes, size_t offset) const
 {
     chassert(min_bytes <= max_bytes);
 
@@ -80,7 +80,8 @@ size_t ReadBufferFromFileDescriptor::readImpl(char * to, size_t min_bytes, size_
         if (-1 == res && errno != EINTR)
         {
             ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
-            throwFromErrnoWithPath("Cannot read from file: " + getFileName(), getFileName(), ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
+            ErrnoException::throwFromPath(
+                ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, getFileName(), "Cannot read from file {}", getFileName());
         }
 
         if (res > 0)
@@ -145,7 +146,7 @@ void ReadBufferFromFileDescriptor::prefetch(Priority)
 
     /// Ask OS to prefetch data into page cache.
     if (0 != posix_fadvise(fd, file_offset_of_buffer_end, internal_buffer.size(), POSIX_FADV_WILLNEED))
-        throwFromErrno("Cannot posix_fadvise", ErrorCodes::CANNOT_ADVISE);
+        throw ErrnoException(ErrorCodes::CANNOT_ADVISE, "Cannot posix_fadvise");
 #endif
 }
 
@@ -172,7 +173,8 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
     if (new_pos + (working_buffer.end() - pos) == file_offset_of_buffer_end)
         return new_pos;
 
-    if (file_offset_of_buffer_end - working_buffer.size() <= static_cast<size_t>(new_pos)
+    /// NOLINTBEGIN(readability-else-after-return)
+    if (file_offset_of_buffer_end - working_buffer.size() <= new_pos
         && new_pos <= file_offset_of_buffer_end)
     {
         /// Position is still inside the buffer.
@@ -208,8 +210,12 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
 
             off_t res = ::lseek(fd, seek_pos, SEEK_SET);
             if (-1 == res)
-                throwFromErrnoWithPath(fmt::format("Cannot seek through file {} at offset {}", getFileName(), seek_pos), getFileName(),
-                    ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+                ErrnoException::throwFromPath(
+                    ErrorCodes::CANNOT_SEEK_THROUGH_FILE,
+                    getFileName(),
+                    "Cannot seek through file {} at offset {}",
+                    getFileName(),
+                    seek_pos);
 
             /// Also note that seeking past the file size is not allowed.
             if (res != seek_pos)
@@ -227,6 +233,7 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
 
         return seek_pos;
     }
+    /// NOLINTEND(readability-else-after-return)
 }
 
 
@@ -237,8 +244,8 @@ void ReadBufferFromFileDescriptor::rewind()
         ProfileEvents::increment(ProfileEvents::Seek);
         off_t res = ::lseek(fd, 0, SEEK_SET);
         if (-1 == res)
-            throwFromErrnoWithPath("Cannot seek through file " + getFileName(), getFileName(),
-                ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+            ErrnoException::throwFromPath(
+                ErrorCodes::CANNOT_SEEK_THROUGH_FILE, getFileName(), "Cannot seek through file {}", getFileName());
     }
     /// In case of pread, the ProfileEvents::Seek is not accounted, but it's Ok.
 
@@ -248,7 +255,7 @@ void ReadBufferFromFileDescriptor::rewind()
     file_offset_of_buffer_end = 0;
 }
 
-size_t ReadBufferFromFileDescriptor::getFileSize()
+std::optional<size_t> ReadBufferFromFileDescriptor::tryGetFileSize()
 {
     return getSizeFromFileDescriptor(fd, getFileName());
 }
@@ -260,7 +267,7 @@ bool ReadBufferFromFileDescriptor::checkIfActuallySeekable()
     return res == 0 && S_ISREG(stat.st_mode);
 }
 
-size_t ReadBufferFromFileDescriptor::readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> &)
+size_t ReadBufferFromFileDescriptor::readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> &) const
 {
     chassert(use_pread);
     return readImpl(to, n, n, offset);

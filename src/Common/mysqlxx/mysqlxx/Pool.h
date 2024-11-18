@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/Logger.h>
+
 #include <list>
 #include <memory>
 #include <mutex>
@@ -62,17 +64,6 @@ public:
             decrementRefCount();
         }
 
-        Entry & operator= (const Entry & src) /// NOLINT
-        {
-            pool = src.pool;
-            if (data)
-                decrementRefCount();
-            data = src.data;
-            if (data)
-                incrementRefCount();
-            return * this;
-        }
-
         bool isNull() const
         {
             return data == nullptr;
@@ -112,8 +103,7 @@ public:
         {
             if (pool)
                 return pool->getDescription();
-            else
-                return "pool is null";
+            return "pool is null";
         }
 
         void disconnect();
@@ -202,7 +192,7 @@ public:
     void removeConnection(Connection * connection);
 
 protected:
-    Poco::Logger * log = &Poco::Logger::get("mysqlxx::Pool");
+    LoggerPtr log = getLogger("mysqlxx::Pool");
 
     /// Number of MySQL connections which are created at launch.
     unsigned default_connections;

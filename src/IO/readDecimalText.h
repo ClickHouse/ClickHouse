@@ -38,7 +38,7 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
         return false;
     }
 
-    switch (*buf.position())
+    switch (*buf.position()) /// NOLINT(bugprone-switch-missing-default-case)
     {
         case '-':
             sign = -1;
@@ -90,28 +90,27 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
                         /// Simply cut excessive digits.
                         break;
                     }
-                    else
-                    {
-                        if constexpr (_throw_on_error)
-                            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Too many digits ({} > {}) in decimal value",
-                                std::to_string(digits + places), std::to_string(max_digits));
 
-                        return false;
-                    }
+                    if constexpr (_throw_on_error)
+                        throw Exception(
+                            ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                            "Too many digits ({} > {}) in decimal value",
+                            std::to_string(digits + places),
+                            std::to_string(max_digits));
+
+                    return false;
                 }
-                else
-                {
-                    digits += places;
-                    if (after_point)
-                        exponent -= places;
 
-                    // TODO: accurate shift10 for big integers
-                    x *= intExp10OfSize<typename T::NativeType>(places);
-                    places = 0;
+                digits += places;
+                if (after_point)
+                    exponent -= places;
 
-                    x += (byte - '0');
-                    break;
-                }
+                // TODO: accurate shift10 for big integers
+                x *= intExp10OfSize<typename T::NativeType>(places);
+                places = 0;
+
+                x += (byte - '0');
+                break;
             }
             case 'e': [[fallthrough]];
             case 'E':
@@ -121,7 +120,7 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
                 if (!tryReadIntText(addition_exp, buf))
                 {
                     if constexpr (_throw_on_error)
-                        throw ParsingException(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot parse exponent while reading decimal");
+                        throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot parse exponent while reading decimal");
                     else
                         return false;
                 }
@@ -134,7 +133,7 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
                 if (digits_only)
                 {
                     if constexpr (_throw_on_error)
-                        throw ParsingException(ErrorCodes::CANNOT_PARSE_NUMBER, "Unexpected symbol while reading decimal");
+                        throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Unexpected symbol while reading decimal");
                     return false;
                 }
                 stop = true;
@@ -186,15 +185,13 @@ inline ReturnType readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, u
             scale = 0;
             return ReturnType(true);
         }
-        else
-        {
-            /// Too many digits after point. Just cut off excessive digits.
-            auto divisor = intExp10OfSize<typename T::NativeType>(divisor_exp);
-            assert(divisor > 0); /// This is for Clang Static Analyzer. It is not smart enough to infer it automatically.
-            x.value /= divisor;
-            scale = 0;
-            return ReturnType(true);
-        }
+
+        /// Too many digits after point. Just cut off excessive digits.
+        auto divisor = intExp10OfSize<typename T::NativeType>(divisor_exp);
+        assert(divisor > 0); /// This is for Clang Static Analyzer. It is not smart enough to infer it automatically.
+        x.value /= divisor;
+        scale = 0;
+        return ReturnType(true);
     }
 
     scale += exponent;
@@ -222,6 +219,26 @@ inline void readCSVDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint
 
     if (maybe_quote == '\'' || maybe_quote == '\"')
         assertChar(maybe_quote, buf);
+}
+
+template <typename T>
+inline bool tryReadCSVDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint32_t & scale)
+{
+    if (buf.eof())
+        return false;
+
+    char maybe_quote = *buf.position();
+
+    if (maybe_quote == '\'' || maybe_quote == '\"')
+        ++buf.position();
+
+    if (!tryReadDecimalText(buf, x, precision, scale))
+        return false;
+
+    if ((maybe_quote == '\'' || maybe_quote == '\"') && !checkChar(maybe_quote, buf))
+        return false;
+
+    return true;
 }
 
 }

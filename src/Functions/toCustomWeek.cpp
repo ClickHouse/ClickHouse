@@ -21,8 +21,8 @@ REGISTER_FUNCTION(ToCustomWeek)
     factory.registerFunction<FunctionToLastDayOfWeek>();
 
     /// Compatibility aliases for mysql.
-    factory.registerAlias("week", "toWeek", FunctionFactory::CaseInsensitive);
-    factory.registerAlias("yearweek", "toYearWeek", FunctionFactory::CaseInsensitive);
+    factory.registerAlias("week", "toWeek", FunctionFactory::Case::Insensitive);
+    factory.registerAlias("yearweek", "toYearWeek", FunctionFactory::Case::Insensitive);
 }
 
 }

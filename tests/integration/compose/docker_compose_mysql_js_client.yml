@@ -1,0 +1,5 @@
+services:
+  mysqljs1:
+    image: clickhouse/mysql-js-client:${DOCKER_MYSQL_JS_CLIENT_TAG:-latest}
+    # to keep container running
+    command: sleep infinity

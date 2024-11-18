@@ -22,7 +22,7 @@ namespace
             if (!id_mode)
                 return parseIdentifierOrStringLiteral(pos, expected, res);
 
-            if (!ParserKeyword{"ID"}.ignore(pos, expected))
+            if (!ParserKeyword{Keyword::ID}.ignore(pos, expected))
                 return false;
             if (!ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
                 return false;
@@ -59,8 +59,8 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            bool is_min_value = ParserKeyword{"MIN"}.ignore(pos, expected);
-            bool is_max_value = !is_min_value && ParserKeyword{"MAX"}.ignore(pos, expected);
+            bool is_min_value = ParserKeyword{Keyword::MIN}.ignore(pos, expected);
+            bool is_max_value = !is_min_value && ParserKeyword{Keyword::MAX}.ignore(pos, expected);
             if (!is_min_value && !is_max_value)
                 return false;
 
@@ -85,23 +85,22 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (ParserKeyword{"READONLY"}.ignore(pos, expected) || ParserKeyword{"CONST"}.ignore(pos, expected))
+            if (ParserKeyword{Keyword::READONLY}.ignore(pos, expected) || ParserKeyword{Keyword::CONST}.ignore(pos, expected))
             {
                 writability = SettingConstraintWritability::CONST;
                 return true;
             }
-            else if (ParserKeyword{"WRITABLE"}.ignore(pos, expected))
+            if (ParserKeyword{Keyword::WRITABLE}.ignore(pos, expected))
             {
                 writability = SettingConstraintWritability::WRITABLE;
                 return true;
             }
-            else if (ParserKeyword{"CHANGEABLE_IN_READONLY"}.ignore(pos, expected))
+            if (ParserKeyword{Keyword::CHANGEABLE_IN_READONLY}.ignore(pos, expected))
             {
                 writability = SettingConstraintWritability::CHANGEABLE_IN_READONLY;
                 return true;
             }
-            else
-                return false;
+            return false;
         });
     }
 
@@ -147,7 +146,7 @@ namespace
             if (!has_value_or_constraint)
                 return false;
 
-            if (boost::iequals(res_setting_name, "PROFILE") && !res_value && !res_min_value && !res_max_value
+            if (boost::iequals(res_setting_name, toStringView(Keyword::PROFILE)) && !res_value && !res_min_value && !res_max_value
                 && res_writability == SettingConstraintWritability::CONST)
             {
                 /// Ambiguity: "profile readonly" can be treated either as a profile named "readonly" or
@@ -180,22 +179,22 @@ namespace
 
         auto parse_element = [&]
         {
-            if (ParserKeyword{"SETTINGS"}.ignore(pos, expected) || ParserKeyword{"SETTING"}.ignore(pos, expected))
+            if (ParserKeyword{Keyword::SETTINGS}.ignore(pos, expected) || ParserKeyword{Keyword::SETTING}.ignore(pos, expected))
             {
                 expect_settings = true;
             }
 
             bool expect_settings_next = expect_settings;
 
-            if (ParserKeyword{"PROFILES"}.ignore(pos, expected) || ParserKeyword{"PROFILE"}.ignore(pos, expected))
+            if (ParserKeyword{Keyword::PROFILES}.ignore(pos, expected) || ParserKeyword{Keyword::PROFILE}.ignore(pos, expected))
             {
                 expect_profiles = true;
                 expect_settings = false;
             }
-            else if (use_inherit_keyword && ParserKeyword{"INHERIT"}.ignore(pos, expected))
+            else if (use_inherit_keyword && ParserKeyword{Keyword::INHERIT}.ignore(pos, expected))
             {
-                if (!ParserKeyword{"PROFILES"}.ignore(pos, expected))
-                    ParserKeyword{"PROFILE"}.ignore(pos, expected);
+                if (!ParserKeyword{Keyword::PROFILES}.ignore(pos, expected))
+                    ParserKeyword{Keyword::PROFILE}.ignore(pos, expected);
                 expect_profiles = true;
                 expect_settings = false;
             }
@@ -203,7 +202,7 @@ namespace
             if (!expect_profiles && !expect_settings)
                 return false;
 
-            if (ParserKeyword{"NONE"}.ignore(pos, expected))
+            if (ParserKeyword{Keyword::NONE}.ignore(pos, expected))
             {
                 found_none = true;
                 expect_settings = expect_settings_next;
@@ -313,17 +312,17 @@ bool ParserAlterSettingsProfileElements::parseImpl(Pos & pos, ASTPtr & node, Exp
 
         auto parse_element = [&]
         {
-            if (ParserKeyword{"ADD"}.ignore(pos, expected))
+            if (ParserKeyword{Keyword::ADD}.ignore(pos, expected))
             {
                 mode = "ADD";
                 submode = "";
             }
-            else if (ParserKeyword{"DROP"}.ignore(pos, expected))
+            else if (ParserKeyword{Keyword::DROP}.ignore(pos, expected))
             {
                 mode = "DROP";
                 submode = "";
             }
-            else if (ParserKeyword{"MODIFY"}.ignore(pos, expected))
+            else if (ParserKeyword{Keyword::MODIFY}.ignore(pos, expected))
             {
                 mode = "MODIFY";
                 submode = "";
@@ -331,13 +330,13 @@ bool ParserAlterSettingsProfileElements::parseImpl(Pos & pos, ASTPtr & node, Exp
 
             if (!mode.empty())
             {
-                if (ParserKeyword{"ALL PROFILES"}.ignore(pos, expected))
+                if (ParserKeyword{Keyword::ALL_PROFILES}.ignore(pos, expected))
                     submode = "ALL PROFILES";
-                else if (ParserKeyword{"ALL SETTINGS"}.ignore(pos, expected))
+                else if (ParserKeyword{Keyword::ALL_SETTINGS}.ignore(pos, expected))
                     submode = "ALL SETTINGS";
-                else if (ParserKeyword{"PROFILES"}.ignore(pos, expected) || ParserKeyword{"PROFILE"}.ignore(pos, expected))
+                else if (ParserKeyword{Keyword::PROFILES}.ignore(pos, expected) || ParserKeyword{"PROFILE"}.ignore(pos, expected))
                     submode = "PROFILES";
-                else if (ParserKeyword{"SETTINGS"}.ignore(pos, expected) || ParserKeyword{"SETTING"}.ignore(pos, expected))
+                else if (ParserKeyword{Keyword::SETTINGS}.ignore(pos, expected) || ParserKeyword{"SETTING"}.ignore(pos, expected))
                     submode = "SETTINGS";
             }
 

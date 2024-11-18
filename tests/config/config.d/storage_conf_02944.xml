@@ -1,0 +1,26 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3_disk_02944>
+                <type>s3</type>
+                <path>s3_disk/</path>
+                <endpoint>http://localhost:11111/test/test_02944/</endpoint>
+                <access_key_id>clickhouse</access_key_id>
+                <secret_access_key>clickhouse</secret_access_key>
+                <request_timeout_ms>20000</request_timeout_ms>
+            </s3_disk_02944>
+            <s3_cache_02944>
+                <type>cache</type>
+                <disk>s3_disk</disk>
+                <path>s3_cache_02944/</path>
+                <max_size>100</max_size>
+                <max_elements>10</max_elements>
+                <max_file_segment_size>10</max_file_segment_size>
+                <boundary_alignment>10</boundary_alignment>
+                <delayed_cleanup_interval_ms>100</delayed_cleanup_interval_ms>
+                <cache_on_write_operations>0</cache_on_write_operations>
+                <load_metadata_asynchronously>0</load_metadata_asynchronously>
+            </s3_cache_02944>
+        </disks>
+    </storage_configuration>
+</clickhouse>

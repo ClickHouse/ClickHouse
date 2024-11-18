@@ -14,13 +14,13 @@ Expression ((Projection + Before ORDER BY))
         Parts: 1/1
         Granules: 1/1
 Expression ((Project names + Projection))
-  Filter ((WHERE + Change column names to column identifiers))
+  Filter ((WHERE + (Change column names to column identifiers + Compute alias columns)))
     ReadFromMergeTree (02911_support_alias_column_in_indices.test1)
     Indexes:
       PrimaryKey
         Keys: 
           c
-        Condition: (_CAST(plus(c, \'UInt64\'), 1) in [11, +Inf))
+        Condition: (plus(c, 1) in [11, +Inf))
         Parts: 1/2
         Granules: 1/2
       Skip
@@ -44,12 +44,17 @@ Expression ((Projection + Before ORDER BY))
         Parts: 1/1
         Granules: 1/1
 Expression ((Project names + Projection))
-  Filter ((WHERE + Change column names to column identifiers))
+  Filter ((WHERE + (Change column names to column identifiers + Compute alias columns)))
     ReadFromMergeTree (02911_support_alias_column_in_indices.test2)
     Indexes:
       PrimaryKey
         Keys: 
           c
-        Condition: (_CAST(plus(_CAST(plus(c, \'UInt64\'), 1), \'UInt64\'), 1) in [16, +Inf))
+        Condition: (plus(plus(c, 1), 1) in [16, +Inf))
         Parts: 1/2
         Granules: 1/2
+      Skip
+        Name: i
+        Description: minmax GRANULARITY 1
+        Parts: 1/1
+        Granules: 1/1

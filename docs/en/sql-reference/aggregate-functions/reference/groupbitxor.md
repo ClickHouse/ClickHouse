@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/groupbitxor
-sidebar_position: 127
+sidebar_position: 153
 ---
 
 # groupBitXor

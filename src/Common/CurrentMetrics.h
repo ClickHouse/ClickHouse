@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
 #include <utility>
 #include <atomic>
 #include <cassert>
@@ -24,7 +23,7 @@ namespace CurrentMetrics
 {
     /// Metric identifier (index in array).
     using Metric = StrongTypedef<size_t, struct MetricTag>;
-    using Value = DB::Int64;
+    using Value = Int64;
 
     /// Get name of metric by identifier. Returns statically allocated string.
     const char * getName(Metric event);

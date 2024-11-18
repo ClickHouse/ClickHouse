@@ -1,1 +1,24 @@
 1.1
+SELECT dictGet(\'dictdb_01376.dict_exists\', \'value\', toUInt64(1)) AS val
+FROM numbers(2)
+GROUP BY toUInt64(1)
+QUERY id: 0
+  PROJECTION COLUMNS
+    val Float64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: dictGet, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 3, nodes: 3
+            CONSTANT id: 4, constant_value: \'dictdb_01376.dict_exists\', constant_value_type: String
+            CONSTANT id: 5, constant_value: \'value\', constant_value_type: String
+            COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
+  JOIN TREE
+    TABLE_FUNCTION id: 7, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 8, nodes: 1
+          CONSTANT id: 9, constant_value: UInt64_2, constant_value_type: UInt8
+  GROUP BY
+    LIST id: 10, nodes: 1
+      COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
+  SETTINGS enable_analyzer=1

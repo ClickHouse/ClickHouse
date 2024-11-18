@@ -2,18 +2,21 @@
 DROP TABLE IF EXISTS t;
 CREATE TABLE t
 (
-    `n` int
+    `n` int,
+    `__unused_group_by_column` int
 )
-    ENGINE = MergeTree
-        ORDER BY n AS
-SELECT *
+ENGINE = MergeTree
+ORDER BY n AS
+SELECT number, number
 FROM numbers(10);
 
 SELECT
     sum(n),
-    1 AS x
+    __unused_group_by_column 
 FROM t
-GROUP BY x;
+GROUP BY __unused_group_by_column ORDER BY __unused_group_by_column;
+
+SELECT sum(n), 1 as x from t group by x;
 
 SELECT
     'processed' AS type,

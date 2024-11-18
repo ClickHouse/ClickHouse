@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -13,6 +14,12 @@
 
 namespace DB
 {
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsUInt64 index_granularity;
+    extern const MergeTreeSettingsUInt64 index_granularity_bytes;
+}
 
 namespace ErrorCodes
 {
@@ -33,7 +40,7 @@ static String formattedASTNormalized(const ASTPtr & ast)
     if (!ast)
         return "";
     auto ast_normalized = ast->clone();
-    FunctionNameNormalizer().visit(ast_normalized.get());
+    FunctionNameNormalizer::visit(ast_normalized.get());
     WriteBufferFromOwnString buf;
     formatAST(*ast_normalized, buf, false, true);
     return buf.str();
@@ -43,15 +50,16 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
 {
     if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
-        auto minmax_idx_column_names = data.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey());
+        auto minmax_idx_column_names = MergeTreeData::getMinMaxColumnsNames(metadata_snapshot->getPartitionKey());
         date_column = minmax_idx_column_names[data.minmax_idx_date_column_pos];
     }
 
     const auto data_settings = data.getSettings();
     sampling_expression = formattedASTNormalized(metadata_snapshot->getSamplingKeyAST());
-    index_granularity = data_settings->index_granularity;
+    index_granularity = (*data_settings)[MergeTreeSetting::index_granularity];
     merging_params_mode = static_cast<int>(data.merging_params.mode);
     sign_column = data.merging_params.sign_column;
+    is_deleted_column = data.merging_params.is_deleted_column;
     columns_to_sum = fmt::format("{}", fmt::join(data.merging_params.columns_to_sum.begin(), data.merging_params.columns_to_sum.end(), ","));
     version_column = data.merging_params.version_column;
     if (data.merging_params.mode == MergeTreeData::MergingParams::Graphite)
@@ -94,7 +102,7 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     projections = metadata_snapshot->getProjections().toString();
 
     if (data.canUseAdaptiveGranularity())
-        index_granularity_bytes = data_settings->index_granularity_bytes;
+        index_granularity_bytes = (*data_settings)[MergeTreeSetting::index_granularity_bytes];
     else
         index_granularity_bytes = 0;
 
@@ -156,6 +164,8 @@ void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
         out << "merge parameters format version: " << merge_params_version << "\n";
         if (!version_column.empty())
             out << "version column: " << version_column << "\n";
+        if (!is_deleted_column.empty())
+            out << "is_deleted column: " << is_deleted_column << "\n";
         if (!columns_to_sum.empty())
             out << "columns to sum: " << columns_to_sum << "\n";
         if (!graphite_params_hash.empty())
@@ -221,6 +231,9 @@ void ReplicatedMergeTreeTableMetadata::read(ReadBuffer & in)
         if (checkString("version column: ", in))
             in >> version_column >> "\n";
 
+        if (checkString("is_deleted column: ", in))
+            in >> is_deleted_column >> "\n";
+
         if (checkString("columns to sum: ", in))
             in >> columns_to_sum >> "\n";
 
@@ -272,6 +285,10 @@ void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(const Replicat
         if (version_column != from_zk.version_column)
             throw Exception(ErrorCodes::METADATA_MISMATCH, "Existing table metadata in ZooKeeper differs in version column. "
                 "Stored in ZooKeeper: {}, local: {}", from_zk.version_column, version_column);
+
+        if (is_deleted_column != from_zk.is_deleted_column)
+            throw Exception(ErrorCodes::METADATA_MISMATCH, "Existing table metadata in ZooKeeper differs in is_deleted column. "
+                "Stored in ZooKeeper: {}, local: {}", from_zk.is_deleted_column, is_deleted_column);
 
         if (columns_to_sum != from_zk.columns_to_sum)
             throw Exception(ErrorCodes::METADATA_MISMATCH, "Existing table metadata in ZooKeeper differs in sum columns. "
@@ -422,7 +439,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
         auto parse_key_expr = [] (const String & key_expr)
         {
             ParserNotEmptyExpressionList parser(false);
-            auto new_sorting_key_expr_list = parseQuery(parser, key_expr, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+            auto new_sorting_key_expr_list = parseQuery(parser, key_expr, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
             ASTPtr order_by_ast;
             if (new_sorting_key_expr_list->children.size() == 1)
@@ -479,7 +496,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
             if (!new_ttl_table.empty())
             {
                 ParserTTLExpressionList parser;
-                auto ttl_for_table_ast = parseQuery(parser, new_ttl_table, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+                auto ttl_for_table_ast = parseQuery(parser, new_ttl_table, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
                 new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
                     ttl_for_table_ast, new_metadata.columns, context, new_metadata.primary_key, true /* allow_suspicious; because it is replication */);
             }

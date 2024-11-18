@@ -12,6 +12,7 @@ enum class KeeperFeatureFlag : size_t
     MULTI_READ,
     CHECK_NOT_EXISTS,
     CREATE_IF_NOT_EXISTS,
+    REMOVE_RECURSIVE,
 };
 
 class KeeperFeatureFlags
@@ -32,7 +33,7 @@ public:
     void enableFeatureFlag(KeeperFeatureFlag feature);
     void disableFeatureFlag(KeeperFeatureFlag feature);
 
-    void logFlags(Poco::Logger * log) const;
+    void logFlags(LoggerPtr log) const;
 private:
     std::string feature_flags;
 };

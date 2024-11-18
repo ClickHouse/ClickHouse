@@ -11,7 +11,7 @@ SELECT count() FROM merge_tree;
 SET max_rows_to_read = 900000;
 
 -- constant ignore will be pruned by part pruner. ignore(*) is used.
-SELECT count() FROM merge_tree WHERE not ignore(*); -- { serverError 158 }
-SELECT count() FROM merge_tree WHERE not ignore(*); -- { serverError 158 }
+SELECT count() FROM merge_tree WHERE not ignore(*); -- { serverError TOO_MANY_ROWS }
+SELECT count() FROM merge_tree WHERE not ignore(*); -- { serverError TOO_MANY_ROWS }
 
 DROP TABLE merge_tree;

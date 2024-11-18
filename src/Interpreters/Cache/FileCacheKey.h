@@ -14,15 +14,16 @@ struct FileCacheKey
 
     FileCacheKey() = default;
 
-    explicit FileCacheKey(const std::string & path);
-
-    explicit FileCacheKey(const UInt128 & key_);
-
     static FileCacheKey random();
+    static FileCacheKey fromPath(const std::string & path);
+    static FileCacheKey fromKey(const UInt128 & key);
+    static FileCacheKey fromKeyString(const std::string & key_str);
 
     bool operator==(const FileCacheKey & other) const { return key == other.key; }
+    bool operator<(const FileCacheKey & other) const { return key < other.key; }
 
-    static FileCacheKey fromKeyString(const std::string & key_str);
+private:
+    explicit FileCacheKey(const UInt128 & key_);
 };
 
 using FileCacheKeyAndOffset = std::pair<FileCacheKey, size_t>;

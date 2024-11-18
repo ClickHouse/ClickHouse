@@ -67,6 +67,14 @@ public:
     std::shared_ptr<ASTSettingsProfileElements> toAST() const;
     std::shared_ptr<ASTSettingsProfileElements> toASTWithNames(const AccessControl & access_control) const;
 
+    std::vector<UUID> findDependencies() const;
+    bool hasDependencies(const std::unordered_set<UUID> & ids) const;
+    void replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids);
+    void copyDependenciesFrom(const SettingsProfileElements & src, const std::unordered_set<UUID> & ids);
+    void removeDependencies(const std::unordered_set<UUID> & ids);
+
+    void removeSettingsKeepProfiles();
+
     Settings toSettings() const;
     SettingsChanges toSettingsChanges() const;
     SettingsConstraints toSettingsConstraints(const AccessControl & access_control) const;
@@ -83,9 +91,6 @@ public:
 
     /// Applies changes from an "ALTER PROFILE (USER/ROLE)" command. Always normalizes the result.
     void applyChanges(const AlterSettingsProfileElements & changes);
-
-    std::vector<UUID> findDependencies() const;
-    void replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids);
 
     bool isBackupAllowed() const;
     static bool isAllowBackupSetting(const String & setting_name);

@@ -86,6 +86,58 @@ SELECT * FROM mySecondReplacingMT FINAL;
 │   1 │ first   │ 2020-01-01 01:01:01 │
 └─────┴─────────┴─────────────────────┘
 ```
+### is_deleted
+
+`is_deleted` —  Имя столбца, который используется во время слияния для обозначения того, нужно ли отображать строку или она подлежит удалению; `1` - для удаления строки, `0` - для отображения строки.
+
+  Тип данных столбца — `UInt8`.
+
+:::note
+`is_deleted` может быть использован, если `ver` используется.
+
+Строка удаляется в следующих случаях:
+
+    - при использовании инструкции `OPTIMIZE ... FINAL CLEANUP`
+    - при использовании инструкции `OPTIMIZE ... FINAL`
+    - есть новые версии строки
+
+Не рекомендуется выполнять `FINAL CLEANUP`, это может привести к неожиданным результатам, например удаленные строки могут вновь появиться.
+
+Вне зависимости от производимых изменений над данными, версия должна увеличиваться. Если у двух строк одна и та же версия, то остается только последняя вставленная строка.
+:::
+
+Пример:
+
+```sql
+-- with ver and is_deleted
+CREATE OR REPLACE TABLE myThirdReplacingMT
+(
+    `key` Int64,
+    `someCol` String,
+    `eventTime` DateTime,
+    `is_deleted` UInt8
+)
+ENGINE = ReplacingMergeTree(eventTime, is_deleted)
+ORDER BY key;
+
+INSERT INTO myThirdReplacingMT Values (1, 'first', '2020-01-01 01:01:01', 0);
+INSERT INTO myThirdReplacingMT Values (1, 'first', '2020-01-01 01:01:01', 1); 
+
+select * from myThirdReplacingMT final;
+
+0 rows in set. Elapsed: 0.003 sec.
+
+-- delete rows with is_deleted
+OPTIMIZE TABLE myThirdReplacingMT FINAL CLEANUP; 
+
+INSERT INTO myThirdReplacingMT Values (1, 'first', '2020-01-01 00:00:00', 0);
+
+select * from myThirdReplacingMT final; 
+
+┌─key─┬─someCol─┬───────────eventTime─┬─is_deleted─┐
+│   1 │ first   │ 2020-01-01 00:00:00 │          0 │
+└─────┴─────────┴─────────────────────┴────────────┘
+```
 
 ## Секции запроса
 

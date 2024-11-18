@@ -1,4 +1,5 @@
 #pragma once
+
 #include <map>
 #include <mutex>
 #include <unordered_map>
@@ -73,7 +74,7 @@ private:
     TablesDependencyGraph referential_dependencies;
     TablesDependencyGraph loading_dependencies;
     TablesDependencyGraph all_loading_dependencies;
-    Poco::Logger * log;
+    LoggerPtr log;
     std::atomic<size_t> tables_processed{0};
     AtomicStopwatch stopwatch;
 
@@ -82,8 +83,6 @@ private:
 
     void buildDependencyGraph();
     void removeUnresolvableDependencies();
-    void loadTablesInTopologicalOrder();
-    void startLoadingTables(ContextMutablePtr load_context, const std::vector<StorageID> & tables_to_load, size_t level);
 };
 
 }

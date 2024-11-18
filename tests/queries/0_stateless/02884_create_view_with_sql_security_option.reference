@@ -1,0 +1,45 @@
+===== StorageView =====
+OK
+OK
+OK
+2
+2
+OK
+OK
+2
+2
+OK
+2
+2
+1
+OK
+1
+===== MaterializedView =====
+OK
+1
+0
+0
+OK
+OK
+OK
+2
+OK
+OK
+OK
+100
+100
+OK
+Syntax error
+===== TestGrants =====
+OK
+OK
+===== TestRowPolicy =====
+1	1
+2	2
+6	6
+9	9
+===== TestInsertChain =====
+1000
+1000
+===== TestOnCluster =====
+1

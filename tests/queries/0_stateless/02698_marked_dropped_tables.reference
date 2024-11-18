@@ -1,8 +1,3 @@
 25400_dropped_tables	MergeTree
-index	UInt32					
-database	String					
-table	String					
-uuid	UUID					
-engine	String					
-metadata_dropped_path	String					
-table_dropped_time	DateTime					
+default	25400_dropped_tables	all_1_1_0
+default	25400_dropped_tables	all_2_2_0

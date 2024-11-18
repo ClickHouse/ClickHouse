@@ -6,6 +6,7 @@
 #include <Columns/ColumnString.h>
 #include <Interpreters/Context.h>
 #include <Common/Macros.h>
+#include <Core/Block.h>
 #include <Core/Field.h>
 
 
@@ -49,6 +50,8 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    bool isServerConstant() const override { return true; }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 1 || !isString(arguments[0].type) || !arguments[0].column || !isColumnConst(*arguments[0].column))
@@ -83,9 +86,9 @@ public:
 
     static ColumnWithTypeAndName createScalar(ContextPtr context_)
     {
-        if (const auto * block = context_->tryGetSpecialScalar(Scalar::scalar_name))
+        if (auto block = context_->tryGetSpecialScalar(Scalar::scalar_name))
             return block->getByPosition(0);
-        else if (context_->hasQueryContext())
+        if (context_->hasQueryContext())
         {
             if (context_->getQueryContext()->hasScalar(Scalar::scalar_name))
                 return context_->getQueryContext()->getScalar(Scalar::scalar_name).getByPosition(0);
@@ -104,6 +107,8 @@ public:
     }
 
     bool isDeterministic() const override { return false; }
+
+    bool isServerConstant() const override { return true; }
 
     bool isSuitableForConstantFolding() const override { return !is_distributed; }
 

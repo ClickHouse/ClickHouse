@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/groupbitor
-sidebar_position: 126
+sidebar_position: 152
 ---
 
 # groupBitOr

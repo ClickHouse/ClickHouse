@@ -32,3 +32,4 @@ SELECT CAST('{"x" : [ 1 , [ 1 , 2] ]}', 'Object(\'json\')');
 SELECT CAST('{"x" : [ {} , [ 1 , 2] ]}', 'Object(\'json\')');
 SELECT CAST('{"x" : [ {} , [ 1 , [2]] ]}', 'Object(\'json\')');
 SELECT CAST('{"x" : [ {} , [ {} , [2]] ]}', 'Object(\'json\')');
+SELECT CAST(' {"a": { "a": [ [1],  null ] } }', 'Object(Nullable(\'json\'))');

@@ -1,0 +1,35 @@
+env:
+  PYTHONUNBUFFERED: 1
+
+name: StageWF
+
+'on':
+  workflow_call:
+    inputs:
+      stage:
+        description: stage name
+        type: string
+        required: true
+      data:
+        description: ci data
+        type: string
+        required: true
+    secrets:
+      secret_envs:
+        description: if given, it's passed to the environments
+        required: false
+
+jobs:
+  s:
+    if: ${{ !failure() && !cancelled() }}
+    strategy:
+      fail-fast: false
+      matrix:
+        job_name_and_runner_type: ${{ fromJson(inputs.data).stages_data[inputs.stage] }}
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: ${{ matrix.job_name_and_runner_type.job_name }}
+      runner_type: ${{ matrix.job_name_and_runner_type.runner_type }}
+      data: ${{ inputs.data }}
+    secrets:
+      secret_envs: ${{ secrets.secret_envs }}

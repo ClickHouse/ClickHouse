@@ -1,3 +1,4 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterShowCreateAccessEntityQuery.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Parsers/Access/ASTShowCreateAccessEntityQuery.h>
@@ -23,7 +24,7 @@
 #include <Access/SettingsProfile.h>
 #include <Access/User.h>
 #include <Columns/ColumnString.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
@@ -63,14 +64,9 @@ namespace
                 query->default_roles = user.default_roles.toASTWithNames(*access_control);
         }
 
-        if (user.auth_data.getType() != AuthenticationType::NO_PASSWORD)
-            query->auth_data = user.auth_data.toAST();
-
-        if (user.valid_until)
+        for (const auto & authentication_method : user.authentication_methods)
         {
-            WriteBufferFromOwnString out;
-            writeDateTimeText(user.valid_until, out);
-            query->valid_until = std::make_shared<ASTLiteral>(out.str());
+            query->authentication_methods.push_back(authentication_method.toAST());
         }
 
         if (!user.settings.empty())
@@ -215,7 +211,7 @@ namespace
             if (!filter.empty())
             {
                 ParserExpression parser;
-                ASTPtr expr = parseQuery(parser, filter, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+                ASTPtr expr = parseQuery(parser, filter, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
                 query->filters.emplace_back(type, std::move(expr));
             }
         }
@@ -430,4 +426,14 @@ AccessRightsElements InterpreterShowCreateAccessEntityQuery::getRequiredAccess()
     }
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: type is not supported by SHOW CREATE query", toString(show_query.type));
 }
+
+void registerInterpreterShowCreateAccessEntityQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterShowCreateAccessEntityQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterShowCreateAccessEntityQuery", create_fn);
+}
+
 }

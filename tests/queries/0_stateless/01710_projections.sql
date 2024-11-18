@@ -6,8 +6,8 @@ insert into projection_test with rowNumberInAllBlocks() as id select 1, toDateTi
 
 set optimize_use_projections = 1, force_optimize_projection = 1;
 
-select * from projection_test; -- { serverError 584 }
-select toStartOfMinute(datetime) dt_m, countIf(first_time = 0) from projection_test join (select 1) x on 1 where domain = '1' group by dt_m order by dt_m; -- { serverError 584 }
+select * from projection_test; -- { serverError PROJECTION_NOT_USED }
+select toStartOfMinute(datetime) dt_m, countIf(first_time = 0) from projection_test join (select 1) x on 1 where domain = '1' group by dt_m order by dt_m; -- { serverError PROJECTION_NOT_USED }
 
 select toStartOfMinute(datetime) dt_m, countIf(first_time = 0) / count(), avg((kbytes * 8) / duration) from projection_test where domain = '1' group by dt_m order by dt_m;
 

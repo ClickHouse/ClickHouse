@@ -26,6 +26,7 @@ namespace ProfileEvents
     extern const Event ThreadpoolReaderSubmitReadSynchronously;
     extern const Event ThreadpoolReaderSubmitReadSynchronouslyBytes;
     extern const Event ThreadpoolReaderSubmitReadSynchronouslyMicroseconds;
+    extern const Event ThreadpoolReaderSubmitLookupInCacheMicroseconds;
     extern const Event AsynchronousReaderIgnoredBytes;
 }
 
@@ -83,7 +84,13 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
         reader.seek(request.offset, SEEK_SET);
     }
 
-    if (reader.isContentCached(request.offset, request.size))
+    bool is_content_cached = false;
+    {
+        ProfileEventTimeIncrement<Microseconds> elapsed(ProfileEvents::ThreadpoolReaderSubmitLookupInCacheMicroseconds);
+        is_content_cached = reader.isContentCached(request.offset, request.size);
+    }
+
+    if (is_content_cached)
     {
         std::promise<Result> promise;
         std::future<Result> future = promise.get_future();
@@ -99,7 +106,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
     }
 
     ProfileEventTimeIncrement<Microseconds> elapsed(ProfileEvents::ThreadpoolReaderSubmit);
-    return scheduleFromThreadPool<Result>(
+    return scheduleFromThreadPoolUnsafe<Result>(
         [request, this]() -> Result { return execute(request, /*seek_performed=*/true); }, *pool, "VFSRead", request.priority);
 }
 
@@ -145,6 +152,8 @@ IAsynchronousReader::Result ThreadPoolRemoteFSReader::execute(Request request, b
     IAsynchronousReader::Result read_result;
     if (result)
     {
+        chassert(reader.buffer().begin() == request.buf);
+        chassert(reader.buffer().end() <= request.buf + request.size);
         read_result.size = reader.buffer().size();
         read_result.offset = reader.offset();
         ProfileEvents::increment(ProfileEvents::ThreadpoolReaderReadBytes, read_result.size);

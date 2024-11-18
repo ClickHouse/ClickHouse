@@ -1,0 +1,10 @@
+SELECT lambda(1, 1)
+SELECT lambda(1, 1)
+SELECT x -> 1
+SELECT x -> 1
+SELECT (x, y) -> 1
+SELECT (x, y) -> 1
+SELECT lambda(f(1), 1)
+SELECT lambda(f(1), 1)
+SELECT lambda(f(x), 1)
+SELECT lambda(f(x), 1)

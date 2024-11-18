@@ -1,10 +1,12 @@
 #pragma once
 
 #include <Common/typeid_cast.h>
+#include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTRefreshStrategy.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -87,12 +89,19 @@ public:
             visit(child);
     }
 
+    void visit(ASTRefreshStrategy & refresh) const
+    {
+        ASTPtr unused;
+        visit(refresh, unused);
+    }
+
 private:
 
     ContextPtr context;
 
     const String database_name;
     std::set<String> external_tables;
+    mutable std::unordered_set<String> with_aliases;
 
     bool only_replace_current_database_function = false;
     bool only_replace_in_join = false;
@@ -110,6 +119,13 @@ private:
 
     void visit(ASTSelectQuery & select, ASTPtr &) const
     {
+        if (select.recursive_with)
+            for (const auto & child : select.with()->children)
+            {
+                if (typeid_cast<ASTWithElement *>(child.get()))
+                    with_aliases.insert(child->as<ASTWithElement>()->name);
+            }
+
         if (select.tables())
             tryVisit<ASTTablesInSelectQuery>(select.refTables());
 
@@ -148,8 +164,6 @@ private:
     {
         if (table_expression.database_and_table_name)
             tryVisit<ASTTableIdentifier>(table_expression.database_and_table_name);
-        else if (table_expression.subquery)
-            tryVisit<ASTSubquery>(table_expression.subquery);
     }
 
     void visit(const ASTTableIdentifier & identifier, ASTPtr & ast) const
@@ -158,18 +172,16 @@ private:
         if (identifier.compound())
             return;
         /// There is temporary table with such name, should not be rewritten.
-        if (external_tables.count(identifier.shortName()))
+        if (external_tables.contains(identifier.shortName()))
+            return;
+        /// This is WITH RECURSIVE alias.
+        if (with_aliases.contains(identifier.name()))
             return;
 
         auto qualified_identifier = std::make_shared<ASTTableIdentifier>(database_name, identifier.name());
         if (!identifier.alias.empty())
             qualified_identifier->setAlias(identifier.alias);
         ast = qualified_identifier;
-    }
-
-    void visit(ASTSubquery & subquery, ASTPtr &) const
-    {
-        tryVisit<ASTSelectWithUnionQuery>(subquery.children[0]);
     }
 
     void visit(ASTFunction & function, ASTPtr &) const
@@ -201,7 +213,7 @@ private:
                             if (literal_value.getType() != Field::Types::String)
                                 continue;
 
-                            auto dictionary_name = literal_value.get<String>();
+                            auto dictionary_name = literal_value.safeGet<String>();
                             auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(dictionary_name, context);
                             literal_value = qualified_dictionary_name.getFullName();
                         }
@@ -236,6 +248,13 @@ private:
         }
     }
 
+    void visit(ASTRefreshStrategy & refresh, ASTPtr &) const
+    {
+        if (refresh.dependencies)
+            for (auto & table : refresh.dependencies->children)
+                tryVisit<ASTTableIdentifier>(table);
+    }
+
     void visitChildren(IAST & ast) const
     {
         for (auto & child : ast.children)
@@ -268,13 +287,7 @@ private:
         if (only_replace_current_database_function)
             return;
 
-        for (ASTRenameQuery::Element & elem : node.elements)
-        {
-            if (!elem.from.database)
-                elem.from.database = std::make_shared<ASTIdentifier>(database_name);
-            if (!elem.to.database)
-                elem.to.database = std::make_shared<ASTIdentifier>(database_name);
-        }
+        node.setDatabaseIfNotExists(database_name);
     }
 
     void visitDDL(ASTAlterQuery & node, ASTPtr &) const

@@ -44,7 +44,7 @@ public:
     {
     }
 
-    inline bool isConstant() const { return default_values_column == nullptr; }
+    bool isConstant() const { return default_values_column == nullptr; }
 
     Field getDefaultValue(size_t row) const
     {
@@ -75,13 +75,15 @@ public:
     DictionaryStorageFetchRequest(const DictionaryStructure & structure,
         const Strings & attributes_to_fetch_names,
         const DataTypes & attributes_to_fetch_types,
-        const Columns & attributes_to_fetch_default_values_columns)
+        const Columns * const attributes_to_fetch_default_values_columns = nullptr)
         : attributes_to_fetch_filter(structure.attributes.size(), false)
     {
         size_t attributes_to_fetch_size = attributes_to_fetch_names.size();
 
         assert(attributes_to_fetch_size == attributes_to_fetch_types.size());
-        assert(attributes_to_fetch_size == attributes_to_fetch_default_values_columns.size());
+
+        bool has_default = attributes_to_fetch_default_values_columns;
+        assert(!has_default || attributes_to_fetch_size == attributes_to_fetch_default_values_columns->size());
 
         for (size_t i = 0; i < attributes_to_fetch_size; ++i)
             attributes_to_fetch_name_to_index.emplace(attributes_to_fetch_names[i], i);
@@ -109,7 +111,6 @@ public:
 
             size_t attributes_to_fetch_index = attribute_to_fetch_index_it->second;
             const auto & attribute_to_fetch_result_type = attributes_to_fetch_types[attributes_to_fetch_index];
-            const auto & attribute_to_fetch_default_value_column = attributes_to_fetch_default_values_columns[attributes_to_fetch_index];
 
             if (!attribute_to_fetch_result_type->equals(*dictionary_attribute.type))
                 throw Exception(ErrorCodes::TYPE_MISMATCH,
@@ -118,7 +119,13 @@ public:
                     attribute_to_fetch_result_type->getName(),
                     dictionary_attribute.type->getName());
 
-            attributes_default_value_providers.emplace_back(dictionary_attribute.null_value, attribute_to_fetch_default_value_column);
+            if (has_default)
+            {
+                const auto & attribute_to_fetch_default_value_column =
+                    (*attributes_to_fetch_default_values_columns)[attributes_to_fetch_index];
+                attributes_default_value_providers.emplace_back(dictionary_attribute.null_value,
+                    attribute_to_fetch_default_value_column);
+            }
         }
     }
 
@@ -267,10 +274,8 @@ public:
                 auto nested_column = array_type->getNestedType()->createColumn();
                 return ColumnArray::create(std::move(nested_column));
             }
-            else
-            {
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported attribute type.");
-            }
+
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported attribute type.");
         }
         if constexpr (std::is_same_v<DictionaryAttributeType, String>)
         {
@@ -338,7 +343,7 @@ public:
             if (attribute_default_value.isNull())
                 default_value_is_null = true;
             else
-                default_value = static_cast<DictionaryAttributeType>(attribute_default_value.get<DictionaryAttributeType>());
+                default_value = static_cast<DictionaryAttributeType>(attribute_default_value.safeGet<DictionaryAttributeType>());
         }
         else
         {
@@ -370,7 +375,7 @@ public:
         if constexpr (std::is_same_v<DefaultColumnType, ColumnArray>)
         {
             Field field = (*default_values_column)[row];
-            return field.get<Array>();
+            return field.safeGet<Array>();
         }
         else if constexpr (std::is_same_v<DefaultColumnType, ColumnString>)
             return default_values_column->getDataAt(row);
@@ -443,17 +448,17 @@ public:
         keys_size = key_columns.front()->size();
     }
 
-    inline size_t getKeysSize() const
+    size_t getKeysSize() const
     {
         return keys_size;
     }
 
-    inline size_t getCurrentKeyIndex() const
+    size_t getCurrentKeyIndex() const
     {
         return current_key_index;
     }
 
-    inline KeyType extractCurrentKey()
+    KeyType extractCurrentKey()
     {
         assert(current_key_index < keys_size);
 
@@ -674,10 +679,8 @@ static const PaddedPODArray<T> & getColumnVectorData(
 
         return backup_storage;
     }
-    else
-    {
-        return vector_col->getData();
-    }
+
+    return vector_col->getData();
 }
 
 template <typename T>

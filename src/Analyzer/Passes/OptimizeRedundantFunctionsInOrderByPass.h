@@ -17,7 +17,7 @@ public:
 
     String getDescription() override { return "If ORDER BY has argument x followed by f(x) transforms it to ORDER BY x."; }
 
-    void run(QueryTreeNodePtr query_tree_node, ContextPtr context) override;
+    void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
 };
 
 }

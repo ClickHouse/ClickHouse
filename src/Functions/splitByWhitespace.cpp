@@ -1,6 +1,6 @@
 #include <Functions/FunctionTokens.h>
 #include <Functions/FunctionFactory.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 
 
 namespace DB
@@ -29,6 +29,8 @@ public:
 
     static bool isVariadic() { return true; }
     static size_t getNumberOfArguments() { return 0; }
+
+    static ColumnNumbers getArgumentsThatAreAlwaysConstant() { return {1}; }
 
     static void checkArguments(const IFunction & func, const ColumnsWithTypeAndName & arguments)
     {

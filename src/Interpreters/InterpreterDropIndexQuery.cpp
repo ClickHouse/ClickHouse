@@ -1,7 +1,10 @@
 #include <Access/ContextAccess.h>
+#include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterDropIndexQuery.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTDropIndexQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -9,6 +12,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsSeconds lock_acquire_timeout;
+}
 
 namespace ErrorCodes
 {
@@ -58,7 +65,7 @@ BlockIO InterpreterDropIndexQuery::execute()
 
     alter_commands.emplace_back(std::move(command));
 
-    auto alter_lock = table->lockForAlter(current_context->getSettingsRef().lock_acquire_timeout);
+    auto alter_lock = table->lockForAlter(current_context->getSettingsRef()[Setting::lock_acquire_timeout]);
     StorageInMemoryMetadata metadata = table->getInMemoryMetadata();
     alter_commands.validate(table, current_context);
     alter_commands.prepare(metadata);
@@ -66,6 +73,15 @@ BlockIO InterpreterDropIndexQuery::execute()
     table->alter(alter_commands, current_context, alter_lock);
 
     return {};
+}
+
+void registerInterpreterDropIndexQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterDropIndexQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterDropIndexQuery", create_fn);
 }
 
 }

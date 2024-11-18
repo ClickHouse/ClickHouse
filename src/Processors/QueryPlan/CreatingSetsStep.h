@@ -13,7 +13,7 @@ class CreatingSetStep : public ITransformingStep
 {
 public:
     CreatingSetStep(
-        const DataStream & input_stream_,
+        const Header & input_header_,
         SetAndKeyPtr set_and_key_,
         StoragePtr external_table_,
         SizeLimits network_transfer_limits_,
@@ -27,7 +27,7 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
 private:
-    void updateOutputStream() override;
+    void updateOutputHeader() override;
 
     SetAndKeyPtr set_and_key;
     StoragePtr external_table;
@@ -38,13 +38,16 @@ private:
 class CreatingSetsStep : public IQueryPlanStep
 {
 public:
-    explicit CreatingSetsStep(DataStreams input_streams_);
+    explicit CreatingSetsStep(Headers input_headers_);
 
     String getName() const override { return "CreatingSets"; }
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
 
     void describePipeline(FormatSettings & settings) const override;
+
+private:
+    void updateOutputHeader() override { output_header = getInputHeaders().front(); }
 };
 
 /// This is a temporary step which is converted to CreatingSetStep after plan optimization.
@@ -52,7 +55,7 @@ public:
 class DelayedCreatingSetsStep final : public IQueryPlanStep
 {
 public:
-    DelayedCreatingSetsStep(DataStream input_stream, PreparedSets::Subqueries subqueries_, ContextPtr context_);
+    DelayedCreatingSetsStep(Header input_header, PreparedSets::Subqueries subqueries_, ContextPtr context_);
 
     String getName() const override { return "DelayedCreatingSets"; }
 
@@ -64,6 +67,8 @@ public:
     PreparedSets::Subqueries detachSets() { return std::move(subqueries); }
 
 private:
+    void updateOutputHeader() override { output_header = getInputHeaders().front(); }
+
     PreparedSets::Subqueries subqueries;
     ContextPtr context;
 };
@@ -71,5 +76,7 @@ private:
 void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::Subqueries subqueries, ContextPtr context);
 
 void addCreatingSetsStep(QueryPlan & query_plan, PreparedSetsPtr prepared_sets, ContextPtr context);
+
+QueryPipelineBuilderPtr addCreatingSetsTransform(QueryPipelineBuilderPtr pipeline, PreparedSets::Subqueries subqueries, ContextPtr context);
 
 }

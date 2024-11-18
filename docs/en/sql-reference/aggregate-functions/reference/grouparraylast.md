@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/grouparraylast
-sidebar_position: 110
+sidebar_position: 142
 ---
 
 # groupArrayLast

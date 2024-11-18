@@ -1,4 +1,5 @@
-SET allow_experimental_analyzer = 1;
+SET output_format_pretty_color=1;
+SET enable_analyzer = 1;
 
 select * from system.one cross join system.one;
 select * from system.one cross join system.one r;
@@ -11,9 +12,9 @@ USE system;
 SELECT dummy FROM one AS A JOIN one ON A.dummy = one.dummy;
 SELECT dummy FROM one JOIN one AS A ON A.dummy = one.dummy;
 SELECT dummy FROM one l JOIN one r ON dummy = r.dummy;
-SELECT dummy FROM one l JOIN one r ON l.dummy = dummy; -- { serverError 403 }
+SELECT dummy FROM one l JOIN one r ON l.dummy = dummy; -- { serverError INVALID_JOIN_ON_EXPRESSION }
 SELECT dummy FROM one l JOIN one r ON one.dummy = r.dummy;
-SELECT dummy FROM one l JOIN one r ON l.dummy = one.dummy; -- { serverError 403 }
+SELECT dummy FROM one l JOIN one r ON l.dummy = one.dummy; -- { serverError INVALID_JOIN_ON_EXPRESSION }
 
 SELECT * from one
 JOIN one A ON one.dummy = A.dummy

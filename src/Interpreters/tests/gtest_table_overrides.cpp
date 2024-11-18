@@ -34,11 +34,11 @@ TEST_P(TableOverrideTest, applyOverrides)
     const auto & [database_query, table_query, expected_query] = GetParam();
     ParserCreateQuery parser;
     ASTPtr database_ast;
-    ASSERT_NO_THROW(database_ast = parseQuery(parser, database_query, 0, 0));
+    ASSERT_NO_THROW(database_ast = parseQuery(parser, database_query, 0, 0, 0));
     auto * database = database_ast->as<ASTCreateQuery>();
     ASSERT_NE(nullptr, database);
     ASTPtr table_ast;
-    ASSERT_NO_THROW(table_ast = parseQuery(parser, table_query, 0, 0));
+    ASSERT_NO_THROW(table_ast = parseQuery(parser, table_query, 0, 0, 0));
     auto * table = table_ast->as<ASTCreateQuery>();
     ASSERT_NE(nullptr, table);
     auto table_name = table->table->as<ASTIdentifier>()->name();

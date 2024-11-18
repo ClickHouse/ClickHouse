@@ -17,13 +17,32 @@ class WriteBufferFromPocoSocket : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
     explicit WriteBufferFromPocoSocket(Poco::Net::Socket & socket_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
+    explicit WriteBufferFromPocoSocket(Poco::Net::Socket & socket_, const ProfileEvents::Event & write_event_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
 
     ~WriteBufferFromPocoSocket() override;
 
     void setAsyncCallback(AsyncCallback async_callback_) { async_callback = std::move(async_callback_); }
 
+    using WriteBuffer::write;
+    void write(const std::string & str) { WriteBuffer::write(str.c_str(), str.size()); }
+    void write(std::string_view str) { WriteBuffer::write(str.data(), str.size()); }
+    void write(const char * str) { WriteBuffer::write(str, strlen(str)); }
+    void writeln(const std::string & str) { write(str); WriteBuffer::write("\n", 1); }
+    void writeln(std::string_view str) { write(str); WriteBuffer::write("\n", 1); }
+    void writeln(const char * str) { write(str); WriteBuffer::write("\n", 1); }
+
 protected:
     void nextImpl() override;
+
+    void socketSendBytes(const char * ptr, size_t size);
+    void socketSendStr(const std::string & str)
+    {
+        socketSendBytes(str.data(), str.size());
+    }
+    void socketSendStr(const char * ptr)
+    {
+        socketSendBytes(ptr, strlen(ptr));
+    }
 
     Poco::Net::Socket & socket;
 
@@ -34,9 +53,13 @@ protected:
     Poco::Net::SocketAddress peer_address;
     Poco::Net::SocketAddress our_address;
 
+    ProfileEvents::Event write_event;
+
 private:
     AsyncCallback async_callback;
     std::string socket_description;
+
+    ssize_t socketSendBytesImpl(const char * ptr, size_t size);
 };
 
 }

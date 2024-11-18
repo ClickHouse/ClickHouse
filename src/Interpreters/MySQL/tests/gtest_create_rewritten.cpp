@@ -2,12 +2,10 @@
 
 #include <gtest/gtest.h>
 
-#include <Parsers/IAST.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTExternalDDLQuery.h>
 #include <Parsers/ParserExternalDDLQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/MySQL/InterpretersMySQLDDLQuery.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
@@ -19,15 +17,15 @@ using namespace DB;
 static inline ASTPtr tryRewrittenCreateQuery(const String & query, ContextPtr context)
 {
     ParserExternalDDLQuery external_ddl_parser;
-    ASTPtr ast = parseQuery(external_ddl_parser, "EXTERNAL DDL FROM MySQL(test_database, test_database) " + query, 0, 0);
+    ASTPtr ast = parseQuery(external_ddl_parser, "EXTERNAL DDL FROM MySQL(test_database, test_database) " + query, 0, 0, 0);
 
     return MySQLInterpreter::InterpreterCreateImpl::getRewrittenQueries(
         *ast->as<ASTExternalDDLQuery>()->external_ddl->as<MySQLParser::ASTCreateQuery>(),
         context, "test_database", "test_database")[0];
 }
 
-static const char MATERIALIZEDMYSQL_TABLE_COLUMNS[] = ", `_sign` Int8() MATERIALIZED 1"
-                                                     ", `_version` UInt64() MATERIALIZED 1"
+static const char MATERIALIZEDMYSQL_TABLE_COLUMNS[] = ", `_sign` Int8 MATERIALIZED 1"
+                                                     ", `_version` UInt64 MATERIALIZED 1"
                                                      ", INDEX _version _version TYPE minmax GRANULARITY 1";
 
 TEST(MySQLCreateRewritten, ColumnsDataType)

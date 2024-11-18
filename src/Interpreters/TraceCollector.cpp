@@ -1,12 +1,10 @@
-#include "TraceCollector.h"
-
+#include <Interpreters/TraceCollector.h>
 #include <Core/Field.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/TraceLog.h>
-#include <Poco/Logger.h>
 #include <Common/ProfileEvents.h>
 #include <Common/setThreadName.h>
 #include <Common/logger_useful.h>
@@ -15,8 +13,12 @@
 namespace DB
 {
 
-TraceCollector::TraceCollector(std::shared_ptr<TraceLog> trace_log_)
-    : trace_log(std::move(trace_log_))
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+TraceCollector::TraceCollector()
 {
     TraceSender::pipe.open();
 
@@ -27,6 +29,23 @@ TraceCollector::TraceCollector(std::shared_ptr<TraceLog> trace_log_)
     TraceSender::pipe.tryIncreaseSize(1 << 20);
 
     thread = ThreadFromGlobalPool(&TraceCollector::run, this);
+}
+
+void TraceCollector::initialize(std::shared_ptr<TraceLog> trace_log_)
+{
+    if (is_trace_log_initialized)
+        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "TraceCollector is already initialized");
+
+    trace_log_ptr = trace_log_;
+    is_trace_log_initialized.store(true, std::memory_order_release);
+}
+
+std::shared_ptr<TraceLog> TraceCollector::getTraceLog()
+{
+    if (!is_trace_log_initialized.load(std::memory_order_acquire))
+        return nullptr;
+
+    return trace_log_ptr;
 }
 
 void TraceCollector::tryClosePipe()
@@ -65,7 +84,7 @@ TraceCollector::~TraceCollector()
     if (thread.joinable())
         thread.join();
     else
-        LOG_ERROR(&Poco::Logger::get("TraceCollector"), "TraceCollector thread is malformed and cannot be joined");
+        LOG_ERROR(getLogger("TraceCollector"), "TraceCollector thread is malformed and cannot be joined");
 }
 
 
@@ -121,7 +140,7 @@ void TraceCollector::run()
             ProfileEvents::Count increment;
             readPODBinary(increment, in);
 
-            if (trace_log)
+            if (auto trace_log = getTraceLog())
             {
                 // time and time_in_microseconds are both being constructed from the same timespec so that the
                 // times will be equal up to the precision of a second.

@@ -20,12 +20,12 @@ namespace ErrorCodes
 
 namespace
 {
-    inline constexpr bool is_leap_year(int32_t year)
+    constexpr bool is_leap_year(int32_t year)
     {
         return (year % 4 == 0) && ((year % 400 == 0) || (year % 100 != 0));
     }
 
-    inline constexpr uint8_t monthLength(bool is_leap_year, uint8_t month)
+    constexpr uint8_t monthLength(bool is_leap_year, uint8_t month)
     {
         switch (month)
         {
@@ -49,34 +49,32 @@ namespace
     /** Integer division truncated toward negative infinity.
       */
     template <typename I, typename J>
-    inline constexpr I div(I x, J y)
+    constexpr I div(I x, J y)
     {
         const auto y_cast = static_cast<I>(y);
         if (x > 0 && y_cast < 0)
             return ((x - 1) / y_cast) - 1;
-        else if (x < 0 && y_cast > 0)
+        if (x < 0 && y_cast > 0)
             return ((x + 1) / y_cast) - 1;
-        else
-            return x / y_cast;
+        return x / y_cast;
     }
 
     /** Integer modulus, satisfying div(x, y)*y + mod(x, y) == x.
       */
     template <typename I, typename J>
-    inline constexpr I mod(I x, J y)
+    constexpr I mod(I x, J y)
     {
         const auto y_cast = static_cast<I>(y);
         const auto r = x % y_cast;
         if ((x > 0 && y_cast < 0) || (x < 0 && y_cast > 0))
             return r == 0 ? static_cast<I>(0) : r + y_cast;
-        else
-            return r;
+        return r;
     }
 
     /** Like std::min(), but the type of operands may differ.
       */
     template <typename I, typename J>
-    inline constexpr I min(I x, J y)
+    constexpr I min(I x, J y)
     {
         const auto y_cast = static_cast<I>(y);
         return x < y_cast ? x : y_cast;
@@ -87,10 +85,9 @@ namespace
         char c;
         if (!in.read(c))
             throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Cannot parse input: expected a digit at the end of stream");
-        else if (c < '0' || c > '9')
+        if (c < '0' || c > '9')
             throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Cannot read input: expected a digit but got something else");
-        else
-            return c - '0';
+        return c - '0';
     }
 
     inline bool tryReadDigit(ReadBuffer & in, char & c)
@@ -125,7 +122,7 @@ void GregorianDate::init(ReadBuffer & in)
     assertEOF(in);
 
     if (month_ < 1 || month_ > 12 || day_of_month_ < 1 || day_of_month_ > monthLength(is_leap_year(year_), month_))
-        throw Exception(ErrorCodes::CANNOT_PARSE_DATE, "Invalid date, out of range (year: {}, month: {}, day_of_month: {}).");
+        throw Exception(ErrorCodes::CANNOT_PARSE_DATE, "Invalid date, out of range (year: {}, month: {}, day_of_month: {}).", year_, month_, day_of_month_);
 }
 
 bool GregorianDate::tryInit(ReadBuffer & in)
@@ -284,12 +281,12 @@ void OrdinalDate::init(int64_t modified_julian_day)
 
 bool OrdinalDate::tryInit(int64_t modified_julian_day)
 {
-    /// This function supports day number from -678941 to 2973119 (which represent 0000-01-01 and 9999-12-31 respectively).
+    /// This function supports day number from -678941 to 2973483 (which represent 0000-01-01 and 9999-12-31 respectively).
 
     if (modified_julian_day < -678941)
         return false;
 
-    if (modified_julian_day > 2973119)
+    if (modified_julian_day > 2973483)
         return false;
 
     const auto a         = modified_julian_day + 678575;

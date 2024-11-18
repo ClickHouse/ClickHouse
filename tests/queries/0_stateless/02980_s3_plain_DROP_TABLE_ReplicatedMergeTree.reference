@@ -1,0 +1,30 @@
+data after INSERT	1
+data after ATTACH	1
+Files before DETACH TABLE
+all_X_X_X
+
+/backups/ordinary_default/data/ordinary_default/data_read/all_X_X_X:
+checksums.txt
+columns.txt
+count.txt
+data.bin
+data.cmrk3
+default_compression_codec.txt
+metadata_version.txt
+primary.cidx
+serialization.json
+
+Files after DETACH TABLE
+all_X_X_X
+
+/backups/ordinary_default/data/ordinary_default/data_read/all_X_X_X:
+checksums.txt
+columns.txt
+count.txt
+data.bin
+data.cmrk3
+default_compression_codec.txt
+metadata_version.txt
+primary.cidx
+serialization.json
+

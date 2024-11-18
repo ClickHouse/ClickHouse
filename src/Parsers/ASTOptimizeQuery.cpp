@@ -7,8 +7,16 @@ namespace DB
 
 void ASTOptimizeQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "OPTIMIZE TABLE " << (settings.hilite ? hilite_none : "")
-                  << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "OPTIMIZE TABLE " << (settings.hilite ? hilite_none : "");
+
+    if (database)
+    {
+        database->formatImpl(settings, state, frame);
+        settings.ostr << '.';
+    }
+
+    chassert(table);
+    table->formatImpl(settings, state, frame);
 
     formatOnCluster(settings);
 
@@ -23,6 +31,9 @@ void ASTOptimizeQuery::formatQueryImpl(const FormatSettings & settings, FormatSt
 
     if (deduplicate)
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " DEDUPLICATE" << (settings.hilite ? hilite_none : "");
+
+    if (cleanup)
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " CLEANUP" << (settings.hilite ? hilite_none : "");
 
     if (deduplicate_by_columns)
     {

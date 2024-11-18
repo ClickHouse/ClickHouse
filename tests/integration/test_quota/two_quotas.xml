@@ -18,6 +18,7 @@
                 <read_bytes>400000</read_bytes>
                 <result_bytes>400000</result_bytes>
                 <execution_time>60</execution_time>
+                <failed_sequential_authentications>3</failed_sequential_authentications>
             </interval>
             <interval2>
                 <duration>2629746</duration>

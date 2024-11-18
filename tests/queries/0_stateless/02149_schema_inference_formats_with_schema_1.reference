@@ -24,12 +24,12 @@ fixed_string	Nullable(FixedString(3))
 Str: 0	100
 Str: 1	200
 array	Array(Nullable(UInt64))					
-tuple	Tuple(`1` Nullable(UInt64), `2` Nullable(String))					
+tuple	Tuple(\n    `1` Nullable(UInt64),\n    `2` Nullable(String))					
 map	Map(String, Nullable(UInt64))					
 [0,1]	(0,'0')	{'0':0}
 [1,2]	(1,'1')	{'1':1}
-nested1	Array(Tuple(`1` Array(Nullable(UInt64)), `2` Map(String, Nullable(UInt64))))					
-nested2	Tuple(`1` Tuple(`1` Array(Array(Nullable(UInt64))), `2` Map(UInt64, Array(Tuple(`1` Nullable(UInt64), `2` Nullable(String))))), `2` Nullable(UInt8))					
+nested1	Array(Tuple(\n    `1` Array(Nullable(UInt64)),\n    `2` Map(String, Nullable(UInt64))))					
+nested2	Tuple(\n    `1` Tuple(\n        `1` Array(Array(Nullable(UInt64))),\n        `2` Map(UInt64, Array(Tuple(\n            `1` Nullable(UInt64),\n            `2` Nullable(String))))),\n    `2` Nullable(UInt8))					
 [([0,1],{'42':0}),([],{}),([42],{'42':42})]	(([[0],[1],[]],{0:[(0,'42'),(1,'42')]}),42)
 [([1,2],{'42':1}),([],{}),([42],{'42':42})]	(([[1],[2],[]],{1:[(1,'42'),(2,'42')]}),42)
 ArrowStream
@@ -58,12 +58,12 @@ fixed_string	Nullable(FixedString(3))
 Str: 0	100
 Str: 1	200
 array	Array(Nullable(UInt64))					
-tuple	Tuple(`1` Nullable(UInt64), `2` Nullable(String))					
+tuple	Tuple(\n    `1` Nullable(UInt64),\n    `2` Nullable(String))					
 map	Map(String, Nullable(UInt64))					
 [0,1]	(0,'0')	{'0':0}
 [1,2]	(1,'1')	{'1':1}
-nested1	Array(Tuple(`1` Array(Nullable(UInt64)), `2` Map(String, Nullable(UInt64))))					
-nested2	Tuple(`1` Tuple(`1` Array(Array(Nullable(UInt64))), `2` Map(UInt64, Array(Tuple(`1` Nullable(UInt64), `2` Nullable(String))))), `2` Nullable(UInt8))					
+nested1	Array(Tuple(\n    `1` Array(Nullable(UInt64)),\n    `2` Map(String, Nullable(UInt64))))					
+nested2	Tuple(\n    `1` Tuple(\n        `1` Array(Array(Nullable(UInt64))),\n        `2` Map(UInt64, Array(Tuple(\n            `1` Nullable(UInt64),\n            `2` Nullable(String))))),\n    `2` Nullable(UInt8))					
 [([0,1],{'42':0}),([],{}),([42],{'42':42})]	(([[0],[1],[]],{0:[(0,'42'),(1,'42')]}),42)
 [([1,2],{'42':1}),([],{}),([42],{'42':42})]	(([[1],[2],[]],{1:[(1,'42'),(2,'42')]}),42)
 Parquet
@@ -92,12 +92,12 @@ fixed_string	Nullable(FixedString(3))
 Str: 0	100
 Str: 1	200
 array	Array(Nullable(UInt64))					
-tuple	Tuple(`1` Nullable(UInt64), `2` Nullable(String))					
+tuple	Tuple(\n    `1` Nullable(UInt64),\n    `2` Nullable(String))					
 map	Map(String, Nullable(UInt64))					
 [0,1]	(0,'0')	{'0':0}
 [1,2]	(1,'1')	{'1':1}
-nested1	Array(Tuple(`1` Array(Nullable(UInt64)), `2` Map(String, Nullable(UInt64))))					
-nested2	Tuple(`1` Tuple(`1` Array(Array(Nullable(UInt64))), `2` Map(UInt64, Array(Tuple(`1` Nullable(UInt64), `2` Nullable(String))))), `2` Nullable(UInt8))					
+nested1	Array(Tuple(\n    `1` Array(Nullable(UInt64)),\n    `2` Map(String, Nullable(UInt64))))					
+nested2	Tuple(\n    `1` Tuple(\n        `1` Array(Array(Nullable(UInt64))),\n        `2` Map(UInt64, Array(Tuple(\n            `1` Nullable(UInt64),\n            `2` Nullable(String))))),\n    `2` Nullable(UInt8))					
 [([0,1],{'42':0}),([],{}),([42],{'42':42})]	(([[0],[1],[]],{0:[(0,'42'),(1,'42')]}),42)
 [([1,2],{'42':1}),([],{}),([42],{'42':42})]	(([[1],[2],[]],{1:[(1,'42'),(2,'42')]}),42)
 ORC
@@ -126,12 +126,12 @@ fixed_string	Nullable(String)
 Str: 0	100
 Str: 1	200
 array	Array(Nullable(Int64))					
-tuple	Tuple(`1` Nullable(Int64), `2` Nullable(String))					
+tuple	Tuple(\n    `1` Nullable(Int64),\n    `2` Nullable(String))					
 map	Map(String, Nullable(Int64))					
 [0,1]	(0,'0')	{'0':0}
 [1,2]	(1,'1')	{'1':1}
-nested1	Array(Tuple(`1` Array(Nullable(Int64)), `2` Map(String, Nullable(Int64))))					
-nested2	Tuple(`1` Tuple(`1` Array(Array(Nullable(Int64))), `2` Map(Int64, Array(Tuple(`1` Nullable(Int64), `2` Nullable(String))))), `2` Nullable(Int8))					
+nested1	Array(Tuple(\n    `1` Array(Nullable(Int64)),\n    `2` Map(String, Nullable(Int64))))					
+nested2	Tuple(\n    `1` Tuple(\n        `1` Array(Array(Nullable(Int64))),\n        `2` Map(Int64, Array(Tuple(\n            `1` Nullable(Int64),\n            `2` Nullable(String))))),\n    `2` Nullable(Int8))					
 [([0,1],{'42':0}),([],{}),([42],{'42':42})]	(([[0],[1],[]],{0:[(0,'42'),(1,'42')]}),42)
 [([1,2],{'42':1}),([],{}),([42],{'42':42})]	(([[1],[2],[]],{1:[(1,'42'),(2,'42')]}),42)
 Native

@@ -8,7 +8,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.date_t
+    TABLE id: 3, alias: __table1, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -24,22 +24,22 @@ QUERY id: 0
                 FUNCTION id: 12, function_name: less, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
                     LIST id: 13, nodes: 2
-                      COLUMN id: 14, column_name: date1, result_type: Date, source_id: 3
-                      CONSTANT id: 15, constant_value: \'1994-01-01\', constant_value_type: String
-          FUNCTION id: 16, function_name: and, function_type: ordinary, result_type: UInt8
+                      COLUMN id: 10, column_name: date1, result_type: Date, source_id: 3
+                      CONSTANT id: 14, constant_value: \'1994-01-01\', constant_value_type: String
+          FUNCTION id: 15, function_name: and, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 17, nodes: 2
-                FUNCTION id: 18, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
+              LIST id: 16, nodes: 2
+                FUNCTION id: 17, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 19, nodes: 2
-                      COLUMN id: 20, column_name: id, result_type: UInt32, source_id: 3
-                      CONSTANT id: 21, constant_value: UInt64_1, constant_value_type: UInt8
-                FUNCTION id: 22, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                    LIST id: 18, nodes: 2
+                      COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
+                      CONSTANT id: 20, constant_value: UInt64_1, constant_value_type: UInt8
+                FUNCTION id: 21, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 23, nodes: 2
-                      COLUMN id: 20, column_name: id, result_type: UInt32, source_id: 3
-                      CONSTANT id: 24, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+                    LIST id: 22, nodes: 2
+                      COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
+                      CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 WHERE ((date1 < \'1993-01-01\') OR (date1 >= \'1994-01-01\')) AND ((id >= 1) AND (id <= 3))
@@ -50,7 +50,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.date_t
+    TABLE id: 3, alias: __table1, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -66,22 +66,22 @@ QUERY id: 0
                 FUNCTION id: 12, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
                     LIST id: 13, nodes: 2
-                      COLUMN id: 14, column_name: date1, result_type: Date, source_id: 3
-                      CONSTANT id: 15, constant_value: \'1994-01-01\', constant_value_type: String
-          FUNCTION id: 16, function_name: and, function_type: ordinary, result_type: UInt8
+                      COLUMN id: 10, column_name: date1, result_type: Date, source_id: 3
+                      CONSTANT id: 14, constant_value: \'1994-01-01\', constant_value_type: String
+          FUNCTION id: 15, function_name: and, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 17, nodes: 2
-                FUNCTION id: 18, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
+              LIST id: 16, nodes: 2
+                FUNCTION id: 17, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 19, nodes: 2
-                      COLUMN id: 20, column_name: id, result_type: UInt32, source_id: 3
-                      CONSTANT id: 21, constant_value: UInt64_1, constant_value_type: UInt8
-                FUNCTION id: 22, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                    LIST id: 18, nodes: 2
+                      COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
+                      CONSTANT id: 20, constant_value: UInt64_1, constant_value_type: UInt8
+                FUNCTION id: 21, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 23, nodes: 2
-                      COLUMN id: 20, column_name: id, result_type: UInt32, source_id: 3
-                      CONSTANT id: 24, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+                    LIST id: 22, nodes: 2
+                      COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
+                      CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 WHERE (date1 < \'1993-01-01\') AND ((id >= 1) AND (id <= 3))
@@ -92,7 +92,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.date_t
+    TABLE id: 3, alias: __table1, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -115,7 +115,7 @@ QUERY id: 0
                     LIST id: 17, nodes: 2
                       COLUMN id: 14, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 WHERE (date1 >= \'1994-01-01\') AND ((id >= 1) AND (id <= 3))
@@ -126,7 +126,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.date_t
+    TABLE id: 3, alias: __table1, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -149,7 +149,7 @@ QUERY id: 0
                     LIST id: 17, nodes: 2
                       COLUMN id: 14, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 WHERE (date1 < \'1994-01-01\') AND ((id >= 1) AND (id <= 3))
@@ -160,7 +160,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.date_t
+    TABLE id: 3, alias: __table1, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -183,7 +183,7 @@ QUERY id: 0
                     LIST id: 17, nodes: 2
                       COLUMN id: 14, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 WHERE (date1 >= \'1993-01-01\') AND ((id >= 1) AND (id <= 3))
@@ -194,7 +194,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.date_t
+    TABLE id: 3, alias: __table1, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -217,7 +217,7 @@ QUERY id: 0
                     LIST id: 17, nodes: 2
                       COLUMN id: 14, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 WHERE ((date1 >= \'1993-01-01\') AND (date1 < \'1998-01-01\')) AND ((id >= 1) AND (id <= 3))
@@ -228,7 +228,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.date_t
+    TABLE id: 3, alias: __table1, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -244,22 +244,22 @@ QUERY id: 0
                 FUNCTION id: 12, function_name: less, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
                     LIST id: 13, nodes: 2
-                      COLUMN id: 14, column_name: date1, result_type: Date, source_id: 3
-                      CONSTANT id: 15, constant_value: \'1998-01-01\', constant_value_type: String
-          FUNCTION id: 16, function_name: and, function_type: ordinary, result_type: UInt8
+                      COLUMN id: 10, column_name: date1, result_type: Date, source_id: 3
+                      CONSTANT id: 14, constant_value: \'1998-01-01\', constant_value_type: String
+          FUNCTION id: 15, function_name: and, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 17, nodes: 2
-                FUNCTION id: 18, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
+              LIST id: 16, nodes: 2
+                FUNCTION id: 17, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 19, nodes: 2
-                      COLUMN id: 20, column_name: id, result_type: UInt32, source_id: 3
-                      CONSTANT id: 21, constant_value: UInt64_1, constant_value_type: UInt8
-                FUNCTION id: 22, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                    LIST id: 18, nodes: 2
+                      COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
+                      CONSTANT id: 20, constant_value: UInt64_1, constant_value_type: UInt8
+                FUNCTION id: 21, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 23, nodes: 2
-                      COLUMN id: 20, column_name: id, result_type: UInt32, source_id: 3
-                      CONSTANT id: 24, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+                    LIST id: 22, nodes: 2
+                      COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
+                      CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 WHERE (((date1 >= \'1993-01-01\') AND (date1 < \'1994-01-01\')) OR ((date1 >= \'1994-01-01\') AND (date1 < \'1995-01-01\'))) AND ((id >= 1) AND (id <= 3))
@@ -270,7 +270,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.date_t
+    TABLE id: 3, alias: __table1, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -289,35 +289,35 @@ QUERY id: 0
                       FUNCTION id: 14, function_name: less, function_type: ordinary, result_type: UInt8
                         ARGUMENTS
                           LIST id: 15, nodes: 2
-                            COLUMN id: 16, column_name: date1, result_type: Date, source_id: 3
-                            CONSTANT id: 17, constant_value: \'1994-01-01\', constant_value_type: String
-                FUNCTION id: 18, function_name: and, function_type: ordinary, result_type: UInt8
+                            COLUMN id: 12, column_name: date1, result_type: Date, source_id: 3
+                            CONSTANT id: 16, constant_value: \'1994-01-01\', constant_value_type: String
+                FUNCTION id: 17, function_name: and, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 19, nodes: 2
-                      FUNCTION id: 20, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
+                    LIST id: 18, nodes: 2
+                      FUNCTION id: 19, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
                         ARGUMENTS
-                          LIST id: 21, nodes: 2
-                            COLUMN id: 22, column_name: date1, result_type: Date, source_id: 3
-                            CONSTANT id: 23, constant_value: \'1994-01-01\', constant_value_type: String
-                      FUNCTION id: 24, function_name: less, function_type: ordinary, result_type: UInt8
+                          LIST id: 20, nodes: 2
+                            COLUMN id: 12, column_name: date1, result_type: Date, source_id: 3
+                            CONSTANT id: 21, constant_value: \'1994-01-01\', constant_value_type: String
+                      FUNCTION id: 22, function_name: less, function_type: ordinary, result_type: UInt8
                         ARGUMENTS
-                          LIST id: 25, nodes: 2
-                            COLUMN id: 26, column_name: date1, result_type: Date, source_id: 3
-                            CONSTANT id: 27, constant_value: \'1995-01-01\', constant_value_type: String
-          FUNCTION id: 28, function_name: and, function_type: ordinary, result_type: UInt8
+                          LIST id: 23, nodes: 2
+                            COLUMN id: 12, column_name: date1, result_type: Date, source_id: 3
+                            CONSTANT id: 24, constant_value: \'1995-01-01\', constant_value_type: String
+          FUNCTION id: 25, function_name: and, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 29, nodes: 2
-                FUNCTION id: 30, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
+              LIST id: 26, nodes: 2
+                FUNCTION id: 27, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 31, nodes: 2
-                      COLUMN id: 32, column_name: id, result_type: UInt32, source_id: 3
-                      CONSTANT id: 33, constant_value: UInt64_1, constant_value_type: UInt8
-                FUNCTION id: 34, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                    LIST id: 28, nodes: 2
+                      COLUMN id: 29, column_name: id, result_type: UInt32, source_id: 3
+                      CONSTANT id: 30, constant_value: UInt64_1, constant_value_type: UInt8
+                FUNCTION id: 31, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 35, nodes: 2
-                      COLUMN id: 32, column_name: id, result_type: UInt32, source_id: 3
-                      CONSTANT id: 36, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+                    LIST id: 32, nodes: 2
+                      COLUMN id: 29, column_name: id, result_type: UInt32, source_id: 3
+                      CONSTANT id: 33, constant_value: UInt64_3, constant_value_type: UInt8
+  SETTINGS enable_analyzer=1
 SELECT
     value1,
     toYear(date1) AS year1
@@ -335,7 +335,7 @@ QUERY id: 0
           LIST id: 5, nodes: 1
             COLUMN id: 6, column_name: date1, result_type: Date, source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.date_t
+    TABLE id: 3, alias: __table1, table_name: default.date_t
   WHERE
     FUNCTION id: 7, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -346,27 +346,27 @@ QUERY id: 0
                 FUNCTION id: 11, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
                     LIST id: 12, nodes: 2
-                      COLUMN id: 13, column_name: date1, result_type: Date, source_id: 3
-                      CONSTANT id: 14, constant_value: \'1993-01-01\', constant_value_type: String
-                FUNCTION id: 15, function_name: less, function_type: ordinary, result_type: UInt8
+                      COLUMN id: 6, column_name: date1, result_type: Date, source_id: 3
+                      CONSTANT id: 13, constant_value: \'1993-01-01\', constant_value_type: String
+                FUNCTION id: 14, function_name: less, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 16, nodes: 2
-                      COLUMN id: 17, column_name: date1, result_type: Date, source_id: 3
-                      CONSTANT id: 18, constant_value: \'1994-01-01\', constant_value_type: String
-          FUNCTION id: 19, function_name: and, function_type: ordinary, result_type: UInt8
+                    LIST id: 15, nodes: 2
+                      COLUMN id: 6, column_name: date1, result_type: Date, source_id: 3
+                      CONSTANT id: 16, constant_value: \'1994-01-01\', constant_value_type: String
+          FUNCTION id: 17, function_name: and, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 20, nodes: 2
-                FUNCTION id: 21, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
+              LIST id: 18, nodes: 2
+                FUNCTION id: 19, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 22, nodes: 2
-                      COLUMN id: 23, column_name: id, result_type: UInt32, source_id: 3
-                      CONSTANT id: 24, constant_value: UInt64_1, constant_value_type: UInt8
-                FUNCTION id: 25, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                    LIST id: 20, nodes: 2
+                      COLUMN id: 21, column_name: id, result_type: UInt32, source_id: 3
+                      CONSTANT id: 22, constant_value: UInt64_1, constant_value_type: UInt8
+                FUNCTION id: 23, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 26, nodes: 2
-                      COLUMN id: 23, column_name: id, result_type: UInt32, source_id: 3
-                      CONSTANT id: 27, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+                    LIST id: 24, nodes: 2
+                      COLUMN id: 21, column_name: id, result_type: UInt32, source_id: 3
+                      CONSTANT id: 25, constant_value: UInt64_3, constant_value_type: UInt8
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 WHERE (date1 < \'1993-01-01\') AND ((id >= 1) AND (id <= 3))
@@ -377,7 +377,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.date_t
+    TABLE id: 3, alias: __table1, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -400,7 +400,7 @@ QUERY id: 0
                     LIST id: 17, nodes: 2
                       COLUMN id: 14, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 PREWHERE (date1 >= \'1993-01-01\') AND (date1 < \'1994-01-01\')
@@ -412,7 +412,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.date_t
+    TABLE id: 3, alias: __table1, table_name: default.date_t
   PREWHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -425,23 +425,23 @@ QUERY id: 0
           FUNCTION id: 10, function_name: less, function_type: ordinary, result_type: UInt8
             ARGUMENTS
               LIST id: 11, nodes: 2
-                COLUMN id: 12, column_name: date1, result_type: Date, source_id: 3
-                CONSTANT id: 13, constant_value: \'1994-01-01\', constant_value_type: String
+                COLUMN id: 8, column_name: date1, result_type: Date, source_id: 3
+                CONSTANT id: 12, constant_value: \'1994-01-01\', constant_value_type: String
   WHERE
-    FUNCTION id: 14, function_name: and, function_type: ordinary, result_type: UInt8
+    FUNCTION id: 13, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
-        LIST id: 15, nodes: 2
-          FUNCTION id: 16, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
+        LIST id: 14, nodes: 2
+          FUNCTION id: 15, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 17, nodes: 2
-                COLUMN id: 18, column_name: id, result_type: UInt32, source_id: 3
-                CONSTANT id: 19, constant_value: UInt64_1, constant_value_type: UInt8
-          FUNCTION id: 20, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+              LIST id: 16, nodes: 2
+                COLUMN id: 17, column_name: id, result_type: UInt32, source_id: 3
+                CONSTANT id: 18, constant_value: UInt64_1, constant_value_type: UInt8
+          FUNCTION id: 19, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 21, nodes: 2
-                COLUMN id: 18, column_name: id, result_type: UInt32, source_id: 3
-                CONSTANT id: 22, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+              LIST id: 20, nodes: 2
+                COLUMN id: 17, column_name: id, result_type: UInt32, source_id: 3
+                CONSTANT id: 21, constant_value: UInt64_3, constant_value_type: UInt8
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 WHERE ((id >= 1) AND (id <= 3)) AND ((date1 >= \'1993-01-01\') AND (date1 < \'1994-01-01\'))
@@ -452,7 +452,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.date_t
+    TABLE id: 3, alias: __table1, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -479,9 +479,9 @@ QUERY id: 0
           FUNCTION id: 19, function_name: less, function_type: ordinary, result_type: UInt8
             ARGUMENTS
               LIST id: 20, nodes: 2
-                COLUMN id: 21, column_name: date1, result_type: Date, source_id: 3
-                CONSTANT id: 22, constant_value: \'1994-01-01\', constant_value_type: String
-  SETTINGS allow_experimental_analyzer=1
+                COLUMN id: 17, column_name: date1, result_type: Date, source_id: 3
+                CONSTANT id: 21, constant_value: \'1994-01-01\', constant_value_type: String
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 WHERE (toYYYYMM(date1) = 199300) AND ((id >= 1) AND (id <= 3))
@@ -492,7 +492,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.date_t
+    TABLE id: 3, alias: __table1, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -518,7 +518,7 @@ QUERY id: 0
                     LIST id: 19, nodes: 2
                       COLUMN id: 16, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 20, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 WHERE (toYYYYMM(date1) = 199313) AND ((id >= 1) AND (id <= 3))
@@ -529,7 +529,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.date_t
+    TABLE id: 3, alias: __table1, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -555,7 +555,7 @@ QUERY id: 0
                     LIST id: 19, nodes: 2
                       COLUMN id: 16, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 20, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 WHERE ((date1 >= \'1993-12-01\') AND (date1 < \'1994-01-01\')) AND ((id >= 1) AND (id <= 3))
@@ -566,7 +566,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.date_t
+    TABLE id: 3, alias: __table1, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -582,22 +582,22 @@ QUERY id: 0
                 FUNCTION id: 12, function_name: less, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
                     LIST id: 13, nodes: 2
-                      COLUMN id: 14, column_name: date1, result_type: Date, source_id: 3
-                      CONSTANT id: 15, constant_value: \'1994-01-01\', constant_value_type: String
-          FUNCTION id: 16, function_name: and, function_type: ordinary, result_type: UInt8
+                      COLUMN id: 10, column_name: date1, result_type: Date, source_id: 3
+                      CONSTANT id: 14, constant_value: \'1994-01-01\', constant_value_type: String
+          FUNCTION id: 15, function_name: and, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 17, nodes: 2
-                FUNCTION id: 18, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
+              LIST id: 16, nodes: 2
+                FUNCTION id: 17, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 19, nodes: 2
-                      COLUMN id: 20, column_name: id, result_type: UInt32, source_id: 3
-                      CONSTANT id: 21, constant_value: UInt64_1, constant_value_type: UInt8
-                FUNCTION id: 22, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                    LIST id: 18, nodes: 2
+                      COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
+                      CONSTANT id: 20, constant_value: UInt64_1, constant_value_type: UInt8
+                FUNCTION id: 21, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 23, nodes: 2
-                      COLUMN id: 20, column_name: id, result_type: UInt32, source_id: 3
-                      CONSTANT id: 24, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+                    LIST id: 22, nodes: 2
+                      COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
+                      CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 WHERE ((date1 >= \'1992-03-01\') AND (date1 < \'1992-04-01\')) AND ((id >= 1) AND (id <= 3))
@@ -608,7 +608,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.date_t
+    TABLE id: 3, alias: __table1, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -624,22 +624,22 @@ QUERY id: 0
                 FUNCTION id: 12, function_name: less, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
                     LIST id: 13, nodes: 2
-                      COLUMN id: 14, column_name: date1, result_type: Date, source_id: 3
-                      CONSTANT id: 15, constant_value: \'1992-04-01\', constant_value_type: String
-          FUNCTION id: 16, function_name: and, function_type: ordinary, result_type: UInt8
+                      COLUMN id: 10, column_name: date1, result_type: Date, source_id: 3
+                      CONSTANT id: 14, constant_value: \'1992-04-01\', constant_value_type: String
+          FUNCTION id: 15, function_name: and, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 17, nodes: 2
-                FUNCTION id: 18, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
+              LIST id: 16, nodes: 2
+                FUNCTION id: 17, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 19, nodes: 2
-                      COLUMN id: 20, column_name: id, result_type: UInt32, source_id: 3
-                      CONSTANT id: 21, constant_value: UInt64_1, constant_value_type: UInt8
-                FUNCTION id: 22, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                    LIST id: 18, nodes: 2
+                      COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
+                      CONSTANT id: 20, constant_value: UInt64_1, constant_value_type: UInt8
+                FUNCTION id: 21, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 23, nodes: 2
-                      COLUMN id: 20, column_name: id, result_type: UInt32, source_id: 3
-                      CONSTANT id: 24, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+                    LIST id: 22, nodes: 2
+                      COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
+                      CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 WHERE ((date1 < \'1992-03-01\') OR (date1 >= \'1992-04-01\')) AND ((id >= 1) AND (id <= 3))
@@ -650,7 +650,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.date_t
+    TABLE id: 3, alias: __table1, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -666,22 +666,22 @@ QUERY id: 0
                 FUNCTION id: 12, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
                     LIST id: 13, nodes: 2
-                      COLUMN id: 14, column_name: date1, result_type: Date, source_id: 3
-                      CONSTANT id: 15, constant_value: \'1992-04-01\', constant_value_type: String
-          FUNCTION id: 16, function_name: and, function_type: ordinary, result_type: UInt8
+                      COLUMN id: 10, column_name: date1, result_type: Date, source_id: 3
+                      CONSTANT id: 14, constant_value: \'1992-04-01\', constant_value_type: String
+          FUNCTION id: 15, function_name: and, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 17, nodes: 2
-                FUNCTION id: 18, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
+              LIST id: 16, nodes: 2
+                FUNCTION id: 17, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 19, nodes: 2
-                      COLUMN id: 20, column_name: id, result_type: UInt32, source_id: 3
-                      CONSTANT id: 21, constant_value: UInt64_1, constant_value_type: UInt8
-                FUNCTION id: 22, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                    LIST id: 18, nodes: 2
+                      COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
+                      CONSTANT id: 20, constant_value: UInt64_1, constant_value_type: UInt8
+                FUNCTION id: 21, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 23, nodes: 2
-                      COLUMN id: 20, column_name: id, result_type: UInt32, source_id: 3
-                      CONSTANT id: 24, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+                    LIST id: 22, nodes: 2
+                      COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
+                      CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 WHERE (date1 < \'1992-03-01\') AND ((id >= 1) AND (id <= 3))
@@ -692,7 +692,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.date_t
+    TABLE id: 3, alias: __table1, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -715,7 +715,7 @@ QUERY id: 0
                     LIST id: 17, nodes: 2
                       COLUMN id: 14, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 WHERE (date1 >= \'1992-04-01\') AND ((id >= 1) AND (id <= 3))
@@ -726,7 +726,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.date_t
+    TABLE id: 3, alias: __table1, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -749,7 +749,7 @@ QUERY id: 0
                     LIST id: 17, nodes: 2
                       COLUMN id: 14, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 WHERE (date1 < \'1992-04-01\') AND ((id >= 1) AND (id <= 3))
@@ -760,7 +760,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.date_t
+    TABLE id: 3, alias: __table1, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -783,7 +783,7 @@ QUERY id: 0
                     LIST id: 17, nodes: 2
                       COLUMN id: 14, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 WHERE (date1 >= \'1992-03-01\') AND ((id >= 1) AND (id <= 3))
@@ -794,7 +794,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.date_t
+    TABLE id: 3, alias: __table1, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -817,7 +817,7 @@ QUERY id: 0
                     LIST id: 17, nodes: 2
                       COLUMN id: 14, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 WHERE ((date1 >= \'1992-03-01\') OR ((date1 >= \'1993-01-01\') AND (date1 < \'1994-01-01\'))) AND ((id >= 1) AND (id <= 3))
@@ -828,7 +828,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.date_t
+    TABLE id: 3, alias: __table1, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -847,27 +847,27 @@ QUERY id: 0
                       FUNCTION id: 14, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
                         ARGUMENTS
                           LIST id: 15, nodes: 2
-                            COLUMN id: 16, column_name: date1, result_type: Date, source_id: 3
-                            CONSTANT id: 17, constant_value: \'1993-01-01\', constant_value_type: String
-                      FUNCTION id: 18, function_name: less, function_type: ordinary, result_type: UInt8
+                            COLUMN id: 10, column_name: date1, result_type: Date, source_id: 3
+                            CONSTANT id: 16, constant_value: \'1993-01-01\', constant_value_type: String
+                      FUNCTION id: 17, function_name: less, function_type: ordinary, result_type: UInt8
                         ARGUMENTS
-                          LIST id: 19, nodes: 2
-                            COLUMN id: 20, column_name: date1, result_type: Date, source_id: 3
-                            CONSTANT id: 21, constant_value: \'1994-01-01\', constant_value_type: String
-          FUNCTION id: 22, function_name: and, function_type: ordinary, result_type: UInt8
+                          LIST id: 18, nodes: 2
+                            COLUMN id: 10, column_name: date1, result_type: Date, source_id: 3
+                            CONSTANT id: 19, constant_value: \'1994-01-01\', constant_value_type: String
+          FUNCTION id: 20, function_name: and, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 23, nodes: 2
-                FUNCTION id: 24, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
+              LIST id: 21, nodes: 2
+                FUNCTION id: 22, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 25, nodes: 2
-                      COLUMN id: 26, column_name: id, result_type: UInt32, source_id: 3
-                      CONSTANT id: 27, constant_value: UInt64_1, constant_value_type: UInt8
-                FUNCTION id: 28, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                    LIST id: 23, nodes: 2
+                      COLUMN id: 24, column_name: id, result_type: UInt32, source_id: 3
+                      CONSTANT id: 25, constant_value: UInt64_1, constant_value_type: UInt8
+                FUNCTION id: 26, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 29, nodes: 2
-                      COLUMN id: 26, column_name: id, result_type: UInt32, source_id: 3
-                      CONSTANT id: 30, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+                    LIST id: 27, nodes: 2
+                      COLUMN id: 24, column_name: id, result_type: UInt32, source_id: 3
+                      CONSTANT id: 28, constant_value: UInt64_3, constant_value_type: UInt8
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM datetime_t
 WHERE ((date1 >= \'1993-01-01 00:00:00\') AND (date1 < \'1994-01-01 00:00:00\')) AND ((id >= 1) AND (id <= 3))
@@ -878,7 +878,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.datetime_t
+    TABLE id: 3, alias: __table1, table_name: default.datetime_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -894,22 +894,22 @@ QUERY id: 0
                 FUNCTION id: 12, function_name: less, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
                     LIST id: 13, nodes: 2
-                      COLUMN id: 14, column_name: date1, result_type: DateTime, source_id: 3
-                      CONSTANT id: 15, constant_value: \'1994-01-01 00:00:00\', constant_value_type: String
-          FUNCTION id: 16, function_name: and, function_type: ordinary, result_type: UInt8
+                      COLUMN id: 10, column_name: date1, result_type: DateTime, source_id: 3
+                      CONSTANT id: 14, constant_value: \'1994-01-01 00:00:00\', constant_value_type: String
+          FUNCTION id: 15, function_name: and, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 17, nodes: 2
-                FUNCTION id: 18, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
+              LIST id: 16, nodes: 2
+                FUNCTION id: 17, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 19, nodes: 2
-                      COLUMN id: 20, column_name: id, result_type: UInt32, source_id: 3
-                      CONSTANT id: 21, constant_value: UInt64_1, constant_value_type: UInt8
-                FUNCTION id: 22, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                    LIST id: 18, nodes: 2
+                      COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
+                      CONSTANT id: 20, constant_value: UInt64_1, constant_value_type: UInt8
+                FUNCTION id: 21, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 23, nodes: 2
-                      COLUMN id: 20, column_name: id, result_type: UInt32, source_id: 3
-                      CONSTANT id: 24, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+                    LIST id: 22, nodes: 2
+                      COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
+                      CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM datetime_t
 WHERE ((date1 >= \'1993-12-01 00:00:00\') AND (date1 < \'1994-01-01 00:00:00\')) AND ((id >= 1) AND (id <= 3))
@@ -920,7 +920,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.datetime_t
+    TABLE id: 3, alias: __table1, table_name: default.datetime_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -936,22 +936,22 @@ QUERY id: 0
                 FUNCTION id: 12, function_name: less, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
                     LIST id: 13, nodes: 2
-                      COLUMN id: 14, column_name: date1, result_type: DateTime, source_id: 3
-                      CONSTANT id: 15, constant_value: \'1994-01-01 00:00:00\', constant_value_type: String
-          FUNCTION id: 16, function_name: and, function_type: ordinary, result_type: UInt8
+                      COLUMN id: 10, column_name: date1, result_type: DateTime, source_id: 3
+                      CONSTANT id: 14, constant_value: \'1994-01-01 00:00:00\', constant_value_type: String
+          FUNCTION id: 15, function_name: and, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 17, nodes: 2
-                FUNCTION id: 18, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
+              LIST id: 16, nodes: 2
+                FUNCTION id: 17, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 19, nodes: 2
-                      COLUMN id: 20, column_name: id, result_type: UInt32, source_id: 3
-                      CONSTANT id: 21, constant_value: UInt64_1, constant_value_type: UInt8
-                FUNCTION id: 22, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                    LIST id: 18, nodes: 2
+                      COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
+                      CONSTANT id: 20, constant_value: UInt64_1, constant_value_type: UInt8
+                FUNCTION id: 21, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 23, nodes: 2
-                      COLUMN id: 20, column_name: id, result_type: UInt32, source_id: 3
-                      CONSTANT id: 24, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+                    LIST id: 22, nodes: 2
+                      COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
+                      CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date32_t
 WHERE ((date1 >= \'1993-01-01\') AND (date1 < \'1994-01-01\')) AND ((id >= 1) AND (id <= 3))
@@ -962,7 +962,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.date32_t
+    TABLE id: 3, alias: __table1, table_name: default.date32_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -978,22 +978,22 @@ QUERY id: 0
                 FUNCTION id: 12, function_name: less, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
                     LIST id: 13, nodes: 2
-                      COLUMN id: 14, column_name: date1, result_type: Date32, source_id: 3
-                      CONSTANT id: 15, constant_value: \'1994-01-01\', constant_value_type: String
-          FUNCTION id: 16, function_name: and, function_type: ordinary, result_type: UInt8
+                      COLUMN id: 10, column_name: date1, result_type: Date32, source_id: 3
+                      CONSTANT id: 14, constant_value: \'1994-01-01\', constant_value_type: String
+          FUNCTION id: 15, function_name: and, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 17, nodes: 2
-                FUNCTION id: 18, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
+              LIST id: 16, nodes: 2
+                FUNCTION id: 17, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 19, nodes: 2
-                      COLUMN id: 20, column_name: id, result_type: UInt32, source_id: 3
-                      CONSTANT id: 21, constant_value: UInt64_1, constant_value_type: UInt8
-                FUNCTION id: 22, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                    LIST id: 18, nodes: 2
+                      COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
+                      CONSTANT id: 20, constant_value: UInt64_1, constant_value_type: UInt8
+                FUNCTION id: 21, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 23, nodes: 2
-                      COLUMN id: 20, column_name: id, result_type: UInt32, source_id: 3
-                      CONSTANT id: 24, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+                    LIST id: 22, nodes: 2
+                      COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
+                      CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date32_t
 WHERE ((date1 >= \'1993-12-01\') AND (date1 < \'1994-01-01\')) AND ((id >= 1) AND (id <= 3))
@@ -1004,7 +1004,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.date32_t
+    TABLE id: 3, alias: __table1, table_name: default.date32_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -1020,22 +1020,22 @@ QUERY id: 0
                 FUNCTION id: 12, function_name: less, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
                     LIST id: 13, nodes: 2
-                      COLUMN id: 14, column_name: date1, result_type: Date32, source_id: 3
-                      CONSTANT id: 15, constant_value: \'1994-01-01\', constant_value_type: String
-          FUNCTION id: 16, function_name: and, function_type: ordinary, result_type: UInt8
+                      COLUMN id: 10, column_name: date1, result_type: Date32, source_id: 3
+                      CONSTANT id: 14, constant_value: \'1994-01-01\', constant_value_type: String
+          FUNCTION id: 15, function_name: and, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 17, nodes: 2
-                FUNCTION id: 18, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
+              LIST id: 16, nodes: 2
+                FUNCTION id: 17, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 19, nodes: 2
-                      COLUMN id: 20, column_name: id, result_type: UInt32, source_id: 3
-                      CONSTANT id: 21, constant_value: UInt64_1, constant_value_type: UInt8
-                FUNCTION id: 22, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                    LIST id: 18, nodes: 2
+                      COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
+                      CONSTANT id: 20, constant_value: UInt64_1, constant_value_type: UInt8
+                FUNCTION id: 21, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 23, nodes: 2
-                      COLUMN id: 20, column_name: id, result_type: UInt32, source_id: 3
-                      CONSTANT id: 24, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+                    LIST id: 22, nodes: 2
+                      COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
+                      CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM datetime64_t
 WHERE ((date1 >= \'1993-01-01 00:00:00\') AND (date1 < \'1994-01-01 00:00:00\')) AND ((id >= 1) AND (id <= 3))
@@ -1046,7 +1046,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.datetime64_t
+    TABLE id: 3, alias: __table1, table_name: default.datetime64_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -1062,22 +1062,22 @@ QUERY id: 0
                 FUNCTION id: 12, function_name: less, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
                     LIST id: 13, nodes: 2
-                      COLUMN id: 14, column_name: date1, result_type: DateTime64(3), source_id: 3
-                      CONSTANT id: 15, constant_value: \'1994-01-01 00:00:00\', constant_value_type: String
-          FUNCTION id: 16, function_name: and, function_type: ordinary, result_type: UInt8
+                      COLUMN id: 10, column_name: date1, result_type: DateTime64(3), source_id: 3
+                      CONSTANT id: 14, constant_value: \'1994-01-01 00:00:00\', constant_value_type: String
+          FUNCTION id: 15, function_name: and, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 17, nodes: 2
-                FUNCTION id: 18, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
+              LIST id: 16, nodes: 2
+                FUNCTION id: 17, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 19, nodes: 2
-                      COLUMN id: 20, column_name: id, result_type: UInt32, source_id: 3
-                      CONSTANT id: 21, constant_value: UInt64_1, constant_value_type: UInt8
-                FUNCTION id: 22, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                    LIST id: 18, nodes: 2
+                      COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
+                      CONSTANT id: 20, constant_value: UInt64_1, constant_value_type: UInt8
+                FUNCTION id: 21, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 23, nodes: 2
-                      COLUMN id: 20, column_name: id, result_type: UInt32, source_id: 3
-                      CONSTANT id: 24, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+                    LIST id: 22, nodes: 2
+                      COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
+                      CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM datetime64_t
 WHERE ((date1 >= \'1993-12-01 00:00:00\') AND (date1 < \'1994-01-01 00:00:00\')) AND ((id >= 1) AND (id <= 3))
@@ -1088,7 +1088,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.datetime64_t
+    TABLE id: 3, alias: __table1, table_name: default.datetime64_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -1104,19 +1104,19 @@ QUERY id: 0
                 FUNCTION id: 12, function_name: less, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
                     LIST id: 13, nodes: 2
-                      COLUMN id: 14, column_name: date1, result_type: DateTime64(3), source_id: 3
-                      CONSTANT id: 15, constant_value: \'1994-01-01 00:00:00\', constant_value_type: String
-          FUNCTION id: 16, function_name: and, function_type: ordinary, result_type: UInt8
+                      COLUMN id: 10, column_name: date1, result_type: DateTime64(3), source_id: 3
+                      CONSTANT id: 14, constant_value: \'1994-01-01 00:00:00\', constant_value_type: String
+          FUNCTION id: 15, function_name: and, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 17, nodes: 2
-                FUNCTION id: 18, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
+              LIST id: 16, nodes: 2
+                FUNCTION id: 17, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 19, nodes: 2
-                      COLUMN id: 20, column_name: id, result_type: UInt32, source_id: 3
-                      CONSTANT id: 21, constant_value: UInt64_1, constant_value_type: UInt8
-                FUNCTION id: 22, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                    LIST id: 18, nodes: 2
+                      COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
+                      CONSTANT id: 20, constant_value: UInt64_1, constant_value_type: UInt8
+                FUNCTION id: 21, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 23, nodes: 2
-                      COLUMN id: 20, column_name: id, result_type: UInt32, source_id: 3
-                      CONSTANT id: 24, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+                    LIST id: 22, nodes: 2
+                      COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
+                      CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
+  SETTINGS enable_analyzer=1

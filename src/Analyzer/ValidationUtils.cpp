@@ -19,6 +19,8 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int ILLEGAL_PREWHERE;
+    extern const int UNSUPPORTED_METHOD;
+    extern const int UNEXPECTED_EXPRESSION;
 }
 
 namespace
@@ -26,7 +28,24 @@ namespace
 
 void validateFilter(const QueryTreeNodePtr & filter_node, std::string_view exception_place_message, const QueryTreeNodePtr & query_node)
 {
-    auto filter_node_result_type = filter_node->getResultType();
+    DataTypePtr filter_node_result_type;
+    try
+    {
+        filter_node_result_type = filter_node->getResultType();
+    }
+    catch (const DB::Exception &e)
+    {
+        if (e.code() != ErrorCodes::UNSUPPORTED_METHOD)
+            e.rethrow();
+    }
+
+    if (!filter_node_result_type)
+        throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
+                        "Unexpected expression '{}' in filter in {}. In query {}",
+                        filter_node->formatASTForErrorMessage(),
+                        exception_place_message,
+                        query_node->formatASTForErrorMessage());
+
     if (!filter_node_result_type->canBeUsedInBooleanContext())
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
             "Invalid type for filter in {}: {}. In query {}",
@@ -56,6 +75,9 @@ void validateFilters(const QueryTreeNodePtr & query_node)
 
     if (query_node_typed.hasHaving())
         validateFilter(query_node_typed.getHaving(), "HAVING", query_node);
+
+    if (query_node_typed.hasQualify())
+        validateFilter(query_node_typed.getQualify(), "QUALIFY", query_node);
 }
 
 namespace
@@ -131,6 +153,52 @@ public:
     }
 
 private:
+
+    static bool areColumnSourcesEqual(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs)
+    {
+        using NodePair = std::pair<const IQueryTreeNode *, const IQueryTreeNode *>;
+        std::vector<NodePair> nodes_to_process;
+        nodes_to_process.emplace_back(lhs.get(), rhs.get());
+
+        while (!nodes_to_process.empty())
+        {
+            const auto [lhs_node, rhs_node] = nodes_to_process.back();
+            nodes_to_process.pop_back();
+
+            if (lhs_node->getNodeType() != rhs_node->getNodeType())
+                return false;
+
+            if (lhs_node->getNodeType() == QueryTreeNodeType::COLUMN)
+            {
+                const auto * lhs_column_node = lhs_node->as<ColumnNode>();
+                const auto * rhs_column_node = rhs_node->as<ColumnNode>();
+                if (!lhs_column_node->getColumnSource()->isEqual(*rhs_column_node->getColumnSource()))
+                    return false;
+            }
+
+            const auto & lhs_children = lhs_node->getChildren();
+            const auto & rhs_children = rhs_node->getChildren();
+            if (lhs_children.size() != rhs_children.size())
+                return false;
+
+            for (size_t i = 0; i < lhs_children.size(); ++i)
+            {
+                const auto & lhs_child = lhs_children[i];
+                const auto & rhs_child = rhs_children[i];
+
+                if (!lhs_child && !rhs_child)
+                    continue;
+                if (lhs_child && !rhs_child)
+                    return false;
+                if (!lhs_child && rhs_child)
+                    return false;
+
+                nodes_to_process.emplace_back(lhs_child.get(), rhs_child.get());
+            }
+        }
+        return true;
+    }
+
     bool nodeIsAggregateFunctionOrInGroupByKeys(const QueryTreeNodePtr & node) const
     {
         if (auto * function_node = node->as<FunctionNode>())
@@ -138,8 +206,17 @@ private:
                 return true;
 
         for (const auto & group_by_key_node : group_by_keys_nodes)
+        {
             if (node->isEqual(*group_by_key_node, {.compare_aliases = false}))
-                return true;
+            {
+                /** Column sources should be compared with aliases for correct GROUP BY keys validation,
+                  * otherwise t2.x and t1.x will be considered as the same column:
+                  * SELECT t2.x FROM t1 JOIN t1 as t2 ON t1.x = t2.x GROUP BY t1.x;
+                  */
+                if (areColumnSourcesEqual(node, group_by_key_node))
+                    return true;
+            }
+        }
 
         return false;
     }
@@ -263,8 +340,14 @@ void validateAggregates(const QueryTreeNodePtr & query_node, AggregatesValidatio
         if (query_node_typed.hasHaving())
             validate_group_by_columns_visitor.visit(query_node_typed.getHaving());
 
+        if (query_node_typed.hasQualify())
+            validate_group_by_columns_visitor.visit(query_node_typed.getQualify());
+
         if (query_node_typed.hasOrderBy())
             validate_group_by_columns_visitor.visit(query_node_typed.getOrderByNode());
+
+        if (query_node_typed.hasInterpolate())
+            validate_group_by_columns_visitor.visit(query_node_typed.getInterpolate());
 
         validate_group_by_columns_visitor.visit(query_node_typed.getProjectionNode());
     }
@@ -344,7 +427,21 @@ void validateTreeSize(const QueryTreeNodePtr & node,
         if (processed_children)
         {
             ++tree_size;
-            node_to_tree_size.emplace(node_to_process, tree_size);
+
+            size_t subtree_size = 1;
+            for (const auto & node_to_process_child : node_to_process->getChildren())
+            {
+                if (!node_to_process_child)
+                    continue;
+
+                subtree_size += node_to_tree_size[node_to_process_child];
+            }
+
+            auto * constant_node = node_to_process->as<ConstantNode>();
+            if (constant_node && constant_node->hasSourceExpression())
+                subtree_size += node_to_tree_size[constant_node->getSourceExpression()];
+
+            node_to_tree_size.emplace(node_to_process, subtree_size);
             continue;
         }
 

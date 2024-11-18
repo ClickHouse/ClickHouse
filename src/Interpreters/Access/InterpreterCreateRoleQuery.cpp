@@ -1,3 +1,4 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterCreateRoleQuery.h>
 
 #include <Access/AccessControl.h>
@@ -75,7 +76,7 @@ BlockIO InterpreterCreateRoleQuery::execute()
 
     if (query.alter)
     {
-        auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
+        auto update_func = [&](const AccessEntityPtr & entity, const UUID &) -> AccessEntityPtr
         {
             auto updated_role = typeid_cast<std::shared_ptr<Role>>(entity->clone());
             updateRoleFromQueryImpl(*updated_role, query, {}, settings_from_query);
@@ -124,4 +125,14 @@ void InterpreterCreateRoleQuery::updateRoleFromQuery(Role & role, const ASTCreat
 {
     updateRoleFromQueryImpl(role, query, {}, {});
 }
+
+void registerInterpreterCreateRoleQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterCreateRoleQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterCreateRoleQuery", create_fn);
+}
+
 }

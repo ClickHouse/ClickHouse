@@ -7,6 +7,8 @@
 
 #include "config.h"
 
+#include <Common/Logger.h>
+
 
 namespace Poco
 {
@@ -38,12 +40,12 @@ public:
     ~Timer();
 
     void createIfNecessary(UInt64 thread_id, int clock_type, int pause_signal);
-    void set(UInt32 period);
+    void set(UInt64 period);
     void stop();
     void cleanup();
 
 private:
-    Poco::Logger * log;
+    LoggerPtr log;
     std::optional<timer_t> timer_id;
 };
 #endif
@@ -52,13 +54,15 @@ template <typename ProfilerImpl>
 class QueryProfilerBase
 {
 public:
-    QueryProfilerBase(UInt64 thread_id, int clock_type, UInt32 period, int pause_signal_);
+    QueryProfilerBase(UInt64 thread_id, int clock_type, UInt64 period, int pause_signal_);
     ~QueryProfilerBase();
+
+    void setPeriod(UInt64 period_);
 
 private:
     void cleanup();
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
 #ifndef __APPLE__
     inline static thread_local Timer timer = Timer();
@@ -72,7 +76,7 @@ private:
 class QueryProfilerReal : public QueryProfilerBase<QueryProfilerReal>
 {
 public:
-    QueryProfilerReal(UInt64 thread_id, UInt32 period); /// NOLINT
+    QueryProfilerReal(UInt64 thread_id, UInt64 period); /// NOLINT
 
     static void signalHandler(int sig, siginfo_t * info, void * context);
 };
@@ -81,7 +85,7 @@ public:
 class QueryProfilerCPU : public QueryProfilerBase<QueryProfilerCPU>
 {
 public:
-    QueryProfilerCPU(UInt64 thread_id, UInt32 period); /// NOLINT
+    QueryProfilerCPU(UInt64 thread_id, UInt64 period); /// NOLINT
 
     static void signalHandler(int sig, siginfo_t * info, void * context);
 };

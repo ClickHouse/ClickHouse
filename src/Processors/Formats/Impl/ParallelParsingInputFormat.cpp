@@ -61,7 +61,7 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupPtr thread
     }
     catch (...)
     {
-        onBackgroundException(successfully_read_rows_count);
+        onBackgroundException();
     }
 }
 
@@ -90,8 +90,9 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupPtr thread_grou
         ReadBuffer read_buffer(unit.segment.data(), unit.segment.size(), 0);
 
         InputFormatPtr input_format = internal_parser_creator(read_buffer);
-        input_format->setCurrentUnitNumber(current_ticket_number);
+        input_format->setRowsReadBefore(unit.offset);
         input_format->setErrorsLogger(errors_logger);
+        input_format->setSerializationHints(serialization_hints);
         InternalParser parser(input_format);
 
         unit.chunk_ext.chunk.clear();
@@ -110,7 +111,12 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupPtr thread_grou
             /// Variable chunk is moved, but it is not really used in the next iteration.
             /// NOLINTNEXTLINE(bugprone-use-after-move, hicpp-invalid-access-moved)
             unit.chunk_ext.chunk.emplace_back(std::move(chunk));
-            unit.chunk_ext.block_missing_values.emplace_back(parser.getMissingValues());
+
+            if (const auto * block_missing_values = parser.getMissingValues())
+                unit.chunk_ext.block_missing_values.emplace_back(*block_missing_values);
+            else
+                unit.chunk_ext.block_missing_values.emplace_back(chunk.getNumColumns());
+
             size_t approx_chunk_size = input_format->getApproxBytesReadForChunk();
             /// We could decompress data during file segmentation.
             /// Correct chunk size using original segment size.
@@ -132,28 +138,16 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupPtr thread_grou
     }
     catch (...)
     {
-        onBackgroundException(unit.offset);
+        onBackgroundException();
     }
 }
 
 
-void ParallelParsingInputFormat::onBackgroundException(size_t offset)
+void ParallelParsingInputFormat::onBackgroundException()
 {
     std::lock_guard lock(mutex);
     if (!background_exception)
-    {
         background_exception = std::current_exception();
-        if (ParsingException * e = exception_cast<ParsingException *>(background_exception))
-        {
-            /// NOTE: it is not that safe to use line number hack here (may exceed INT_MAX)
-            if (e->getLineNumber() != -1)
-                e->setLineNumber(static_cast<int>(e->getLineNumber() + offset));
-
-            auto file_name = getFileNameFromReadBuffer(getReadBuffer());
-            if (!file_name.empty())
-                e->setFileName(file_name);
-        }
-    }
 
     if (is_server)
         tryLogCurrentException(__PRETTY_FUNCTION__);
@@ -164,7 +158,7 @@ void ParallelParsingInputFormat::onBackgroundException(size_t offset)
     segmentator_condvar.notify_all();
 }
 
-Chunk ParallelParsingInputFormat::generate()
+Chunk ParallelParsingInputFormat::read()
 {
     /// Delayed launching of segmentator thread
     if (unlikely(!parsing_started.exchange(true)))
@@ -236,7 +230,9 @@ Chunk ParallelParsingInputFormat::generate()
             /// skipped all rows. For example, it can happen while using settings
             /// input_format_allow_errors_num/input_format_allow_errors_ratio
             /// and this segment contained only rows with errors.
-            /// Process the next unit.
+            /// Return this empty unit back to segmentator and process the next unit.
+            unit->status = READY_TO_INSERT;
+            segmentator_condvar.notify_all();
             ++reader_ticket_number;
             unit = &processing_units[reader_ticket_number % processing_units.size()];
         }

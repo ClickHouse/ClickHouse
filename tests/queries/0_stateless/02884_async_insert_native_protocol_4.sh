@@ -4,7 +4,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -n -q "
+$CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_async_insert_native_4;
     CREATE TABLE t_async_insert_native_4 (id UInt64) ENGINE = MergeTree ORDER BY id;
 "
@@ -20,7 +20,7 @@ echo "(2) (3) (4) (5)" | $CLICKHOUSE_CLIENT_WITH_LOG $async_insert_options --asy
     -q 'INSERT INTO t_async_insert_native_4 FORMAT Values' 2>&1 \
     | grep -c "too much data"
 
-$CLICKHOUSE_CLIENT -n -q "
+$CLICKHOUSE_CLIENT -q "
     SELECT * FROM t_async_insert_native_4 ORDER BY id;
 
     SYSTEM FLUSH LOGS;

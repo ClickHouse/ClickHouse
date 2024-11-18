@@ -5,13 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# See 01658_read_file_to_string_column.sh
-user_files_path=$(clickhouse-client --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
-
-mkdir -p "${user_files_path}/"
-chmod 777 ${user_files_path}
-
-FILE_PATH="${user_files_path}/test_table_function_file"
+FILE_PATH="${USER_FILES_PATH}/test_table_function_file"
 
 function cleanup()
 {
@@ -27,4 +21,3 @@ echo 'part 2'
 ${CLICKHOUSE_CLIENT} --query="select * from file('${FILE_PATH}/2/test_2', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')";
 echo 'part 3'
 ${CLICKHOUSE_CLIENT} --query="select * from file('${FILE_PATH}/3/test_3', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')";
-

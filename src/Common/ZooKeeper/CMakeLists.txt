@@ -12,8 +12,6 @@ target_link_libraries (clickhouse_common_zookeeper
         clickhouse_common_io
         clickhouse_compression
         common
-    PRIVATE
-        string_utils
 )
 
 # for examples -- no logging (to avoid extra dependencies)
@@ -23,8 +21,6 @@ target_link_libraries (clickhouse_common_zookeeper_no_log
         clickhouse_common_io
         clickhouse_compression
         common
-    PRIVATE
-        string_utils
 )
 if (ENABLE_EXAMPLES)
     add_subdirectory(examples)

@@ -39,6 +39,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -50,6 +51,11 @@ public:
                 getName(),
                 arguments.size());
 
+        return std::make_shared<DataTypeString>();
+    }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
         return std::make_shared<DataTypeString>();
     }
 
@@ -108,13 +114,13 @@ public:
                 }
                 write_helper.finalize();
 
-                /// Same as the normal `ColumnString` branch
-                has_column_string = true;
-                data[i - 1] = &converted_col_str->getChars();
-                offsets[i - 1] = &converted_col_str->getOffsets();
-
                 /// Keep the pointer alive
                 converted_col_ptrs[i - 1] = std::move(converted_col_str);
+
+                /// Same as the normal `ColumnString` branch
+                has_column_string = true;
+                data[i - 1] = &converted_col_ptrs[i - 1]->getChars();
+                offsets[i - 1] = &converted_col_ptrs[i - 1]->getOffsets();
             }
         }
 

@@ -5,8 +5,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-USER_FILES_PATH=$(clickhouse-client --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
-
 $CLICKHOUSE_CLIENT -q "insert into table function file(data.jsonl, 'JSONEachRow', 'x UInt32 default 42, y String') select number as x, 'String' as y from numbers(10)"
 
 $CLICKHOUSE_CLIENT -q "drop table if exists test"
@@ -30,4 +28,3 @@ $CLICKHOUSE_CLIENT -q "detach table test_dist"
 $CLICKHOUSE_CLIENT -q "drop table test"
 $CLICKHOUSE_CLIENT -q "attach table test_dist"
 $CLICKHOUSE_CLIENT --prefer_localhost_replica=1 -q "select * from test_dist" 2>&1 | grep -q "UNKNOWN_TABLE" && echo "OK" || echo "FAIL"
-

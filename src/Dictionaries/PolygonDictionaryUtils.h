@@ -1,7 +1,9 @@
 #pragma once
 
 #include <base/types.h>
+#include <Common/iota.h>
 #include <Common/ThreadPool.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Poco/Logger.h>
 
 #include <boost/geometry.hpp>
@@ -82,7 +84,7 @@ private:
     /** Auxiliary function for adding ring to the index */
     void indexAddRing(const Ring & ring, size_t polygon_id);
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     /** Sorted distinct coordinates of all vertices */
     std::vector<Coord> sorted_x;
@@ -156,6 +158,12 @@ public:
         auto y_ratio = y * kSplit;
         auto x_bin = static_cast<int>(x_ratio);
         auto y_bin = static_cast<int>(y_ratio);
+        /// In case if we have a lot of values and argument is very close to max_x (max_y) so x_ratio (y_ratio) = 1.
+        if (x_bin == kSplit)
+            --x_bin;
+        /// => x_bin (y_bin) will be 4, which can lead to wrong vector access.
+        if (y_bin == kSplit)
+            --y_bin;
         return children[y_bin + x_bin * kSplit]->find(x_ratio - x_bin, y_ratio - y_bin);
     }
 
@@ -184,7 +192,7 @@ public:
     {
         setBoundingBox();
         std::vector<size_t> order(polygons.size());
-        std::iota(order.begin(), order.end(), 0);
+        iota(order.data(), order.size(), size_t(0));
         root = makeCell(min_x, min_y, max_x, max_y, order);
     }
 
@@ -207,7 +215,7 @@ public:
     static constexpr Coord kEps = 1e-4f;
 
 private:
-    std::unique_ptr<ICell<ReturnCell>> root = nullptr;
+    std::unique_ptr<ICell<ReturnCell>> root;
     Coord min_x = 0, min_y = 0;
     Coord max_x = 0, max_y = 0;
     const size_t k_min_intersections;
@@ -243,10 +251,11 @@ private:
         auto y_shift = (current_max_y - current_min_y) / DividedCell<ReturnCell>::kSplit;
         std::vector<std::unique_ptr<ICell<ReturnCell>>> children;
         children.resize(DividedCell<ReturnCell>::kSplit * DividedCell<ReturnCell>::kSplit);
-        std::vector<ThreadFromGlobalPool> threads{};
+
+        ThreadPoolCallbackRunnerLocal<void, GlobalThreadPool> runner(GlobalThreadPool::instance(), "PolygonDict");
         for (size_t i = 0; i < DividedCell<ReturnCell>::kSplit; current_min_x += x_shift, ++i)
         {
-            auto handle_row = [this, &children, &y_shift, &x_shift, &possible_ids, &depth, i](Coord x, Coord y)
+            auto handle_row = [this, &children, &y_shift, &x_shift, &possible_ids, &depth, i, x = current_min_x, y = current_min_y]() mutable
             {
                 for (size_t j = 0; j < DividedCell<ReturnCell>::kSplit; y += y_shift, ++j)
                 {
@@ -254,12 +263,11 @@ private:
                 }
             };
             if (depth <= kMultiProcessingDepth)
-                threads.emplace_back(handle_row, current_min_x, current_min_y);
+                runner(std::move(handle_row));
             else
-                handle_row(current_min_x, current_min_y);
+                handle_row();
         }
-        for (auto & thread : threads)
-            thread.join();
+        runner.waitForAllToFinishAndRethrowFirstError();
         return std::make_unique<DividedCell<ReturnCell>>(std::move(children));
     }
 

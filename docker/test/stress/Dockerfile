@@ -19,12 +19,8 @@ RUN apt-get update -y \
             openssl \
             netcat-openbsd \
             brotli \
-    && apt-get clean
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
-COPY run.sh /
-
-ENV DATASETS="hits visits"
-ENV S3_URL="https://clickhouse-datasets.s3.amazonaws.com"
 ENV EXPORT_S3_STORAGE_POLICIES=1
 
-CMD ["/bin/bash", "/run.sh"]

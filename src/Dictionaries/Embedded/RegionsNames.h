@@ -7,6 +7,8 @@
 #include <base/types.h>
 #include "GeodataProviders/INamesProvider.h"
 
+namespace DB
+{
 
 /** A class that allows you to recognize by region id its text name in one of the supported languages.
   *
@@ -33,9 +35,10 @@ class RegionsNames
     M(et, ru, 11) \
     M(pt, en, 12) \
     M(he, en, 13) \
-    M(vi, en, 14)
+    M(vi, en, 14) \
+    M(es, en, 15)
 
-    static constexpr size_t total_languages = 15;
+    static constexpr size_t total_languages = 16;
 
 public:
     enum class Language : size_t
@@ -46,14 +49,14 @@ public:
     };
 
 private:
-    static inline constexpr const char * languages[] =
+    static constexpr const char * languages[] =
     {
         #define M(NAME, FALLBACK, NUM) #NAME,
         FOR_EACH_LANGUAGE(M)
         #undef M
     };
 
-    static inline constexpr Language fallbacks[] =
+    static constexpr Language fallbacks[] =
     {
         #define M(NAME, FALLBACK, NUM) Language::FALLBACK,
         FOR_EACH_LANGUAGE(M)
@@ -111,3 +114,5 @@ public:
 
     void reload();
 };
+
+}

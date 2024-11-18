@@ -1,9 +1,12 @@
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/ParserCreateFunctionQuery.h>
-#include <Parsers/ParserBackupQuery.h>
+#include <Parsers/ParserCreateWorkloadQuery.h>
+#include <Parsers/ParserCreateResourceQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserCreateIndexQuery.h>
 #include <Parsers/ParserDropFunctionQuery.h>
+#include <Parsers/ParserDropWorkloadQuery.h>
+#include <Parsers/ParserDropResourceQuery.h>
 #include <Parsers/ParserDropIndexQuery.h>
 #include <Parsers/ParserDropNamedCollectionQuery.h>
 #include <Parsers/ParserAlterNamedCollectionQuery.h>
@@ -19,6 +22,7 @@
 #include <Parsers/ParserExternalDDLQuery.h>
 #include <Parsers/ParserTransactionControl.h>
 #include <Parsers/ParserDeleteQuery.h>
+#include <Parsers/ParserSelectQuery.h>
 
 #include <Parsers/Access/ParserCreateQuotaQuery.h>
 #include <Parsers/Access/ParserCreateRoleQuery.h>
@@ -37,7 +41,9 @@ namespace DB
 
 bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    /// QueryWithOutput includes SELECT, SELECT with UNION ALL, SHOW, and similar:
     ParserQueryWithOutput query_with_output_p(end, allow_settings_after_format_in_insert);
+
     ParserInsertQuery insert_p(end, allow_settings_after_format_in_insert);
     ParserUseQuery use_p;
     ParserSetQuery set_p;
@@ -49,6 +55,10 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserCreateSettingsProfileQuery create_settings_profile_p;
     ParserCreateFunctionQuery create_function_p;
     ParserDropFunctionQuery drop_function_p;
+    ParserCreateWorkloadQuery create_workload_p;
+    ParserDropWorkloadQuery drop_workload_p;
+    ParserCreateResourceQuery create_resource_p;
+    ParserDropResourceQuery drop_resource_p;
     ParserCreateNamedCollectionQuery create_named_collection_p;
     ParserDropNamedCollectionQuery drop_named_collection_p;
     ParserAlterNamedCollectionQuery alter_named_collection_p;
@@ -61,7 +71,11 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserExternalDDLQuery external_ddl_p;
     ParserTransactionControl transaction_control_p;
     ParserDeleteQuery delete_p;
-    ParserBackupQuery backup_p;
+
+    /// SELECT queries are already attempted to parse by ParserQueryWithOutput,
+    /// but here we also try "implicit SELECT" after all other options.
+    /// It allows to use ClickHouse as a calculator, to process queries like `1 + 2` without the SELECT keyword.
+    ParserSelectQuery implicit_select_p(true);
 
     bool res = query_with_output_p.parse(pos, node, expected)
         || insert_p.parse(pos, node, expected)
@@ -76,6 +90,10 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || create_settings_profile_p.parse(pos, node, expected)
         || create_function_p.parse(pos, node, expected)
         || drop_function_p.parse(pos, node, expected)
+        || create_workload_p.parse(pos, node, expected)
+        || drop_workload_p.parse(pos, node, expected)
+        || create_resource_p.parse(pos, node, expected)
+        || drop_resource_p.parse(pos, node, expected)
         || create_named_collection_p.parse(pos, node, expected)
         || drop_named_collection_p.parse(pos, node, expected)
         || alter_named_collection_p.parse(pos, node, expected)
@@ -87,7 +105,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || external_ddl_p.parse(pos, node, expected)
         || transaction_control_p.parse(pos, node, expected)
         || delete_p.parse(pos, node, expected)
-        || backup_p.parse(pos, node, expected);
+        || (implicit_select && implicit_select_p.parse(pos, node, expected));
 
     return res;
 }

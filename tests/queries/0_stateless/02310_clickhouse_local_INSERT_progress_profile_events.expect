@@ -1,4 +1,6 @@
 #!/usr/bin/expect -f
+# Tags: no-debug, no-tsan, no-msan, no-asan, no-ubsan, no-s3-storage, no-cpu-aarch64
+# ^ it can be slower than 60 seconds
 
 # This is the regression for the concurrent access in ProgressIndication,
 # so it is important to read enough rows here (10e6).
@@ -8,7 +10,12 @@
 
 set basedir [file dirname $argv0]
 set basename [file tail $argv0]
-exp_internal -f $env(CLICKHOUSE_TMP)/$basename.debuglog 0
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
 
 log_user 0
 set timeout 60

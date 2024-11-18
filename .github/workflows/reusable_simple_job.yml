@@ -1,0 +1,96 @@
+### For the pure soul wishes to move it to another place
+# https://github.com/orgs/community/discussions/9050
+
+name: Simple job
+'on':
+  workflow_call:
+    inputs:
+      test_name:
+        description: the value of test type from tests/ci/ci_config.py, ends up as $CHECK_NAME ENV
+        required: true
+        type: string
+      runner_type:
+        description: the label of runner to use
+        required: true
+        type: string
+      run_command:
+        description: the command to launch the check
+        default: ""
+        required: false
+        type: string
+      checkout_depth:
+        description: the value of the git shallow checkout
+        required: false
+        type: number
+        default: 1
+      submodules:
+        description: if the submodules should be checked out
+        required: false
+        type: boolean
+        default: false
+      additional_envs:
+        description: additional ENV variables to setup the job
+        type: string
+      working-directory:
+        description: sets custom working directory
+        type: string
+        default: "$GITHUB_WORKSPACE/tests/ci"
+      git_ref:
+        description: commit to use, merge commit for pr or head
+        required: false
+        type: string
+        default: ${{ github.event.after }} # no merge commit
+      report_required:
+        description: set to true if job report with the commit status required
+        type: boolean
+        default: false
+    secrets:
+      secret_envs:
+        description: if given, it's passed to the environments
+        required: false
+
+
+env:
+  # Force the stdout and stderr streams to be unbuffered
+  PYTHONUNBUFFERED: 1
+  CHECK_NAME: ${{inputs.test_name}}
+
+jobs:
+  Test:
+    runs-on: [self-hosted, '${{inputs.runner_type}}']
+    name: ${{inputs.test_name}}
+    env:
+      GITHUB_JOB_OVERRIDDEN: ${{inputs.test_name}}
+    steps:
+      - name: Check out repository code
+        uses: ClickHouse/checkout@v1
+        with:
+          clear-repository: true
+          ref: ${{ inputs.git_ref }}
+          submodules: ${{inputs.submodules}}
+          fetch-depth: ${{inputs.checkout_depth}}
+          filter: tree:0
+      - name: Debug Info
+        uses: ./.github/actions/debug
+      - name: Set build envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          CHECK_NAME=${{ inputs.test_name }}
+          ${{inputs.additional_envs}}
+          ${{secrets.secret_envs}}
+          EOF
+      - name: Common setup
+        uses: ./.github/actions/common_setup
+        with:
+          job_type: test
+      - name: Run
+        run: |
+          cd "${{ inputs.working-directory }}"
+          ${{ inputs.run_command }}
+      - name: Post
+        if: ${{ inputs.report_required }}
+        run: |
+          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --post --job-name '${{inputs.test_name}}'
+      - name: Clean
+        if: always()
+        uses: ./.github/actions/clean

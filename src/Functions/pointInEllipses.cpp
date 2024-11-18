@@ -89,10 +89,13 @@ private:
         return std::make_shared<DataTypeUInt8>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeUInt8>();
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto size = input_rows_count;
-
         /// Prepare array of ellipses.
         size_t ellipses_count = (arguments.size() - 2) / 4;
         std::vector<Ellipse> ellipses(ellipses_count);
@@ -141,29 +144,31 @@ private:
 
                 auto dst = ColumnVector<UInt8>::create();
                 auto & dst_data = dst->getData();
-                dst_data.resize(size);
+                dst_data.resize(input_rows_count);
 
                 size_t start_index = 0;
-                for (const auto row : collections::range(0, size))
-                {
+                for (size_t row = 0; row < input_rows_count; ++row)
                     dst_data[row] = isPointInEllipses(col_vec_x->getData()[row], col_vec_y->getData()[row], ellipses.data(), ellipses_count, start_index);
-                }
 
                 return dst;
         }
-        else if (const_cnt == 2)
+        if (const_cnt == 2)
         {
-            const auto * col_const_x = assert_cast<const ColumnConst *> (col_x);
-            const auto * col_const_y = assert_cast<const ColumnConst *> (col_y);
+            const auto * col_const_x = assert_cast<const ColumnConst *>(col_x);
+            const auto * col_const_y = assert_cast<const ColumnConst *>(col_y);
             size_t start_index = 0;
-            UInt8 res = isPointInEllipses(col_const_x->getValue<Float64>(), col_const_y->getValue<Float64>(), ellipses.data(), ellipses_count, start_index);
-            return DataTypeUInt8().createColumnConst(size, res);
+            UInt8 res = isPointInEllipses(
+                col_const_x->getValue<Float64>(), col_const_y->getValue<Float64>(), ellipses.data(), ellipses_count, start_index);
+            return DataTypeUInt8().createColumnConst(input_rows_count, res);
         }
-        else
-        {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types {}, {} of arguments 1, 2 of function {}. "
-                "Both must be either const or vector", col_x->getName(), col_y->getName(), getName());
-        }
+
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Illegal types {}, {} of arguments 1, 2 of function {}. "
+            "Both must be either const or vector",
+            col_x->getName(),
+            col_y->getName(),
+            getName());
     }
 
     static bool isPointInEllipses(Float64 x, Float64 y, const Ellipse * ellipses, size_t ellipses_count, size_t & start_index)

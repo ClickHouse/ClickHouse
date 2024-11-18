@@ -40,10 +40,10 @@ public:
     CompressionCodecPtr getDefaultCodec() const;
 
     /// Validate codecs AST specified by user and parses codecs description (substitute default parameters)
-    ASTPtr validateCodecAndGetPreprocessedAST(const ASTPtr & ast, const DataTypePtr & column_type, bool sanity_check, bool allow_experimental_codecs, bool enable_deflate_qpl_codec) const;
+    ASTPtr validateCodecAndGetPreprocessedAST(const ASTPtr & ast, const DataTypePtr & column_type, bool sanity_check, bool allow_experimental_codecs, bool enable_zstd_qat_codec) const;
 
     /// Validate codecs AST specified by user
-    void validateCodec(const String & family_name, std::optional<int> level, bool sanity_check, bool allow_experimental_codecs, bool enable_deflate_qpl_codec) const;
+    void validateCodec(const String & family_name, std::optional<int> level, bool sanity_check, bool allow_experimental_codecs, bool enable_zstd_qat_codec) const;
 
     /// Get codec by AST and possible column_type. Some codecs can use
     /// information about type to improve inner settings, but every codec should
@@ -67,6 +67,9 @@ public:
 
     /// For backward compatibility with config settings
     CompressionCodecPtr get(const String & family_name, std::optional<int> level) const;
+
+    /// Get codec by name with optional params. Example: LZ4, ZSTD(3)
+    CompressionCodecPtr get(const String & compression_codec) const;
 
     /// Register codec with parameters and column type
     void registerCompressionCodecWithType(const String & family_name, std::optional<uint8_t> byte_code, CreatorWithType creator);

@@ -40,10 +40,17 @@ OPTIMIZE TABLE shard_0.from_0;
 OPTIMIZE TABLE shard_1.from_0;
 OPTIMIZE TABLE shard_0.from_1;
 OPTIMIZE TABLE shard_1.from_1;
+
 OPTIMIZE TABLE shard_0.to;
+
+-- If moved parts are not merged by OPTIMIZE or background merge restart
+-- can log Warning about metadata version on disk. It's normal situation
+-- and test shouldn't rarely fail because of it.
+set send_logs_level = 'error';
 
 system restart replica shard_0.to;
 
+-- Doesn't lead to test flakyness, because we don't check anything after it
 select sleep(2);
 
 attach table shard_1.to;
@@ -54,4 +61,3 @@ drop table if exists shard_0.from_1;
 drop table if exists shard_1.from_1;
 drop table if exists shard_0.to;
 drop table if exists shard_1.to;
-

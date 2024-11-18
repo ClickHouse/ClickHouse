@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/System/IStorageSystemOneBlock.h>
+#include <Storages/IStorage.h>
 
 namespace DB
 {
@@ -14,7 +14,8 @@ public:
 
     bool isSystemStorage() const override { return true; }
 
-    Pipe read(
+    void read(
+        QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,

@@ -29,7 +29,6 @@ protected:
     size_t bytes_to_ignore = 0;           /// How many bytes should we ignore upon a new read request.
     int fd;
     ThrottlerPtr throttler;
-    bool use_external_buffer;
 
     bool nextImpl() override;
 
@@ -47,8 +46,7 @@ public:
         char * existing_memory = nullptr,
         size_t alignment = 0,
         std::optional<size_t> file_size_ = std::nullopt,
-        ThrottlerPtr throttler_ = {},
-        bool use_external_buffer_ = false);
+        ThrottlerPtr throttler_ = {});
 
     ~AsynchronousReadBufferFromFileDescriptor() override;
 
@@ -70,7 +68,7 @@ public:
     /// Seek to the beginning, discarding already read data if any. Useful to reread file that changes on every read.
     void rewind();
 
-    size_t getFileSize() override;
+    std::optional<size_t> tryGetFileSize() override;
 
     size_t getFileOffsetOfBufferEnd() const override { return file_offset_of_buffer_end; }
 

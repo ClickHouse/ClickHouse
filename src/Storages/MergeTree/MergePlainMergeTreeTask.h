@@ -20,6 +20,7 @@ public:
         StorageMetadataPtr metadata_snapshot_,
         bool deduplicate_,
         Names deduplicate_by_columns_,
+        bool cleanup_,
         MergeMutateSelectedEntryPtr merge_mutate_entry_,
         TableLockHolder table_lock_holder_,
         IExecutableTask::TaskResultCallback & task_result_callback_)
@@ -27,6 +28,7 @@ public:
         , metadata_snapshot(std::move(metadata_snapshot_))
         , deduplicate(deduplicate_)
         , deduplicate_by_columns(std::move(deduplicate_by_columns_))
+        , cleanup(cleanup_)
         , merge_mutate_entry(std::move(merge_mutate_entry_))
         , table_lock_holder(std::move(table_lock_holder_))
         , task_result_callback(task_result_callback_)
@@ -51,7 +53,7 @@ private:
     void prepare();
     void finish();
 
-    enum class State
+    enum class State : uint8_t
     {
         NEED_PREPARE,
         NEED_EXECUTE,
@@ -67,6 +69,7 @@ private:
     StorageMetadataPtr metadata_snapshot;
     bool deduplicate;
     Names deduplicate_by_columns;
+    bool cleanup;
     MergeMutateSelectedEntryPtr merge_mutate_entry{nullptr};
     TableLockHolder table_lock_holder;
     FutureMergedMutatedPartPtr future_part{nullptr};
