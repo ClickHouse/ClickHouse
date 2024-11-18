@@ -226,6 +226,27 @@ template class TableFunctionObjectStorage<HDFSClusterDefinition, StorageHDFSConf
 #endif
 template class TableFunctionObjectStorage<LocalDefinition, StorageLocalConfiguration>;
 
+#if USE_AVRO && USE_AWS_S3
+template class TableFunctionObjectStorage<IcebergClusterDefinition, StorageS3IcebergConfiguration>;
+template class TableFunctionObjectStorage<IcebergS3ClusterDefinition, StorageS3IcebergConfiguration>;
+#endif
+
+#if USE_AVRO && USE_AZURE_BLOB_STORAGE
+template class TableFunctionObjectStorage<IcebergAzureClusterDefinition, StorageAzureIcebergConfiguration>;
+#endif
+
+#if USE_AVRO &&  USE_HDFS
+template class TableFunctionObjectStorage<IcebergHDFSClusterDefinition, StorageHDFSIcebergConfiguration>;
+#endif
+
+#if USE_AWS_S3 && USE_PARQUET
+template class TableFunctionObjectStorage<DeltaLakeClusterDefinition, StorageS3DeltaLakeConfiguration>;
+#endif
+
+#if USE_AWS_S3
+template class TableFunctionObjectStorage<HudiClusterDefinition, StorageS3HudiConfiguration>;
+#endif
+
 #if USE_AVRO
 void registerTableFunctionIceberg(TableFunctionFactory & factory)
 {
