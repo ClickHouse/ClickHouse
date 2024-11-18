@@ -803,9 +803,8 @@ private:
             using LeftDataType = typename Types::LeftType;
             using RightDataType = typename Types::RightType;
 
-            if (check_decimal_overflow)
-                return (res = DecimalComparison<LeftDataType, RightDataType, Op, true>::apply(col_left, col_right)) != nullptr;
-            return (res = DecimalComparison<LeftDataType, RightDataType, Op, false>::apply(col_left, col_right)) != nullptr;
+            return (res = DecimalComparison<LeftDataType, RightDataType, Op>::apply(col_left, col_right, check_decimal_overflow))
+                != nullptr;
         };
 
         if (!callOnAtLeastOneDecimalType<true, false, true, true>(left_number, right_number, call))

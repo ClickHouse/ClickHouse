@@ -1307,7 +1307,8 @@ namespace
                         {
                             if (decimal.value == 0)
                                 writeInt(0);
-                            else if (DecimalComparison<DecimalType, int, EqualsOp>::compare(decimal, 1, scale, 0))
+                            else if (DecimalComparison<DecimalType, int, EqualsOp>::compare(
+                                         decimal, 1, scale, 0, /* check overflow */ true))
                                 writeInt(1);
                             else
                             {
