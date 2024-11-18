@@ -977,13 +977,13 @@ bool applyFunctionChainToColumn(
 
     // And cast it to the argument type of the first function in the chain
     auto in_argument_type = functions[0]->getArgumentTypes()[0];
-    if (canBeSafelyCasted(result_type, in_argument_type))
+    if (canBeSafelyCast(result_type, in_argument_type))
     {
         result_column = castColumnAccurate({result_column, result_type, ""}, in_argument_type);
         result_type = in_argument_type;
     }
-    // If column cannot be casted accurate, casting with OrNull, and in case all
-    // values has been casted (no nulls), unpacking nested column from nullable.
+    // If column cannot be cast accurate, casting with OrNull, and in case all
+    // values has been cast (no nulls), unpacking nested column from nullable.
     // In case any further functions require Nullable input, they'll be able
     // to cast it.
     else
@@ -1006,7 +1006,7 @@ bool applyFunctionChainToColumn(
             return false;
 
         auto argument_type = func->getArgumentTypes()[0];
-        if (!canBeSafelyCasted(result_type, argument_type))
+        if (!canBeSafelyCast(result_type, argument_type))
             return false;
 
         result_column = castColumnAccurate({result_column, result_type, ""}, argument_type);
@@ -1306,7 +1306,7 @@ bool KeyCondition::tryPrepareSetIndex(
             is_constant_transformed = true;
         }
 
-        if (canBeSafelyCasted(set_element_type, key_column_type))
+        if (canBeSafelyCast(set_element_type, key_column_type))
         {
             transformed_set_columns[set_element_index] = castColumn({set_column, set_element_type, {}}, key_column_type);
             continue;
@@ -2085,7 +2085,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
             else
                 key_expr_type_not_null = key_expr_type;
 
-            bool cast_not_needed = is_set_const /// Set args are already casted inside Set::createFromAST
+            bool cast_not_needed = is_set_const /// Set args are already cast inside Set::createFromAST
                 || ((isNativeInteger(key_expr_type_not_null) || isDateTime(key_expr_type_not_null))
                     && (isNativeInteger(const_type) || isDateTime(const_type))); /// Native integers and DateTime are accurately compared without cast.
 
