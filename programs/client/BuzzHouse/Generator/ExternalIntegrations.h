@@ -44,7 +44,7 @@ public:
 
     ClickHouseIntegration() { buf.reserve(4096); }
 
-    virtual bool performIntegration(RandomGenerator & rg, const uint32_t tname, std::vector<InsertEntry> & entries) = 0;
+    virtual bool performIntegration(RandomGenerator & rg, uint32_t tname, std::vector<InsertEntry> & entries) = 0;
 
     virtual ~ClickHouseIntegration() = default;
 };
@@ -53,14 +53,14 @@ class ClickHouseIntegratedDatabase : public ClickHouseIntegration
 {
 public:
     std::ofstream out_file;
-    ClickHouseIntegratedDatabase(const std::filesystem::path & query_log_file)
+    explicit ClickHouseIntegratedDatabase(const std::filesystem::path & query_log_file)
         : ClickHouseIntegration(), out_file(std::ofstream(query_log_file, std::ios::out | std::ios::trunc))
     {
     }
 
     virtual bool performQuery(const std::string & buf) = 0;
 
-    virtual std::string getTableName(const uint32_t tname) = 0;
+    virtual std::string getTableName(uint32_t tname) = 0;
 
     virtual void getTypeString(RandomGenerator & rg, const SQLType * tp, std::string & out) const = 0;
 
@@ -75,6 +75,8 @@ public:
 
         if (performQuery(buf))
         {
+            bool first = true;
+
             buf.resize(0);
             buf += "CREATE TABLE ";
             buf += str_tname;
@@ -84,11 +86,9 @@ public:
             {
                 std::shuffle(entries.begin(), entries.end(), rg.generator);
             }
-            for (size_t i = 0; i < entries.size(); i++)
+            for (const auto & entry : entries)
             {
-                const InsertEntry & entry = entries[i];
-
-                if (i != 0)
+                if (first)
                 {
                     buf += ", ";
                 }
@@ -103,6 +103,7 @@ public:
                     buf += "NULL";
                 }
                 assert(!entry.cname2.has_value());
+                first = false;
             }
             buf += ");";
             return performQuery(buf);
@@ -135,12 +136,12 @@ public:
         }
         else if (!mysql_real_connect(
                      mcon,
-                     fc.mysql_server.hostname == "" ? nullptr : fc.mysql_server.hostname.c_str(),
-                     fc.mysql_server.user == "" ? nullptr : fc.mysql_server.user.c_str(),
-                     fc.mysql_server.password == "" ? nullptr : fc.mysql_server.password.c_str(),
+                     fc.mysql_server.hostname.empty() ? nullptr : fc.mysql_server.hostname.c_str(),
+                     fc.mysql_server.user.empty() ? nullptr : fc.mysql_server.user.c_str(),
+                     fc.mysql_server.password.empty() ? nullptr : fc.mysql_server.password.c_str(),
                      nullptr,
                      fc.mysql_server.port,
-                     fc.mysql_server.unix_socket == "" ? nullptr : fc.mysql_server.unix_socket.c_str(),
+                     fc.mysql_server.unix_socket.empty() ? nullptr : fc.mysql_server.unix_socket.c_str(),
                      0))
         {
             std::cerr << "MySQL connection error: " << mysql_error(mcon) << std::endl;
@@ -226,14 +227,14 @@ public:
     static PostgreSQLIntegration * TestAndAddPostgreSQLIntegration(const FuzzConfig & fc)
     {
         bool has_something = false;
-        std::string connection_str = "";
+        std::string connection_str;
         pqxx::connection * pcon = nullptr;
         PostgreSQLIntegration * psql = nullptr;
 
-        if (fc.postgresql_server.unix_socket != "" || fc.postgresql_server.hostname != "")
+        if (!fc.postgresql_server.unix_socket.empty() || !fc.postgresql_server.hostname.empty())
         {
             connection_str += "host='";
-            connection_str += fc.postgresql_server.unix_socket != "" ? fc.postgresql_server.unix_socket : fc.postgresql_server.hostname;
+            connection_str += fc.postgresql_server.unix_socket.empty() ? fc.postgresql_server.hostname : fc.postgresql_server.unix_socket;
             connection_str += "'";
             has_something = true;
         }
@@ -248,7 +249,7 @@ public:
             connection_str += "'";
             has_something = true;
         }
-        if (fc.postgresql_server.user != "")
+        if (!fc.postgresql_server.user.empty())
         {
             if (has_something)
             {
@@ -259,7 +260,7 @@ public:
             connection_str += "'";
             has_something = true;
         }
-        if (fc.postgresql_server.password != "")
+        if (!fc.postgresql_server.password.empty())
         {
             if (has_something)
             {
@@ -269,7 +270,7 @@ public:
             connection_str += fc.postgresql_server.password;
             connection_str += "'";
         }
-        if (fc.postgresql_server.database != "")
+        if (!fc.postgresql_server.database.empty())
         {
             if (has_something)
             {
@@ -281,7 +282,7 @@ public:
         }
         try
         {
-            if (!(pcon = new pqxx::connection(std::move(connection_str))))
+            if (!(pcon = new pqxx::connection(connection_str)))
             {
                 std::cerr << "Could not initialize PostgreSQL handle" << std::endl;
             }
@@ -329,7 +330,7 @@ public:
             pqxx::work w(*postgres_connection);
 
             out_file << query << std::endl;
-            (void)w.exec(query.c_str());
+            (void)w.exec(query);
             w.commit();
             return true;
         }
@@ -405,7 +406,7 @@ public:
 
     bool performQuery(const std::string & query) override
     {
-        char * err_msg = NULL;
+        char * err_msg = nullptr;
 
         if (!sqlite_connection)
         {
@@ -434,7 +435,7 @@ public:
 class SQLiteIntegration : public ClickHouseIntegration
 {
 public:
-    const std::filesystem::path sqlite_path = "";
+    const std::filesystem::path sqlite_path;
 
     SQLiteIntegration() : ClickHouseIntegration() { }
 
@@ -493,10 +494,10 @@ public:
     {
         std::string connection_str = "mongodb://";
 
-        if (fc.mongodb_server.user != "")
+        if (!fc.mongodb_server.user.empty())
         {
             connection_str += fc.mongodb_server.user;
-            if (fc.mongodb_server.password != "")
+            if (!fc.mongodb_server.password.empty())
             {
                 connection_str += ":";
                 connection_str += fc.mongodb_server.password;
@@ -619,7 +620,7 @@ private:
     bool sendRequest(const std::string & resource);
 
 public:
-    MinIOIntegration(const FuzzConfig & fc) : ClickHouseIntegration(), sc(fc.minio_server) { }
+    explicit MinIOIntegration(const FuzzConfig & fc) : ClickHouseIntegration(), sc(fc.minio_server) { }
 
     bool performIntegration(RandomGenerator &, const uint32_t tname, std::vector<InsertEntry> &) override
     {
@@ -666,13 +667,13 @@ public:
         next_call_succeeded = false;
     }
 
-    ExternalIntegrations(const FuzzConfig & fc)
+    explicit ExternalIntegrations(const FuzzConfig & fc)
     {
-        if (fc.mysql_server.port || fc.mysql_server.unix_socket != "")
+        if (fc.mysql_server.port || !fc.mysql_server.unix_socket.empty())
         {
             mysql = MySQLIntegration::TestAndAddMySQLIntegration(fc);
         }
-        if (fc.postgresql_server.port || fc.postgresql_server.unix_socket != "")
+        if (fc.postgresql_server.port || !fc.postgresql_server.unix_socket.empty())
         {
             postresql = PostgreSQLIntegration::TestAndAddPostgreSQLIntegration(fc);
         }
@@ -685,7 +686,7 @@ public:
         {
             redis = new RedisIntegration();
         }
-        if (fc.minio_server.user != "" && fc.minio_server.password != "")
+        if (!fc.minio_server.user.empty() && !fc.minio_server.password.empty())
         {
             minio = new MinIOIntegration(fc);
         }

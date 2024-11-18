@@ -3302,7 +3302,7 @@ CONV_FN(ExplainQuery, explain)
     {
         for (int i = 0; i < explain.opts_size(); i++)
         {
-            std::string ostr = "";
+            std::string ostr;
             const ExplainOption & eopt = explain.opts(i);
 
             if (i != 0)

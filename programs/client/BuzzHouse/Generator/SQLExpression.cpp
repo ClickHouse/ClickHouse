@@ -116,7 +116,7 @@ int StatementGenerator::refColumn(RandomGenerator & rg, const GroupCol & gcol, E
     ExprSchemaTableColumn * estc = expr->mutable_comp_expr()->mutable_expr_stc();
     ExprColumn * ecol = estc->mutable_col();
 
-    if (gcol.col.rel_name != "")
+    if (!gcol.col.rel_name.empty())
     {
         estc->mutable_table()->set_table(gcol.col.rel_name);
     }

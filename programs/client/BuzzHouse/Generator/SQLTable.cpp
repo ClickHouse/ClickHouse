@@ -51,7 +51,7 @@ void StatementGenerator::addTableRelation(
             }
         }
     }
-    if (rel_name == "")
+    if (rel_name.empty())
     {
         this->levels[this->current_level] = QueryLevel(this->current_level);
     }

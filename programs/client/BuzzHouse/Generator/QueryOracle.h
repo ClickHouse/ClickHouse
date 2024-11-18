@@ -18,9 +18,9 @@ private:
     std::vector<std::string> nsettings;
 
 public:
-    QueryOracle(const FuzzConfig & ffc) : fc(ffc) { buf.reserve(4096); }
+    explicit QueryOracle(const FuzzConfig & ffc) : fc(ffc) { buf.reserve(4096); }
 
-    int processOracleQueryResult(const bool first, const bool success, const std::string & oracle_name);
+    int processOracleQueryResult(bool first, bool success, const std::string & oracle_name);
 
     /* Correctness query oracle */
     int generateCorrectnessTestFirstQuery(RandomGenerator & rg, StatementGenerator & generator, SQLQuery & sq);

@@ -17,9 +17,8 @@ public:
     uint64_t lower;
     int64_t upper;
 
-public:
     hugeint_t() = default;
-    hugeint_t(int64_t value);
+    explicit hugeint_t(int64_t value);
     constexpr hugeint_t(int64_t up, uint64_t lo) : lower(lo), upper(up) { }
     constexpr hugeint_t(const hugeint_t & rhs) = default;
     constexpr hugeint_t(hugeint_t && rhs) = default;

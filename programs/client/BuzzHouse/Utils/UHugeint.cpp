@@ -263,7 +263,7 @@ static uint8_t Bits(uhugeint_t x)
 
 static uhugeint_t divMod(uhugeint_t lhs, uhugeint_t rhs, uhugeint_t & remainder)
 {
-    if (rhs == 0)
+    if (rhs == uhugeint_t(0))
     {
         remainder = lhs;
         return uhugeint_t(0);
@@ -284,21 +284,21 @@ static uhugeint_t divMod(uhugeint_t lhs, uhugeint_t rhs, uhugeint_t & remainder)
         return uhugeint_t(0);
     }
 
-    uhugeint_t result = 0;
+    uhugeint_t result{0};
     for (uint8_t idx = Bits(lhs); idx > 0; --idx)
     {
-        result <<= 1;
-        remainder <<= 1;
+        result <<= uhugeint_t(1);
+        remainder <<= uhugeint_t(1);
 
-        if (((lhs >> (idx - 1U)) & 1) != 0)
+        if (((lhs >> uhugeint_t(idx - 1U)) & uhugeint_t(1)) != uhugeint_t(0))
         {
-            remainder += 1;
+            remainder += uhugeint_t(1);
         }
 
         if (remainder >= rhs)
         {
             remainder -= rhs;
-            result += 1;
+            result += uhugeint_t(1);
         }
     }
     return result;
@@ -341,7 +341,7 @@ uhugeint_t uhugeint_t::operator%(const uhugeint_t & rhs) const
 
 static uhugeint_t negateInPlace(const uhugeint_t & input)
 {
-    uhugeint_t result = 0;
+    uhugeint_t result{0};
     result -= input;
     return result;
 }
@@ -386,12 +386,12 @@ uhugeint_t & uhugeint_t::operator^=(const uhugeint_t & rhs)
 
 bool uhugeint_t::operator!() const
 {
-    return *this == 0;
+    return *this == uhugeint_t(0);
 }
 
 uhugeint_t::operator bool() const
 {
-    return *this != 0;
+    return *this != uhugeint_t(0);
 }
 
 void uhugeint_t::toString(std::string & res) const
@@ -405,7 +405,7 @@ void uhugeint_t::toString(std::string & res) const
         {
             break;
         }
-        input = divMod(input, 10, remainder);
+        input = divMod(input, uhugeint_t(10), remainder);
         in.insert(0, std::string(1, static_cast<char>('0' + remainder.lower)));
     }
     if (in.empty())

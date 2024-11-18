@@ -1429,7 +1429,7 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 const uint32_t fname = rg.pickKeyRandomlyFromMap(t.frozen_partitions);
                 const std::string & partition_id = t.frozen_partitions[fname];
 
-                if (partition_id != "")
+                if (!partition_id.empty())
                 {
                     fp->mutable_partition()->set_partition_id(partition_id);
                 }

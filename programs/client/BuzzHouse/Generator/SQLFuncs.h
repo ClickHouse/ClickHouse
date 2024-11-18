@@ -39,7 +39,7 @@ public:
 
 const constexpr uint32_t ulimited_params = 10000;
 
-const std::vector<const CHAggregate> CHAggrs = {
+const std::vector<CHAggregate> CHAggrs = {
     //standard aggregates
     CHAggregate(SQLFunc::FUNCcount, 0, 0, 0, 1, true, false),
     CHAggregate(SQLFunc::FUNCmin, 0, 0, 1, 1, false, false),
@@ -167,7 +167,7 @@ const std::vector<const CHAggregate> CHAggrs = {
 
 const CHFunction materialize = CHFunction(SQLFunc::FUNCmaterialize, 0, 0, 1, 1);
 
-const std::vector<const CHFunction> CHFuncs = {
+const std::vector<CHFunction> CHFuncs = {
     //arithmetic Functions
     CHFunction(SQLFunc::FUNCplus, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCminus, 0, 0, 2, 2),

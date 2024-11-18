@@ -17,7 +17,7 @@ public:
     std::string rel_name, name;
     std::optional<std::string> name2;
 
-    SQLRelationCol() { }
+    SQLRelationCol() = default;
 
     SQLRelationCol(const std::string rname, const std::string cname, std::optional<std::string> cname2)
         : rel_name(rname), name(cname), name2(cname2)
@@ -31,9 +31,9 @@ public:
     std::string name;
     std::vector<SQLRelationCol> cols;
 
-    SQLRelation() { }
+    SQLRelation() = default;
 
-    SQLRelation(const std::string n) : name(n) { }
+    explicit SQLRelation(const std::string n) : name(n) { }
 };
 
 class GroupCol
@@ -55,9 +55,9 @@ public:
     std::vector<SQLRelation> rels;
     std::vector<uint32_t> projections;
 
-    QueryLevel() { }
+    QueryLevel() = default;
 
-    QueryLevel(const uint32_t n) : level(n) { }
+    explicit QueryLevel(const uint32_t n) : level(n) { }
 };
 
 const constexpr uint32_t allow_set = (1 << 0), allow_cte = (1 << 1), allow_distinct = (1 << 2), allow_from = (1 << 3),
@@ -82,38 +82,9 @@ private:
     std::map<uint32_t, SQLFunction> staged_functions, functions;
 
     std::vector<std::string> enum_values
-        = {"'-1'",
-           "'0'",
-           "'1'",
-           "'10'",
-           "'1000'",
-           "'is'",
-           "'was'",
-           "'are'",
-           "'be'",
-           "'have'",
-           "'had'",
-           "'were'",
-           "'can'",
-           "'said'",
-           "'use'",
-           "','",
-           "'😀'",
-           "'😀😀😀😀'"
-           "'名字'",
-           "'兄弟姐妹'",
-           "''",
-           "'\\n'",
-           "x'c328'",
-           "x'e28228'",
-           "x'ff'",
-           "b'101'",
-           "b'100'",
-           "b'10001'",
-           "' '",
-           "'c0'",
-           "'c1'",
-           "'11'"};
+        = {"'-1'",    "'0'",       "'1'",    "'10'",   "'1000'", "'is'",     "'was'",      "'are'",  "'be'",       "'have'", "'had'",
+           "'were'",  "'can'",     "'said'", "'use'",  "','",    "'😀'",     "'😀😀😀😀'", "'名字'", "'兄弟姐妹'", "''",     "'\\n'",
+           "x'c328'", "x'e28228'", "x'ff'",  "b'101'", "b'100'", "b'10001'", "' '",        "'c0'",   "'c1'",       "'11'"};
 
     std::vector<uint32_t> ids;
     std::vector<InsertEntry> entries;
@@ -221,12 +192,12 @@ public:
 private:
     void insertEntryRef(const InsertEntry & entry, Expr * expr);
     void insertEntryRefCP(const InsertEntry & entry, ColumnPath * cp);
-    void addTableRelation(RandomGenerator & rg, const bool allow_internal_cols, const std::string & rel_name, const SQLTable & t);
+    void addTableRelation(RandomGenerator & rg, bool allow_internal_cols, const std::string & rel_name, const SQLTable & t);
 
     void strAppendBottomValue(RandomGenerator & rg, std::string & ret, const SQLType * tp);
     void strAppendMap(RandomGenerator & rg, std::string & ret, const MapType * mt);
     void strAppendArray(RandomGenerator & rg, std::string & ret, const ArrayType * at);
-    void strAppendArray(RandomGenerator & rg, std::string & ret, const ArrayType * at, const uint32_t limit);
+    void strAppendArray(RandomGenerator & rg, std::string & ret, const ArrayType * at, uint32_t limit);
     void strAppendTuple(RandomGenerator & rg, std::string & ret, const TupleType * at);
     void strAppendVariant(RandomGenerator & rg, std::string & ret, const VariantType * vtp);
     void strAppendAnyValueInternal(RandomGenerator & rg, std::string & ret, const SQLType * tp);
@@ -235,22 +206,15 @@ private:
     int generateNextStatistics(RandomGenerator & rg, ColumnStatistics * cstats);
     int pickUpNextCols(RandomGenerator & rg, const SQLTable & t, ColumnList * clist);
     int addTableColumn(
-        RandomGenerator & rg,
-        SQLTable & t,
-        const uint32_t cname,
-        const bool staged,
-        const bool modify,
-        const bool is_pk,
-        const ColumnSpecial special,
-        ColumnDef * cd);
-    int addTableIndex(RandomGenerator & rg, SQLTable & t, const bool staged, IndexDef * idef);
-    int addTableProjection(RandomGenerator & rg, SQLTable & t, const bool staged, ProjectionDef * pdef);
-    int addTableConstraint(RandomGenerator & rg, SQLTable & t, const bool staged, ConstraintDef * cdef);
+        RandomGenerator & rg, SQLTable & t, uint32_t cname, bool staged, bool modify, bool is_pk, ColumnSpecial special, ColumnDef * cd);
+    int addTableIndex(RandomGenerator & rg, SQLTable & t, bool staged, IndexDef * idef);
+    int addTableProjection(RandomGenerator & rg, SQLTable & t, bool staged, ProjectionDef * pdef);
+    int addTableConstraint(RandomGenerator & rg, SQLTable & t, bool staged, ConstraintDef * cdef);
     int generateTableKey(RandomGenerator & rg, TableKey * tkey);
-    int generateMergeTreeEngineDetails(RandomGenerator & rg, const TableEngineValues teng, const bool add_pkey, TableEngine * te);
-    int generateEngineDetails(RandomGenerator & rg, SQLBase & b, const bool add_pkey, TableEngine * te);
+    int generateMergeTreeEngineDetails(RandomGenerator & rg, TableEngineValues teng, bool add_pkey, TableEngine * te);
+    int generateEngineDetails(RandomGenerator & rg, SQLBase & b, bool add_pkey, TableEngine * te);
 
-    TableEngineValues getNextTableEngine(RandomGenerator & rg, const bool use_external_integrations);
+    TableEngineValues getNextTableEngine(RandomGenerator & rg, bool use_external_integrations);
 
     int generateNextRefreshableView(RandomGenerator & rg, RefreshableView * cv);
     int generateNextCreateView(RandomGenerator & rg, CreateView * cv);
@@ -271,7 +235,7 @@ private:
     int generateSettingValues(
         RandomGenerator & rg,
         const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> & settings,
-        const size_t nvalues,
+        size_t nvalues,
         SettingValues * vals);
     int generateSettingList(
         RandomGenerator & rg,
@@ -281,8 +245,8 @@ private:
     int generateDetach(RandomGenerator & rg, Detach * det);
     int generateNextCreateFunction(RandomGenerator & rg, CreateFunction * cf);
 
-    int addFieldAccess(RandomGenerator & rg, Expr * expr, const uint32_t nested_prob);
-    int addColNestedAccess(RandomGenerator & rg, ExprColumn * expr, const uint32_t nested_prob);
+    int addFieldAccess(RandomGenerator & rg, Expr * expr, uint32_t nested_prob);
+    int addColNestedAccess(RandomGenerator & rg, ExprColumn * expr, uint32_t nested_prob);
     int refColumn(RandomGenerator & rg, const GroupCol & gcol, Expr * expr);
     int generateSubquery(RandomGenerator & rg, Select * sel);
     int generateColRef(RandomGenerator & rg, Expr * expr);
@@ -290,52 +254,51 @@ private:
     int generatePredicate(RandomGenerator & rg, Expr * expr);
     int generateFrameBound(RandomGenerator & rg, Expr * expr);
     int generateExpression(RandomGenerator & rg, Expr * expr);
-    int generateLambdaCall(RandomGenerator & rg, const uint32_t nparams, LambdaExpr * lexpr);
-    int generateFuncCall(RandomGenerator & rg, const bool allow_funcs, const bool allow_aggr, SQLFuncCall * expr);
+    int generateLambdaCall(RandomGenerator & rg, uint32_t nparams, LambdaExpr * lexpr);
+    int generateFuncCall(RandomGenerator & rg, bool allow_funcs, bool allow_aggr, SQLFuncCall * expr);
 
-    int generateOrderBy(RandomGenerator & rg, const uint32_t ncols, const bool allow_settings, OrderByStatement * ob);
+    int generateOrderBy(RandomGenerator & rg, uint32_t ncols, bool allow_settings, OrderByStatement * ob);
 
     int generateLimitExpr(RandomGenerator & rg, Expr * expr);
-    int generateLimit(RandomGenerator & rg, const bool has_order_by, const uint32_t ncols, LimitStatement * ls);
+    int generateLimit(RandomGenerator & rg, bool has_order_by, uint32_t ncols, LimitStatement * ls);
     int generateOffset(RandomGenerator & rg, OffsetStatement * off);
     int generateGroupByExpr(
         RandomGenerator & rg,
-        const bool enforce_having,
-        const uint32_t offset,
-        const uint32_t ncols,
+        bool enforce_having,
+        uint32_t offset,
+        uint32_t ncols,
         const std::vector<SQLRelationCol> & available_cols,
         std::vector<GroupCol> & gcols,
         Expr * expr);
-    int generateGroupBy(
-        RandomGenerator & rg, const uint32_t ncols, const bool enforce_having, const bool allow_settings, GroupByStatement * gb);
+    int generateGroupBy(RandomGenerator & rg, uint32_t ncols, bool enforce_having, bool allow_settings, GroupByStatement * gb);
     int addWhereSide(RandomGenerator & rg, const std::vector<GroupCol> & available_cols, Expr * expr);
     int addWhereFilter(RandomGenerator & rg, const std::vector<GroupCol> & available_cols, Expr * expr);
     int generateWherePredicate(RandomGenerator & rg, Expr * expr);
     int addJoinClause(RandomGenerator & rg, BinaryExpr * bexpr);
     int generateArrayJoin(RandomGenerator & rg, ArrayJoin * aj);
-    int generateFromElement(RandomGenerator & rg, const uint32_t allowed_clauses, TableOrSubquery * tos);
-    int generateJoinConstraint(RandomGenerator & rg, const bool allow_using, JoinConstraint * jc);
-    int generateDerivedTable(RandomGenerator & rg, SQLRelation & rel, const uint32_t allowed_clauses, Select * sel);
-    int generateFromStatement(RandomGenerator & rg, const uint32_t allowed_clauses, FromStatement * ft);
-    int addCTEs(RandomGenerator & rg, const uint32_t allowed_clauses, CTEs * qctes);
-    int generateSelect(RandomGenerator & rg, const bool top, const uint32_t ncols, const uint32_t allowed_clauses, Select * sel);
+    int generateFromElement(RandomGenerator & rg, uint32_t allowed_clauses, TableOrSubquery * tos);
+    int generateJoinConstraint(RandomGenerator & rg, bool allow_using, JoinConstraint * jc);
+    int generateDerivedTable(RandomGenerator & rg, SQLRelation & rel, uint32_t allowed_clauses, Select * sel);
+    int generateFromStatement(RandomGenerator & rg, uint32_t allowed_clauses, FromStatement * ft);
+    int addCTEs(RandomGenerator & rg, uint32_t allowed_clauses, CTEs * qctes);
+    int generateSelect(RandomGenerator & rg, bool top, uint32_t ncols, uint32_t allowed_clauses, Select * sel);
 
-    int generateTopSelect(RandomGenerator & rg, const uint32_t allowed_clauses, TopSelect * sq);
+    int generateTopSelect(RandomGenerator & rg, uint32_t allowed_clauses, TopSelect * sq);
     int generateNextExplain(RandomGenerator & rg, ExplainQuery * sq);
     int generateNextQuery(RandomGenerator & rg, SQLQueryInner * sq);
 
-    std::tuple<const SQLType *, Integers> randomIntType(RandomGenerator & rg, const uint32_t allowed_types);
+    std::tuple<const SQLType *, Integers> randomIntType(RandomGenerator & rg, uint32_t allowed_types);
     std::tuple<const SQLType *, FloatingPoints> randomFloatType(RandomGenerator & rg);
-    std::tuple<const SQLType *, Dates> randomDateType(RandomGenerator & rg, const uint32_t allowed_types);
-    const SQLType * randomDateTimeType(RandomGenerator & rg, const uint32_t allowed_types, DateTimeTp * dt);
-    const SQLType * bottomType(RandomGenerator & rg, const uint32_t allowed_types, const bool low_card, BottomTypeName * tp);
-    const SQLType * generateArraytype(RandomGenerator & rg, const uint32_t allowed_types);
-    const SQLType * generateArraytype(RandomGenerator & rg, const uint32_t allowed_types, uint32_t & col_counter, TopTypeName * tp);
+    std::tuple<const SQLType *, Dates> randomDateType(RandomGenerator & rg, uint32_t allowed_types);
+    const SQLType * randomDateTimeType(RandomGenerator & rg, uint32_t allowed_types, DateTimeTp * dt);
+    const SQLType * bottomType(RandomGenerator & rg, uint32_t allowed_types, bool low_card, BottomTypeName * tp);
+    const SQLType * generateArraytype(RandomGenerator & rg, uint32_t allowed_types);
+    const SQLType * generateArraytype(RandomGenerator & rg, uint32_t allowed_types, uint32_t & col_counter, TopTypeName * tp);
 
-    const SQLType * randomNextType(RandomGenerator & rg, const uint32_t allowed_types);
-    const SQLType * randomNextType(RandomGenerator & rg, const uint32_t allowed_types, uint32_t & col_counter, TopTypeName * tp);
+    const SQLType * randomNextType(RandomGenerator & rg, uint32_t allowed_types);
+    const SQLType * randomNextType(RandomGenerator & rg, uint32_t allowed_types, uint32_t & col_counter, TopTypeName * tp);
 
-    void dropDatabase(const uint32_t dname);
+    void dropDatabase(uint32_t dname);
 
     template <bool AllowParts>
     int generateNextTablePartition(RandomGenerator & rg, const SQLTable & t, PartitionExpr * pexpr)

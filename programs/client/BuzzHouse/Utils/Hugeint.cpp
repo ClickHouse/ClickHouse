@@ -101,13 +101,13 @@ static hugeint_t divModPositive(hugeint_t lhs, uint64_t rhs, uint64_t & remainde
 
 int sign(hugeint_t n)
 {
-    return ((n > 0) - (n < 0));
+    return ((n > hugeint_t(0)) - (n < hugeint_t(0)));
 }
 
 hugeint_t abs(hugeint_t n)
 {
     assert(n != NumericLimits<hugeint_t>::Minimum());
-    return (n * sign(n));
+    return (n * static_cast<hugeint_t>(sign(n)));
 }
 
 static hugeint_t divMod(hugeint_t lhs, hugeint_t rhs, hugeint_t & remainder);
@@ -119,32 +119,32 @@ static hugeint_t divModMinimum(hugeint_t lhs, hugeint_t rhs, hugeint_t & remaind
     {
         if (lhs == NumericLimits<hugeint_t>::Minimum())
         {
-            remainder = 0;
-            return 1;
+            remainder = hugeint_t(0);
+            return hugeint_t(1);
         }
         remainder = lhs;
-        return 0;
+        return hugeint_t(0);
     }
 
     // Add 1 to minimum and run through divMod again
-    hugeint_t result = divMod(NumericLimits<hugeint_t>::Minimum() + 1, rhs, remainder);
+    hugeint_t result = divMod(NumericLimits<hugeint_t>::Minimum() + hugeint_t(1), rhs, remainder);
 
     // If the 1 mattered we need to adjust the result, otherwise the remainder
-    if (abs(remainder) + 1 == abs(rhs))
+    if (abs(remainder) + hugeint_t(1) == abs(rhs))
     {
-        result -= sign(rhs);
-        remainder = 0;
+        result -= static_cast<hugeint_t>(sign(rhs));
+        remainder = hugeint_t(0);
     }
     else
     {
-        remainder -= 1;
+        remainder -= hugeint_t(1);
     }
     return result;
 }
 
 static hugeint_t divMod(hugeint_t lhs, hugeint_t rhs, hugeint_t & remainder)
 {
-    if (rhs == 0)
+    if (rhs == hugeint_t(0))
     {
         remainder = lhs;
         return hugeint_t(0);
@@ -187,13 +187,13 @@ static hugeint_t divMod(hugeint_t lhs, hugeint_t rhs, hugeint_t & remainder)
         // we get the value of the bit at position X, where position 0 is the least-significant bit
         if (positiveHugeintIsBitSet(lhs, x - 1))
         {
-            remainder += 1;
+            remainder += hugeint_t(1);
         }
         if (remainder >= rhs)
         {
             // the remainder has passed the division multiplier: add one to the divide result
             remainder -= rhs;
-            div_result += 1;
+            div_result += hugeint_t(1);
         }
     }
     if (lhs_negative ^ rhs_negative)
@@ -553,12 +553,12 @@ hugeint_t & hugeint_t::operator^=(const hugeint_t & rhs)
 
 bool hugeint_t::operator!() const
 {
-    return *this == 0;
+    return *this == hugeint_t(0);
 }
 
 hugeint_t::operator bool() const
 {
-    return *this != 0;
+    return *this != hugeint_t(0);
 }
 
 void hugeint_t::toString(std::string & res) const

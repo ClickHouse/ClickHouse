@@ -19,7 +19,7 @@ public:
     std::string unix_socket, user, password, database;
     std::filesystem::path query_log_file;
 
-    ServerCredentials() : hostname("localhost"), port(0), unix_socket(""), user("test"), password(""), database(""), query_log_file("") { }
+    ServerCredentials() : hostname("localhost"), port(0), user("test") { }
 
     ServerCredentials(
         const std::string & h,
@@ -33,17 +33,8 @@ public:
     {
     }
 
-    ServerCredentials(const ServerCredentials & c)
-    {
-        this->hostname = c.hostname;
-        this->port = c.port;
-        this->user = c.user;
-        this->unix_socket = c.unix_socket;
-        this->password = c.password;
-        this->database = c.database;
-        this->query_log_file = c.query_log_file;
-    }
-    ServerCredentials(ServerCredentials && c)
+    ServerCredentials(const ServerCredentials & c) = default;
+    ServerCredentials(ServerCredentials && c) noexcept
     {
         this->hostname = c.hostname;
         this->port = c.port;
@@ -77,11 +68,10 @@ public:
     }
 };
 
-static const ServerCredentials
-loadServerCredentials(const simdjson::dom::object & jobj, const std::string & sname, const uint32_t & default_port)
+static ServerCredentials loadServerCredentials(const simdjson::dom::object & jobj, const std::string & sname, const uint32_t & default_port)
 {
     uint32_t port = default_port;
-    std::string hostname = "localhost", unix_socket = "", user = "test", password = "", database = "test";
+    std::string hostname = "localhost", unix_socket, user = "test", password, database = "test";
     std::filesystem::path query_log_file = std::filesystem::temp_directory_path() / (sname + ".sql");
 
     for (const auto [key, value] : jobj)
@@ -129,7 +119,7 @@ private:
     DB::ClientBase * cb = nullptr;
 
 public:
-    std::vector<const std::string> collations;
+    std::vector<std::string> collations;
     ServerCredentials mysql_server, postgresql_server, sqlite_server, mongodb_server, redis_server, minio_server;
     bool read_log = false, fuzz_floating_points = true;
     uint32_t seed = 0, max_depth = 3, max_width = 3, max_databases = 4, max_functions = 4, max_tables = 10, max_views = 5;
@@ -254,7 +244,7 @@ public:
     bool tableHasPartitions(const std::string & database, const std::string & table)
     {
         buf.resize(0);
-        buf += "SELECT count() FROM \"system\".\"";
+        buf += R"(SELECT count() FROM "system".")";
         if constexpr (IsDetached)
         {
             buf += "detached_parts";
@@ -264,7 +254,7 @@ public:
             buf += "parts";
         }
         buf += "\" WHERE ";
-        if (database != "")
+        if (!database.empty())
         {
             buf += "\"database\" = '";
             buf += database;
@@ -300,7 +290,7 @@ public:
         {
             buf += "name";
         }
-        buf += "\" AS y FROM \"system\".\"";
+        buf += R"(" AS y FROM "system".")";
         if constexpr (IsDetached)
         {
             buf += "detached_parts";
@@ -310,7 +300,7 @@ public:
             buf += "parts";
         }
         buf += "\" WHERE ";
-        if (database != "")
+        if (!database.empty())
         {
             buf += "\"database\" = '";
             buf += database;
@@ -318,7 +308,7 @@ public:
         }
         buf += "\"table\" = '";
         buf += table;
-        buf += "' AND \"partition_id\" != 'all') AS z WHERE z.x = (SELECT rand() % (max2(count(), 1)::Int) FROM \"system\".\"";
+        buf += R"(' AND "partition_id" != 'all') AS z WHERE z.x = (SELECT rand() % (max2(count(), 1)::Int) FROM "system".")";
         if constexpr (IsDetached)
         {
             buf += "detached_parts";
@@ -328,7 +318,7 @@ public:
             buf += "parts";
         }
         buf += "\" WHERE ";
-        if (database != "")
+        if (!database.empty())
         {
             buf += "\"database\" = '";
             buf += database;

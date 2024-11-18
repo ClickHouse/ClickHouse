@@ -101,7 +101,7 @@ const SQLType * TypeDeepCopy(const SQLType * tp)
     }
     else if ((ttp = dynamic_cast<const TupleType *>(tp)))
     {
-        std::vector<const SubType> subtypes;
+        std::vector<SubType> subtypes;
 
         for (const auto & entry : ttp->subtypes)
         {
@@ -111,17 +111,17 @@ const SQLType * TypeDeepCopy(const SQLType * tp)
     }
     else if ((vtp = dynamic_cast<const VariantType *>(tp)))
     {
-        std::vector<const SQLType *> subtypes;
+        std::vector<SQLType *> subtypes;
 
         for (const auto & entry : vtp->subtypes)
         {
-            subtypes.push_back(TypeDeepCopy(entry));
+            subtypes.push_back(const_cast<SQLType *>(TypeDeepCopy(entry)));
         }
         return new VariantType(std::move(subtypes));
     }
     else if ((ntp = dynamic_cast<const NestedType *>(tp)))
     {
-        std::vector<const NestedSubType> subtypes;
+        std::vector<NestedSubType> subtypes;
 
         for (const auto & entry : ntp->subtypes)
         {
@@ -358,7 +358,7 @@ const SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint3
         && nopt < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + enum_type + 1))
     {
         const bool bits = rg.nextBool();
-        std::vector<const EnumValue> evs;
+        std::vector<EnumValue> evs;
         const uint32_t nvalues = (rg.nextLargeNumber() % static_cast<uint32_t>(enum_values.size())) + 1;
         EnumDef * edef = tp ? tp->mutable_enum_def() : nullptr;
 
@@ -422,7 +422,7 @@ const SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint3
             < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + enum_type + uuid_type
                + ipv4_type + ipv6_type + j_type + 1))
     {
-        std::string desc = "";
+        std::string desc;
         JSONDef * jdef = tp ? tp->mutable_jdef() : nullptr;
         const uint32_t nclauses = rg.nextMediumNumber() % 7;
 
@@ -602,7 +602,7 @@ StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_t allowed_
     else if (tuple_type && nopt < (nullable_type + non_nullable_type + array_type + map_type + tuple_type + 1))
     {
         //tuple
-        std::vector<const SubType> subtypes;
+        std::vector<SubType> subtypes;
         const bool with_names = rg.nextBool();
         TupleTypeDef * tt = tp ? tp->mutable_tuple() : nullptr;
         TupleWithColumnNames * twcn = (tp && with_names) ? tt->mutable_with_names() : nullptr;
@@ -634,7 +634,7 @@ StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_t allowed_
     else if (variant_type && nopt < (nullable_type + non_nullable_type + array_type + map_type + tuple_type + variant_type + 1))
     {
         //variant
-        std::vector<const SQLType *> subtypes;
+        std::vector<SQLType *> subtypes;
         TupleWithOutColumnNames * twocn = tp ? tp->mutable_variant() : nullptr;
         const uint32_t ncols
             = this->width >= this->fc.max_width ? 0 : (rg.nextMediumNumber() % std::min<uint32_t>(5, this->fc.max_width - this->width));
@@ -644,8 +644,8 @@ StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_t allowed_
         {
             TopTypeName * ttn = tp ? twocn->add_values() : nullptr;
 
-            subtypes.push_back(this->randomNextType(
-                rg, allowed_types & ~(allow_nullable | allow_nested | allow_variant | allow_dynamic), col_counter, ttn));
+            subtypes.push_back(const_cast<SQLType *>(this->randomNextType(
+                rg, allowed_types & ~(allow_nullable | allow_nested | allow_variant | allow_dynamic), col_counter, ttn)));
         }
         this->depth--;
         return new VariantType(subtypes);
@@ -654,7 +654,7 @@ StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_t allowed_
         nested_type && nopt < (nullable_type + non_nullable_type + array_type + map_type + tuple_type + variant_type + nested_type + 1))
     {
         //nested
-        std::vector<const NestedSubType> subtypes;
+        std::vector<NestedSubType> subtypes;
         NestedTypeDef * nt = tp ? tp->mutable_nested() : nullptr;
         const uint32_t ncols = (rg.nextMediumNumber() % (std::min<uint32_t>(5, this->fc.max_width - this->width))) + UINT32_C(1);
 

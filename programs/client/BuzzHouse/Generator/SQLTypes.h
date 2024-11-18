@@ -20,10 +20,10 @@ const constexpr uint32_t allow_bool = (1 << 0), allow_unsigned_int = (1 << 1), a
 class SQLType
 {
 public:
-    virtual void typeName(std::string & ret, const bool escape) const = 0;
-    virtual void MySQLtypeName(RandomGenerator & rg, std::string & ret, const bool escape) const = 0;
-    virtual void PostgreSQLtypeName(RandomGenerator & rg, std::string & ret, const bool escape) const = 0;
-    virtual void SQLitetypeName(RandomGenerator & rg, std::string & ret, const bool escape) const = 0;
+    virtual void typeName(std::string & ret, bool escape) const = 0;
+    virtual void MySQLtypeName(RandomGenerator & rg, std::string & ret, bool escape) const = 0;
+    virtual void PostgreSQLtypeName(RandomGenerator & rg, std::string & ret, bool escape) const = 0;
+    virtual void SQLitetypeName(RandomGenerator & rg, std::string & ret, bool escape) const = 0;
 
     virtual ~SQLType() = default;
 };
@@ -102,7 +102,7 @@ class FloatType : public SQLType
 {
 public:
     const uint32_t size;
-    FloatType(const uint32_t s) : size(s) { }
+    explicit FloatType(const uint32_t s) : size(s) { }
 
     void typeName(std::string & ret, const bool) const override
     {
@@ -127,7 +127,7 @@ class DateType : public SQLType
 {
 public:
     const bool extended;
-    DateType(const bool ex) : extended(ex) { }
+    explicit DateType(const bool ex) : extended(ex) { }
 
     void typeName(std::string & ret, const bool) const override
     {
@@ -240,7 +240,7 @@ class StringType : public SQLType
 {
 public:
     const std::optional<const uint32_t> precision;
-    StringType(const std::optional<const uint32_t> p) : precision(p) { }
+    explicit StringType(const std::optional<const uint32_t> p) : precision(p) { }
 
     void typeName(std::string & ret, const bool) const override
     {
@@ -313,8 +313,8 @@ class EnumType : public SQLType
 {
 public:
     const uint32_t size;
-    const std::vector<const EnumValue> values;
-    EnumType(const uint32_t s, const std::vector<const EnumValue> v) : size(s), values(v) { }
+    const std::vector<EnumValue> values;
+    EnumType(const uint32_t s, const std::vector<EnumValue> v) : size(s), values(v) { }
 
     void typeName(std::string & ret, const bool escape) const override
     {
@@ -375,7 +375,7 @@ class DynamicType : public SQLType
 {
 public:
     const std::optional<const uint32_t> ntypes;
-    DynamicType(const std::optional<const uint32_t> n) : ntypes(n) { }
+    explicit DynamicType(const std::optional<const uint32_t> n) : ntypes(n) { }
 
     void typeName(std::string & ret, const bool) const override
     {
@@ -398,7 +398,7 @@ class JSONType : public SQLType
 {
 public:
     const std::string desc;
-    JSONType(const std::string & s) : desc(s) { }
+    explicit JSONType(const std::string & s) : desc(s) { }
 
     void typeName(std::string & ret, const bool escape) const override
     {
@@ -423,7 +423,7 @@ class Nullable : public SQLType
 {
 public:
     const SQLType * subtype;
-    Nullable(const SQLType * s) : subtype(s) { }
+    explicit Nullable(const SQLType * s) : subtype(s) { }
 
     void typeName(std::string & ret, const bool escape) const override
     {
@@ -454,7 +454,7 @@ class LowCardinality : public SQLType
 {
 public:
     const SQLType * subtype;
-    LowCardinality(const SQLType * s) : subtype(s) { }
+    explicit LowCardinality(const SQLType * s) : subtype(s) { }
 
     void typeName(std::string & ret, const bool escape) const override
     {
@@ -482,7 +482,7 @@ class GeoType : public SQLType
 {
 public:
     const GeoTypes geo_type;
-    GeoType(const GeoTypes & gt) : geo_type(gt) { }
+    explicit GeoType(const GeoTypes & gt) : geo_type(gt) { }
 
     void typeName(std::string & ret, const bool) const override { ret += GeoTypes_Name(geo_type); }
     void MySQLtypeName(RandomGenerator &, std::string &, const bool) const override { assert(0); }
@@ -496,7 +496,7 @@ class ArrayType : public SQLType
 {
 public:
     const SQLType * subtype;
-    ArrayType(const SQLType * s) : subtype(s) { }
+    explicit ArrayType(const SQLType * s) : subtype(s) { }
 
     void typeName(std::string & ret, const bool escape) const override
     {
@@ -552,8 +552,8 @@ public:
 class TupleType : public SQLType
 {
 public:
-    const std::vector<const SubType> subtypes;
-    TupleType(const std::vector<const SubType> s) : subtypes(s) { }
+    const std::vector<SubType> subtypes;
+    explicit TupleType(const std::vector<SubType> s) : subtypes(s) { }
 
     void typeName(std::string & ret, const bool escape) const override
     {
@@ -592,8 +592,8 @@ public:
 class VariantType : public SQLType
 {
 public:
-    const std::vector<const SQLType *> subtypes;
-    VariantType(const std::vector<const SQLType *> s) : subtypes(s) { }
+    const std::vector<SQLType *> subtypes;
+    explicit VariantType(const std::vector<SQLType *> s) : subtypes(s) { }
 
     void typeName(std::string & ret, const bool escape) const override
     {
@@ -614,7 +614,7 @@ public:
 
     ~VariantType() override
     {
-        for (auto & entry : subtypes)
+        for (const auto & entry : subtypes)
         {
             delete entry;
         }
@@ -634,8 +634,8 @@ public:
 class NestedType : public SQLType
 {
 public:
-    const std::vector<const NestedSubType> subtypes;
-    NestedType(const std::vector<const NestedSubType> s) : subtypes(s) { }
+    const std::vector<NestedSubType> subtypes;
+    explicit NestedType(const std::vector<NestedSubType> s) : subtypes(s) { }
 
     void typeName(std::string & ret, const bool escape) const override
     {
@@ -698,9 +698,9 @@ bool hasType(const SQLType * tp)
     return false;
 }
 
-void appendDecimal(RandomGenerator & rg, std::string & ret, const uint32_t left, const uint32_t right);
-void strBuildJSONArray(RandomGenerator & rg, const int jdepth, const int jwidth, std::string & ret);
+void appendDecimal(RandomGenerator & rg, std::string & ret, uint32_t left, uint32_t right);
+void strBuildJSONArray(RandomGenerator & rg, int jdepth, int jwidth, std::string & ret);
 void strBuildJSONElement(RandomGenerator & rg, std::string & ret);
-void strBuildJSON(RandomGenerator & rg, const int jdepth, const int jwidth, std::string & ret);
+void strBuildJSON(RandomGenerator & rg, int jdepth, int jwidth, std::string & ret);
 void strAppendGeoValue(RandomGenerator & rg, std::string & ret, const GeoTypes & geo_type);
 }

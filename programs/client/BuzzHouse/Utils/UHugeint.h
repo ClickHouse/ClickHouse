@@ -17,9 +17,8 @@ public:
     uint64_t lower;
     uint64_t upper;
 
-public:
     uhugeint_t() = default;
-    uhugeint_t(uint64_t value);
+    explicit uhugeint_t(uint64_t value);
     constexpr uhugeint_t(uint64_t up, uint64_t lo) : lower(lo), upper(up) { }
     constexpr uhugeint_t(const uhugeint_t & rhs) = default;
     constexpr uhugeint_t(uhugeint_t && rhs) = default;

@@ -27,14 +27,13 @@ public:
         this->dmod = c.dmod;
         this->tp = TypeDeepCopy(c.tp);
     }
-    SQLColumn(SQLColumn && c)
+    SQLColumn(SQLColumn && c) noexcept
     {
         this->cname = c.cname;
         this->special = c.special;
         this->nullable = c.nullable;
         this->dmod = c.dmod;
-        this->tp = c.tp;
-        c.tp = nullptr;
+        this->tp = TypeDeepCopy(c.tp);
     }
     SQLColumn & operator=(const SQLColumn & c)
     {
@@ -186,7 +185,7 @@ public:
     uint32_t fname = 0, nargs = 0;
 };
 
-typedef struct InsertEntry
+struct InsertEntry
 {
     std::optional<bool> nullable = std::nullopt;
     ColumnSpecial special = ColumnSpecial::NONE;
@@ -205,6 +204,6 @@ typedef struct InsertEntry
         : nullable(nu), special(cs), cname1(c1), cname2(c2), tp(t), dmod(dm)
     {
     }
-} InsertEntry;
+};
 
 }

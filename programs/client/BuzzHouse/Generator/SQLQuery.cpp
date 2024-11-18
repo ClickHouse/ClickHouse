@@ -19,7 +19,7 @@ int StatementGenerator::generateArrayJoin(RandomGenerator & rg, ArrayJoin * aj)
         ExprSchemaTableColumn * estc = expr->mutable_comp_expr()->mutable_expr_stc();
         ExprColumn * ecol = estc->mutable_col();
 
-        if (rel1.name != "")
+        if (!rel1.name.empty())
         {
             estc->mutable_table()->set_table(rel1.name);
         }
@@ -300,11 +300,11 @@ int StatementGenerator::addJoinClause(RandomGenerator & rg, BinaryExpr * bexpr)
     ExprSchemaTableColumn *estc1 = expr1->mutable_comp_expr()->mutable_expr_stc(), *estc2 = expr2->mutable_comp_expr()->mutable_expr_stc();
     ExprColumn *ecol1 = estc1->mutable_col(), *ecol2 = estc2->mutable_col();
 
-    if (rel1->name != "")
+    if (!rel1->name.empty())
     {
         estc1->mutable_table()->set_table(rel1->name);
     }
-    if (rel2->name != "")
+    if (!rel2->name.empty())
     {
         estc2->mutable_table()->set_table(rel2->name);
     }
@@ -647,7 +647,7 @@ int StatementGenerator::generateGroupByExpr(
         ExprSchemaTableColumn * estc = expr->mutable_comp_expr()->mutable_expr_stc();
         ExprColumn * ecol = estc->mutable_col();
 
-        if (rel_col.rel_name != "")
+        if (!rel_col.rel_name.empty())
         {
             estc->mutable_table()->set_table(rel_col.rel_name);
         }

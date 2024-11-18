@@ -15,13 +15,13 @@
 namespace BuzzHouse
 {
 
-typedef struct TestSetting
+struct TestSetting
 {
     const std::string tsetting;
     const std::set<std::string> options;
 
     TestSetting(const std::string & sett, const std::set<std::string> & noptions) : tsetting(sett), options(noptions) { }
-} TestSetting;
+};
 
 const constexpr int seconds_per_day = 60 * 60 * 24;
 
@@ -104,7 +104,7 @@ private:
 public:
     pcg64_fast generator;
 
-    RandomGenerator(const uint32_t in_seed)
+    explicit RandomGenerator(const uint32_t in_seed)
         : ints8(std::numeric_limits<int8_t>::min(), std::numeric_limits<int8_t>::max())
         , uints8(std::numeric_limits<uint8_t>::min(), std::numeric_limits<uint8_t>::max())
         , digits(static_cast<uint8_t>('0'), static_cast<uint8_t>('9'))
