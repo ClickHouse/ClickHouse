@@ -273,7 +273,8 @@ cat << EOF > $CONFIG_FILE
     "log_path": "$OUTPUT_SQL_FILE",
     "seed": 0,
     "read_log": false,
-    "fuzz_floating_points": false
+    "fuzz_floating_points": false,
+    "time_to_run": 180
 }
 EOF
         FUZZER_ARGS="--buzz-house-config=$BUZZHOUSE_CONFIG_FILE"
