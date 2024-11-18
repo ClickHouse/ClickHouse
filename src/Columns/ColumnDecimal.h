@@ -3,7 +3,6 @@
 #include <base/sort.h>
 #include <base/TypeName.h>
 #include <Core/Field.h>
-#include <Core/DecimalFunctions.h>
 #include <Core/TypeId.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnFixedSizeHelper.h>
@@ -97,8 +96,6 @@ public:
     {
         return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
     }
-
-    Float64 getFloat64(size_t n) const final { return DecimalUtils::convertTo<Float64>(data[n], scale); }
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
     const char * skipSerializedInArena(const char * pos) const override;
