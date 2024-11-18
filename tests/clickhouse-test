@@ -982,6 +982,8 @@ class MergeTreeSettingsRandomizer:
         "concurrent_part_removal_threshold": threshold_generator(0.2, 0.3, 0, 100),
         "old_parts_lifetime": threshold_generator(0.2, 0.3, 10, 8 * 60),
         "prewarm_mark_cache": lambda: random.randint(0, 1),
+        "use_const_adaptive_granularity": lambda: random.randint(0, 1),
+        "enable_index_granularity_compression": lambda: random.randint(0, 1),
     }
 
     @staticmethod

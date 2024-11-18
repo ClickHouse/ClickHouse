@@ -335,7 +335,7 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     : header(header_)
     , keys_positions(calculateKeysPositions(header, params_))
     , params(params_)
-    , tmp_data(params.tmp_data_scope ? std::make_unique<TemporaryDataOnDisk>(params.tmp_data_scope, CurrentMetrics::TemporaryFilesForAggregation) : nullptr)
+    , tmp_data(params.tmp_data_scope ? params.tmp_data_scope->childScope(CurrentMetrics::TemporaryFilesForAggregation) : nullptr)
     , min_bytes_for_prefetch(getMinBytesForPrefetch())
 {
     /// Use query-level memory tracker
@@ -1519,10 +1519,15 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
     Stopwatch watch;
     size_t rows = data_variants.size();
 
-    auto & out_stream = tmp_data->createStream(getHeader(false), max_temp_file_size);
+    auto & out_stream = [this, max_temp_file_size]() -> TemporaryBlockStreamHolder &
+    {
+        std::lock_guard lk(tmp_files_mutex);
+        return tmp_files.emplace_back(getHeader(false), tmp_data.get(), max_temp_file_size);
+    }();
+
     ProfileEvents::increment(ProfileEvents::ExternalAggregationWritePart);
 
-    LOG_DEBUG(log, "Writing part of aggregation data into temporary file {}", out_stream.getPath());
+    LOG_DEBUG(log, "Writing part of aggregation data into temporary file {}", out_stream.getHolder()->describeFilePath());
 
     /// Flush only two-level data and possibly overflow data.
 
@@ -1639,11 +1644,24 @@ Block Aggregator::convertOneBucketToBlock(AggregatedDataVariants & variants, Are
     return block;
 }
 
+std::list<TemporaryBlockStreamHolder> Aggregator::detachTemporaryData()
+{
+    std::lock_guard lk(tmp_files_mutex);
+    return std::move(tmp_files);
+}
+
+bool Aggregator::hasTemporaryData() const
+{
+    std::lock_guard lk(tmp_files_mutex);
+    return !tmp_files.empty();
+}
+
+
 template <typename Method>
 void Aggregator::writeToTemporaryFileImpl(
     AggregatedDataVariants & data_variants,
     Method & method,
-    TemporaryFileStream & out) const
+    TemporaryBlockStreamHolder & out) const
 {
     size_t max_temporary_block_size_rows = 0;
     size_t max_temporary_block_size_bytes = 0;
@@ -1660,14 +1678,14 @@ void Aggregator::writeToTemporaryFileImpl(
     for (UInt32 bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
     {
         Block block = convertOneBucketToBlock(data_variants, method, data_variants.aggregates_pool, false, bucket);
-        out.write(block);
+        out->write(block);
         update_max_sizes(block);
     }
 
     if (params.overflow_row)
     {
         Block block = prepareBlockAndFillWithoutKey(data_variants, false, true);
-        out.write(block);
+        out->write(block);
         update_max_sizes(block);
     }
 
@@ -3369,6 +3387,8 @@ UInt64 calculateCacheKey(const DB::ASTPtr & select_query)
 
     SipHash hash;
     hash.update(select.tables()->getTreeHash(/*ignore_aliases=*/true));
+    if (const auto prewhere = select.prewhere())
+        hash.update(prewhere->getTreeHash(/*ignore_aliases=*/true));
     if (const auto where = select.where())
         hash.update(where->getTreeHash(/*ignore_aliases=*/true));
     if (const auto group_by = select.groupBy())

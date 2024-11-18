@@ -76,7 +76,7 @@ struct HashTableNoState
 template <typename T>
 inline bool bitEquals(T a, T b)
 {
-    if constexpr (std::is_floating_point_v<T>)
+    if constexpr (is_floating_point<T>)
         /// Note that memcmp with constant size is a compiler builtin.
         return 0 == memcmp(&a, &b, sizeof(T)); /// NOLINT
     else
