@@ -1620,22 +1620,6 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
 
     table_join->setInputColumns(columns_from_left_table, columns_from_right_table);
 
-    for (auto & column_from_joined_table : columns_from_left_table)
-    {
-        /// Add columns to output only if they are presented in outer scope, otherwise they can be dropped
-        if (planner_context->getGlobalPlannerContext()->hasColumnIdentifier(column_from_joined_table.name) &&
-            outer_scope_columns.contains(column_from_joined_table.name))
-            table_join->setUsedColumn(column_from_joined_table, JoinTableSide::Left);
-    }
-
-    for (auto & column_from_joined_table : columns_from_right_table)
-    {
-        /// Add columns to output only if they are presented in outer scope, otherwise they can be dropped
-        if (planner_context->getGlobalPlannerContext()->hasColumnIdentifier(column_from_joined_table.name) &&
-            outer_scope_columns.contains(column_from_joined_table.name))
-            table_join->setUsedColumn(column_from_joined_table, JoinTableSide::Right);
-    }
-
     if (table_join->getOutputColumns(JoinTableSide::Left).empty() && table_join->getOutputColumns(JoinTableSide::Right).empty())
     {
         if (!columns_from_left_table.empty())
@@ -1735,13 +1719,36 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
 
         auto join_pipeline_type = join_algorithm->pipelineType();
 
-        ColumnIdentifierSet outer_scope_columns_nonempty;
-        if (outer_scope_columns.empty())
+        ColumnIdentifierSet required_columns_after_join = outer_scope_columns;
+
+        if (join_clauses_and_actions.residual_join_expressions_actions)
+        {
+            for (const auto * input : join_clauses_and_actions.residual_join_expressions_actions->getInputs())
+                required_columns_after_join.insert(input->result_name);
+        }
+
+        if (required_columns_after_join.empty())
         {
             if (left_header.columns() > 1)
-                outer_scope_columns_nonempty.insert(left_header.getByPosition(0).name);
+                required_columns_after_join.insert(left_header.getByPosition(0).name);
             else if (right_header.columns() > 1)
-                outer_scope_columns_nonempty.insert(right_header.getByPosition(0).name);
+                required_columns_after_join.insert(right_header.getByPosition(0).name);
+        }
+
+        for (auto & column_from_joined_table : columns_from_left_table)
+        {
+            /// Add columns to output only if they are presented in outer scope, otherwise they can be dropped
+            if (planner_context->getGlobalPlannerContext()->hasColumnIdentifier(column_from_joined_table.name) &&
+                required_columns_after_join.contains(column_from_joined_table.name))
+                table_join->setUsedColumn(column_from_joined_table, JoinTableSide::Left);
+        }
+
+        for (auto & column_from_joined_table : columns_from_right_table)
+        {
+            /// Add columns to output only if they are presented in outer scope, otherwise they can be dropped
+            if (planner_context->getGlobalPlannerContext()->hasColumnIdentifier(column_from_joined_table.name) &&
+                required_columns_after_join.contains(column_from_joined_table.name))
+                table_join->setUsedColumn(column_from_joined_table, JoinTableSide::Right);
         }
 
         auto join_step = std::make_unique<JoinStep>(
@@ -1750,7 +1757,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             std::move(join_algorithm),
             settings[Setting::max_block_size],
             settings[Setting::max_threads],
-            outer_scope_columns.empty() ? outer_scope_columns_nonempty : outer_scope_columns,
+            required_columns_after_join,
             false /*optimize_read_in_order*/,
             true /*optimize_skip_unused_shards*/);
         join_step->inner_table_selection_mode = settings[Setting::query_plan_join_inner_table_selection];
