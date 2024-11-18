@@ -389,7 +389,7 @@ public:
             /* A few times, generate a large string */
             if (this->nextLargeNumber() < 4)
             {
-                uint32_t i = 0, len = pick.size();
+                uint32_t i = 0, len = static_cast<uint32_t>(pick.size());
                 const uint32_t max_iterations = this->nextBool() ? 10000 : this->nextMediumNumber();
 
                 while (i < max_iterations)

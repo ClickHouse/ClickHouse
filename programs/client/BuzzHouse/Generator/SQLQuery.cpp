@@ -351,7 +351,8 @@ int StatementGenerator::generateJoinConstraint(RandomGenerator & rg, const bool 
             if (!intersect.empty())
             {
                 ExprColumnList * ecl = jc->mutable_using_expr()->mutable_col_list();
-                const uint32_t nclauses = std::min<uint32_t>(UINT32_C(3), (rg.nextRandomUInt32() % intersect.size()) + 1);
+                const uint32_t nclauses
+                    = std::min<uint32_t>(UINT32_C(3), (rg.nextRandomUInt32() % static_cast<uint32_t>(intersect.size())) + 1);
 
                 std::shuffle(intersect.begin(), intersect.end(), rg.generator);
                 for (uint32_t i = 0; i < nclauses; i++)
@@ -810,7 +811,8 @@ int StatementGenerator::generateOrderBy(RandomGenerator & rg, const uint32_t nco
         }
         const uint32_t nclauses = std::min<uint32_t>(
             this->fc.max_width - this->width,
-            std::min<uint32_t>(UINT32_C(5), (rg.nextRandomUInt32() % (available_cols.empty() ? 5 : available_cols.size())) + 1));
+            std::min<uint32_t>(
+                UINT32_C(5), (rg.nextRandomUInt32() % (available_cols.empty() ? 5 : static_cast<uint32_t>(available_cols.size()))) + 1));
 
         for (uint32_t i = 0; i < nclauses; i++)
         {
@@ -874,7 +876,9 @@ int StatementGenerator::generateOrderBy(RandomGenerator & rg, const uint32_t nco
             std::vector<uint32_t> nids;
             const uint32_t iclauses = std::min<uint32_t>(
                 this->fc.max_width - this->width,
-                std::min<uint32_t>(UINT32_C(3), (rg.nextRandomUInt32() % this->levels[this->current_level].projections.size()) + 1));
+                std::min<uint32_t>(
+                    UINT32_C(3),
+                    (rg.nextRandomUInt32() % static_cast<uint32_t>(this->levels[this->current_level].projections.size())) + 1));
 
             nids.insert(
                 nids.end(), this->levels[this->current_level].projections.begin(), this->levels[this->current_level].projections.end());

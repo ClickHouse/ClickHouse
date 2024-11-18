@@ -1569,9 +1569,11 @@ int StatementGenerator::generateDetach(RandomGenerator & rg, Detach * det)
 int StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner * sq)
 {
     const uint32_t create_table = 6
-        * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases) && tables.size() < this->fc.max_tables),
-                   create_view
-        = 10 * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases) && views.size() < this->fc.max_views),
+        * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases)
+                                && static_cast<uint32_t>(tables.size()) < this->fc.max_tables),
+                   create_view = 10
+        * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases)
+                                && static_cast<uint32_t>(views.size()) < this->fc.max_views),
                    drop = 1
         * static_cast<uint32_t>(
                               collectionHas<SQLTable>(attached_tables) || collectionHas<SQLView>(attached_views)
@@ -1606,8 +1608,9 @@ int StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner * 
                    detach = 2
         * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables) || collectionHas<SQLView>(attached_views)
                                 || collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases)),
-                   create_database = 2 * static_cast<uint32_t>(databases.size() < this->fc.max_databases),
-                   create_function = 5 * static_cast<uint32_t>(functions.size() < this->fc.max_functions), select_query = 350,
+                   create_database = 2 * static_cast<uint32_t>(static_cast<uint32_t>(databases.size()) < this->fc.max_databases),
+                   create_function = 5 * static_cast<uint32_t>(static_cast<uint32_t>(functions.size()) < this->fc.max_functions),
+                   select_query = 350,
                    prob_space = create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table
         + desc_table + exchange_tables + alter_table + set_values + attach + detach + create_database + create_function + select_query;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);

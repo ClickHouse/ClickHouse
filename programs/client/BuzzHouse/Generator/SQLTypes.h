@@ -558,7 +558,7 @@ public:
     void typeName(std::string & ret, const bool escape) const override
     {
         ret += "Tuple(";
-        for (uint32_t i = 0; i < subtypes.size(); i++)
+        for (size_t i = 0; i < subtypes.size(); i++)
         {
             const SubType & sub = subtypes[i];
 
@@ -598,7 +598,7 @@ public:
     void typeName(std::string & ret, const bool escape) const override
     {
         ret += "Variant(";
-        for (uint32_t i = 0; i < subtypes.size(); i++)
+        for (size_t i = 0; i < subtypes.size(); i++)
         {
             if (i != 0)
             {
@@ -640,7 +640,7 @@ public:
     void typeName(std::string & ret, const bool escape) const override
     {
         ret += "Nested(";
-        for (uint32_t i = 0; i < subtypes.size(); i++)
+        for (size_t i = 0; i < subtypes.size(); i++)
         {
             const NestedSubType & sub = subtypes[i];
 

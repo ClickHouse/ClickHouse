@@ -359,7 +359,7 @@ const SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint3
     {
         const bool bits = rg.nextBool();
         std::vector<const EnumValue> evs;
-        const uint32_t nvalues = (rg.nextLargeNumber() % enum_values.size()) + 1;
+        const uint32_t nvalues = (rg.nextLargeNumber() % static_cast<uint32_t>(enum_values.size())) + 1;
         EnumDef * edef = tp ? tp->mutable_enum_def() : nullptr;
 
         edef->set_bits(bits);
@@ -1054,7 +1054,7 @@ void StatementGenerator::strAppendArray(RandomGenerator & rg, std::string & ret,
 void StatementGenerator::strAppendTuple(RandomGenerator & rg, std::string & ret, const TupleType * at)
 {
     ret += "(";
-    for (uint32_t i = 0; i < at->subtypes.size(); i++)
+    for (size_t i = 0; i < at->subtypes.size(); i++)
     {
         strAppendAnyValueInternal(rg, ret, at->subtypes[i].subtype);
         ret += ", ";

@@ -593,7 +593,7 @@ int StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow_
 
     assert(allow_funcs || allow_aggr);
     const uint32_t nopt = next_dist(rg.generator);
-    if (!allow_funcs || nopt >= funcs_size)
+    if (!allow_funcs || nopt >= static_cast<uint32_t>(funcs_size))
     {
         //aggregate
         const CHAggregate & agg = CHAggrs[nopt - static_cast<uint32_t>(allow_funcs ? funcs_size : 0)];
