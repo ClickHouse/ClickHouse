@@ -833,7 +833,7 @@ void Connection::sendQuery(
         writeVectorBinary(external_roles, buffer);
         buffer.finalize();
 
-        LOG_DEBUG(log_wrapper.get(), "Sending external_roles with query: [{}] ({})", fmt::join(external_roles, ", "), external_roles.size());
+        LOG_TRACE(log_wrapper.get(), "Sending external_roles with query: [{}] ({})", fmt::join(external_roles, ", "), external_roles.size());
 
         writeStringBinary(external_roles_str, *out);
     }
@@ -858,7 +858,9 @@ void Connection::sendQuery(
             data += query;
             data += query_id;
             data += client_info->initial_user;
-            data += external_roles_str;
+            // Also for backwards compatibility
+            if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_EXTERNALLY_GRANTED_ROLES)
+                data += external_roles_str;
             /// TODO: add source/target host/ip-address
 
             std::string hash = encodeSHA256(data);

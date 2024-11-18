@@ -1569,8 +1569,8 @@ void Context::setExternalRolesWithLock(const std::vector<UUID> & new_external_ro
             current_roles->insert(current_roles->end(), new_external_roles.begin(), new_external_roles.end());
         else
             current_roles = std::make_shared<std::vector<UUID>>(new_external_roles);
+        need_recalculate_access = true;
     }
-    need_recalculate_access = true;
 }
 
 void Context::setCurrentRolesImpl(const std::vector<UUID> & new_current_roles, bool throw_if_not_granted, bool skip_if_not_granted, const std::shared_ptr<const User> & user)
