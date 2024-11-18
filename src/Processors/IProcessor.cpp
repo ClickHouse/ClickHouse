@@ -10,6 +10,20 @@
 namespace DB
 {
 
+IProcessor::IProcessor()
+{
+    processor_index = CurrentThread::isInitialized() ? CurrentThread::get().getNextPipelineProcessorIndex() : 0;
+}
+
+IProcessor::IProcessor(InputPorts inputs_, OutputPorts outputs_) : inputs(std::move(inputs_)), outputs(std::move(outputs_))
+{
+    for (auto & port : inputs)
+        port.processor = this;
+    for (auto & port : outputs)
+        port.processor = this;
+    processor_index = CurrentThread::isInitialized() ? CurrentThread::get().getNextPipelineProcessorIndex() : 0;
+}
+
 void IProcessor::setQueryPlanStep(IQueryPlanStep * step, size_t group)
 {
     query_plan_step = step;
@@ -18,6 +32,7 @@ void IProcessor::setQueryPlanStep(IQueryPlanStep * step, size_t group)
     {
         plan_step_name = step->getName();
         plan_step_description = step->getStepDescription();
+        step_uniq_id = step->getUniqID();
     }
 }
 
