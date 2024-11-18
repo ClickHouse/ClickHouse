@@ -20,10 +20,13 @@ shard_configs = {
 nodes = {
     node_name: cluster.add_instance(
         node_name,
-        main_configs=shard_config + ["config/config_discovery_path_auxiliary_keeper.xml", "config/config_keepers.xml"],
+        main_configs=shard_config
+        + [
+            "config/config_discovery_path_auxiliary_keeper.xml",
+            "config/config_keepers.xml",
+        ],
         stay_alive=True,
         with_zookeeper=True,
-        #use_keeper=False,
     )
     for node_name, shard_config in shard_configs.items()
 }
