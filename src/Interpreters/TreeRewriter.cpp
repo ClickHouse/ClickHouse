@@ -1008,7 +1008,7 @@ TreeRewriterResult::TreeRewriterResult(
 /// Special columns are non physical columns, for example ALIAS
 void TreeRewriterResult::collectSourceColumns(bool add_special)
 {
-    if (storage)
+    if (storage && storage_snapshot)
     {
         auto options = GetColumnsOptions(add_special ? GetColumnsOptions::All : GetColumnsOptions::AllPhysical);
         options.withExtendedObjects();

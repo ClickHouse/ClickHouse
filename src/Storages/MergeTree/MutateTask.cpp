@@ -1017,6 +1017,8 @@ struct MutationContext
     FutureMergedMutatedPartPtr future_part;
     MergeTreeData::DataPartPtr source_part;
     StorageMetadataPtr metadata_snapshot;
+    /// for projection part only, changed from table part
+    StorageMetadataPtr projection_metadata_snapshot;
 
     MutationCommandsConstPtr commands;
     time_t time_of_mutation;
@@ -2270,10 +2272,6 @@ bool MutateTask::prepare()
 
     if (!ctx->for_interpreter.empty())
     {
-        const auto & proj_desc = *(ctx->metadata_snapshot->getProjections().begin());
-        const auto & projections_name_and_part = ctx->source_part->getProjectionParts();
-        MergeTreeData::DataPartPtr projection_part = projections_name_and_part.begin()->second;
-
         /// Always disable filtering in mutations: we want to read and write all rows because for updates we rewrite only some of the
         /// columns and preserve the columns that are not affected, but after the update all columns must have the same number of row
         MutationsInterpreter::Settings settings(true);
@@ -2284,17 +2282,24 @@ bool MutateTask::prepare()
             ctx->metadata_snapshot, ctx->for_interpreter,
             ctx->metadata_snapshot->getColumns().getNamesOfPhysical(), context_for_reading, settings);
 
-        auto projection_interpreter = std::make_unique<MutationsInterpreter>(
-            *ctx->data, projection_part, alter_conversions,
-            ctx->metadata_snapshot, ctx->for_interpreter,
-            proj_desc.metadata->getColumns().getNamesOfPhysical(), context_for_reading, settings);
-
         ctx->materialized_indices = ctx->interpreter->grabMaterializedIndices();
         ctx->materialized_statistics = ctx->interpreter->grabMaterializedStatistics();
         ctx->materialized_projections = ctx->interpreter->grabMaterializedProjections();
         ctx->mutating_pipeline_builder = ctx->interpreter->execute();
         ctx->updated_header = ctx->interpreter->getUpdatedHeader();
         ctx->progress_callback = MergeProgressCallback((*ctx->mutate_entry)->ptr(), ctx->watch_prev_elapsed, *ctx->stage_progress);
+
+        /// might be better to create metadata_snapshot for projection part.
+        const auto & proj_desc = *(ctx->metadata_snapshot->getProjections().begin());
+        const auto & projections_name_and_part = ctx->source_part->getProjectionParts();
+        MergeTreeData::DataPartPtr projection_part = projections_name_and_part.begin()->second;
+
+        auto projection_interpreter = std::make_unique<MutationsInterpreter>(
+            *ctx->data, projection_part, alter_conversions,
+            nullptr, ctx->for_interpreter,
+            proj_desc.metadata->getColumns().getNamesOfPhysical(), context_for_reading, settings);
+
+        ctx->projection_mutating_pipeline_builder = projection_interpreter->execute();
 
         lightweight_delete_mode = ctx->updated_header.has(RowExistsColumn::name);
         /// If under the condition of lightweight delete mode with rebuild option, add projections again here as we can only know
