@@ -423,9 +423,8 @@ private:
     std::vector<Sizes> key_sizes;
 
     /// Needed to do external cross join
-    TemporaryDataOnDiskScopePtr tmp_data;
-    std::optional<TemporaryBlockStreamHolder> tmp_stream;
-    mutable std::once_flag finish_writing;
+    TemporaryDataOnDiskPtr tmp_data;
+    TemporaryFileStream* tmp_stream{nullptr};
 
     /// Block with columns from the right-side table.
     Block right_sample_block;

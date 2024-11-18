@@ -35,6 +35,11 @@
 #include <Interpreters/HashJoin/HashJoinMethods.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
 
+namespace CurrentMetrics
+{
+    extern const Metric TemporaryFilesForJoin;
+}
+
 namespace DB
 {
 
@@ -59,7 +64,7 @@ struct NotProcessedCrossJoin : public ExtraBlock
 {
     size_t left_position;
     size_t right_block;
-    std::optional<TemporaryBlockStreamReaderHolder> reader;
+    std::unique_ptr<TemporaryFileStream::Reader> reader;
 };
 
 
@@ -101,7 +106,10 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
     , instance_id(instance_id_)
     , asof_inequality(table_join->getAsofInequality())
     , data(std::make_shared<RightTableData>())
-    , tmp_data(table_join_->getTempDataOnDisk())
+    , tmp_data(
+          table_join_->getTempDataOnDisk()
+              ? std::make_unique<TemporaryDataOnDisk>(table_join_->getTempDataOnDisk(), CurrentMetrics::TemporaryFilesForJoin)
+              : nullptr)
     , right_sample_block(right_sample_block_)
     , max_joined_block_rows(table_join->maxJoinedBlockRows())
     , instance_log_id(!instance_id_.empty() ? "(" + instance_id_ + ") " : "")
@@ -512,10 +520,11 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
         && (tmp_stream || (max_bytes_in_join && getTotalByteCount() + block_to_save.allocatedBytes() >= max_bytes_in_join)
             || (max_rows_in_join && getTotalRowCount() + block_to_save.rows() >= max_rows_in_join)))
     {
-        if (!tmp_stream)
-            tmp_stream.emplace(right_sample_block, tmp_data.get());
-
-        tmp_stream.value()->write(block_to_save);
+        if (tmp_stream == nullptr)
+        {
+            tmp_stream = &tmp_data->createStream(right_sample_block);
+        }
+        tmp_stream->write(block_to_save);
         return true;
     }
 
@@ -721,14 +730,13 @@ void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) 
 {
     size_t start_left_row = 0;
     size_t start_right_block = 0;
-    std::optional<TemporaryBlockStreamReaderHolder> reader;
+    std::unique_ptr<TemporaryFileStream::Reader> reader = nullptr;
     if (not_processed)
     {
         auto & continuation = static_cast<NotProcessedCrossJoin &>(*not_processed);
         start_left_row = continuation.left_position;
         start_right_block = continuation.right_block;
-        if (continuation.reader)
-            reader = std::move(*continuation.reader);
+        reader = std::move(continuation.reader);
         not_processed.reset();
     }
 
@@ -796,10 +804,12 @@ void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) 
 
         if (tmp_stream && rows_added <= max_joined_block_rows)
         {
-            if (!reader)
+            if (reader == nullptr)
+            {
+                tmp_stream->finishWritingAsyncSafe();
                 reader = tmp_stream->getReadStream();
-
-            while (auto block_right = reader.value()->read())
+            }
+            while (auto block_right = reader->read())
             {
                 ++block_number;
                 process_right_block(block_right);

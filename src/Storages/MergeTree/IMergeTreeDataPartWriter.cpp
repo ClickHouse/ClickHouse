@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
-#include <Columns/ColumnSparse.h>
 
 namespace DB
 {
@@ -12,14 +11,13 @@ namespace ErrorCodes
 }
 
 
-Block getIndexBlockAndPermute(const Block & block, const Names & names, const IColumn::Permutation * permutation)
+Block getBlockAndPermute(const Block & block, const Names & names, const IColumn::Permutation * permutation)
 {
     Block result;
     for (size_t i = 0, size = names.size(); i < size; ++i)
     {
-        auto src_column = block.getByName(names[i]);
-        src_column.column = recursiveRemoveSparse(src_column.column);
-        result.insert(i, src_column);
+        const auto & name = names[i];
+        result.insert(i, block.getByName(name));
 
         /// Reorder primary key columns in advance and add them to `primary_key_columns`.
         if (permutation)
@@ -89,13 +87,6 @@ Columns IMergeTreeDataPartWriter::releaseIndexColumns()
 
     index_columns.clear();
     return result;
-}
-
-PlainMarksByName IMergeTreeDataPartWriter::releaseCachedMarks()
-{
-    PlainMarksByName res;
-    std::swap(cached_marks, res);
-    return res;
 }
 
 SerializationPtr IMergeTreeDataPartWriter::getSerialization(const String & column_name) const
@@ -188,24 +179,12 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
         return createMergeTreeDataPartCompactWriter(data_part_name_, logger_name_, serializations_, data_part_storage_,
             index_granularity_info_, storage_settings_, columns_list, column_positions, metadata_snapshot, virtual_columns, indices_to_recalc, stats_to_recalc_,
             marks_file_extension_, default_codec_, writer_settings, computed_index_granularity);
-    if (part_type == MergeTreeDataPartType::Wide)
-        return createMergeTreeDataPartWideWriter(
-            data_part_name_,
-            logger_name_,
-            serializations_,
-            data_part_storage_,
-            index_granularity_info_,
-            storage_settings_,
-            columns_list,
-            metadata_snapshot,
-            virtual_columns,
-            indices_to_recalc,
-            stats_to_recalc_,
-            marks_file_extension_,
-            default_codec_,
-            writer_settings,
-            computed_index_granularity);
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown part type: {}", part_type.toString());
+    else if (part_type == MergeTreeDataPartType::Wide)
+        return createMergeTreeDataPartWideWriter(data_part_name_, logger_name_, serializations_, data_part_storage_,
+            index_granularity_info_, storage_settings_, columns_list, metadata_snapshot, virtual_columns, indices_to_recalc, stats_to_recalc_,
+            marks_file_extension_, default_codec_, writer_settings, computed_index_granularity);
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown part type: {}", part_type.toString());
 }
 
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <vector>
 
 #include <Core/Names.h>
 #include <Core/Block.h>

@@ -4,6 +4,8 @@
 select '';
 select '# byteSize';
 
+set allow_experimental_bigint_types = 1;
+
 -- numbers #0 --
 select '';
 select 'byteSize for numbers #0';

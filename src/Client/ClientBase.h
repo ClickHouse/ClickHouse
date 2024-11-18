@@ -1,22 +1,21 @@
 #pragma once
 
 
-#include <Client/ProgressTable.h>
 #include <Client/Suggest.h>
-#include <Core/ExternalTable.h>
-#include <Core/Settings.h>
-#include <Interpreters/Context.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Poco/ConsoleChannel.h>
-#include <Poco/SimpleFileChannel.h>
-#include <Poco/SplitterChannel.h>
-#include <Poco/Util/Application.h>
+#include <Common/QueryFuzzer.h>
 #include <Common/DNSResolver.h>
 #include <Common/InterruptListener.h>
 #include <Common/ProgressIndication.h>
-#include <Common/QueryFuzzer.h>
 #include <Common/ShellCommand.h>
 #include <Common/Stopwatch.h>
+#include <Core/ExternalTable.h>
+#include <Core/Settings.h>
+#include <Poco/ConsoleChannel.h>
+#include <Poco/SimpleFileChannel.h>
+#include <Poco/SplitterChannel.h>
+#include <Interpreters/Context.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Poco/Util/Application.h>
 
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/SelectQueryInfo.h>
@@ -69,7 +68,6 @@ ProgressOption toProgressOption(std::string progress);
 std::istream& operator>> (std::istream & in, ProgressOption & progress);
 
 class InternalTextLogs;
-class TerminalKeystrokeInterceptor;
 class WriteBufferFromFileDescriptor;
 
 /**
@@ -208,9 +206,6 @@ private:
     void initQueryIdFormats();
     bool addMergeTreeSettings(ASTCreateQuery & ast_create);
 
-    void startKeystrokeInterceptorIfExists();
-    void stopKeystrokeInterceptorIfExists();
-
 protected:
 
     class QueryInterruptHandler : private boost::noncopyable
@@ -250,8 +245,7 @@ protected:
 
     void setDefaultFormatsAndCompressionFromConfiguration();
 
-    void initTTYBuffer(ProgressOption progress_option, ProgressOption progress_table_option);
-    void initKeystrokeInterceptor();
+    void initTTYBuffer(ProgressOption progress);
 
     /// Should be one of the first, to be destroyed the last,
     /// since other members can use them.
@@ -260,8 +254,6 @@ protected:
 
     /// Client context is a context used only by the client to parse queries, process query parameters and to connect to clickhouse-server.
     ContextMutablePtr client_context;
-
-    std::unique_ptr<TerminalKeystrokeInterceptor> keystroke_interceptor;
 
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.
     bool delayed_interactive = false;
@@ -328,11 +320,9 @@ protected:
     /// /dev/tty if accessible or std::cerr - for progress bar.
     /// We prefer to output progress bar directly to tty to allow user to redirect stdout and stderr and still get the progress indication.
     std::unique_ptr<WriteBufferFromFileDescriptor> tty_buf;
-    std::mutex tty_mutex;
 
     String home_path;
     String history_file; /// Path to a file containing command history.
-    UInt32 history_max_entries; /// Maximum number of entries in the history file.
 
     String current_profile;
 
@@ -342,11 +332,7 @@ protected:
     String server_display_name;
 
     ProgressIndication progress_indication;
-    ProgressTable progress_table;
     bool need_render_progress = true;
-    bool need_render_progress_table = true;
-    bool progress_table_toggle_enabled = true;
-    std::atomic_bool progress_table_toggle_on = false;
     bool need_render_profile_events = true;
     bool written_first_block = false;
     size_t processed_rows = 0; /// How many rows have been read or written.

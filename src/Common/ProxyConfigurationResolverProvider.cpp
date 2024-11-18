@@ -170,13 +170,13 @@ std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::
     {
         return nullptr;
     }
-    const auto & prefix = *prefix_opt;
+    auto prefix = *prefix_opt;
 
     if (hasRemoteResolver(prefix, configuration))
     {
         return getRemoteResolver(request_protocol, prefix, configuration);
     }
-    if (hasListResolver(prefix, configuration))
+    else if (hasListResolver(prefix, configuration))
     {
         return getListResolver(request_protocol, prefix, configuration);
     }

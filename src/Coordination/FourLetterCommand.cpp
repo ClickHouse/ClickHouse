@@ -236,15 +236,17 @@ void FourLetterCommandFactory::initializeAllowList(KeeperDispatcher & keeper_dis
             allow_list.push_back(ALLOW_LIST_ALL);
             return;
         }
-
-        if (commands.contains(IFourLetterCommand::toCode(token)))
-        {
-            allow_list.push_back(IFourLetterCommand::toCode(token));
-        }
         else
         {
-            auto log = getLogger("FourLetterCommandFactory");
-            LOG_WARNING(log, "Find invalid keeper 4lw command {} when initializing, ignore it.", token);
+            if (commands.contains(IFourLetterCommand::toCode(token)))
+            {
+                allow_list.push_back(IFourLetterCommand::toCode(token));
+            }
+            else
+            {
+                auto log = getLogger("FourLetterCommandFactory");
+                LOG_WARNING(log, "Find invalid keeper 4lw command {} when initializing, ignore it.", token);
+            }
         }
     }
 }
@@ -532,7 +534,8 @@ String IsReadOnlyCommand::run()
 {
     if (keeper_dispatcher.isObserver())
         return "ro";
-    return "rw";
+    else
+        return "rw";
 }
 
 String RecoveryCommand::run()

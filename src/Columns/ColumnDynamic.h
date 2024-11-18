@@ -304,15 +304,6 @@ public:
         variant_column_ptr->protect();
     }
 
-    ColumnCheckpointPtr getCheckpoint() const override
-    {
-        return variant_column_ptr->getCheckpoint();
-    }
-
-    void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
-
-    void rollback(const ColumnCheckpoint & checkpoint) override;
-
     void forEachSubcolumn(MutableColumnCallback callback) override
     {
         callback(variant_column);
@@ -376,7 +367,6 @@ public:
     bool addNewVariant(const DataTypePtr & new_variant) { return addNewVariant(new_variant, new_variant->getName()); }
 
     bool hasDynamicStructure() const override { return true; }
-    bool dynamicStructureEquals(const IColumn & rhs) const override;
     void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
 
     const StatisticsPtr & getStatistics() const { return statistics; }

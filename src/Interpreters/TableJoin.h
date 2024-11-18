@@ -20,11 +20,6 @@
 #include <memory>
 #include <base/types.h>
 
-namespace CurrentMetrics
-{
-    extern const Metric TemporaryFilesForJoin;
-}
-
 namespace DB
 {
 
@@ -270,7 +265,7 @@ public:
 
     VolumePtr getGlobalTemporaryVolume() { return tmp_volume; }
 
-    TemporaryDataOnDiskScopePtr getTempDataOnDisk() { return tmp_data ? tmp_data->childScope(CurrentMetrics::TemporaryFilesForJoin) : nullptr; }
+    TemporaryDataOnDiskScopePtr getTempDataOnDisk() { return tmp_data; }
 
     ActionsDAG createJoinedBlockActions(ContextPtr context) const;
 

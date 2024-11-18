@@ -73,7 +73,7 @@ public:
     virtual DataTypePtr getStateType() const;
 
     /// Same as the above but normalize state types so that variants with the same binary representation will use the same type.
-    virtual DataTypePtr getNormalizedStateType() const;
+    virtual DataTypePtr getNormalizedStateType() const { return getStateType(); }
 
     /// Returns true if two aggregate functions have the same state representation in memory and the same serialization,
     /// so state of one aggregate function can be safely used with another.

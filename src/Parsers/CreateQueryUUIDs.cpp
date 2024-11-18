@@ -31,7 +31,7 @@ CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_r
         /// If we generate random UUIDs for already existing tables then those UUIDs will not be correct making those inner target table inaccessible.
         /// Thus it's not safe for example to replace
         /// "ATTACH MATERIALIZED VIEW mv AS SELECT a FROM b" with
-        /// "ATTACH MATERIALIZED VIEW mv TO INNER UUID "248372b7-02c4-4c88-a5e1-282a83cc572a" AS SELECT a FROM b"
+        /// "ATTACH MATERIALIZED VIEW mv TO INNER UUID "XXXX" AS SELECT a FROM b"
         /// This replacement is safe only for CREATE queries when inner target tables don't exist yet.
         if (!query.attach)
         {
@@ -43,8 +43,7 @@ CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_r
 
             /// If destination table (to_table_id) is not specified for materialized view,
             /// then MV will create inner table. We should generate UUID of inner table here.
-            /// An exception is refreshable MV that replaces inner table by renaming, changing UUID on each refresh.
-            if (query.is_materialized_view && !(query.refresh_strategy && !query.refresh_strategy->append))
+            if (query.is_materialized_view)
                 generate_target_uuid(ViewTarget::To);
 
             if (query.is_time_series_table)

@@ -335,7 +335,7 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     : header(header_)
     , keys_positions(calculateKeysPositions(header, params_))
     , params(params_)
-    , tmp_data(params.tmp_data_scope ? params.tmp_data_scope->childScope(CurrentMetrics::TemporaryFilesForAggregation) : nullptr)
+    , tmp_data(params.tmp_data_scope ? std::make_unique<TemporaryDataOnDisk>(params.tmp_data_scope, CurrentMetrics::TemporaryFilesForAggregation) : nullptr)
     , min_bytes_for_prefetch(getMinBytesForPrefetch())
 {
     /// Use query-level memory tracker
@@ -640,7 +640,8 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
     {
         if (has_low_cardinality)
             return AggregatedDataVariants::Type::low_cardinality_key_fixed_string;
-        return AggregatedDataVariants::Type::key_fixed_string;
+        else
+            return AggregatedDataVariants::Type::key_fixed_string;
     }
 
     /// If all keys fits in N bits, will use hash table with all keys packed (placed contiguously) to single N-bit key.
@@ -671,7 +672,8 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
     {
         if (has_low_cardinality)
             return AggregatedDataVariants::Type::low_cardinality_key_string;
-        return AggregatedDataVariants::Type::key_string;
+        else
+            return AggregatedDataVariants::Type::key_string;
     }
 
     if (params.keys_size > 1 && all_keys_are_numbers_or_strings)
@@ -1519,15 +1521,10 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
     Stopwatch watch;
     size_t rows = data_variants.size();
 
-    auto & out_stream = [this, max_temp_file_size]() -> TemporaryBlockStreamHolder &
-    {
-        std::lock_guard lk(tmp_files_mutex);
-        return tmp_files.emplace_back(getHeader(false), tmp_data.get(), max_temp_file_size);
-    }();
-
+    auto & out_stream = tmp_data->createStream(getHeader(false), max_temp_file_size);
     ProfileEvents::increment(ProfileEvents::ExternalAggregationWritePart);
 
-    LOG_DEBUG(log, "Writing part of aggregation data into temporary file {}", out_stream.getHolder()->describeFilePath());
+    LOG_DEBUG(log, "Writing part of aggregation data into temporary file {}", out_stream.getPath());
 
     /// Flush only two-level data and possibly overflow data.
 
@@ -1644,24 +1641,11 @@ Block Aggregator::convertOneBucketToBlock(AggregatedDataVariants & variants, Are
     return block;
 }
 
-std::list<TemporaryBlockStreamHolder> Aggregator::detachTemporaryData()
-{
-    std::lock_guard lk(tmp_files_mutex);
-    return std::move(tmp_files);
-}
-
-bool Aggregator::hasTemporaryData() const
-{
-    std::lock_guard lk(tmp_files_mutex);
-    return !tmp_files.empty();
-}
-
-
 template <typename Method>
 void Aggregator::writeToTemporaryFileImpl(
     AggregatedDataVariants & data_variants,
     Method & method,
-    TemporaryBlockStreamHolder & out) const
+    TemporaryFileStream & out) const
 {
     size_t max_temporary_block_size_rows = 0;
     size_t max_temporary_block_size_bytes = 0;
@@ -1678,14 +1662,14 @@ void Aggregator::writeToTemporaryFileImpl(
     for (UInt32 bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
     {
         Block block = convertOneBucketToBlock(data_variants, method, data_variants.aggregates_pool, false, bucket);
-        out->write(block);
+        out.write(block);
         update_max_sizes(block);
     }
 
     if (params.overflow_row)
     {
         Block block = prepareBlockAndFillWithoutKey(data_variants, false, true);
-        out->write(block);
+        out.write(block);
         update_max_sizes(block);
     }
 
@@ -1991,13 +1975,14 @@ Aggregator::ConvertToBlockResVariant Aggregator::convertToBlockImplFinal(
     {
         return insertResultsIntoColumns(places, std::move(out_cols.value()), arena, has_null_key_data, use_compiled_functions);
     }
-
-    if (out_cols.has_value())
+    else
     {
-        blocks.emplace_back(
-            insertResultsIntoColumns(places, std::move(out_cols.value()), arena, has_null_key_data, use_compiled_functions));
+        if (out_cols.has_value())
+        {
+            blocks.emplace_back(insertResultsIntoColumns(places, std::move(out_cols.value()), arena, has_null_key_data, use_compiled_functions));
+        }
+        return blocks;
     }
-    return blocks;
 }
 
 template <typename Method, typename Table>
@@ -2065,10 +2050,12 @@ Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & a
     {
         return finalizeBlock(params, getHeader(final), std::move(out_cols).value(), final, rows_in_current_block);
     }
-
-    if (rows_in_current_block)
-        res_blocks.emplace_back(finalizeBlock(params, getHeader(final), std::move(out_cols).value(), final, rows_in_current_block));
-    return res_blocks;
+    else
+    {
+        if (rows_in_current_block)
+            res_blocks.emplace_back(finalizeBlock(params, getHeader(final), std::move(out_cols).value(), final, rows_in_current_block));
+        return res_blocks;
+    }
 }
 
 void Aggregator::addSingleKeyToAggregateColumns(
