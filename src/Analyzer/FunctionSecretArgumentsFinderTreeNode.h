@@ -11,16 +11,16 @@ namespace
 {
 
 template <typename FunctionNodeType>
-String getFunctionNameImpl(const FunctionNodeType *);
+inline String getFunctionNameImpl(const FunctionNodeType *);
 
 template <>
-[[maybe_unused]] String getFunctionNameImpl<DB::FunctionNode>(const DB::FunctionNode * function)
+inline String getFunctionNameImpl<DB::FunctionNode>(const DB::FunctionNode * function)
 {
     return function->getFunctionName();
 }
 
 template <>
-[[maybe_unused]] String getFunctionNameImpl<DB::TableFunctionNode>(const DB::TableFunctionNode * function)
+inline String getFunctionNameImpl<DB::TableFunctionNode>(const DB::TableFunctionNode * function)
 {
     return function->getTableFunctionName();
 }

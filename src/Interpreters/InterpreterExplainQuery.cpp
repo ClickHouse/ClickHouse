@@ -480,8 +480,8 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                     buf << "\n\n";
 
                 IAST::FormatSettings format_settings(buf, false);
-                if (!getContext()->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
-                    format_settings.show_secrets = false;
+                format_settings.show_secrets = getContext()->getSettingsRef()[Setting::format_display_secrets_in_show_and_select];
+
                 query_tree->toAST()->format(format_settings);
             }
 
