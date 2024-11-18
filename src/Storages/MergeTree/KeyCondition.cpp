@@ -914,6 +914,8 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
     return {field.columns, field.row_idx, result_idx};
 }
 
+DataTypePtr getArgumentTypeOfMonotonicFunction(const IFunctionBase & func);
+
 /// Sequentially applies functions to the column, returns `true`
 /// if all function arguments are compatible with functions
 /// signatures, and none of the functions produce `NULL` output.
@@ -945,7 +947,7 @@ bool applyFunctionChainToColumn(
     }
 
     // And cast it to the argument type of the first function in the chain
-    auto in_argument_type = functions[0]->getArgumentTypes()[0];
+    auto in_argument_type = getArgumentTypeOfMonotonicFunction(*functions[0]);
     if (canBeSafelyCasted(result_type, in_argument_type))
     {
         result_column = castColumnAccurate({result_column, result_type, ""}, in_argument_type);
@@ -974,7 +976,7 @@ bool applyFunctionChainToColumn(
         if (func->getArgumentTypes().empty())
             return false;
 
-        auto argument_type = func->getArgumentTypes()[0];
+        auto argument_type = getArgumentTypeOfMonotonicFunction(*func);
         if (!canBeSafelyCasted(result_type, argument_type))
             return false;
 
@@ -1383,6 +1385,18 @@ private:
     ColumnWithTypeAndName const_arg;
     Kind kind = Kind::NO_CONST;
 };
+
+DataTypePtr getArgumentTypeOfMonotonicFunction(const IFunctionBase & func)
+{
+    const auto & arg_types = func.getArgumentTypes();
+    if (const auto * func_ptr = typeid_cast<const FunctionWithOptionalConstArg *>(&func))
+    {
+        if (func_ptr->getKind() == FunctionWithOptionalConstArg::Kind::LEFT_CONST)
+            return arg_types.at(1);
+    }
+
+    return arg_types.at(0);
+}
 
 
 bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
