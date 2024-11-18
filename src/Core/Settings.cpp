@@ -151,6 +151,9 @@ Squash blocks passed to the external table to a specified size in bytes, if bloc
     DECLARE(UInt64, max_joined_block_size_rows, DEFAULT_BLOCK_SIZE, R"(
 Maximum block size for JOIN result (if join algorithm supports it). 0 means unlimited.
 )", 0) \
+    DECLARE(UInt64, min_joined_block_size_bytes, 524288, R"(
+Minimum block size for JOIN result (if join algorithm supports it). 0 means unlimited.
+)", 0) \
     DECLARE(UInt64, max_insert_threads, 0, R"(
 The maximum number of threads to execute the `INSERT SELECT` query.
 
@@ -1794,7 +1797,7 @@ Possible values:
 
 - 0 — Disabled.
 - 1 — Enabled.
-)", 0) \
+)", 1) \
     DECLARE(Int64, http_zlib_compression_level, 3, R"(
 Sets the level of data compression in the response to an HTTP request if [enable_http_compression = 1](#enable_http_compression).
 
@@ -4572,7 +4575,7 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
-    DECLARE(Bool, query_plan_merge_filters, false, R"(
+    DECLARE(Bool, query_plan_merge_filters, true, R"(
 Allow to merge filters in the query plan
 )", 0) \
     DECLARE(Bool, query_plan_filter_push_down, true, R"(

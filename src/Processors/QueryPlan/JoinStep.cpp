@@ -1,9 +1,10 @@
-#include <Processors/QueryPlan/JoinStep.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Processors/Transforms/JoiningTransform.h>
+#include <IO/Operators.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
-#include <IO/Operators.h>
+#include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/Transforms/JoiningTransform.h>
+#include <Processors/Transforms/SquashingTransform.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
 #include <Common/typeid_cast.h>
 #include <Processors/Transforms/ColumnPermuteTransform.h>
@@ -75,6 +76,7 @@ JoinStep::JoinStep(
     const Header & right_header_,
     JoinPtr join_,
     size_t max_block_size_,
+    size_t min_block_size_bytes_,
     size_t max_streams_,
     NameSet required_output_,
     bool keep_left_read_in_order_,
@@ -132,7 +134,13 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         });
     }
 
-    return joined_pipeline;
+    if (join->supportParallelJoin())
+    {
+        pipeline->addSimpleTransform([&](const Block & header)
+                                     { return std::make_shared<SimpleSquashingChunksTransform>(header, 0, min_block_size_bytes); });
+    }
+
+    return pipeline;
 }
 
 bool JoinStep::allowPushDownToRight() const
