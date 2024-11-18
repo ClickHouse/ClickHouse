@@ -60,9 +60,12 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
   * threshold = 0.1,  TP = 2, FP = 1, FN = 0, Recall = 1.0, Precision = 0.666
   * threshold = 0,    TP = 2, FP = 2, FN = 0, Recall = 1.0, Precision = 0.5
   *
-  * The "curve" will be present by a line that moves one step either towards right or top on each threshold change.
-  * This implementation is not interpolated and does not use the trapezoidal rule. 
-  * Each increment in area is calculated using `(R_n - R_{n-1}) * P_n`, which is equivalent to the right Riemann sum.
+  * This PR-AUC uses the right Riemann sum to calculate the AUC.
+  * Each increment in area is calculated using `(R_n - R_{n-1}) * P_n`, 
+  * where `R_n` is the Recall at the `n`-th point and `P_n` is the Precision at the `n`-th point.
+  *
+  * This implementation is not interpolated and is different from computing the AUC with the trapezoidal rule, 
+  * which uses linear interpolation and can be too optimistic for the Precision Recall AUC metric.
   */
 
 class FunctionArrayPrAUC : public IFunction
@@ -106,17 +109,19 @@ private:
         {
             if (sorted_labels[i].score != prev_score)
             {
-                /* Precision = TP / (TP + FP) and Recall = TP / (TP + FN)
+                /* Precision = TP / (TP + FP) 
+                 * Recall = TP / (TP + FN)
                  *
-                 *  Instead of calculating 
-                 *      d_Area = Precision_n * (Recall_n - Recall_{n-1}), 
-                 *  we can calculate 
-                 *      d_Area = Precision_n * (TP_n - TP_{n-1}) 
-                 *  and later divide it by (TP + FN), since (TP + FN) is constant and equal to total positive labels.
+                 * Instead of calculating 
+                 *     d_Area = Precision_n * (Recall_n - Recall_{n-1}), 
+                 * we can calculate 
+                 *     d_Area = Precision_n * (TP_n - TP_{n-1}) 
+                 * and later divide it by (TP + FN), since (TP + FN) is constant and equal to total positive labels.
                  */
                 curr_precision = static_cast<Float64>(curr_tp) / curr_p;
                 area += curr_precision * (curr_tp - prev_tp);
                 prev_tp = curr_tp;
+                prev_score = sorted_labels[i].score;
             }
 
             if (sorted_labels[i].label)
