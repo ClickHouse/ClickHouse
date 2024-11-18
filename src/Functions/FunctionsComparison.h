@@ -50,6 +50,44 @@
 namespace DB
 {
 
+namespace
+{
+template <bool _int, bool _float, bool _decimal, bool _datetime, typename F>
+static inline bool callOnAtLeastOneDecimalType(TypeIndex type_num1, TypeIndex type_num2, F && f)
+{
+    switch (type_num1)
+    {
+        case TypeIndex::Decimal32:
+            return callOnBasicType<Decimal32, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
+        case TypeIndex::Decimal64:
+            return callOnBasicType<Decimal64, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
+        case TypeIndex::Decimal128:
+            return callOnBasicType<Decimal128, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
+        case TypeIndex::Decimal256:
+            return callOnBasicType<Decimal256, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
+        default:
+            break;
+    }
+
+    switch (type_num2)
+    {
+        case TypeIndex::Decimal32:
+            return callOnBasicTypeSecondArg<Decimal32, _int, _float, _decimal, _datetime>(type_num1, std::forward<F>(f));
+        case TypeIndex::Decimal64:
+            return callOnBasicTypeSecondArg<Decimal64, _int, _float, _decimal, _datetime>(type_num1, std::forward<F>(f));
+        case TypeIndex::Decimal128:
+            return callOnBasicTypeSecondArg<Decimal128, _int, _float, _decimal, _datetime>(type_num1, std::forward<F>(f));
+        case TypeIndex::Decimal256:
+            return callOnBasicTypeSecondArg<Decimal256, _int, _float, _decimal, _datetime>(type_num1, std::forward<F>(f));
+        default:
+            break;
+    }
+
+    return false;
+}
+}
+
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
@@ -770,7 +808,7 @@ private:
             return (res = DecimalComparison<LeftDataType, RightDataType, Op, false>::apply(col_left, col_right)) != nullptr;
         };
 
-        if (!callOnBasicTypes<true, false, true, true>(left_number, right_number, call))
+        if (!callOnAtLeastOneDecimalType<true, false, true, true>(left_number, right_number, call))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong call for {} with {} and {}",
                             getName(), col_left.type->getName(), col_right.type->getName());
 
