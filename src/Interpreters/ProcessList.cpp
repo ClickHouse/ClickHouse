@@ -458,16 +458,20 @@ void QueryStatus::ExecutorHolder::remove()
 
 CancellationCode QueryStatus::cancelQuery(CancelReason reason, std::exception_ptr exception)
 {
-    if (is_killed.exchange(true))
-        return CancellationCode::CancelSent;
-
     {
-        std::lock_guard lock{cancellation_exception_mutex};
+        // Lock the mutex to protect the critical section
+        std::lock_guard<std::mutex> lock(cancel_mutex);
+
+        if (is_killed)
+            return CancellationCode::CancelSent;
+
+        is_killed = true;
+
         if (!cancellation_exception)
             cancellation_exception = exception;
-    }
 
-    std::atomic_exchange(&cancel_reason, reason);
+        cancel_reason = reason;
+    }
 
     std::vector<ExecutorHolderPtr> executors_snapshot;
 
@@ -495,18 +499,23 @@ CancellationCode QueryStatus::cancelQuery(CancelReason reason, std::exception_pt
     return CancellationCode::CancelSent;
 }
 
-void QueryStatus::throwProperExceptionIfNeeded(const UInt64 & max_execution_time, const UInt64 & elapsed_ns)
+void QueryStatus::throwProperExceptionIfNeeded(const UInt64 & max_execution_time, const UInt64 & elapsed_ns) const
 {
     if (is_killed.load())
     {
-        String additional_error_part;
-        if (!elapsed_ns)
-            additional_error_part = fmt::format("elapsed {} ms,", static_cast<double>(elapsed_ns) / 1000000000ULL);
-
-        if (cancel_reason == CancelReason::TIMEOUT)
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: {} maximum: {} ms", additional_error_part, max_execution_time / 1000.0);
-        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+        throwProperException(max_execution_time, elapsed_ns);
     }
+}
+
+void QueryStatus::throwProperException(const UInt64 & max_execution_time, const UInt64 & elapsed_ns) const
+{
+    String additional_error_part;
+    if (!elapsed_ns)
+        additional_error_part = fmt::format("elapsed {} ms,", static_cast<double>(elapsed_ns) / 1000000000ULL);
+
+    if (cancel_reason == CancelReason::TIMEOUT)
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: {} maximum: {} ms", additional_error_part, max_execution_time / 1000.0);
+    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 }
 
 void QueryStatus::addPipelineExecutor(PipelineExecutor * e)
@@ -551,8 +560,7 @@ void QueryStatus::throwQueryWasCancelled() const
     std::lock_guard lock{cancellation_exception_mutex};
     if (cancellation_exception)
         std::rethrow_exception(cancellation_exception);
-    else
-        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+    throwProperException(limits.max_execution_time.totalMilliseconds());
 }
 
 bool QueryStatus::checkTimeLimitSoft()
