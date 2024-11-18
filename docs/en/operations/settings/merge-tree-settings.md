@@ -78,6 +78,16 @@ If `min_merge_bytes_to_use_direct_io = 0`, then direct I/O is disabled.
 
 Default value: `10 * 1024 * 1024 * 1024` bytes.
 
+## ttl_only_drop_parts
+
+Controls whether data parts are fully dropped in MergeTree tables when all rows in that part have expired according to their `TTL` settings.
+
+When `ttl_only_drop_parts` is disabled (by default), only the rows that have expired based on their TTL settings are removed.
+
+When `ttl_only_drop_parts` is enabled, the entire part is dropped if all rows in that part have expired according to their `TTL` settings.
+
+Default value: 0.
+
 ## merge_with_ttl_timeout
 
 Minimum delay in seconds before repeating a merge with delete TTL.
