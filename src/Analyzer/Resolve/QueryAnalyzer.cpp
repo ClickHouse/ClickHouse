@@ -1369,7 +1369,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
             {
                 LOG_DEBUG(&Poco::Logger::get("resolveInParentScope"), "Found dependent column for indetifier '{}': {}", identifier_lookup.dump(), current_column->dumpTree());
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                    "Resolved identifier '{}' in parent scope to expression '{}' with corellated column '{}'. In scope {}",
+                    "Resolved identifier '{}' in parent scope to expression '{}' with correlated column '{}'. In scope {}",
                     identifier_lookup.identifier.getFullName(),
                     resolved_identifier->formatASTForErrorMessage(),
                     current_column->getColumnName(),
