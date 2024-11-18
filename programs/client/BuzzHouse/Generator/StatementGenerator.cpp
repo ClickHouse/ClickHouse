@@ -1902,7 +1902,7 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
         }
         else if (drp.sobject() == SQLObject::DATABASE)
         {
-            dropDatabase(std::stoul(drp.object().database().database().substr(1)));
+            dropDatabase(static_cast<uint32_t>(std::stoul(drp.object().database().database().substr(1))));
         }
         else if (drp.sobject() == SQLObject::FUNCTION)
         {
@@ -2136,7 +2136,7 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
     }
     else if (sq.has_inner_query() && query.has_trunc() && query.trunc().has_database())
     {
-        dropDatabase(std::stoul(query.trunc().database().database().substr(1)));
+        dropDatabase(static_cast<uint32_t>(std::stoul(query.trunc().database().database().substr(1))));
     }
     else if (sq.has_start_trans() && success)
     {

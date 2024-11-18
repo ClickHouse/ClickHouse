@@ -1288,6 +1288,11 @@ void StatementGenerator::strAppendAnyValueInternal(RandomGenerator & rg, std::st
         const SQLType * next = randomNextType(rg, allow_nullable | allow_JSON, col_counter, nullptr);
 
         strAppendAnyValueInternal(rg, ret, next);
+        if (rg.nextMediumNumber() < 4)
+        {
+            ret += "::";
+            next->typeName(ret, false);
+        }
         delete next;
     }
     else if ((gtp = dynamic_cast<const GeoType *>(tp)))

@@ -308,7 +308,7 @@ int StatementGenerator::generateMergeTreeEngineDetails(
                     {
                         const ExprColumn & oecol = tpk.exprs(j).comp_expr().expr_stc().col();
 
-                        if (!oecol.has_subcol() && std::stoul(oecol.col().column().substr(1)) == entry.cname1)
+                        if (!oecol.has_subcol() && static_cast<uint32_t>(std::stoul(oecol.col().column().substr(1))) == entry.cname1)
                         {
                             this->ids.push_back(entry.cname1);
                             break;
