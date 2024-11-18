@@ -6791,7 +6791,7 @@ parseDateTime(str[, format[, timezone]])
 
 **Returned value(s)**
 
-Returns DateTime values parsed from input string according to a MySQL style format string.
+Return a [DateTime](../data-types/datetime.md) value parsed from the input string according to a MySQL-style format string.
 
 **Supported format specifiers**
 
@@ -6840,7 +6840,7 @@ parseDateTimeInJodaSyntax(str[, format[, timezone]])
 
 **Returned value(s)**
 
-Returns DateTime values parsed from input string according to a Joda style format.
+Return a [DateTime](../data-types/datetime.md) value parsed from the input string according to a Joda-style format string.
 
 **Supported format specifiers**
 
@@ -6885,7 +6885,8 @@ parseDateTime64(str[, format[, timezone]])
 
 **Returned value(s)**
 
-Returns [DateTime64](../data-types/datetime64.md) type values parsed from input string according to a MySQL style format string.
+Return a [DateTime64](../data-types/datetime64.md) value parsed from the input string according to a MySQL-style format string.
+The precision of the returned value is 6.
 
 ## parseDateTime64OrZero
 
@@ -6913,7 +6914,8 @@ parseDateTime64InJodaSyntax(str[, format[, timezone]])
 
 **Returned value(s)**
 
-Returns [DateTime64](../data-types/datetime64.md) type values parsed from input string according to a joda style format string.
+Return a [DateTime64](../data-types/datetime64.md) value parsed from the input string according to a Joda-style format string.
+The precision of the returned value equal to the number of `S` placeholders in the format string (but at most 6).
 
 ## parseDateTime64InJodaSyntaxOrZero
 
