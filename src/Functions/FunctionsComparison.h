@@ -79,6 +79,30 @@ static inline bool callOnAtLeastOneDecimalType(TypeIndex type_num1, TypeIndex ty
 
     return false;
 }
+
+template <template <typename, typename> class Operation, typename Name>
+ColumnPtr executeDecimal(const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right, bool check_decimal_overflow)
+{
+    TypeIndex left_number = col_left.type->getTypeId();
+    TypeIndex right_number = col_right.type->getTypeId();
+    ColumnPtr res;
+
+    auto call = [&](const auto & types) -> bool
+    {
+        using Types = std::decay_t<decltype(types)>;
+        using LeftDataType = typename Types::LeftType;
+        using RightDataType = typename Types::RightType;
+
+        return (res = DecimalComparison<LeftDataType, RightDataType, Operation>::apply(col_left, col_right, check_decimal_overflow))
+            != nullptr;
+    };
+
+    if (!callOnAtLeastOneDecimalType<true, false, true, true>(left_number, right_number, call))
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Wrong call for {} with {} and {}", Name::name, col_left.type->getName(), col_right.type->getName());
+
+    return res;
+}
 }
 
 
@@ -729,29 +753,6 @@ private:
         return nullptr;
     }
 
-    ColumnPtr executeDecimal(const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right) const
-    {
-        TypeIndex left_number = col_left.type->getTypeId();
-        TypeIndex right_number = col_right.type->getTypeId();
-        ColumnPtr res;
-
-        auto call = [&](const auto & types) -> bool
-        {
-            using Types = std::decay_t<decltype(types)>;
-            using LeftDataType = typename Types::LeftType;
-            using RightDataType = typename Types::RightType;
-
-            return (res = DecimalComparison<LeftDataType, RightDataType, Op>::apply(col_left, col_right, check_decimal_overflow))
-                != nullptr;
-        };
-
-        if (!callOnAtLeastOneDecimalType<true, false, true, true>(left_number, right_number, call))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong call for {} with {} and {}",
-                            getName(), col_left.type->getName(), col_right.type->getName());
-
-        return res;
-    }
-
     ColumnPtr executeString(const IColumn * c0, const IColumn * c1) const
     {
         const ColumnString * c0_string = checkAndGetColumn<ColumnString>(c0);
@@ -1309,7 +1310,8 @@ public:
                 DataTypePtr common_type = getLeastSupertype(DataTypes{left_type, right_type});
                 ColumnPtr c0_converted = castColumn(col_with_type_and_name_left, common_type);
                 ColumnPtr c1_converted = castColumn(col_with_type_and_name_right, common_type);
-                return executeDecimal({c0_converted, common_type, "left"}, {c1_converted, common_type, "right"});
+                return executeDecimal<Op, Name>(
+                    {c0_converted, common_type, "left"}, {c1_converted, common_type, "right"}, check_decimal_overflow);
             }
 
             /// Check does another data type is comparable to Decimal, includes Int and Float.
@@ -1332,7 +1334,7 @@ public:
                     = ColumnsWithTypeAndName{{c0_converted, converted_type, "left"}, {c1_converted, converted_type, "right"}};
                 return executeImpl(new_arguments, result_type, input_rows_count);
             }
-            return executeDecimal(col_with_type_and_name_left, col_with_type_and_name_right);
+            return executeDecimal<Op, Name>(col_with_type_and_name_left, col_with_type_and_name_right, check_decimal_overflow);
         }
         if (date_and_datetime)
         {
@@ -1342,7 +1344,8 @@ public:
             if (!((res = executeNumLeftType<UInt32>(c0_converted.get(), c1_converted.get()))
                   || (res = executeNumLeftType<UInt64>(c0_converted.get(), c1_converted.get()))
                   || (res = executeNumLeftType<Int32>(c0_converted.get(), c1_converted.get()))
-                  || (res = executeDecimal({c0_converted, common_type, "left"}, {c1_converted, common_type, "right"}))))
+                  || (res = executeDecimal<Op, Name>(
+                          {c0_converted, common_type, "left"}, {c1_converted, common_type, "right"}, check_decimal_overflow))))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Date related common types can only be UInt32/UInt64/Int32/Decimal");
             return res;
         }
