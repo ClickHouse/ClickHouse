@@ -2,8 +2,8 @@
 
 #include <Core/Settings.h>
 
-#include <Common/scope_guard_safe.h>
 #include <Core/ParallelReplicasMode.h>
+#include <Common/scope_guard_safe.h>
 
 #include <Columns/ColumnAggregateFunction.h>
 
@@ -104,6 +104,7 @@ namespace Setting
     extern const SettingsBool optimize_move_to_prewhere;
     extern const SettingsBool optimize_move_to_prewhere_if_final;
     extern const SettingsBool use_concurrency_control;
+    extern const SettingsUInt64 min_joined_block_size_bytes;
 }
 
 namespace ErrorCodes
@@ -1267,11 +1268,13 @@ void joinCastPlanColumnsToNullable(QueryPlan & plan_to_add_cast, PlannerContextP
     plan_to_add_cast.addStep(std::move(cast_join_columns_step));
 }
 
-JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_expression,
+JoinTreeQueryPlan buildQueryPlanForJoinNode(
+    const QueryTreeNodePtr & join_table_expression,
     JoinTreeQueryPlan left_join_tree_query_plan,
     JoinTreeQueryPlan right_join_tree_query_plan,
     const ColumnIdentifierSet & outer_scope_columns,
-    PlannerContextPtr & planner_context)
+    PlannerContextPtr & planner_context,
+    const SelectQueryInfo & select_query_info)
 {
     auto & join_node = join_table_expression->as<JoinNode &>();
     if (left_join_tree_query_plan.from_stage != QueryProcessingStage::FetchColumns)
@@ -1554,7 +1557,8 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
     }
 
     const Block & right_header = right_plan.getCurrentHeader();
-    auto join_algorithm = chooseJoinAlgorithm(table_join, join_node.getRightTableExpression(), left_header, right_header, planner_context);
+    auto join_algorithm = chooseJoinAlgorithm(
+        table_join, join_node.getRightTableExpression(), left_header, right_header, planner_context, select_query_info);
 
     auto result_plan = QueryPlan();
 
@@ -1646,6 +1650,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             right_plan.getCurrentHeader(),
             std::move(join_algorithm),
             settings[Setting::max_block_size],
+            settings[Setting::min_joined_block_size_bytes],
             settings[Setting::max_threads],
             false /*optimize_read_in_order*/);
 
@@ -1912,11 +1917,13 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             auto left_query_plan = std::move(query_plans_stack.back());
             query_plans_stack.pop_back();
 
-            query_plans_stack.push_back(buildQueryPlanForJoinNode(table_expression,
+            query_plans_stack.push_back(buildQueryPlanForJoinNode(
+                table_expression,
                 std::move(left_query_plan),
                 std::move(right_query_plan),
                 table_expressions_outer_scope_columns[i],
-                planner_context));
+                planner_context,
+                select_query_info));
         }
         else
         {
