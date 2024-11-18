@@ -1643,6 +1643,7 @@ You can specify the log format that will be outputted in the console log. Curren
 
 ```json
 {
+  "date_time_utc": "2024-11-06T09:06:09Z",
   "date_time": "1650918987.180175",
   "thread_name": "#1",
   "thread_id": "254545",

@@ -36,7 +36,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         const VirtualsDescriptionPtr & virtual_columns_,
         const MergeTreeWriterSettings & settings_,
-        const MergeTreeIndexGranularity & index_granularity_ = {});
+        MergeTreeIndexGranularityPtr index_granularity_);
 
     virtual ~IMergeTreeDataPartWriter();
 
@@ -52,7 +52,7 @@ public:
 
     PlainMarksByName releaseCachedMarks();
 
-    const MergeTreeIndexGranularity & getIndexGranularity() const { return index_granularity; }
+    MergeTreeIndexGranularityPtr getIndexGranularity() const { return index_granularity; }
 
     virtual Block getColumnsSample() const = 0;
 
@@ -76,7 +76,7 @@ protected:
 
     MutableDataPartStoragePtr data_part_storage;
     MutableColumns index_columns;
-    MergeTreeIndexGranularity index_granularity;
+    MergeTreeIndexGranularityPtr index_granularity;
     /// Marks that will be saved to cache on finish.
     PlainMarksByName cached_marks;
 };
@@ -101,6 +101,6 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
-        const MergeTreeIndexGranularity & computed_index_granularity);
+        MergeTreeIndexGranularityPtr computed_index_granularity);
 
 }
