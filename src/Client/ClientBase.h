@@ -213,6 +213,9 @@ private:
     void initQueryIdFormats();
     bool addMergeTreeSettings(ASTCreateQuery & ast_create);
 
+    void startKeystrokeInterceptorIfExists();
+    void stopKeystrokeInterceptorIfExists();
+
 protected:
 
     class QueryInterruptHandler : private boost::noncopyable
@@ -330,6 +333,7 @@ protected:
     /// /dev/tty if accessible or std::cerr - for progress bar.
     /// We prefer to output progress bar directly to tty to allow user to redirect stdout and stderr and still get the progress indication.
     std::unique_ptr<WriteBufferFromFileDescriptor> tty_buf;
+    std::mutex tty_mutex;
 
     String home_path;
     String history_file; /// Path to a file containing command history.

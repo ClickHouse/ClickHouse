@@ -644,6 +644,7 @@ template class ParquetLeafColReader<ColumnInt32>;
 template class ParquetLeafColReader<ColumnUInt32>;
 template class ParquetLeafColReader<ColumnInt64>;
 template class ParquetLeafColReader<ColumnUInt64>;
+template class ParquetLeafColReader<ColumnBFloat16>;
 template class ParquetLeafColReader<ColumnFloat32>;
 template class ParquetLeafColReader<ColumnFloat64>;
 template class ParquetLeafColReader<ColumnString>;
