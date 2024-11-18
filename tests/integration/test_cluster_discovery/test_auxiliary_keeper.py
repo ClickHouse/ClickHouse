@@ -124,6 +124,4 @@ def test_cluster_discovery_with_auxiliary_keeper_startup_and_stop(start_cluster)
     )
 
     # cleanup
-    nodes["node0"].query(
-        "DROP TABLE tbl ON CLUSTER 'test_auto_cluster' SYNC"
-    )
+    nodes["node0"].query("DROP TABLE tbl ON CLUSTER 'test_auto_cluster' SYNC")
