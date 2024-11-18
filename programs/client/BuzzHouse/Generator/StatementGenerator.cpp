@@ -1914,9 +1914,12 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
         const uint32_t tname1 = static_cast<uint32_t>(std::stoul(query.exchange().est1().table().table().substr(1))),
                        tname2 = static_cast<uint32_t>(std::stoul(query.exchange().est2().table().table().substr(1)));
         SQLTable tx = std::move(this->tables[tname1]), ty = std::move(this->tables[tname2]);
+        auto db_tmp = tx.db;
 
         tx.tname = tname2;
+        tx.db = ty.db;
         ty.tname = tname1;
+        ty.db = db_tmp;
         this->tables[tname2] = std::move(tx);
         this->tables[tname1] = std::move(ty);
     }

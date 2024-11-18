@@ -776,7 +776,7 @@ static inline void nextFloatingPoint(RandomGenerator & rg, std::string & ret)
     }
     else
     {
-        std::uniform_int_distribution<uint32_t> next_dist(0, 30);
+        std::uniform_int_distribution<uint32_t> next_dist(0, 9);
         const uint32_t left = next_dist(rg.generator), right = next_dist(rg.generator);
 
         appendDecimal(rg, ret, left, right);
