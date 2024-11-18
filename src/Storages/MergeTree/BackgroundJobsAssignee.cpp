@@ -11,11 +11,22 @@ namespace DB
 
 BackgroundJobsAssignee::BackgroundJobsAssignee(MergeTreeData & data_, BackgroundJobsAssignee::Type type_, ContextPtr global_context_)
     : WithContext(global_context_)
-    , data(data_)
-    , sleep_settings(global_context_->getBackgroundMoveTaskSchedulingSettings())
-    , rng(randomSeed())
     , type(type_)
+    , data(data_)
+    , rng(randomSeed())
+    , sleep_settings(getSettings())
 {
+}
+
+BackgroundTaskSchedulingSettings BackgroundJobsAssignee::getSettings() const
+{
+    switch (type)
+    {
+        case Type::DataProcessing:
+            return getContext()->getBackgroundProcessingTaskSchedulingSettings();
+        case Type::Moving:
+            return getContext()->getBackgroundMoveTaskSchedulingSettings();
+    }
 }
 
 void BackgroundJobsAssignee::trigger()
