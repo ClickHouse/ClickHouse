@@ -28,10 +28,11 @@ int main(int /*argc*/, char ** argv)
     String hdfs_file_path = "/path/to/file";
     ReadSettings read_settings;
 
-    auto get_read_buffer = [&](bool async, bool prefetch, bool read_at) -> ReadBufferPtr
+    auto get_read_buffer = [&](bool async, bool prefetch, bool read_at)
     {
         auto rb = std::make_shared<ReadBufferFromHDFS>(hdfs_uri, hdfs_file_path, *config, read_settings, 0, true);
 
+        ReadBufferPtr res;
         if (async)
         {
             std::cout << "use async" << std::endl;
@@ -41,13 +42,13 @@ int main(int /*argc*/, char ** argv)
                 std::cout << "use read_at" << std::endl;
 
             read_settings.remote_fs_prefetch = prefetch;
-            return std::make_shared<AsynchronousReadBufferFromHDFS>(
+            res = std::make_shared<AsynchronousReadBufferFromHDFS>(
                 getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER), read_settings, rb, read_at);
         }
         else
-        {
-            return rb;
-        }
+            res = rb;
+
+        return res;
     };
 
     auto wrap_parallel_if_needed = [&](ReadBufferPtr input, bool parallel) -> ReadBufferPtr
@@ -62,10 +63,10 @@ int main(int /*argc*/, char ** argv)
             return input;
     };
 
-    bool async = (std::atoi(argv[1]) != 0);
-    bool prefetch = (std::atoi(argv[2]) != 0);
-    bool read_at = (std::atoi(argv[3]) != 0);
-    bool parallel = (std::atoi(argv[4]) != 0);
+    bool async = (std::stoi(std::string(argv[1])) != 0);
+    bool prefetch = (std::stoi(std::string(argv[2])) != 0);
+    bool read_at = (std::stoi(std::string(argv[3])) != 0);
+    bool parallel = (std::stoi(std::string(argv[4])) != 0);
     std::cout << "async: " << async << ", prefetch: " << prefetch << ", read_at: " << read_at << ", parallel: " << parallel << std::endl;
     auto holder = get_read_buffer(async, prefetch, read_at);
     auto rb = wrap_parallel_if_needed(holder, parallel);
