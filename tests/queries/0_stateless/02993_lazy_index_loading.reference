@@ -1,4 +1,18 @@
-100000000	100000000
-0	0
+Row 1:
+──────
+round(primary_key_bytes_in_memory, -7):           100000000 -- 100.00 million
+round(primary_key_bytes_in_memory_allocated, -7): 100000000 -- 100.00 million
+Row 1:
+──────
+primary_key_bytes_in_memory:           0
+primary_key_bytes_in_memory_allocated: 0
 1
-100000000	100000000
+Row 1:
+──────
+primary_key_bytes_in_memory:           0
+primary_key_bytes_in_memory_allocated: 0
+1
+Row 1:
+──────
+round(primary_key_bytes_in_memory, -7):           100000000 -- 100.00 million
+round(primary_key_bytes_in_memory_allocated, -7): 100000000 -- 100.00 million

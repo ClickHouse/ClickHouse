@@ -151,6 +151,9 @@ Squash blocks passed to the external table to a specified size in bytes, if bloc
     DECLARE(UInt64, max_joined_block_size_rows, DEFAULT_BLOCK_SIZE, R"(
 Maximum block size for JOIN result (if join algorithm supports it). 0 means unlimited.
 )", 0) \
+    DECLARE(UInt64, min_joined_block_size_bytes, 524288, R"(
+Minimum block size for JOIN result (if join algorithm supports it). 0 means unlimited.
+)", 0) \
     DECLARE(UInt64, max_insert_threads, 0, R"(
 The maximum number of threads to execute the `INSERT SELECT` query.
 
@@ -1797,7 +1800,7 @@ Possible values:
 
 - 0 — Disabled.
 - 1 — Enabled.
-)", 0) \
+)", 1) \
     DECLARE(Int64, http_zlib_compression_level, 3, R"(
 Sets the level of data compression in the response to an HTTP request if [enable_http_compression = 1](#enable_http_compression).
 
@@ -5745,7 +5748,10 @@ Enable experimental functions for natural language processing.
 Enable experimental hash functions
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_object_type, false, R"(
-Allow Object and JSON data types
+Allow the obsolete Object data type
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_bfloat16_type, false, R"(
+Allow BFloat16 data type (under development).
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_time_series_table, false, R"(
 Allows creation of tables with the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine.
