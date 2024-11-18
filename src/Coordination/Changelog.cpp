@@ -399,8 +399,6 @@ private:
 
     void cancelCurrentFile()
     {
-        chassert(!prealloc_done);
-
         if (compressed_buffer)
             compressed_buffer->cancel();
 
