@@ -647,7 +647,7 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
 
                         range.begin = exact_ranges[i].end;
                         ordinary_reading_marks -= exact_ranges[i].end - exact_ranges[i].begin;
-                        exact_count += part_with_ranges.data_part->index_granularity.getRowsCountInRange(exact_ranges[i]);
+                        exact_count += part_with_ranges.data_part->index_granularity->getRowsCountInRange(exact_ranges[i]);
                         ++i;
                     }
 

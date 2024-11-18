@@ -197,6 +197,9 @@ private:
     };
 
     /// Information about all the host participating in the current BACKUP or RESTORE operation.
+    /// This information is read from ZooKeeper.
+    /// To simplify the programming logic `state` can only be updated AFTER changing corresponding nodes in ZooKeeper
+    /// (for example, first we create the 'error' node, and only after that we set or read from ZK the `state.host_with_error` field).
     struct State
     {
         std::map<String /* host */, HostInfo> hosts; /// std::map because we need to compare states
