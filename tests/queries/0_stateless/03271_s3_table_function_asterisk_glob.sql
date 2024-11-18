@@ -12,6 +12,9 @@ INSERT INTO FUNCTION s3(s3_conn, filename='dir1/03271_s3_table_function_asterisk
 SELECT * FROM s3(s3_conn, filename='dir1/03271_s3_table_function_asterisk_glob/*') ORDER BY ALL SETTINGS max_threads = 1;
 SELECT * FROM s3(s3_conn, filename='dir1/03271_s3_table_function_asterisk_glob/*') ORDER BY ALL SETTINGS max_threads = 4;
 
+SELECT * FROM s3Cluster('test_cluster_two_shards_localhost', s3_conn, filename='dir1/03271_s3_table_function_asterisk_glob/*') ORDER BY ALL SETTINGS max_threads = 1;
+SELECT * FROM s3Cluster('test_cluster_two_shards_localhost', s3_conn, filename='dir1/03271_s3_table_function_asterisk_glob/*') ORDER BY ALL SETTINGS max_threads = 4;
+
 -- Empty "directory" files created implicitly by S3 console:
 -- https://docs.aws.amazon.com/AmazonS3/latest/userguide/using-folders.html
 SELECT *
@@ -19,3 +22,10 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_review
 LIMIT 1
 FORMAT Null
 SETTINGS s3_skip_empty_files = 1;
+
+-- TODO: Still doesn't work
+-- SELECT *
+-- FROM s3Cluster('test_cluster_two_shards_localhost', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/*', NOSIGN)
+-- LIMIT 1
+-- FORMAT Null
+-- SETTINGS s3_skip_empty_files = 1;
