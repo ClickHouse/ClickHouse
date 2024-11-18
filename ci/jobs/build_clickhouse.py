@@ -74,7 +74,7 @@ def main():
                  -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DCMAKE_INSTALL_PREFIX=/usr \
                  -DCMAKE_INSTALL_SYSCONFDIR=/etc -DCMAKE_INSTALL_LOCALSTATEDIR=/var -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON \
                  -DCMAKE_C_COMPILER=clang-18 -DCMAKE_CXX_COMPILER=clang++-18 -DCOMPILER_CACHE={build_cache_type} -DENABLE_TESTS=1 \
-                 -DENABLE_BUILD_PROFILING=1 {current_directory}",
+                 -DENABLE_BUILD_PROFILING=1 -DENABLE_BUZZHOUSE=1 {current_directory}",
                 workdir=build_dir,
                 with_log=True,
             )
