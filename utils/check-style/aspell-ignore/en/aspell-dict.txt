@@ -1224,6 +1224,7 @@ argMax
 argMin
 argmax
 argmin
+arrayAUC
 arrayAll
 arrayAvg
 arrayCompact
