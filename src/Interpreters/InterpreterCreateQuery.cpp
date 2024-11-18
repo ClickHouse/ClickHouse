@@ -228,16 +228,18 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
                             db_num_limit, db_count);
     }
 
+    auto shared_disk = getContext()->getSharedDisk();
+
     /// Will write file with database metadata, if needed.
     String database_name_escaped = escapeForFileName(database_name);
     fs::path metadata_path = fs::weakly_canonical(getContext()->getPath());
-    fs::create_directories(metadata_path / "metadata");
+    shared_disk->createDirectories(metadata_path / "metadata");
     fs::path metadata_file_tmp_path = metadata_path / "metadata" / (database_name_escaped + ".sql.tmp");
     fs::path metadata_file_path = metadata_path / "metadata" / (database_name_escaped + ".sql");
 
     if (!create.storage && create.attach)
     {
-        if (!fs::exists(metadata_file_path))
+        if (!shared_disk->existsFile(metadata_file_path))
             throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Database engine must be specified for ATTACH DATABASE query");
         /// Short syntax: try read database definition from file
         auto ast = DatabaseOnDisk::parseQueryFromMetadata(nullptr, getContext(), metadata_file_path);
@@ -284,7 +286,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
         metadata_path = metadata_path / "store" / DatabaseCatalog::getPathForUUID(create.uuid);
 
-        if (!create.attach && fs::exists(metadata_path) && !fs::is_empty(metadata_path))
+        if (!create.attach && shared_disk->existsDirectory(metadata_path) && !shared_disk->isDirectoryEmpty(metadata_path))
             throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Metadata directory {} already exists and is not empty", metadata_path.string());
     }
     else if (create.storage->engine->name == "MaterializeMySQL"
@@ -356,7 +358,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
                         "Enable allow_experimental_database_materialized_postgresql to use it");
     }
 
-    bool need_write_metadata = !create.attach || !fs::exists(metadata_file_path);
+    bool need_write_metadata = !create.attach || !shared_disk->existsFile(metadata_file_path);
     bool need_lock_uuid = internal || need_write_metadata;
     auto mode = getLoadingStrictnessLevel(create.attach, force_attach, has_force_restore_data_flag, /*secondary*/ false);
 
@@ -384,7 +386,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         String statement = statement_buf.str();
 
         /// Needed to make database creation retriable if it fails after the file is created
-        fs::remove(metadata_file_tmp_path);
+        shared_disk->removeFileIfExists(metadata_file_tmp_path);
 
         /// Exclusive flag guarantees, that database is not created right now in another thread.
         WriteBufferFromFile out(metadata_file_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
@@ -419,10 +421,18 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_tasks);
         }
 
+        LOG_DEBUG(
+            getLogger("InterpreterCreateQuery"),
+            "InterpreterCreateQuery metadata_file_path {}, create.attach {}, existsFile {}, need_write_metadata {}",
+            metadata_file_path,
+            create.attach,
+            shared_disk->existsFile(metadata_file_path),
+            need_write_metadata);
+
         if (need_write_metadata)
         {
             /// Prevents from overwriting metadata of detached database
-            renameNoReplace(metadata_file_tmp_path, metadata_file_path);
+            shared_disk->moveFile(metadata_file_tmp_path, metadata_file_path);
             renamed = true;
         }
     }
@@ -430,8 +440,8 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     {
         if (renamed)
         {
-            [[maybe_unused]] bool removed = fs::remove(metadata_file_path);
-            assert(removed);
+            assert(shared_disk->existsFile(metadata_file_path));
+            shared_disk->removeFileIfExists(metadata_file_path);
         }
         if (added)
             DatabaseCatalog::instance().detachDatabase(getContext(), database_name, false, false);
@@ -1787,8 +1797,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
     data_path = database->getTableDataPath(create);
     auto full_data_path = fs::path{getContext()->getPath()} / data_path;
+    auto shared_disk = getContext()->getSharedDisk();
 
-    if (!create.attach && !data_path.empty() && fs::exists(full_data_path))
+    if (!create.attach && !data_path.empty() && shared_disk->existsDirectory(full_data_path))
     {
         if (getContext()->getZooKeeperMetadataTransaction() &&
             !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery() &&
@@ -1803,8 +1814,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             fs::path trash_path = fs::path{getContext()->getPath()} / "trash" / data_path / getHexUIntLowercase(thread_local_rng());
             LOG_WARNING(getLogger("InterpreterCreateQuery"), "Directory for {} data {} already exists. Will move it to {}",
                         Poco::toLower(storage_name), String(data_path), trash_path);
-            fs::create_directories(trash_path.parent_path());
-            renameNoReplace(full_data_path, trash_path);
+            shared_disk->createDirectories(trash_path.parent_path());
+            shared_disk->moveFile(full_data_path, trash_path);
         }
         else
         {

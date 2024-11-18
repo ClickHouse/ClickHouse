@@ -3,8 +3,10 @@
 #include <filesystem>
 #include <iterator>
 #include <span>
+#include <Core/Settings.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseOrdinary.h>
+#include <Disks/DiskLocal.h>
 #include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -29,7 +31,6 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-#include <Core/Settings.h>
 
 
 namespace fs = std::filesystem;
@@ -57,6 +58,7 @@ static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 namespace ErrorCodes
 {
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int CANNOT_RMDIR;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
@@ -171,14 +173,8 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
 
 
 DatabaseOnDisk::DatabaseOnDisk(
-    const String & name,
-    const String & metadata_path_,
-    const String & data_path_,
-    const String & logger,
-    ContextPtr local_context)
-    : DatabaseWithOwnTablesBase(name, logger, local_context)
-    , metadata_path(metadata_path_)
-    , data_path(data_path_)
+    const String & name, const String & metadata_path_, const String & data_path_, const String & logger, ContextPtr local_context)
+    : DatabaseWithOwnTablesBase(name, logger, local_context), metadata_path(metadata_path_), data_path(data_path_)
 {
 }
 
@@ -191,8 +187,10 @@ void DatabaseOnDisk::createDirectories()
 
 void DatabaseOnDisk::createDirectoriesUnlocked()
 {
-    fs::create_directories(std::filesystem::path(getContext()->getPath()) / data_path);
-    fs::create_directories(metadata_path);
+    auto shared_disk = getContext()->getSharedDisk();
+
+    shared_disk->createDirectories(metadata_path);
+    shared_disk->createDirectories(std::filesystem::path(getContext()->getPath()) / data_path);
 }
 
 
@@ -209,6 +207,8 @@ void DatabaseOnDisk::createTable(
     const StoragePtr & table,
     const ASTPtr & query)
 {
+    auto shared_disk = getContext()->getSharedDisk();
+
     createDirectories();
 
     const auto & settings = local_context->getSettingsRef();
@@ -238,7 +238,7 @@ void DatabaseOnDisk::createTable(
     if (create.attach_short_syntax)
     {
         /// Metadata already exists, table was detached
-        assert(fs::exists(getObjectMetadataPath(table_name)));
+        assert(shared_disk->existsFileOrDirectory(getObjectMetadataPath(table_name)));
         removeDetachedPermanentlyFlag(local_context, table_name, table_metadata_path, true);
         attachTable(local_context, table_name, table, getTableDataPath(create));
         return;
@@ -247,7 +247,7 @@ void DatabaseOnDisk::createTable(
     if (!create.attach)
         checkMetadataFilenameAvailability(table_name);
 
-    if (create.attach && fs::exists(table_metadata_path))
+    if (create.attach && shared_disk->existsFileOrDirectory(table_metadata_path))
     {
         ASTPtr ast_detached = parseQueryFromMetadata(log, local_context, table_metadata_path);
         auto & create_detached = ast_detached->as<ASTCreateQuery &>();
@@ -285,12 +285,11 @@ void DatabaseOnDisk::createTable(
 /// .sql.detached extension, is not needed anymore since we attached the table back
 void DatabaseOnDisk::removeDetachedPermanentlyFlag(ContextPtr, const String & table_name, const String & table_metadata_path, bool)
 {
+    auto shared_disk = getContext()->getSharedDisk();
     try
     {
         fs::path detached_permanently_flag(table_metadata_path + detached_suffix);
-
-        if (fs::exists(detached_permanently_flag))
-            (void)fs::remove(detached_permanently_flag);
+        (void)shared_disk->removeFileIfExists(detached_permanently_flag);
     }
     catch (Exception & e)
     {
@@ -303,6 +302,7 @@ void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const Stora
                                        const String & table_metadata_tmp_path, const String & table_metadata_path,
                                        ContextPtr query_context)
 {
+    auto shared_disk = getContext()->getSharedDisk();
     try
     {
         createDirectories();
@@ -312,11 +312,11 @@ void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const Stora
 
         /// If it was ATTACH query and file with table metadata already exist
         /// (so, ATTACH is done after DETACH), then rename atomically replaces old file with new one.
-        fs::rename(table_metadata_tmp_path, table_metadata_path);
+        shared_disk->replaceFile(table_metadata_tmp_path, table_metadata_path);
     }
     catch (...)
     {
-        (void)fs::remove(table_metadata_tmp_path);
+        (void)shared_disk->removeFileIfExists(table_metadata_tmp_path);
         throw;
     }
 }
@@ -325,12 +325,14 @@ void DatabaseOnDisk::detachTablePermanently(ContextPtr query_context, const Stri
 {
     waitDatabaseStarted();
 
+    auto shared_disk = getContext()->getSharedDisk();
+
     auto table = detachTable(query_context, table_name);
 
     fs::path detached_permanently_flag(getObjectMetadataPath(table_name) + detached_suffix);
     try
     {
-        FS::createFile(detached_permanently_flag);
+        shared_disk->createFile(detached_permanently_flag);
 
         std::lock_guard lock(mutex);
         const auto it = snapshot_detached_tables.find(table_name);
@@ -352,6 +354,8 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
 {
     waitDatabaseStarted();
 
+    auto shared_disk = getContext()->getSharedDisk();
+
     String table_metadata_path = getObjectMetadataPath(table_name);
     String table_metadata_path_drop = table_metadata_path + drop_suffix;
     String table_data_path_relative = getTableDataPath(table_name);
@@ -363,7 +367,7 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
     bool renamed = false;
     try
     {
-        fs::rename(table_metadata_path, table_metadata_path_drop);
+        shared_disk->replaceFile(table_metadata_path, table_metadata_path_drop);
         renamed = true;
         // The table might be not loaded for Lazy database engine.
         if (table)
@@ -378,7 +382,7 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
         if (table)
             attachTable(local_context, table_name, table, table_data_path_relative);
         if (renamed)
-            fs::rename(table_metadata_path_drop, table_metadata_path);
+            shared_disk->replaceFile(table_metadata_path_drop, table_metadata_path);
         throw;
     }
 
@@ -390,7 +394,7 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
         LOG_INFO(log, "Removing data directory from disk {} with path {} for dropped table {} ", disk_name, table_data_path_relative, table_name);
         disk->removeRecursive(table_data_path_relative);
     }
-    (void)fs::remove(table_metadata_path_drop);
+    (void)shared_disk->removeFileIfExists(table_metadata_path_drop);
 }
 
 void DatabaseOnDisk::checkMetadataFilenameAvailability(const String & to_table_name) const
@@ -401,13 +405,14 @@ void DatabaseOnDisk::checkMetadataFilenameAvailability(const String & to_table_n
 
 void DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked(const String & to_table_name) const
 {
+    auto shared_disk = getContext()->getSharedDisk();
     String table_metadata_path = getObjectMetadataPath(to_table_name);
 
-    if (fs::exists(table_metadata_path))
+    if (shared_disk->existsFile(table_metadata_path))
     {
         fs::path detached_permanently_flag(table_metadata_path + detached_suffix);
 
-        if (fs::exists(detached_permanently_flag))
+        if (shared_disk->existsFile(detached_permanently_flag))
             throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists (detached permanently)",
                             backQuote(database_name), backQuote(to_table_name));
         throw Exception(
@@ -425,6 +430,8 @@ void DatabaseOnDisk::renameTable(
 {
     if (exchange)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Tables can be exchanged only in Atomic databases");
+
+    auto shared_disk = getContext()->getSharedDisk();
 
     bool from_ordinary_to_atomic = false;
     bool from_atomic_to_ordinary = false;
@@ -509,7 +516,7 @@ void DatabaseOnDisk::renameTable(
     /// Now table data are moved to new database, so we must add metadata and attach table to new database
     to_database.createTable(local_context, to_table_name, table, attach_query);
 
-    (void)fs::remove(table_metadata_path);
+    (void)shared_disk->removeFileIfExists(table_metadata_path);
 
     if (from_atomic_to_ordinary)
     {
@@ -587,27 +594,32 @@ void DatabaseOnDisk::drop(ContextPtr local_context)
 {
     waitDatabaseStarted();
 
+    auto shared_disk = getContext()->getSharedDisk();
+
     assert(TSA_SUPPRESS_WARNING_FOR_READ(tables).empty());
     if (local_context->getSettingsRef()[Setting::force_remove_data_recursively_on_drop])
     {
-        (void)fs::remove_all(std::filesystem::path(getContext()->getPath()) / data_path);
-        (void)fs::remove_all(getMetadataPath());
+        (void)shared_disk->removeRecursive(std::filesystem::path(getContext()->getPath()) / data_path);
+        (void)shared_disk->removeRecursive(getMetadataPath());
     }
     else
     {
         try
         {
-            (void)fs::remove(std::filesystem::path(getContext()->getPath()) / data_path);
-            (void)fs::remove(getMetadataPath());
+            (void)shared_disk->removeDirectoryIfExists(std::filesystem::path(getContext()->getPath()) / data_path);
+            (void)shared_disk->removeDirectoryIfExists(getMetadataPath());
         }
-        catch (const fs::filesystem_error & e)
+        catch (const Exception & e)
         {
-            if (e.code() != std::errc::directory_not_empty)
-                throw Exception(Exception::CreateFromSTDTag{}, e);
-            throw Exception(ErrorCodes::DATABASE_NOT_EMPTY, "Cannot drop: {}. "
+            if (e.code() != ErrorCodes::CANNOT_RMDIR)
+                throw;
+            throw Exception(
+                ErrorCodes::DATABASE_NOT_EMPTY,
+                "Cannot drop: {}. "
                 "Probably database contain some detached tables or metadata leftovers from Ordinary engine. "
                 "If you want to remove all data anyway, try to attach database back and drop it again "
-                "with enabled force_remove_data_recursively_on_drop setting", e.what());
+                "with enabled force_remove_data_recursively_on_drop setting",
+                e.what());
         }
     }
 }
@@ -619,10 +631,19 @@ String DatabaseOnDisk::getObjectMetadataPath(const String & object_name) const
 
 time_t DatabaseOnDisk::getObjectMetadataModificationTime(const String & object_name) const
 {
+    auto shared_disk = getContext()->getSharedDisk();
+
     String table_metadata_path = getObjectMetadataPath(object_name);
+    if (!shared_disk->existsFileOrDirectory(table_metadata_path))
+        return static_cast<time_t>(0);
+
     try
     {
-        return FS::getModificationTime(table_metadata_path);
+        return shared_disk->getLastModified(table_metadata_path).epochTime();
+    }
+    catch (const Exception &)
+    {
+        throw;
     }
     catch (const fs::filesystem_error & e)
     {
@@ -636,7 +657,8 @@ time_t DatabaseOnDisk::getObjectMetadataModificationTime(const String & object_n
 
 void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_metadata_file) const
 {
-    if (!fs::exists(metadata_path))
+    auto shared_disk = getContext()->getSharedDisk();
+    if (!shared_disk->existsDirectory(metadata_path))
         return;
 
     auto process_tmp_drop_metadata_file = [&](const String & file_name)
@@ -645,28 +667,28 @@ void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_meta
         static const char * tmp_drop_ext = ".sql.tmp_drop";
         const std::string object_name = file_name.substr(0, file_name.size() - strlen(tmp_drop_ext));
 
-        if (fs::exists(std::filesystem::path(getContext()->getPath()) / data_path / object_name))
+        if (shared_disk->existsFileOrDirectory(std::filesystem::path(getContext()->getPath()) / data_path / object_name))
         {
-            fs::rename(getMetadataPath() + file_name, getMetadataPath() + object_name + ".sql");
+            shared_disk->replaceFile(getMetadataPath() + file_name, getMetadataPath() + object_name + ".sql");
             LOG_WARNING(log, "Object {} was not dropped previously and will be restored", backQuote(object_name));
             process_metadata_file(object_name + ".sql");
         }
         else
         {
             LOG_INFO(log, "Removing file {}", getMetadataPath() + file_name);
-            (void)fs::remove(getMetadataPath() + file_name);
+            (void)shared_disk->removeFileIfExists(getMetadataPath() + file_name);
         }
     };
 
     /// Metadata files to load: name and flag for .tmp_drop files
     std::vector<std::pair<String, bool>> metadata_files;
 
-    fs::directory_iterator dir_end;
-    for (fs::directory_iterator dir_it(metadata_path); dir_it != dir_end; ++dir_it)
+    for (const auto it = shared_disk->iterateDirectory(metadata_path); it->isValid(); it->next())
     {
-        String file_name = dir_it->path().filename();
+        auto sub_path = fs::path(it->path());
+        String file_name = it->name();
         /// For '.svn', '.gitignore' directory and similar.
-        if (file_name.at(0) == '.')
+        if (!file_name.empty() && file_name.at(0) == '.')
             continue;
 
         /// There are .sql.bak files - skip them.
@@ -685,8 +707,8 @@ void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_meta
         else if (endsWith(file_name, ".sql.tmp"))
         {
             /// There are files .sql.tmp - delete
-            LOG_INFO(log, "Removing file {}", dir_it->path().string());
-            (void)fs::remove(dir_it->path());
+            LOG_INFO(log, "Removing file {}", sub_path.string());
+            (void)shared_disk->removeFileIfExists(sub_path);
         }
         else if (endsWith(file_name, ".sql"))
         {
@@ -729,13 +751,11 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
     bool throw_on_error /*= true*/,
     bool remove_empty /*= false*/)
 {
-    String query;
+    auto shared_disk = Context::getGlobalContextInstance()->getSharedDisk();
 
-    int metadata_file_fd = ::open(metadata_file_path.c_str(), O_RDONLY | O_CLOEXEC);
-
-    if (metadata_file_fd == -1)
+    if (!shared_disk->existsFile(metadata_file_path))
     {
-        if (errno == ENOENT && !throw_on_error)
+        if (!throw_on_error)
             return nullptr;
 
         ErrnoException::throwFromPath(
@@ -745,8 +765,11 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
             metadata_file_path);
     }
 
-    ReadBufferFromFile in(metadata_file_fd, metadata_file_path, METADATA_FILE_BUFFER_SIZE);
-    readStringUntilEOF(query, in);
+    ReadSettings read_settings;
+    read_settings.local_fs_buffer_size = METADATA_FILE_BUFFER_SIZE;
+    auto read_buf = shared_disk->readFile(metadata_file_path, read_settings);
+    String query;
+    readStringUntilEOF(query, *read_buf);
 
     /** Empty files with metadata are generated after a rough restart of the server.
       * Remove these files to slightly reduce the work of the admins on startup.
@@ -755,7 +778,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
     {
         if (logger)
             LOG_ERROR(logger, "File {} is empty. Removing.", metadata_file_path);
-        (void)fs::remove(metadata_file_path);
+        (void)shared_disk->removeFileIfExists(metadata_file_path);
         return nullptr;
     }
 
@@ -893,6 +916,7 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
         out.sync();
     out.close();
 
-    fs::rename(metadata_file_tmp_path, metadata_file_path);
+    auto shared_disk = getContext()->getSharedDisk();
+    shared_disk->replaceFile(metadata_file_tmp_path, metadata_file_path);
 }
 }

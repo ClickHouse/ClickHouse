@@ -185,11 +185,12 @@ void DatabaseMaterializedMySQL::alterTable(ContextPtr context_, const StorageID 
 void DatabaseMaterializedMySQL::drop(ContextPtr context_)
 {
     LOG_TRACE(log, "Dropping MaterializeMySQL database");
+
+    auto shared_disk = getContext()->getSharedDisk();
     /// Remove metadata info
     fs::path metadata(getMetadataPath() + "/.metadata");
 
-    if (fs::exists(metadata))
-        (void)fs::remove(metadata);
+    (void)shared_disk->removeFileIfExists(metadata);
 
     DatabaseAtomic::drop(context_);
 }

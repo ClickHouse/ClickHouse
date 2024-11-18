@@ -360,6 +360,8 @@ struct ContextSharedPart : boost::noncopyable
     ConfigurationPtr config TSA_GUARDED_BY(mutex);           /// Global configuration settings.
     String tmp_path TSA_GUARDED_BY(mutex);                   /// Path to the temporary files that occur when processing the request.
 
+    std::shared_ptr<IDisk> shared_disk;
+
     /// All temporary files that occur when processing the requests accounted here.
     /// Child scopes for more fine-grained accounting are created per user/query/etc.
     /// Initialized once during server startup.
@@ -1130,6 +1132,11 @@ String Context::getFilesystemCachesPath() const
     return shared->filesystem_caches_path;
 }
 
+std::shared_ptr<IDisk> Context::getSharedDisk() const
+{
+    return shared->shared_disk;
+}
+
 String Context::getFilesystemCacheUser() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -1218,6 +1225,8 @@ void Context::setPath(const String & path)
 
     shared->path = path;
 
+    shared->shared_disk = std::make_shared<DiskLocal>("shared", path);
+
     if (shared->tmp_path.empty() && !shared->root_temp_data_on_disk)
         shared->tmp_path = shared->path + "tmp/";
 
@@ -1255,21 +1264,23 @@ try
 {
     LOG_DEBUG(log, "Setting up {} to store temporary data in it", path);
 
-    if (fs::exists(path))
+    auto shared_disk = Context::getGlobalContextInstance()->getSharedDisk();
+
+    if (shared_disk->existsDirectory(path))
     {
         /// Clearing old temporary files.
-        fs::directory_iterator dir_end;
-        for (fs::directory_iterator it(path); it != dir_end; ++it)
+        for (const auto dir_it = shared_disk->iterateDirectory(path); dir_it->isValid(); dir_it->next())
         {
-            if (it->is_regular_file())
+            auto file_path = fs::path(dir_it->path());
+            if (shared_disk->existsFile(file_path))
             {
-                if (startsWith(it->path().filename(), "tmp"))
+                if (startsWith(file_path.filename(), "tmp"))
                 {
-                    LOG_DEBUG(log, "Removing old temporary file {}", it->path().string());
-                    fs::remove(it->path());
+                    LOG_DEBUG(log, "Removing old temporary file {}", file_path.string());
+                    shared_disk->removeFileIfExists(file_path);
                 }
                 else
-                    LOG_DEBUG(log, "Found unknown file in temporary path {}", it->path().string());
+                    LOG_DEBUG(log, "Found unknown file in temporary path {}", file_path.string());
             }
             /// We skip directories (for example, 'http_buffers' - it's used for buffering of the results) and all other file types.
         }
@@ -4801,14 +4812,16 @@ void Context::checkCanBeDropped(const String & database, const String & table, c
     if (!max_size_to_drop || size <= max_size_to_drop)
         return;
 
+    auto shared_disk = getSharedDisk();
+
     fs::path force_file(getFlagsPath() + "force_drop_table");
-    bool force_file_exists = fs::exists(force_file);
+    bool force_file_exists = shared_disk->existsFile(force_file);
 
     if (force_file_exists)
     {
         try
         {
-            fs::remove(force_file);
+            shared_disk->removeFileIfExists(force_file);
             return;
         }
         catch (...)
