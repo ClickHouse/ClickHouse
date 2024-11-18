@@ -1,4 +1,4 @@
-bottle~=0.12.25
+bottle~=0.13
 packaging~=24.1
 pip~=23.2.1
 pipdeptree~=2.23.0
