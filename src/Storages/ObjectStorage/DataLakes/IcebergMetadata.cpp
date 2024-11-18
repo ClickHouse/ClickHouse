@@ -1,3 +1,4 @@
+#include <mutex>
 #include "config.h"
 
 #if USE_AVRO
@@ -51,26 +52,47 @@ extern const int UNSUPPORTED_METHOD;
 extern const int LOGICAL_ERROR;
 }
 
+Int32 parseTableSchema(const Poco::JSON::Object::Ptr & metadata_object, IcebergSchemaProcessor & schema_processor)
+{
+    Int32 format_version = metadata_object->getValue<Int32>("format-version");
+    if (format_version == 2)
+    {
+        auto fields = metadata_object->get("schemas").extract<Poco::JSON::Array::Ptr>();
+        for (size_t i = 0; i != fields->size(); ++i)
+        {
+            auto field = fields->getObject(static_cast<UInt32>(i));
+            schema_processor.addIcebergTableSchema(field);
+        }
+        return metadata_object->getValue<int>("current-schema-id");
+    }
+    else
+    {
+        auto schema = metadata_object->getObject("schema");
+        schema_processor.addIcebergTableSchema(schema);
+        return schema->getValue<Int32>("schema-id");
+    }
+}
+
 IcebergMetadata::IcebergMetadata(
     ObjectStoragePtr object_storage_,
     ConfigurationObserverPtr configuration_,
-    DB::ContextPtr context_,
+    const DB::ContextPtr & context_,
     Int32 metadata_version_,
     Int32 format_version_,
     String manifest_list_file_,
-    Int32 current_schema_id_,
-    IcebergSchemaProcessor schema_processor_)
+    const Poco::JSON::Object::Ptr & object)
     : WithContext(context_)
-    , object_storage(object_storage_)
-    , configuration(configuration_)
+    , object_storage(std::move(object_storage_))
+    , configuration(std::move(configuration_))
     , metadata_version(metadata_version_)
     , format_version(format_version_)
     , manifest_list_file(std::move(manifest_list_file_))
-    , current_schema_id(current_schema_id_)
-    , schema_processor(schema_processor_)
-    , schema(*schema_processor.getClickhouseTableSchemaById(current_schema_id))
+    , schema_processor(IcebergSchemaProcessor())
     , log(getLogger("IcebergMetadata"))
 {
+    auto schema_id = parseTableSchema(object, schema_processor);
+    schema = *(schema_processor.getClickhouseTableSchemaById(schema_id));
+    current_schema_id = schema_id;
 }
 
 namespace
@@ -118,27 +140,6 @@ bool operator==(const Poco::JSON::Object & first, const Poco::JSON::Object & sec
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JSON Parsing failed");
     }
     return first_string_stream.str() == second_string_stream.str();
-}
-
-Int32 parseTableSchema(const Poco::JSON::Object::Ptr & metadata_object, IcebergSchemaProcessor & schema_processor)
-{
-    Int32 format_version = metadata_object->getValue<Int32>("format-version");
-    if (format_version == 2)
-    {
-        auto fields = metadata_object->get("schemas").extract<Poco::JSON::Array::Ptr>();
-        for (size_t i = 0; i != fields->size(); ++i)
-        {
-            auto field = fields->getObject(static_cast<UInt32>(i));
-            schema_processor.addIcebergTableSchema(field);
-        }
-        return metadata_object->getValue<int>("current-schema-id");
-    }
-    else
-    {
-        auto schema = metadata_object->getObject("schema");
-        schema_processor.addIcebergTableSchema(schema);
-        return schema->getValue<Int32>("schema-id");
-    }
 }
 }
 
@@ -350,7 +351,7 @@ IcebergSchemaProcessor::getSchemaTransformationDag(const Poco::JSON::Object::Ptr
             {
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "Canßnot add a column with id {} with required values to the table during schema evolution, old schema id is {}, new "
+                    "Cannot add a column with id {} with required values to the table during schema evolution, old schema id is {}, new "
                     "schema id is {}",
                     id,
                     current_old_id,
@@ -366,6 +367,7 @@ IcebergSchemaProcessor::getSchemaTransformationDag(const Poco::JSON::Object::Ptr
 
 std::shared_ptr<const ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDagByIds(Int32 old_id, Int32 new_id)
 {
+    std::lock_guard lock(mutex);
     current_old_id = old_id;
     current_new_id = new_id;
     SCOPE_EXIT({
@@ -450,9 +452,8 @@ MutableColumns parseAvro(avro::DataFileReaderBase & file_reader, const Block & h
  *   1) v<V>.metadata.json, where V - metadata version.
  *   2) <V>-<random-uuid>.metadata.json, where V - metadata version
  */
-std::pair<Int32, String> getMetadataFileAndVersion(
-    ObjectStoragePtr object_storage,
-    const StorageObjectStorage::Configuration & configuration)
+std::pair<Int32, String>
+getMetadataFileAndVersion(const ObjectStoragePtr & object_storage, const StorageObjectStorage::Configuration & configuration)
 {
     const auto metadata_files = listFiles(*object_storage, configuration, "metadata", ".metadata.json");
     if (metadata_files.empty())
@@ -486,8 +487,8 @@ std::pair<Int32, String> getMetadataFileAndVersion(
 }
 
 
-DataLakeMetadataPtr
-IcebergMetadata::create(ObjectStoragePtr object_storage, ConfigurationObserverPtr configuration, ContextPtr local_context)
+DataLakeMetadataPtr IcebergMetadata::create(
+    const ObjectStoragePtr & object_storage, const ConfigurationObserverPtr & configuration, const ContextPtr & local_context)
 {
     auto configuration_ptr = configuration.lock();
 
@@ -509,7 +510,6 @@ IcebergMetadata::create(ObjectStoragePtr object_storage, ConfigurationObserverPt
     IcebergSchemaProcessor schema_processor;
 
     auto format_version = object->getValue<int>("format-version");
-    auto schema_id = parseTableSchema(object, schema_processor);
 
     auto snapshots = object->get("snapshots").extract<Poco::JSON::Array::Ptr>();
 
@@ -527,8 +527,11 @@ IcebergMetadata::create(ObjectStoragePtr object_storage, ConfigurationObserverPt
         }
     }
 
-    return std::make_unique<IcebergMetadata>(
-        object_storage, configuration_ptr, local_context, metadata_version, format_version, manifest_list_file, schema_id, schema_processor);
+    auto ptr = std::make_unique<IcebergMetadata>(
+        object_storage, configuration_ptr, local_context, metadata_version, format_version, manifest_list_file, object);
+
+
+    return ptr;
 }
 
 /**
@@ -556,8 +559,11 @@ IcebergMetadata::create(ObjectStoragePtr object_storage, ConfigurationObserverPt
  * │      1 │ 2252246380142525104 │ ('/iceberg_data/db/table_name/data/a=2/00000-1-c9535a00-2f4f-405c-bcfa-6d4f9f477235-00003.parquet','PARQUET',(2),1,631,67108864,[(1,46),(2,48)],[(1,1),(2,1)],[(1,0),(2,0)],[],[(1,'\0\0\0\0\0\0\0'),(2,'3')],[(1,'\0\0\0\0\0\0\0'),(2,'3')],NULL,[4],0) │
  * └────────┴─────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
  */
+
+
 Strings IcebergMetadata::getDataFiles() const
 {
+    std::lock_guard lock(get_data_files_mutex);
     if (!data_files.empty())
         return data_files;
 

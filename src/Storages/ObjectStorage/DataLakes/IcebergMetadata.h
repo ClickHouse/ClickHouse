@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <unordered_map>
 #include "config.h"
@@ -103,6 +104,8 @@ private:
 
     Int32 current_old_id = -1;
     Int32 current_new_id = -1;
+
+    std::mutex mutex;
 };
 
 
@@ -163,12 +166,11 @@ public:
     IcebergMetadata(
         ObjectStoragePtr object_storage_,
         ConfigurationObserverPtr configuration_,
-        ContextPtr context_,
+        const DB::ContextPtr & context_,
         Int32 metadata_version_,
         Int32 format_version_,
         String manifest_list_file_,
-        Int32 current_schema_id_,
-        IcebergSchemaProcessor schema_processor);
+        const Poco::JSON::Object::Ptr& object);
 
     /// Get data files. On first request it reads manifest_list file and iterates through manifest files to find all data files.
     /// All subsequent calls will return saved list of files (because it cannot be changed without changing metadata file)
@@ -187,7 +189,8 @@ public:
         return iceberg_metadata && getVersion() == iceberg_metadata->getVersion();
     }
 
-    static DataLakeMetadataPtr create(ObjectStoragePtr object_storage, ConfigurationObserverPtr configuration, ContextPtr local_context);
+    static DataLakeMetadataPtr
+    create(const ObjectStoragePtr & object_storage, const ConfigurationObserverPtr & configuration, const ContextPtr & local_context);
 
     size_t getVersion() const { return metadata_version; }
 
@@ -215,13 +218,15 @@ private:
     Int32 metadata_version;
     Int32 format_version;
     String manifest_list_file;
-    const Int32 current_schema_id;
+    Int32 current_schema_id;
     mutable Strings data_files;
     std::unordered_map<String, String> column_name_to_physical_name;
     DataLakePartitionColumns partition_columns;
-    mutable IcebergSchemaProcessor schema_processor;
     NamesAndTypesList schema;
+    mutable IcebergSchemaProcessor schema_processor;
     LoggerPtr log;
+
+    mutable std::mutex get_data_files_mutex;
 
     std::optional<Int32> getSchemaVersionByFileIfOutdated(String data_path) const
     {
