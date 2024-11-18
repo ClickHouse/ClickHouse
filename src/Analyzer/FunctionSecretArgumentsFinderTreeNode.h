@@ -10,9 +10,6 @@
 namespace DB
 {
 
-namespace
-{
-
 template <typename FunctionNodeType>
 inline String getFunctionNameImpl(const FunctionNodeType *);
 
@@ -108,7 +105,6 @@ public:
     FunctionSecretArgumentsFinder::Result getResult() const { return result; }
 };
 
-}
 
 using FunctionSecretArgumentsFinderTreeNode = FunctionSecretArgumentsFinderTreeNodeImpl<FunctionNode>;
 using TableFunctionSecretArgumentsFinderTreeNode = FunctionSecretArgumentsFinderTreeNodeImpl<TableFunctionNode>;
