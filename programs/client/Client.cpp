@@ -1004,6 +1004,19 @@ bool Client::processBuzzHouseQuery(const std::string & full_query)
     return server_up;
 }
 
+typedef void (*sighandler_t)(int);
+sighandler_t volatile prev_signal = nullptr;
+std::sig_atomic_t volatile buzz_done = 0;
+
+static void finishBuzzHouse(int num)
+{
+    if (prev_signal)
+    {
+        prev_signal(num);
+    }
+    buzz_done = 1;
+}
+
 /// Returns false when server is not available.
 bool Client::buzzHouse()
 {
@@ -1013,12 +1026,19 @@ bool Client::buzzHouse()
     BuzzHouse::FuzzConfig fc(this, buzz_house_options_path);
     BuzzHouse::ExternalIntegrations ei(fc);
 
+    //set time to run, but what if a query runs for too long?
+    buzz_done = 0;
+    if (fc.time_to_run)
+    {
+        prev_signal = std::signal(SIGALRM, finishBuzzHouse);
+    }
+    alarm(fc.time_to_run);
     full_query.reserve(8192);
     if (fc.read_log)
     {
         std::ifstream infile(fc.log_path);
 
-        while (server_up && std::getline(infile, full_query))
+        while (server_up && !buzz_done && std::getline(infile, full_query))
         {
             server_up &= processBuzzHouseQuery(full_query);
             full_query.resize(0);
@@ -1080,7 +1100,7 @@ bool Client::buzzHouse()
         full_query2.reserve(8192);
         BuzzHouse::StatementGenerator gen(fc, ei, has_cloud_features);
         BuzzHouse::QueryOracle qo(fc);
-        while (server_up)
+        while (server_up && !buzz_done)
         {
             sq1.Clear();
             full_query.resize(0);
@@ -1211,7 +1231,7 @@ bool Client::buzzHouse()
             }
         }
     }
-    return false;
+    return server_up;
 #else
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clickhouse was compiled without BuzzHouse enabled");
 #endif
