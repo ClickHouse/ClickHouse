@@ -216,6 +216,8 @@ private:
 
     RowsBeforeStepCounterPtr rows_before_aggregation;
 
+    std::list<TemporaryBlockStreamHolder> tmp_files;
+
     void initGenerate();
 };
 
