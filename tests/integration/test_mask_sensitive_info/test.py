@@ -506,11 +506,15 @@ def test_table_functions():
 
     # Check EXPLAIN QUERY TREE
     for toggle, secret in enumerate(["[HIDDEN]", password]):
-        skip = ['mysql', 'postgresql']
+        skip = ["mysql", "postgresql"]
         for table_function in table_functions:
-            should_skip = any([table_function.startswith(prefix_to_skip) for prefix_to_skip in skip])
+            should_skip = any(
+                [table_function.startswith(prefix_to_skip) for prefix_to_skip in skip]
+            )
             if not should_skip:
-                output = node.query(f"EXPLAIN QUERY TREE SELECT * FROM {table_function} {show_secrets}={toggle}")
+                output = node.query(
+                    f"EXPLAIN QUERY TREE SELECT * FROM {table_function} {show_secrets}={toggle}"
+                )
                 print(output)
                 assert secret in output
                 if not toggle:
