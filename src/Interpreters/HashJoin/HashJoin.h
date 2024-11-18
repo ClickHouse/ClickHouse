@@ -345,19 +345,6 @@ public:
 
         size_t blocks_allocated_size = 0;
         size_t blocks_nullmaps_allocated_size = 0;
-        /// Number of rows of right table to join
-        size_t rows_to_join = 0;
-        /// Number of keys of right table to join
-        size_t keys_to_join = 0;
-        /// Whether the right table reranged by key
-        bool sorted = false;
-
-        size_t avgPerKeyRows() const
-        {
-            if (keys_to_join == 0)
-                return 0;
-            return rows_to_join / keys_to_join;
-        }
     };
 
     using RightTableDataPtr = std::shared_ptr<RightTableData>;
@@ -423,9 +410,8 @@ private:
     std::vector<Sizes> key_sizes;
 
     /// Needed to do external cross join
-    TemporaryDataOnDiskScopePtr tmp_data;
-    std::optional<TemporaryBlockStreamHolder> tmp_stream;
-    mutable std::once_flag finish_writing;
+    TemporaryDataOnDiskPtr tmp_data;
+    TemporaryFileStream* tmp_stream{nullptr};
 
     /// Block with columns from the right-side table.
     Block right_sample_block;
@@ -467,11 +453,6 @@ private:
 
     void validateAdditionalFilterExpression(std::shared_ptr<ExpressionActions> additional_filter_expression);
     bool needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const;
-
-    void tryRerangeRightTableData() override;
-    template <JoinKind KIND, typename Map, JoinStrictness STRICTNESS>
-    void tryRerangeRightTableDataImpl(Map & map);
-    void doDebugAsserts() const;
 };
 
 }

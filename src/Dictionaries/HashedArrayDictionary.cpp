@@ -17,11 +17,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool dictionary_use_async_executor;
-    extern const SettingsSeconds max_execution_time;
-}
 
 namespace ErrorCodes
 {
@@ -480,7 +475,6 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::updateData()
     {
         QueryPipeline pipeline(source_ptr->loadUpdatedAll());
         DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-        pipeline.setConcurrencyControl(false);
         update_field_loaded_block.reset();
         Block block;
 
@@ -979,7 +973,6 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::loadData()
 
         QueryPipeline pipeline(source_ptr->loadAll());
         DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-        pipeline.setConcurrencyControl(false);
 
         UInt64 pull_time_microseconds = 0;
         UInt64 process_time_microseconds = 0;
@@ -1153,7 +1146,7 @@ void registerDictionaryArrayHashed(DictionaryFactory & factory)
     {
         if (dictionary_key_type == DictionaryKeyType::Simple && dict_struct.key)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'key' is not supported for simple key hashed array dictionary");
-        if (dictionary_key_type == DictionaryKeyType::Complex && dict_struct.id)
+        else if (dictionary_key_type == DictionaryKeyType::Complex && dict_struct.id)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'id' is not supported for complex key hashed array dictionary");
 
         if (dict_struct.range_min || dict_struct.range_max)
@@ -1186,10 +1179,10 @@ void registerDictionaryArrayHashed(DictionaryFactory & factory)
         const auto & settings = context->getSettingsRef();
 
         const auto * clickhouse_source = dynamic_cast<const ClickHouseDictionarySource *>(source_ptr.get());
-        configuration.use_async_executor = clickhouse_source && clickhouse_source->isLocal() && settings[Setting::dictionary_use_async_executor];
+        configuration.use_async_executor = clickhouse_source && clickhouse_source->isLocal() && settings.dictionary_use_async_executor;
 
-        if (settings[Setting::max_execution_time].totalSeconds() > 0)
-            configuration.load_timeout = std::chrono::seconds(settings[Setting::max_execution_time].totalSeconds());
+        if (settings.max_execution_time.totalSeconds() > 0)
+            configuration.load_timeout = std::chrono::seconds(settings.max_execution_time.totalSeconds());
 
         if (dictionary_key_type == DictionaryKeyType::Simple)
         {
@@ -1197,12 +1190,12 @@ void registerDictionaryArrayHashed(DictionaryFactory & factory)
                 return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Simple, true>>(dict_id, dict_struct, std::move(source_ptr), configuration);
             return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Simple, false>>(dict_id, dict_struct, std::move(source_ptr), configuration);
         }
-
-        if (shards > 1)
-            return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Complex, true>>(
-                dict_id, dict_struct, std::move(source_ptr), configuration);
-        return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Complex, false>>(
-            dict_id, dict_struct, std::move(source_ptr), configuration);
+        else
+        {
+            if (shards > 1)
+                return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Complex, true>>(dict_id, dict_struct, std::move(source_ptr), configuration);
+            return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Complex, false>>(dict_id, dict_struct, std::move(source_ptr), configuration);
+        }
     };
 
     factory.registerLayout("hashed_array",

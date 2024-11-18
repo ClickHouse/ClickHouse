@@ -131,7 +131,7 @@ bool tryGetNumericValueFromJSONElement(
     switch (element.type())
     {
         case ElementType::DOUBLE:
-            if constexpr (is_floating_point<NumberType>)
+            if constexpr (std::is_floating_point_v<NumberType>)
             {
                 /// We permit inaccurate conversion of double to float.
                 /// Example: double 0.1 from JSON is not representable in float.
@@ -175,7 +175,7 @@ bool tryGetNumericValueFromJSONElement(
                 return false;
 
             auto rb = ReadBufferFromMemory{element.getString()};
-            if constexpr (is_floating_point<NumberType>)
+            if constexpr (std::is_floating_point_v<NumberType>)
             {
                 if (!tryReadFloatText(value, rb) || !rb.eof())
                 {
@@ -1085,7 +1085,7 @@ public:
         }
 
         auto & col_lc = assert_cast<ColumnLowCardinality &>(column);
-        auto tmp_nested = removeNullable(col_lc.getDictionary().getNestedColumn()->cloneEmpty())->assumeMutable();
+        auto tmp_nested = col_lc.getDictionary().getNestedColumn()->cloneEmpty();
         if (!nested->insertResultToColumn(*tmp_nested, element, insert_settings, format_settings, error))
             return false;
 

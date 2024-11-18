@@ -134,7 +134,6 @@ namespace VolnitskyTraits
 
         n = toNGram(pos);
 
-        /// NOLINTBEGIN(readability-else-after-return)
         if (isascii(chars.c0) && isascii(chars.c1))
         {
             return putNGramASCIICaseInsensitive(pos, offset, putNGramBase);
@@ -347,7 +346,6 @@ namespace VolnitskyTraits
             }
         }
         return true;
-        /// NOLINTEND(readability-else-after-return)
     }
 
     template <bool CaseSensitive, bool ASCII, typename Callback>

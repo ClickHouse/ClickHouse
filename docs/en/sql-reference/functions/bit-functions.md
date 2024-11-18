@@ -226,9 +226,9 @@ Result:
 
 ## bitTestAll
 
-Returns result of [logical conjunction](https://en.wikipedia.org/wiki/Logical_conjunction) (AND operator) of all bits at given positions. Counting is right-to-left, starting at 0.
+Returns result of [logical conjuction](https://en.wikipedia.org/wiki/Logical_conjunction) (AND operator) of all bits at given positions. Counting is right-to-left, starting at 0.
 
-The conjunction for bit-wise operations:
+The conjuction for bit-wise operations:
 
 0 AND 0 = 0
 
@@ -251,7 +251,7 @@ SELECT bitTestAll(number, index1, index2, index3, index4, ...)
 
 **Returned value**
 
-- Result of the logical conjunction. [UInt8](../data-types/int-uint.md).
+- Result of the logical conjuction. [UInt8](../data-types/int-uint.md).
 
 **Example**
 

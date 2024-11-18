@@ -1,5 +1,6 @@
 #include <Server/HTTPHandler.h>
 
+#include <Access/Credentials.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/ExternalTable.h>
@@ -53,22 +54,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool add_http_cors_header;
-    extern const SettingsBool cancel_http_readonly_queries_on_client_close;
-    extern const SettingsBool enable_http_compression;
-    extern const SettingsUInt64 http_headers_progress_interval_ms;
-    extern const SettingsUInt64 http_max_request_param_data_size;
-    extern const SettingsBool http_native_compression_disable_checksumming_on_decompress;
-    extern const SettingsUInt64 http_response_buffer_size;
-    extern const SettingsBool http_wait_end_of_query;
-    extern const SettingsBool http_write_exception_in_output_format;
-    extern const SettingsInt64 http_zlib_compression_level;
-    extern const SettingsUInt64 readonly;
-    extern const SettingsBool send_progress_in_http_headers;
-    extern const SettingsInt64 zstd_window_log_max;
-}
 
 namespace ErrorCodes
 {
@@ -144,15 +129,6 @@ static std::chrono::steady_clock::duration parseSessionTimeout(
     return std::chrono::seconds(session_timeout);
 }
 
-HTTPHandlerConnectionConfig::HTTPHandlerConnectionConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
-{
-    if (config.has(config_prefix + ".handler.user") || config.has(config_prefix + ".handler.password"))
-    {
-        credentials.emplace(
-            config.getString(config_prefix + ".handler.user", "default"),
-            config.getString(config_prefix + ".handler.password", ""));
-    }
-}
 
 void HTTPHandler::pushDelayedResults(Output & used_output)
 {
@@ -170,16 +146,15 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
 
     for (auto & write_buf : write_buffers)
     {
-        if (auto * write_buf_concrete = dynamic_cast<TemporaryDataBuffer *>(write_buf.get()))
-        {
-            if (auto reread_buf = write_buf_concrete->read())
-                read_buffers.emplace_back(std::move(reread_buf));
-        }
+        if (!write_buf)
+            continue;
 
-        if (auto * write_buf_concrete = dynamic_cast<IReadableWriteBuffer *>(write_buf.get()))
+        IReadableWriteBuffer * write_buf_concrete = dynamic_cast<IReadableWriteBuffer *>(write_buf.get());
+        if (write_buf_concrete)
         {
-            if (auto reread_buf = write_buf_concrete->tryGetReadBuffer())
-                read_buffers.emplace_back(std::move(reread_buf));
+            ReadBufferPtr reread_buf = write_buf_concrete->tryGetReadBuffer();
+            if (reread_buf)
+                read_buffers.emplace_back(wrapReadBufferPointer(reread_buf));
         }
     }
 
@@ -191,12 +166,11 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
 }
 
 
-HTTPHandler::HTTPHandler(IServer & server_, const HTTPHandlerConnectionConfig & connection_config_, const std::string & name, const HTTPResponseHeaderSetup & http_response_headers_override_)
+HTTPHandler::HTTPHandler(IServer & server_, const std::string & name, const HTTPResponseHeaderSetup & http_response_headers_override_)
     : server(server_)
     , log(getLogger(name))
     , default_settings(server.context()->getSettingsRef())
     , http_response_headers_override(http_response_headers_override_)
-    , connection_config(connection_config_)
 {
     server_display_name = server.config().getString("display_name", getFQDNOrHostName());
 }
@@ -209,7 +183,7 @@ HTTPHandler::~HTTPHandler() = default;
 
 bool HTTPHandler::authenticateUser(HTTPServerRequest & request, HTMLForm & params, HTTPServerResponse & response)
 {
-    return authenticateUserByHTTP(request, params, response, *session, request_credentials, connection_config, server.context(), log);
+    return authenticateUserByHTTP(request, params, response, *session, request_credentials, server.context(), log);
 }
 
 
@@ -275,19 +249,18 @@ void HTTPHandler::processQuery(
 
     /// At least, we should postpone sending of first buffer_size result bytes
     size_t buffer_size_total = std::max(
-        params.getParsed<size_t>("buffer_size", context->getSettingsRef()[Setting::http_response_buffer_size]),
+        params.getParsed<size_t>("buffer_size", context->getSettingsRef().http_response_buffer_size),
         static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE));
 
     /// If it is specified, the whole result will be buffered.
     ///  First ~buffer_size bytes will be buffered in memory, the remaining bytes will be stored in temporary file.
-    bool buffer_until_eof = params.getParsed<bool>("wait_end_of_query", context->getSettingsRef()[Setting::http_wait_end_of_query]);
+    bool buffer_until_eof = params.getParsed<bool>("wait_end_of_query", context->getSettingsRef().http_wait_end_of_query);
 
     size_t buffer_size_http = DBMS_DEFAULT_BUFFER_SIZE;
     size_t buffer_size_memory = (buffer_size_total > buffer_size_http) ? buffer_size_total : 0;
 
-    bool enable_http_compression = params.getParsed<bool>("enable_http_compression", context->getSettingsRef()[Setting::enable_http_compression]);
-    Int64 http_zlib_compression_level
-        = params.getParsed<Int64>("http_zlib_compression_level", context->getSettingsRef()[Setting::http_zlib_compression_level]);
+    bool enable_http_compression = params.getParsed<bool>("enable_http_compression", context->getSettingsRef().enable_http_compression);
+    Int64 http_zlib_compression_level = params.getParsed<Int64>("http_zlib_compression_level", context->getSettingsRef().http_zlib_compression_level);
 
     used_output.out_holder =
         std::make_shared<WriteBufferFromHTTPServerResponse>(
@@ -300,15 +273,12 @@ void HTTPHandler::processQuery(
     if (client_supports_http_compression && enable_http_compression)
     {
         used_output.out_holder->setCompressionMethodHeader(http_response_compression_method);
-        used_output.wrap_compressed_holder = wrapWriteBufferWithCompressionMethod(
-            used_output.out_holder.get(),
-            http_response_compression_method,
-            static_cast<int>(http_zlib_compression_level),
-            0,
-            DBMS_DEFAULT_BUFFER_SIZE,
-            nullptr,
-            0,
-            false);
+        used_output.wrap_compressed_holder =
+            wrapWriteBufferWithCompressionMethod(
+                used_output.out_holder.get(),
+                http_response_compression_method,
+                static_cast<int>(http_zlib_compression_level),
+                0, DBMS_DEFAULT_BUFFER_SIZE, nullptr, 0, false);
         used_output.out = used_output.wrap_compressed_holder;
     }
 
@@ -322,19 +292,21 @@ void HTTPHandler::processQuery(
 
     if (buffer_size_memory > 0 || buffer_until_eof)
     {
-        CascadeWriteBuffer::WriteBufferPtrs cascade_buffers;
-        CascadeWriteBuffer::WriteBufferConstructors cascade_buffers_lazy;
+        CascadeWriteBuffer::WriteBufferPtrs cascade_buffer1;
+        CascadeWriteBuffer::WriteBufferConstructors cascade_buffer2;
 
         if (buffer_size_memory > 0)
-            cascade_buffers.emplace_back(std::make_shared<MemoryWriteBuffer>(buffer_size_memory));
+            cascade_buffer1.emplace_back(std::make_shared<MemoryWriteBuffer>(buffer_size_memory));
 
         if (buffer_until_eof)
         {
-            auto tmp_data = server.context()->getTempDataOnDisk();
-            cascade_buffers_lazy.emplace_back([tmp_data](const WriteBufferPtr &) -> WriteBufferPtr
-            {
-                return std::make_unique<TemporaryDataBuffer>(tmp_data.get());
-            });
+            auto tmp_data = std::make_shared<TemporaryDataOnDisk>(server.context()->getTempDataOnDisk());
+
+            auto create_tmp_disk_buffer = [tmp_data] (const WriteBufferPtr &) -> WriteBufferPtr {
+                return tmp_data->createRawStream();
+            };
+
+            cascade_buffer2.emplace_back(std::move(create_tmp_disk_buffer));
         }
         else
         {
@@ -350,10 +322,10 @@ void HTTPHandler::processQuery(
                 return next_buffer;
             };
 
-            cascade_buffers_lazy.emplace_back(push_memory_buffer_and_continue);
+            cascade_buffer2.emplace_back(push_memory_buffer_and_continue);
         }
 
-        used_output.out_delayed_and_compressed_holder = std::make_unique<CascadeWriteBuffer>(std::move(cascade_buffers), std::move(cascade_buffers_lazy));
+        used_output.out_delayed_and_compressed_holder = std::make_unique<CascadeWriteBuffer>(std::move(cascade_buffer1), std::move(cascade_buffer2));
         used_output.out_maybe_delayed_and_compressed = used_output.out_delayed_and_compressed_holder.get();
     }
     else
@@ -363,11 +335,10 @@ void HTTPHandler::processQuery(
 
     /// Request body can be compressed using algorithm specified in the Content-Encoding header.
     String http_request_compression_method_str = request.get("Content-Encoding", "");
-    int zstd_window_log_max = static_cast<int>(context->getSettingsRef()[Setting::zstd_window_log_max]);
+    int zstd_window_log_max = static_cast<int>(context->getSettingsRef().zstd_window_log_max);
     auto in_post = wrapReadBufferWithCompressionMethod(
         wrapReadBufferReference(request.getStream()),
-        chooseCompressionMethod({}, http_request_compression_method_str),
-        zstd_window_log_max);
+        chooseCompressionMethod({}, http_request_compression_method_str), zstd_window_log_max);
 
     /// The data can also be compressed using incompatible internal algorithm. This is indicated by
     /// 'decompress' query parameter.
@@ -460,18 +431,18 @@ void HTTPHandler::processQuery(
     const auto & query = getQuery(request, params, context);
     std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query);
 
-    used_output.out_holder->setSendProgress(settings[Setting::send_progress_in_http_headers]);
-    used_output.out_holder->setSendProgressInterval(settings[Setting::http_headers_progress_interval_ms]);
+    used_output.out_holder->setSendProgress(settings.send_progress_in_http_headers);
+    used_output.out_holder->setSendProgressInterval(settings.http_headers_progress_interval_ms);
 
     /// If 'http_native_compression_disable_checksumming_on_decompress' setting is turned on,
     /// checksums of client data compressed with internal algorithm are not checked.
-    if (is_in_post_compressed && settings[Setting::http_native_compression_disable_checksumming_on_decompress])
+    if (is_in_post_compressed && settings.http_native_compression_disable_checksumming_on_decompress)
         static_cast<CompressedReadBuffer &>(*in_post_maybe_compressed).disableChecksumming();
 
     /// Add CORS header if 'add_http_cors_header' setting is turned on send * in Access-Control-Allow-Origin
     /// Note that whether the header is added is determined by the settings, and we can only get the user settings after authentication.
     /// Once the authentication fails, the header can't be added.
-    if (settings[Setting::add_http_cors_header] && !request.get("Origin", "").empty() && !config.has("http_options_response"))
+    if (settings.add_http_cors_header && !request.get("Origin", "").empty() && !config.has("http_options_response"))
         used_output.out_holder->addHeaderCORS(true);
 
     auto append_callback = [my_context = context] (ProgressCallback callback)
@@ -494,7 +465,7 @@ void HTTPHandler::processQuery(
         used_output.out_holder->onProgress(progress);
     });
 
-    if (settings[Setting::readonly] > 0 && settings[Setting::cancel_http_readonly_queries_on_client_close])
+    if (settings.readonly > 0 && settings.cancel_http_readonly_queries_on_client_close)
     {
         append_callback([&context, &request](const Progress &)
         {
@@ -525,12 +496,9 @@ void HTTPHandler::processQuery(
             response.add("X-ClickHouse-Timezone", *details.timezone);
     };
 
-    auto handle_exception_in_output_format = [&](IOutputFormat & current_output_format,
-                                                 const String & format_name,
-                                                 const ContextPtr & context_,
-                                                 const std::optional<FormatSettings> & format_settings)
+    auto handle_exception_in_output_format = [&](IOutputFormat & current_output_format, const String & format_name, const ContextPtr & context_, const std::optional<FormatSettings> & format_settings)
     {
-        if (settings[Setting::http_write_exception_in_output_format] && current_output_format.supportsWritingException())
+        if (settings.http_write_exception_in_output_format && current_output_format.supportsWritingException())
         {
             /// If wait_end_of_query=true in case of an exception all data written to output format during query execution will be
             /// ignored, so we cannot write exception message in current output format as it will be also ignored.
@@ -776,12 +744,8 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 }
 
 DynamicQueryHandler::DynamicQueryHandler(
-    IServer & server_,
-    const HTTPHandlerConnectionConfig & connection_config,
-    const std::string & param_name_,
-    const HTTPResponseHeaderSetup & http_response_headers_override_)
-    : HTTPHandler(server_, connection_config, "DynamicQueryHandler", http_response_headers_override_)
-    , param_name(param_name_)
+    IServer & server_, const std::string & param_name_, const HTTPResponseHeaderSetup & http_response_headers_override_)
+    : HTTPHandler(server_, "DynamicQueryHandler", http_response_headers_override_), param_name(param_name_)
 {
 }
 
@@ -838,13 +802,12 @@ std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm 
 
 PredefinedQueryHandler::PredefinedQueryHandler(
     IServer & server_,
-    const HTTPHandlerConnectionConfig & connection_config,
     const NameSet & receive_params_,
     const std::string & predefined_query_,
     const CompiledRegexPtr & url_regex_,
     const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_,
     const HTTPResponseHeaderSetup & http_response_headers_override_)
-    : HTTPHandler(server_, connection_config, "PredefinedQueryHandler", http_response_headers_override_)
+    : HTTPHandler(server_, "PredefinedQueryHandler", http_response_headers_override_)
     , receive_params(receive_params_)
     , predefined_query(predefined_query_)
     , url_regex(url_regex_)
@@ -913,7 +876,7 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, Conte
         WriteBufferFromOwnString value;
         const auto & settings = context->getSettingsRef();
 
-        copyDataMaxBytes(body, value, settings[Setting::http_max_request_param_data_size]);
+        copyDataMaxBytes(body, value, settings.http_max_request_param_data_size);
         context->setQueryParameter("_request_body", value.str());
     }
 }
@@ -936,11 +899,10 @@ HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
 {
     auto query_param_name = config.getString(config_prefix + ".handler.query_param_name", "query");
 
-    HTTPHandlerConnectionConfig connection_config(config, config_prefix);
     HTTPResponseHeaderSetup http_response_headers_override = parseHTTPResponseHeaders(config, config_prefix);
 
-    auto creator = [&server, query_param_name, http_response_headers_override, connection_config]() -> std::unique_ptr<DynamicQueryHandler>
-    { return std::make_unique<DynamicQueryHandler>(server, connection_config, query_param_name, http_response_headers_override); };
+    auto creator = [&server, query_param_name, http_response_headers_override]() -> std::unique_ptr<DynamicQueryHandler>
+    { return std::make_unique<DynamicQueryHandler>(server, query_param_name, http_response_headers_override); };
 
     auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(creator));
     factory->addFiltersFromConfig(config, config_prefix);
@@ -982,8 +944,6 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
     Poco::Util::AbstractConfiguration::Keys headers_name;
     config.keys(config_prefix + ".headers", headers_name);
 
-    HTTPHandlerConnectionConfig connection_config(config, config_prefix);
-
     for (const auto & header_name : headers_name)
     {
         auto expression = config.getString(config_prefix + ".headers." + header_name);
@@ -1017,18 +977,12 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
                 predefined_query,
                 regex,
                 headers_name_with_regex,
-                http_response_headers_override,
-                connection_config]
+                http_response_headers_override]
                 -> std::unique_ptr<PredefinedQueryHandler>
             {
                 return std::make_unique<PredefinedQueryHandler>(
-                    server,
-                    connection_config,
-                    analyze_receive_params,
-                    predefined_query,
-                    regex,
-                    headers_name_with_regex,
-                    http_response_headers_override);
+                    server, analyze_receive_params, predefined_query, regex,
+                    headers_name_with_regex, http_response_headers_override);
             };
             factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(std::move(creator));
             factory->addFiltersFromConfig(config, config_prefix);
@@ -1041,21 +995,18 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
         analyze_receive_params,
         predefined_query,
         headers_name_with_regex,
-        http_response_headers_override,
-        connection_config]
+        http_response_headers_override]
         -> std::unique_ptr<PredefinedQueryHandler>
     {
         return std::make_unique<PredefinedQueryHandler>(
-            server,
-            connection_config,
-            analyze_receive_params,
-            predefined_query,
-            CompiledRegexPtr{},
-            headers_name_with_regex,
-            http_response_headers_override);
+            server, analyze_receive_params, predefined_query, CompiledRegexPtr{},
+            headers_name_with_regex, http_response_headers_override);
     };
+
     factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(std::move(creator));
+
     factory->addFiltersFromConfig(config, config_prefix);
+
     return factory;
 }
 
