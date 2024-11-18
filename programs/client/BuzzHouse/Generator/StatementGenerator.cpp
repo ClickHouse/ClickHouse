@@ -203,10 +203,10 @@ int StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView 
 int StatementGenerator::generateNextDrop(RandomGenerator & rg, Drop * dp)
 {
     SQLObjectName * sot = dp->mutable_object();
-    const uint32_t drop_table = 10 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables)),
-                   drop_view = 10 * static_cast<uint32_t>(collectionHas<SQLView>(attached_views)),
-                   drop_database = 2 * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases)),
-                   drop_function = 1 * static_cast<uint32_t>(!functions.empty()),
+    const uint32_t drop_table = 10 * static_cast<uint32_t>(collectionCount<SQLTable>(attached_tables) > 3),
+                   drop_view = 10 * static_cast<uint32_t>(collectionCount<SQLView>(attached_views) > 3),
+                   drop_database = 2 * static_cast<uint32_t>(collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3),
+                   drop_function = 1 * static_cast<uint32_t>(functions.size() > 3),
                    prob_space = drop_table + drop_view + drop_database + drop_function;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
@@ -1518,9 +1518,9 @@ int StatementGenerator::generateAttach(RandomGenerator & rg, Attach * att)
 int StatementGenerator::generateDetach(RandomGenerator & rg, Detach * det)
 {
     SQLObjectName * sot = det->mutable_object();
-    const uint32_t detach_table = 10 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables)),
-                   detach_view = 10 * static_cast<uint32_t>(collectionHas<SQLView>(attached_views)),
-                   detach_database = 2 * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases)),
+    const uint32_t detach_table = 10 * static_cast<uint32_t>(collectionCount<SQLTable>(attached_tables) > 3),
+                   detach_view = 10 * static_cast<uint32_t>(collectionCount<SQLView>(attached_views) > 3),
+                   detach_database = 2 * static_cast<uint32_t>(collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3),
                    prob_space = detach_table + detach_view + detach_database;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
@@ -1574,10 +1574,10 @@ int StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner * 
                    create_view = 10
         * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases)
                                 && static_cast<uint32_t>(views.size()) < this->fc.max_views),
-                   drop = 1
+                   drop = 2
         * static_cast<uint32_t>(
-                              collectionHas<SQLTable>(attached_tables) || collectionHas<SQLView>(attached_views)
-                              || collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases) || !functions.empty()),
+                              collectionCount<SQLTable>(attached_tables) > 3 || collectionCount<SQLView>(attached_views) > 3
+                              || collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3 || functions.size() > 3),
                    insert = 100 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables)),
                    light_delete = 6 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables)),
                    truncate = 2
@@ -1606,8 +1606,8 @@ int StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner * 
         * static_cast<uint32_t>(collectionHas<SQLTable>(detached_tables) || collectionHas<SQLView>(detached_views)
                                 || collectionHas<std::shared_ptr<SQLDatabase>>(detached_databases)),
                    detach = 2
-        * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables) || collectionHas<SQLView>(attached_views)
-                                || collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases)),
+        * static_cast<uint32_t>(collectionCount<SQLTable>(attached_tables) > 3 || collectionCount<SQLView>(attached_views) > 3
+                              || collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3),
                    create_database = 2 * static_cast<uint32_t>(static_cast<uint32_t>(databases.size()) < this->fc.max_databases),
                    create_function = 5 * static_cast<uint32_t>(static_cast<uint32_t>(functions.size()) < this->fc.max_functions),
                    select_query = 350,
