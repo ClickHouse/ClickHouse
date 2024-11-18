@@ -18,15 +18,6 @@
 namespace DB
 {
 
-/** A nested table. For example, Nested(UInt32 CounterID, FixedString(2) UserAgentMajor)
-  */
-class ParserNestedTable : public IParserBase
-{
-protected:
-    const char * getName() const override { return "nested table"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
 /** Parses sql security option. DEFINER = user_name SQL SECURITY DEFINER
  */
 class ParserSQLSecurity : public IParserBase

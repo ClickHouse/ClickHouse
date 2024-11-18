@@ -4,10 +4,10 @@ from string import Template
 
 import pymysql.cursors
 import pytest
+
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, is_arm
 from helpers.network import PartitionManager
-
 
 if is_arm():
     pytestmark = pytest.mark.skip

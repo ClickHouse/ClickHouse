@@ -1,9 +1,8 @@
-#include <Parsers/CommonParsers.h>
-#include <Common/ErrorCodes.h>
-#include <base/find_symbols.h>
 #include <algorithm>
 #include <cctype>
-
+#include <Parsers/CommonParsers.h>
+#include <base/find_symbols.h>
+#include <Common/ErrorCodes.h>
 namespace DB
 {
 
@@ -35,6 +34,8 @@ public:
         return mapping;
     }
 
+    const std::unordered_set<std::string> & getSet() const { return set; }
+
 private:
     KeyWordToStringConverter()
     {
@@ -63,6 +64,7 @@ private:
         size_t index = static_cast<size_t>(identifier);
         mapping.resize(std::max(index + 1, mapping.size()));
         mapping[index] = value;
+        set.emplace(value);
     }
 
     void checkUnderscore(std::string_view value)
@@ -94,6 +96,7 @@ private:
     }
 
     Strings mapping;
+    std::unordered_set<std::string> set;
 };
 }
 
@@ -106,6 +109,11 @@ std::string_view toStringView(Keyword type)
 const std::vector<String> & getAllKeyWords()
 {
     return KeyWordToStringConverter::instance().getMapping();
+}
+
+const std::unordered_set<std::string> & getKeyWordSet()
+{
+    return KeyWordToStringConverter::instance().getSet();
 }
 
 ParserKeyword::ParserKeyword(Keyword keyword)

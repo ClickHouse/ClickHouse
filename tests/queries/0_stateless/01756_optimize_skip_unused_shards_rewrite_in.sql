@@ -63,7 +63,7 @@ select splitByString('IN', query)[-1] from system.query_log where
 order by query;
 
 select 'optimize_skip_unused_shards_rewrite_in(2,)';
-with (select currentDatabase()) as id_2 select *, ignore(id_2) from dist_01756 where dummy in (2,);
+with (select currentDatabase()) as id_2 select *, ignore(id_2) from dist_01756 where dummy in (2);
 system flush logs;
 select splitByString('IN', query)[-1] from system.query_log where
     event_date >= yesterday() and
@@ -75,7 +75,7 @@ select splitByString('IN', query)[-1] from system.query_log where
 order by query;
 
 select 'optimize_skip_unused_shards_rewrite_in(0,)';
-with (select currentDatabase()) as id_00 select *, ignore(id_00) from dist_01756 where dummy in (0,);
+with (select currentDatabase()) as id_00 select *, ignore(id_00) from dist_01756 where dummy in (0);
 system flush logs;
 select splitByString('IN', query)[-1] from system.query_log where
     event_date >= yesterday() and

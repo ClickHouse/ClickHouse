@@ -369,6 +369,23 @@ void ColumnArray::popBack(size_t n)
     offsets_data.resize_assume_reserved(offsets_data.size() - n);
 }
 
+ColumnCheckpointPtr ColumnArray::getCheckpoint() const
+{
+    return std::make_shared<ColumnCheckpointWithNested>(size(), getData().getCheckpoint());
+}
+
+void ColumnArray::updateCheckpoint(ColumnCheckpoint & checkpoint) const
+{
+    checkpoint.size = size();
+    getData().updateCheckpoint(*assert_cast<ColumnCheckpointWithNested &>(checkpoint).nested);
+}
+
+void ColumnArray::rollback(const ColumnCheckpoint & checkpoint)
+{
+    getOffsets().resize_assume_reserved(checkpoint.size);
+    getData().rollback(*assert_cast<const ColumnCheckpointWithNested &>(checkpoint).nested);
+}
+
 int ColumnArray::compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint, const Collator * collator) const
 {
     const ColumnArray & rhs = assert_cast<const ColumnArray &>(rhs_);
@@ -450,6 +467,11 @@ void ColumnArray::reserve(size_t n)
 {
     getOffsets().reserve_exact(n);
     getData().reserve(n); /// The average size of arrays is not taken into account here. Or it is considered to be no more than 1.
+}
+
+size_t ColumnArray::capacity() const
+{
+    return getOffsets().capacity();
 }
 
 void ColumnArray::prepareForSquashing(const Columns & source_columns)
@@ -640,6 +662,8 @@ ColumnPtr ColumnArray::filter(const Filter & filt, ssize_t result_size_hint) con
         return filterNumber<Int128>(filt, result_size_hint);
     if (typeid_cast<const ColumnInt256 *>(data.get()))
         return filterNumber<Int256>(filt, result_size_hint);
+    if (typeid_cast<const ColumnBFloat16 *>(data.get()))
+        return filterNumber<BFloat16>(filt, result_size_hint);
     if (typeid_cast<const ColumnFloat32 *>(data.get()))
         return filterNumber<Float32>(filt, result_size_hint);
     if (typeid_cast<const ColumnFloat64 *>(data.get()))
@@ -1043,6 +1067,8 @@ ColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
         return replicateNumber<Int128>(replicate_offsets);
     if (typeid_cast<const ColumnInt256 *>(data.get()))
         return replicateNumber<Int256>(replicate_offsets);
+    if (typeid_cast<const ColumnBFloat16 *>(data.get()))
+        return replicateNumber<BFloat16>(replicate_offsets);
     if (typeid_cast<const ColumnFloat32 *>(data.get()))
         return replicateNumber<Float32>(replicate_offsets);
     if (typeid_cast<const ColumnFloat64 *>(data.get()))

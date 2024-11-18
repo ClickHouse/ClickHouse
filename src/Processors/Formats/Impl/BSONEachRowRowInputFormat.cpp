@@ -71,20 +71,17 @@ inline size_t BSONEachRowRowInputFormat::columnIndex(const StringRef & name, siz
     {
         return prev_positions[key_index]->second;
     }
-    else
+
+    const auto it = name_map.find(name);
+
+    if (it != name_map.end())
     {
-        const auto it = name_map.find(name);
+        if (key_index < prev_positions.size())
+            prev_positions[key_index] = it;
 
-        if (it != name_map.end())
-        {
-            if (key_index < prev_positions.size())
-                prev_positions[key_index] = it;
-
-            return it->second;
-        }
-        else
-            return UNKNOWN_FIELD;
+        return it->second;
     }
+    return UNKNOWN_FIELD;
 }
 
 /// Read the field name. Resulting StringRef is valid only before next read from buf.
@@ -825,8 +822,7 @@ bool BSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
             const auto & type = header.getByPosition(i).type;
             if (format_settings.force_null_for_omitted_fields && !isNullableOrLowCardinalityNullable(type))
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot insert NULL value into a column of type '{}' at index {}", type->getName(), i);
-            else
-                type->insertDefaultInto(*columns[i]);
+            type->insertDefaultInto(*columns[i]);
         }
 
     if (format_settings.defaults_for_omitted_fields)

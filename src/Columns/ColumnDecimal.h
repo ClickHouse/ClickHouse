@@ -53,6 +53,7 @@ public:
     size_t allocatedBytes() const override { return data.allocated_bytes(); }
     void protect() override { data.protect(); }
     void reserve(size_t n) override { data.reserve_exact(n); }
+    size_t capacity() const override { return data.capacity(); }
     void shrinkToFit() override { data.shrink_to_fit(); }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)

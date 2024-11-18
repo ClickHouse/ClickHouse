@@ -254,6 +254,37 @@ void ColumnTuple::popBack(size_t n)
         column->popBack(n);
 }
 
+ColumnCheckpointPtr ColumnTuple::getCheckpoint() const
+{
+    ColumnCheckpoints checkpoints;
+    checkpoints.reserve(columns.size());
+
+    for (const auto & column : columns)
+        checkpoints.push_back(column->getCheckpoint());
+
+    return std::make_shared<ColumnCheckpointWithMultipleNested>(size(), std::move(checkpoints));
+}
+
+void ColumnTuple::updateCheckpoint(ColumnCheckpoint & checkpoint) const
+{
+    auto & checkpoints = assert_cast<ColumnCheckpointWithMultipleNested &>(checkpoint).nested;
+    chassert(checkpoints.size() == columns.size());
+
+    checkpoint.size = size();
+    for (size_t i = 0; i < columns.size(); ++i)
+        columns[i]->updateCheckpoint(*checkpoints[i]);
+}
+
+void ColumnTuple::rollback(const ColumnCheckpoint & checkpoint)
+{
+    column_length = checkpoint.size;
+    const auto & checkpoints = assert_cast<const ColumnCheckpointWithMultipleNested &>(checkpoint).nested;
+
+    chassert(columns.size() == checkpoints.size());
+    for (size_t i = 0; i < columns.size(); ++i)
+        columns[i]->rollback(*checkpoints[i]);
+}
+
 StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     if (columns.empty())
@@ -520,7 +551,7 @@ struct ColumnTuple::Less
                 res = column->compareAt(a, b, *column, nan_direction_hint);
             if (res < 0)
                 return positive;
-            else if (res > 0)
+            if (res > 0)
                 return !positive;
         }
         return false;
@@ -593,6 +624,14 @@ void ColumnTuple::reserve(size_t n)
     const size_t tuple_size = columns.size();
     for (size_t i = 0; i < tuple_size; ++i)
         getColumn(i).reserve(n);
+}
+
+size_t ColumnTuple::capacity() const
+{
+    if (columns.empty())
+        return size();
+
+    return getColumn(0).capacity();
 }
 
 void ColumnTuple::prepareForSquashing(const Columns & source_columns)
@@ -695,8 +734,7 @@ bool ColumnTuple::structureEquals(const IColumn & rhs) const
 
         return true;
     }
-    else
-        return false;
+    return false;
 }
 
 bool ColumnTuple::isCollationSupported() const
@@ -717,6 +755,26 @@ bool ColumnTuple::hasDynamicStructure() const
             return true;
     }
     return false;
+}
+
+bool ColumnTuple::dynamicStructureEquals(const IColumn & rhs) const
+{
+    if (const auto * rhs_tuple = typeid_cast<const ColumnTuple *>(&rhs))
+    {
+        const size_t tuple_size = columns.size();
+        if (tuple_size != rhs_tuple->columns.size())
+            return false;
+
+        for (size_t i = 0; i < tuple_size; ++i)
+            if (!columns[i]->dynamicStructureEquals(*rhs_tuple->columns[i]))
+                return false;
+
+        return true;
+    }
+    else
+    {
+        return false;
+    }
 }
 
 void ColumnTuple::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
@@ -762,9 +820,11 @@ ColumnPtr ColumnTuple::compress() const
     return ColumnCompressed::create(size(), byte_size,
         [my_compressed = std::move(compressed)]() mutable
         {
-            for (auto & column : my_compressed)
-                column = column->decompress();
-            return ColumnTuple::create(my_compressed);
+            Columns decompressed;
+            decompressed.reserve(my_compressed.size());
+            for (const auto & column : my_compressed)
+                decompressed.push_back(column->decompress());
+            return ColumnTuple::create(decompressed);
         });
 }
 

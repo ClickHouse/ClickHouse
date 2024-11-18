@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import re
 import subprocess
@@ -6,9 +7,13 @@ import sys
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator, List, Union, Optional, Sequence
+from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple, Union
 
 import requests
+
+from env_helper import IS_CI
+
+logger = logging.getLogger(__name__)
 
 
 class Envs:
@@ -18,6 +23,7 @@ class Envs:
     )
     S3_BUILDS_BUCKET = os.getenv("S3_BUILDS_BUCKET", "clickhouse-builds")
     GITHUB_WORKFLOW = os.getenv("GITHUB_WORKFLOW", "")
+    GITHUB_ACTOR = os.getenv("GITHUB_ACTOR", "")
 
 
 class WithIter(type):
@@ -33,6 +39,34 @@ def cd(path: Union[Path, str]) -> Iterator[None]:
         yield
     finally:
         os.chdir(oldpwd)
+
+
+def kill_ci_runner(message: str) -> None:
+    """The function to kill the current process with all parents when it's possible.
+    Works only when run with the set `CI` environment"""
+    if not IS_CI:
+        logger.info("Running outside the CI, won't kill the runner")
+        return
+    print(f"::error::{message}")
+
+    def get_ppid_name(pid: int) -> Tuple[int, str]:
+        # Avoid using psutil, it's not in stdlib
+        stats = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8").split()
+        return int(stats[3]), stats[1]
+
+    pid = os.getpid()
+    pids = {}  # type: Dict[str, str]
+    while pid:
+        ppid, name = get_ppid_name(pid)
+        pids[str(pid)] = name
+        pid = ppid
+    logger.error(
+        "Sleeping 5 seconds and killing all possible processes from following:\n %s",
+        "\n ".join(f"{p}: {n}" for p, n in pids.items()),
+    )
+    time.sleep(5)
+    # The current process will be killed too
+    subprocess.run(f"kill -9 {' '.join(pids.keys())}", check=False, shell=True)
 
 
 class GH:
@@ -83,8 +117,7 @@ class GH:
         res = cls.get_workflow_results()
         if wf_job_name in res:
             return res[wf_job_name]["result"]  # type: ignore
-        else:
-            return None
+        return None
 
     @staticmethod
     def print_in_group(group_name: str, lines: Union[Any, List[Any]]) -> None:
@@ -102,21 +135,29 @@ class GH:
         assert len(commit_sha) == 40
         assert Utils.is_hex(commit_sha)
         assert not Utils.is_hex(token)
-        url = f"https://api.github.com/repos/{Envs.GITHUB_REPOSITORY}/commits/{commit_sha}/statuses?per_page={200}"
+
+        url = f"https://api.github.com/repos/{Envs.GITHUB_REPOSITORY}/commits/{commit_sha}/statuses"
         headers = {
             "Authorization": f"token {token}",
             "Accept": "application/vnd.github.v3+json",
         }
-        response = requests.get(url, headers=headers, timeout=5)
 
         if isinstance(status_name, str):
             status_name = (status_name,)
-        if response.status_code == 200:
-            assert "next" not in response.links, "Response truncated"
-            statuses = response.json()
-            for status in statuses:
-                if status["context"] in status_name:
-                    return status["state"]  # type: ignore
+
+        while url:
+            response = requests.get(url, headers=headers, timeout=5)
+            if response.status_code == 200:
+                statuses = response.json()
+                for status in statuses:
+                    if status["context"] in status_name:
+                        return status["state"]  # type: ignore
+
+                # Check if there is a next page
+                url = response.links.get("next", {}).get("url")
+            else:
+                break
+
         return ""
 
     @staticmethod
@@ -207,7 +248,7 @@ class Shell:
             return True
         if verbose:
             print(f"Run command [{command}]")
-        proc = subprocess.Popen(
+        with subprocess.Popen(
             command,
             shell=True,
             stderr=subprocess.STDOUT,
@@ -218,16 +259,17 @@ class Shell:
             bufsize=1,
             errors="backslashreplace",
             **kwargs,
-        )
-        if stdin_str:
-            proc.communicate(input=stdin_str)
-        elif proc.stdout:
-            for line in proc.stdout:
-                sys.stdout.write(line)
-        proc.wait()
-        if strict:
-            assert proc.returncode == 0
-        return proc.returncode == 0
+        ) as proc:
+            if stdin_str:
+                proc.communicate(input=stdin_str)
+            elif proc.stdout:
+                for line in proc.stdout:
+                    sys.stdout.write(line)
+            proc.wait()
+            retcode = proc.returncode
+            if strict:
+                assert retcode == 0
+        return retcode == 0
 
 
 class Utils:
@@ -274,3 +316,10 @@ class Utils:
         ):
             res = res.replace(*r)
         return res
+
+    @staticmethod
+    def is_job_triggered_manually():
+        return (
+            "robot" not in Envs.GITHUB_ACTOR
+            and "clickhouse-ci" not in Envs.GITHUB_ACTOR
+        )

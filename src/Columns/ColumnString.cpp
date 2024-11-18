@@ -240,6 +240,23 @@ ColumnPtr ColumnString::permute(const Permutation & perm, size_t limit) const
     return permuteImpl(*this, perm, limit);
 }
 
+ColumnCheckpointPtr ColumnString::getCheckpoint() const
+{
+    auto nested = std::make_shared<ColumnCheckpoint>(chars.size());
+    return std::make_shared<ColumnCheckpointWithNested>(size(), std::move(nested));
+}
+
+void ColumnString::updateCheckpoint(ColumnCheckpoint & checkpoint) const
+{
+    checkpoint.size = size();
+    assert_cast<ColumnCheckpointWithNested &>(checkpoint).nested->size = chars.size();
+}
+
+void ColumnString::rollback(const ColumnCheckpoint & checkpoint)
+{
+    offsets.resize_assume_reserved(checkpoint.size);
+    chars.resize_assume_reserved(assert_cast<const ColumnCheckpointWithNested &>(checkpoint).nested->size);
+}
 
 void ColumnString::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const
 {
@@ -555,6 +572,11 @@ ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
 void ColumnString::reserve(size_t n)
 {
     offsets.reserve_exact(n);
+}
+
+size_t ColumnString::capacity() const
+{
+    return offsets.capacity();
 }
 
 void ColumnString::prepareForSquashing(const Columns & source_columns)

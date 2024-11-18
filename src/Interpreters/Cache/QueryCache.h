@@ -211,7 +211,7 @@ public:
     Reader createReader(const Key & key);
     Writer createWriter(const Key & key, std::chrono::milliseconds min_query_runtime, bool squash_partial_results, size_t max_block_size, size_t max_query_cache_size_in_bytes_quota, size_t max_query_cache_entries_quota);
 
-    void clear();
+    void clear(const std::optional<String> & tag);
 
     size_t sizeInBytes() const;
     size_t count() const;

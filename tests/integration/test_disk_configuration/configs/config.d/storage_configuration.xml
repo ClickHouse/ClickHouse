@@ -20,6 +20,24 @@
                     </main>
                 </volumes>
             </local>
+            <s3>
+                <volumes>
+                    <s3>
+                        <disk>s3</disk>
+                    </s3>
+                </volumes>
+            </s3>
+            <hybrid>
+                <volumes>
+                    <disk_local>
+                        <disk>disk_local</disk>
+                    </disk_local>
+                    <s3>
+                        <disk>s3</disk>
+                    </s3>
+                </volumes>
+            </hybrid>
+
         </policies>
     </storage_configuration>
 </clickhouse>

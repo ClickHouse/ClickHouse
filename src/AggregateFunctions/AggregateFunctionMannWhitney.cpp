@@ -114,7 +114,7 @@ private:
             {
                 if (ind < first.size())
                     return first[ind];
-                return second[ind % first.size()];
+                return second[ind - first.size()];
             }
 
             size_t size() const
