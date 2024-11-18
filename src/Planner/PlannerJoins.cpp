@@ -464,69 +464,65 @@ JoinClauses buildJoinClauses(
     while (!nodes_to_process.empty())
     {
         auto node = nodes_to_process.top();
-        const auto node_type = node->getNodeType();
-        if (node_type == QueryTreeNodeType::FUNCTION)
+        auto * function_node = node->as<FunctionNode>();
+        const auto function_name = function_node ? function_node->getFunctionName() : String();
+        if (function_name == "and" || function_name == "or")
         {
-            auto & function_node = node->as<FunctionNode &>();
-            const auto & function_name = function_node.getFunctionName();
-            if (function_name == "and" || function_name == "or")
+            auto & arguments = function_node->getArguments().getNodes();
+            auto * first_argument = arguments.front().get();
+            if (const auto it = built_clauses.find(first_argument); it == built_clauses.end())
             {
-                auto & arguments = function_node.getArguments().getNodes();
-                auto * first_argument = arguments.front().get();
-                if (const auto it = built_clauses.find(first_argument); it == built_clauses.end())
+                for (auto & argument : arguments)
+                    nodes_to_process.push(argument);
+
+                continue;
+            }
+
+            nodes_to_process.pop();
+            JoinClauses result;
+            if (function_name == "or")
+            {
+                for (auto & argument : arguments)
                 {
-                    for (auto & argument : arguments)
-                        nodes_to_process.push(argument);
-
-                    continue;
+                    auto & child_res = built_clauses.at(argument.get());
+                    result.insert(result.end(), std::make_move_iterator(child_res.begin()), std::make_move_iterator(child_res.end()));
                 }
-
-                nodes_to_process.pop();
-                JoinClauses result;
-                if (function_name == "or")
-                {
-                    for (auto & argument : arguments)
-                    {
-                        auto & child_res = built_clauses.at(argument.get());
-                        result.insert(result.end(), std::make_move_iterator(child_res.begin()), std::make_move_iterator(child_res.end()));
-                    }
-                }
-                else
-                {
-                    auto it = arguments.begin();
-                    {
-                        auto & child_res = built_clauses.at(it->get());
-                        result.insert(result.end(), std::make_move_iterator(child_res.begin()), std::make_move_iterator(child_res.end()));
-                    }
-                    it++;
-
-                    for (; it != arguments.end(); it++)
-                    {
-                        auto & child_res = built_clauses.at(it->get());
-                        result = makeCrossProduct(result, child_res);
-                    }
-                }
-
-                built_clauses.emplace(node.get(), std::move(result));
             }
             else
             {
-                nodes_to_process.pop();
-                JoinClauses clauses;
-                clauses.emplace_back();
-                buildSimpleJoinClause(
-                    left_dag,
-                    right_dag,
-                    mixed_dag,
-                    planner_context,
-                    node,
-                    left_table_expressions,
-                    right_table_expressions,
-                    join_node,
-                    clauses.front());
+                auto it = arguments.begin();
+                {
+                    auto & child_res = built_clauses.at(it->get());
+                    result.insert(result.end(), std::make_move_iterator(child_res.begin()), std::make_move_iterator(child_res.end()));
+                }
+                it++;
 
-                built_clauses.emplace(node.get(), std::move(clauses));
+                for (; it != arguments.end(); it++)
+                {
+                    auto & child_res = built_clauses.at(it->get());
+                    result = makeCrossProduct(result, child_res);
+                }
             }
+
+            built_clauses.emplace(node.get(), std::move(result));
+        }
+        else
+        {
+            nodes_to_process.pop();
+            JoinClauses clauses;
+            clauses.emplace_back();
+            buildSimpleJoinClause(
+                left_dag,
+                right_dag,
+                mixed_dag,
+                planner_context,
+                node,
+                left_table_expressions,
+                right_table_expressions,
+                join_node,
+                clauses.front());
+
+            built_clauses.emplace(node.get(), std::move(clauses));
         }
     }
     return std::move(built_clauses.at(join_expression.get()));
