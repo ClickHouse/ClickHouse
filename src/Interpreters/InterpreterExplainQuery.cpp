@@ -1,3 +1,4 @@
+#include "Analyzer/FunctionNode.h"
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterExplainQuery.h>
 
@@ -21,6 +22,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/FunctionSecretArgumentsFinder.h>
 
 #include <Storages/StorageView.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -33,6 +35,9 @@
 
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
+#include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/FunctionSecretArgumentsFinderTreeNode.h>
+
 
 namespace DB
 {
@@ -40,6 +45,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_statistics_optimize;
+    extern const SettingsBool format_display_secrets_in_show_and_select;
 }
 
 namespace ErrorCodes
@@ -89,6 +95,32 @@ namespace
     };
 
     using ExplainAnalyzedSyntaxVisitor = InDepthNodeVisitor<ExplainAnalyzedSyntaxMatcher, true>;
+
+    class TableFunctionSecretsVisitor : public InDepthQueryTreeVisitor<TableFunctionSecretsVisitor>
+    {
+        friend class InDepthQueryTreeVisitor;
+        bool needChildVisit(VisitQueryTreeNodeType & parent [[maybe_unused]], VisitQueryTreeNodeType & child [[maybe_unused]])
+        {
+            QueryTreeNodeType type = parent->getNodeType();
+            return type == QueryTreeNodeType::QUERY || type == QueryTreeNodeType::JOIN || type == QueryTreeNodeType::TABLE_FUNCTION;
+        }
+
+        void visitImpl(VisitQueryTreeNodeType & query_tree_node)
+        {
+            auto * table_function_node_ptr = query_tree_node->as<TableFunctionNode>();
+            if (!table_function_node_ptr)
+                return;
+
+            if (FunctionSecretArgumentsFinder::Result secret_arguments = TableFunctionSecretArgumentsFinderTreeNode(*table_function_node_ptr).getResult(); secret_arguments.count)
+            {
+                auto & argument_nodes = table_function_node_ptr->getArgumentsNode()->as<ListNode &>().getNodes();
+
+                for (size_t n = secret_arguments.start; n < secret_arguments.start + secret_arguments.count; ++n)
+                    if (auto * constant = argument_nodes[n]->as<ConstantNode>())
+                        constant->setMaskId();
+            }
+        }
+    };
 
 }
 
@@ -411,6 +443,12 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             auto query_tree = buildQueryTree(ast.getExplainedQuery(), getContext());
             bool need_newline = false;
 
+            if (!getContext()->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
+            {
+                TableFunctionSecretsVisitor visitor;
+                visitor.visit(query_tree);
+            }
+
             if (settings.run_passes)
             {
                 auto query_tree_pass_manager = QueryTreePassManager(getContext());
@@ -441,7 +479,10 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 if (need_newline)
                     buf << "\n\n";
 
-                query_tree->toAST()->format(IAST::FormatSettings(buf, false));
+                IAST::FormatSettings format_settings(buf, false);
+                if (!getContext()->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
+                    format_settings.show_secrets = false;
+                query_tree->toAST()->format(format_settings);
             }
 
             break;
