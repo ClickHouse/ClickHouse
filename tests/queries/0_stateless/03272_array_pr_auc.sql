@@ -22,6 +22,7 @@ select floor(arrayPrAUC([0.1, 0.35, 0.4, 0.4, 0.8], [1, 0, 1, 0, 0]), 10);
 select floor(arrayPrAUC([0, 3, 5, 6, 7.5, 8], [1, 0, 1, 0, 0, 0]), 10);
 select floor(arrayPrAUC([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], [1, 0, 1, 0, 0, 0, 1, 0, 0, 1]), 10);
 select floor(arrayPrAUC([0, 1, 1, 2, 2, 2, 3, 3, 3, 3], [1, 0, 1, 0, 0, 0, 1, 0, 0, 1]), 10);
+
 -- edge cases
 SELECT floor(arrayPrAUC([1], [1]), 10);
 SELECT floor(arrayPrAUC([1], [0]), 10);
