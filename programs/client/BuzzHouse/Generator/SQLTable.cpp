@@ -287,7 +287,7 @@ int StatementGenerator::generateMergeTreeEngineDetails(
         generateTableKey(rg, te->mutable_partition_by());
     }
 
-    const size_t npkey = te->primary_key().exprs_size();
+    const int npkey = te->primary_key().exprs_size();
     if (npkey && rg.nextSmallNumber() < 5)
     {
         //try to add sample key
@@ -302,7 +302,7 @@ int StatementGenerator::generateMergeTreeEngineDetails(
                 const TableKey & tpk = te->primary_key();
 
                 //must be in pkey
-                for (size_t j = 0; j < npkey; j++)
+                for (int j = 0; j < npkey; j++)
                 {
                     if (tpk.exprs(j).has_comp_expr() && tpk.exprs(j).comp_expr().has_expr_stc())
                     {
