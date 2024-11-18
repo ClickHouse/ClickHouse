@@ -5,6 +5,7 @@
 #include <Columns/ColumnMap.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Functions/array/length.h>
 #include <Functions/array/arrayResize.h>
 #include <Functions/array/emptyArrayToSingle.h>
