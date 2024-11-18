@@ -119,6 +119,8 @@ Chunk IRowInputFormat::read()
 
     auto chunk_offset = [&]() -> size_t
     {
+        if (total_rows == 0)
+            return getDataOffsetMaybeCompressed(getReadBuffer());
         return getDataOffsetMaybeCompressed(getReadBuffer()) + getReadBuffer().offset();
     };
 
