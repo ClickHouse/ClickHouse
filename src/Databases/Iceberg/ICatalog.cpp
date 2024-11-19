@@ -1,5 +1,7 @@
 #include <Databases/Iceberg/ICatalog.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
+#include <Poco/String.h>
 
 namespace DB::ErrorCodes
 {
@@ -10,22 +12,75 @@ namespace DB::ErrorCodes
 namespace Iceberg
 {
 
-std::string TableMetadata::getPath() const
+void TableMetadata::setLocation(const std::string & location_)
 {
     if (!with_location)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data location was not requested");
 
-    if (location.starts_with("s3://"))
-        return location.substr(std::strlen("s3://"));
+    /// Location has format:
+    /// s3://<bucket>/path/to/table/data.
+    /// We want to split s3://<bucket> and path/to/table/data.
+
+    auto pos = location_.find("://");
+    if (pos == std::string::npos)
+        throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unexpected location format: {}", location_);
+
+    auto pos_to_bucket = pos + std::strlen("://");
+    auto pos_to_path = location_.substr(pos_to_bucket).find('/');
+
+    if (pos_to_path == std::string::npos)
+        throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unexpected location format: {}", location_);
+
+    pos_to_path = pos_to_bucket + pos_to_path;
+
+    location_without_path = location_.substr(0, pos_to_path);
+    path = location_.substr(pos_to_path + 1);
+
+    LOG_TEST(getLogger("TableMetadata"),
+             "Parsed location without path: {}, path: {}",
+             location_without_path, path);
+}
+
+std::string TableMetadata::getLocation(bool path_only) const
+{
+    if (!with_location)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data location was not requested");
+
+    if (path_only)
+        return path;
     else
-        throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unexpected path format: {}", location);
+        return std::filesystem::path(location_without_path) / path;
+}
+
+void TableMetadata::setSchema(const DB::NamesAndTypesList & schema_)
+{
+    if (!with_schema)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data schema was not requested");
+
+    schema = schema_;
 }
 
 const DB::NamesAndTypesList & TableMetadata::getSchema() const
 {
     if (!with_schema)
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data location was not requested");
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data schema was not requested");
+
     return schema;
+}
+
+StorageType ICatalog::getStorageType(const std::string & location)
+{
+    auto pos = location.find("://");
+    if (pos == std::string::npos)
+        throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unexpected path format: {}", location);
+
+    auto storage_type_str = location.substr(0, pos);
+    auto storage_type = magic_enum::enum_cast<StorageType>(Poco::toUpper(storage_type_str));
+
+    if (!storage_type)
+        throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unsupported storage type: {}", storage_type_str);
+
+    return *storage_type;
 }
 
 }

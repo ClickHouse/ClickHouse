@@ -28,10 +28,12 @@ namespace DB
 {
 namespace DatabaseIcebergSetting
 {
-    extern const DatabaseIcebergSettingsString storage_endpoint;
-    extern const DatabaseIcebergSettingsString auth_header;
     extern const DatabaseIcebergSettingsDatabaseIcebergCatalogType catalog_type;
     extern const DatabaseIcebergSettingsDatabaseIcebergStorageType storage_type;
+    extern const DatabaseIcebergSettingsString warehouse;
+    extern const DatabaseIcebergSettingsString catalog_credential;
+    extern const DatabaseIcebergSettingsString auth_header;
+    extern const DatabaseIcebergSettingsString storage_endpoint;
 }
 
 namespace ErrorCodes
@@ -55,44 +57,55 @@ namespace
         auto namespace_name = name.substr(0, name.size() - table_name.size() - 1);
         return {namespace_name, table_name};
     }
-
-    void setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri)
-    {
-        const auto & user_info = request_uri.getUserInfo();
-        if (!user_info.empty())
-        {
-            std::size_t n = user_info.find(':');
-            if (n != std::string::npos)
-            {
-                credentials.setUsername(user_info.substr(0, n));
-                credentials.setPassword(user_info.substr(n + 1));
-            }
-        }
-    }
 }
 
 DatabaseIceberg::DatabaseIceberg(
     const std::string & database_name_,
     const std::string & url_,
     const DatabaseIcebergSettings & settings_,
-    ASTPtr database_engine_definition_)
+    ASTPtr database_engine_definition_,
+    ContextPtr context_)
     : IDatabase(database_name_)
     , url(url_)
     , settings(settings_)
     , database_engine_definition(database_engine_definition_)
     , log(getLogger("DatabaseIceberg(" + database_name_ + ")"))
 {
-    setCredentials(credentials, Poco::URI(url));
-
     const auto auth_header = settings[DatabaseIcebergSetting::auth_header].value;
+    LOG_TEST(log, "Auth header: {}", auth_header);
     if (!auth_header.empty())
     {
         auto pos = auth_header.find(':');
         if (pos == std::string::npos)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected format of auth header");
         headers.emplace_back(auth_header.substr(0, pos), auth_header.substr(pos + 1));
+
+        LOG_TEST(log, "Added header: {}={}", headers.back().name, headers.back().value);
     }
 
+    validateSettings(context_);
+}
+
+void DatabaseIceberg::validateSettings(const ContextPtr & context_)
+{
+    if (settings[DatabaseIcebergSetting::warehouse].value.empty())
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "`warehouse` setting cannot be empty. "
+            "Please specify 'SETTINGS warehouse=<warehouse_name>' in the CREATE DATABASE query");
+    }
+
+    if (!settings[DatabaseIcebergSetting::storage_type].changed)
+    {
+        auto catalog = getCatalog(context_);
+        const auto storage_type = catalog->getStorageType();
+        if (!storage_type)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Storage type is not found in catalog config. "
+                "Please specify it manually via 'SETTINGS storage_type=<type>' in CREATE DATABASE query");
+        }
+    }
 }
 
 std::unique_ptr<Iceberg::ICatalog> DatabaseIceberg::getCatalog(ContextPtr context_) const
@@ -101,7 +114,12 @@ std::unique_ptr<Iceberg::ICatalog> DatabaseIceberg::getCatalog(ContextPtr contex
     {
         case DB::DatabaseIcebergCatalogType::REST:
         {
-            return std::make_unique<Iceberg::RestCatalog>(getDatabaseName(), url, context_);
+            return std::make_unique<Iceberg::RestCatalog>(
+                settings[DatabaseIcebergSetting::warehouse].value,
+                url,
+                settings[DatabaseIcebergSetting::catalog_credential].value,
+                headers,
+                context_);
         }
     }
 }
@@ -143,9 +161,17 @@ std::shared_ptr<StorageObjectStorage::Configuration> DatabaseIceberg::getConfigu
 
 std::string DatabaseIceberg::getStorageEndpointForTable(const Iceberg::TableMetadata & table_metadata) const
 {
-    return std::filesystem::path(settings[DatabaseIcebergSetting::storage_endpoint].value)
-        / table_metadata.getPath()
-        / "";
+    auto endpoint_from_settings = settings[DatabaseIcebergSetting::storage_endpoint].value;
+    if (!endpoint_from_settings.empty())
+    {
+        return std::filesystem::path(endpoint_from_settings)
+            / table_metadata.getLocation(/* path_only */true)
+            / "";
+    }
+    else
+    {
+        return std::filesystem::path(table_metadata.getLocation(/* path_only */false)) / "";
+    }
 }
 
 bool DatabaseIceberg::empty() const
@@ -307,7 +333,8 @@ void registerDatabaseIceberg(DatabaseFactory & factory)
             args.database_name,
             url,
             database_settings,
-            database_engine_define->clone());
+            database_engine_define->clone(),
+            args.context);
     };
     factory.registerDatabase("Iceberg", create_fn, { .supports_arguments = true, .supports_settings = true });
 }

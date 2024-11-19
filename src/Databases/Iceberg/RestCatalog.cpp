@@ -13,7 +13,6 @@
 
 #include <Poco/URI.h>
 #include <Poco/JSON/Array.h>
-#include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 
 namespace DB::ErrorCodes
@@ -25,17 +24,178 @@ namespace DB::ErrorCodes
 namespace Iceberg
 {
 
+static constexpr auto config_endpoint = "config";
 static constexpr auto namespaces_endpoint = "namespaces";
 
-RestCatalog::RestCatalog(
-    const std::string & catalog_name_,
-    const std::string & base_url_,
-    DB::ContextPtr context_)
-    : ICatalog(catalog_name_)
-    , DB::WithContext(context_)
-    , base_url(base_url_)
-    , log(getLogger("RestCatalog(" + catalog_name_ + ")"))
+std::string RestCatalog::Config::toString() const
 {
+    DB::WriteBufferFromOwnString wb;
+
+    if (!prefix.empty())
+        wb << "prefix: " << prefix.string() << ", ";
+    if (!default_base_location.empty())
+        wb << "default_base_location: " << default_base_location << ", ";
+
+    return wb.str();
+}
+
+RestCatalog::RestCatalog(
+    const std::string & warehouse_,
+    const std::string & base_url_,
+    const std::string & catalog_credential_,
+    const DB::HTTPHeaderEntries & headers_,
+    DB::ContextPtr context_)
+    : ICatalog(warehouse_)
+    , DB::WithContext(context_)
+    , log(getLogger("RestCatalog(" + warehouse_ + ")"))
+    , base_url(base_url_)
+    , headers(headers_)
+{
+    if (!catalog_credential_.empty())
+    {
+        auto pos = catalog_credential_.find(':');
+        if (pos == std::string::npos)
+        {
+            throw DB::Exception(
+                DB::ErrorCodes::BAD_ARGUMENTS, "Unexpected format of catalog credential: "
+                "expected client_id and client_secret separated by `:`");
+        }
+        client_id = catalog_credential_.substr(0, pos);
+        client_secret = catalog_credential_.substr(pos + 1);
+
+        /// TODO: remove before merge.
+        LOG_TEST(log, "Client id: {}, client secret: {}", client_id, client_secret);
+    }
+    LOG_TEST(log, "kssenii 1");
+    config = loadConfig();
+}
+
+RestCatalog::Config RestCatalog::loadConfig()
+{
+    LOG_TEST(log, "kssenii 2");
+    if (!client_id.empty())
+    {
+        static constexpr auto oauth_tokens_endpoint = "oauth/tokens";
+
+        const auto & context = getContext();
+        const auto timeouts = DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
+        // Poco::URI::QueryParameters params = {
+        //     {"grant_type", "client_credentials"},
+        //     {"scope", "PRINCIPAL_ROLE:ALL"},
+        //     {"client_id", client_id},
+        //     {"client_secret", client_secret}};
+
+        Poco::JSON::Object json;
+        json.set("grant_type", "client_credentials");
+        json.set("scope", "PRINCIPAL_ROLE:ALL");
+        json.set("client_id", client_id);
+        json.set("client_secret", client_secret);
+
+        LOG_TEST(log, "kssenii 3");
+
+        std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        oss.exceptions(std::ios::failbit);
+        Poco::JSON::Stringifier::stringify(json, oss);
+        std::string json_str = oss.str();
+
+        LOG_TEST(log, "kssenii 4");
+        Poco::URI url(base_url / oauth_tokens_endpoint);
+        // url.setQueryParameters(params);
+
+        LOG_TEST(log, "Writing {}: {}", url.toString(), json_str);
+
+        auto callback = [&](std::ostream & out)
+        {
+            out << json_str;
+        };
+
+        auto wb = DB::BuilderRWBufferFromHTTP(url)
+            .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
+            .withSettings(getContext()->getReadSettings())
+            .withTimeouts(timeouts)
+            .withHostFilter(&getContext()->getRemoteHostFilter())
+            .withOutCallback(callback)
+            .withSkipNotFound(false)
+            .withHeaders(headers)
+            .create(credentials);
+
+        json_str.clear();
+        readJSONObjectPossiblyInvalid(json_str, *wb);
+
+        LOG_TEST(log, "Received token result: {}", json_str);
+
+        Poco::JSON::Parser parser;
+        Poco::Dynamic::Var res_json = parser.parse(json_str);
+        const Poco::JSON::Object::Ptr & object = res_json.extract<Poco::JSON::Object::Ptr>();
+
+        auto access_token = object->get("access_token").extract<String>();
+        headers.emplace_back("Authorization", "Bearer " + access_token);
+    }
+
+    Poco::URI::QueryParameters params = {{"warehouse", warehouse}};
+    auto buf = createReadBuffer(config_endpoint, params);
+
+    std::string json_str;
+    readJSONObjectPossiblyInvalid(json_str, *buf);
+
+    LOG_TEST(log, "Received config result: {}", json_str);
+
+    Poco::JSON::Parser parser;
+    Poco::Dynamic::Var json = parser.parse(json_str);
+    const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+
+    Config result;
+
+    auto defaults_object = object->get("defaults").extract<Poco::JSON::Object::Ptr>();
+    parseConfig(defaults_object, result);
+
+    auto overrides_object = object->get("overrides").extract<Poco::JSON::Object::Ptr>();
+    parseConfig(overrides_object, result);
+
+    LOG_TEST(log, "Parsed config: {}", result.toString());
+    return result;
+}
+
+void RestCatalog::parseConfig(const Poco::JSON::Object::Ptr & object, Config & result)
+{
+    if (!object)
+        return;
+
+    if (object->has("prefix"))
+        result.prefix = object->get("prefix").extract<String>();
+
+    if (object->has("default-base-location"))
+        result.default_base_location = object->get("default-base-location").extract<String>();
+}
+
+std::optional<StorageType> RestCatalog::getStorageType() const
+{
+    if (config.default_base_location.empty())
+        return std::nullopt;
+    return ICatalog::getStorageType(config.default_base_location);
+}
+
+DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
+    const std::string & endpoint,
+    const Poco::URI::QueryParameters & params) const
+{
+    const auto & context = getContext();
+    const auto timeouts = DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
+
+    Poco::URI url(base_url / endpoint);
+    if (!params.empty())
+        url.setQueryParameters(params);
+
+    LOG_TEST(log, "Requesting: {}", url.toString());
+
+    return DB::BuilderRWBufferFromHTTP(url)
+        .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
+        .withSettings(getContext()->getReadSettings())
+        .withTimeouts(timeouts)
+        .withHostFilter(&getContext()->getRemoteHostFilter())
+        .withSkipNotFound(false)
+        .withHeaders(headers)
+        .create(credentials);
 }
 
 bool RestCatalog::empty() const
@@ -60,24 +220,6 @@ bool RestCatalog::empty() const
         DB::tryLogCurrentException(log);
         return true;
     }
-}
-
-DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(const std::string & endpoint, const Poco::URI::QueryParameters & params) const
-{
-    const auto & context = getContext();
-    const auto timeouts = DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
-
-    Poco::URI url(base_url / endpoint);
-    if (!params.empty())
-        url.setQueryParameters(params);
-
-    return DB::BuilderRWBufferFromHTTP(url)
-        .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
-        .withSettings(getContext()->getReadSettings())
-        .withTimeouts(timeouts)
-        .withHostFilter(&getContext()->getRemoteHostFilter())
-        .withSkipNotFound(true)
-        .create(credentials);
 }
 
 RestCatalog::Tables RestCatalog::getTables() const
@@ -133,7 +275,7 @@ RestCatalog::Namespaces RestCatalog::getNamespaces(const std::string & base_name
 
     try
     {
-        auto buf = createReadBuffer(namespaces_endpoint, params);
+        auto buf = createReadBuffer(config.prefix / namespaces_endpoint, params);
         auto namespaces = parseNamespaces(*buf, base_namespace);
         LOG_TEST(log, "Loaded {} namespaces", namespaces.size());
         return namespaces;
@@ -142,7 +284,7 @@ RestCatalog::Namespaces RestCatalog::getNamespaces(const std::string & base_name
     {
         std::string message = fmt::format(
             "Received error while fetching list of namespaces from iceberg catalog `{}`. ",
-            catalog_name);
+            warehouse);
 
         if (e.code() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND)
             message += "Namespace provided in the `parent` query parameter is not found. ";
@@ -195,7 +337,7 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
 RestCatalog::Tables RestCatalog::getTables(const std::string & base_namespace, size_t limit) const
 {
     const auto endpoint = std::string(namespaces_endpoint) + "/" + base_namespace + "/tables";
-    auto buf = createReadBuffer(endpoint);
+    auto buf = createReadBuffer(config.prefix / endpoint);
     return parseTables(*buf, base_namespace, limit);
 }
 
@@ -267,7 +409,7 @@ bool RestCatalog::getTableMetadataImpl(
     LOG_TEST(log, "Checking table {} in namespace {}", table_name, namespace_name);
 
     const auto endpoint = std::string(namespaces_endpoint) + "/" + namespace_name + "/tables/" + table_name;
-    auto buf = createReadBuffer(endpoint);
+    auto buf = createReadBuffer(config.prefix / endpoint);
 
     if (buf->eof())
     {
@@ -288,17 +430,17 @@ bool RestCatalog::getTableMetadataImpl(
     if (!metadata_object)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot parse result");
 
-    if (result.with_location)
+    if (result.requiresLocation())
     {
-        result.location = metadata_object->get("location").extract<String>();
-
-        LOG_TEST(log, "Location for table {}: {}", table_name, result.location);
+        const auto location = metadata_object->get("location").extract<String>();
+        result.setLocation(location);
+        LOG_TEST(log, "Location for table {}: {}", table_name, location);
     }
 
-    if (result.with_schema)
+    if (result.requiresSchema())
     {
         int format_version = metadata_object->getValue<int>("format-version");
-        result.schema = DB::IcebergMetadata::parseTableSchema(metadata_object, format_version, true).first;
+        result.setSchema(DB::IcebergMetadata::parseTableSchema(metadata_object, format_version, true).first);
     }
     return true;
 }

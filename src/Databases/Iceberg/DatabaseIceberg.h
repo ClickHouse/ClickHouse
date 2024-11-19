@@ -22,7 +22,8 @@ public:
         const std::string & database_name_,
         const std::string & url_,
         const DatabaseIcebergSettings & settings_,
-        ASTPtr database_engine_definition_);
+        ASTPtr database_engine_definition_,
+        ContextPtr context_);
 
     String getEngineName() const override { return "Iceberg"; }
 
@@ -59,6 +60,7 @@ private:
     Poco::Net::HTTPBasicCredentials credentials;
     HTTPHeaderEntries headers;
 
+    void validateSettings(const ContextPtr & context_);
     std::unique_ptr<Iceberg::ICatalog> getCatalog(ContextPtr context_) const;
     std::shared_ptr<StorageObjectStorage::Configuration> getConfiguration() const;
     std::string getStorageEndpointForTable(const Iceberg::TableMetadata & table_metadata) const;

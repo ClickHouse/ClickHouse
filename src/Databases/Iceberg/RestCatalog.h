@@ -2,8 +2,10 @@
 #include <Databases/Iceberg/ICatalog.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
+#include <IO/HTTPHeaderEntries.h>
 #include <Interpreters/Context_fwd.h>
 #include <filesystem>
+#include <Poco/JSON/Object.h>
 
 namespace DB
 {
@@ -17,8 +19,10 @@ class RestCatalog final : public ICatalog, private DB::WithContext
 {
 public:
     explicit RestCatalog(
-        const std::string & catalog_name_,
+        const std::string & warehouse_,
         const std::string & base_url_,
+        const std::string & catalog_credential_,
+        const DB::HTTPHeaderEntries & headers_,
         DB::ContextPtr context_);
 
     ~RestCatalog() override = default;
@@ -39,12 +43,31 @@ public:
         const std::string & table_name,
         TableMetadata & result) const override;
 
+    std::optional<StorageType> getStorageType() const override;
+
 private:
-    const std::filesystem::path base_url;
-    Poco::Net::HTTPBasicCredentials credentials{};
     LoggerPtr log;
 
-    DB::ReadWriteBufferFromHTTPPtr createReadBuffer(const std::string & endpoint, const Poco::URI::QueryParameters & params = {}) const;
+    struct Config
+    {
+        std::filesystem::path prefix;
+        std::string default_base_location;
+
+        std::string toString() const;
+    };
+
+    const std::filesystem::path base_url;
+    DB::HTTPHeaderEntries headers;
+    std::string client_id;
+    std::string client_secret;
+    Config config;
+
+    Poco::Net::HTTPBasicCredentials credentials{};
+
+
+    DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
+        const std::string & endpoint,
+        const Poco::URI::QueryParameters & params = {}) const;
 
     Poco::URI::QueryParameters createParentNamespaceParams(const std::string & base_namespace) const;
 
@@ -63,6 +86,9 @@ private:
         const std::string & namespace_name,
         const std::string & table_name,
         TableMetadata & result) const;
+
+    Config loadConfig();
+    static void parseConfig(const Poco::JSON::Object::Ptr & object, Config & result);
 };
 
 }

@@ -17,6 +17,8 @@ namespace ErrorCodes
 #define DATABASE_ICEBERG_RELATED_SETTINGS(DECLARE, ALIAS) \
     DECLARE(DatabaseIcebergCatalogType, catalog_type, DatabaseIcebergCatalogType::REST, "Catalog type", 0) \
     DECLARE(DatabaseIcebergStorageType, storage_type, DatabaseIcebergStorageType::S3, "Storage type: S3, Local, Azure, HDFS", 0) \
+    DECLARE(String, catalog_credential, "", "", 0)             \
+    DECLARE(String, warehouse, "", "Warehouse name inside the catalog", 0)             \
     DECLARE(String, auth_header, "", "Authorization header of format 'Authorization: <scheme> <auth_info>'", 0)             \
     DECLARE(String, storage_endpoint, "", "Object storage endpoint", 0) \
 
