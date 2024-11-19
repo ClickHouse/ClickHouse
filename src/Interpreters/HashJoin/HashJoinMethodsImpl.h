@@ -82,6 +82,7 @@ ScatteredBlock HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
     }
 
     auto & source_block = block.getSourceBlock();
+    size_t existing_columns = source_block.columns();
 
     /** For LEFT/INNER JOIN, the saved blocks do not contain keys.
       * For FULL/RIGHT JOIN, the saved blocks contain keys;
@@ -184,7 +185,7 @@ ScatteredBlock HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
         chassert(offsets.size() == block.rows());
 
         auto && columns = block.getSourceBlock().getColumns();
-        for (size_t i = 0; i < columns.size(); ++i)
+        for (size_t i = 0; i < existing_columns; ++i)
             columns[i] = columns[i]->replicate(offsets);
         for (size_t pos : right_keys_to_replicate)
             columns[pos] = columns[pos]->replicate(offsets);
