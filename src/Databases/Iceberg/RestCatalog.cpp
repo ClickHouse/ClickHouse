@@ -3,6 +3,7 @@
 #include <base/find_symbols.h>
 #include <Common/escapeForFileName.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Common/Base64.h>
 
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
@@ -75,13 +76,11 @@ RestCatalog::RestCatalog(
         /// TODO: remove before merge.
         LOG_TEST(log, "Client id: {}, client secret: {}", client_id, client_secret);
     }
-    LOG_TEST(log, "kssenii 1");
     config = loadConfig();
 }
 
 RestCatalog::Config RestCatalog::loadConfig()
 {
-    LOG_TEST(log, "kssenii 2");
     if (!client_id.empty())
     {
         static constexpr auto oauth_tokens_endpoint = "oauth/tokens";
@@ -100,44 +99,29 @@ RestCatalog::Config RestCatalog::loadConfig()
         Poco::JSON::Stringifier::stringify(json, oss);
         std::string json_str = oss.str();
 
-        Poco::URI::QueryParameters params = {
-        {"Content-Type", "application/x-www-form-urlencoded"},
-        {"Content-Length", DB::toString(json_str.size())}
-        };
-            // {"grant_type", "client_credentials"},
-            // {"scope", "PRINCIPAL_ROLE:ALL"},
-            // {"client_id", client_id},
-            // {"client_secret", client_secret}};
+        auto current_headers = headers;
+        current_headers.emplace_back("Content-Type", "application/x-www-form-urlencoded");
+        current_headers.emplace_back("Accepts", "application/json; charset=UTF-8");
 
-
-        // LOG_TEST(log, "kssenii 3");
-
-        // DB::HTMLForm form(context->getSettingsRef());
-        // form.add("grant_type", "client_credentials");
-        // form.add("scope", "PRINCIPAL_ROLE:ALL");
-        // form.add("client_id", client_id);
-        // form.add("client_secret", client_secret);
-
-
-         LOG_TEST(log, "kssenii 4");
         Poco::URI url(base_url / oauth_tokens_endpoint);
+        Poco::URI::QueryParameters params = {
+            {"grant_type", "client_credentials"},
+            {"scope", "PRINCIPAL_ROLE:ALL"},
+            {"client_id", client_id},
+            {"client_secret", client_secret},
+        };
         url.setQueryParameters(params);
 
         LOG_TEST(log, "Writing {}: {}", url.toString(), json_str);
 
-        auto callback = [&](std::ostream & out)
-        {
-            out << json_str;
-        };
-
         auto wb = DB::BuilderRWBufferFromHTTP(url)
             .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
+            .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
             .withSettings(getContext()->getReadSettings())
             .withTimeouts(timeouts)
             .withHostFilter(&getContext()->getRemoteHostFilter())
-            .withOutCallback(callback)
             .withSkipNotFound(false)
-            .withHeaders(headers)
+            .withHeaders(current_headers)
             .create(credentials);
 
         json_str.clear();
