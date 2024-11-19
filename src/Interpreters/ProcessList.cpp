@@ -459,7 +459,6 @@ void QueryStatus::ExecutorHolder::remove()
 CancellationCode QueryStatus::cancelQuery(CancelReason reason, std::exception_ptr exception)
 {
     {
-        // Lock the mutex to protect the critical section
         std::lock_guard<std::mutex> lock(cancel_mutex);
 
         if (is_killed)
@@ -501,9 +500,12 @@ CancellationCode QueryStatus::cancelQuery(CancelReason reason, std::exception_pt
 
 void QueryStatus::throwProperExceptionIfNeeded(const UInt64 & max_execution_time, const UInt64 & elapsed_ns) const
 {
-    if (is_killed.load())
     {
-        throwProperException(max_execution_time, elapsed_ns);
+        std::lock_guard<std::mutex> lock(cancel_mutex);
+        if (is_killed)
+        {
+            throwProperException(max_execution_time, elapsed_ns);
+        }
     }
 }
 
@@ -515,7 +517,7 @@ void QueryStatus::throwProperException(const UInt64 & max_execution_time, const 
 
     if (cancel_reason == CancelReason::TIMEOUT)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: {} maximum: {} ms", additional_error_part, max_execution_time / 1000.0);
-    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+    throwQueryWasCancelled();
 }
 
 void QueryStatus::addPipelineExecutor(PipelineExecutor * e)

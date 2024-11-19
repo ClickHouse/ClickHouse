@@ -116,7 +116,7 @@ protected:
     bool is_cancelling { false };
     /// KILL was send to the query
     std::atomic<bool> is_killed { false };
-    std::atomic<CancelReason> cancel_reason { CancelReason::UNDEFINED };
+    CancelReason cancel_reason { CancelReason::UNDEFINED };
 
     std::exception_ptr cancellation_exception;
     mutable std::mutex cancellation_exception_mutex;
