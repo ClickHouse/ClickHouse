@@ -80,7 +80,8 @@ StorageObjectStorage::StorageObjectStorage(
     std::optional<FormatSettings> format_settings_,
     LoadingStrictnessLevel mode,
     bool distributed_processing_,
-    ASTPtr partition_by_)
+    ASTPtr partition_by_,
+    bool lazy_init)
     : IStorage(table_id_)
     , configuration(configuration_)
     , object_storage(object_storage_)
@@ -91,7 +92,8 @@ StorageObjectStorage::StorageObjectStorage(
 {
     try
     {
-        configuration->update(object_storage, context);
+        if (!lazy_init)
+            configuration->update(object_storage, context);
     }
     catch (...)
     {

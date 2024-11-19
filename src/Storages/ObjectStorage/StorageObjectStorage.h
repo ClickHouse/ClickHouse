@@ -59,7 +59,8 @@ public:
         std::optional<FormatSettings> format_settings_,
         LoadingStrictnessLevel mode,
         bool distributed_processing_ = false,
-        ASTPtr partition_by_ = nullptr);
+        ASTPtr partition_by_ = nullptr,
+        bool lazy_init = false);
 
     String getName() const override;
 

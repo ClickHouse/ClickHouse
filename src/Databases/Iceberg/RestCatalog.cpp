@@ -2,6 +2,7 @@
 
 #include <base/find_symbols.h>
 #include <Common/escapeForFileName.h>
+#include <Common/threadPoolCallbackRunner.h>
 
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
@@ -9,6 +10,7 @@
 #include <Interpreters/Context.h>
 
 #include <Storages/ObjectStorage/DataLakes/IcebergMetadata.h>
+#include <Server/HTTP/HTMLForm.h>
 #include <Formats/FormatFactory.h>
 
 #include <Poco/URI.h>
@@ -19,6 +21,13 @@ namespace DB::ErrorCodes
 {
     extern const int ICEBERG_CATALOG_ERROR;
     extern const int LOGICAL_ERROR;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric MergeTreeDataSelectExecutorThreads;
+    extern const Metric MergeTreeDataSelectExecutorThreadsActive;
+    extern const Metric MergeTreeDataSelectExecutorThreadsScheduled;
 }
 
 namespace Iceberg
@@ -79,11 +88,6 @@ RestCatalog::Config RestCatalog::loadConfig()
 
         const auto & context = getContext();
         const auto timeouts = DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
-        // Poco::URI::QueryParameters params = {
-        //     {"grant_type", "client_credentials"},
-        //     {"scope", "PRINCIPAL_ROLE:ALL"},
-        //     {"client_id", client_id},
-        //     {"client_secret", client_secret}};
 
         Poco::JSON::Object json;
         json.set("grant_type", "client_credentials");
@@ -91,16 +95,33 @@ RestCatalog::Config RestCatalog::loadConfig()
         json.set("client_id", client_id);
         json.set("client_secret", client_secret);
 
-        LOG_TEST(log, "kssenii 3");
-
         std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         oss.exceptions(std::ios::failbit);
         Poco::JSON::Stringifier::stringify(json, oss);
         std::string json_str = oss.str();
 
-        LOG_TEST(log, "kssenii 4");
+        Poco::URI::QueryParameters params = {
+        {"Content-Type", "application/x-www-form-urlencoded"},
+        {"Content-Length", DB::toString(json_str.size())}
+        };
+            // {"grant_type", "client_credentials"},
+            // {"scope", "PRINCIPAL_ROLE:ALL"},
+            // {"client_id", client_id},
+            // {"client_secret", client_secret}};
+
+
+        // LOG_TEST(log, "kssenii 3");
+
+        // DB::HTMLForm form(context->getSettingsRef());
+        // form.add("grant_type", "client_credentials");
+        // form.add("scope", "PRINCIPAL_ROLE:ALL");
+        // form.add("client_id", client_id);
+        // form.add("client_secret", client_secret);
+
+
+         LOG_TEST(log, "kssenii 4");
         Poco::URI url(base_url / oauth_tokens_endpoint);
-        // url.setQueryParameters(params);
+        url.setQueryParameters(params);
 
         LOG_TEST(log, "Writing {}: {}", url.toString(), json_str);
 
@@ -211,7 +232,7 @@ bool RestCatalog::empty() const
         };
 
         Namespaces namespaces;
-        getNamespacesRecursive("", namespaces, stop_condition);
+        getNamespacesRecursive("", namespaces, stop_condition, {});
 
         return found_table;
     }
@@ -224,19 +245,42 @@ bool RestCatalog::empty() const
 
 RestCatalog::Tables RestCatalog::getTables() const
 {
-    Namespaces namespaces;
-    getNamespacesRecursive("", namespaces, {});
+    size_t num_threads = 10;
+    ThreadPool pool(
+        CurrentMetrics::MergeTreeDataSelectExecutorThreads,
+        CurrentMetrics::MergeTreeDataSelectExecutorThreadsActive,
+        CurrentMetrics::MergeTreeDataSelectExecutorThreadsScheduled,
+        num_threads);
+
+    DB::ThreadPoolCallbackRunnerLocal<void> runner(pool, "RestCatalog");
 
     Tables tables;
-    for (const auto & current_namespace : namespaces)
+    std::mutex mutex;
+
+    auto func = [&](const std::string & current_namespace)
     {
-        auto tables_in_namespace = getTables(current_namespace);
-        std::move(tables_in_namespace.begin(), tables_in_namespace.end(), std::back_inserter(tables));
-    }
+        runner(
+        [&]{
+            auto tables_in_namespace = getTables(current_namespace);
+            {
+                std::lock_guard lock(mutex);
+                std::move(tables_in_namespace.begin(), tables_in_namespace.end(), std::back_inserter(tables));
+            }
+        });
+    };
+
+    Namespaces namespaces;
+    getNamespacesRecursive("", namespaces, {}, func);
+
+    runner.waitForAllToFinishAndRethrowFirstError();
     return tables;
 }
 
-void RestCatalog::getNamespacesRecursive(const std::string & base_namespace, Namespaces & result, StopCondition stop_condition) const
+void RestCatalog::getNamespacesRecursive(
+    const std::string & base_namespace,
+    Namespaces & result,
+    StopCondition stop_condition,
+    ExecuteFunc func) const
 {
     auto namespaces = getNamespaces(base_namespace);
     result.reserve(result.size() + namespaces.size());
@@ -249,7 +293,10 @@ void RestCatalog::getNamespacesRecursive(const std::string & base_namespace, Nam
         if (stop_condition && stop_condition(current_namespace))
             break;
 
-        getNamespacesRecursive(current_namespace, result, stop_condition);
+        if (func)
+            func(current_namespace);
+
+        getNamespacesRecursive(current_namespace, result, stop_condition, func);
     }
 }
 

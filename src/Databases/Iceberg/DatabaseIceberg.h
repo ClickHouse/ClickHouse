@@ -60,8 +60,10 @@ private:
     Poco::Net::HTTPBasicCredentials credentials;
     HTTPHeaderEntries headers;
 
+    mutable std::shared_ptr<Iceberg::ICatalog> catalog_impl;
+
     void validateSettings(const ContextPtr & context_);
-    std::unique_ptr<Iceberg::ICatalog> getCatalog(ContextPtr context_) const;
+    std::shared_ptr<Iceberg::ICatalog> getCatalog(ContextPtr context_) const;
     std::shared_ptr<StorageObjectStorage::Configuration> getConfiguration() const;
     std::string getStorageEndpointForTable(const Iceberg::TableMetadata & table_metadata) const;
 };

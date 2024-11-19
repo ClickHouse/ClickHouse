@@ -23,6 +23,13 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTDataType.h>
 
+namespace CurrentMetrics
+{
+    extern const Metric MergeTreeDataSelectExecutorThreads;
+    extern const Metric MergeTreeDataSelectExecutorThreadsActive;
+    extern const Metric MergeTreeDataSelectExecutorThreadsScheduled;
+}
+
 
 namespace DB
 {
@@ -108,20 +115,24 @@ void DatabaseIceberg::validateSettings(const ContextPtr & context_)
     }
 }
 
-std::unique_ptr<Iceberg::ICatalog> DatabaseIceberg::getCatalog(ContextPtr context_) const
+std::shared_ptr<Iceberg::ICatalog> DatabaseIceberg::getCatalog(ContextPtr) const
 {
+    if (catalog_impl)
+        return catalog_impl;
+
     switch (settings[DatabaseIcebergSetting::catalog_type].value)
     {
         case DB::DatabaseIcebergCatalogType::REST:
         {
-            return std::make_unique<Iceberg::RestCatalog>(
+            catalog_impl = std::make_shared<Iceberg::RestCatalog>(
                 settings[DatabaseIcebergSetting::warehouse].value,
                 url,
                 settings[DatabaseIcebergSetting::catalog_credential].value,
                 headers,
-                context_);
+                Context::getGlobalContextInstance());
         }
     }
+    return catalog_impl;
 }
 
 std::shared_ptr<StorageObjectStorage::Configuration> DatabaseIceberg::getConfiguration() const
@@ -220,7 +231,10 @@ StoragePtr DatabaseIceberg::tryGetTable(const String & name, ContextPtr context_
         /* constraints */ConstraintsDescription{},
         /* comment */"",
         getFormatSettings(context_),
-        LoadingStrictnessLevel::CREATE);
+        LoadingStrictnessLevel::CREATE,
+        /* distributed_processing */false,
+        /* partition_by */nullptr,
+        /* lazy_init */true);
 }
 
 DatabaseTablesIteratorPtr DatabaseIceberg::getTablesIterator(
@@ -230,15 +244,34 @@ DatabaseTablesIteratorPtr DatabaseIceberg::getTablesIterator(
 {
     Tables tables;
     auto catalog = getCatalog(context_);
-    for (const auto & table_name : catalog->getTables())
+
+    auto iceberg_tables = catalog->getTables();
+    size_t num_threads = std::min<size_t>(10, iceberg_tables.size());
+    ThreadPool pool(
+        CurrentMetrics::MergeTreeDataSelectExecutorThreads,
+        CurrentMetrics::MergeTreeDataSelectExecutorThreadsActive,
+        CurrentMetrics::MergeTreeDataSelectExecutorThreadsScheduled,
+        num_threads);
+
+    DB::ThreadPoolCallbackRunnerLocal<void> runner(pool, "RestCatalog");
+    std::mutex mutexx;
+
+    for (const auto & table_name : iceberg_tables)
     {
         if (filter_by_table_name && !filter_by_table_name(table_name))
             continue;
 
-        auto storage = tryGetTable(table_name, context_);
-        tables.emplace(table_name, storage);
+        runner([&]{
+            auto storage = tryGetTable(table_name, context_);
+            {
+                std::lock_guard lock(mutexx);
+                [[maybe_unused]] bool inserted = tables.emplace(table_name, storage).second;
+                chassert(inserted);
+            }
+        });
     }
 
+    runner.waitForAllToFinishAndRethrowFirstError();
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, getDatabaseName());
 }
 

@@ -72,7 +72,13 @@ private:
     Poco::URI::QueryParameters createParentNamespaceParams(const std::string & base_namespace) const;
 
     using StopCondition = std::function<bool(const std::string & namespace_name)>;
-    void getNamespacesRecursive(const std::string & base_namespace, Namespaces & result, StopCondition stop_condition) const;
+    using ExecuteFunc = std::function<void(const std::string & namespace_name)>;
+
+    void getNamespacesRecursive(
+        const std::string & base_namespace,
+        Namespaces & result,
+        StopCondition stop_condition,
+        ExecuteFunc func) const;
 
     Namespaces getNamespaces(const std::string & base_namespace) const;
 
