@@ -1,4 +1,9 @@
-option (ENABLE_JWT_CPP "Enable jwt-cpp library" ${ENABLE_LIBRARIES})
+set(ENABLE_JWT_CPP_DEFAULT OFF)
+if(ENABLE_LIBRARIES AND CLICKHOUSE_CLOUD)
+    set(ENABLE_JWT_CPP_DEFAULT ON)
+endif()
+
+option(ENABLE_JWT_CPP "Enable jwt-cpp library" ${ENABLE_JWT_CPP_DEFAULT})
 
 if (NOT ENABLE_JWT_CPP)
     message(STATUS "Not using jwt-cpp")
