@@ -49,94 +49,49 @@ std::string RestCatalog::Config::toString() const
     return wb.str();
 }
 
-RestCatalog::RestCatalog(
-    const std::string & warehouse_,
-    const std::string & base_url_,
-    const std::string & catalog_credential_,
-    const DB::HTTPHeaderEntries & headers_,
-    DB::ContextPtr context_)
-    : ICatalog(warehouse_)
-    , DB::WithContext(context_)
-    , log(getLogger("RestCatalog(" + warehouse_ + ")"))
-    , base_url(base_url_)
-    , headers(headers_)
+static std::pair<std::string, std::string> parseCatalogCredential(const std::string & catalog_credential)
 {
-    if (!catalog_credential_.empty())
+    std::string client_id, client_secret;
+    if (!catalog_credential.empty())
     {
-        auto pos = catalog_credential_.find(':');
+        auto pos = catalog_credential.find(':');
         if (pos == std::string::npos)
         {
             throw DB::Exception(
                 DB::ErrorCodes::BAD_ARGUMENTS, "Unexpected format of catalog credential: "
                 "expected client_id and client_secret separated by `:`");
         }
-        client_id = catalog_credential_.substr(0, pos);
-        client_secret = catalog_credential_.substr(pos + 1);
+        client_id = catalog_credential.substr(0, pos);
+        client_secret = catalog_credential.substr(pos + 1);
+    }
+    return std::pair(client_id, client_secret);
+}
 
-        /// TODO: remove before merge.
-        LOG_TEST(log, "Client id: {}, client secret: {}", client_id, client_secret);
+RestCatalog::RestCatalog(
+    const std::string & warehouse_,
+    const std::string & base_url_,
+    const std::string & catalog_credential_,
+    const std::string & auth_header_,
+    DB::ContextPtr context_)
+    : ICatalog(warehouse_)
+    , DB::WithContext(context_)
+    , log(getLogger("RestCatalog(" + warehouse_ + ")"))
+    , base_url(base_url_)
+{
+    std::tie(client_id, client_secret) = parseCatalogCredential(catalog_credential_);
+    if (!auth_header_.empty())
+    {
+        auto pos = auth_header_.find(':');
+        if (pos == std::string::npos)
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unexpected format of auth header");
+
+        auth_header = DB::HTTPHeaderEntry(auth_header_.substr(0, pos), auth_header_.substr(pos + 1));
     }
     config = loadConfig();
 }
 
 RestCatalog::Config RestCatalog::loadConfig()
 {
-    if (!client_id.empty())
-    {
-        static constexpr auto oauth_tokens_endpoint = "oauth/tokens";
-
-        const auto & context = getContext();
-        const auto timeouts = DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
-
-        Poco::JSON::Object json;
-        json.set("grant_type", "client_credentials");
-        json.set("scope", "PRINCIPAL_ROLE:ALL");
-        json.set("client_id", client_id);
-        json.set("client_secret", client_secret);
-
-        std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        oss.exceptions(std::ios::failbit);
-        Poco::JSON::Stringifier::stringify(json, oss);
-        std::string json_str = oss.str();
-
-        auto current_headers = headers;
-        current_headers.emplace_back("Content-Type", "application/x-www-form-urlencoded");
-        current_headers.emplace_back("Accepts", "application/json; charset=UTF-8");
-
-        Poco::URI url(base_url / oauth_tokens_endpoint);
-        Poco::URI::QueryParameters params = {
-            {"grant_type", "client_credentials"},
-            {"scope", "PRINCIPAL_ROLE:ALL"},
-            {"client_id", client_id},
-            {"client_secret", client_secret},
-        };
-        url.setQueryParameters(params);
-
-        LOG_TEST(log, "Writing {}: {}", url.toString(), json_str);
-
-        auto wb = DB::BuilderRWBufferFromHTTP(url)
-            .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
-            .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
-            .withSettings(getContext()->getReadSettings())
-            .withTimeouts(timeouts)
-            .withHostFilter(&getContext()->getRemoteHostFilter())
-            .withSkipNotFound(false)
-            .withHeaders(current_headers)
-            .create(credentials);
-
-        json_str.clear();
-        readJSONObjectPossiblyInvalid(json_str, *wb);
-
-        LOG_TEST(log, "Received token result: {}", json_str);
-
-        Poco::JSON::Parser parser;
-        Poco::Dynamic::Var res_json = parser.parse(json_str);
-        const Poco::JSON::Object::Ptr & object = res_json.extract<Poco::JSON::Object::Ptr>();
-
-        auto access_token = object->get("access_token").extract<String>();
-        headers.emplace_back("Authorization", "Bearer " + access_token);
-    }
-
     Poco::URI::QueryParameters params = {{"warehouse", warehouse}};
     auto buf = createReadBuffer(config_endpoint, params);
 
@@ -173,6 +128,78 @@ void RestCatalog::parseConfig(const Poco::JSON::Object::Ptr & object, Config & r
         result.default_base_location = object->get("default-base-location").extract<String>();
 }
 
+DB::HTTPHeaderEntries RestCatalog::getHeaders(bool update_token) const
+{
+    if (auth_header.has_value())
+    {
+        return DB::HTTPHeaderEntries{auth_header.value()};
+    }
+
+    if (!access_token.has_value() || update_token)
+    {
+        access_token = retrieveAccessToken();
+    }
+
+    DB::HTTPHeaderEntries headers;
+    headers.emplace_back("Authorization", "Bearer " + access_token.value());
+    return headers;
+}
+
+std::string RestCatalog::retrieveAccessToken() const
+{
+    static constexpr auto oauth_tokens_endpoint = "oauth/tokens";
+
+    const auto & context = getContext();
+    const auto timeouts = DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
+
+    Poco::JSON::Object json;
+    json.set("grant_type", "client_credentials");
+    json.set("scope", "PRINCIPAL_ROLE:ALL");
+    json.set("client_id", client_id);
+    json.set("client_secret", client_secret);
+
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    oss.exceptions(std::ios::failbit);
+    Poco::JSON::Stringifier::stringify(json, oss);
+    std::string json_str = oss.str();
+
+    DB::HTTPHeaderEntries headers;
+    headers.emplace_back("Content-Type", "application/x-www-form-urlencoded");
+    headers.emplace_back("Accepts", "application/json; charset=UTF-8");
+
+    Poco::URI url(base_url / oauth_tokens_endpoint);
+    Poco::URI::QueryParameters params = {
+        {"grant_type", "client_credentials"},
+        {"scope", "PRINCIPAL_ROLE:ALL"},
+        {"client_id", client_id},
+        {"client_secret", client_secret},
+    };
+    url.setQueryParameters(params);
+
+    LOG_TEST(log, "Writing {}: {}", url.toString(), json_str);
+
+    auto wb = DB::BuilderRWBufferFromHTTP(url)
+        .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
+        .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
+        .withSettings(getContext()->getReadSettings())
+        .withTimeouts(timeouts)
+        .withHostFilter(&getContext()->getRemoteHostFilter())
+        .withSkipNotFound(false)
+        .withHeaders(headers)
+        .create(credentials);
+
+    json_str.clear();
+    readJSONObjectPossiblyInvalid(json_str, *wb);
+
+    LOG_TEST(log, "Received token result: {}", json_str);
+
+    Poco::JSON::Parser parser;
+    Poco::Dynamic::Var res_json = parser.parse(json_str);
+    const Poco::JSON::Object::Ptr & object = res_json.extract<Poco::JSON::Object::Ptr>();
+
+    return object->get("access_token").extract<String>();
+}
+
 std::optional<StorageType> RestCatalog::getStorageType() const
 {
     if (config.default_base_location.empty())
@@ -191,16 +218,35 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
     if (!params.empty())
         url.setQueryParameters(params);
 
+    auto headers = getHeaders(false);
+
     LOG_TEST(log, "Requesting: {}", url.toString());
 
-    return DB::BuilderRWBufferFromHTTP(url)
-        .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
-        .withSettings(getContext()->getReadSettings())
-        .withTimeouts(timeouts)
-        .withHostFilter(&getContext()->getRemoteHostFilter())
-        .withSkipNotFound(false)
-        .withHeaders(headers)
-        .create(credentials);
+    try
+    {
+        return DB::BuilderRWBufferFromHTTP(url)
+            .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
+            .withSettings(getContext()->getReadSettings())
+            .withTimeouts(timeouts)
+            .withHeaders(headers)
+            .withHostFilter(&getContext()->getRemoteHostFilter())
+            .withDelayInit(false)
+            .withSkipNotFound(false)
+            .create(credentials);
+    }
+    catch (...)
+    {
+        auto new_headers = getHeaders(true);
+        return DB::BuilderRWBufferFromHTTP(url)
+            .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
+            .withSettings(getContext()->getReadSettings())
+            .withTimeouts(timeouts)
+            .withHeaders(new_headers)
+            .withHostFilter(&getContext()->getRemoteHostFilter())
+            .withDelayInit(false)
+            .withSkipNotFound(false)
+            .create(credentials);
+    }
 }
 
 bool RestCatalog::empty() const

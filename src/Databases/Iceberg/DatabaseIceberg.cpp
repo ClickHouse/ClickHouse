@@ -78,18 +78,6 @@ DatabaseIceberg::DatabaseIceberg(
     , database_engine_definition(database_engine_definition_)
     , log(getLogger("DatabaseIceberg(" + database_name_ + ")"))
 {
-    const auto auth_header = settings[DatabaseIcebergSetting::auth_header].value;
-    LOG_TEST(log, "Auth header: {}", auth_header);
-    if (!auth_header.empty())
-    {
-        auto pos = auth_header.find(':');
-        if (pos == std::string::npos)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected format of auth header");
-        headers.emplace_back(auth_header.substr(0, pos), auth_header.substr(pos + 1));
-
-        LOG_TEST(log, "Added header: {}={}", headers.back().name, headers.back().value);
-    }
-
     validateSettings(context_);
 }
 
@@ -128,7 +116,7 @@ std::shared_ptr<Iceberg::ICatalog> DatabaseIceberg::getCatalog(ContextPtr) const
                 settings[DatabaseIcebergSetting::warehouse].value,
                 url,
                 settings[DatabaseIcebergSetting::catalog_credential].value,
-                headers,
+                settings[DatabaseIcebergSetting::auth_header],
                 Context::getGlobalContextInstance());
         }
     }

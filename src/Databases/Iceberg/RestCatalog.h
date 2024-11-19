@@ -22,7 +22,7 @@ public:
         const std::string & warehouse_,
         const std::string & base_url_,
         const std::string & catalog_credential_,
-        const DB::HTTPHeaderEntries & headers_,
+        const std::string & auth_header_,
         DB::ContextPtr context_);
 
     ~RestCatalog() override = default;
@@ -57,7 +57,8 @@ private:
     };
 
     const std::filesystem::path base_url;
-    DB::HTTPHeaderEntries headers;
+    std::optional<DB::HTTPHeaderEntry> auth_header;
+    mutable std::optional<std::string> access_token;
     std::string client_id;
     std::string client_secret;
     Config config;
@@ -94,6 +95,8 @@ private:
         TableMetadata & result) const;
 
     Config loadConfig();
+    std::string retrieveAccessToken() const;
+    DB::HTTPHeaderEntries getHeaders(bool update_token = false) const;
     static void parseConfig(const Poco::JSON::Object::Ptr & object, Config & result);
 };
 

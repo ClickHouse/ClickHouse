@@ -58,7 +58,6 @@ private:
     const LoggerPtr log;
     /// Crendetials to authenticate Iceberg Catalog.
     Poco::Net::HTTPBasicCredentials credentials;
-    HTTPHeaderEntries headers;
 
     mutable std::shared_ptr<Iceberg::ICatalog> catalog_impl;
 
