@@ -383,7 +383,7 @@ void StorageMergeTree::alter(
     if (std::find_if(
             current_changes.begin(),
             current_changes.end(),
-            [this](const auto & change)
+            [](const auto & change)
             {
                 return change.name == "enable_minmax_index_for_all_numeric_columns";
             }) != current_changes.end())
