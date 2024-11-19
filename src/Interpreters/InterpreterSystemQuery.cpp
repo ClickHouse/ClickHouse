@@ -365,12 +365,12 @@ BlockIO InterpreterSystemQuery::execute()
         }
         case Type::PREWARM_MARK_CACHE:
         {
-            prewarmCaches(getContext()->getMarkCache(), nullptr);
+            prewarmMarkCache();
             break;
         }
         case Type::PREWARM_PRIMARY_INDEX_CACHE:
         {
-            prewarmCaches(nullptr, getContext()->getPrimaryIndexCache());
+            prewarmPrimaryIndexCache();
             break;
         }
         case Type::DROP_MARK_CACHE:
@@ -1316,25 +1316,21 @@ RefreshTaskList InterpreterSystemQuery::getRefreshTasks()
     return tasks;
 }
 
-void InterpreterSystemQuery::prewarmCaches(MarkCachePtr mark_cache, PrimaryIndexCachePtr index_cache)
+void InterpreterSystemQuery::prewarmMarkCache()
 {
-    if (!mark_cache && !index_cache)
-        return;
-
     if (table_id.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table is not specified for PREWARM <MARK/PRIMARY INDEX> CACHE command");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table is not specified for PREWARM MARK CACHE command");
 
-    if (mark_cache)
-        getContext()->checkAccess(AccessType::SYSTEM_PREWARM_MARK_CACHE, table_id);
-
-    if (index_cache)
-        getContext()->checkAccess(AccessType::SYSTEM_PREWARM_PRIMARY_INDEX_CACHE, table_id);
+    getContext()->checkAccess(AccessType::SYSTEM_PREWARM_MARK_CACHE, table_id);
 
     auto table_ptr = DatabaseCatalog::instance().getTable(table_id, getContext());
     auto * merge_tree = dynamic_cast<MergeTreeData *>(table_ptr.get());
-
     if (!merge_tree)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Command PREWARM <MARK/PRIMARY INDEX> CACHE is supported only for MergeTree table, but got: {}", table_ptr->getName());
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Command PREWARM MARK CACHE is supported only for MergeTree table, but got: {}", table_ptr->getName());
+
+    auto mark_cache = getContext()->getMarkCache();
+    if (!mark_cache)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mark cache is not configured");
 
     ThreadPool pool(
         CurrentMetrics::MergeTreePartsLoaderThreads,
@@ -1342,7 +1338,32 @@ void InterpreterSystemQuery::prewarmCaches(MarkCachePtr mark_cache, PrimaryIndex
         CurrentMetrics::MergeTreePartsLoaderThreadsScheduled,
         getContext()->getSettingsRef()[Setting::max_threads]);
 
-    merge_tree->prewarmCaches(pool, std::move(mark_cache), std::move(index_cache));
+    merge_tree->prewarmCaches(pool, std::move(mark_cache), nullptr);
+}
+
+void InterpreterSystemQuery::prewarmPrimaryIndexCache()
+{
+    if (table_id.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table is not specified for PREWARM PRIMARY INDEX CACHE command");
+
+    getContext()->checkAccess(AccessType::SYSTEM_PREWARM_PRIMARY_INDEX_CACHE, table_id);
+
+    auto table_ptr = DatabaseCatalog::instance().getTable(table_id, getContext());
+    auto * merge_tree = dynamic_cast<MergeTreeData *>(table_ptr.get());
+    if (!merge_tree)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Command PREWARM PRIMARY INDEX CACHE is supported only for MergeTree table, but got: {}", table_ptr->getName());
+
+    auto index_cache = merge_tree->getPrimaryIndexCache();
+    if (!index_cache)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary index cache is not configured or is not enabled for table {}", table_id.getFullTableName());
+
+    ThreadPool pool(
+        CurrentMetrics::MergeTreePartsLoaderThreads,
+        CurrentMetrics::MergeTreePartsLoaderThreadsActive,
+        CurrentMetrics::MergeTreePartsLoaderThreadsScheduled,
+        getContext()->getSettingsRef()[Setting::max_threads]);
+
+    merge_tree->prewarmCaches(pool, nullptr, std::move(index_cache));
 }
 
 

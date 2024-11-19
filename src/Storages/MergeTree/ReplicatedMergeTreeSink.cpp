@@ -466,28 +466,6 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk & chunk)
     ++num_blocks_processed;
 }
 
-template<bool async_insert>
-void ReplicatedMergeTreeSinkImpl<async_insert>::prewarmCaches(const MergeTreeDataWriter::TemporaryPart & temp_part) const
-{
-    const auto & part = temp_part.part;
-
-    if (auto mark_cache = storage.getMarkCacheToPrewarm())
-    {
-        for (const auto & stream : temp_part.streams)
-        {
-            auto marks = stream.stream->releaseCachedMarks();
-            addMarksToCache(*part, marks, mark_cache.get());
-        }
-    }
-
-    if (auto index_cache = storage.getPrimaryIndexCacheToPrewarm())
-    {
-        /// Move index to cache and reset it here because we need
-        /// a correct part name after rename for a key of cache entry.
-        part->moveIndexToCache(*index_cache);
-    }
-}
-
 template<>
 void ReplicatedMergeTreeSinkImpl<false>::finishDelayedChunk(const ZooKeeperWithFaultInjectionPtr & zookeeper)
 {
@@ -510,7 +488,7 @@ void ReplicatedMergeTreeSinkImpl<false>::finishDelayedChunk(const ZooKeeperWithF
             int error = (deduplicate && deduplicated) ? ErrorCodes::INSERT_WAS_DEDUPLICATED : 0;
 
             if (!error)
-                prewarmCaches(partition.temp_part);
+                partition.temp_part.prewarmCaches();
 
             auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
             PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot), ExecutionStatus(error));
@@ -555,7 +533,7 @@ void ReplicatedMergeTreeSinkImpl<true>::finishDelayedChunk(const ZooKeeperWithFa
 
             if (conflict_block_ids.empty())
             {
-                prewarmCaches(partition.temp_part);
+                partition.temp_part.prewarmCaches();
 
                 auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
                 PartLog::addNewPart(

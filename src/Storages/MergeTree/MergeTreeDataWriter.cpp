@@ -14,7 +14,7 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/RowOrderOptimizer.h>
-#include "Common/logger_useful.h"
+#include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
@@ -223,6 +223,27 @@ void MergeTreeDataWriter::TemporaryPart::finalize()
     part->getDataPartStorage().precommitTransaction();
     for (const auto & [_, projection] : part->getProjectionParts())
         projection->getDataPartStorage().precommitTransaction();
+}
+
+void MergeTreeDataWriter::TemporaryPart::prewarmCaches()
+{
+    /// This method must be called after rename and commit of part
+    /// because a correct path is required for the keys of caches.
+
+    if (auto mark_cache = part->storage.getMarkCacheToPrewarm())
+    {
+        for (const auto & stream : streams)
+        {
+            auto marks = stream.stream->releaseCachedMarks();
+            addMarksToCache(*part, marks, mark_cache.get());
+        }
+    }
+
+    if (auto index_cache = part->storage.getPrimaryIndexCacheToPrewarm())
+    {
+        /// Index was already set during writing. Now move it to cache.
+        part->moveIndexToCache(*index_cache);
+    }
 }
 
 std::vector<AsyncInsertInfoPtr> scatterAsyncInsertInfoBySelector(AsyncInsertInfoPtr async_insert_info, const IColumn::Selector & selector, size_t partition_num)

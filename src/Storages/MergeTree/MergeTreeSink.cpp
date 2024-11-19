@@ -247,21 +247,7 @@ void MergeTreeSink::finishDelayedChunk()
         /// Part can be deduplicated, so increment counters and add to part log only if it's really added
         if (added)
         {
-            if (auto mark_cache = storage.getMarkCacheToPrewarm())
-            {
-                for (const auto & stream : partition.temp_part.streams)
-                {
-                    auto marks = stream.stream->releaseCachedMarks();
-                    addMarksToCache(*part, marks, mark_cache.get());
-                }
-            }
-
-            if (auto index_cache = storage.getPrimaryIndexCacheToPrewarm())
-            {
-                /// Move index to cache and reset it here because we need
-                /// a correct part name after rename for a key of cache entry.
-                part->moveIndexToCache(*index_cache);
-            }
+            partition.temp_part.prewarmCaches();
 
             auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
             PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot));

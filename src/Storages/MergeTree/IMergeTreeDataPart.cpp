@@ -33,7 +33,6 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 #include <base/JSON.h>
 #include <boost/algorithm/string/join.hpp>
-#include "Common/Logger.h"
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
@@ -389,7 +388,6 @@ IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::getIndex() const
 
 IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::loadIndexToCache(PrimaryIndexCache & index_cache) const
 {
-    LOG_DEBUG(getLogger("KEK"), "part name: {}, load index path: {}", name, getDataPartStorage().getFullPath());
     auto key = PrimaryIndexCache::hash(getDataPartStorage().getFullPath());
     auto callback = [this] { return loadIndex(); };
     return index_cache.getOrSet(key, callback);
@@ -415,7 +413,7 @@ void IMergeTreeDataPart::setIndex(Columns index_columns)
     if (index)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The index of data part can be set only once");
 
-    optimizeIndexColumns(index_granularity.getMarksCount(), index_columns);
+    optimizeIndexColumns(index_granularity->getMarksCount(), index_columns);
     index = std::make_shared<Index>(std::move(index_columns));
 }
 
@@ -780,7 +778,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
         loadIndexGranularity();
 
         if (!(*storage.getSettings())[MergeTreeSetting::primary_key_lazy_load])
-            getIndex();
+            index = loadIndex();
 
         calculateColumnsAndSecondaryIndicesSizesOnDisk();
         loadRowsCount(); /// Must be called after loadIndexGranularity() as it uses the value of `index_granularity`.
@@ -1006,13 +1004,13 @@ std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
     for (size_t i = 0; i < key_size; ++i)
     {
         loaded_index[i] = primary_key.data_types[i]->createColumn();
-        loaded_index[i]->reserve(index_granularity.getMarksCount());
+        loaded_index[i]->reserve(index_granularity->getMarksCount());
     }
 
     String index_name = "primary" + getIndexExtensionFromFilesystem(getDataPartStorage());
     String index_path = fs::path(getDataPartStorage().getRelativePath()) / index_name;
     auto index_file = metadata_manager->read(index_name);
-    size_t marks_count = index_granularity.getMarksCount();
+    size_t marks_count = index_granularity->getMarksCount();
 
     Serializations key_serializations(key_size);
     for (size_t j = 0; j < key_size; ++j)

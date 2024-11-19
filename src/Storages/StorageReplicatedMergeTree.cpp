@@ -5091,6 +5091,11 @@ bool StorageReplicatedMergeTree::fetchPart(
                 part->loadMarksToCache(column_names, mark_cache.get());
             }
 
+            if (auto index_cache = getPrimaryIndexCacheToPrewarm())
+            {
+                part->loadIndexToCache(*index_cache);
+            }
+
             write_part_log({});
         }
         else

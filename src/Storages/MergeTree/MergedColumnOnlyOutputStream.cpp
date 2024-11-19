@@ -13,11 +13,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsBool use_primary_index_cache;
-}
-
 MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     const MergeTreeMutableDataPartPtr & data_part,
     const StorageMetadataPtr & metadata_snapshot_,
@@ -29,7 +24,9 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     WrittenOffsetColumns * offset_columns)
     : IMergedBlockOutputStream(data_part->storage.getSettings(), data_part->getDataPartStoragePtr(), metadata_snapshot_, columns_list_, /*reset_columns=*/ true)
 {
+    /// Save marks in memory if prewarm is enabled to avoid rereading marks file.
     bool save_marks_in_cache = data_part->storage.getMarkCacheToPrewarm() != nullptr;
+    /// Save primary index in memory if cache is disabled or is enabled with prewarm to avoid rereading marks file.
     bool save_primary_index_in_memory = !data_part->storage.getPrimaryIndexCache() || data_part->storage.getPrimaryIndexCacheToPrewarm();
 
     /// Granularity is never recomputed while writing only columns.

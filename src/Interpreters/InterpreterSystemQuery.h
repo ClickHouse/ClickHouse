@@ -84,7 +84,9 @@ private:
 
     AccessRightsElements getRequiredAccessForDDLOnCluster() const;
     void startStopAction(StorageActionBlockType action_type, bool start);
-    void prewarmCaches(MarkCachePtr mark_cache, PrimaryIndexCachePtr index_cache);
+
+    void prewarmMarkCache();
+    void prewarmPrimaryIndexCache();
 
     void stopReplicatedDDLQueries();
     void startReplicatedDDLQueries();

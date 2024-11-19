@@ -235,6 +235,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool use_primary_index_cache;
     extern const MergeTreeSettingsBool prewarm_primary_index_cache;
     extern const MergeTreeSettingsBool prewarm_mark_cache;
+    extern const MergeTreeSettingsBool primary_key_lazy_load;
 }
 
 namespace ServerSetting
@@ -2349,7 +2350,10 @@ void MergeTreeData::stopOutdatedAndUnexpectedDataPartsLoadingTask()
 
 PrimaryIndexCachePtr MergeTreeData::getPrimaryIndexCache() const
 {
-    if (!(*getSettings())[MergeTreeSetting::use_primary_index_cache])
+    bool use_primary_index_cache = (*getSettings())[MergeTreeSetting::use_primary_index_cache];
+    bool primary_key_lazy_load = (*getSettings())[MergeTreeSetting::primary_key_lazy_load];
+
+    if (!use_primary_index_cache || !primary_key_lazy_load)
         return nullptr;
 
     return getContext()->getPrimaryIndexCache();
@@ -2376,14 +2380,6 @@ void MergeTreeData::prewarmCaches(ThreadPool & pool, MarkCachePtr mark_cache, Pr
     if (!mark_cache && !index_cache)
         return;
 
-    Names columns_to_prewarm_marks;
-
-    if (mark_cache)
-    {
-        auto metadata_snaphost = getInMemoryMetadataPtr();
-        columns_to_prewarm_marks = getColumnsToPrewarmMarks(*getSettings(), metadata_snaphost->getColumns().getAllPhysical());
-    }
-
     Stopwatch watch;
     LOG_TRACE(log, "Prewarming mark and/or primary index caches");
 
@@ -2407,13 +2403,32 @@ void MergeTreeData::prewarmCaches(ThreadPool & pool, MarkCachePtr mark_cache, Pr
     double marks_ratio_to_prewarm = getContext()->getServerSettings()[ServerSetting::mark_cache_prewarm_ratio];
     double index_ratio_to_prewarm = getContext()->getServerSettings()[ServerSetting::primary_index_cache_prewarm_ratio];
 
+    Names columns_to_prewarm_marks;
+
+    if (mark_cache)
+    {
+        auto metadata_snaphost = getInMemoryMetadataPtr();
+        columns_to_prewarm_marks = getColumnsToPrewarmMarks(*getSettings(), metadata_snaphost->getColumns().getAllPhysical());
+    }
+
     for (const auto & part : data_parts)
     {
-        if (index_cache && index_cache->sizeInBytes() < index_cache->maxSizeInBytes() * index_ratio_to_prewarm)
+        bool added_task = false;
+
+        if (index_cache && !part->isIndexLoaded() && index_cache->sizeInBytes() < index_cache->maxSizeInBytes() * index_ratio_to_prewarm)
+        {
+            added_task = true;
             runner([&] { part->loadIndexToCache(*index_cache); });
+        }
 
         if (mark_cache && mark_cache->sizeInBytes() < mark_cache->maxSizeInBytes() * marks_ratio_to_prewarm)
+        {
+            added_task = true;
             runner([&] { part->loadMarksToCache(columns_to_prewarm_marks, mark_cache.get()); });
+        }
+
+        if (!added_task)
+            break;
     }
 
     runner.waitForAllToFinishAndRethrowFirstError();
