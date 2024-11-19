@@ -47,6 +47,12 @@ int ColumnDecimal<T>::doCompareAt(size_t n, size_t m, const IColumn & rhs_, int)
 }
 
 template <is_decimal T>
+Float64 ColumnDecimal<T>::getFloat64(size_t n) const
+{
+    return DecimalUtils::convertTo<Float64>(data[n], scale);
+}
+
+template <is_decimal T>
 const char * ColumnDecimal<T>::deserializeAndInsertFromArena(const char * pos)
 {
     data.push_back(unalignedLoad<T>(pos));

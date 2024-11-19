@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/DecimalFunctions.h>
 #include <Core/Types.h>
 #include <Common/Exception.h>
 #include <Common/intExp.h>
