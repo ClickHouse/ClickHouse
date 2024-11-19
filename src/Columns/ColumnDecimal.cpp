@@ -9,7 +9,9 @@
 #include <Common/iota.h>
 
 #include <Core/DecimalFunctions.h>
+#include <Core/TypeId.h>
 
+#include <base/TypeName.h>
 #include <base/sort.h>
 
 #include <IO/WriteHelpers.h>
@@ -31,6 +33,19 @@ namespace ErrorCodes
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
 }
+
+template <is_decimal T>
+const char * ColumnDecimal<T>::getFamilyName() const
+{
+    return TypeName<T>.data();
+}
+
+template <is_decimal T>
+TypeIndex ColumnDecimal<T>::getDataType() const
+{
+    return TypeToTypeIndex<T>;
+}
+
 
 template <is_decimal T>
 #if !defined(DEBUG_OR_SANITIZER_BUILD)

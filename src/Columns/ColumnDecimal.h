@@ -1,13 +1,9 @@
 #pragma once
 
-#include <base/sort.h>
-#include <base/TypeName.h>
-#include <Core/Field.h>
-#include <Core/TypeId.h>
-#include <Common/typeid_cast.h>
 #include <Columns/ColumnFixedSizeHelper.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
+#include <Core/Field.h>
 
 
 namespace DB
@@ -38,8 +34,8 @@ private:
     {}
 
 public:
-    const char * getFamilyName() const override { return TypeName<T>.data(); }
-    TypeIndex getDataType() const override { return TypeToTypeIndex<T>; }
+    const char * getFamilyName() const override;
+    TypeIndex getDataType() const override;
 
     bool isNumeric() const override { return false; }
     bool canBeInsideNullable() const override { return true; }
