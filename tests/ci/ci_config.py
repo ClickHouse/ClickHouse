@@ -106,7 +106,7 @@ class CI:
         BuildNames.PACKAGE_AARCH64_ASAN: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.PACKAGE_AARCH64_ASAN,
-                compiler="clang-18-aarch64",
+                compiler="clang-19-aarch64",
                 sanitizer="address",
                 package_type="deb",
             ),
