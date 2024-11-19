@@ -748,7 +748,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexFullText::createIndexGranule() const
     /// have an old index.
     /// TODO: remove this at the end of 2024.
     if (index.type == INVERTED_INDEX_NAME)
-        throw Exception(ErrorCodes::ILLEGAL_INDEX, "Indexes of type 'inverted' are no longer supported. Please drop and recreate the index as type 'full-text'");
+        throw Exception(ErrorCodes::ILLEGAL_INDEX, "Indexes of type 'inverted' are no longer supported. Please drop and recreate the index as type 'full_text'");
     /// ------
 
     return std::make_shared<MergeTreeIndexGranuleFullText>(index.name, index.column_names.size(), params);
