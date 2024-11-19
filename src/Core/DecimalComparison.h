@@ -2,6 +2,7 @@
 
 #include <base/arithmeticOverflow.h>
 #include <Core/Block.h>
+#include <Core/DecimalFunctions.h>
 #include <Core/AccurateComparison.h>
 #include <Core/callOnTypeIndex.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -124,8 +125,8 @@ private:
         if (decimal0 && decimal1)
         {
             auto result_type = DecimalUtils::binaryOpResult<false, false>(*decimal0, *decimal1);
-            shift.a = static_cast<CompareInt>(result_type.scaleFactorFor(decimal0->getTrait(), false).value);
-            shift.b = static_cast<CompareInt>(result_type.scaleFactorFor(decimal1->getTrait(), false).value);
+            shift.a = static_cast<CompareInt>(result_type.scaleFactorFor(DecimalUtils::DataTypeDecimalTrait<T>{decimal0->getPrecision(), decimal0->getScale()}, false).value);
+            shift.b = static_cast<CompareInt>(result_type.scaleFactorFor(DecimalUtils::DataTypeDecimalTrait<U>{decimal1->getPrecision(), decimal1->getScale()}, false).value);
         }
         else if (decimal0)
             shift.b = static_cast<CompareInt>(decimal0->getScaleMultiplier().value);

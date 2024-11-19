@@ -8,6 +8,8 @@
 #include <Common/assert_cast.h>
 #include <Common/iota.h>
 
+#include <Core/DecimalFunctions.h>
+
 #include <base/sort.h>
 
 #include <IO/WriteHelpers.h>
