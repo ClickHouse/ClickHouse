@@ -12,5 +12,5 @@ SYSTEM FLUSH LOGS;
 SET enable_parallel_replicas=0;
 SET max_rows_to_read = 0; -- system.text_log can be really big
 SELECT count() > 0 FROM system.text_log
-WHERE query_id in (select query_id from system.query_log where log_comment like '03275_16cb4bb2-813a-43c2-8956-fa3520454020%')
+WHERE query_id in (select query_id from system.query_log where current_database = currentDatabase() and log_comment like '03275_16cb4bb2-813a-43c2-8956-fa3520454020%')
     AND message LIKE '%Parallel reading from replicas is disabled for cluster%';
