@@ -59,7 +59,7 @@ QUERY id: 0
               FUNCTION id: 10, function_name: currentDatabase, function_type: ordinary, result_type: String
           IDENTIFIER id: 11, identifier: foo
           CONSTANT id: 12, constant_value: \'default\', constant_value_type: String
-          CONSTANT id: 13, constant_value: \'\', constant_value_type: String
+          CONSTANT id: 13, constant_value: [HIDDEN], constant_value_type: String
       SETTINGS connection_wait_timeout=123 connect_timeout=40123002 read_write_timeout=40123001 connection_pool_size=3
 
 SELECT
