@@ -42,7 +42,7 @@ void CancellationChecker::terminateThread()
     cond_var.notify_all();
 }
 
-void CancellationChecker::cancelTask(QueryToTrack task, [[maybe_unused]]CancelReason reason)
+void CancellationChecker::cancelTask(QueryToTrack task)
 {
     if (task.query)
     {
@@ -123,7 +123,7 @@ void CancellationChecker::workerFunction()
             if ((end_time_ms <= now_ms && duration_milliseconds.count() != 0))
             {
                 LOG_TRACE(getLogger("CancellationChecker"), "Cancelling the task because of the timeout: {} ms, query: {}", duration, next_task.query->getInfo().query);
-                cancelTask(next_task, CancelReason::TIMEOUT);
+                cancelTask(next_task);
                 querySet.erase(next_task);
 
                 continue;

@@ -240,8 +240,7 @@ public:
 
     QueryStatusInfo getInfo(bool get_thread_list = false, bool get_profile_events = false, bool get_settings = false) const;
 
-    void throwProperExceptionIfNeeded(const UInt64 & max_execution_time, const UInt64 & elapsed_ns = 0) const;
-    [[noreturn]] void throwProperException(const UInt64 & max_execution_time, const UInt64 & elapsed_ns = 0) const;
+    void throwProperExceptionIfNeeded(const UInt64 & max_execution_time, const UInt64 & elapsed_ns = 0);
 
     /// Cancels the current query.
     /// Optional argument `exception` allows to set an exception which checkTimeLimit() will throw instead of "QUERY_WAS_CANCELLED".

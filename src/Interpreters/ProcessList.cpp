@@ -498,26 +498,24 @@ CancellationCode QueryStatus::cancelQuery(CancelReason reason, std::exception_pt
     return CancellationCode::CancelSent;
 }
 
-void QueryStatus::throwProperExceptionIfNeeded(const UInt64 & max_execution_time, const UInt64 & elapsed_ns) const
+void QueryStatus::throwProperExceptionIfNeeded(const UInt64 & max_execution_time, const UInt64 & elapsed_ns)
 {
     {
         std::lock_guard<std::mutex> lock(cancel_mutex);
         if (is_killed)
         {
-            throwProperException(max_execution_time, elapsed_ns);
+            String additional_error_part;
+            if (!elapsed_ns)
+                additional_error_part = fmt::format("elapsed {} ms, ", static_cast<double>(elapsed_ns) / 1000000000ULL);
+
+            if (cancel_reason == CancelReason::TIMEOUT)
+            {
+                cancel_reason = CancelReason::UNDEFINED; // We can assign only CancelReason::TIMEOUT to cancel_reason, so we need to assign it back to UNDEFINED
+                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: {}maximum: {} ms", additional_error_part, max_execution_time / 1000.0);
+            }
+            throwQueryWasCancelled();
         }
     }
-}
-
-void QueryStatus::throwProperException(const UInt64 & max_execution_time, const UInt64 & elapsed_ns) const
-{
-    String additional_error_part;
-    if (!elapsed_ns)
-        additional_error_part = fmt::format("elapsed {} ms,", static_cast<double>(elapsed_ns) / 1000000000ULL);
-
-    if (cancel_reason == CancelReason::TIMEOUT)
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: {} maximum: {} ms", additional_error_part, max_execution_time / 1000.0);
-    throwQueryWasCancelled();
 }
 
 void QueryStatus::addPipelineExecutor(PipelineExecutor * e)
