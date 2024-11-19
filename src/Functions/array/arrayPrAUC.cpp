@@ -63,7 +63,7 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
   * threshold = 0.1,  TP = 2, FP = 1, FN = 0, Recall = 1.0, Precision = 0.666
   * threshold = 0,    TP = 2, FP = 2, FN = 0, Recall = 1.0, Precision = 0.5
   *
-  * This PR-AUC uses the right Riemann sum (see https://en.wikipedia.org/wiki/Riemann_sum) to calculate the AUC.
+  * This implementation uses the right Riemann sum (see https://en.wikipedia.org/wiki/Riemann_sum) to calculate the AUC.
   * That is, each increment in area is calculated using `(R_n - R_{n-1}) * P_n`, 
   *   where `R_n` is the Recall at the `n`-th point and `P_n` is the Precision at the `n`-th point.
   *
