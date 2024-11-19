@@ -1309,6 +1309,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
         return {};
 
     LOG_DEBUG(&Poco::Logger::get("resolveInParentScope"), "Resolving indetifier '{}'", identifier_lookup.dump());
+    bool initial_scope_is_query = scope.scope_node->getNodeType() == QueryTreeNodeType::QUERY;
 
     auto new_resolve_context = identifier_resolve_settings.resolveAliasesAt(&scope);
 
@@ -1319,7 +1320,12 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
       */
     if (identifier_lookup.isTableExpressionLookup())
     {
-        new_resolve_context.allow_to_check_join_tree = false;
+        /* Allow to check join tree when resolving lambda body.
+         *
+         * Example: SELECT arrayMap(x -> test_table.* EXCEPT value, [1,2,3]) FROM test_table;
+         */
+        if (initial_scope_is_query)
+            new_resolve_context.allow_to_check_join_tree = false;
 
         /** From parent scopes we can resolve table identifiers only as CTE.
             * Example: SELECT (SELECT 1 FROM a) FROM test_table AS a;
@@ -1357,9 +1363,10 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
         auto * union_node = resolved_identifier->as<UnionNode>();
 
         bool is_cte = (subquery_node && subquery_node->isCTE()) || (union_node && union_node->isCTE());
-        bool is_table_from_expression_arguments = resolve_result.resolve_place == IdentifierResolvePlace::EXPRESSION_ARGUMENTS &&
+        bool is_table_from_expression_arguments = resolve_result.isResolvedFromExpressionArguments() &&
             resolved_identifier->getNodeType() == QueryTreeNodeType::TABLE;
-        bool is_valid_table_expression = is_cte || is_table_from_expression_arguments;
+        bool is_table_from_join_tree = !initial_scope_is_query && resolve_result.isResolvedFromJoinTree();
+        bool is_valid_table_expression = is_cte || is_table_from_expression_arguments || is_table_from_join_tree;
 
 
         if (!is_valid_table_expression)
