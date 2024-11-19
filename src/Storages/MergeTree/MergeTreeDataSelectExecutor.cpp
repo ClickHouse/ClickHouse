@@ -650,8 +650,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         return parts_with_ranges;
     }
 
-    RangesInDataParts parts_with_ranges;
-    parts_with_ranges.resize(parts.size());
     if (use_skip_indexes && settings[Setting::force_data_skipping_indices].changed)
     {
         const auto & indices_str = settings[Setting::force_data_skipping_indices].toString();
@@ -689,6 +687,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
     std::atomic<size_t> sum_marks_pk = 0;
     std::atomic<size_t> sum_parts_pk = 0;
+
+    RangesInDataParts parts_with_ranges(parts.size());
 
     /// Let's find what range to read from each part.
     {
