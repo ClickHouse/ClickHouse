@@ -32,17 +32,17 @@ ${CLICKHOUSE_CLIENT} -nm --query "
 # Reading from dictionary via direct SELECT is Ok.
 $CLICKHOUSE_CLIENT -nm --user="${username}" --query "
     SELECT * FROM ${dictname};
-" 2>&1 > /dev/null && echo "Ok."
+" >/dev/null 2>&1 && echo "Ok."
 
 # Reading from dictionary via dictionary storage is Ok.
 $CLICKHOUSE_CLIENT -nm --user="${username}" --query "
     SELECT * FROM ${dicttablename};
-" 2>&1 > /dev/null && echo "Ok."
+" >/dev/null 2>&1 && echo "Ok."
 
 # Reading from dictionary via dictionary table function is Ok.
 $CLICKHOUSE_CLIENT -nm --user="${username}" --query "
     SELECT * FROM dictionary(${dictname});
-" 2>&1 > /dev/null && echo "Ok."
+" >/dev/null 2>&1 && echo "Ok."
 
 # Function dictGet requires a permission dictGet to use.
 $CLICKHOUSE_CLIENT -nm --user="${username}" --query "
