@@ -479,6 +479,11 @@ std::pair<ColumnsDescription, std::string> StorageObjectStorage::resolveSchemaAn
     return std::pair(columns, format);
 }
 
+void StorageObjectStorage::updateEngineArgsForCreateQuery(ASTs & args, const ContextPtr & context) const
+{
+    configuration->addStructureAndFormatToArgsIfNeeded(args, "", configuration->format, context, /*with_structure=*/false);
+}
+
 SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, const std::string & storage_type_name)
 {
     if (storage_type_name == "s3")

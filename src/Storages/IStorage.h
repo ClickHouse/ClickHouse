@@ -284,6 +284,10 @@ public:
     /// Returns hints for serialization of columns accorsing to statistics accumulated by storage.
     virtual SerializationInfoByName getSerializationHints() const { return {}; }
 
+    /// Update engine args in create query that were inferred during storage creation to avoid the same
+    /// inference on server restart. For example - data format inference in File/URL/S3/etc engines.
+    virtual void updateEngineArgsForCreateQuery(ASTs & /*args*/, const ContextPtr & /*context*/) const {}
+
 private:
     StorageID storage_id;
 

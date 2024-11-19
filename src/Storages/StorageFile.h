@@ -139,6 +139,8 @@ public:
 
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
+    void updateEngineArgsForCreateQuery(ASTs & args, const ContextPtr & context) const override;
+
 protected:
     friend class StorageFileSource;
     friend class StorageFileSink;

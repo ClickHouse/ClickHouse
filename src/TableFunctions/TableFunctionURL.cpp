@@ -77,7 +77,7 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
     }
 }
 
-void TableFunctionURL::updateStructureAndFormatArgumentsIfNeeded(ASTs & args, const String & structure_, const String & format_, const ContextPtr & context)
+void TableFunctionURL::updateStructureAndFormatArgumentsIfNeeded(ASTs & args, const String & structure_, const String & format_, const ContextPtr & context, bool with_structure)
 {
     if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
     {
@@ -89,7 +89,7 @@ void TableFunctionURL::updateStructureAndFormatArgumentsIfNeeded(ASTs & args, co
             auto format_equal_func = makeASTFunction("equals", std::move(format_equal_func_args));
             args.push_back(format_equal_func);
         }
-        if (collection->getOrDefault<String>("structure", "auto") == "auto")
+        if (with_structure && collection->getOrDefault<String>("structure", "auto") == "auto")
         {
             ASTs structure_equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure_)};
             auto structure_equal_func = makeASTFunction("equals", std::move(structure_equal_func_args));
@@ -109,7 +109,7 @@ void TableFunctionURL::updateStructureAndFormatArgumentsIfNeeded(ASTs & args, co
             args.pop_back();
         }
 
-        ITableFunctionFileLike::updateStructureAndFormatArgumentsIfNeeded(args, structure_, format_, context);
+        ITableFunctionFileLike::updateStructureAndFormatArgumentsIfNeeded(args, structure_, format_, context, with_structure);
 
         if (headers_ast)
             args.push_back(headers_ast);

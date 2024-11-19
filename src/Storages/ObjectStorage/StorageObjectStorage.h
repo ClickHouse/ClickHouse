@@ -122,6 +122,8 @@ public:
         std::string & sample_path,
         const ContextPtr & context);
 
+    void updateEngineArgsForCreateQuery(ASTs & args, const ContextPtr & context) const override;
+
 protected:
     String getPathSample(StorageInMemoryMetadata metadata, ContextPtr context);
 
@@ -179,7 +181,7 @@ public:
 
     /// Add/replace structure and format arguments in the AST arguments if they have 'auto' values.
     virtual void addStructureAndFormatToArgsIfNeeded(
-        ASTs & args, const String & structure_, const String & format_, ContextPtr context) = 0;
+        ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure) = 0;
 
     bool withPartitionWildcard() const;
     bool withGlobs() const { return isPathWithGlobs() || isNamespaceWithGlobs(); }

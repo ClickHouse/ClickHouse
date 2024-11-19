@@ -34,7 +34,7 @@ public:
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
-    static void updateStructureAndFormatArgumentsIfNeeded(ASTs & args, const String & structure_, const String & format_, const ContextPtr & context);
+    static void updateStructureAndFormatArgumentsIfNeeded(ASTs & args, const String & structure_, const String & format_, const ContextPtr & context, bool with_structure);
 
 protected:
     void parseArguments(const ASTPtr & ast, ContextPtr context) override;

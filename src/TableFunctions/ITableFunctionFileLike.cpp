@@ -88,7 +88,7 @@ void ITableFunctionFileLike::parseArgumentsImpl(ASTs & args, const ContextPtr & 
         compression_method = checkAndGetLiteralArgument<String>(args[3], "compression_method");
 }
 
-void ITableFunctionFileLike::updateStructureAndFormatArgumentsIfNeeded(ASTs & args, const String & structure, const String & format, const ContextPtr & context)
+void ITableFunctionFileLike::updateStructureAndFormatArgumentsIfNeeded(ASTs & args, const String & structure, const String & format, const ContextPtr & context, bool with_structure)
 {
     if (args.empty() || args.size() > getMaxNumberOfArguments())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 1 to {} arguments in table function, got {}", getMaxNumberOfArguments(), args.size());
@@ -103,21 +103,23 @@ void ITableFunctionFileLike::updateStructureAndFormatArgumentsIfNeeded(ASTs & ar
     if (args.size() == 1)
     {
         args.push_back(format_literal);
-        args.push_back(structure_literal);
+        if (with_structure)
+            args.push_back(structure_literal);
     }
     /// f(filename, format)
     else if (args.size() == 2)
     {
         if (checkAndGetLiteralArgument<String>(args[1], "format") == "auto")
             args.back() = format_literal;
-        args.push_back(structure_literal);
+        if (with_structure)
+            args.push_back(structure_literal);
     }
-    /// f(filename, format, structure) or f(filename, format, structure, compression)
+    /// f(filename, format, structure) or f(filename, format, structure, compression) or f(filename, format, compression)
     else if (args.size() >= 3)
     {
         if (checkAndGetLiteralArgument<String>(args[1], "format") == "auto")
             args[1] = format_literal;
-        if (checkAndGetLiteralArgument<String>(args[2], "structure") == "auto")
+        if (with_structure && checkAndGetLiteralArgument<String>(args[2], "structure") == "auto")
             args[2] = structure_literal;
     }
 }

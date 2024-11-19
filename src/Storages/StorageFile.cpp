@@ -2114,6 +2114,11 @@ void StorageFile::truncate(
     }
 }
 
+void StorageFile::updateEngineArgsForCreateQuery(ASTs & args, const ContextPtr & context) const
+{
+    if (checkAndGetLiteralArgument<String>(evaluateConstantExpressionOrIdentifierAsLiteral(args[0], context), "format") == "auto")
+        args[0] = std::make_shared<ASTLiteral>(format_name);
+}
 
 void registerStorageFile(StorageFactory & factory)
 {

@@ -38,6 +38,8 @@
 #include <Common/logger_useful.h>
 #include <Common/re2.h>
 
+#include <TableFunctions/TableFunctionURL.h>
+
 #include <Formats/SchemaInferenceUtils.h>
 #include <Core/FormatFactorySettings.h>
 #include <Core/ServerSettings.h>
@@ -1568,6 +1570,11 @@ void StorageURL::processNamedCollectionResult(Configuration & configuration, con
     configuration.format = collection.getOrDefault<String>("format", "auto");
     configuration.compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
     configuration.structure = collection.getOrDefault<String>("structure", "auto");
+}
+
+void StorageURL::updateEngineArgsForCreateQuery(ASTs & args, const ContextPtr & context) const
+{
+    TableFunctionURL::updateStructureAndFormatArgumentsIfNeeded(args, "", format_name, context, /*with_structure=*/false);
 }
 
 StorageURL::Configuration StorageURL::getConfiguration(ASTs & args, const ContextPtr & local_context)
