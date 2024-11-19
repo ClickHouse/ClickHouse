@@ -1,4 +1,5 @@
 #include <Access/Common/AccessFlags.h>
+#include <Access/ContextAccess.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageFactory.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -169,7 +170,18 @@ Pipe StorageDictionary::read(
 {
     auto registered_dictionary_name = location == Location::SameDatabaseAndNameAsDictionary ? getStorageID().getInternalDictionaryName() : dictionary_name;
     auto dictionary = getContext()->getExternalDictionariesLoader().getDictionary(registered_dictionary_name, local_context);
-    local_context->checkAccess(AccessType::dictGet, dictionary->getDatabaseOrNoDatabaseTag(), dictionary->getDictionaryID().getTableName());
+
+    /**
+     * For backward compatibility reasons we require either SELECT or dictGet permission to read directly from the dictionary.
+     * If none of these conditions are met - we ask to grant a dictGet.
+     */
+    bool has_dict_get = local_context->getAccess()->isGranted(
+        AccessType::dictGet, dictionary->getDatabaseOrNoDatabaseTag(), dictionary->getDictionaryID().getTableName());
+    bool has_select = local_context->getAccess()->isGranted(
+        AccessType::SELECT, dictionary->getDatabaseOrNoDatabaseTag(), dictionary->getDictionaryID().getTableName());
+    if (!has_dict_get && !has_select)
+        local_context->checkAccess(AccessType::dictGet, dictionary->getDatabaseOrNoDatabaseTag(), dictionary->getDictionaryID().getTableName());
+
     return dictionary->read(column_names, max_block_size, threads);
 }
 
