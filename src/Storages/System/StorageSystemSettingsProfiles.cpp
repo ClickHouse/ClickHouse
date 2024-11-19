@@ -101,10 +101,10 @@ void StorageSystemSettingsProfiles::backupData(
 }
 
 void StorageSystemSettingsProfiles::restoreDataFromBackup(
-    RestorerFromBackup & restorer, const String & /* data_path_in_backup */, const std::optional<ASTs> & /* partitions */)
+    RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
     auto & access_control = restorer.getContext()->getAccessControl();
-    access_control.restoreFromBackup(restorer);
+    access_control.restoreFromBackup(restorer, data_path_in_backup);
 }
 
 }

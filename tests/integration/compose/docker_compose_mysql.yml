@@ -1,4 +1,3 @@
-version: '2.3'
 services:
     mysql57:
         image: mysql:5.7
@@ -6,7 +5,7 @@ services:
         environment:
             MYSQL_ROOT_PASSWORD: clickhouse
             MYSQL_ROOT_HOST: ${MYSQL_ROOT_HOST}
-            DATADIR: /mysql/
+            DATADIR: /var/log/mysql/
         expose:
             - ${MYSQL_PORT:-3306}
         command: --server_id=100
@@ -15,11 +14,11 @@ services:
             --gtid-mode="ON"
             --enforce-gtid-consistency
             --log-error-verbosity=3
-            --log-error=/mysql/error.log
+            --log-error=/var/log/mysql/error.log
             --general-log=ON
-            --general-log-file=/mysql/general.log
+            --general-log-file=/var/log/mysql/general.log
         volumes:
             - type: ${MYSQL_LOGS_FS:-tmpfs}
               source: ${MYSQL_LOGS:-}
-              target: /mysql/
+              target: /var/log/mysql/
         user: ${MYSQL_DOCKER_USER}

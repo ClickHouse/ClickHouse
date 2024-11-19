@@ -66,8 +66,7 @@ void ASTColumnDeclaration::formatImpl(const FormatSettings & format_settings, Fo
 {
     frame.need_parens = false;
 
-    /// We have to always quote column names to avoid ambiguity with INDEX and other declarations in CREATE query.
-    format_settings.quoteIdentifier(name);
+    format_settings.writeIdentifier(name, /*ambiguous=*/true);
 
     if (type)
     {
@@ -129,4 +128,14 @@ void ASTColumnDeclaration::formatImpl(const FormatSettings & format_settings, Fo
     }
 }
 
+void ASTColumnDeclaration::forEachPointerToChild(std::function<void(void **)> f)
+{
+    f(reinterpret_cast<void **>(&default_expression));
+    f(reinterpret_cast<void **>(&comment));
+    f(reinterpret_cast<void **>(&codec));
+    f(reinterpret_cast<void **>(&statistics_desc));
+    f(reinterpret_cast<void **>(&ttl));
+    f(reinterpret_cast<void **>(&collation));
+    f(reinterpret_cast<void **>(&settings));
+}
 }

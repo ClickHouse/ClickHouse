@@ -33,6 +33,12 @@ public:
 
     Priority getPriority() const override { return priority; }
 
+    void cancel() noexcept override
+    {
+        if (mutate_task)
+            mutate_task->cancel();
+    }
+
 private:
 
     ReplicatedMergeMutateTaskBase::PrepareResult prepare() override;

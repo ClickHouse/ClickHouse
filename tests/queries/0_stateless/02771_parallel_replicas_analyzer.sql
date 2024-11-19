@@ -1,5 +1,5 @@
 -- Tags: zookeeper
-DROP TABLE IF EXISTS join_inner_table__fuzz_146_replicated;
+DROP TABLE IF EXISTS join_inner_table__fuzz_146_replicated SYNC;
 CREATE TABLE join_inner_table__fuzz_146_replicated
 (
     `id` UUID,
@@ -26,7 +26,7 @@ FROM join_inner_table__fuzz_146_replicated
     enable_analyzer = 1,
     max_parallel_replicas = 2,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
-    allow_experimental_parallel_reading_from_replicas = 1;
+    enable_parallel_replicas = 1;
 
 SYSTEM FLUSH LOGS;
 -- There should be 2 different queries
@@ -52,4 +52,4 @@ WHERE
 GROUP BY is_initial_query, query
 ORDER BY is_initial_query DESC, c, query;
 
-DROP TABLE join_inner_table__fuzz_146_replicated;
+DROP TABLE join_inner_table__fuzz_146_replicated SYNC;

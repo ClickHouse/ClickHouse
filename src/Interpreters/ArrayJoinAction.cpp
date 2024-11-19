@@ -1,5 +1,4 @@
 #include <Common/typeid_cast.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <Columns/ColumnArray.h>
@@ -26,24 +25,22 @@ std::shared_ptr<const DataTypeArray> getArrayJoinDataType(DataTypePtr type)
 {
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
         return std::shared_ptr<const DataTypeArray>{type, array_type};
-    else if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
     {
         const auto & nested_type = map_type->getNestedType();
         const auto * nested_array_type = typeid_cast<const DataTypeArray *>(nested_type.get());
         return std::shared_ptr<const DataTypeArray>{nested_type, nested_array_type};
     }
-    else
-        return nullptr;
+    return nullptr;
 }
 
 ColumnPtr getArrayJoinColumn(const ColumnPtr & column)
 {
     if (typeid_cast<const ColumnArray *>(column.get()))
         return column;
-    else if (const auto * map = typeid_cast<const ColumnMap *>(column.get()))
+    if (const auto * map = typeid_cast<const ColumnMap *>(column.get()))
         return map->getNestedColumnPtr();
-    else
-        return nullptr;
+    return nullptr;
 }
 
 const ColumnArray * getArrayJoinColumnRawPtr(const ColumnPtr & column)

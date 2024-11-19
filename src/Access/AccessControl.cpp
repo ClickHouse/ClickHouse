@@ -22,8 +22,10 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
 #include <base/defines.h>
+#include <base/range.h>
 #include <IO/Operators.h>
 #include <Common/re2.h>
+
 #include <Poco/AccessExpireCache.h>
 #include <boost/algorithm/string/join.hpp>
 #include <filesystem>
@@ -132,8 +134,8 @@ public:
                             "' registered for user-defined settings",
                             String{setting_name}, boost::algorithm::join(registered_prefixes, "' or '"));
         }
-        else
-            BaseSettingsHelpers::throwSettingNotFound(setting_name);
+
+        throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting '{}'", String{setting_name});
     }
 
 private:
@@ -280,7 +282,7 @@ void AccessControl::shutdown()
 }
 
 
-void AccessControl::setUpFromMainConfig(const Poco::Util::AbstractConfiguration & config_, const String & config_path_,
+void AccessControl::setupFromMainConfig(const Poco::Util::AbstractConfiguration & config_, const String & config_path_,
                                         const zkutil::GetZooKeeper & get_zookeeper_function_)
 {
     if (config_.has("custom_settings_prefixes"))
@@ -606,7 +608,7 @@ AuthResult AccessControl::authenticate(const Credentials & credentials, const Po
     }
     catch (...)
     {
-        tryLogCurrentException(getLogger(), "from: " + address.toString() + ", user: " + credentials.getUserName()  + ": Authentication failed");
+        tryLogCurrentException(getLogger(), "from: " + address.toString() + ", user: " + credentials.getUserName()  + ": Authentication failed", LogsLevel::information);
 
         WriteBufferFromOwnString message;
         message << credentials.getUserName() << ": Authentication failed: password is incorrect, or there is no user with such name.";
@@ -620,18 +622,19 @@ AuthResult AccessControl::authenticate(const Credentials & credentials, const Po
                 << "and deleting this file will reset the password.\n"
                 << "See also /etc/clickhouse-server/users.xml on the server where ClickHouse is installed.\n\n";
 
-        /// We use the same message for all authentication failures because we don't want to give away any unnecessary information for security reasons,
-        /// only the log will show the exact reason.
+        /// We use the same message for all authentication failures because we don't want to give away any unnecessary information for security reasons.
+        /// Only the log ((*), above) will show the exact reason. Note that (*) logs at information level instead of the default error level as
+        /// authentication failures are not an unusual event.
         throw Exception(PreformattedMessage{message.str(),
-                                            "{}: Authentication failed: password is incorrect, or there is no user with such name.{}",
+                                            "{}: Authentication failed: password is incorrect, or there is no user with such name",
                                             std::vector<std::string>{credentials.getUserName()}},
                         ErrorCodes::AUTHENTICATION_FAILED);
     }
 }
 
-void AccessControl::restoreFromBackup(RestorerFromBackup & restorer)
+void AccessControl::restoreFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup)
 {
-    MultipleAccessStorage::restoreFromBackup(restorer);
+    MultipleAccessStorage::restoreFromBackup(restorer, data_path_in_backup);
     changes_notifier->sendNotifications();
 }
 
@@ -828,8 +831,7 @@ std::shared_ptr<const EnabledQuota> AccessControl::getAuthenticationQuota(
                                             quota_key,
                                             throw_if_client_key_empty);
     }
-    else
-        return nullptr;
+    return nullptr;
 }
 
 
@@ -866,6 +868,12 @@ std::shared_ptr<const SettingsProfilesInfo> AccessControl::getSettingsProfileInf
 const ExternalAuthenticators & AccessControl::getExternalAuthenticators() const
 {
     return *external_authenticators;
+}
+
+
+void AccessControl::allowAllSettings()
+{
+    custom_settings_prefixes->registerPrefixes({""});
 }
 
 }

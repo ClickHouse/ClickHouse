@@ -20,8 +20,7 @@ struct StorageID;
 class IDatabase;
 using DatabasePtr = std::shared_ptr<IDatabase>;
 class AccessRestorerFromBackup;
-struct IAccessEntity;
-using AccessEntityPtr = std::shared_ptr<const IAccessEntity>;
+struct AccessEntitiesToRestore;
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 
@@ -54,7 +53,7 @@ public:
     using DataRestoreTasks = std::vector<DataRestoreTask>;
 
     /// Restores the metadata of databases and tables and returns tasks to restore the data of tables.
-    void run(Mode mode);
+    void run(Mode mode_);
 
     BackupPtr getBackup() const { return backup; }
     const RestoreSettings & getRestoreSettings() const { return restore_settings; }
@@ -68,7 +67,7 @@ public:
     void addDataRestoreTasks(DataRestoreTasks && new_tasks);
 
     /// Returns the list of access entities to restore.
-    std::vector<std::pair<UUID, AccessEntityPtr>> getAccessEntitiesToRestore();
+    AccessEntitiesToRestore getAccessEntitiesToRestore(const String & data_path_in_backup) const;
 
     /// Throws an exception that a specified table is already non-empty.
     [[noreturn]] static void throwTableIsNotEmpty(const StorageID & storage_id);
@@ -81,10 +80,10 @@ private:
     ContextMutablePtr context;
     QueryStatusPtr process_list_element;
     std::function<void()> after_task_callback;
-    std::chrono::milliseconds on_cluster_first_sync_timeout;
     std::chrono::milliseconds create_table_timeout;
     LoggerPtr log;
 
+    Mode mode = Mode::RESTORE;
     Strings all_hosts;
     DDLRenamingMap renaming_map;
     std::vector<std::filesystem::path> root_paths_in_backup;
@@ -98,9 +97,11 @@ private:
     void findDatabaseInBackupImpl(const String & database_name_in_backup, const std::set<DatabaseAndTableName> & except_table_names);
     void findEverythingInBackup(const std::set<String> & except_database_names, const std::set<DatabaseAndTableName> & except_table_names);
 
+    void logNumberOfDatabasesAndTablesToRestore() const;
     size_t getNumDatabases() const;
     size_t getNumTables() const;
 
+    void loadSystemAccessTables();
     void checkAccessForObjectsFoundInBackup() const;
 
     void createDatabases();

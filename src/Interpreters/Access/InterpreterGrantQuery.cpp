@@ -474,7 +474,7 @@ BlockIO InterpreterGrantQuery::execute()
         calculateCurrentGrantRightsWithIntersection(new_rights, current_user_access, elements_to_grant);
 
     /// Update roles and users listed in `grantees`.
-    auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
+    auto update_func = [&](const AccessEntityPtr & entity, const UUID &) -> AccessEntityPtr
     {
         auto clone = entity->clone();
         if (query.current_grants)

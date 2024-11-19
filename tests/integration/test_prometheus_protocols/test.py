@@ -1,7 +1,9 @@
-import pytest
 import time
-import requests
 from http import HTTPStatus
+
+import pytest
+import requests
+
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -18,7 +20,7 @@ node = cluster.add_instance(
 
 def execute_query_on_prometheus_writer(query, timestamp):
     return execute_query_impl(
-        cluster.get_instance_ip(cluster.prometheus_writer_host),
+        cluster.prometheus_writer_ip,
         cluster.prometheus_writer_port,
         "/api/v1/query",
         query,
@@ -28,7 +30,7 @@ def execute_query_on_prometheus_writer(query, timestamp):
 
 def execute_query_on_prometheus_reader(query, timestamp):
     return execute_query_impl(
-        cluster.get_instance_ip(cluster.prometheus_reader_host),
+        cluster.prometheus_reader_ip,
         cluster.prometheus_reader_port,
         "/api/v1/query",
         query,

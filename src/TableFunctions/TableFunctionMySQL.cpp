@@ -23,6 +23,17 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 external_storage_connect_timeout_sec;
+    extern const SettingsUInt64 external_storage_rw_timeout_sec;
+}
+
+namespace MySQLSetting
+{
+    extern const MySQLSettingsUInt64 connect_timeout;
+    extern const MySQLSettingsUInt64 read_write_timeout;
+}
 
 namespace ErrorCodes
 {
@@ -67,8 +78,8 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr 
     MySQLSettings mysql_settings;
 
     const auto & settings = context->getSettingsRef();
-    mysql_settings.connect_timeout = settings.external_storage_connect_timeout_sec;
-    mysql_settings.read_write_timeout = settings.external_storage_rw_timeout_sec;
+    mysql_settings[MySQLSetting::connect_timeout] = settings[Setting::external_storage_connect_timeout_sec];
+    mysql_settings[MySQLSetting::read_write_timeout] = settings[Setting::external_storage_rw_timeout_sec];
 
     for (auto * it = args.begin(); it != args.end(); ++it)
     {

@@ -1,3 +1,4 @@
+#include <Common/assert_cast.h>
 #include <Disks/ObjectStorages/MetadataStorageFactory.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorage.h>
@@ -135,7 +136,8 @@ void registerPlainMetadataStorage(MetadataStorageFactory & factory)
                             "MetadataStorageFactory: requires_object_storage can be false only in case of disk metadata storages");
         }
         auto key_compatibility_prefix = getObjectKeyCompatiblePrefix(*object_storage, config, config_prefix);
-        return std::make_shared<MetadataStorageFromPlainObjectStorage>(object_storage, key_compatibility_prefix);
+        return std::make_shared<MetadataStorageFromPlainObjectStorage>(
+            object_storage, key_compatibility_prefix, config.getUInt64(config_prefix + ".object_metadata_cache_size", 0));
     });
 }
 
@@ -155,7 +157,8 @@ void registerPlainRewritableMetadataStorage(MetadataStorageFactory & factory)
                                 "MetadataStorageFactory: requires_object_storage can be false only in case of disk metadata storages");
             }
             auto key_compatibility_prefix = getObjectKeyCompatiblePrefix(*object_storage, config, config_prefix);
-            return std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, key_compatibility_prefix);
+            return std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(
+                object_storage, key_compatibility_prefix, config.getUInt64(config_prefix + ".object_metadata_cache_size", 0));
         });
 }
 

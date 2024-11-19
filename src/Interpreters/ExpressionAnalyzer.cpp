@@ -77,7 +77,6 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 
-#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/QueryParameterVisitor.h>
@@ -86,6 +85,29 @@ namespace DB
 {
 
 using LogAST = DebugASTLog<false>; /// set to true to enable logs
+
+namespace Setting
+{
+    extern const SettingsBool compile_sort_description;
+    extern const SettingsUInt64 distributed_group_by_no_merge;
+    extern const SettingsBool enable_early_constant_folding;
+    extern const SettingsBool enable_positional_arguments;
+    extern const SettingsBool group_by_use_nulls;
+    extern const SettingsUInt64 max_bytes_in_set;
+    extern const SettingsUInt64 max_rows_in_set;
+    extern const SettingsMaxThreads max_threads;
+    extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
+    extern const SettingsUInt64 min_count_to_compile_sort_description;
+    extern const SettingsOverflowMode set_overflow_mode;
+    extern const SettingsBool optimize_aggregation_in_order;
+    extern const SettingsBool optimize_read_in_order;
+    extern const SettingsUInt64 parallel_replicas_count;
+    extern const SettingsBool query_plan_aggregation_in_order;
+    extern const SettingsBool query_plan_read_in_order;
+    extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
+    extern const SettingsBool allow_suspicious_types_in_group_by;
+    extern const SettingsBool allow_suspicious_types_in_order_by;
+}
 
 
 namespace ErrorCodes
@@ -98,6 +120,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_IDENTIFIER;
     extern const int UNKNOWN_TYPE_OF_AST_NODE;
+    extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -107,7 +130,7 @@ namespace
 ///  predicates because some performance tests use ignore function as a non-optimize guard.
 bool allowEarlyConstantFolding(const ActionsDAG & actions, const Settings & settings)
 {
-    if (!settings.enable_early_constant_folding)
+    if (!settings[Setting::enable_early_constant_folding])
         return false;
 
     for (const auto & node : actions.getNodes())
@@ -150,14 +173,13 @@ bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column)
 ExpressionAnalyzerData::~ExpressionAnalyzerData() = default;
 
 ExpressionAnalyzer::ExtractedSettings::ExtractedSettings(const Settings & settings_)
-    : use_index_for_in_with_subqueries(settings_.use_index_for_in_with_subqueries)
-    , size_limits_for_set(settings_.max_rows_in_set, settings_.max_bytes_in_set, settings_.set_overflow_mode)
+    : size_limits_for_set(settings_[Setting::max_rows_in_set], settings_[Setting::max_bytes_in_set], settings_[Setting::set_overflow_mode])
     , size_limits_for_set_used_with_index(
-        (settings_.use_index_for_in_with_subqueries_max_values &&
-            settings_.use_index_for_in_with_subqueries_max_values < settings_.max_rows_in_set) ?
-        size_limits_for_set :
-        SizeLimits(settings_.use_index_for_in_with_subqueries_max_values, settings_.max_bytes_in_set, OverflowMode::BREAK))
-    , distributed_group_by_no_merge(settings_.distributed_group_by_no_merge)
+          (settings_[Setting::use_index_for_in_with_subqueries_max_values]
+           && settings_[Setting::use_index_for_in_with_subqueries_max_values] < settings_[Setting::max_rows_in_set])
+              ? size_limits_for_set
+              : SizeLimits(settings_[Setting::use_index_for_in_with_subqueries_max_values], settings_[Setting::max_bytes_in_set], OverflowMode::BREAK))
+    , distributed_group_by_no_merge(settings_[Setting::distributed_group_by_no_merge])
 {}
 
 ExpressionAnalyzer::~ExpressionAnalyzer() = default;
@@ -293,7 +315,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAG & temp_actions)
                 group_by_kind = GroupByKind::GROUPING_SETS;
             else
                 group_by_kind = GroupByKind::ORDINARY;
-            bool use_nulls = group_by_kind != GroupByKind::ORDINARY && getContext()->getSettingsRef().group_by_use_nulls;
+            bool use_nulls = group_by_kind != GroupByKind::ORDINARY && getContext()->getSettingsRef()[Setting::group_by_use_nulls];
 
             /// For GROUPING SETS with multiple groups we always add virtual __grouping_set column
             /// With set number, which is used as an additional key at the stage of merging aggregating data.
@@ -304,7 +326,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAG & temp_actions)
             {
                 ssize_t size = group_asts.size();
 
-                if (getContext()->getSettingsRef().enable_positional_arguments)
+                if (getContext()->getSettingsRef()[Setting::enable_positional_arguments])
                     replaceForPositionalArguments(group_asts[i], select_query, ASTSelectQuery::Expression::GROUP_BY);
 
                 if (select_query->group_by_with_grouping_sets)
@@ -853,8 +875,8 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAG & actions)
         }
     }
 
-    bool compile_sort_description = current_context->getSettingsRef().compile_sort_description;
-    size_t min_count_to_compile_sort_description = current_context->getSettingsRef().min_count_to_compile_sort_description;
+    bool compile_sort_description = current_context->getSettingsRef()[Setting::compile_sort_description];
+    size_t min_count_to_compile_sort_description = current_context->getSettingsRef()[Setting::min_count_to_compile_sort_description];
 
     for (auto & [_, window_description] : window_descriptions)
     {
@@ -1006,7 +1028,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 
         if (analyzed_join->allowParallelHashJoin())
             return std::make_shared<ConcurrentHashJoin>(
-                context, analyzed_join, settings.max_threads, right_sample_block, StatsCollectingParams{});
+                context, analyzed_join, settings[Setting::max_threads], right_sample_block, StatsCollectingParams{});
         return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
     }
 
@@ -1036,7 +1058,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 static std::shared_ptr<IJoin> chooseJoinAlgorithm(
     std::shared_ptr<TableJoin> analyzed_join, const ColumnsWithTypeAndName & left_sample_columns, std::unique_ptr<QueryPlan> & joined_plan, ContextPtr context)
 {
-    Block right_sample_block = joined_plan->getCurrentDataStream().header;
+    Block right_sample_block = joined_plan->getCurrentHeader();
     const auto & join_algorithms = analyzed_join->getEnabledJoinAlgorithms();
     for (const auto alg : join_algorithms)
     {
@@ -1089,13 +1111,13 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
                 rename_dag.getOutputs()[pos] = &alias;
             }
         }
-        rename_dag.appendInputsForUnusedColumns(joined_plan->getCurrentDataStream().header);
-        auto rename_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), std::move(rename_dag));
+        rename_dag.appendInputsForUnusedColumns(joined_plan->getCurrentHeader());
+        auto rename_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentHeader(), std::move(rename_dag));
         rename_step->setStepDescription("Rename joined columns");
         joined_plan->addStep(std::move(rename_step));
     }
 
-    auto joined_actions_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), std::move(joined_block_actions));
+    auto joined_actions_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentHeader(), std::move(joined_block_actions));
     joined_actions_step->setStepDescription("Joined actions");
     joined_plan->addStep(std::move(joined_actions_step));
 
@@ -1177,11 +1199,11 @@ JoinPtr SelectQueryExpressionAnalyzer::makeJoin(
 
     joined_plan = buildJoinedPlan(getContext(), join_element, *analyzed_join, query_options);
 
-    const ColumnsWithTypeAndName & right_columns = joined_plan->getCurrentDataStream().header.getColumnsWithTypeAndName();
+    const ColumnsWithTypeAndName & right_columns = joined_plan->getCurrentHeader().getColumnsWithTypeAndName();
     std::tie(left_convert_actions, right_convert_actions) = analyzed_join->createConvertingActions(left_columns, right_columns);
     if (right_convert_actions)
     {
-        auto converting_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), std::move(*right_convert_actions));
+        auto converting_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentHeader(), std::move(*right_convert_actions));
         converting_step->setStepDescription("Convert joined columns");
         joined_plan->addStep(std::move(converting_step));
     }
@@ -1349,6 +1371,7 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
     ExpressionActionsChain::Step & step = chain.lastStep(columns_after_join);
 
     ASTs asts = select_query->groupBy()->children;
+    NameSet group_by_keys;
     if (select_query->group_by_with_grouping_sets)
     {
         for (const auto & ast : asts)
@@ -1356,6 +1379,7 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
             for (const auto & ast_element : ast->children)
             {
                 step.addRequiredOutput(ast_element->getColumnName());
+                group_by_keys.insert(ast_element->getColumnName());
                 getRootActions(ast_element, only_types, step.actions()->dag);
             }
         }
@@ -1365,8 +1389,15 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
         for (const auto & ast : asts)
         {
             step.addRequiredOutput(ast->getColumnName());
+            group_by_keys.insert(ast->getColumnName());
             getRootActions(ast, only_types, step.actions()->dag);
         }
+    }
+
+    for (const auto & result_column : step.getResultColumns())
+    {
+        if (group_by_keys.contains(result_column.name))
+            validateGroupByKeyType(result_column.type);
     }
 
     if (optimize_aggregation_in_order)
@@ -1381,6 +1412,26 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
     }
 
     return true;
+}
+
+void SelectQueryExpressionAnalyzer::validateGroupByKeyType(const DB::DataTypePtr & key_type) const
+{
+    if (getContext()->getSettingsRef()[Setting::allow_suspicious_types_in_group_by])
+        return;
+
+    auto check = [](const IDataType & type)
+    {
+        if (isDynamic(type) || isVariant(type))
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Data types Variant/Dynamic are not allowed in GROUP BY keys, because it can lead to unexpected results. "
+                "Consider using a subcolumn with a specific data type instead (for example 'column.Int64' or 'json.some.path.:Int64' if "
+                "its a JSON path subcolumn) or casting this column to a specific data type. "
+                "Set setting allow_suspicious_types_in_group_by = 1 in order to allow it");
+    };
+
+    check(*key_type);
+    key_type->forEachChild(check);
 }
 
 void SelectQueryExpressionAnalyzer::appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types)
@@ -1540,8 +1591,8 @@ void SelectQueryExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain,
         appendSelectSkipWindowExpressions(step, child);
 }
 
-ActionsAndProjectInputsFlagPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order,
-                                                           ManyExpressionActions & order_by_elements_actions)
+ActionsAndProjectInputsFlagPtr SelectQueryExpressionAnalyzer::appendOrderBy(
+    ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order, ManyExpressionActions & order_by_elements_actions)
 {
     const auto * select_query = getSelectQuery();
 
@@ -1560,7 +1611,7 @@ ActionsAndProjectInputsFlagPtr SelectQueryExpressionAnalyzer::appendOrderBy(Expr
         if (!ast || ast->children.empty())
             throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE, "Bad ORDER BY expression AST");
 
-        if (getContext()->getSettingsRef().enable_positional_arguments)
+        if (getContext()->getSettingsRef()[Setting::enable_positional_arguments])
             replaceForPositionalArguments(ast->children.at(0), select_query, ASTSelectQuery::Expression::ORDER_BY);
     }
 
@@ -1578,6 +1629,12 @@ ActionsAndProjectInputsFlagPtr SelectQueryExpressionAnalyzer::appendOrderBy(Expr
 
         if (ast->with_fill)
             with_fill = true;
+    }
+
+    for (const auto & result_column : step.getResultColumns())
+    {
+        if (order_by_keys.contains(result_column.name))
+            validateOrderByKeyType(result_column.type);
     }
 
     if (auto interpolate_list = select_query->interpolate())
@@ -1645,6 +1702,26 @@ ActionsAndProjectInputsFlagPtr SelectQueryExpressionAnalyzer::appendOrderBy(Expr
     return actions;
 }
 
+void SelectQueryExpressionAnalyzer::validateOrderByKeyType(const DataTypePtr & key_type) const
+{
+    if (getContext()->getSettingsRef()[Setting::allow_suspicious_types_in_order_by])
+        return;
+
+    auto check = [](const IDataType & type)
+    {
+        if (isDynamic(type) || isVariant(type))
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Data types Variant/Dynamic are not allowed in ORDER BY keys, because it can lead to unexpected results. "
+                "Consider using a subcolumn with a specific data type instead (for example 'column.Int64' or 'json.some.path.:Int64' if "
+                "its a JSON path subcolumn) or casting this column to a specific data type. "
+                "Set setting allow_suspicious_types_in_order_by = 1 in order to allow it");
+    };
+
+    check(*key_type);
+    key_type->forEachChild(check);
+}
+
 bool SelectQueryExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain, bool only_types)
 {
     const auto * select_query = getSelectQuery();
@@ -1672,7 +1749,7 @@ bool SelectQueryExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain
     auto & children = select_query->limitBy()->children;
     for (auto & child : children)
     {
-        if (getContext()->getSettingsRef().enable_positional_arguments)
+        if (getContext()->getSettingsRef()[Setting::enable_positional_arguments])
             replaceForPositionalArguments(child, select_query, ASTSelectQuery::Expression::LIMIT_BY);
 
         auto child_name = child->getColumnName();
@@ -1912,7 +1989,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
     {
         ExpressionActionsChain chain(context);
 
-        if (storage && (query.sampleSize() || settings.parallel_replicas_count > 1))
+        if (storage && (query.sampleSize() || settings[Setting::parallel_replicas_count] > 1))
         {
             // we evaluate sampling for Merge lazily, so we need to get all the columns
             if (storage->getName() == "Merge")
@@ -1962,7 +2039,9 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                 Block before_prewhere_sample = source_header;
                 if (sanitizeBlock(before_prewhere_sample))
                 {
-                    before_prewhere_sample = prewhere_dag_and_flags->dag.updateHeader(before_prewhere_sample);
+                    ExpressionActions(
+                        prewhere_dag_and_flags->dag.clone(),
+                        ExpressionActionsSettings::fromSettings(context->getSettingsRef())).execute(before_prewhere_sample);
                     auto & column_elem = before_prewhere_sample.getByName(query.prewhere()->getColumnName());
                     /// If the filter column is a constant, record it.
                     if (column_elem.column)
@@ -1994,7 +2073,9 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                     before_where_sample = source_header;
                 if (sanitizeBlock(before_where_sample))
                 {
-                    before_where_sample = before_where->dag.updateHeader(before_where_sample);
+                    ExpressionActions(
+                        before_where->dag.clone(),
+                        ExpressionActionsSettings::fromSettings(context->getSettingsRef())).execute(before_where_sample);
 
                     auto & column_elem
                         = before_where_sample.getByName(query.where()->getColumnName());
@@ -2009,16 +2090,14 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         if (need_aggregate)
         {
             /// TODO correct conditions
-            optimize_aggregation_in_order =
-                    context->getSettingsRef().optimize_aggregation_in_order
-                    && (!context->getSettingsRef().query_plan_aggregation_in_order)
-                    && storage && query.groupBy();
+            optimize_aggregation_in_order = context->getSettingsRef()[Setting::optimize_aggregation_in_order]
+                && (!context->getSettingsRef()[Setting::query_plan_aggregation_in_order]) && storage && query.groupBy();
 
             query_analyzer.appendGroupBy(chain, only_types || !first_stage, optimize_aggregation_in_order, group_by_elements_actions);
             query_analyzer.appendAggregateFunctionsArguments(chain, only_types || !first_stage);
             before_aggregation = chain.getLastActions();
 
-            if (settings.group_by_use_nulls)
+            if (settings[Setting::group_by_use_nulls])
                 query_analyzer.appendGroupByModifiers(before_aggregation->dag, chain, only_types);
 
             auto columns_before_aggregation = finalize_chain(chain);
@@ -2050,8 +2129,8 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                 bool has_grouping = query_analyzer.group_by_kind != GroupByKind::ORDINARY;
                 auto actual_header = Aggregator::Params::getHeader(
                     header_before_aggregation, /*only_merge*/ false, keys, aggregates, /*final*/ true);
-                actual_header = AggregatingStep::appendGroupingColumn(
-                    std::move(actual_header), keys, has_grouping, settings.group_by_use_nulls);
+                actual_header
+                    = AggregatingStep::appendGroupingColumn(std::move(actual_header), keys, has_grouping, settings[Setting::group_by_use_nulls]);
 
                 Block expected_header;
                 for (const auto & expected : query_analyzer.aggregated_columns)
@@ -2087,14 +2166,8 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             join_allow_read_in_order = typeid_cast<HashJoin *>(join.get()) && !join_has_delayed_stream;
         }
 
-        optimize_read_in_order =
-            settings.optimize_read_in_order && (!settings.query_plan_read_in_order)
-            && storage
-            && query.orderBy()
-            && !query_analyzer.hasAggregation()
-            && !query_analyzer.hasWindow()
-            && !query.final()
-            && join_allow_read_in_order;
+        optimize_read_in_order = settings[Setting::optimize_read_in_order] && (!settings[Setting::query_plan_read_in_order]) && storage && query.orderBy()
+            && !query_analyzer.hasAggregation() && !query_analyzer.hasWindow() && !query.final() && join_allow_read_in_order;
 
         /// If there is aggregation, we execute expressions in SELECT and ORDER BY on the initiating server, otherwise on the source servers.
         query_analyzer.appendSelect(chain, only_types || (need_aggregate ? !second_stage : !first_stage));

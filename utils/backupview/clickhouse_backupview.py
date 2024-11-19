@@ -2,14 +2,13 @@
 
 import bisect
 import os.path
-import xml.etree.ElementTree as ET
-from urllib.parse import urlparse
 import shutil
-
+import xml.etree.ElementTree as ET
 import zipfile  # For reading backups from zip archives
+from urllib.parse import urlparse
+
 import boto3  # For reading backups from S3
 import botocore
-
 
 ## Examples:
 ## from backupview import open_backup

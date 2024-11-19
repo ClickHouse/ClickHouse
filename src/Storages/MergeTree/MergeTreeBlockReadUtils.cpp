@@ -172,7 +172,7 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const C
         {
             size_t size_of_value = column_data->sizeOfValueIfFixed();
             fixed_columns_bytes_per_row += column_data->sizeOfValueIfFixed();
-            max_size_per_row_fixed = std::max<size_t>(max_size_per_row_fixed, size_of_value);
+            max_size_per_row_fixed = std::max<double>(max_size_per_row_fixed, size_of_value);
         }
         else
         {
@@ -330,7 +330,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         auto prewhere_actions = MergeTreeSelectProcessor::getPrewhereActions(
             prewhere_info,
             actions_settings,
-            reader_settings.enable_multiple_prewhere_read_steps);
+            reader_settings.enable_multiple_prewhere_read_steps, reader_settings.force_short_circuit_execution);
 
         for (const auto & step : prewhere_actions.steps)
             add_step(*step);

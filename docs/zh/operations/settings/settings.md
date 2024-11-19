@@ -97,7 +97,7 @@ ClickHouse从表的过时副本中选择最相关的副本。
 -   0 — Disabled.
 -   1 — Enabled.
 
-默认值：0。
+默认值：1。
 
 ## http_zlib_compression_level {#settings-http_zlib_compression_level}
 

@@ -602,8 +602,20 @@ public:
         return projection_columns;
     }
 
+    /// Returns true if query node is resolved, false otherwise
+    bool isResolved() const
+    {
+        return !projection_columns.empty();
+    }
+
     /// Resolve query node projection columns
     void resolveProjectionColumns(NamesAndTypes projection_columns_value);
+
+    /// Clear query node projection columns
+    void clearProjectionColumns()
+    {
+        projection_columns.clear();
+    }
 
     /// Remove unused projection columns
     void removeUnusedProjectionColumns(const std::unordered_set<std::string> & used_projection_columns);
