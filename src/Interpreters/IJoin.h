@@ -122,6 +122,7 @@ public:
     /// Peek next stream of delayed joined blocks.
     virtual IBlocksStreamPtr getDelayedBlocks() { return nullptr; }
     virtual bool hasDelayedBlocks() const { return false; }
+    virtual bool rightTableCanBeReranged() const { return false; }
     virtual void tryRerangeRightTableData() {}
 
     virtual IBlocksStreamPtr
