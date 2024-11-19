@@ -1002,6 +1002,16 @@ void finalizeMutatedPart(
     new_data_part->default_codec = codec;
 }
 
+static StorageMetadataPtr generateProjectionPartMetadata(
+    MergeTreeData::DataPartPtr projection_part,
+    StorageMetadataPtr table_metadata[[maybe_unused]])
+{
+    auto res = std::make_shared<StorageInMemoryMetadata>();
+    /// Currently only ColumnsDescription, later add as needed.
+    res->columns = projection_part->getColumnsDescription();
+    return res;
+}
+
 }
 
 struct MutationContext
@@ -2289,14 +2299,15 @@ bool MutateTask::prepare()
         ctx->updated_header = ctx->interpreter->getUpdatedHeader();
         ctx->progress_callback = MergeProgressCallback((*ctx->mutate_entry)->ptr(), ctx->watch_prev_elapsed, *ctx->stage_progress);
 
-        /// might be better to create metadata_snapshot for projection part.
         const auto & proj_desc = *(ctx->metadata_snapshot->getProjections().begin());
         const auto & projections_name_and_part = ctx->source_part->getProjectionParts();
         MergeTreeData::DataPartPtr projection_part = projections_name_and_part.begin()->second;
 
+        ctx->projection_metadata_snapshot = MutationHelpers::generateProjectionPartMetadata(projection_part, ctx->metadata_snapshot);
+
         auto projection_interpreter = std::make_unique<MutationsInterpreter>(
             *ctx->data, projection_part, alter_conversions,
-            nullptr, ctx->for_interpreter,
+            ctx->projection_metadata_snapshot, ctx->for_interpreter,
             proj_desc.metadata->getColumns().getNamesOfPhysical(), context_for_reading, settings);
 
         ctx->projection_mutating_pipeline_builder = projection_interpreter->execute();

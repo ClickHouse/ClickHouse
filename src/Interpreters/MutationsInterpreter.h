@@ -162,11 +162,8 @@ private:
 
     void prepare(bool dry_run);
 
-    void prepareForProjection(bool dry_run);
-
     void initQueryPlan(Stage & first_stage, QueryPlan & query_plan);
     void prepareMutationStages(std::vector<Stage> &prepared_stages, bool dry_run);
-    void prepareMutationStagesForProjection(std::vector<Stage> &prepared_stages, bool dry_run);
     QueryPipelineBuilder addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const;
 
     std::optional<SortDescription> getStorageSortDescriptionIfPossible(const Block & header) const;
