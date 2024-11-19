@@ -127,6 +127,16 @@ void dump_mapping(WriteBuffer & buffer, const String & mapping_name, const std::
         buffer << " { '" << alias_name << "' : " << node->formatASTForErrorMessage() << " }\n";
 }
 
+void dump_list(WriteBuffer & buffer, const String & list_name, const std::ranges::viewable_range auto & list)
+{
+    if (list.empty())
+        return;
+
+    buffer << list_name << " table size: " << list.size() << '\n';
+    for (const auto & node : list)
+        buffer << " { '" << node->getAlias() << "' : " << node->formatASTForErrorMessage() << " }\n";
+}
+
 }
 
 /// Dump identifier resolve scope
@@ -178,6 +188,8 @@ void dump_mapping(WriteBuffer & buffer, const String & mapping_name, const std::
         for (const auto & node : aliases.nodes_with_duplicated_aliases)
             buffer << " { " << node->formatASTForErrorMessage() << " }\n";
     }
+
+    dump_list(buffer, "Nodes to remove aliases ", aliases.node_to_remove_aliases);
 
     expressions_in_resolve_process_stack.dump(buffer);
 

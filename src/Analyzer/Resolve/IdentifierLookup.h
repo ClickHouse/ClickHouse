@@ -174,6 +174,9 @@ struct IdentifierResolveContext
     /// Allow to check join tree during identifier resolution
     bool allow_to_check_join_tree = true;
 
+    /// Allow to check aliases during identifier resolution
+    bool allow_to_check_aliases = true;
+
     /// Allow to check CTEs during table identifier resolution
     bool allow_to_check_cte = true;
 

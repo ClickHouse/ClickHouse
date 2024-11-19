@@ -1,6 +1,8 @@
 #include "Common/Logger.h"
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Interpreters/ProcessorsProfileLog.h>
+#include "Common/Logger.h"
+#include "Common/logger_useful.h"
 #include <Common/FieldVisitorToString.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -1309,7 +1311,6 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
     LOG_DEBUG(&Poco::Logger::get("resolveInParentScope"), "Resolving indetifier '{}'", identifier_lookup.dump());
 
     auto new_resolve_context = identifier_resolve_settings.resolveAliasesAt(&scope);
-    new_resolve_context.allow_to_check_database_catalog = false;
 
     /** Nested subqueries cannot access outer subqueries table expressions from JOIN tree because
       * that can prevent resolution of table expression from CTE.
@@ -1317,7 +1318,17 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
       * Example: WITH a AS (SELECT number FROM numbers(1)), b AS (SELECT number FROM a) SELECT * FROM a as l, b as r;
       */
     if (identifier_lookup.isTableExpressionLookup())
+    {
         new_resolve_context.allow_to_check_join_tree = false;
+
+        /** From parent scopes we can resolve table identifiers only as CTE.
+            * Example: SELECT (SELECT 1 FROM a) FROM test_table AS a;
+            *
+            * During child scope table identifier resolve a, table node test_table with alias a from parent scope
+            * is invalid.
+            */
+        new_resolve_context.allow_to_check_aliases = false;
+    }
 
     new_resolve_context.allow_to_check_database_catalog = false;
 
@@ -1498,14 +1509,14 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
                 resolve_result = identifier_resolver.tryResolveIdentifierFromJoinTree(identifier_lookup, scope);
             }
 
-            if (!resolve_result.resolved_identifier && !already_in_resolve_process)
+            if (identifier_resolve_settings.allow_to_check_aliases && !resolve_result.resolved_identifier && !already_in_resolve_process)
             {
                 resolve_result = tryResolveIdentifierFromAliases(identifier_lookup, scope, identifier_resolve_settings);
             }
         }
         else
         {
-            if (!already_in_resolve_process)
+            if (identifier_resolve_settings.allow_to_check_aliases && !already_in_resolve_process)
                 resolve_result = tryResolveIdentifierFromAliases(identifier_lookup, scope, identifier_resolve_settings);
 
             if (!resolve_result.resolved_identifier && identifier_resolve_settings.allow_to_check_join_tree)
