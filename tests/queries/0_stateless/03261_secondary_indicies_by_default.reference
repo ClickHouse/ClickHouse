@@ -1,0 +1,8 @@
+tbl	1	x_idx	1		\N	0	\N	\N	\N	MINMAX			YES	x
+tbl	1	PRIMARY	1	key	A	0	\N	\N	\N	PRIMARY			YES	
+tbl	1	_index_key	1		\N	0	\N	\N	\N	MINMAX			YES	key
+tbl	1	x_idx	1		\N	0	\N	\N	\N	MINMAX			YES	x
+tbl	1	_index_y	1		\N	0	\N	\N	\N	MINMAX			YES	y
+tbl	1	PRIMARY	1	key	A	0	\N	\N	\N	PRIMARY			YES	
+tbl	1	x_idx	1		\N	0	\N	\N	\N	MINMAX			YES	x
+tbl	1	PRIMARY	1	key	A	0	\N	\N	\N	PRIMARY			YES	

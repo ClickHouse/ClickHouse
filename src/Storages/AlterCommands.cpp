@@ -32,6 +32,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/queryToString.h>
+#include <Parsers/ASTFunction.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -52,6 +53,11 @@ namespace Setting
     extern const SettingsBool allow_suspicious_ttl_expressions;
     extern const SettingsBool enable_zstd_qat_codec;
     extern const SettingsBool flatten_nested;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool enable_minmax_index_for_all_numeric_columns;
 }
 
 namespace ErrorCodes
@@ -847,6 +853,48 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                 it->value = change.value;
             else
                 settings_from_storage.push_back(change);
+
+            if (change.name == "enable_minmax_index_for_all_numeric_columns")
+            {
+                if (change.value == true)
+                {
+                    for (const auto &column: metadata.columns)
+                    {
+                        bool index_exists = false;
+                        for (auto &index: metadata.secondary_indices)
+                        {
+                            if (index.column_names.front() == column.name)
+                            {
+                                index_exists = true;
+                                break;
+                            }
+                        }
+
+                        if (index_exists)
+                            continue;
+
+                        auto index_type = makeASTFunction("minmax");
+                        auto index_ast = std::make_shared<ASTIndexDeclaration>(
+                                std::make_shared<ASTIdentifier>(column.name), index_type,
+                                "_index_" + column.name);
+                        metadata.secondary_indices.push_back(
+                                IndexDescription::getIndexFromAST(index_ast, metadata.columns, context));
+
+                    }
+                }
+                else
+                {
+                    for (auto index_iterator =metadata.secondary_indices.begin();
+                         index_iterator != metadata.secondary_indices.end();)
+                    {
+                        if (index_iterator->name.starts_with("_index_"))
+                            index_iterator = metadata.secondary_indices.erase(index_iterator);
+                        else
+                            ++index_iterator;
+                    }
+
+                }
+            }
         }
     }
     else if (type == RESET_SETTING)

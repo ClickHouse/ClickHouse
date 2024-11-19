@@ -19,6 +19,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTIndexDeclaration.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -45,6 +46,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool allow_floating_point_partition_key;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
     extern const MergeTreeSettingsUInt64 index_granularity;
+    extern const MergeTreeSettingsBool enable_minmax_index_for_all_numeric_columns;
 }
 
 namespace ServerSetting
@@ -684,9 +686,47 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 args.storage_def->ttl_table->ptr(), metadata.columns, context, metadata.primary_key, allow_suspicious_ttl);
         }
 
+        storage_settings->loadFromQuery(*args.storage_def, context, LoadingStrictnessLevel::ATTACH <= args.mode);
+
+        // updates the default storage_settings with settings specified via SETTINGS arg in a query
+        if (args.storage_def->settings)
+        {
+            if (args.mode <= LoadingStrictnessLevel::CREATE)
+                args.getLocalContext()->checkMergeTreeSettingsConstraints(initial_storage_settings, storage_settings->changes());
+            metadata.settings_changes = args.storage_def->settings->ptr();
+        }
+
         if (args.query.columns_list && args.query.columns_list->indices)
-            for (auto & index : args.query.columns_list->indices->children)
+        {
+            for (auto &index: args.query.columns_list->indices->children)
                 metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, context));
+
+            if ((*storage_settings)[MergeTreeSetting::enable_minmax_index_for_all_numeric_columns])
+            {
+                for (const auto & column : metadata.columns)
+                {
+                    bool index_exists = false;
+
+                    for (auto &index: args.query.columns_list->indices->children)
+                    {
+                        if (index->children[0]->as<ASTIdentifier>() && index->children[0]->as<ASTIdentifier>()->full_name == column.name)
+                        {
+                            index_exists = true;
+                            break;
+                        }
+                    }
+
+                    if (index_exists)
+                        continue;
+
+                    auto index_type = makeASTFunction("minmax");
+                    auto index = std::make_shared<ASTIndexDeclaration>(std::make_shared<ASTIdentifier>(column.name), index_type,
+                                                                  "_index_"+column.name);
+                    metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, context));
+                }
+            }
+
+        }
 
         if (args.query.columns_list && args.query.columns_list->projections)
             for (auto & projection_ast : args.query.columns_list->projections->children)
@@ -701,16 +741,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         {
             auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, columns, context, metadata.primary_key, allow_suspicious_ttl);
             metadata.column_ttls_by_name[name] = new_ttl_entry;
-        }
-
-        storage_settings->loadFromQuery(*args.storage_def, context, LoadingStrictnessLevel::ATTACH <= args.mode);
-
-        // updates the default storage_settings with settings specified via SETTINGS arg in a query
-        if (args.storage_def->settings)
-        {
-            if (args.mode <= LoadingStrictnessLevel::CREATE)
-                args.getLocalContext()->checkMergeTreeSettingsConstraints(initial_storage_settings, storage_settings->changes());
-            metadata.settings_changes = args.storage_def->settings->ptr();
         }
 
         auto constraints = metadata.constraints.getConstraints();

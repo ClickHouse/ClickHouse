@@ -377,8 +377,20 @@ void StorageMergeTree::alter(
     if (!query_settings[Setting::allow_suspicious_primary_key])
         MergeTreeData::verifySortingKey(new_metadata.sorting_key);
 
+
+    const auto current_changes = new_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes;
+    bool indices_changed = false;
+    if (std::find_if(
+            current_changes.begin(),
+            current_changes.end(),
+            [this](const auto & change)
+            {
+                return change.name == "enable_minmax_index_for_all_numeric_columns";
+            }) != current_changes.end())
+        indices_changed = true;
+
     /// This alter can be performed at new_metadata level only
-    if (commands.isSettingsAlter())
+    if (commands.isSettingsAlter() && !indices_changed)
     {
         changeSettings(new_metadata.settings_changes, table_lock_holder);
         /// It is safe to ignore exceptions here as only settings are changed, which is not validated in `alterTable`
