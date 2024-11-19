@@ -562,7 +562,8 @@ void QueryStatus::throwQueryWasCancelled() const
     std::lock_guard lock{cancellation_exception_mutex};
     if (cancellation_exception)
         std::rethrow_exception(cancellation_exception);
-    throwProperException(limits.max_execution_time.totalMilliseconds());
+    else
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 }
 
 bool QueryStatus::checkTimeLimitSoft()
