@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <exception>
 #include <memory>
 #include <cassert>
 #include <cstring>
@@ -16,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_WRITE_AFTER_END_OF_BUFFER;
+    extern const int CANNOT_WRITE_AFTER_BUFFER_CANCELED;
     extern const int LOGICAL_ERROR;
 }
 
@@ -29,6 +31,13 @@ namespace ErrorCodes
 class WriteBuffer : public BufferBase
 {
 public:
+    /// Special exception to throw when the current MemoryWriteBuffer cannot receive data
+    class CurrentBufferExhausted : public std::exception
+    {
+    public:
+        const char * what() const noexcept override { return "WriteBuffer limit is exhausted"; }
+    };
+
     using BufferBase::set;
     using BufferBase::position;
     void set(Position ptr, size_t size) { BufferBase::set(ptr, size, 0); }
@@ -43,6 +52,9 @@ public:
       */
     void next()
     {
+        if (canceled)
+            return;
+
         if (!offset())
             return;
 
@@ -52,6 +64,12 @@ public:
         {
             nextImpl();
         }
+        catch (CurrentBufferExhausted &)
+        {
+            pos = working_buffer.begin();
+            bytes += bytes_in_buffer;
+            throw;
+        }
         catch (...)
         {
             /** If the nextImpl() call was unsuccessful, move the cursor to the beginning,
@@ -59,6 +77,8 @@ public:
               */
             pos = working_buffer.begin();
             bytes += bytes_in_buffer;
+
+            cancel();
 
             throw;
         }
@@ -82,6 +102,9 @@ public:
         if (finalized)
             throw Exception{ErrorCodes::LOGICAL_ERROR, "Cannot write to finalized buffer"};
 
+        if (canceled)
+            throw Exception{ErrorCodes::CANNOT_WRITE_AFTER_BUFFER_CANCELED, "Cannot write to canceled buffer"};
+
         size_t bytes_copied = 0;
 
         /// Produces endless loop
@@ -102,6 +125,9 @@ public:
         if (finalized)
             throw Exception{ErrorCodes::LOGICAL_ERROR, "Cannot write to finalized buffer"};
 
+        if (canceled)
+            throw Exception{ErrorCodes::LOGICAL_ERROR, "Cannot write to canceled buffer"};
+
         nextIfAtEnd();
         *pos = x;
         ++pos;
@@ -117,31 +143,11 @@ public:
     virtual void preFinalize() { next(); }
 
     /// Write the last data.
-    void finalize()
-    {
-        if (finalized)
-            return;
-
-        if (canceled)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot finalize buffer after cancellation.");
-
-        LockMemoryExceptionInThread lock(VariableContext::Global);
-        try
-        {
-            finalizeImpl();
-            finalized = true;
-        }
-        catch (...)
-        {
-            pos = working_buffer.begin();
-
-            cancel();
-
-            throw;
-        }
-    }
-
+    void finalize();
     void cancel() noexcept;
+
+    bool isFinalized() const { return finalized; }
+    bool isCanceled() const { return canceled; }
 
     /// Wait for data to be reliably written. Mainly, call fsync for fd.
     /// May be called after finalize() if needed.
@@ -150,17 +156,20 @@ public:
         next();
     }
 
+    size_t rejectBufferedDataSave()
+    {
+        size_t before = count();
+        bool data_has_been_sent = count() != offset();
+        if (!data_has_been_sent)
+            position() -= offset();
+        return before - count();
+    }
+
 protected:
     WriteBuffer(Position ptr, size_t size) : BufferBase(ptr, size, 0) {}
 
-    virtual void finalizeImpl()
-    {
-        next();
-    }
-
-    virtual void cancelImpl() noexcept
-    {
-    }
+    virtual void finalizeImpl() { next(); }
+    virtual void cancelImpl() noexcept { }
 
     bool finalized = false;
     bool canceled = false;
@@ -178,6 +187,13 @@ private:
     {
         throw Exception(ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER, "Cannot write after end of buffer.");
     }
+
+    bool isStackUnwinding() const
+    {
+        return exception_level < std::uncaught_exceptions();
+    }
+
+    int exception_level = std::uncaught_exceptions();
 };
 
 
@@ -198,6 +214,53 @@ private:
     void sync() override
     {
         /// no on
+    }
+};
+
+
+// AutoCanceledWriteBuffer cancel the buffer in d-tor when it has not been finalized before d-tor
+// AutoCanceledWriteBuffer could not be inherited.
+// Otherwise cancel method could not call proper cancelImpl ьуерщв because inheritor is destroyed already.
+// But the ussage of final inheritance is avoided in favor to keep the possibility to use std::make_shared.
+template<class Base>
+class AutoCanceledWriteBuffer final : public Base
+{
+    static_assert(std::derived_from<Base, WriteBuffer>);
+
+public:
+    using Base::Base;
+
+    ~AutoCanceledWriteBuffer() override
+    {
+        if (!this->finalized && !this->canceled)
+            this->cancel();
+    }
+};
+
+
+/// That class is applied only in 2 folloving cases
+// case 1 - HTTPServerResponse. The external interface HTTPResponse forces that.
+// case 2 - WriteBufferFromVector, WriteBufferFromString. It is safe to make them autofinaliziable.
+// AutoFinalizedWriteBuffer could not be inherited due to a restriction on polymorphics call in d-tor.
+template<class Base>
+class AutoFinalizedWriteBuffer final : public Base
+{
+    static_assert(std::derived_from<Base, WriteBuffer>);
+
+public:
+    using Base::Base;
+
+    ~AutoFinalizedWriteBuffer() override
+    {
+        try
+        {
+            if (!this->finalized && !this->canceled)
+                this->finalize();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
     }
 };
 

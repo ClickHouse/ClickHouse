@@ -35,8 +35,8 @@ def test_disk_selection(start_cluster):
 
     node.query(query, settings=settings)
     assert node.contains_in_log(
-        "Writing part of aggregation data into temporary file /disk1/"
+        "Writing part of aggregation data into temporary file.*/disk1/"
     )
     assert node.contains_in_log(
-        "Writing part of aggregation data into temporary file /disk2/"
+        "Writing part of aggregation data into temporary file.*/disk2/"
     )

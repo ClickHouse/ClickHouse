@@ -22,26 +22,26 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     const MergeTreeMutableDataPartPtr & data_part,
     const StorageMetadataPtr & metadata_snapshot_,
     const NamesAndTypesList & columns_list_,
-    CompressionCodecPtr default_codec,
     const MergeTreeIndices & indices_to_recalc,
-    const ColumnsStatistics & stats_to_recalc_,
-    WrittenOffsetColumns * offset_columns_,
-    const MergeTreeIndexGranularity & index_granularity,
-    const MergeTreeIndexGranularityInfo * index_granularity_info)
+    const ColumnsStatistics & stats_to_recalc,
+    CompressionCodecPtr default_codec,
+    MergeTreeIndexGranularityPtr index_granularity_ptr,
+    WrittenOffsetColumns * offset_columns)
     : IMergedBlockOutputStream(data_part->storage.getSettings(), data_part->getDataPartStoragePtr(), metadata_snapshot_, columns_list_, /*reset_columns=*/ true)
 {
     bool save_marks_in_cache = data_part->storage.getMarkCacheToPrewarm() != nullptr;
     bool save_primary_index_in_memory = !data_part->storage.getPrimaryIndexCache() || data_part->storage.getPrimaryIndexCacheToPrewarm();
 
+    /// Granularity is never recomputed while writing only columns.
     MergeTreeWriterSettings writer_settings(
         data_part->storage.getContext()->getSettingsRef(),
         data_part->storage.getContext()->getWriteSettings(),
         storage_settings,
-        index_granularity_info ? index_granularity_info->mark_type.adaptive : data_part->storage.canUseAdaptiveGranularity(),
-        /* rewrite_primary_key = */ false,
+        data_part->index_granularity_info.mark_type.adaptive,
+        /*rewrite_primary_key=*/ false,
         save_marks_in_cache,
         save_primary_index_in_memory,
-        /* blocks_are_granules_size = */ false);
+        /*blocks_are_granules_size=*/ false);
 
     writer = createMergeTreeDataPartWriter(
         data_part->getType(),
@@ -53,17 +53,17 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         metadata_snapshot_,
         data_part->storage.getVirtualsPtr(),
         indices_to_recalc,
-        stats_to_recalc_,
+        stats_to_recalc,
         data_part->getMarksFileExtension(),
         default_codec,
         writer_settings,
-        index_granularity);
+        std::move(index_granularity_ptr));
 
     auto * writer_on_disk = dynamic_cast<MergeTreeDataPartWriterOnDisk *>(writer.get());
     if (!writer_on_disk)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergedColumnOnlyOutputStream supports only parts stored on disk");
 
-    writer_on_disk->setWrittenOffsetColumns(offset_columns_);
+    writer_on_disk->setWrittenOffsetColumns(offset_columns);
 }
 
 void MergedColumnOnlyOutputStream::write(const Block & block)
@@ -113,6 +113,11 @@ MergedColumnOnlyOutputStream::fillChecksums(
 void MergedColumnOnlyOutputStream::finish(bool sync)
 {
     writer->finish(sync);
+}
+
+void MergedColumnOnlyOutputStream::cancel() noexcept
+{
+    writer->cancel();
 }
 
 }

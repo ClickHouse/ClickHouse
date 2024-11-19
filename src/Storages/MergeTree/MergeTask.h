@@ -3,6 +3,7 @@
 #include <list>
 #include <memory>
 
+#include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/filesystemHelpers.h>
 #include "Storages/MergeTree/IMergeTreeDataPart.h"
@@ -144,6 +145,8 @@ public:
 
     bool execute();
 
+    void cancel() noexcept;
+
 private:
     struct IStage;
     using StagePtr = std::shared_ptr<IStage>;
@@ -157,6 +160,7 @@ private:
         virtual StageRuntimeContextPtr getContextForNextStage() = 0;
         virtual ProfileEvents::Event getTotalTimeProfileEvent() const = 0;
         virtual bool execute() = 0;
+        virtual void cancel() noexcept = 0;
         virtual ~IStage() = default;
     };
 
@@ -247,7 +251,6 @@ private:
         bool need_remove_expired_values{false};
         bool force_ttl{false};
         CompressionCodecPtr compression_codec{nullptr};
-        size_t sum_input_rows_upper_bound{0};
         std::shared_ptr<RowsSourcesTemporaryFile> rows_sources_temporary_file;
         std::optional<ColumnSizeEstimator> column_sizes{};
 
@@ -265,7 +268,9 @@ private:
         std::function<bool()> is_cancelled{};
 
         /// Local variables for this stage
+        size_t sum_input_rows_upper_bound{0};
         size_t sum_compressed_bytes_upper_bound{0};
+        size_t sum_uncompressed_bytes_upper_bound{0};
         bool blocks_are_granules_size{false};
 
         LoggerPtr log{getLogger("MergeTask::PrepareStage")};
@@ -281,6 +286,7 @@ private:
     struct ExecuteAndFinalizeHorizontalPart : public IStage
     {
         bool execute() override;
+        void cancel() noexcept override;
 
         bool prepare() const;
         bool executeImpl() const;
@@ -369,6 +375,8 @@ private:
     struct VerticalMergeStage : public IStage
     {
         bool execute() override;
+        void cancel() noexcept override;
+
         void setRuntimeContext(StageRuntimeContextPtr local, StageRuntimeContextPtr global) override
         {
             ctx = static_pointer_cast<VerticalMergeRuntimeContext>(local);
@@ -424,6 +432,8 @@ private:
     struct MergeProjectionsStage : public IStage
     {
         bool execute() override;
+
+        void cancel() noexcept override;
 
         void setRuntimeContext(StageRuntimeContextPtr local, StageRuntimeContextPtr global) override
         {
