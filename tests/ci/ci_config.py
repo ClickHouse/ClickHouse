@@ -52,7 +52,7 @@ class CI:
                 BuildNames.FUZZERS,
                 JobNames.LIBFUZZER_TEST,
             ]
-        )
+        ),
     }  # type: Dict[str, LabelConfig]
 
     TAG_CONFIGS = {
