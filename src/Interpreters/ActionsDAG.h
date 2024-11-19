@@ -282,14 +282,13 @@ public:
 
     /// For apply materialize() function for every output.
     /// Also add aliases so the result names remain unchanged.
-    void addMaterializingOutputActions();
+    void addMaterializingOutputActions(bool materialize_sparse);
 
     /// Apply materialize() function to node. Result node has the same name.
-    const Node & materializeNode(const Node & node);
+    const Node & materializeNode(const Node & node, bool materialize_sparse = true);
 
     enum class MatchColumnsMode : uint8_t
     {
-        /// Require same number of columns in source and result. Match columns by corresponding positions, regardless to names.
         Position,
         /// Find columns in source by their names. Allow excessive columns in source.
         Name,

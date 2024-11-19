@@ -75,6 +75,11 @@ public:
         return std::make_shared<DataTypeInt64>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeInt64>();
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         if (!allow_deprecated_snowflake_conversion_functions)
@@ -198,6 +203,11 @@ public:
         };
         validateFunctionArguments(*this, arguments, args);
 
+        return std::make_shared<DataTypeInt64>();
+    }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
         return std::make_shared<DataTypeInt64>();
     }
 

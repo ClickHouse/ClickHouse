@@ -178,8 +178,7 @@ public:
             pos = begin;
             return false;
         }
-        else
-            return true;
+        return true;
     }
 
     /** The same, but doesn't move the position even if parsing was successful.

@@ -1,6 +1,9 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeObjectDeprecated.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/Serializations/SerializationJSON.h>
 #include <DataTypes/Serializations/SerializationObjectTypedPath.h>
 #include <DataTypes/Serializations/SerializationObjectDynamicPath.h>
@@ -24,7 +27,8 @@
 
 #if USE_SIMDJSON
 #  include <Common/JSONParsers/SimdJSONParser.h>
-#elif USE_RAPIDJSON
+#endif
+#if USE_RAPIDJSON
 #  include <Common/JSONParsers/RapidJSONParser.h>
 #else
 #  include <Common/JSONParsers/DummyJSONParser.h>
@@ -36,6 +40,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_object_type;
     extern const SettingsBool use_json_alias_for_old_object_type;
+    extern const SettingsBool allow_simdjson;
 }
 
 namespace ErrorCodes
@@ -127,12 +132,18 @@ SerializationPtr DataTypeObject::doGetDefaultSerialization() const
     {
         case SchemaFormat::JSON:
 #if USE_SIMDJSON
-            return std::make_shared<SerializationJSON<SimdJSONParser>>(
-                std::move(typed_path_serializations),
-                paths_to_skip,
-                path_regexps_to_skip,
-                buildJSONExtractTree<SimdJSONParser>(getPtr(), "JSON serialization"));
-#elif USE_RAPIDJSON
+            auto context = CurrentThread::getQueryContext();
+            if (!context)
+                context = Context::getGlobalContextInstance();
+            if (context->getSettingsRef()[Setting::allow_simdjson])
+                return std::make_shared<SerializationJSON<SimdJSONParser>>(
+                    std::move(typed_path_serializations),
+                    paths_to_skip,
+                    path_regexps_to_skip,
+                    buildJSONExtractTree<SimdJSONParser>(getPtr(), "JSON serialization"));
+#endif
+
+#if USE_RAPIDJSON
             return std::make_shared<SerializationJSON<RapidJSONParser>>(
                 std::move(typed_path_serializations),
                 paths_to_skip,
@@ -220,6 +231,15 @@ MutableColumnPtr DataTypeObject::createColumn() const
         typed_path_columns[path] = type->createColumn();
 
     return ColumnObject::create(std::move(typed_path_columns), max_dynamic_paths, max_dynamic_types);
+}
+
+void DataTypeObject::forEachChild(const ChildCallback & callback) const
+{
+    for (const auto & [path, type] : typed_paths)
+    {
+        callback(*type);
+        type->forEachChild(callback);
+    }
 }
 
 namespace
@@ -348,17 +368,13 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
                     result_typed_columns[getSubPath(path, prefix)] = column;
             }
 
-            auto & result_dynamic_columns = result_object_column.getDynamicPaths();
-            auto & result_dynamic_columns_ptrs = result_object_column.getDynamicPathsPtrs();
+            std::vector<std::pair<String, ColumnPtr>> result_dynamic_paths;
             for (const auto & [path, column] :  object_column.getDynamicPaths())
             {
                 if (path.starts_with(prefix) && path.size() != prefix.size())
-                {
-                    auto sub_path = getSubPath(path, prefix);
-                    result_dynamic_columns[sub_path] = column;
-                    result_dynamic_columns_ptrs[sub_path] = assert_cast<ColumnDynamic *>(result_dynamic_columns[sub_path].get());
-                }
+                    result_dynamic_paths.emplace_back(getSubPath(path, prefix), column);
             }
+            result_object_column.setDynamicPaths(result_dynamic_paths);
 
             const auto & shared_data_offsets = object_column.getSharedDataOffsets();
             const auto [shared_data_paths, shared_data_values] = object_column.getSharedDataPathsAndValues();
@@ -404,7 +420,7 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
     else
     {
         res = std::make_unique<SubstreamData>(std::make_shared<SerializationDynamic>());
-        res->type = std::make_shared<DataTypeDynamic>();
+        res->type = std::make_shared<DataTypeDynamic>(max_dynamic_types);
     }
 
     /// If column was provided, we should create a column for requested subcolumn.
@@ -516,6 +532,13 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
 
     std::sort(path_regexps_to_skip.begin(), path_regexps_to_skip.end());
     return std::make_shared<DataTypeObject>(schema_format, std::move(typed_paths), std::move(paths_to_skip), std::move(path_regexps_to_skip), max_dynamic_paths, max_dynamic_types);
+}
+
+const DataTypePtr & DataTypeObject::getTypeOfSharedData()
+{
+    /// Array(Tuple(String, String))
+    static const DataTypePtr type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()}, Names{"paths", "values"}));
+    return type;
 }
 
 static DataTypePtr createJSON(const ASTPtr & arguments)

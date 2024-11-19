@@ -92,6 +92,10 @@ void MergePlainMergeTreeTask::prepare()
         future_part,
         task_context);
 
+    storage.writePartLog(
+        PartLogElement::MERGE_PARTS_START, {}, 0,
+        future_part->name, new_part, future_part->parts, merge_list_entry.get(), {});
+
     write_part_log = [this] (const ExecutionStatus & execution_status)
     {
         auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
@@ -121,19 +125,19 @@ void MergePlainMergeTreeTask::prepare()
     };
 
     merge_task = storage.merger_mutator.mergePartsToTemporaryPart(
-            future_part,
-            metadata_snapshot,
-            merge_list_entry.get(),
-            {} /* projection_merge_list_element */,
-            table_lock_holder,
-            time(nullptr),
-            task_context,
-            merge_mutate_entry->tagger->reserved_space,
-            deduplicate,
-            deduplicate_by_columns,
-            cleanup,
-            storage.merging_params,
-            txn);
+        future_part,
+        metadata_snapshot,
+        merge_list_entry.get(),
+        {} /* projection_merge_list_element */,
+        table_lock_holder,
+        time(nullptr),
+        task_context,
+        merge_mutate_entry->tagger->reserved_space,
+        deduplicate,
+        deduplicate_by_columns,
+        cleanup,
+        storage.merging_params,
+        txn);
 }
 
 
@@ -148,6 +152,12 @@ void MergePlainMergeTreeTask::finish()
     ThreadFuzzer::maybeInjectSleep();
     ThreadFuzzer::maybeInjectMemoryLimitException();
 
+    if (auto * mark_cache = storage.getContext()->getMarkCache().get())
+    {
+        auto marks = merge_task->releaseCachedMarks();
+        addMarksToCache(*new_part, marks, mark_cache);
+    }
+
     write_part_log({});
     StorageMergeTree::incrementMergedPartsProfileEvent(new_part->getType());
     transfer_profile_counters_to_initial_query();
@@ -159,7 +169,6 @@ void MergePlainMergeTreeTask::finish()
         ThreadFuzzer::maybeInjectSleep();
         ThreadFuzzer::maybeInjectMemoryLimitException();
     }
-
 }
 
 ContextMutablePtr MergePlainMergeTreeTask::createTaskContext() const

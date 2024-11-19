@@ -29,14 +29,12 @@ namespace
 
             bool wildcard = false;
             bool default_database = false;
-            if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, res_database, res_table_name, wildcard, default_database) || (res_database.empty() && res_table_name.empty() && !default_database))
-            {
+            if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, res_database, res_table_name, wildcard, default_database)
+                || (res_database.empty() && res_table_name.empty() && !default_database))
                 return false;
-            }
-            else if (res_table_name.empty())
-            {
+
+            if (res_table_name.empty())
                 res_table_name = RowPolicyName::ANY_TABLE_MARK;
-            }
 
             /// If table is specified without DB it cannot be followed by Keyword::ON
             /// (but can be followed by Keyword::ON CLUSTER).

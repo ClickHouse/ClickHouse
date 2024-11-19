@@ -314,8 +314,7 @@ inline ReturnType readBoolTextWord(bool & x, ReadBuffer & buf, bool support_uppe
                 x = true;
                 break;
             }
-            else
-                [[fallthrough]];
+            [[fallthrough]];
         }
         case 'F':
         {
@@ -328,8 +327,7 @@ inline ReturnType readBoolTextWord(bool & x, ReadBuffer & buf, bool support_uppe
                 x = false;
                 break;
             }
-            else
-                [[fallthrough]];
+            [[fallthrough]];
         }
         default:
         {
@@ -822,8 +820,7 @@ inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf, const cha
         date = LocalDate(year, month, day);
         return ReturnType(true);
     }
-    else
-        return readDateTextFallback<ReturnType>(date, buf, allowed_delimiters);
+    return readDateTextFallback<ReturnType>(date, buf, allowed_delimiters);
 }
 
 inline void convertToDayNum(DayNum & date, ExtendedDayNum & from)
@@ -935,18 +932,16 @@ inline ReturnType readUUIDTextImpl(UUID & uuid, ReadBuffer & buf)
         uuid = parseUUID({reinterpret_cast<const UInt8 *>(s), size});
         return ReturnType(true);
     }
+
+    s[size] = 0;
+
+    if constexpr (throw_exception)
+    {
+        throw Exception(ErrorCodes::CANNOT_PARSE_UUID, "Cannot parse uuid {}", s);
+    }
     else
     {
-        s[size] = 0;
-
-        if constexpr (throw_exception)
-        {
-            throw Exception(ErrorCodes::CANNOT_PARSE_UUID, "Cannot parse uuid {}", s);
-        }
-        else
-        {
-            return ReturnType(false);
-        }
+        return ReturnType(false);
     }
 }
 
@@ -1098,12 +1093,10 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
 
             return ReturnType(true);
         }
-        else
-            /// Why not readIntTextUnsafe? Because for needs of AdFox, parsing of unix timestamp with leading zeros is supported: 000...NNNN.
-            return readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf);
+        /// Why not readIntTextUnsafe? Because for needs of AdFox, parsing of unix timestamp with leading zeros is supported: 000...NNNN.
+        return readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf);
     }
-    else
-        return readDateTimeTextFallback<ReturnType, dt64_mode>(datetime, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
+    return readDateTimeTextFallback<ReturnType, dt64_mode>(datetime, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
 }
 
 template <typename ReturnType>
@@ -1427,7 +1420,9 @@ inline bool tryReadText(UUID & x, ReadBuffer & buf) { return tryReadUUIDText(x, 
 inline bool tryReadText(IPv4 & x, ReadBuffer & buf) { return tryReadIPv4Text(x, buf); }
 inline bool tryReadText(IPv6 & x, ReadBuffer & buf) { return tryReadIPv6Text(x, buf); }
 
-inline void readText(is_floating_point auto & x, ReadBuffer & buf) { readFloatText(x, buf); }
+template <typename T>
+requires is_floating_point<T>
+inline void readText(T & x, ReadBuffer & buf) { readFloatText(x, buf); }
 
 inline void readText(String & x, ReadBuffer & buf) { readEscapedString(x, buf); }
 

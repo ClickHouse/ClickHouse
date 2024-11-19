@@ -158,11 +158,9 @@ void ExternalDictionaryLibraryBridgeRequestHandler::handleRequest(HTTPServerRequ
                 out.finalize();
                 return;
             }
-            else
-            {
-                LOG_TRACE(log, "Cannot clone from dictionary with id: {}, will call extDict_libNew instead", from_dictionary_id);
-                lib_new = true;
-            }
+
+            LOG_TRACE(log, "Cannot clone from dictionary with id: {}, will call extDict_libNew instead", from_dictionary_id);
+            lib_new = true;
         }
         if (lib_new)
         {
@@ -596,7 +594,10 @@ void CatBoostLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & requ
         catch (...)
         {
             tryLogCurrentException(log);
+            out.cancel();
         }
+
+        return;
     }
 
     try

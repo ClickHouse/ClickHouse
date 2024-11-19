@@ -26,6 +26,7 @@
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Common.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
@@ -50,7 +51,7 @@ extern const int UNSUPPORTED_METHOD;
 
 IcebergMetadata::IcebergMetadata(
     ObjectStoragePtr object_storage_,
-    ConfigurationPtr configuration_,
+    ConfigurationObserverPtr configuration_,
     DB::ContextPtr context_,
     Int32 metadata_version_,
     Int32 format_version_,
@@ -381,21 +382,25 @@ std::pair<Int32, String> getMetadataFileAndVersion(
 
 }
 
-DataLakeMetadataPtr IcebergMetadata::create(
-    ObjectStoragePtr object_storage,
-    ConfigurationPtr configuration,
-    ContextPtr local_context)
+DataLakeMetadataPtr
+IcebergMetadata::create(ObjectStoragePtr object_storage, ConfigurationObserverPtr configuration, ContextPtr local_context)
 {
-    const auto [metadata_version, metadata_file_path] = getMetadataFileAndVersion(object_storage, *configuration);
-    LOG_DEBUG(getLogger("IcebergMetadata"), "Parse metadata {}", metadata_file_path);
-    auto read_settings = local_context->getReadSettings();
-    auto buf = object_storage->readObject(StoredObject(metadata_file_path), read_settings);
+    auto configuration_ptr = configuration.lock();
+
+    const auto [metadata_version, metadata_file_path] = getMetadataFileAndVersion(object_storage, *configuration_ptr);
+
+    auto log = getLogger("IcebergMetadata");
+    LOG_DEBUG(log, "Parse metadata {}", metadata_file_path);
+
+    StorageObjectStorageSource::ObjectInfo object_info(metadata_file_path);
+    auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log);
+
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, *buf);
 
     Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
     Poco::Dynamic::Var json = parser.parse(json_str);
-    Poco::JSON::Object::Ptr object = json.extract<Poco::JSON::Object::Ptr>();
+    const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
 
     auto format_version = object->getValue<int>("format-version");
     auto [schema, schema_id]
@@ -411,12 +416,13 @@ DataLakeMetadataPtr IcebergMetadata::create(
         if (snapshot->getValue<Int64>("snapshot-id") == current_snapshot_id)
         {
             const auto path = snapshot->getValue<String>("manifest-list");
-            manifest_list_file = std::filesystem::path(configuration->getPath()) / "metadata" / std::filesystem::path(path).filename();
+            manifest_list_file = std::filesystem::path(configuration_ptr->getPath()) / "metadata" / std::filesystem::path(path).filename();
             break;
         }
     }
 
-    return std::make_unique<IcebergMetadata>(object_storage, configuration, local_context, metadata_version, format_version, manifest_list_file, schema_id, schema);
+    return std::make_unique<IcebergMetadata>(
+        object_storage, configuration_ptr, local_context, metadata_version, format_version, manifest_list_file, schema_id, schema);
 }
 
 /**
@@ -446,6 +452,7 @@ DataLakeMetadataPtr IcebergMetadata::create(
  */
 Strings IcebergMetadata::getDataFiles() const
 {
+    auto configuration_ptr = configuration.lock();
     if (!data_files.empty())
         return data_files;
 
@@ -456,8 +463,8 @@ Strings IcebergMetadata::getDataFiles() const
     LOG_TEST(log, "Collect manifest files from manifest list {}", manifest_list_file);
 
     auto context = getContext();
-    auto read_settings = context->getReadSettings();
-    auto manifest_list_buf = object_storage->readObject(StoredObject(manifest_list_file), read_settings);
+    StorageObjectStorageSource::ObjectInfo object_info(manifest_list_file);
+    auto manifest_list_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
     auto manifest_list_file_reader = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*manifest_list_buf));
 
     auto data_type = AvroSchemaReader::avroNodeToDataType(manifest_list_file_reader->dataSchema().root()->leafAt(0));
@@ -478,7 +485,7 @@ Strings IcebergMetadata::getDataFiles() const
     {
         const auto file_path = col_str->getDataAt(i).toView();
         const auto filename = std::filesystem::path(file_path).filename();
-        manifest_files.emplace_back(std::filesystem::path(configuration->getPath()) / "metadata" / filename);
+        manifest_files.emplace_back(std::filesystem::path(configuration_ptr->getPath()) / "metadata" / filename);
     }
 
     NameSet files;
@@ -487,7 +494,8 @@ Strings IcebergMetadata::getDataFiles() const
     {
         LOG_TEST(log, "Process manifest file {}", manifest_file);
 
-        auto buffer = object_storage->readObject(StoredObject(manifest_file), read_settings);
+        StorageObjectStorageSource::ObjectInfo manifest_object_info(manifest_file);
+        auto buffer = StorageObjectStorageSource::createReadBuffer(manifest_object_info, object_storage, context, log);
         auto manifest_file_reader = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buffer));
 
         /// Manifest file should always have table schema in avro file metadata. By now we don't support tables with evolved schema,
@@ -612,9 +620,9 @@ Strings IcebergMetadata::getDataFiles() const
 
             const auto status = status_int_column->getInt(i);
             const auto data_path = std::string(file_path_string_column->getDataAt(i).toView());
-            const auto pos = data_path.find(configuration->getPath());
+            const auto pos = data_path.find(configuration_ptr->getPath());
             if (pos == std::string::npos)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected to find {} in data path: {}", configuration->getPath(), data_path);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected to find {} in data path: {}", configuration_ptr->getPath(), data_path);
 
             const auto file_path = data_path.substr(pos);
 

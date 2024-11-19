@@ -249,8 +249,7 @@ const DataTypeFactory::Value * DataTypeFactory::findCreatorByName(const String &
     auto hints = this->getHints(family_name);
     if (!hints.empty())
         throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown data type family: {}. Maybe you meant: {}", family_name, toString(hints));
-    else
-        throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown data type family: {}", family_name);
+    throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown data type family: {}", family_name);
 }
 
 DataTypeFactory::DataTypeFactory()

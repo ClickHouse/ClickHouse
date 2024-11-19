@@ -260,8 +260,10 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
         formatAuthenticationData(authentication_methods, format);
     }
 
-    if (valid_until)
-        formatValidUntil(*valid_until, format);
+    if (global_valid_until)
+    {
+        formatValidUntil(*global_valid_until, format);
+    }
 
     if (hosts)
         formatHosts(nullptr, *hosts, format);

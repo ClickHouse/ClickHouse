@@ -24,6 +24,7 @@ namespace Setting
     extern const SettingsUInt64 log_queries_cut_to_length;
     extern const SettingsBool move_all_conditions_to_prewhere;
     extern const SettingsBool move_primary_key_columns_to_end_of_prewhere;
+    extern const SettingsBool allow_reorder_prewhere_conditions;
 }
 
 /// Conditions like "x = N" are considered good if abs(N) > threshold.
@@ -100,6 +101,7 @@ void MergeTreeWhereOptimizer::optimize(SelectQueryInfo & select_query_info, cons
     where_optimizer_context.move_all_conditions_to_prewhere = context->getSettingsRef()[Setting::move_all_conditions_to_prewhere];
     where_optimizer_context.move_primary_key_columns_to_end_of_prewhere
         = context->getSettingsRef()[Setting::move_primary_key_columns_to_end_of_prewhere];
+    where_optimizer_context.allow_reorder_prewhere_conditions = context->getSettingsRef()[Setting::allow_reorder_prewhere_conditions];
     where_optimizer_context.is_final = select.final();
     where_optimizer_context.use_statistics = context->getSettingsRef()[Setting::allow_statistics_optimize];
 
@@ -134,6 +136,7 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
     where_optimizer_context.move_all_conditions_to_prewhere = context->getSettingsRef()[Setting::move_all_conditions_to_prewhere];
     where_optimizer_context.move_primary_key_columns_to_end_of_prewhere
         = context->getSettingsRef()[Setting::move_primary_key_columns_to_end_of_prewhere];
+    where_optimizer_context.allow_reorder_prewhere_conditions = context->getSettingsRef()[Setting::allow_reorder_prewhere_conditions];
     where_optimizer_context.is_final = is_final;
     where_optimizer_context.use_statistics = context->getSettingsRef()[Setting::allow_statistics_optimize];
 
@@ -236,12 +239,12 @@ static bool isConditionGood(const RPNBuilderTreeNode & condition, const NameSet 
         const auto value = output_value.safeGet<UInt64>();
         return value > threshold;
     }
-    else if (type == Field::Types::Int64)
+    if (type == Field::Types::Int64)
     {
         const auto value = output_value.safeGet<Int64>();
         return value < -threshold || threshold < value;
     }
-    else if (type == Field::Types::Float64)
+    if (type == Field::Types::Float64)
     {
         const auto value = output_value.safeGet<Float64>();
         return value < -threshold || threshold < value;
@@ -379,16 +382,28 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
     for (const auto & condition : where_conditions)
         condition_positions[&condition] = position++;
 
+    auto move_to_prewhere_conditions = [&](Conditions::iterator cond_it)
+    {
+        LOG_TRACE(log, "Condition {} moved to PREWHERE", cond_it->node.getColumnName());
+        if (where_optimizer_context.allow_reorder_prewhere_conditions)
+        {
+            prewhere_conditions.splice(prewhere_conditions.end(), where_conditions, cond_it);
+        }
+        else
+        {
+            /// Keep the original order of conditions in prewhere_conditions.
+            position = condition_positions[&(*cond_it)];
+            auto prewhere_it = prewhere_conditions.begin();
+            while (condition_positions[&(*prewhere_it)] < position && prewhere_it != prewhere_conditions.end())
+                ++prewhere_it;
+            prewhere_conditions.splice(prewhere_it, where_conditions, cond_it);
+        }
+    };
+
     /// Move condition and all other conditions depend on the same set of columns.
     auto move_condition = [&](Conditions::iterator cond_it)
     {
-        LOG_TRACE(log, "Condition {} moved to PREWHERE", cond_it->node.getColumnName());
-        /// Keep the original order of conditions in prewhere_conditions.
-        position = condition_positions[&(*cond_it)];
-        auto prewhere_it = prewhere_conditions.begin();
-        while (condition_positions[&(*prewhere_it)] < position && prewhere_it != prewhere_conditions.end())
-            ++prewhere_it;
-        prewhere_conditions.splice(prewhere_it, where_conditions, cond_it);
+        move_to_prewhere_conditions(cond_it);
         total_size_of_moved_conditions += cond_it->columns_size;
         total_number_of_moved_columns += cond_it->table_columns.size();
 
@@ -397,13 +412,7 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
         {
             if (jt->viable && jt->columns_size == cond_it->columns_size && jt->table_columns == cond_it->table_columns)
             {
-                LOG_TRACE(log, "Condition {} moved to PREWHERE", jt->node.getColumnName());
-                /// Keep the original order of conditions in prewhere_conditions.
-                position = condition_positions[&(*jt)];
-                prewhere_it = prewhere_conditions.begin();
-                while (condition_positions[&(*prewhere_it)] < position && prewhere_it != prewhere_conditions.end())
-                    ++prewhere_it;
-                prewhere_conditions.splice(prewhere_it, where_conditions, jt++);
+                move_to_prewhere_conditions(jt++);
             }
             else
             {

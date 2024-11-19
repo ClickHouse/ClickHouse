@@ -2,7 +2,6 @@
 title: "Settings Overview"
 sidebar_position: 1
 slug: /en/operations/settings/
-pagination_next: en/operations/settings/settings
 ---
 
 # Settings Overview

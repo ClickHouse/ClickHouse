@@ -169,8 +169,7 @@ protected:
     {
         if (this->use_count() > 1)
             return derived()->clone();
-        else
-            return assumeMutable();
+        return assumeMutable();
     }
 
 public:

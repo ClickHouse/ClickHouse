@@ -69,12 +69,6 @@ public:
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const override;
 
-    std::unique_ptr<ReadBufferFromFileBase> readObjects( /// NOLINT
-        const StoredObjects & objects,
-        const ReadSettings & read_settings,
-        std::optional<size_t> read_hint = {},
-        std::optional<size_t> file_size = {}) const override;
-
     /// Open the file for write and return WriteBufferFromFileBase object.
     std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
         const StoredObject & object,
@@ -82,11 +76,6 @@ public:
         std::optional<ObjectAttributes> attributes = {},
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) override;
-
-    /// Remove file. Throws exception if file doesn't exists or it's a directory.
-    void removeObject(const StoredObject & object) override;
-
-    void removeObjects(const StoredObjects & objects) override;
 
     void removeObjectIfExists(const StoredObject & object) override;
 
@@ -122,6 +111,11 @@ public:
 private:
     void initializeHDFSFS() const;
     std::string extractObjectKeyFromURL(const StoredObject & object) const;
+
+    /// Remove file. Throws exception if file doesn't exists or it's a directory.
+    void removeObject(const StoredObject & object);
+
+    void removeObjects(const StoredObjects & objects);
 
     const Poco::Util::AbstractConfiguration & config;
 

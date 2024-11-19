@@ -1,16 +1,20 @@
 #pragma once
 
+#include <Access/Common/SQLSecurityDefs.h>
 #include <Core/Joins.h>
 #include <Core/LoadBalancing.h>
 #include <Core/LogsLevel.h>
+#include <Core/MergeSelectorAlgorithm.h>
+#include <Core/ParallelReplicasMode.h>
 #include <Core/QueryLogElementType.h>
 #include <Core/SchemaInferenceMode.h>
 #include <Core/SettingsFields.h>
 #include <Core/ShortCircuitFunctionEvaluation.h>
-#include <Core/ParallelReplicasMode.h>
+#include <Core/StreamingHandleErrorMode.h>
 #include <Formats/FormatSettings.h>
-#include <IO/ReadSettings.h>
-#include <Parsers/ASTSQLSecurity.h>
+#include <IO/DistributedCacheLogMode.h>
+#include <IO/DistributedCachePoolBehaviourOnLimit.h>
+#include <IO/ReadMethod.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Common/ShellCommandSettings.h>
@@ -218,6 +222,9 @@ enum class DefaultTableEngine : uint8_t
 
 DECLARE_SETTING_ENUM(DefaultTableEngine)
 
+DECLARE_SETTING_ENUM(DistributedCacheLogMode)
+
+DECLARE_SETTING_ENUM(DistributedCachePoolBehaviourOnLimit)
 
 enum class CleanDeletedRows : uint8_t
 {
@@ -258,14 +265,6 @@ enum class DistributedDDLOutputMode : uint8_t
 };
 
 DECLARE_SETTING_ENUM(DistributedDDLOutputMode)
-
-enum class StreamingHandleErrorMode : uint8_t
-{
-    DEFAULT = 0, // Ignore errors with threshold.
-    STREAM, // Put errors to stream in the virtual column named ``_error.
-    /*FIXED_SYSTEM_TABLE, Put errors to in a fixed system table likely system.kafka_errors. This is not implemented now.  */
-    /*CUSTOM_SYSTEM_TABLE, Put errors to in a custom system table. This is not implemented now.  */
-};
 
 DECLARE_SETTING_ENUM(StreamingHandleErrorMode)
 
@@ -314,6 +313,7 @@ DECLARE_SETTING_ENUM(LightweightMutationProjectionMode)
 
 enum class DeduplicateMergeProjectionMode : uint8_t
 {
+    IGNORE,
     THROW,
     DROP,
     REBUILD,
@@ -358,5 +358,7 @@ enum class GroupArrayActionWhenLimitReached : uint8_t
     DISCARD
 };
 DECLARE_SETTING_ENUM(GroupArrayActionWhenLimitReached)
+
+DECLARE_SETTING_ENUM(MergeSelectorAlgorithm)
 
 }

@@ -85,7 +85,7 @@ std::optional<String> DataPartStorageOnDiskBase::getRelativePathForPrefix(Logger
     {
         res = getPartDirForPrefix(prefix, detached, try_no);
 
-        if (!volume->getDisk()->exists(full_relative_path / res))
+        if (!volume->getDisk()->existsDirectory(full_relative_path / res))
             return res;
 
         /// If part with compacted storage is broken then we probably
@@ -143,11 +143,11 @@ bool DataPartStorageOnDiskBase::looksLikeBrokenDetachedPartHasTheSameContent(con
     /// We cannot know for sure that content of detached part is the same,
     /// but in most cases it's enough to compare checksums.txt and list of files.
 
-    if (!exists("checksums.txt"))
+    if (!existsFile("checksums.txt"))
         return false;
 
     auto storage_from_detached = create(volume, fs::path(root_path) / MergeTreeData::DETACHED_DIR_NAME, detached_part_path, /*initialize=*/ true);
-    if (!storage_from_detached->exists("checksums.txt"))
+    if (!storage_from_detached->existsFile("checksums.txt"))
         return false;
 
     if (!original_checksums_content)
@@ -207,7 +207,7 @@ Poco::Timestamp DataPartStorageOnDiskBase::getLastModified() const
 
 static UInt64 calculateTotalSizeOnDiskImpl(const DiskPtr & disk, const String & from)
 {
-    if (disk->isFile(from))
+    if (disk->existsFile(from))
         return disk->getFileSize(from);
 
     std::vector<std::string> files;
@@ -427,7 +427,7 @@ void DataPartStorageOnDiskBase::backup(
             backup_entries.emplace_back(filepath_in_backup, std::make_unique<BackupEntryFromSmallFile>(disk, filepath_on_disk, read_settings, copy_encrypted));
             return;
         }
-        else if (is_projection_part && allow_backup_broken_projection && !disk->exists(filepath_on_disk))
+        if (is_projection_part && allow_backup_broken_projection && !disk->existsFile(filepath_on_disk))
             return;
 
         if (make_temporary_hard_links)
@@ -514,14 +514,14 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
     if (params.external_transaction)
     {
         params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
-        params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / "txn_version.txt");
+        params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME);
         if (!params.keep_metadata_version)
             params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
     }
     else
     {
         disk->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
-        disk->removeFileIfExists(fs::path(to) / dir_path / "txn_version.txt");
+        disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME);
         if (!params.keep_metadata_version)
             disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
     }
@@ -570,14 +570,14 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freezeRemote(
     if (params.external_transaction)
     {
         params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
-        params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / "txn_version.txt");
+        params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME);
         if (!params.keep_metadata_version)
             params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
     }
     else
     {
         dst_disk->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
-        dst_disk->removeFileIfExists(fs::path(to) / dir_path / "txn_version.txt");
+        dst_disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME);
         if (!params.keep_metadata_version)
             dst_disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
     }
@@ -601,7 +601,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::clonePart(
     String path_to_clone = fs::path(to) / dir_path / "";
     auto src_disk = volume->getDisk();
 
-    if (dst_disk->exists(path_to_clone))
+    if (dst_disk->existsDirectory(path_to_clone))
     {
         throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS,
                         "Cannot clone part {} from '{}' to '{}': path '{}' already exists",
@@ -640,7 +640,7 @@ void DataPartStorageOnDiskBase::rename(
 
     String to = fs::path(new_root_path) / new_part_dir / "";
 
-    if (volume->getDisk()->exists(to))
+    if (volume->getDisk()->existsDirectory(to))
     {
         /// FIXME it should be logical error
         if (remove_new_dir_if_exists)
@@ -729,7 +729,7 @@ void DataPartStorageOnDiskBase::remove(
 
         to = fs::path(root_path) / part_dir_without_slash;
 
-        if (disk->exists(to))
+        if (disk->existsDirectory(to))
         {
             LOG_WARNING(log, "Directory {} (to which part must be renamed before removing) already exists. "
                         "Most likely this is due to unclean restart or race condition. Removing it.", fullPath(disk, to));
@@ -747,7 +747,7 @@ void DataPartStorageOnDiskBase::remove(
             }
         }
 
-        if (!disk->exists(from))
+        if (!disk->existsDirectory(from))
         {
             LOG_ERROR(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
             /// We will never touch this part again, so unlocking it from zero-copy
@@ -831,7 +831,7 @@ void DataPartStorageOnDiskBase::remove(
 
             /// If we have a directory with suffix '.proj' it is likely a projection.
             /// Try to load checksums for it (to avoid recursive removing fallback).
-            if (projection_storage->exists(checksums_name))
+            if (projection_storage->existsFile(checksums_name))
             {
                 try
                 {
@@ -866,7 +866,7 @@ void DataPartStorageOnDiskBase::clearDirectory(
     /// It does not make sense to try fast path for incomplete temporary parts, because some files are probably absent.
     /// Sometimes we add something to checksums.files before actually writing checksums and columns on disk.
     /// Also sometimes we write checksums.txt and columns.txt in arbitrary order, so this check becomes complex...
-    bool incomplete_temporary_part = is_temp && (!disk->exists(fs::path(dir) / "checksums.txt") || !disk->exists(fs::path(dir) / "columns.txt"));
+    bool incomplete_temporary_part = is_temp && (!disk->existsFile(fs::path(dir) / "checksums.txt") || !disk->existsFile(fs::path(dir) / "columns.txt"));
     if (checksums.empty() || incomplete_temporary_part)
     {
         /// If the part is not completely written, we cannot use fast path by listing files.
@@ -887,14 +887,14 @@ void DataPartStorageOnDiskBase::clearDirectory(
         RemoveBatchRequest request;
         for (const auto & file : names_to_remove)
         {
-            if (isGinFile(file) && (!disk->isFile(fs::path(dir) / file)))
+            if (isGinFile(file) && (!disk->existsFile(fs::path(dir) / file)))
                 continue;
 
             request.emplace_back(fs::path(dir) / file);
         }
         request.emplace_back(fs::path(dir) / "default_compression_codec.txt", true);
         request.emplace_back(fs::path(dir) / "delete-on-destroy.txt", true);
-        request.emplace_back(fs::path(dir) / "txn_version.txt", true);
+        request.emplace_back(fs::path(dir) / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME, true);
         request.emplace_back(fs::path(dir) / "metadata_version.txt", true);
 
         disk->removeSharedFiles(request, !can_remove_shared_data, names_not_to_remove);
@@ -942,7 +942,7 @@ SyncGuardPtr DataPartStorageOnDiskBase::getDirectorySyncGuard() const
 
 std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDiskBase::writeTransactionFile(WriteMode mode) const
 {
-    return volume->getDisk()->writeFile(fs::path(root_path) / part_dir / "txn_version.txt", 256, mode);
+    return volume->getDisk()->writeFile(fs::path(root_path) / part_dir / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME, 256, mode);
 }
 
 void DataPartStorageOnDiskBase::removeRecursive()

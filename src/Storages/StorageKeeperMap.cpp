@@ -584,7 +584,7 @@ StorageKeeperMap::StorageKeeperMap(
                         log, "It looks like a table on path {} was created by another server at the same moment, will retry", zk_root_path);
                     return;
                 }
-                else if (code != Coordination::Error::ZOK)
+                if (code != Coordination::Error::ZOK)
                 {
                     zkutil::KeeperMultiException::check(code, create_requests, create_responses);
                 }
@@ -792,12 +792,12 @@ void StorageKeeperMap::drop()
         LOG_INFO(log, "Metadata is being removed by another table");
         return;
     }
-    else if (code == Coordination::Error::ZNOTEMPTY)
+    if (code == Coordination::Error::ZNOTEMPTY)
     {
         LOG_WARNING(log, "Another table is using the same path, metadata will not be deleted");
         return;
     }
-    else if (code != Coordination::Error::ZOK)
+    if (code != Coordination::Error::ZOK)
         zkutil::KeeperMultiException::check(code, ops, responses);
 
     auto metadata_drop_lock = zkutil::EphemeralNodeHolder::existing(zk_dropped_lock_path, *client);
@@ -889,7 +889,7 @@ private:
             }
         };
 
-        auto max_multiread_size = with_retries->getKeeperSettings().batch_size_for_keeper_multiread;
+        auto max_multiread_size = with_retries->getKeeperSettings().batch_size_for_multiread;
 
         auto keys_it = data_children.begin();
         while (keys_it != data_children.end())
@@ -941,9 +941,8 @@ void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collec
         (
             getLogger(fmt::format("StorageKeeperMapBackup ({})", getStorageID().getNameForLogs())),
             [&] { return getClient(); },
-            WithRetries::KeeperSettings::fromContext(backup_entries_collector.getContext()),
-            backup_entries_collector.getContext()->getProcessListElement(),
-            [](WithRetries::FaultyKeeper &) {}
+            BackupKeeperSettings::fromContext(backup_entries_collector.getContext()),
+            backup_entries_collector.getContext()->getProcessListElement()
         );
 
         backup_entries_collector.addBackupEntries(
@@ -972,9 +971,8 @@ void StorageKeeperMap::restoreDataFromBackup(RestorerFromBackup & restorer, cons
     (
         getLogger(fmt::format("StorageKeeperMapRestore ({})", getStorageID().getNameForLogs())),
         [&] { return getClient(); },
-        WithRetries::KeeperSettings::fromContext(restorer.getContext()),
-        restorer.getContext()->getProcessListElement(),
-        [](WithRetries::FaultyKeeper &) {}
+        BackupKeeperSettings::fromContext(restorer.getContext()),
+        restorer.getContext()->getProcessListElement()
     );
 
     bool allow_non_empty_tables = restorer.isNonEmptyTableAllowed();
@@ -1037,7 +1035,7 @@ void StorageKeeperMap::restoreDataImpl(
     CompressedReadBufferFromFile compressed_in{std::move(in_from_file)};
     fs::path data_path_fs(zk_data_path);
 
-    auto max_multi_size = with_retries->getKeeperSettings().batch_size_for_keeper_multi;
+    auto max_multi_size = with_retries->getKeeperSettings().batch_size_for_multi;
 
     Coordination::Requests create_requests;
     const auto flush_create_requests = [&]

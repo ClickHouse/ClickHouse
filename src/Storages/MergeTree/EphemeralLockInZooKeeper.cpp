@@ -171,7 +171,7 @@ EphemeralLocksInAllPartitions::EphemeralLocksInAllPartitions(
             LOG_TRACE(getLogger("EphemeralLocksInAllPartitions"), "Someone has inserted a block in a new partition while we were creating locks. Retry.");
             continue;
         }
-        else if (rc != Coordination::Error::ZOK)
+        if (rc != Coordination::Error::ZOK)
             throw Coordination::Exception(rc);
 
         for (size_t i = 0; i < partitions.size(); ++i)

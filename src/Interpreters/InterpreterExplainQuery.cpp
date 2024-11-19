@@ -119,16 +119,14 @@ Block InterpreterExplainQuery::getSampleBlock(const ASTExplainQuery::ExplainKind
             {cols[4].type->createColumn(), cols[4].type, cols[4].name},
         });
     }
-    else
-    {
-        Block res;
-        ColumnWithTypeAndName col;
-        col.name = "explain";
-        col.type = std::make_shared<DataTypeString>();
-        col.column = col.type->createColumn();
-        res.insert(col);
-        return res;
-    }
+
+    Block res;
+    ColumnWithTypeAndName col;
+    col.name = "explain";
+    col.type = std::make_shared<DataTypeString>();
+    col.column = col.type->createColumn();
+    res.insert(col);
+    return res;
 }
 
 /// Split str by line feed and write as separate row to ColumnString.

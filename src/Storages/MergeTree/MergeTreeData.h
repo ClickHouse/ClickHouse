@@ -241,7 +241,7 @@ public:
 
     MergeTreeDataPartFormat choosePartFormat(size_t bytes_uncompressed, size_t rows_count) const;
     MergeTreeDataPartFormat choosePartFormatOnDisk(size_t bytes_uncompressed, size_t rows_count) const;
-    MergeTreeDataPartBuilder getDataPartBuilder(const String & name, const VolumePtr & volume, const String & part_dir) const;
+    MergeTreeDataPartBuilder getDataPartBuilder(const String & name, const VolumePtr & volume, const String & part_dir, const ReadSettings & read_settings_) const;
 
     /// Auxiliary object to add a set of parts into the working set in two steps:
     /// * First, as PreActive parts (the parts are ready, but not yet in the active set).
@@ -441,6 +441,7 @@ public:
 
     bool supportsDynamicSubcolumnsDeprecated() const override { return true; }
     bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsSparseSerialization() const override { return true; }
 
     bool supportsLightweightDelete() const override;
 
@@ -504,6 +505,10 @@ public:
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts);
+
+    /// Prewarm mark cache for the most recent data parts.
+    void prewarmMarkCache(ThreadPool & pool);
+    void prewarmMarkCacheIfNeeded(ThreadPool & pool);
 
     String getLogName() const { return log.loadName(); }
 
@@ -1242,6 +1247,11 @@ protected:
     /// protected by @data_parts_mutex.
     ColumnsDescription object_columns;
 
+    /// Serialization info accumulated among all active parts.
+    /// It changes only when set of parts is changed and is
+    /// protected by @data_parts_mutex.
+    SerializationInfoByName serialization_hints;
+
     MergeTreePartsMover parts_mover;
 
     /// Executors are common for both ReplicatedMergeTree and plain MergeTree
@@ -1529,6 +1539,13 @@ protected:
 
     void resetObjectColumnsFromActiveParts(const DataPartsLock & lock);
     void updateObjectColumns(const DataPartPtr & part, const DataPartsLock & lock);
+
+    void resetSerializationHints(const DataPartsLock & lock);
+
+    template <typename AddedParts, typename RemovedParts>
+    void updateSerializationHints(const AddedParts & added_parts, const RemovedParts & removed_parts, const DataPartsLock & lock);
+
+    SerializationInfoByName getSerializationHints() const override;
 
     /** A structure that explicitly represents a "merge tree" of parts
      *  which is implicitly presented by min-max block numbers and levels of parts.
