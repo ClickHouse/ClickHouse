@@ -264,3 +264,52 @@ def test_materialzed_views(started_cluster):
     query("drop table test_mv.a")
     query("drop table test_mv.z")
     query("drop database test_mv")
+
+
+def test_materialzed_views_cascaded(started_cluster):
+    query = node1.query
+    query("create database test_mv")
+    query("create table test_mv.t (Id UInt64) engine=MergeTree order by Id")
+    query("create table test_mv.a (Id UInt64) engine=MergeTree order by Id")
+    query("create table test_mv.z (Id UInt64) engine=MergeTree order by Id")
+    query("create materialized view t_to_a to test_mv.a as select Id from test_mv.t")
+    query("create materialized view a_to_z to test_mv.z as select Id from test_mv.a")
+
+    node1.restart_clickhouse()
+    query("insert into test_mv.t values(42)")
+    assert query("select * from test_mv.a Format CSV") == "42\n"
+    assert query("select * from test_mv.z Format CSV") == "42\n"
+
+    query("drop view t_to_a")
+    query("drop view a_to_z")
+    query("drop table test_mv.t")
+    query("drop table test_mv.a")
+    query("drop table test_mv.z")
+    query("drop database test_mv")
+
+
+def test_materialzed_views_cascaded_multiple(started_cluster):
+    query = node1.query
+    query("create database test_mv")
+    query("create table test_mv.t (Id UInt64) engine=MergeTree order by Id")
+    query("create table test_mv.a (Id UInt64) engine=MergeTree order by Id")
+    query("create table test_mv.x (IdText String) engine=MergeTree order by IdText")
+    query("create table test_mv.z (Id UInt64, IdTextLength UInt64) engine=MergeTree order by Id")
+    query("create materialized view t_to_a to test_mv.a as select Id from test_mv.t")
+    query("create materialized view t_to_x to test_mv.x as select toString(Id) as IdText from test_mv.t")
+    query("create materialized view ax_to_z to test_mv.z as select Id, (select max(length(IdText)) from test_mv.x) as IdTextLength from test_mv.a")
+
+    node1.restart_clickhouse()
+    query("insert into test_mv.t values(42)")
+    assert query("select * from test_mv.a Format CSV") == "42\n"
+    assert query("select * from test_mv.x Format CSV") == "\"42\"\n"
+    assert query("select * from test_mv.z Format CSV") == "42,2\n"
+
+    query("drop view t_to_a")
+    query("drop view t_to_x")
+    query("drop view ax_to_z")
+    query("drop table test_mv.t")
+    query("drop table test_mv.a")
+    query("drop table test_mv.x")
+    query("drop table test_mv.z")
+    query("drop database test_mv")
