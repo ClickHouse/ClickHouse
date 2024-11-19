@@ -5,7 +5,7 @@
 namespace DB
 {
 
-class WriteBufferFromPointer;
+class NullWriteBuffer;
 
 /// Output format which is used in PullingPipelineExecutor.
 class PullingOutputFormat : public IOutputFormat
@@ -41,7 +41,7 @@ private:
     ProfileInfo info;
 
     /// Is not used.
-    static WriteBufferFromPointer out;
+    static NullWriteBuffer out;
 };
 
 }

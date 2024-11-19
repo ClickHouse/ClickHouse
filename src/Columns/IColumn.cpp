@@ -443,6 +443,7 @@ template class IColumnHelper<ColumnVector<Int32>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<Int64>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<Int128>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<Int256>, ColumnFixedSizeHelper>;
+template class IColumnHelper<ColumnVector<BFloat16>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<Float32>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<Float64>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<UUID>, ColumnFixedSizeHelper>;

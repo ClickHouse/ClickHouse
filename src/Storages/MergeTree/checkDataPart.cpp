@@ -14,6 +14,7 @@
 #include <IO/HashingReadBuffer.h>
 #include <IO/S3Common.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/NetException.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <IO/AzureBlobStorage/isRetryableAzureException.h>
@@ -48,6 +49,7 @@ namespace ErrorCodes
     extern const int SOCKET_TIMEOUT;
     extern const int BROKEN_PROJECTION;
     extern const int ABORTED;
+    extern const int CANNOT_WRITE_TO_OSTREAM;
 }
 
 
@@ -91,6 +93,10 @@ bool isRetryableException(std::exception_ptr exception_ptr)
             || e.code() == ErrorCodes::ABORTED;
 
     }
+    catch (const NetException &)
+    {
+        return true;
+    }
     catch (const Coordination::Exception & e)
     {
         return Coordination::isHardwareError(e.code);
@@ -101,7 +107,8 @@ bool isRetryableException(std::exception_ptr exception_ptr)
             || e.code() == ErrorCodes::NETWORK_ERROR
             || e.code() == ErrorCodes::SOCKET_TIMEOUT
             || e.code() == ErrorCodes::CANNOT_SCHEDULE_TASK
-            || e.code() == ErrorCodes::ABORTED;
+            || e.code() == ErrorCodes::ABORTED
+            || e.code() == ErrorCodes::CANNOT_WRITE_TO_OSTREAM;
     }
     catch (const std::filesystem::filesystem_error & e)
     {

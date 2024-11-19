@@ -321,7 +321,7 @@ public:
 
     /// Amount of rows between marks
     /// As index always loaded into memory
-    MergeTreeIndexGranularity index_granularity;
+    MergeTreeIndexGranularityPtr index_granularity;
 
     /// Index that for each part stores min and max values of a set of columns. This allows quickly excluding
     /// parts based on conditions on these columns imposed by a query.
@@ -632,7 +632,7 @@ protected:
 
     mutable PartMetadataManagerPtr metadata_manager;
 
-    void removeIfNeeded();
+    void removeIfNeeded() noexcept;
 
     /// Fill each_columns_size and total_size with sizes from columns files on
     /// disk using columns and checksums.

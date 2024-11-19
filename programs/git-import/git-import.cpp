@@ -529,6 +529,13 @@ struct ResultWriter
             }
         }
     }
+
+    void finalize()
+    {
+        commits.finalize();
+        file_changes.finalize();
+        line_changes.finalize();
+    }
 };
 
 
@@ -1178,6 +1185,8 @@ void processLog(const Options & options)
         if (i + num_threads < num_commits)
             show_commands[i % num_threads] = gitShow(hashes[i + num_threads]);
     }
+
+    result.finalize();
 }
 
 

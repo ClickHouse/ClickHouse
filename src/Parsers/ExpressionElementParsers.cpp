@@ -1309,13 +1309,11 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
         {
             if (pos->type == closing_bracket)
             {
-                std::shared_ptr<ASTLiteral> literal;
-
                 /// Parse one-element tuples (e.g. (1)) later as single values for backward compatibility.
                 if (std::is_same_v<Collection, Tuple> && layers.back().arr.size() == 1)
                     return false;
 
-                literal = std::make_shared<ASTLiteral>(std::move(layers.back().arr));
+                std::shared_ptr<ASTLiteral> literal = std::make_shared<ASTLiteral>(std::move(layers.back().arr));
                 literal->begin = layers.back().literal_begin;
                 literal->end = ++pos;
 
