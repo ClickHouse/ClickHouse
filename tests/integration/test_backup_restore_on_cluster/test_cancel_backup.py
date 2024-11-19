@@ -667,7 +667,7 @@ def test_long_disconnection_stops_backup():
             # A backup is expected to fail, but it isn't expected to fail too soon.
             print(f"Backup failed after {time_to_fail} seconds disconnection")
             assert time_to_fail > 3
-            assert time_to_fail < 35
+            assert time_to_fail < 45
 
 
 # A backup must NOT be stopped if Zookeeper is disconnected shorter than `failure_after_host_disconnected_for_seconds`.

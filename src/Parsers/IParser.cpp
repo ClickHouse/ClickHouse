@@ -53,7 +53,12 @@ void Expected::highlight(HighlightedRange range)
     /// for each highlight x and the next one y: x.end <= y.begin, thus preventing any overlap.
 
     if (it != highlights.begin())
-        it = std::prev(it);
+    {
+        auto prev_it = std::prev(it);
+
+        if (range.begin < prev_it->end)
+            it = prev_it;
+    }
 
     while (it != highlights.end() && range.begin < it->end)
     {
