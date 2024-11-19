@@ -2847,7 +2847,13 @@ class ClickHouseCluster:
                         indentation = 4 * " "
 
                         def get_feature_flag_value(feature_flag):
-                            return 1
+                            if not self.keeper_randomize_feature_flags:
+                                return 1
+
+                            if feature_flag in self.keeper_required_feature_flags:
+                                return 1
+
+                            return random.randint(0, 1)
 
                         with open(feature_flags_config, "w") as ff_config:
                             ff_config.write("keeper_server:\n")
