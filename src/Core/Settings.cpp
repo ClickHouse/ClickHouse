@@ -1036,6 +1036,12 @@ Possible values:
 - 1 — `SELECT` will be executed on each shard from the underlying table of the distributed engine.
 - 2 — `SELECT` and `INSERT` will be executed on each shard from/to the underlying table of the distributed engine.
 )", 0) \
+    DECLARE(UInt64, distributed_shard_retry_count, 0, R"(
+For distributed queries, configures how many times the root executor will retry leaf executors in a shard when receiving 'too many simultaneous queries' errors
+)", 0) \
+    DECLARE(String, distributed_shard_retry_error_codes, "", R"(
+A list of error codes that trigger a retry when encountered during distributed query execution
+)", 0) \
     DECLARE(UInt64, distributed_group_by_no_merge, 0, R"(
 Do not merge aggregation states from different servers for distributed query processing, you can use this in case it is for certain that there are different keys on different shards
 
