@@ -1474,11 +1474,13 @@ try
         rewind_needed = true;
     }
 
+    file_out.finalize();
+
     return 0;
 }
 catch (...)
 {
     std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
     auto code = DB::getCurrentExceptionCode();
-    return code ? code : 1;
+    return static_cast<UInt8>(code) ? code : 1;
 }

@@ -10,9 +10,9 @@ namespace DB
 {
 
 RestoreCoordinationLocal::RestoreCoordinationLocal(
-    const UUID & restore_uuid, bool allow_concurrent_restore_, BackupConcurrencyCounters & concurrency_counters_)
+    bool allow_concurrent_restore_, BackupConcurrencyCounters & concurrency_counters_)
     : log(getLogger("RestoreCoordinationLocal"))
-    , concurrency_check(restore_uuid, /* is_restore = */ true, /* on_cluster = */ false, allow_concurrent_restore_, concurrency_counters_)
+    , concurrency_check(/* is_restore = */ true, /* on_cluster = */ false, /* zookeeper_path = */ "", allow_concurrent_restore_, concurrency_counters_)
 {
 }
 

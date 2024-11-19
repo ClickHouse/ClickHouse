@@ -1309,13 +1309,11 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
         {
             if (pos->type == closing_bracket)
             {
-                std::shared_ptr<ASTLiteral> literal;
-
                 /// Parse one-element tuples (e.g. (1)) later as single values for backward compatibility.
                 if (std::is_same_v<Collection, Tuple> && layers.back().arr.size() == 1)
                     return false;
 
-                literal = std::make_shared<ASTLiteral>(std::move(layers.back().arr));
+                std::shared_ptr<ASTLiteral> literal = std::make_shared<ASTLiteral>(std::move(layers.back().arr));
                 literal->begin = layers.back().literal_begin;
                 literal->end = ++pos;
 
@@ -2178,6 +2176,7 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     ParserKeyword from(Keyword::FROM);
     ParserKeyword to(Keyword::TO);
     ParserKeyword step(Keyword::STEP);
+    ParserKeyword staleness(Keyword::STALENESS);
     ParserStringLiteral collate_locale_parser;
     ParserExpressionWithOptionalAlias exp_parser(false);
 
@@ -2219,6 +2218,7 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     ASTPtr fill_from;
     ASTPtr fill_to;
     ASTPtr fill_step;
+    ASTPtr fill_staleness;
     if (with_fill.ignore(pos, expected))
     {
         has_with_fill = true;
@@ -2229,6 +2229,9 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
             return false;
 
         if (step.ignore(pos, expected) && !exp_parser.parse(pos, fill_step, expected))
+            return false;
+
+        if (staleness.ignore(pos, expected) && !exp_parser.parse(pos, fill_staleness, expected))
             return false;
     }
 
@@ -2244,6 +2247,7 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     elem->setFillFrom(fill_from);
     elem->setFillTo(fill_to);
     elem->setFillStep(fill_step);
+    elem->setFillStaleness(fill_staleness);
 
     node = elem;
 
