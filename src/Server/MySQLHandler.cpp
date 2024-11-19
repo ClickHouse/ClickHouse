@@ -257,7 +257,7 @@ void MySQLHandler::run()
         catch (const Exception & exc)
         {
             log->log(exc);
-            packet_endpoint->sendPacket(ERRPacket(exc.code(), "00000", exc.message()), true);
+            packet_endpoint->sendPacket(ERRPacket(exc.code(), "HY000", exc.message()), true);
         }
 
         OKPacket ok_packet(0, handshake_response.capability_flags, 0, 0, 0);
@@ -321,7 +321,7 @@ void MySQLHandler::run()
             catch (...)
             {
                 tryLogCurrentException(log, "MySQLHandler: Cannot read packet: ");
-                packet_endpoint->sendPacket(ERRPacket(getCurrentExceptionCode(), "00000", getCurrentExceptionMessage(false)), true);
+                packet_endpoint->sendPacket(ERRPacket(getCurrentExceptionCode(), "HY000", getCurrentExceptionMessage(false)), true);
             }
         }
     }
@@ -400,7 +400,7 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
     catch (const Exception & exc)
     {
         LOG_ERROR(log, "Authentication for user {} failed.", user_name);
-        packet_endpoint->sendPacket(ERRPacket(exc.code(), "00000", exc.message()), true);
+        packet_endpoint->sendPacket(ERRPacket(exc.code(), "HY000", exc.message()), true);
         throw;
     }
     LOG_DEBUG(log, "Authentication for user {} succeeded.", user_name);
