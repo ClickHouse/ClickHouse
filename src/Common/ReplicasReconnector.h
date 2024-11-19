@@ -3,6 +3,7 @@
 #include <Core/ServerSettings.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>
+#include <Common/logger_useful.h>
 #include <boost/noncopyable.hpp>
 #include <functional>
 #include <list>
@@ -37,23 +38,26 @@ public:
     {
         emergency_stop = true;
         task_handle->deactivate();
-        instance_ptr(nullptr, true);
+        instance_ptr = nullptr;
     }
 
     [[nodiscard]]
     static std::unique_ptr<ReplicasReconnector> init(ContextPtr context)
     {
+        if (instance_ptr)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Replicas reconnector is already initialized.");
+
         std::unique_ptr<ReplicasReconnector> ret(new ReplicasReconnector(context));
-        instance_ptr(ret.get());
+        instance_ptr = ret.get();
         return ret;
     }
 
     static ReplicasReconnector & instance()
     {
-        ReplicasReconnector * ptr = instance_ptr();
-        if (!ptr)
+        if (!instance_ptr)
             throw Exception(ErrorCodes::NOT_INITIALIZED, "Replicas reconnector is not initialized.");
-        return *ptr;
+
+        return *instance_ptr;
     }
 
     void add(const Reconnector & reconnector)
@@ -64,34 +68,16 @@ public:
     }
 
 private:
+    inline static ReplicasReconnector * instance_ptr = nullptr;
     ReconnectorsList reconnectors;
     std::mutex mutex;
     std::atomic_bool emergency_stop{false};
     BackgroundSchedulePoolTaskHolder task_handle;
-
-    static ReplicasReconnector * instance_ptr(ReplicasReconnector * ptr = nullptr, bool deinitialize = false)
-    {
-        static ReplicasReconnector * instance_ptr = nullptr;
-
-        if (deinitialize)
-        {
-            instance_ptr = nullptr;
-            return instance_ptr;
-        }
-
-        if (instance_ptr)
-        {
-            if (ptr)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Replicas reconnector is already initialized.");
-        }
-        else
-            instance_ptr = ptr;
-
-        return instance_ptr;
-    }
+    LoggerPtr log = nullptr;
 
     explicit ReplicasReconnector(ContextPtr context)
         : task_handle(context->getSchedulePool().createTask("ReplicasReconnector", [this]{ run(); }))
+        , log(getLogger("ReplicasReconnector"))
     {
     }
 
@@ -102,8 +88,18 @@ private:
 
         for (auto it = reconnectors.cbegin(); !emergency_stop && it != reconnectors.end();)
         {
+            bool res = true;
             lock.unlock();
-            bool res = (*it)(interval_milliseconds);
+
+            try
+            {
+                res = (*it)(interval_milliseconds);
+            }
+            catch (...)
+            {
+                LOG_WARNING(log, "Failed reconnection routine.");
+            }
+
             lock.lock();
 
             if (res)
