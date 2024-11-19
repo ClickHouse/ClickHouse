@@ -2128,6 +2128,7 @@ ReplicatedMergeTreeQueue::Status ReplicatedMergeTreeQueue::getStatus() const
     res.inserts_in_queue = 0;
     res.merges_in_queue = 0;
     res.part_mutations_in_queue = 0;
+    res.metadata_alters_in_queue = 0;
     res.queue_oldest_time = 0;
     res.inserts_oldest_time = 0;
     res.merges_oldest_time = 0;
@@ -2169,6 +2170,11 @@ ReplicatedMergeTreeQueue::Status ReplicatedMergeTreeQueue::getStatus() const
                 res.part_mutations_oldest_time = static_cast<UInt32>(entry->create_time);
                 res.oldest_part_to_mutate_to = entry->new_part_name;
             }
+        }
+
+        if (entry->type == LogEntry::ALTER_METADATA)
+        {
+            ++res.metadata_alters_in_queue;
         }
     }
 
