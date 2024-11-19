@@ -74,9 +74,7 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
     if (format_alter_commands_with_parentheses)
     {
         settings.ostr << "(";
-        closing_bracket_guard = make_scope_guard(std::function<void(void)>([&settings](){
-            settings.ostr << ")";
-        }));
+        closing_bracket_guard = make_scope_guard(std::function<void(void)>([&settings]() { settings.ostr << ")"; }));
     }
 
     if (type == ASTAlterCommand::ADD_COLUMN)
