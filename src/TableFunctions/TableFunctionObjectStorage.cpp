@@ -235,11 +235,11 @@ template class TableFunctionObjectStorage<IcebergS3ClusterDefinition, StorageS3I
 template class TableFunctionObjectStorage<IcebergAzureClusterDefinition, StorageAzureIcebergConfiguration>;
 #endif
 
-#if USE_AVRO &&  USE_HDFS
+#if USE_AVRO && USE_HDFS
 template class TableFunctionObjectStorage<IcebergHDFSClusterDefinition, StorageHDFSIcebergConfiguration>;
 #endif
 
-#if USE_AWS_S3 && USE_PARQUET
+#if USE_PARQUET && USE_AWS_S3
 template class TableFunctionObjectStorage<DeltaLakeClusterDefinition, StorageS3DeltaLakeConfiguration>;
 #endif
 
