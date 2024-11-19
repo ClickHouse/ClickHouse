@@ -1,0 +1,87 @@
+ClickHouseサーバーにMySQLインターフェースを有効にする方法については[公式ドキュメント](https://clickhouse.com/docs/ja/interfaces/mysql)を参照してください。
+
+サーバーの `config.xml` にエントリを追加することに加えて、
+
+```xml
+<clickhouse>
+    <mysql_port>9004</mysql_port>
+</clickhouse>
+```
+
+MySQLインターフェースを利用するユーザーには、[二重SHA1パスワード暗号化](https://clickhouse.com/docs/ja/operations/settings/settings-users#user-namepassword)を使用することが**必要**です。
+
+シェルから二重SHA1で暗号化されたランダムパスワードを生成するには以下を実行してください：
+
+```shell
+PASSWORD=$(base64 < /dev/urandom | head -c16); echo "$PASSWORD"; echo -n "$PASSWORD" | sha1sum | tr -d '-' | xxd -r -p | sha1sum | tr -d '-'
+```
+
+出力は以下のようになります：
+
+```
+LZOQYnqQN4L/T6L0
+fbc958cc745a82188a51f30de69eebfc67c40ee4
+```
+
+最初の行は生成されたパスワードで、2行目はClickHouseの設定に使用するハッシュです。
+
+以下は生成されたハッシュを使用する`mysql_user`の設定例です：
+
+`/etc/clickhouse-server/users.d/mysql_user.xml`
+
+```xml
+<users>
+    <mysql_user>
+        <password_double_sha1_hex>fbc958cc745a82188a51f30de69eebfc67c40ee4</password_double_sha1_hex>
+        <networks>
+            <ip>::/0</ip>
+        </networks>
+        <profile>default</profile>
+        <quota>default</quota>
+    </mysql_user>
+</users>
+```
+
+`password_double_sha1_hex` エントリを自分で生成した二重SHA1ハッシュに置き換えてください。
+
+さらに、BIツールがMySQLコネクタを使用する際にデータベーススキーマを適切に調査できるように、`SHOW [FULL] COLUMNS` クエリの結果でMySQLネイティブタイプを表示するために、`use_mysql_types_in_show_columns`を使用することを推奨します。
+
+例えば：
+
+`/etc/clickhouse-server/users.d/mysql_user.xml`
+
+```xml
+<profiles>
+    <default>
+        <use_mysql_types_in_show_columns>1</use_mysql_types_in_show_columns>
+    </default>
+</profiles>
+```
+
+または、デフォルト以外の異なるプロファイルに割り当てることもできます。
+
+`mysql` バイナリが利用可能であれば、コマンドラインから接続をテストできます。以下は、サンプルのユーザー名 (`mysql_user`) とパスワード (`LZOQYnqQN4L/T6L0`) を使用したコマンドです：
+
+```bash
+mysql --protocol tcp -h localhost -u mysql_user -P 9004 --password=LZOQYnqQN4L/T6L0
+```
+
+```
+mysql> show databases;
++--------------------+
+| name               |
++--------------------+
+| INFORMATION_SCHEMA |
+| default            |
+| information_schema |
+| system             |
++--------------------+
+4行取得しました (0.00 sec)
+4行読み込み、603.00 B、0.00156秒で、2564行/秒、377.48 KiB/秒
+```
+
+最後に、ClickHouseサーバーを希望するIPアドレスでリッスンするように設定します。例えば、`config.xml` の中で、すべてのアドレスでリッスンするために以下をアンコメントしてください：
+
+```bash
+<listen_host>::</listen_host> 
+```

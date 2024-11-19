@@ -29,7 +29,7 @@ class ClientInfo;
 /// Packet that could be received from server.
 struct Packet
 {
-    UInt64 type;
+    UInt64 type = Protocol::Server::MAX; // default value has to be invalid
 
     Block block;
     std::unique_ptr<Exception> exception;
@@ -43,8 +43,6 @@ struct Packet
     std::optional<ParallelReadRequest> request;
 
     std::string server_timezone;
-
-    Packet() : type(Protocol::Server::Hello) {}
 };
 
 
