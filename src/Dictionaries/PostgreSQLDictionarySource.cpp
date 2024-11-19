@@ -37,7 +37,7 @@ namespace ErrorCodes
 }
 
 static const ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> dictionary_allowed_keys = {
-    "host", "port", "user", "password", "db", "database", "table", "schema", "bg_reconnect",
+    "host", "port", "user", "password", "db", "database", "table", "schema", "background_reconnect",
     "update_field", "update_lag", "invalidate_query", "query", "where", "name", "priority"};
 
 #if USE_LIBPQXX
@@ -244,7 +244,7 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
                 .update_lag = named_collection->getOrDefault<UInt64>("update_lag", 1),
             });
 
-            bg_reconnect = named_collection->getOrDefault<bool>("bg_reconnect", false);
+            bg_reconnect = named_collection->getOrDefault<bool>("background_reconnect", false);
 
             replicas_by_priority[0].emplace_back(common_configuration);
         }
@@ -273,7 +273,7 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
                 .update_lag = config.getUInt64(fmt::format("{}.update_lag", settings_config_prefix), 1)
             });
 
-            bg_reconnect = config.getBool(fmt::format("{}.bg_reconnect", settings_config_prefix), false);
+            bg_reconnect = config.getBool(fmt::format("{}.background_reconnect", settings_config_prefix), false);
 
             if (config.has(settings_config_prefix + ".replica"))
             {

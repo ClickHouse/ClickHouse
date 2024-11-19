@@ -623,7 +623,7 @@ def test_background_dictionary_reconnect(started_cluster):
         PASSWORD 'mysecretpassword'
         DB 'postgres_database'
         QUERY $doc$SELECT * FROM dict;$doc$
-        BG_RECONNECT 'true'
+        BACKGROUND_RECONNECT 'true'
         REPLICA(HOST '{started_cluster.postgres_ip}' PORT {started_cluster.postgres_port} PRIORITY 1)))
     """
     )

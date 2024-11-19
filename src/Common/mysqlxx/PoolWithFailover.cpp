@@ -58,7 +58,7 @@ PoolWithFailover::PoolWithFailover(
     : max_tries(max_tries_)
     , shareable(config_.getBool(config_name_ + ".share_connection", false))
     , wait_timeout(UINT64_MAX)
-    , bg_reconnect(config_.getBool(config_name_ + ".bg_reconnect", false))
+    , bg_reconnect(config_.getBool(config_name_ + ".background_reconnect", false))
 {
     if (config_.has(config_name_ + ".replica"))
     {

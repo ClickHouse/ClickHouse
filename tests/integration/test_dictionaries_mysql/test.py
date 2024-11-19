@@ -471,7 +471,7 @@ def test_background_dictionary_reconnect(started_cluster):
         PASSWORD 'clickhouse'
         DB 'test'
         QUERY $doc$SELECT * FROM test.dict;$doc$
-        BG_RECONNECT 'true'
+        BACKGROUND_RECONNECT 'true'
         REPLICA(HOST 'mysql80' PORT 3306 PRIORITY 1)))
     """
     )

@@ -119,7 +119,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                 .update_field = named_collection->getOrDefault<String>("update_field", ""),
                 .update_lag = named_collection->getOrDefault<UInt64>("update_lag", 1),
                 .dont_check_update_time = named_collection->getOrDefault<bool>("dont_check_update_time", false),
-                .bg_reconnect = named_collection->getOrDefault<bool>("bg_reconnect", false),
+                .bg_reconnect = named_collection->getOrDefault<bool>("background_reconnect", false),
             });
 
             const auto & settings = global_context->getSettingsRef();
@@ -149,7 +149,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                 .update_field = config.getString(settings_config_prefix + ".update_field", ""),
                 .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
                 .dont_check_update_time = config.getBool(settings_config_prefix + ".dont_check_update_time", false),
-                .bg_reconnect = config.getBool(settings_config_prefix + ".bg_reconnect", false),
+                .bg_reconnect = config.getBool(settings_config_prefix + ".background_reconnect", false),
             });
 
             pool = std::make_shared<mysqlxx::PoolWithFailover>(
