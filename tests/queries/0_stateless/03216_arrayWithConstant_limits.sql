@@ -3,4 +3,4 @@ SELECT arrayWithConstant(100000000, materialize([[[[[[[[[['Hello, world!']]]]]]]
 SELECT length(arrayWithConstant(10000000, materialize([[[[[[[[[['Hello world']]]]]]]]]])));
 
 CREATE TEMPORARY TABLE args (value Array(Int)) ENGINE=Memory AS SELECT [1, 1, 1, 1] as value FROM numbers(1, 100);
-SELECT arrayWithConstant(1000000, value) FROM args FORMAT NULL;
+SELECT length(arrayWithConstant(1000000, value)) FROM args FORMAT NULL;
