@@ -92,6 +92,7 @@ class WorkFlowNames(metaclass=WithIter):
 
     JEPSEN = "JepsenWorkflow"
     CreateRelease = "CreateRelease"
+    NIGHTLY = "NightlyBuilds"
 
 
 class BuildNames(metaclass=WithIter):
