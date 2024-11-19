@@ -2164,8 +2164,8 @@ try
     /// Check sanity of MergeTreeSettings on server startup
     {
         /// All settings can be changed in the global config
-        bool allowed_experimental = 1;
-        bool allowed_beta = 1;
+        bool allowed_experimental = true;
+        bool allowed_beta = true;
         size_t background_pool_tasks = global_context->getMergeMutateExecutor()->getMaxTasksCount();
         global_context->getMergeTreeSettings().sanityCheck(background_pool_tasks, allowed_experimental, allowed_beta);
         global_context->getReplicatedMergeTreeSettings().sanityCheck(background_pool_tasks, allowed_experimental, allowed_beta);
