@@ -214,7 +214,7 @@ namespace
 
             auto impl = std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionTransform>())->build(args);
 
-            return impl->execute(args, result_type, input_rows_count);
+            return impl->execute(args, result_type, input_rows_count, /* dry_run = */ false);
         }
 
         void executeAnything(const IColumn * in, IColumn & column_result, const ColumnPtr default_non_const, const IColumn & in_casted, size_t input_rows_count) const

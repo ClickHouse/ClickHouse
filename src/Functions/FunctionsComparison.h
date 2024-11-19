@@ -990,7 +990,7 @@ private:
             convolution_columns[i].type = impl->getResultType();
 
             /// Comparison of the elements.
-            convolution_columns[i].column = impl->execute(tmp_columns, impl->getResultType(), input_rows_count);
+            convolution_columns[i].column = impl->execute(tmp_columns, impl->getResultType(), input_rows_count, /* dry_run = */ false);
         }
 
         if (tuple_size == 1)
@@ -1001,7 +1001,7 @@ private:
 
         /// Logical convolution.
         auto impl = func_convolution->build(convolution_columns);
-        return impl->execute(convolution_columns, impl->getResultType(), input_rows_count);
+        return impl->execute(convolution_columns, impl->getResultType(), input_rows_count, /* dry_run = */ false);
     }
 
     ColumnPtr executeTupleLessGreaterImpl(
@@ -1033,18 +1033,18 @@ private:
             {
                 auto impl_head = func_compare_head->build(tmp_columns);
                 less_columns[i].type = impl_head->getResultType();
-                less_columns[i].column = impl_head->execute(tmp_columns, less_columns[i].type, input_rows_count);
+                less_columns[i].column = impl_head->execute(tmp_columns, less_columns[i].type, input_rows_count, /* dry_run = */ false);
 
                 auto impl_equals = func_equals->build(tmp_columns);
                 equal_columns[i].type = impl_equals->getResultType();
-                equal_columns[i].column = impl_equals->execute(tmp_columns, equal_columns[i].type, input_rows_count);
+                equal_columns[i].column = impl_equals->execute(tmp_columns, equal_columns[i].type, input_rows_count, /* dry_run = */ false);
 
             }
             else
             {
                 auto impl_tail = func_compare_tail->build(tmp_columns);
                 less_columns[i].type = impl_tail->getResultType();
-                less_columns[i].column = impl_tail->execute(tmp_columns, less_columns[i].type, input_rows_count);
+                less_columns[i].column = impl_tail->execute(tmp_columns, less_columns[i].type, input_rows_count, /* dry_run = */ false);
             }
         }
 
@@ -1063,13 +1063,13 @@ private:
             tmp_columns[1] = equal_columns[i];
             auto func_and_adaptor = func_and->build(tmp_columns);
 
-            tmp_columns[0].column = func_and_adaptor->execute(tmp_columns, func_and_adaptor->getResultType(), input_rows_count);
+            tmp_columns[0].column = func_and_adaptor->execute(tmp_columns, func_and_adaptor->getResultType(), input_rows_count, /* dry_run = */ false);
             tmp_columns[0].type = func_and_adaptor->getResultType();
 
             tmp_columns[1] = less_columns[i];
             auto func_or_adaptor = func_or->build(tmp_columns);
 
-            tmp_columns[0].column = func_or_adaptor->execute(tmp_columns, func_or_adaptor->getResultType(), input_rows_count);
+            tmp_columns[0].column = func_or_adaptor->execute(tmp_columns, func_or_adaptor->getResultType(), input_rows_count, /* dry_run = */ false);
             tmp_columns[tmp_columns.size() - 1].type = func_or_adaptor->getResultType();
         }
 
