@@ -95,17 +95,16 @@ void DynamicJoinFilters::filterDynamicPartsByFilledJoin(const IJoin & join)
 
     const auto & settings = context->getSettingsRef();
 
-    for (const auto & clause : clauses)
+    for (size_t i = 0; i < clauses.size(); ++i)
     {
-        auto squashed = squashBlocks(clause.keys, blocks);
+        const auto & clause = clauses[i];
+        auto squashed = squashBlocks(clause.keys, blocks[i]);
 
-        // std::cerr << "Right join data rows " << squashed.front().column->size() << std::endl;
+        std::cerr << "Right join data rows " << squashed.front().column->size() << std::endl;
 
         auto set = std::make_shared<FutureSetFromTuple>(squashed, settings);
         clause.set->setData(std::move(set));
     }
-
-    // std::cerr << ".... ccc " << reinterpret_cast<const void *>(col_set) << std::endl;
 
     const auto & primary_key = metadata->getPrimaryKey();
     const Names & primary_key_column_names = primary_key.column_names;
@@ -116,11 +115,17 @@ void DynamicJoinFilters::filterDynamicPartsByFilledJoin(const IJoin & join)
     auto log = getLogger("DynamicJoinFilter");
 
     auto parts_with_lock = parts->parts_ranges_ptr->get();
+
+    size_t prev_marks = 0;
+    size_t post_marks = 0;
+
     for (auto & part_range : parts_with_lock.parts_ranges)
     {
         MarkRanges filtered_ranges;
         for (auto & range : part_range.ranges)
         {
+            prev_marks += range.getNumberOfMarks();
+
             // std::cerr << "Range " << range.begin << ' ' << range.end << std::endl;
             auto new_ranges = MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 part_range.data_part,
@@ -134,12 +139,17 @@ void DynamicJoinFilters::filterDynamicPartsByFilledJoin(const IJoin & join)
             {
                 // std::cerr << "New Range " << new_range.begin << ' ' << new_range.end << std::endl;
                 if (new_range.getNumberOfMarks())
+                {
+                    post_marks += new_range.getNumberOfMarks();
                     filtered_ranges.push_back(new_range);
+                }
             }
         }
 
         part_range.ranges = std::move(filtered_ranges);
     }
+
+    LOG_TRACE(log, "Reading {}/{} marks after filtration.", post_marks, prev_marks);
 }
 
 
@@ -175,7 +185,9 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
 
     auto finish_callback = [filter = this->dynamic_filter, algo = this->join]()
     {
-        filter->filterDynamicPartsByFilledJoin(*algo);
+        LOG_TRACE(getLogger("JoinStep"), "Finish callback called");
+        if (filter)
+            filter->filterDynamicPartsByFilledJoin(*algo);
     };
 
     return QueryPipelineBuilder::joinPipelinesRightLeft(

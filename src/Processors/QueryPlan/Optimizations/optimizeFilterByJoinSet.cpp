@@ -16,6 +16,7 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Functions/FunctionsLogical.h>
 
 namespace DB
 {
@@ -133,7 +134,7 @@ void optimizeFilterByJoinSet(QueryPlan::Node & node)
         return;
 
     const auto & clauses = table_join.getClauses();
-    if (clauses.size() != 1)
+    if (clauses.empty())
         return;
 
     // std::cerr << "optimizeFilterByJoinSetone class\n";
@@ -166,60 +167,78 @@ void optimizeFilterByJoinSet(QueryPlan::Node & node)
         outputs.emplace(output->result_name, output);
 
     const Block & right_source_columns = node.children.back()->step->getOutputHeader();
-    const auto & clause = clauses.front();
+    ActionsDAG::NodeRawConstPtrs predicates;
+    DynamicJoinFilters join_filters;
+    std::vector<Names> right_keys_per_clause;
 
-    std::vector<const ActionsDAG::Node *> left_columns;
-    std::vector<ColumnWithTypeAndName> right_columns;
+    FunctionOverloadResolverPtr func_tuple_builder = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionTuple>());
 
-    size_t keys_size = clause.key_names_left.size();
-
-    for (size_t i = 0; i < keys_size; ++i)
+    for (const auto & clause : clauses)
     {
-        const auto & left_name = clause.key_names_left[i];
-        const auto & right_name = clause.key_names_right[i];
+        // Names left_keys;
+        Names right_keys;
+        std::vector<const ActionsDAG::Node *> left_columns;
+        std::vector<ColumnWithTypeAndName> right_columns;
 
-        // std::cerr << left_name << ' ' << right_name << std::endl;
+        size_t keys_size = clause.key_names_left.size();
 
-        auto it = outputs.find(left_name);
-        if (it != outputs.end())
+        for (size_t i = 0; i < keys_size; ++i)
         {
-            left_columns.push_back(it->second);
-            right_columns.push_back(right_source_columns.getByName(right_name));
+            const auto & left_name = clause.key_names_left[i];
+            const auto & right_name = clause.key_names_right[i];
+
+            // std::cerr << left_name << ' ' << right_name << std::endl;
+
+            auto it = outputs.find(left_name);
+            if (it != outputs.end())
+            {
+                // left_keys.push_back(left_name);
+                right_keys.push_back(right_name);
+                left_columns.push_back(it->second);
+                right_columns.push_back(right_source_columns.getByName(right_name));
+            }
         }
+
+        if (left_columns.empty())
+            return;
+
+        // std::cerr << "optimizeFilterByJoinSetone some coluns\n";
+
+        const ActionsDAG::Node * in_lhs_arg = left_columns.front();
+        if (left_columns.size() > 1)
+            in_lhs_arg = &dag->addFunction(func_tuple_builder, std::move(left_columns), {});
+
+        auto context = reading->getContext();
+        auto test_set = std::make_shared<FutureSetFromTuple>(Block(right_columns), context->getSettingsRef());
+        auto column_set = ColumnSet::create(1, std::move(test_set));
+        ColumnSet * column_set_ptr = column_set.get();
+        ColumnPtr set_col = ColumnConst::create(std::move(column_set), 0);
+
+        const ActionsDAG::Node * in_rhs_arg = &dag->addColumn({set_col, std::make_shared<DataTypeSet>(), {}});
+
+        auto func_in = FunctionFactory::instance().get("in", context);
+        const ActionsDAG::Node * predicate = &dag->addFunction(func_in, {in_lhs_arg, in_rhs_arg}, {});
+
+        join_filters.clauses.emplace_back(column_set_ptr, right_keys);
+        right_keys_per_clause.emplace_back(std::move(right_keys));
+        predicates.emplace_back(predicate);
     }
 
-    if (left_columns.empty())
-        return;
-
-    // std::cerr << "optimizeFilterByJoinSetone some coluns\n";
-
-    const ActionsDAG::Node * in_lhs_arg = left_columns.front();
-    if (left_columns.size() > 1)
+    if (predicates.size() > 1)
     {
-        FunctionOverloadResolverPtr func_tuple_builder = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionTuple>());
-        in_lhs_arg = &dag->addFunction(func_tuple_builder, std::move(left_columns), {});
+        FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionOr>());
+        predicates = {&dag->addFunction(func_builder_and, std::move(predicates), {})};
     }
 
-    auto context = reading->getContext();
-    auto test_set = std::make_shared<FutureSetFromTuple>(Block(right_columns), context->getSettingsRef());
-    auto column_set = ColumnSet::create(1, std::move(test_set));
-    ColumnSet * column_set_ptr = column_set.get();
-    ColumnPtr set_col = ColumnConst::create(std::move(column_set), 0);
-
-    const ActionsDAG::Node * in_rhs_arg = &dag->addColumn({set_col, std::make_shared<DataTypeSet>(), {}});
-
-    auto func_in = FunctionFactory::instance().get("in", context);
-    const ActionsDAG::Node * predicate = &dag->addFunction(func_in, {in_lhs_arg, in_rhs_arg}, {});
-
-    dag->getOutputs() = {predicate};
+    dag->getOutputs() = std::move(predicates);
     dag->removeUnusedActions();
-
 
     // std::cerr << "optimizeFilterByJoinSetone dag " << dag->dumpDAG() << std::endl;
 
     auto metadata_snapshot = reading->getStorageMetadata();
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     const Names & primary_key_column_names = primary_key.column_names;
+    auto context = reading->getContext();
 
     KeyCondition key_condition(&*dag, context, primary_key_column_names, primary_key.expression);
 
@@ -232,9 +251,14 @@ void optimizeFilterByJoinSet(QueryPlan::Node & node)
     // std::cerr << "optimizeFilterByJoinSetone matched cond " << std::endl;
 
     auto dynamic_parts = reading->useDynamiclyFilteredParts();
-    join_step->setDynamicParts(dynamic_parts, std::move(*dag), column_set_ptr, context, metadata_snapshot);
 
-    hash_join->saveRightKeyColumnsForFilter();
+    join_filters.actions = std::move(*dag);
+    join_filters.parts = dynamic_parts;
+    join_filters.context = context;
+    join_filters.metadata = metadata_snapshot;
+
+    join_step->setDynamicFilter(std::make_shared<DynamicJoinFilters>(std::move(join_filters)));
+    hash_join->saveRightKeyColumnsForFilter(std::move(right_keys_per_clause));
 }
 
 }

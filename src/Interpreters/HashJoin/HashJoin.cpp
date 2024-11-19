@@ -535,6 +535,8 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
         right_key_columns_for_filter = prepareRightBlock(source_block, right_table_keys);
         if (shrink_blocks)
             right_key_columns_for_filter = right_key_columns_for_filter.shrinkToFit();
+
+        data->right_key_columns_for_filter.resize(table_join->getClauses().size());
     }
 
     size_t max_bytes_in_join = table_join->sizeLimits().max_bytes;
@@ -605,11 +607,16 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
 
             if (save_right_key_columns_for_filter)
             {
-                if (null_map)
-                    filterBlock(right_key_columns_for_filter, *null_map);
+                const auto & required_names = right_keys_for_fiter_per_clause[onexpr_idx];
 
-                if (onexpr_idx == 0 && right_key_columns_for_filter)
-                    data->right_key_columns_for_filter.emplace_back(right_key_columns_for_filter);
+                Block right_keys_for_clause;
+                for (const auto & name : required_names)
+                    right_keys_for_clause.insert(right_key_columns_for_filter.getByName(name));
+
+                if (null_map)
+                    filterBlock(right_keys_for_clause, *null_map);
+
+                data->right_key_columns_for_filter[onexpr_idx].emplace_back(right_keys_for_clause);
             }
 
             auto join_mask_col = JoinCommon::getColumnAsMask(source_block, onexprs[onexpr_idx].condColumnNames().second);
@@ -1503,6 +1510,17 @@ void HashJoin::tryRerangeRightTableData()
         [&](auto kind_, auto strictness_, auto & map_) { tryRerangeRightTableDataImpl<kind_, decltype(map_), strictness_>(map_); });
     chassert(result);
     data->sorted = true;
+}
+
+void HashJoin::saveRightKeyColumnsForFilter(std::vector<Names> keys_per_clause)
+{
+    if (keys_per_clause.size() != table_join->getClauses().size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Invalid number of clauses. Expected {}, got {}",
+            table_join->getClauses().size(), keys_per_clause.size());
+
+    save_right_key_columns_for_filter = true;
+    right_keys_for_fiter_per_clause = std::move(keys_per_clause);
 }
 
 }

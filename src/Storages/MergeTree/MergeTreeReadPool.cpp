@@ -74,6 +74,8 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(size_t task_idx, MergeTreeReadTa
 
         fillPerPartInfos(parts_ranges);
         fillPerThreadInfo(parts_ranges, pool_settings.threads, pool_settings.sum_marks);
+
+        LOG_TRACE(getLogger("MergeTreeReadPool"), "Init callback done");
     };
     std::call_once(init_flag, init);
 
