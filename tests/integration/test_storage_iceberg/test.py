@@ -678,7 +678,7 @@ def test_evolved_schema_simple(
 
     execute_spark_query(
         f"""
-            INSERT INTO {TABLE_NAME} VALUES (4, 3.0, 7.12, ARRAY(5, 6, 7));
+            INSERT INTO {TABLE_NAME} VALUES (4, NULL, 7.12, ARRAY(5, 6, 7));
         """
     )
 
@@ -691,12 +691,12 @@ def test_evolved_schema_simple(
             ["c", "Decimal(9, 2)"],
             ["d", "Array(Nullable(Int32))"],
         ],
-        [["4", "3", "7.12", "[5,6,7]"]],
+        [["4", "\\N", "7.12", "[5,6,7]"]],
     )
 
     execute_spark_query(
         f"""
-        ALTER TABLE {TABLE_NAME} ALTER COLUMN b TYPE double;
+            ALTER TABLE {TABLE_NAME} ALTER COLUMN b TYPE double;
         """
     )
 
@@ -709,13 +709,13 @@ def test_evolved_schema_simple(
             ["c", "Decimal(9, 2)"],
             ["d", "Array(Nullable(Int32))"],
         ],
-        [["4", "3", "7.12", "[5,6,7]"]],
+        [["4", "\\N", "7.12", "[5,6,7]"]],
     )
 
     execute_spark_query(
         f"""
-    INSERT INTO {TABLE_NAME} VALUES (7, 5.0, 18.1, ARRAY(6, 7, 9));
-    """
+            INSERT INTO {TABLE_NAME} VALUES (7, 5.0, 18.1, ARRAY(6, 7, 9));
+        """
     )
 
     check_schema_and_data(
@@ -727,13 +727,13 @@ def test_evolved_schema_simple(
             ["c", "Decimal(9, 2)"],
             ["d", "Array(Nullable(Int32))"],
         ],
-        [["4", "3", "7.12", "[5,6,7]"], ["7", "5", "18.1", "[6,7,9]"]],
+        [["4", "\\N", "7.12", "[5,6,7]"], ["7", "5", "18.1", "[6,7,9]"]],
     )
 
     execute_spark_query(
         f"""
-    ALTER TABLE {TABLE_NAME} ALTER COLUMN d FIRST;
-    """
+            ALTER TABLE {TABLE_NAME} ALTER COLUMN d FIRST;
+        """
     )
 
     check_schema_and_data(
@@ -745,13 +745,13 @@ def test_evolved_schema_simple(
             ["b", "Nullable(Float64)"],
             ["c", "Decimal(9, 2)"],
         ],
-        [["[5,6,7]", "4", "3", "7.12"], ["[6,7,9]", "7", "5", "18.1"]],
+        [["[5,6,7]", "4", "\\N", "7.12"], ["[6,7,9]", "7", "5", "18.1"]],
     )
 
     execute_spark_query(
         f"""
-    ALTER TABLE {TABLE_NAME} ALTER COLUMN b AFTER d;
-    """
+            ALTER TABLE {TABLE_NAME} ALTER COLUMN b AFTER d;
+        """
     )
 
     check_schema_and_data(
@@ -763,16 +763,16 @@ def test_evolved_schema_simple(
             ["a", "Int32"],
             ["c", "Decimal(9, 2)"],
         ],
-        [["[5,6,7]", "3", "4", "7.12"], ["[6,7,9]", "5", "7", "18.1"]],
+        [["[5,6,7]", "\\N", "4", "7.12"], ["[6,7,9]", "5", "7", "18.1"]],
     )
 
     execute_spark_query(
         f"""
-    ALTER TABLE {TABLE_NAME}
-    ADD COLUMNS (
-        e string
-    );
-    """
+            ALTER TABLE {TABLE_NAME}
+            ADD COLUMNS (
+                e string
+            );
+        """
     )
 
     check_schema_and_data(
@@ -786,15 +786,15 @@ def test_evolved_schema_simple(
             ["e", "Nullable(String)"],
         ],
         [
-            ["[5,6,7]", "3", "4", "7.12", "\\N"],
+            ["[5,6,7]", "\\N", "4", "7.12", "\\N"],
             ["[6,7,9]", "5", "7", "18.1", "\\N"],
         ],
     )
 
     execute_spark_query(
         f"""
-    ALTER TABLE {TABLE_NAME} ALTER COLUMN c TYPE decimal(12, 2);
-    """
+            ALTER TABLE {TABLE_NAME} ALTER COLUMN c TYPE decimal(12, 2);
+        """
     )
 
     check_schema_and_data(
@@ -808,15 +808,15 @@ def test_evolved_schema_simple(
             ["e", "Nullable(String)"],
         ],
         [
-            ["[5,6,7]", "3", "4", "7.12", "\\N"],
+            ["[5,6,7]", "\\N", "4", "7.12", "\\N"],
             ["[6,7,9]", "5", "7", "18.1", "\\N"],
         ],
     )
 
     execute_spark_query(
         f"""
-    INSERT INTO {TABLE_NAME} VALUES (ARRAY(5, 6, 7), 3, -30, 7.12, 'AAA');
-    """
+            INSERT INTO {TABLE_NAME} VALUES (ARRAY(5, 6, 7), 3, -30, 7.12, 'AAA');
+        """
     )
 
     check_schema_and_data(
@@ -831,15 +831,15 @@ def test_evolved_schema_simple(
         ],
         [
             ["[5,6,7]", "3", "-30", "7.12", "AAA"],
-            ["[5,6,7]", "3", "4", "7.12", "\\N"],
+            ["[5,6,7]", "\\N", "4", "7.12", "\\N"],
             ["[6,7,9]", "5", "7", "18.1", "\\N"],
         ],
     )
 
     execute_spark_query(
         f"""
-    ALTER TABLE {TABLE_NAME} ALTER COLUMN a TYPE BIGINT;
-    """
+            ALTER TABLE {TABLE_NAME} ALTER COLUMN a TYPE BIGINT;
+        """
     )
 
     check_schema_and_data(
@@ -854,15 +854,15 @@ def test_evolved_schema_simple(
         ],
         [
             ["[5,6,7]", "3", "-30", "7.12", "AAA"],
-            ["[5,6,7]", "3", "4", "7.12", "\\N"],
+            ["[5,6,7]", "\\N", "4", "7.12", "\\N"],
             ["[6,7,9]", "5", "7", "18.1", "\\N"],
         ],
     )
 
     execute_spark_query(
         f"""
-    INSERT INTO {TABLE_NAME} VALUES (ARRAY(), 3.0, 12, -9.13, 'BBB');
-    """
+            INSERT INTO {TABLE_NAME} VALUES (ARRAY(), 3.0, 12, -9.13, 'BBB');
+        """
     )
 
     check_schema_and_data(
@@ -878,15 +878,15 @@ def test_evolved_schema_simple(
         [
             ["[]", "3", "12", "-9.13", "BBB"],
             ["[5,6,7]", "3", "-30", "7.12", "AAA"],
-            ["[5,6,7]", "3", "4", "7.12", "\\N"],
+            ["[5,6,7]", "\\N", "4", "7.12", "\\N"],
             ["[6,7,9]", "5", "7", "18.1", "\\N"],
         ],
     )
 
     execute_spark_query(
         f"""
-    ALTER TABLE {TABLE_NAME} ALTER COLUMN a DROP NOT NULL;;
-    """
+            ALTER TABLE {TABLE_NAME} ALTER COLUMN a DROP NOT NULL;
+        """
     )
 
     check_schema_and_data(
@@ -902,15 +902,15 @@ def test_evolved_schema_simple(
         [
             ["[]", "3", "12", "-9.13", "BBB"],
             ["[5,6,7]", "3", "-30", "7.12", "AAA"],
-            ["[5,6,7]", "3", "4", "7.12", "\\N"],
+            ["[5,6,7]", "\\N", "4", "7.12", "\\N"],
             ["[6,7,9]", "5", "7", "18.1", "\\N"],
         ],
     )
 
     execute_spark_query(
         f"""
-    INSERT INTO {TABLE_NAME} VALUES (NULL, 3.4, NULL, -9.13, NULL);
-    """
+            INSERT INTO {TABLE_NAME} VALUES (NULL, 3.4, NULL, -9.13, NULL);
+        """
     )
 
     check_schema_and_data(
@@ -927,15 +927,15 @@ def test_evolved_schema_simple(
             ["[]", "3", "12", "-9.13", "BBB"],
             ["[]", "3.4", "\\N", "-9.13", "\\N"],
             ["[5,6,7]", "3", "-30", "7.12", "AAA"],
-            ["[5,6,7]", "3", "4", "7.12", "\\N"],
+            ["[5,6,7]", "\\N", "4", "7.12", "\\N"],
             ["[6,7,9]", "5", "7", "18.1", "\\N"],
         ],
     )
 
     execute_spark_query(
         f"""
-    ALTER TABLE {TABLE_NAME} DROP COLUMN d;
-    """
+            ALTER TABLE {TABLE_NAME} DROP COLUMN d;
+        """
     )
 
     check_schema_and_data(
@@ -949,10 +949,34 @@ def test_evolved_schema_simple(
         ],
         [
             ["3", "-30", "7.12", "AAA"],
-            ["3", "4", "7.12", "\\N"],
             ["3", "12", "-9.13", "BBB"],
             ["3.4", "\\N", "-9.13", "\\N"],
             ["5", "7", "18.1", "\\N"],
+            ["\\N", "4", "7.12", "\\N"],
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} RENAME COLUMN a TO f;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ["b", "Nullable(Float64)"],
+            ["f", "Nullable(Int64)"],
+            ["c", "Decimal(12, 2)"],
+            ["e", "Nullable(String)"],
+        ],
+        [
+            ["3", "-30", "7.12", "AAA"],
+            ["3", "12", "-9.13", "BBB"],
+            ["3.4", "\\N", "-9.13", "\\N"],
+            ["5", "7", "18.1", "\\N"],
+            ["\\N", "4", "7.12", "\\N"],
         ],
     )
 
@@ -1044,7 +1068,7 @@ def test_not_evolved_schema(started_cluster, format_version, storage_type):
 
     execute_spark_query(
         f"""
-        ALTER TABLE {TABLE_NAME} ALTER COLUMN b TYPE double;
+            ALTER TABLE {TABLE_NAME} ALTER COLUMN b TYPE double;
         """
     )
 
@@ -1062,8 +1086,8 @@ def test_not_evolved_schema(started_cluster, format_version, storage_type):
 
     execute_spark_query(
         f"""
-    INSERT INTO {TABLE_NAME} VALUES (7, 5.0, 18.1, ARRAY(6, 7, 9));
-    """
+            INSERT INTO {TABLE_NAME} VALUES (7, 5.0, 18.1, ARRAY(6, 7, 9));
+        """
     )
 
     check_schema_and_data(
@@ -1080,8 +1104,8 @@ def test_not_evolved_schema(started_cluster, format_version, storage_type):
 
     execute_spark_query(
         f"""
-    ALTER TABLE {TABLE_NAME} ALTER COLUMN d FIRST;
-    """
+            ALTER TABLE {TABLE_NAME} ALTER COLUMN d FIRST;
+        """
     )
 
     check_schema_and_data(
@@ -1098,8 +1122,8 @@ def test_not_evolved_schema(started_cluster, format_version, storage_type):
 
     execute_spark_query(
         f"""
-    ALTER TABLE {TABLE_NAME} ALTER COLUMN b AFTER d;
-    """
+            ALTER TABLE {TABLE_NAME} ALTER COLUMN b AFTER d;
+        """
     )
 
     check_schema_and_data(
@@ -1116,11 +1140,11 @@ def test_not_evolved_schema(started_cluster, format_version, storage_type):
 
     execute_spark_query(
         f"""
-    ALTER TABLE {TABLE_NAME}
-    ADD COLUMNS (
-        e string
-    );
-    """
+            ALTER TABLE {TABLE_NAME}
+            ADD COLUMNS (
+                e string
+            );
+        """
     )
 
     check_schema_and_data(
@@ -1137,8 +1161,8 @@ def test_not_evolved_schema(started_cluster, format_version, storage_type):
 
     execute_spark_query(
         f"""
-    ALTER TABLE {TABLE_NAME} ALTER COLUMN c TYPE decimal(12, 2);
-    """
+            ALTER TABLE {TABLE_NAME} ALTER COLUMN c TYPE decimal(12, 2);
+        """
     )
 
     check_schema_and_data(
@@ -1155,8 +1179,8 @@ def test_not_evolved_schema(started_cluster, format_version, storage_type):
 
     execute_spark_query(
         f"""
-    INSERT INTO {TABLE_NAME} VALUES (ARRAY(5, 6, 7), 3, -30, 7.12, 'AAA');
-    """
+            INSERT INTO {TABLE_NAME} VALUES (ARRAY(5, 6, 7), 3, -30, 7.12, 'AAA');
+        """
     )
 
     check_schema_and_data(
@@ -1177,8 +1201,8 @@ def test_not_evolved_schema(started_cluster, format_version, storage_type):
 
     execute_spark_query(
         f"""
-    ALTER TABLE {TABLE_NAME} ALTER COLUMN a TYPE BIGINT;
-    """
+            ALTER TABLE {TABLE_NAME} ALTER COLUMN a TYPE BIGINT;
+        """
     )
 
     check_schema_and_data(
@@ -1199,31 +1223,8 @@ def test_not_evolved_schema(started_cluster, format_version, storage_type):
 
     execute_spark_query(
         f"""
-    INSERT INTO {TABLE_NAME} VALUES (ARRAY(), 3.0, 12, -9.13, 'BBB');
-    """
-    )
-
-    check_schema_and_data(
-        instance,
-        TABLE_NAME,
-        [
-            ["a", "Int32"],
-            ["b", "Nullable(Float32)"],
-            ["c", "Decimal(9, 2)"],
-            ["d", "Array(Nullable(Int32))"],
-        ],
-        [
-            ["-30", "3", "7.12", "[5,6,7]"],
-            ["4", "3", "7.12", "[5,6,7]"],
-            ["7", "5", "18.1", "[6,7,9]"],
-            ["12", "3", "-9.13", "[]"],
-        ],
-    )
-
-    execute_spark_query(
-        f"""
-    ALTER TABLE {TABLE_NAME} ALTER COLUMN a DROP NOT NULL;
-    """
+            INSERT INTO {TABLE_NAME} VALUES (ARRAY(), 3.0, 12, -9.13, 'BBB');
+        """
     )
 
     check_schema_and_data(
@@ -1245,8 +1246,31 @@ def test_not_evolved_schema(started_cluster, format_version, storage_type):
 
     execute_spark_query(
         f"""
-    INSERT INTO {TABLE_NAME} VALUES (NULL, 3.4, NULL, -9.13, NULL);
-    """
+            ALTER TABLE {TABLE_NAME} ALTER COLUMN a DROP NOT NULL;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        TABLE_NAME,
+        [
+            ["a", "Int32"],
+            ["b", "Nullable(Float32)"],
+            ["c", "Decimal(9, 2)"],
+            ["d", "Array(Nullable(Int32))"],
+        ],
+        [
+            ["-30", "3", "7.12", "[5,6,7]"],
+            ["4", "3", "7.12", "[5,6,7]"],
+            ["7", "5", "18.1", "[6,7,9]"],
+            ["12", "3", "-9.13", "[]"],
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            INSERT INTO {TABLE_NAME} VALUES (NULL, 3.4, NULL, -9.13, NULL);
+        """
     )
 
     check_schema_and_data(
@@ -1269,8 +1293,8 @@ def test_not_evolved_schema(started_cluster, format_version, storage_type):
 
     execute_spark_query(
         f"""
-    ALTER TABLE {TABLE_NAME} DROP COLUMN d;
-    """
+            ALTER TABLE {TABLE_NAME} DROP COLUMN d;
+        """
     )
 
     error = instance.query_and_get_error(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL")

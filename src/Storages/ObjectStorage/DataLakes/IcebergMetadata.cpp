@@ -331,7 +331,7 @@ IcebergSchemaProcessor::getSchemaTransformationDag(const Poco::JSON::Object::Ptr
                 }
                 else if (allowPrimitiveTypeConversion(old_type, new_type))
                 {
-                    node = &dag->addCast(*old_node, getSimpleType(new_type), name);
+                    node = &dag->addCast(*old_node, getFieldType(field, "type", required), name);
                 }
                 outputs.push_back(node);
             }
