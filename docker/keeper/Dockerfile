@@ -31,8 +31,8 @@ COPY entrypoint.sh /entrypoint.sh
 ARG TARGETARCH
 RUN arch=${TARGETARCH:-amd64} \
     && case $arch in \
-        amd64) mkdir -p /lib64 && ln -sf /lib/ld-2.31.so /lib64/ld-linux-x86-64.so.2 ;; \
-        arm64) ln -sf /lib/ld-2.31.so /lib/ld-linux-aarch64.so.1 ;; \
+        amd64) mkdir -p /lib64 && ln -sf /lib/ld-2.35.so /lib64/ld-linux-x86-64.so.2 ;; \
+        arm64) ln -sf /lib/ld-2.35.so /lib/ld-linux-aarch64.so.1 ;; \
     esac
 
 # lts / testing / prestable / etc
