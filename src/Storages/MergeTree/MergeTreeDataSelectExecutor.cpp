@@ -80,6 +80,7 @@ namespace Setting
     extern const SettingsUInt64 parallel_replica_offset;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
+    extern const SettingsBool parallel_replicas_local_plan;
 }
 
 namespace MergeTreeSetting
@@ -631,10 +632,26 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     bool use_skip_indexes,
     bool find_exact_ranges)
 {
-    RangesInDataParts parts_with_ranges;
-    parts_with_ranges.resize(parts.size());
     const Settings & settings = context->getSettingsRef();
 
+    if (context->canUseParallelReplicasOnFollower() && settings[Setting::parallel_replicas_local_plan])
+    {
+        RangesInDataParts parts_with_ranges;
+        parts_with_ranges.reserve(parts.size());
+        for (size_t part_index = 0; part_index < parts.size(); ++part_index)
+        {
+            const auto & part = parts[part_index];
+            // LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "part {}", part->getNameWithState());
+
+            MarkRanges ranges;
+            ranges.emplace_back(0, part->getMarksCount());
+            parts_with_ranges.emplace_back(part, part_index, std::move(ranges));
+        }
+        return parts_with_ranges;
+    }
+
+    RangesInDataParts parts_with_ranges;
+    parts_with_ranges.resize(parts.size());
     if (use_skip_indexes && settings[Setting::force_data_skipping_indices].changed)
     {
         const auto & indices_str = settings[Setting::force_data_skipping_indices].toString();
