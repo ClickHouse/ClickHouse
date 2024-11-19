@@ -1225,28 +1225,31 @@ def test_format_detection(started_cluster):
     node.query(
         f"create table test_format_detection engine=HDFS('hdfs://hdfs1:9000/{dir}/test_format_detection1')"
     )
-    result = node.query(
-        f"show create table test_format_detection"
+    result = node.query(f"show create table test_format_detection")
+    assert (
+        result
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = HDFS(\\'hdfs://hdfs1:9000/{dir}/test_format_detection1\\', \\'JSON\\')\n"
     )
-    assert result == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = HDFS(\\'hdfs://hdfs1:9000/{dir}/test_format_detection1\\', \\'JSON\\')\n"
 
     node.query("drop table test_format_detection")
     node.query(
         f"create table test_format_detection engine=HDFS('hdfs://hdfs1:9000/{dir}/test_format_detection1', auto)"
     )
-    result = node.query(
-        f"show create table test_format_detection"
+    result = node.query(f"show create table test_format_detection")
+    assert (
+        result
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = HDFS(\\'hdfs://hdfs1:9000/{dir}/test_format_detection1\\', \\'JSON\\')\n"
     )
-    assert result == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = HDFS(\\'hdfs://hdfs1:9000/{dir}/test_format_detection1\\', \\'JSON\\')\n"
 
     node.query("drop table test_format_detection")
     node.query(
         f"create table test_format_detection engine=HDFS('hdfs://hdfs1:9000/{dir}/test_format_detection1', auto, 'none')"
     )
-    result = node.query(
-        f"show create table test_format_detection"
+    result = node.query(f"show create table test_format_detection")
+    assert (
+        result
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = HDFS(\\'hdfs://hdfs1:9000/{dir}/test_format_detection1\\', \\'JSON\\', \\'none\\')\n"
     )
-    assert result == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = HDFS(\\'hdfs://hdfs1:9000/{dir}/test_format_detection1\\', \\'JSON\\', \\'none\\')\n"
 
 
 def test_write_to_globbed_partitioned_path(started_cluster):
