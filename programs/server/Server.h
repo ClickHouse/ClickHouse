@@ -34,6 +34,9 @@ class ProtocolServerAdapter;
 class Server : public BaseDaemon, public IServer
 {
 public:
+
+    Server();
+
     using ServerApplication::run;
 
     Poco::Util::LayeredConfiguration & config() const override
