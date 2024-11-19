@@ -86,7 +86,8 @@ RUN arch=${TARGETARCH:-amd64} \
 ARG DEFAULT_CONFIG_DIR="/etc/clickhouse-keeper"
 ARG DEFAULT_DATA_DIR="/var/lib/clickhouse-keeper"
 ARG DEFAULT_LOG_DIR="/var/log/clickhouse-keeper"
-RUN mkdir -p "${DEFAULT_DATA_DIR}" "${DEFAULT_LOG_DIR}" "${DEFAULT_CONFIG_DIR}" \
+RUN clickhouse-keeper --version \
+    && mkdir -p "${DEFAULT_DATA_DIR}" "${DEFAULT_LOG_DIR}" "${DEFAULT_CONFIG_DIR}" \
     && chown clickhouse:clickhouse "${DEFAULT_DATA_DIR}" \
     && chown root:clickhouse "${DEFAULT_LOG_DIR}" \
     && chmod ugo+Xrw -R "${DEFAULT_DATA_DIR}" "${DEFAULT_LOG_DIR}" "${DEFAULT_CONFIG_DIR}"
