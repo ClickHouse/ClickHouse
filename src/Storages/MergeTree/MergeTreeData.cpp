@@ -231,12 +231,15 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString storage_policy;
     extern const MergeTreeSettingsFloat zero_copy_concurrent_part_removal_max_postpone_ratio;
     extern const MergeTreeSettingsUInt64 zero_copy_concurrent_part_removal_max_split_times;
+    extern const MergeTreeSettingsBool use_primary_index_cache;
+    extern const MergeTreeSettingsBool prewarm_primary_index_cache;
     extern const MergeTreeSettingsBool prewarm_mark_cache;
 }
 
 namespace ServerSetting
 {
     extern const ServerSettingsDouble mark_cache_prewarm_ratio;
+    extern const ServerSettingsDouble primary_index_cache_prewarm_ratio;
 }
 
 namespace ErrorCodes
@@ -2343,32 +2346,49 @@ void MergeTreeData::stopOutdatedAndUnexpectedDataPartsLoadingTask()
     }
 }
 
-void MergeTreeData::prewarmMarkCacheIfNeeded(ThreadPool & pool)
+PrimaryIndexCachePtr MergeTreeData::getPrimaryIndexCache() const
 {
-    if (!(*getSettings())[MergeTreeSetting::prewarm_mark_cache])
-        return;
+    if (!(*getSettings())[MergeTreeSetting::use_primary_index_cache])
+        return nullptr;
 
-    prewarmMarkCache(pool);
+    return getContext()->getPrimaryIndexCache();
 }
 
-void MergeTreeData::prewarmMarkCache(ThreadPool & pool)
+PrimaryIndexCachePtr MergeTreeData::getPrimaryIndexCacheToPrewarm() const
 {
-    auto * mark_cache = getContext()->getMarkCache().get();
-    if (!mark_cache)
+    if (!(*getSettings())[MergeTreeSetting::prewarm_primary_index_cache])
+        return nullptr;
+
+    return getPrimaryIndexCache();
+}
+
+MarkCachePtr MergeTreeData::getMarkCacheToPrewarm() const
+{
+    if (!(*getSettings())[MergeTreeSetting::prewarm_mark_cache])
+        return nullptr;
+
+    return getContext()->getMarkCache();
+}
+
+void MergeTreeData::prewarmCaches(ThreadPool & pool, MarkCachePtr mark_cache, PrimaryIndexCachePtr index_cache)
+{
+    if (!mark_cache && !index_cache)
         return;
 
-    auto metadata_snaphost = getInMemoryMetadataPtr();
-    auto column_names = getColumnsToPrewarmMarks(*getSettings(), metadata_snaphost->getColumns().getAllPhysical());
+    Names columns_to_prewarm_marks;
 
-    if (column_names.empty())
-        return;
+    if (mark_cache)
+    {
+        auto metadata_snaphost = getInMemoryMetadataPtr();
+        columns_to_prewarm_marks = getColumnsToPrewarmMarks(*getSettings(), metadata_snaphost->getColumns().getAllPhysical());
+    }
 
     Stopwatch watch;
-    LOG_TRACE(log, "Prewarming mark cache");
+    LOG_TRACE(log, "Prewarming mark and/or primary index caches");
 
     auto data_parts = getDataPartsVectorForInternalUsage();
 
-    /// Prewarm mark cache firstly for the most fresh parts according
+    /// Prewarm caches firstly for the most fresh parts according
     /// to time columns in partition key (if exists) and by modification time.
 
     auto to_tuple = [](const auto & part)
@@ -2381,20 +2401,22 @@ void MergeTreeData::prewarmMarkCache(ThreadPool & pool)
         return to_tuple(lhs) > to_tuple(rhs);
     });
 
-    ThreadPoolCallbackRunnerLocal<void> runner(pool, "PrewarmMarks");
-    double ratio_to_prewarm = getContext()->getServerSettings()[ServerSetting::mark_cache_prewarm_ratio];
+    ThreadPoolCallbackRunnerLocal<void> runner(pool, "PrewarmCaches");
+
+    double marks_ratio_to_prewarm = getContext()->getServerSettings()[ServerSetting::mark_cache_prewarm_ratio];
+    double index_ratio_to_prewarm = getContext()->getServerSettings()[ServerSetting::primary_index_cache_prewarm_ratio];
 
     for (const auto & part : data_parts)
     {
-        if (mark_cache->sizeInBytes() >= mark_cache->maxSizeInBytes() * ratio_to_prewarm)
-            break;
+        if (index_cache && index_cache->sizeInBytes() < index_cache->maxSizeInBytes() * index_ratio_to_prewarm)
+            runner([&] { part->loadIndexToCache(*index_cache); });
 
-        runner([&] { part->loadMarksToCache(column_names, mark_cache); });
+        if (mark_cache && mark_cache->sizeInBytes() < mark_cache->maxSizeInBytes() * marks_ratio_to_prewarm)
+            runner([&] { part->loadMarksToCache(columns_to_prewarm_marks, mark_cache.get()); });
     }
 
     runner.waitForAllToFinishAndRethrowFirstError();
-    watch.stop();
-    LOG_TRACE(log, "Prewarmed mark cache in {} seconds", watch.elapsedSeconds());
+    LOG_TRACE(log, "Prewarmed mark and/or primary index caches in {} seconds", watch.elapsedSeconds());
 }
 
 /// Is the part directory old.

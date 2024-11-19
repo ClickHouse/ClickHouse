@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
@@ -15,6 +16,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool use_primary_index_cache;
+}
 
 MergedBlockOutputStream::MergedBlockOutputStream(
     const MergeTreeMutableDataPartPtr & data_part,
@@ -25,7 +30,6 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     CompressionCodecPtr default_codec_,
     TransactionID tid,
     bool reset_columns_,
-    bool save_marks_in_cache,
     bool blocks_are_granules_size,
     const WriteSettings & write_settings_,
     const MergeTreeIndexGranularity & computed_index_granularity)
@@ -34,6 +38,9 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     , default_codec(default_codec_)
     , write_settings(write_settings_)
 {
+    bool save_marks_in_cache = data_part->storage.getMarkCacheToPrewarm() != nullptr;
+    bool save_primary_index_in_memory = !data_part->storage.getPrimaryIndexCache() || data_part->storage.getPrimaryIndexCacheToPrewarm();
+
     MergeTreeWriterSettings writer_settings(
         data_part->storage.getContext()->getSettingsRef(),
         write_settings,
@@ -41,6 +48,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         data_part->index_granularity_info.mark_type.adaptive,
         /* rewrite_primary_key = */ true,
         save_marks_in_cache,
+        save_primary_index_in_memory,
         blocks_are_granules_size);
 
     /// TODO: looks like isStoredOnDisk() is always true for MergeTreeDataPart
@@ -202,7 +210,10 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
 
     new_part->rows_count = rows_count;
     new_part->modification_time = time(nullptr);
-    new_part->setIndex(writer->releaseIndexColumns());
+
+    if (auto computed_index = writer->releaseIndexColumns())
+        new_part->setIndex(std::move(*computed_index));
+
     new_part->checksums = checksums;
     new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
     new_part->setBytesUncompressedOnDisk(checksums.getTotalSizeUncompressedOnDisk());

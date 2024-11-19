@@ -466,6 +466,28 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk & chunk)
     ++num_blocks_processed;
 }
 
+template<bool async_insert>
+void ReplicatedMergeTreeSinkImpl<async_insert>::prewarmCaches(const MergeTreeDataWriter::TemporaryPart & temp_part) const
+{
+    const auto & part = temp_part.part;
+
+    if (auto mark_cache = storage.getMarkCacheToPrewarm())
+    {
+        for (const auto & stream : temp_part.streams)
+        {
+            auto marks = stream.stream->releaseCachedMarks();
+            addMarksToCache(*part, marks, mark_cache.get());
+        }
+    }
+
+    if (auto index_cache = storage.getPrimaryIndexCacheToPrewarm())
+    {
+        /// Move index to cache and reset it here because we need
+        /// a correct part name after rename for a key of cache entry.
+        part->moveIndexToCache(*index_cache);
+    }
+}
+
 template<>
 void ReplicatedMergeTreeSinkImpl<false>::finishDelayedChunk(const ZooKeeperWithFaultInjectionPtr & zookeeper)
 {
@@ -486,16 +508,9 @@ void ReplicatedMergeTreeSinkImpl<false>::finishDelayedChunk(const ZooKeeperWithF
 
             /// Set a special error code if the block is duplicate
             int error = (deduplicate && deduplicated) ? ErrorCodes::INSERT_WAS_DEDUPLICATED : 0;
-            auto * mark_cache = storage.getContext()->getMarkCache().get();
 
-            if (!error && mark_cache)
-            {
-                for (const auto & stream : partition.temp_part.streams)
-                {
-                    auto marks = stream.stream->releaseCachedMarks();
-                    addMarksToCache(*part, marks, mark_cache);
-                }
-            }
+            if (!error)
+                prewarmCaches(partition.temp_part);
 
             auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
             PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot), ExecutionStatus(error));
@@ -540,14 +555,7 @@ void ReplicatedMergeTreeSinkImpl<true>::finishDelayedChunk(const ZooKeeperWithFa
 
             if (conflict_block_ids.empty())
             {
-                if (auto * mark_cache = storage.getContext()->getMarkCache().get())
-                {
-                    for (const auto & stream : partition.temp_part.streams)
-                    {
-                        auto marks = stream.stream->releaseCachedMarks();
-                        addMarksToCache(*partition.temp_part.part, marks, mark_cache);
-                    }
-                }
+                prewarmCaches(partition.temp_part);
 
                 auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
                 PartLog::addNewPart(

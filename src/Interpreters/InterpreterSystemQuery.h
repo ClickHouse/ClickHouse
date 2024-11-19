@@ -6,6 +6,8 @@
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Common/ActionLock.h>
+#include "Storages/MarkCache.h"
+#include "Storages/MergeTree/PrimaryIndexCache.h"
 #include <Disks/IVolume.h>
 
 
@@ -82,7 +84,7 @@ private:
 
     AccessRightsElements getRequiredAccessForDDLOnCluster() const;
     void startStopAction(StorageActionBlockType action_type, bool start);
-    void prewarmMarkCache();
+    void prewarmCaches(MarkCachePtr mark_cache, PrimaryIndexCachePtr index_cache);
 
     void stopReplicatedDDLQueries();
     void startReplicatedDDLQueries();

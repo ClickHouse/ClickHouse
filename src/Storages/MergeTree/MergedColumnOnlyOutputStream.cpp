@@ -1,14 +1,21 @@
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteSettings.h>
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool use_primary_index_cache;
 }
 
 MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
@@ -19,20 +26,21 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     const MergeTreeIndices & indices_to_recalc,
     const ColumnsStatistics & stats_to_recalc_,
     WrittenOffsetColumns * offset_columns_,
-    bool save_marks_in_cache,
     const MergeTreeIndexGranularity & index_granularity,
     const MergeTreeIndexGranularityInfo * index_granularity_info)
     : IMergedBlockOutputStream(data_part->storage.getSettings(), data_part->getDataPartStoragePtr(), metadata_snapshot_, columns_list_, /*reset_columns=*/ true)
 {
-    const auto & global_settings = data_part->storage.getContext()->getSettingsRef();
+    bool save_marks_in_cache = data_part->storage.getMarkCacheToPrewarm() != nullptr;
+    bool save_primary_index_in_memory = !data_part->storage.getPrimaryIndexCache() || data_part->storage.getPrimaryIndexCacheToPrewarm();
 
     MergeTreeWriterSettings writer_settings(
-        global_settings,
+        data_part->storage.getContext()->getSettingsRef(),
         data_part->storage.getContext()->getWriteSettings(),
         storage_settings,
         index_granularity_info ? index_granularity_info->mark_type.adaptive : data_part->storage.canUseAdaptiveGranularity(),
         /* rewrite_primary_key = */ false,
         save_marks_in_cache,
+        save_primary_index_in_memory,
         /* blocks_are_granules_size = */ false);
 
     writer = createMergeTreeDataPartWriter(
