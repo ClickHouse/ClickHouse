@@ -187,7 +187,12 @@ void AuthenticationData::setPasswordHashHex(const String & hash, bool validate)
 
 String AuthenticationData::getPasswordHashHex() const
 {
-    if (type == AuthenticationType::LDAP || type == AuthenticationType::KERBEROS || type == AuthenticationType::SSL_CERTIFICATE)
+    if (
+        type == AuthenticationType::LDAP
+        || type == AuthenticationType::KERBEROS
+        || type == AuthenticationType::SSL_CERTIFICATE
+        || type == AuthenticationType::SSH_KEY
+    )
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get password hex hash for authentication type {}", toString(type));
 
     String hex;
