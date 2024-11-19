@@ -141,29 +141,27 @@ endforeach ()
 
 include(ExternalProject)
 
+# -- The build needs protobuf files. The original build scripts download them from a remote server (see target 'googleapis_download').
+#    This is too unreliable in the context of ClickHouse ... we instead ship the downloaded archive with the ClickHouse source and
+#    extract it into the build directory directly.
+
+# Dummy googleapis_download target
 externalproject_add(
     googleapis_download
     EXCLUDE_FROM_ALL ON
     PREFIX "${EXTERNAL_GOOGLEAPIS_PREFIX}"
-    URL ${GOOGLE_CLOUD_CPP_GOOGLEAPIS_URL}
-    URL_HASH SHA256=${GOOGLE_CLOUD_CPP_GOOGLEAPIS_URL_HASH}
-    PATCH_COMMAND
-        ""
-        # ~~~
-        # Scaffolding for patching googleapis after download. For example:
-        #   PATCH_COMMAND
-        #       patch
-        #       -p1
-        #       --input=/workspace/external/googleapis.patch
-        # NOTE: This should only be used while developing with a new
-        # protobuf message. No changes to `PATCH_COMMAND` should ever be
-        # committed to the main branch.
-        # ~~~
+    PATCH_COMMAND ""
+    DOWNLOAD_COMMAND ""
     CONFIGURE_COMMAND ""
     BUILD_COMMAND ""
     INSTALL_COMMAND ""
     BUILD_BYPRODUCTS ${EXTERNAL_GOOGLEAPIS_BYPRODUCTS}
     LOG_DOWNLOAD OFF)
+
+# Command that extracts the tarball into the proper dir
+execute_process(
+    COMMAND ${CMAKE_COMMAND} -D "GOOGLE_CLOUD_CPP_CMAKE_DIR=${ClickHouse_SOURCE_DIR}/contrib/google-cloud-cpp-cmake" -D "EXTERNAL_GOOGLEAPIS_SOURCE=${EXTERNAL_GOOGLEAPIS_SOURCE}" -P "${CMAKE_CURRENT_SOURCE_DIR}/GoogleApisDownload.cmake"
+)
 
 google_cloud_cpp_find_proto_include_dir(PROTO_INCLUDE_DIR)
 

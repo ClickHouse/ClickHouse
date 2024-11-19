@@ -1,8 +1,8 @@
 set(ENABLE_GOOGLE_CLOUD_CPP_DEFAULT OFF)
 
-if(ENABLE_LIBRARIES AND CLICKHOUSE_CLOUD AND OS_LINUX)
+# if(ENABLE_LIBRARIES AND CLICKHOUSE_CLOUD AND OS_LINUX) # TODO: uncomment before merging
     set(ENABLE_GOOGLE_CLOUD_CPP_DEFAULT ON)
-endif()
+# endif()
 
 option(ENABLE_GOOGLE_CLOUD_CPP "Enable Google Cloud Cpp" ${ENABLE_GOOGLE_CLOUD_CPP_DEFAULT})
 
@@ -33,33 +33,6 @@ set(PROJECT_SOURCE_DIR_BAK ${PROJECT_SOURCE_DIR})
 set(PROJECT_SOURCE_DIR ${GOOGLE_CLOUD_CPP_DIR})
 
 list(APPEND CMAKE_MODULE_PATH "${GOOGLE_CLOUD_CPP_DIR}/cmake")
-
-# -- The build needs protobuf files. The original build scripts download them from a remote server (see target 'googleapis_download').
-#    This is too unreliable in the context of ClickHouse ... we instead ship the downloaded archive with the ClickHouse source and
-#    extract it into the build directory directly.
-
-# Note: The hash must match the Google Cloud Api version, otherwise funny things will happen.
-# Find the right hash in "strip-prefix" in MODULE.bazel in the subrepository
-set(PB_HASH "e60db19f11f94175ac682c5898cce0f77cc508ea")
-set(PB_ARCHIVE "${PB_HASH}.tar.gz")
-set(PB_DIR "googleapis-${PB_HASH}")
-
-# Terrible CMake below but it works.
-file(COPY "${ClickHouse_SOURCE_DIR}/contrib/google-cloud-cpp-cmake/${PB_ARCHIVE}"
-    DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/../../external/googleapis/src/"
-)
-
-file(ARCHIVE_EXTRACT INPUT
-    "${CMAKE_CURRENT_BINARY_DIR}/../../external/googleapis/src/${PB_ARCHIVE}"
-    DESTINATION
-    "${CMAKE_CURRENT_BINARY_DIR}/../../external/googleapis/src")
-
-file(REMOVE_RECURSE "${CMAKE_CURRENT_BINARY_DIR}/../../external/googleapis/src/googleapis_download")
-file(RENAME
-    "${CMAKE_CURRENT_BINARY_DIR}/../../external/googleapis/src/${PB_DIR}"
-    "${CMAKE_CURRENT_BINARY_DIR}/../../external/googleapis/src/googleapis_download"
-)
-# ---
 
 # Building this target results in all protobufs being compiled.
 add_custom_target(google-cloud-cpp-protos)
