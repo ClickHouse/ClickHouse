@@ -79,7 +79,7 @@ bool ExecutionThreadContext::executeTask()
 
     if (trace_processors)
     {
-        span = std::make_unique<OpenTelemetry::SpanHolder>(node->processor->getName());
+        span = std::make_unique<OpenTelemetry::SpanHolder>(node->processor->getUniqID());
         span->addAttribute("thread_number", thread_number);
     }
     std::optional<Stopwatch> execution_time_watch;
