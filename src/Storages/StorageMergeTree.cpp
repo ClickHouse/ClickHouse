@@ -383,12 +383,8 @@ void StorageMergeTree::alter(
     if (new_metadata.getSettingsChanges())
     {
         const auto current_changes = new_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes;
-        if (std::find_if(
-                current_changes.begin(),
-                current_changes.end(),
-                [](const auto & change) {
-                    return change.name == "enable_minmax_index_for_all_numeric_columns";
-                }) != current_changes.end())
+        auto find_setting = std::find_if(current_changes.begin(), current_changes.end(), [](const auto & change){ return change.name == "enable_minmax_index_for_all_numeric_columns"; });
+        if (find_setting != current_changes.end())
             indices_changed = true;
     }
 
