@@ -1,5 +1,6 @@
 #pragma once
 #include <Processors/Formats/Impl/Parquet/SelectiveColumnReader.h>
+#include <Processors/Formats/Impl/Parquet/ParquetColumnReaderFactory.h>
 #include <Common/threadPoolCallbackRunner.h>
 
 namespace DB
@@ -125,5 +126,6 @@ private:
     ReadMetrics metrics;
     std::unique_ptr<SelectConditions> selectConditions;
     RowGroupContext context;
+    std::unique_ptr<ColumnReaderBuilder> builder;
 };
 }

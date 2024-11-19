@@ -5,6 +5,8 @@
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeMap.h>
 #include <Processors/Formats/Impl/Parquet/SelectiveColumnReader.h>
 #include <Processors/Formats/Impl/Parquet/RowGroupChunkReader.h>
 #include <Processors/Formats/Impl/Parquet/ParquetReader.h>
@@ -440,7 +442,16 @@ bool isListElement(parquet::schema::Node & node)
         node.name().ends_with("_tuple");
 }
 
-SelectiveColumnReaderPtr createColumnReaderRecursive(const RowGroupContext& context, parquet::schema::NodePtr node, int def_level, int rep_level, bool condition_column, const ColumnFilterPtr & filter, const DataTypePtr & target_type)
+std::shared_ptr<parquet::schema::GroupNode> checkAndGetGroupNode(parquet::schema::NodePtr node)
+{
+    if (!node)
+        return nullptr;
+    if (!node->is_group())
+        throw Exception(ErrorCodes::PARQUET_EXCEPTION, "need group node");
+    return std::static_pointer_cast<parquet::schema::GroupNode>(node);
+}
+
+SelectiveColumnReaderPtr ColumnReaderBuilder::buildReader(parquet::schema::NodePtr node, const DataTypePtr & target_type, int def_level, int rep_level)
 {
     if (node->repetition() == parquet::Repetition::UNDEFINED)
         throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Undefined repetition level");
@@ -450,9 +461,10 @@ SelectiveColumnReaderPtr createColumnReaderRecursive(const RowGroupContext& cont
         rep_level++;
     if (node->is_primitive())
     {
+        auto full_name = node->path()->ToDotString();
         int column_idx = context.parquet_reader->metaData().schema()->ColumnIndex(*node);
         RowGroupPrefetchPtr row_group_prefetch;
-        if (condition_column)
+        if (predicate_columns.contains(full_name))
             row_group_prefetch = context.prefetch_conditions;
         else
             row_group_prefetch = context.prefetch;
@@ -473,35 +485,92 @@ SelectiveColumnReaderPtr createColumnReaderRecursive(const RowGroupContext& cont
         };
         const auto * column_desc = context.parquet_reader->metaData().schema()->Column(column_idx);
 
-        return ParquetColumnReaderFactory::builder()
-                            .nullable(node->is_optional())
-                            .dictionary(context.row_group_meta->ColumnChunk(column_idx)->has_dictionary_page())
-                            .columnDescriptor(column_desc)
-                            .pageReader(std::move(creator))
-                            .targetType(target_type)
-                            .filter(filter)
-                            .build();
+        auto leaf_reader = ParquetColumnReaderFactory::builder()
+            .nullable(node->is_optional())
+            .dictionary(context.row_group_meta->ColumnChunk(column_idx)->has_dictionary_page())
+            .columnDescriptor(column_desc)
+            .pageReader(std::move(creator))
+            .targetType(target_type)
+            .filter(inplace_filter_mapping.contains(full_name) ? inplace_filter_mapping.at(full_name) : nullptr)
+            .build();
+        return leaf_reader;
     }
     else if (node->converted_type() == parquet::ConvertedType::LIST)
     {
-        auto group_node = std::static_pointer_cast<parquet::schema::GroupNode>(node);
+        auto group_node = checkAndGetGroupNode(node);
         if (group_node->field_count() != 1)
             throw Exception(ErrorCodes::PARQUET_EXCEPTION, "List group node must have exactly one field");
         auto repeated_field = group_node->field(0);
         if (isListElement(*repeated_field))
         {
             const auto * array_type = checkAndGetDataType<DataTypeArray>(target_type.get());
-            auto reader = createColumnReaderRecursive(context, repeated_field, def_level, rep_level, condition_column, nullptr, array_type->getNestedType());
+            auto reader = buildReader(repeated_field, array_type->getNestedType(), def_level, rep_level);
             return std::make_shared<ListColumnReader>(rep_level, def_level, reader);
         }
         else
         {
             auto child_field = std::static_pointer_cast<parquet::schema::GroupNode>(repeated_field)->field(0);
             const auto * array_type = checkAndGetDataType<DataTypeArray>(target_type.get());
-            auto reader = createColumnReaderRecursive(context, child_field, def_level+1, rep_level+1, condition_column, nullptr, array_type->getNestedType());
+            auto reader = buildReader(child_field, array_type->getNestedType(), def_level, rep_level);
             return std::make_shared<ListColumnReader>(rep_level, def_level, reader);
         }
     }
-    return DB::SelectiveColumnReaderPtr();
+    else if (node->converted_type() == parquet::ConvertedType::MAP || node->converted_type() == parquet::ConvertedType::MAP_KEY_VALUE)
+    {
+        auto map_node = checkAndGetGroupNode(node);
+        if (map_node->field_count() != 1)
+            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Map group node must have exactly one field");
+        auto key_value_node = checkAndGetGroupNode(map_node->field(0));
+        if (key_value_node->field_count() != 2)
+            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Map key-value group node must have exactly two fields");
+        if (!key_value_node->field(0)->is_primitive())
+            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Map key field must be primitive");
+
+        const auto& map_type = checkAndGetDataType<DataTypeMap>(*target_type);
+        auto key_value_types = checkAndGetDataType<DataTypeTuple>(*checkAndGetDataType<DataTypeArray>(*map_type.getNestedType()).getNestedType()).getElements();
+        auto key_reader = buildReader(key_value_node->field(0), key_value_types.front(), def_level+1, rep_level+1);
+        auto value_reader = buildReader(key_value_node->field(1), key_value_types.back(), def_level+1, rep_level+1);
+        return std::make_shared<MapColumnReader>(rep_level, def_level, key_reader, value_reader);
+    }
+    // Structure type
+    else
+    {
+        auto struct_node = checkAndGetGroupNode(node);
+        const auto *struct_type = checkAndGetDataType<DataTypeTuple>(target_type.get());
+        if (!struct_type)
+            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Target type for node {} must be DataTypeTuple", struct_node->name());
+        auto names = struct_type->getElementNames();
+        int child_num = struct_node->field_count();
+        std::unordered_map<String, SelectiveColumnReaderPtr> readers;
+        for (const auto& name : names)
+        {
+            for (int i = 0; i < child_num; ++i)
+            {
+                if (struct_node->field(i)->name() == name)
+                {
+                    auto child_field = struct_node->field(i);
+                    auto child_type = struct_type->getElements().at(i);
+                    auto reader = buildReader(child_field, child_type, def_level, rep_level);
+                    readers.emplace(name, reader);
+                }
+            }
+            if (!readers.contains(name))
+            {
+                throw Exception(ErrorCodes::PARQUET_EXCEPTION, "{} not found in struct node {}", name, struct_node->name());
+            }
+        }
+        return std::make_shared<StructColumnReader>(readers, target_type);
+    }
+}
+ColumnReaderBuilder::ColumnReaderBuilder(
+    const Block & requiredColumns_,
+    const RowGroupContext & context_,
+    const std::unordered_map<String, ColumnFilterPtr> & inplaceFilterMapping_,
+    const std::unordered_set<String> & predicateColumns_)
+    : required_columns(requiredColumns_)
+    , context(context_)
+    , inplace_filter_mapping(inplaceFilterMapping_)
+    , predicate_columns(predicateColumns_)
+{
 }
 }

@@ -475,4 +475,51 @@ private:
     int16_t def_level = 0;
     int16_t rep_level = 0;
 };
+
+class MapColumnReader : public SelectiveColumnReader
+{
+public:
+    MapColumnReader(int16_t rep_level_, int16_t def_level_, const SelectiveColumnReaderPtr key_, const SelectiveColumnReaderPtr value_)
+        : SelectiveColumnReader(nullptr, ScanSpec{}), key_reader(key_), value_reader(value_), def_level(def_level_), rep_level(rep_level_)
+    {
+    }
+
+    ~MapColumnReader() override = default;
+
+    void read(MutableColumnPtr & column, OptionalRowSet & row_set, size_t rows_to_read) override;
+
+    int16_t maxDefinitionLevel() const override { return def_level; }
+    int16_t maxRepetitionLevel() const override { return rep_level; }
+    void computeRowSet(std::optional<RowSet> & row_set, size_t rows_to_read) override;
+    MutableColumnPtr createColumn() override;
+    size_t skipValuesInCurrentPage(size_t rows_to_skip) override;
+private:
+    SelectiveColumnReaderPtr key_reader;
+    SelectiveColumnReaderPtr value_reader;
+    int16_t def_level = 0;
+    int16_t rep_level = 0;
+};
+
+class StructColumnReader : public SelectiveColumnReader
+{
+public:
+    StructColumnReader(const std::unordered_map<String, SelectiveColumnReaderPtr> & children_, DataTypePtr structType_)
+        : SelectiveColumnReader(nullptr, ScanSpec{}), children(children_), structType(structType_)
+    {
+    }
+
+    ~StructColumnReader() override = default;
+
+    void read(MutableColumnPtr & column, OptionalRowSet & row_set, size_t rows_to_read) override;
+
+    void computeRowSet(OptionalRowSet & row_set, size_t rows_to_read) override;
+
+    MutableColumnPtr createColumn() override;
+
+    size_t skipValuesInCurrentPage(size_t rows_to_skip) override;
+
+private:
+    std::unordered_map<String, SelectiveColumnReaderPtr> children;
+    DataTypePtr structType;
+};
 }

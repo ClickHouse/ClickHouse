@@ -48,6 +48,20 @@ public:
     static Builder builder();
 };
 
-SelectiveColumnReaderPtr createColumnReaderRecursive(const RowGroupContext& context, parquet::schema::NodePtr node, int def_level, int rep_level, bool condition_column, const ColumnFilterPtr & filter, const DataTypePtr & target_type);
+class ColumnReaderBuilder
+{
+public:
+    ColumnReaderBuilder(
+        const Block & requiredColumns,
+        const RowGroupContext & context,
+        const std::unordered_map<String, ColumnFilterPtr> & inplaceFilterMapping,
+        const std::unordered_set<String> & predicateColumns);
+    SelectiveColumnReaderPtr buildReader(parquet::schema::NodePtr node, const DataTypePtr & target_type, int def_level = 0, int rep_level = 0);
+private:
+    const Block& required_columns;
+    const RowGroupContext& context;
+    const std::unordered_map<String, ColumnFilterPtr>& inplace_filter_mapping;
+    const std::unordered_set<String>& predicate_columns;
+};
 
 }

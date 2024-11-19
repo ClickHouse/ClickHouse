@@ -223,6 +223,8 @@ RowGroupChunkReader::RowGroupChunkReader(
     context.prefetch_conditions = prefetch_conditions;
     context.filter_columns = filter_columns;
     remain_rows = row_group_meta->num_rows();
+    builder = std::make_unique<ColumnReaderBuilder>(parquet_reader->header, context, parquet_reader->filters, parquet_reader->condition_columns);
+
     for (const auto & col_with_name : parquet_reader->header)
     {
         if (!parquetReader->parquet_columns.contains(col_with_name.name))
@@ -231,61 +233,7 @@ RowGroupChunkReader::RowGroupChunkReader(
         const auto & node = parquetReader->parquet_columns.at(col_with_name.name);
         SelectiveColumnReaderPtr column_reader;
         auto filter = filters.contains(col_with_name.name) ? filters.at(col_with_name.name) : nullptr;
-        bool condition = parquet_reader->condition_columns.contains(col_with_name.name);
-        column_reader = createColumnReaderRecursive(context, node, 0, 0, condition, filter, col_with_name.type);
-//        if (!node->is_primitive())
-//            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "arrays and maps are not implemented in native parquet reader");
-//
-//        auto idx = parquet_reader->meta_data->schema()->ColumnIndex(*node);
-//        auto filter = filters.contains(col_with_name.name) ? filters.at(col_with_name.name) : nullptr;
-//        remain_rows = row_group_meta->ColumnChunk(idx)->num_values();
-//        SelectiveColumnReaderPtr column_reader;
-//        if (parquet_reader->condition_columns.contains(col_with_name.name))
-//        {
-//            PageReaderCreator creator = [&, idx]
-//            {
-//                Stopwatch time;
-//                auto data = prefetch_conditions->readRange(getColumnRange(*row_group_meta->ColumnChunk(idx)));
-//                auto page_reader = std::make_unique<LazyPageReader>(
-//                    std::make_shared<ReadBufferFromMemory>(reinterpret_cast<char *>(data.data), data.size),
-//                    parquet_reader->properties,
-//                    remain_rows,
-//                    row_group_meta->ColumnChunk(idx)->compression());
-//                ProfileEvents::increment(ProfileEvents::ParquetFetchWaitTimeMicroseconds, time.elapsedMicroseconds());
-//                return page_reader;
-//            };
-//            const auto * column_desc = parquet_reader->meta_data->schema()->Column(idx);
-//            column_reader = ParquetColumnReaderFactory::builder()
-//                                     .nullable(node->is_optional())
-//                                     .dictionary(row_group_meta->ColumnChunk(idx)->has_dictionary_page())
-//                                     .columnDescriptor(column_desc)
-//                                     .pageReader(std::move(creator))
-//                                     .targetType(col_with_name.type)
-//                                     .filter(filter)
-//                                     .build();
-//        }
-//        else
-//        {
-//            PageReaderCreator creator = [&, idx]
-//            {
-//                auto data = prefetch->readRange(getColumnRange(*row_group_meta->ColumnChunk(idx)));
-//                auto page_reader = std::make_unique<LazyPageReader>(
-//                    std::make_shared<ReadBufferFromMemory>(reinterpret_cast<char *>(data.data), data.size),
-//                    parquet_reader->properties,
-//                    remain_rows,
-//                    row_group_meta->ColumnChunk(idx)->compression());
-//                return page_reader;
-//            };
-//            const auto * column_desc = parquet_reader->meta_data->schema()->Column(idx);
-//            column_reader = ParquetColumnReaderFactory::builder()
-//                                     .nullable(node->is_optional())
-//                                     .dictionary(row_group_meta->ColumnChunk(idx)->has_dictionary_page())
-//                                     .columnDescriptor(column_desc)
-//                                     .pageReader(std::move(creator))
-//                                     .targetType(col_with_name.type)
-//                                     .filter(filter)
-//                                     .build();
-//        }
+        column_reader = builder->buildReader(node, col_with_name.type, 0, 0);
         column_readers.push_back(column_reader);
         reader_columns_mapping[col_with_name.name] = column_reader;
         if (filter)

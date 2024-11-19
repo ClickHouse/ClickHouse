@@ -2,10 +2,13 @@
 
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Processors/Formats/Impl/Parquet/ParquetColumnReaderFactory.h>
 #include <Processors/Formats/Impl/Parquet/ParquetReader.h>
 #include <Common/assert_cast.h>
@@ -1368,6 +1371,107 @@ MutableColumnPtr ListColumnReader::createColumn()
     return ColumnArray::create(child->createColumn(), ColumnArray::ColumnOffsets::create());
 }
 size_t ListColumnReader::skipValuesInCurrentPage(size_t )
+{
+    throw Exception(ErrorCodes::PARQUET_EXCEPTION, "unimplemented operation");
+}
+void MapColumnReader::read(MutableColumnPtr & column, OptionalRowSet & row_set, size_t rows_to_read)
+{
+    ColumnNullable* null_column = nullptr;
+    if (column->isNullable())
+    {
+        null_column = static_cast<ColumnNullable *>(column.get());
+        column = null_column->getNestedColumnPtr()->assumeMutable();
+    }
+    if (!checkColumn<ColumnMap>(*column))
+    {
+        throw DB::Exception(ErrorCodes::PARQUET_EXCEPTION, "column type should be map, but is {}", column->getName());
+    }
+    ColumnMap* map_column = static_cast<ColumnMap *>(column.get());
+    ColumnArray* nested_column = &map_column->getNestedColumn();
+    auto data_column = nested_column->getDataPtr();
+    const ColumnTuple & tuple_col = checkAndGetColumn<ColumnTuple>(*data_column);
+    if (tuple_col.getColumns().size() !=2)
+    {
+        throw DB::Exception(ErrorCodes::PARQUET_EXCEPTION, "map column should have 2 columns, but has {}", tuple_col.getColumns().size());
+    }
+    auto key_column = tuple_col.getColumns()[0]->assumeMutable();
+    auto value_column = tuple_col.getColumns()[1]->assumeMutable();
+    if (!row_set)
+    {
+        auto & offsets = nested_column->getOffsets();
+        auto old_size = offsets.size();
+        offsets.reserve(old_size + rows_to_read);
+        size_t count = 0;
+        const auto & rep_levels = key_reader->getRepetitionLevels();
+        size_t start = rep_levels.size() - key_reader->currentRemainRows();
+        // generate offsets;
+        int array_size = 0;
+        while (offsets.size() - old_size < rows_to_read)
+        {
+            size_t idx = start + count;
+            if (idx >= rep_levels.size())
+                break;
+            if (rep_levels[idx] <= rep_level)
+            {
+                if (count)
+                {
+                    offsets.push_back(offsets.back() + array_size);
+                    array_size = 0;
+                }
+                array_size++;
+            }
+            else
+                array_size ++;
+            count++;
+        }
+        offsets.push_back(offsets.back() + array_size);
+        OptionalRowSet filter;
+        key_reader->read(key_column, filter, offsets.back());
+        value_reader->read(value_column, filter, offsets.back());
+    }
+}
+void MapColumnReader::computeRowSet(std::optional<RowSet> & , size_t )
+{
+    throw Exception(ErrorCodes::PARQUET_EXCEPTION, "unsupported operation");
+}
+MutableColumnPtr MapColumnReader::createColumn()
+{
+    MutableColumns columns;
+    columns.push_back(key_reader->createColumn());
+    columns.push_back(value_reader->createColumn());
+    MutableColumnPtr tuple = ColumnTuple::create(std::move(columns));
+    MutableColumnPtr array = ColumnArray::create(std::move(tuple));
+    return ColumnMap::create(std::move(array));
+}
+
+size_t MapColumnReader::skipValuesInCurrentPage(size_t )
+{
+    throw Exception(ErrorCodes::PARQUET_EXCEPTION, "unimplemented operation");
+}
+
+void StructColumnReader::read(MutableColumnPtr & column, OptionalRowSet & row_set, size_t rows_to_read)
+{
+    checkColumn<ColumnTuple>(*column);
+    ColumnTuple * tuple_column = static_cast<ColumnTuple*>(column.get());
+    const auto *tuple_type = checkAndGetDataType<DataTypeTuple>(structType.get());
+    auto names = tuple_type->getElementNames();
+    for (size_t i = 0; i < names.size(); i++)
+    {
+        auto nested_column = tuple_column->getColumn(i).assumeMutable();
+        auto & nested_reader = children.at(names.at(i));
+        nested_reader->read(nested_column, row_set, rows_to_read);
+    }
+}
+void StructColumnReader::computeRowSet(std::optional<RowSet> & , size_t )
+{
+    throw Exception(ErrorCodes::PARQUET_EXCEPTION, "unsupported operation");
+}
+MutableColumnPtr StructColumnReader::createColumn()
+{
+    return structType->createColumn();
+}
+
+size_t StructColumnReader::skipValuesInCurrentPage(size_t )
 {
     throw Exception(ErrorCodes::PARQUET_EXCEPTION, "unimplemented operation");
 }
