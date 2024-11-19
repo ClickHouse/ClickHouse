@@ -1888,8 +1888,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// If schema wes inferred while storage creation, add columns description to create query.
         auto & create_query = query_ptr->as<ASTCreateQuery &>();
         addColumnsDescriptionToCreateQueryIfNecessary(create_query, res);
+        /// Add any inferred engine args if needed. For example, data format for engines File/S3/URL/etc
         if (auto * engine_args = getEngineArgsFromCreateQuery(create_query))
-            res->updateEngineArgsForCreateQuery(*engine_args, getContext());
+            res->addInferredEngineArgsToCreateQuery(*engine_args, getContext());
     }
 
     validateVirtualColumns(*res);

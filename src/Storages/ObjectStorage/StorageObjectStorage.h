@@ -122,7 +122,7 @@ public:
         std::string & sample_path,
         const ContextPtr & context);
 
-    void updateEngineArgsForCreateQuery(ASTs & args, const ContextPtr & context) const override;
+    void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override;
 
 protected:
     String getPathSample(StorageInMemoryMetadata metadata, ContextPtr context);

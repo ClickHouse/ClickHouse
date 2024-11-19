@@ -1572,7 +1572,7 @@ void StorageURL::processNamedCollectionResult(Configuration & configuration, con
     configuration.structure = collection.getOrDefault<String>("structure", "auto");
 }
 
-void StorageURL::updateEngineArgsForCreateQuery(ASTs & args, const ContextPtr & context) const
+void StorageURL::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
 {
     TableFunctionURL::updateStructureAndFormatArgumentsIfNeeded(args, "", format_name, context, /*with_structure=*/false);
 }

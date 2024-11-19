@@ -305,7 +305,7 @@ public:
 
     bool supportsDynamicSubcolumns() const override { return true; }
 
-    void updateEngineArgsForCreateQuery(ASTs & args, const ContextPtr & context) const override;
+    void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override;
 
     static FormatSettings getFormatSettingsFromArgs(const StorageFactory::Arguments & args);
 
