@@ -29,21 +29,24 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
   * f(object) = score
   * predicted_label = score > threshold
   *
-  * This way classifier may predict positive or negative value correctly - true positive (tp) or true negative (tn) or have false positive (fp) or false negative (fn) result.
+  * This way classifier may predict positive or negative value correctly - true positive (tp) or true negative (tn) 
+  *   or have false positive (fp) or false negative (fn) result.
   * Varying the threshold we can get different probabilities of false positive or false negatives or true positives, etc...
   *
   * We can also calculate the Precision and the Recall:
   *
-  * Precision is the ratio `tp / (tp + fp)` where `tp` is the number of true positives and fp `the` number of false positives.
+  * Precision is the ratio `tp / (tp + fp)` where `tp` is the number of true positives and `fp` the number of false positives.
   * It represents how often the classifier is correct when giving a positive result.
-  * Precision = P(label = positive | prediction = positive)
+  * Precision = P(label = positive | score > threshold)
   *
   * Recall is the ratio `tp / (tp + fn)` where `tp` is the number of true positives and `fn` the number of false negatives.
   * It represents the probability of the classifier to give positive result if the object has positive label.
   * Recall = P(score > threshold | label = positive)
   *
   * We can draw a curve of values of Precision and Recall with different threshold on [0..1] x [0..1] unit square.
-  * This curve is named "Precision Recall curve" (PR). For the curve we can calculate, literally, Area Under the Curve, that will be in the range of [0..1].
+  * This curve is named "Precision Recall curve" (PR). 
+  *
+  * For the curve we can calculate, literally, Area Under the Curve, that will be in the range of [0..1].
   *
   * Let's look at the example:
   * arrayPrAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
@@ -60,12 +63,12 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
   * threshold = 0.1,  TP = 2, FP = 1, FN = 0, Recall = 1.0, Precision = 0.666
   * threshold = 0,    TP = 2, FP = 2, FN = 0, Recall = 1.0, Precision = 0.5
   *
-  * This PR-AUC uses the right Riemann sum to calculate the AUC.
-  * Each increment in area is calculated using `(R_n - R_{n-1}) * P_n`, 
-  * where `R_n` is the Recall at the `n`-th point and `P_n` is the Precision at the `n`-th point.
+  * This PR-AUC uses the right Riemann sum (see https://en.wikipedia.org/wiki/Riemann_sum) to calculate the AUC.
+  * That is, each increment in area is calculated using `(R_n - R_{n-1}) * P_n`, 
+  *   where `R_n` is the Recall at the `n`-th point and `P_n` is the Precision at the `n`-th point.
   *
   * This implementation is not interpolated and is different from computing the AUC with the trapezoidal rule, 
-  * which uses linear interpolation and can be too optimistic for the Precision Recall AUC metric.
+  *   which uses linear interpolation and can be too optimistic for the Precision Recall AUC metric.
   */
 
 class FunctionArrayPrAUC : public IFunction
@@ -112,11 +115,13 @@ private:
                 /* Precision = TP / (TP + FP) 
                  * Recall = TP / (TP + FN)
                  *
-                 * Instead of calculating 
-                 *     d_Area = Precision_n * (Recall_n - Recall_{n-1}), 
-                 * we can calculate 
-                 *     d_Area = Precision_n * (TP_n - TP_{n-1}) 
-                 * and later divide it by (TP + FN), since (TP + FN) is constant and equal to total positive labels.
+                 * Instead of calculating
+                 *   d_Area = Precision_n * (Recall_n - Recall_{n-1}), 
+                 * we can just calculate 
+                 *   d_Area = Precision_n * (TP_n - TP_{n-1}) 
+                 * and later divide it by (TP + FN). 
+                 * 
+                 * This can be done because (TP + FN) is constant and equal to total positive labels.
                  */
                 curr_precision = static_cast<Float64>(curr_tp) / curr_p;
                 area += curr_precision * (curr_tp - prev_tp);
@@ -135,7 +140,8 @@ private:
         /// If there were no positive labels, Recall did not change and the area is 0
         if (curr_tp == 0)
             return 0.0;
-        /// Finally, we assume that we've traversed the whole curve and total positive labels (TP + FN) is curr_tp
+        /// Finally, we divide by (TP + FN) to obtain the Recall
+        /// At this point we've traversed the whole curve and curr_tp = total positive labels (TP + FN)
         return area / curr_tp;
     }
 
