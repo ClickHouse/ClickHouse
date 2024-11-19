@@ -610,7 +610,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
         }
     }
 
-    auto new_data_part = data.getDataPartBuilder(part_name, data_part_volume, part_dir)
+    auto new_data_part = data.getDataPartBuilder(part_name, data_part_volume, part_dir, getReadSettings())
         .withPartFormat(data.choosePartFormat(expected_size, block.rows()))
         .withPartInfo(new_part_info)
         .build();
@@ -687,6 +687,13 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     auto compression_codec = data.getContext()->chooseCompressionCodec(0, 0);
     bool save_marks_in_cache = (*data_settings)[MergeTreeSetting::prewarm_mark_cache] && data.getContext()->getMarkCache();
 
+    auto index_granularity_ptr = createMergeTreeIndexGranularity(
+        block.rows(),
+        block.bytes(),
+        *data.getSettings(),
+        new_data_part->index_granularity_info,
+        /*blocks_are_granules=*/ false);
+
     auto out = std::make_unique<MergedBlockOutputStream>(
         new_data_part,
         metadata_snapshot,
@@ -694,6 +701,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
         indices,
         statistics,
         compression_codec,
+        std::move(index_granularity_ptr),
         context->getCurrentTransaction() ? context->getCurrentTransaction()->tid : Tx::PrehistoricTID,
         /*reset_columns=*/ false,
         save_marks_in_cache,
@@ -834,6 +842,13 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     auto compression_codec = data.getContext()->chooseCompressionCodec(0, 0);
     bool save_marks_in_cache = (*data.getSettings())[MergeTreeSetting::prewarm_mark_cache] && data.getContext()->getMarkCache();
 
+    auto index_granularity_ptr = createMergeTreeIndexGranularity(
+        block.rows(),
+        block.bytes(),
+        *data.getSettings(),
+        new_data_part->index_granularity_info,
+        /*blocks_are_granules=*/ false);
+
     auto out = std::make_unique<MergedBlockOutputStream>(
         new_data_part,
         metadata_snapshot,
@@ -842,6 +857,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
         /// TODO(hanfei): It should be helpful to write statistics for projection result.
         ColumnsStatistics{},
         compression_codec,
+        std::move(index_granularity_ptr),
         Tx::PrehistoricTID,
         /*reset_columns=*/ false,
         save_marks_in_cache,

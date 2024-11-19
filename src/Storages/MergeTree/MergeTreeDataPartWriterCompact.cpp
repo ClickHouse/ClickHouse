@@ -25,13 +25,13 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
-    const MergeTreeIndexGranularity & index_granularity_)
+    MergeTreeIndexGranularityPtr index_granularity_)
     : MergeTreeDataPartWriterOnDisk(
         data_part_name_, logger_name_, serializations_,
         data_part_storage_, index_granularity_info_, storage_settings_,
         columns_list_, metadata_snapshot_, virtual_columns_,
         indices_to_recalc_, stats_to_recalc, marks_file_extension_,
-        default_codec_, settings_, index_granularity_)
+        default_codec_, settings_, std::move(index_granularity_))
     , plain_file(getDataPartStorage().writeFile(
             MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION,
             settings.max_compress_block_size,
@@ -63,23 +63,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     for (const auto & column : columns_list)
     {
         auto compression = getCodecDescOrDefault(column.name, default_codec);
-        addStreams(column, nullptr, compression);
-    }
-}
-
-void MergeTreeDataPartWriterCompact::initDynamicStreamsIfNeeded(const Block & block)
-{
-    if (is_dynamic_streams_initialized)
-        return;
-
-    is_dynamic_streams_initialized = true;
-    for (const auto & column : columns_list)
-    {
-        if (column.type->hasDynamicSubcolumns())
-        {
-            auto compression = getCodecDescOrDefault(column.name, default_codec);
-            addStreams(column, block.getByName(column.name).column, compression);
-        }
+        MergeTreeDataPartWriterCompact::addStreams(column, nullptr, compression);
     }
 }
 
@@ -181,32 +165,37 @@ void writeColumnSingleGranule(
 
 void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumn::Permutation * permutation)
 {
-    /// On first block of data initialize streams for dynamic subcolumns.
-    initDynamicStreamsIfNeeded(block);
+    Block result_block = block;
+
+    /// During serialization columns with dynamic subcolumns (like JSON/Dynamic) must have the same dynamic structure.
+    /// But it may happen that they don't (for example during ALTER MODIFY COLUMN from some type to JSON/Dynamic).
+    /// In this case we use dynamic structure of the column from the first written block and adjust columns from
+    /// the next blocks so they match this dynamic structure.
+    initOrAdjustDynamicStructureIfNeeded(result_block);
 
     /// Fill index granularity for this block
     /// if it's unknown (in case of insert data or horizontal merge,
     /// but not in case of vertical merge)
     if (compute_granularity)
     {
-        size_t index_granularity_for_block = computeIndexGranularity(block);
+        size_t index_granularity_for_block = computeIndexGranularity(result_block);
         assert(index_granularity_for_block >= 1);
-        fillIndexGranularity(index_granularity_for_block, block.rows());
+        fillIndexGranularity(index_granularity_for_block, result_block.rows());
     }
 
-    Block result_block = permuteBlockIfNeeded(block, permutation);
+    result_block = permuteBlockIfNeeded(result_block, permutation);
 
     if (!header)
         header = result_block.cloneEmpty();
 
     columns_buffer.add(result_block.mutateColumns());
-    size_t current_mark_rows = index_granularity.getMarkRows(getCurrentMark());
+    size_t current_mark_rows = index_granularity->getMarkRows(getCurrentMark());
     size_t rows_in_buffer = columns_buffer.size();
 
     if (rows_in_buffer >= current_mark_rows)
     {
         Block flushed_block = header.cloneWithColumns(columns_buffer.releaseColumns());
-        auto granules_to_write = getGranulesToWrite(index_granularity, flushed_block.rows(), getCurrentMark(), /* last_block = */ false);
+        auto granules_to_write = getGranulesToWrite(*index_granularity, flushed_block.rows(), getCurrentMark(), /* last_block = */ false);
         writeDataBlockPrimaryIndexAndSkipIndices(flushed_block, granules_to_write);
         setCurrentMark(getCurrentMark() + granules_to_write.size());
         calculateAndSerializeStatistics(flushed_block);
@@ -285,12 +274,11 @@ void MergeTreeDataPartWriterCompact::fillDataChecksums(MergeTreeDataPartChecksum
     if (columns_buffer.size() != 0)
     {
         auto block = header.cloneWithColumns(columns_buffer.releaseColumns());
-        auto granules_to_write = getGranulesToWrite(index_granularity, block.rows(), getCurrentMark(), /* last_block = */ true);
+        auto granules_to_write = getGranulesToWrite(*index_granularity, block.rows(), getCurrentMark(), /*last_block=*/ true);
         if (!granules_to_write.back().is_complete)
         {
             /// Correct last mark as it should contain exact amount of rows.
-            index_granularity.popMark();
-            index_granularity.appendMark(granules_to_write.back().rows_to_write);
+            index_granularity->adjustLastMark(granules_to_write.back().rows_to_write);
         }
         writeDataBlockPrimaryIndexAndSkipIndices(block, granules_to_write);
     }
@@ -386,11 +374,11 @@ static void fillIndexGranularityImpl(
 void MergeTreeDataPartWriterCompact::fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block)
 {
     size_t index_offset = 0;
-    if (index_granularity.getMarksCount() > getCurrentMark())
-        index_offset = index_granularity.getMarkRows(getCurrentMark()) - columns_buffer.size();
+    if (index_granularity->getMarksCount() > getCurrentMark())
+        index_offset = index_granularity->getMarkRows(getCurrentMark()) - columns_buffer.size();
 
     fillIndexGranularityImpl(
-        index_granularity,
+        *index_granularity,
         index_offset,
         index_granularity_for_block,
         rows_in_block);
