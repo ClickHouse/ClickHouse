@@ -363,6 +363,8 @@ try
         showClientVersion();
     }
 
+    default_database = config().getString("database", "");
+
     try
     {
         connect();
@@ -451,8 +453,11 @@ void Client::connect()
     {
         try
         {
+            const auto host = ConnectionParameters::Host{hosts_and_ports[attempted_address_index].host};
+            const auto database = ConnectionParameters::Database{default_database};
+
             connection_parameters = ConnectionParameters(
-                config(), hosts_and_ports[attempted_address_index].host, hosts_and_ports[attempted_address_index].port);
+                config(), host, database, hosts_and_ports[attempted_address_index].port);
 
             if (is_interactive)
                 std::cout << "Connecting to "
@@ -515,6 +520,10 @@ void Client::connect()
     load_suggestions
         = is_interactive && (server_revision >= Suggest::MIN_SERVER_REVISION) && !config().getBool("disable_suggestion", false);
     wait_for_suggestions_to_load = config().getBool("wait_for_suggestions_to_load", false);
+    if (load_suggestions)
+    {
+        suggestion_limit = config().getInt("suggestion_limit");
+    }
 
     server_display_name = connection->getServerDisplayName(connection_parameters.timeouts);
     if (server_display_name.empty())
@@ -896,10 +905,42 @@ void Client::processConfig()
         echo_queries = config().getBool("echo", false);
         ignore_error = config().getBool("ignore-error", false);
 
-        auto query_id = config().getString("query_id", "");
+        query_id = config().getString("query_id", "");
         if (!query_id.empty())
             global_context->setCurrentQueryId(query_id);
     }
+
+    if (is_interactive || delayed_interactive)
+    {
+        if (home_path.empty())
+        {
+            const char * home_path_cstr = getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
+            if (home_path_cstr)
+                home_path = home_path_cstr;
+        }
+
+        /// Load command history if present.
+        if (config().has("history_file"))
+            history_file = config().getString("history_file");
+        else
+        {
+            auto * history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE"); // NOLINT(concurrency-mt-unsafe)
+            if (history_file_from_env)
+                history_file = history_file_from_env;
+            else if (!home_path.empty())
+                history_file = home_path + "/.clickhouse-client-history";
+        }
+    }
+
+    if (config().has("query"))
+    {
+        static_query = config().getRawString("query"); /// Poco configuration should not process substitutions in form of ${...} inside query.
+    }
+
+    pager = config().getString("pager", "");
+
+    enable_highlight = config().getBool("highlight", true);
+    multiline = config().has("multiline");
     print_stack_trace = config().getBool("stacktrace", false);
 
     pager = config().getString("pager", "");
