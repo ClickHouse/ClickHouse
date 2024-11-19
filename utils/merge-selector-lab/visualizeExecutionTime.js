@@ -13,7 +13,7 @@ export function visualizeExecutionTime(mt, container)
 
     // Input visuals
     const margin = { left: 50, right: 40, top: 60, bottom: 60 };
-    const width = 450;
+    const width = 300;
     const height = 450;
     const part_dy = 4;
     const part_dx = 1;

@@ -13,7 +13,7 @@ export function visualizeUtility(mt, container)
 
     // Input visuals
     const margin = { left: 50, right: 30, top: 60, bottom: 60 };
-    const width = 450;
+    const width = 300;
     const height = 450;
     const part_dy = 4;
     const part_dx = 1;
@@ -36,7 +36,7 @@ export function visualizeUtility(mt, container)
             bytes: p.bytes,
             created: p.created,
             left: p.level == 0? insert_left : lefts[p.begin],
-            top: p.parent == undefined ? undefined : mt.parts[p.parent].bytes,
+            top: p.parent == undefined ? p.bytes : mt.parts[p.parent].bytes,
             bottom: p.bytes,
             /* entropy */ color: parent ? valueToColor(parent.entropy, 0, max_entropy) : undefined,
             // /* height */ color: parent ? undefined : valueToColor(Math.log2(parent.bytes), log_min_bytes, log_max_bytes),
@@ -51,8 +51,8 @@ export function visualizeUtility(mt, container)
         }
     }
 
-    const maxYValue = d3.max(data, d => d.top);
     const minYValue = d3.min(data, d => d.bottom);
+    const maxYValue = Math.max(minYValue * 2, d3.max(data, d => d.top));
     const maxXValue = d3.max(data, d => d.bytes + d.left);
 
     const svgWidth = width + margin.left + margin.right;
@@ -89,7 +89,7 @@ export function visualizeUtility(mt, container)
     svgContainer.append("g").selectAll("rect")
         .data(data)
         .enter()
-        .filter(d => d.top !== undefined)
+        .filter(d => d.part.parent !== undefined)
         .append("rect")
         .attr("x", d => pxl(xScale(d.left)))
         .attr("y", d => pxt(yScale(d.top)))
