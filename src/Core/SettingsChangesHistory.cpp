@@ -64,6 +64,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     },
     {"24.11",
         {
+            {"enable_http_compression", false, true, "Improvement for read-only clients since they can't change settings"},
             {"validate_mutation_query", false, true, "New setting to validate mutation queries by default."},
             {"enable_job_stack_trace", false, true, "Enable by default collecting stack traces from job's scheduling."},
             {"allow_suspicious_types_in_group_by", true, false, "Don't allow Variant/Dynamic types in GROUP BY by default"},
@@ -79,10 +80,12 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"backup_restore_finish_timeout_after_error_sec", 0, 180, "New setting."},
             {"query_plan_merge_filters", false, true, "Allow to merge filters in the query plan. This is required to properly support filter-push-down with a new analyzer."},
             {"parallel_replicas_local_plan", false, true, "Use local plan for local replica in a query with parallel replicas"},
+            {"min_joined_block_size_bytes", 524288, 524288, "New setting."},
             {"allow_experimental_bfloat16_type", false, false, "Add new experimental BFloat16 type"},
             {"filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit", 1, 1, "Rename of setting skip_download_if_exceeds_query_cache_limit"},
             {"filesystem_cache_prefer_bigger_buffer_size", true, true, "New setting"},
             {"read_in_order_use_virtual_row", false, false, "Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only relevant ones are touched."},
+            {"filesystem_cache_boundary_alignment", 0, 0, "New setting"},
         }
     },
     {"24.10",
