@@ -1,6 +1,8 @@
-import subprocess
-import pytest
 import os
+import subprocess
+
+import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
