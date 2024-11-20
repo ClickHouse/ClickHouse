@@ -112,13 +112,6 @@ void registerTableFunctionIcebergCluster(TableFunctionFactory & factory)
     UNUSED(factory);
 
 #if USE_AWS_S3
-    factory.registerFunction<TableFunctionIcebergCluster>(
-        {.documentation
-         = {.description = R"(The table function can be used to read the Iceberg table stored on S3 object store in parallel for many nodes in a specified cluster. Alias to icebergS3)",
-            .examples{{"icebergCluster", "SELECT * FROM icebergCluster(cluster, url, [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression])", ""}},
-            .categories{"DataLake"}},
-         .allow_readonly = false});
-
     factory.registerFunction<TableFunctionIcebergS3Cluster>(
         {.documentation
          = {.description = R"(The table function can be used to read the Iceberg table stored on S3 object store in parallel for many nodes in a specified cluster.)",

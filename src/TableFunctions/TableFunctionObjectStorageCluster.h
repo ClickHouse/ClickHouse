@@ -33,12 +33,6 @@ struct HDFSClusterDefinition
     static constexpr auto storage_type_name = "HDFSCluster";
 };
 
-struct IcebergClusterDefinition
-{
-    static constexpr auto name = "icebergCluster";
-    static constexpr auto storage_type_name = "IcebergS3Cluster";
-};
-
 struct IcebergS3ClusterDefinition
 {
     static constexpr auto name = "icebergS3Cluster";
@@ -117,7 +111,6 @@ using TableFunctionHDFSCluster = TableFunctionObjectStorageCluster<HDFSClusterDe
 #endif
 
 #if USE_AVRO && USE_AWS_S3
-using TableFunctionIcebergCluster = TableFunctionObjectStorageCluster<IcebergClusterDefinition, StorageS3IcebergConfiguration>;
 using TableFunctionIcebergS3Cluster = TableFunctionObjectStorageCluster<IcebergS3ClusterDefinition, StorageS3IcebergConfiguration>;
 #endif
 
