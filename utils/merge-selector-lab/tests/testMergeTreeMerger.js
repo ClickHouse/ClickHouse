@@ -4,8 +4,7 @@ import { EventSimulator } from '../EventSimulator.js';
 import { WorkerPool } from '../WorkerPool.js';
 import { MergeTree } from '../MergeTree.js';
 import { MergeTreeMerger } from '../MergeTreeMerger.js';
-import { visualizeExecutionTime } from '../visualizeExecutionTime.js';
-import { visualizeUtility } from '../visualizeUtility.js';
+import { MergeTreeUtilityVisualizer, MergeTreeTimeVisualizer } from '../MergeTreeVisualizer.js';
 
 export async function testMergeTreeMerger()
 {
@@ -69,6 +68,6 @@ export async function testMergeTreeMerger()
                 .attr("id", "merge-tree-merge-util-container");
         });
 
-    visualizeUtility(mt, d3.select("#merge-tree-merge-util-container"), true);
-    visualizeExecutionTime(mt, d3.select("#merge-tree-merge-exec-container"));
+    new MergeTreeUtilityVisualizer(mt, d3.select("#merge-tree-merge-util-container"));
+    new MergeTreeTimeVisualizer(mt, d3.select("#merge-tree-merge-exec-container"));
 }
