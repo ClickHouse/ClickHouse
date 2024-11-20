@@ -5653,6 +5653,9 @@ Parts virtually divided into segments to be distributed between replicas for par
     DECLARE(Bool, parallel_replicas_local_plan, true, R"(
 Build local plan for local replica
 )", BETA) \
+    DECLARE(Bool, parallel_replicas_skip_index_analysis_on_workers, true, R"(
+Skip index analysis on workers. Effective only with enabled parallel_replicas_local_plan
+)", BETA) \
     \
     DECLARE(Bool, allow_experimental_analyzer, true, R"(
 Allow new query analyzer.
