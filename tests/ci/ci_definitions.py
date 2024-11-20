@@ -502,7 +502,7 @@ class CommonJobConfigs:
             ],
             docker=["clickhouse/fuzzer"],
         ),
-        run_command='ci_fuzzer_check.py',
+        run_command="ci_fuzzer_check.py",
         run_always=True,
         runner_type=Runners.FUZZER_UNIT_TESTER,
     )
@@ -514,7 +514,7 @@ class CommonJobConfigs:
             ],
             docker=["clickhouse/fuzzer"],
         ),
-        run_command='ci_fuzzer_check.py',
+        run_command="ci_fuzzer_check.py",
         run_always=True,
         runner_type=Runners.FUZZER_UNIT_TESTER,
     )
