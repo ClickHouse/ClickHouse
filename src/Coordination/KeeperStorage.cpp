@@ -50,6 +50,11 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace CoordinationSetting
+{
+    extern const CoordinationSettingsUInt64 log_slow_cpu_threshold_ms;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -2926,7 +2931,7 @@ void KeeperStorage<Container>::preprocessRequest(
     Stopwatch watch;
     SCOPE_EXIT({
         auto elapsed = watch.elapsedMicroseconds();
-        if (auto elapsed_ms = elapsed / 1000; elapsed_ms > keeper_context->getCoordinationSettings()->log_slow_cpu_threshold_ms)
+        if (auto elapsed_ms = elapsed / 1000; elapsed_ms > keeper_context->getCoordinationSettings()[CoordinationSetting::log_slow_cpu_threshold_ms])
         {
             LOG_INFO(
                 getLogger("KeeperStorage"),
@@ -3116,7 +3121,7 @@ KeeperStorage<Container>::ResponsesForSessions KeeperStorage<Container>::process
     Stopwatch watch;
     SCOPE_EXIT({
         auto elapsed = watch.elapsedMicroseconds();
-        if (auto elapsed_ms = elapsed / 1000; elapsed_ms > keeper_context->getCoordinationSettings()->log_slow_cpu_threshold_ms)
+        if (auto elapsed_ms = elapsed / 1000; elapsed_ms > keeper_context->getCoordinationSettings()[CoordinationSetting::log_slow_cpu_threshold_ms])
         {
             LOG_INFO(
                 getLogger("KeeperStorage"),

@@ -5,6 +5,7 @@ import os
 import random
 import string
 import time
+import uuid
 from datetime import datetime
 
 import delta
@@ -34,6 +35,7 @@ from pyspark.sql.window import Window
 
 import helpers.client
 from helpers.cluster import ClickHouseCluster
+from helpers.network import PartitionManager
 from helpers.s3_tools import (
     get_file_contents,
     list_s3_objects,
@@ -70,10 +72,26 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__, with_spark=True)
         cluster.add_instance(
             "node1",
-            main_configs=["configs/config.d/named_collections.xml"],
+            main_configs=[
+                "configs/config.d/named_collections.xml",
+                "configs/config.d/filesystem_caches.xml",
+                "configs/config.d/remote_servers.xml",
+            ],
             user_configs=["configs/users.d/users.xml"],
             with_minio=True,
             stay_alive=True,
+            with_zookeeper=True,
+        )
+        cluster.add_instance(
+            "node2",
+            main_configs=[
+                "configs/config.d/named_collections.xml",
+                "configs/config.d/remote_servers.xml",
+            ],
+            user_configs=["configs/users.d/users.xml"],
+            with_minio=True,
+            stay_alive=True,
+            with_zookeeper=True,
         )
 
         logging.info("Starting cluster...")
@@ -826,3 +844,161 @@ def test_complex_types(started_cluster):
             f"SELECT metadata FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' , 'minio', 'minio123')"
         )
     )
+
+
+@pytest.mark.parametrize("storage_type", ["s3"])
+def test_filesystem_cache(started_cluster, storage_type):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    TABLE_NAME = randomize_table_name("test_filesystem_cache")
+    bucket = started_cluster.minio_bucket
+
+    if not minio_client.bucket_exists(bucket):
+        minio_client.make_bucket(bucket)
+
+    parquet_data_path = create_initial_data_file(
+        started_cluster,
+        instance,
+        "SELECT number, toString(number) FROM numbers(100)",
+        TABLE_NAME,
+    )
+
+    write_delta_from_file(spark, parquet_data_path, f"/{TABLE_NAME}")
+    upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    create_delta_table(instance, TABLE_NAME, bucket=bucket)
+
+    query_id = f"{TABLE_NAME}-{uuid.uuid4()}"
+    instance.query(
+        f"SELECT * FROM {TABLE_NAME} SETTINGS filesystem_cache_name = 'cache1'",
+        query_id=query_id,
+    )
+
+    instance.query("SYSTEM FLUSH LOGS")
+
+    count = int(
+        instance.query(
+            f"SELECT ProfileEvents['CachedReadBufferCacheWriteBytes'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        )
+    )
+    assert 0 < int(
+        instance.query(
+            f"SELECT ProfileEvents['S3GetObject'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        )
+    )
+
+    query_id = f"{TABLE_NAME}-{uuid.uuid4()}"
+    instance.query(
+        f"SELECT * FROM {TABLE_NAME} SETTINGS filesystem_cache_name = 'cache1'",
+        query_id=query_id,
+    )
+
+    instance.query("SYSTEM FLUSH LOGS")
+
+    assert count == int(
+        instance.query(
+            f"SELECT ProfileEvents['CachedReadBufferReadFromCacheBytes'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        )
+    )
+    assert 0 == int(
+        instance.query(
+            f"SELECT ProfileEvents['S3GetObject'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        )
+    )
+
+
+def test_replicated_database_and_unavailable_s3(started_cluster):
+    node1 = started_cluster.instances["node1"]
+    node2 = started_cluster.instances["node2"]
+
+    DB_NAME = randomize_table_name("db")
+    TABLE_NAME = randomize_table_name("test_replicated_database_and_unavailable_s3")
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_restricted_bucket
+
+    if not minio_client.bucket_exists(bucket):
+        minio_client.make_bucket(bucket)
+
+    node1.query(
+        f"CREATE DATABASE {DB_NAME} ENGINE=Replicated('/clickhouse/databases/{DB_NAME}', 'shard1', 'node1')"
+    )
+    node2.query(
+        f"CREATE DATABASE {DB_NAME} ENGINE=Replicated('/clickhouse/databases/{DB_NAME}', 'shard1', 'node2')"
+    )
+
+    parquet_data_path = create_initial_data_file(
+        started_cluster,
+        node1,
+        "SELECT number, toString(number) FROM numbers(100)",
+        TABLE_NAME,
+    )
+
+    endpoint_url = f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}"
+    aws_access_key_id = "minio"
+    aws_secret_access_key = "minio123"
+
+    schema = pa.schema(
+        [
+            ("id", pa.int32()),
+            ("name", pa.string()),
+        ]
+    )
+
+    data = [
+        pa.array([1, 2, 3], type=pa.int32()),
+        pa.array(["John Doe", "Jane Smith", "Jake Johnson"], type=pa.string()),
+    ]
+    storage_options = {
+        "AWS_ENDPOINT_URL": endpoint_url,
+        "AWS_ACCESS_KEY_ID": aws_access_key_id,
+        "AWS_SECRET_ACCESS_KEY": aws_secret_access_key,
+        "AWS_ALLOW_HTTP": "true",
+        "AWS_S3_ALLOW_UNSAFE_RENAME": "true",
+    }
+    path = f"s3://root/{TABLE_NAME}"
+    table = pa.Table.from_arrays(data, schema=schema)
+
+    write_deltalake(path, table, storage_options=storage_options)
+
+    with PartitionManager() as pm:
+        pm_rule_reject = {
+            "probability": 1,
+            "destination": node2.ip_address,
+            "source_port": started_cluster.minio_port,
+            "action": "REJECT --reject-with tcp-reset",
+        }
+        pm_rule_drop_all = {
+            "destination": node2.ip_address,
+            "source_port": started_cluster.minio_port,
+            "action": "DROP",
+        }
+        pm._add_rule(pm_rule_reject)
+
+        node1.query(
+            f"""
+            DROP TABLE IF EXISTS {DB_NAME}.{TABLE_NAME};
+            CREATE TABLE {DB_NAME}.{TABLE_NAME}
+            AS deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{TABLE_NAME}' , 'minio', 'minio123')
+            """
+        )
+
+        assert TABLE_NAME in node1.query(
+            f"select name from system.tables where database = '{DB_NAME}'"
+        )
+        assert TABLE_NAME in node2.query(
+            f"select name from system.tables where database = '{DB_NAME}'"
+        )
+
+        replica_path = f"/clickhouse/databases/{DB_NAME}/replicas/shard1|node2"
+        zk = started_cluster.get_kazoo_client("zoo1")
+        zk.set(replica_path + "/digest", "123456".encode())
+
+        assert "123456" in node2.query(
+            f"SELECT * FROM system.zookeeper WHERE path = '{replica_path}'"
+        )
+
+        node2.restart_clickhouse()
+
+        assert "123456" not in node2.query(
+            f"SELECT * FROM system.zookeeper WHERE path = '{replica_path}'"
+        )

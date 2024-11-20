@@ -5230,14 +5230,51 @@ Result:
 
 Also see the `toUnixTimestamp` function.
 
-## toFixedString(s, N)
+## toFixedString
 
 Converts a [String](../data-types/string.md) type argument to a [FixedString(N)](../data-types/fixedstring.md) type (a string of fixed length N).
 If the string has fewer bytes than N, it is padded with null bytes to the right. If the string has more bytes than N, an exception is thrown.
 
-## toStringCutToZero(s)
+**Syntax**
+
+```sql
+toFixedString(s, N)
+```
+
+**Arguments**
+
+- `s` — A String to convert to a fixed string. [String](../data-types/string.md).
+- `N` — Length N. [UInt8](../data-types/int-uint.md)
+
+**Returned value**
+
+- An N length fixed string of `s`. [FixedString](../data-types/fixedstring.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT toFixedString('foo', 8) AS s;
+```
+
+Result:
+
+```response
+┌─s─────────────┐
+│ foo\0\0\0\0\0 │
+└───────────────┘
+```
+
+## toStringCutToZero
 
 Accepts a String or FixedString argument. Returns the String with the content truncated at the first zero byte found.
+
+**Syntax**
+
+```sql
+toStringCutToZero(s)
+```
 
 **Example**
 
@@ -6754,7 +6791,7 @@ parseDateTime(str[, format[, timezone]])
 
 **Returned value(s)**
 
-Returns DateTime values parsed from input string according to a MySQL style format string.
+Return a [DateTime](../data-types/datetime.md) value parsed from the input string according to a MySQL-style format string.
 
 **Supported format specifiers**
 
@@ -6803,7 +6840,7 @@ parseDateTimeInJodaSyntax(str[, format[, timezone]])
 
 **Returned value(s)**
 
-Returns DateTime values parsed from input string according to a Joda style format.
+Return a [DateTime](../data-types/datetime.md) value parsed from the input string according to a Joda-style format string.
 
 **Supported format specifiers**
 
@@ -6829,6 +6866,64 @@ Same as for [parseDateTimeInJodaSyntax](#parsedatetimeinjodasyntax) except that 
 ## parseDateTimeInJodaSyntaxOrNull
 
 Same as for [parseDateTimeInJodaSyntax](#parsedatetimeinjodasyntax) except that it returns `NULL` when it encounters a date format that cannot be processed.
+
+## parseDateTime64
+
+Converts a [String](../data-types/string.md) to [DateTime64](../data-types/datetime64.md) according to a [MySQL format string](https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format).
+
+**Syntax**
+
+``` sql
+parseDateTime64(str[, format[, timezone]])
+```
+
+**Arguments**
+
+- `str` — The String to be parsed.
+- `format` — The format string. Optional. `%Y-%m-%d %H:%i:%s.%f` if not specified.
+- `timezone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md#timezone). Optional.
+
+**Returned value(s)**
+
+Return a [DateTime64](../data-types/datetime64.md) value parsed from the input string according to a MySQL-style format string.
+The precision of the returned value is 6.
+
+## parseDateTime64OrZero
+
+Same as for [parseDateTime64](#parsedatetime64) except that it returns zero date when it encounters a date format that cannot be processed.
+
+## parseDateTime64OrNull
+
+Same as for [parseDateTime64](#parsedatetime64) except that it returns `NULL` when it encounters a date format that cannot be processed.
+
+## parseDateTime64InJodaSyntax
+
+Converts a [String](../data-types/string.md) to [DateTime64](../data-types/datetime64.md) according to a [Joda format string](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html).
+
+**Syntax**
+
+``` sql
+parseDateTime64InJodaSyntax(str[, format[, timezone]])
+```
+
+**Arguments**
+
+- `str` — The String to be parsed.
+- `format` — The format string. Optional. `yyyy-MM-dd HH:mm:ss` if not specified.
+- `timezone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md#timezone). Optional.
+
+**Returned value(s)**
+
+Return a [DateTime64](../data-types/datetime64.md) value parsed from the input string according to a Joda-style format string.
+The precision of the returned value equal to the number of `S` placeholders in the format string (but at most 6).
+
+## parseDateTime64InJodaSyntaxOrZero
+
+Same as for [parseDateTime64InJodaSyntax](#parsedatetime64injodasyntax) except that it returns zero date when it encounters a date format that cannot be processed.
+
+## parseDateTime64InJodaSyntaxOrNull
+
+Same as for [parseDateTime64InJodaSyntax](#parsedatetime64injodasyntax) except that it returns `NULL` when it encounters a date format that cannot be processed.
 
 ## parseDateTimeBestEffort
 ## parseDateTime32BestEffort

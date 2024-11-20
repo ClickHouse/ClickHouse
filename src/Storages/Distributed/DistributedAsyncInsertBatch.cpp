@@ -2,6 +2,7 @@
 #include <Storages/Distributed/DistributedAsyncInsertHelpers.h>
 #include <Storages/Distributed/DistributedAsyncInsertHeader.h>
 #include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
+#include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/StorageDistributed.h>
 #include <QueryPipeline/RemoteInserter.h>
 #include <Common/CurrentMetrics.h>
@@ -19,6 +20,11 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool distributed_insert_skip_read_only_replicas;
+}
+
+namespace DistributedSetting
+{
+    extern const DistributedSettingsBool fsync_after_insert;
 }
 
 namespace ErrorCodes
@@ -53,7 +59,7 @@ bool isSplittableErrorCode(int code, bool remote)
 DistributedAsyncInsertBatch::DistributedAsyncInsertBatch(DistributedAsyncInsertDirectoryQueue & parent_)
     : parent(parent_)
     , split_batch_on_failure(parent.split_batch_on_failure)
-    , fsync(parent.storage.getDistributedSettingsRef().fsync_after_insert)
+    , fsync(parent.storage.getDistributedSettingsRef()[DistributedSetting::fsync_after_insert])
     , dir_fsync(parent.dir_fsync)
 {}
 

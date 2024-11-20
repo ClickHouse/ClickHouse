@@ -1155,9 +1155,6 @@ private:
 
         calculateMinMaxFlags();
 
-        if (!isLeaf())
-            return;
-
         auto new_flags = function(flags, min_flags_with_children, max_flags_with_children, level, grant_option);
 
         if (new_flags != flags)

@@ -32,6 +32,20 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsString default_replica_name;
+    extern const ServerSettingsString default_replica_path;
+}
+
+namespace RefreshSetting
+{
+    extern const RefreshSettingsBool all_replicas;
+    extern const RefreshSettingsInt64 refresh_retries;
+    extern const RefreshSettingsUInt64 refresh_retry_initial_backoff_ms;
+    extern const RefreshSettingsUInt64 refresh_retry_max_backoff_ms;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -62,8 +76,8 @@ RefreshTask::RefreshTask(
         const auto macros = context->getMacros();
         Macros::MacroExpansionInfo info;
         info.table_id = view->getStorageID();
-        coordination.path = macros->expand(server_settings.default_replica_path, info);
-        coordination.replica_name = context->getMacros()->expand(server_settings.default_replica_name, info);
+        coordination.path = macros->expand(server_settings[ServerSetting::default_replica_path], info);
+        coordination.replica_name = context->getMacros()->expand(server_settings[ServerSetting::default_replica_name], info);
 
         auto zookeeper = context->getZooKeeper();
         String replica_path = coordination.path + "/replicas/" + coordination.replica_name;
@@ -181,7 +195,7 @@ void RefreshTask::checkAlterIsPossible(const DB::ASTRefreshStrategy & new_strate
     RefreshSettings s;
     if (new_strategy.settings)
         s.applyChanges(new_strategy.settings->changes);
-    if (s.all_replicas != refresh_settings.all_replicas)
+    if (s[RefreshSetting::all_replicas] != refresh_settings[RefreshSetting::all_replicas])
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Altering setting 'all_replicas' is not supported.");
     if (new_strategy.append != refresh_append)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Adding or removing APPEND is not supported.");
@@ -299,9 +313,11 @@ std::chrono::sys_seconds RefreshTask::getNextRefreshTimeslot() const
     return refresh_schedule.advance(coordination.root_znode.last_completed_timeslot);
 }
 
-void RefreshTask::notifyDependencyProgress()
+void RefreshTask::notify()
 {
     std::lock_guard guard(mutex);
+    if (view && view->getContext()->getRefreshSet().refreshesStopped())
+        interruptExecution();
     scheduling.dependencies_satisfied_until = std::chrono::sys_seconds(std::chrono::seconds(-1));
     refresh_task->schedule();
 }
@@ -367,7 +383,7 @@ void RefreshTask::refreshTask()
 
             chassert(lock.owns_lock());
 
-            if (scheduling.stop_requested || coordination.read_only)
+            if (scheduling.stop_requested || view->getContext()->getRefreshSet().refreshesStopped() || coordination.read_only)
             {
                 /// Exit the task and wait for the user to start or resume, which will schedule the task again.
                 setState(RefreshState::Disabled, lock);
@@ -448,7 +464,7 @@ void RefreshTask::refreshTask()
                 else
                 {
                     error_message = getCurrentExceptionMessage(true);
-                    LOG_ERROR(log, "{}: Refresh failed (attempt {}/{}): {}", view->getStorageID().getFullTableName(), start_znode.attempt_number, refresh_settings.refresh_retries + 1, error_message);
+                    LOG_ERROR(log, "{}: Refresh failed (attempt {}/{}): {}", view->getStorageID().getFullTableName(), start_znode.attempt_number, refresh_settings[RefreshSetting::refresh_retries] + 1, error_message);
                 }
             }
 
@@ -668,10 +684,10 @@ static std::chrono::milliseconds backoff(Int64 retry_idx, const RefreshSettings 
     UInt64 delay_ms;
     UInt64 multiplier = UInt64(1) << std::min(retry_idx, Int64(62));
     /// Overflow check: a*b <= c iff a <= c/b iff a <= floor(c/b).
-    if (refresh_settings.refresh_retry_initial_backoff_ms <= refresh_settings.refresh_retry_max_backoff_ms / multiplier)
-        delay_ms = refresh_settings.refresh_retry_initial_backoff_ms * multiplier;
+    if (refresh_settings[RefreshSetting::refresh_retry_initial_backoff_ms] <= refresh_settings[RefreshSetting::refresh_retry_max_backoff_ms] / multiplier)
+        delay_ms = refresh_settings[RefreshSetting::refresh_retry_initial_backoff_ms] * multiplier;
     else
-        delay_ms = refresh_settings.refresh_retry_max_backoff_ms;
+        delay_ms = refresh_settings[RefreshSetting::refresh_retry_max_backoff_ms];
     return std::chrono::milliseconds(delay_ms);
 }
 
@@ -679,7 +695,7 @@ std::tuple<std::chrono::system_clock::time_point, std::chrono::sys_seconds, Refr
 RefreshTask::determineNextRefreshTime(std::chrono::sys_seconds now)
 {
     auto znode = coordination.root_znode;
-    if (refresh_settings.refresh_retries >= 0 && znode.attempt_number > refresh_settings.refresh_retries)
+    if (refresh_settings[RefreshSetting::refresh_retries] >= 0 && znode.attempt_number > refresh_settings[RefreshSetting::refresh_retries])
     {
         /// Skip to the next scheduled refresh, as if a refresh succeeded.
         znode.last_completed_timeslot = refresh_schedule.timeslotForCompletedRefresh(znode.last_completed_timeslot, znode.last_attempt_time, znode.last_attempt_time, false);
@@ -863,7 +879,7 @@ std::tuple<StoragePtr, TableLockHolder> RefreshTask::getAndLockTargetTable(const
         std::lock_guard lock(replica_sync_mutex);
         if (uuid != last_synced_inner_uuid)
         {
-            InterpreterSystemQuery::trySyncReplica(storage.get(), SyncReplicaMode::DEFAULT, {}, context);
+            InterpreterSystemQuery::trySyncReplica(storage, SyncReplicaMode::DEFAULT, {}, context);
 
             /// (Race condition: this may revert from a newer uuid to an older one. This doesn't break
             ///  anything, just causes an unnecessary sync. Should be rare.)

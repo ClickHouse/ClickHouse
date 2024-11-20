@@ -263,6 +263,11 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeString>();
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const IColumn * column = arguments[0].column.get();
@@ -291,6 +296,7 @@ public:
             tryExecuteUIntOrInt<Int256>(column, res_column) ||
             tryExecuteString(column, res_column) ||
             tryExecuteFixedString(column, res_column) ||
+            tryExecuteFloat<BFloat16>(column, res_column) ||
             tryExecuteFloat<Float32>(column, res_column) ||
             tryExecuteFloat<Float64>(column, res_column) ||
             tryExecuteDecimal<Decimal32>(column, res_column) ||
@@ -615,6 +621,11 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
                             arguments[0]->getName(), getName());
 
+        return std::make_shared<DataTypeString>();
+    }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
         return std::make_shared<DataTypeString>();
     }
 

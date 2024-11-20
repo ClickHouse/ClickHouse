@@ -57,6 +57,13 @@ public:
         return arguments[0];
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        /// In case of default implementation for Dynamic always return String even for FixedString types
+        /// to avoid Dynamic result of this function.
+        return std::make_shared<DataTypeString>();
+    }
+
     bool useDefaultImplementationForConstants() const override { return true; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

@@ -33,6 +33,12 @@ namespace DB
 {
 struct Settings;
 
+namespace ServerSetting
+{
+    extern const ServerSettingsGroupArrayActionWhenLimitReached aggregate_function_group_array_action_when_limit_is_reached;
+    extern const ServerSettingsUInt64 aggregate_function_group_array_max_element_size;
+}
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -73,7 +79,7 @@ template <typename T>
 struct GroupArraySamplerData
 {
     /// For easy serialization.
-    static_assert(std::has_unique_object_representations_v<T> || std::is_floating_point_v<T>);
+    static_assert(std::has_unique_object_representations_v<T> || is_floating_point<T>);
 
     // Switch to ordinary Allocator after 4096 bytes to avoid fragmentation and trash in Arena
     using Allocator = MixedAlignedArenaAllocator<alignof(T), 4096>;
@@ -114,7 +120,7 @@ template <typename T>
 struct GroupArrayNumericData<T, false>
 {
     /// For easy serialization.
-    static_assert(std::has_unique_object_representations_v<T> || std::is_floating_point_v<T>);
+    static_assert(std::has_unique_object_representations_v<T> || is_floating_point<T>);
 
     // Switch to ordinary Allocator after 4096 bytes to avoid fragmentation and trash in Arena
     using Allocator = MixedAlignedArenaAllocator<alignof(T), 4096>;
@@ -746,7 +752,7 @@ inline AggregateFunctionPtr createAggregateFunctionGroupArrayImpl(const DataType
 size_t getMaxArraySize()
 {
     if (auto context = Context::getGlobalContextInstance())
-        return context->getServerSettings().aggregate_function_group_array_max_element_size;
+        return context->getServerSettings()[ServerSetting::aggregate_function_group_array_max_element_size];
 
     return 0xFFFFFF;
 }
@@ -754,7 +760,7 @@ size_t getMaxArraySize()
 bool discardOnLimitReached()
 {
     if (auto context = Context::getGlobalContextInstance())
-        return context->getServerSettings().aggregate_function_group_array_action_when_limit_is_reached
+        return context->getServerSettings()[ServerSetting::aggregate_function_group_array_action_when_limit_is_reached]
             == GroupArrayActionWhenLimitReached::DISCARD;
 
     return false;

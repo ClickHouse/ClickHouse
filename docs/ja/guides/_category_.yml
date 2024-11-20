@@ -1,0 +1,7 @@
+position: 10 
+label: 'User Guides'
+collapsible: true
+collapsed: true
+link:
+  type: generated-index
+  title: User Guides

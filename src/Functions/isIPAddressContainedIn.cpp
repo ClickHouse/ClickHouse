@@ -155,6 +155,11 @@ namespace DB
             return std::make_shared<DataTypeUInt8>();
         }
 
+        DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+        {
+            return std::make_shared<DataTypeUInt8>();
+        }
+
         size_t getNumberOfArguments() const override { return 2; }
         bool useDefaultImplementationForNulls() const override { return false; }
 

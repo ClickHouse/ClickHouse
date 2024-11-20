@@ -14,6 +14,7 @@ public:
     (
         Suggest & suggest,
         const String & history_file_path,
+        UInt32 history_max_entries,
         bool multiline,
         bool ignore_shell_suspend,
         Patterns extenders_,

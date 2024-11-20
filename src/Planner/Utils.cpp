@@ -11,11 +11,13 @@
 #include <DataTypes/DataTypeNullable.h>
 
 #include <Columns/getLeastSuperColumn.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 
 #include <IO/WriteBufferFromString.h>
 
 #include <Functions/FunctionFactory.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Functions/indexHint.h>
 
 #include <Storages/StorageDummy.h>
@@ -78,7 +80,7 @@ namespace ErrorCodes
     extern const int INTERSECT_OR_EXCEPT_RESULT_STRUCTURES_MISMATCH;
 }
 
-String dumpQueryPlan(QueryPlan & query_plan)
+String dumpQueryPlan(const QueryPlan & query_plan)
 {
     WriteBufferFromOwnString query_plan_buffer;
     query_plan.explainPlan(query_plan_buffer, QueryPlan::ExplainPlanOptions{true, true, true, true});
@@ -86,7 +88,7 @@ String dumpQueryPlan(QueryPlan & query_plan)
     return query_plan_buffer.str();
 }
 
-String dumpQueryPipeline(QueryPlan & query_plan)
+String dumpQueryPipeline(const QueryPlan & query_plan)
 {
     QueryPlan::ExplainPipelineOptions explain_pipeline;
     WriteBufferFromOwnString query_pipeline_buffer;

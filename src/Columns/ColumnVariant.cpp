@@ -739,6 +739,39 @@ void ColumnVariant::popBack(size_t n)
     offsets->popBack(n);
 }
 
+ColumnCheckpointPtr ColumnVariant::getCheckpoint() const
+{
+    ColumnCheckpoints checkpoints;
+    checkpoints.reserve(variants.size());
+
+    for (const auto & column : variants)
+        checkpoints.push_back(column->getCheckpoint());
+
+    return std::make_shared<ColumnCheckpointWithMultipleNested>(size(), std::move(checkpoints));
+}
+
+void ColumnVariant::updateCheckpoint(ColumnCheckpoint & checkpoint) const
+{
+    auto & checkpoints = assert_cast<ColumnCheckpointWithMultipleNested &>(checkpoint).nested;
+    chassert(checkpoints.size() == variants.size());
+
+    checkpoint.size = size();
+    for (size_t i = 0; i < variants.size(); ++i)
+        variants[i]->updateCheckpoint(*checkpoints[i]);
+}
+
+void ColumnVariant::rollback(const ColumnCheckpoint & checkpoint)
+{
+    getOffsets().resize_assume_reserved(checkpoint.size);
+    getLocalDiscriminators().resize_assume_reserved(checkpoint.size);
+
+    const auto & checkpoints = assert_cast<const ColumnCheckpointWithMultipleNested &>(checkpoint).nested;
+    chassert(variants.size() == checkpoints.size());
+
+    for (size_t i = 0; i < variants.size(); ++i)
+        variants[i]->rollback(*checkpoints[i]);
+}
+
 StringRef ColumnVariant::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     /// During any serialization/deserialization we should always use global discriminators.
@@ -919,7 +952,7 @@ ColumnPtr ColumnVariant::permute(const Permutation & perm, size_t limit) const
     if (hasOnlyNulls())
     {
         if (limit)
-            return cloneResized(limit);
+            return cloneResized(limit ? std::min(size(), limit) : size());
 
         /// If no limit, we can just return current immutable column.
         return this->getPtr();
@@ -1376,6 +1409,23 @@ bool ColumnVariant::structureEquals(const IColumn & rhs) const
     return true;
 }
 
+bool ColumnVariant::dynamicStructureEquals(const IColumn & rhs) const
+{
+    const auto * rhs_variant = typeid_cast<const ColumnVariant *>(&rhs);
+    if (!rhs_variant)
+        return false;
+
+    const size_t num_variants = variants.size();
+    if (num_variants != rhs_variant->variants.size())
+        return false;
+
+    for (size_t i = 0; i < num_variants; ++i)
+        if (!variants[i]->dynamicStructureEquals(rhs_variant->getVariantByGlobalDiscriminator(globalDiscriminatorByLocal(i))))
+            return false;
+
+    return true;
+}
+
 ColumnPtr ColumnVariant::compress() const
 {
     ColumnPtr local_discriminators_compressed = local_discriminators->compress();
@@ -1449,6 +1499,31 @@ std::optional<ColumnVariant::Discriminator> ColumnVariant::getLocalDiscriminator
     }
 
     return std::nullopt;
+}
+
+std::optional<ColumnVariant::Discriminator> ColumnVariant::getGlobalDiscriminatorOfOneNoneEmptyVariantNoNulls() const
+{
+    if (auto local_discr = getLocalDiscriminatorOfOneNoneEmptyVariantNoNulls())
+        return globalDiscriminatorByLocal(*local_discr);
+
+    return std::nullopt;
+}
+
+std::optional<ColumnVariant::Discriminator> ColumnVariant::getGlobalDiscriminatorOfOneNoneEmptyVariant() const
+{
+    std::optional<ColumnVariant::Discriminator> discr;
+    for (size_t i = 0; i != variants.size(); ++i)
+    {
+        if (!variants[i]->empty())
+        {
+            /// Check if we already had non-empty variant.
+            if (discr)
+                return std::nullopt;
+            discr = globalDiscriminatorByLocal(i);
+        }
+    }
+
+    return discr;
 }
 
 void ColumnVariant::applyNullMap(const ColumnVector<UInt8>::Container & null_map)

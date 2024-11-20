@@ -21,6 +21,7 @@ node1 = cluster.add_instance(
     user_configs=["configs/users.xml"],
     with_zookeeper=True,
     macros={"shard": "shard1", "replica": "1"},
+    stay_alive=True,
 )
 node2 = cluster.add_instance(
     "node2",
@@ -82,7 +83,11 @@ def test_refreshable_mv_in_replicated_db(started_cluster):
             )
         # Wait for quiescence.
         for node in nodes:
-            node.query(f"system wait view re.{name}")
+            # Wait twice to make sure we wait for a refresh that started after we adjusted the clock.
+            # Otherwise another refresh may start right after (because clock moved far forward).
+            node.query(
+                f"system wait view re.{name}; system refresh view re.{name}; system wait view re.{name};"
+            )
         rows_before = int(nodes[randint(0, 1)].query(f"select count() from re.{name}"))
         # Advance the clocks.
         for node in nodes:
@@ -98,7 +103,9 @@ def test_refreshable_mv_in_replicated_db(started_cluster):
             )
             node.query(f"system wait view re.{name}")
         # Check results.
-        rows_after = int(nodes[randint(0, 1)].query(f"select count() from re.{name}"))
+        node = nodes[randint(0, 1)]
+        node.query(f"system sync replica re.{name}")
+        rows_after = int(node.query(f"select count() from re.{name}"))
         expected = 1 if coordinated else 2
         assert rows_after - rows_before == expected
 
@@ -199,3 +206,16 @@ def test_refreshable_mv_in_replicated_db(started_cluster):
 
     node1.query("drop database re sync")
     node2.query("drop database re sync")
+
+
+def test_refreshable_mv_in_system_db(started_cluster):
+    node1.query(
+        "create materialized view system.a refresh every 1 second (x Int64) engine Memory as select number+1 as x from numbers(2);"
+        "system refresh view system.a;"
+    )
+
+    node1.restart_clickhouse()
+    node1.query("system refresh view system.a")
+    assert node1.query("select count(), sum(x) from system.a") == "2\t3\n"
+
+    node1.query("drop table system.a")

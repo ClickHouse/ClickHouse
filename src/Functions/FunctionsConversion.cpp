@@ -7,10 +7,8 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
-#include <Columns/ColumnNothing.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnObjectDeprecated.h>
-#include <Columns/ColumnObject.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnStringHelpers.h>
 #include <Columns/ColumnTuple.h>
@@ -73,8 +71,10 @@
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 
+
 namespace DB
 {
+
 namespace Setting
 {
     extern const SettingsBool cast_ipv4_ipv6_default_on_conversion_error;
@@ -83,6 +83,7 @@ namespace Setting
     extern const SettingsBool input_format_ipv4_default_on_conversion_error;
     extern const SettingsBool input_format_ipv6_default_on_conversion_error;
     extern const SettingsBool precise_float_parsing;
+    extern const SettingsBool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
 }
 
 namespace ErrorCodes
@@ -652,7 +653,7 @@ inline void convertFromTime<DataTypeDateTime>(DataTypeDateTime::FieldType & x, t
 template <typename DataType>
 void parseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool precise_float_parsing)
 {
-    if constexpr (std::is_floating_point_v<typename DataType::FieldType>)
+    if constexpr (is_floating_point<typename DataType::FieldType>)
     {
         if (precise_float_parsing)
             readFloatTextPrecise(x, rb);
@@ -716,7 +717,7 @@ inline void parseImpl<DataTypeIPv6>(DataTypeIPv6::FieldType & x, ReadBuffer & rb
 template <typename DataType>
 bool tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool precise_float_parsing)
 {
-    if constexpr (std::is_floating_point_v<typename DataType::FieldType>)
+    if constexpr (is_floating_point<typename DataType::FieldType>)
     {
         if (precise_float_parsing)
             return tryReadFloatTextPrecise(x, rb);
@@ -1397,9 +1398,18 @@ struct ConvertImpl
                 offsets_to.resize(size);
 
                 WriteBufferFromVector<ColumnString::Chars> write_buffer(data_to);
-                const auto & type = static_cast<const FromDataType &>(*col_with_type_and_name.type);
+                const FromDataType & type = static_cast<const FromDataType &>(*col_with_type_and_name.type);
 
                 ColumnUInt8::MutablePtr null_map = copyNullMap(datetime_arg.column);
+
+                bool cut_trailing_zeros_align_to_groups_of_thousands = false;
+                if (DB::CurrentThread::isInitialized())
+                {
+                    const DB::ContextPtr query_context = DB::CurrentThread::get().getQueryContext();
+
+                    if (query_context)
+                        cut_trailing_zeros_align_to_groups_of_thousands = query_context->getSettingsRef()[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands];
+                }
 
                 if (!null_map && arguments.size() > 1)
                     null_map = copyNullMap(arguments[1].column->convertToFullColumnIfConst());
@@ -1415,7 +1425,18 @@ struct ConvertImpl
                             else
                                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty");
                         }
-                        bool is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
+                        bool is_ok = true;
+                        if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>)
+                        {
+                            if (cut_trailing_zeros_align_to_groups_of_thousands)
+                                writeDateTimeTextCutTrailingZerosAlignToGroupOfThousands(DateTime64(vec_from[i]), type.getScale(), write_buffer, *time_zone);
+                            else
+                                is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
+                        }
+                        else
+                        {
+                            is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
+                        }
                         null_map->getData()[i] |= !is_ok;
                         writeChar(0, write_buffer);
                         offsets_to[i] = write_buffer.count();
@@ -1432,7 +1453,17 @@ struct ConvertImpl
                             else
                                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty");
                         }
-                        FormatImpl<FromDataType>::template execute<void>(vec_from[i], write_buffer, &type, time_zone);
+                        if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>)
+                        {
+                            if (cut_trailing_zeros_align_to_groups_of_thousands)
+                                writeDateTimeTextCutTrailingZerosAlignToGroupOfThousands(DateTime64(vec_from[i]), type.getScale(), write_buffer, *time_zone);
+                            else
+                                FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
+                        }
+                        else
+                        {
+                            FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
+                        }
                         writeChar(0, write_buffer);
                         offsets_to[i] = write_buffer.count();
                     }
@@ -1816,7 +1847,7 @@ struct ConvertImpl
                 else
                 {
                     /// If From Data is Nan or Inf and we convert to integer type, throw exception
-                    if constexpr (std::is_floating_point_v<FromFieldType> && !std::is_floating_point_v<ToFieldType>)
+                    if constexpr (is_floating_point<FromFieldType> && !is_floating_point<ToFieldType>)
                     {
                         if (!isFinite(vec_from[i]))
                         {
@@ -2302,9 +2333,9 @@ private:
                 using RightT = typename RightDataType::FieldType;
 
                 static constexpr bool bad_left =
-                    is_decimal<LeftT> || std::is_floating_point_v<LeftT> || is_big_int_v<LeftT> || is_signed_v<LeftT>;
+                    is_decimal<LeftT> || is_floating_point<LeftT> || is_big_int_v<LeftT> || is_signed_v<LeftT>;
                 static constexpr bool bad_right =
-                    is_decimal<RightT> || std::is_floating_point_v<RightT> || is_big_int_v<RightT> || is_signed_v<RightT>;
+                    is_decimal<RightT> || is_floating_point<RightT> || is_big_int_v<RightT> || is_signed_v<RightT>;
 
                 /// Disallow int vs UUID conversion (but support int vs UInt128 conversion)
                 if constexpr ((bad_left && std::is_same_v<RightDataType, DataTypeUUID>) ||
@@ -2631,7 +2662,7 @@ struct ToNumberMonotonicity
         /// Float cases.
 
         /// When converting to Float, the conversion is always monotonic.
-        if constexpr (std::is_floating_point_v<T>)
+        if constexpr (is_floating_point<T>)
             return { .is_monotonic = true, .is_always_monotonic = true };
 
         const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&type);
@@ -2844,6 +2875,7 @@ struct NameToInt32 { static constexpr auto name = "toInt32"; };
 struct NameToInt64 { static constexpr auto name = "toInt64"; };
 struct NameToInt128 { static constexpr auto name = "toInt128"; };
 struct NameToInt256 { static constexpr auto name = "toInt256"; };
+struct NameToBFloat16 { static constexpr auto name = "toBFloat16"; };
 struct NameToFloat32 { static constexpr auto name = "toFloat32"; };
 struct NameToFloat64 { static constexpr auto name = "toFloat64"; };
 struct NameToUUID { static constexpr auto name = "toUUID"; };
@@ -2862,6 +2894,7 @@ using FunctionToInt32 = FunctionConvert<DataTypeInt32, NameToInt32, ToNumberMono
 using FunctionToInt64 = FunctionConvert<DataTypeInt64, NameToInt64, ToNumberMonotonicity<Int64>>;
 using FunctionToInt128 = FunctionConvert<DataTypeInt128, NameToInt128, ToNumberMonotonicity<Int128>>;
 using FunctionToInt256 = FunctionConvert<DataTypeInt256, NameToInt256, ToNumberMonotonicity<Int256>>;
+using FunctionToBFloat16 = FunctionConvert<DataTypeBFloat16, NameToBFloat16, ToNumberMonotonicity<BFloat16>>;
 using FunctionToFloat32 = FunctionConvert<DataTypeFloat32, NameToFloat32, ToNumberMonotonicity<Float32>>;
 using FunctionToFloat64 = FunctionConvert<DataTypeFloat64, NameToFloat64, ToNumberMonotonicity<Float64>>;
 
@@ -2899,6 +2932,7 @@ template <> struct FunctionTo<DataTypeInt32> { using Type = FunctionToInt32; };
 template <> struct FunctionTo<DataTypeInt64> { using Type = FunctionToInt64; };
 template <> struct FunctionTo<DataTypeInt128> { using Type = FunctionToInt128; };
 template <> struct FunctionTo<DataTypeInt256> { using Type = FunctionToInt256; };
+template <> struct FunctionTo<DataTypeBFloat16> { using Type = FunctionToBFloat16; };
 template <> struct FunctionTo<DataTypeFloat32> { using Type = FunctionToFloat32; };
 template <> struct FunctionTo<DataTypeFloat64> { using Type = FunctionToFloat64; };
 
@@ -2941,6 +2975,7 @@ struct NameToInt32OrZero { static constexpr auto name = "toInt32OrZero"; };
 struct NameToInt64OrZero { static constexpr auto name = "toInt64OrZero"; };
 struct NameToInt128OrZero { static constexpr auto name = "toInt128OrZero"; };
 struct NameToInt256OrZero { static constexpr auto name = "toInt256OrZero"; };
+struct NameToBFloat16OrZero { static constexpr auto name = "toBFloat16OrZero"; };
 struct NameToFloat32OrZero { static constexpr auto name = "toFloat32OrZero"; };
 struct NameToFloat64OrZero { static constexpr auto name = "toFloat64OrZero"; };
 struct NameToDateOrZero { static constexpr auto name = "toDateOrZero"; };
@@ -2967,6 +3002,7 @@ using FunctionToInt32OrZero = FunctionConvertFromString<DataTypeInt32, NameToInt
 using FunctionToInt64OrZero = FunctionConvertFromString<DataTypeInt64, NameToInt64OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToInt128OrZero = FunctionConvertFromString<DataTypeInt128, NameToInt128OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToInt256OrZero = FunctionConvertFromString<DataTypeInt256, NameToInt256OrZero, ConvertFromStringExceptionMode::Zero>;
+using FunctionToBFloat16OrZero = FunctionConvertFromString<DataTypeBFloat16, NameToBFloat16OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToFloat32OrZero = FunctionConvertFromString<DataTypeFloat32, NameToFloat32OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToFloat64OrZero = FunctionConvertFromString<DataTypeFloat64, NameToFloat64OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToDateOrZero = FunctionConvertFromString<DataTypeDate, NameToDateOrZero, ConvertFromStringExceptionMode::Zero>;
@@ -2993,6 +3029,7 @@ struct NameToInt32OrNull { static constexpr auto name = "toInt32OrNull"; };
 struct NameToInt64OrNull { static constexpr auto name = "toInt64OrNull"; };
 struct NameToInt128OrNull { static constexpr auto name = "toInt128OrNull"; };
 struct NameToInt256OrNull { static constexpr auto name = "toInt256OrNull"; };
+struct NameToBFloat16OrNull { static constexpr auto name = "toBFloat16OrNull"; };
 struct NameToFloat32OrNull { static constexpr auto name = "toFloat32OrNull"; };
 struct NameToFloat64OrNull { static constexpr auto name = "toFloat64OrNull"; };
 struct NameToDateOrNull { static constexpr auto name = "toDateOrNull"; };
@@ -3019,6 +3056,7 @@ using FunctionToInt32OrNull = FunctionConvertFromString<DataTypeInt32, NameToInt
 using FunctionToInt64OrNull = FunctionConvertFromString<DataTypeInt64, NameToInt64OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToInt128OrNull = FunctionConvertFromString<DataTypeInt128, NameToInt128OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToInt256OrNull = FunctionConvertFromString<DataTypeInt256, NameToInt256OrNull, ConvertFromStringExceptionMode::Null>;
+using FunctionToBFloat16OrNull = FunctionConvertFromString<DataTypeBFloat16, NameToBFloat16OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToFloat32OrNull = FunctionConvertFromString<DataTypeFloat32, NameToFloat32OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToFloat64OrNull = FunctionConvertFromString<DataTypeFloat64, NameToFloat64OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToDateOrNull = FunctionConvertFromString<DataTypeDate, NameToDateOrNull, ConvertFromStringExceptionMode::Null>;
@@ -3205,11 +3243,9 @@ private:
     {
         auto function_adaptor = std::make_unique<FunctionToOverloadResolverAdaptor>(function)->build({ColumnWithTypeAndName{nullptr, from_type, ""}});
 
-        return [function_adaptor]
-            (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count)
-        {
-            return function_adaptor->execute(arguments, result_type, input_rows_count);
-        };
+        return [function_adaptor](
+                   ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count)
+        { return function_adaptor->execute(arguments, result_type, input_rows_count, /* dry_run = */ false); };
     }
 
     static WrapperType createToNullableColumnWrapper()
@@ -3890,7 +3926,7 @@ private:
         }
     }
 
-    WrapperType createTupleToObjectWrapper(const DataTypeTuple & from_tuple, bool has_nullable_subcolumns) const
+    WrapperType createTupleToObjectDeprecatedWrapper(const DataTypeTuple & from_tuple, bool has_nullable_subcolumns) const
     {
         if (!from_tuple.haveExplicitNames())
             throw Exception(ErrorCodes::TYPE_MISMATCH,
@@ -3937,7 +3973,7 @@ private:
         };
     }
 
-    WrapperType createMapToObjectWrapper(const DataTypeMap & from_map, bool has_nullable_subcolumns) const
+    WrapperType createMapToObjectDeprecatedWrapper(const DataTypeMap & from_map, bool has_nullable_subcolumns) const
     {
         auto key_value_types = from_map.getKeyValueTypes();
 
@@ -4017,11 +4053,11 @@ private:
     {
         if (const auto * from_tuple = checkAndGetDataType<DataTypeTuple>(from_type.get()))
         {
-            return createTupleToObjectWrapper(*from_tuple, to_type->hasNullableSubcolumns());
+            return createTupleToObjectDeprecatedWrapper(*from_tuple, to_type->hasNullableSubcolumns());
         }
         else if (const auto * from_map = checkAndGetDataType<DataTypeMap>(from_type.get()))
         {
-            return createMapToObjectWrapper(*from_map, to_type->hasNullableSubcolumns());
+            return createMapToObjectDeprecatedWrapper(*from_map, to_type->hasNullableSubcolumns());
         }
         else if (checkAndGetDataType<DataTypeString>(from_type.get()))
         {
@@ -4050,23 +4086,43 @@ private:
             "Cast to Object can be performed only from flatten named Tuple, Map or String. Got: {}", from_type->getName());
     }
 
+
     WrapperType createObjectWrapper(const DataTypePtr & from_type, const DataTypeObject * to_object) const
     {
         if (checkAndGetDataType<DataTypeString>(from_type.get()))
         {
             return [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
             {
-                auto res = ConvertImplGenericFromString<true>::execute(arguments, result_type, nullable_source, input_rows_count, context)->assumeMutable();
-                res->finalize();
-                return res;
+                return ConvertImplGenericFromString<true>::execute(arguments, result_type, nullable_source, input_rows_count, context);
+            };
+        }
+
+        /// Cast Tuple/Object/Map to JSON type through serializing into JSON string and parsing back into JSON column.
+        /// Potentially we can do smarter conversion Tuple -> JSON with type preservation, but it's questionable how exactly Tuple should be
+        /// converted to JSON (for example, should we recursively convert nested Array(Tuple) to Array(JSON) or not, should we infer types from String fields, etc).
+        if (checkAndGetDataType<DataTypeObjectDeprecated>(from_type.get()) || checkAndGetDataType<DataTypeTuple>(from_type.get()) || checkAndGetDataType<DataTypeMap>(from_type.get()))
+        {
+            return [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
+            {
+                auto json_string = ColumnString::create();
+                ColumnStringHelpers::WriteHelper write_helper(assert_cast<ColumnString &>(*json_string), input_rows_count);
+                auto & write_buffer = write_helper.getWriteBuffer();
+                FormatSettings format_settings = context ? getFormatSettings(context) : FormatSettings{};
+                auto serialization = arguments[0].type->getDefaultSerialization();
+                for (size_t i = 0; i < input_rows_count; ++i)
+                {
+                    serialization->serializeTextJSON(*arguments[0].column, i, write_buffer, format_settings);
+                    write_helper.rowWritten();
+                }
+                write_helper.finalize();
+
+                ColumnsWithTypeAndName args_with_json_string = {ColumnWithTypeAndName(json_string->getPtr(), std::make_shared<DataTypeString>(), "")};
+                return ConvertImplGenericFromString<true>::execute(args_with_json_string, result_type, nullable_source, input_rows_count, context);
             };
         }
 
         /// TODO: support CAST between JSON types with different parameters
-        ///       support CAST from Map to JSON
-        ///       support CAST from Tuple to JSON
-        ///       support CAST from Object('json') to JSON
-        throw Exception(ErrorCodes::TYPE_MISMATCH, "Cast to {} can be performed only from String. Got: {}", magic_enum::enum_name(to_object->getSchemaFormat()), from_type->getName());
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Cast to {} can be performed only from String/Map/Object/Tuple. Got: {}", magic_enum::enum_name(to_object->getSchemaFormat()), from_type->getName());
     }
 
     WrapperType createVariantToVariantWrapper(const DataTypeVariant & from_variant, const DataTypeVariant & to_variant) const
@@ -4359,7 +4415,7 @@ private:
                     variant_column = IColumn::mutate(column);
                 /// Otherwise we should filter column.
                 else
-                    variant_column = column->filter(filter, variant_size_hint)->assumeMutable();
+                    variant_column = IColumn::mutate(column->filter(filter, variant_size_hint));
 
                 assert_cast<ColumnLowCardinality &>(*variant_column).nestedRemoveNullable();
                 return createVariantFromDescriptorsAndOneNonEmptyVariant(variant_types, std::move(discriminators), std::move(variant_column), variant_discr);
@@ -5142,7 +5198,7 @@ private:
             if constexpr (is_any_of<ToDataType,
                 DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256,
                 DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256,
-                DataTypeFloat32, DataTypeFloat64,
+                DataTypeBFloat16, DataTypeFloat32, DataTypeFloat64,
                 DataTypeDate, DataTypeDate32, DataTypeDateTime,
                 DataTypeUUID, DataTypeIPv4, DataTypeIPv6>)
             {
@@ -5395,6 +5451,17 @@ REGISTER_FUNCTION(Conversion)
     factory.registerFunction<FunctionToInt64>();
     factory.registerFunction<FunctionToInt128>();
     factory.registerFunction<FunctionToInt256>();
+
+    factory.registerFunction<FunctionToBFloat16>(FunctionDocumentation{.description=R"(
+Converts Float32 to BFloat16 with losing the precision.
+
+Example:
+[example:typical]
+)",
+        .examples{
+            {"typical", "SELECT toBFloat16(12.3::Float32);", "12.3125"}},
+        .categories{"Conversion"}});
+
     factory.registerFunction<FunctionToFloat32>();
     factory.registerFunction<FunctionToFloat64>();
 
@@ -5433,6 +5500,31 @@ REGISTER_FUNCTION(Conversion)
     factory.registerFunction<FunctionToInt64OrZero>();
     factory.registerFunction<FunctionToInt128OrZero>();
     factory.registerFunction<FunctionToInt256OrZero>();
+
+    factory.registerFunction<FunctionToBFloat16OrZero>(FunctionDocumentation{.description=R"(
+Converts String to BFloat16.
+
+If the string does not represent a floating point value, the function returns zero.
+
+The function allows a silent loss of precision while converting from the string representation. In that case, it will return the truncated result.
+
+Example of successful conversion:
+[example:typical]
+
+Examples of not successful conversion:
+[example:invalid1]
+[example:invalid2]
+
+Example of a loss of precision:
+[example:precision]
+)",
+        .examples{
+            {"typical", "SELECT toBFloat16OrZero('12.3');", "12.3125"},
+            {"invalid1", "SELECT toBFloat16OrZero('abc');", "0"},
+            {"invalid2", "SELECT toBFloat16OrZero(' 1');", "0"},
+            {"precision", "SELECT toBFloat16OrZero('12.3456789');", "12.375"}},
+        .categories{"Conversion"}});
+
     factory.registerFunction<FunctionToFloat32OrZero>();
     factory.registerFunction<FunctionToFloat64OrZero>();
     factory.registerFunction<FunctionToDateOrZero>();
@@ -5461,6 +5553,31 @@ REGISTER_FUNCTION(Conversion)
     factory.registerFunction<FunctionToInt64OrNull>();
     factory.registerFunction<FunctionToInt128OrNull>();
     factory.registerFunction<FunctionToInt256OrNull>();
+
+    factory.registerFunction<FunctionToBFloat16OrNull>(FunctionDocumentation{.description=R"(
+Converts String to Nullable(BFloat16).
+
+If the string does not represent a floating point value, the function returns NULL.
+
+The function allows a silent loss of precision while converting from the string representation. In that case, it will return the truncated result.
+
+Example of successful conversion:
+[example:typical]
+
+Examples of not successful conversion:
+[example:invalid1]
+[example:invalid2]
+
+Example of a loss of precision:
+[example:precision]
+)",
+    .examples{
+        {"typical", "SELECT toBFloat16OrNull('12.3');", "12.3125"},
+        {"invalid1", "SELECT toBFloat16OrNull('abc');", "NULL"},
+        {"invalid2", "SELECT toBFloat16OrNull(' 1');", "NULL"},
+        {"precision", "SELECT toBFloat16OrNull('12.3456789');", "12.375"}},
+    .categories{"Conversion"}});
+
     factory.registerFunction<FunctionToFloat32OrNull>();
     factory.registerFunction<FunctionToFloat64OrNull>();
     factory.registerFunction<FunctionToDateOrNull>();

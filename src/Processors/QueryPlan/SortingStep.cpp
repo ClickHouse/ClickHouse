@@ -77,13 +77,11 @@ static ITransformingStep::Traits getTraits(size_t limit)
 }
 
 SortingStep::SortingStep(
-    const DataStream & input_stream,
-    SortDescription description_,
-    UInt64 limit_,
-    const Settings & settings_)
-    : ITransformingStep(input_stream, input_stream.header, getTraits(limit_))
+    const Header & input_header, SortDescription description_, UInt64 limit_, const Settings & settings_, bool is_sorting_for_merge_join_)
+    : ITransformingStep(input_header, input_header, getTraits(limit_))
     , type(Type::Full)
     , result_description(std::move(description_))
+    , is_sorting_for_merge_join(is_sorting_for_merge_join_)
     , limit(limit_)
     , sort_settings(settings_)
 {
@@ -92,23 +90,23 @@ SortingStep::SortingStep(
 }
 
 SortingStep::SortingStep(
-        const DataStream & input_stream,
+        const Header & input_header,
         const SortDescription & description_,
         const SortDescription & partition_by_description_,
         UInt64 limit_,
         const Settings & settings_)
-    : SortingStep(input_stream, description_, limit_, settings_)
+    : SortingStep(input_header, description_, limit_, settings_)
 {
     partition_by_description = partition_by_description_;
 }
 
 SortingStep::SortingStep(
-    const DataStream & input_stream_,
+    const Header & input_header,
     SortDescription prefix_description_,
     SortDescription result_description_,
     size_t max_block_size_,
     UInt64 limit_)
-    : ITransformingStep(input_stream_, input_stream_.header, getTraits(limit_))
+    : ITransformingStep(input_header, input_header, getTraits(limit_))
     , type(Type::FinishSorting)
     , prefix_description(std::move(prefix_description_))
     , result_description(std::move(result_description_))
@@ -118,12 +116,12 @@ SortingStep::SortingStep(
 }
 
 SortingStep::SortingStep(
-    const DataStream & input_stream,
+    const Header & input_header,
     SortDescription sort_description_,
     size_t max_block_size_,
     UInt64 limit_,
     bool always_read_till_end_)
-    : ITransformingStep(input_stream, input_stream.header, getTraits(limit_))
+    : ITransformingStep(input_header, input_header, getTraits(limit_))
     , type(Type::MergingSorted)
     , result_description(std::move(sort_description_))
     , limit(limit_)
@@ -133,9 +131,9 @@ SortingStep::SortingStep(
     sort_settings.max_block_size = max_block_size_;
 }
 
-void SortingStep::updateOutputStream()
+void SortingStep::updateOutputHeader()
 {
-    output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
+    output_header = input_headers.front();
 }
 
 void SortingStep::updateLimit(size_t limit_)
@@ -147,11 +145,12 @@ void SortingStep::updateLimit(size_t limit_)
     }
 }
 
-void SortingStep::convertToFinishSorting(SortDescription prefix_description_, bool use_buffering_)
+void SortingStep::convertToFinishSorting(SortDescription prefix_description_, bool use_buffering_, bool apply_virtual_row_conversions_)
 {
     type = Type::FinishSorting;
     prefix_description = std::move(prefix_description_);
     use_buffering = use_buffering_;
+    apply_virtual_row_conversions = apply_virtual_row_conversions_;
 }
 
 void SortingStep::scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline)
@@ -255,7 +254,10 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
             /*max_block_size_bytes=*/0,
             SortingQueueStrategy::Batch,
             limit_,
-            always_read_till_end);
+            always_read_till_end,
+            nullptr,
+            false,
+            apply_virtual_row_conversions);
 
         pipeline.addTransform(std::move(transform));
     }
@@ -280,9 +282,9 @@ void SortingStep::mergeSorting(
             if (increase_sort_description_compile_attempts)
                 increase_sort_description_compile_attempts = false;
 
-            auto tmp_data_on_disk = sort_settings.tmp_data
-                ? std::make_unique<TemporaryDataOnDisk>(sort_settings.tmp_data, CurrentMetrics::TemporaryFilesForSort)
-                : std::unique_ptr<TemporaryDataOnDisk>();
+            TemporaryDataOnDiskScopePtr tmp_data_on_disk = nullptr;
+            if (sort_settings.tmp_data)
+                tmp_data_on_disk = sort_settings.tmp_data->childScope(CurrentMetrics::TemporaryFilesForSort);
 
             return std::make_shared<MergeSortingTransform>(
                 header,
