@@ -90,6 +90,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"s3_skip_empty_files", false, true, "We hope it will provide better UX"},
             {"filesystem_cache_boundary_alignment", 0, 0, "New setting"},
             {"push_external_roles_in_interserver_queries", false, false, "New setting."},
+            {"parallel_replicas_skip_index_analysis_on_workers", false, true, "Skip index analysis on workers. Effective only with enabled parallel_replicas_local_plan"},
         }
     },
     {"24.10",
