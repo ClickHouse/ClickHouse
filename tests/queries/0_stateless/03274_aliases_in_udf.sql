@@ -1,4 +1,4 @@
-SELECT "FIX ISSUE #69143"
+SELECT "FIX ISSUE #69143";
 
 CREATE OR REPLACE FUNCTION test_function AS ( input_column_name ) -> ((
         '1' AS a,
