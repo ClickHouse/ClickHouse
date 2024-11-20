@@ -19,7 +19,7 @@ class ASTFunction;
   * After applying visitor:
   * SELECT number + 1 FROM system.numbers LIMIT 10;
   */
-class UserDefinedSQLFunctionVisitor : WithContext
+class UserDefinedSQLFunctionVisitor
 {
 public:
     static void visit(ASTPtr & ast, ContextPtr context_);
