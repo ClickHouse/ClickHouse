@@ -46,22 +46,16 @@ class CI:
                 JobNames.JEPSEN_KEEPER,
                 JobNames.JEPSEN_SERVER,
             ]
-        ),
-        WorkFlowNames.NIGHTLY: LabelConfig(
-            run_jobs=[
-                BuildNames.FUZZERS,
-                JobNames.LIBFUZZER_TEST,
-            ]
-        ),
+        )
     }  # type: Dict[str, LabelConfig]
 
     TAG_CONFIGS = {
         Tags.DO_NOT_TEST_LABEL: LabelConfig(run_jobs=[JobNames.STYLE_CHECK]),
-        Tags.CI_SET_AARCH64: LabelConfig(
+        Tags.CI_SET_ARM: LabelConfig(
             run_jobs=[
                 JobNames.STYLE_CHECK,
                 BuildNames.PACKAGE_AARCH64,
-                JobNames.INTEGRATION_TEST_AARCH64,
+                JobNames.INTEGRATION_TEST_ARM,
             ]
         ),
         Tags.CI_SET_REQUIRED: LabelConfig(
@@ -101,7 +95,7 @@ class CI:
                 static_binary_name="aarch64",
                 additional_pkgs=True,
             ),
-            runner_type=Runners.BUILDER_AARCH64,
+            runner_type=Runners.BUILDER_ARM,
         ),
         BuildNames.PACKAGE_AARCH64_ASAN: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
@@ -110,7 +104,7 @@ class CI:
                 sanitizer="address",
                 package_type="deb",
             ),
-            runner_type=Runners.BUILDER_AARCH64,
+            runner_type=Runners.BUILDER_ARM,
         ),
         BuildNames.PACKAGE_ASAN: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
@@ -282,16 +276,12 @@ class CI:
         JobNames.INSTALL_TEST_AMD: CommonJobConfigs.INSTALL_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE]
         ),
-        JobNames.INSTALL_TEST_AARCH64: CommonJobConfigs.INSTALL_TEST.with_properties(
+        JobNames.INSTALL_TEST_ARM: CommonJobConfigs.INSTALL_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
-            runner_type=Runners.STYLE_CHECKER_AARCH64,
+            runner_type=Runners.STYLE_CHECKER_ARM,
         ),
         JobNames.STATEFUL_TEST_ASAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_ASAN]
-        ),
-        JobNames.STATEFUL_TEST_AARCH64_ASAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_AARCH64_ASAN],
-            runner_type=Runners.FUNC_TESTER_AARCH64,
         ),
         JobNames.STATEFUL_TEST_TSAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_TSAN]
@@ -313,7 +303,7 @@ class CI:
         ),
         JobNames.STATEFUL_TEST_AARCH64: CommonJobConfigs.STATEFUL_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
-            runner_type=Runners.FUNC_TESTER_AARCH64,
+            runner_type=Runners.FUNC_TESTER_ARM,
         ),
         JobNames.STATEFUL_TEST_PARALLEL_REPL_RELEASE: CommonJobConfigs.STATEFUL_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE]
@@ -341,11 +331,6 @@ class CI:
         JobNames.STATELESS_TEST_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_ASAN], num_batches=2
         ),
-        JobNames.STATELESS_TEST_AARCH64_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_AARCH64_ASAN],
-            num_batches=2,
-            runner_type=Runners.FUNC_TESTER_AARCH64,
-        ),
         JobNames.STATELESS_TEST_TSAN: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_TSAN], num_batches=4
         ),
@@ -366,7 +351,7 @@ class CI:
         ),
         JobNames.STATELESS_TEST_AARCH64: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
-            runner_type=Runners.FUNC_TESTER_AARCH64,
+            runner_type=Runners.FUNC_TESTER_ARM,
         ),
         JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE], num_batches=2
@@ -438,10 +423,10 @@ class CI:
             num_batches=6,
             timeout=9000,  # the job timed out with default value (7200)
         ),
-        JobNames.INTEGRATION_TEST_AARCH64: CommonJobConfigs.INTEGRATION_TEST.with_properties(
+        JobNames.INTEGRATION_TEST_ARM: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
             num_batches=6,
-            runner_type=Runners.FUNC_TESTER_AARCH64,
+            runner_type=Runners.FUNC_TESTER_ARM,
         ),
         JobNames.INTEGRATION_TEST: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE],
@@ -459,10 +444,10 @@ class CI:
             required_builds=[BuildNames.PACKAGE_RELEASE],
             required_on_release_branch=True,
         ),
-        JobNames.COMPATIBILITY_TEST_AARCH64: CommonJobConfigs.COMPATIBILITY_TEST.with_properties(
+        JobNames.COMPATIBILITY_TEST_ARM: CommonJobConfigs.COMPATIBILITY_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
             required_on_release_branch=True,
-            runner_type=Runners.STYLE_CHECKER_AARCH64,
+            runner_type=Runners.STYLE_CHECKER_ARM,
         ),
         JobNames.UNIT_TEST: CommonJobConfigs.UNIT_TEST.with_properties(
             required_builds=[BuildNames.BINARY_RELEASE],
@@ -505,22 +490,22 @@ class CI:
             required_builds=[BuildNames.BINARY_RELEASE],
             run_by_labels=[Labels.JEPSEN_TEST],
             run_command="jepsen_check.py keeper",
-            runner_type=Runners.STYLE_CHECKER_AARCH64,
+            runner_type=Runners.STYLE_CHECKER_ARM,
         ),
         JobNames.JEPSEN_SERVER: JobConfig(
             required_builds=[BuildNames.BINARY_RELEASE],
             run_by_labels=[Labels.JEPSEN_TEST],
             run_command="jepsen_check.py server",
-            runner_type=Runners.STYLE_CHECKER_AARCH64,
+            runner_type=Runners.STYLE_CHECKER_ARM,
         ),
         JobNames.PERFORMANCE_TEST_AMD64: CommonJobConfigs.PERF_TESTS.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE], num_batches=4
         ),
-        JobNames.PERFORMANCE_TEST_AARCH64: CommonJobConfigs.PERF_TESTS.with_properties(
+        JobNames.PERFORMANCE_TEST_ARM64: CommonJobConfigs.PERF_TESTS.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
             num_batches=4,
             run_by_labels=[Labels.PR_PERFORMANCE],
-            runner_type=Runners.FUNC_TESTER_AARCH64,
+            runner_type=Runners.FUNC_TESTER_ARM,
         ),
         JobNames.SQLANCER: CommonJobConfigs.SQLLANCER_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE],
@@ -538,16 +523,16 @@ class CI:
         JobNames.CLICKBENCH_TEST: CommonJobConfigs.CLICKBENCH_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE],
         ),
-        JobNames.CLICKBENCH_TEST_AARCH64: CommonJobConfigs.CLICKBENCH_TEST.with_properties(
+        JobNames.CLICKBENCH_TEST_ARM: CommonJobConfigs.CLICKBENCH_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
-            runner_type=Runners.FUNC_TESTER_AARCH64,
+            runner_type=Runners.FUNC_TESTER_ARM,
         ),
         JobNames.LIBFUZZER_TEST: JobConfig(
             required_builds=[BuildNames.FUZZERS],
             run_by_labels=[Tags.libFuzzer],
-            timeout=5400,
+            timeout=10800,
             run_command='libfuzzer_test_check.py "$CHECK_NAME"',
-            runner_type=Runners.FUNC_TESTER,
+            runner_type=Runners.STYLE_CHECKER,
         ),
         JobNames.DOCKER_SERVER: CommonJobConfigs.DOCKER_SERVER.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE, BuildNames.PACKAGE_AARCH64]
@@ -569,8 +554,6 @@ class CI:
                 include_paths=[
                     "./tests/queries/0_stateless/",
                     "./tests/docker_scripts/",
-                    "./tests/config/",
-                    "./tests/clickhouse-test",
                 ],
                 exclude_files=[".md"],
                 docker=["clickhouse/fasttest"],
@@ -580,7 +563,7 @@ class CI:
         ),
         JobNames.STYLE_CHECK: JobConfig(
             run_always=True,
-            runner_type=Runners.STYLE_CHECKER_AARCH64,
+            runner_type=Runners.STYLE_CHECKER_ARM,
         ),
         JobNames.BUGFIX_VALIDATE: JobConfig(
             run_by_labels=[Labels.PR_BUGFIX, Labels.PR_CRITICAL_BUGFIX],

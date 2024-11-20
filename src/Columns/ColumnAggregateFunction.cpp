@@ -406,10 +406,9 @@ WeakHash32 ColumnAggregateFunction::getWeakHash32() const
     std::vector<UInt8> v;
     for (size_t i = 0; i < s; ++i)
     {
-        {
-            WriteBufferFromVector<std::vector<UInt8>> wbuf(v);
-            func->serialize(data[i], wbuf, version);
-        }
+        WriteBufferFromVector<std::vector<UInt8>> wbuf(v);
+        func->serialize(data[i], wbuf, version);
+        wbuf.finalize();
         hash_data[i] = ::updateWeakHash32(v.data(), v.size(), hash_data[i]);
     }
 

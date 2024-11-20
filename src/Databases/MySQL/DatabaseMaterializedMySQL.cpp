@@ -62,7 +62,6 @@ DatabaseMaterializedMySQL::DatabaseMaterializedMySQL(
     , settings(std::move(settings_))
     , materialize_thread(context_, database_name_, mysql_database_name_, std::move(pool_), std::move(client_), binlog_client_, settings.get())
 {
-    createDirectories();
 }
 
 DatabaseMaterializedMySQL::~DatabaseMaterializedMySQL() = default;

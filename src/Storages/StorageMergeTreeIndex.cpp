@@ -63,7 +63,7 @@ protected:
             marks_loader = createMarksLoader(part, MergeTreeDataPartCompact::DATA_FILE_NAME, part->getColumns().size());
 
         size_t num_columns = header.columns();
-        size_t num_rows = index_granularity->getMarksCount();
+        size_t num_rows = index_granularity.getMarksCount();
 
         const auto & part_name_column = StorageMergeTreeIndex::part_name_column;
         const auto & mark_number_column = StorageMergeTreeIndex::mark_number_column;
@@ -115,7 +115,7 @@ protected:
 
                 data.resize(num_rows);
                 for (size_t i = 0; i < num_rows; ++i)
-                    data[i] = index_granularity->getMarkRows(i);
+                    data[i] = index_granularity.getMarkRows(i);
 
                 result_columns[pos] = std::move(column);
             }
@@ -159,7 +159,7 @@ private:
     {
         size_t col_idx = 0;
         bool has_marks_in_part = false;
-        size_t num_rows = part->index_granularity->getMarksCount();
+        size_t num_rows = part->index_granularity.getMarksCount();
 
         if (isWidePart(part))
         {
