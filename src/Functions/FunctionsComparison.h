@@ -44,8 +44,15 @@
 namespace DB
 {
 
-namespace
+namespace ErrorCodes
 {
+    extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
+    extern const int BAD_ARGUMENTS;
+}
+
 template <bool _int, bool _float, bool _decimal, bool _datetime, typename F>
 static inline bool callOnAtLeastOneDecimalType(TypeIndex type_num1, TypeIndex type_num2, F && f)
 {
@@ -106,17 +113,6 @@ ColumnPtr executeDecimal(const ColumnWithTypeAndName & col_left, const ColumnWit
             ErrorCodes::LOGICAL_ERROR, "Wrong call for {} with {} and {}", Name::name, col_left.type->getName(), col_right.type->getName());
 
     return res;
-}
-}
-
-
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
-    extern const int BAD_ARGUMENTS;
 }
 
 
