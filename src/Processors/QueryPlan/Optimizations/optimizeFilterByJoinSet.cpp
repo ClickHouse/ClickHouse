@@ -143,6 +143,9 @@ void optimizeFilterByJoinSet(QueryPlan::Node & node)
     if (!reading)
         return;
 
+    if (reading->splitsRangesIntoIntersectionAndNonIntersecting() || reading->isQueryWithFinal())
+        return;
+
     // if (reading->getContext()->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas])
     //     return;
 

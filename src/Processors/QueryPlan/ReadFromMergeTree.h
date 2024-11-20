@@ -220,6 +220,7 @@ public:
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
     DynamiclyFilteredPartsRangesPtr useDynamiclyFilteredParts();
+    bool splitsRangesIntoIntersectionAndNonIntersecting() const { return read_split_ranges_into_intersecting_and_non_intersecting_injection; }
 
 private:
     MergeTreeReaderSettings reader_settings;
@@ -296,6 +297,8 @@ private:
     ExpressionActionsPtr virtual_row_conversion;
 
     std::optional<size_t> number_of_current_replica;
+
+    bool read_split_ranges_into_intersecting_and_non_intersecting_injection = false;
 };
 
 }

@@ -386,6 +386,16 @@ ReadFromMergeTree::ReadFromMergeTree(
     setStepDescription(data.getStorageID().getFullNameNotQuoted());
     enable_vertical_final = query_info.isFinal() && context->getSettingsRef()[Setting::enable_vertical_final]
         && data.merging_params.mode == MergeTreeData::MergingParams::Replacing;
+
+    double read_split_ranges_into_intersecting_and_non_intersecting_injection_probability
+        = settings[Setting::merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability];
+    if (read_split_ranges_into_intersecting_and_non_intersecting_injection_probability > 0.0)
+    {
+        std::bernoulli_distribution fault(read_split_ranges_into_intersecting_and_non_intersecting_injection_probability);
+
+        if (fault(thread_local_rng))
+            read_split_ranges_into_intersecting_and_non_intersecting_injection = true;
+    }
 }
 
 std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplicasReadingStep(
@@ -885,14 +895,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(RangesInDataParts && parts_
 
     auto read_type = is_parallel_reading_from_replicas ? ReadType::ParallelReplicas : ReadType::Default;
 
-    double read_split_ranges_into_intersecting_and_non_intersecting_injection_probability
-        = settings[Setting::merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability];
-    std::bernoulli_distribution fault(read_split_ranges_into_intersecting_and_non_intersecting_injection_probability);
-
     if (read_type != ReadType::ParallelReplicas &&
         num_streams > 1 &&
-        read_split_ranges_into_intersecting_and_non_intersecting_injection_probability > 0.0 &&
-        fault(thread_local_rng) &&
+        read_split_ranges_into_intersecting_and_non_intersecting_injection &&
         !isQueryWithFinal() &&
         data.merging_params.is_deleted_column.empty() &&
         !prewhere_info)

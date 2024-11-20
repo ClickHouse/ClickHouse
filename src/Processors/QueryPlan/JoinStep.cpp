@@ -128,7 +128,7 @@ void DynamicJoinFilters::filterDynamicPartsByFilledJoin(const IJoin & join)
         {
             prev_marks += range.getNumberOfMarks();
 
-            // std::cerr << "Range " << range.begin << ' ' << range.end << std::endl;
+            // std::cerr << "Range " << range.begin << ' ' << range.end << " has final mark " << part_range.data_part->index_granularity->hasFinalMark() << std::endl;
             auto new_ranges = MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 part_range.data_part,
                 range.begin,
