@@ -5,7 +5,6 @@
 namespace DB
 {
 
-
 struct NameDivide { static constexpr auto name = "divide"; };
 using FunctionDivide = BinaryArithmeticOverloadResolver<DivideFloatingImpl, NameDivide>;
 

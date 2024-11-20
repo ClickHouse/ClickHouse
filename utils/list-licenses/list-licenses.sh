@@ -13,8 +13,8 @@ fi
 ROOT_PATH="$(git rev-parse --show-toplevel)"
 LIBS_PATH="${ROOT_PATH}/contrib"
 
-mapfile -t libs < <(echo "${ROOT_PATH}/base/poco"; find "${LIBS_PATH}" -maxdepth 1 -type d -not -name '*-cmake' -not -name 'rust_vendor' | LC_ALL=C sort)
-for LIB in "${libs[@]}"
+libs=$(echo "${ROOT_PATH}/base/poco"; (find "${LIBS_PATH}" -maxdepth 1 -type d -not -name '*-cmake' -not -name 'rust_vendor' | LC_ALL=C sort) )
+for LIB in ${libs}
 do
     LIB_NAME=$(basename "$LIB")
 
@@ -97,4 +97,4 @@ do
 done
 
 # Special care for Rust
-find "${LIBS_PATH}/rust_vendor/" -name 'Cargo.toml' | xargs grep 'license = ' | (grep -v -P 'MIT|Apache|MPL' && echo "Fatal error: unrecognized licenses in the Rust code" >&2 && exit 1 || true)
+find "${LIBS_PATH}/rust_vendor/" -name 'Cargo.toml' | xargs ${GREP_CMD} 'license = ' | (${GREP_CMD} -v -P 'MIT|Apache|MPL' && echo "Fatal error: unrecognized licenses in the Rust code" >&2 && exit 1 || true)
