@@ -48,6 +48,22 @@ public:
         consume(bytes);
     }
 
+    template <typename TValue, typename ParquetType>
+    void ALWAYS_INLINE readValuesOfDifferentSize(TValue * dst, size_t count)
+    {
+        auto necessary_bytes = count * sizeof(ParquetType);
+        checkAvaible(necessary_bytes);
+
+        const ParquetType* src = reinterpret_cast<const ParquetType*>(data);
+
+        for (std::size_t i = 0; i < count; i++)
+        {
+            dst[i] = static_cast<TValue>(src[i]);
+        }
+
+        consume(necessary_bytes);
+    }
+
     void ALWAYS_INLINE readDateTime64FromInt96(DateTime64 & dst)
     {
         static const int max_scale_num = 9;
