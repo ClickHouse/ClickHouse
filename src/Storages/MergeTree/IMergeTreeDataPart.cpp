@@ -524,6 +524,14 @@ SerializationPtr IMergeTreeDataPart::tryGetSerialization(const String & column_n
     return it == serializations.end() ? nullptr : it->second;
 }
 
+bool IMergeTreeDataPart::isMovingPart() const
+{
+    fs::path part_directory_path = getDataPartStorage().getRelativePath();
+    if (part_directory_path.filename().empty())
+        part_directory_path = part_directory_path.parent_path();
+    return part_directory_path.parent_path().filename() == "moving";
+}
+
 void IMergeTreeDataPart::removeIfNeeded()
 {
     assert(assertHasValidVersionMetadata());
@@ -548,10 +556,7 @@ void IMergeTreeDataPart::removeIfNeeded()
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "relative_path {} of part {} is invalid or not set",
                                 getDataPartStorage().getPartDirectory(), name);
 
-            fs::path part_directory_path = getDataPartStorage().getRelativePath();
-            if (part_directory_path.filename().empty())
-                part_directory_path = part_directory_path.parent_path();
-            bool is_moving_part = part_directory_path.parent_path().filename() == "moving";
+            bool is_moving_part = isMovingPart();
             if (!startsWith(file_name, "tmp") && !endsWith(file_name, ".tmp_proj") && !is_moving_part)
             {
                 LOG_ERROR(
