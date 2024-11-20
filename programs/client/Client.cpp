@@ -223,16 +223,13 @@ std::vector<String> Client::loadWarningMessages()
         return {};
 
     std::vector<String> messages;
-    connection->sendQuery(
-        connection_parameters.timeouts,
-        "SELECT * FROM viewIfPermitted(SELECT message FROM system.warnings ELSE null('message String'))",
-        {} /* query_parameters */,
-        "" /* query_id */,
-        QueryProcessingStage::Complete,
-        &client_context->getSettingsRef(),
-        &client_context->getClientInfo(),
-        false,
-        {});
+    connection->sendQuery(connection_parameters.timeouts,
+                          "SELECT * FROM viewIfPermitted(SELECT message FROM system.warnings ELSE null('message String'))",
+                          {} /* query_parameters */,
+                          "" /* query_id */,
+                          QueryProcessingStage::Complete,
+                          &client_context->getSettingsRef(),
+                          &client_context->getClientInfo(), false, {}, {});
     while (true)
     {
         Packet packet = connection->receivePacket();

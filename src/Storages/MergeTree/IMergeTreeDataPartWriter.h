@@ -45,6 +45,7 @@ public:
     virtual void fillChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove) = 0;
 
     virtual void finish(bool sync) = 0;
+    virtual void cancel() noexcept = 0;
 
     virtual size_t getNumberOfOpenStreams() const = 0;
 

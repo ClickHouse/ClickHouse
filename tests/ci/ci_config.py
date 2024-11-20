@@ -46,7 +46,13 @@ class CI:
                 JobNames.JEPSEN_KEEPER,
                 JobNames.JEPSEN_SERVER,
             ]
-        )
+        ),
+        WorkFlowNames.NIGHTLY: LabelConfig(
+            run_jobs=[
+                BuildNames.FUZZERS,
+                JobNames.LIBFUZZER_TEST,
+            ]
+        ),
     }  # type: Dict[str, LabelConfig]
 
     TAG_CONFIGS = {

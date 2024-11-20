@@ -92,6 +92,7 @@ class WorkFlowNames(metaclass=WithIter):
 
     JEPSEN = "JepsenWorkflow"
     CreateRelease = "CreateRelease"
+    NIGHTLY = "NightlyBuilds"
 
 
 class BuildNames(metaclass=WithIter):
@@ -588,6 +589,7 @@ class CommonJobConfigs:
                 "tests/ci/docker_server.py",
                 "tests/ci/docker_images_helper.py",
                 "./docker/server",
+                "./docker/keeper",
             ]
         ),
         runner_type=Runners.STYLE_CHECKER,
