@@ -35,13 +35,15 @@ public:
 
         if (table_function->name == Base::name)
             Base::updateStructureAndFormatArgumentsIfNeeded(args, structure_, format_, context);
-        else
+        else if (table_function->name == fmt::format("{}Cluster", Base::name))
         {
             ASTPtr cluster_name_arg = args.front();
             args.erase(args.begin());
             Base::updateStructureAndFormatArgumentsIfNeeded(args, structure_, format_, context);
             args.insert(args.begin(), cluster_name_arg);
         }
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected table function name: {}", table_function->name);
     }
 
 protected:

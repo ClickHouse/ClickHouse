@@ -87,8 +87,15 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     const ContextPtr & context)
 {
     auto * table_function = extractTableFunctionFromSelectQuery(query);
-    auto * expression_list = table_function->arguments->as<ASTExpressionList>();
+    if (!table_function)
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Expected SELECT query from table function {}, got '{}'",
+            configuration->getEngineName(), queryToString(query));
+    }
 
+    auto * expression_list = table_function->arguments->as<ASTExpressionList>();
     if (!expression_list)
     {
         throw Exception(
@@ -109,13 +116,15 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
 
     if (table_function->name == configuration->getTypeName())
         configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context);
-    else
+    else if (table_function->name == fmt::format("{}Cluster", configuration->getTypeName()))
     {
         ASTPtr cluster_name_arg = args.front();
         args.erase(args.begin());
         configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context);
         args.insert(args.begin(), cluster_name_arg);
     }
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected table function name: {}", table_function->name);
 
 }
 

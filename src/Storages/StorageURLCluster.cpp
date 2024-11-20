@@ -83,6 +83,12 @@ StorageURLCluster::StorageURLCluster(
 void StorageURLCluster::updateQueryToSendIfNeeded(ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context)
 {
     auto * table_function = extractTableFunctionFromSelectQuery(query);
+    if (!table_function)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function urlCluster, got '{}'", queryToString(query));
+
+    auto * expression_list = table_function->arguments->as<ASTExpressionList>();
+    if (!expression_list)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function urlCluster, got '{}'", queryToString(query));
 
     TableFunctionURLCluster::updateStructureAndFormatArgumentsIfNeeded(
         table_function,
