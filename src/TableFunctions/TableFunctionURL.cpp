@@ -17,7 +17,6 @@
 
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromVector.h>
-#include "Common/logger_useful.h"
 
 
 namespace DB

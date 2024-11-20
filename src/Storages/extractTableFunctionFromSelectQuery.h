@@ -7,7 +7,6 @@
 namespace DB
 {
 
-ASTExpressionList * extractTableFunctionArgumentsFromSelectQuery(ASTPtr & query);
 ASTFunction * extractTableFunctionFromSelectQuery(ASTPtr & query);
 
 }

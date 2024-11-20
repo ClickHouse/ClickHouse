@@ -20,7 +20,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageURL.h>
-#include <Storages/extractTableFunctionArgumentsFromSelectQuery.h>
+#include <Storages/extractTableFunctionFromSelectQuery.h>
 #include <Storages/VirtualColumnUtils.h>
 
 #include <TableFunctions/TableFunctionURLCluster.h>
