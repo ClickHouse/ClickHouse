@@ -18,6 +18,7 @@
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ParserQuery.h>
+#include <IO/NullWriteBuffer.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Poco/Timestamp.h>
@@ -26,6 +27,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperLock.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
 #include <Common/randomSeed.h>
@@ -483,8 +485,6 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
     String query_to_show_in_logs = query_prefix + task.query_for_logging;
 
     ReadBufferFromString istr(query_to_execute);
-    String dummy_string;
-    WriteBufferFromString ostr(dummy_string);
     std::optional<CurrentThread::QueryScope> query_scope;
 
     try
@@ -504,7 +504,8 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
         if (!task.is_initial_query)
             query_scope.emplace(query_context);
 
-        executeQuery(istr, ostr, !task.is_initial_query, query_context, {}, QueryFlags{ .internal = false, .distributed_backup_restore = task.entry.is_backup_restore });
+        NullWriteBuffer nullwb;
+        executeQuery(istr, nullwb, !task.is_initial_query, query_context, {}, QueryFlags{ .internal = false, .distributed_backup_restore = task.entry.is_backup_restore });
 
         if (auto txn = query_context->getZooKeeperMetadataTransaction())
         {
@@ -1053,7 +1054,25 @@ void DDLWorker::createStatusDirs(const std::string & node_path, const ZooKeeperP
 }
 
 
-String DDLWorker::enqueueQuery(DDLLogEntry & entry)
+String DDLWorker::enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo & retries_info, QueryStatusPtr process_list_element)
+{
+    String node_path;
+    if (retries_info.max_retries > 0)
+    {
+        ZooKeeperRetriesControl retries_ctl{"DDLWorker::enqueueQuery", log, retries_info, process_list_element};
+        retries_ctl.retryLoop([&]{
+            node_path = enqueueQueryAttempt(entry);
+        });
+    }
+    else
+    {
+        node_path = enqueueQueryAttempt(entry);
+    }
+    return node_path;
+}
+
+
+String DDLWorker::enqueueQueryAttempt(DDLLogEntry & entry)
 {
     if (entry.hosts.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty host list in a distributed DDL task");

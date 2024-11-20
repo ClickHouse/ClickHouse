@@ -76,6 +76,7 @@ class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
 class ExternalUserDefinedExecutableFunctionsLoader;
 class IUserDefinedSQLObjectsStorage;
+class IWorkloadEntityStorage;
 class InterserverCredentials;
 using InterserverCredentialsPtr = std::shared_ptr<const InterserverCredentials>;
 class InterserverIOHandler;
@@ -288,6 +289,7 @@ protected:
 
     std::optional<UUID> user_id;
     std::shared_ptr<std::vector<UUID>> current_roles;
+    std::shared_ptr<std::vector<UUID>> external_roles;
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> settings_constraints_and_current_profiles;
     mutable std::shared_ptr<const ContextAccess> access;
     mutable bool need_recalculate_access = true;
@@ -633,7 +635,7 @@ public:
 
     /// Sets the current user assuming that he/she is already authenticated.
     /// WARNING: This function doesn't check password!
-    void setUser(const UUID & user_id_);
+    void setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_ = {});
     UserPtr getUser() const;
 
     std::optional<UUID> getUserID() const;
@@ -892,6 +894,8 @@ public:
     IUserDefinedSQLObjectsStorage & getUserDefinedSQLObjectsStorage();
     void setUserDefinedSQLObjectsStorage(std::unique_ptr<IUserDefinedSQLObjectsStorage> storage);
     void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
+
+    IWorkloadEntityStorage & getWorkloadEntityStorage() const;
 
 #if USE_NLP
     SynonymsExtensions & getSynonymsExtensions() const;
@@ -1394,6 +1398,8 @@ private:
     void setCurrentProfilesWithLock(const SettingsProfilesInfo & profiles_info, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock);
 
     void setCurrentRolesWithLock(const std::vector<UUID> & new_current_roles, const std::lock_guard<ContextSharedMutex> & lock);
+
+    void setExternalRolesWithLock(const std::vector<UUID> & new_external_roles, const std::lock_guard<ContextSharedMutex> & lock);
 
     void setSettingWithLock(std::string_view name, const String & value, const std::lock_guard<ContextSharedMutex> & lock);
 

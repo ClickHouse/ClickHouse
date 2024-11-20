@@ -263,7 +263,7 @@ std::unique_ptr<ParquetColumnReader> ColReaderFactory::makeReader()
     switch (col_descriptor.physical_type())
     {
         case parquet::Type::BOOLEAN:
-            break;
+            return makeLeafReader<DataTypeUInt8>();
         case parquet::Type::INT32:
             return fromInt32();
         case parquet::Type::INT64:
