@@ -7,7 +7,8 @@ export class MergeTree {
 
         // Metrics
         this.time = 0;
-        this.inserted_parts_count = 0;
+        this.total_part_count = 0;
+        this.inserted_part_count = 0;
         this.inserted_bytes = 0;
         this.written_bytes = 0; // inserts + merges
         this.inserted_utility = 0; // utility = size * log(size)
@@ -49,14 +50,15 @@ export class MergeTree {
         let log_bytes = Math.log2(bytes);
         let utility = bytes * log_bytes;
         let result = {
+            id: this.total_part_count,
             bytes,
             log_bytes,
             utility,
             entropy: 0,
             created: now,
             level: 0,
-            begin: this.inserted_parts_count,
-            end: this.inserted_parts_count + 1,
+            begin: this.inserted_part_count,
+            end: this.inserted_part_count + 1,
             left_bytes: this.inserted_bytes,
             right_bytes: this.inserted_bytes + bytes,
             is_leftmost: false,
@@ -68,7 +70,8 @@ export class MergeTree {
         };
         this.parts.push(result);
         this.active_part_count++;
-        this.inserted_parts_count++;
+        this.inserted_part_count++;
+        this.total_part_count++;
         this.inserted_bytes += bytes;
         this.written_bytes += bytes;
         this.inserted_utility += utility;
@@ -123,6 +126,7 @@ export class MergeTree {
         const entropy = (utility - utility0) / bytes;
 
         let result = {
+            id: this.total_part_count,
             bytes,
             log_bytes,
             utility,
@@ -140,6 +144,7 @@ export class MergeTree {
         };
         this.parts.push(result);
         this.active_part_count++;
+        this.total_part_count++;
         for (let p of parts_to_merge)
         {
             if (p.active == false)

@@ -63,12 +63,12 @@ export async function testMergeTreeMerger()
         .call(function(row) {
             row.append("div")
                 .attr("class", "col-md-6")
-                .attr("id", "merge-tree-merge-exec-container");
+                .attr("id", "merge-tree-merge-time-container");
             row.append("div")
                 .attr("class", "col-md-6")
                 .attr("id", "merge-tree-merge-util-container");
         });
 
     new MergeTreeUtilityVisualizer(mt, d3.select("#merge-tree-merge-util-container"));
-    new MergeTreeTimeVisualizer(mt, d3.select("#merge-tree-merge-exec-container"));
+    new MergeTreeTimeVisualizer(mt, d3.select("#merge-tree-merge-time-container"));
 }

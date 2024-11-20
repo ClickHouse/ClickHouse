@@ -26,7 +26,7 @@ export class MergeTreeInserter
                 case 'insert':
                     const part = this.mt.insertPart(value.bytes);
                     if (this.signals.on_insert)
-                        this.signals.on_insert({sim: this.sim, mt: this.mt, part});
+                        await this.signals.on_insert({sim: this.sim, mt: this.mt, part});
                     break;
                 case 'sleep':
                     if (value.delay > 0)

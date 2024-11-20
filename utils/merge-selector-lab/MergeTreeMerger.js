@@ -38,7 +38,7 @@ export class MergeTreeMerger
                     const {parts_to_merge} = value;
                     this.#beginMerge(parts_to_merge);
                     if (this.signals.on_merge_begin)
-                        this.signals.on_merge_begin({sim: this.sim, mt: this.mt, parts_to_merge});
+                        await this.signals.on_merge_begin({sim: this.sim, mt: this.mt, parts_to_merge});
                     break;
                 case 'wait':
                     if (this.merges_running == 0)
@@ -64,16 +64,16 @@ export class MergeTreeMerger
         const bytes = parts_to_merge.reduce((sum, d) => sum + d.bytes, 0);
         const mergeDuration = this.mt.mergeDuration(bytes, parts_to_merge.length);
 
-        // Create a Promise that will be resolved on merge finish
-        return this.pool.schedule(mergeDuration, "MergeEnd", (sim, event) => this.#onMergeEnd(parts_to_merge));
+        // Schedule merge finish event
+        return this.pool.schedule(mergeDuration, "MergeEnd", async (sim, event) => await this.#onMergeEnd(parts_to_merge));
     }
 
-    #onMergeEnd(parts_to_merge)
+    async #onMergeEnd(parts_to_merge)
     {
         this.mt.advanceTime(this.sim.time);
         let part = this.mt.finishMergeParts(parts_to_merge);
         if (this.signals.on_merge_end)
-            this.signals.on_merge_end({sim: this.sim, mt: this.mt, part, parts_to_merge});
+            await this.signals.on_merge_end({sim: this.sim, mt: this.mt, part, parts_to_merge});
         this.merges_running--;
         this.#iterateSelector();
     }
