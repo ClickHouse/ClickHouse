@@ -373,14 +373,6 @@ bool MutationsInterpreter::Source::isCompactPart() const
     return part && part->getType() == MergeTreeDataPartType::Compact;
 }
 
-const NamesAndTypesList & MutationsInterpreter::Source::getColumns() const
-{
-    if (!part)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "MutationsInterpreter source part is nullptr. It is a bug.");
-
-    return part->getColumns();
-}
-
 static Names getAvailableColumnsWithVirtuals(StorageMetadataPtr metadata_snapshot, const IStorage & storage)
 {
     auto all_columns = metadata_snapshot->getColumns().getNamesOfPhysical();

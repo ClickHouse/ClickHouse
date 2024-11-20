@@ -1017,6 +1017,7 @@ struct MutationContext
     MergeTreeData::DataPartPtr source_part;
     MergeTreeData::DataPartPtr projection_part;
     StorageMetadataPtr metadata_snapshot;
+    StorageMetadataPtr projection_metadata_snapshot;
 
     MutationCommandsConstPtr commands;
     time_t time_of_mutation;
@@ -1661,6 +1662,30 @@ private:
         /// Is calculated inside MergeProgressCallback.
         ctx->mutating_pipeline.disableProfileEventUpdate();
         ctx->mutating_executor = std::make_unique<PullingPipelineExecutor>(ctx->mutating_pipeline);
+
+        chassert (ctx->projection_mutating_pipeline_builder.initialized());
+        builder = std::make_unique<QueryPipelineBuilder>(std::move(ctx->projection_mutating_pipeline_builder));
+
+        const auto & projections_name_and_part = ctx->source_part->getProjectionParts();
+        auto part_name = fmt::format("{}", projections_name_and_part.begin()->first);
+        auto new_data_part = ctx->new_data_part->getProjectionPartBuilder(part_name, true).withPartType(ctx->projection_part->getType()).build();
+
+        ctx->projection_out = std::make_shared<MergedBlockOutputStream>(
+            new_data_part,
+            ctx->projection_metadata_snapshot,
+            ctx->projection_metadata_snapshot->getColumns().getAllPhysical(),
+            MergeTreeIndices{},
+            ColumnsStatistics{},
+            ctx->data->getContext()->chooseCompressionCodec(0, 0),
+            Tx::PrehistoricTID,
+            /*reset_columns=*/ false,
+            /*save_marks_in_cache=*/ false,
+            /*blocks_are_granules_size=*/ false,
+            ctx->data->getContext()->getWriteSettings());
+
+        ctx->projection_mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
+        ctx->projection_mutating_pipeline.disableProfileEventUpdate();
+        ctx->projection_mutating_executor = std::make_unique<PullingPipelineExecutor>(ctx->projection_mutating_pipeline);
 
         part_merger_writer_task = std::make_unique<PartMergerWriter>(ctx);
     }
@@ -2314,6 +2339,7 @@ bool MutateTask::prepare()
         ctx->progress_callback = MergeProgressCallback((*ctx->mutate_entry)->ptr(), ctx->watch_prev_elapsed, *ctx->stage_progress);
 
         const auto & proj_desc = *(ctx->metadata_snapshot->getProjections().begin());
+        ctx->projection_metadata_snapshot = proj_desc.metadata;
         const auto & projections_name_and_part = ctx->source_part->getProjectionParts();
         ctx->projection_part = projections_name_and_part.begin()->second;
 
@@ -2328,6 +2354,8 @@ bool MutateTask::prepare()
             ctx->for_file_renames,
             false,
             ctx->log);
+
+        chassert(!projection_commands.empty());
 
         auto projection_interpreter = std::make_unique<MutationsInterpreter>(
             *ctx->data, ctx->projection_part, alter_conversions,

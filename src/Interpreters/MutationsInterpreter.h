@@ -129,8 +129,6 @@ public:
         bool hasBrokenProjection(const String & name) const;
         bool isCompactPart() const;
 
-        const NamesAndTypesList & getColumns() const;
-
         void read(
             Stage & first_stage,
             QueryPlan & plan,
