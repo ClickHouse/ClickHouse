@@ -330,7 +330,7 @@ TYPED_TEST(CoordinationTest, TestSummingRaft1)
     this->setLogDirectory("./logs");
     this->setStateFileDirectory(".");
 
-    SummingRaftServer s1(1, "localhost", 0, this->keeper_context);
+    SummingRaftServer s1(1, "localhost", 44444, this->keeper_context);
     SCOPE_EXIT(if (std::filesystem::exists("./state")) std::filesystem::remove("./state"););
 
     /// Single node is leader

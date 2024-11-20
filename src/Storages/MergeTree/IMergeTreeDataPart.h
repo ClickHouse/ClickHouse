@@ -180,9 +180,6 @@ public:
 
     void loadRowsCountFileForUnexpectedPart();
 
-    /// Loads marks and saves them into mark cache for specified columns.
-    virtual void loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const = 0;
-
     String getMarksFileExtension() const { return index_granularity_info.mark_type.getFileExtension(); }
 
     /// Generate the new name for this part according to `new_part_info` and min/max dates from the old name.
@@ -380,8 +377,6 @@ public:
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
     UInt64 getIndexSizeInAllocatedBytes() const;
-    UInt64 getIndexGranularityBytes() const;
-    UInt64 getIndexGranularityAllocatedBytes() const;
     UInt64 getMarksCount() const;
     UInt64 getIndexSizeFromFile() const;
 

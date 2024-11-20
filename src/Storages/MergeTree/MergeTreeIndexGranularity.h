@@ -100,11 +100,6 @@ public:
     void resizeWithFixedGranularity(size_t size, size_t fixed_granularity);
 
     std::string describe() const;
-
-    void shrinkToFitInMemory();
-
-    uint64_t getBytesSize() const;
-    uint64_t getBytesAllocated() const;
 };
 
 }

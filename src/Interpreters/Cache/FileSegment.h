@@ -177,7 +177,7 @@ public:
 
     void setQueueIterator(Priority::IteratorPtr iterator);
 
-    void markDelayedRemovalAndResetQueueIterator();
+    void resetQueueIterator();
 
     KeyMetadataPtr tryGetKeyMetadata() const;
 
@@ -189,7 +189,7 @@ public:
      * ========== Methods that must do cv.notify() ==================
      */
 
-    void complete(bool allow_background_download);
+    void complete();
 
     void completePartAndResetDownloader();
 
@@ -249,13 +249,12 @@ private:
 
     String tryGetPath() const;
 
-    const Key file_key;
+    Key file_key;
     Range segment_range;
     const FileSegmentKind segment_kind;
     /// Size of the segment is not known until it is downloaded and
     /// can be bigger than max_file_segment_size.
-    /// is_unbound == true for temporary data in cache.
-    const bool is_unbound;
+    const bool is_unbound = false;
     const bool background_download_enabled;
 
     std::atomic<State> download_state;
@@ -280,8 +279,6 @@ private:
     std::atomic<size_t> hits_count = 0; /// cache hits.
     std::atomic<size_t> ref_count = 0; /// Used for getting snapshot state
 
-    bool on_delayed_removal = false;
-
     CurrentMetrics::Increment metric_increment{CurrentMetrics::CacheFileSegments};
 };
 
@@ -300,7 +297,7 @@ struct FileSegmentsHolder final : private boost::noncopyable
 
     String toString(bool with_state = false) const;
 
-    void completeAndPopFront(bool allow_background_download) { completeAndPopFrontImpl(allow_background_download); }
+    void popFront() { completeAndPopFrontImpl(); }
 
     FileSegment & front() { return *file_segments.front(); }
     const FileSegment & front() const { return *file_segments.front(); }
@@ -322,7 +319,7 @@ struct FileSegmentsHolder final : private boost::noncopyable
 private:
     FileSegments file_segments{};
 
-    FileSegments::iterator completeAndPopFrontImpl(bool allow_background_download);
+    FileSegments::iterator completeAndPopFrontImpl();
 };
 
 using FileSegmentsHolderPtr = std::unique_ptr<FileSegmentsHolder>;

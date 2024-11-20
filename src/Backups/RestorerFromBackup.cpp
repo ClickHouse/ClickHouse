@@ -100,6 +100,7 @@ RestorerFromBackup::RestorerFromBackup(
     , context(context_)
     , process_list_element(context->getProcessListElement())
     , after_task_callback(after_task_callback_)
+    , on_cluster_first_sync_timeout(context->getConfigRef().getUInt64("backups.on_cluster_first_sync_timeout", 180000))
     , create_table_timeout(context->getConfigRef().getUInt64("backups.create_table_timeout", 300000))
     , log(getLogger("RestorerFromBackup"))
     , tables_dependencies("RestorerFromBackup")
@@ -118,13 +119,11 @@ RestorerFromBackup::~RestorerFromBackup()
     }
 }
 
-void RestorerFromBackup::run(Mode mode_)
+void RestorerFromBackup::run(Mode mode)
 {
     /// run() can be called onle once.
     if (!current_stage.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Already restoring");
-
-    mode = mode_;
 
     /// Find other hosts working along with us to execute this ON CLUSTER query.
     all_hosts = BackupSettings::Util::filterHostIDs(
@@ -140,7 +139,6 @@ void RestorerFromBackup::run(Mode mode_)
     setStage(Stage::FINDING_TABLES_IN_BACKUP);
     findDatabasesAndTablesInBackup();
     waitFutures();
-    logNumberOfDatabasesAndTablesToRestore();
 
     /// Check access rights.
     setStage(Stage::CHECKING_ACCESS_RIGHTS);
@@ -230,8 +228,20 @@ void RestorerFromBackup::setStage(const String & new_stage, const String & messa
 
     if (restore_coordination)
     {
-        /// There is no need to sync Stage::COMPLETED with other hosts because it's the last stage.
-        restore_coordination->setStage(new_stage, message, /* sync = */ (new_stage != Stage::COMPLETED));
+        restore_coordination->setStage(new_stage, message);
+
+        /// The initiator of a RESTORE ON CLUSTER query waits for other hosts to complete their work (see waitForStage(Stage::COMPLETED) in BackupsWorker::doRestore),
+        /// but other hosts shouldn't wait for each others' completion. (That's simply unnecessary and also
+        /// the initiator may start cleaning up (e.g. removing restore-coordination ZooKeeper nodes) once all other hosts are in Stage::COMPLETED.)
+        bool need_wait = (new_stage != Stage::COMPLETED);
+
+        if (need_wait)
+        {
+            if (new_stage == Stage::FINDING_TABLES_IN_BACKUP)
+                restore_coordination->waitForStage(new_stage, on_cluster_first_sync_timeout);
+            else
+                restore_coordination->waitForStage(new_stage);
+        }
     }
 }
 
@@ -374,12 +384,8 @@ void RestorerFromBackup::findDatabasesAndTablesInBackup()
             }
         }
     }
-}
 
-void RestorerFromBackup::logNumberOfDatabasesAndTablesToRestore() const
-{
-    std::string_view action = (mode == CHECK_ACCESS_ONLY) ? "check access rights for restoring" : "restore";
-    LOG_INFO(log, "Will {} {} databases and {} tables", action, getNumDatabases(), getNumTables());
+    LOG_INFO(log, "Will restore {} databases and {} tables", getNumDatabases(), getNumTables());
 }
 
 void RestorerFromBackup::findTableInBackup(const QualifiedTableName & table_name_in_backup, bool skip_if_inner_table, const std::optional<ASTs> & partitions)
