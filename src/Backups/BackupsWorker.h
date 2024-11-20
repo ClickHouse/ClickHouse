@@ -81,7 +81,6 @@ private:
         BackupMutablePtr backup,
         const std::shared_ptr<ASTBackupQuery> & backup_query,
         const BackupOperationID & backup_id,
-        const String & backup_name_for_logging,
         const BackupSettings & backup_settings,
         std::shared_ptr<IBackupCoordination> backup_coordination,
         ContextMutablePtr context,
@@ -102,7 +101,6 @@ private:
     void doRestore(
         const std::shared_ptr<ASTBackupQuery> & restore_query,
         const BackupOperationID & restore_id,
-        const String & backup_name_for_logging,
         const BackupInfo & backup_info,
         RestoreSettings restore_settings,
         std::shared_ptr<IRestoreCoordination> restore_coordination,
