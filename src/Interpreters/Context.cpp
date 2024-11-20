@@ -4991,7 +4991,12 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
     getAccessControl().setDefaultProfileName(shared->default_profile_name);
 
     shared->system_profile_name = config.getString("system_profile", shared->default_profile_name);
-    setCurrentProfile(shared->system_profile_name);
+
+    /// Don't check for constraints on first load. This makes the default profile consistent with other users, where
+    /// the default value set in the config might be outside of the constraints range
+    /// It makes it possible to change the value of experimental settings with `allowed_feature_tier` != 2
+    bool check_constraints = false;
+    setCurrentProfile(shared->system_profile_name, check_constraints);
 
     applySettingsQuirks(*settings, getLogger("SettingsQuirks"));
     doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
