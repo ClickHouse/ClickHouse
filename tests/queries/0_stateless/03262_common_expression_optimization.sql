@@ -86,3 +86,8 @@ EXPLAIN QUERY TREE SELECT count() FROM x INNER JOIN y ON ((x.A = y.A ) AND x.B =
 
 -- Check that optimization only happen on top level, (x.C = y.C AND x.D = y.D) OR (x.C = y.C AND x.E = y.E) shouldn't be optimized
 EXPLAIN QUERY TREE SELECT count() FROM x INNER JOIN y ON (x.A = y.A) OR ((x.B = y.B) AND ((x.C = y.C AND x.D = y.D) OR (x.C = y.C AND x.E = y.E)));
+
+-- Duplicated subexpressions, found by fuzzer
+SELECT * FROM x WHERE (D AND 5) OR ((C AND E) AND (C AND E)) ORDER BY ALL LIMIT 3 SETTINGS optimize_extract_common_expressions = 0;
+SELECT * FROM x WHERE (D AND 5) OR ((C AND E) AND (C AND E)) ORDER BY ALL LIMIT 3 SETTINGS optimize_extract_common_expressions = 1;
+EXPLAIN QUERY TREE SELECT * FROM x WHERE (C AND E) OR ((C AND E) AND (C AND E));

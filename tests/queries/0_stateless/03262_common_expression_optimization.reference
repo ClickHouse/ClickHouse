@@ -764,3 +764,35 @@ QUERY id: 0
                                     LIST id: 37, nodes: 2
                                       COLUMN id: 38, column_name: E, result_type: UInt8, source_id: 4
                                       COLUMN id: 39, column_name: E, result_type: UInt8, source_id: 5
+-9220342792229035180	1	1	0	1	0	1
+-9215479184005563028	0	1	1	1	0	1
+-9211524111550600160	0	0	1	1	1	0
+-9220342792229035180	1	1	0	1	0	1
+-9215479184005563028	0	1	1	1	0	1
+-9211524111550600160	0	0	1	1	1	0
+QUERY id: 0
+  PROJECTION COLUMNS
+    x Int64
+    A UInt8
+    B UInt8
+    C UInt8
+    D UInt8
+    E UInt8
+    F UInt8
+  PROJECTION
+    LIST id: 1, nodes: 7
+      COLUMN id: 2, column_name: x, result_type: Int64, source_id: 3
+      COLUMN id: 4, column_name: A, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: B, result_type: UInt8, source_id: 3
+      COLUMN id: 6, column_name: C, result_type: UInt8, source_id: 3
+      COLUMN id: 7, column_name: D, result_type: UInt8, source_id: 3
+      COLUMN id: 8, column_name: E, result_type: UInt8, source_id: 3
+      COLUMN id: 9, column_name: F, result_type: UInt8, source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.x
+  WHERE
+    FUNCTION id: 10, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 11, nodes: 2
+          COLUMN id: 12, column_name: C, result_type: UInt8, source_id: 3
+          COLUMN id: 13, column_name: E, result_type: UInt8, source_id: 3

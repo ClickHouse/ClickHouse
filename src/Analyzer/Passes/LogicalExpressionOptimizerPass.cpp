@@ -195,6 +195,10 @@ std::shared_ptr<FunctionNode> getFlattenedAndOrOr(const FunctionNode & node, con
         if (!maybe_function || maybe_function->getFunctionName() != function_name)
             continue;
 
+        auto it = arguments_to_replace.find(argument);
+        if (it != arguments_to_replace.end())
+            continue;
+
         auto maybe_flattened = getFlattenedAndOrOr(*maybe_function, context);
         if (maybe_flattened)
             arguments_to_replace.emplace(argument, std::move(maybe_flattened->getArguments().getNodes()));
@@ -212,10 +216,18 @@ std::shared_ptr<FunctionNode> getFlattenedAndOrOr(const FunctionNode & node, con
     for (const auto & argument : arguments)
     {
         if (auto it = arguments_to_replace.find(argument); it != arguments_to_replace.end())
+        {
+            if (it->second.empty())
+                continue;
+
             new_arguments.insert(
                 new_arguments.end(), std::make_move_iterator(it->second.begin()), std::make_move_iterator(it->second.end()));
+            it->second.clear();
+        }
         else
+        {
             new_arguments.push_back(argument);
+        }
     }
 
     auto function_resolver = FunctionFactory::instance().get(function_name, context);
