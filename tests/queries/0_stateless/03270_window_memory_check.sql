@@ -11,7 +11,7 @@ FROM
     FROM numbers(10000000)
 )
 FORMAT `null`
-SETTINGS max_threads = 1, max_memory_usage = 104857600;
+SETTINGS max_threads = 1, max_memory_usage = 125829120;
 
 SELECT
     x,
@@ -24,7 +24,7 @@ FROM
     FROM numbers(10000000)
 )
 FORMAT `null`
-SETTINGS max_threads = 1, max_memory_usage = 104857600;
+SETTINGS max_threads = 1, max_memory_usage = 125829120;
 
 SELECT
     x,
@@ -37,4 +37,4 @@ FROM
     FROM numbers(10000000)
 )
 FORMAT `null`
-SETTINGS max_threads = 1, max_memory_usage = 104857600;
+SETTINGS max_threads = 1, max_memory_usage = 125829120;
