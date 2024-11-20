@@ -131,20 +131,12 @@ bool ASTSettingsProfileElements::empty() const
 
 size_t ASTSettingsProfileElements::getNumberOfSettings() const
 {
-    size_t count = 0;
-    for (const auto & element : elements)
-        if (!element->setting_name.empty())
-            ++count;
-    return count;
+    return std::count_if(elements.begin(), elements.end(), [](const auto & element){ return !element->setting_name.empty(); });
 }
 
 size_t ASTSettingsProfileElements::getNumberOfProfiles() const
 {
-    size_t count = 0;
-    for (const auto & element : elements)
-        if (!element->parent_profile.empty())
-            ++count;
-    return count;
+    return std::count_if(elements.begin(), elements.end(), [](const auto & element){ return !element->parent_profile.empty(); });
 }
 
 

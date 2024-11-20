@@ -307,53 +307,43 @@ bool ParserAlterSettingsProfileElements::parseImpl(Pos & pos, ASTPtr & node, Exp
     else
     {
         /// new style: "MODIFY SETTINGS ..., ADD PROFILES ..., DROP PROFILES ..., DROP SETTINGS ..."
-        std::string_view mode;
-        std::string_view submode;
+        std::string_view action;
+        std::string_view target;
 
         auto parse_element = [&]
         {
             if (ParserKeyword{Keyword::ADD}.ignore(pos, expected))
-            {
-                mode = "ADD";
-                submode = "";
-            }
+                action = "ADD";
             else if (ParserKeyword{Keyword::DROP}.ignore(pos, expected))
-            {
-                mode = "DROP";
-                submode = "";
-            }
+                action = "DROP";
             else if (ParserKeyword{Keyword::MODIFY}.ignore(pos, expected))
-            {
-                mode = "MODIFY";
-                submode = "";
-            }
+                action = "MODIFY";
 
-            if (!mode.empty())
+            if (!action.empty())
             {
                 if (ParserKeyword{Keyword::ALL_PROFILES}.ignore(pos, expected))
-                    submode = "ALL PROFILES";
+                    target = "ALL PROFILES";
                 else if (ParserKeyword{Keyword::ALL_SETTINGS}.ignore(pos, expected))
-                    submode = "ALL SETTINGS";
+                    target = "ALL SETTINGS";
                 else if (ParserKeyword{Keyword::PROFILES}.ignore(pos, expected) || ParserKeyword{Keyword::PROFILE}.ignore(pos, expected))
-                    submode = "PROFILES";
+                    target = "PROFILES";
                 else if (ParserKeyword{Keyword::SETTINGS}.ignore(pos, expected) || ParserKeyword{Keyword::SETTING}.ignore(pos, expected))
-                    submode = "SETTINGS";
+                    target = "SETTINGS";
+                else
+                    return false;
             }
 
-            if (submode.empty())
-                return false;
-
-            if (submode == "PROFILES")
+            if (target == "PROFILES")
             {
                 auto element = std::make_shared<ASTSettingsProfileElement>();
                 if (!parseProfileNameOrID(pos, expected, /* id_mode= */ false, element->parent_profile))
                     return false;
-                if (mode == "ADD")
+                if (action == "ADD")
                 {
                     add_settings.push_back(element);
                     return true;
                 }
-                if (mode == "DROP")
+                if (action == "DROP")
                 {
                     drop_settings.push_back(element);
                     return true;
@@ -361,20 +351,20 @@ bool ParserAlterSettingsProfileElements::parseImpl(Pos & pos, ASTPtr & node, Exp
                 return false;
             }
 
-            if (submode == "SETTINGS")
+            if (target == "SETTINGS")
             {
                 auto element = std::make_shared<ASTSettingsProfileElement>();
-                if (mode == "ADD" || mode == "MODIFY")
+                if (action == "ADD" || action == "MODIFY")
                 {
                     if (!parseSettingNameWithValueOrConstraints(pos, expected, element->setting_name, element->value, element->min_value, element->max_value, element->writability))
                         return false;
-                    if (mode == "ADD")
+                    if (action == "ADD")
                         add_settings.push_back(element);
                     else
                         modify_settings.push_back(element);
                     return true;
                 }
-                if (mode == "DROP")
+                if (action == "DROP")
                 {
                     ASTPtr name_ast;
                     if (!ParserCompoundIdentifier{}.parse(pos, name_ast, expected))
@@ -386,13 +376,13 @@ bool ParserAlterSettingsProfileElements::parseImpl(Pos & pos, ASTPtr & node, Exp
                 return false;
             }
 
-            if (mode == "DROP" && submode == "ALL PROFILES")
+            if (action == "DROP" && target == "ALL PROFILES")
             {
                 drop_all_profiles = true;
                 return true;
             }
 
-            if (mode == "DROP" && submode == "ALL SETTINGS")
+            if (action == "DROP" && target == "ALL SETTINGS")
             {
                 drop_all_settings = true;
                 return true;
