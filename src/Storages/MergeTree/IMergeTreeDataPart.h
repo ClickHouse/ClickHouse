@@ -429,6 +429,9 @@ public:
 
     bool isProjectionPart() const { return parent_part != nullptr; }
 
+    /// Check if the part is in the `/moving` directory
+    bool isMovingPart() const;
+
     const IMergeTreeDataPart * getParentPart() const { return parent_part; }
     String getParentPartName() const { return parent_part_name; }
 
