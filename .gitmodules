@@ -1,6 +1,9 @@
 # Please do not use 'branch = ...' tags with submodule entries. Such tags make updating submodules a
 # little bit more convenient but they do *not* specify the tracked submodule branch. Thus, they are
 # more confusing than useful.
+[submodule "contrib/jwt-cpp"]
+	path = contrib/jwt-cpp
+	url = https://github.com/Thalhammer/jwt-cpp
 [submodule "contrib/zstd"]
 	path = contrib/zstd
 	url = https://github.com/facebook/zstd
