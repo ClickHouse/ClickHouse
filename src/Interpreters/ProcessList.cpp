@@ -509,10 +509,7 @@ void QueryStatus::throwProperExceptionIfNeeded(const UInt64 & max_execution_time
                 additional_error_part = fmt::format("elapsed {} ms, ", static_cast<double>(elapsed_ns) / 1000000000ULL);
 
             if (cancel_reason == CancelReason::TIMEOUT)
-            {
-                cancel_reason = CancelReason::UNDEFINED; // We can assign only CancelReason::TIMEOUT to cancel_reason, so we need to assign it back to UNDEFINED
                 throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: {}maximum: {} ms", additional_error_part, max_execution_time / 1000.0);
-            }
             throwQueryWasCancelled();
         }
     }
