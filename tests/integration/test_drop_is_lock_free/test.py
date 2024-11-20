@@ -1,10 +1,11 @@
-import time
-import pytest
 import logging
+import time
 from contextlib import contextmanager
+
+import pytest
+
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
-
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -176,7 +177,7 @@ def test_query_is_permanent(transaction, permanent, exclusive_table):
 
     select_handler = node.get_query_request(
         f"""
-            SELECT sleepEachRow(3) FROM {exclusive_table} SETTINGS function_sleep_max_microseconds_per_block = 0;
+            SELECT sleepEachRow(3) FROM {exclusive_table} SETTINGS function_sleep_max_microseconds_per_block = 0, max_threads=1;
         """,
         query_id=query_id,
     )

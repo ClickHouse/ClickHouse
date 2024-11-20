@@ -1,4 +1,5 @@
 #include <Access/Common/AccessFlags.h>
+#include <Access/ContextAccess.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageFactory.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -20,6 +21,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool dictionary_validate_primary_key_type;
+}
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -112,7 +118,12 @@ StorageDictionary::StorageDictionary(
     Location location_,
     ContextPtr context_)
     : StorageDictionary(
-        table_id_, dictionary_name_, ColumnsDescription{getNamesAndTypes(dictionary_structure_, context_->getSettingsRef().dictionary_validate_primary_key_type)}, comment, location_, context_)
+          table_id_,
+          dictionary_name_,
+          ColumnsDescription{getNamesAndTypes(dictionary_structure_, context_->getSettingsRef()[Setting::dictionary_validate_primary_key_type])},
+          comment,
+          location_,
+          context_)
 {
 }
 
@@ -169,7 +180,18 @@ Pipe StorageDictionary::read(
 {
     auto registered_dictionary_name = location == Location::SameDatabaseAndNameAsDictionary ? getStorageID().getInternalDictionaryName() : dictionary_name;
     auto dictionary = getContext()->getExternalDictionariesLoader().getDictionary(registered_dictionary_name, local_context);
-    local_context->checkAccess(AccessType::dictGet, dictionary->getDatabaseOrNoDatabaseTag(), dictionary->getDictionaryID().getTableName());
+
+    /**
+     * For backward compatibility reasons we require either SELECT or dictGet permission to read directly from the dictionary.
+     * If none of these conditions are met - we ask to grant a dictGet.
+     */
+    bool has_dict_get = local_context->getAccess()->isGranted(
+        AccessType::dictGet, dictionary->getDatabaseOrNoDatabaseTag(), dictionary->getDictionaryID().getTableName());
+    bool has_select = local_context->getAccess()->isGranted(
+        AccessType::SELECT, dictionary->getDatabaseOrNoDatabaseTag(), dictionary->getDictionaryID().getTableName());
+    if (!has_dict_get && !has_select)
+        local_context->checkAccess(AccessType::dictGet, dictionary->getDatabaseOrNoDatabaseTag(), dictionary->getDictionaryID().getTableName());
+
     return dictionary->read(column_names, max_block_size, threads);
 }
 
@@ -333,26 +355,25 @@ void registerStorageDictionary(StorageFactory & factory)
 
             return result_storage;
         }
-        else
+
+        /// Create dictionary storage that is view of underlying dictionary
+
+        if (args.engine_args.size() != 1)
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage Dictionary requires single parameter: name of dictionary");
+
+        args.engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], local_context);
+        String dictionary_name = checkAndGetLiteralArgument<String>(args.engine_args[0], "dictionary_name");
+
+        if (args.mode <= LoadingStrictnessLevel::CREATE)
         {
-            /// Create dictionary storage that is view of underlying dictionary
-
-            if (args.engine_args.size() != 1)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage Dictionary requires single parameter: name of dictionary");
-
-            args.engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], local_context);
-            String dictionary_name = checkAndGetLiteralArgument<String>(args.engine_args[0], "dictionary_name");
-
-            if (args.mode <= LoadingStrictnessLevel::CREATE)
-            {
-                const auto & dictionary = args.getContext()->getExternalDictionariesLoader().getDictionary(dictionary_name, args.getContext());
-                const DictionaryStructure & dictionary_structure = dictionary->getStructure();
-                checkNamesAndTypesCompatibleWithDictionary(dictionary_name, args.columns, dictionary_structure);
-            }
-
-            return std::make_shared<StorageDictionary>(
-                args.table_id, dictionary_name, args.columns, args.comment, StorageDictionary::Location::Custom, local_context);
+            const auto & dictionary = args.getContext()->getExternalDictionariesLoader().getDictionary(dictionary_name, args.getContext());
+            const DictionaryStructure & dictionary_structure = dictionary->getStructure();
+            checkNamesAndTypesCompatibleWithDictionary(dictionary_name, args.columns, dictionary_structure);
         }
+
+        return std::make_shared<StorageDictionary>(
+            args.table_id, dictionary_name, args.columns, args.comment, StorageDictionary::Location::Custom, local_context);
     });
 }
 

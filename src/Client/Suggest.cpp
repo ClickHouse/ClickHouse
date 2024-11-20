@@ -3,6 +3,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <Columns/ColumnString.h>
+#include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <Common/Macros.h>
 #include "Core/Protocol.h"
@@ -10,7 +11,6 @@
 #include <IO/Operators.h>
 #include <Functions/FunctionFactory.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <Storages/StorageFactory.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>
 #include <Client/Connection.h>
@@ -85,7 +85,6 @@ static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggesti
         add_column("name", "columns", true, suggestion_limit);
     }
 
-    /// FIXME: This query does not work with the new analyzer because of bug https://github.com/ClickHouse/ClickHouse/issues/50669
     query = "SELECT DISTINCT arrayJoin(extractAll(name, '[\\\\w_]{2,}')) AS res FROM (" + query + ") WHERE notEmpty(res)";
     return query;
 }
@@ -115,7 +114,7 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
                 last_error = e.code();
                 if (e.code() == ErrorCodes::DEADLOCK_AVOIDED)
                     continue;
-                else if (e.code() != ErrorCodes::USER_SESSION_LIMIT_EXCEEDED)
+                if (e.code() != ErrorCodes::USER_SESSION_LIMIT_EXCEEDED)
                 {
                     /// We should not use std::cerr here, because this method works concurrently with the main thread.
                     /// WriteBufferFromFileDescriptor will write directly to the file descriptor, avoiding data race on std::cerr.
@@ -124,7 +123,7 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
                     /// suggestions using the main connection later.
                     WriteBufferFromFileDescriptor out(STDERR_FILENO, 4096);
                     out << "Cannot load data for command line suggestions: " << getCurrentExceptionMessage(false, true) << "\n";
-                    out.next();
+                    out.finalize();
                 }
             }
             catch (...)
@@ -132,7 +131,7 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
                 last_error = getCurrentExceptionCode();
                 WriteBufferFromFileDescriptor out(STDERR_FILENO, 4096);
                 out << "Cannot load data for command line suggestions: " << getCurrentExceptionMessage(false, true) << "\n";
-                out.next();
+                out.finalize();
             }
 
             break;
@@ -214,7 +213,7 @@ void Suggest::fillWordsFromBlock(const Block & block)
     Words new_words;
     new_words.reserve(rows);
     for (size_t i = 0; i < rows; ++i)
-        new_words.emplace_back(column[i].get<String>());
+        new_words.emplace_back(column[i].safeGet<String>());
 
     addWords(std::move(new_words));
 }

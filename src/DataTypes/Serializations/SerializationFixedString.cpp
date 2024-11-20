@@ -28,7 +28,7 @@ static constexpr size_t MAX_STRINGS_SIZE = 1ULL << 30;
 
 void SerializationFixedString::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
 {
-    const String & s = field.get<const String &>();
+    const String & s = field.safeGet<const String &>();
     ostr.write(s.data(), std::min(s.size(), n));
     if (s.size() < n)
         for (size_t i = s.size(); i < n; ++i)
@@ -39,7 +39,7 @@ void SerializationFixedString::serializeBinary(const Field & field, WriteBuffer 
 void SerializationFixedString::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const
 {
     field = String();
-    String & s = field.get<String &>();
+    String & s = field.safeGet<String &>();
     s.resize(n);
     istr.readStrict(s.data(), n);
 }

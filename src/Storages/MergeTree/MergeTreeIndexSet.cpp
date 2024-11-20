@@ -97,10 +97,13 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeInd
     Field field_rows;
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
     size_type->getDefaultSerialization()->deserializeBinary(field_rows, istr, {});
-    size_t rows_to_read = field_rows.get<size_t>();
+    size_t rows_to_read = field_rows.safeGet<size_t>();
 
     if (rows_to_read == 0)
+    {
+        block.clear();
         return;
+    }
 
     size_t num_columns = block.columns();
 
@@ -482,7 +485,7 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::operatorFromDAG(const Actio
         auto bit_swap_last_two_function = FunctionFactory::instance().get("__bitSwapLastTwo", context);
         return &result_dag.addFunction(bit_swap_last_two_function, {argument}, {});
     }
-    else if (function_name == "and" || function_name == "indexHint" || function_name == "or")
+    if (function_name == "and" || function_name == "indexHint" || function_name == "or")
     {
         if (arguments_size < 1)
             return nullptr;
@@ -532,13 +535,13 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
             sets_to_prepare.push_back(set);
         return false;
     }
-    else if (node.column && isColumnConst(*node.column))
+    if (node.column && isColumnConst(*node.column))
     {
         Field literal;
         node.column->get(0, literal);
         return !atomic && literal.safeGet<bool>();
     }
-    else if (node.type == ActionsDAG::ActionType::FUNCTION)
+    if (node.type == ActionsDAG::ActionType::FUNCTION)
     {
         auto column_name = tree_node.getColumnName();
         if (key_columns.contains(column_name))
@@ -559,13 +562,17 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
             }
             return all_useless;
         }
-        else if (function_name == "or")
-            return std::any_of(arguments.begin(), arguments.end(), [&, atomic](const auto & arg) { return checkDAGUseless(*arg, context, sets_to_prepare, atomic); });
-        else if (function_name == "not")
+        if (function_name == "or")
+            return std::any_of(
+                arguments.begin(),
+                arguments.end(),
+                [&, atomic](const auto & arg) { return checkDAGUseless(*arg, context, sets_to_prepare, atomic); });
+        if (function_name == "not")
             return checkDAGUseless(*arguments.at(0), context, sets_to_prepare, atomic);
-        else
-            return std::any_of(arguments.begin(), arguments.end(),
-                [&](const auto & arg) { return checkDAGUseless(*arg, context, sets_to_prepare, true /*atomic*/); });
+        return std::any_of(
+            arguments.begin(),
+            arguments.end(),
+            [&](const auto & arg) { return checkDAGUseless(*arg, context, sets_to_prepare, true /*atomic*/); });
     }
 
     auto column_name = tree_node.getColumnName();
@@ -591,7 +598,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexSet::createIndexCondition(
 
 MergeTreeIndexPtr setIndexCreator(const IndexDescription & index)
 {
-    size_t max_rows = index.arguments[0].get<size_t>();
+    size_t max_rows = index.arguments[0].safeGet<size_t>();
     return std::make_shared<MergeTreeIndexSet>(index, max_rows);
 }
 
@@ -599,7 +606,7 @@ void setIndexValidator(const IndexDescription & index, bool /*attach*/)
 {
     if (index.arguments.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Set index must have exactly one argument.");
-    else if (index.arguments[0].getType() != Field::Types::UInt64)
+    if (index.arguments[0].getType() != Field::Types::UInt64)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Set index argument must be positive integer.");
 }
 

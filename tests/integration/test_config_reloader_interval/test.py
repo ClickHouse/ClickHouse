@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 
-import pytest
 import fnmatch
 
-from helpers.cluster import ClickHouseCluster
+import pytest
+
 from helpers.client import QueryRuntimeException
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 

@@ -159,10 +159,9 @@ private:
 
         if (arguments[0]->getTypeId() == TypeIndex::Tuple)
             return getReturnTypeForTuples(arguments);
-        else if (arguments[0]->getTypeId() == TypeIndex::Map)
+        if (arguments[0]->getTypeId() == TypeIndex::Map)
             return getReturnTypeForMaps(arguments);
-        else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} only accepts maps", getName());
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} only accepts maps", getName());
     }
 
     template <typename KeyType, typename ValType>
@@ -237,7 +236,7 @@ private:
                     }
 
                     arg.val_column->get(offset + j, temp_val);
-                    ValType value = temp_val.get<ValType>();
+                    ValType value = temp_val.safeGet<ValType>();
 
                     if constexpr (op_type == OpTypes::ADD)
                     {

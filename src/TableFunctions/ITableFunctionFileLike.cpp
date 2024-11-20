@@ -57,7 +57,7 @@ void ITableFunctionFileLike::parseArguments(const ASTPtr & ast_function, Context
 
 void ITableFunctionFileLike::parseArgumentsImpl(ASTs & args, const ContextPtr & context)
 {
-    if (args.empty() || args.size() > 4)
+    if (args.empty() || args.size() > getMaxNumberOfArguments())
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "The signature of table function {} shall be the following:\n{}", getName(), getSignature());
 
     for (auto & arg : args)

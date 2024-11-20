@@ -6,16 +6,17 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CLICKHOUSE_CLIENT_TRACE=${CLICKHOUSE_CLIENT/"--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}"/"--send_logs_level=trace"}
 
 function were_parallel_replicas_used () {
-    # Not using current_database = '$CLICKHOUSE_DATABASE' as nested parallel queries aren't run with it
     $CLICKHOUSE_CLIENT --query "
         SELECT
             initial_query_id,
-            concat('Used parallel replicas: ', (countIf(initial_query_id != query_id) != 0)::bool::String) as used
+            concat('Used parallel replicas: ', (ProfileEvents['ParallelReplicasUsedCount'] > 0)::bool::String) as used
         FROM system.query_log
     WHERE event_date >= yesterday()
       AND initial_query_id LIKE '$1%'
-    GROUP BY initial_query_id
-    ORDER BY min(event_time_microseconds) ASC
+      AND query_id = initial_query_id
+      AND type = 'QueryFinish'
+      AND current_database = '$CLICKHOUSE_DATABASE'
+    ORDER BY event_time_microseconds ASC
     FORMAT TSV"
 }
 
@@ -48,11 +49,11 @@ function run_query_with_pure_parallel_replicas () {
         --query "$3" \
         --query_id "${1}_pure" \
         --max_parallel_replicas 3 \
-        --prefer_localhost_replica 1 \
         --cluster_for_parallel_replicas "parallel_replicas" \
-        --allow_experimental_parallel_reading_from_replicas 1 \
+        --enable_parallel_replicas 1 \
         --parallel_replicas_for_non_replicated_merge_tree 1 \
         --parallel_replicas_min_number_of_rows_per_replica "$2" \
+        --max_threads 5 \
     |& grep "It is enough work for" | awk '{ print substr($7, 2, length($7) - 2) "\t" $20 " estimated parallel replicas" }'
 }
 

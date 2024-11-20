@@ -3,7 +3,6 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 
-#include <Formats/FormatFactory.h>
 #include <Formats/registerFormats.h>
 
 #include <QueryPipeline/Pipe.h>

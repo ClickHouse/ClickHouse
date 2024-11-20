@@ -1,8 +1,8 @@
 import pytest
+
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
-from helpers.test_tools import assert_eq_with_retry
+from helpers.test_tools import TSV, assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -317,3 +317,74 @@ def test_host_is_drop_from_cache_after_consecutive_failures(
     assert node4.wait_for_log_line(
         "Cached hosts dropped:.*InvalidHostThatDoesNotExist.*"
     )
+
+
+node7 = cluster.add_instance(
+    "node7",
+    main_configs=["configs/listen_host.xml", "configs/dns_update_long.xml"],
+    with_zookeeper=True,
+    ipv6_address="2001:3984:3989::1:1117",
+    ipv4_address="10.5.95.17",
+)
+
+
+def _render_filter_config(allow_ipv4, allow_ipv6):
+    config = f"""
+    <clickhouse>
+        <dns_allow_resolve_names_to_ipv4>{int(allow_ipv4)}</dns_allow_resolve_names_to_ipv4>
+        <dns_allow_resolve_names_to_ipv6>{int(allow_ipv6)}</dns_allow_resolve_names_to_ipv6>
+    </clickhouse>
+    """
+    return config
+
+
+@pytest.mark.parametrize(
+    "allow_ipv4, allow_ipv6",
+    [
+        (True, False),
+        (False, True),
+        (False, False),
+    ],
+)
+def test_dns_resolver_filter(cluster_without_dns_cache_update, allow_ipv4, allow_ipv6):
+    node = node7
+    host_ipv6 = node.ipv6_address
+    host_ipv4 = node.ipv4_address
+
+    node.set_hosts(
+        [
+            (host_ipv6, "test_host"),
+            (host_ipv4, "test_host"),
+        ]
+    )
+    node.replace_config(
+        "/etc/clickhouse-server/config.d/dns_filter.xml",
+        _render_filter_config(allow_ipv4, allow_ipv6),
+    )
+
+    node.query("SYSTEM RELOAD CONFIG")
+    node.query("SYSTEM DROP DNS CACHE")
+    node.query("SYSTEM DROP CONNECTIONS CACHE")
+
+    if not allow_ipv4 and not allow_ipv6:
+        with pytest.raises(QueryRuntimeException):
+            node.query("SELECT * FROM remote('lost_host', 'system', 'one')")
+    else:
+        node.query("SELECT * FROM remote('test_host', system, one)")
+        assert (
+            node.query(
+                "SELECT ip_address FROM system.dns_cache WHERE hostname='test_host'"
+            )
+            == f"{host_ipv4 if allow_ipv4 else host_ipv6}\n"
+        )
+
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "rm /etc/clickhouse-server/config.d/dns_filter.xml",
+        ],
+        privileged=True,
+        user="root",
+    )
+    node.query("SYSTEM RELOAD CONFIG")

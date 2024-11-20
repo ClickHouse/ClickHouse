@@ -42,13 +42,13 @@ ASTPtr generateOptimizedDateFilterAST(const String & comparator, const NameAndTy
 
     if (isDateOrDate32(column.type.get()))
     {
-        start_date_or_date_time = date_lut.dateToString(range.first.get<DateLUTImpl::Time>());
-        end_date_or_date_time = date_lut.dateToString(range.second.get<DateLUTImpl::Time>());
+        start_date_or_date_time = date_lut.dateToString(range.first.safeGet<DateLUTImpl::Time>());
+        end_date_or_date_time = date_lut.dateToString(range.second.safeGet<DateLUTImpl::Time>());
     }
     else if (isDateTime(column.type.get()) || isDateTime64(column.type.get()))
     {
-        start_date_or_date_time = date_lut.timeToString(range.first.get<DateLUTImpl::Time>());
-        end_date_or_date_time = date_lut.timeToString(range.second.get<DateLUTImpl::Time>());
+        start_date_or_date_time = date_lut.timeToString(range.first.safeGet<DateLUTImpl::Time>());
+        end_date_or_date_time = date_lut.timeToString(range.second.safeGet<DateLUTImpl::Time>());
     }
     else [[unlikely]] return {};
 
@@ -65,45 +65,31 @@ ASTPtr generateOptimizedDateFilterAST(const String & comparator, const NameAndTy
                                             )
                                 );
     }
-    else if (comparator == "notEquals")
+    if (comparator == "notEquals")
     {
-        return makeASTFunction("or",
-                                makeASTFunction("less",
-                                            std::make_shared<ASTIdentifier>(column_name),
-                                            std::make_shared<ASTLiteral>(start_date_or_date_time)
-                                            ),
-                                makeASTFunction("greaterOrEquals",
-                                            std::make_shared<ASTIdentifier>(column_name),
-                                            std::make_shared<ASTLiteral>(end_date_or_date_time)
-                                            )
-                                );
+        return makeASTFunction(
+            "or",
+            makeASTFunction("less", std::make_shared<ASTIdentifier>(column_name), std::make_shared<ASTLiteral>(start_date_or_date_time)),
+            makeASTFunction(
+                "greaterOrEquals", std::make_shared<ASTIdentifier>(column_name), std::make_shared<ASTLiteral>(end_date_or_date_time)));
     }
-    else if (comparator == "greater")
+    if (comparator == "greater")
     {
-        return makeASTFunction("greaterOrEquals",
-                    std::make_shared<ASTIdentifier>(column_name),
-                    std::make_shared<ASTLiteral>(end_date_or_date_time)
-                    );
+        return makeASTFunction(
+            "greaterOrEquals", std::make_shared<ASTIdentifier>(column_name), std::make_shared<ASTLiteral>(end_date_or_date_time));
     }
-    else if (comparator == "lessOrEquals")
+    if (comparator == "lessOrEquals")
     {
-        return makeASTFunction("less",
-                    std::make_shared<ASTIdentifier>(column_name),
-                    std::make_shared<ASTLiteral>(end_date_or_date_time)
-                    );
+        return makeASTFunction("less", std::make_shared<ASTIdentifier>(column_name), std::make_shared<ASTLiteral>(end_date_or_date_time));
     }
-    else if (comparator == "less" || comparator == "greaterOrEquals")
+    if (comparator == "less" || comparator == "greaterOrEquals")
     {
-        return makeASTFunction(comparator,
-                    std::make_shared<ASTIdentifier>(column_name),
-                    std::make_shared<ASTLiteral>(start_date_or_date_time)
-                    );
+        return makeASTFunction(
+            comparator, std::make_shared<ASTIdentifier>(column_name), std::make_shared<ASTLiteral>(start_date_or_date_time));
     }
-    else [[unlikely]]
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Expected equals, notEquals, less, lessOrEquals, greater, greaterOrEquals. Actual {}",
-            comparator);
+    [[unlikely]] {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Expected equals, notEquals, less, lessOrEquals, greater, greaterOrEquals. Actual {}", comparator);
     }
 }
 
@@ -127,7 +113,7 @@ void OptimizeDateOrDateTimeConverterWithPreimageMatcher::visit(const ASTFunction
     size_t func_id = function.arguments->children.size();
 
     for (size_t i = 0; i < function.arguments->children.size(); i++)
-        if (const auto * func = function.arguments->children[i]->as<ASTFunction>())
+        if (const auto * /*func*/ _ = function.arguments->children[i]->as<ASTFunction>())
             func_id = i;
 
     if (func_id == function.arguments->children.size())

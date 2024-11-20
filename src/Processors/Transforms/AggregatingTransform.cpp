@@ -8,7 +8,6 @@
 #include <Core/ProtocolDefines.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
-
 #include <Processors/Transforms/SquashingTransform.h>
 
 
@@ -55,9 +54,9 @@ namespace
     class SourceFromNativeStream : public ISource
     {
     public:
-        explicit SourceFromNativeStream(TemporaryFileStream * tmp_stream_)
-            : ISource(tmp_stream_->getHeader())
-            , tmp_stream(tmp_stream_)
+        explicit SourceFromNativeStream(const Block & header, TemporaryBlockStreamReaderHolder tmp_stream_)
+            : ISource(header)
+            , tmp_stream(std::move(tmp_stream_))
         {}
 
         String getName() const override { return "SourceFromNativeStream"; }
@@ -70,7 +69,7 @@ namespace
             auto block = tmp_stream->read();
             if (!block)
             {
-                tmp_stream = nullptr;
+                tmp_stream.reset();
                 return {};
             }
             return convertToChunk(block);
@@ -79,7 +78,7 @@ namespace
         std::optional<ReadProgress> getReadProgress() override { return std::nullopt; }
 
     private:
-        TemporaryFileStream * tmp_stream;
+        TemporaryBlockStreamReaderHolder tmp_stream;
     };
 }
 
@@ -367,7 +366,7 @@ public:
         return prepareTwoLevel();
     }
 
-    void onCancel() override
+    void onCancel() noexcept override
     {
         shared_data->is_cancelled.store(true, std::memory_order_seq_cst);
     }
@@ -487,7 +486,7 @@ private:
 
     #define M(NAME) \
                 else if (first->type == AggregatedDataVariants::Type::NAME) \
-                    params->aggregator.mergeSingleLevelDataImpl<decltype(first->NAME)::element_type>(*data);
+                    params->aggregator.mergeSingleLevelDataImpl<decltype(first->NAME)::element_type>(*data, shared_data->is_cancelled);
         if (false) {} // NOLINT
         APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
     #undef M
@@ -610,12 +609,10 @@ IProcessor::Status AggregatingTransform::prepare()
             many_data.reset();
             return Status::Finished;
         }
-        else
-        {
-            /// Finish data processing and create another pipe.
-            is_consume_finished = true;
-            return Status::Ready;
-        }
+
+        /// Finish data processing and create another pipe.
+        is_consume_finished = true;
+        return Status::Ready;
     }
 
     if (!input.hasData())
@@ -676,7 +673,8 @@ void AggregatingTransform::consume(Chunk chunk)
         LOG_TRACE(log, "Aggregating");
         is_consume_started = true;
     }
-
+    if (rows_before_aggregation)
+        rows_before_aggregation->add(num_rows);
     src_rows += num_rows;
     src_bytes += chunk.bytes();
 
@@ -813,15 +811,18 @@ void AggregatingTransform::initGenerate()
 
         Pipes pipes;
         /// Merge external data from all aggregators used in query.
-        for (const auto & aggregator : *params->aggregator_list_ptr)
+        for (auto & aggregator : *params->aggregator_list_ptr)
         {
-            const auto & tmp_data = aggregator.getTemporaryData();
-            for (auto * tmp_stream : tmp_data.getStreams())
-                pipes.emplace_back(Pipe(std::make_unique<SourceFromNativeStream>(tmp_stream)));
+            tmp_files = aggregator.detachTemporaryData();
+            num_streams += tmp_files.size();
 
-            num_streams += tmp_data.getStreams().size();
-            compressed_size += tmp_data.getStat().compressed_size;
-            uncompressed_size += tmp_data.getStat().uncompressed_size;
+            for (auto & tmp_stream : tmp_files)
+            {
+                auto stat = tmp_stream.finishWriting();
+                compressed_size += stat.compressed_size;
+                uncompressed_size += stat.uncompressed_size;
+                pipes.emplace_back(Pipe(std::make_unique<SourceFromNativeStream>(tmp_stream.getHeader(), tmp_stream.getReadStream())));
+            }
         }
 
         LOG_DEBUG(

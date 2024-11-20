@@ -8,6 +8,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <Common/logger_useful.h>
 #include <Common/Throttler.h>
+#include <Common/Scheduler/ResourceGuard.h>
 #include <base/sleep.h>
 #include <Common/ProfileEvents.h>
 #include <IO/SeekableReadBuffer.h>
@@ -113,7 +114,9 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
     {
         try
         {
+            ResourceGuard rlock(ResourceGuard::Metrics::getIORead(), read_settings.io_scheduling.read_resource_link, to_read_bytes);
             bytes_read = data_stream->ReadToCount(reinterpret_cast<uint8_t *>(data_ptr), to_read_bytes);
+            rlock.unlock(bytes_read); // Do not hold resource under bandwidth throttler
             if (read_settings.remote_throttler)
                 read_settings.remote_throttler->add(bytes_read, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
             break;

@@ -241,7 +241,7 @@ String MergeTreePartition::getID(const Block & partition_key_sample) const
             if (typeid_cast<const DataTypeDate *>(partition_key_sample.getByPosition(i).type.get()))
                 result += toString(DateLUT::serverTimezoneInstance().toNumYYYYMMDD(DayNum(value[i].safeGet<UInt64>())));
             else if (typeid_cast<const DataTypeIPv4 *>(partition_key_sample.getByPosition(i).type.get()))
-                result += toString(value[i].get<IPv4>().toUnderType());
+                result += toString(value[i].safeGet<IPv4>().toUnderType());
             else
                 result += applyVisitor(to_string_visitor, value[i]);
 

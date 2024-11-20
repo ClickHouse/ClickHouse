@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 
-$CLICKHOUSE_CLIENT -nq "
+$CLICKHOUSE_CLIENT -q "
     CREATE TABLE t1
     (
         a UInt32,
@@ -57,7 +57,7 @@ ORDER BY
     b DESC
 FORMAT Null;"
 
-$CLICKHOUSE_CLIENT -nq "
+$CLICKHOUSE_CLIENT -q "
 SYSTEM FLUSH LOGS;
 
 SELECT ProfileEvents['SelectedMarks']

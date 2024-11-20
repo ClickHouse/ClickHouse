@@ -15,8 +15,8 @@ namespace ErrorCodes
 }
 
 template <bool with_defaults>
-BinaryRowInputFormat<with_defaults>::BinaryRowInputFormat(ReadBuffer & in_, const Block & header, Params params_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
-    : RowInputFormatWithNamesAndTypes(
+BinaryRowInputFormat<with_defaults>::BinaryRowInputFormat(ReadBuffer & in_, const Block & header, IRowInputFormat::Params params_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
+    : RowInputFormatWithNamesAndTypes<BinaryFormatReader<with_defaults>>(
         header,
         in_,
         params_,

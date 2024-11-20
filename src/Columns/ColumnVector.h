@@ -52,6 +52,7 @@ private:
     explicit ColumnVector(const size_t n) : data(n) {}
     ColumnVector(const size_t n, const ValueType x) : data(n, x) {}
     ColumnVector(const ColumnVector & src) : data(src.data.begin(), src.data.end()) {}
+    ColumnVector(Container::const_iterator begin, Container::const_iterator end) : data(begin, end) { }
 
     /// Sugar constructor.
     ColumnVector(std::initializer_list<T> il) : data{il} {}
@@ -85,7 +86,7 @@ public:
 
     void insertMany(const Field & field, size_t length) override
     {
-        data.resize_fill(data.size() + length, static_cast<T>(field.get<T>()));
+        data.resize_fill(data.size() + length, static_cast<T>(field.safeGet<T>()));
     }
 
     void insertData(const char * pos, size_t) override
@@ -180,6 +181,11 @@ public:
         data.reserve_exact(n);
     }
 
+    size_t capacity() const override
+    {
+        return data.capacity();
+    }
+
     void shrinkToFit() override
     {
         data.shrink_to_fit();
@@ -235,7 +241,7 @@ public:
 
     void insert(const Field & x) override
     {
-        data.push_back(static_cast<T>(x.get<T>()));
+        data.push_back(static_cast<T>(x.safeGet<T>()));
     }
 
     bool tryInsert(const DB::Field & x) override;
@@ -476,6 +482,7 @@ extern template class ColumnVector<Int32>;
 extern template class ColumnVector<Int64>;
 extern template class ColumnVector<Int128>;
 extern template class ColumnVector<Int256>;
+extern template class ColumnVector<BFloat16>;
 extern template class ColumnVector<Float32>;
 extern template class ColumnVector<Float64>;
 extern template class ColumnVector<UUID>;

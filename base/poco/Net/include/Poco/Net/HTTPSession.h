@@ -19,6 +19,8 @@
 
 
 #include <ios>
+#include <memory>
+#include <functional>
 #include "Poco/Any.h"
 #include "Poco/Buffer.h"
 #include "Poco/Exception.h"
@@ -31,6 +33,27 @@ namespace Poco
 {
 namespace Net
 {
+
+
+    class IHTTPSessionDataHooks
+    /// Interface to control stream of data bytes being sent or received though socket by HTTPSession
+    /// It allows to monitor, throttle and schedule data streams with syscall granulatrity
+    {
+    public:
+        virtual ~IHTTPSessionDataHooks() = default;
+
+        virtual void atStart(int bytes) = 0;
+        /// Called before sending/receiving data `bytes` to/from socket.
+
+        virtual void atFinish(int bytes) = 0;
+        /// Called when sending/receiving of data `bytes` is successfully finished.
+
+        virtual void atFail() = 0;
+        /// If an error occurred during send/receive `fail()` is called instead of `finish()`.
+    };
+
+
+    using HTTPSessionDataHooksPtr = std::shared_ptr<IHTTPSessionDataHooks>;
 
 
     class Net_API HTTPSession
@@ -72,6 +95,12 @@ namespace Net
 
         Poco::Timespan getReceiveTimeout() const;
         /// Returns receive timeout for the HTTP session.
+
+        void setSendDataHooks(const HTTPSessionDataHooksPtr & sendDataHooks = {});
+        /// Sets data hooks that will be called on every sent to the socket.
+
+        void setReceiveDataHooks(const HTTPSessionDataHooksPtr & receiveDataHooks = {});
+        /// Sets data hooks that will be called on every receive from the socket.
 
         bool connected() const;
         /// Returns true if the underlying socket is connected.
@@ -211,6 +240,10 @@ namespace Net
         Poco::Exception * _pException;
         Poco::Any _data;
 
+        // Data hooks
+        HTTPSessionDataHooksPtr _sendDataHooks;
+        HTTPSessionDataHooksPtr _receiveDataHooks;
+
         friend class HTTPStreamBuf;
         friend class HTTPHeaderStreamBuf;
         friend class HTTPFixedLengthStreamBuf;
@@ -244,6 +277,16 @@ namespace Net
     inline Poco::Timespan HTTPSession::getReceiveTimeout() const
     {
         return _receiveTimeout;
+    }
+
+    inline void HTTPSession::setSendDataHooks(const HTTPSessionDataHooksPtr & sendDataHooks)
+    {
+        _sendDataHooks = sendDataHooks;
+    }
+
+    inline void HTTPSession::setReceiveDataHooks(const HTTPSessionDataHooksPtr & receiveDataHooks)
+    {
+        _receiveDataHooks = receiveDataHooks;
     }
 
     inline StreamSocket & HTTPSession::socket()

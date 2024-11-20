@@ -53,6 +53,7 @@ struct ObjectMetadata
 {
     uint64_t size_bytes = 0;
     Poco::Timestamp last_modified;
+    std::string etag;
     ObjectAttributes attributes;
 };
 
@@ -144,14 +145,7 @@ public:
     /// Read single object
     virtual std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
-        const ReadSettings & read_settings = ReadSettings{},
-        std::optional<size_t> read_hint = {},
-        std::optional<size_t> file_size = {}) const = 0;
-
-    /// Read multiple objects with common prefix
-    virtual std::unique_ptr<ReadBufferFromFileBase> readObjects( /// NOLINT
-        const StoredObjects & objects,
-        const ReadSettings & read_settings = ReadSettings{},
+        const ReadSettings & read_settings,
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const = 0;
 
@@ -166,11 +160,11 @@ public:
     virtual bool isRemote() const = 0;
 
     /// Remove object. Throws exception if object doesn't exists.
-    virtual void removeObject(const StoredObject & object) = 0;
+    // virtual void removeObject(const StoredObject & object) = 0;
 
     /// Remove multiple objects. Some object storages can do batch remove in a more
     /// optimal way.
-    virtual void removeObjects(const StoredObjects & objects) = 0;
+    // virtual void removeObjects(const StoredObjects & objects) = 0;
 
     /// Remove object on path if exists
     virtual void removeObjectIfExists(const StoredObject & object) = 0;

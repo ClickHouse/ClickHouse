@@ -30,13 +30,7 @@ public:
     static constexpr bool is_parametric = true;
 
     DataTypeAggregateFunction(AggregateFunctionPtr function_, const DataTypes & argument_types_,
-                              const Array & parameters_, std::optional<size_t> version_ = std::nullopt)
-        : function(std::move(function_))
-        , argument_types(argument_types_)
-        , parameters(parameters_)
-        , version(version_)
-    {
-    }
+                              const Array & parameters_, std::optional<size_t> version_ = std::nullopt);
 
     size_t getVersion() const;
 

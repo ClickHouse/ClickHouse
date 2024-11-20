@@ -1,10 +1,11 @@
+import os
+import uuid
 from typing import Dict
+
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
-import uuid
-import os
-
 
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
 

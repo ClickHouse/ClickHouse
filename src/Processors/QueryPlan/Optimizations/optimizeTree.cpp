@@ -131,7 +131,7 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
                 optimizeReadInOrder(*frame.node, nodes);
 
             if (optimization_settings.distinct_in_order)
-                tryDistinctReadInOrder(frame.node);
+                optimizeDistinctInOrder(*frame.node, nodes);
         }
 
         /// Traverse all children first.
@@ -199,8 +199,6 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
             }
         }
 
-        enableMemoryBoundMerging(*stack.back().node, nodes);
-
         stack.pop_back();
     }
 
@@ -214,9 +212,12 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
             ErrorCodes::INCORRECT_DATA,
             "Projection {} is specified in setting force_optimize_projection_name but not used",
              optimization_settings.force_projection_name);
+
+    /// Trying to reuse sorting property for other steps.
+    applyOrder(optimization_settings, root);
 }
 
-void optimizeTreeThirdPass(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+void addStepsToBuildSets(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
     Stack stack;
     stack.push_back({.node = &root});

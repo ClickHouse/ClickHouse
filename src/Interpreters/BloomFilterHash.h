@@ -75,30 +75,54 @@ struct BloomFilterHash
         WhichDataType which(data_type);
 
         if (which.isUInt8()) return build_hash_column(getNumberTypeHash<UInt64, UInt8>(field));
-        else if (which.isUInt16()) return build_hash_column(getNumberTypeHash<UInt64, UInt16>(field));
-        else if (which.isUInt32()) return build_hash_column(getNumberTypeHash<UInt64, UInt32>(field));
-        else if (which.isUInt64()) return build_hash_column(getNumberTypeHash<UInt64, UInt64>(field));
-        else if (which.isUInt128()) return build_hash_column(getNumberTypeHash<UInt128, UInt256>(field));
-        else if (which.isUInt256()) return build_hash_column(getNumberTypeHash<UInt256, UInt256>(field));
-        else if (which.isInt8()) return build_hash_column(getNumberTypeHash<Int64, Int8>(field));
-        else if (which.isInt16()) return build_hash_column(getNumberTypeHash<Int64, Int16>(field));
-        else if (which.isInt32()) return build_hash_column(getNumberTypeHash<Int64, Int32>(field));
-        else if (which.isInt64()) return build_hash_column(getNumberTypeHash<Int64, Int64>(field));
-        else if (which.isInt128()) return build_hash_column(getNumberTypeHash<Int128, Int128>(field));
-        else if (which.isInt256()) return build_hash_column(getNumberTypeHash<Int256, Int256>(field));
-        else if (which.isEnum8()) return build_hash_column(getNumberTypeHash<Int64, Int8>(field));
-        else if (which.isEnum16()) return build_hash_column(getNumberTypeHash<Int64, Int16>(field));
-        else if (which.isDate()) return build_hash_column(getNumberTypeHash<UInt64, UInt16>(field));
-        else if (which.isDate32()) return build_hash_column(getNumberTypeHash<UInt64, Int32>(field));
-        else if (which.isDateTime()) return build_hash_column(getNumberTypeHash<UInt64, UInt32>(field));
-        else if (which.isFloat32()) return build_hash_column(getNumberTypeHash<Float64, Float64>(field));
-        else if (which.isFloat64()) return build_hash_column(getNumberTypeHash<Float64, Float64>(field));
-        else if (which.isUUID()) return build_hash_column(getNumberTypeHash<UUID, UUID>(field));
-        else if (which.isIPv4()) return build_hash_column(getNumberTypeHash<IPv4, IPv4>(field));
-        else if (which.isIPv6()) return build_hash_column(getNumberTypeHash<IPv6, IPv6>(field));
-        else if (which.isString()) return build_hash_column(getStringTypeHash(field));
-        else if (which.isFixedString()) return build_hash_column(getFixedStringTypeHash(field, data_type));
-        else throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type {} of bloom filter index.", data_type->getName());
+        if (which.isUInt16())
+            return build_hash_column(getNumberTypeHash<UInt64, UInt16>(field));
+        if (which.isUInt32())
+            return build_hash_column(getNumberTypeHash<UInt64, UInt32>(field));
+        if (which.isUInt64())
+            return build_hash_column(getNumberTypeHash<UInt64, UInt64>(field));
+        if (which.isUInt128())
+            return build_hash_column(getNumberTypeHash<UInt128, UInt256>(field));
+        if (which.isUInt256())
+            return build_hash_column(getNumberTypeHash<UInt256, UInt256>(field));
+        if (which.isInt8())
+            return build_hash_column(getNumberTypeHash<Int64, Int8>(field));
+        if (which.isInt16())
+            return build_hash_column(getNumberTypeHash<Int64, Int16>(field));
+        if (which.isInt32())
+            return build_hash_column(getNumberTypeHash<Int64, Int32>(field));
+        if (which.isInt64())
+            return build_hash_column(getNumberTypeHash<Int64, Int64>(field));
+        if (which.isInt128())
+            return build_hash_column(getNumberTypeHash<Int128, Int128>(field));
+        if (which.isInt256())
+            return build_hash_column(getNumberTypeHash<Int256, Int256>(field));
+        if (which.isEnum8())
+            return build_hash_column(getNumberTypeHash<Int64, Int8>(field));
+        if (which.isEnum16())
+            return build_hash_column(getNumberTypeHash<Int64, Int16>(field));
+        if (which.isDate())
+            return build_hash_column(getNumberTypeHash<UInt64, UInt16>(field));
+        if (which.isDate32())
+            return build_hash_column(getNumberTypeHash<UInt64, Int32>(field));
+        if (which.isDateTime())
+            return build_hash_column(getNumberTypeHash<UInt64, UInt32>(field));
+        if (which.isFloat32())
+            return build_hash_column(getNumberTypeHash<Float64, Float64>(field));
+        if (which.isFloat64())
+            return build_hash_column(getNumberTypeHash<Float64, Float64>(field));
+        if (which.isUUID())
+            return build_hash_column(getNumberTypeHash<UUID, UUID>(field));
+        if (which.isIPv4())
+            return build_hash_column(getNumberTypeHash<IPv4, IPv4>(field));
+        if (which.isIPv6())
+            return build_hash_column(getNumberTypeHash<IPv6, IPv6>(field));
+        if (which.isString())
+            return build_hash_column(getStringTypeHash(field));
+        if (which.isFixedString())
+            return build_hash_column(getFixedStringTypeHash(field, data_type));
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type {} of bloom filter index.", data_type->getName());
     }
 
     static ColumnPtr hashWithColumn(const DataTypePtr & data_type, const ColumnPtr & column, size_t pos, size_t limit)
@@ -171,7 +195,7 @@ struct BloomFilterHash
         const auto * index_column = typeid_cast<const ColumnVector<Type> *>(column);
 
         if (unlikely(!index_column))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column type was passed to the bloom filter index.");
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} was passed to the bloom filter index", column->getName());
 
         const typename ColumnVector<Type>::Container & vec_from = index_column->getData();
 

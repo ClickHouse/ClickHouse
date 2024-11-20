@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings, no-ordinary-database
+# Tags: no-random-settings, no-ordinary-database, no-fasttest
+# no-fasttest: The test is slow (too many small blocks)
 # shellcheck disable=SC2009
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

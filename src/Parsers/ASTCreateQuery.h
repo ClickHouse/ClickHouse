@@ -97,8 +97,10 @@ public:
     bool is_materialized_view{false};
     bool is_live_view{false};
     bool is_window_view{false};
+    bool is_time_series_table{false}; /// CREATE TABLE ... ENGINE=TimeSeries() ...
     bool is_populate{false};
     bool is_create_empty{false};    /// CREATE TABLE ... EMPTY AS SELECT ...
+    bool is_clone_as{false};    /// CREATE TABLE ... CLONE AS ...
     bool replace_view{false}; /// CREATE OR REPLACE VIEW
     bool has_uuid{false}; // CREATE TABLE x UUID '...'
 

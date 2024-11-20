@@ -5,7 +5,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 
-$CLICKHOUSE_CLIENT -n --query "
+$CLICKHOUSE_CLIENT --query "
 CREATE USER quoted_by_ip_${CLICKHOUSE_DATABASE};
 CREATE USER quoted_by_forwarded_ip_${CLICKHOUSE_DATABASE};
 
@@ -57,7 +57,7 @@ ${CLICKHOUSE_CURL} -H 'X-Forwarded-For: 5.6.7.8, 1.2.3.4' -sS "${CLICKHOUSE_URL}
 
 ${CLICKHOUSE_CURL} -H 'X-Forwarded-For: 1.2.3.4, 5.6.7.8' -sS "${CLICKHOUSE_URL}&user=quoted_by_forwarded_ip_${CLICKHOUSE_DATABASE}" -d "SELECT count() FROM numbers(10)"
 
-$CLICKHOUSE_CLIENT -n --query "
+$CLICKHOUSE_CLIENT --query "
 DROP QUOTA IF EXISTS quota_by_ip_${CLICKHOUSE_DATABASE};
 DROP QUOTA IF EXISTS quota_by_forwarded_ip;
 
