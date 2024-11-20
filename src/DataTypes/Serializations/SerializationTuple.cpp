@@ -139,12 +139,12 @@ void SerializationTuple::serializeText(const IColumn & column, size_t row_num, W
     writeChar('(', ostr);
     if (!elems.empty())
     {
-        if (settings.spark_text_output_format)
+        if (settings.composed_data_type_output_format_mode == "spark")
             elems[0]->serializeText(extractElementColumn(column, 0), row_num, ostr, settings);
         else
             elems[0]->serializeTextQuoted(extractElementColumn(column, 0), row_num, ostr, settings);
     }
-    if (settings.spark_text_output_format)
+    if (settings.composed_data_type_output_format_mode == "spark")
         for (size_t i = 1; i < elems.size(); ++i)
         {
             writeString(std::string_view(", "), ostr);

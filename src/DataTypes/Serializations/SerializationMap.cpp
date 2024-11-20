@@ -108,13 +108,13 @@ void SerializationMap::serializeTextImpl(
     if (offset != next_offset)
     {
         key_writer(ostr, key, nested_tuple.getColumn(0), offset);
-        if (settings.spark_text_output_format)
+        if (settings.composed_data_type_output_format_mode == "spark")
             writeString(std::string_view(" -> "), ostr);
         else
             writeChar(':', ostr);
         value_writer(ostr, value, nested_tuple.getColumn(1), offset);
     }
-    if (settings.spark_text_output_format)
+    if (settings.composed_data_type_output_format_mode == "spark")
         for (size_t i = offset + 1; i < next_offset; ++i)
         {
             writeString(std::string_view(", "), ostr);
@@ -238,7 +238,7 @@ void SerializationMap::serializeText(const IColumn & column, size_t row_num, Wri
 {
     auto writer = [&settings](WriteBuffer & buf, const SerializationPtr & subcolumn_serialization, const IColumn & subcolumn, size_t pos)
     {
-        if (settings.spark_text_output_format)
+        if (settings.composed_data_type_output_format_mode == "spark")
             subcolumn_serialization->serializeText(subcolumn, pos, buf, settings);
         else
             subcolumn_serialization->serializeTextQuoted(subcolumn, pos, buf, settings);

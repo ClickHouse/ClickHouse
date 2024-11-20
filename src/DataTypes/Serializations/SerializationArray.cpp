@@ -418,7 +418,7 @@ static void serializeTextImpl(const IColumn & column, size_t row_num, const Form
     for (size_t i = offset + 1; i < next_offset; ++i)
     {
         writeChar(',', ostr);
-        if (settings.spark_text_output_format)
+        if (settings.composed_data_type_output_format_mode == "spark")
             writeChar(' ', ostr);
         write_nested(nested_column, i);
     }
@@ -527,7 +527,7 @@ void SerializationArray::serializeText(const IColumn & column, size_t row_num, W
     serializeTextImpl(column, row_num, settings, ostr,
         [&](const IColumn & nested_column, size_t i)
         {
-            if (settings.spark_text_output_format)
+            if (settings.composed_data_type_output_format_mode == "spark")
                 nested->serializeText(nested_column, i, ostr, settings);
             else
                 nested->serializeTextQuoted(nested_column, i, ostr, settings);
