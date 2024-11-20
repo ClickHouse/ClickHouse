@@ -9,6 +9,8 @@ namespace DB
 /// Writes data part in compact format.
 class MergeTreeDataPartWriterCompact : public MergeTreeDataPartWriterOnDisk
 {
+    using Base = MergeTreeDataPartWriterOnDisk;
+
 public:
     MergeTreeDataPartWriterCompact(
         const String & data_part_name_,
@@ -25,12 +27,13 @@ public:
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
         const MergeTreeWriterSettings & settings,
-        const MergeTreeIndexGranularity & index_granularity);
+        MergeTreeIndexGranularityPtr index_granularity_);
 
     void write(const Block & block, const IColumn::Permutation * permutation) override;
 
     void fillChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove) override;
     void finish(bool sync) override;
+    void cancel() noexcept override;
 
     size_t getNumberOfOpenStreams() const override { return 1; }
 

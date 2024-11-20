@@ -36,6 +36,7 @@
 #include <Common/StudentTTest.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ErrorCodes.h>
+#include "IO/WriteBuffer.h"
 
 
 /** A tool for evaluating ClickHouse performance.
@@ -223,7 +224,7 @@ private:
     ContextMutablePtr global_context;
     QueryProcessingStage::Enum query_processing_stage;
 
-    WriteBufferFromFileDescriptor log{STDERR_FILENO};
+    AutoFinalizedWriteBuffer<WriteBufferFromFileDescriptor> log{STDERR_FILENO};
 
     std::atomic<size_t> consecutive_errors{0};
 

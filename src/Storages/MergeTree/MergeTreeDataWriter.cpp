@@ -14,6 +14,7 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/RowOrderOptimizer.h>
+#include "Common/logger_useful.h"
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
@@ -78,7 +79,6 @@ namespace MergeTreeSetting
 
 namespace ErrorCodes
 {
-    extern const int ABORTED;
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_PARTS;
     extern const int NOT_ENOUGH_SPACE;
@@ -206,15 +206,14 @@ void updateTTL(
 
 void MergeTreeDataWriter::TemporaryPart::cancel()
 {
-    try
+    for (auto & stream : streams)
     {
-        /// An exception context is needed to proper delete write buffers without finalization
-        throw Exception(ErrorCodes::ABORTED, "Cancel temporary part.");
+        stream.stream->cancel();
+        stream.finalizer.cancel();
     }
-    catch (...)
-    {
-        *this = TemporaryPart{};
-    }
+
+    /// The part is trying to delete leftovers here
+    part.reset();
 }
 
 void MergeTreeDataWriter::TemporaryPart::finalize()
@@ -693,6 +692,13 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     auto compression_codec = data.getContext()->chooseCompressionCodec(0, 0);
     bool save_marks_in_cache = (*data_settings)[MergeTreeSetting::prewarm_mark_cache] && data.getContext()->getMarkCache();
 
+    auto index_granularity_ptr = createMergeTreeIndexGranularity(
+        block.rows(),
+        block.bytes(),
+        *data.getSettings(),
+        new_data_part->index_granularity_info,
+        /*blocks_are_granules=*/ false);
+
     auto out = std::make_unique<MergedBlockOutputStream>(
         new_data_part,
         metadata_snapshot,
@@ -700,6 +706,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
         indices,
         statistics,
         compression_codec,
+        std::move(index_granularity_ptr),
         context->getCurrentTransaction() ? context->getCurrentTransaction()->tid : Tx::PrehistoricTID,
         /*reset_columns=*/ false,
         save_marks_in_cache,
@@ -846,6 +853,13 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     auto compression_codec = data.getContext()->chooseCompressionCodec(0, 0);
     bool save_marks_in_cache = (*data.getSettings())[MergeTreeSetting::prewarm_mark_cache] && data.getContext()->getMarkCache();
 
+    auto index_granularity_ptr = createMergeTreeIndexGranularity(
+        block.rows(),
+        block.bytes(),
+        *data.getSettings(),
+        new_data_part->index_granularity_info,
+        /*blocks_are_granules=*/ false);
+
     auto out = std::make_unique<MergedBlockOutputStream>(
         new_data_part,
         metadata_snapshot,
@@ -854,6 +868,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
         /// TODO(hanfei): It should be helpful to write statistics for projection result.
         ColumnsStatistics{},
         compression_codec,
+        std::move(index_granularity_ptr),
         Tx::PrehistoricTID,
         /*reset_columns=*/ false,
         save_marks_in_cache,

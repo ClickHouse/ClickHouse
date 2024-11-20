@@ -18,7 +18,7 @@ class GH:
             ret_code, out, err = Shell.get_res_stdout_stderr(command, verbose=True)
             res = ret_code == 0
             if not res and "Validation Failed" in err:
-                print(f"ERROR: GH command validation error.")
+                print("ERROR: GH command validation error")
                 break
             if not res and "Bad credentials" in err:
                 print("ERROR: GH credentials/auth failure")

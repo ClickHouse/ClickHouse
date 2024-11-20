@@ -140,6 +140,9 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         const ASTPtr & explained_ast = explain_query.getExplainedQuery();
         if (explained_ast)
         {
+            if (!explained_ast->as<ASTSelectWithUnionQuery>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN inside subquery supports only SELECT queries");
+
             auto view_explain = makeASTFunction("viewExplain",
                 std::make_shared<ASTLiteral>(kind_str),
                 std::make_shared<ASTLiteral>(settings_str),
@@ -1309,13 +1312,11 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
         {
             if (pos->type == closing_bracket)
             {
-                std::shared_ptr<ASTLiteral> literal;
-
                 /// Parse one-element tuples (e.g. (1)) later as single values for backward compatibility.
                 if (std::is_same_v<Collection, Tuple> && layers.back().arr.size() == 1)
                     return false;
 
-                literal = std::make_shared<ASTLiteral>(std::move(layers.back().arr));
+                std::shared_ptr<ASTLiteral> literal = std::make_shared<ASTLiteral>(std::move(layers.back().arr));
                 literal->begin = layers.back().literal_begin;
                 literal->end = ++pos;
 
