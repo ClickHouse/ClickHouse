@@ -230,7 +230,7 @@ try
 
     if (!isCancelled() && current_row < data_part->rows_count)
     {
-        size_t rows_to_read = data_part->index_granularity.getMarkRows(current_mark);
+        size_t rows_to_read = data_part->index_granularity->getMarkRows(current_mark);
         bool continue_reading = (current_mark != 0);
 
         const auto & sample = reader->getColumns();

@@ -1959,7 +1959,7 @@ void InterpreterCreateQuery::throwIfTooManyEntities(ASTCreateQuery & create, Sto
                                 entity_name, setting_name, num_limit, attached_count);
         };
 
-    if (auto * replicated_storage = typeid_cast<StorageReplicatedMergeTree *>(storage.get()))
+    if (typeid_cast<StorageReplicatedMergeTree *>(storage.get()) != nullptr)
         check_and_throw(ServerSetting::max_replicated_table_num_to_throw, CurrentMetrics::AttachedReplicatedTable, "max_replicated_table_num_to_throw", "replicated tables");
     else if (create.is_dictionary)
         check_and_throw(ServerSetting::max_dictionary_num_to_throw, CurrentMetrics::AttachedDictionary, "max_dictionary_num_to_throw", "dictionaries");

@@ -676,7 +676,7 @@ Pipe ReadFromMergeTree::readInOrder(
             part_with_ranges.ranges.size(),
             read_type == ReadType::InReverseOrder ? " reverse " : " ",
             part_with_ranges.data_part->name, total_rows,
-            part_with_ranges.data_part->index_granularity.getMarkStartingRow(part_with_ranges.ranges.front().begin));
+            part_with_ranges.data_part->index_granularity->getMarkStartingRow(part_with_ranges.ranges.front().begin));
 
         MergeTreeSelectAlgorithmPtr algorithm;
         if (read_type == ReadType::InReverseOrder)
@@ -1768,7 +1768,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             return std::make_shared<AnalysisResult>(std::move(result));
 
         for (const auto & part : parts)
-            total_marks_pk += part->index_granularity.getMarksCountWithoutFinal();
+            total_marks_pk += part->index_granularity->getMarksCountWithoutFinal();
         parts_before_pk = parts.size();
 
         auto reader_settings = getMergeTreeReaderSettings(context_, query_info_);
