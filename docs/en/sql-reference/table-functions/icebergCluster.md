@@ -11,14 +11,14 @@ Allows processing files from Apache [Iceberg](https://iceberg.apache.org/) in pa
 **Syntax**
 
 ``` sql
-icebergS3(cluster_name, url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
-icebergS3(cluster_name, named_collection[, option=value [,..]])
+icebergS3Cluster(cluster_name, url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
+icebergS3Cluster(cluster_name, named_collection[, option=value [,..]])
 
-icebergAzure(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
-icebergAzure(cluster_name, named_collection[, option=value [,..]])
+icebergAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+icebergAzureCluster(cluster_name, named_collection[, option=value [,..]])
 
-icebergHDFS(cluster_name, path_to_table, [,format] [,compression_method])
-icebergHDFS(cluster_name, named_collection[, option=value [,..]])
+icebergHDFSCluster(cluster_name, path_to_table, [,format] [,compression_method])
+icebergHDFSCluster(cluster_name, named_collection[, option=value [,..]])
 ```
 
 **Arguments**
@@ -36,10 +36,6 @@ A table with the specified structure for reading data from cluster in the specif
 ```sql
 SELECT * FROM icebergS3Cluster('cluster_simple', 'http://test.s3.amazonaws.com/clickhouse-bucket/test_table', 'test', 'test')
 ```
-
-**Aliases**
-
-Table function `icebergCluster` is an alias to `icebergS3Cluster` now.
 
 **See Also**
 
