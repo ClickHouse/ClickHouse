@@ -20,6 +20,11 @@ export async function customScenario(scenario, signals)
         await inserter.start();
     await merger.start();
 
+    // Make timer
+    const {every_real_second: on_every_real_second} = signals;
+    if (on_every_real_second)
+        sim.addTimer(1000, async () => await on_every_real_second({mt, sim}));
+
     // Run the simulation
     await sim.run();
 

@@ -52,6 +52,9 @@ export class EventSimulator
         this.ready_events = []; // Events ready to be executed
         this.pending_events = new Heap((a, b) => a.time - b.time); // Use min Heap for pending events
         this.time = 0;
+        this.timers = [];
+        this.last_timer = 0;
+        this.min_timer_interval_ms = 100; // At least check every 100 ms
     }
 
     // Schedule new event to be executed at specific time
@@ -83,11 +86,47 @@ export class EventSimulator
         this.scheduleAt(0, name, callback, []);
     }
 
+    // Register a callback to be called every `interval` ms in realtime (not simulation)
+    addTimer(interval_ms, callback)
+    {
+        this.timers.push({
+            last: performance.now(),
+            interval_ms,
+            callback,
+        });
+        this.min_timer_interval_ms = Math.min(this.min_timer_interval_ms, interval_ms);
+    }
+
+    // Handle timers
+    async #handleTimers()
+    {
+        if (this.timers.length > 0)
+        {
+            const now = performance.now();
+            if (this.last_timer + this.min_timer_interval_ms < now)
+            {
+                this.last_timer = now;
+                for (const timer of this.timers)
+                {
+                    if (timer.last + timer.interval_ms < now)
+                    {
+                        timer.last = now;
+                        await timer.callback();
+                    }
+                }
+            }
+        }
+    }
+
     // Run the simulation
     async run()
     {
+        const startTime = performance.now();
         while (this.ready_events.length > 0 || this.pending_events.size() > 0)
+        {
             await this.#executeNextEvent();
+            await this.#handleTimers();
+        }
     }
 
     // All dependencies of an event are now satisfied
