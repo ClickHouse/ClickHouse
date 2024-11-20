@@ -478,9 +478,10 @@ jobs:
     secrets: inherit
     with:
       runner_type: altinity-on-demand, altinity-type-cpx51, altinity-image-x86-app-docker-ce, altinity-setup-regression
-      commit: 4bce3c2c1477543bb67c9a719282c11d66ba17d9
+      commit: 634042960dd157489199ca0f9d028c7fd1e6adb0
       arch: release
       build_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout_minutes: 300
   RegressionTestsAarch64:
     needs: [BuilderDebAarch64]
     if: ${{ !failure() && !cancelled() }}
@@ -488,9 +489,10 @@ jobs:
     secrets: inherit
     with:
       runner_type: altinity-on-demand, altinity-type-cax41, altinity-image-arm-app-docker-ce, altinity-setup-regression
-      commit: 4bce3c2c1477543bb67c9a719282c11d66ba17d9
+      commit: 634042960dd157489199ca0f9d028c7fd1e6adb0
       arch: aarch64
       build_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout_minutes: 300
   SignRelease:
     needs: [RunConfig, BuilderDebRelease]
     if: ${{ !failure() && !cancelled() }}
