@@ -320,6 +320,21 @@ def test_delete_after_processing(started_cluster, mode, engine_name):
         ).splitlines()
     ] == sorted(total_values, key=lambda x: (x[0], x[1], x[2]))
 
+    node.query("system flush logs")
+
+    if engine_name == "S3Queue":
+        system_table_name = "s3queue_log"
+    else:
+        system_table_name = "azure_queue_log"
+    assert (
+        int(
+            node.query(
+                f"SELECT sum(rows_processed) FROM system.{system_table_name} WHERE table = '{table_name}'"
+            )
+        )
+        == files_num * row_num
+    )
+
     if engine_name == "S3Queue":
         minio = started_cluster.minio_client
         objects = list(minio.list_objects(started_cluster.minio_bucket, recursive=True))
