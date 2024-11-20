@@ -955,7 +955,12 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                             LiteralValue * lv = expr->mutable_lit_val();
 
                             buf.resize(0);
-                            if (entry.special == ColumnSpecial::SIGN)
+                            if ((entry.dmod.has_value() && entry.dmod.value() == DModifier::DEF_DEFAULT && rg.nextMediumNumber() < 6)
+                                || rg.nextLargeNumber() < 2)
+                            {
+                                buf += "DEFAULT";
+                            }
+                            else if (entry.special == ColumnSpecial::SIGN)
                             {
                                 buf += rg.nextBool() ? "1" : "-1";
                             }

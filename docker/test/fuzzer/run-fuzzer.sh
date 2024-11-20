@@ -267,7 +267,7 @@ function fuzz
         touch out.sql fuzz.json
         OUTPUT_SQL_FILE=$(realpath out.sql)
         BUZZHOUSE_CONFIG_FILE=$(realpath fuzz.json)
-cat << EOF > $CONFIG_FILE
+cat << EOF > $BUZZHOUSE_CONFIG_FILE
 {
     "db_file_path": "/var/lib/clickhouse/user_files",
     "log_path": "$OUTPUT_SQL_FILE",

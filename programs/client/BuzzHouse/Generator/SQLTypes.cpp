@@ -555,7 +555,7 @@ StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_t allowed_
                    nested_type = 10
         * static_cast<uint32_t>((allowed_types & allow_nested) != 0 && this->depth < this->fc.max_depth
                                 && this->width < this->fc.max_width),
-                   geo_type = 10 * static_cast<uint32_t>((allowed_types & allow_geo) != 0),
+                   geo_type = 10 * static_cast<uint32_t>((allowed_types & allow_geo) != 0 && this->fc.fuzz_floating_points),
                    prob_space
         = nullable_type + non_nullable_type + array_type + map_type + tuple_type + variant_type + nested_type + geo_type;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
@@ -1248,12 +1248,7 @@ void StatementGenerator::strAppendAnyValueInternal(RandomGenerator & rg, std::st
     const LowCardinality * lc;
     const GeoType * gtp;
 
-    if (rg.nextMediumNumber() == 1)
-    {
-        ret += "DEFAULT";
-    }
-    else if (
-        dynamic_cast<const IntType *>(tp) || dynamic_cast<const FloatType *>(tp) || dynamic_cast<const DateType *>(tp)
+    if (dynamic_cast<const IntType *>(tp) || dynamic_cast<const FloatType *>(tp) || dynamic_cast<const DateType *>(tp)
         || dynamic_cast<const DateTimeType *>(tp) || dynamic_cast<const DecimalType *>(tp) || dynamic_cast<const StringType *>(tp)
         || dynamic_cast<const BoolType *>(tp) || dynamic_cast<const EnumType *>(tp) || dynamic_cast<const UUIDType *>(tp)
         || dynamic_cast<const IPv4Type *>(tp) || dynamic_cast<const IPv6Type *>(tp))

@@ -626,7 +626,7 @@ int StatementGenerator::generateFromStatement(RandomGenerator & rg, const uint32
                 }
             }
             generateFromElement(rg, allowed_clauses, core->mutable_tos());
-            generateJoinConstraint(rg, njoined == 1, core->mutable_join_constraint());
+            generateJoinConstraint(rg, njoined == 2, core->mutable_join_constraint());
         }
     }
     this->width -= njoined;
