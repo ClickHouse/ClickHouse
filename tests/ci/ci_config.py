@@ -584,6 +584,8 @@ class CI:
                 include_paths=[
                     "./tests/queries/0_stateless/",
                     "./tests/docker_scripts/",
+                    "./tests/config/",
+                    "./tests/clickhouse-test",
                 ],
                 exclude_files=[".md"],
                 docker=["clickhouse/fasttest"],

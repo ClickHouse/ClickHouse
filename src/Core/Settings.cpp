@@ -433,7 +433,7 @@ Possible values:
 - 0 — `INSERT` query appends new data to the end of the file.
 - 1 — `INSERT` query creates a new file.
 )", 0) \
-    DECLARE(Bool, s3_skip_empty_files, false, R"(
+    DECLARE(Bool, s3_skip_empty_files, true, R"(
 Enables or disables skipping empty files in [S3](../../engines/table-engines/integrations/s3.md) engine tables.
 
 Possible values:
@@ -4323,7 +4323,7 @@ Disable limit on kafka_num_consumers that depends on the number of available CPU
 )", 0) \
     DECLARE(Bool, allow_experimental_kafka_offsets_storage_in_keeper, false, R"(
 Allow experimental feature to store Kafka related offsets in ClickHouse Keeper. When enabled a ClickHouse Keeper path and replica name can be specified to the Kafka table engine. As a result instead of the regular Kafka engine, a new type of storage engine will be used that stores the committed offsets primarily in ClickHouse Keeper
-)", 0) \
+)", EXPERIMENTAL) \
     DECLARE(Bool, enable_software_prefetch_in_aggregation, true, R"(
 Enable use of software prefetch in aggregation
 )", 0) \
@@ -5656,10 +5656,10 @@ Build local plan for local replica
     \
     DECLARE(Bool, allow_experimental_analyzer, true, R"(
 Allow new query analyzer.
-)", IMPORTANT | BETA) ALIAS(enable_analyzer) \
+)", IMPORTANT) ALIAS(enable_analyzer) \
     DECLARE(Bool, analyzer_compatibility_join_using_top_level_identifier, false, R"(
 Force to resolve identifier in JOIN USING from projection (for example, in `SELECT a + 1 AS b FROM t1 JOIN t2 USING (b)` join will be performed by `t1.a + 1 = t2.b`, rather then `t1.b = t2.b`).
-)", BETA) \
+)", 0) \
     \
     DECLARE(Timezone, session_timezone, "", R"(
 Sets the implicit time zone of the current session or query.
@@ -5770,7 +5770,7 @@ Possible values:
 
 - 0 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is disabled.
 - 1 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is enabled.
-)", 0) \
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_vector_similarity_index, false, R"(
 Allow experimental vector similarity index
 )", EXPERIMENTAL) \
@@ -5843,7 +5843,7 @@ If it is set to true, allow to use experimental full-text index.
     \
     DECLARE(Bool, allow_experimental_join_condition, false, R"(
 Support join with inequal conditions which involve columns from both left and right table. e.g. t1.y < t2.y.
-)", 0) \
+)", EXPERIMENTAL) \
     \
     DECLARE(Bool, allow_experimental_live_view, false, R"(
 Allows creation of a deprecated LIVE VIEW.
@@ -5852,7 +5852,7 @@ Possible values:
 
 - 0 — Working with live views is disabled.
 - 1 — Working with live views is enabled.
-)", 0) \
+)", EXPERIMENTAL) \
     DECLARE(Seconds, live_view_heartbeat_interval, 15, R"(
 The heartbeat interval in seconds to indicate live query is alive.
 )", EXPERIMENTAL) \
@@ -6204,6 +6204,11 @@ bool Settings::has(std::string_view name) const
 bool Settings::isChanged(std::string_view name) const
 {
     return impl->isChanged(name);
+}
+
+SettingsTierType Settings::getTier(std::string_view name) const
+{
+    return impl->getTier(name);
 }
 
 bool Settings::tryGet(std::string_view name, Field & value) const
