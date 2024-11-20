@@ -438,7 +438,7 @@ bool HashJoin::isUsedByAnotherAlgorithm() const
 
 bool HashJoin::canRemoveColumnsFromLeftBlock() const
 {
-    return table_join->enableEnalyzer() && !table_join->hasUsing() && !isUsedByAnotherAlgorithm();
+    return table_join->enableEnalyzer() && !table_join->hasUsing() && !isUsedByAnotherAlgorithm() && strictness != JoinStrictness::RightAny;
 }
 
 void HashJoin::initRightBlockStructure(Block & saved_block_sample)
