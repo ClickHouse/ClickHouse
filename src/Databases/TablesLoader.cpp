@@ -107,8 +107,6 @@ LoadTaskPtrs TablesLoader::startupTablesAsync(LoadJobSet startup_after)
     LoadTaskPtrs result;
     std::unordered_map<String, LoadTaskPtrs> startup_database; /// database name -> all its tables startup tasks
 
-
-
     for (const auto & table_id : all_loading_dependencies.getTables())
     {
         // Make startup table task
