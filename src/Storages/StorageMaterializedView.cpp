@@ -29,6 +29,7 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
+#include <Common/randomSeed.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <QueryPipeline/Pipe.h>
@@ -765,8 +766,8 @@ void StorageMaterializedView::startup()
 {
     if (const auto configured_delay_ms = getContext()->getServerSettings()[ServerSetting::startup_mv_delay_ms]; configured_delay_ms)
     {
-        std::random_device rd;
-        const auto delay_ms = std::uniform_int_distribution<>(0, 1)(rd) ? configured_delay_ms : 0UL;
+        pcg64_fast gen{randomSeed()};
+        const auto delay_ms = std::uniform_int_distribution<>(0, 1)(gen) ? configured_delay_ms : 0UL;
         if (delay_ms)
         {
             LOG_DEBUG(&Poco::Logger::get("StorageMaterializedView"), "sleeping in startup of {}", getStorageID().table_name);
