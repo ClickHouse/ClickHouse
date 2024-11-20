@@ -37,7 +37,7 @@ if (ENABLE_BUZZHOUSE)
     )
 
     # Needed because of protobuf
-    set_source_files_properties(${CLICKHOUSE_CLIENT_SOURCES} PROPERTIES COMPILE_FLAGS "-Wno-reserved-identifier -Wno-extra-semi-stmt")
+    set_source_files_properties(${GRAMMAR_SRC} PROPERTIES COMPILE_FLAGS "-Wno-reserved-identifier -Wno-extra-semi-stmt")
 
     list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE ch_contrib::protoc)
     if (TARGET OpenSSL::Crypto)

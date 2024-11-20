@@ -1,8 +1,7 @@
 #pragma once
 
 #include <cstdint>
-#include <vector>
-#include "SQLGrammar.pb.h"
+#include "SQLProtoStr.h"
 
 namespace BuzzHouse
 {

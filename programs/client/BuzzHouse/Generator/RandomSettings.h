@@ -2,7 +2,7 @@
 
 #include "FuzzTimezones.h"
 #include "RandomGenerator.h"
-#include "SQLGrammar.pb.h"
+#include "SQLProtoStr.h"
 
 #include <cstdint>
 #include <functional>

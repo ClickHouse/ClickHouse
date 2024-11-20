@@ -1,7 +1,7 @@
 #pragma once
 
 #include "RandomGenerator.h"
-#include "SQLGrammar.pb.h"
+#include "SQLProtoStr.h"
 
 #include <memory>
 #include <optional>
