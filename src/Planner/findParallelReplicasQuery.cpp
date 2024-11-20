@@ -23,6 +23,8 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/buildQueryTreeForShard.h>
 
+#include <ranges>
+
 namespace DB
 {
 namespace Setting
@@ -38,12 +40,12 @@ namespace ErrorCodes
 
 /// Returns a list of (sub)queries (candidates) which may support parallel replicas.
 /// The rule is :
-/// subquery has only LEFT or ALL INNER JOIN (or none), and left part is MergeTree table or subquery candidate as well.
+/// subquery has only LEFT / RIGHT / ALL INNER JOIN (or none), and left / right part is MergeTree table or subquery candidate as well.
 ///
 /// Additional checks are required, so we return many candidates. The innermost subquery is on top.
-std::stack<const QueryNode *> getSupportingParallelReplicasQuery(const IQueryTreeNode * query_tree_node)
+std::vector<const QueryNode *> getSupportingParallelReplicasQuery(const IQueryTreeNode * query_tree_node)
 {
-    std::stack<const QueryNode *> res;
+    std::vector<const QueryNode *> res;
 
     while (query_tree_node)
     {
@@ -75,7 +77,7 @@ std::stack<const QueryNode *> getSupportingParallelReplicasQuery(const IQueryTre
             {
                 const auto & query_node_to_process = query_tree_node->as<QueryNode &>();
                 query_tree_node = query_node_to_process.getJoinTree().get();
-                res.push(&query_node_to_process);
+                res.push_back(&query_node_to_process);
                 break;
             }
             case QueryTreeNodeType::UNION:
@@ -98,17 +100,16 @@ std::stack<const QueryNode *> getSupportingParallelReplicasQuery(const IQueryTre
             case QueryTreeNodeType::JOIN:
             {
                 const auto & join_node = query_tree_node->as<JoinNode &>();
-                auto join_kind = join_node.getKind();
-                auto join_strictness = join_node.getStrictness();
+                const auto join_kind = join_node.getKind();
+                const auto join_strictness = join_node.getStrictness();
 
-                bool can_parallelize_join =
-                    join_kind == JoinKind::Left
-                    || (join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All);
-
-                if (!can_parallelize_join)
+                if (join_kind == JoinKind::Left || (join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All))
+                    query_tree_node = join_node.getLeftTableExpression().get();
+                else if (join_kind == JoinKind::Right)
+                    query_tree_node = join_node.getRightTableExpression().get();
+                else
                     return {};
 
-                query_tree_node = join_node.getLeftTableExpression().get();
                 break;
             }
             default:
@@ -163,14 +164,27 @@ QueryTreeNodePtr replaceTablesWithDummyTables(QueryTreeNodePtr query, const Cont
     return query->cloneAndReplace(visitor.replacement_map);
 }
 
+#ifdef DUMP_PARALLEL_REPLICAS_QUERY_CANDIDATES
+static void dumpStack(const std::vector<const QueryNode *> & stack)
+{
+    std::ranges::reverse_view rv{stack};
+    for (const auto * node : rv)
+        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "{}\n{}", CityHash_v1_0_2::Hash128to64(node->getTreeHash()), node->dumpTree());
+}
+#endif
+
 /// Find the best candidate for parallel replicas execution by verifying query plan.
-/// If query plan has only Expression, Filter of Join steps, we can execute it fully remotely and check the next query.
+/// If query plan has only Expression, Filter or Join steps, we can execute it fully remotely and check the next query.
 /// Otherwise we can execute current query up to WithMergableStage only.
 const QueryNode * findQueryForParallelReplicas(
-    std::stack<const QueryNode *> stack,
+    std::vector<const QueryNode *> stack,
     const std::unordered_map<const QueryNode *, const QueryPlan::Node *> & mapping,
     const Settings & settings)
 {
+#ifdef DUMP_PARALLEL_REPLICAS_QUERY_CANDIDATES
+    dumpStack(stack);
+#endif
+
     struct Frame
     {
         const QueryPlan::Node * node = nullptr;
@@ -189,8 +203,8 @@ const QueryNode * findQueryForParallelReplicas(
 
     while (!stack.empty())
     {
-        const QueryNode * const subquery_node = stack.top();
-        stack.pop();
+        const QueryNode * const subquery_node = stack.back();
+        stack.pop_back();
 
         auto it = mapping.find(subquery_node);
         /// This should not happen ideally.
@@ -236,7 +250,7 @@ const QueryNode * findQueryForParallelReplicas(
             else
             {
                 const auto * join = typeid_cast<JoinStep *>(step);
-                /// We've checked that JOIN is INNER/LEFT in query tree.
+                /// We've checked that JOIN is INNER/LEFT/RIGHT on query tree level before.
                 /// Don't distribute UNION node.
                 if (!join)
                     return res;
@@ -263,7 +277,7 @@ const QueryNode * findQueryForParallelReplicas(
     return res;
 }
 
-const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tree_node, SelectQueryOptions & select_query_options)
+const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options)
 {
     if (select_query_options.only_analyze)
         return nullptr;
@@ -287,7 +301,7 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
         return nullptr;
 
     /// We don't have any subquery and storage can process parallel replicas by itself.
-    if (stack.top() == query_tree_node.get())
+    if (stack.back() == query_tree_node.get())
         return nullptr;
 
     /// This is needed to avoid infinite recursion.
@@ -310,31 +324,33 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
     const auto & mapping = planner.getQueryNodeToPlanStepMapping();
     const auto * res = findQueryForParallelReplicas(new_stack, mapping, context->getSettingsRef());
 
-    /// Now, return a query from initial stack.
     if (res)
     {
+        // find query in initial stack
         while (!new_stack.empty())
         {
-            if (res == new_stack.top())
-                return stack.top();
+            if (res == new_stack.back())
+            {
+                res = stack.back();
+                break;
+            }
 
-            stack.pop();
-            new_stack.pop();
+            stack.pop_back();
+            new_stack.pop_back();
         }
     }
-
     return res;
 }
 
 static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * query_tree_node)
 {
-    std::stack<const IQueryTreeNode *> right_join_nodes;
-    while (query_tree_node || !right_join_nodes.empty())
+    std::stack<const IQueryTreeNode *> join_nodes;
+    while (query_tree_node || !join_nodes.empty())
     {
         if (!query_tree_node)
         {
-            query_tree_node = right_join_nodes.top();
-            right_join_nodes.pop();
+            query_tree_node = join_nodes.top();
+            join_nodes.pop();
         }
 
         auto join_tree_node_type = query_tree_node->getNodeType();
@@ -383,8 +399,23 @@ static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * que
             case QueryTreeNodeType::JOIN:
             {
                 const auto & join_node = query_tree_node->as<JoinNode &>();
-                query_tree_node = join_node.getLeftTableExpression().get();
-                right_join_nodes.push(join_node.getRightTableExpression().get());
+                const auto join_kind = join_node.getKind();
+                const auto join_strictness = join_node.getStrictness();
+
+                if (join_kind == JoinKind::Left || (join_kind == JoinKind::Inner and join_strictness == JoinStrictness::All))
+                {
+                    query_tree_node = join_node.getLeftTableExpression().get();
+                    join_nodes.push(join_node.getRightTableExpression().get());
+                }
+                else if (join_kind == JoinKind::Right)
+                {
+                    query_tree_node = join_node.getRightTableExpression().get();
+                    join_nodes.push(join_node.getLeftTableExpression().get());
+                }
+                else
+                {
+                    return nullptr;
+                }
                 break;
             }
             default:
@@ -400,7 +431,7 @@ static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * que
     return nullptr;
 }
 
-const TableNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tree_node, SelectQueryOptions & select_query_options)
+const TableNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options)
 {
     if (select_query_options.only_analyze)
         return nullptr;

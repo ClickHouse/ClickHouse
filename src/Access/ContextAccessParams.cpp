@@ -18,6 +18,7 @@ ContextAccessParams::ContextAccessParams(
     bool full_access_,
     bool use_default_roles_,
     const std::shared_ptr<const std::vector<UUID>> & current_roles_,
+    const std::shared_ptr<const std::vector<UUID>> & external_roles_,
     const Settings & settings_,
     const String & current_database_,
     const ClientInfo & client_info_)
@@ -25,6 +26,7 @@ ContextAccessParams::ContextAccessParams(
     , full_access(full_access_)
     , use_default_roles(use_default_roles_)
     , current_roles(current_roles_)
+    , external_roles(external_roles_)
     , readonly(settings_[Setting::readonly])
     , allow_ddl(settings_[Setting::allow_ddl])
     , allow_introspection(settings_[Setting::allow_introspection_functions])
@@ -56,6 +58,17 @@ String ContextAccessParams::toString() const
             if (i)
                 out << ", ";
             out << (*current_roles)[i];
+        }
+        out << "]";
+    }
+    if (external_roles && !external_roles->empty())
+    {
+        out << separator() << "external_roles = [";
+        for (size_t i = 0; i != external_roles->size(); ++i)
+        {
+            if (i)
+                out << ", ";
+            out << (*external_roles)[i];
         }
         out << "]";
     }
@@ -107,6 +120,7 @@ bool operator ==(const ContextAccessParams & left, const ContextAccessParams & r
     CONTEXT_ACCESS_PARAMS_EQUALS(full_access)
     CONTEXT_ACCESS_PARAMS_EQUALS(use_default_roles)
     CONTEXT_ACCESS_PARAMS_EQUALS(current_roles)
+    CONTEXT_ACCESS_PARAMS_EQUALS(external_roles)
     CONTEXT_ACCESS_PARAMS_EQUALS(readonly)
     CONTEXT_ACCESS_PARAMS_EQUALS(allow_ddl)
     CONTEXT_ACCESS_PARAMS_EQUALS(allow_introspection)
@@ -157,6 +171,7 @@ bool operator <(const ContextAccessParams & left, const ContextAccessParams & ri
     CONTEXT_ACCESS_PARAMS_LESS(full_access)
     CONTEXT_ACCESS_PARAMS_LESS(use_default_roles)
     CONTEXT_ACCESS_PARAMS_LESS(current_roles)
+    CONTEXT_ACCESS_PARAMS_LESS(external_roles)
     CONTEXT_ACCESS_PARAMS_LESS(readonly)
     CONTEXT_ACCESS_PARAMS_LESS(allow_ddl)
     CONTEXT_ACCESS_PARAMS_LESS(allow_introspection)
