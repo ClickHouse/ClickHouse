@@ -132,24 +132,6 @@ StoragePtr TableFunctionURL::getStorage(
     const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
     const std::string & table_name, const String & compression_method_) const
 {
-    if (global_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
-    {
-        return std::make_shared<StorageURL>(
-            source,
-            StorageID(getDatabaseName(), table_name),
-            format_,
-            std::nullopt /*format settings*/,
-            columns,
-            ConstraintsDescription{},
-            String{},
-            global_context,
-            compression_method_,
-            configuration.headers,
-            configuration.http_method,
-            nullptr,
-            /*distributed_processing*/ true);
-    }
-
     const auto & settings = global_context->getSettingsRef();
     auto parallel_replicas_cluster_name = settings[Setting::cluster_for_parallel_replicas].toString();
     auto can_use_parallel_replicas = settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0
