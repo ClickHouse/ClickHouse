@@ -313,11 +313,20 @@ bool ParserAlterSettingsProfileElements::parseImpl(Pos & pos, ASTPtr & node, Exp
         auto parse_element = [&]
         {
             if (ParserKeyword{Keyword::ADD}.ignore(pos, expected))
+            {
                 action = "ADD";
+                target = "";
+            }
             else if (ParserKeyword{Keyword::DROP}.ignore(pos, expected))
+            {
                 action = "DROP";
+                target = "";
+            }
             else if (ParserKeyword{Keyword::MODIFY}.ignore(pos, expected))
+            {
                 action = "MODIFY";
+                target = "";
+            }
 
             if (!action.empty())
             {
@@ -329,9 +338,10 @@ bool ParserAlterSettingsProfileElements::parseImpl(Pos & pos, ASTPtr & node, Exp
                     target = "PROFILES";
                 else if (ParserKeyword{Keyword::SETTINGS}.ignore(pos, expected) || ParserKeyword{Keyword::SETTING}.ignore(pos, expected))
                     target = "SETTINGS";
-                else
-                    return false;
             }
+
+            if (target.empty())
+                return false;
 
             if (target == "PROFILES")
             {
