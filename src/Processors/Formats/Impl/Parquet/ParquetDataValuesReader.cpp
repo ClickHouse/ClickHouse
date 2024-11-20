@@ -365,11 +365,11 @@ void ParquetPlainValuesReader<TColumn, ParquetType>::readBatch(
         null_map,
         /* individual_visitor */ [&](size_t nest_cursor)
         {
-            plain_data_buffer.readValue(column_data[nest_cursor]);
+            plain_data_buffer.readValuesOfDifferentSize<TValue, ParquetType>(column_data + nest_cursor, 1);
         },
         /* repeated_visitor */ [&](size_t nest_cursor, UInt32 count)
         {
-            plain_data_buffer.readBytes(column_data + nest_cursor, count * sizeof(TValue));
+            plain_data_buffer.readValuesOfDifferentSize<TValue, ParquetType>(column_data + nest_cursor, count);
         }
     );
 }
