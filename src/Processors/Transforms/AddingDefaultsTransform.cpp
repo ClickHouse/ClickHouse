@@ -9,7 +9,6 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnSparse.h>
 #include <Columns/FilterDescription.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -84,7 +83,7 @@ static void mixNumberColumns(
 
                 return true;
             }
-            if (auto col_defs = checkAndGetColumn<ColVecType>(col_defaults.get()))
+            else if (auto col_defs = checkAndGetColumn<ColVecType>(col_defaults.get()))
             {
                 auto & src = col_defs->getData();
                 for (size_t i = 0; i < defaults_mask.size(); ++i)
@@ -150,8 +149,8 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
     if (column_defaults.empty())
         return;
 
-    const auto * block_missing_values = input_format.getMissingValues();
-    if (!block_missing_values)
+    const BlockMissingValues & block_missing_values = input_format.getMissingValues();
+    if (block_missing_values.empty())
         return;
 
     const auto & header = getOutputPort().getHeader();
@@ -168,7 +167,7 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
         if (evaluate_block.has(column.first))
         {
             size_t column_idx = res.getPositionByName(column.first);
-            if (block_missing_values->hasDefaultBits(column_idx))
+            if (block_missing_values.hasDefaultBits(column_idx))
                 evaluate_block.erase(column.first);
         }
     }
@@ -185,7 +184,7 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
 
     std::unordered_map<size_t, MutableColumnPtr> mixed_columns;
 
-    for (auto & column_def : evaluate_block)
+    for (const ColumnWithTypeAndName & column_def : evaluate_block)
     {
         const String & column_name = column_def.name;
 
@@ -194,15 +193,12 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
 
         size_t block_column_position = res.getPositionByName(column_name);
         ColumnWithTypeAndName & column_read = res.getByPosition(block_column_position);
-        const auto & defaults_mask = block_missing_values->getDefaultsBitmask(block_column_position);
+        const auto & defaults_mask = block_missing_values.getDefaultsBitmask(block_column_position);
 
         checkCalculated(column_read, column_def, defaults_mask.size());
 
         if (!defaults_mask.empty())
         {
-            column_read.column = recursiveRemoveSparse(column_read.column);
-            column_def.column = recursiveRemoveSparse(column_def.column);
-
             /// TODO: FixedString
             if (isColumnedAsNumber(column_read.type) || isDecimal(column_read.type))
             {

@@ -1,4 +1,4 @@
--- Tags: no-random-settings, no-random-merge-tree-settings, no-msan, no-tsan, no-asan, no-debug
+-- Tags: no-random-settings, no-random-merge-tree-settings
 -- small number of insert threads can make insert terribly slow, especially with some build like msan
 DROP TABLE IF EXISTS mt;
 
