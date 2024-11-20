@@ -31,6 +31,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace Setting
 {
     extern const SettingsUInt64 glob_expansion_max_elements;
