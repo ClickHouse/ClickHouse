@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Common/StackTrace.h"
 #include "config.h"
 
 #if USE_SIMDJSON
@@ -590,11 +591,13 @@ struct OnDemandSimdJSONParser
         }
         ALWAYS_INLINE Array getArray() const
         {
-            return value.get_array().value();
+            SIMDJSON_ASSIGN_OR_THROW(auto arr, value.get_array());
+            return arr;
         }
         ALWAYS_INLINE Object getObject() const
         {
-            return value.get_object().value();
+            SIMDJSON_ASSIGN_OR_THROW(auto obj, value.get_object());
+            return obj;
         }
 
         ALWAYS_INLINE simdjson::ondemand::value getElement() const { return value; }
@@ -610,6 +613,7 @@ struct OnDemandSimdJSONParser
         class Iterator
         {
         public:
+            Iterator() = default;
             ALWAYS_INLINE Iterator(const simdjson::ondemand::array_iterator & it_) : it(it_) {} /// NOLINT
             ALWAYS_INLINE Element operator*() const { return (*it).value(); }
             ALWAYS_INLINE Iterator & operator++() { ++it; return *this; }
@@ -623,9 +627,26 @@ struct OnDemandSimdJSONParser
         ALWAYS_INLINE Iterator begin() const { return array.begin().value(); }
         ALWAYS_INLINE Iterator end() const { return array.end().value(); }
         ALWAYS_INLINE size_t size() const { return array.count_elements().value(); }
-        ALWAYS_INLINE Element operator[](size_t index) const { return array.at(index).value(); }
+        ALWAYS_INLINE Element operator[](size_t index) const
+        {
+            if (index < last_index)
+                array.reset();
+            if (last_index == 0)
+            {
+                SIMDJSON_ASSIGN_OR_THROW(auto iter, array.begin());
+                it = iter;
+            }
+            size_t diff = index - last_index;
+            while (diff--)
+                ++it;
+            last_index = index;
+            SIMDJSON_ASSIGN_OR_THROW(auto ele, *it);
+            return ele;
+        }
 
     private:
+        mutable size_t last_index{};
+        mutable simdjson::ondemand::array_iterator it;
         mutable simdjson::ondemand::array array;
     };
 
@@ -642,8 +663,18 @@ struct OnDemandSimdJSONParser
 
             ALWAYS_INLINE KeyValuePair operator*() const
             {
-                SIMDJSON_ASSIGN_OR_THROW(auto field_wrapper, *it);
-                SIMDJSON_ASSIGN_OR_THROW(std::string_view key, field_wrapper.unescaped_key());
+                //SIMDJSON_ASSIGN_OR_THROW(auto field_wrapper, *it);
+                auto field_wrapper = *it;
+                if (field_wrapper.error())
+                {
+                    return {};
+                }
+                std::string_view key;
+                auto key_error = field_wrapper.unescaped_key().get(key);
+                if (key_error)
+                {
+                    return {};
+                }
                 ::simdjson::ondemand::value v = field_wrapper.value();
                 return {key, Element(std::move(v))};
             }
@@ -671,6 +702,14 @@ struct OnDemandSimdJSONParser
                 return false;
 
             result = x.value_unsafe();
+            return true;
+        }
+
+        bool reset()
+        {
+            auto v = object.reset();
+            if (v.error())
+                return false;
             return true;
         }
 

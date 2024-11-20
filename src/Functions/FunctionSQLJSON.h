@@ -102,8 +102,12 @@ public:
     }
 
     /// serialize the json element into column's buffer directly
-    void addElement(const Element & element)
+    void addElement(const Element & element, const std::string sep = ", ")
     {
+        if (is_first)
+            is_first = false;
+        else
+            addRawData(sep.data(), sep.size());
         formatter.append(element.getElement());
     }
     void commit()
@@ -121,7 +125,7 @@ private:
     IColumn::Offsets & offsets;
     Formatter formatter;
     size_t prev_offset;
-
+    bool is_first{true};
 };
 
 
@@ -364,7 +368,7 @@ public:
                 /// Here it is possible to handle errors with ON ERROR (as described in ISO/IEC TR 19075-6),
                 ///  however this functionality is not implemented yet
             }
-            current_element = root;
+            //current_element = root;
         }
 
         if (status == VisitorStatus::Exhausted)
@@ -416,19 +420,16 @@ public:
         bool success = false;
         const char * array_begin = "[";
         const char * array_end = "]";
-        const char * comma = ", ";
+        //const char * comma = ", ";
         JSONStringSerializer json_serializer(col_str);
         json_serializer.addRawData(array_begin, 1);
-        while ((status = generator_json_path.getNextItem(current_element)) != VisitorStatus::Exhausted)
+        //std::vector<Element> result{};
+        std::function<void(const Element&)> result_func= [&json_serializer](const Element & element) { json_serializer.addElement(element); };
+        while ((status = generator_json_path.getNextItemBatch(current_element, result_func)) != VisitorStatus::Exhausted)
         {
             if (status == VisitorStatus::Ok)
             {
-                if (success)
-                {
-                    json_serializer.addRawData(comma, 2);
-                }
                 success = true;
-                json_serializer.addElement(current_element);
             }
             else if (status == VisitorStatus::Error)
             {
@@ -436,7 +437,8 @@ public:
                 /// Here it is possible to handle errors with ON ERROR (as described in ISO/IEC TR 19075-6),
                 ///  however this functionality is not implemented yet
             }
-            current_element = root;
+            //current_element = root;
+            //result.clear();
         }
         if (!success)
         {

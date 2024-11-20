@@ -169,5 +169,5 @@ constexpr void UNUSED(Args &&... args [[maybe_unused]]) // NOLINT(cppcoreguideli
 #define DB_CONCATENATE(s1, s2) DB_CONCATENATE_IMPL(s1, s2)
 
 #define DB_ANONYMOUS_VARIABLE(str) \
-  DB_CONCATENATE(DB_CONCATENATE(DB_CONCATENATE(str, __COUNTER__), _), __LINE__)
+    DB_CONCATENATE(DB_CONCATENATE(DB_CONCATENATE(str, __COUNTER__), _), __LINE__)
 
