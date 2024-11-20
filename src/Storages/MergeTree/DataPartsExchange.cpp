@@ -18,7 +18,6 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/NetException.h>
 #include <Common/randomDelay.h>
 #include <Common/FailPoint.h>
 #include <Common/thread_local_rng.h>
@@ -53,7 +52,6 @@ namespace ErrorCodes
     extern const int NO_SUCH_DATA_PART;
     extern const int ABORTED;
     extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
-    extern const int CANNOT_WRITE_TO_OSTREAM;
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int INSECURE_PATH;
     extern const int LOGICAL_ERROR;
@@ -225,21 +223,6 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
 
         sendPartFromDisk(part, out, client_protocol_version, false, send_projections);
         data.addLastSentPart(part->info);
-    }
-    catch (const NetException &)
-    {
-        /// Network error or error on remote side. No need to enqueue part for check.
-        throw;
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() != ErrorCodes::CANNOT_WRITE_TO_OSTREAM
-            && !isRetryableException(std::current_exception()))
-        {
-            report_broken_part();
-        }
-
-        throw;
     }
     catch (...)
     {
@@ -676,17 +659,6 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
 #endif
 
             LOG_WARNING(log, "Will retry fetching part without zero-copy: {}", e.message());
-
-            /// It's important to release session from HTTP pool. Otherwise it's possible to get deadlock
-            /// on http pool.
-            try
-            {
-                in.reset();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log);
-            }
 
             temporary_directory_lock = {};
 

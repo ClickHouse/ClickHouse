@@ -952,7 +952,7 @@ ColumnPtr ColumnVariant::permute(const Permutation & perm, size_t limit) const
     if (hasOnlyNulls())
     {
         if (limit)
-            return cloneResized(limit);
+            return cloneResized(limit ? std::min(size(), limit) : size());
 
         /// If no limit, we can just return current immutable column.
         return this->getPtr();
@@ -1404,6 +1404,23 @@ bool ColumnVariant::structureEquals(const IColumn & rhs) const
 
     for (size_t i = 0; i < num_variants; ++i)
         if (!variants[i]->structureEquals(rhs_variant->getVariantByGlobalDiscriminator(globalDiscriminatorByLocal(i))))
+            return false;
+
+    return true;
+}
+
+bool ColumnVariant::dynamicStructureEquals(const IColumn & rhs) const
+{
+    const auto * rhs_variant = typeid_cast<const ColumnVariant *>(&rhs);
+    if (!rhs_variant)
+        return false;
+
+    const size_t num_variants = variants.size();
+    if (num_variants != rhs_variant->variants.size())
+        return false;
+
+    for (size_t i = 0; i < num_variants; ++i)
+        if (!variants[i]->dynamicStructureEquals(rhs_variant->getVariantByGlobalDiscriminator(globalDiscriminatorByLocal(i))))
             return false;
 
     return true;

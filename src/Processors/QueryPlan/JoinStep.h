@@ -2,7 +2,6 @@
 
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <Core/Joins.h>
 
 namespace DB
 {
@@ -19,10 +18,9 @@ public:
         const Header & right_header_,
         JoinPtr join_,
         size_t max_block_size_,
+        size_t min_block_size_bytes_,
         size_t max_streams_,
-        NameSet required_output_,
-        bool keep_left_read_in_order_,
-        bool use_new_analyzer_);
+        bool keep_left_read_in_order_);
 
     String getName() const override { return "Join"; }
 
@@ -34,26 +32,17 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
     const JoinPtr & getJoin() const { return join; }
-    void setJoin(JoinPtr join_, bool swap_streams_ = false);
+    void setJoin(JoinPtr join_) { join = std::move(join_); }
     bool allowPushDownToRight() const;
-
-    JoinInnerTableSelectionMode inner_table_selection_mode = JoinInnerTableSelectionMode::Right;
 
 private:
     void updateOutputHeader() override;
 
-    /// Header that expected to be returned from IJoin
-    Block join_algorithm_header;
-
     JoinPtr join;
     size_t max_block_size;
+    size_t min_block_size_bytes;
     size_t max_streams;
-
-    const NameSet required_output;
-    std::set<size_t> columns_to_remove;
     bool keep_left_read_in_order;
-    bool use_new_analyzer = false;
-    bool swap_streams = false;
 };
 
 /// Special step for the case when Join is already filled.

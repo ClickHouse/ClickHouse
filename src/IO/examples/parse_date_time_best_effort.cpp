@@ -23,6 +23,8 @@ try
     writeDateTimeText(res, out);
     writeChar('\n', out);
 
+    out.finalize();
+
     return 0;
 }
 catch (const Exception &)

@@ -1132,8 +1132,8 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
             auto partition_columns = partition_desc.expression->getRequiredColumns();
             NameSet partition_columns_set(partition_columns.begin(), partition_columns.end());
 
-            const auto & parititon_virtuals = MergeTreeData::virtuals_useful_for_filter;
-            partition_columns_set.insert(parititon_virtuals.begin(), parititon_virtuals.end());
+            const auto & partition_virtuals = MergeTreeData::virtuals_useful_for_filter;
+            partition_columns_set.insert(partition_virtuals.begin(), partition_virtuals.end());
 
             optimize_trivial_count = true;
             for (const auto & required_column : required)
@@ -1353,15 +1353,12 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
 
     if (tables_with_columns.size() > 1)
     {
-        auto columns_from_left_table = tables_with_columns[0].columns;
         const auto & right_table = tables_with_columns[1];
         auto columns_from_joined_table = right_table.columns;
         /// query can use materialized or aliased columns from right joined table,
         /// we want to request it for right table
         columns_from_joined_table.insert(columns_from_joined_table.end(), right_table.hidden_columns.begin(), right_table.hidden_columns.end());
-        columns_from_left_table.insert(columns_from_left_table.end(), tables_with_columns[0].hidden_columns.begin(), tables_with_columns[0].hidden_columns.end());
-        result.analyzed_join->setColumnsFromJoinedTable(
-            std::move(columns_from_joined_table), source_columns_set, right_table.table.getQualifiedNamePrefix(), columns_from_left_table);
+        result.analyzed_join->setColumnsFromJoinedTable(std::move(columns_from_joined_table), source_columns_set, right_table.table.getQualifiedNamePrefix());
     }
 
     translateQualifiedNames(query, *select_query, source_columns_set, tables_with_columns);
