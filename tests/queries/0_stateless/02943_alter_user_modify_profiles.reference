@@ -12,10 +12,10 @@ CREATE ROLE test_role SETTINGS PROFILE `profile_b`, PROFILE `profile_a`, PROFILE
 CREATE ROLE test_role SETTINGS PROFILE `profile_a`, PROFILE `profile_d`
 CREATE ROLE test_role SETTINGS PROFILE `profile_e`
 CREATE ROLE test_role
-CREATE SETTINGS PROFILE test_profile
-CREATE SETTINGS PROFILE test_profile SETTINGS INHERIT `profile_a`
-CREATE SETTINGS PROFILE test_profile SETTINGS INHERIT `profile_a`, INHERIT `profile_b`
-CREATE SETTINGS PROFILE test_profile SETTINGS INHERIT `profile_b`, INHERIT `profile_a`, INHERIT `profile_c`
-CREATE SETTINGS PROFILE test_profile SETTINGS INHERIT `profile_a`, INHERIT `profile_d`
-CREATE SETTINGS PROFILE test_profile SETTINGS INHERIT `profile_e`
-CREATE SETTINGS PROFILE test_profile
+CREATE SETTINGS PROFILE `test_profile`
+CREATE SETTINGS PROFILE `test_profile` SETTINGS INHERIT `profile_a`
+CREATE SETTINGS PROFILE `test_profile` SETTINGS INHERIT `profile_a`, INHERIT `profile_b`
+CREATE SETTINGS PROFILE `test_profile` SETTINGS INHERIT `profile_b`, INHERIT `profile_a`, INHERIT `profile_c`
+CREATE SETTINGS PROFILE `test_profile` SETTINGS INHERIT `profile_a`, INHERIT `profile_d`
+CREATE SETTINGS PROFILE `test_profile` SETTINGS INHERIT `profile_e`
+CREATE SETTINGS PROFILE `test_profile`
