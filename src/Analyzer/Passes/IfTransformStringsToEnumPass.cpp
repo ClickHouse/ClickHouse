@@ -43,7 +43,8 @@ DataTypePtr getEnumType(const std::set<std::string> & string_values)
 {
     if (string_values.size() >= 255)
         return getDataEnumType<DataTypeEnum16>(string_values);
-    return getDataEnumType<DataTypeEnum8>(string_values);
+    else
+        return getDataEnumType<DataTypeEnum8>(string_values);
 }
 
 /// if(arg1, arg2, arg3) will be transformed to if(arg1, _CAST(arg2, Enum...), _CAST(arg3, Enum...))

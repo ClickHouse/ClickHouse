@@ -1,10 +1,10 @@
 import random
 import re
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
-from typing import Dict, List, Optional
+from typing import Dict, Optional, List
 
-from ci_definitions import *  # pylint:disable=unused-wildcard-import
 from ci_utils import Utils
+from ci_definitions import *
 
 
 class CI:
@@ -17,24 +17,24 @@ class CI:
 
     # reimport types to CI class so that they visible as CI.* and mypy is happy
     # pylint:disable=useless-import-alias,reimported,import-outside-toplevel
-    from ci_definitions import MQ_JOBS as MQ_JOBS
-    from ci_definitions import REQUIRED_CHECKS as REQUIRED_CHECKS
     from ci_definitions import BuildConfig as BuildConfig
-    from ci_definitions import BuildNames as BuildNames
     from ci_definitions import DigestConfig as DigestConfig
     from ci_definitions import JobConfig as JobConfig
-    from ci_definitions import JobNames as JobNames
-    from ci_definitions import Labels as Labels
-    from ci_definitions import Runners as Runners
-    from ci_definitions import StatusNames as StatusNames
-    from ci_definitions import SyncState as SyncState
     from ci_definitions import Tags as Tags
-    from ci_definitions import WorkFlowNames as WorkFlowNames
+    from ci_definitions import JobNames as JobNames
+    from ci_definitions import BuildNames as BuildNames
+    from ci_definitions import StatusNames as StatusNames
+    from ci_definitions import REQUIRED_CHECKS as REQUIRED_CHECKS
+    from ci_definitions import SyncState as SyncState
+    from ci_definitions import MQ_JOBS as MQ_JOBS
     from ci_definitions import WorkflowStages as WorkflowStages
-    from ci_utils import GH as GH
+    from ci_definitions import Runners as Runners
     from ci_utils import Envs as Envs
-    from ci_utils import Shell as Shell
     from ci_utils import Utils as Utils
+    from ci_utils import GH as GH
+    from ci_utils import Shell as Shell
+    from ci_definitions import Labels as Labels
+    from ci_definitions import WorkFlowNames as WorkFlowNames
 
     # Jobs that run for doc related updates
     _DOCS_CHECK_JOBS = [JobNames.DOCS_CHECK, JobNames.STYLE_CHECK]
@@ -51,11 +51,11 @@ class CI:
 
     TAG_CONFIGS = {
         Tags.DO_NOT_TEST_LABEL: LabelConfig(run_jobs=[JobNames.STYLE_CHECK]),
-        Tags.CI_SET_AARCH64: LabelConfig(
+        Tags.CI_SET_ARM: LabelConfig(
             run_jobs=[
                 JobNames.STYLE_CHECK,
                 BuildNames.PACKAGE_AARCH64,
-                JobNames.INTEGRATION_TEST_AARCH64,
+                JobNames.INTEGRATION_TEST_ARM,
             ]
         ),
         Tags.CI_SET_REQUIRED: LabelConfig(
@@ -95,16 +95,7 @@ class CI:
                 static_binary_name="aarch64",
                 additional_pkgs=True,
             ),
-            runner_type=Runners.BUILDER_AARCH64,
-        ),
-        BuildNames.PACKAGE_AARCH64_ASAN: CommonJobConfigs.BUILD.with_properties(
-            build_config=BuildConfig(
-                name=BuildNames.PACKAGE_AARCH64_ASAN,
-                compiler="clang-18-aarch64",
-                sanitizer="address",
-                package_type="deb",
-            ),
-            runner_type=Runners.BUILDER_AARCH64,
+            runner_type=Runners.BUILDER_ARM,
         ),
         BuildNames.PACKAGE_ASAN: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
@@ -270,22 +261,18 @@ class CI:
                 compiler="clang-18",
                 package_type="fuzzers",
             ),
-            run_by_labels=[Tags.libFuzzer],
+            run_by_label=Tags.libFuzzer,
         ),
         JobNames.BUILD_CHECK: CommonJobConfigs.BUILD_REPORT.with_properties(),
         JobNames.INSTALL_TEST_AMD: CommonJobConfigs.INSTALL_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE]
         ),
-        JobNames.INSTALL_TEST_AARCH64: CommonJobConfigs.INSTALL_TEST.with_properties(
+        JobNames.INSTALL_TEST_ARM: CommonJobConfigs.INSTALL_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
-            runner_type=Runners.STYLE_CHECKER_AARCH64,
+            runner_type=Runners.STYLE_CHECKER_ARM,
         ),
         JobNames.STATEFUL_TEST_ASAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_ASAN]
-        ),
-        JobNames.STATEFUL_TEST_AARCH64_ASAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_AARCH64_ASAN],
-            runner_type=Runners.FUNC_TESTER_AARCH64,
         ),
         JobNames.STATEFUL_TEST_TSAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_TSAN]
@@ -307,7 +294,7 @@ class CI:
         ),
         JobNames.STATEFUL_TEST_AARCH64: CommonJobConfigs.STATEFUL_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
-            runner_type=Runners.FUNC_TESTER_AARCH64,
+            runner_type=Runners.FUNC_TESTER_ARM,
         ),
         JobNames.STATEFUL_TEST_PARALLEL_REPL_RELEASE: CommonJobConfigs.STATEFUL_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE]
@@ -335,11 +322,6 @@ class CI:
         JobNames.STATELESS_TEST_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_ASAN], num_batches=2
         ),
-        JobNames.STATELESS_TEST_AARCH64_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_AARCH64_ASAN],
-            num_batches=2,
-            runner_type=Runners.FUNC_TESTER_AARCH64,
-        ),
         JobNames.STATELESS_TEST_TSAN: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_TSAN], num_batches=4
         ),
@@ -360,7 +342,7 @@ class CI:
         ),
         JobNames.STATELESS_TEST_AARCH64: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
-            runner_type=Runners.FUNC_TESTER_AARCH64,
+            runner_type=Runners.FUNC_TESTER_ARM,
         ),
         JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE], num_batches=2
@@ -432,10 +414,10 @@ class CI:
             num_batches=6,
             timeout=9000,  # the job timed out with default value (7200)
         ),
-        JobNames.INTEGRATION_TEST_AARCH64: CommonJobConfigs.INTEGRATION_TEST.with_properties(
+        JobNames.INTEGRATION_TEST_ARM: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
             num_batches=6,
-            runner_type=Runners.FUNC_TESTER_AARCH64,
+            runner_type=Runners.FUNC_TESTER_ARM,
         ),
         JobNames.INTEGRATION_TEST: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE],
@@ -453,10 +435,10 @@ class CI:
             required_builds=[BuildNames.PACKAGE_RELEASE],
             required_on_release_branch=True,
         ),
-        JobNames.COMPATIBILITY_TEST_AARCH64: CommonJobConfigs.COMPATIBILITY_TEST.with_properties(
+        JobNames.COMPATIBILITY_TEST_ARM: CommonJobConfigs.COMPATIBILITY_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
             required_on_release_branch=True,
-            runner_type=Runners.STYLE_CHECKER_AARCH64,
+            runner_type=Runners.STYLE_CHECKER_ARM,
         ),
         JobNames.UNIT_TEST: CommonJobConfigs.UNIT_TEST.with_properties(
             required_builds=[BuildNames.BINARY_RELEASE],
@@ -497,24 +479,24 @@ class CI:
         ),
         JobNames.JEPSEN_KEEPER: JobConfig(
             required_builds=[BuildNames.BINARY_RELEASE],
-            run_by_labels=[Labels.JEPSEN_TEST],
+            run_by_label="jepsen-test",
             run_command="jepsen_check.py keeper",
-            runner_type=Runners.STYLE_CHECKER_AARCH64,
+            runner_type=Runners.STYLE_CHECKER_ARM,
         ),
         JobNames.JEPSEN_SERVER: JobConfig(
             required_builds=[BuildNames.BINARY_RELEASE],
-            run_by_labels=[Labels.JEPSEN_TEST],
+            run_by_label="jepsen-test",
             run_command="jepsen_check.py server",
-            runner_type=Runners.STYLE_CHECKER_AARCH64,
+            runner_type=Runners.STYLE_CHECKER_ARM,
         ),
         JobNames.PERFORMANCE_TEST_AMD64: CommonJobConfigs.PERF_TESTS.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE], num_batches=4
         ),
-        JobNames.PERFORMANCE_TEST_AARCH64: CommonJobConfigs.PERF_TESTS.with_properties(
+        JobNames.PERFORMANCE_TEST_ARM64: CommonJobConfigs.PERF_TESTS.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
             num_batches=4,
-            run_by_labels=[Labels.PR_PERFORMANCE],
-            runner_type=Runners.FUNC_TESTER_AARCH64,
+            run_by_label="pr-performance",
+            runner_type=Runners.FUNC_TESTER_ARM,
         ),
         JobNames.SQLANCER: CommonJobConfigs.SQLLANCER_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE],
@@ -532,16 +514,16 @@ class CI:
         JobNames.CLICKBENCH_TEST: CommonJobConfigs.CLICKBENCH_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE],
         ),
-        JobNames.CLICKBENCH_TEST_AARCH64: CommonJobConfigs.CLICKBENCH_TEST.with_properties(
+        JobNames.CLICKBENCH_TEST_ARM: CommonJobConfigs.CLICKBENCH_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
-            runner_type=Runners.FUNC_TESTER_AARCH64,
+            runner_type=Runners.FUNC_TESTER_ARM,
         ),
         JobNames.LIBFUZZER_TEST: JobConfig(
             required_builds=[BuildNames.FUZZERS],
-            run_by_labels=[Tags.libFuzzer],
-            timeout=5400,
+            run_by_label=Tags.libFuzzer,
+            timeout=10800,
             run_command='libfuzzer_test_check.py "$CHECK_NAME"',
-            runner_type=Runners.FUNC_TESTER,
+            runner_type=Runners.STYLE_CHECKER,
         ),
         JobNames.DOCKER_SERVER: CommonJobConfigs.DOCKER_SERVER.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE, BuildNames.PACKAGE_AARCH64]
@@ -572,12 +554,12 @@ class CI:
         ),
         JobNames.STYLE_CHECK: JobConfig(
             run_always=True,
-            runner_type=Runners.STYLE_CHECKER_AARCH64,
+            runner_type=Runners.STYLE_CHECKER_ARM,
         ),
         JobNames.BUGFIX_VALIDATE: JobConfig(
-            run_by_labels=[Labels.PR_BUGFIX, Labels.PR_CRITICAL_BUGFIX],
+            run_by_label="pr-bugfix",
             run_command="bugfix_validate_check.py",
-            timeout=2400,
+            timeout=900,
             runner_type=Runners.STYLE_CHECKER,
         ),
     }

@@ -62,13 +62,6 @@ Logger::~Logger()
 
 void Logger::setChannel(Channel* pChannel)
 {
-	std::lock_guard<std::mutex> lock(getLoggerMutex());
-	unsafeSetChannel(pChannel);
-}
-
-
-void Logger::unsafeSetChannel(Channel* pChannel)
-{
 	if (_pChannel) _pChannel->release();
 	_pChannel = pChannel;
 	if (_pChannel) _pChannel->duplicate();
@@ -76,14 +69,6 @@ void Logger::unsafeSetChannel(Channel* pChannel)
 
 
 Channel* Logger::getChannel() const
-{
-	std::lock_guard<std::mutex> lock(getLoggerMutex());
-
-	return unsafeGetChannel();
-}
-
-
-Channel* Logger::unsafeGetChannel() const
 {
 	return _pChannel;
 }
@@ -104,7 +89,7 @@ void Logger::setLevel(const std::string& level)
 void Logger::setProperty(const std::string& name, const std::string& value)
 {
 	if (name == "channel")
-		unsafeSetChannel(LoggingRegistry::defaultRegistry().channelForName(value));
+		setChannel(LoggingRegistry::defaultRegistry().channelForName(value));
 	else if (name == "level")
 		setLevel(value);
 	else
@@ -175,7 +160,7 @@ void Logger::setChannel(const std::string& name, Channel* pChannel)
 			if (len == 0 ||
 				(it.first.compare(0, len, name) == 0 && (it.first.length() == len || it.first[len] == '.')))
 			{
-				it.second.logger->unsafeSetChannel(pChannel);
+				it.second.logger->setChannel(pChannel);
 			}
 		}
 	}
@@ -408,7 +393,7 @@ std::pair<Logger::LoggerMapIterator, bool> Logger::unsafeGet(const std::string& 
 		else
 		{
 			Logger& par = parent(name);
-			logger = new Logger(name, par.unsafeGetChannel(), par.getLevel());
+			logger = new Logger(name, par.getChannel(), par.getLevel());
 		}
 
 		return add(logger);

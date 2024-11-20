@@ -50,5 +50,4 @@ public:
     using SystemLog<ProcessorProfileLogElement>::SystemLog;
 };
 
-void logProcessorProfile(ContextPtr context, const Processors & processors);
 }
