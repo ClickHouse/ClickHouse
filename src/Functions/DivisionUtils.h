@@ -209,7 +209,7 @@ struct DivideFloatingImpl
     template <typename Result = ResultType>
     static NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]], NullMap::value_type * m [[maybe_unused]] = nullptr)
     {
-        return static_cast<Result>(a) / b;
+        return static_cast<Result>(a) / static_cast<Result>(b);
     }
 
 #if USE_EMBEDDED_COMPILER
