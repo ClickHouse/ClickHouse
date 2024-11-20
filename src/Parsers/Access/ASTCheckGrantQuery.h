@@ -2,13 +2,10 @@
 
 #include <Parsers/IAST.h>
 #include <Access/Common/AccessRightsElement.h>
-#include <Parsers/ASTQueryWithOnCluster.h>
 
 
 namespace DB
 {
-class ASTRolesOrUsersSet;
-
 
 /** Parses queries like
   * CHECK GRANT access_type[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*}
@@ -24,4 +21,5 @@ public:
     void replaceEmptyDatabase(const String & current_database);
     QueryKind getQueryKind() const override { return QueryKind::Check; }
 };
+
 }
