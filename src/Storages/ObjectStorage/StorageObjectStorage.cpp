@@ -60,7 +60,7 @@ String StorageObjectStorage::getPathSample(StorageInMemoryMetadata metadata, Con
         local_distributed_processing,
         context,
         {}, // predicate
-        metadata.getColumns().getAll(), // virtual_columns
+        {}, // virtual_columns
         nullptr, // read_keys
         {} // file_progress_callback
     );

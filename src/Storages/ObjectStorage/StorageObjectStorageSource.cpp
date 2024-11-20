@@ -750,6 +750,7 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::KeysIterator::ne
             auto metadata = object_storage->tryGetObjectMetadata(key);
             if (!metadata)
                 continue;
+            object_metadata = *metadata;
         }
         else
             object_metadata = object_storage->getObjectMetadata(key);
