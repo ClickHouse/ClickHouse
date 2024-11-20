@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 drop table if exists test;
 
 create table test engine=S3('http://localhost:11111/test/json_data');
