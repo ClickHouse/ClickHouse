@@ -286,7 +286,11 @@ def main():
         retcode = process.wait()
         if retcode == 0:
             logging.info("Run successfully")
-            if pr_info.number == 0 and pr_info.base_ref == "master" and pr_info.head_ref == "master":
+            if (
+                pr_info.number == 0
+                and pr_info.base_ref == "master"
+                and pr_info.head_ref == "master"
+            ):
                 logging.info("Uploading corpus - running in master")
                 # upload_corpus(fuzzers_path)
             else:
