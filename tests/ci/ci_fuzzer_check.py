@@ -25,9 +25,11 @@ def get_run_command(
     workspace_path: Path,
     ci_logs_args: str,
     image: DockerImage,
-    check_name: str
+    check_name: str,
 ) -> str:
-    fuzzer_name = "BuzzHouse" if check_name.lower().startswith("buzzhouse") else "AST Fuzzer"
+    fuzzer_name = (
+        "BuzzHouse" if check_name.lower().startswith("buzzhouse") else "AST Fuzzer"
+    )
     envs = [
         f"-e PR_TO_TEST={pr_info.number}",
         f"-e SHA_TO_TEST={pr_info.sha}",
@@ -91,12 +93,7 @@ def main():
     )
 
     run_command = get_run_command(
-        pr_info,
-        build_url,
-        workspace_path,
-        ci_logs_args,
-        docker_image,
-        check_name
+        pr_info, build_url, workspace_path, ci_logs_args, docker_image, check_name
     )
     logging.info("Going to run %s", run_command)
 
