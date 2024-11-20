@@ -17,7 +17,7 @@ public:
 
     const char * getName() const override { return "VisitorJSONPathMemberAccess"; }
 
-    VisitorStatus apply(typename JSONParser::Element & element) override
+    VisitorStatus apply(typename JSONParser::Element & element) const override
     {
         typename JSONParser::Element result;
         auto obj = element.getObject();

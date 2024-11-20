@@ -19,7 +19,7 @@ public:
 
     const char * getName() const override { return "VisitorJSONPathRange"; }
 
-    VisitorStatus apply(typename JSONParser::Element & element) override
+    VisitorStatus apply(typename JSONParser::Element & element) const override
     {
         element = (*array)[current_index];
         return VisitorStatus::Ok;

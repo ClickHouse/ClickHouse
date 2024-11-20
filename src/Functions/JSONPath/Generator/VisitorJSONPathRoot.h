@@ -15,7 +15,7 @@ public:
 
     const char * getName() const override { return "VisitorJSONPathRoot"; }
 
-    VisitorStatus apply(typename JSONParser::Element & /*element*/) override
+    VisitorStatus apply(typename JSONParser::Element & /*element*/) const override
     {
         /// No-op on document, since we are already passed document's root
         return VisitorStatus::Ok;

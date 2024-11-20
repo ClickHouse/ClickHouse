@@ -24,7 +24,7 @@ public:
      */
     virtual VisitorStatus getNextItem(TElement & element) = 0;
 
-    virtual VisitorStatus getNextItemBatch(TElement & element, std::function<void(const TElement &)> & ) = 0;
+    virtual VisitorStatus getNextItemBatch(TElement & element, std::function<void(const TElement &)> & res_func) = 0;
 
     virtual ~IGenerator() = default;
 };

@@ -623,7 +623,7 @@ public:
 
     static bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view, const FormatSettings &, String &)
     {
-        size_t size{};
+        size_t size;
         if (element.isArray())
             size = element.getArray().size();
         else if (element.isObject())

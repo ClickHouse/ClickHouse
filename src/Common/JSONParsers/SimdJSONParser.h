@@ -1,10 +1,8 @@
 #pragma once
 
-#include "Common/StackTrace.h"
 #include "config.h"
 
 #if USE_SIMDJSON
-#    include <Common/logger_useful.h>
 #    include <base/types.h>
 #    include <Common/Exception.h>
 #    include <base/defines.h>
@@ -294,7 +292,7 @@ public:
                 simdjson::ondemand::number_type nt{};
                 auto res = value.get_number_type().get(nt);
                 chassert(res == simdjson::SUCCESS);
-                switch(nt)
+                switch (nt)
                 {
                     case simdjson::ondemand::number_type::signed_integer:
                         format.number(value.get_int64().value_unsafe());
@@ -663,7 +661,6 @@ struct OnDemandSimdJSONParser
 
             ALWAYS_INLINE KeyValuePair operator*() const
             {
-                //SIMDJSON_ASSIGN_OR_THROW(auto field_wrapper, *it);
                 auto field_wrapper = *it;
                 if (field_wrapper.error())
                 {
@@ -716,8 +713,6 @@ struct OnDemandSimdJSONParser
         /// Optional: Provides access to an object's element by index.
         KeyValuePair operator[](size_t index) const
         {
-            ///SIMDJSON_ASSIGN_OR_THROW(auto b, object.reset());
-            ///(void)b;
             SIMDJSON_ASSIGN_OR_THROW(auto it, object.begin());
             while (index--)
             {

@@ -1324,7 +1324,7 @@ public:
         size_t old_size = tuple_col.size();
         auto object = element.getObject();
         auto it = object.begin();
-        size_t object_size{};
+        size_t object_size = 0;
         for (; it != object.end(); ++it)
         {
             ++object_size;

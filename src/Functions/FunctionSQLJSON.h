@@ -368,7 +368,6 @@ public:
                 /// Here it is possible to handle errors with ON ERROR (as described in ISO/IEC TR 19075-6),
                 ///  however this functionality is not implemented yet
             }
-            //current_element = root;
         }
 
         if (status == VisitorStatus::Exhausted)
@@ -420,10 +419,8 @@ public:
         bool success = false;
         const char * array_begin = "[";
         const char * array_end = "]";
-        //const char * comma = ", ";
         JSONStringSerializer json_serializer(col_str);
         json_serializer.addRawData(array_begin, 1);
-        //std::vector<Element> result{};
         std::function<void(const Element&)> result_func= [&json_serializer](const Element & element) { json_serializer.addElement(element); };
         while ((status = generator_json_path.getNextItemBatch(current_element, result_func)) != VisitorStatus::Exhausted)
         {
@@ -437,8 +434,6 @@ public:
                 /// Here it is possible to handle errors with ON ERROR (as described in ISO/IEC TR 19075-6),
                 ///  however this functionality is not implemented yet
             }
-            //current_element = root;
-            //result.clear();
         }
         if (!success)
         {
