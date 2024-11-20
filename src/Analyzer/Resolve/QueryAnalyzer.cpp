@@ -1178,11 +1178,25 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
 
     LOG_DEBUG(&Poco::Logger::get("resolveFromAliases"), "Found alias for '{}'", identifier_lookup.dump());
 
+    auto * scope_to_resolve_alias_expression = &scope;
+    if (identifier_resolve_context.scope_to_resolve_alias_expression)
+    {
+        scope_to_resolve_alias_expression = identifier_resolve_context.scope_to_resolve_alias_expression;
+        LOG_DEBUG(&Poco::Logger::get("resolveFromAliases"), "Changed scope_to_resolve_alias_expression");
+    }
+    else
+    {
+        LOG_DEBUG(&Poco::Logger::get("resolveFromAliases"), "Didn't change scope_to_resolve_alias_expression");
+    }
+
     QueryTreeNodePtr alias_node = *it;
 
     auto node_type = alias_node->getNodeType();
     if (!IdentifierResolver::isTableExpressionNodeType(node_type))
+    {
         alias_node = alias_node->clone();
+        scope_to_resolve_alias_expression->aliases.node_to_remove_aliases.push_back(alias_node);
+    }
 
     if (!alias_node)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -1209,19 +1223,6 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
         scope.non_cached_identifier_lookups_during_expression_resolve.insert(identifier_lookup);
         return {};
     }
-
-    auto * scope_to_resolve_alias_expression = &scope;
-    if (identifier_resolve_context.scope_to_resolve_alias_expression)
-    {
-        scope_to_resolve_alias_expression = identifier_resolve_context.scope_to_resolve_alias_expression;
-        LOG_DEBUG(&Poco::Logger::get("resolveFromAliases"), "Changed scope_to_resolve_alias_expression");
-    }
-    else
-    {
-        LOG_DEBUG(&Poco::Logger::get("resolveFromAliases"), "Didn't change scope_to_resolve_alias_expression");
-    }
-
-    scope_to_resolve_alias_expression->aliases.node_to_remove_aliases.push_back(alias_node);
 
     LOG_DEBUG(&Poco::Logger::get("resolveFromAliases"), "Scope to resolve expressions:\n{}", scope_to_resolve_alias_expression->dump());
 
@@ -1313,19 +1314,18 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
 
     auto new_resolve_context = identifier_resolve_settings.resolveAliasesAt(&scope);
 
-    /** Nested subqueries cannot access outer subqueries table expressions from JOIN tree because
+    /** 1. Nested subqueries cannot access outer subqueries table expressions from JOIN tree because
       * that can prevent resolution of table expression from CTE.
       *
       * Example: WITH a AS (SELECT number FROM numbers(1)), b AS (SELECT number FROM a) SELECT * FROM a as l, b as r;
+      *
+      * 2. Allow to check join tree and aliases when resolving lambda body.
+      *
+      * Example: SELECT arrayMap(x -> test_table.* EXCEPT value, [1,2,3]) FROM test_table;
       */
-    if (identifier_lookup.isTableExpressionLookup())
+    if (identifier_lookup.isTableExpressionLookup() && initial_scope_is_query)
     {
-        /* Allow to check join tree when resolving lambda body.
-         *
-         * Example: SELECT arrayMap(x -> test_table.* EXCEPT value, [1,2,3]) FROM test_table;
-         */
-        if (initial_scope_is_query)
-            new_resolve_context.allow_to_check_join_tree = false;
+        new_resolve_context.allow_to_check_join_tree = false;
 
         /** From parent scopes we can resolve table identifiers only as CTE.
             * Example: SELECT (SELECT 1 FROM a) FROM test_table AS a;
@@ -1365,8 +1365,8 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
         bool is_cte = (subquery_node && subquery_node->isCTE()) || (union_node && union_node->isCTE());
         bool is_table_from_expression_arguments = resolve_result.isResolvedFromExpressionArguments() &&
             resolved_identifier->getNodeType() == QueryTreeNodeType::TABLE;
-        bool is_table_from_join_tree = !initial_scope_is_query && resolve_result.isResolvedFromJoinTree();
-        bool is_valid_table_expression = is_cte || is_table_from_expression_arguments || is_table_from_join_tree;
+        bool is_from_join_tree_or_aliases = !initial_scope_is_query && (resolve_result.isResolvedFromJoinTree() || resolve_result.isResolvedFromAliases());
+        bool is_valid_table_expression = is_cte || is_table_from_expression_arguments || is_from_join_tree_or_aliases;
 
 
         if (!is_valid_table_expression)
@@ -1899,6 +1899,8 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
     IdentifierResolveContext identifier_resolve_settings;
     identifier_resolve_settings.allow_to_check_cte = false;
     identifier_resolve_settings.allow_to_check_database_catalog = false;
+
+    LOG_DEBUG(getLogger("resolveQualifiedMatcher"), "Looking for table '{}'", matcher_node_typed.getQualifiedIdentifier().getFullName());
 
     auto table_identifier_lookup = IdentifierLookup{matcher_node_typed.getQualifiedIdentifier(), IdentifierLookupContext::TABLE_EXPRESSION};
     auto table_identifier_resolve_result = tryResolveIdentifier(table_identifier_lookup, scope, identifier_resolve_settings);
