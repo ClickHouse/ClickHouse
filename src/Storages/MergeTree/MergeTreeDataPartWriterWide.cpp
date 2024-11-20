@@ -765,6 +765,17 @@ void MergeTreeDataPartWriterWide::finish(bool sync)
     finishStatisticsSerialization(sync);
 }
 
+void MergeTreeDataPartWriterWide::cancel() noexcept
+{
+     for (auto & stream : column_streams)
+        stream.second->cancel();
+
+    column_streams.clear();
+    serialization_states.clear();
+
+    Base::cancel();
+}
+
 void MergeTreeDataPartWriterWide::writeFinalMark(
     const NameAndTypePair & name_and_type,
     WrittenOffsetColumns & offset_columns)
