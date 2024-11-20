@@ -74,17 +74,6 @@ BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
     return res;
 }
 
-bool BackupSettings::isAsync(const ASTBackupQuery & query)
-{
-    if (query.settings)
-    {
-        const auto * field = query.settings->as<const ASTSetQuery &>().changes.tryGet("async");
-        if (field)
-            return field->safeGet<bool>();
-    }
-    return false; /// `async` is false by default.
-}
-
 void BackupSettings::copySettingsToQuery(ASTBackupQuery & query) const
 {
     auto query_settings = std::make_shared<ASTSetQuery>();

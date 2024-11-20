@@ -1,7 +1,5 @@
--- Tags: long, zookeeper, no-replicated-database, no-shared-merge-tree
+-- Tags: long, zookeeper, no-replicated-database
 -- Tag no-replicated-database: Old syntax is not allowed
--- Tag no-parallel: leftovers
--- no-shared-merge-tree implemented another test
 
 SET optimize_on_insert = 0;
 

@@ -43,9 +43,11 @@ bool MergeProjectionPartsTask::executeStep()
             /// Task is finished
             return false;
         }
-
-        LOG_DEBUG(log, "Forwarded part {} in level {} to next level", selected_parts[0]->name, current_level);
-        next_level_parts.push_back(std::move(selected_parts[0]));
+        else
+        {
+            LOG_DEBUG(log, "Forwarded part {} in level {} to next level", selected_parts[0]->name, current_level);
+            next_level_parts.push_back(std::move(selected_parts[0]));
+        }
     }
     else if (selected_parts.size() > 1)
     {
@@ -83,9 +85,6 @@ bool MergeProjectionPartsTask::executeStep()
             ".tmp_proj");
 
         next_level_parts.push_back(executeHere(tmp_part_merge_task));
-        /// FIXME (alesapin) we should use some temporary storage for this,
-        /// not commit each subprojection part
-        next_level_parts.back()->getDataPartStorage().commitTransaction();
         next_level_parts.back()->is_temp = true;
     }
 

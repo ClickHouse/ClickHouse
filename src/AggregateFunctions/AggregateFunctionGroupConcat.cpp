@@ -275,7 +275,8 @@ AggregateFunctionPtr createAggregateFunctionGroupConcat(
 
     if (has_limit)
         return std::make_shared<GroupConcatImpl</* has_limit= */ true>>(argument_types[0], parameters, limit, delimiter);
-    return std::make_shared<GroupConcatImpl</* has_limit= */ false>>(argument_types[0], parameters, limit, delimiter);
+    else
+        return std::make_shared<GroupConcatImpl</* has_limit= */ false>>(argument_types[0], parameters, limit, delimiter);
 }
 
 }

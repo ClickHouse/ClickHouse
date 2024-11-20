@@ -55,6 +55,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_suspicious_codecs;
+    extern const SettingsBool enable_deflate_qpl_codec;
     extern const SettingsBool enable_zstd_qat_codec;
     extern const SettingsString network_compression_method;
     extern const SettingsInt64 network_zstd_compression_level;
@@ -78,8 +79,14 @@ namespace ErrorCodes
 
 Connection::~Connection()
 {
-    if (connected)
-        Connection::cancel();
+    try{
+        if (connected)
+            Connection::disconnect();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 Connection::Connection(const String & host_, UInt16 port_,
@@ -136,7 +143,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
             have_more_addresses_to_connect = it != std::prev(addresses.end());
 
             if (connected)
-                cancel();
+                disconnect();
 
             if (static_cast<bool>(secure))
             {
@@ -287,7 +294,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     }
     catch (DB::NetException & e)
     {
-        cancel();
+        disconnect();
 
         /// Remove this possible stale entry from cache
         DNSResolver::instance().removeHostFromCache(host);
@@ -298,7 +305,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     }
     catch (Poco::Net::NetException & e)
     {
-        cancel();
+        disconnect();
 
         /// Remove this possible stale entry from cache
         DNSResolver::instance().removeHostFromCache(host);
@@ -308,7 +315,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     }
     catch (Poco::TimeoutException & e)
     {
-        cancel();
+        disconnect();
 
         /// Remove this possible stale entry from cache
         DNSResolver::instance().removeHostFromCache(host);
@@ -323,45 +330,55 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
             getDescription(/*with_extra*/ true),
             connection_timeout.totalMilliseconds());
     }
-    catch (...)
-    {
-        cancel();
-        throw;
-    }
-}
-
-void Connection::cancel() noexcept
-{
-    if (maybe_compressed_out)
-        maybe_compressed_out->cancel();
-
-    if (out)
-        out->cancel();
-
-    if (socket)
-        socket->close();
-
-    reset();
-}
-
-void Connection::reset() noexcept
-{
-    maybe_compressed_out.reset();
-    out.reset();
-    socket.reset();
-    nonce.reset();
-
-    connected = false;
 }
 
 
 void Connection::disconnect()
 {
-    in.reset();
+    in = nullptr;
     last_input_packet_type.reset();
+    std::exception_ptr finalize_exception;
 
-    // no point to finalize tcp connections
-    cancel();
+    try
+    {
+        // finalize() can write and throw an exception.
+        if (maybe_compressed_out)
+            maybe_compressed_out->finalize();
+    }
+    catch (...)
+    {
+        /// Don't throw an exception here, it will leave Connection in invalid state.
+        finalize_exception = std::current_exception();
+
+        if (out)
+        {
+            out->cancel();
+            out = nullptr;
+        }
+    }
+    maybe_compressed_out = nullptr;
+
+    try
+    {
+        if (out)
+            out->finalize();
+    }
+    catch (...)
+    {
+        /// Don't throw an exception here, it will leave Connection in invalid state.
+        finalize_exception = std::current_exception();
+    }
+    out = nullptr;
+
+    if (socket)
+        socket->close();
+
+    socket = nullptr;
+    connected = false;
+    nonce.reset();
+
+    if (finalize_exception)
+        std::rethrow_exception(finalize_exception);
 }
 
 
@@ -794,6 +811,7 @@ void Connection::sendQuery(
             level,
             !(*settings)[Setting::allow_suspicious_codecs],
             (*settings)[Setting::allow_experimental_codecs],
+            (*settings)[Setting::enable_deflate_qpl_codec],
             (*settings)[Setting::enable_zstd_qat_codec]);
         compression_codec = CompressionCodecFactory::instance().get(method, level);
     }
@@ -872,7 +890,7 @@ void Connection::sendQuery(
 
     maybe_compressed_in.reset();
     if (maybe_compressed_out && maybe_compressed_out != out)
-        maybe_compressed_out->finalize();
+        maybe_compressed_out->cancel();
     maybe_compressed_out.reset();
     block_in.reset();
     block_logs_in.reset();
