@@ -140,7 +140,7 @@ void QueryAliasesMatcher<T>::visitOther(const ASTPtr & ast, Data & data)
                 throw Exception(wrongAliasMessage(ast, aliases[alias], alias), ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
         }
 
-        aliases[ast->getColumnNameWithoutAlias()] = ast;
+        aliases[alias] = ast;
     }
 
     /** QueryAliasesVisitor is executed before ExecuteScalarSubqueriesVisitor.
