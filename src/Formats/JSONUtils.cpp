@@ -330,7 +330,7 @@ namespace JSONUtils
         writeChar(settings.json.pretty_print_indent, indent * settings.json.pretty_print_indent_multiplier, out);
         writeChar('"', out);
         writeCString(title, out);
-        writeCString("\": ", out);
+        writeCString("\":", out);
         writeCString(after_delimiter, out);
     }
 
