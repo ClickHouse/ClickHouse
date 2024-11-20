@@ -388,8 +388,10 @@ Pool::Connection * Pool::allocConnection(bool dont_throw_if_failed_first_time)
         {
             throw;
         }
-
-        return nullptr;
+        else
+        {
+            return nullptr;
+        }
     }
 
     connections.push_back(conn_ptr.get());

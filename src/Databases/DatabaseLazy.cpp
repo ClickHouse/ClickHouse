@@ -47,13 +47,12 @@ DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, 
     : DatabaseOnDisk(name_, metadata_path_, std::filesystem::path("data") / escapeForFileName(name_) / "", "DatabaseLazy (" + name_ + ")", context_)
     , expiration_time(expiration_time_)
 {
-    createDirectories();
 }
 
 
 void DatabaseLazy::loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel /*mode*/)
 {
-    iterateMetadataFiles([this, &local_context](const String & file_name)
+    iterateMetadataFiles(local_context, [this, &local_context](const String & file_name)
     {
         const std::string table_name = unescapeForFileName(file_name.substr(0, file_name.size() - 4));
 
@@ -399,6 +398,6 @@ void registerDatabaseLazy(DatabaseFactory & factory)
             cache_expiration_time_seconds,
             args.context);
     };
-    factory.registerDatabase("Lazy", create_fn, {.supports_arguments = true});
+    factory.registerDatabase("Lazy", create_fn);
 }
 }

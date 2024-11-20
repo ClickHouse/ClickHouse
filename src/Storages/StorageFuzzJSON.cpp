@@ -63,19 +63,20 @@ JSONValue::Type JSONValue::getType(const JSONValue & v)
         assert(!v.object);
         return JSONValue::Type::Fixed;
     }
-    if (v.array)
+    else if (v.array)
     {
         assert(!v.fixed);
         assert(!v.object);
         return JSONValue::Type::Array;
     }
-    if (v.object)
+    else if (v.object)
     {
         assert(!v.fixed);
         assert(!v.array);
         return JSONValue::Type::Object;
     }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to determine JSON node type.");
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to determine JSON node type.");
 }
 
 // A node represents either a JSON field (a key-value pair) or a JSON value.
@@ -149,6 +150,7 @@ void traverse(const ParserImpl::Element & e, std::shared_ptr<JSONNode> node)
 
 std::shared_ptr<JSONNode> parseJSON(const String & json)
 {
+    std::string_view view{json.begin(), json.end()};
     ParserImpl::Element document;
     ParserImpl p;
 
