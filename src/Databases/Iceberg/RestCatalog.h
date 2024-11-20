@@ -48,7 +48,7 @@ public:
 private:
     struct Config
     {
-        /// Prefix is a path of the catalog enpoint,
+        /// Prefix is a path of the catalog endpoint,
         /// e.g. /v1/{prefix}/namespaces/{namespace}/tables/{table}
         std::filesystem::path prefix;
         /// Base location is location of data in storage
