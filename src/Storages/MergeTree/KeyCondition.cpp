@@ -17,6 +17,7 @@
 #include <Functions/indexHint.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
+#include <Functions/IFunctionDateOrDateTime.h>
 #include <Functions/geometryConverters.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/HilbertUtils.h>
@@ -596,12 +597,15 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
         case (ActionsDAG::ActionType::COLUMN):
         {
             String name;
-            if (const auto * column_const = typeid_cast<const ColumnConst *>(node.column.get()))
+            if (const auto * column_const = typeid_cast<const ColumnConst *>(node.column.get());
+                column_const && column_const->getDataType() != TypeIndex::Function)
+            {
                 /// Re-generate column name for constant.
-                /// DAG form query (with enabled analyzer) uses suffixes for constants, like 1_UInt8.
-                /// DAG from PK does not use it. This breaks matching by column name sometimes.
+                /// DAG from the query (with enabled analyzer) uses suffixes for constants, like 1_UInt8.
+                /// DAG from the PK does not use it. This breaks matching by column name sometimes.
                 /// Ideally, we should not compare names, but DAG subtrees instead.
-                name = ASTLiteral(column_const->getDataColumn()[0]).getColumnName();
+                name = ASTLiteral(column_const->getField()).getColumnName();
+            }
             else
                 name = node.result_name;
 
@@ -941,6 +945,8 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
     return {field.columns, field.row_idx, result_idx};
 }
 
+DataTypePtr getArgumentTypeOfMonotonicFunction(const IFunctionBase & func);
+
 /// Sequentially applies functions to the column, returns `true`
 /// if all function arguments are compatible with functions
 /// signatures, and none of the functions produce `NULL` output.
@@ -972,7 +978,7 @@ bool applyFunctionChainToColumn(
     }
 
     // And cast it to the argument type of the first function in the chain
-    auto in_argument_type = functions[0]->getArgumentTypes()[0];
+    auto in_argument_type = getArgumentTypeOfMonotonicFunction(*functions[0]);
     if (canBeSafelyCasted(result_type, in_argument_type))
     {
         result_column = castColumnAccurate({result_column, result_type, ""}, in_argument_type);
@@ -1001,7 +1007,7 @@ bool applyFunctionChainToColumn(
         if (func->getArgumentTypes().empty())
             return false;
 
-        auto argument_type = func->getArgumentTypes()[0];
+        auto argument_type = getArgumentTypeOfMonotonicFunction(*func);
         if (!canBeSafelyCasted(result_type, argument_type))
             return false;
 
@@ -1157,6 +1163,7 @@ bool KeyCondition::tryPrepareSetIndex(
     const RPNBuilderFunctionTreeNode & func,
     RPNElement & out,
     size_t & out_key_column_num,
+    bool & allow_constant_transformation,
     bool & is_constant_transformed)
 {
     const auto & left_arg = func.getArgumentAt(0);
@@ -1183,7 +1190,9 @@ bool KeyCondition::tryPrepareSetIndex(
             set_transforming_chains.push_back(set_transforming_chain);
         }
         // For partition index, checking if set can be transformed to prune any partitions
-        else if (single_point && canSetValuesBeWrappedByFunctions(node, index_mapping.key_index, data_type, set_transforming_chain))
+        else if (
+            single_point && allow_constant_transformation
+            && canSetValuesBeWrappedByFunctions(node, index_mapping.key_index, data_type, set_transforming_chain))
         {
             indexes_mapping.push_back(index_mapping);
             data_types.push_back(data_type);
@@ -1446,6 +1455,30 @@ public:
 
     IFunctionBase::Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
+        if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(func.get()))
+        {
+            if (dynamic_cast<FunctionDateOrDateTimeBase *>(adaptor->getFunction().get()) && kind == Kind::RIGHT_CONST)
+            {
+                auto time_zone = extractTimeZoneNameFromColumn(const_arg.column.get(), const_arg.name);
+
+                const IDataType * type_ptr = &type;
+                if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type_ptr))
+                    type_ptr = low_cardinality_type->getDictionaryType().get();
+
+                if (type_ptr->isNullable())
+                    type_ptr = static_cast<const DataTypeNullable &>(*type_ptr).getNestedType().get();
+
+                DataTypePtr type_with_time_zone;
+                if (typeid_cast<const DataTypeDateTime *>(type_ptr))
+                    type_with_time_zone = std::make_shared<DataTypeDateTime>(time_zone);
+                else if (const auto * dt64 = typeid_cast<const DataTypeDateTime64 *>(type_ptr))
+                    type_with_time_zone = std::make_shared<DataTypeDateTime64>(dt64->getScale(), time_zone);
+                else
+                    return {}; /// In case we will have other types with time zone
+
+                return func->getMonotonicityForRange(*type_with_time_zone, left, right);
+            }
+        }
         return func->getMonotonicityForRange(type, left, right);
     }
 
@@ -1457,6 +1490,18 @@ private:
     ColumnWithTypeAndName const_arg;
     Kind kind = Kind::NO_CONST;
 };
+
+DataTypePtr getArgumentTypeOfMonotonicFunction(const IFunctionBase & func)
+{
+    const auto & arg_types = func.getArgumentTypes();
+    if (const auto * func_ptr = typeid_cast<const FunctionWithOptionalConstArg *>(&func))
+    {
+        if (func_ptr->getKind() == FunctionWithOptionalConstArg::Kind::LEFT_CONST)
+            return arg_types.at(1);
+    }
+
+    return arg_types.at(0);
+}
 
 
 bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
@@ -1929,7 +1974,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
 
             if (functionIsInOrGlobalInOperator(func_name))
             {
-                if (tryPrepareSetIndex(func, out, key_column_num, is_constant_transformed))
+                if (tryPrepareSetIndex(func, out, key_column_num, allow_constant_transformation, is_constant_transformed))
                 {
                     key_arg_pos = 0;
                     is_set_const = true;

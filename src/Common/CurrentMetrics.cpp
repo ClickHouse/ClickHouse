@@ -27,8 +27,8 @@
     M(BackgroundBufferFlushSchedulePoolSize, "Limit on number of tasks in BackgroundBufferFlushSchedulePool") \
     M(BackgroundDistributedSchedulePoolTask, "Number of active tasks in BackgroundDistributedSchedulePool. This pool is used for distributed sends that is done in background.") \
     M(BackgroundDistributedSchedulePoolSize, "Limit on number of tasks in BackgroundDistributedSchedulePool") \
-    M(BackgroundMessageBrokerSchedulePoolTask, "Number of active tasks in BackgroundProcessingPool for message streaming") \
-    M(BackgroundMessageBrokerSchedulePoolSize, "Limit on number of tasks in BackgroundProcessingPool for message streaming") \
+    M(BackgroundMessageBrokerSchedulePoolTask, "Number of active tasks in BackgroundMessageBrokerSchedulePool for message streaming") \
+    M(BackgroundMessageBrokerSchedulePoolSize, "Limit on number of tasks in BackgroundMessageBrokerSchedulePool for message streaming") \
     M(CacheDictionaryUpdateQueueBatches, "Number of 'batches' (a set of keys) in update queue in CacheDictionaries.") \
     M(CacheDictionaryUpdateQueueKeys, "Exact number of keys in update queue in CacheDictionaries.") \
     M(DiskSpaceReservedForMerge, "Disk space reserved for currently running background merges. It is slightly more than the total size of currently merging parts.") \
@@ -41,10 +41,15 @@
     M(PostgreSQLConnection, "Number of client connections using PostgreSQL protocol") \
     M(OpenFileForRead, "Number of files open for reading") \
     M(OpenFileForWrite, "Number of files open for writing") \
+    M(Compressing, "Number of compress operations using internal compression codecs") \
+    M(Decompressing, "Number of decompress operations using internal compression codecs") \
+    M(ParallelCompressedWriteBufferThreads, "Number of threads in all instances of ParallelCompressedWriteBuffer - these threads are doing parallel compression and writing") \
+    M(ParallelCompressedWriteBufferWait, "Number of threads in all instances of ParallelCompressedWriteBuffer that are currently waiting for buffer to become available for writing") \
     M(TotalTemporaryFiles, "Number of temporary files created") \
     M(TemporaryFilesForSort, "Number of temporary files created for external sorting") \
     M(TemporaryFilesForAggregation, "Number of temporary files created for external aggregation") \
     M(TemporaryFilesForJoin, "Number of temporary files created for JOIN") \
+    M(TemporaryFilesForMerge, "Number of temporary files for vertical merge") \
     M(TemporaryFilesUnknown, "Number of temporary files created without known purpose") \
     M(Read, "Number of read (read, pread, io_getevents, etc.) syscalls in fly") \
     M(RemoteRead, "Number of read with remote reader in fly") \
@@ -99,6 +104,9 @@
     M(IOThreads, "Number of threads in the IO thread pool.") \
     M(IOThreadsActive, "Number of threads in the IO thread pool running a task.") \
     M(IOThreadsScheduled, "Number of queued or active jobs in the IO thread pool.") \
+    M(CompressionThread, "Number of threads in compression thread pools.") \
+    M(CompressionThreadActive, "Number of threads in compression thread pools running a task.") \
+    M(CompressionThreadScheduled, "Number of queued or active jobs in compression thread pools.") \
     M(ThreadPoolRemoteFSReaderThreads, "Number of threads in the thread pool for remote_filesystem_read_method=threadpool.") \
     M(ThreadPoolRemoteFSReaderThreadsActive, "Number of threads in the thread pool for remote_filesystem_read_method=threadpool running a task.") \
     M(ThreadPoolRemoteFSReaderThreadsScheduled, "Number of queued or active jobs in the thread pool for remote_filesystem_read_method=threadpool.") \
@@ -183,8 +191,14 @@
     M(BuildVectorSimilarityIndexThreadsScheduled, "Number of queued or active jobs in the build vector similarity index thread pool.") \
     \
     M(DiskPlainRewritableAzureDirectoryMapSize, "Number of local-to-remote path entries in the 'plain_rewritable' in-memory map for AzureObjectStorage.") \
+    M(DiskPlainRewritableAzureFileCount, "Number of file entries in the 'plain_rewritable' in-memory map for AzureObjectStorage.") \
+    M(DiskPlainRewritableAzureUniqueFileNamesCount, "Number of unique file name entries in the 'plain_rewritable' in-memory map for AzureObjectStorage.") \
     M(DiskPlainRewritableLocalDirectoryMapSize, "Number of local-to-remote path entries in the 'plain_rewritable' in-memory map for LocalObjectStorage.") \
+    M(DiskPlainRewritableLocalFileCount, "Number of file entries in the 'plain_rewritable' in-memory map for LocalObjectStorage.") \
+    M(DiskPlainRewritableLocalUniqueFileNamesCount, "Number of unique file name entries in the 'plain_rewritable' in-memory map for LocalObjectStorage.") \
     M(DiskPlainRewritableS3DirectoryMapSize, "Number of local-to-remote path entries in the 'plain_rewritable' in-memory map for S3ObjectStorage.") \
+    M(DiskPlainRewritableS3FileCount, "Number of file entries in the 'plain_rewritable' in-memory map for S3ObjectStorage.") \
+    M(DiskPlainRewritableS3UniqueFileNamesCount, "Number of unique file name entries in the 'plain_rewritable' in-memory map for S3ObjectStorage.") \
     \
     M(MergeTreePartsLoaderThreads, "Number of threads in the MergeTree parts loader thread pool.") \
     M(MergeTreePartsLoaderThreadsActive, "Number of threads in the MergeTree parts loader thread pool running a task.") \
@@ -242,6 +256,7 @@
     M(PartsActive, "Active data part, used by current and upcoming SELECTs.") \
     M(AttachedDatabase, "Active databases.") \
     M(AttachedTable, "Active tables.") \
+    M(AttachedReplicatedTable, "Active replicated tables.") \
     M(AttachedView, "Active views.") \
     M(AttachedDictionary, "Active dictionaries.") \
     M(PartsOutdated, "Not active data part, but could be used by only current SELECTs, could be deleted after SELECTs finishes.") \

@@ -23,8 +23,6 @@ class DiskSelector;
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 
-class WriteBufferFromOwnString;
-
 class KeeperContext
 {
 public:

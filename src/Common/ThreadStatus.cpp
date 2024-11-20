@@ -78,7 +78,7 @@ ThreadStatus::ThreadStatus(bool check_current_thread_on_destruction_)
 
     last_rusage = std::make_unique<RUsageCounters>();
 
-    memory_tracker.setDescription("(for thread)");
+    memory_tracker.setDescription("Thread");
     log = getLogger("ThreadStatus");
 
     current_thread = this;
@@ -202,6 +202,16 @@ bool ThreadStatus::isQueryCanceled() const
     if (local_data.query_is_canceled_predicate)
         return local_data.query_is_canceled_predicate();
     return false;
+}
+
+size_t ThreadStatus::getNextPlanStepIndex() const
+{
+    return local_data.plan_step_index->fetch_add(1);
+}
+
+size_t ThreadStatus::getNextPipelineProcessorIndex() const
+{
+    return local_data.pipeline_processor_index->fetch_add(1);
 }
 
 ThreadStatus::~ThreadStatus()

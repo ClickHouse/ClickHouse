@@ -98,6 +98,9 @@
 namespace CurrentMetrics
 {
     extern const Metric AttachedTable;
+    extern const Metric AttachedReplicatedTable;
+    extern const Metric AttachedDictionary;
+    extern const Metric AttachedView;
 }
 
 namespace DB
@@ -129,7 +132,6 @@ namespace Setting
     extern const SettingsDefaultTableEngine default_temporary_table_engine;
     extern const SettingsString default_view_definer;
     extern const SettingsUInt64 distributed_ddl_entry_format_version;
-    extern const SettingsBool enable_deflate_qpl_codec;
     extern const SettingsBool enable_zstd_qat_codec;
     extern const SettingsBool flatten_nested;
     extern const SettingsBool fsync_metadata;
@@ -146,7 +148,10 @@ namespace ServerSetting
 {
     extern const ServerSettingsBool ignore_empty_sql_security_in_create_view_query;
     extern const ServerSettingsUInt64 max_database_num_to_throw;
+    extern const ServerSettingsUInt64 max_dictionary_num_to_throw;
     extern const ServerSettingsUInt64 max_table_num_to_throw;
+    extern const ServerSettingsUInt64 max_replicated_table_num_to_throw;
+    extern const ServerSettingsUInt64 max_view_num_to_throw;
 }
 
 namespace ErrorCodes
@@ -667,7 +672,6 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     bool skip_checks = LoadingStrictnessLevel::SECONDARY_CREATE <= mode;
     bool sanity_check_compression_codecs = !skip_checks && !context_->getSettingsRef()[Setting::allow_suspicious_codecs];
     bool allow_experimental_codecs = skip_checks || context_->getSettingsRef()[Setting::allow_experimental_codecs];
-    bool enable_deflate_qpl_codec = skip_checks || context_->getSettingsRef()[Setting::enable_deflate_qpl_codec];
     bool enable_zstd_qat_codec = skip_checks || context_->getSettingsRef()[Setting::enable_zstd_qat_codec];
 
     ColumnsDescription res;
@@ -729,7 +733,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             if (col_decl.default_specifier == "ALIAS")
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
             column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                col_decl.codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs, enable_deflate_qpl_codec, enable_zstd_qat_codec);
+                col_decl.codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs, enable_zstd_qat_codec);
         }
 
         if (col_decl.statistics_desc)
@@ -1469,7 +1473,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     bool is_secondary_query = getContext()->getZooKeeperMetadataTransaction() && !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery();
     auto mode = getLoadingStrictnessLevel(create.attach, /*force_attach*/ false, /*has_force_restore_data_flag*/ false, is_secondary_query || is_restore_from_backup);
 
-    if (!create.sql_security && create.supportSQLSecurity() && !getContext()->getServerSettings()[ServerSetting::ignore_empty_sql_security_in_create_view_query])
+    if (!create.sql_security && create.supportSQLSecurity() && (create.refresh_strategy || !getContext()->getServerSettings()[ServerSetting::ignore_empty_sql_security_in_create_view_query]))
         create.sql_security = std::make_shared<ASTSQLSecurity>();
 
     if (create.sql_security)
@@ -1914,16 +1918,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         }
     }
 
-    UInt64 table_num_limit = getContext()->getGlobalContext()->getServerSettings()[ServerSetting::max_table_num_to_throw];
-    if (table_num_limit > 0 && !internal)
-    {
-        UInt64 table_count = CurrentMetrics::get(CurrentMetrics::AttachedTable);
-        if (table_count >= table_num_limit)
-            throw Exception(ErrorCodes::TOO_MANY_TABLES,
-                            "Too many tables. "
-                            "The limit (server configuration parameter `max_table_num_to_throw`) is set to {}, the current number of tables is {}",
-                            table_num_limit, table_count);
-    }
+    if (!internal)
+        throwIfTooManyEntities(create, res);
 
     database->createTable(getContext(), create.getTable(), res, query_ptr);
 
@@ -1947,6 +1943,30 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
     res->startup();
     return true;
+}
+
+
+void InterpreterCreateQuery::throwIfTooManyEntities(ASTCreateQuery & create, StoragePtr storage) const
+{
+    auto check_and_throw = [&](auto setting, CurrentMetrics::Metric metric, String setting_name, String entity_name)
+        {
+            UInt64 num_limit = getContext()->getGlobalContext()->getServerSettings()[setting];
+            UInt64 attached_count = CurrentMetrics::get(metric);
+            if (num_limit > 0 && attached_count >= num_limit)
+                throw Exception(ErrorCodes::TOO_MANY_TABLES,
+                                "Too many {}. "
+                                "The limit (server configuration parameter `{}`) is set to {}, the current number is {}",
+                                entity_name, setting_name, num_limit, attached_count);
+        };
+
+    if (typeid_cast<StorageReplicatedMergeTree *>(storage.get()) != nullptr)
+        check_and_throw(ServerSetting::max_replicated_table_num_to_throw, CurrentMetrics::AttachedReplicatedTable, "max_replicated_table_num_to_throw", "replicated tables");
+    else if (create.is_dictionary)
+        check_and_throw(ServerSetting::max_dictionary_num_to_throw, CurrentMetrics::AttachedDictionary, "max_dictionary_num_to_throw", "dictionaries");
+    else if (create.isView())
+        check_and_throw(ServerSetting::max_view_num_to_throw, CurrentMetrics::AttachedView, "max_view_num_to_throw", "views");
+    else
+        check_and_throw(ServerSetting::max_table_num_to_throw, CurrentMetrics::AttachedTable, "max_table_num_to_throw", "tables");
 }
 
 
@@ -1988,6 +2008,12 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             /// Avoid different table name on database replicas
             UInt16 hashed_zk_path = sipHash64(txn->getTaskZooKeeperPath());
             random_suffix = getHexUIntLowercase(hashed_zk_path);
+        }
+        else if (!current_context->getCurrentQueryId().empty())
+        {
+            random_suffix = getRandomASCIIString(/*length=*/2);
+            UInt8 hashed_query_id = sipHash64(current_context->getCurrentQueryId());
+            random_suffix += getHexUIntLowercase(hashed_query_id);
         }
         else
         {

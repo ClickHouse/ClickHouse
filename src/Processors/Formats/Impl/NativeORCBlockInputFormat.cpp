@@ -32,12 +32,35 @@
 #    include <IO/copyData.h>
 #    include <Interpreters/castColumn.h>
 #    include <Storages/MergeTree/KeyCondition.h>
-#    include <boost/algorithm/string/case_conv.hpp>
+#    include <orc/MemoryPool.hh>
+#    include <Common/Allocator.h>
 #    include <Common/FieldVisitorsAccurateComparison.h>
-#    include "ArrowBufferedStreams.h"
-
+#    include <Common/MemorySanitizer.h>
 #    include <orc/Vector.hh>
 
+#    include "ArrowBufferedStreams.h"
+
+#    include <boost/algorithm/string/case_conv.hpp>
+
+
+namespace
+{
+
+class MemoryPool : public orc::MemoryPool
+{
+public:
+    char * malloc(uint64_t size) override
+    {
+        auto * ptr = ::malloc(size);
+        /// For nullable columns some of the values will not be initialized.
+        __msan_unpoison(ptr, size);
+        return static_cast<char *>(ptr);
+    }
+
+    void free(char * p) override { ::free(p); }
+};
+
+}
 
 namespace DB
 {
@@ -96,9 +119,10 @@ std::unique_ptr<orc::InputStream> asORCInputStreamLoadIntoMemory(ReadBuffer & in
     if (bytes_read < magic_size || file_data != ORC_MAGIC_BYTES)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Not an ORC file");
 
-    WriteBufferFromString file_buffer(file_data, AppendModeTag{});
-    copyData(in, file_buffer, is_cancelled);
-    file_buffer.finalize();
+    {
+        WriteBufferFromString file_buffer(file_data, AppendModeTag{});
+        copyData(in, file_buffer, is_cancelled);
+    }
 
     size_t file_size = file_data.size();
     return std::make_unique<ORCInputStreamFromString>(std::move(file_data), file_size);
@@ -724,12 +748,17 @@ buildORCSearchArgument(const KeyCondition & key_condition, const Block & header,
 }
 
 static void getFileReader(
-    ReadBuffer & in, std::unique_ptr<orc::Reader> & file_reader, const FormatSettings & format_settings, std::atomic<int> & is_stopped)
+    ReadBuffer & in,
+    std::unique_ptr<orc::Reader> & file_reader,
+    orc::MemoryPool & pool,
+    const FormatSettings & format_settings,
+    std::atomic<int> & is_stopped)
 {
     if (is_stopped)
         return;
 
     orc::ReaderOptions options;
+    options.setMemoryPool(pool);
     auto input_stream = asORCInputStream(in, format_settings, is_stopped);
     file_reader = orc::createReader(std::move(input_stream), options);
 }
@@ -875,6 +904,7 @@ static void updateIncludeTypeIds(
 
 NativeORCBlockInputFormat::NativeORCBlockInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_)
     : IInputFormat(std::move(header_), &in_)
+    , memory_pool(std::make_unique<MemoryPool>())
     , block_missing_values(getPort().getHeader().columns())
     , format_settings(format_settings_)
     , skip_stripes(format_settings.orc.skip_stripes)
@@ -883,7 +913,7 @@ NativeORCBlockInputFormat::NativeORCBlockInputFormat(ReadBuffer & in_, Block hea
 
 void NativeORCBlockInputFormat::prepareFileReader()
 {
-    getFileReader(*in, file_reader, format_settings, is_stopped);
+    getFileReader(*in, file_reader, *memory_pool, format_settings, is_stopped);
     if (is_stopped)
         return;
 
@@ -1027,7 +1057,8 @@ NamesAndTypesList NativeORCSchemaReader::readSchema()
 {
     std::unique_ptr<orc::Reader> file_reader;
     std::atomic<int> is_stopped = 0;
-    getFileReader(in, file_reader, format_settings, is_stopped);
+    MemoryPool memory_pool;
+    getFileReader(in, file_reader, memory_pool, format_settings, is_stopped);
 
 
     const auto & schema = file_reader->getType();
@@ -1504,15 +1535,23 @@ static ColumnWithTypeAndName readColumnWithDateData(
 
     for (size_t i = 0; i < orc_int_column->numElements; ++i)
     {
-        Int32 days_num = static_cast<Int32>(orc_int_column->data[i]);
-        if (check_date_range && (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM || days_num < -DAYNUM_OFFSET_EPOCH))
-            throw Exception(
-                ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                "Input value {} of a column \"{}\" exceeds the range of type Date32",
-                days_num,
-                column_name);
+        if (!orc_int_column->hasNulls || orc_int_column->notNull[i])
+        {
+            Int32 days_num = static_cast<Int32>(orc_int_column->data[i]);
+            if (check_date_range && (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM || days_num < -DAYNUM_OFFSET_EPOCH))
+                throw Exception(
+                    ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                    "Input value {} of a column \"{}\" exceeds the range of type Date32",
+                    days_num,
+                    column_name);
 
-        column_data.push_back(days_num);
+            column_data.push_back(days_num);
+        }
+        else
+        {
+            /// ORC library doesn't guarantee that orc_int_column->data[i] is initialized to zero when orc_int_column->notNull[i] is false since https://github.com/ClickHouse/ClickHouse/pull/69473
+            column_data.push_back(0);
+        }
     }
 
     return {std::move(internal_column), internal_type, column_name};

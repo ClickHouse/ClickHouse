@@ -23,6 +23,15 @@ namespace Setting
     extern const SettingsMaxThreads max_parsing_threads;
 }
 
+namespace ObjectStorageQueueSetting
+{
+    extern const ObjectStorageQueueSettingsObjectStorageQueueAction after_processing;
+    extern const ObjectStorageQueueSettingsUInt64 max_processed_bytes_before_commit;
+    extern const ObjectStorageQueueSettingsUInt64 max_processed_files_before_commit;
+    extern const ObjectStorageQueueSettingsUInt64 max_processed_rows_before_commit;
+    extern const ObjectStorageQueueSettingsUInt64 max_processing_time_sec_before_commit;
+}
+
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
@@ -630,7 +639,7 @@ void ObjectStorageQueueSource::commit(bool success, const std::string & exceptio
                 /* overwrite_status */true);
 
         }
-        appendLogElement(file_metadata->getPath(), *file_metadata->getFileStatus(), processed_rows_from_file, /* processed */success);
+        appendLogElement(file_metadata->getPath(), *file_metadata->getFileStatus(), /* processed */success);
     }
 
     for (const auto & file_metadata : failed_during_read_files)
@@ -642,22 +651,21 @@ void ObjectStorageQueueSource::commit(bool success, const std::string & exceptio
             /* reduce_retry_count */true,
             /* overwrite_status */false);
 
-        appendLogElement(file_metadata->getPath(), *file_metadata->getFileStatus(), processed_rows_from_file, /* processed */false);
+        appendLogElement(file_metadata->getPath(), *file_metadata->getFileStatus(), /* processed */false);
     }
 }
 
 void ObjectStorageQueueSource::applyActionAfterProcessing(const String & path)
 {
-    if (files_metadata->getTableMetadata().after_processing == "delete")
+    if (files_metadata->getTableMetadata().after_processing == ObjectStorageQueueAction::DELETE)
     {
-        object_storage->removeObject(StoredObject(path));
+        object_storage->removeObjectIfExists(StoredObject(path));
     }
 }
 
 void ObjectStorageQueueSource::appendLogElement(
     const std::string & filename,
     ObjectStorageQueueMetadata::FileStatus & file_status_,
-    size_t processed_rows,
     bool processed)
 {
     if (!system_queue_log)
@@ -672,7 +680,7 @@ void ObjectStorageQueueSource::appendLogElement(
             .table = storage_id.table_name,
             .uuid = toString(storage_id.uuid),
             .file_name = filename,
-            .rows_processed = processed_rows,
+            .rows_processed = file_status_.processed_rows,
             .status = processed ? ObjectStorageQueueLogElement::ObjectStorageQueueStatus::Processed : ObjectStorageQueueLogElement::ObjectStorageQueueStatus::Failed,
             .processing_start_time = file_status_.processing_start_time,
             .processing_end_time = file_status_.processing_end_time,

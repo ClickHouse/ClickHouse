@@ -1,12 +1,13 @@
 #pragma once
 #include "config.h"
 
-#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Interpreters/ObjectStorageQueueLog.h>
 #include <Processors/ISource.h>
-#include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <Interpreters/ObjectStorageQueueLog.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 
 
 namespace Poco { class Logger; }
@@ -166,7 +167,6 @@ private:
     void appendLogElement(
         const std::string & filename,
         ObjectStorageQueueMetadata::FileStatus & file_status_,
-        size_t processed_rows,
         bool processed);
 };
 
