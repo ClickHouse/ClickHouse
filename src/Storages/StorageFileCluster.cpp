@@ -9,7 +9,7 @@
 #include <Storages/StorageFileCluster.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageFile.h>
-#include <Storages/extractTableFunctionArgumentsFromSelectQuery.h>
+#include <Storages/extractTableFunctionFromSelectQuery.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <TableFunctions/TableFunctionFileCluster.h>
 

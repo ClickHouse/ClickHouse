@@ -7,8 +7,6 @@
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionObjectStorage.h>
 
-#include <Common/logger_useful.h>
-
 
 namespace DB
 {
