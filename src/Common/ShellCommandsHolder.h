@@ -26,7 +26,7 @@ private:
     std::mutex mutex;
     ShellCommands shell_commands TSA_GUARDED_BY(mutex);
 
-    static LoggerPtr getLogger();
+    LoggerPtr log = getLogger("ShellCommandsHolder");
 };
 
 }

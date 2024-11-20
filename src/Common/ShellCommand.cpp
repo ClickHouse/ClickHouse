@@ -61,7 +61,7 @@ LoggerPtr ShellCommand::getLogger()
 
 ShellCommand::~ShellCommand()
 {
-    if (is_manualy_terminated)
+    if (do_not_terminate)
         return;
 
     if (wait_called)

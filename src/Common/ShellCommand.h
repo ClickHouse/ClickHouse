@@ -77,9 +77,9 @@ public:
         return wait_called;
     }
 
-    void setManuallyTerminated()
+    void setDoNotTerminate()
     {
-        is_manualy_terminated = true;
+        do_not_terminate = true;
     }
 
     /// Run the command using /bin/sh -c.
@@ -111,7 +111,7 @@ private:
     pid_t pid;
     Config config;
     bool wait_called = false;
-    bool is_manualy_terminated = false;
+    bool do_not_terminate = false;
 
     ShellCommand(pid_t pid_, int & in_fd_, int & out_fd_, int & err_fd_, const Config & config);
 
