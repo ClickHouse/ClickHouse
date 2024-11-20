@@ -127,7 +127,7 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
     MarkRanges exact_ranges;
     for (const auto & part : parts)
     {
-        MarkRanges part_ranges = markRangesFromPKRange(part, 0, part->index_granularity.getMarksCount(), metadata_snapshot, key_condition, {}, &exact_ranges, settings, log);
+        MarkRanges part_ranges = markRangesFromPKRange(part, 0, part->index_granularity->getMarksCount(), metadata_snapshot, key_condition, {}, &exact_ranges, settings, log);
         for (const auto & range : part_ranges)
             rows_count += part->index_granularity->getRowsCountInRange(range);
     }
@@ -695,7 +695,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithPrimaryKey);
                 ranges.ranges = markRangesFromPKRange(
                     part,
-                    0, part->index_granularity.getMarksCount(),
+                    0, part->index_granularity->getMarksCount(),
                     metadata_snapshot,
                     key_condition,
                     part_offset_condition,

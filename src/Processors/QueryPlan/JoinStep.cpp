@@ -102,7 +102,7 @@ void DynamicJoinFilters::filterDynamicPartsByFilledJoin(const IJoin & join)
         const auto & clause = clauses[i];
         auto squashed = squashBlocks(clause.keys, blocks[i]);
 
-        std::cerr << "Right join data rows " << squashed.front().column->size() << std::endl;
+        // std::cerr << "Right join data rows " << squashed.front().column->size() << std::endl;
 
         auto set = std::make_shared<FutureSetFromTuple>(squashed, settings);
         clause.set->setData(std::move(set));
