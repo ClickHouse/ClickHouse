@@ -34,16 +34,13 @@ bool ProgressIndication::updateProgress(const Progress & value)
 
 void ProgressIndication::resetProgress()
 {
-    {
-        std::lock_guard lock(progress_mutex);
-        progress.reset();
-        show_progress_bar = false;
-        written_progress_chars = 0;
-        write_progress_on_update = false;
-    }
+    watch.restart();
+    progress.reset();
+    show_progress_bar = false;
+    written_progress_chars = 0;
+    write_progress_on_update = false;
     {
         std::lock_guard lock(profile_events_mutex);
-        watch.restart();
         cpu_usage_meter.reset(getElapsedNanoseconds());
         hosts_data.clear();
     }
@@ -93,8 +90,6 @@ ProgressIndication::MemoryUsage ProgressIndication::getMemoryUsage() const
 
 void ProgressIndication::writeFinalProgress()
 {
-    std::lock_guard lock(progress_mutex);
-
     if (progress.read_rows < 1000)
         return;
 
@@ -276,8 +271,6 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message)
 
 void ProgressIndication::clearProgressOutput(WriteBufferFromFileDescriptor & message)
 {
-    std::lock_guard lock(progress_mutex);
-
     if (written_progress_chars)
     {
         written_progress_chars = 0;

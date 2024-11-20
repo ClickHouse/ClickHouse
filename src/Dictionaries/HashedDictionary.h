@@ -334,26 +334,22 @@ HashedDictionary<dictionary_key_type, sparse, sharded>::~HashedDictionary()
         if (container.empty())
             return;
 
-        if (!pool.trySchedule([&container, thread_group = CurrentThread::getGroup()]
-            {
-                SCOPE_EXIT_SAFE(
-                    if (thread_group)
-                        CurrentThread::detachFromGroupIfNotDetached();
-                );
-
-                /// Do not account memory that was occupied by the dictionaries for the query/user context.
-                MemoryTrackerBlockerInThread memory_blocker;
-
-                if (thread_group)
-                    CurrentThread::attachToGroupIfDetached(thread_group);
-                setThreadName("HashedDictDtor");
-
-                clearContainer(container);
-            }))
+        pool.trySchedule([&container, thread_group = CurrentThread::getGroup()]
         {
+            SCOPE_EXIT_SAFE(
+                if (thread_group)
+                    CurrentThread::detachFromGroupIfNotDetached();
+            );
+
+            /// Do not account memory that was occupied by the dictionaries for the query/user context.
             MemoryTrackerBlockerInThread memory_blocker;
+
+            if (thread_group)
+                CurrentThread::attachToGroupIfDetached(thread_group);
+            setThreadName("HashedDictDtor");
+
             clearContainer(container);
-        }
+        });
 
         ++hash_tables_count;
     };
@@ -888,7 +884,6 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::updateData()
     {
         QueryPipeline pipeline(source_ptr->loadUpdatedAll());
         DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-        pipeline.setConcurrencyControl(false);
         update_field_loaded_block.reset();
         Block block;
 
@@ -1168,7 +1163,6 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::loadData()
         QueryPipeline pipeline(source_ptr->loadAll());
 
         DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-        pipeline.setConcurrencyControl(false);
         Block block;
         DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
 
