@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 SELECT * FROM s3(
         'http://localhost:11111/test/03036_json_archive.zip :: example11.jsonl',
         JSONEachRow,
