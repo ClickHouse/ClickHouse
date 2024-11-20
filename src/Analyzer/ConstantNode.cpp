@@ -1,3 +1,4 @@
+#include "DataTypes/IDataType.h"
 #include <Analyzer/ConstantNode.h>
 
 #include <Analyzer/FunctionNode.h>
@@ -149,10 +150,18 @@ bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compar
 {
     const auto & rhs_typed = assert_cast<const ConstantNode &>(rhs);
 
+    const auto & value_type = constant_value.getType();
+    const auto & rhs_value_type = rhs_typed.constant_value.getType();
+    if ( (isArray(value_type) || isTuple(value_type) || isMap(value_type) ||
+          isArray(rhs_value_type) || isTuple(rhs_value_type) || isMap(rhs_value_type))
+        && constant_value.getType() != rhs_typed.constant_value.getType()
+    )
+        return false;
+
     const auto & column = constant_value.getColumn();
     const auto & rhs_column = rhs_typed.constant_value.getColumn();
 
-    if (column->getDataType() != rhs_column->getDataType() || constant_value.getType() != rhs_typed.constant_value.getType() ||  column->compareAt(0, 0, *rhs_column, 1) != 0)
+    if (column->getDataType() != rhs_column->getDataType() ||  column->compareAt(0, 0, *rhs_column, 1) != 0)
         return false;
 
     return !compare_options.compare_types || constant_value.getType()->equals(*rhs_typed.constant_value.getType());
