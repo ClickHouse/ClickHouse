@@ -144,21 +144,6 @@ void dump_list(WriteBuffer & buffer, const String & list_name, const std::ranges
 {
     buffer << "Scope node " << scope_node->formatConvertedASTForErrorMessage() << '\n';
 
-    if (scope_node->as<QueryNode>())
-    {
-        buffer << "Table expression data: ";
-        auto it = table_expression_node_to_data.find(scope_node);
-        if (it != table_expression_node_to_data.end())
-        {
-            buffer << it->second.dump();
-        }
-        else
-        {
-            buffer << "Not initialized";
-        }
-        buffer << '\n';
-    }
-
     buffer << "Identifier lookup to resolve state " << identifier_in_lookup_process.size() << '\n';
     for (const auto & [identifier, state] : identifier_in_lookup_process)
     {
@@ -210,6 +195,8 @@ void dump_list(WriteBuffer & buffer, const String & list_name, const std::ranges
     buffer << "Table expression node to data: " << table_expression_node_to_data.size() << '\n';
     for (const auto & [table_expression_node, table_expression_data] : table_expression_node_to_data)
         buffer << " { " << table_expression_node->formatASTForErrorMessage() << " data:\n  " << table_expression_data.dump() << " }\n";
+
+    dump_list(buffer, "Registered table expression nodes", registered_table_expression_nodes);
 
     buffer << "Subquery depth " << subquery_depth << '\n';
 }

@@ -1368,7 +1368,6 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
         bool is_from_join_tree_or_aliases = !initial_scope_is_query && (resolve_result.isResolvedFromJoinTree() || resolve_result.isResolvedFromAliases());
         bool is_valid_table_expression = is_cte || is_table_from_expression_arguments || is_from_join_tree_or_aliases;
 
-
         if (!is_valid_table_expression)
             return {};
         return resolve_result;
@@ -1385,7 +1384,8 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
         {
             if (isDependentColumn(&scope, current_column->getColumnSource()))
             {
-                LOG_DEBUG(&Poco::Logger::get("resolveInParentScope"), "Found dependent column for indetifier '{}': {}", identifier_lookup.dump(), current_column->dumpTree());
+                LOG_DEBUG(&Poco::Logger::get("resolveInParentScope"), "Found dependent column for indetifier '{}': {}\nSource: {}",
+                    identifier_lookup.dump(), current_column->dumpTree(), current_column->getColumnSource()->dumpTree());
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                     "Resolved identifier '{}' in parent scope to expression '{}' with correlated column '{}'. In scope {}",
                     identifier_lookup.identifier.getFullName(),
@@ -5414,6 +5414,7 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
     };
 
     add_table_expression_alias_into_scope(join_tree_node);
+    scope.registered_table_expression_nodes.insert(join_tree_node);
     scope.table_expressions_in_resolve_process.erase(join_tree_node.get());
 }
 
