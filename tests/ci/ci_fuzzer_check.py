@@ -27,11 +27,12 @@ def get_run_command(
     image: DockerImage,
     check_name: str
 ) -> str:
+    fuzzer_name = "BuzzHouse" if check_name.lower().startswith("buzzhouse") else "AST Fuzzer"
     envs = [
         f"-e PR_TO_TEST={pr_info.number}",
         f"-e SHA_TO_TEST={pr_info.sha}",
         f"-e BINARY_URL_TO_DOWNLOAD='{build_url}'",
-        f"-e FUZZER_TO_RUN='{"BuzzHouse" if check_name.lower().startswith("buzzhouse") else "AST Fuzzer"}'",
+        f"-e FUZZER_TO_RUN='{fuzzer_name}'",
     ]
 
     env_str = " ".join(envs)
