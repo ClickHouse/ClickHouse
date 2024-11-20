@@ -38,6 +38,9 @@ export async function testMergeTreeInserter()
     const inserter2 = new MergeTreeInserter(sim, mt, testInserter2());
     const inserter3 = new MergeTreeInserter(sim, mt, testInserter3());
 
+    await inserter1.start();
+    await inserter2.start();
+    await inserter3.start();
     await sim.run();
 
     assert.deepEqual(mt.parts.map(d => d.bytes), [1, 42, 42, 42, 1, 13, 13, 2, 3, 4, 666]);

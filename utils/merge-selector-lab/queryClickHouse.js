@@ -1,6 +1,6 @@
 let add_http_cors_header = (location.protocol != 'file:');
 
-export async function queryClickHouse({host, user, password, query, is_stopping, for_each_row})
+export async function queryClickHouse({host, user, password, query, is_stopping, for_each_row, on_error})
 {
     // Construct URL
     let url = `${host}?default_format=JSONEachRow&enable_http_compression=1`
@@ -12,13 +12,20 @@ export async function queryClickHouse({host, user, password, query, is_stopping,
     if (password)
         url += `&password=${encodeURIComponent(password)}`;
 
+    console.log("QUERY", query);
+
     let response, reply, error;
     try
     {
         // Send the query
         response = await fetch(url, { method: "POST", body: query });
+
         if (!response.ok)
-            throw new Error(`HTTP error. Status: ${response.status}`);
+        {
+            const reply = JSON.parse(await response.text());
+            const error = ('exception' in reply) ? reply.exception : reply.toString();
+            throw new Error(`HTTP Status: ${response.status}. Error: ${error}`);
+        }
 
         // Initiate stream processing of response body
         const reader = response.body.getReader();
@@ -48,7 +55,8 @@ export async function queryClickHouse({host, user, password, query, is_stopping,
     }
     catch (e)
     {
-        console.log(e);
-        error = e.toString();
+        console.log("CLICKHOUSE QUERY FAILED", e);
+        if (on_error)
+            on_error(e.toString());
     }
 }

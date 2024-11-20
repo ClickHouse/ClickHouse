@@ -57,10 +57,14 @@ export class MergeTree {
             level: 0,
             begin: this.inserted_parts_count,
             end: this.inserted_parts_count + 1,
+            left_bytes: this.inserted_bytes,
+            right_bytes: this.inserted_bytes + bytes,
+            is_leftmost: false,
+            is_rightmost: false,
             active: true,
             merging: false,
             idx: this.parts.length,
-            source_part_count: 1
+            source_part_count: 0
         };
         this.parts.push(result);
         this.active_part_count++;
@@ -127,6 +131,8 @@ export class MergeTree {
             level: 1 + Math.max(...parts_to_merge.map(d => d.level)),
             begin: Math.min(...parts_to_merge.map(d => d.begin)),
             end: Math.max(...parts_to_merge.map(d => d.end)),
+            left_bytes: Math.min(...parts_to_merge.map(d => d.left_bytes)),
+            right_bytes: Math.max(...parts_to_merge.map(d => d.right_bytes)),
             active: true,
             merging: false,
             idx: this.parts.length,
@@ -136,11 +142,20 @@ export class MergeTree {
         this.active_part_count++;
         for (let p of parts_to_merge)
         {
-            p.parent = idx;
             if (p.active == false)
                 throw { message: "Merging inactive part", part: p};
+
+            // Update children parts
+            p.parent = idx;
+            p.parent_part = result;
             p.active = false;
             p.merging = false;
+            if (p.left_bytes == result.left_bytes)
+                p.is_leftmost = true;
+            if (p.right_bytes == result.right_bytes)
+                p.is_rightmost = true;
+
+            // Update metrics
             this.merging_part_count--;
             this.active_part_count--;
         }

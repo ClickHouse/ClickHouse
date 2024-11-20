@@ -9,19 +9,23 @@ export class MergeTreeMerger
         this.selector = selector;
         this.signals = signals;
         this.merges_running = 0;
-        if (mt.active_part_count == 0) // Hack to start only after initial parts are inserted
-            this.sim.postpone("PostponeMergerInit", () => this.#iterateSelector());
-        else
-            this.#iterateSelector();
         // TODO(serxa): if we are going to use more than 1 selector in parallel we should "subscribe" for pool availability to be able to run more merges when worker is release by another merger
     }
 
-    #iterateSelector()
+    async start()
+    {
+        if (this.mt.active_part_count == 0) // Hack to start only after initial parts are inserted
+            this.sim.postpone("PostponeMergerInit", async () => await this.#iterateSelector());
+        else
+            await this.#iterateSelector();
+    }
+
+    async #iterateSelector()
     {
         let value_to_send = null;
         loop: while (this.pool.isAvailable())
         {
-            const { value, done } = this.selector.next(value_to_send);
+            const { value, done } = await this.selector.next(value_to_send);
             value_to_send = null;
             if (done)
                 return; // No more merges required
@@ -41,7 +45,7 @@ export class MergeTreeMerger
                         throw { message: "Merge selector wait for zero merges. Run at least one or use 'sleep' instead" };
                     break loop; // No need to do anything iterateSelector() will be called on the end of any merge
                 case 'sleep':
-                    this.sim.scheduleAt(this.sim.time + value.delay, "MergerSleep", () => this.#iterateSelector());
+                    this.sim.scheduleAt(this.sim.time + value.delay, "MergerSleep", async () => await this.#iterateSelector());
                     return;
                 default:
                     throw { message: "Unknown merge selector yield type", value };

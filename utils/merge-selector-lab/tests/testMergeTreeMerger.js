@@ -47,6 +47,7 @@ export async function testMergeTreeMerger()
     }
 
     const merger = new MergeTreeMerger(sim, mt, pool, testSelector());
+    await merger.start();
     await sim.run();
 
     assert.deepEqual(mt.parts.filter(d => d.active).map(d => d.bytes), [expected_bytes]);

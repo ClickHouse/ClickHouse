@@ -7,14 +7,18 @@ export class MergeTreeInserter
         this.mt = mt; // MergeTree
         this.inserter = inserter;
         this.signals = signals;
-        this.#iterateInserter();
     }
 
-    #iterateInserter()
+    async start()
+    {
+        await this.#iterateInserter();
+    }
+
+    async #iterateInserter()
     {
         while (true)
         {
-            const { value, done } = this.inserter.next();
+            const { value, done } = await this.inserter.next();
             if (done)
                 return; // No more inserts
             switch (value.type)
@@ -27,7 +31,7 @@ export class MergeTreeInserter
                 case 'sleep':
                     if (value.delay > 0)
                     {
-                        this.sim.scheduleAt(this.sim.time + value.delay, "InserterSleep", () => this.#iterateInserter());
+                        this.sim.scheduleAt(this.sim.time + value.delay, "InserterSleep", async () => await this.#iterateInserter());
                         return;
                     }
                     break;

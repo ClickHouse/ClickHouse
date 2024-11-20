@@ -1,4 +1,6 @@
-export function* clickHousePartsInserter({host, user, password, query, table, database, partition})
+import { queryClickHouse } from './queryClickHouse.js';
+
+export async function* clickHousePartsInserter({host, user, password, query, table, database, partition})
 {
     if (!query)
     {
@@ -12,13 +14,14 @@ export function* clickHousePartsInserter({host, user, password, query, table, da
         query = `SELECT * FROM system.parts ${where} ORDER BY min_block_number`;
     }
     let rows = [];
-    queryClickHouse({
+    await queryClickHouse({
         host,
         user,
         password,
         query,
         for_each_row: (data) => rows.push(data)
     });
+    yield {type: 'sleep', delay: 0};
     for (const row of rows)
-        yield {type: 'insert', bytes}; // TODO(serxa): pass modification_time
+        yield {type: 'insert', bytes: +row.bytes_on_disk}; // TODO(serxa): pass modification_time
 }
