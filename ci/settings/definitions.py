@@ -7,24 +7,33 @@ S3_BUCKET_HTTP_ENDPOINT = "clickhouse-builds.s3.amazonaws.com"
 class RunnerLabels:
     CI_SERVICES = "ci_services"
     CI_SERVICES_EBS = "ci_services_ebs"
-    BUILDER = "builder"
+    BUILDER_AMD = "builder"
+    BUILDER_ARM = "builder-aarch64"
+    FUNC_TESTER_AMD = "func-tester"
+    FUNC_TESTER_ARM = "func-tester-aarch64"
 
 
 BASE_BRANCH = "master"
+
+azure_secret = Secret.Config(
+    name="azure_connection_string",
+    type=Secret.Type.AWS_SSM_VAR,
+)
 
 SECRETS = [
     Secret.Config(
         name="dockerhub_robot_password",
         type=Secret.Type.AWS_SSM_VAR,
     ),
-    Secret.Config(
-        name="woolenwolf_gh_app.clickhouse-app-id",
-        type=Secret.Type.AWS_SSM_SECRET,
-    ),
-    Secret.Config(
-        name="woolenwolf_gh_app.clickhouse-app-key",
-        type=Secret.Type.AWS_SSM_SECRET,
-    ),
+    azure_secret,
+    # Secret.Config(
+    #     name="woolenwolf_gh_app.clickhouse-app-id",
+    #     type=Secret.Type.AWS_SSM_SECRET,
+    # ),
+    # Secret.Config(
+    #     name="woolenwolf_gh_app.clickhouse-app-key",
+    #     type=Secret.Type.AWS_SSM_SECRET,
+    # ),
 ]
 
 DOCKERS = [
@@ -118,18 +127,18 @@ DOCKERS = [
     #     platforms=Docker.Platforms.arm_amd,
     #     depends_on=["clickhouse/test-base"],
     # ),
-    # Docker.Config(
-    #     name="clickhouse/stateless-test",
-    #     path="./ci/docker/test/stateless",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=["clickhouse/test-base"],
-    # ),
-    # Docker.Config(
-    #     name="clickhouse/stateful-test",
-    #     path="./ci/docker/test/stateful",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=["clickhouse/stateless-test"],
-    # ),
+    Docker.Config(
+        name="clickhouse/stateless-test",
+        path="./ci/docker/stateless-test",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
+        name="clickhouse/stateful-test",
+        path="./ci/docker/stateful-test",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=["clickhouse/stateless-test"],
+    ),
     # Docker.Config(
     #     name="clickhouse/stress-test",
     #     path="./ci/docker/test/stress",
@@ -230,4 +239,6 @@ DOCKERS = [
 class JobNames:
     STYLE_CHECK = "Style Check"
     FAST_TEST = "Fast test"
-    BUILD_AMD_DEBUG = "Build amd64 debug"
+    BUILD = "Build"
+    STATELESS = "Stateless tests"
+    STATEFUL = "Stateful tests"

@@ -16,6 +16,12 @@ JSONColumnsBlockOutputFormatBase::JSONColumnsBlockOutputFormatBase(
     ostr = OutputFormatWithUTF8ValidationAdaptor::getWriteBufferPtr();
 }
 
+void JSONColumnsBlockOutputFormatBase::resetFormatterImpl()
+{
+    OutputFormatWithUTF8ValidationAdaptor::resetFormatterImpl();
+    ostr = OutputFormatWithUTF8ValidationAdaptor::getWriteBufferPtr();
+}
+
 void JSONColumnsBlockOutputFormatBase::consume(Chunk chunk)
 {
     if (!mono_chunk)

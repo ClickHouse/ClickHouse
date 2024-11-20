@@ -14,6 +14,7 @@
 #include "Coordination/KeeperFeatureFlags.h"
 #include <Coordination/Keeper4LWInfo.h>
 #include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <boost/algorithm/string.hpp>
 
@@ -257,7 +258,9 @@ String RuokCommand::run()
 namespace
 {
 
-void print(IFourLetterCommand::StringBuffer & buf, const String & key, const String & value)
+using StringBuffer = DB::WriteBufferFromOwnString;
+
+void print(StringBuffer & buf, const String & key, const String & value)
 {
     writeText("zk_", buf);
     writeText(key, buf);
@@ -266,7 +269,7 @@ void print(IFourLetterCommand::StringBuffer & buf, const String & key, const Str
     writeText('\n', buf);
 }
 
-void print(IFourLetterCommand::StringBuffer & buf, const String & key, uint64_t value)
+void print(StringBuffer & buf, const String & key, uint64_t value)
 {
     print(buf, key, toString(value));
 }
