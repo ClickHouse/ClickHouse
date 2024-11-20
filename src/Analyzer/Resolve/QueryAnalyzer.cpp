@@ -1323,17 +1323,26 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
       *
       * Example: SELECT arrayMap(x -> test_table.* EXCEPT value, [1,2,3]) FROM test_table;
       */
-    if (identifier_lookup.isTableExpressionLookup() && initial_scope_is_query)
+    if (initial_scope_is_query)
     {
-        new_resolve_context.allow_to_check_join_tree = false;
+        if (identifier_lookup.isTableExpressionLookup())
+        {
+            new_resolve_context.allow_to_check_join_tree = false;
 
-        /** From parent scopes we can resolve table identifiers only as CTE.
-            * Example: SELECT (SELECT 1 FROM a) FROM test_table AS a;
-            *
-            * During child scope table identifier resolve a, table node test_table with alias a from parent scope
-            * is invalid.
-            */
-        new_resolve_context.allow_to_check_aliases = false;
+            /** From parent scopes we can resolve table identifiers only as CTE.
+                * Example: SELECT (SELECT 1 FROM a) FROM test_table AS a;
+                *
+                * During child scope table identifier resolve a, table node test_table with alias a from parent scope
+                * is invalid.
+                */
+            new_resolve_context.allow_to_check_aliases = false;
+        }
+
+        if (!scope.context->getSettingsRef()[Setting::enable_global_with_statement])
+        {
+            new_resolve_context.allow_to_check_aliases = false;
+            new_resolve_context.allow_to_check_cte = false;
+        }
     }
 
     new_resolve_context.allow_to_check_database_catalog = false;
@@ -1347,9 +1356,6 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
         return {};
 
     LOG_DEBUG(&Poco::Logger::get("resolveInParentScope"), "Resolved indetifier '{}':\n{}", identifier_lookup.dump(), resolved_identifier->dumpTree());
-
-    if (!scope.context->getSettingsRef()[Setting::enable_global_with_statement] && (resolve_result.isResolvedFromAliases() || resolve_result.isResolvedFromCTEs()))
-        return {};
 
     /** From parent scopes we can resolve table identifiers only as CTE.
         * Example: SELECT (SELECT 1 FROM a) FROM test_table AS a;
