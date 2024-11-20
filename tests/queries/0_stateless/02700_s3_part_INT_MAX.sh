@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, long
+# Tags: no-parallel, long, no-fasttest
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -12,10 +12,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # too slow with this.
 #
 # Unfortunately, the test has to buffer it in memory.
-$CLICKHOUSE_CLIENT --max_memory_usage 16G -nm -q "
+$CLICKHOUSE_CLIENT --max_memory_usage 16G -m -q "
     INSERT INTO FUNCTION s3('http://localhost:11111/test/$CLICKHOUSE_DATABASE/test_INT_MAX.tsv', '', '', 'TSV')
     SELECT repeat('a', 1024) FROM numbers((pow(2, 30) * 2) / 1024)
-    SETTINGS s3_max_single_part_upload_size = '5Gi';
+    SETTINGS s3_max_single_part_upload_size = '5Gi', s3_retry_attempts=5;
 
-    SELECT count() FROM s3('http://localhost:11111/test/$CLICKHOUSE_DATABASE/test_INT_MAX.tsv');
+    SELECT count() FROM s3('http://localhost:11111/test/$CLICKHOUSE_DATABASE/test_INT_MAX.tsv')
+    SETTINGS s3_retry_attempts=5;
 "

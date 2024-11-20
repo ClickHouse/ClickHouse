@@ -231,8 +231,8 @@ static Int64 transformSigned(Int64 x, UInt64 seed)
 {
     if (x >= 0)
         return transform(x, seed);
-    else
-        return -transform(-x, seed);    /// It works Ok even for minimum signed number.
+
+    return -transform(-x, seed);    /// It works Ok even for minimum signed number.
 }
 
 
@@ -1105,8 +1105,8 @@ public:
         {
             if (isUInt(data_type))
                 return std::make_unique<UnsignedIntegerModel>(seed);
-            else
-                return std::make_unique<SignedIntegerModel>(seed);
+
+            return std::make_unique<SignedIntegerModel>(seed);
         }
 
         if (typeid_cast<const DataTypeFloat32 *>(&data_type))
@@ -1474,11 +1474,13 @@ try
         rewind_needed = true;
     }
 
+    file_out.finalize();
+
     return 0;
 }
 catch (...)
 {
     std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
     auto code = DB::getCurrentExceptionCode();
-    return code ? code : 1;
+    return static_cast<UInt8>(code) ? code : 1;
 }

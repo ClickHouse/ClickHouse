@@ -1,14 +1,15 @@
 import glob
 import os.path
-import pytest
 import random
 import re
 import sys
 import uuid
 from collections import namedtuple
-from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry, TSV
 
+import pytest
+
+from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import TSV, assert_eq_with_retry
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 
@@ -1236,7 +1237,10 @@ def test_system_users_required_privileges():
     instance.query("GRANT SELECT ON test.* TO u2 WITH GRANT OPTION")
     instance.query(f"RESTORE ALL FROM {backup_name}", user="u2")
 
-    assert instance.query("SHOW CREATE USER u1") == "CREATE USER u1 DEFAULT ROLE r1\n"
+    assert (
+        instance.query("SHOW CREATE USER u1")
+        == "CREATE USER u1 IDENTIFIED WITH no_password DEFAULT ROLE r1\n"
+    )
     assert instance.query("SHOW GRANTS FOR u1") == TSV(
         ["GRANT SELECT ON test.* TO u1", "GRANT r1 TO u1"]
     )
@@ -1498,6 +1502,7 @@ def test_backup_all(exclude_system_log_tables):
         # See the list of log tables in src/Interpreters/SystemLog.cpp
         log_tables = [
             "query_log",
+            "query_metric_log",
             "query_thread_log",
             "part_log",
             "trace_log",

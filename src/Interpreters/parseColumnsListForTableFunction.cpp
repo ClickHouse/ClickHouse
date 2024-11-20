@@ -14,6 +14,21 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_dynamic_type;
+    extern const SettingsBool allow_experimental_json_type;
+    extern const SettingsBool allow_experimental_object_type;
+    extern const SettingsBool allow_experimental_variant_type;
+    extern const SettingsBool allow_experimental_bfloat16_type;
+    extern const SettingsBool allow_suspicious_fixed_string_types;
+    extern const SettingsBool allow_suspicious_low_cardinality_types;
+    extern const SettingsBool allow_suspicious_variant_types;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
+    extern const SettingsBool validate_experimental_and_suspicious_types_inside_nested_types;
+}
 
 namespace ErrorCodes
 {
@@ -23,15 +38,16 @@ extern const int ILLEGAL_COLUMN;
 
 }
 
-DataTypeValidationSettings::DataTypeValidationSettings(const DB::Settings& settings)
-        : allow_suspicious_low_cardinality_types(settings.allow_suspicious_low_cardinality_types)
-        , allow_experimental_object_type(settings.allow_experimental_object_type)
-        , allow_suspicious_fixed_string_types(settings.allow_suspicious_fixed_string_types)
-        , allow_experimental_variant_type(settings.allow_experimental_variant_type)
-        , allow_suspicious_variant_types(settings.allow_suspicious_variant_types)
-        , validate_nested_types(settings.validate_experimental_and_suspicious_types_inside_nested_types)
-        , allow_experimental_dynamic_type(settings.allow_experimental_dynamic_type)
-        , allow_experimental_json_type(settings.allow_experimental_json_type)
+DataTypeValidationSettings::DataTypeValidationSettings(const DB::Settings & settings)
+    : allow_suspicious_low_cardinality_types(settings[Setting::allow_suspicious_low_cardinality_types])
+    , allow_experimental_object_type(settings[Setting::allow_experimental_object_type])
+    , allow_suspicious_fixed_string_types(settings[Setting::allow_suspicious_fixed_string_types])
+    , allow_experimental_variant_type(settings[Setting::allow_experimental_variant_type])
+    , allow_experimental_bfloat16_type(settings[Setting::allow_experimental_bfloat16_type])
+    , allow_suspicious_variant_types(settings[Setting::allow_suspicious_variant_types])
+    , validate_nested_types(settings[Setting::validate_experimental_and_suspicious_types_inside_nested_types])
+    , allow_experimental_dynamic_type(settings[Setting::allow_experimental_dynamic_type])
+    , allow_experimental_json_type(settings[Setting::allow_experimental_json_type])
 {
 }
 
@@ -48,7 +64,7 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
                     throw Exception(
                         ErrorCodes::SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY,
                         "Creating columns of type {} is prohibited by default due to expected negative impact on performance. "
-                        "It can be enabled with the \"allow_suspicious_low_cardinality_types\" setting.",
+                        "It can be enabled with the \"allow_suspicious_low_cardinality_types\" setting",
                         lc_type->getName());
             }
         }
@@ -87,6 +103,18 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
                     ErrorCodes::ILLEGAL_COLUMN,
                     "Cannot create column with type '{}' because experimental Variant type is not allowed. "
                     "Set setting allow_experimental_variant_type = 1 in order to allow it",
+                    data_type.getName());
+            }
+        }
+
+        if (!settings.allow_experimental_bfloat16_type)
+        {
+            if (WhichDataType(data_type).isBFloat16())
+            {
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Cannot create column with type '{}' because experimental BFloat16 type is not allowed. "
+                    "Set setting allow_experimental_bfloat16_type = 1 in order to allow it",
                     data_type.getName());
             }
         }
@@ -159,7 +187,13 @@ ColumnsDescription parseColumnsListFromString(const std::string & structure, con
     ParserColumnDeclarationList parser(true, true);
     const Settings & settings = context->getSettingsRef();
 
-    ASTPtr columns_list_raw = parseQuery(parser, structure, "columns declaration list", settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
+    ASTPtr columns_list_raw = parseQuery(
+        parser,
+        structure,
+        "columns declaration list",
+        settings[Setting::max_query_size],
+        settings[Setting::max_parser_depth],
+        settings[Setting::max_parser_backtracks]);
 
     auto * columns_list = dynamic_cast<ASTExpressionList *>(columns_list_raw.get());
     if (!columns_list)
@@ -180,7 +214,17 @@ bool tryParseColumnsListFromString(const std::string & structure, ColumnsDescrip
     const char * start = structure.data();
     const char * end = structure.data() + structure.size();
     ASTPtr columns_list_raw = tryParseQuery(
-        parser, start, end, error, false, "columns declaration list", false, settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks, true);
+        parser,
+        start,
+        end,
+        error,
+        false,
+        "columns declaration list",
+        false,
+        settings[Setting::max_query_size],
+        settings[Setting::max_parser_depth],
+        settings[Setting::max_parser_backtracks],
+        true);
     if (!columns_list_raw)
         return false;
 

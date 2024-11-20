@@ -19,6 +19,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_variant_type;
+    extern const SettingsBool use_variant_as_common_type;
+}
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -40,7 +46,7 @@ public:
     explicit FunctionMap(ContextPtr context_)
         : context(context_)
         , use_variant_as_common_type(
-              context->getSettingsRef().allow_experimental_variant_type && context->getSettingsRef().use_variant_as_common_type)
+              context->getSettingsRef()[Setting::allow_experimental_variant_type] && context->getSettingsRef()[Setting::use_variant_as_common_type])
         , function_array(FunctionFactory::instance().get("array", context))
         , function_map_from_arrays(FunctionFactory::instance().get("mapFromArrays", context))
     {
@@ -127,13 +133,13 @@ public:
         const DataTypePtr & value_array_type = std::make_shared<DataTypeArray>(value_type);
 
         /// key_array = array(args[0], args[2]...)
-        ColumnPtr key_array = function_array->build(key_args)->execute(key_args, key_array_type, input_rows_count);
+        ColumnPtr key_array = function_array->build(key_args)->execute(key_args, key_array_type, input_rows_count, /* dry_run = */ false);
         /// value_array = array(args[1], args[3]...)
-        ColumnPtr value_array = function_array->build(value_args)->execute(value_args, value_array_type, input_rows_count);
+        ColumnPtr value_array = function_array->build(value_args)->execute(value_args, value_array_type, input_rows_count, /* dry_run = */ false);
 
         /// result = mapFromArrays(key_array, value_array)
         ColumnsWithTypeAndName map_args{{key_array, key_array_type, ""}, {value_array, value_array_type, ""}};
-        return function_map_from_arrays->build(map_args)->execute(map_args, result_type, input_rows_count);
+        return function_map_from_arrays->build(map_args)->execute(map_args, result_type, input_rows_count, /* dry_run = */ false);
     }
 
 private:
@@ -155,7 +161,7 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNulls() const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 

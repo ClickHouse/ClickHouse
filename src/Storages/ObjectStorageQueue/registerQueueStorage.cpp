@@ -1,9 +1,11 @@
 #include "config.h"
 
-#include <Storages/StorageFactory.h>
+#include <Core/FormatFactorySettings.h>
+#include <Core/Settings.h>
+#include <Formats/FormatFactory.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
-#include <Formats/FormatFactory.h>
+#include <Storages/StorageFactory.h>
 
 #if USE_AWS_S3
 #include <IO/S3Common.h>
@@ -41,25 +43,10 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
     if (args.storage_def->settings)
     {
         queue_settings->loadFromQuery(*args.storage_def);
-        FormatFactorySettings user_format_settings;
 
-        // Apply changed settings from global context, but ignore the
-        // unknown ones, because we only have the format settings here.
-        const auto & changes = args.getContext()->getSettingsRef().changes();
-        for (const auto & change : changes)
-        {
-            if (user_format_settings.has(change.name))
-                user_format_settings.set(change.name, change.value);
-
-            args.storage_def->settings->changes.removeSetting(change.name);
-        }
-
-        for (const auto & change : args.storage_def->settings->changes)
-        {
-            if (user_format_settings.has(change.name))
-                user_format_settings.applyChange(change);
-        }
-        format_settings = getFormatSettings(args.getContext(), user_format_settings);
+        Settings settings = args.getContext()->getSettingsCopy();
+        settings.applyChanges(args.storage_def->settings->changes);
+        format_settings = getFormatSettings(args.getContext(), settings);
     }
     else
     {

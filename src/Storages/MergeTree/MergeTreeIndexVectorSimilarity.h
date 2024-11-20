@@ -11,11 +11,18 @@
 namespace DB
 {
 
+/// Defaults for HNSW parameters. Instead of using the default parameters provided by USearch (default_connectivity(),
+/// default_expansion_add(), default_expansion_search()), we experimentally came up with our own default parameters. They provide better
+/// trade-offs with regards to index construction time, search precision and queries-per-second (speed).
+static constexpr size_t default_connectivity = 32;
+static constexpr size_t default_expansion_add = 128;
+static constexpr size_t default_expansion_search = 256;
+
+/// Parameters for HNSW index construction.
 struct UsearchHnswParams
 {
-    size_t m = unum::usearch::default_connectivity();
-    size_t ef_construction = unum::usearch::default_expansion_add();
-    size_t ef_search = unum::usearch::default_expansion_search();
+    size_t connectivity = default_connectivity;
+    size_t expansion_add = default_expansion_add;
 };
 
 using USearchIndex = unum::usearch::index_dense_t;
@@ -62,14 +69,12 @@ struct MergeTreeIndexGranuleVectorSimilarity final : public IMergeTreeIndexGranu
 {
     MergeTreeIndexGranuleVectorSimilarity(
         const String & index_name_,
-        const Block & index_sample_block_,
         unum::usearch::metric_kind_t metric_kind_,
         unum::usearch::scalar_kind_t scalar_kind_,
         UsearchHnswParams usearch_hnsw_params_);
 
     MergeTreeIndexGranuleVectorSimilarity(
         const String & index_name_,
-        const Block & index_sample_block_,
         unum::usearch::metric_kind_t metric_kind_,
         unum::usearch::scalar_kind_t scalar_kind_,
         UsearchHnswParams usearch_hnsw_params_,
@@ -83,7 +88,6 @@ struct MergeTreeIndexGranuleVectorSimilarity final : public IMergeTreeIndexGranu
     bool empty() const override { return !index || index->size() == 0; }
 
     const String index_name;
-    const Block index_sample_block;
     const unum::usearch::metric_kind_t metric_kind;
     const unum::usearch::scalar_kind_t scalar_kind;
     const UsearchHnswParams usearch_hnsw_params;
@@ -137,11 +141,12 @@ public:
 
     bool alwaysUnknownOrTrue() const override;
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule) const override;
-    std::vector<size_t> getUsefulRanges(MergeTreeIndexGranulePtr granule) const override;
+    std::vector<UInt64> calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr granule) const override;
 
 private:
     const VectorSimilarityCondition vector_similarity_condition;
     const unum::usearch::metric_kind_t metric_kind;
+    const size_t expansion_search;
 };
 
 

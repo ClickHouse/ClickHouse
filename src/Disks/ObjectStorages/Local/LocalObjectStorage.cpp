@@ -40,47 +40,12 @@ bool LocalObjectStorage::exists(const StoredObject & object) const
     return fs::exists(object.remote_path);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObjects( /// NOLINT
-    const StoredObjects & objects,
-    const ReadSettings & read_settings,
-    std::optional<size_t>,
-    std::optional<size_t>) const
-{
-    auto modified_settings = patchSettings(read_settings);
-    auto global_context = Context::getGlobalContextInstance();
-    auto read_buffer_creator = [=](bool /* restricted_seek */, const StoredObject & object) -> std::unique_ptr<ReadBufferFromFileBase>
-    { return std::make_unique<ReadBufferFromFile>(object.remote_path); };
-
-    return std::make_unique<ReadBufferFromRemoteFSGather>(
-        std::move(read_buffer_creator),
-        objects,
-        "file:",
-        modified_settings,
-        global_context->getFilesystemCacheLog(),
-        /* use_external_buffer */ false);
-}
-
 ReadSettings LocalObjectStorage::patchSettings(const ReadSettings & read_settings) const
 {
-    if (!read_settings.enable_filesystem_cache)
-        return IObjectStorage::patchSettings(read_settings);
-
     auto modified_settings{read_settings};
-    /// For now we cannot allow asynchronous reader from local filesystem when CachedObjectStorage is used.
-    switch (modified_settings.local_fs_method)
-    {
-        case LocalFSReadMethod::pread_threadpool:
-        case LocalFSReadMethod::pread_fake_async:
-        {
-            modified_settings.local_fs_method = LocalFSReadMethod::pread;
-            LOG_INFO(log, "Changing local filesystem read method to `pread`");
-            break;
-        }
-        default:
-        {
-            break;
-        }
-    }
+    /// Other options might break assertions in AsynchronousBoundedReadBuffer.
+    modified_settings.local_fs_method = LocalFSReadMethod::pread;
+    modified_settings.direct_io_threshold = 0; /// Disable.
     return IObjectStorage::patchSettings(modified_settings);
 }
 
@@ -116,7 +81,7 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
     return std::make_unique<WriteBufferFromFile>(object.remote_path, buf_size);
 }
 
-void LocalObjectStorage::removeObject(const StoredObject & object)
+void LocalObjectStorage::removeObject(const StoredObject & object) const
 {
     /// For local object storage files are actually removed when "metadata" is removed.
     if (!exists(object))
@@ -126,7 +91,7 @@ void LocalObjectStorage::removeObject(const StoredObject & object)
         ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, object.remote_path, "Cannot unlink file {}", object.remote_path);
 }
 
-void LocalObjectStorage::removeObjects(const StoredObjects & objects)
+void LocalObjectStorage::removeObjects(const StoredObjects & objects) const
 {
     for (const auto & object : objects)
         removeObject(object);

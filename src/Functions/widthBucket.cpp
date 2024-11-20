@@ -99,7 +99,7 @@ class FunctionWidthBucket : public IFunction
         {
             return 0;
         }
-        else if (operand >= high)
+        if (operand >= high)
         {
             return count + 1;
         }

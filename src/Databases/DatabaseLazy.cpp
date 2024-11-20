@@ -47,6 +47,7 @@ DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, 
     : DatabaseOnDisk(name_, metadata_path_, std::filesystem::path("data") / escapeForFileName(name_) / "", "DatabaseLazy (" + name_ + ")", context_)
     , expiration_time(expiration_time_)
 {
+    createDirectories();
 }
 
 
@@ -398,6 +399,6 @@ void registerDatabaseLazy(DatabaseFactory & factory)
             cache_expiration_time_seconds,
             args.context);
     };
-    factory.registerDatabase("Lazy", create_fn);
+    factory.registerDatabase("Lazy", create_fn, {.supports_arguments = true});
 }
 }

@@ -92,6 +92,7 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
     writePODBinary(extras.increment, out);
 
     out.next();
+    out.finalize();
 
     inside_send = false;
 }

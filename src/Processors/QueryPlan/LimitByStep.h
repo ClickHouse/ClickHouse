@@ -9,7 +9,7 @@ class LimitByStep : public ITransformingStep
 {
 public:
     explicit LimitByStep(
-            const DataStream & input_stream_,
+            const Header & input_header_,
             size_t group_length_, size_t group_offset_, const Names & columns_);
 
     String getName() const override { return "LimitBy"; }
@@ -20,9 +20,9 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
 private:
-    void updateOutputStream() override
+    void updateOutputHeader() override
     {
-        output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
+        output_header = input_headers.front();
     }
 
     size_t group_length;

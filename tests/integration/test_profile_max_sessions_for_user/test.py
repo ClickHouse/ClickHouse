@@ -1,11 +1,11 @@
 import os
-
-import grpc
-import pymysql.connections
-import psycopg2 as py_psql
-import pytest
 import sys
 import threading
+
+import grpc
+import psycopg2 as py_psql
+import pymysql.connections
+import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_logs_contain_with_retry
@@ -15,8 +15,8 @@ script_dir = os.path.dirname(os.path.realpath(__file__))
 grpc_protocol_pb2_dir = os.path.join(script_dir, "grpc_protocol_pb2")
 if grpc_protocol_pb2_dir not in sys.path:
     sys.path.append(grpc_protocol_pb2_dir)
-import clickhouse_grpc_pb2, clickhouse_grpc_pb2_grpc  # Execute grpc_protocol_pb2/generate.py to generate these modules.
-
+import clickhouse_grpc_pb2  # Execute grpc_protocol_pb2/generate.py to generate these modules.
+import clickhouse_grpc_pb2_grpc
 
 MAX_SESSIONS_FOR_USER = 2
 POSTGRES_SERVER_PORT = 5433

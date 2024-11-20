@@ -1,5 +1,3 @@
-version: '2.3'
-
 services:
   azurite1:
     image: mcr.microsoft.com/azure-storage/azurite

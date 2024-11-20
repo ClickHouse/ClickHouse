@@ -10,7 +10,6 @@
 #include <Core/CompareHelper.h>
 #include <Core/Defines.h>
 #include <Core/Types.h>
-#include <Core/UUID.h>
 #include <base/DayNum.h>
 #include <base/IPv4andIPv6.h>
 #include <Common/AllocatorWithMemoryTracking.h>
@@ -258,6 +257,7 @@ template <> struct NearestFieldTypeImpl<DecimalField<Decimal64>> { using Type = 
 template <> struct NearestFieldTypeImpl<DecimalField<Decimal128>> { using Type = DecimalField<Decimal128>; };
 template <> struct NearestFieldTypeImpl<DecimalField<Decimal256>> { using Type = DecimalField<Decimal256>; };
 template <> struct NearestFieldTypeImpl<DecimalField<DateTime64>> { using Type = DecimalField<DateTime64>; };
+template <> struct NearestFieldTypeImpl<BFloat16> { using Type = Float64; };
 template <> struct NearestFieldTypeImpl<Float32> { using Type = Float64; };
 template <> struct NearestFieldTypeImpl<Float64> { using Type = Float64; };
 template <> struct NearestFieldTypeImpl<const char *> { using Type = String; };
@@ -863,6 +863,9 @@ template <> struct Field::EnumToType<Field::Types::AggregateFunctionState> { usi
 template <> struct Field::EnumToType<Field::Types::CustomType> { using Type = CustomType; };
 template <> struct Field::EnumToType<Field::Types::Bool> { using Type = UInt64; };
 
+/// Use it to prevent inclusion of magic_enum in headers, which is very expensive for the compiler
+std::string_view fieldTypeToString(Field::Types::Which type);
+
 constexpr bool isInt64OrUInt64FieldType(Field::Types::Which t)
 {
     return t == Field::Types::Int64
@@ -886,7 +889,7 @@ auto & Field::safeGet()
     if (target != which &&
         !(which == Field::Types::Bool && (target == Field::Types::UInt64 || target == Field::Types::Int64)) &&
         !(isInt64OrUInt64FieldType(which) && isInt64OrUInt64FieldType(target)))
-            throw Exception(ErrorCodes::BAD_GET, "Bad get: has {}, requested {}", getTypeName(), target);
+        throw Exception(ErrorCodes::BAD_GET, "Bad get: has {}, requested {}", getTypeName(), fieldTypeToString(target));
 
     return get<T>();
 }
@@ -943,14 +946,15 @@ inline Field & Field::operator=(String && str)
 class ReadBuffer;
 class WriteBuffer;
 
-/// It is assumed that all elements of the array have the same type.
-void readBinary(Array & x, ReadBuffer & buf);
+/// Binary serialization of generic field.
+void writeFieldBinary(const Field & x, WriteBuffer & buf);
+Field readFieldBinary(ReadBuffer & buf);
+
+void readBinaryArray(Array & x, ReadBuffer & buf);
 [[noreturn]] inline void readText(Array &, ReadBuffer &) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot read Array."); }
 [[noreturn]] inline void readQuoted(Array &, ReadBuffer &) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot read Array."); }
 
-/// It is assumed that all elements of the array have the same type.
-/// Also write size and type into buf. UInt64 and Int64 is written in variadic size form
-void writeBinary(const Array & x, WriteBuffer & buf);
+void writeBinaryArray(const Array & x, WriteBuffer & buf);
 void writeText(const Array & x, WriteBuffer & buf);
 [[noreturn]] inline void writeQuoted(const Array &, WriteBuffer &) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot write Array quoted."); }
 
@@ -1001,8 +1005,6 @@ void readQuoted(DecimalField<T> & x, ReadBuffer & buf);
 void writeFieldText(const Field & x, WriteBuffer & buf);
 
 String toString(const Field & x);
-
-std::string_view fieldTypeToString(Field::Types::Which type);
 }
 
 template <>

@@ -1,12 +1,13 @@
-import os
 import math
+import os
+
 import pytest
 
-from .common import *
-
 from helpers.cluster import ClickHouseCluster
-from helpers.dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
+from helpers.dictionary import Dictionary, DictionaryStructure, Field, Layout, Row
 from helpers.external_sources import SourceHTTPS
+
+from .common import *
 
 SOURCE = SourceHTTPS(
     "SourceHTTPS", "localhost", "9000", "clickhouse_hs", "9000", "", ""

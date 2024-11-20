@@ -1,5 +1,6 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-shared-merge-tree
 -- Tag no-fasttest -- due to EmbeddedRocksDB
+-- Tag no-shared-merge-tree -- due to system.replication_queue
 
 drop table if exists null;
 drop table if exists dist;

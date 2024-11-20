@@ -32,6 +32,16 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool any_join_distinct_right_table_keys;
+    extern const SettingsBool join_any_take_last_row;
+    extern const SettingsOverflowMode join_overflow_mode;
+    extern const SettingsBool join_use_nulls;
+    extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsUInt64 max_rows_in_join;
+    extern const SettingsUInt64 max_bytes_in_join;
+}
 
 namespace ErrorCodes
 {
@@ -82,7 +92,7 @@ RWLockImpl::LockHolder StorageJoin::tryLockTimedWithContext(const RWLock & lock,
 {
     const String query_id = context ? context->getInitialQueryId() : RWLockImpl::NO_QUERY;
     const std::chrono::milliseconds acquire_timeout
-        = context ? context->getSettingsRef().lock_acquire_timeout : std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC);
+        = context ? context->getSettingsRef()[Setting::lock_acquire_timeout] : std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC);
     return tryLockTimed(lock, type, query_id, acquire_timeout);
 }
 
@@ -90,7 +100,7 @@ RWLockImpl::LockHolder StorageJoin::tryLockForCurrentQueryTimedWithContext(const
 {
     const String query_id = context ? context->getInitialQueryId() : RWLockImpl::NO_QUERY;
     const std::chrono::milliseconds acquire_timeout
-        = context ? context->getSettingsRef().lock_acquire_timeout : std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC);
+        = context ? context->getSettingsRef()[Setting::lock_acquire_timeout] : std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC);
     return lock->getLock(type, query_id, acquire_timeout, false);
 }
 
@@ -146,7 +156,7 @@ void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPt
     std::lock_guard mutate_lock(mutate_mutex);
     TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
 
-    if (disk->exists(path))
+    if (disk->existsDirectory(path))
         disk->removeRecursive(path);
     else
         LOG_INFO(getLogger("StorageJoin"), "Path {} is already removed from disk {}", path, disk->getName());
@@ -207,8 +217,7 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     if (persistent)
     {
         backup_stream.flush();
-        compressed_backup_buf.next();
-        backup_buf->next();
+        compressed_backup_buf.finalize();
         backup_buf->finalize();
 
         std::vector<std::string> files;
@@ -220,6 +229,11 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
         }
 
         disk->replaceFile(path + tmp_backup_file_name, path + std::to_string(increment) + ".bin");
+    }
+    else
+    {
+        compressed_backup_buf.cancel();
+        backup_buf->cancel();
     }
 }
 
@@ -316,13 +330,13 @@ size_t StorageJoin::getSize(ContextPtr context) const
 
 std::optional<UInt64> StorageJoin::totalRows(const Settings &settings) const
 {
-    TableLockHolder holder = tryLockTimed(rwlock, RWLockImpl::Read, RWLockImpl::NO_QUERY, settings.lock_acquire_timeout);
+    TableLockHolder holder = tryLockTimed(rwlock, RWLockImpl::Read, RWLockImpl::NO_QUERY, settings[Setting::lock_acquire_timeout]);
     return join->getTotalRowCount();
 }
 
 std::optional<UInt64> StorageJoin::totalBytes(const Settings &settings) const
 {
-    TableLockHolder holder = tryLockTimed(rwlock, RWLockImpl::Read, RWLockImpl::NO_QUERY, settings.lock_acquire_timeout);
+    TableLockHolder holder = tryLockTimed(rwlock, RWLockImpl::Read, RWLockImpl::NO_QUERY, settings[Setting::lock_acquire_timeout]);
     return join->getTotalByteCount();
 }
 
@@ -357,12 +371,12 @@ void registerStorageJoin(StorageFactory & factory)
 
         const auto & settings = args.getContext()->getSettingsRef();
 
-        auto join_use_nulls = settings.join_use_nulls;
-        auto max_rows_in_join = settings.max_rows_in_join;
-        auto max_bytes_in_join = settings.max_bytes_in_join;
-        auto join_overflow_mode = settings.join_overflow_mode;
-        auto join_any_take_last_row = settings.join_any_take_last_row;
-        auto old_any_join = settings.any_join_distinct_right_table_keys;
+        auto join_use_nulls = settings[Setting::join_use_nulls];
+        auto max_rows_in_join = settings[Setting::max_rows_in_join];
+        auto max_bytes_in_join = settings[Setting::max_bytes_in_join];
+        auto join_overflow_mode = settings[Setting::join_overflow_mode];
+        auto join_any_take_last_row = settings[Setting::join_any_take_last_row];
+        auto old_any_join = settings[Setting::any_join_distinct_right_table_keys];
         bool persistent = true;
         String disk_name = "default";
 
