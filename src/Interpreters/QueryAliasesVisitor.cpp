@@ -115,16 +115,32 @@ void QueryAliasesMatcher<T>::visit(const ASTSubquery & const_subquery, const AST
 }
 
 template <typename T>
+bool QueryAliasesMatcher<T>::checkIfNamesAreSame(Data & data, const ASTPtr & ast)
+{
+    String name = ast->getColumnName();
+    for (const auto & obj : data)
+    {
+        if (obj.second->getColumnName() == name)
+            return true;
+    }
+    return false;
+}
+
+template <typename T>
 void QueryAliasesMatcher<T>::visitOther(const ASTPtr & ast, Data & data)
 {
     auto & aliases = data;
     String alias = ast->tryGetAlias();
+
     if (!alias.empty())
     {
         if (aliases.contains(alias) && ast->getTreeHash(/*ignore_aliases=*/ true) != aliases[alias]->getTreeHash(/*ignore_aliases=*/ true))
-            throw Exception(wrongAliasMessage(ast, aliases[alias], alias), ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
+        {
+            if (checkIfNamesAreSame(aliases, ast))
+                throw Exception(wrongAliasMessage(ast, aliases[alias], alias), ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
+        }
 
-        aliases[alias] = ast;
+        aliases[ast->getColumnNameWithoutAlias()] = ast;
     }
 
     /** QueryAliasesVisitor is executed before ExecuteScalarSubqueriesVisitor.

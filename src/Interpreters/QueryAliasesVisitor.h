@@ -38,6 +38,7 @@ private:
     static void visit(const ASTSubquery & subquery, const ASTPtr & ast, Data & data);
     static void visit(const ASTArrayJoin &, const ASTPtr & ast, Data & data);
     static void visitOther(const ASTPtr & ast, Data & data);
+    static bool checkIfNamesAreSame(Data & data, const ASTPtr & ast);
 };
 
 /// Visits AST nodes and collect their aliases in one map (with links to source nodes).
