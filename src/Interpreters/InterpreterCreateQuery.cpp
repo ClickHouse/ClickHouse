@@ -1599,7 +1599,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     // substitute possible UDFs with their definitions
     if (!UserDefinedSQLFunctionFactory::instance().empty())
-        UserDefinedSQLFunctionVisitor::visit(query_ptr);
+        UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
 
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
