@@ -137,7 +137,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"allow_reorder_prewhere_conditions", true, true, "New setting"},
             {"input_format_parquet_bloom_filter_push_down", false, true, "When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and bloom filter in the Parquet metadata."},
             {"date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands", false, false, "Dynamically trim the trailing zeros of datetime64 values to adjust the output scale to (0, 3, 6), corresponding to 'seconds', 'milliseconds', and 'microseconds'."},
-            {"composed_data_type_output_format_mode", "default", "default", "New setting"}
+            {"composed_data_type_output_format_mode", "default", "default", "New setting"},
             {"spark_text_output_format", false, false, "New setting"},
         }
     },
