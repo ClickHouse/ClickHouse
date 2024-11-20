@@ -1921,7 +1921,7 @@ See also:
 For single JOIN in case of identifier ambiguity prefer left table
 )", IMPORTANT) \
     \
-DECLARE(BoolAuto, query_plan_join_swap_table, {}, R"(
+DECLARE(BoolAuto, query_plan_join_swap_table, Field("auto"), R"(
     Determine which side of the join should be the build table (also called inner, the one inserted into the hash table for a hash join) in the query plan. This setting is supported only for `ALL` join strictness with the `JOIN ON` clause. Possible values are:
     - 'auto': Let the planner decide which table to use as the build table.
     - 'false': Never swap tables (the right table is the build table).
