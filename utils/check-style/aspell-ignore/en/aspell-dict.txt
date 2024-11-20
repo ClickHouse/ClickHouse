@@ -3160,7 +3160,7 @@ zstd
 divideOrNull
 moduloOrNull
 tupleDivideOrNull
-tupleDivideOrNullByNumber
+tupleDivideByNumberOrNull
 tupleModuloByNumberOrNull
 tupleModuloOrNull
 BFloat

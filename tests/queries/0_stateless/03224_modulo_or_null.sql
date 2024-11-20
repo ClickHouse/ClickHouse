@@ -35,5 +35,5 @@ SELECT moduloOrNull(materialize(16.2), materialize(0.0));
 
 SELECT tupleModuloOrNull((15, 10, 5), (0, 3, 2));
 SELECT tupleModuloOrNull((15, 10, 5), (5, 3, 2));
-SELECT tupleModuloOrNullByNumber((15, 10, 5), 0);
-SELECT tupleModuloOrNullByNumber((15, 10, 5), 2);
+SELECT tupleModuloByNumberOrNull((15, 10, 5), 0);
+SELECT tupleModuloByNumberOrNull((15, 10, 5), 2);

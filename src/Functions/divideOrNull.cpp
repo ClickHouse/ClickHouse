@@ -48,7 +48,7 @@ struct DivideOrNullImpl
                             c[i] = ResultType();
                         }
                         else
-                            c[i] = -a[i];
+                            c[i] = static_cast<ResultType>(-a[i]);
                     }
                     return;
                 }
@@ -86,7 +86,7 @@ struct DivideOrNullImpl
                         *m = 1;
                         return res;
                     }
-                    return -a;
+                    return static_cast<ResultType>(-a);
                 }
             }
             return static_cast<ResultType>(a) / b;

@@ -596,14 +596,14 @@ Result:
 └──────────────────────────────────┘
 ```
 
-## tupleDivideOrNullByNumber
+## tupleDivideByNumberOrNull
 
 Like [tupleDivideByNumber](#tupleDivideByNumber), but division by zero will return `NULL`.
 
 **Syntax**
 
 ```sql
-tupleDivideOrNullByNumber(tuple, number)
+tupleDivideByNumberOrNull(tuple, number)
 ```
 
 **Arguments**
@@ -620,13 +620,13 @@ tupleDivideOrNullByNumber(tuple, number)
 Query:
 
 ```sql
-SELECT tupleDivideOrNullByNumber((1, 2), 0.0);
+SELECT tupleDivideByNumberOrNull((1, 2), 0.0);
 ```
 
 Result:
 
 ```text
-┌─tupleDivideOrNullByNumber((1, 2), 0.)─┐
+┌─tupleDivideByNumberOrNull((1, 2), 0.)─┐
 │ (NULL,NULL)                           │
 └───────────────────────────────────────┘
 ```
@@ -970,7 +970,7 @@ Like [tupleModuloByNumber](#tuplemodulobynumber) it returns a tuple of the modul
 **Syntax**
 
 ```sql
-tupleModuloOrNullByNumber(tuple_num, div)
+tupleModuloByNumberOrNull(tuple_num, div)
 ```
 
 **Parameters**
@@ -988,13 +988,13 @@ tupleModuloOrNullByNumber(tuple_num, div)
 Query:
 
 ``` sql
-SELECT tupleModuloOrNullByNumber((15, 10, 5), 0);
+SELECT tupleModuloByNumberOrNull((15, 10, 5), 0);
 ```
 
 Result:
 
 ``` text
-┌─tupleModuloOrNullByNumber((15, 10, 5), 0)─┐
+┌─tupleModuloByNumberOrNull((15, 10, 5), 0)─┐
 │ (NULL,NULL,NULL)                          │
 └───────────────────────────────────────────┘
 ```

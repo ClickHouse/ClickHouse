@@ -34,5 +34,5 @@ SELECT divideOrNull(materialize(toDecimal32(16.2, 2)), materialize(0.0));
 
 SELECT tupleDivideOrNull((15, 10, 5), (0, 0, 0));
 SELECT tupleDivideOrNull((15, 10, 5), (5, 0, 0));
-SELECT tupleDivideOrNullByNumber((15, 10, 5), 5);
-SELECT tupleDivideOrNullByNumber((15, 10, 5), 0);
+SELECT tupleDivideByNumberOrNull((15, 10, 5), 5);
+SELECT tupleDivideByNumberOrNull((15, 10, 5), 0);

@@ -218,7 +218,7 @@ checkAndGetNestedArrayOffset(const IColumn ** columns, size_t num_arguments)
     return {nested_columns, offsets->data()};
 }
 
-ColumnPtr 
+ColumnPtr
 wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, const NullMap * res_null_map)
 {
     ColumnPtr result_null_map_column;

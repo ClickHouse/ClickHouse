@@ -73,6 +73,16 @@ constexpr std::string makeFirstLetterUppercase(const std::string & str)
     return res;
 }
 
+constexpr bool endWith(const std::string & str, const std::string & needle)
+{
+    return str.size() >= needle.size() && str.compare(str.size() - needle.size(), needle.size(), needle) == 0;
+}
+
+constexpr std::string dropNeedle(const std::string & str, const std::string & needle)
+{
+    return endWith(str, needle) ? str.substr(0, str.size() - needle.size()) : str;
+}
+
 template <class FuncName>
 class FunctionTupleOperator : public ITupleFunction
 {
@@ -240,7 +250,7 @@ class FunctionTupleOperatorByNumber : public ITupleFunction
 {
 public:
     /// constexpr cannot be used due to std::string has not constexpr constructor in this compiler version
-    static inline auto name = "tuple" + makeFirstLetterUppercase(FuncName::name) + "ByNumber";
+    static inline auto name = "tuple" + makeFirstLetterUppercase(dropNeedle(FuncName::name, "OrNull")) + "ByNumber" + (endWith(FuncName::name, "OrNull") ? "OrNull" : "");
 
     explicit FunctionTupleOperatorByNumber(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTupleOperatorByNumber>(context_); }
