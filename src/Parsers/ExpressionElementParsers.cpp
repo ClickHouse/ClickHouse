@@ -140,6 +140,9 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         const ASTPtr & explained_ast = explain_query.getExplainedQuery();
         if (explained_ast)
         {
+            if (!explained_ast->as<ASTSelectWithUnionQuery>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN inside subquery supports only SELECT queries");
+
             auto view_explain = makeASTFunction("viewExplain",
                 std::make_shared<ASTLiteral>(kind_str),
                 std::make_shared<ASTLiteral>(settings_str),
