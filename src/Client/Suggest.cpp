@@ -3,7 +3,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <Columns/ColumnString.h>
-#include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <Common/Macros.h>
 #include "Core/Protocol.h"
@@ -123,7 +122,7 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
                     /// suggestions using the main connection later.
                     WriteBufferFromFileDescriptor out(STDERR_FILENO, 4096);
                     out << "Cannot load data for command line suggestions: " << getCurrentExceptionMessage(false, true) << "\n";
-                    out.finalize();
+                    out.next();
                 }
             }
             catch (...)
@@ -131,7 +130,7 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
                 last_error = getCurrentExceptionCode();
                 WriteBufferFromFileDescriptor out(STDERR_FILENO, 4096);
                 out << "Cannot load data for command line suggestions: " << getCurrentExceptionMessage(false, true) << "\n";
-                out.finalize();
+                out.next();
             }
 
             break;

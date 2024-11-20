@@ -1848,16 +1848,17 @@ private:
 
         try
         {
-            writer->flush();
             writer->finalize();
-            write_buf->finalize();
+            writer->flush();
         }
         catch (...)
         {
             /// Stop ParallelFormattingOutputFormat correctly.
-            cancelBuffers();
+            releaseBuffers();
             throw;
         }
+
+        write_buf->finalize();
     }
 
     void releaseBuffers()

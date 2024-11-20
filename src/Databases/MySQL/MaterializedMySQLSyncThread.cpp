@@ -73,7 +73,6 @@ namespace ErrorCodes
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int THERE_IS_NO_QUERY;
     extern const int QUERY_WAS_CANCELLED;
-    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
     extern const int TABLE_ALREADY_EXISTS;
     extern const int DATABASE_ALREADY_EXISTS;
     extern const int DATABASE_NOT_EMPTY;
@@ -1048,7 +1047,6 @@ void MaterializedMySQLSyncThread::executeDDLAtomic(const QueryEvent & query_even
             exception.code() != ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY &&
             exception.code() != ErrorCodes::THERE_IS_NO_QUERY &&
             exception.code() != ErrorCodes::QUERY_WAS_CANCELLED &&
-            exception.code() != ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT &&
             exception.code() != ErrorCodes::TABLE_ALREADY_EXISTS &&
             exception.code() != ErrorCodes::UNKNOWN_DATABASE &&
             exception.code() != ErrorCodes::DATABASE_ALREADY_EXISTS &&

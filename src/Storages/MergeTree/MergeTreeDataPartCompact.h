@@ -54,17 +54,12 @@ public:
 
     std::optional<String> getFileNameForColumn(const NameAndTypePair & /* column */) const override { return DATA_FILE_NAME; }
 
-    void loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const override;
-
     ~MergeTreeDataPartCompact() override;
 
 protected:
      static void loadIndexGranularityImpl(
-         MergeTreeIndexGranularityPtr & index_granularity_,
-         const MergeTreeIndexGranularityInfo & index_granularity_info_,
-         size_t columns_count,
-         const IDataPartStorage & data_part_storage_,
-         const MergeTreeSettings & storage_settings);
+         MergeTreeIndexGranularity & index_granularity_, const MergeTreeIndexGranularityInfo & index_granularity_info_,
+         size_t columns_count, const IDataPartStorage & data_part_storage_);
 
      void doCheckConsistency(bool require_part_metadata) const override;
 
@@ -73,7 +68,7 @@ private:
      void loadIndexGranularity() override;
 
      /// Compact parts don't support per column size, only total size
-     void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size, std::optional<Block> columns_sample) const override;
+     void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
 };
 
 }

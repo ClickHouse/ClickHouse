@@ -29,7 +29,7 @@ class ClientInfo;
 /// Packet that could be received from server.
 struct Packet
 {
-    UInt64 type = Protocol::Server::MAX; // default value has to be invalid
+    UInt64 type;
 
     Block block;
     std::unique_ptr<Exception> exception;
@@ -43,6 +43,8 @@ struct Packet
     std::optional<ParallelReadRequest> request;
 
     std::string server_timezone;
+
+    Packet() : type(Protocol::Server::Hello) {}
 };
 
 
@@ -106,10 +108,6 @@ public:
 
     /// Send block of data; if name is specified, server will write it to external (temporary) table of that name.
     virtual void sendData(const Block & block, const String & name, bool scalar) = 0;
-
-    /// Whether the client needs to read and send the data for the INSERT.
-    /// False if the server will read the data through other means (in particular if clickhouse-local added input reading step directly into the query pipeline).
-    virtual bool isSendDataNeeded() const { return true; }
 
     /// Send all contents of external (temporary) tables.
     virtual void sendExternalTablesData(ExternalTablesData & data) = 0;

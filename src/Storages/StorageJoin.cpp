@@ -217,7 +217,8 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     if (persistent)
     {
         backup_stream.flush();
-        compressed_backup_buf.finalize();
+        compressed_backup_buf.next();
+        backup_buf->next();
         backup_buf->finalize();
 
         std::vector<std::string> files;

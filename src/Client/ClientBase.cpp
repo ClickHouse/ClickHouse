@@ -293,14 +293,17 @@ ClientBase::ClientBase(
     , std_out(out_fd_)
     , progress_indication(output_stream_, in_fd_, err_fd_)
     , progress_table(output_stream_, in_fd_, err_fd_)
+    , in_fd(in_fd_)
+    , out_fd(out_fd_)
+    , err_fd(err_fd_)
     , input_stream(input_stream_)
     , output_stream(output_stream_)
     , error_stream(error_stream_)
 {
-    stdin_is_a_tty = isatty(in_fd_);
-    stdout_is_a_tty = isatty(out_fd_);
-    stderr_is_a_tty = isatty(err_fd_);
-    terminal_width = getTerminalWidth(in_fd_, err_fd_);
+    stdin_is_a_tty = isatty(in_fd);
+    stdout_is_a_tty = isatty(out_fd);
+    stderr_is_a_tty = isatty(err_fd);
+    terminal_width = getTerminalWidth(in_fd, err_fd);
 }
 
 ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements)
@@ -454,17 +457,8 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
         output_format->write(materializeBlock(block));
         written_first_block = true;
     }
-    catch (const NetException &)
-    {
-        throw;
-    }
-    catch (const ErrnoException &)
-    {
-        throw;
-    }
     catch (const Exception &)
     {
-        //this is a bad catch. It catches too much cases unrelated to LocalFormatError
         /// Catch client errors like NO_ROW_DELIMITER
         throw LocalFormatError(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
     }
@@ -691,7 +685,7 @@ void ClientBase::initLogsOutputStream()
             if (server_logs_file.empty())
             {
                 /// Use stderr by default
-                out_logs_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(STDERR_FILENO);
+                out_logs_buf = std::make_unique<WriteBufferFromFileDescriptor>(STDERR_FILENO);
                 wb = out_logs_buf.get();
                 color_logs = stderr_is_a_tty;
             }
@@ -704,7 +698,7 @@ void ClientBase::initLogsOutputStream()
             else
             {
                 out_logs_buf
-                    = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFile>>(server_logs_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
+                    = std::make_unique<WriteBufferFromFile>(server_logs_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
                 wb = out_logs_buf.get();
             }
         }
@@ -868,7 +862,7 @@ void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption pr
         {
             try
             {
-                tty_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFile>>(tty_file_name, buf_size);
+                tty_buf = std::make_unique<WriteBufferFromFile>(tty_file_name, buf_size);
 
                 /// It is possible that the terminal file has writeable permissions
                 /// but we cannot write anything there. Check it with invisible character.
@@ -879,7 +873,8 @@ void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption pr
             }
             catch (const Exception & e)
             {
-                tty_buf.reset();
+                if (tty_buf)
+                    tty_buf.reset();
 
                 if (e.code() != ErrorCodes::CANNOT_OPEN_FILE)
                     throw;
@@ -892,7 +887,7 @@ void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption pr
 
     if (stderr_is_a_tty || progress == ProgressOption::ERR)
     {
-        tty_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(STDERR_FILENO, buf_size);
+        tty_buf = std::make_unique<WriteBufferFromFileDescriptor>(STDERR_FILENO, buf_size);
     }
     else
     {
@@ -905,7 +900,7 @@ void ClientBase::initKeystrokeInterceptor()
 {
     if (is_interactive && need_render_progress_table && progress_table_toggle_enabled)
     {
-        keystroke_interceptor = std::make_unique<TerminalKeystrokeInterceptor>(std_in.getFD(), error_stream);
+        keystroke_interceptor = std::make_unique<TerminalKeystrokeInterceptor>(in_fd, error_stream);
         keystroke_interceptor->registerCallback(' ', [this]() { progress_table_toggle_on = !progress_table_toggle_on; });
     }
 }
@@ -1491,10 +1486,10 @@ void ClientBase::resetOutput()
     logs_out_stream.reset();
 
     if (out_file_buf)
+    {
         out_file_buf->finalize();
-    out_file_buf.reset();
-
-    out_logs_buf.reset();
+        out_file_buf.reset();
+    }
 
     if (pager_cmd)
     {
@@ -1511,6 +1506,12 @@ void ClientBase::resetOutput()
         setupSignalHandler();
     }
     pager_cmd = nullptr;
+
+    if (out_logs_buf)
+    {
+        out_logs_buf->finalize();
+        out_logs_buf.reset();
+    }
 
     std_out.next();
 }
@@ -1661,11 +1662,6 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     /// If INSERT data must be sent.
     auto * parsed_insert_query = parsed_query->as<ASTInsertQuery>();
     if (!parsed_insert_query)
-        return;
-
-    /// If it's clickhouse-local, and the input data reading is already baked into the query pipeline,
-    /// don't read the data again here. This happens in some cases (e.g. input() table function) but not others (e.g. INFILE).
-    if (!connection->isSendDataNeeded())
         return;
 
     bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(std_in);
@@ -2325,9 +2321,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
         /// disable logs if expects errors
         TestHint test_hint(all_queries_text);
         if (test_hint.hasClientErrors() || test_hint.hasServerErrors())
-        {
             processTextAsSingleQuery("SET send_logs_level = 'fatal'");
-        }
     }
 
     /// Test tags are started with "--" so they are interpreted as comments anyway.
@@ -2445,7 +2439,6 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 // (or their absence).
                 bool error_matches_hint = true;
                 bool need_retry = test_hint.needRetry(server_exception, &retries_count);
-
                 if (need_retry)
                 {
                     std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -2725,11 +2718,11 @@ void ClientBase::runInteractive()
         catch (const ErrnoException & e)
         {
             if (e.getErrno() != EEXIST)
+            {
                 error_stream << getCurrentExceptionMessage(false) << '\n';
+            }
         }
     }
-
-    history_max_entries = getClientConfiguration().getUInt("history_max_entries");
 
     LineReader::Patterns query_extenders = {"\\"};
     LineReader::Patterns query_delimiters = {";", "\\G", "\\G;"};
@@ -2738,15 +2731,11 @@ void ClientBase::runInteractive()
 #if USE_REPLXX
     replxx::Replxx::highlighter_callback_t highlight_callback{};
     if (getClientConfiguration().getBool("highlight", true))
-        highlight_callback = [this](const String & query, std::vector<replxx::Replxx::Color> & colors)
-        {
-            highlight(query, colors, *client_context);
-        };
+        highlight_callback = highlight;
 
     ReplxxLineReader lr(
         *suggest,
         history_file,
-        history_max_entries,
         getClientConfiguration().has("multiline"),
         getClientConfiguration().getBool("ignore_shell_suspend", true),
         query_extenders,
