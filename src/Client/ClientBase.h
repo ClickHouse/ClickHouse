@@ -405,6 +405,10 @@ protected:
     std::atomic_bool cancelled = false;
     std::atomic_bool cancelled_printed = false;
 
+    int in_fd = STDIN_FILENO;
+    int out_fd = STDOUT_FILENO;
+    int err_fd = STDERR_FILENO;
+
     /// Unpacked descriptors and streams for the ease of use.
     std::istream & input_stream;
     std::ostream & output_stream;
