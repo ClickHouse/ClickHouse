@@ -152,8 +152,8 @@ bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compar
 
     const auto & value_type = constant_value.getType();
     const auto & rhs_value_type = rhs_typed.constant_value.getType();
-    if ( (isArray(value_type) || isTuple(value_type) || isMap(value_type) ||
-          isArray(rhs_value_type) || isTuple(rhs_value_type) || isMap(rhs_value_type))
+    if ((isArray(value_type) || isTuple(value_type) || isMap(value_type) ||
+         isArray(rhs_value_type) || isTuple(rhs_value_type) || isMap(rhs_value_type))
         && constant_value.getType() != rhs_typed.constant_value.getType()
     )
         return false;
