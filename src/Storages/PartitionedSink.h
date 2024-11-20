@@ -18,6 +18,8 @@ public:
 
     PartitionedSink(const ASTPtr & partition_by, ContextPtr context_, const Block & sample_block_);
 
+    ~PartitionedSink() override;
+
     String getName() const override { return "PartitionedSink"; }
 
     void consume(Chunk & chunk) override;

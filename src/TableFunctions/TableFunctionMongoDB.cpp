@@ -15,7 +15,7 @@
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/ColumnsDescription.h>
-
+#include <TableFunctions/TableFunctionMongoDB.h>
 
 namespace DB
 {
@@ -85,17 +85,11 @@ void TableFunctionMongoDB::parseArguments(const ASTPtr & ast_function, ContextPt
         {
             if (const auto * ast_func = typeid_cast<const ASTFunction *>(args[i].get()))
             {
-                const auto * args_expr = assert_cast<const ASTExpressionList *>(ast_func->arguments.get());
-                auto function_args = args_expr->children;
-                if (function_args.size() != 2)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument");
-
-                auto arg_name = function_args[0]->as<ASTIdentifier>()->name();
-
+                const auto & [arg_name, arg_value] = getKeyValueMongoDBArgument(ast_func);
                 if (arg_name == "structure")
-                    structure = checkAndGetLiteralArgument<String>(function_args[1], "structure");
+                    structure = checkAndGetLiteralArgument<String>(arg_value, arg_name);
                 else if (arg_name == "options")
-                    main_arguments.push_back(function_args[1]);
+                    main_arguments.push_back(arg_value);
             }
             else if (i == 5)
             {
@@ -117,15 +111,11 @@ void TableFunctionMongoDB::parseArguments(const ASTPtr & ast_function, ContextPt
         {
             if (const auto * ast_func = typeid_cast<const ASTFunction *>(args[i].get()))
             {
-                const auto * args_expr = assert_cast<const ASTExpressionList *>(ast_func->arguments.get());
-                auto function_args = args_expr->children;
-                if (function_args.size() != 2)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument");
-
-                auto arg_name = function_args[0]->as<ASTIdentifier>()->name();
-
+                const auto & [arg_name, arg_value] = getKeyValueMongoDBArgument(ast_func);
                 if (arg_name == "structure")
-                    structure = checkAndGetLiteralArgument<String>(function_args[1], "structure");
+                    structure = checkAndGetLiteralArgument<String>(arg_value, arg_name);
+                else if (arg_name == "options")
+                    main_arguments.push_back(arg_value);
             }
             else if (i == 2)
             {
@@ -143,6 +133,20 @@ void TableFunctionMongoDB::parseArguments(const ASTPtr & ast_function, ContextPt
     }
 }
 
+}
+
+std::pair<String, ASTPtr> getKeyValueMongoDBArgument(const ASTFunction * ast_func)
+{
+    const auto * args_expr = assert_cast<const ASTExpressionList *>(ast_func->arguments.get());
+    const auto & function_args = args_expr->children;
+    if (function_args.size() != 2 || ast_func->name != "equals" || !function_args[0]->as<ASTIdentifier>())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument, got {}", ast_func->formatForErrorMessage());
+
+    const auto & arg_name = function_args[0]->as<ASTIdentifier>()->name();
+    if (arg_name == "structure" || arg_name == "options")
+        return std::make_pair(arg_name, function_args[1]);
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument, got {}", ast_func->formatForErrorMessage());
 }
 
 void registerTableFunctionMongoDB(TableFunctionFactory & factory)

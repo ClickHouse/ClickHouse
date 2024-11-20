@@ -522,9 +522,10 @@ namespace
                 {
                     write_function = [this](NumberType value)
                     {
-                        WriteBufferFromString buf{text_buffer};
-                        writeText(value, buf);
-                        buf.finalize();
+                        {
+                            WriteBufferFromString buf{text_buffer};
+                            writeText(value, buf);
+                        }
                         writeStr(text_buffer);
                     };
 
@@ -540,7 +541,7 @@ namespace
 
                 case FieldTypeId::TYPE_ENUM:
                 {
-                    if (std::is_floating_point_v<NumberType>)
+                    if (is_floating_point<NumberType>)
                         incompatibleColumnType(TypeName<NumberType>);
 
                     write_function = [this](NumberType value)
@@ -894,7 +895,7 @@ namespace
         template <typename NumberType>
         void toStringAppend(NumberType value, PaddedPODArray<UInt8> & str)
         {
-            WriteBufferFromVector buf{str, AppendModeTag{}};
+            auto buf = WriteBufferFromVector<PaddedPODArray<UInt8>>(str, AppendModeTag{});
             writeText(value, buf);
         }
 

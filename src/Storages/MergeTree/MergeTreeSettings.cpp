@@ -28,6 +28,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_SETTING;
     extern const int BAD_ARGUMENTS;
+    extern const int READONLY;
 }
 
 // clang-format off
@@ -101,6 +102,8 @@ namespace ErrorCodes
     DECLARE(Milliseconds, background_task_preferred_step_execution_time_ms, 50, "Target time to execution of one step of merge or mutation. Can be exceeded if one step takes longer time", 0) \
     DECLARE(MergeSelectorAlgorithm, merge_selector_algorithm, MergeSelectorAlgorithm::SIMPLE, "The algorithm to select parts for merges assignment", EXPERIMENTAL) \
     DECLARE(Bool, merge_selector_enable_heuristic_to_remove_small_parts_at_right, true, "Enable heuristic for selecting parts for merge which removes parts from right side of range, if their size is less than specified ratio (0.01) of sum_size. Works for Simple and StochasticSimple merge selectors", 0) \
+    DECLARE(Float, merge_selector_base, 5.0, "Affects write amplification of assigned merges (expert level setting, don't change if you don't understand what it is doing). Works for Simple and StochasticSimple merge selectors", 0) \
+    DECLARE(UInt64, min_parts_to_merge_at_once, 0, "Minimal amount of data parts which merge selector can pick to merge at once (expert level setting, don't change if you don't understand what it is doing). 0 - disabled. Works for Simple and StochasticSimple merge selectors.", 0) \
     \
     /** Inserts settings. */ \
     DECLARE(UInt64, parts_to_delay_insert, 1000, "If table contains at least that many active parts in single partition, artificially slow down insert into table. Disabled if set to 0", 0) \
@@ -185,6 +188,8 @@ namespace ErrorCodes
     DECLARE(UInt64, min_merge_bytes_to_use_direct_io, 10ULL * 1024 * 1024 * 1024, "Minimal amount of bytes to enable O_DIRECT in merge (0 - disabled).", 0) \
     DECLARE(UInt64, index_granularity_bytes, 10 * 1024 * 1024, "Approximate amount of bytes in single granule (0 - disabled).", 0) \
     DECLARE(UInt64, min_index_granularity_bytes, 1024, "Minimum amount of bytes in single granule.", 1024) \
+    DECLARE(Bool, use_const_adaptive_granularity, false, "Always use constant granularity for whole part. It allows to compress in memory values of index granularity. It can be useful in extremely large workloads with thin tables.", 0) \
+    DECLARE(Bool, enable_index_granularity_compression, true, "Compress in memory values of index granularity if it is possible", 0) \
     DECLARE(Int64, merge_with_ttl_timeout, 3600 * 4, "Minimal time in seconds, when merge with delete TTL can be repeated.", 0) \
     DECLARE(Int64, merge_with_recompression_ttl_timeout, 3600 * 4, "Minimal time in seconds, when merge with recompression TTL can be repeated.", 0) \
     DECLARE(Bool, ttl_only_drop_parts, false, "Only drop altogether the expired parts and not partially prune them.", 0) \
@@ -293,7 +298,7 @@ struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
     void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_attach);
 
     /// Check that the values are sane taking also query-level settings into account.
-    void sanityCheck(size_t background_pool_tasks) const;
+    void sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta) const;
 };
 
 IMPLEMENT_SETTINGS_TRAITS(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS)
@@ -373,8 +378,35 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
 #undef ADD_IF_ABSENT
 }
 
-void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks) const
+void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta) const
 {
+    if (!allow_experimental || !allow_beta)
+    {
+        for (const auto & setting : all())
+        {
+            if (!setting.isValueChanged())
+                continue;
+
+            auto tier = setting.getTier();
+            if (!allow_experimental && tier == EXPERIMENTAL)
+            {
+                throw Exception(
+                    ErrorCodes::READONLY,
+                    "Cannot modify setting '{}'. Changes to EXPERIMENTAL settings are disabled in the server config "
+                    "('allowed_feature_tier')",
+                    setting.getName());
+            }
+            if (!allow_beta && tier == BETA)
+            {
+                throw Exception(
+                    ErrorCodes::READONLY,
+                    "Cannot modify setting '{}'. Changes to BETA settings are disabled in the server config ('allowed_feature_tier')",
+                    setting.getName());
+            }
+        }
+    }
+
+
     if (number_of_free_entries_in_pool_to_execute_mutation > background_pool_tasks)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of 'number_of_free_entries_in_pool_to_execute_mutation' setting"
@@ -621,9 +653,9 @@ bool MergeTreeSettings::needSyncPart(size_t input_rows, size_t input_bytes) cons
         || (impl->min_compressed_bytes_to_fsync_after_merge && input_bytes >= impl->min_compressed_bytes_to_fsync_after_merge));
 }
 
-void MergeTreeSettings::sanityCheck(size_t background_pool_tasks) const
+void MergeTreeSettings::sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta) const
 {
-    impl->sanityCheck(background_pool_tasks);
+    impl->sanityCheck(background_pool_tasks, allow_experimental, allow_beta);
 }
 
 void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const

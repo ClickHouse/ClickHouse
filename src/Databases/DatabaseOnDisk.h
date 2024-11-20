@@ -99,6 +99,9 @@ protected:
     virtual void removeDetachedPermanentlyFlag(ContextPtr context, const String & table_name, const String & table_metadata_path, bool attach);
     virtual void setDetachedTableNotInUseForce(const UUID & /*uuid*/) {}
 
+    void createDirectories();
+    void createDirectoriesUnlocked() TSA_REQUIRES(mutex);
+
     const String metadata_path;
     const String data_path;
 };
