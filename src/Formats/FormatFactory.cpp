@@ -182,7 +182,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.ignore_unnecessary_fields = settings[Setting::input_format_json_ignore_unnecessary_fields];
     format_settings.json.empty_as_default = settings[Setting::input_format_json_empty_as_default];
     format_settings.json.type_json_skip_duplicated_paths = settings[Setting::type_json_skip_duplicated_paths];
-    format_settings.null_as_default = settings[Setting::input_format_null_as_default];
+    format_settings.json.pretty_print = settings[Setting::output_format_json_pretty_print];
     format_settings.force_null_for_omitted_fields = settings[Setting::input_format_force_null_for_omitted_fields];
     format_settings.decimal_trailing_zeros = settings[Setting::output_format_decimal_trailing_zeros];
     format_settings.parquet.row_group_rows = settings[Setting::output_format_parquet_row_group_size];
