@@ -255,6 +255,7 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
 
         disk->createDirectories(path_to_clone);
 
+        /// TODO: Make it possible to fetch only zero-copy part without fallback to fetching a full-copy one
         auto zero_copy_part = data->tryToFetchIfShared(*part, disk, fs::path(path_to_clone) / part->name);
 
         if (zero_copy_part)
@@ -297,6 +298,28 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
     return cloned_part;
 }
 
+void MergeTreePartsMover::renameClonedPart(IMergeTreeDataPart & part) const
+try
+{
+    part.is_temp = false;
+    /// Mark it DeleteOnDestroy to ensure deleting in destructor
+    /// if something goes wrong before swapping
+    part.setState(MergeTreeDataPartState::DeleteOnDestroy);
+    /// Don't remove new directory but throw an error because it may contain part which is currently in use.
+    part.renameTo(part.name, /* remove_new_dir_if_exists */ false);
+}
+catch (...)
+{
+    /// Check if part was renamed or not
+    /// `renameTo()` does not provide strong exception guarantee in case of an exception
+    if (part.isMovingPart())
+    {
+        /// Restore its temporary state
+        part.is_temp = true;
+        part.setState(MergeTreeDataPartState::Temporary);
+    }
+    throw;
+}
 
 void MergeTreePartsMover::swapClonedPart(TemporaryClonedPart & cloned_part) const
 {
@@ -323,12 +346,23 @@ void MergeTreePartsMover::swapClonedPart(TemporaryClonedPart & cloned_part) cons
         return;
     }
 
-    cloned_part.part->is_temp = false;
+    /// It is safe to acquire zero-copy lock for the temporary part here
+    /// because no one can fetch it until it is *swapped*.
+    ///
+    /// Set ASK_KEEPER to try to unlock it in destructor if something goes wrong before *renaming*
+    /// If unlocking is failed we will not get a stuck part in moving directory
+    /// because it will be renamed to delete_tmp_<name> beforehand and cleaned up later.
+    /// Worst outcomes: trash in object storage and/or orphaned shared zero-copy lock. It is acceptable.
+    /// See DataPartStorageOnDiskBase::remove().
+    cloned_part.part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::ASK_KEEPER;
+    data->lockSharedData(*cloned_part.part, /* replace_existing_lock = */ true);
 
-    /// Don't remove new directory but throw an error because it may contain part which is currently in use.
-    cloned_part.part->renameTo(active_part->name, false);
+    renameClonedPart(*cloned_part.part);
 
-    /// TODO what happen if server goes down here?
+    /// If server goes down here we will get two copy of the part with the same name on different disks.
+    /// And on the next ClickHouse startup during loading parts the first copy (in the order of defining disks
+    /// in the storage policy) will be loaded as Active, the second one will be loaded as Outdated and removed as duplicate.
+    /// See MergeTreeData::loadDataParts().
     data->swapActivePart(cloned_part.part, part_lock);
 
     LOG_TRACE(log, "Part {} was moved to {}", cloned_part.part->name, cloned_part.part->getDataPartStorage().getFullPath());
