@@ -571,6 +571,7 @@ class CommonJobConfigs:
                 "tests/ci/docker_server.py",
                 "tests/ci/docker_images_helper.py",
                 "./docker/server",
+                "./docker/keeper",
             ]
         ),
         runner_type=Runners.STYLE_CHECKER,
