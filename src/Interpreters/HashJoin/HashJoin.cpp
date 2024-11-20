@@ -1069,6 +1069,8 @@ void HashJoin::joinBlock(ScatteredBlock & block, ScatteredBlock & remaining_bloc
     }
 
     std::vector<const std::decay_t<decltype(data->maps[0])> *> maps_vector;
+    maps_vector.reserve(table_join->getClauses().size());
+
     for (size_t i = 0; i < table_join->getClauses().size(); ++i)
         maps_vector.push_back(&data->maps[i]);
 
