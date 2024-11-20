@@ -46,25 +46,33 @@ public:
     std::optional<StorageType> getStorageType() const override;
 
 private:
-    LoggerPtr log;
-
     struct Config
     {
+        /// Prefix is a path of the catalog enpoint,
+        /// e.g. /v1/{prefix}/namespaces/{namespace}/tables/{table}
         std::filesystem::path prefix;
+        /// Base location is location of data in storage
+        /// (in filesystem or object storage).
         std::string default_base_location;
 
         std::string toString() const;
     };
 
     const std::filesystem::path base_url;
-    std::optional<DB::HTTPHeaderEntry> auth_header;
-    mutable std::optional<std::string> access_token;
-    std::string client_id;
-    std::string client_secret;
+    const LoggerPtr log;
+
+    /// Catalog configuration settings from /v1/config endpoint.
     Config config;
 
-    Poco::Net::HTTPBasicCredentials credentials{};
+    /// Auth headers of format: "Authorization": "<auth_scheme> <token>"
+    std::optional<DB::HTTPHeaderEntry> auth_header;
 
+    /// Parameters for OAuth.
+    std::string client_id;
+    std::string client_secret;
+    mutable std::optional<std::string> access_token;
+
+    Poco::Net::HTTPBasicCredentials credentials{};
 
     DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
         const std::string & endpoint,
@@ -97,7 +105,7 @@ private:
     Config loadConfig();
     std::string retrieveAccessToken() const;
     DB::HTTPHeaderEntries getHeaders(bool update_token = false) const;
-    static void parseConfig(const Poco::JSON::Object::Ptr & object, Config & result);
+    static void parseCatalogConfigurationSettings(const Poco::JSON::Object::Ptr & object, Config & result);
 };
 
 }

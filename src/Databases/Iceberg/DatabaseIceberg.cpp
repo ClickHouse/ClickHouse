@@ -25,9 +25,9 @@
 
 namespace CurrentMetrics
 {
-    extern const Metric MergeTreeDataSelectExecutorThreads;
-    extern const Metric MergeTreeDataSelectExecutorThreadsActive;
-    extern const Metric MergeTreeDataSelectExecutorThreadsScheduled;
+    extern const Metric IcebergCatalogThreads;
+    extern const Metric IcebergCatalogThreadsActive;
+    extern const Metric IcebergCatalogThreadsScheduled;
 }
 
 
@@ -236,9 +236,9 @@ DatabaseTablesIteratorPtr DatabaseIceberg::getTablesIterator(
     auto iceberg_tables = catalog->getTables();
     size_t num_threads = std::min<size_t>(10, iceberg_tables.size());
     ThreadPool pool(
-        CurrentMetrics::MergeTreeDataSelectExecutorThreads,
-        CurrentMetrics::MergeTreeDataSelectExecutorThreadsActive,
-        CurrentMetrics::MergeTreeDataSelectExecutorThreadsScheduled,
+        CurrentMetrics::IcebergCatalogThreads,
+        CurrentMetrics::IcebergCatalogThreadsActive,
+        CurrentMetrics::IcebergCatalogThreadsScheduled,
         num_threads);
 
     DB::ThreadPoolCallbackRunnerLocal<void> runner(pool, "RestCatalog");
