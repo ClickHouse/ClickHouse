@@ -64,6 +64,10 @@ static struct InitFiu
     REGULAR(lazy_pipe_fds_fail_close) \
     PAUSEABLE(infinite_sleep) \
     PAUSEABLE(stop_moving_part_before_swap_with_active) \
+    REGULAR(slowdown_index_analysis) \
+    REGULAR(replicated_merge_tree_all_replicas_stale) \
+    REGULAR(zero_copy_lock_zk_fail_before_op) \
+    REGULAR(zero_copy_lock_zk_fail_after_op) \
 
 
 namespace FailPoints
