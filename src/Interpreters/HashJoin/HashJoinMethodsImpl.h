@@ -122,9 +122,6 @@ ScatteredBlock HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
 
     block.filterBySelector();
 
-    for (size_t i = 0; i < added_columns.size(); ++i)
-        source_block.insert(added_columns.moveColumn(i));
-
     const auto & table_join = join.table_join;
     std::set<size_t> block_columns_to_erase;
     if (join.canRemoveColumnsFromLeftBlock())
@@ -138,6 +135,9 @@ ScatteredBlock HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
                 block_columns_to_erase.insert(i);
         }
     }
+
+    for (size_t i = 0; i < added_columns.size(); ++i)
+        source_block.insert(added_columns.moveColumn(i));
 
     std::vector<size_t> right_keys_to_replicate [[maybe_unused]];
 
