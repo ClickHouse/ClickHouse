@@ -145,7 +145,9 @@ include(ExternalProject)
 #    This is too unreliable in the context of ClickHouse ... we instead ship the downloaded archive with the ClickHouse source and
 #    extract it into the build directory directly.
 
-# Dummy googleapis_download target
+# Dummy googleapis_download target. This needs to exist because lots of other targets depend on it
+# We however trick it a little bit saying this target generates the ${EXTERNAL_GOOGLEAPIS_BYPRODUCTS} BYPRODUCTS when
+# actually the following section is the one actually providing such BYPRODUCTS.
 externalproject_add(
     googleapis_download
     EXCLUDE_FROM_ALL ON
@@ -159,8 +161,22 @@ externalproject_add(
     LOG_DOWNLOAD OFF)
 
 # Command that extracts the tarball into the proper dir
-execute_process(
-    COMMAND ${CMAKE_COMMAND} -D "GOOGLE_CLOUD_CPP_CMAKE_DIR=${ClickHouse_SOURCE_DIR}/contrib/google-cloud-cpp-cmake" -D "EXTERNAL_GOOGLEAPIS_SOURCE=${EXTERNAL_GOOGLEAPIS_SOURCE}" -P "${CMAKE_CURRENT_SOURCE_DIR}/GoogleApisDownload.cmake"
+# Note: The hash must match the Google Cloud Api version, otherwise funny things will happen.
+# Find the right hash in "strip-prefix" in MODULE.bazel in the subrepository
+message(STATUS "Extracting googleapis tarball")
+set(PB_HASH "e60db19f11f94175ac682c5898cce0f77cc508ea")
+set(PB_ARCHIVE "${PB_HASH}.tar.gz")
+set(PB_DIR "googleapis-${PB_HASH}")
+
+file(ARCHIVE_EXTRACT INPUT
+    "${ClickHouse_SOURCE_DIR}/contrib/google-cloud-cpp-cmake/googleapis/${PB_ARCHIVE}"
+    DESTINATION
+    "${EXTERNAL_GOOGLEAPIS_PREFIX}/tmp")
+
+file(REMOVE_RECURSE "${EXTERNAL_GOOGLEAPIS_SOURCE}")
+file(RENAME
+    "${EXTERNAL_GOOGLEAPIS_PREFIX}/tmp/${PB_DIR}"
+    "${EXTERNAL_GOOGLEAPIS_SOURCE}"
 )
 
 google_cloud_cpp_find_proto_include_dir(PROTO_INCLUDE_DIR)
