@@ -13,7 +13,7 @@ namespace ErrorCodes
 
 struct ProxyConfiguration
 {
-    enum class Protocol : uint8_t
+    enum class Protocol
     {
         HTTP,
         HTTPS
@@ -25,7 +25,7 @@ struct ProxyConfiguration
         {
             return Protocol::HTTP;
         }
-        if (str == "https")
+        else if (str == "https")
         {
             return Protocol::HTTPS;
         }
@@ -44,18 +44,11 @@ struct ProxyConfiguration
         }
     }
 
-    static bool useTunneling(Protocol request_protocol, Protocol proxy_protocol, bool disable_tunneling_for_https_requests_over_http_proxy)
-    {
-        bool is_https_request_over_http_proxy = request_protocol == Protocol::HTTPS && proxy_protocol == Protocol::HTTP;
-        return is_https_request_over_http_proxy && !disable_tunneling_for_https_requests_over_http_proxy;
-    }
-
     std::string host = std::string{};
     Protocol protocol = Protocol::HTTP;
     uint16_t port = 0;
     bool tunneling = false;
     Protocol original_request_protocol = Protocol::HTTP;
-    std::string no_proxy_hosts = std::string{};
 
     bool isEmpty() const { return host.empty(); }
 };

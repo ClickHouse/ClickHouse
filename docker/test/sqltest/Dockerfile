@@ -14,14 +14,16 @@ RUN apt-get update --yes \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
-COPY requirements.txt /
-RUN pip3 install --no-cache-dir -r /requirements.txt
+RUN pip3 install \
+    pyyaml \
+    clickhouse-driver
 
 ARG sqltest_repo="https://github.com/elliotchance/sqltest/"
 
 RUN git clone ${sqltest_repo}
 
 ENV TZ=UTC
+ENV MAX_RUN_TIME=900
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 COPY run.sh /

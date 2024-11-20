@@ -4,7 +4,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT --query "
+$CLICKHOUSE_CLIENT --multiquery --query "
 DROP TABLE IF EXISTS NmSubj;
 DROP TABLE IF EXISTS events;
 
@@ -60,7 +60,7 @@ FROM events as e INNER JOIN NmSubj as ns
 ON ns.NmId = toUInt32(e.Param1)
 WHERE e.EventDate = today() - 7 AND e.EventId = 'GCO' AND ns.SubjectId = 2073"
 
-$CLICKHOUSE_CLIENT --query "
+$CLICKHOUSE_CLIENT --multiquery --query "
 DROP TABLE NmSubj;
 DROP TABLE events;
 "

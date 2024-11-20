@@ -7,7 +7,7 @@
 #include <Common/ActionBlocker.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MutationCommands.h>
-#include <Storages/MergeTree/MergeSelectors/TTLMergeSelector.h>
+#include <Storages/MergeTree/TTLMergeSelector.h>
 #include <Storages/MergeTree/MergeAlgorithm.h>
 #include <Storages/MergeTree/MergeType.h>
 #include <Storages/MergeTree/MergeTask.h>
@@ -20,14 +20,14 @@ namespace DB
 
 class MergeProgressCallback;
 
-enum class SelectPartsDecision : uint8_t
+enum class SelectPartsDecision
 {
     SELECTED = 0,
     CANNOT_SELECT = 1,
     NOTHING_TO_MERGE = 2,
 };
 
-enum class ExecuteTTLType : uint8_t
+enum class ExecuteTTLType
 {
     NONE = 0,
     NORMAL = 1,
@@ -43,7 +43,7 @@ public:
     using AllowedMergingPredicate = std::function<bool (const MergeTreeData::DataPartPtr &,
                                                         const MergeTreeData::DataPartPtr &,
                                                         const MergeTreeTransaction *,
-                                                        PreformattedMessage &)>;
+                                                        String &)>;
 
     explicit MergeTreeDataMergerMutator(MergeTreeData & data_);
 
@@ -92,7 +92,7 @@ public:
         const MergeTreeData::DataPartsVector & data_parts,
         const AllowedMergingPredicate & can_merge_callback,
         const MergeTreeTransactionPtr & txn,
-        PreformattedMessage & out_disable_reason) const;
+        String & out_disable_reason) const;
 
     /// The third step of selecting parts to merge: takes ranges that we can merge, and selects parts that we want to merge
     SelectPartsDecision selectPartsToMergeFromRanges(
@@ -103,14 +103,12 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         const IMergeSelector::PartsRanges & parts_ranges,
         const time_t & current_time,
-        PreformattedMessage & out_disable_reason,
+        String & out_disable_reason,
         bool dry_run = false);
 
-    /// Actually the most fresh partition with biggest modification_time
     String getBestPartitionToOptimizeEntire(const PartitionsInfo & partitions_info) const;
 
     /// Useful to quickly get a list of partitions that contain parts that we may want to merge
-    /// The result is limited by top_number_of_partitions_to_consider_for_merge
     PartitionIdsHint getPartitionsThatMayBeMerged(
         size_t max_total_size_to_merge,
         const AllowedMergingPredicate & can_merge_callback,
@@ -131,7 +129,7 @@ public:
         const AllowedMergingPredicate & can_merge,
         bool merge_with_ttl_allowed,
         const MergeTreeTransactionPtr & txn,
-        PreformattedMessage & out_disable_reason,
+        String & out_disable_reason,
         const PartitionIdsHint * partitions_hint = nullptr);
 
     /** Select all the parts in the specified partition for merge, if possible.
@@ -146,7 +144,7 @@ public:
         bool final,
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeTransactionPtr & txn,
-        PreformattedMessage & out_disable_reason,
+        String & out_disable_reason,
         bool optimize_skip_merged_partitions = false);
 
     /** Creates a task to merge parts.
@@ -161,7 +159,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         MergeListEntry * merge_entry,
         std::unique_ptr<MergeListElement> projection_merge_list_element,
-        TableLockHolder & table_lock_holder,
+        TableLockHolder table_lock_holder,
         time_t time_of_merge,
         ContextPtr context,
         ReservationSharedPtr space_reservation,
@@ -209,7 +207,7 @@ public :
     /** Is used to cancel all merges and mutations. On cancel() call all currently running actions will throw exception soon.
       * All new attempts to start a merge or mutation will throw an exception until all 'LockHolder' objects will be destroyed.
       */
-    PartitionActionBlocker merges_blocker;
+    ActionBlocker merges_blocker;
     ActionBlocker ttl_merges_blocker;
 
 private:

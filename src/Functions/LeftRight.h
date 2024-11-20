@@ -26,7 +26,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-enum class SubstringDirection : uint8_t
+enum class SubstringDirection
 {
     Left,
     Right
@@ -65,11 +65,6 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of second argument of function {}",
                     arguments[1]->getName(), getName());
 
-        return std::make_shared<DataTypeString>();
-    }
-
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
         return std::make_shared<DataTypeString>();
     }
 
@@ -116,33 +111,30 @@ public:
             if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_string.get()))
                 return executeForSource(column_length, column_length_const,
                     length_value, UTF8StringSource(*col), input_rows_count);
-            if (const ColumnConst * col_const = checkAndGetColumnConst<ColumnString>(column_string.get()))
-                return executeForSource(
-                    column_length, column_length_const, length_value, ConstSource<UTF8StringSource>(*col_const), input_rows_count);
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column {} of first argument of function {}",
-                arguments[0].column->getName(),
-                getName());
+            else if (const ColumnConst * col_const = checkAndGetColumnConst<ColumnString>(column_string.get()))
+                return executeForSource(column_length, column_length_const,
+                    length_value, ConstSource<UTF8StringSource>(*col_const), input_rows_count);
+            else
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                    arguments[0].column->getName(), getName());
         }
         else
         {
             if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_string.get()))
                 return executeForSource(column_length, column_length_const,
                     length_value, StringSource(*col), input_rows_count);
-            if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column_string.get()))
-                return executeForSource(column_length, column_length_const, length_value, FixedStringSource(*col_fixed), input_rows_count);
-            if (const ColumnConst * col_const = checkAndGetColumnConst<ColumnString>(column_string.get()))
-                return executeForSource(
-                    column_length, column_length_const, length_value, ConstSource<StringSource>(*col_const), input_rows_count);
-            if (const ColumnConst * col_const_fixed = checkAndGetColumnConst<ColumnFixedString>(column_string.get()))
-                return executeForSource(
-                    column_length, column_length_const, length_value, ConstSource<FixedStringSource>(*col_const_fixed), input_rows_count);
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column {} of first argument of function {}",
-                arguments[0].column->getName(),
-                getName());
+            else if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column_string.get()))
+                return executeForSource(column_length, column_length_const,
+                    length_value, FixedStringSource(*col_fixed), input_rows_count);
+            else if (const ColumnConst * col_const = checkAndGetColumnConst<ColumnString>(column_string.get()))
+                return executeForSource(column_length, column_length_const,
+                    length_value, ConstSource<StringSource>(*col_const), input_rows_count);
+            else if (const ColumnConst * col_const_fixed = checkAndGetColumnConst<ColumnFixedString>(column_string.get()))
+                return executeForSource(column_length, column_length_const,
+                    length_value, ConstSource<FixedStringSource>(*col_const_fixed), input_rows_count);
+            else
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                    arguments[0].column->getName(), getName());
         }
     }
 };

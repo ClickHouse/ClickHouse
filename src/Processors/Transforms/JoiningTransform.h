@@ -1,11 +1,6 @@
 #pragma once
-
-#include <Interpreters/HashJoin/ScatteredBlock.h>
-#include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 
-#include <deque>
-#include <memory>
 
 namespace DB
 {
@@ -70,7 +65,7 @@ protected:
 
 private:
     Chunk input_chunk;
-    std::deque<Chunk> output_chunks;
+    Chunk output_chunk;
     bool has_input = false;
     bool has_output = false;
     bool stop_reading = false;
@@ -84,16 +79,13 @@ private:
     bool default_totals;
     bool initialized = false;
 
-    /// Only used with ConcurrentHashJoin
-    ExtraScatteredBlocks remaining_blocks;
-
     ExtraBlockPtr not_processed;
 
     FinishCounterPtr finish_counter;
     IBlocksStreamPtr non_joined_blocks;
     size_t max_block_size;
 
-    Blocks readExecute(Chunk & chunk);
+    Block readExecute(Chunk & chunk);
 };
 
 /// Fills Join with block from right table.
@@ -119,12 +111,11 @@ private:
 };
 
 
-class DelayedBlocksTask : public ChunkInfoCloneable<DelayedBlocksTask>
+class DelayedBlocksTask : public ChunkInfo
 {
 public:
 
     DelayedBlocksTask() = default;
-    DelayedBlocksTask(const DelayedBlocksTask & other) = default;
     explicit DelayedBlocksTask(IBlocksStreamPtr delayed_blocks_, JoiningTransform::FinishCounterPtr left_delayed_stream_finish_counter_)
         : delayed_blocks(std::move(delayed_blocks_))
         , left_delayed_stream_finish_counter(left_delayed_stream_finish_counter_)

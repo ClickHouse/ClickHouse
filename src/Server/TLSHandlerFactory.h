@@ -48,8 +48,8 @@ public:
             LOG_TRACE(log, "TCP Request. Address: {}", socket.peerAddress().toString());
             return new TLSHandler(
                 socket,
-                server.config(),
-                conf_name + ".",
+                server.config().getString(conf_name + ".privateKeyFile", ""),
+                server.config().getString(conf_name + ".certificateFile", ""),
                 stack_data);
         }
         catch (const Poco::Net::NetException &)

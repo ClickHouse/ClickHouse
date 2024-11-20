@@ -62,7 +62,8 @@ String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled, bool th
                     "Quota {} (for user {}) requires a client supplied key.",
                     quota->getName(),
                     params.user_name);
-            return ""; // Authentication quota has no client key at time of authentication.
+            else
+                return ""; // Authentication quota has no client key at time of authentication.
         }
         case QuotaKeyType::CLIENT_KEY_OR_USER_NAME:
         {

@@ -41,8 +41,6 @@ public:
 
     ~CachedOnDiskReadBufferFromFile() override;
 
-    bool isCached() const override { return true; }
-
     bool nextImpl() override;
 
     off_t seek(off_t off, int whence) override;
@@ -59,7 +57,7 @@ public:
 
     String getFileName() const override { return source_file_path; }
 
-    enum class ReadType : uint8_t
+    enum class ReadType
     {
         CACHED,
         REMOTE_FS_READ_BYPASS_CACHE,
@@ -131,7 +129,19 @@ private:
 
     ReadType read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
 
-    static String toString(ReadType type);
+    static String toString(ReadType type)
+    {
+        switch (type)
+        {
+            case ReadType::CACHED:
+                return "CACHED";
+            case ReadType::REMOTE_FS_READ_BYPASS_CACHE:
+                return "REMOTE_FS_READ_BYPASS_CACHE";
+            case ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE:
+                return "REMOTE_FS_READ_AND_PUT_IN_CACHE";
+        }
+        UNREACHABLE();
+    }
 
     size_t first_offset = 0;
     String nextimpl_step_log_info;

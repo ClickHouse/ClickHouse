@@ -14,7 +14,7 @@
 #include <Common/TerminalSize.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/ShellCommand.h>
 #include <Common/re2.h>
 #include <base/find_symbols.h>
@@ -233,7 +233,7 @@ struct Commit
 };
 
 
-enum class FileChangeType : uint8_t
+enum class FileChangeType
 {
     Add,
     Delete,
@@ -291,7 +291,7 @@ struct FileChange
 };
 
 
-enum class LineType : uint8_t
+enum class LineType
 {
     Empty,
     Comment,
@@ -528,13 +528,6 @@ struct ResultWriter
                 writeChar('\n', out);
             }
         }
-    }
-
-    void finalize()
-    {
-        commits.finalize();
-        file_changes.finalize();
-        line_changes.finalize();
     }
 };
 
@@ -1185,8 +1178,6 @@ void processLog(const Options & options)
         if (i + num_threads < num_commits)
             show_commands[i % num_threads] = gitShow(hashes[i + num_threads]);
     }
-
-    result.finalize();
 }
 
 

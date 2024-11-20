@@ -1,4 +1,3 @@
-#include <Core/Settings.h>
 #include <Server/ProxyV1Handler.h>
 #include <Poco/Net/NetException.h>
 #include <Common/NetException.h>
@@ -8,10 +7,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsSeconds receive_timeout;
-}
 
 namespace ErrorCodes
 {
@@ -24,7 +19,7 @@ namespace ErrorCodes
 void ProxyV1Handler::run()
 {
     const auto & settings = server.context()->getSettingsRef();
-    socket().setReceiveTimeout(settings[Setting::receive_timeout]);
+    socket().setReceiveTimeout(settings.receive_timeout);
 
     std::string word;
     bool eol;
