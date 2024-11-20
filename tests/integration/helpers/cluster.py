@@ -744,11 +744,13 @@ class ClickHouseCluster:
         # available when with_prometheus == True
         self.with_prometheus = False
         self.prometheus_writer_host = "prometheus_writer"
+        self.prometheus_writer_ip = None
         self.prometheus_writer_port = 9090
         self.prometheus_writer_logs_dir = p.abspath(
             p.join(self.instances_dir, "prometheus_writer/logs")
         )
         self.prometheus_reader_host = "prometheus_reader"
+        self.prometheus_reader_ip = None
         self.prometheus_reader_port = 9091
         self.prometheus_reader_logs_dir = p.abspath(
             p.join(self.instances_dir, "prometheus_reader/logs")
@@ -2728,6 +2730,16 @@ class ClickHouseCluster:
 
         raise Exception("Can't wait LDAP to start")
 
+    def wait_prometheus_to_start(self):
+        self.prometheus_reader_ip = self.get_instance_ip(self.prometheus_reader_host)
+        self.prometheus_writer_ip = self.get_instance_ip(self.prometheus_writer_host)
+        self.wait_for_url(
+            f"http://{self.prometheus_reader_ip}:{self.prometheus_reader_port}/api/v1/query?query=time()"
+        )
+        self.wait_for_url(
+            f"http://{self.prometheus_writer_ip}:{self.prometheus_writer_port}/api/v1/query?query=time()"
+        )
+
     def start(self):
         pytest_xdist_logging_to_separate_files.setup()
         logging.info("Running tests in {}".format(self.base_path))
@@ -3083,11 +3095,22 @@ class ClickHouseCluster:
                     f"http://{self.jdbc_bridge_ip}:{self.jdbc_bridge_port}/ping"
                 )
 
-            if self.with_prometheus:
+            if self.with_prometheus and self.base_prometheus_cmd:
                 os.makedirs(self.prometheus_writer_logs_dir)
                 os.chmod(self.prometheus_writer_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
                 os.makedirs(self.prometheus_reader_logs_dir)
                 os.chmod(self.prometheus_reader_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+
+                prometheus_start_cmd = self.base_prometheus_cmd + common_opts
+
+                logging.info(
+                    "Trying to create Prometheus instances by command %s",
+                    " ".join(map(str, prometheus_start_cmd)),
+                )
+                run_and_check(prometheus_start_cmd)
+                self.up_called = True
+                logging.info("Trying to connect to Prometheus...")
+                self.wait_prometheus_to_start()
 
             clickhouse_start_cmd = self.base_cmd + ["up", "-d", "--no-recreate"]
             logging.debug(

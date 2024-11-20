@@ -1,3 +1,4 @@
+#include <Interpreters/ProcessorsProfileLog.h>
 #include <Common/FieldVisitorToString.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -676,6 +677,8 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                         "tuple"});
                 }
             }
+
+            logProcessorProfile(context, io.pipeline.getProcessors());
         }
 
         scalars_cache.emplace(node_with_hash, scalar_block);

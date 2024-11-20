@@ -231,7 +231,7 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const final
     {
-        increment(place, static_cast<const ColVecType &>(*columns[0]).getData()[row_num]);
+        increment(place, Numerator(static_cast<const ColVecType &>(*columns[0]).getData()[row_num]));
         ++this->data(place).denominator;
     }
 

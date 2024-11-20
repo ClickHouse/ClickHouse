@@ -319,7 +319,9 @@ def generate_random_string(length=6):
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
 def test_delete_after_processing(started_cluster, mode, engine_name):
     node = started_cluster.instances["instance"]
-    table_name = f"delete_after_processing_{mode}_{engine_name}"
+    table_name = (
+        f"delete_after_processing_{mode}_{engine_name}_{generate_random_string()}"
+    )
     dst_table_name = f"{table_name}_dst"
     files_path = f"{table_name}_data"
     files_num = 5
@@ -361,6 +363,21 @@ def test_delete_after_processing(started_cluster, mode, engine_name):
             f"SELECT column1, column2, column3 FROM {dst_table_name} ORDER BY column1, column2, column3"
         ).splitlines()
     ] == sorted(total_values, key=lambda x: (x[0], x[1], x[2]))
+
+    node.query("system flush logs")
+
+    if engine_name == "S3Queue":
+        system_table_name = "s3queue_log"
+    else:
+        system_table_name = "azure_queue_log"
+    assert (
+        int(
+            node.query(
+                f"SELECT sum(rows_processed) FROM system.{system_table_name} WHERE table = '{table_name}'"
+            )
+        )
+        == files_num * row_num
+    )
 
     if engine_name == "S3Queue":
         minio = started_cluster.minio_client
@@ -407,6 +424,8 @@ def test_failed_retry(started_cluster, mode, engine_name):
         additional_settings={
             "s3queue_loading_retries": retries_num,
             "keeper_path": keeper_path,
+            "polling_max_timeout_ms": 5000,
+            "polling_backoff_ms": 1000,
         },
         engine_name=engine_name,
     )
@@ -852,6 +871,8 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
             additional_settings={
                 "keeper_path": keeper_path,
                 "s3queue_buckets": 2,
+                "polling_max_timeout_ms": 2000,
+                "polling_backoff_ms": 1000,
                 **({"s3queue_processing_threads_num": 1} if mode == "ordered" else {}),
             },
         )
@@ -929,6 +950,8 @@ def test_max_set_age(started_cluster):
             "cleanup_interval_min_ms": max_age / 3,
             "cleanup_interval_max_ms": max_age / 3,
             "loading_retries": 0,
+            "polling_max_timeout_ms": 5000,
+            "polling_backoff_ms": 1000,
             "processing_threads_num": 1,
             "loading_retries": 0,
         },
@@ -999,6 +1022,9 @@ def test_max_set_age(started_cluster):
     node.query("SYSTEM FLUSH LOGS")
     assert "Cannot parse input" in node.query(
         f"SELECT exception FROM system.s3queue WHERE file_name ilike '%{file_with_error}'"
+    )
+    assert "Cannot parse input" in node.query(
+        f"SELECT exception FROM system.s3queue_log WHERE file_name ilike '%{file_with_error}' ORDER BY processing_end_time DESC LIMIT 1"
     )
 
     assert 1 == int(
@@ -1420,6 +1446,8 @@ def test_shards_distributed(started_cluster, mode, processing_threads):
                 "keeper_path": keeper_path,
                 "s3queue_processing_threads_num": processing_threads,
                 "s3queue_buckets": shards_num,
+                "polling_max_timeout_ms": 1000,
+                "polling_backoff_ms": 0,
             },
         )
         i += 1
@@ -1670,6 +1698,8 @@ def test_processed_file_setting_distributed(started_cluster, processing_threads)
                 "s3queue_processing_threads_num": processing_threads,
                 "s3queue_last_processed_path": f"{files_path}/test_5.csv",
                 "s3queue_buckets": 2,
+                "polling_max_timeout_ms": 2000,
+                "polling_backoff_ms": 1000,
             },
         )
 

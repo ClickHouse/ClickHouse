@@ -131,7 +131,7 @@ bool tryGetNumericValueFromJSONElement(
     switch (element.type())
     {
         case ElementType::DOUBLE:
-            if constexpr (std::is_floating_point_v<NumberType>)
+            if constexpr (is_floating_point<NumberType>)
             {
                 /// We permit inaccurate conversion of double to float.
                 /// Example: double 0.1 from JSON is not representable in float.
@@ -175,7 +175,7 @@ bool tryGetNumericValueFromJSONElement(
                 return false;
 
             auto rb = ReadBufferFromMemory{element.getString()};
-            if constexpr (std::is_floating_point_v<NumberType>)
+            if constexpr (is_floating_point<NumberType>)
             {
                 if (!tryReadFloatText(value, rb) || !rb.eof())
                 {
@@ -362,9 +362,10 @@ public:
 
             auto & col_str = assert_cast<ColumnString &>(column);
             auto & chars = col_str.getChars();
-            WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
-            jsonElementToString<JSONParser>(element, buf, format_settings);
-            buf.finalize();
+            {
+                WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
+                jsonElementToString<JSONParser>(element, buf, format_settings);
+            }
             chars.push_back(0);
             col_str.getOffsets().push_back(chars.size());
         }
