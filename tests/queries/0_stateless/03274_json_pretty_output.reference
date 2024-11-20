@@ -48,14 +48,7 @@
 		}
 	],
 
-	"rows": 1,
-
-	"statistics":
-	{
-		"elapsed": 0.003190043,
-		"rows_read": 0,
-		"bytes_read": 0
-	}
+	"rows": 1
 }
 {
 	"meta":
@@ -88,12 +81,5 @@
 		}
 	],
 
-	"rows": 1,
-
-	"statistics":
-	{
-		"elapsed": 0.001094511,
-		"rows_read": 0,
-		"bytes_read": 0
-	}
+	"rows": 1
 }
