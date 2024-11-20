@@ -123,27 +123,8 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration>::executeImpl(
         columns = cached_columns;
 
     StoragePtr storage;
-
-    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
-    {
-        storage = std::make_shared<StorageObjectStorage>(
-            configuration,
-            getObjectStorage(context, !is_insert_query),
-            context,
-            StorageID(getDatabaseName(), table_name),
-            columns,
-            ConstraintsDescription{},
-            /* comment */ String{},
-            /* format_settings */ std::nullopt,
-            /* mode */ LoadingStrictnessLevel::CREATE,
-            /* distributed_processing */ true,
-            /* partition_by */ nullptr);
-
-        storage->startup();
-        return storage;
-    }
-
     const auto & settings = context->getSettingsRef();
+
     auto parallel_replicas_cluster_name = settings[Setting::cluster_for_parallel_replicas].toString();
     auto can_use_parallel_replicas = settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0
         && settings[Setting::parallel_replicas_for_cluster_engines]
