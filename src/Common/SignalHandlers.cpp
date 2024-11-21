@@ -80,7 +80,7 @@ void childSignalHandler(int sig, siginfo_t * info, void *)
     writeBinary(sig, out);
     writeBinary(info->si_pid, out);
 
-    out.next();
+    out.finalize();
     errno = saved_errno;
 }
 
