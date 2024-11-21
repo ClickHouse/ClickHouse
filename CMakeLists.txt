@@ -63,9 +63,9 @@ if (ENABLE_CHECK_HEAVY_BUILDS)
 
     # Sanitizers are too heavy. Some architectures too.
     if (SANITIZE OR SANITIZE_COVERAGE OR WITH_COVERAGE OR ARCH_RISCV64 OR ARCH_LOONGARCH64)
-        # Twice as large
-        set (RLIMIT_DATA 10000000000)
-        set (RLIMIT_AS 20000000000)
+        # Three times as large
+        set (RLIMIT_DATA 15000000000)
+        set (RLIMIT_AS 30000000000)
     endif()
 
     # For some files currently building RISCV64/LOONGARCH64 might be too slow.
@@ -105,7 +105,7 @@ if (ENABLE_FUZZING)
     set (ENABLE_THINLTO 0)
     set (ENABLE_TCMALLOC 0)
     set (ENABLE_JEMALLOC 0)
-    set (ENABLE_CHECK_HEAVY_BUILDS 0)
+    set (ENABLE_CHECK_HEAVY_BUILDS 1)
     set (GLIBC_COMPATIBILITY OFF)
     set (ENABLE_BENCHMARKS 0)
 
