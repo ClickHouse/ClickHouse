@@ -638,16 +638,14 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     if (context->canUseParallelReplicasOnFollower() && settings[Setting::parallel_replicas_local_plan]
         && settings[Setting::parallel_replicas_skip_index_analysis_on_workers])
     {
+        // Skip index analysis and return parts with all marks
+        // The coordinator will chose ranges to read for workers based on index analysis on its side
         RangesInDataParts parts_with_ranges;
         parts_with_ranges.reserve(parts.size());
         for (size_t part_index = 0; part_index < parts.size(); ++part_index)
         {
             const auto & part = parts[part_index];
-            // LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "part {}", part->getNameWithState());
-
-            MarkRanges ranges;
-            ranges.emplace_back(0, part->getMarksCount());
-            parts_with_ranges.emplace_back(part, part_index, std::move(ranges));
+            parts_with_ranges.emplace_back(part, part_index, MarkRanges{{0, part->getMarksCount()}});
         }
         return parts_with_ranges;
     }
