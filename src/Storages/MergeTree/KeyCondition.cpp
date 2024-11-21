@@ -17,6 +17,7 @@
 #include <Functions/indexHint.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Functions/IFunctionDateOrDateTime.h>
 #include <Functions/geometryConverters.h>
 #include <Common/FieldVisitorToString.h>
@@ -905,7 +906,7 @@ static Field applyFunctionForField(
         { arg_type->createColumnConst(1, arg_value), arg_type, "x" },
     };
 
-    auto col = func->execute(columns, func->getResultType(), 1);
+    auto col = func->execute(columns, func->getResultType(), 1, /* dry_run = */ false);
     return (*col)[0];
 }
 
@@ -939,7 +940,7 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
         /// When cache is missed, we calculate the whole column where the field comes from. This will avoid repeated calculation.
         ColumnsWithTypeAndName args{(*columns)[field.column_idx]};
         field.columns->emplace_back(ColumnWithTypeAndName {nullptr, func->getResultType(), result_name});
-        (*columns)[result_idx].column = func->execute(args, (*columns)[result_idx].type, columns->front().column->size());
+        (*columns)[result_idx].column = func->execute(args, (*columns)[result_idx].type, columns->front().column->size(), /* dry_run = */ false);
     }
 
     return {field.columns, field.row_idx, result_idx};
@@ -1012,7 +1013,7 @@ bool applyFunctionChainToColumn(
             return false;
 
         result_column = castColumnAccurate({result_column, result_type, ""}, argument_type);
-        result_column = func->execute({{result_column, argument_type, ""}}, func->getResultType(), result_column->size());
+        result_column = func->execute({{result_column, argument_type, ""}}, func->getResultType(), result_column->size(), /* dry_run = */ false);
         result_type = func->getResultType();
 
         // Transforming nullable columns to the nested ones, in case no nulls found
