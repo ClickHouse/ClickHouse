@@ -10,9 +10,7 @@ using namespace DB;
 
 using ResourceTest = ResourceTestClass;
 
-/// Tests disabled because of leaks in the test themselves: https://github.com/ClickHouse/ClickHouse/issues/67678
-
-TEST(DISABLED_SchedulerThrottlerConstraint, LeakyBucketConstraint)
+TEST(SchedulerThrottlerConstraint, LeakyBucketConstraint)
 {
     ResourceTest t;
     EventQueue::TimePoint start = std::chrono::system_clock::now();
@@ -42,7 +40,7 @@ TEST(DISABLED_SchedulerThrottlerConstraint, LeakyBucketConstraint)
     t.consumed("A", 10);
 }
 
-TEST(DISABLED_SchedulerThrottlerConstraint, Unlimited)
+TEST(SchedulerThrottlerConstraint, Unlimited)
 {
     ResourceTest t;
     EventQueue::TimePoint start = std::chrono::system_clock::now();
@@ -59,7 +57,7 @@ TEST(DISABLED_SchedulerThrottlerConstraint, Unlimited)
     }
 }
 
-TEST(DISABLED_SchedulerThrottlerConstraint, Pacing)
+TEST(SchedulerThrottlerConstraint, Pacing)
 {
     ResourceTest t;
     EventQueue::TimePoint start = std::chrono::system_clock::now();
@@ -79,7 +77,7 @@ TEST(DISABLED_SchedulerThrottlerConstraint, Pacing)
     }
 }
 
-TEST(DISABLED_SchedulerThrottlerConstraint, BucketFilling)
+TEST(SchedulerThrottlerConstraint, BucketFilling)
 {
     ResourceTest t;
     EventQueue::TimePoint start = std::chrono::system_clock::now();
@@ -113,7 +111,7 @@ TEST(DISABLED_SchedulerThrottlerConstraint, BucketFilling)
     t.consumed("A", 3);
 }
 
-TEST(DISABLED_SchedulerThrottlerConstraint, PeekAndAvgLimits)
+TEST(SchedulerThrottlerConstraint, PeekAndAvgLimits)
 {
     ResourceTest t;
     EventQueue::TimePoint start = std::chrono::system_clock::now();
@@ -141,7 +139,7 @@ TEST(DISABLED_SchedulerThrottlerConstraint, PeekAndAvgLimits)
     }
 }
 
-TEST(DISABLED_SchedulerThrottlerConstraint, ThrottlerAndFairness)
+TEST(SchedulerThrottlerConstraint, ThrottlerAndFairness)
 {
     ResourceTest t;
     EventQueue::TimePoint start = std::chrono::system_clock::now();
@@ -160,22 +158,22 @@ TEST(DISABLED_SchedulerThrottlerConstraint, ThrottlerAndFairness)
         t.enqueue("/fair/B", {req_cost});
     }
 
-    double shareA = 0.1;
-    double shareB = 0.9;
+    double share_a = 0.1;
+    double share_b = 0.9;
 
     // Bandwidth-latency coupling due to fairness: worst latency is inversely proportional to share
-    auto max_latencyA = static_cast<ResourceCost>(req_cost * (1.0 + 1.0 / shareA));
-    auto max_latencyB = static_cast<ResourceCost>(req_cost * (1.0 + 1.0 / shareB));
+    auto max_latency_a = static_cast<ResourceCost>(req_cost * (1.0 + 1.0 / share_a));
+    auto max_latency_b = static_cast<ResourceCost>(req_cost * (1.0 + 1.0 / share_b));
 
-    double consumedA = 0;
-    double consumedB = 0;
+    double consumed_a = 0;
+    double consumed_b = 0;
     for (int seconds = 0; seconds < 100; seconds++)
     {
         t.process(start + std::chrono::seconds(seconds));
         double arrival_curve = 100.0 + 10.0 * seconds + req_cost;
-        t.consumed("A", static_cast<ResourceCost>(arrival_curve * shareA - consumedA), max_latencyA);
-        t.consumed("B", static_cast<ResourceCost>(arrival_curve * shareB - consumedB), max_latencyB);
-        consumedA = arrival_curve * shareA;
-        consumedB = arrival_curve * shareB;
+        t.consumed("A", static_cast<ResourceCost>(arrival_curve * share_a - consumed_a), max_latency_a);
+        t.consumed("B", static_cast<ResourceCost>(arrival_curve * share_b - consumed_b), max_latency_b);
+        consumed_a = arrival_curve * share_a;
+        consumed_b = arrival_curve * share_b;
     }
 }

@@ -4,8 +4,9 @@ FROM ubuntu:22.04
 # ARG for quick switch to a given ubuntu mirror
 ARG apt_archive="http://archive.ubuntu.com"
 RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
+ARG LLVM_APT_VERSION="1:19.1.4~*"
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=18
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=19
 
 RUN apt-get update \
     && apt-get install \
@@ -26,13 +27,15 @@ RUN apt-get update \
     && echo "deb https://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-${LLVM_VERSION} main" >> \
         /etc/apt/sources.list \
     && apt-get update \
-    && apt-get install --yes --no-install-recommends --verbose-versions llvm-${LLVM_VERSION} \
+    && apt-get install --yes --no-install-recommends --verbose-versions llvm-${LLVM_VERSION}>=${LLVM_APT_VERSION} \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 # moreutils - provides ts fo FT
 # expect, bzip2 - requried by FT
 # bsdmainutils - provides hexdump for FT
+# nasm - nasm copiler for one of submodules, required from normal build
+# yasm - asssembler for libhdfs3, required from normal build
 
 RUN apt-get update \
     && apt-get install \
@@ -53,6 +56,8 @@ RUN apt-get update \
         pv \
         jq \
         bzip2 \
+        nasm \
+        yasm \
         --yes --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
@@ -67,10 +72,6 @@ RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld
 # FIXME: workaround for "The imported target "merge-fdata" references the file" error
 # https://salsa.debian.org/pkg-llvm-team/llvm-toolchain/-/commit/992e52c0b156a5ba9c6a8a54f8c4857ddd3d371d
 RUN sed -i '/_IMPORT_CHECK_FILES_FOR_\(mlir-\|llvm-bolt\|merge-fdata\|MLIR\)/ {s|^|#|}' /usr/lib/llvm-${LLVM_VERSION}/lib/cmake/llvm/LLVMExports-*.cmake
-
-# LLVM changes paths for compiler-rt libraries. For some reason clang-18.1.8 cannot catch up libraries from default install path.
-# It's very dirty workaround, better to build compiler and LLVM ourself and use it. Details: https://github.com/llvm/llvm-project/issues/95792
-RUN test ! -d /usr/lib/llvm-18/lib/clang/18/lib/x86_64-pc-linux-gnu || ln -s /usr/lib/llvm-18/lib/clang/18/lib/x86_64-pc-linux-gnu /usr/lib/llvm-18/lib/clang/18/lib/x86_64-unknown-linux-gnu
 
 ARG TARGETARCH
 ARG SCCACHE_VERSION=v0.7.7
@@ -100,6 +101,15 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 RUN groupadd --system --gid 1000 clickhouse \
     && useradd --system --gid 1000 --uid 1000 -m clickhouse \
     && mkdir -p /.cache/sccache && chmod 777 /.cache/sccache
+
+
+# TODO move nfpm to docker that will do packaging
+ARG TARGETARCH
+ARG NFPM_VERSION=2.20.0
+RUN arch=${TARGETARCH:-amd64} \
+    && curl -Lo /tmp/nfpm.deb "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${arch}.deb" \
+    && dpkg -i /tmp/nfpm.deb \
+    && rm /tmp/nfpm.deb
 
 ENV PYTHONPATH="/wd"
 ENV PYTHONUNBUFFERED=1

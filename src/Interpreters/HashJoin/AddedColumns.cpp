@@ -3,14 +3,16 @@
 
 namespace DB
 {
-JoinOnKeyColumns::JoinOnKeyColumns(const Block & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_)
-    : key_names(key_names_)
-    , materialized_keys_holder(JoinCommon::materializeColumns(
-          block, key_names)) /// Rare case, when keys are constant or low cardinality. To avoid code bloat, simply materialize them.
+JoinOnKeyColumns::JoinOnKeyColumns(
+    const ScatteredBlock & block_, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_)
+    : block(block_)
+    , key_names(key_names_)
+    /// Rare case, when keys are constant or low cardinality. To avoid code bloat, simply materialize them.
+    , materialized_keys_holder(JoinCommon::materializeColumns(block.getSourceBlock(), key_names))
     , key_columns(JoinCommon::getRawPointers(materialized_keys_holder))
     , null_map(nullptr)
     , null_map_holder(extractNestedColumnsAndNullMap(key_columns, null_map))
-    , join_mask_column(JoinCommon::getColumnAsMask(block, cond_column_name))
+    , join_mask_column(JoinCommon::getColumnAsMask(block.getSourceBlock(), cond_column_name))
     , key_sizes(key_sizes_)
 {
 }

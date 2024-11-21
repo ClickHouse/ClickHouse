@@ -136,6 +136,7 @@ add_headers_and_sources(dbms Storages/ObjectStorage/HDFS)
 add_headers_and_sources(dbms Storages/ObjectStorage/Local)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes)
 add_headers_and_sources(dbms Common/NamedCollections)
+add_headers_and_sources(dbms Common/Scheduler/Workload)
 
 if (TARGET ch_contrib::amqp_cpp)
     add_headers_and_sources(dbms Storages/RabbitMQ)
@@ -636,6 +637,10 @@ endif()
 if (TARGET ch_rust::skim)
     dbms_target_include_directories(PRIVATE $<TARGET_PROPERTY:ch_rust::skim,INTERFACE_INCLUDE_DIRECTORIES>)
     dbms_target_link_libraries(PUBLIC ch_rust::skim)
+endif()
+
+if (TARGET ch_contrib::google_cloud_cpp)
+    dbms_target_link_libraries(PUBLIC ch_contrib::google_cloud_cpp)
 endif()
 
 if (ENABLE_TESTS)

@@ -62,6 +62,7 @@ bool MergePlainMergeTreeTask::executeStep()
             }
             catch (...)
             {
+                tryLogCurrentException(__PRETTY_FUNCTION__, "Exception is in merge_task.");
                 write_part_log(ExecutionStatus::fromCurrentException("", true));
                 throw;
             }
@@ -99,7 +100,6 @@ void MergePlainMergeTreeTask::prepare()
     write_part_log = [this] (const ExecutionStatus & execution_status)
     {
         auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
-        merge_task.reset();
         storage.writePartLog(
             PartLogElement::MERGE_PARTS,
             execution_status,
@@ -152,7 +152,14 @@ void MergePlainMergeTreeTask::finish()
     ThreadFuzzer::maybeInjectSleep();
     ThreadFuzzer::maybeInjectMemoryLimitException();
 
+    if (auto * mark_cache = storage.getContext()->getMarkCache().get())
+    {
+        auto marks = merge_task->releaseCachedMarks();
+        addMarksToCache(*new_part, marks, mark_cache);
+    }
+
     write_part_log({});
+
     StorageMergeTree::incrementMergedPartsProfileEvent(new_part->getType());
     transfer_profile_counters_to_initial_query();
 
@@ -163,15 +170,20 @@ void MergePlainMergeTreeTask::finish()
         ThreadFuzzer::maybeInjectSleep();
         ThreadFuzzer::maybeInjectMemoryLimitException();
     }
+}
 
+void MergePlainMergeTreeTask::cancel() noexcept
+{
+    if (merge_task)
+        merge_task->cancel();
 }
 
 ContextMutablePtr MergePlainMergeTreeTask::createTaskContext() const
 {
     auto context = Context::createCopy(storage.getContext());
     context->makeQueryContextForMerge(*storage.getSettings());
-    auto queryId = getQueryId();
-    context->setCurrentQueryId(queryId);
+    auto query_id = getQueryId();
+    context->setCurrentQueryId(query_id);
     context->setBackgroundOperationTypeForContext(ClientInfo::BackgroundOperationType::MERGE);
     return context;
 }
