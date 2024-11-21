@@ -64,6 +64,8 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     },
     {"24.11",
         {
+            {"short_circuit_function_evaluation_for_nulls", false, true, "Allow to execute functions with Nullable arguments only on rows with non-NULL values in all arguments"},
+            {"short_circuit_function_evaluation_for_nulls_threshold", 1.0, 1.0, "Ratio threshold of NULL values to execute functions with Nullable arguments only on rows with non-NULL values in all arguments. Applies when setting short_circuit_function_evaluation_for_nulls is enabled."},
             {"enable_http_compression", false, true, "Improvement for read-only clients since they can't change settings"},
             {"validate_mutation_query", false, true, "New setting to validate mutation queries by default."},
             {"enable_job_stack_trace", false, true, "Enable by default collecting stack traces from job's scheduling."},
@@ -85,6 +87,9 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit", 1, 1, "Rename of setting skip_download_if_exceeds_query_cache_limit"},
             {"filesystem_cache_prefer_bigger_buffer_size", true, true, "New setting"},
             {"read_in_order_use_virtual_row", false, false, "Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only relevant ones are touched."},
+            {"s3_skip_empty_files", false, true, "We hope it will provide better UX"},
+            {"filesystem_cache_boundary_alignment", 0, 0, "New setting"},
+            {"push_external_roles_in_interserver_queries", false, false, "New setting."},
         }
     },
     {"24.10",

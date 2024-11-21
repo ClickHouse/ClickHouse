@@ -58,13 +58,8 @@ jobs:
       test_name: Style check
       runner_type: style-checker-aarch64
       run_command: |
-          python3 style_check.py
+          python3 style_check.py --no-push
       data: ${{ needs.RunConfig.outputs.data }}
-    secrets:
-      secret_envs: |
-        ROBOT_CLICKHOUSE_SSH_KEY<<RCSK
-        ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
-        RCSK
   FastTest:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'Fast test') }}

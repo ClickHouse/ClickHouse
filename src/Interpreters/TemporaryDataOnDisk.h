@@ -129,7 +129,6 @@ public:
     const Impl & operator*() const { chassert(impl); chassert(holder); return *impl; }
     operator bool() const { return impl != nullptr; } /// NOLINT
 
-    const Holder * getHolder() const { return holder.get(); }
     Holder * getHolder() { return holder.get(); }
 
     void reset()
@@ -185,6 +184,8 @@ public:
     };
 
     explicit TemporaryDataBuffer(TemporaryDataOnDiskScope * parent_, size_t reserve_size = 0);
+    ~TemporaryDataBuffer() override;
+
     void nextImpl() override;
     void finalizeImpl() override;
     void cancelImpl() noexcept override;
@@ -193,8 +194,6 @@ public:
     Stat finishWriting();
 
     String describeFilePath() const;
-
-    ~TemporaryDataBuffer() override;
 
 private:
     void updateAllocAndCheck();

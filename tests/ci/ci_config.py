@@ -46,7 +46,13 @@ class CI:
                 JobNames.JEPSEN_KEEPER,
                 JobNames.JEPSEN_SERVER,
             ]
-        )
+        ),
+        WorkFlowNames.NIGHTLY: LabelConfig(
+            run_jobs=[
+                BuildNames.FUZZERS,
+                JobNames.LIBFUZZER_TEST,
+            ]
+        ),
     }  # type: Dict[str, LabelConfig]
 
     TAG_CONFIGS = {
@@ -563,6 +569,8 @@ class CI:
                 include_paths=[
                     "./tests/queries/0_stateless/",
                     "./tests/docker_scripts/",
+                    "./tests/config/",
+                    "./tests/clickhouse-test",
                 ],
                 exclude_files=[".md"],
                 docker=["clickhouse/fasttest"],

@@ -220,7 +220,7 @@ std::vector<String> Client::loadWarningMessages()
                           "" /* query_id */,
                           QueryProcessingStage::Complete,
                           &client_context->getSettingsRef(),
-                          &client_context->getClientInfo(), false, {});
+                          &client_context->getClientInfo(), false, {}, {});
     while (true)
     {
         Packet packet = connection->receivePacket();

@@ -81,6 +81,13 @@ void MergedBlockOutputStream::write(const Block & block)
     writeImpl(block, nullptr);
 }
 
+void MergedBlockOutputStream::cancel() noexcept
+{
+    if (writer)
+        writer->cancel();
+}
+
+
 /** If the data is not sorted, but we pre-calculated the permutation, after which they will be sorted.
     * This method is used to save RAM, since you do not need to keep two blocks at once - the source and the sorted.
     */
@@ -106,6 +113,7 @@ struct MergedBlockOutputStream::Finalizer::Impl
     }
 
     void finish();
+    void cancel();
 };
 
 void MergedBlockOutputStream::Finalizer::finish()
@@ -114,6 +122,14 @@ void MergedBlockOutputStream::Finalizer::finish()
     impl.reset();
     if (to_finish)
         to_finish->finish();
+}
+
+void MergedBlockOutputStream::Finalizer::cancel()
+{
+    std::unique_ptr<Impl> to_cancel = std::move(impl);
+    impl.reset();
+    if (to_cancel)
+        to_cancel->cancel();
 }
 
 void MergedBlockOutputStream::Finalizer::Impl::finish()
@@ -143,6 +159,16 @@ void MergedBlockOutputStream::Finalizer::Impl::finish()
 
     for (const auto & file_name : files_to_remove_after_finish)
         part->getDataPartStorage().removeFile(file_name);
+}
+
+void MergedBlockOutputStream::Finalizer::Impl::cancel()
+{
+    writer.cancel();
+
+    for (auto & file : written_files)
+    {
+        file->cancel();
+    }
 }
 
 MergedBlockOutputStream::Finalizer::Finalizer(Finalizer &&) noexcept = default;
@@ -211,9 +237,9 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
         new_part->setColumns(part_columns, serialization_infos, metadata_snapshot->getMetadataVersion());
     }
 
-    auto finalizer = std::make_unique<Finalizer::Impl>(*writer, new_part, files_to_remove_after_sync, sync);
+    std::vector<std::unique_ptr<WriteBufferFromFileBase>> written_files;
     if (new_part->isStoredOnDisk())
-       finalizer->written_files = finalizePartOnDisk(new_part, checksums);
+       written_files = finalizePartOnDisk(new_part, checksums);
 
     new_part->rows_count = rows_count;
     new_part->modification_time = time(nullptr);
@@ -238,6 +264,8 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     if (default_codec != nullptr)
         new_part->default_codec = default_codec;
 
+    auto finalizer = std::make_unique<Finalizer::Impl>(*writer, new_part, files_to_remove_after_sync, sync);
+    finalizer->written_files = std::move(written_files);
     return Finalizer(std::move(finalizer));
 }
 

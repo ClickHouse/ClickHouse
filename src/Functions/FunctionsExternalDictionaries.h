@@ -644,7 +644,7 @@ private:
         };
 
         auto rows = mask_column->size();
-        result_column = if_func->build(if_args)->execute(if_args, result_type, rows);
+        result_column = if_func->build(if_args)->execute(if_args, result_type, rows, /* dry_run = */ false);
     }
 
 

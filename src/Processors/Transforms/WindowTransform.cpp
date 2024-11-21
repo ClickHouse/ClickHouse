@@ -2350,7 +2350,7 @@ struct WindowFunctionLagLeadInFrame final : public StatelessWindowFunction
             }
         };
 
-        return func_cast->execute(arguments, argument_types[0], columns[idx[2]]->size());
+        return func_cast->execute(arguments, argument_types[0], columns[idx[2]]->size(), /* dry_run = */ false);
     }
 
     static DataTypePtr createResultType(const DataTypes & argument_types_, const std::string & name_)
