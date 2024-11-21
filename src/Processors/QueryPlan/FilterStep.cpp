@@ -5,7 +5,9 @@
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
 #include <stack>
@@ -52,7 +54,7 @@ static ActionsAndName splitSingleAndFilter(ActionsDAG & dag, const ActionsDAG::N
     auto filter_type = removeLowCardinality(split_filter_node->result_type);
     if (!filter_type->onlyNull() && !isUInt8(removeNullable(filter_type)))
     {
-        DataTypePtr cast_type = std::make_shared<DataTypeUInt8>();
+        DataTypePtr cast_type = DataTypeFactory::instance().get("Bool");
         if (filter_type->isNullable())
             cast_type = std::make_shared<DataTypeNullable>(std::move(cast_type));
 

@@ -4,6 +4,8 @@ from ci.settings.definitions import (
     RunnerLabels,
 )
 
+MAIN_BRANCH = "master"
+
 S3_ARTIFACT_PATH = f"{S3_BUCKET_NAME}/artifacts"
 CI_CONFIG_RUNS_ON = [RunnerLabels.CI_SERVICES]
 DOCKER_BUILD_RUNS_ON = [RunnerLabels.CI_SERVICES_EBS]
