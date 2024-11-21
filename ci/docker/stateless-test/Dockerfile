@@ -58,6 +58,7 @@ RUN apt-get update -y \
             curl \
             wget \
             xz-utils \
+            ripgrep \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
@@ -114,4 +115,5 @@ RUN curl -L --no-verbose -O 'https://archive.apache.org/dist/hadoop/common/hadoo
 RUN npm install -g azurite@3.30.0 \
     && npm install -g tslib && npm install -g node
 
+ENV PYTHONPATH=".:./ci"
 USER clickhouse
