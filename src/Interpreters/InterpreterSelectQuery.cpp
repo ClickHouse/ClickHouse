@@ -1893,6 +1893,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         joined_plan->getCurrentHeader(),
                         expressions.join,
                         settings[Setting::max_block_size],
+                        0,
                         max_streams,
                         analysis_result.optimize_read_in_order);
 

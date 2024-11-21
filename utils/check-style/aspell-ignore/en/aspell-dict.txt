@@ -244,7 +244,10 @@ Deduplication
 DefaultTableEngine
 DelayedInserts
 DeliveryTag
+Deltalake
 DeltaLake
+deltalakeCluster
+deltaLakeCluster
 Denormalize
 DestroyAggregatesThreads
 DestroyAggregatesThreadsActive
@@ -377,10 +380,15 @@ Homebrew's
 HorizontalDivide
 Hostname
 HouseOps
+hudi
 Hudi
+hudiCluster
+HudiCluster
 HyperLogLog
 Hypot
 IANA
+icebergCluster
+IcebergCluster
 IDE
 IDEs
 IDNA
@@ -1996,6 +2004,7 @@ jbod
 jdbc
 jemalloc
 jeprof
+joda
 joinGet
 joinGetOrNull
 json
@@ -3156,3 +3165,4 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
+BFloat

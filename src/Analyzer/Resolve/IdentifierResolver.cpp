@@ -533,7 +533,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromCompoundExpression(
   *
   * Resolve strategy:
   * 1. Try to bind identifier to scope argument name to node map.
-  * 2. If identifier is binded but expression context and node type are incompatible return nullptr.
+  * 2. If identifier is bound but expression context and node type are incompatible return nullptr.
   *
   * It is important to support edge cases, where we lookup for table or function node, but argument has same name.
   * Example: WITH (x -> x + 1) AS func, (func -> func(1) + func) AS lambda SELECT lambda(1);

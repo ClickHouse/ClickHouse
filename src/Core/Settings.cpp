@@ -151,6 +151,9 @@ Squash blocks passed to the external table to a specified size in bytes, if bloc
     DECLARE(UInt64, max_joined_block_size_rows, DEFAULT_BLOCK_SIZE, R"(
 Maximum block size for JOIN result (if join algorithm supports it). 0 means unlimited.
 )", 0) \
+    DECLARE(UInt64, min_joined_block_size_bytes, 524288, R"(
+Minimum block size for JOIN result (if join algorithm supports it). 0 means unlimited.
+)", 0) \
     DECLARE(UInt64, max_insert_threads, 0, R"(
 The maximum number of threads to execute the `INSERT SELECT` query.
 
@@ -430,7 +433,7 @@ Possible values:
 - 0 — `INSERT` query appends new data to the end of the file.
 - 1 — `INSERT` query creates a new file.
 )", 0) \
-    DECLARE(Bool, s3_skip_empty_files, false, R"(
+    DECLARE(Bool, s3_skip_empty_files, true, R"(
 Enables or disables skipping empty files in [S3](../../engines/table-engines/integrations/s3.md) engine tables.
 
 Possible values:
@@ -1794,7 +1797,7 @@ Possible values:
 
 - 0 — Disabled.
 - 1 — Enabled.
-)", 0) \
+)", 1) \
     DECLARE(Int64, http_zlib_compression_level, 3, R"(
 Sets the level of data compression in the response to an HTTP request if [enable_http_compression = 1](#enable_http_compression).
 
@@ -4320,7 +4323,7 @@ Disable limit on kafka_num_consumers that depends on the number of available CPU
 )", 0) \
     DECLARE(Bool, allow_experimental_kafka_offsets_storage_in_keeper, false, R"(
 Allow experimental feature to store Kafka related offsets in ClickHouse Keeper. When enabled a ClickHouse Keeper path and replica name can be specified to the Kafka table engine. As a result instead of the regular Kafka engine, a new type of storage engine will be used that stores the committed offsets primarily in ClickHouse Keeper
-)", 0) \
+)", EXPERIMENTAL) \
     DECLARE(Bool, enable_software_prefetch_in_aggregation, true, R"(
 Enable use of software prefetch in aggregation
 )", 0) \
@@ -4883,6 +4886,9 @@ Wait time to lock cache for space reservation in filesystem cache
 )", 0) \
     DECLARE(Bool, filesystem_cache_prefer_bigger_buffer_size, true, R"(
 Prefer bigger buffer size if filesystem cache is enabled to avoid writing small file segments which deteriorate cache performance. On the other hand, enabling this setting might increase memory usage.
+)", 0) \
+    DECLARE(UInt64, filesystem_cache_boundary_alignment, 0, R"(
+Filesystem cache boundary alignment. This setting is applied only for non-disk read (e.g. for cache of remote table engines / table functions, but not for storage configuration of MergeTree tables). Value 0 means no alignment.
 )", 0) \
     DECLARE(UInt64, temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds, (10 * 60 * 1000), R"(
 Wait time to lock cache for space reservation for temporary data in filesystem cache
@@ -5515,6 +5521,13 @@ Only available in ClickHouse Cloud. Number of background threads for speculative
     DECLARE(Int64, ignore_cold_parts_seconds, 0, R"(
 Only available in ClickHouse Cloud. Exclude new data parts from SELECT queries until they're either pre-warmed (see cache_populated_by_fetch) or this many seconds old. Only for Replicated-/SharedMergeTree.
 )", 0) \
+    DECLARE(Bool, short_circuit_function_evaluation_for_nulls, true, R"(
+Allows to execute functions with Nullable arguments only on rows with non-NULL values in all arguments when ratio of NULL values in arguments exceeds short_circuit_function_evaluation_for_nulls_threshold. Applies only to functions that return NULL value for rows with at least one NULL value in arguments.
+)", 0) \
+    DECLARE(Double, short_circuit_function_evaluation_for_nulls_threshold, 1.0, R"(
+Ratio threshold of NULL values to execute functions with Nullable arguments only on rows with non-NULL values in all arguments. Applies when setting short_circuit_function_evaluation_for_nulls is enabled.
+When the ratio of rows containing NULL values to the total number of rows exceeds this threshold, these rows containing NULL values will not be evaluated.
+)", 0) \
     DECLARE(Int64, prefer_warmed_unmerged_parts_seconds, 0, R"(
 Only available in ClickHouse Cloud. If a merged part is less than this many seconds old and is not pre-warmed (see cache_populated_by_fetch), but all its source parts are available and pre-warmed, SELECT queries will read from those parts instead. Only for ReplicatedMergeTree. Note that this only checks whether CacheWarmer processed the part; if the part was fetched into cache by something else, it'll still be considered cold until CacheWarmer gets to it; if it was warmed, then evicted from cache, it'll still be considered warm.
 )", 0) \
@@ -5643,10 +5656,10 @@ Build local plan for local replica
     \
     DECLARE(Bool, allow_experimental_analyzer, true, R"(
 Allow new query analyzer.
-)", IMPORTANT | BETA) ALIAS(enable_analyzer) \
+)", IMPORTANT) ALIAS(enable_analyzer) \
     DECLARE(Bool, analyzer_compatibility_join_using_top_level_identifier, false, R"(
 Force to resolve identifier in JOIN USING from projection (for example, in `SELECT a + 1 AS b FROM t1 JOIN t2 USING (b)` join will be performed by `t1.a + 1 = t2.b`, rather then `t1.b = t2.b`).
-)", BETA) \
+)", 0) \
     \
     DECLARE(Timezone, session_timezone, "", R"(
 Sets the implicit time zone of the current session or query.
@@ -5722,6 +5735,9 @@ Allow writing simple SELECT queries without the leading SELECT keyword, which ma
 
 In `clickhouse-local` it is enabled by default and can be explicitly disabled.
 )", 0) \
+    DECLARE(Bool, push_external_roles_in_interserver_queries, true, R"(
+Enable pushing user roles from originator to other nodes while performing a query.
+)", 0) \
     \
     \
     /* ####################################################### */ \
@@ -5742,7 +5758,10 @@ Enable experimental functions for natural language processing.
 Enable experimental hash functions
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_object_type, false, R"(
-Allow Object and JSON data types
+Allow the obsolete Object data type
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_bfloat16_type, false, R"(
+Allow BFloat16 data type (under development).
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_time_series_table, false, R"(
 Allows creation of tables with the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine.
@@ -5751,7 +5770,7 @@ Possible values:
 
 - 0 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is disabled.
 - 1 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is enabled.
-)", 0) \
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_vector_similarity_index, false, R"(
 Allow experimental vector similarity index
 )", EXPERIMENTAL) \
@@ -5824,7 +5843,7 @@ If it is set to true, allow to use experimental full-text index.
     \
     DECLARE(Bool, allow_experimental_join_condition, false, R"(
 Support join with inequal conditions which involve columns from both left and right table. e.g. t1.y < t2.y.
-)", 0) \
+)", EXPERIMENTAL) \
     \
     DECLARE(Bool, allow_experimental_live_view, false, R"(
 Allows creation of a deprecated LIVE VIEW.
@@ -5833,7 +5852,7 @@ Possible values:
 
 - 0 — Working with live views is disabled.
 - 1 — Working with live views is enabled.
-)", 0) \
+)", EXPERIMENTAL) \
     DECLARE(Seconds, live_view_heartbeat_interval, 15, R"(
 The heartbeat interval in seconds to indicate live query is alive.
 )", EXPERIMENTAL) \
@@ -6185,6 +6204,11 @@ bool Settings::has(std::string_view name) const
 bool Settings::isChanged(std::string_view name) const
 {
     return impl->isChanged(name);
+}
+
+SettingsTierType Settings::getTier(std::string_view name) const
+{
+    return impl->getTier(name);
 }
 
 bool Settings::tryGet(std::string_view name, Field & value) const
