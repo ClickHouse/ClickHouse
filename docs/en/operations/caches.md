@@ -12,6 +12,7 @@ Main cache types:
 
 - `mark_cache` — Cache of marks used by table engines of the [MergeTree](../engines/table-engines/mergetree-family/mergetree.md) family.
 - `uncompressed_cache` — Cache of uncompressed data used by table engines of the [MergeTree](../engines/table-engines/mergetree-family/mergetree.md) family.
+- `skipping_index_cache` — Cache of in-memory skipping index granules used by table engines of the [MergeTree](../engines/table-engines/mergetree-family/mergetree.md) family.
 - Operating system page cache (used indirectly, for files with actual data).
 
 Additional cache types:

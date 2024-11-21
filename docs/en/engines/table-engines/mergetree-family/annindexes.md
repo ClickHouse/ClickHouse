@@ -120,7 +120,12 @@ requests.
 :::tip
 To reduce the cost of building vector similarity indexes, consider setting `materialize_skip_indexes_on_insert` which disables the
 construction of skipping indexes on newly inserted parts. Search would fall back to exact search but as inserted parts are typically small
-compared to the total table size, the performance impact of that would be negligible.
+compared to the total table size, the performance impact of that would be negligible. You may further use [SYSTEM STOP
+MERGES](../../../sql-reference/statements/system.md#stop-merges) to postpone all merges until the table with a vector similarity index has
+been fully build (e.g. all inserts completed).
+
+Repeated reads from vector similarity indexes benefit from a large skipping index cache. If needed, you can increase the default cache size
+using server setting [skipping_index_cache_size](../../../operations/server/settings.md#skipping_index_cache_size).
 
 ANN indexes support this type of query:
 
