@@ -7,10 +7,8 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
-#include <Columns/ColumnNothing.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnObjectDeprecated.h>
-#include <Columns/ColumnObject.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnStringHelpers.h>
 #include <Columns/ColumnTuple.h>
@@ -73,8 +71,20 @@
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 
+
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool cast_ipv4_ipv6_default_on_conversion_error;
+    extern const SettingsBool cast_string_to_dynamic_use_inference;
+    extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
+    extern const SettingsBool input_format_ipv4_default_on_conversion_error;
+    extern const SettingsBool input_format_ipv6_default_on_conversion_error;
+    extern const SettingsBool precise_float_parsing;
+    extern const SettingsBool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
+}
 
 namespace ErrorCodes
 {
@@ -643,7 +653,7 @@ inline void convertFromTime<DataTypeDateTime>(DataTypeDateTime::FieldType & x, t
 template <typename DataType>
 void parseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool precise_float_parsing)
 {
-    if constexpr (std::is_floating_point_v<typename DataType::FieldType>)
+    if constexpr (is_floating_point<typename DataType::FieldType>)
     {
         if (precise_float_parsing)
             readFloatTextPrecise(x, rb);
@@ -707,7 +717,7 @@ inline void parseImpl<DataTypeIPv6>(DataTypeIPv6::FieldType & x, ReadBuffer & rb
 template <typename DataType>
 bool tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool precise_float_parsing)
 {
-    if constexpr (std::is_floating_point_v<typename DataType::FieldType>)
+    if constexpr (is_floating_point<typename DataType::FieldType>)
     {
         if (precise_float_parsing)
             return tryReadFloatTextPrecise(x, rb);
@@ -967,7 +977,7 @@ struct ConvertThroughParsing
             const DB::ContextPtr query_context = DB::CurrentThread::get().getQueryContext();
 
             if (query_context)
-                precise_float_parsing = query_context->getSettingsRef().precise_float_parsing;
+                precise_float_parsing = query_context->getSettingsRef()[Setting::precise_float_parsing];
         }
 
         for (size_t i = 0; i < size; ++i)
@@ -1388,9 +1398,18 @@ struct ConvertImpl
                 offsets_to.resize(size);
 
                 WriteBufferFromVector<ColumnString::Chars> write_buffer(data_to);
-                const auto & type = static_cast<const FromDataType &>(*col_with_type_and_name.type);
+                const FromDataType & type = static_cast<const FromDataType &>(*col_with_type_and_name.type);
 
                 ColumnUInt8::MutablePtr null_map = copyNullMap(datetime_arg.column);
+
+                bool cut_trailing_zeros_align_to_groups_of_thousands = false;
+                if (DB::CurrentThread::isInitialized())
+                {
+                    const DB::ContextPtr query_context = DB::CurrentThread::get().getQueryContext();
+
+                    if (query_context)
+                        cut_trailing_zeros_align_to_groups_of_thousands = query_context->getSettingsRef()[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands];
+                }
 
                 if (!null_map && arguments.size() > 1)
                     null_map = copyNullMap(arguments[1].column->convertToFullColumnIfConst());
@@ -1406,7 +1425,18 @@ struct ConvertImpl
                             else
                                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty");
                         }
-                        bool is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
+                        bool is_ok = true;
+                        if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>)
+                        {
+                            if (cut_trailing_zeros_align_to_groups_of_thousands)
+                                writeDateTimeTextCutTrailingZerosAlignToGroupOfThousands(DateTime64(vec_from[i]), type.getScale(), write_buffer, *time_zone);
+                            else
+                                is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
+                        }
+                        else
+                        {
+                            is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
+                        }
                         null_map->getData()[i] |= !is_ok;
                         writeChar(0, write_buffer);
                         offsets_to[i] = write_buffer.count();
@@ -1423,7 +1453,17 @@ struct ConvertImpl
                             else
                                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty");
                         }
-                        FormatImpl<FromDataType>::template execute<void>(vec_from[i], write_buffer, &type, time_zone);
+                        if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>)
+                        {
+                            if (cut_trailing_zeros_align_to_groups_of_thousands)
+                                writeDateTimeTextCutTrailingZerosAlignToGroupOfThousands(DateTime64(vec_from[i]), type.getScale(), write_buffer, *time_zone);
+                            else
+                                FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
+                        }
+                        else
+                        {
+                            FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
+                        }
                         writeChar(0, write_buffer);
                         offsets_to[i] = write_buffer.count();
                     }
@@ -1807,7 +1847,7 @@ struct ConvertImpl
                 else
                 {
                     /// If From Data is Nan or Inf and we convert to integer type, throw exception
-                    if constexpr (std::is_floating_point_v<FromFieldType> && !std::is_floating_point_v<ToFieldType>)
+                    if constexpr (is_floating_point<FromFieldType> && !is_floating_point<ToFieldType>)
                     {
                         if (!isFinite(vec_from[i]))
                         {
@@ -2217,7 +2257,7 @@ private:
         FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior;
 
         if (context)
-            date_time_overflow_behavior = context->getSettingsRef().date_time_overflow_behavior.value;
+            date_time_overflow_behavior = context->getSettingsRef()[Setting::date_time_overflow_behavior].value;
 
         auto call = [&](const auto & types, BehaviourOnErrorFromString from_string_tag) -> bool
         {
@@ -2293,9 +2333,9 @@ private:
                 using RightT = typename RightDataType::FieldType;
 
                 static constexpr bool bad_left =
-                    is_decimal<LeftT> || std::is_floating_point_v<LeftT> || is_big_int_v<LeftT> || is_signed_v<LeftT>;
+                    is_decimal<LeftT> || is_floating_point<LeftT> || is_big_int_v<LeftT> || is_signed_v<LeftT>;
                 static constexpr bool bad_right =
-                    is_decimal<RightT> || std::is_floating_point_v<RightT> || is_big_int_v<RightT> || is_signed_v<RightT>;
+                    is_decimal<RightT> || is_floating_point<RightT> || is_big_int_v<RightT> || is_signed_v<RightT>;
 
                 /// Disallow int vs UUID conversion (but support int vs UInt128 conversion)
                 if constexpr ((bad_left && std::is_same_v<RightDataType, DataTypeUUID>) ||
@@ -2354,7 +2394,7 @@ private:
             bool cast_ipv4_ipv6_default_on_conversion_error = false;
             if constexpr (is_any_of<ToDataType, DataTypeIPv4, DataTypeIPv6>)
             {
-                if (context && (cast_ipv4_ipv6_default_on_conversion_error = context->getSettingsRef().cast_ipv4_ipv6_default_on_conversion_error))
+                if (context && (cast_ipv4_ipv6_default_on_conversion_error = context->getSettingsRef()[Setting::cast_ipv4_ipv6_default_on_conversion_error]))
                     done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, BehaviourOnErrorFromString::ConvertReturnZeroOnErrorTag);
             }
 
@@ -2622,7 +2662,7 @@ struct ToNumberMonotonicity
         /// Float cases.
 
         /// When converting to Float, the conversion is always monotonic.
-        if constexpr (std::is_floating_point_v<T>)
+        if constexpr (is_floating_point<T>)
             return { .is_monotonic = true, .is_always_monotonic = true };
 
         const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&type);
@@ -2835,6 +2875,7 @@ struct NameToInt32 { static constexpr auto name = "toInt32"; };
 struct NameToInt64 { static constexpr auto name = "toInt64"; };
 struct NameToInt128 { static constexpr auto name = "toInt128"; };
 struct NameToInt256 { static constexpr auto name = "toInt256"; };
+struct NameToBFloat16 { static constexpr auto name = "toBFloat16"; };
 struct NameToFloat32 { static constexpr auto name = "toFloat32"; };
 struct NameToFloat64 { static constexpr auto name = "toFloat64"; };
 struct NameToUUID { static constexpr auto name = "toUUID"; };
@@ -2853,6 +2894,7 @@ using FunctionToInt32 = FunctionConvert<DataTypeInt32, NameToInt32, ToNumberMono
 using FunctionToInt64 = FunctionConvert<DataTypeInt64, NameToInt64, ToNumberMonotonicity<Int64>>;
 using FunctionToInt128 = FunctionConvert<DataTypeInt128, NameToInt128, ToNumberMonotonicity<Int128>>;
 using FunctionToInt256 = FunctionConvert<DataTypeInt256, NameToInt256, ToNumberMonotonicity<Int256>>;
+using FunctionToBFloat16 = FunctionConvert<DataTypeBFloat16, NameToBFloat16, ToNumberMonotonicity<BFloat16>>;
 using FunctionToFloat32 = FunctionConvert<DataTypeFloat32, NameToFloat32, ToNumberMonotonicity<Float32>>;
 using FunctionToFloat64 = FunctionConvert<DataTypeFloat64, NameToFloat64, ToNumberMonotonicity<Float64>>;
 
@@ -2890,6 +2932,7 @@ template <> struct FunctionTo<DataTypeInt32> { using Type = FunctionToInt32; };
 template <> struct FunctionTo<DataTypeInt64> { using Type = FunctionToInt64; };
 template <> struct FunctionTo<DataTypeInt128> { using Type = FunctionToInt128; };
 template <> struct FunctionTo<DataTypeInt256> { using Type = FunctionToInt256; };
+template <> struct FunctionTo<DataTypeBFloat16> { using Type = FunctionToBFloat16; };
 template <> struct FunctionTo<DataTypeFloat32> { using Type = FunctionToFloat32; };
 template <> struct FunctionTo<DataTypeFloat64> { using Type = FunctionToFloat64; };
 
@@ -2932,6 +2975,7 @@ struct NameToInt32OrZero { static constexpr auto name = "toInt32OrZero"; };
 struct NameToInt64OrZero { static constexpr auto name = "toInt64OrZero"; };
 struct NameToInt128OrZero { static constexpr auto name = "toInt128OrZero"; };
 struct NameToInt256OrZero { static constexpr auto name = "toInt256OrZero"; };
+struct NameToBFloat16OrZero { static constexpr auto name = "toBFloat16OrZero"; };
 struct NameToFloat32OrZero { static constexpr auto name = "toFloat32OrZero"; };
 struct NameToFloat64OrZero { static constexpr auto name = "toFloat64OrZero"; };
 struct NameToDateOrZero { static constexpr auto name = "toDateOrZero"; };
@@ -2958,6 +3002,7 @@ using FunctionToInt32OrZero = FunctionConvertFromString<DataTypeInt32, NameToInt
 using FunctionToInt64OrZero = FunctionConvertFromString<DataTypeInt64, NameToInt64OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToInt128OrZero = FunctionConvertFromString<DataTypeInt128, NameToInt128OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToInt256OrZero = FunctionConvertFromString<DataTypeInt256, NameToInt256OrZero, ConvertFromStringExceptionMode::Zero>;
+using FunctionToBFloat16OrZero = FunctionConvertFromString<DataTypeBFloat16, NameToBFloat16OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToFloat32OrZero = FunctionConvertFromString<DataTypeFloat32, NameToFloat32OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToFloat64OrZero = FunctionConvertFromString<DataTypeFloat64, NameToFloat64OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToDateOrZero = FunctionConvertFromString<DataTypeDate, NameToDateOrZero, ConvertFromStringExceptionMode::Zero>;
@@ -2984,6 +3029,7 @@ struct NameToInt32OrNull { static constexpr auto name = "toInt32OrNull"; };
 struct NameToInt64OrNull { static constexpr auto name = "toInt64OrNull"; };
 struct NameToInt128OrNull { static constexpr auto name = "toInt128OrNull"; };
 struct NameToInt256OrNull { static constexpr auto name = "toInt256OrNull"; };
+struct NameToBFloat16OrNull { static constexpr auto name = "toBFloat16OrNull"; };
 struct NameToFloat32OrNull { static constexpr auto name = "toFloat32OrNull"; };
 struct NameToFloat64OrNull { static constexpr auto name = "toFloat64OrNull"; };
 struct NameToDateOrNull { static constexpr auto name = "toDateOrNull"; };
@@ -3010,6 +3056,7 @@ using FunctionToInt32OrNull = FunctionConvertFromString<DataTypeInt32, NameToInt
 using FunctionToInt64OrNull = FunctionConvertFromString<DataTypeInt64, NameToInt64OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToInt128OrNull = FunctionConvertFromString<DataTypeInt128, NameToInt128OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToInt256OrNull = FunctionConvertFromString<DataTypeInt256, NameToInt256OrNull, ConvertFromStringExceptionMode::Null>;
+using FunctionToBFloat16OrNull = FunctionConvertFromString<DataTypeBFloat16, NameToBFloat16OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToFloat32OrNull = FunctionConvertFromString<DataTypeFloat32, NameToFloat32OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToFloat64OrNull = FunctionConvertFromString<DataTypeFloat64, NameToFloat64OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToDateOrNull = FunctionConvertFromString<DataTypeDate, NameToDateOrNull, ConvertFromStringExceptionMode::Null>;
@@ -3226,7 +3273,7 @@ private:
 
         FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior;
         if (context)
-            date_time_overflow_behavior = context->getSettingsRef().date_time_overflow_behavior;
+            date_time_overflow_behavior = context->getSettingsRef()[Setting::date_time_overflow_behavior];
 
         if (requested_result_is_nullable && checkAndGetDataType<DataTypeString>(from_type.get()))
         {
@@ -3881,7 +3928,7 @@ private:
         }
     }
 
-    WrapperType createTupleToObjectWrapper(const DataTypeTuple & from_tuple, bool has_nullable_subcolumns) const
+    WrapperType createTupleToObjectDeprecatedWrapper(const DataTypeTuple & from_tuple, bool has_nullable_subcolumns) const
     {
         if (!from_tuple.haveExplicitNames())
             throw Exception(ErrorCodes::TYPE_MISMATCH,
@@ -3928,7 +3975,7 @@ private:
         };
     }
 
-    WrapperType createMapToObjectWrapper(const DataTypeMap & from_map, bool has_nullable_subcolumns) const
+    WrapperType createMapToObjectDeprecatedWrapper(const DataTypeMap & from_map, bool has_nullable_subcolumns) const
     {
         auto key_value_types = from_map.getKeyValueTypes();
 
@@ -4008,11 +4055,11 @@ private:
     {
         if (const auto * from_tuple = checkAndGetDataType<DataTypeTuple>(from_type.get()))
         {
-            return createTupleToObjectWrapper(*from_tuple, to_type->hasNullableSubcolumns());
+            return createTupleToObjectDeprecatedWrapper(*from_tuple, to_type->hasNullableSubcolumns());
         }
         else if (const auto * from_map = checkAndGetDataType<DataTypeMap>(from_type.get()))
         {
-            return createMapToObjectWrapper(*from_map, to_type->hasNullableSubcolumns());
+            return createMapToObjectDeprecatedWrapper(*from_map, to_type->hasNullableSubcolumns());
         }
         else if (checkAndGetDataType<DataTypeString>(from_type.get()))
         {
@@ -4041,23 +4088,43 @@ private:
             "Cast to Object can be performed only from flatten named Tuple, Map or String. Got: {}", from_type->getName());
     }
 
+
     WrapperType createObjectWrapper(const DataTypePtr & from_type, const DataTypeObject * to_object) const
     {
         if (checkAndGetDataType<DataTypeString>(from_type.get()))
         {
             return [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
             {
-                auto res = ConvertImplGenericFromString<true>::execute(arguments, result_type, nullable_source, input_rows_count, context)->assumeMutable();
-                res->finalize();
-                return res;
+                return ConvertImplGenericFromString<true>::execute(arguments, result_type, nullable_source, input_rows_count, context);
+            };
+        }
+
+        /// Cast Tuple/Object/Map to JSON type through serializing into JSON string and parsing back into JSON column.
+        /// Potentially we can do smarter conversion Tuple -> JSON with type preservation, but it's questionable how exactly Tuple should be
+        /// converted to JSON (for example, should we recursively convert nested Array(Tuple) to Array(JSON) or not, should we infer types from String fields, etc).
+        if (checkAndGetDataType<DataTypeObjectDeprecated>(from_type.get()) || checkAndGetDataType<DataTypeTuple>(from_type.get()) || checkAndGetDataType<DataTypeMap>(from_type.get()))
+        {
+            return [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
+            {
+                auto json_string = ColumnString::create();
+                ColumnStringHelpers::WriteHelper write_helper(assert_cast<ColumnString &>(*json_string), input_rows_count);
+                auto & write_buffer = write_helper.getWriteBuffer();
+                FormatSettings format_settings = context ? getFormatSettings(context) : FormatSettings{};
+                auto serialization = arguments[0].type->getDefaultSerialization();
+                for (size_t i = 0; i < input_rows_count; ++i)
+                {
+                    serialization->serializeTextJSON(*arguments[0].column, i, write_buffer, format_settings);
+                    write_helper.rowWritten();
+                }
+                write_helper.finalize();
+
+                ColumnsWithTypeAndName args_with_json_string = {ColumnWithTypeAndName(json_string->getPtr(), std::make_shared<DataTypeString>(), "")};
+                return ConvertImplGenericFromString<true>::execute(args_with_json_string, result_type, nullable_source, input_rows_count, context);
             };
         }
 
         /// TODO: support CAST between JSON types with different parameters
-        ///       support CAST from Map to JSON
-        ///       support CAST from Tuple to JSON
-        ///       support CAST from Object('json') to JSON
-        throw Exception(ErrorCodes::TYPE_MISMATCH, "Cast to {} can be performed only from String. Got: {}", magic_enum::enum_name(to_object->getSchemaFormat()), from_type->getName());
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Cast to {} can be performed only from String/Map/Object/Tuple. Got: {}", magic_enum::enum_name(to_object->getSchemaFormat()), from_type->getName());
     }
 
     WrapperType createVariantToVariantWrapper(const DataTypeVariant & from_variant, const DataTypeVariant & to_variant) const
@@ -4134,6 +4201,29 @@ private:
         };
     }
 
+    /// Create wrapper only if we support this conversion.
+    WrapperType createWrapperIfCanConvert(const DataTypePtr & from, const DataTypePtr & to) const
+    {
+        try
+        {
+            /// We can avoid try/catch here if we will implement check that 2 types can be casted, but it
+            /// requires quite a lot of work. By now let's simply use try/catch.
+            /// First, check that we can create a wrapper.
+            WrapperType wrapper = prepareUnpackDictionaries(from, to);
+            /// Second, check if we can perform a conversion on column with default value.
+            /// (we cannot just check empty column as we do some checks only during iteration over rows).
+            auto test_col = from->createColumn();
+            test_col->insertDefault();
+            ColumnsWithTypeAndName column_from = {{test_col->getPtr(), from, "" }};
+            wrapper(column_from, to, nullptr, 1);
+            return wrapper;
+        }
+        catch (const Exception &)
+        {
+            return {};
+        }
+    }
+
     WrapperType createVariantToColumnWrapper(const DataTypeVariant & from_variant, const DataTypePtr & to_type) const
     {
         const auto & variant_types = from_variant.getVariants();
@@ -4142,7 +4232,19 @@ private:
 
         /// Create conversion wrapper for each variant.
         for (const auto & variant_type : variant_types)
-            variant_wrappers.push_back(prepareUnpackDictionaries(variant_type, to_type));
+        {
+            WrapperType wrapper;
+            if (cast_type == CastType::accurateOrNull)
+            {
+                /// Create wrapper only if we support conversion from variant to the resulting type.
+                wrapper = createWrapperIfCanConvert(variant_type, to_type);
+            }
+            else
+            {
+                wrapper = prepareUnpackDictionaries(variant_type, to_type);
+            }
+            variant_wrappers.push_back(wrapper);
+        }
 
         return [variant_wrappers, variant_types, to_type]
                (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
@@ -4157,7 +4259,11 @@ private:
                 auto variant_col = column_variant.getVariantPtrByGlobalDiscriminator(i);
                 ColumnsWithTypeAndName variant = {{variant_col, variant_types[i], "" }};
                 const auto & variant_wrapper = variant_wrappers[i];
-                casted_variant_columns.push_back(variant_wrapper(variant, result_type, nullptr, variant_col->size()));
+                ColumnPtr casted_variant;
+                /// Check if we have wrapper for this variant.
+                if (variant_wrapper)
+                    casted_variant = variant_wrapper(variant, result_type, nullptr, variant_col->size());
+                casted_variant_columns.push_back(std::move(casted_variant));
             }
 
             /// Second, construct resulting column from casted variant columns according to discriminators.
@@ -4167,7 +4273,7 @@ private:
             for (size_t i = 0; i != input_rows_count; ++i)
             {
                 auto global_discr = column_variant.globalDiscriminatorByLocal(local_discriminators[i]);
-                if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
+                if (global_discr == ColumnVariant::NULL_DISCRIMINATOR || !casted_variant_columns[global_discr])
                     res->insertDefault();
                 else
                     res->insertFrom(*casted_variant_columns[global_discr], column_variant.offsetAt(i));
@@ -4311,7 +4417,7 @@ private:
                     variant_column = IColumn::mutate(column);
                 /// Otherwise we should filter column.
                 else
-                    variant_column = column->filter(filter, variant_size_hint)->assumeMutable();
+                    variant_column = IColumn::mutate(column->filter(filter, variant_size_hint));
 
                 assert_cast<ColumnLowCardinality &>(*variant_column).nestedRemoveNullable();
                 return createVariantFromDescriptorsAndOneNonEmptyVariant(variant_types, std::move(discriminators), std::move(variant_column), variant_discr);
@@ -4357,10 +4463,27 @@ private:
             casted_variant_columns.reserve(variant_types.size());
             for (size_t i = 0; i != variant_types.size(); ++i)
             {
+                /// Skip shared variant, it will be processed later.
+                if (i == column_dynamic.getSharedVariantDiscriminator())
+                {
+                    casted_variant_columns.push_back(nullptr);
+                    continue;
+                }
+
                 const auto & variant_col = variant_column.getVariantPtrByGlobalDiscriminator(i);
                 ColumnsWithTypeAndName variant = {{variant_col, variant_types[i], ""}};
-                auto variant_wrapper = prepareUnpackDictionaries(variant_types[i], result_type);
-                casted_variant_columns.push_back(variant_wrapper(variant, result_type, nullptr, variant_col->size()));
+                WrapperType variant_wrapper;
+                if (cast_type == CastType::accurateOrNull)
+                    /// Create wrapper only if we support conversion from variant to the resulting type.
+                    variant_wrapper = createWrapperIfCanConvert(variant_types[i], result_type);
+                else
+                    variant_wrapper = prepareUnpackDictionaries(variant_types[i], result_type);
+
+                ColumnPtr casted_variant;
+                /// Check if we have wrapper for this variant.
+                if (variant_wrapper)
+                    casted_variant = variant_wrapper(variant, result_type, nullptr, variant_col->size());
+                casted_variant_columns.push_back(casted_variant);
             }
 
             /// Second, collect all variants stored in shared variant and cast them to result type.
@@ -4416,8 +4539,18 @@ private:
             for (size_t i = 0; i != variant_types_from_shared_variant.size(); ++i)
             {
                 ColumnsWithTypeAndName variant = {{variant_columns_from_shared_variant[i]->getPtr(), variant_types_from_shared_variant[i], ""}};
-                auto variant_wrapper = prepareUnpackDictionaries(variant_types_from_shared_variant[i], result_type);
-                casted_shared_variant_columns.push_back(variant_wrapper(variant, result_type, nullptr, variant_columns_from_shared_variant[i]->size()));
+                WrapperType variant_wrapper;
+                if (cast_type == CastType::accurateOrNull)
+                    /// Create wrapper only if we support conversion from variant to the resulting type.
+                    variant_wrapper = createWrapperIfCanConvert(variant_types_from_shared_variant[i], result_type);
+                else
+                    variant_wrapper = prepareUnpackDictionaries(variant_types_from_shared_variant[i], result_type);
+
+                ColumnPtr casted_variant;
+                /// Check if we have wrapper for this variant.
+                if (variant_wrapper)
+                    casted_variant = variant_wrapper(variant, result_type, nullptr, variant_columns_from_shared_variant[i]->size());
+                casted_shared_variant_columns.push_back(casted_variant);
             }
 
             /// Construct result column from all casted variants.
@@ -4427,11 +4560,23 @@ private:
             {
                 auto global_discr = variant_column.globalDiscriminatorByLocal(local_discriminators[i]);
                 if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
+                {
                     res->insertDefault();
+                }
                 else if (global_discr == shared_variant_discr)
-                    res->insertFrom(*casted_shared_variant_columns[shared_variant_indexes[i]], shared_variant_offsets[i]);
+                {
+                    if (casted_shared_variant_columns[shared_variant_indexes[i]])
+                        res->insertFrom(*casted_shared_variant_columns[shared_variant_indexes[i]], shared_variant_offsets[i]);
+                    else
+                        res->insertDefault();
+                }
                 else
-                    res->insertFrom(*casted_variant_columns[global_discr], offsets[i]);
+                {
+                    if (casted_variant_columns[global_discr])
+                        res->insertFrom(*casted_variant_columns[global_discr], offsets[i]);
+                    else
+                        res->insertDefault();
+                }
             }
 
             return res;
@@ -4492,7 +4637,7 @@ private:
         if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(from_type.get()))
             return createVariantToDynamicWrapper(*variant_type, dynamic_type);
 
-        if (context && context->getSettingsRef().cast_string_to_dynamic_use_inference && isStringOrFixedString(removeNullable(removeLowCardinality(from_type))))
+        if (context && context->getSettingsRef()[Setting::cast_string_to_dynamic_use_inference] && isStringOrFixedString(removeNullable(removeLowCardinality(from_type))))
             return createStringToDynamicThroughParsingWrapper();
 
         /// First, cast column to Variant with 2 variants - the type of the column we cast and shared variant type.
@@ -4521,26 +4666,124 @@ private:
             return [to_max_types]
                    (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t) -> ColumnPtr
             {
-                const auto & column_dynamic = assert_cast<const ColumnDynamic &>(*arguments[0].column);
+                const auto & dynamic_column = assert_cast<const ColumnDynamic &>(*arguments[0].column);
                 /// We should use the same limit as already used in column and change only global limit.
                 /// It's needed because shared variant should contain values only when limit is exceeded,
                 /// so if there are already some data, we cannot increase the limit.
-                return ColumnDynamic::create(column_dynamic.getVariantColumnPtr(), column_dynamic.getVariantInfo(), column_dynamic.getMaxDynamicTypes(), to_max_types);
+                return ColumnDynamic::create(dynamic_column.getVariantColumnPtr(), dynamic_column.getVariantInfo(), dynamic_column.getMaxDynamicTypes(), to_max_types);
             };
         }
 
         return [to_max_types]
                (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t) -> ColumnPtr
         {
-            const auto & column_dynamic = assert_cast<const ColumnDynamic &>(*arguments[0].column);
+            const auto & dynamic_column = assert_cast<const ColumnDynamic &>(*arguments[0].column);
             /// If real limit in the column is not greater than desired, just use the same variant column.
-            if (column_dynamic.getMaxDynamicTypes() <= to_max_types)
-                return ColumnDynamic::create(column_dynamic.getVariantColumnPtr(), column_dynamic.getVariantInfo(), column_dynamic.getMaxDynamicTypes(), to_max_types);
+            if (dynamic_column.getMaxDynamicTypes() <= to_max_types)
+                return ColumnDynamic::create(dynamic_column.getVariantColumnPtr(), dynamic_column.getVariantInfo(), dynamic_column.getMaxDynamicTypes(), to_max_types);
 
-            /// Otherwise some variants should go to the shared variant. In this case we can just insert all
-            /// the data into resulting column and it will do all the logic with shared variant.
-            auto result_dynamic_column = ColumnDynamic::create(to_max_types);
-            result_dynamic_column->insertRangeFrom(column_dynamic, 0, column_dynamic.size());
+            /// Otherwise some variants should go to the shared variant. We try to keep the most frequent variants.
+            const auto & variant_info = dynamic_column.getVariantInfo();
+            const auto & variants = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
+            const auto & statistics = dynamic_column.getStatistics();
+            const auto & variant_column = dynamic_column.getVariantColumn();
+            auto shared_variant_discr = dynamic_column.getSharedVariantDiscriminator();
+            std::vector<std::tuple<size_t, String, DataTypePtr>> variants_with_sizes;
+            variants_with_sizes.reserve(variant_info.variant_names.size());
+            for (const auto & [name, discr] : variant_info.variant_name_to_discriminator)
+            {
+                /// Don't include shared variant.
+                if (discr == shared_variant_discr)
+                    continue;
+
+                size_t size = variant_column.getVariantByGlobalDiscriminator(discr).size();
+                /// If column has statistics from the data part, use size from it for consistency.
+                /// It's important to keep the same dynamic structure of the result column during ALTER.
+                if (statistics)
+                {
+                    auto statistics_it = statistics->variants_statistics.find(name);
+                    if (statistics_it != statistics->variants_statistics.end())
+                        size = statistics_it->second;
+                }
+                variants_with_sizes.emplace_back(size, name, variants[discr]);
+            }
+
+            std::sort(variants_with_sizes.begin(), variants_with_sizes.end(), std::greater());
+            DataTypes result_variants;
+            result_variants.reserve(to_max_types + 1); /// +1 for shared variant.
+            /// Add new variants from sorted list until we reach to_max_types.
+            for (const auto & [size, name, type] : variants_with_sizes)
+            {
+                if (result_variants.size() < to_max_types)
+                    result_variants.push_back(type);
+                else
+                    break;
+            }
+
+            /// Add shared variant.
+            result_variants.push_back(ColumnDynamic::getSharedVariantDataType());
+            /// Create resulting Variant type and Dynamic column.
+            auto result_variant_type = std::make_shared<DataTypeVariant>(result_variants);
+            auto result_dynamic_column = ColumnDynamic::create(result_variant_type->createColumn(), result_variant_type, to_max_types, to_max_types);
+            const auto & result_variant_info = result_dynamic_column->getVariantInfo();
+            auto & result_variant_column = result_dynamic_column->getVariantColumn();
+            auto result_shared_variant_discr = result_dynamic_column->getSharedVariantDiscriminator();
+            /// Create mapping from old discriminators to the new ones.
+            std::vector<ColumnVariant::Discriminator> old_to_new_discriminators;
+            old_to_new_discriminators.resize(variant_info.variant_name_to_discriminator.size(), result_shared_variant_discr);
+            for (const auto & [name, discr] : result_variant_info.variant_name_to_discriminator)
+            {
+                auto old_discr = variant_info.variant_name_to_discriminator.at(name);
+                old_to_new_discriminators[old_discr] = discr;
+                /// Reuse old variant column if it's not shared variant.
+                if (discr != result_shared_variant_discr)
+                    result_variant_column.getVariantPtrByGlobalDiscriminator(discr) = variant_column.getVariantPtrByGlobalDiscriminator(old_discr);
+            }
+
+            const auto & local_discriminators = variant_column.getLocalDiscriminators();
+            const auto & offsets = variant_column.getOffsets();
+            const auto & shared_variant = dynamic_column.getSharedVariant();
+            auto & result_local_discriminators = result_variant_column.getLocalDiscriminators();
+            result_local_discriminators.reserve(local_discriminators.size());
+            auto & result_offsets = result_variant_column.getOffsets();
+            result_offsets.reserve(offsets.size());
+            auto & result_shared_variant = result_dynamic_column->getSharedVariant();
+            for (size_t i = 0; i != local_discriminators.size(); ++i)
+            {
+                auto global_discr = variant_column.globalDiscriminatorByLocal(local_discriminators[i]);
+                if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
+                {
+                    result_local_discriminators.push_back(ColumnVariant::NULL_DISCRIMINATOR);
+                    result_offsets.emplace_back();
+                }
+                else if (global_discr == shared_variant_discr)
+                {
+                    result_local_discriminators.push_back(result_variant_column.localDiscriminatorByGlobal(result_shared_variant_discr));
+                    result_offsets.push_back(result_shared_variant.size());
+                    result_shared_variant.insertFrom(shared_variant, offsets[i]);
+                }
+                else
+                {
+                    auto result_global_discr = old_to_new_discriminators[global_discr];
+                    if (result_global_discr == result_shared_variant_discr)
+                    {
+                        result_local_discriminators.push_back(result_variant_column.localDiscriminatorByGlobal(result_shared_variant_discr));
+                        result_offsets.push_back(result_shared_variant.size());
+                        ColumnDynamic::serializeValueIntoSharedVariant(
+                            result_shared_variant,
+                            variant_column.getVariantByGlobalDiscriminator(global_discr),
+                            variants[global_discr],
+                            variants[global_discr]->getDefaultSerialization(),
+                            offsets[i]);
+                    }
+                    else
+                    {
+                        result_local_discriminators.push_back(result_variant_column.localDiscriminatorByGlobal(result_global_discr));
+                        result_offsets.push_back(offsets[i]);
+                    }
+                }
+            }
+
             return result_dynamic_column;
         };
     }
@@ -4957,7 +5200,7 @@ private:
             if constexpr (is_any_of<ToDataType,
                 DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256,
                 DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256,
-                DataTypeFloat32, DataTypeFloat64,
+                DataTypeBFloat16, DataTypeFloat32, DataTypeFloat64,
                 DataTypeDate, DataTypeDate32, DataTypeDateTime,
                 DataTypeUUID, DataTypeIPv4, DataTypeIPv6>)
             {
@@ -4991,9 +5234,9 @@ private:
             return false;
         };
 
-        bool cast_ipv4_ipv6_default_on_conversion_error_value = context && context->getSettingsRef().cast_ipv4_ipv6_default_on_conversion_error;
-        bool input_format_ipv4_default_on_conversion_error_value = context && context->getSettingsRef().input_format_ipv4_default_on_conversion_error;
-        bool input_format_ipv6_default_on_conversion_error_value = context && context->getSettingsRef().input_format_ipv6_default_on_conversion_error;
+        bool cast_ipv4_ipv6_default_on_conversion_error_value = context && context->getSettingsRef()[Setting::cast_ipv4_ipv6_default_on_conversion_error];
+        bool input_format_ipv4_default_on_conversion_error_value = context && context->getSettingsRef()[Setting::input_format_ipv4_default_on_conversion_error];
+        bool input_format_ipv6_default_on_conversion_error_value = context && context->getSettingsRef()[Setting::input_format_ipv6_default_on_conversion_error];
 
         auto make_custom_serialization_wrapper = [&, cast_ipv4_ipv6_default_on_conversion_error_value, input_format_ipv4_default_on_conversion_error_value, input_format_ipv6_default_on_conversion_error_value](const auto & types) -> bool
         {
@@ -5210,6 +5453,17 @@ REGISTER_FUNCTION(Conversion)
     factory.registerFunction<FunctionToInt64>();
     factory.registerFunction<FunctionToInt128>();
     factory.registerFunction<FunctionToInt256>();
+
+    factory.registerFunction<FunctionToBFloat16>(FunctionDocumentation{.description=R"(
+Converts Float32 to BFloat16 with losing the precision.
+
+Example:
+[example:typical]
+)",
+        .examples{
+            {"typical", "SELECT toBFloat16(12.3::Float32);", "12.3125"}},
+        .categories{"Conversion"}});
+
     factory.registerFunction<FunctionToFloat32>();
     factory.registerFunction<FunctionToFloat64>();
 
@@ -5248,6 +5502,31 @@ REGISTER_FUNCTION(Conversion)
     factory.registerFunction<FunctionToInt64OrZero>();
     factory.registerFunction<FunctionToInt128OrZero>();
     factory.registerFunction<FunctionToInt256OrZero>();
+
+    factory.registerFunction<FunctionToBFloat16OrZero>(FunctionDocumentation{.description=R"(
+Converts String to BFloat16.
+
+If the string does not represent a floating point value, the function returns zero.
+
+The function allows a silent loss of precision while converting from the string representation. In that case, it will return the truncated result.
+
+Example of successful conversion:
+[example:typical]
+
+Examples of not successful conversion:
+[example:invalid1]
+[example:invalid2]
+
+Example of a loss of precision:
+[example:precision]
+)",
+        .examples{
+            {"typical", "SELECT toBFloat16OrZero('12.3');", "12.3125"},
+            {"invalid1", "SELECT toBFloat16OrZero('abc');", "0"},
+            {"invalid2", "SELECT toBFloat16OrZero(' 1');", "0"},
+            {"precision", "SELECT toBFloat16OrZero('12.3456789');", "12.375"}},
+        .categories{"Conversion"}});
+
     factory.registerFunction<FunctionToFloat32OrZero>();
     factory.registerFunction<FunctionToFloat64OrZero>();
     factory.registerFunction<FunctionToDateOrZero>();
@@ -5276,6 +5555,31 @@ REGISTER_FUNCTION(Conversion)
     factory.registerFunction<FunctionToInt64OrNull>();
     factory.registerFunction<FunctionToInt128OrNull>();
     factory.registerFunction<FunctionToInt256OrNull>();
+
+    factory.registerFunction<FunctionToBFloat16OrNull>(FunctionDocumentation{.description=R"(
+Converts String to Nullable(BFloat16).
+
+If the string does not represent a floating point value, the function returns NULL.
+
+The function allows a silent loss of precision while converting from the string representation. In that case, it will return the truncated result.
+
+Example of successful conversion:
+[example:typical]
+
+Examples of not successful conversion:
+[example:invalid1]
+[example:invalid2]
+
+Example of a loss of precision:
+[example:precision]
+)",
+    .examples{
+        {"typical", "SELECT toBFloat16OrNull('12.3');", "12.3125"},
+        {"invalid1", "SELECT toBFloat16OrNull('abc');", "NULL"},
+        {"invalid2", "SELECT toBFloat16OrNull(' 1');", "NULL"},
+        {"precision", "SELECT toBFloat16OrNull('12.3456789');", "12.375"}},
+    .categories{"Conversion"}});
+
     factory.registerFunction<FunctionToFloat32OrNull>();
     factory.registerFunction<FunctionToFloat64OrNull>();
     factory.registerFunction<FunctionToDateOrNull>();

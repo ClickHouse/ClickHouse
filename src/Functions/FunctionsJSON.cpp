@@ -44,6 +44,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_simdjson;
+}
 
 namespace ErrorCodes
 {
@@ -531,7 +535,7 @@ public:
         for (const auto & argument : arguments)
             argument_types.emplace_back(argument.type);
         return std::make_unique<FunctionBaseFunctionJSON<Name, Impl>>(
-            null_presence, getContext()->getSettingsRef().allow_simdjson, argument_types, return_type, json_return_type, getFormatSettings(getContext()));
+            null_presence, getContext()->getSettingsRef()[Setting::allow_simdjson], argument_types, return_type, json_return_type, getFormatSettings(getContext()));
     }
 };
 

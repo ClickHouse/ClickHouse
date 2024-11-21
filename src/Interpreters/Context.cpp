@@ -5,10 +5,12 @@
 #include <Poco/UUID.h>
 #include <Poco/Util/Application.h>
 #include <Common/AsyncLoader.h>
+#include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/PoolId.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/Macros.h>
 #include <Common/EventNotifier.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/Throttler.h>
@@ -19,6 +21,7 @@
 #include <Common/SharedLockGuard.h>
 #include <Common/PageCache.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/isLocalAddress.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
@@ -64,7 +67,6 @@
 #include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Access/GSSAcceptor.h>
-#include <Common/Scheduler/ResourceManagerFactory.h>
 #include <Backups/BackupsWorker.h>
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
@@ -89,6 +91,8 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Common/Scheduler/createResourceManager.h>
+#include <Common/Scheduler/Workload/createWorkloadEntityStorage.h>
 #include <Common/StackTrace.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -119,7 +123,6 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <base/defines.h>
-
 
 namespace fs = std::filesystem;
 
@@ -163,6 +166,9 @@ namespace CurrentMetrics
     extern const Metric TablesLoaderForegroundThreadsActive;
     extern const Metric TablesLoaderForegroundThreadsScheduled;
     extern const Metric IOWriterThreadsScheduled;
+    extern const Metric BuildVectorSimilarityIndexThreads;
+    extern const Metric BuildVectorSimilarityIndexThreadsActive;
+    extern const Metric BuildVectorSimilarityIndexThreadsScheduled;
     extern const Metric AttachedTable;
     extern const Metric AttachedView;
     extern const Metric AttachedDictionary;
@@ -173,6 +179,111 @@ namespace CurrentMetrics
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsMilliseconds async_insert_poll_timeout_ms;
+    extern const SettingsBool azure_allow_parallel_part_upload;
+    extern const SettingsUInt64 backup_threads;
+    extern const SettingsString cluster_for_parallel_replicas;
+    extern const SettingsBool enable_filesystem_cache;
+    extern const SettingsBool enable_filesystem_cache_log;
+    extern const SettingsBool enable_filesystem_cache_on_write_operations;
+    extern const SettingsBool enable_filesystem_read_prefetches_log;
+    extern const SettingsBool enable_blob_storage_log;
+    extern const SettingsUInt64 filesystem_cache_max_download_size;
+    extern const SettingsUInt64 filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
+    extern const SettingsUInt64 filesystem_cache_segments_batch_size;
+    extern const SettingsBool filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage;
+    extern const SettingsBool filesystem_cache_enable_background_download_during_fetch;
+    extern const SettingsBool filesystem_cache_prefer_bigger_buffer_size;
+    extern const SettingsBool http_make_head_request;
+    extern const SettingsUInt64 http_max_fields;
+    extern const SettingsUInt64 http_max_field_name_size;
+    extern const SettingsUInt64 http_max_field_value_size;
+    extern const SettingsUInt64 http_max_tries;
+    extern const SettingsUInt64 http_max_uri_size;
+    extern const SettingsSeconds http_receive_timeout;
+    extern const SettingsUInt64 http_retry_initial_backoff_ms;
+    extern const SettingsUInt64 http_retry_max_backoff_ms;
+    extern const SettingsSeconds http_send_timeout;
+    extern const SettingsBool http_skip_not_found_url_for_globs;
+    extern const SettingsUInt64 hsts_max_age;
+    extern const SettingsString local_filesystem_read_method;
+    extern const SettingsBool local_filesystem_read_prefetch;
+    extern const SettingsBool load_marks_asynchronously;
+    extern const SettingsUInt64 max_backup_bandwidth;
+    extern const SettingsUInt64 max_local_read_bandwidth;
+    extern const SettingsUInt64 max_local_write_bandwidth;
+    extern const SettingsNonZeroUInt64 max_parallel_replicas;
+    extern const SettingsUInt64 max_read_buffer_size;
+    extern const SettingsUInt64 max_read_buffer_size_local_fs;
+    extern const SettingsUInt64 max_read_buffer_size_remote_fs;
+    extern const SettingsUInt64 max_remote_read_network_bandwidth;
+    extern const SettingsUInt64 max_remote_write_network_bandwidth;
+    extern const SettingsUInt64 min_bytes_to_use_direct_io;
+    extern const SettingsUInt64 min_bytes_to_use_mmap_io;
+    extern const SettingsBool page_cache_inject_eviction;
+    extern const SettingsParallelReplicasMode parallel_replicas_mode;
+    extern const SettingsString parallel_replicas_custom_key;
+    extern const SettingsUInt64 prefetch_buffer_size;
+    extern const SettingsBool read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
+    extern const SettingsBool read_from_page_cache_if_exists_otherwise_bypass_cache;
+    extern const SettingsInt64 read_priority;
+    extern const SettingsUInt64 restore_threads;
+    extern const SettingsString remote_filesystem_read_method;
+    extern const SettingsBool remote_filesystem_read_prefetch;
+    extern const SettingsUInt64 remote_fs_read_max_backoff_ms;
+    extern const SettingsUInt64 remote_fs_read_backoff_max_tries;
+    extern const SettingsUInt64 remote_read_min_bytes_for_seek;
+    extern const SettingsBool throw_on_error_from_cache_on_write_operations;
+    extern const SettingsBool filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit;
+    extern const SettingsBool s3_allow_parallel_part_upload;
+    extern const SettingsBool use_page_cache_for_disks_without_file_cache;
+    extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
+    extern const SettingsString workload;
+    extern const SettingsString compatibility;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsString merge_workload;
+    extern const MergeTreeSettingsString mutation_workload;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 background_buffer_flush_schedule_pool_size;
+    extern const ServerSettingsUInt64 background_common_pool_size;
+    extern const ServerSettingsUInt64 background_distributed_schedule_pool_size;
+    extern const ServerSettingsUInt64 background_fetches_pool_size;
+    extern const ServerSettingsFloat background_merges_mutations_concurrency_ratio;
+    extern const ServerSettingsString background_merges_mutations_scheduling_policy;
+    extern const ServerSettingsUInt64 background_message_broker_schedule_pool_size;
+    extern const ServerSettingsUInt64 background_move_pool_size;
+    extern const ServerSettingsUInt64 background_pool_size;
+    extern const ServerSettingsUInt64 background_schedule_pool_size;
+    extern const ServerSettingsBool display_secrets_in_show_and_select;
+    extern const ServerSettingsUInt64 max_backup_bandwidth_for_server;
+    extern const ServerSettingsUInt64 max_build_vector_similarity_index_thread_pool_size;
+    extern const ServerSettingsUInt64 max_local_read_bandwidth_for_server;
+    extern const ServerSettingsUInt64 max_local_write_bandwidth_for_server;
+    extern const ServerSettingsUInt64 max_merges_bandwidth_for_server;
+    extern const ServerSettingsUInt64 max_mutations_bandwidth_for_server;
+    extern const ServerSettingsUInt64 max_remote_read_network_bandwidth_for_server;
+    extern const ServerSettingsUInt64 max_remote_write_network_bandwidth_for_server;
+    extern const ServerSettingsUInt64 max_replicated_fetches_network_bandwidth_for_server;
+    extern const ServerSettingsUInt64 max_replicated_sends_network_bandwidth_for_server;
+    extern const ServerSettingsUInt64 tables_loader_background_pool_size;
+    extern const ServerSettingsUInt64 tables_loader_foreground_pool_size;
+    extern const ServerSettingsUInt64 prefetch_threadpool_pool_size;
+    extern const ServerSettingsUInt64 prefetch_threadpool_queue_size;
+    extern const ServerSettingsUInt64 load_marks_threadpool_pool_size;
+    extern const ServerSettingsUInt64 load_marks_threadpool_queue_size;
+    extern const ServerSettingsUInt64 threadpool_writer_pool_size;
+    extern const ServerSettingsUInt64 threadpool_writer_queue_size;
+
+}
 
 namespace ErrorCodes
 {
@@ -186,13 +297,13 @@ namespace ErrorCodes
     extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_SETTING_VALUE;
-    extern const int UNKNOWN_READ_METHOD;
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_FUNCTION;
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int CLUSTER_DOESNT_EXIST;
     extern const int SET_NON_GRANTED_ROLE;
+    extern const int UNKNOWN_READ_METHOD;
 }
 
 #define SHUTDOWN(log, desc, ptr, method) do             \
@@ -253,6 +364,8 @@ struct ContextSharedPart : boost::noncopyable
     /// Child scopes for more fine-grained accounting are created per user/query/etc.
     /// Initialized once during server startup.
     TemporaryDataOnDiskScopePtr root_temp_data_on_disk TSA_GUARDED_BY(mutex);
+    /// TODO: remove, use only root_temp_data_on_disk
+    VolumePtr temporary_volume_legacy;
 
     mutable OnceFlag async_loader_initialized;
     mutable std::unique_ptr<AsyncLoader> async_loader; /// Thread pool for asynchronous initialization of arbitrary DAG of `LoadJob`s (used for tables loading)
@@ -269,6 +382,9 @@ struct ContextSharedPart : boost::noncopyable
 
     mutable OnceFlag user_defined_sql_objects_storage_initialized;
     mutable std::unique_ptr<IUserDefinedSQLObjectsStorage> user_defined_sql_objects_storage;
+
+    mutable OnceFlag workload_entity_storage_initialized;
+    mutable std::unique_ptr<IWorkloadEntityStorage> workload_entity_storage;
 
 #if USE_NLP
     mutable OnceFlag synonyms_extensions_initialized;
@@ -296,6 +412,8 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::unique_ptr<ThreadPool> load_marks_threadpool;  /// Threadpool for loading marks cache.
     mutable OnceFlag prefetch_threadpool_initialized;
     mutable std::unique_ptr<ThreadPool> prefetch_threadpool;    /// Threadpool for loading marks cache.
+    mutable OnceFlag build_vector_similarity_index_threadpool_initialized;
+    mutable std::unique_ptr<ThreadPool> build_vector_similarity_index_threadpool; /// Threadpool for vector-similarity index creation.
     mutable UncompressedCachePtr index_uncompressed_cache TSA_GUARDED_BY(mutex);      /// The cache of decompressed blocks for MergeTree indices.
     mutable QueryCachePtr query_cache TSA_GUARDED_BY(mutex);                          /// Cache of query results.
     mutable MarkCachePtr index_mark_cache TSA_GUARDED_BY(mutex);                      /// Cache of marks in compressed files of MergeTree indices.
@@ -609,6 +727,7 @@ struct ContextSharedPart : boost::noncopyable
         SHUTDOWN(log, "dictionaries loader", external_dictionaries_loader, enablePeriodicUpdates(false));
         SHUTDOWN(log, "UDFs loader", external_user_defined_executable_functions_loader, enablePeriodicUpdates(false));
         SHUTDOWN(log, "another UDFs storage", user_defined_sql_objects_storage, stopWatching());
+        SHUTDOWN(log, "workload entity storage", workload_entity_storage, stopWatching());
 
         LOG_TRACE(log, "Shutting down named sessions");
         Session::shutdownNamedSessions();
@@ -640,6 +759,7 @@ struct ContextSharedPart : boost::noncopyable
         std::unique_ptr<ExternalDictionariesLoader> delete_external_dictionaries_loader;
         std::unique_ptr<ExternalUserDefinedExecutableFunctionsLoader> delete_external_user_defined_executable_functions_loader;
         std::unique_ptr<IUserDefinedSQLObjectsStorage> delete_user_defined_sql_objects_storage;
+        std::unique_ptr<IWorkloadEntityStorage> delete_workload_entity_storage;
         std::unique_ptr<BackgroundSchedulePool> delete_buffer_flush_schedule_pool;
         std::unique_ptr<BackgroundSchedulePool> delete_schedule_pool;
         std::unique_ptr<BackgroundSchedulePool> delete_distributed_schedule_pool;
@@ -681,10 +801,9 @@ struct ContextSharedPart : boost::noncopyable
             }
 
             /// Special volumes might also use disks that require shutdown.
-            auto & tmp_data = root_temp_data_on_disk;
-            if (tmp_data && tmp_data->getVolume())
+            if (temporary_volume_legacy)
             {
-                auto & disks = tmp_data->getVolume()->getDisks();
+                auto & disks = temporary_volume_legacy->getDisks();
                 for (auto & disk : disks)
                     disk->shutdown();
             }
@@ -724,6 +843,7 @@ struct ContextSharedPart : boost::noncopyable
             delete_external_dictionaries_loader = std::move(external_dictionaries_loader);
             delete_external_user_defined_executable_functions_loader = std::move(external_user_defined_executable_functions_loader);
             delete_user_defined_sql_objects_storage = std::move(user_defined_sql_objects_storage);
+            delete_workload_entity_storage = std::move(workload_entity_storage);
             delete_buffer_flush_schedule_pool = std::move(buffer_flush_schedule_pool);
             delete_schedule_pool = std::move(schedule_pool);
             delete_distributed_schedule_pool = std::move(distributed_schedule_pool);
@@ -742,6 +862,7 @@ struct ContextSharedPart : boost::noncopyable
         delete_external_dictionaries_loader.reset();
         delete_external_user_defined_executable_functions_loader.reset();
         delete_user_defined_sql_objects_storage.reset();
+        delete_workload_entity_storage.reset();
         delete_ddl_worker.reset();
         delete_buffer_flush_schedule_pool.reset();
         delete_schedule_pool.reset();
@@ -782,31 +903,31 @@ struct ContextSharedPart : boost::noncopyable
 
     void configureServerWideThrottling()
     {
-        if (auto bandwidth = server_settings.max_replicated_fetches_network_bandwidth_for_server)
+        if (auto bandwidth = server_settings[ServerSetting::max_replicated_fetches_network_bandwidth_for_server])
             replicated_fetches_throttler = std::make_shared<Throttler>(bandwidth);
 
-        if (auto bandwidth = server_settings.max_replicated_sends_network_bandwidth_for_server)
+        if (auto bandwidth = server_settings[ServerSetting::max_replicated_sends_network_bandwidth_for_server])
             replicated_sends_throttler = std::make_shared<Throttler>(bandwidth);
 
-        if (auto bandwidth = server_settings.max_remote_read_network_bandwidth_for_server)
+        if (auto bandwidth = server_settings[ServerSetting::max_remote_read_network_bandwidth_for_server])
             remote_read_throttler = std::make_shared<Throttler>(bandwidth);
 
-        if (auto bandwidth = server_settings.max_remote_write_network_bandwidth_for_server)
+        if (auto bandwidth = server_settings[ServerSetting::max_remote_write_network_bandwidth_for_server])
             remote_write_throttler = std::make_shared<Throttler>(bandwidth);
 
-        if (auto bandwidth = server_settings.max_local_read_bandwidth_for_server)
+        if (auto bandwidth = server_settings[ServerSetting::max_local_read_bandwidth_for_server])
             local_read_throttler = std::make_shared<Throttler>(bandwidth);
 
-        if (auto bandwidth = server_settings.max_local_write_bandwidth_for_server)
+        if (auto bandwidth = server_settings[ServerSetting::max_local_write_bandwidth_for_server])
             local_write_throttler = std::make_shared<Throttler>(bandwidth);
 
-        if (auto bandwidth = server_settings.max_backup_bandwidth_for_server)
+        if (auto bandwidth = server_settings[ServerSetting::max_backup_bandwidth_for_server])
             backups_server_throttler = std::make_shared<Throttler>(bandwidth);
 
-        if (auto bandwidth = server_settings.max_mutations_bandwidth_for_server)
+        if (auto bandwidth = server_settings[ServerSetting::max_mutations_bandwidth_for_server])
             mutations_throttler = std::make_shared<Throttler>(bandwidth);
 
-        if (auto bandwidth = server_settings.max_merges_bandwidth_for_server)
+        if (auto bandwidth = server_settings[ServerSetting::max_merges_bandwidth_for_server])
             merges_throttler = std::make_shared<Throttler>(bandwidth);
     }
 };
@@ -893,6 +1014,12 @@ ContextData::ContextData(const ContextData &o) :
 {
 }
 
+void ContextData::resetSharedContext()
+{
+    std::lock_guard<std::mutex> lock(mutex_shared_context);
+    shared = nullptr;
+}
+
 Context::Context() = default;
 Context::Context(const Context & rhs) : ContextData(rhs), std::enable_shared_from_this<Context>(rhs) {}
 
@@ -912,14 +1039,6 @@ ContextMutablePtr Context::createGlobal(ContextSharedPart * shared_part)
     res->query_access_info = std::make_shared<QueryAccessInfo>();
     res->query_privileges_info = std::make_shared<QueryPrivilegesInfo>();
     return res;
-}
-
-void Context::initGlobal()
-{
-    assert(!global_context_instance);
-    global_context_instance = shared_from_this();
-    DatabaseCatalog::init(shared_from_this());
-    EventNotifier::init();
 }
 
 SharedContextHolder Context::createShared()
@@ -1024,23 +1143,18 @@ Strings Context::getWarnings() const
         SharedLockGuard lock(shared->mutex);
         common_warnings = shared->warnings;
         if (CurrentMetrics::get(CurrentMetrics::AttachedTable) > static_cast<Int64>(shared->max_table_num_to_warn))
-            common_warnings.emplace_back(fmt::format("The number of attached tables is more than {}", shared->max_table_num_to_warn));
+            common_warnings.emplace_back(fmt::format("The number of attached tables is more than {}.", shared->max_table_num_to_warn));
         if (CurrentMetrics::get(CurrentMetrics::AttachedView) > static_cast<Int64>(shared->max_view_num_to_warn))
-            common_warnings.emplace_back(fmt::format("The number of attached views is more than {}", shared->max_view_num_to_warn));
+            common_warnings.emplace_back(fmt::format("The number of attached views is more than {}.", shared->max_view_num_to_warn));
         if (CurrentMetrics::get(CurrentMetrics::AttachedDictionary) > static_cast<Int64>(shared->max_dictionary_num_to_warn))
-            common_warnings.emplace_back(fmt::format("The number of attached dictionaries is more than {}", shared->max_dictionary_num_to_warn));
+            common_warnings.emplace_back(fmt::format("The number of attached dictionaries is more than {}.", shared->max_dictionary_num_to_warn));
         if (CurrentMetrics::get(CurrentMetrics::AttachedDatabase) > static_cast<Int64>(shared->max_database_num_to_warn))
-            common_warnings.emplace_back(fmt::format("The number of attached databases is more than {}", shared->max_database_num_to_warn));
+            common_warnings.emplace_back(fmt::format("The number of attached databases is more than {}.", shared->max_database_num_to_warn));
         if (CurrentMetrics::get(CurrentMetrics::PartsActive) > static_cast<Int64>(shared->max_part_num_to_warn))
-            common_warnings.emplace_back(fmt::format("The number of active parts is more than {}", shared->max_part_num_to_warn));
+            common_warnings.emplace_back(fmt::format("The number of active parts is more than {}.", shared->max_part_num_to_warn));
     }
     /// Make setting's name ordered
-    std::set<String> obsolete_settings;
-    for (const auto & setting : *settings)
-    {
-        if (setting.isValueChanged() && setting.isObsolete())
-            obsolete_settings.emplace(setting.getName());
-    }
+    auto obsolete_settings = settings->getChangedAndObsoleteNames();
 
     if (!obsolete_settings.empty())
     {
@@ -1051,7 +1165,9 @@ Strings Context::getWarnings() const
         for (const auto & setting : obsolete_settings)
         {
             res += first ? "" : ", ";
-            res += "'" + setting + "'";
+            res += "'";
+            res += setting;
+            res += "'";
             first = false;
         }
         res = res + "]" + (single_element ? " is" : " are")
@@ -1069,8 +1185,8 @@ VolumePtr Context::getGlobalTemporaryVolume() const
     SharedLockGuard lock(shared->mutex);
     /// Calling this method we just bypass the `temp_data_on_disk` and write to the file on the volume directly.
     /// Volume is the same for `root_temp_data_on_disk` (always set) and `temp_data_on_disk` (if it's set).
-    if (shared->root_temp_data_on_disk)
-        return shared->root_temp_data_on_disk->getVolume();
+    if (shared->temporary_volume_legacy)
+        return shared->temporary_volume_legacy;
     return nullptr;
 }
 
@@ -1122,7 +1238,7 @@ void Context::setFilesystemCachesPath(const String & path)
 {
     std::lock_guard lock(shared->mutex);
 
-    if (!fs::path(path).is_absolute())
+    if (getApplicationType() != ApplicationType::LOCAL && !fs::path(path).is_absolute())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Filesystem caches path must be absolute: {}", path);
 
     shared->filesystem_caches_path = path;
@@ -1158,6 +1274,10 @@ try
             /// We skip directories (for example, 'http_buffers' - it's used for buffering of the results) and all other file types.
         }
     }
+    else
+    {
+        fs::create_directories(path);
+    }
 }
 catch (...)
 {
@@ -1191,7 +1311,8 @@ void Context::setTemporaryStoragePath(const String & path, size_t max_size)
 
     TemporaryDataOnDiskSettings temporary_data_on_disk_settings;
     temporary_data_on_disk_settings.max_size_on_disk = max_size;
-    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(std::move(volume), std::move(temporary_data_on_disk_settings));
+    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, std::move(temporary_data_on_disk_settings));
+    shared->temporary_volume_legacy = volume;
 }
 
 void Context::setTemporaryStoragePolicy(const String & policy_name, size_t max_size)
@@ -1239,7 +1360,8 @@ void Context::setTemporaryStoragePolicy(const String & policy_name, size_t max_s
 
     TemporaryDataOnDiskSettings temporary_data_on_disk_settings;
     temporary_data_on_disk_settings.max_size_on_disk = max_size;
-    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(std::move(volume), std::move(temporary_data_on_disk_settings));
+    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, std::move(temporary_data_on_disk_settings));
+    shared->temporary_volume_legacy = volume;
 }
 
 void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t max_size)
@@ -1263,7 +1385,8 @@ void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t 
 
     TemporaryDataOnDiskSettings temporary_data_on_disk_settings;
     temporary_data_on_disk_settings.max_size_on_disk = max_size;
-    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(std::move(volume), file_cache.get(), std::move(temporary_data_on_disk_settings));
+    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(file_cache.get(), std::move(temporary_data_on_disk_settings));
+    shared->temporary_volume_legacy = volume;
 }
 
 void Context::setFlagsPath(const String & path)
@@ -1551,7 +1674,8 @@ std::shared_ptr<const ContextAccessWrapper> Context::getAccess() const
         /// If setUserID() was never called then this must be the global context with the full access.
         bool full_access = !user_id;
 
-        return ContextAccessParams{user_id, full_access, /* use_default_roles= */ false, current_roles, *settings, current_database, client_info};
+        return ContextAccessParams{
+            user_id, full_access, /* use_default_roles= */ false, current_roles, *settings, current_database, client_info};
     };
 
     /// Check if the current access rights are still valid, otherwise get parameters for recalculating access rights.
@@ -1670,7 +1794,7 @@ std::vector<UUID> Context::getEnabledProfiles() const
 ResourceManagerPtr Context::getResourceManager() const
 {
     callOnce(shared->resource_manager_initialized, [&] {
-        shared->resource_manager = ResourceManagerFactory::instance().get(getConfigRef().getString("resource_manager", "dynamic"));
+        shared->resource_manager = createResourceManager(getGlobalContext());
     });
 
     return shared->resource_manager;
@@ -1681,7 +1805,7 @@ ClassifierPtr Context::getWorkloadClassifier() const
     std::lock_guard lock(mutex);
     // NOTE: Workload cannot be changed after query start, and getWorkloadClassifier() should not be called before proper `workload` is set
     if (!classifier)
-        classifier = getResourceManager()->acquire(getSettingsRef().workload);
+        classifier = getResourceManager()->acquire(getSettingsRef()[Setting::workload]);
     return classifier;
 }
 
@@ -2058,8 +2182,10 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             throw;
         }
 
-        uint64_t use_structure_from_insertion_table_in_table_functions = getSettingsRef().use_structure_from_insertion_table_in_table_functions;
-        if (select_query_hint && use_structure_from_insertion_table_in_table_functions && table_function_ptr->needStructureHint() && hasInsertionTable())
+        uint64_t use_structure_from_insertion_table_in_table_functions
+            = getSettingsRef()[Setting::use_structure_from_insertion_table_in_table_functions];
+        if (select_query_hint && use_structure_from_insertion_table_in_table_functions && table_function_ptr->needStructureHint()
+            && hasInsertionTable())
         {
             const auto & insert_columns = DatabaseCatalog::instance()
                                               .getTable(getInsertionTable(), shared_from_this())
@@ -2187,8 +2313,8 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 
                     if (!structure_hint.empty())
                         table_function_ptr->setStructureHint(structure_hint);
-
-                } else if (use_structure_from_insertion_table_in_table_functions == 1)
+                }
+                else if (use_structure_from_insertion_table_in_table_functions == 1)
                     throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH, "Number of columns in insert table less than required by SELECT expression.");
             }
         }
@@ -2236,12 +2362,21 @@ StoragePtr Context::buildParametrizedViewStorage(const String & database_name, c
     if (!storage_view || !storage_view->isParameterizedView())
         return nullptr;
 
-    auto query = original_view->getInMemoryMetadataPtr()->getSelectQuery().inner_query->clone();
+    auto original_view_metadata = original_view->getInMemoryMetadataPtr();
+    auto query = original_view_metadata->getSelectQuery().inner_query->clone();
     StorageView::replaceQueryParametersIfParametrizedView(query, param_values);
 
     ASTCreateQuery create;
     create.select = query->as<ASTSelectWithUnionQuery>();
-    auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, shared_from_this());
+
+    auto sql_security = std::make_shared<ASTSQLSecurity>();
+    sql_security->type = original_view_metadata->sql_security_type;
+    if (original_view_metadata->definer)
+        sql_security->definer = std::make_shared<ASTUserNameWithHost>(*original_view_metadata->definer);
+    create.sql_security = sql_security;
+
+    auto view_context = original_view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
+    auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);
     auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                 create,
                                                 ColumnsDescription(sample_block.getNamesAndTypesList()),
@@ -2268,7 +2403,7 @@ StoragePtr Context::getViewSource() const
 
 bool Context::displaySecretsInShowAndSelect() const
 {
-    return shared->server_settings.display_secrets_in_show_and_select;
+    return shared->server_settings[ServerSetting::display_secrets_in_show_and_select];
 }
 
 Settings Context::getSettingsCopy() const
@@ -2675,14 +2810,15 @@ void Context::makeQueryContextForMerge(const MergeTreeSettings & merge_tree_sett
 {
     makeQueryContext();
     classifier.reset(); // It is assumed that there are no active queries running using this classifier, otherwise this will lead to crashes
-    settings->workload = merge_tree_settings.merge_workload.value.empty() ? getMergeWorkload() : merge_tree_settings.merge_workload;
+    (*settings)[Setting::workload] = merge_tree_settings[MergeTreeSetting::merge_workload].value.empty() ? getMergeWorkload() : merge_tree_settings[MergeTreeSetting::merge_workload];
 }
 
 void Context::makeQueryContextForMutate(const MergeTreeSettings & merge_tree_settings)
 {
     makeQueryContext();
     classifier.reset(); // It is assumed that there are no active queries running using this classifier, otherwise this will lead to crashes
-    settings->workload = merge_tree_settings.mutation_workload.value.empty() ? getMutationWorkload() : merge_tree_settings.mutation_workload;
+    (*settings)[Setting::workload]
+        = merge_tree_settings[MergeTreeSetting::mutation_workload].value.empty() ? getMutationWorkload() : merge_tree_settings[MergeTreeSetting::mutation_workload];
 }
 
 void Context::makeSessionContext()
@@ -2692,7 +2828,11 @@ void Context::makeSessionContext()
 
 void Context::makeGlobalContext()
 {
-    initGlobal();
+    assert(!global_context_instance);
+    global_context_instance = shared_from_this();
+    DatabaseCatalog::init(shared_from_this());
+    EventNotifier::init();
+
     global_context = shared_from_this();
 }
 
@@ -2716,7 +2856,7 @@ AsyncLoader & Context::getAsyncLoader() const
                     CurrentMetrics::TablesLoaderForegroundThreads,
                     CurrentMetrics::TablesLoaderForegroundThreadsActive,
                     CurrentMetrics::TablesLoaderForegroundThreadsScheduled,
-                    shared->server_settings.tables_loader_foreground_pool_size,
+                    shared->server_settings[ServerSetting::tables_loader_foreground_pool_size],
                     TablesLoaderForegroundPriority
                 },
                 { // TablesLoaderBackgroundLoadPoolId
@@ -2724,7 +2864,7 @@ AsyncLoader & Context::getAsyncLoader() const
                     CurrentMetrics::TablesLoaderBackgroundThreads,
                     CurrentMetrics::TablesLoaderBackgroundThreadsActive,
                     CurrentMetrics::TablesLoaderBackgroundThreadsScheduled,
-                    shared->server_settings.tables_loader_background_pool_size,
+                    shared->server_settings[ServerSetting::tables_loader_background_pool_size],
                     TablesLoaderBackgroundLoadPriority
                 },
                 { // TablesLoaderBackgroundStartupPoolId
@@ -2732,7 +2872,7 @@ AsyncLoader & Context::getAsyncLoader() const
                     CurrentMetrics::TablesLoaderBackgroundThreads,
                     CurrentMetrics::TablesLoaderBackgroundThreadsActive,
                     CurrentMetrics::TablesLoaderBackgroundThreadsScheduled,
-                    shared->server_settings.tables_loader_background_pool_size,
+                    shared->server_settings[ServerSetting::tables_loader_background_pool_size],
                     TablesLoaderBackgroundStartupPriority
                 }
             },
@@ -2901,6 +3041,16 @@ void Context::setUserDefinedSQLObjectsStorage(std::unique_ptr<IUserDefinedSQLObj
     shared->user_defined_sql_objects_storage = std::move(storage);
 }
 
+IWorkloadEntityStorage & Context::getWorkloadEntityStorage() const
+{
+    callOnce(shared->workload_entity_storage_initialized, [&] {
+        shared->workload_entity_storage = createWorkloadEntityStorage(getGlobalContext());
+    });
+
+    std::lock_guard lock(shared->mutex);
+    return *shared->workload_entity_storage;
+}
+
 #if USE_NLP
 
 SynonymsExtensions & Context::getSynonymsExtensions() const
@@ -2927,8 +3077,8 @@ BackupsWorker & Context::getBackupsWorker() const
     callOnce(shared->backups_worker_initialized, [&] {
         const auto & config = getConfigRef();
         const auto & settings_ref = getSettingsRef();
-        UInt64 backup_threads = config.getUInt64("backup_threads", settings_ref.backup_threads);
-        UInt64 restore_threads = config.getUInt64("restore_threads", settings_ref.restore_threads);
+        UInt64 backup_threads = config.getUInt64("backup_threads", settings_ref[Setting::backup_threads]);
+        UInt64 restore_threads = config.getUInt64("restore_threads", settings_ref[Setting::restore_threads]);
 
         shared->backups_worker.emplace(getGlobalContext(), backup_threads, restore_threads);
     });
@@ -3083,9 +3233,8 @@ void Context::clearMarkCache() const
 ThreadPool & Context::getLoadMarksThreadpool() const
 {
     callOnce(shared->load_marks_threadpool_initialized, [&] {
-        const auto & config = getConfigRef();
-        auto pool_size = config.getUInt(".load_marks_threadpool_pool_size", 50);
-        auto queue_size = config.getUInt(".load_marks_threadpool_queue_size", 1000000);
+        auto pool_size = shared->server_settings[ServerSetting::load_marks_threadpool_pool_size];
+        auto queue_size = shared->server_settings[ServerSetting::load_marks_threadpool_queue_size];
         shared->load_marks_threadpool = std::make_unique<ThreadPool>(
             CurrentMetrics::MarksLoaderThreads, CurrentMetrics::MarksLoaderThreadsActive, CurrentMetrics::MarksLoaderThreadsScheduled, pool_size, pool_size, queue_size);
     });
@@ -3278,9 +3427,9 @@ AsynchronousMetrics * Context::getAsynchronousMetrics() const
 ThreadPool & Context::getPrefetchThreadpool() const
 {
     callOnce(shared->prefetch_threadpool_initialized, [&] {
-        const auto & config = getConfigRef();
-        auto pool_size = config.getUInt(".prefetch_threadpool_pool_size", 100);
-        auto queue_size = config.getUInt(".prefetch_threadpool_queue_size", 1000000);
+        auto pool_size = shared->server_settings[ServerSetting::prefetch_threadpool_pool_size];
+        auto queue_size = shared->server_settings[ServerSetting::prefetch_threadpool_queue_size];
+
         shared->prefetch_threadpool = std::make_unique<ThreadPool>(
             CurrentMetrics::IOPrefetchThreads, CurrentMetrics::IOPrefetchThreadsActive, CurrentMetrics::IOPrefetchThreadsScheduled, pool_size, pool_size, queue_size);
     });
@@ -3290,15 +3439,32 @@ ThreadPool & Context::getPrefetchThreadpool() const
 
 size_t Context::getPrefetchThreadpoolSize() const
 {
-    const auto & config = getConfigRef();
-    return config.getUInt(".prefetch_threadpool_pool_size", 100);
+    return shared->server_settings[ServerSetting::prefetch_threadpool_pool_size];
+}
+
+ThreadPool & Context::getBuildVectorSimilarityIndexThreadPool() const
+{
+    callOnce(
+        shared->build_vector_similarity_index_threadpool_initialized,
+        [&]
+        {
+            size_t pool_size = shared->server_settings[ServerSetting::max_build_vector_similarity_index_thread_pool_size] > 0
+                ? shared->server_settings[ServerSetting::max_build_vector_similarity_index_thread_pool_size]
+                : getNumberOfCPUCoresToUse();
+            shared->build_vector_similarity_index_threadpool = std::make_unique<ThreadPool>(
+                CurrentMetrics::BuildVectorSimilarityIndexThreads,
+                CurrentMetrics::BuildVectorSimilarityIndexThreadsActive,
+                CurrentMetrics::BuildVectorSimilarityIndexThreadsScheduled,
+                pool_size);
+        });
+    return *shared->build_vector_similarity_index_threadpool;
 }
 
 BackgroundSchedulePool & Context::getBufferFlushSchedulePool() const
 {
     callOnce(shared->buffer_flush_schedule_pool_initialized, [&] {
         shared->buffer_flush_schedule_pool = std::make_unique<BackgroundSchedulePool>(
-            shared->server_settings.background_buffer_flush_schedule_pool_size,
+            shared->server_settings[ServerSetting::background_buffer_flush_schedule_pool_size],
             CurrentMetrics::BackgroundBufferFlushSchedulePoolTask,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolSize,
             "BgBufSchPool");
@@ -3342,7 +3508,7 @@ BackgroundSchedulePool & Context::getSchedulePool() const
 {
     callOnce(shared->schedule_pool_initialized, [&] {
         shared->schedule_pool = std::make_unique<BackgroundSchedulePool>(
-            shared->server_settings.background_schedule_pool_size,
+            shared->server_settings[ServerSetting::background_schedule_pool_size],
             CurrentMetrics::BackgroundSchedulePoolTask,
             CurrentMetrics::BackgroundSchedulePoolSize,
             "BgSchPool");
@@ -3355,7 +3521,7 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool() const
 {
     callOnce(shared->distributed_schedule_pool_initialized, [&] {
         shared->distributed_schedule_pool = std::make_unique<BackgroundSchedulePool>(
-            shared->server_settings.background_distributed_schedule_pool_size,
+            shared->server_settings[ServerSetting::background_distributed_schedule_pool_size],
             CurrentMetrics::BackgroundDistributedSchedulePoolTask,
             CurrentMetrics::BackgroundDistributedSchedulePoolSize,
             "BgDistSchPool");
@@ -3368,7 +3534,7 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
 {
     callOnce(shared->message_broker_schedule_pool_initialized, [&] {
         shared->message_broker_schedule_pool = std::make_unique<BackgroundSchedulePool>(
-            shared->server_settings.background_message_broker_schedule_pool_size,
+            shared->server_settings[ServerSetting::background_message_broker_schedule_pool_size],
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolTask,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolSize,
             "BgMBSchPool");
@@ -3390,7 +3556,7 @@ ThrottlerPtr Context::getReplicatedSendsThrottler() const
 ThrottlerPtr Context::getRemoteReadThrottler() const
 {
     ThrottlerPtr throttler = shared->remote_read_throttler;
-    if (auto bandwidth = getSettingsRef().max_remote_read_network_bandwidth)
+    if (auto bandwidth = getSettingsRef()[Setting::max_remote_read_network_bandwidth])
     {
         std::lock_guard lock(mutex);
         if (!remote_read_query_throttler)
@@ -3403,7 +3569,7 @@ ThrottlerPtr Context::getRemoteReadThrottler() const
 ThrottlerPtr Context::getRemoteWriteThrottler() const
 {
     ThrottlerPtr throttler = shared->remote_write_throttler;
-    if (auto bandwidth = getSettingsRef().max_remote_write_network_bandwidth)
+    if (auto bandwidth = getSettingsRef()[Setting::max_remote_write_network_bandwidth])
     {
         std::lock_guard lock(mutex);
         if (!remote_write_query_throttler)
@@ -3416,7 +3582,7 @@ ThrottlerPtr Context::getRemoteWriteThrottler() const
 ThrottlerPtr Context::getLocalReadThrottler() const
 {
     ThrottlerPtr throttler = shared->local_read_throttler;
-    if (auto bandwidth = getSettingsRef().max_local_read_bandwidth)
+    if (auto bandwidth = getSettingsRef()[Setting::max_local_read_bandwidth])
     {
         std::lock_guard lock(mutex);
         if (!local_read_query_throttler)
@@ -3429,7 +3595,7 @@ ThrottlerPtr Context::getLocalReadThrottler() const
 ThrottlerPtr Context::getLocalWriteThrottler() const
 {
     ThrottlerPtr throttler = shared->local_write_throttler;
-    if (auto bandwidth = getSettingsRef().max_local_write_bandwidth)
+    if (auto bandwidth = getSettingsRef()[Setting::max_local_write_bandwidth])
     {
         std::lock_guard lock(mutex);
         if (!local_write_query_throttler)
@@ -3442,7 +3608,7 @@ ThrottlerPtr Context::getLocalWriteThrottler() const
 ThrottlerPtr Context::getBackupsThrottler() const
 {
     ThrottlerPtr throttler = shared->backups_server_throttler;
-    if (auto bandwidth = getSettingsRef().max_backup_bandwidth)
+    if (auto bandwidth = getSettingsRef()[Setting::max_backup_bandwidth])
     {
         std::lock_guard lock(mutex);
         if (!backups_query_throttler)
@@ -3573,21 +3739,19 @@ bool Context::tryCheckClientConnectionToMyKeeperCluster() const
             /// Connected, return true
             return true;
         }
-        else
-        {
-            Poco::Util::AbstractConfiguration::Keys keys;
-            getConfigRef().keys("auxiliary_zookeepers", keys);
 
-            /// If our server is part of some auxiliary_zookeeper
-            for (const auto & aux_zk_name : keys)
+        Poco::Util::AbstractConfiguration::Keys keys;
+        getConfigRef().keys("auxiliary_zookeepers", keys);
+
+        /// If our server is part of some auxiliary_zookeeper
+        for (const auto & aux_zk_name : keys)
+        {
+            if (checkZooKeeperConfigIsLocal(getConfigRef(), "auxiliary_zookeepers." + aux_zk_name))
             {
-                if (checkZooKeeperConfigIsLocal(getConfigRef(), "auxiliary_zookeepers." + aux_zk_name))
-                {
-                    LOG_DEBUG(shared->log, "Our Keeper server is participant of the auxiliary zookeeper cluster ({}), will try to connect to it", aux_zk_name);
-                    getAuxiliaryZooKeeper(aux_zk_name);
-                    /// Connected, return true
-                    return true;
-                }
+                LOG_DEBUG(shared->log, "Our Keeper server is participant of the auxiliary zookeeper cluster ({}), will try to connect to it", aux_zk_name);
+                getAuxiliaryZooKeeper(aux_zk_name);
+                /// Connected, return true
+                return true;
             }
         }
 
@@ -3738,6 +3902,11 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
         zookeeper->second = zookeeper->second->startNewSession();
 
     return zookeeper->second;
+}
+
+std::shared_ptr<zkutil::ZooKeeper> Context::getDefaultOrAuxiliaryZooKeeper(const String & name) const
+{
+    return name == zkutil::DEFAULT_ZOOKEEPER_NAME ? getZooKeeper() : getAuxiliaryZooKeeper(name);
 }
 
 
@@ -3900,8 +4069,7 @@ UInt16 Context::getServerPort(const String & port_name) const
     auto it = shared->server_ports.find(port_name);
     if (it == shared->server_ports.end())
         throw Exception(ErrorCodes::CLUSTER_DOESNT_EXIST, "There is no port named {}", port_name);
-    else
-        return it->second;
+    return it->second;
 }
 
 void Context::setMaxPartNumToWarn(size_t max_part_to_warn)
@@ -4088,8 +4256,13 @@ void Context::initializeTraceCollector()
 }
 
 /// Call after unexpected crash happen.
-void Context::handleCrash() const TSA_NO_THREAD_SAFETY_ANALYSIS
+void Context::handleCrash() const
 {
+    std::lock_guard<std::mutex> lock(mutex_shared_context);
+    if (!shared)
+        return;
+
+    SharedLockGuard lock2(shared->mutex);
     if (shared->system_logs)
         shared->system_logs->handleCrash();
 }
@@ -4108,6 +4281,16 @@ std::shared_ptr<QueryLog> Context::getQueryLog() const
         return {};
 
     return shared->system_logs->query_log;
+}
+
+std::shared_ptr<QueryMetricLog> Context::getQueryMetricLog() const
+{
+    SharedLockGuard lock(shared->mutex);
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->query_metric_log;
 }
 
 std::shared_ptr<QueryThreadLog> Context::getQueryThreadLog() const
@@ -4302,9 +4485,9 @@ std::shared_ptr<BackupLog> Context::getBackupLog() const
 
 std::shared_ptr<BlobStorageLog> Context::getBlobStorageLog() const
 {
-    bool enable_blob_storage_log = settings->enable_blob_storage_log;
+    bool enable_blob_storage_log = getSettingsRef()[Setting::enable_blob_storage_log];
     if (hasQueryContext())
-        enable_blob_storage_log = getQueryContext()->getSettingsRef().enable_blob_storage_log;
+        enable_blob_storage_log = getQueryContext()->getSettingsRef()[Setting::enable_blob_storage_log];
 
     if (!enable_blob_storage_log)
         return {};
@@ -4540,6 +4723,11 @@ const MergeTreeSettings & Context::getMergeTreeSettings() const
     {
         const auto & config = shared->getConfigRefWithLock(lock);
         MergeTreeSettings mt_settings;
+
+        /// Respect compatibility setting from the default profile.
+        /// First, we apply compatibility values, and only after apply changes from the config.
+        mt_settings.applyCompatibilitySetting((*settings)[Setting::compatibility]);
+
         mt_settings.loadFromConfig("merge_tree", config);
         shared->merge_tree_settings.emplace(mt_settings);
     }
@@ -4555,6 +4743,11 @@ const MergeTreeSettings & Context::getReplicatedMergeTreeSettings() const
     {
         const auto & config = shared->getConfigRefWithLock(lock);
         MergeTreeSettings mt_settings;
+
+        /// Respect compatibility setting from the default profile.
+        /// First, we apply compatibility values, and only after apply changes from the config.
+        mt_settings.applyCompatibilitySetting((*settings)[Setting::compatibility]);
+
         mt_settings.loadFromConfig("merge_tree", config);
         mt_settings.loadFromConfig("replicated_merge_tree", config);
         shared->replicated_merge_tree_settings.emplace(mt_settings);
@@ -5203,6 +5396,38 @@ void Context::resetZooKeeperMetadataTransaction()
     metadata_transaction = nullptr;
 }
 
+void Context::setParentTable(UUID uuid)
+{
+    chassert(!parent_table_uuid.has_value());
+    parent_table_uuid = uuid;
+}
+
+std::optional<UUID> Context::getParentTable() const
+{
+    return parent_table_uuid;
+}
+
+void Context::setDDLQueryCancellation(StopToken cancel)
+{
+    chassert(!ddl_query_cancellation.stop_possible());
+    ddl_query_cancellation = cancel;
+}
+
+StopToken Context::getDDLQueryCancellation() const
+{
+    return ddl_query_cancellation;
+}
+
+void Context::setDDLAdditionalChecksOnEnqueue(Coordination::Requests requests)
+{
+    ddl_additional_checks_on_enqueue = requests;
+}
+
+Coordination::Requests Context::getDDLAdditionalChecksOnEnqueue() const
+{
+    return ddl_additional_checks_on_enqueue;
+}
+
 
 void Context::checkTransactionsAreAllowed(bool explicit_tcl_query /* = false */) const
 {
@@ -5355,7 +5580,7 @@ void Context::setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInser
 
     SharedLockGuard lock(shared->mutex);
 
-    if (std::chrono::milliseconds(settings->async_insert_poll_timeout_ms) == std::chrono::milliseconds::zero())
+    if (std::chrono::milliseconds(getSettingsRef()[Setting::async_insert_poll_timeout_ms]) == std::chrono::milliseconds::zero())
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting async_insert_poll_timeout_ms can't be zero");
 
     shared->async_insert_queue = ptr;
@@ -5369,13 +5594,13 @@ void Context::initializeBackgroundExecutorsIfNeeded()
         return;
 
     const ServerSettings & server_settings = shared->server_settings;
-    size_t background_pool_size = server_settings.background_pool_size;
-    auto background_merges_mutations_concurrency_ratio = server_settings.background_merges_mutations_concurrency_ratio;
+    size_t background_pool_size = server_settings[ServerSetting::background_pool_size];
+    auto background_merges_mutations_concurrency_ratio = server_settings[ServerSetting::background_merges_mutations_concurrency_ratio];
     size_t background_pool_max_tasks_count = static_cast<size_t>(background_pool_size * background_merges_mutations_concurrency_ratio);
-    String background_merges_mutations_scheduling_policy = server_settings.background_merges_mutations_scheduling_policy;
-    size_t background_move_pool_size = server_settings.background_move_pool_size;
-    size_t background_fetches_pool_size = server_settings.background_fetches_pool_size;
-    size_t background_common_pool_size = server_settings.background_common_pool_size;
+    String background_merges_mutations_scheduling_policy = server_settings[ServerSetting::background_merges_mutations_scheduling_policy];
+    size_t background_move_pool_size = server_settings[ServerSetting::background_move_pool_size];
+    size_t background_fetches_pool_size = server_settings[ServerSetting::background_fetches_pool_size];
+    size_t background_common_pool_size = server_settings[ServerSetting::background_common_pool_size];
 
     /// With this executor we can execute more tasks than threads we have
     shared->merge_mutate_executor = std::make_shared<MergeMutateBackgroundExecutor>
@@ -5487,9 +5712,8 @@ IOUringReader & Context::getIOUringReader() const
 ThreadPool & Context::getThreadPoolWriter() const
 {
     callOnce(shared->threadpool_writer_initialized, [&] {
-        const auto & config = getConfigRef();
-        auto pool_size = config.getUInt(".threadpool_writer_pool_size", 100);
-        auto queue_size = config.getUInt(".threadpool_writer_queue_size", 1000000);
+        auto pool_size = shared->server_settings[ServerSetting::threadpool_writer_pool_size];
+        auto queue_size = shared->server_settings[ServerSetting::threadpool_writer_queue_size];
 
         shared->threadpool_writer = std::make_unique<ThreadPool>(
             CurrentMetrics::IOWriterThreads, CurrentMetrics::IOWriterThreadsActive, CurrentMetrics::IOWriterThreadsScheduled, pool_size, pool_size, queue_size);
@@ -5501,70 +5725,77 @@ ThreadPool & Context::getThreadPoolWriter() const
 ReadSettings Context::getReadSettings() const
 {
     ReadSettings res;
+    const auto & settings_ref = getSettingsRef();
 
-    std::string_view read_method_str = settings->local_filesystem_read_method.value;
+    std::string_view read_method_str = getSettingsRef()[Setting::local_filesystem_read_method].value;
 
     if (auto opt_method = magic_enum::enum_cast<LocalFSReadMethod>(read_method_str))
         res.local_fs_method = *opt_method;
     else
         throw Exception(ErrorCodes::UNKNOWN_READ_METHOD, "Unknown read method '{}' for local filesystem", read_method_str);
 
-    read_method_str = settings->remote_filesystem_read_method.value;
+    read_method_str = getSettingsRef()[Setting::remote_filesystem_read_method].value;
 
     if (auto opt_method = magic_enum::enum_cast<RemoteFSReadMethod>(read_method_str))
         res.remote_fs_method = *opt_method;
     else
         throw Exception(ErrorCodes::UNKNOWN_READ_METHOD, "Unknown read method '{}' for remote filesystem", read_method_str);
 
-    res.local_fs_prefetch = settings->local_filesystem_read_prefetch;
-    res.remote_fs_prefetch = settings->remote_filesystem_read_prefetch;
+    res.local_fs_prefetch = settings_ref[Setting::local_filesystem_read_prefetch];
+    res.remote_fs_prefetch = settings_ref[Setting::remote_filesystem_read_prefetch];
 
-    res.load_marks_asynchronously = settings->load_marks_asynchronously;
+    res.load_marks_asynchronously = settings_ref[Setting::load_marks_asynchronously];
 
-    res.enable_filesystem_read_prefetches_log = settings->enable_filesystem_read_prefetches_log;
+    res.enable_filesystem_read_prefetches_log = settings_ref[Setting::enable_filesystem_read_prefetches_log];
 
-    res.remote_fs_read_max_backoff_ms = settings->remote_fs_read_max_backoff_ms;
-    res.remote_fs_read_backoff_max_tries = settings->remote_fs_read_backoff_max_tries;
-    res.enable_filesystem_cache = settings->enable_filesystem_cache;
-    res.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = settings->read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
-    res.enable_filesystem_cache_log = settings->enable_filesystem_cache_log;
-    res.filesystem_cache_segments_batch_size = settings->filesystem_cache_segments_batch_size;
-    res.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = settings->filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
+    res.remote_fs_read_max_backoff_ms = settings_ref[Setting::remote_fs_read_max_backoff_ms];
+    res.remote_fs_read_backoff_max_tries = settings_ref[Setting::remote_fs_read_backoff_max_tries];
+    res.enable_filesystem_cache = settings_ref[Setting::enable_filesystem_cache];
+    res.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
+        = settings_ref[Setting::read_from_filesystem_cache_if_exists_otherwise_bypass_cache];
+    res.enable_filesystem_cache_log = settings_ref[Setting::enable_filesystem_cache_log];
+    res.filesystem_cache_segments_batch_size = settings_ref[Setting::filesystem_cache_segments_batch_size];
+    res.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds
+        = settings_ref[Setting::filesystem_cache_reserve_space_wait_lock_timeout_milliseconds];
+    res.filesystem_cache_allow_background_download_for_metadata_files_in_packed_storage
+        = settings_ref[Setting::filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage];
+    res.filesystem_cache_allow_background_download_during_fetch = settings_ref[Setting::filesystem_cache_enable_background_download_during_fetch];
+    res.filesystem_cache_prefer_bigger_buffer_size = settings_ref[Setting::filesystem_cache_prefer_bigger_buffer_size];
 
-    res.filesystem_cache_max_download_size = settings->filesystem_cache_max_download_size;
-    res.skip_download_if_exceeds_query_cache = settings->skip_download_if_exceeds_query_cache;
+    res.filesystem_cache_max_download_size = settings_ref[Setting::filesystem_cache_max_download_size];
+    res.filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit = settings_ref[Setting::filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit];
 
     res.page_cache = getPageCache();
-    res.use_page_cache_for_disks_without_file_cache = settings->use_page_cache_for_disks_without_file_cache;
-    res.read_from_page_cache_if_exists_otherwise_bypass_cache = settings->read_from_page_cache_if_exists_otherwise_bypass_cache;
-    res.page_cache_inject_eviction = settings->page_cache_inject_eviction;
+    res.use_page_cache_for_disks_without_file_cache = settings_ref[Setting::use_page_cache_for_disks_without_file_cache];
+    res.read_from_page_cache_if_exists_otherwise_bypass_cache = settings_ref[Setting::read_from_page_cache_if_exists_otherwise_bypass_cache];
+    res.page_cache_inject_eviction = settings_ref[Setting::page_cache_inject_eviction];
 
-    res.remote_read_min_bytes_for_seek = settings->remote_read_min_bytes_for_seek;
+    res.remote_read_min_bytes_for_seek = getSettingsRef()[Setting::remote_read_min_bytes_for_seek];
 
     /// Zero read buffer will not make progress.
-    if (!settings->max_read_buffer_size)
+    if (!getSettingsRef()[Setting::max_read_buffer_size])
     {
-        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
-            "Invalid value '{}' for max_read_buffer_size", settings->max_read_buffer_size);
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE, "Invalid value '{}' for max_read_buffer_size", getSettingsRef()[Setting::max_read_buffer_size]);
     }
 
     res.local_fs_buffer_size
-        = settings->max_read_buffer_size_local_fs ? settings->max_read_buffer_size_local_fs : settings->max_read_buffer_size;
+        = settings_ref[Setting::max_read_buffer_size_local_fs] ? settings_ref[Setting::max_read_buffer_size_local_fs] : settings_ref[Setting::max_read_buffer_size];
     res.remote_fs_buffer_size
-        = settings->max_read_buffer_size_remote_fs ? settings->max_read_buffer_size_remote_fs : settings->max_read_buffer_size;
-    res.prefetch_buffer_size = settings->prefetch_buffer_size;
-    res.direct_io_threshold = settings->min_bytes_to_use_direct_io;
-    res.mmap_threshold = settings->min_bytes_to_use_mmap_io;
-    res.priority = Priority{settings->read_priority};
+        = settings_ref[Setting::max_read_buffer_size_remote_fs] ? settings_ref[Setting::max_read_buffer_size_remote_fs] : settings_ref[Setting::max_read_buffer_size];
+    res.prefetch_buffer_size = settings_ref[Setting::prefetch_buffer_size];
+    res.direct_io_threshold = settings_ref[Setting::min_bytes_to_use_direct_io];
+    res.mmap_threshold = settings_ref[Setting::min_bytes_to_use_mmap_io];
+    res.priority = Priority{settings_ref[Setting::read_priority]};
 
     res.remote_throttler = getRemoteReadThrottler();
     res.local_throttler = getLocalReadThrottler();
 
-    res.http_max_tries = settings->http_max_tries;
-    res.http_retry_initial_backoff_ms = settings->http_retry_initial_backoff_ms;
-    res.http_retry_max_backoff_ms = settings->http_retry_max_backoff_ms;
-    res.http_skip_not_found_url_for_globs = settings->http_skip_not_found_url_for_globs;
-    res.http_make_head_request = settings->http_make_head_request;
+    res.http_max_tries = settings_ref[Setting::http_max_tries];
+    res.http_retry_initial_backoff_ms = settings_ref[Setting::http_retry_initial_backoff_ms];
+    res.http_retry_max_backoff_ms = settings_ref[Setting::http_retry_max_backoff_ms];
+    res.http_skip_not_found_url_for_globs = settings_ref[Setting::http_skip_not_found_url_for_globs];
+    res.http_make_head_request = settings_ref[Setting::http_make_head_request];
 
     res.mmap_cache = getMMappedFileCache().get();
 
@@ -5574,14 +5805,16 @@ ReadSettings Context::getReadSettings() const
 WriteSettings Context::getWriteSettings() const
 {
     WriteSettings res;
+    const auto & settings_ref = getSettingsRef();
 
-    res.enable_filesystem_cache_on_write_operations = settings->enable_filesystem_cache_on_write_operations;
-    res.enable_filesystem_cache_log = settings->enable_filesystem_cache_log;
-    res.throw_on_error_from_cache = settings->throw_on_error_from_cache_on_write_operations;
-    res.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = settings->filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
+    res.enable_filesystem_cache_on_write_operations = settings_ref[Setting::enable_filesystem_cache_on_write_operations];
+    res.enable_filesystem_cache_log = settings_ref[Setting::enable_filesystem_cache_log];
+    res.throw_on_error_from_cache = settings_ref[Setting::throw_on_error_from_cache_on_write_operations];
+    res.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds
+        = settings_ref[Setting::filesystem_cache_reserve_space_wait_lock_timeout_milliseconds];
 
-    res.s3_allow_parallel_part_upload = settings->s3_allow_parallel_part_upload;
-    res.azure_allow_parallel_part_upload = settings->azure_allow_parallel_part_upload;
+    res.s3_allow_parallel_part_upload = settings_ref[Setting::s3_allow_parallel_part_upload];
+    res.azure_allow_parallel_part_upload = settings_ref[Setting::azure_allow_parallel_part_upload];
 
     res.remote_throttler = getRemoteWriteThrottler();
     res.local_throttler = getLocalWriteThrottler();
@@ -5597,24 +5830,13 @@ std::shared_ptr<AsyncReadCounters> Context::getAsyncReadCounters() const
     return async_read_counters;
 }
 
-Context::ParallelReplicasMode Context::getParallelReplicasMode() const
-{
-    const auto & settings_ref = getSettingsRef();
-
-    using enum Context::ParallelReplicasMode;
-    if (!settings_ref.parallel_replicas_custom_key.value.empty())
-        return CUSTOM_KEY;
-
-    if (settings_ref.allow_experimental_parallel_reading_from_replicas > 0)
-        return READ_TASKS;
-
-    return SAMPLE_KEY;
-}
-
 bool Context::canUseTaskBasedParallelReplicas() const
 {
     const auto & settings_ref = getSettingsRef();
-    return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS && settings_ref.max_parallel_replicas > 1;
+
+    return settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0
+        && settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
+        && settings_ref[Setting::max_parallel_replicas] > 1;
 }
 
 bool Context::canUseParallelReplicasOnInitiator() const
@@ -5629,7 +5851,15 @@ bool Context::canUseParallelReplicasOnFollower() const
 
 bool Context::canUseParallelReplicasCustomKey() const
 {
-    return settings->max_parallel_replicas > 1 && getParallelReplicasMode() == Context::ParallelReplicasMode::CUSTOM_KEY;
+    const auto & settings_ref = getSettingsRef();
+
+    const bool has_enough_servers = settings_ref[Setting::max_parallel_replicas] > 1;
+    const bool parallel_replicas_enabled = settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0;
+    const bool is_parallel_replicas_with_custom_key =
+        settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_SAMPLING ||
+        settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_RANGE;
+
+    return has_enough_servers && parallel_replicas_enabled && is_parallel_replicas_with_custom_key;
 }
 
 bool Context::canUseParallelReplicasCustomKeyForCluster(const Cluster & cluster) const
@@ -5639,8 +5869,23 @@ bool Context::canUseParallelReplicasCustomKeyForCluster(const Cluster & cluster)
 
 bool Context::canUseOffsetParallelReplicas() const
 {
-    return offset_parallel_replicas_enabled && settings->max_parallel_replicas > 1
-        && getParallelReplicasMode() != Context::ParallelReplicasMode::READ_TASKS;
+    const auto & settings_ref = getSettingsRef();
+
+    /**
+     * Offset parallel replicas algorithm is not only the one which relies on native SAMPLING KEY,
+     * but also those which rely on customer-provided "custom" key.
+     * We combine them together into one group for convenience.
+     */
+    const bool has_enough_servers = settings_ref[Setting::max_parallel_replicas] > 1;
+    const bool parallel_replicas_enabled = settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0;
+    const bool is_parallel_replicas_with_custom_key_or_native_sampling_key =
+        settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::SAMPLING_KEY ||
+        settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_SAMPLING ||
+        settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_RANGE;
+    return offset_parallel_replicas_enabled &&
+           has_enough_servers &&
+           parallel_replicas_enabled &&
+           is_parallel_replicas_with_custom_key_or_native_sampling_key;
 }
 
 void Context::disableOffsetParallelReplicas()
@@ -5650,14 +5895,15 @@ void Context::disableOffsetParallelReplicas()
 
 ClusterPtr Context::getClusterForParallelReplicas() const
 {
+    const auto & settings_ref = getSettingsRef();
     /// check cluster for parallel replicas
-    if (settings->cluster_for_parallel_replicas.value.empty())
+    if (settings_ref[Setting::cluster_for_parallel_replicas].value.empty())
         throw Exception(
             ErrorCodes::CLUSTER_DOESNT_EXIST,
             "Reading in parallel from replicas is enabled but cluster to execute query is not provided. Please set "
             "'cluster_for_parallel_replicas' setting");
 
-    return getCluster(settings->cluster_for_parallel_replicas);
+    return getCluster(settings_ref[Setting::cluster_for_parallel_replicas]);
 }
 
 void Context::setPreparedSetsCache(const PreparedSetsCachePtr & cache)
@@ -5687,37 +5933,37 @@ const ServerSettings & Context::getServerSettings() const
 
 uint64_t HTTPContext::getMaxHstsAge() const
 {
-    return context->getSettingsRef().hsts_max_age;
+    return context->getSettingsRef()[Setting::hsts_max_age];
 }
 
     uint64_t HTTPContext::getMaxUriSize() const
 {
-    return context->getSettingsRef().http_max_uri_size;
+    return context->getSettingsRef()[Setting::http_max_uri_size];
 }
 
 uint64_t HTTPContext::getMaxFields() const
 {
-return context->getSettingsRef().http_max_fields;
+    return context->getSettingsRef()[Setting::http_max_fields];
 }
 
 uint64_t HTTPContext::getMaxFieldNameSize() const
 {
-return context->getSettingsRef().http_max_field_name_size;
+    return context->getSettingsRef()[Setting::http_max_field_name_size];
 }
 
 uint64_t HTTPContext::getMaxFieldValueSize() const
 {
-return context->getSettingsRef().http_max_field_value_size;
+    return context->getSettingsRef()[Setting::http_max_field_value_size];
 }
 
 Poco::Timespan HTTPContext::getReceiveTimeout() const
 {
-return context->getSettingsRef().http_receive_timeout;
+    return context->getSettingsRef()[Setting::http_receive_timeout];
 }
 
 Poco::Timespan HTTPContext::getSendTimeout() const
 {
-return context->getSettingsRef().http_send_timeout;
+    return context->getSettingsRef()[Setting::http_send_timeout];
 }
 
 }

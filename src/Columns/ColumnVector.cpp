@@ -118,9 +118,9 @@ struct ColumnVector<T>::less_stable
         if (unlikely(parent.data[lhs] == parent.data[rhs]))
             return lhs < rhs;
 
-        if constexpr (std::is_floating_point_v<T>)
+        if constexpr (is_floating_point<T>)
         {
-            if (unlikely(std::isnan(parent.data[lhs]) && std::isnan(parent.data[rhs])))
+            if (unlikely(isNaN(parent.data[lhs]) && isNaN(parent.data[rhs])))
             {
                 return lhs < rhs;
             }
@@ -150,9 +150,9 @@ struct ColumnVector<T>::greater_stable
         if (unlikely(parent.data[lhs] == parent.data[rhs]))
             return lhs < rhs;
 
-        if constexpr (std::is_floating_point_v<T>)
+        if constexpr (is_floating_point<T>)
         {
-            if (unlikely(std::isnan(parent.data[lhs]) && std::isnan(parent.data[rhs])))
+            if (unlikely(isNaN(parent.data[lhs]) && isNaN(parent.data[rhs])))
             {
                 return lhs < rhs;
             }
@@ -224,9 +224,9 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
 
     iota(res.data(), data_size, IColumn::Permutation::value_type(0));
 
-    if constexpr (has_find_extreme_implementation<T> && !std::is_floating_point_v<T>)
+    if constexpr (has_find_extreme_implementation<T> && !is_floating_point<T>)
     {
-        /// Disabled for:floating point
+        /// Disabled for floating point:
         /// * floating point: We don't deal with nan_direction_hint
         /// * stability::Stable: We might return any value, not the first
         if ((limit == 1) && (stability == IColumn::PermutationSortStability::Unstable))
@@ -256,7 +256,7 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
             bool sort_is_stable = stability == IColumn::PermutationSortStability::Stable;
 
             /// TODO: LSD RadixSort is currently not stable if direction is descending, or value is floating point
-            bool use_radix_sort = (sort_is_stable && ascending && !std::is_floating_point_v<T>) || !sort_is_stable;
+            bool use_radix_sort = (sort_is_stable && ascending && !is_floating_point<T>) || !sort_is_stable;
 
             /// Thresholds on size. Lower threshold is arbitrary. Upper threshold is chosen by the type for histogram counters.
             if (data_size >= 256 && data_size <= std::numeric_limits<UInt32>::max() && use_radix_sort)
@@ -283,7 +283,7 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
 
                 /// Radix sort treats all NaNs to be greater than all numbers.
                 /// If the user needs the opposite, we must move them accordingly.
-                if (std::is_floating_point_v<T> && nan_direction_hint < 0)
+                if (is_floating_point<T> && nan_direction_hint < 0)
                 {
                     size_t nans_to_move = 0;
 
@@ -330,7 +330,7 @@ void ColumnVector<T>::updatePermutation(IColumn::PermutationSortDirection direct
         if constexpr (is_arithmetic_v<T> && !is_big_int_v<T>)
         {
             /// TODO: LSD RadixSort is currently not stable if direction is descending, or value is floating point
-            bool use_radix_sort = (sort_is_stable && ascending && !std::is_floating_point_v<T>) || !sort_is_stable;
+            bool use_radix_sort = (sort_is_stable && ascending && !is_floating_point<T>) || !sort_is_stable;
             size_t size = end - begin;
 
             /// Thresholds on size. Lower threshold is arbitrary. Upper threshold is chosen by the type for histogram counters.
@@ -353,7 +353,7 @@ void ColumnVector<T>::updatePermutation(IColumn::PermutationSortDirection direct
 
                 /// Radix sort treats all NaNs to be greater than all numbers.
                 /// If the user needs the opposite, we must move them accordingly.
-                if (std::is_floating_point_v<T> && nan_direction_hint < 0)
+                if (is_floating_point<T> && nan_direction_hint < 0)
                 {
                     size_t nans_to_move = 0;
 
@@ -543,8 +543,7 @@ uint8_t prefixToCopy(UInt64 mask)
     const UInt64 leading_zeroes = __builtin_clzll(mask);
     if (mask == ((static_cast<UInt64>(-1) << leading_zeroes) >> leading_zeroes))
         return 64 - leading_zeroes;
-    else
-        return 0xFF;
+    return 0xFF;
 }
 
 uint8_t suffixToCopy(UInt64 mask)
@@ -1006,6 +1005,7 @@ template class ColumnVector<Int32>;
 template class ColumnVector<Int64>;
 template class ColumnVector<Int128>;
 template class ColumnVector<Int256>;
+template class ColumnVector<BFloat16>;
 template class ColumnVector<Float32>;
 template class ColumnVector<Float64>;
 template class ColumnVector<UUID>;

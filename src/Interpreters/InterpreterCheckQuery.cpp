@@ -36,6 +36,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool check_query_single_value_result;
+    extern const SettingsMaxThreads max_threads;
+}
 
 namespace ErrorCodes
 {
@@ -257,10 +262,8 @@ private:
                 LOG_DEBUG(log, "Checking '{}' database", database_name);
                 return current_database;
             }
-            else
-            {
-                LOG_DEBUG(log, "Skipping database '{}' because it was dropped", database_name);
-            }
+
+            LOG_DEBUG(log, "Skipping database '{}' because it was dropped", database_name);
         }
         return {};
     }
@@ -340,7 +343,7 @@ public:
         if (result_value == 0)
             return;
 
-        auto columns = chunk.getColumns();
+        const auto & columns = chunk.getColumns();
         if ((columns.size() != 3 && columns.size() != 5) || column_position_to_check >= columns.size())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of columns: {}, position {}", columns.size(), column_position_to_check);
 
@@ -422,7 +425,7 @@ BlockIO InterpreterCheckQuery::execute()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected query {} in InterpreterCheckQuery", query_ptr->formatForErrorMessage());
     }
 
-    size_t num_streams = std::max<size_t>(settings.max_threads, 1);
+    size_t num_streams = std::max<size_t>(settings[Setting::max_threads], 1);
 
     processors->emplace_back(worker_source);
     std::vector<OutputPort *> worker_ports;
@@ -463,7 +466,7 @@ BlockIO InterpreterCheckQuery::execute()
         resize_outport = &resize_processor->getOutputs().front();
     }
 
-    if (settings.check_query_single_value_result)
+    if (settings[Setting::check_query_single_value_result])
     {
         chassert(!processors->empty() && !processors->back()->getOutputs().empty());
         Block header = processors->back()->getOutputs().front().getHeader();

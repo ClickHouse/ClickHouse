@@ -426,9 +426,9 @@ static ColumnWithTypeAndName readColumnWithDecimalData(const std::shared_ptr<arr
     auto internal_type = createDecimal<DataTypeDecimal>(precision, arrow_decimal_type->scale());
     if (precision <= DecimalUtils::max_precision<Decimal32>)
         return readColumnWithDecimalDataImpl<Decimal32, DecimalArray>(arrow_column, column_name, internal_type);
-    else if (precision <= DecimalUtils::max_precision<Decimal64>)
+    if (precision <= DecimalUtils::max_precision<Decimal64>)
         return readColumnWithDecimalDataImpl<Decimal64, DecimalArray>(arrow_column, column_name, internal_type);
-    else if (precision <= DecimalUtils::max_precision<Decimal128>)
+    if (precision <= DecimalUtils::max_precision<Decimal128>)
         return readColumnWithDecimalDataImpl<Decimal128, DecimalArray>(arrow_column, column_name, internal_type);
     return readColumnWithDecimalDataImpl<Decimal256, DecimalArray>(arrow_column, column_name, internal_type);
 }
@@ -727,6 +727,7 @@ struct ReadColumnFromArrowColumnSettings
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior;
     bool allow_arrow_null_type;
     bool skip_columns_with_unsupported_types;
+    bool allow_inferring_nullable_columns;
 };
 
 static ColumnWithTypeAndName readColumnFromArrowColumn(
@@ -1109,7 +1110,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     bool is_map_nested_column,
     const ReadColumnFromArrowColumnSettings & settings)
 {
-    bool read_as_nullable_column = arrow_column->null_count() || is_nullable_column || (type_hint && type_hint->isNullable());
+    bool read_as_nullable_column = (arrow_column->null_count() || is_nullable_column || (type_hint && type_hint->isNullable())) && settings.allow_inferring_nullable_columns;
     if (read_as_nullable_column &&
         arrow_column->type()->id() != arrow::Type::LIST &&
         arrow_column->type()->id() != arrow::Type::LARGE_LIST &&
@@ -1173,14 +1174,16 @@ static std::shared_ptr<arrow::ChunkedArray> createArrowColumn(const std::shared_
 Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
     const arrow::Schema & schema,
     const std::string & format_name,
-    bool skip_columns_with_unsupported_types)
+    bool skip_columns_with_unsupported_types,
+    bool allow_inferring_nullable_columns)
 {
     ReadColumnFromArrowColumnSettings settings
     {
         .format_name = format_name,
         .date_time_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Ignore,
         .allow_arrow_null_type = false,
-        .skip_columns_with_unsupported_types = skip_columns_with_unsupported_types
+        .skip_columns_with_unsupported_types = skip_columns_with_unsupported_types,
+        .allow_inferring_nullable_columns = allow_inferring_nullable_columns,
     };
 
     ColumnsWithTypeAndName sample_columns;
@@ -1254,7 +1257,8 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(const NameToArrowColumn & nam
         .format_name = format_name,
         .date_time_overflow_behavior = date_time_overflow_behavior,
         .allow_arrow_null_type = true,
-        .skip_columns_with_unsupported_types = false
+        .skip_columns_with_unsupported_types = false,
+        .allow_inferring_nullable_columns = true
     };
 
     Columns columns;
@@ -1324,16 +1328,14 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(const NameToArrowColumn & nam
             {
                 if (!allow_missing_columns)
                     throw Exception{ErrorCodes::THERE_IS_NO_COLUMN, "Column '{}' is not presented in input data.", header_column.name};
-                else
-                {
-                    column.name = header_column.name;
-                    column.type = header_column.type;
-                    column.column = header_column.column->cloneResized(num_rows);
-                    columns.push_back(std::move(column.column));
-                    if (block_missing_values)
-                        block_missing_values->setBits(column_i, num_rows);
-                    continue;
-                }
+
+                column.name = header_column.name;
+                column.type = header_column.type;
+                column.column = header_column.column->cloneResized(num_rows);
+                columns.push_back(std::move(column.column));
+                if (block_missing_values)
+                    block_missing_values->setBits(column_i, num_rows);
+                continue;
             }
         }
         else

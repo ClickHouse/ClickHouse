@@ -59,6 +59,18 @@ class CompiledAggregateFunctionsHolder;
 class NativeWriter;
 struct OutputBlockColumns;
 
+struct GroupingSetsParams
+{
+    GroupingSetsParams() = default;
+
+    GroupingSetsParams(Names used_keys_, Names missing_keys_) : used_keys(std::move(used_keys_)), missing_keys(std::move(missing_keys_)) { }
+
+    Names used_keys;
+    Names missing_keys;
+};
+
+using GroupingSetsParamsList = std::vector<GroupingSetsParams>;
+
 /** How are "total" values calculated with WITH TOTALS?
   * (For more details, see TotalsHavingTransform.)
   *
@@ -297,9 +309,9 @@ public:
     /// For external aggregation.
     void writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size = 0) const;
 
-    bool hasTemporaryData() const { return tmp_data && !tmp_data->empty(); }
+    bool hasTemporaryData() const;
 
-    const TemporaryDataOnDisk & getTemporaryData() const { return *tmp_data; }
+    std::list<TemporaryBlockStreamHolder> detachTemporaryData();
 
     /// Get data structure of the result.
     Block getHeader(bool final) const;
@@ -343,7 +355,9 @@ private:
     LoggerPtr log = getLogger("Aggregator");
 
     /// For external aggregation.
-    TemporaryDataOnDiskPtr tmp_data;
+    TemporaryDataOnDiskScopePtr tmp_data;
+    mutable std::mutex tmp_files_mutex;
+    mutable std::list<TemporaryBlockStreamHolder> tmp_files TSA_GUARDED_BY(tmp_files_mutex);
 
     size_t min_bytes_for_prefetch = 0;
 
@@ -444,7 +458,7 @@ private:
     void writeToTemporaryFileImpl(
         AggregatedDataVariants & data_variants,
         Method & method,
-        TemporaryFileStream & out) const;
+        TemporaryBlockStreamHolder & out) const;
 
     /// Merge NULL key data from hash table `src` into `dst`.
     template <typename Method, typename Table>
@@ -455,7 +469,7 @@ private:
 
     /// Merge data from hash table `src` into `dst`.
     template <typename Method, typename Table>
-    void mergeDataImpl(Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions, bool prefetch) const;
+    void mergeDataImpl(Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions, bool prefetch, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const;
 
     /// Merge data from hash table `src` into `dst`, but only for keys that already exist in dst. In other cases, merge the data into `overflows`.
     template <typename Method, typename Table>
@@ -478,7 +492,7 @@ private:
 
     template <typename Method>
     void mergeSingleLevelDataImpl(
-        ManyAggregatedDataVariants & non_empty_data) const;
+        ManyAggregatedDataVariants & non_empty_data, std::atomic<bool> & is_cancelled) const;
 
     template <bool return_single_block>
     using ConvertToBlockRes = std::conditional_t<return_single_block, Block, BlocksList>;

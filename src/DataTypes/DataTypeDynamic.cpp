@@ -185,7 +185,7 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
                     auto type = decodeDataType(buf);
                     if (type->getName() == subcolumn_type_name)
                     {
-                        dynamic_column.getVariantSerialization(subcolumn_type, subcolumn_type_name)->deserializeBinary(*subcolumn, buf, format_settings);
+                        subcolumn_type->getDefaultSerialization()->deserializeBinary(*subcolumn, buf, format_settings);
                         null_map.push_back(0);
                     }
                     else

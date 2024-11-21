@@ -12,6 +12,14 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
+    extern const SettingsBool print_pretty_type_names;
+    extern const SettingsBool implicit_select;
+}
 
 namespace ErrorCodes
 {
@@ -40,10 +48,11 @@ public:
         : name(name_), output_formatting(output_formatting_), error_handling(error_handling_)
     {
         const Settings & settings = context->getSettingsRef();
-        max_query_size = settings.max_query_size;
-        max_parser_depth = settings.max_parser_depth;
-        max_parser_backtracks = settings.max_parser_backtracks;
-        print_pretty_type_names = settings.print_pretty_type_names;
+        max_query_size = settings[Setting::max_query_size];
+        max_parser_depth = settings[Setting::max_parser_depth];
+        max_parser_backtracks = settings[Setting::max_parser_backtracks];
+        print_pretty_type_names = settings[Setting::print_pretty_type_names];
+        implicit_select = settings[Setting::implicit_select];
     }
 
     String getName() const override { return name; }
@@ -61,8 +70,7 @@ public:
         DataTypePtr string_type = std::make_shared<DataTypeString>();
         if (error_handling == ErrorHandling::Null)
             return std::make_shared<DataTypeNullable>(string_type);
-        else
-            return string_type;
+        return string_type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -80,11 +88,9 @@ public:
 
             if (error_handling == ErrorHandling::Null)
                 return ColumnNullable::create(std::move(col_res), std::move(col_null_map));
-            else
-                return col_res;
+            return col_res;
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", col_query->getName(), getName());
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", col_query->getName(), getName());
     }
 
 private:
@@ -107,7 +113,7 @@ private:
             const char * begin = reinterpret_cast<const char *>(&data[prev_offset]);
             const char * end = begin + offsets[i] - prev_offset - 1;
 
-            ParserQuery parser(end);
+            ParserQuery parser(end, false, implicit_select);
             ASTPtr ast;
             WriteBufferFromOwnString buf;
 
@@ -133,10 +139,8 @@ private:
 
                     continue;
                 }
-                else
-                {
-                    throw;
-                }
+
+                throw;
             }
 
             IAST::FormatSettings settings(buf, output_formatting == OutputFormatting::SingleLine, /*hilite*/ false);
@@ -171,6 +175,7 @@ private:
     size_t max_parser_depth;
     size_t max_parser_backtracks;
     bool print_pretty_type_names;
+    bool implicit_select;
 };
 
 }

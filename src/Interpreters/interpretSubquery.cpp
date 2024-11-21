@@ -18,6 +18,13 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool extremes;
+    extern const SettingsUInt64 max_result_bytes;
+    extern const SettingsUInt64 max_result_rows;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -63,10 +70,10 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
       */
     auto subquery_context = Context::createCopy(context);
     Settings subquery_settings = context->getSettingsCopy();
-    subquery_settings.max_result_rows = 0;
-    subquery_settings.max_result_bytes = 0;
+    subquery_settings[Setting::max_result_rows] = 0;
+    subquery_settings[Setting::max_result_bytes] = 0;
     /// The calculation of `extremes` does not make sense and is not necessary (if you do it, then the `extremes` of the subquery can be taken instead of the whole query).
-    subquery_settings.extremes = false;
+    subquery_settings[Setting::extremes] = false;
     subquery_context->setSettings(subquery_settings);
 
     auto subquery_options = options.subquery();

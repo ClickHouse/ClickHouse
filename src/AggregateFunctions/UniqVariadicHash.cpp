@@ -26,8 +26,7 @@ bool isAllArgumentsContiguousInMemory(const DataTypes & argument_types)
 
     if (single_argument_as_tuple)
         return check_all_arguments_are_contiguous_in_memory(single_argument_as_tuple->getElements());
-    else
-        return check_all_arguments_are_contiguous_in_memory(argument_types);
+    return check_all_arguments_are_contiguous_in_memory(argument_types);
 }
 
 }

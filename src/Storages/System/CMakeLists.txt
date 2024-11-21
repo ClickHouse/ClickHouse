@@ -51,5 +51,3 @@ target_link_libraries(clickhouse_storages_system PRIVATE
     clickhouse_parsers
     Poco::JSON
 )
-
-target_include_directories(clickhouse_storages_system PRIVATE InformationSchema)

@@ -19,6 +19,14 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 read_backoff_max_throughput;
+    extern const SettingsUInt64 read_backoff_min_concurrency;
+    extern const SettingsMilliseconds read_backoff_min_interval_between_events_ms;
+    extern const SettingsUInt64 read_backoff_min_events;
+    extern const SettingsMilliseconds read_backoff_min_latency_ms;
+}
 
 namespace ErrorCodes
 {
@@ -29,6 +37,7 @@ extern const int BAD_ARGUMENTS;
 
 MergeTreeReadPool::MergeTreeReadPool(
     RangesInDataParts && parts_,
+    MutationsSnapshotPtr mutations_snapshot_,
     VirtualFields shared_virtual_fields_,
     const StorageSnapshotPtr & storage_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
@@ -36,9 +45,11 @@ MergeTreeReadPool::MergeTreeReadPool(
     const MergeTreeReaderSettings & reader_settings_,
     const Names & column_names_,
     const PoolSettings & settings_,
+    const MergeTreeReadTask::BlockSizeParams & params_,
     const ContextPtr & context_)
     : MergeTreeReadPoolBase(
         std::move(parts_),
+        std::move(mutations_snapshot_),
         std::move(shared_virtual_fields_),
         storage_snapshot_,
         prewhere_info_,
@@ -46,6 +57,7 @@ MergeTreeReadPool::MergeTreeReadPool(
         reader_settings_,
         column_names_,
         settings_,
+        params_,
         context_)
     , backoff_settings{context_->getSettingsRef()}
     , backoff_state{pool_settings.threads}
@@ -303,12 +315,12 @@ void MergeTreeReadPool::fillPerThreadInfo(size_t threads, size_t sum_marks)
     }
 }
 
-MergeTreeReadPool::BackoffSettings::BackoffSettings(const DB::Settings& settings)
-    : min_read_latency_ms(settings.read_backoff_min_latency_ms.totalMilliseconds()),
-    max_throughput(settings.read_backoff_max_throughput),
-    min_interval_between_events_ms(settings.read_backoff_min_interval_between_events_ms.totalMilliseconds()),
-    min_events(settings.read_backoff_min_events),
-    min_concurrency(settings.read_backoff_min_concurrency)
+MergeTreeReadPool::BackoffSettings::BackoffSettings(const DB::Settings & settings)
+    : min_read_latency_ms(settings[Setting::read_backoff_min_latency_ms].totalMilliseconds())
+    , max_throughput(settings[Setting::read_backoff_max_throughput])
+    , min_interval_between_events_ms(settings[Setting::read_backoff_min_interval_between_events_ms].totalMilliseconds())
+    , min_events(settings[Setting::read_backoff_min_events])
+    , min_concurrency(settings[Setting::read_backoff_min_concurrency])
 {}
 
 }

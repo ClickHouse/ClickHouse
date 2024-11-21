@@ -272,15 +272,14 @@ ALTER TABLE table_name MODIFY COLUMN column_name RESET SETTING max_compress_bloc
 
 ## MATERIALIZE COLUMN
 
-Materializes a column with a `DEFAULT` or `MATERIALIZED` value expression.
-This statement can be used to rewrite existing column data after a `DEFAULT` or `MATERIALIZED` expression has been added or updated (which only updates the metadata but does not change existing data).
+Materializes a column with a `DEFAULT` or `MATERIALIZED` value expression. When adding a materialized column using `ALTER TABLE table_name ADD COLUMN column_name MATERIALIZED`, existing rows without materialized values are not automatically filled. `MATERIALIZE COLUMN` statement can be used to rewrite existing column data after a `DEFAULT` or `MATERIALIZED` expression has been added or updated (which only updates the metadata but does not change existing data).
 Implemented as a [mutation](/docs/en/sql-reference/statements/alter/index.md#mutations).
 
 For columns with a new or updated `MATERIALIZED` value expression, all existing rows are rewritten.
 
 For columns with a new or updated `DEFAULT` value expression, the behavior depends on the ClickHouse version:
 - In ClickHouse < v24.2, all existing rows are rewritten.
-- ClickHouse >= v24.2 distinguishes if a row value in a column with `DEFAULT` value expression was explicitly specified when it was inserted, or not, i.e. calculated from the `DEFAULT` value expression. If the value was explicitly specified, ClickHouse keeps it as is. If the value was was calculated, ClickHouse changes it to the new or updated `MATERIALIZED` value expression.
+- ClickHouse >= v24.2 distinguishes if a row value in a column with `DEFAULT` value expression was explicitly specified when it was inserted, or not, i.e. calculated from the `DEFAULT` value expression. If the value was explicitly specified, ClickHouse keeps it as is. If the value was calculated, ClickHouse changes it to the new or updated `MATERIALIZED` value expression.
 
 Syntax:
 

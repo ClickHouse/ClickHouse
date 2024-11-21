@@ -8,6 +8,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool print_pretty_type_names;
+}
+
 namespace
 {
 
@@ -25,7 +30,7 @@ public:
 
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionToTypeName>(context->getSettingsRef().print_pretty_type_names);
+        return std::make_shared<FunctionToTypeName>(context->getSettingsRef()[Setting::print_pretty_type_names]);
     }
 
     String getName() const override
