@@ -422,6 +422,7 @@ class JobReport:
         current_dir = os.path.dirname(os.path.abspath(__file__))
         if current_dir in sys.path:
             sys.path.remove(current_dir)
+        sys.path.append(current_dir + "/../../ci")
         from praktika.result import (  # pylint: disable=import-error,import-outside-toplevel
             Result,
         )

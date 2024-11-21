@@ -455,6 +455,7 @@ class CommonJobConfigs:
                 "./tests/config",
                 "./tests/*.txt",
                 "./tests/docker_scripts/",
+                "./tests/ci/stress_check.py",
             ],
             exclude_files=[".md"],
             docker=["clickhouse/stress-test"],
