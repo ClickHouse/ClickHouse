@@ -107,11 +107,6 @@ list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/new_dele
 
 
 add_headers_and_sources(clickhouse_compression Compression)
-add_headers_and_sources(clickhouse_compression Parsers)
-add_headers_and_sources(clickhouse_compression Core)
-#Included these specific files to avoid linking grpc
-add_glob(clickhouse_compression_headers Server/ServerType.h)
-add_glob(clickhouse_compression_sources Server/ServerType.cpp)
 add_library(clickhouse_compression ${clickhouse_compression_headers} ${clickhouse_compression_sources})
 
 
