@@ -249,9 +249,6 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     new_part->rows_count = rows_count;
     new_part->modification_time = time(nullptr);
 
-    if (auto computed_index = writer->releaseIndexColumns())
-        new_part->setIndex(std::move(*computed_index));
-
     new_part->checksums = checksums;
     new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
     new_part->setBytesUncompressedOnDisk(checksums.getTotalSizeUncompressedOnDisk());
@@ -263,6 +260,9 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
         if (auto new_index_granularity = new_part->index_granularity->optimize())
             new_part->index_granularity = std::move(new_index_granularity);
     }
+
+    if (auto computed_index = writer->releaseIndexColumns())
+        new_part->setIndex(std::move(*computed_index));
 
     /// In mutation, existing_rows_count is already calculated in PartMergerWriter
     /// In merge situation, lightweight deleted rows was physically deleted, existing_rows_count equals rows_count
