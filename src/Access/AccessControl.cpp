@@ -38,6 +38,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
     extern const int UNKNOWN_SETTING;
     extern const int AUTHENTICATION_FAILED;
+    extern const int REQUIRED_PASSWORD;
     extern const int CANNOT_COMPILE_REGEXP;
     extern const int BAD_ARGUMENTS;
 }
@@ -610,25 +611,29 @@ AuthResult AccessControl::authenticate(const Credentials & credentials, const Po
     {
         tryLogCurrentException(getLogger(), "from: " + address.toString() + ", user: " + credentials.getUserName()  + ": Authentication failed", LogsLevel::information);
 
+        int error_code = ErrorCodes::AUTHENTICATION_FAILED;
+
         WriteBufferFromOwnString message;
         message << credentials.getUserName() << ": Authentication failed: password is incorrect, or there is no user with such name.";
 
         /// Better exception message for usability.
         /// It is typical when users install ClickHouse, type some password and instantly forget it.
         if (credentials.getUserName().empty() || credentials.getUserName() == "default")
+        {
+            error_code = ErrorCodes::REQUIRED_PASSWORD;
             message << "\n\n"
                 << "If you have installed ClickHouse and forgot password you can reset it in the configuration file.\n"
                 << "The password for default user is typically located at /etc/clickhouse-server/users.d/default-password.xml\n"
                 << "and deleting this file will reset the password.\n"
                 << "See also /etc/clickhouse-server/users.xml on the server where ClickHouse is installed.\n\n";
+        }
 
         /// We use the same message for all authentication failures because we don't want to give away any unnecessary information for security reasons.
         /// Only the log ((*), above) will show the exact reason. Note that (*) logs at information level instead of the default error level as
         /// authentication failures are not an unusual event.
         throw Exception(PreformattedMessage{message.str(),
-                                            "{}: Authentication failed: password is incorrect, or there is no user with such name",
-                                            std::vector<std::string>{credentials.getUserName()}},
-                        ErrorCodes::AUTHENTICATION_FAILED);
+            "{}: Authentication failed: password is incorrect, or there is no user with such name",
+            std::vector<std::string>{credentials.getUserName()}}, error_code);
     }
 }
 
