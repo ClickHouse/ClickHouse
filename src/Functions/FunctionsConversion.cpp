@@ -3243,11 +3243,9 @@ private:
     {
         auto function_adaptor = std::make_unique<FunctionToOverloadResolverAdaptor>(function)->build({ColumnWithTypeAndName{nullptr, from_type, ""}});
 
-        return [function_adaptor]
-            (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count)
-        {
-            return function_adaptor->execute(arguments, result_type, input_rows_count);
-        };
+        return [function_adaptor](
+                   ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count)
+        { return function_adaptor->execute(arguments, result_type, input_rows_count, /* dry_run = */ false); };
     }
 
     static WrapperType createToNullableColumnWrapper()
