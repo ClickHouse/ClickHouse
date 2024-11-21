@@ -103,7 +103,7 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
 
     auto function_body_to_update = function_core_expression->children.at(1)->clone();
 
-    if (context_.getSettingsRef()[Setting::skip_redundant_aliases_in_udf])
+    if (context_->getSettingsRef()[Setting::skip_redundant_aliases_in_udf])
     {
         Aliases aliases;
         QueryAliasesVisitor(aliases).visit(function_body_to_update);
