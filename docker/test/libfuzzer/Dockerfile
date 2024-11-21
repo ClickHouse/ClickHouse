@@ -1,6 +1,6 @@
-# docker build -t clickhouse/libfuzzer .
+# docker build -t altinityinfra/libfuzzer .
 ARG FROM_TAG=latest
-FROM clickhouse/test-base:$FROM_TAG
+FROM altinityinfra/test-base:$FROM_TAG
 
 # ARG for quick switch to a given ubuntu mirror
 ARG apt_archive="http://archive.ubuntu.com"
@@ -37,5 +37,5 @@ ENV FUZZER_ARGS="-max_total_time=60"
 
 SHELL ["/bin/bash", "-c"]
 
-# docker run --network=host --volume <workspace>:/workspace -e PR_TO_TEST=<> -e SHA_TO_TEST=<> clickhouse/libfuzzer
+# docker run --network=host --volume <workspace>:/workspace -e PR_TO_TEST=<> -e SHA_TO_TEST=<> altinityinfra/libfuzzer
 

@@ -1,0 +1,164 @@
+### For the pure soul wishes to move it to another place
+# https://github.com/orgs/community/discussions/9050
+
+name: Testing workflow
+'on':
+  workflow_call:
+    inputs:
+      test_name:
+        description: the value of test type from tests/ci/ci_config.py, ends up as $CHECK_NAME ENV
+        required: true
+        type: string
+      runner_type:
+        description: the label of runner to use
+        required: true
+        type: string
+      run_command:
+        description: the command to launch the check
+        default: ""
+        required: false
+        type: string
+      checkout_depth:
+        description: the value of the git shallow checkout
+        required: false
+        type: number
+        default: 1
+      submodules:
+        description: if the submodules should be checked out
+        required: false
+        type: boolean
+        default: false
+      additional_envs:
+        description: additional ENV variables to setup the job
+        type: string
+      data:
+        description: ci data
+        type: string
+        required: true
+      working-directory:
+        description: sets custom working directory
+        type: string
+        default: "$GITHUB_WORKSPACE/tests/ci"
+    secrets:
+      secret_envs:
+        description: if given, it's passed to the environments
+        required: false
+      AWS_SECRET_ACCESS_KEY:
+        description: the access key to the aws param store.
+        required: true
+      AWS_ACCESS_KEY_ID:
+        description: the access key id to the aws param store.
+        required: true
+      GPG_BINARY_SIGNING_KEY:
+        description: gpg signing key for packages.
+        required: true
+      GPG_BINARY_SIGNING_PASSPHRASE:
+        description: gpg signing key passphrase.
+        required: true
+
+env:
+  # Force the stdout and stderr streams to be unbuffered
+  PYTHONUNBUFFERED: 1
+  CHECK_NAME: ${{inputs.test_name}}
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+jobs:
+  runner_labels_setup:
+    name: Compute proper runner labels for the rest of the jobs
+    runs-on: ubuntu-latest
+    outputs:
+      runner_labels: ${{ steps.setVariables.outputs.runner_labels }}
+    steps:
+      - id: setVariables
+        name: Prepare runner_labels variables for the later steps
+        run: |
+
+          # Prepend self-hosted
+          input="self-hosted, ${input}"
+
+          # Remove all whitespace
+          input="$(echo ${input} | tr -d [:space:])"
+          # Make something like a JSON array from comma-separated list
+          input="[ '${input//\,/\'\, \'}' ]"
+
+          echo "runner_labels=$input" >> ${GITHUB_OUTPUT}
+        env:
+          input: ${{ inputs.runner_type }}
+
+  Test:
+    needs: [runner_labels_setup]
+    runs-on: ${{ fromJson(needs.runner_labels_setup.outputs.runner_labels) }}
+    name: ${{inputs.test_name}}${{ fromJson(inputs.data).jobs_data.jobs_params[inputs.test_name].num_batches > 1 && format('-{0}',matrix.batch) || '' }}
+    env:
+      GITHUB_JOB_OVERRIDDEN: ${{inputs.test_name}}${{ fromJson(inputs.data).jobs_data.jobs_params[inputs.test_name].num_batches > 1 && format('-{0}',matrix.batch) || '' }}
+    strategy:
+      fail-fast: false  # we always wait for entire matrix
+      matrix:
+        batch: ${{ fromJson(inputs.data).jobs_data.jobs_params[inputs.test_name].batches }}
+    steps:
+      - name: Check out repository code
+        uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f6
+        with:
+          clear-repository: true
+          ref: ${{ fromJson(inputs.data).git_ref }}
+          submodules: ${{inputs.submodules}}
+          fetch-depth: ${{inputs.checkout_depth}}
+          filter: tree:0
+      - name: Set build envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          CHECK_NAME=${{ inputs.test_name }}
+          ${{inputs.additional_envs}}
+          ${{secrets.secret_envs}}
+          DOCKER_TAG<<DOCKER_JSON
+          ${{ toJson(fromJson(inputs.data).docker_data.images) }}
+          TEMP_PATH=${{runner.temp}}/signed
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          DOCKER_JSON
+          EOF
+      - name: Common setup
+        uses: ./.github/actions/common_setup
+        with:
+          job_type: test
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+      - name: Setup batch
+        if: ${{ fromJson(inputs.data).jobs_data.jobs_params[inputs.test_name].num_batches > 1 }}
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          RUN_BY_HASH_NUM=${{matrix.batch}}
+          RUN_BY_HASH_TOTAL=${{ fromJson(inputs.data).jobs_data.jobs_params[inputs.test_name].num_batches }}
+          EOF
+      - name: Pre run
+        run: |
+          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(inputs.data) }} --pre --job-name '${{inputs.test_name}}'
+      - name: Sign release
+        env:
+          GPG_BINARY_SIGNING_KEY: ${{ secrets.GPG_BINARY_SIGNING_KEY }}
+          GPG_BINARY_SIGNING_PASSPHRASE: ${{ secrets.GPG_BINARY_SIGNING_PASSPHRASE }}
+        run: |
+          cd "${{ inputs.working-directory }}"
+          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" \
+            --infile ${{ toJson(inputs.data) }} \
+            --job-name '${{inputs.test_name}}' \
+            --run \
+            --force \
+            --run-command '''python3 sign_release.py'''
+      - name: Post run
+        if: ${{ !cancelled() }}
+        run: |
+          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(inputs.data) }} --post --job-name '${{inputs.test_name}}'
+      - name: Mark as done
+        if: ${{ !cancelled() }}
+        run: |
+          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(inputs.data) }} --mark-success --job-name '${{inputs.test_name}}' --batch ${{matrix.batch}}
+      - name: Upload signed hashes
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{inputs.test_name}} signed-hashes
+          path: ${{ env.TEMP_PATH }}/*.gpg
+      - name: Clean
+        if: always()
+        uses: ./.github/actions/clean

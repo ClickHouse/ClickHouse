@@ -107,7 +107,9 @@ def started_cluster():
         )
         cluster.add_instance(
             "old_instance",
+            user_configs=["configs/users_old.xml"],
             with_zookeeper=True,
+            # NOTE (vnemkov) Can't use altinity/clickhouse here since 23.8 doesn't hve S3Queue (and associated settings yet)
             image="clickhouse/clickhouse-server",
             tag="23.12",
             stay_alive=True,
