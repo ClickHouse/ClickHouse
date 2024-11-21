@@ -30,7 +30,8 @@ class Stopwatch:
 
 
 def run_fuzzer(fuzzer: str, timeout: int):
-    logging.info("Running fuzzer %s for %d seconds...", fuzzer, timeout)
+    timeout_hard = timeout + 60
+    logging.info("Running fuzzer %s for %d seconds (hard timeout is %d)...", fuzzer, timeout, timeout_hard)
 
     seed_corpus_dir = f"{fuzzer}.in"
     with Path(seed_corpus_dir) as path:
@@ -89,6 +90,8 @@ def run_fuzzer(fuzzer: str, timeout: int):
         custom_libfuzzer_options += f" -dict={fuzzer}.dict"
     custom_libfuzzer_options += f" -exact_artifact_path={exact_artifact_path}"
 
+    custom_libfuzzer_options += f" -timeout={timeout}"
+
     libfuzzer_corpora = f"{active_corpus_dir} {seed_corpus_dir}"
 
     cmd_line = f"{DEBUGGER} ./{fuzzer} {fuzzer_arguments}"
@@ -115,7 +118,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
                 check=True,
                 shell=False,
                 errors="replace",
-                timeout=timeout,
+                timeout=timeout_hard,
                 env=env,
             )
     except subprocess.CalledProcessError:
