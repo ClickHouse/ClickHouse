@@ -56,6 +56,14 @@ public:
         return std::nullopt;
     }
 
+    void implementPartitionPruning(const ActionsDAG & filter_dag) override
+    {
+        if (!current_metadata || !current_metadata->supportsPartitionPruning())
+            return;
+        BaseStorageConfiguration::setPaths(current_metadata->makePartitionPruning(filter_dag));
+    }
+
+
 private:
     DataLakeMetadataPtr current_metadata;
 

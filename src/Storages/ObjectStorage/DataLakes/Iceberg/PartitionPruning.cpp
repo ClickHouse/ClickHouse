@@ -35,18 +35,18 @@
 #    include <Poco/JSON/Object.h>
 #    include <Poco/JSON/Parser.h>
 
-#    include <DataFile.hh>
-
-// #    include <filesystem>
-
 #    include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#    include <DataFile.hh>
 namespace DB
 {
 
-CommonPartitionInfo
-PartitionPruningProcessor::getCommonPartitionInfo(Poco::JSON::Array::Ptr partition_specification, const ColumnTuple * big_partition_tuple)
+CommonPartitionInfo PartitionPruningProcessor::getCommonPartitionInfo(
+    const Poco::JSON::Array::Ptr & partition_specification, const ColumnTuple * data_file_tuple_column) const
 {
     CommonPartitionInfo common_info;
+    ColumnPtr big_partition_column = data_file_tuple_column->getColumnPtr(data_file_tuple_type.getPositionByName("partition"));
+
+    common_info.file_path_column = big_partition_column->getColumnPtr(0);
     for (size_t i = 0; i != partition_specification->size(); ++i)
     {
         auto current_field = partition_specification->getObject(static_cast<UInt32>(i));
@@ -61,17 +61,17 @@ PartitionPruningProcessor::getCommonPartitionInfo(Poco::JSON::Array::Ptr partiti
         auto partition_name = current_field->getValue<String>("name");
         LOG_DEBUG(&Poco::Logger::get("Partition Spec"), "Name: {}", partition_name);
 
-        common_info.partition_columns.push_back(big_partition_tuple->getColumnPtr(i));
+        common_info.partition_columns.push_back(big_partition_column->getColumnPtr(i));
         common_info.partition_transforms.push_back(transform);
         common_info.partition_source_ids.push_back(source_id);
     }
     return common_info;
 }
 
-SpecificSchemaPartitionInfo PartitionPruningProcessor::getSpecificPartitionPruning(
+SpecificSchemaPartitionInfo PartitionPruningProcessor::getSpecificPartitionInfo(
     const CommonPartitionInfo & common_info,
     [[maybe_unused]] Int32 schema_version,
-    const std::unordered_map<Int32, NameAndTypePair> & name_and_type_by_source_id)
+    const std::unordered_map<Int32, NameAndTypePair> & name_and_type_by_source_id) const
 {
     SpecificSchemaPartitionInfo specific_info;
 
@@ -104,7 +104,7 @@ SpecificSchemaPartitionInfo PartitionPruningProcessor::getSpecificPartitionPruni
 }
 
 std::vector<bool> PartitionPruningProcessor::getPruningMask(
-    const SpecificSchemaPartitionInfo & specific_info, const ActionsDAG * filter_dag, ContextPtr context)
+    const SpecificSchemaPartitionInfo & specific_info, const ActionsDAG * filter_dag, ContextPtr context) const
 {
     std::vector<bool> pruning_mask;
     if (!specific_info.partition_names_and_types.empty())
@@ -131,6 +131,47 @@ std::vector<bool> PartitionPruningProcessor::getPruningMask(
     return pruning_mask;
 }
 
+Strings PartitionPruningProcessor::getDataFiles(
+    const std::vector<CommonPartitionInfo> & manifest_partitions_infos,
+    const std::vector<SpecificSchemaPartitionInfo> & specific_infos,
+    const ActionsDAG * filter_dag,
+    ContextPtr context,
+    const std::string & common_path) const
+{
+    Strings data_files;
+    for (size_t index = 0; index < manifest_partitions_infos.size(); ++index)
+    {
+        const auto & manifest_partition_info = manifest_partitions_infos[index];
+        const auto & specific_partition_info = specific_infos[index];
+        size_t number_of_files_in_manifest = manifest_partition_info.file_path_column->size();
+        LOG_DEBUG(&Poco::Logger::get("Partition pruning"), "Filter dag is null: {}", filter_dag == nullptr);
+        auto pruning_mask = filter_dag ? getPruningMask(specific_partition_info, filter_dag, context) : std::vector<bool>{};
+        for (size_t i = 0; i < number_of_files_in_manifest; ++i)
+        {
+            if (!filter_dag || pruning_mask[i])
+            {
+                const auto status = manifest_partition_info.status_column->getInt(i);
+                const auto data_path = std::string(manifest_partition_info.file_path_column->getDataAt(i).toView());
+                const auto pos = data_path.find(common_path);
+                if (pos == std::string::npos)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected to find {} in data path: {}", common_path, data_path);
+
+                const auto file_path = data_path.substr(pos);
+
+                if (ManifestEntryStatus(status) == ManifestEntryStatus::DELETED)
+                {
+                    throw Exception(
+                        ErrorCodes::UNSUPPORTED_METHOD, "Cannot read Iceberg table: positional and equality deletes are not supported");
+                }
+                else
+                {
+                    data_files.push_back(file_path);
+                }
+            }
+        }
+    }
+    return data_files;
+}
 }
 
 #endif

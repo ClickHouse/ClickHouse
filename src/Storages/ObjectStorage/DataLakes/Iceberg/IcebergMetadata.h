@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Columns/IColumn.h"
 #include "Core/NamesAndTypes.h"
 #include "DataTypes/DataTypeNullable.h"
 #include "config.h"
@@ -14,6 +15,7 @@
 
 namespace DB
 {
+
 
 /**
  * Useful links:
@@ -72,11 +74,28 @@ enum class PartitionTransform
     Unsupported
 };
 
+enum class ManifestEntryStatus : uint8_t
+{
+    EXISTING = 0,
+    ADDED = 1,
+    DELETED = 2,
+};
+
+enum class DataFileContent : uint8_t
+{
+    DATA = 0,
+    POSITION_DELETES = 1,
+    EQUALITY_DELETES = 2,
+};
+
+
 struct CommonPartitionInfo
 {
     std::vector<ColumnPtr> partition_columns;
     std::vector<PartitionTransform> partition_transforms;
     std::vector<Int32> partition_source_ids;
+    ColumnPtr file_path_column;
+    ColumnPtr status_column;
 };
 
 struct SpecificSchemaPartitionInfo
@@ -88,16 +107,23 @@ struct SpecificSchemaPartitionInfo
 class PartitionPruningProcessor
 {
 public:
-    CommonPartitionInfo addCommonPartitionInfo(Poco::JSON::Array::Ptr partition_specification, const ColumnTuple * big_partition_tuple);
+    CommonPartitionInfo
+    getCommonPartitionInfo(const Poco::JSON::Array::Ptr & partition_specification, const ColumnTuple * big_partition_tuple) const;
 
-    SpecificSchemaPartitionInfo getSpecificPartitionPruning(
+    SpecificSchemaPartitionInfo getSpecificPartitionInfo(
         const CommonPartitionInfo & common_info,
         Int32 schema_version,
-        const std::unordered_map<Int32, NameAndTypePair> & name_and_type_by_source_id);
+        const std::unordered_map<Int32, NameAndTypePair> & name_and_type_by_source_id) const;
 
-    std::vector<bool> getPruningMask(const SpecificSchemaPartitionInfo & specific_info, const ActionsDAG * filter_dag, ContextPtr context);
+    std::vector<bool>
+    getPruningMask(const SpecificSchemaPartitionInfo & specific_info, const ActionsDAG * filter_dag, ContextPtr context) const;
 
-    std::vector<bool> getAllFilesMask(const ActionsDAG * filter_dag, ContextPtr context);
+    Strings getDataFiles(
+        const std::vector<CommonPartitionInfo> & manifest_partitions_infos,
+        const std::vector<SpecificSchemaPartitionInfo> & specific_infos,
+        const ActionsDAG * filter_dag,
+        ContextPtr context,
+        const std::string & common_path) const;
 
 private:
     static PartitionTransform getTransform(const String & transform_name)
@@ -147,7 +173,7 @@ private:
     static Int16 getDay(Int32 value, PartitionTransform transform)
     {
         DateLUTImpl::Time got_time = getTime(value, transform);
-        LOG_DEBUG(&Poco::Logger::get("Get field"), "Time: {}", got_time);
+        // LOG_DEBUG(&Poco::Logger::get("Get field"), "Time: {}", got_time);
         return DateLUT::instance().toDayNum(got_time);
     }
 
@@ -188,11 +214,6 @@ private:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported partition transform: {}", partition_transform);
         }
     }
-
-    std::unordered_map<String, CommonPartitionInfo> common_partition_info_by_manifest_file;
-    std::map<std::pair<String, Int32>, SpecificSchemaPartitionInfo> specific_partition_info_by_manifest_file_and_schema;
-
-    std::vector<CommonPartitionInfo> common_partition_infos;
 };
 
 
@@ -241,7 +262,18 @@ public:
 
     static DataLakeMetadataPtr create(ObjectStoragePtr object_storage, ConfigurationObserverPtr configuration, ContextPtr local_context);
 
-    Strings makePartitionPruning(const ActionsDAG & filter_dag);
+    Strings makePartitionPruning(const ActionsDAG & filter_dag) override
+    {
+        auto configuration_ptr = configuration.lock();
+        if (!configuration_ptr)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired");
+        }
+        return pruning_processor.getDataFiles(
+            common_partition_infos, specific_partition_infos, &filter_dag, getContext(), configuration_ptr->getPath());
+    }
+
+    bool supportsPartitionPruning() override { return true; }
 
 private:
     size_t getVersion() const { return metadata_version; }
@@ -262,9 +294,12 @@ private:
     std::vector<std::pair<String, Int32>> manifest_files_with_start_index;
 
     mutable Strings data_files;
+    std::vector<CommonPartitionInfo> partition_infos;
     mutable Strings manifest_files;
 
     PartitionPruningProcessor pruning_processor;
+    mutable std::vector<CommonPartitionInfo> common_partition_infos;
+    mutable std::vector<SpecificSchemaPartitionInfo> specific_partition_infos;
 };
 
 }

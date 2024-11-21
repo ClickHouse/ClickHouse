@@ -204,6 +204,8 @@ public:
 
     virtual bool isDataLakeConfiguration() const { return false; }
 
+    virtual void implementPartitionPruning(const ActionsDAG &) { }
+
     virtual ReadFromFormatInfo prepareReadingFromFormat(
         ObjectStoragePtr object_storage,
         const Strings & requested_columns,

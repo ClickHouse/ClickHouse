@@ -191,7 +191,10 @@ public:
         SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
         const ActionsDAG::Node * predicate = nullptr;
         if (filter_actions_dag)
+        {
+            configuration->implementPartitionPruning(*filter_actions_dag);
             predicate = filter_actions_dag->getOutputs().at(0);
+        }
         createIterator(predicate);
     }
 

@@ -75,21 +75,6 @@ IcebergMetadata::IcebergMetadata(
 namespace
 {
 
-enum class ManifestEntryStatus : uint8_t
-{
-    EXISTING = 0,
-    ADDED = 1,
-    DELETED = 2,
-};
-
-enum class DataFileContent : uint8_t
-{
-    DATA = 0,
-    POSITION_DELETES = 1,
-    EQUALITY_DELETES = 2,
-};
-
-
 /**
  * Iceberg supports the next data types (see https://iceberg.apache.org/spec/#schemas-and-data-types):
  * - Primitive types:
@@ -309,7 +294,7 @@ parseTableSchema(const Poco::JSON::Object::Ptr & metadata_object, int format_ver
         /// Field "schemas" is optional for version 1, but after version 2 was introduced,
         /// in most cases this field is added for new tables in version 1 as well.
         if (!ignore_schema_evolution && metadata_object->has("schemas")
-            && metadata_object->get("schemas").extract<Poco::JSON::Array::Ptr>()->size() > 1§)
+            && metadata_object->get("schemas").extract<Poco::JSON::Array::Ptr>()->size() > 1)
             throw Exception(
                 ErrorCodes::UNSUPPORTED_METHOD,
                 "Cannot read Iceberg table: the table schema has been changed at least 1 time, reading tables with evolved schema is not "
@@ -645,8 +630,27 @@ Strings IcebergMetadata::getDataFiles() const
                 data_files.push_back(file_path);
             }
         }
+        ColumnPtr big_partition_column = data_file_tuple_column->getColumnPtr(data_file_tuple_type.getPositionByName("partition"));
+        if (big_partition_column->getDataType() != TypeIndex::Tuple)
+        {
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "The parsed column from Avro file of `file_path` field should be Tuple type, got {}",
+                columns.at(1)->getFamilyName());
+        }
+        const auto * big_partition_tuple = assert_cast<const ColumnTuple *>(big_partition_column.get());
+        std::vector<uint8_t> partition_spec_json_bytes = avro_metadata["partition-spec"];
+        String partition_spec_json_string
+            = String(reinterpret_cast<char *>(partition_spec_json_bytes.data()), partition_spec_json_bytes.size());
+        Poco::Dynamic::Var partition_spec_json = parser.parse(partition_spec_json_string);
+        const Poco::JSON::Array::Ptr & partition_spec = partition_spec_json.extract<Poco::JSON::Array::Ptr>();
+        common_partition_infos.push_back(pruning_processor.getCommonPartitionInfo(partition_spec, big_partition_tuple));
+        specific_partition_infos.push_back(
+            pruning_processor.getSpecificPartitionInfo(common_partition_infos.back(), current_schema_id, name_and_type_by_source_id));
     }
-    return data_files;
+
+    return pruning_processor.getDataFiles(
+        common_partition_infos, specific_partition_infos, nullptr, getContext(), configuration_ptr->getPath());
 }
 
 }
