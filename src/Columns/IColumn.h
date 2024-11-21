@@ -27,6 +27,7 @@ namespace ErrorCodes
     extern const int CANNOT_GET_SIZE_OF_FIELD;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_COLLATION;
+    extern const int LOGICAL_ERROR;
 }
 
 class Arena;
@@ -746,7 +747,21 @@ private:
         /// For Sparse and Const columns, we can compare only internal types. It is considered normal to e.g. insert from normal vector column to a sparse vector column.
         /// This case is specifically handled in ColumnSparse implementation. Similar situation with Const column.
         /// For the rest of column types we can compare the types directly.
-        chassert((isConst() || isSparse()) ? getDataType() == rhs.getDataType() : typeid(*this) == typeid(rhs));
+        const bool ok = (isConst() || isSparse()) ? getDataType() == rhs.getDataType() : typeid(*this) == typeid(rhs);
+        if (!ok)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Incompatible columns: {} {} {} {} {} {} {} {} {} {}",
+                isConst(),
+                rhs.isConst(),
+                isSparse(),
+                rhs.isSparse(),
+                getDataType(),
+                rhs.getDataType(),
+                typeid(*this).name(),
+                typeid(rhs).name(),
+                getName(),
+                rhs.getName());
     }
 #endif
 };
