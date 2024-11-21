@@ -69,7 +69,7 @@ private:
     const std::string metadata_key_prefix;
 
     std::string key_prefix;
-    bool removed = false;
+    bool remove_attempted = false;
 
 public:
     MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation(

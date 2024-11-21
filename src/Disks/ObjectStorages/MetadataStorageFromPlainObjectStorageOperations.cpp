@@ -252,20 +252,28 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute(std:
 
     if (path_map.removePathIfExists(base_path))
     {
-        removed = true;
-
         auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
         CurrentMetrics::sub(metric, 1);
 
         auto event = object_storage->getMetadataStorageMetrics().directory_removed;
         ProfileEvents::increment(event);
     }
+
+    remove_attempted = true;
 }
 
 void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::undo(std::unique_lock<SharedMutex> &)
 {
-    if (!removed)
+    if (!remove_attempted)
         return;
+
+    {
+        std::lock_guard lock(path_map.mutex);
+        auto & map = path_map.map;
+        map.emplace(path.parent_path(), key_prefix);
+    }
+    auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
+    CurrentMetrics::add(metric, 1);
 
     auto metadata_object_key = createMetadataObjectKey(key_prefix, metadata_key_prefix);
     auto metadata_object = StoredObject(metadata_object_key.serialize(), path / PREFIX_PATH_FILE_NAME);
@@ -277,14 +285,6 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::undo(std::un
         /* settings */ {});
     writeString(path.string(), *buf);
     buf->finalize();
-
-    {
-        std::lock_guard lock(path_map.mutex);
-        auto & map = path_map.map;
-        map.emplace(path.parent_path(), std::move(key_prefix));
-    }
-    auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
-    CurrentMetrics::add(metric, 1);
 }
 
 MetadataStorageFromPlainObjectStorageWriteFileOperation::MetadataStorageFromPlainObjectStorageWriteFileOperation(
