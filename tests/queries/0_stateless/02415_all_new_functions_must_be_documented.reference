@@ -884,8 +884,8 @@ tumbleStart
 tupleConcat
 tupleDivide
 tupleDivideByNumber
+tupleDivideByNumberOrNull
 tupleDivideOrNull
-tupleDivideOrNullByNumber
 tupleElement
 tupleHammingDistance
 tupleIntDiv
@@ -895,8 +895,8 @@ tupleIntDivOrZeroByNumber
 tupleMinus
 tupleModulo
 tupleModuloByNumber
+tupleModuloByNumberOrNull
 tupleModuloOrNull
-tupleModuloOrNullByNumber
 tupleMultiply
 tupleMultiplyByNumber
 tupleNegate
