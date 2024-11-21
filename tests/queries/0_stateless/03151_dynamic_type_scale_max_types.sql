@@ -1,6 +1,7 @@
 SET allow_experimental_dynamic_type = 1;
 SET allow_suspicious_types_in_order_by = 1;
 SET optimize_read_in_order = 1;
+SET session_timezone = 'UTC';
 
 drop table if exists to_table;
 
