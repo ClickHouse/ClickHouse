@@ -1474,6 +1474,8 @@ try
         rewind_needed = true;
     }
 
+    file_out.finalize();
+
     return 0;
 }
 catch (...)
