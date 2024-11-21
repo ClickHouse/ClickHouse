@@ -19,7 +19,6 @@ private:
     const std::string metadata_key_prefix;
     const std::string object_key_prefix;
 
-    bool write_created = false;
     bool write_finalized = false;
 
 public:

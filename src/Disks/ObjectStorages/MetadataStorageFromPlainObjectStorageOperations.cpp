@@ -7,6 +7,7 @@
 #include <IO/WriteHelpers.h>
 #include <Poco/Timestamp.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/logger_useful.h>
 
@@ -18,7 +19,13 @@ namespace ErrorCodes
 extern const int FILE_DOESNT_EXIST;
 extern const int FILE_ALREADY_EXISTS;
 extern const int INCORRECT_DATA;
+extern const int FAULT_INJECTED;
 };
+
+namespace FailPoints
+{
+extern const char plain_object_storage_write_fail_on_directory_create[];
+}
 
 namespace
 {
@@ -72,8 +79,6 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std:
         /* buf_size */ DBMS_DEFAULT_BUFFER_SIZE,
         /* settings */ {});
 
-    write_created = true;
-
     {
         std::lock_guard lock(path_map.mutex);
         auto & map = path_map.map;
@@ -85,6 +90,9 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std:
     CurrentMetrics::add(metric, 1);
 
     writeString(path.string(), *buf);
+    fiu_do_on(FailPoints::plain_object_storage_write_fail_on_directory_create, {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when creating '{}' directory", path);
+    });
     buf->finalize();
 
     write_finalized = true;
@@ -97,8 +105,9 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::undo(std::un
 {
     auto metadata_object_key = createMetadataObjectKey(object_key_prefix, metadata_key_prefix);
 
-    if (write_finalized || write_created)
+    if (write_finalized)
     {
+        LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageCreateDirectoryOperation"), "Undoing '{}' directory creation", path);
         const auto base_path = path.parent_path();
         if (path_map.removePathIfExists(base_path))
         {
