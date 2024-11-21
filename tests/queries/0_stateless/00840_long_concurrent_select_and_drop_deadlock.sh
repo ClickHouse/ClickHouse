@@ -27,7 +27,7 @@ function thread_drop_create()
     while [ $SECONDS -lt "$TIMELIMIT" ] && [ $it -lt 100 ];
     do
         it=$((it+1))
-        $CLICKHOUSE_CLIENT -nm -q "
+        $CLICKHOUSE_CLIENT -m -q "
             drop table if exists view_00840;
             create view view_00840 as select count(*),database,table from system.columns group by database,table;
         "

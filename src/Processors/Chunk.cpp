@@ -178,22 +178,6 @@ void Chunk::append(const Chunk & chunk, size_t from, size_t length)
     setColumns(std::move(mutable_columns), rows);
 }
 
-void ChunkMissingValues::setBit(size_t column_idx, size_t row_idx)
-{
-    RowsBitMask & mask = rows_mask_by_column_id[column_idx];
-    mask.resize(row_idx + 1);
-    mask[row_idx] = true;
-}
-
-const ChunkMissingValues::RowsBitMask & ChunkMissingValues::getDefaultsBitmask(size_t column_idx) const
-{
-    static RowsBitMask none;
-    auto it = rows_mask_by_column_id.find(column_idx);
-    if (it != rows_mask_by_column_id.end())
-        return it->second;
-    return none;
-}
-
 void convertToFullIfConst(Chunk & chunk)
 {
     size_t num_rows = chunk.getNumRows();

@@ -9,7 +9,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 
 disk_name="${CLICKHOUSE_TEST_UNIQUE_NAME}"
-$CLICKHOUSE_CLIENT -nm --query """
+$CLICKHOUSE_CLIENT -m --query """
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (a Int32, b String)
 ENGINE = MergeTree() ORDER BY tuple()
@@ -22,29 +22,29 @@ query_id=$RANDOM
 
 $CLICKHOUSE_CLIENT --query_id "$query_id" --query "SELECT * FROM test FORMAT Null SETTINGS enable_filesystem_cache_log = 1"
 
-$CLICKHOUSE_CLIENT -nm --query """
+$CLICKHOUSE_CLIENT -m --query """
 SYSTEM DROP FILESYSTEM CACHE '$disk_name' KEY kek;
 """ 2>&1 | grep -q "Invalid cache key hex: kek" && echo "OK" || echo "FAIL"
 
 ${CLICKHOUSE_CLIENT} -q " system flush logs"
 
-key=$($CLICKHOUSE_CLIENT -nm --query """
+key=$($CLICKHOUSE_CLIENT -m --query """
 SELECT key FROM system.filesystem_cache_log WHERE query_id = '$query_id' ORDER BY size DESC LIMIT 1;
 """)
 
-offset=$($CLICKHOUSE_CLIENT -nm --query """
+offset=$($CLICKHOUSE_CLIENT -m --query """
 SELECT offset FROM system.filesystem_cache_log WHERE query_id = '$query_id' ORDER BY size DESC LIMIT 1;
 """)
 
-$CLICKHOUSE_CLIENT -nm --query """
+$CLICKHOUSE_CLIENT -m --query """
 SELECT count() FROM system.filesystem_cache WHERE key = '$key' AND file_segment_range_begin = $offset;
 """
 
-$CLICKHOUSE_CLIENT -nm --query """
+$CLICKHOUSE_CLIENT -m --query """
 SYSTEM DROP FILESYSTEM CACHE '$disk_name' KEY $key OFFSET $offset;
 """
 
-$CLICKHOUSE_CLIENT -nm --query """
+$CLICKHOUSE_CLIENT -m --query """
 SELECT count() FROM system.filesystem_cache WHERE key = '$key' AND file_segment_range_begin = $offset;
 """
 
@@ -54,18 +54,18 @@ $CLICKHOUSE_CLIENT --query_id "$query_id" --query "SELECT * FROM test FORMAT Nul
 
 ${CLICKHOUSE_CLIENT} -q " system flush logs"
 
-key=$($CLICKHOUSE_CLIENT -nm --query """
+key=$($CLICKHOUSE_CLIENT -m --query """
 SELECT key FROM system.filesystem_cache_log WHERE query_id = '$query_id' ORDER BY size DESC LIMIT 1;
 """)
 
-$CLICKHOUSE_CLIENT -nm --query """
+$CLICKHOUSE_CLIENT -m --query """
 SELECT count() FROM system.filesystem_cache WHERE key = '$key';
 """
 
-$CLICKHOUSE_CLIENT -nm --query """
+$CLICKHOUSE_CLIENT -m --query """
 SYSTEM DROP FILESYSTEM CACHE '$disk_name' KEY $key
 """
 
-$CLICKHOUSE_CLIENT -nm --query """
+$CLICKHOUSE_CLIENT -m --query """
 SELECT count() FROM system.filesystem_cache WHERE key = '$key';
 """

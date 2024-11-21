@@ -17,7 +17,7 @@ for _ in {1..10}; do
     sleep 1
 done
 
-${CLICKHOUSE_GIT_IMPORT} 2>&1 | wc -l
+${CLICKHOUSE_GIT_IMPORT} |& wc -l
 
 ${CLICKHOUSE_CLIENT} --multiline --query "
 

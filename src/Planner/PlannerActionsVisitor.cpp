@@ -36,6 +36,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool enable_named_columns_in_function_tuple;
+    extern const SettingsBool transform_null_in;
+}
 
 namespace ErrorCodes
 {
@@ -176,6 +181,33 @@ public:
                     if (result.empty())
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function __actionName is internal nad should not be used directly");
                     break;
+                }
+
+                if (planner_context.getQueryContext()->getSettingsRef()[Setting::enable_named_columns_in_function_tuple])
+                {
+                    /// Function "tuple" which generates named tuple should use argument aliases to construct its name.
+                    if (function_node.getFunctionName() == "tuple")
+                    {
+                        if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(function_node.getResultType().get()))
+                        {
+                            if (type_tuple->haveExplicitNames())
+                            {
+                                const auto & names = type_tuple->getElementNames();
+                                size_t size = names.size();
+                                WriteBufferFromOwnString s;
+                                s << "tuple(";
+                                for (size_t i = 0; i < size; ++i)
+                                {
+                                    if (i != 0)
+                                        s << ", ";
+                                    s << backQuoteIfNeed(names[i]);
+                                }
+                                s << ")";
+                                result = s.str();
+                                break;
+                            }
+                        }
+                    }
                 }
 
                 String in_function_second_argument_node_name;
@@ -359,6 +391,9 @@ public:
 
                     if (sort_node.hasFillStep())
                         buffer << " STEP " << calculateActionNodeName(sort_node.getFillStep());
+
+                    if (sort_node.hasFillStaleness())
+                        buffer << " STALENESS " << calculateActionNodeName(sort_node.getFillStaleness());
                 }
 
                 if (i + 1 != order_by_nodes_size)
@@ -615,9 +650,9 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
     if (node_type == QueryTreeNodeType::COLUMN)
         return visitColumn(node);
-    else if (node_type == QueryTreeNodeType::CONSTANT)
+    if (node_type == QueryTreeNodeType::CONSTANT)
         return visitConstant(node);
-    else if (node_type == QueryTreeNodeType::FUNCTION)
+    if (node_type == QueryTreeNodeType::FUNCTION)
         return visitFunction(node);
 
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
@@ -686,19 +721,15 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         {
             return calculateActionNodeNameWithCastIfNeeded(constant_node);
         }
-        else
+
+        // Need to check if constant folded from QueryNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
+        if (constant_node.hasSourceExpression() && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY)
         {
-            // Need to check if constant folded from QueryNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
-            if (constant_node.hasSourceExpression() && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY)
-            {
-                if (constant_node.receivedFromInitiatorServer())
-                    return calculateActionNodeNameWithCastIfNeeded(constant_node);
-                else
-                    return action_node_name_helper.calculateActionNodeName(constant_node.getSourceExpression());
-            }
-            else
-                return calculateConstantActionNodeName(constant_literal, constant_type);
+            if (constant_node.receivedFromInitiatorServer())
+                return calculateActionNodeNameWithCastIfNeeded(constant_node);
+            return action_node_name_helper.calculateActionNodeName(constant_node.getSourceExpression());
         }
+        return calculateConstantActionNodeName(constant_literal, constant_type);
     }();
 
     ColumnWithTypeAndName column;
@@ -773,7 +804,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
     auto lambda_node_name = calculateActionNodeName(node, *planner_context);
     auto function_capture = std::make_shared<FunctionCaptureOverloadResolver>(
-        lambda_actions, captured_column_names, lambda_arguments_names_and_types, lambda_node.getExpression()->getResultType(), lambda_expression_node_name);
+        lambda_actions, captured_column_names, lambda_arguments_names_and_types, lambda_node.getExpression()->getResultType(), lambda_expression_node_name, true);
 
     // TODO: Pass IFunctionBase here not FunctionCaptureOverloadResolver.
     const auto * actions_node = actions_stack[level].addFunctionIfNecessary(lambda_node_name, std::move(lambda_children), function_capture);
@@ -818,7 +849,8 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
         if (left_tuple_type && left_tuple_type->getElements().size() != 1)
             set_element_types = left_tuple_type->getElements();
 
-        set_element_types = Set::getElementTypes(std::move(set_element_types), planner_context->getQueryContext()->getSettingsRef().transform_null_in);
+        set_element_types
+            = Set::getElementTypes(std::move(set_element_types), planner_context->getQueryContext()->getSettingsRef()[Setting::transform_null_in]);
         set = planner_context->getPreparedSets().findTuple(set_key, set_element_types);
     }
     else

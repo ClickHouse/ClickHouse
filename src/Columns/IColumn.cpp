@@ -353,10 +353,8 @@ IColumnHelper<Derived, Parent>::serializeValueIntoArenaWithNull(size_t n, Arena 
         self.serializeValueIntoMemory(n, memory + 1);
         return {memory, sz};
     }
-    else
-    {
-        return self.serializeValueIntoArena(n, arena, begin);
-    }
+
+    return self.serializeValueIntoArena(n, arena, begin);
 }
 
 template <typename Derived, typename Parent>
@@ -445,6 +443,7 @@ template class IColumnHelper<ColumnVector<Int32>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<Int64>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<Int128>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<Int256>, ColumnFixedSizeHelper>;
+template class IColumnHelper<ColumnVector<BFloat16>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<Float32>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<Float64>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<UUID>, ColumnFixedSizeHelper>;

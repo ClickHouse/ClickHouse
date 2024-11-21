@@ -18,6 +18,8 @@
 #    include <Common/NetException.h>
 #    include <Common/PipeFDs.h>
 #    include <Common/Stopwatch.h>
+#    include <Common/ZooKeeper/ZooKeeperCommon.h>
+#    include <Common/ZooKeeper/ZooKeeperConstants.h>
 #    include <Common/ZooKeeper/ZooKeeperIO.h>
 #    include <Common/logger_useful.h>
 #    include <Common/setThreadName.h>
@@ -38,6 +40,13 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace CoordinationSetting
+{
+    extern const CoordinationSettingsUInt64 log_slow_connection_operation_threshold_ms;
+    extern const CoordinationSettingsUInt64 log_slow_total_threshold_ms;
+    extern const CoordinationSettingsBool use_xid_64;
+}
+
 struct LastOp
 {
 public:
@@ -55,6 +64,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int BAD_ARGUMENTS;
 }
 
 struct PollResult
@@ -93,7 +103,7 @@ struct SocketInterruptablePollWrapper
         socket_event.data.fd = sockfd;
         if (epoll_ctl(epollfd, EPOLL_CTL_ADD, sockfd, &socket_event) < 0)
         {
-            int err = ::close(epollfd);
+            [[maybe_unused]] int err = ::close(epollfd);
             chassert(!err || errno == EINTR);
 
             throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot insert socket into epoll queue");
@@ -102,7 +112,7 @@ struct SocketInterruptablePollWrapper
         pipe_event.data.fd = pipe.fds_rw[0];
         if (epoll_ctl(epollfd, EPOLL_CTL_ADD, pipe.fds_rw[0], &pipe_event) < 0)
         {
-            int err = ::close(epollfd);
+            [[maybe_unused]] int err = ::close(epollfd);
             chassert(!err || errno == EINTR);
 
             throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot insert socket into epoll queue");
@@ -211,7 +221,7 @@ struct SocketInterruptablePollWrapper
 #if defined(POCO_HAVE_FD_EPOLL)
     ~SocketInterruptablePollWrapper()
     {
-        int err = ::close(epollfd);
+        [[maybe_unused]] int err = ::close(epollfd);
         chassert(!err || errno == EINTR);
     }
 #endif
@@ -252,7 +262,9 @@ void KeeperTCPHandler::sendHandshake(bool has_leader, bool & use_compression)
     Coordination::write(Coordination::SERVER_HANDSHAKE_LENGTH, *out);
     if (has_leader)
     {
-        if (use_compression)
+        if (use_xid_64)
+            Coordination::write(Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_XID_64, *out);
+        else if (use_compression)
             Coordination::write(Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION, *out);
         else
             Coordination::write(Coordination::ZOOKEEPER_PROTOCOL_VERSION, *out);
@@ -290,10 +302,27 @@ Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length, bool
 
     Coordination::read(protocol_version, *in);
 
-    if (protocol_version != Coordination::ZOOKEEPER_PROTOCOL_VERSION && protocol_version != Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION)
+    if (protocol_version != Coordination::ZOOKEEPER_PROTOCOL_VERSION
+        && protocol_version < Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION
+        && protocol_version > Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_XID_64)
+    {
         throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected protocol version: {}", toString(protocol_version));
+    }
 
-    use_compression = (protocol_version == Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION);
+    if (protocol_version == Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION)
+    {
+        use_compression = true;
+    }
+    else if (protocol_version >= Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_XID_64)
+    {
+        if (!keeper_dispatcher->getKeeperContext()->getCoordinationSettings()[CoordinationSetting::use_xid_64])
+            throw Exception(
+                ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+                "keeper_server.coordination_settings.use_xid_64 is set to 'false' while client has it enabled");
+        close_xid = Coordination::CLOSE_XID_64;
+        use_xid_64 = true;
+        Coordination::read(use_compression, *in);
+    }
 
     Coordination::read(last_zxid_seen, *in);
     Coordination::read(timeout_ms, *in);
@@ -413,7 +442,7 @@ void KeeperTCPHandler::runImpl()
     keeper_dispatcher->registerSession(session_id, response_callback);
 
     Stopwatch logging_stopwatch;
-    auto operation_max_ms = keeper_dispatcher->getKeeperContext()->getCoordinationSettings()->log_slow_connection_operation_threshold_ms;
+    auto operation_max_ms = keeper_dispatcher->getKeeperContext()->getCoordinationSettings()[CoordinationSetting::log_slow_connection_operation_threshold_ms];
     auto log_long_operation = [&](const String & operation)
     {
         auto elapsed_ms = logging_stopwatch.elapsedMilliseconds();
@@ -433,7 +462,6 @@ void KeeperTCPHandler::runImpl()
             using namespace std::chrono_literals;
 
             PollResult result = poll_wrapper->poll(session_timeout, *in);
-            log_long_operation("Polling socket");
             if (result.has_requests && !close_received)
             {
                 if (in->eof())
@@ -485,7 +513,7 @@ void KeeperTCPHandler::runImpl()
                 updateStats(response, request_with_response.request);
                 packageSent();
 
-                response->write(getWriteBuffer());
+                response->write(getWriteBuffer(), use_xid_64);
                 flushWriteBuffer();
                 log_long_operation("Sending response");
                 if (response->error == Coordination::Error::ZSESSIONEXPIRED)
@@ -508,12 +536,14 @@ void KeeperTCPHandler::runImpl()
                 break;
             }
         }
+        finalizeWriteBuffer();
     }
     catch (const Exception & ex)
     {
         log_long_operation("Unknown operation");
         LOG_TRACE(log, "Has {} responses in the queue", responses->size());
         LOG_INFO(log, "Got exception processing session #{}: {}", session_id, getExceptionMessage(ex, true));
+        cancelWriteBuffer();
         keeper_dispatcher->finishSession(session_id);
     }
 }
@@ -531,29 +561,27 @@ bool KeeperTCPHandler::tryExecuteFourLetterWordCmd(int32_t command)
         LOG_WARNING(log, "invalid four letter command {}", IFourLetterCommand::toName(command));
         return false;
     }
-    else if (!FourLetterCommandFactory::instance().isEnabled(command))
+    if (!FourLetterCommandFactory::instance().isEnabled(command))
     {
         LOG_WARNING(log, "Not enabled four letter command {}", IFourLetterCommand::toName(command));
         return false;
     }
-    else
+
+    auto command_ptr = FourLetterCommandFactory::instance().get(command);
+    LOG_DEBUG(log, "Receive four letter command {}", command_ptr->name());
+
+    try
     {
-        auto command_ptr = FourLetterCommandFactory::instance().get(command);
-        LOG_DEBUG(log, "Receive four letter command {}", command_ptr->name());
-
-        try
-        {
-            String res = command_ptr->run();
-            out->write(res.data(),res.size());
-            out->next();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Error when executing four letter command " + command_ptr->name());
-        }
-
-        return true;
+        String res = command_ptr->run();
+        out->write(res.data(), res.size());
+        out->next();
     }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Error when executing four letter command " + command_ptr->name());
+    }
+
+    return true;
 }
 
 WriteBuffer & KeeperTCPHandler::getWriteBuffer()
@@ -570,6 +598,20 @@ void KeeperTCPHandler::flushWriteBuffer()
     out->next();
 }
 
+void KeeperTCPHandler::finalizeWriteBuffer()
+{
+    if (compressed_out)
+        compressed_out->finalize();
+    out->finalize();
+}
+
+void KeeperTCPHandler::cancelWriteBuffer() noexcept
+{
+    if (compressed_out)
+        compressed_out->cancel();
+    out->cancel();
+}
+
 ReadBuffer & KeeperTCPHandler::getReadBuffer()
 {
     if (compressed_in)
@@ -582,17 +624,40 @@ std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveReque
     auto & read_buffer = getReadBuffer();
     int32_t length;
     Coordination::read(length, read_buffer);
-    int32_t xid;
-    Coordination::read(xid, read_buffer);
+    int64_t xid;
+    if (use_xid_64)
+        Coordination::read(xid, read_buffer);
+    else
+    {
+        int32_t read_xid;
+        Coordination::read(read_xid, read_buffer);
+        xid = read_xid;
+    }
 
     Coordination::OpNum opnum;
     Coordination::read(opnum, read_buffer);
 
     Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
     request->xid = xid;
-    request->readImpl(read_buffer);
 
-    if (!keeper_dispatcher->putRequest(request, session_id))
+    auto request_validator = [&](const Coordination::ZooKeeperRequest & current_request)
+    {
+        if (!keeper_dispatcher->getKeeperContext()->isOperationSupported(current_request.getOpNum()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported operation: {}", current_request.getOpNum());
+    };
+
+    if (auto * multi_request = dynamic_cast<Coordination::ZooKeeperMultiRequest *>(request.get()))
+    {
+        multi_request->readImpl(read_buffer, request_validator);
+    }
+    else
+    {
+        request->readImpl(read_buffer);
+        request_validator(*request);
+    }
+
+
+    if (!keeper_dispatcher->putRequest(request, session_id, use_xid_64))
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Session {} already disconnected", session_id);
     return std::make_pair(opnum, xid);
 }
@@ -618,7 +683,7 @@ void KeeperTCPHandler::updateStats(Coordination::ZooKeeperResponsePtr & response
         ProfileEvents::increment(ProfileEvents::KeeperTotalElapsedMicroseconds, elapsed);
         Int64 elapsed_ms = elapsed / 1000;
 
-        if (request && elapsed_ms > static_cast<Int64>(keeper_dispatcher->getKeeperContext()->getCoordinationSettings()->log_slow_total_threshold_ms))
+        if (request && elapsed_ms > static_cast<Int64>(keeper_dispatcher->getKeeperContext()->getCoordinationSettings()[CoordinationSetting::log_slow_total_threshold_ms]))
         {
             LOG_INFO(
                 log,
@@ -708,6 +773,7 @@ void KeeperTCPHandler::resetStats()
 
 KeeperTCPHandler::~KeeperTCPHandler()
 {
+    cancelWriteBuffer();
     KeeperTCPHandler::unregisterConnection(this);
 }
 

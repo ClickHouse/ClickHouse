@@ -374,15 +374,15 @@ Users can create [UDF](/docs/en/sql-reference/statements/create/function.md) to 
 ```sql
 CREATE FUNCTION bfEstimateFunctions [ON CLUSTER cluster]
 AS
-(total_nubmer_of_all_grams, size_of_bloom_filter_in_bits) -> round((size_of_bloom_filter_in_bits / total_nubmer_of_all_grams) * log(2));
+(total_number_of_all_grams, size_of_bloom_filter_in_bits) -> round((size_of_bloom_filter_in_bits / total_number_of_all_grams) * log(2));
 
 CREATE FUNCTION bfEstimateBmSize [ON CLUSTER cluster]
 AS
-(total_nubmer_of_all_grams,  probability_of_false_positives) -> ceil((total_nubmer_of_all_grams * log(probability_of_false_positives)) / log(1 / pow(2, log(2))));
+(total_number_of_all_grams,  probability_of_false_positives) -> ceil((total_number_of_all_grams * log(probability_of_false_positives)) / log(1 / pow(2, log(2))));
 
 CREATE FUNCTION bfEstimateFalsePositive [ON CLUSTER cluster]
 AS
-(total_nubmer_of_all_grams, number_of_hash_functions, size_of_bloom_filter_in_bytes) -> pow(1 - exp(-number_of_hash_functions/ (size_of_bloom_filter_in_bytes / total_nubmer_of_all_grams)), number_of_hash_functions);
+(total_number_of_all_grams, number_of_hash_functions, size_of_bloom_filter_in_bytes) -> pow(1 - exp(-number_of_hash_functions/ (size_of_bloom_filter_in_bytes / total_number_of_all_grams)), number_of_hash_functions);
 
 CREATE FUNCTION bfEstimateGramNumber [ON CLUSTER cluster]
 AS
@@ -684,8 +684,7 @@ If you perform the `SELECT` query between merges, you may get expired data. To a
 
 **See Also**
 
-- [ttl_only_drop_parts](/docs/en/operations/settings/settings.md/#ttl_only_drop_parts) setting
-
+- [ttl_only_drop_parts](/docs/en/operations/settings/merge-tree-settings#ttl_only_drop_parts) setting
 
 ## Disk types
 
@@ -710,7 +709,7 @@ Data part is the minimum movable unit for `MergeTree`-engine tables. The data be
 ### Terms {#terms}
 
 - Disk — Block device mounted to the filesystem.
-- Default disk — Disk that stores the path specified in the [path](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-path) server setting.
+- Default disk — Disk that stores the path specified in the [path](/docs/en/operations/server-configuration-parameters/settings.md/#path) server setting.
 - Volume — Ordered set of equal disks (similar to [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures)).
 - Storage policy — Set of volumes and the rules for moving data between them.
 
@@ -995,34 +994,42 @@ They can be used for prewhere optimization only if we enable `set allow_statisti
 
     The minimum and maximum column value which allows to estimate the selectivity of range filters on numeric columns.
 
+    Syntax: `minmax`
+
 - `TDigest`
 
     [TDigest](https://github.com/tdunning/t-digest) sketches which allow to compute approximate percentiles (e.g. the 90th percentile) for numeric columns.
+
+    Syntax: `tdigest`
 
 - `Uniq`
 
     [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) sketches which provide an estimation how many distinct values a column contains.
 
-- `count_min`
+    Syntax: `uniq`
 
-    [Count-min](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) sketches which provide an approximate count of the frequency of each value in a column.
+- `CountMin`
+
+    [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) sketches which provide an approximate count of the frequency of each value in a column.
+
+    Syntax `countmin`
 
 
 ### Supported Data Types {#supported-data-types}
 
-|           | (U)Int* | Float* | Decimal(*) | Date* | Boolean | Enum* | (Fixed)String    |
-|-----------|---------|--------|------------|-------|---------|-------|------------------|
-| count_min | ✔       | ✔      | ✔          | ✔     | ✔       | ✔     | ✔                |
-| MinMax    | ✔       | ✔      | ✔          | ✔     | ✔       | ✔     | ✗                |
-| TDigest   | ✔       | ✔      | ✔          | ✔     | ✔       | ✔     | ✗                |
-| Uniq      | ✔       | ✔      | ✔          | ✔     | ✔       | ✔     | ✔                |
+|           | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | String or FixedString |
+|-----------|----------------------------------------------------|-----------------------|
+| CountMin  | ✔                                                  | ✔                     |
+| MinMax    | ✔                                                  | ✗                     |
+| TDigest   | ✔                                                  | ✗                     |
+| Uniq      | ✔                                                  | ✔                     |
 
 
 ### Supported Operations {#supported-operations}
 
 |           | Equality filters (==) | Range filters (>, >=, <, <=) |
 |-----------|-----------------------|------------------------------|
-| count_min | ✔                     | ✗                            |
+| CountMin  | ✔                     | ✗                            |
 | MinMax    | ✗                     | ✔                            |
 | TDigest   | ✗                     | ✔                            |
 | Uniq      | ✔                     | ✗                            |

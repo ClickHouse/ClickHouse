@@ -54,15 +54,13 @@ public:
 
             return std::make_pair(&inserted_iterator->second, true);
         }
-        else
-        {
-            auto & iterator_in_list_to_update = it->second;
 
-            list.splice(list.end(), list, iterator_in_list_to_update);
-            iterator_in_list_to_update = --list.end();
+        auto & iterator_in_list_to_update = it->second;
 
-            return std::make_pair(&iterator_in_list_to_update->second, false);
-        }
+        list.splice(list.end(), list, iterator_in_list_to_update);
+        iterator_in_list_to_update = --list.end();
+
+        return std::make_pair(&iterator_in_list_to_update->second, false);
     }
 
     value_type & operator[](const key_type & key)

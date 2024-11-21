@@ -117,15 +117,13 @@ namespace
     {
         if (auto * data_uint8 = getIndexesData<UInt8>(column))
             return mapUniqueIndexImpl(*data_uint8);
-        else if (auto * data_uint16 = getIndexesData<UInt16>(column))
+        if (auto * data_uint16 = getIndexesData<UInt16>(column))
             return mapUniqueIndexImpl(*data_uint16);
-        else if (auto * data_uint32 = getIndexesData<UInt32>(column))
+        if (auto * data_uint32 = getIndexesData<UInt32>(column))
             return mapUniqueIndexImpl(*data_uint32);
-        else if (auto * data_uint64 = getIndexesData<UInt64>(column))
+        if (auto * data_uint64 = getIndexesData<UInt64>(column))
             return mapUniqueIndexImpl(*data_uint64);
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Indexes column for getUniqueIndex must be ColumnUInt, got {}",
-                            column.getName());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Indexes column for getUniqueIndex must be ColumnUInt, got {}", column.getName());
     }
 }
 
@@ -441,8 +439,7 @@ void ColumnLowCardinality::updatePermutation(IColumn::PermutationSortDirection d
 
         if (ascending)
             return ret < 0;
-        else
-            return ret > 0;
+        return ret > 0;
     };
 
     auto equal_comparator = [this, nan_direction_hint](size_t lhs, size_t rhs)
@@ -478,8 +475,7 @@ void ColumnLowCardinality::updatePermutationWithCollation(const Collator & colla
 
         if (ascending)
             return ret < 0;
-        else
-            return ret > 0;
+        return ret > 0;
     };
 
     auto equal_comparator = [this, &collator, nan_direction_hint](size_t lhs, size_t rhs)

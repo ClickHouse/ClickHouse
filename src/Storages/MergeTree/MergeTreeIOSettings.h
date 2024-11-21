@@ -2,6 +2,7 @@
 #include <cstddef>
 #include <Compression/CompressionFactory.h>
 #include <Compression/ICompressionCodec.h>
+#include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 
 
@@ -44,6 +45,8 @@ struct MergeTreeReaderSettings
     bool use_asynchronous_read_from_pool = false;
     /// If PREWHERE has multiple conditions combined with AND, execute them in separate read/filtering steps.
     bool enable_multiple_prewhere_read_steps = false;
+    /// In case of multiple prewhere steps, execute filtering earlier to support short-circuit properly.
+    bool force_short_circuit_execution = false;
     /// If true, try to lower size of read buffer according to granule size and compressed block size.
     bool adjust_read_buffer_size = true;
     /// If true, it's allowed to read the whole part without reading marks.
@@ -62,7 +65,8 @@ struct MergeTreeWriterSettings
         const MergeTreeSettingsPtr & storage_settings,
         bool can_use_adaptive_granularity_,
         bool rewrite_primary_key_,
-        bool blocks_are_granules_size_ = false);
+        bool save_marks_in_cache_,
+        bool blocks_are_granules_size_);
 
     size_t min_compress_block_size;
     size_t max_compress_block_size;
@@ -76,12 +80,15 @@ struct MergeTreeWriterSettings
 
     bool can_use_adaptive_granularity;
     bool rewrite_primary_key;
+    bool save_marks_in_cache;
     bool blocks_are_granules_size;
     WriteSettings query_write_settings;
 
     size_t low_cardinality_max_dictionary_size;
     bool low_cardinality_use_single_dictionary_for_part;
     bool use_compact_variant_discriminators_serialization;
+    bool use_adaptive_write_buffer_for_dynamic_subcolumns;
+    size_t adaptive_write_buffer_initial_size;
 };
 
 }

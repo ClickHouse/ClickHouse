@@ -156,13 +156,21 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
         auto it = original_requested_columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++it)
         {
-            auto name_in_storage = it->getNameInStorage();
-
-            if (full_requested_columns_set.emplace(name_in_storage).second)
-                full_requested_columns.emplace_back(name_in_storage, it->getTypeInStorage());
-
             if (res_columns[pos])
+            {
+                /// If column is already read, request it as is.
+                if (full_requested_columns_set.emplace(it->name).second)
+                    full_requested_columns.emplace_back(it->name, it->type);
+
                 additional_columns.insert({res_columns[pos], it->type, it->name});
+            }
+            else
+            {
+                /// If column or subcolumn is missed, request full column for correct evaluation of defaults of subcolumns.
+                auto name_in_storage = it->getNameInStorage();
+                if (full_requested_columns_set.emplace(name_in_storage).second)
+                    full_requested_columns.emplace_back(name_in_storage, it->getTypeInStorage());
+            }
         }
 
         auto dag = DB::evaluateMissingDefaults(
@@ -172,7 +180,7 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
 
         if (dag)
         {
-            dag->addMaterializingOutputActions();
+            dag->addMaterializingOutputActions(/*materialize_sparse=*/ false);
             auto actions = std::make_shared<ExpressionActions>(
                 std::move(*dag),
                 ExpressionActionsSettings::fromSettings(data_part_info_for_read->getContext()->getSettingsRef()));
@@ -183,6 +191,12 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
         it = original_requested_columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++it)
         {
+            if (additional_columns.has(it->name))
+            {
+                res_columns[pos] = additional_columns.getByName(it->name).column;
+                continue;
+            }
+
             auto name_in_storage = it->getNameInStorage();
             res_columns[pos] = additional_columns.getByName(name_in_storage).column;
 

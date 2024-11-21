@@ -11,7 +11,7 @@ class FilterStep : public ITransformingStep
 {
 public:
     FilterStep(
-        const DataStream & input_stream_,
+        const Header & input_header_,
         ActionsDAG actions_dag_,
         String filter_column_name_,
         bool remove_filter_column_);
@@ -29,7 +29,7 @@ public:
     void setQueryConditionCacheAndKey(QueryConditionCachePtr query_condition_cache_, String & where_condition_);
 
 private:
-    void updateOutputStream() override;
+    void updateOutputHeader() override;
 
     ActionsDAG actions_dag;
     String filter_column_name;

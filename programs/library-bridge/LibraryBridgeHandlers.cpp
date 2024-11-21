@@ -158,11 +158,9 @@ void ExternalDictionaryLibraryBridgeRequestHandler::handleRequest(HTTPServerRequ
                 out.finalize();
                 return;
             }
-            else
-            {
-                LOG_TRACE(log, "Cannot clone from dictionary with id: {}, will call extDict_libNew instead", from_dictionary_id);
-                lib_new = true;
-            }
+
+            LOG_TRACE(log, "Cannot clone from dictionary with id: {}, will call extDict_libNew instead", from_dictionary_id);
+            lib_new = true;
         }
         if (lib_new)
         {
@@ -581,31 +579,13 @@ void CatBoostLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & requ
             processError(response, "Unknown library method '" + method + "'");
             LOG_ERROR(log, "Unknown library method: '{}'", method);
         }
-    }
-    catch (...)
-    {
-        auto message = getCurrentExceptionMessage(true);
-        LOG_ERROR(log, "Failed to process request. Error: {}", message);
 
-        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR, message); // can't call process_error, because of too soon response sending
-        try
-        {
-            writeStringBinary(message, out);
-            out.finalize();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log);
-        }
-    }
-
-    try
-    {
         out.finalize();
     }
     catch (...)
     {
-        tryLogCurrentException(log);
+        tryLogCurrentException(log, "Failed to process request");
+        out.cancelWithException(request, getCurrentExceptionCode(), getCurrentExceptionMessage(true), nullptr);
     }
 }
 

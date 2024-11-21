@@ -48,7 +48,7 @@ void QueryConditionCache::write(const MergeTreeDataPartPtr & data_part, const St
     auto table = data_part->storage.getStorageID();
     Key key{table.uuid, data_part->name, condition};
 
-    size_t count = data_part->index_granularity.getMarksCount();
+    size_t count = data_part->index_granularity->getMarksCount();
     auto [entry, _] = cache.getOrSet(key, [&]()
     {
         return std::make_shared<Entry>(count);

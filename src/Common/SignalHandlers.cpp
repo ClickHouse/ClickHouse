@@ -51,7 +51,7 @@ void writeSignalIDtoSignalPipe(int sig)
     auto & signal_pipe = HandledSignals::instance().signal_pipe;
     WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], signal_pipe_buf_size, buf);
     writeBinary(sig, out);
-    out.next();
+    out.finalize();
 
     errno = saved_errno;
 }
@@ -97,8 +97,7 @@ void signalHandler(int sig, siginfo_t * info, void * context)
     writeVectorBinary(Exception::enable_job_stack_trace ? Exception::getThreadFramePointers() : std::vector<StackTrace::FramePointers>{}, out);
     writeBinary(static_cast<UInt32>(getThreadId()), out);
     writePODBinary(current_thread, out);
-
-    out.next();
+    out.finalize();
 
     if (sig != SIGTSTP) /// This signal is used for debugging.
     {
@@ -152,7 +151,7 @@ void signalHandler(int sig, siginfo_t * info, void * context)
     writeBinary(static_cast<int>(SignalListener::StdTerminate), out);
     writeBinary(static_cast<UInt32>(getThreadId()), out);
     writeBinary(log_message, out);
-    out.next();
+    out.finalize();
 
     abort();
 }
@@ -193,8 +192,7 @@ static DISABLE_SANITIZER_INSTRUMENTATION void sanitizerDeathCallback()
     ValueHolder<UInt32> thread_id{static_cast<UInt32>(getThreadId())};
     writeBinary(thread_id.value, out);
     writePODBinary(current_thread, out);
-
-    out.next();
+    out.finalize();
 
     /// The time that is usually enough for separate thread to print info into log.
     sleepForSeconds(20);
@@ -275,7 +273,7 @@ void SignalListener::run()
             LOG_INFO(log, "Stop SignalListener thread");
             break;
         }
-        else if (sig == SIGHUP)
+        if (sig == SIGHUP)
         {
             LOG_DEBUG(log, "Received signal to close logs.");
             BaseDaemon::instance().closeLogs(BaseDaemon::instance().logger());
@@ -291,9 +289,7 @@ void SignalListener::run()
 
             onTerminate(message, thread_num);
         }
-        else if (sig == SIGINT ||
-                 sig == SIGQUIT ||
-                 sig == SIGTERM)
+        else if (sig == SIGINT || sig == SIGQUIT || sig == SIGTERM)
         {
             if (daemon)
                 daemon->handleSignal(sig);
@@ -323,7 +319,8 @@ void SignalListener::run()
             /// Example: segfault while symbolizing stack trace.
             try
             {
-                std::thread([=, this] { onFault(sig, info, context, stack_trace, thread_frame_pointers, thread_num, thread_ptr); }).detach();
+                std::thread([=, this] { onFault(sig, info, context, stack_trace, thread_frame_pointers, thread_num, thread_ptr); })
+                    .detach();
             }
             catch (...)
             {

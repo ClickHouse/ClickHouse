@@ -22,9 +22,12 @@
 #include <Client/MultiplexedConnections.h>
 #include <Client/HedgedConnections.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
-#include <Storages/StorageMemory.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
+#include <Storages/StorageMemory.h>
 
+#include <Access/AccessControl.h>
+#include <Access/User.h>
+#include <Access/Role.h>
 
 namespace ProfileEvents
 {
@@ -36,6 +39,16 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool enable_scalar_subquery_optimization;
+    extern const SettingsSeconds max_execution_time;
+    extern const SettingsSeconds max_estimated_execution_time;
+    extern const SettingsBool skip_unavailable_shards;
+    extern const SettingsOverflowMode timeout_overflow_mode;
+    extern const SettingsBool use_hedged_requests;
+    extern const SettingsBool push_external_roles_in_interserver_queries;
+}
 
 namespace ErrorCodes
 {
@@ -204,7 +217,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
 
 #if defined(OS_LINUX)
-        if (current_settings.use_hedged_requests)
+        if (current_settings[Setting::use_hedged_requests])
         {
             std::shared_ptr<QualifiedTableName> table_to_check = nullptr;
             if (main_table)
@@ -390,12 +403,30 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     if (!duplicated_part_uuids.empty())
         connections->sendIgnoredPartUUIDs(duplicated_part_uuids);
 
-    connections->sendQuery(timeouts, query, query_id, stage, modified_client_info, true);
+    // Collect all roles granted on this node and pass those to the remote node
+    std::vector<String> local_granted_roles;
+    if (context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries] && !modified_client_info.initial_user.empty())
+    {
+        auto user = context->getAccessControl().read<User>(modified_client_info.initial_user, true);
+        boost::container::flat_set<String> granted_roles;
+        if (user)
+        {
+            const auto & access_control = context->getAccessControl();
+            for (const auto & e : user->granted_roles.getElements())
+            {
+                auto names = access_control.readNames(e.ids);
+                granted_roles.insert(names.begin(), names.end());
+            }
+        }
+        local_granted_roles.insert(local_granted_roles.end(), granted_roles.begin(), granted_roles.end());
+    }
+
+    connections->sendQuery(timeouts, query, query_id, stage, modified_client_info, true, local_granted_roles);
 
     established = false;
     sent_query = true;
 
-    if (settings.enable_scalar_subquery_optimization)
+    if (settings[Setting::enable_scalar_subquery_optimization])
         sendScalars();
     sendExternalTables();
 }
@@ -446,7 +477,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
     {
         sendQuery();
 
-        if (context->getSettingsRef().skip_unavailable_shards && (0 == connections->size()))
+        if (context->getSettingsRef()[Setting::skip_unavailable_shards] && (0 == connections->size()))
             return ReadResult(Block());
     }
 
@@ -562,8 +593,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::restartQueryWithoutDuplicat
     /// Consecutive read will implicitly send query first.
     if (!read_context)
         return read();
-    else
-        return readAsync();
+    return readAsync();
 }
 
 RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet)
@@ -822,9 +852,9 @@ void RemoteQueryExecutor::sendExternalTables()
         StreamLocalLimits limits;
         const auto & settings = context->getSettingsRef();
         limits.mode = LimitsMode::LIMITS_TOTAL;
-        limits.speed_limits.max_execution_time = settings.max_execution_time;
-        limits.timeout_overflow_mode = settings.timeout_overflow_mode;
-        limits.speed_limits.max_estimated_execution_time = settings.max_estimated_execution_time;
+        limits.speed_limits.max_execution_time = settings[Setting::max_execution_time];
+        limits.timeout_overflow_mode = settings[Setting::timeout_overflow_mode];
+        limits.speed_limits.max_estimated_execution_time = settings[Setting::max_estimated_execution_time];
 
         for (size_t i = 0; i < count; ++i)
         {
@@ -921,7 +951,7 @@ void RemoteQueryExecutor::setProfileInfoCallback(ProfileInfoCallback callback)
 
 bool RemoteQueryExecutor::needToSkipUnavailableShard() const
 {
-    return context->getSettingsRef().skip_unavailable_shards && (0 == connections->size());
+    return context->getSettingsRef()[Setting::skip_unavailable_shards] && (0 == connections->size());
 }
 
 bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()

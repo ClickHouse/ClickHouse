@@ -12,6 +12,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Common/HashTable/HashMap.h>
@@ -123,19 +124,17 @@ namespace
                 checkAllowedType(ret);
                 return ret;
             }
-            else
-            {
-                auto ret = tryGetLeastSupertype(DataTypes{type_arr_to_nested, arguments[3]});
-                if (!ret)
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Function {} have signature: "
-                        "transform(T, Array(T), Array(U), U) -> U; "
-                        "or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
-                        getName());
-                checkAllowedType(ret);
-                return ret;
-            }
+
+            auto ret = tryGetLeastSupertype(DataTypes{type_arr_to_nested, arguments[3]});
+            if (!ret)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Function {} have signature: "
+                    "transform(T, Array(T), Array(U), U) -> U; "
+                    "or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
+                    getName());
+            checkAllowedType(ret);
+            return ret;
         }
 
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -171,7 +170,7 @@ namespace
                     ? default_non_const
                     : castColumn(arguments[0], result_type);
             }
-            else if (cache.table_num_to_idx)
+            if (cache.table_num_to_idx)
             {
                 if (!executeNum<ColumnVector<UInt8>>(in, *column_result, default_non_const, *in_casted, input_rows_count)
                     && !executeNum<ColumnVector<UInt16>>(in, *column_result, default_non_const, *in_casted, input_rows_count)
@@ -186,7 +185,8 @@ namespace
                     && !executeNum<ColumnDecimal<Decimal32>>(in, *column_result, default_non_const, *in_casted, input_rows_count)
                     && !executeNum<ColumnDecimal<Decimal64>>(in, *column_result, default_non_const, *in_casted, input_rows_count))
                 {
-                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", in->getName(), getName());
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", in->getName(), getName());
                 }
             }
             else if (cache.table_string_to_idx)
@@ -212,9 +212,9 @@ namespace
             ColumnsWithTypeAndName args = arguments;
             args[0].column = args[0].column->cloneResized(input_rows_count)->convertToFullColumnIfConst();
 
-            auto impl = FunctionToOverloadResolverAdaptor(std::make_shared<FunctionTransform>()).build(args);
+            auto impl = std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionTransform>())->build(args);
 
-            return impl->execute(args, result_type, input_rows_count);
+            return impl->execute(args, result_type, input_rows_count, /* dry_run = */ false);
         }
 
         void executeAnything(const IColumn * in, IColumn & column_result, const ColumnPtr default_non_const, const IColumn & in_casted, size_t input_rows_count) const

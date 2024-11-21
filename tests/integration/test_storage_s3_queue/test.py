@@ -1,15 +1,15 @@
 import io
+import json
 import logging
 import random
 import string
 import time
+import uuid
 
 import pytest
+
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
-import json
-from uuid import uuid4
-
 
 AVAILABLE_MODES = ["unordered", "ordered"]
 DEFAULT_AUTH = ["'minio'", "'minio123'"]
@@ -99,6 +99,7 @@ def started_cluster():
             with_minio=True,
             with_azurite=True,
             with_zookeeper=True,
+            keeper_required_feature_flags=["create_if_not_exists"],
             main_configs=[
                 "configs/zookeeper.xml",
                 "configs/s3queue_log.xml",
@@ -110,6 +111,7 @@ def started_cluster():
             user_configs=["configs/users.xml"],
             with_minio=True,
             with_zookeeper=True,
+            keeper_required_feature_flags=["create_if_not_exists"],
             main_configs=[
                 "configs/s3queue_log.xml",
             ],
@@ -118,6 +120,7 @@ def started_cluster():
         cluster.add_instance(
             "old_instance",
             with_zookeeper=True,
+            keeper_required_feature_flags=["create_if_not_exists"],
             image="clickhouse/clickhouse-server",
             tag="23.12",
             stay_alive=True,
@@ -125,15 +128,62 @@ def started_cluster():
             use_old_analyzer=True,
         )
         cluster.add_instance(
+            "node1",
+            with_zookeeper=True,
+            keeper_required_feature_flags=["create_if_not_exists"],
+            stay_alive=True,
+            main_configs=[
+                "configs/zookeeper.xml",
+                "configs/s3queue_log.xml",
+                "configs/remote_servers.xml",
+            ],
+        )
+        cluster.add_instance(
+            "node2",
+            with_zookeeper=True,
+            keeper_required_feature_flags=["create_if_not_exists"],
+            stay_alive=True,
+            main_configs=[
+                "configs/zookeeper.xml",
+                "configs/s3queue_log.xml",
+                "configs/remote_servers.xml",
+            ],
+        )
+        cluster.add_instance(
             "instance_too_many_parts",
             user_configs=["configs/users.xml"],
             with_minio=True,
             with_zookeeper=True,
+            keeper_required_feature_flags=["create_if_not_exists"],
             main_configs=[
                 "configs/s3queue_log.xml",
                 "configs/merge_tree.xml",
             ],
             stay_alive=True,
+        )
+        cluster.add_instance(
+            "instance_24.5",
+            with_zookeeper=True,
+            keeper_required_feature_flags=["create_if_not_exists"],
+            image="clickhouse/clickhouse-server",
+            tag="24.5",
+            stay_alive=True,
+            user_configs=[
+                "configs/users.xml",
+            ],
+            with_installed_binary=True,
+            use_old_analyzer=True,
+        )
+        cluster.add_instance(
+            "node_cloud_mode",
+            with_zookeeper=True,
+            keeper_required_feature_flags=["create_if_not_exists"],
+            stay_alive=True,
+            main_configs=[
+                "configs/zookeeper.xml",
+                "configs/s3queue_log.xml",
+            ],
+            user_configs=["configs/cloud_mode.xml"],
         )
 
         logging.info("Starting cluster...")
@@ -215,6 +265,7 @@ def create_table(
     auth=DEFAULT_AUTH,
     bucket=None,
     expect_error=False,
+    database_name="default",
 ):
     auth_params = ",".join(auth)
     bucket = started_cluster.minio_bucket if bucket is None else bucket
@@ -236,7 +287,7 @@ def create_table(
 
     node.query(f"DROP TABLE IF EXISTS {table_name}")
     create_query = f"""
-        CREATE TABLE {table_name} ({format})
+        CREATE TABLE {database_name}.{table_name} ({format})
         ENGINE = {engine_def}
         SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
         """
@@ -276,7 +327,9 @@ def generate_random_string(length=6):
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
 def test_delete_after_processing(started_cluster, mode, engine_name):
     node = started_cluster.instances["instance"]
-    table_name = f"delete_after_processing_{mode}_{engine_name}"
+    table_name = (
+        f"delete_after_processing_{mode}_{engine_name}_{generate_random_string()}"
+    )
     dst_table_name = f"{table_name}_dst"
     files_path = f"{table_name}_data"
     files_num = 5
@@ -318,6 +371,21 @@ def test_delete_after_processing(started_cluster, mode, engine_name):
             f"SELECT column1, column2, column3 FROM {dst_table_name} ORDER BY column1, column2, column3"
         ).splitlines()
     ] == sorted(total_values, key=lambda x: (x[0], x[1], x[2]))
+
+    node.query("system flush logs")
+
+    if engine_name == "S3Queue":
+        system_table_name = "s3queue_log"
+    else:
+        system_table_name = "azure_queue_log"
+    assert (
+        int(
+            node.query(
+                f"SELECT sum(rows_processed) FROM system.{system_table_name} WHERE table = '{table_name}'"
+            )
+        )
+        == files_num * row_num
+    )
 
     if engine_name == "S3Queue":
         minio = started_cluster.minio_client
@@ -364,6 +432,8 @@ def test_failed_retry(started_cluster, mode, engine_name):
         additional_settings={
             "s3queue_loading_retries": retries_num,
             "keeper_path": keeper_path,
+            "polling_max_timeout_ms": 5000,
+            "polling_backoff_ms": 1000,
         },
         engine_name=engine_name,
     )
@@ -514,7 +584,7 @@ def test_direct_select_multiple_files(started_cluster, mode):
         table_name,
         mode,
         files_path,
-        additional_settings={"keeper_path": keeper_path},
+        additional_settings={"keeper_path": keeper_path, "processing_threads_num": 3},
     )
     for i in range(5):
         rand_values = [[random.randint(0, 50) for _ in range(3)] for _ in range(10)]
@@ -662,10 +732,7 @@ def test_multiple_tables_meta_mismatch(started_cluster):
             },
         )
     except QueryRuntimeException as e:
-        assert (
-            "Table columns structure in ZooKeeper is different from local table structure"
-            in str(e)
-        )
+        assert "Existing table metadata in ZooKeeper differs in columns" in str(e)
         failed = True
 
     assert failed is True
@@ -812,6 +879,8 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
             additional_settings={
                 "keeper_path": keeper_path,
                 "s3queue_buckets": 2,
+                "polling_max_timeout_ms": 2000,
+                "polling_backoff_ms": 1000,
                 **({"s3queue_processing_threads_num": 1} if mode == "ordered" else {}),
             },
         )
@@ -889,6 +958,8 @@ def test_max_set_age(started_cluster):
             "cleanup_interval_min_ms": max_age / 3,
             "cleanup_interval_max_ms": max_age / 3,
             "loading_retries": 0,
+            "polling_max_timeout_ms": 5000,
+            "polling_backoff_ms": 1000,
             "processing_threads_num": 1,
             "loading_retries": 0,
         },
@@ -951,7 +1022,7 @@ def test_max_set_age(started_cluster):
     ).encode()
 
     # use a different filename for each test to allow running a bunch of them sequentially with --count
-    file_with_error = f"max_set_age_fail_{uuid4().hex[:8]}.csv"
+    file_with_error = f"max_set_age_fail_{uuid.uuid4().hex[:8]}.csv"
     put_s3_file_content(started_cluster, f"{files_path}/{file_with_error}", values_csv)
 
     wait_for_condition(lambda: failed_count + 1 == get_object_storage_failures())
@@ -959,6 +1030,9 @@ def test_max_set_age(started_cluster):
     node.query("SYSTEM FLUSH LOGS")
     assert "Cannot parse input" in node.query(
         f"SELECT exception FROM system.s3queue WHERE file_name ilike '%{file_with_error}'"
+    )
+    assert "Cannot parse input" in node.query(
+        f"SELECT exception FROM system.s3queue_log WHERE file_name ilike '%{file_with_error}' ORDER BY processing_end_time DESC LIMIT 1"
     )
 
     assert 1 == int(
@@ -977,6 +1051,14 @@ def test_max_set_age(started_cluster):
         node.query(
             f"SELECT count() FROM system.s3queue_log WHERE file_name ilike '%{file_with_error}' AND notEmpty(exception)"
         )
+    )
+
+    node.restart_clickhouse()
+
+    expected_rows *= 2
+    wait_for_condition(lambda: get_count() == expected_rows)
+    assert files_to_generate == int(
+        node.query(f"SELECT uniq(_path) from {dst_table_name}")
     )
 
 
@@ -1049,7 +1131,7 @@ def test_drop_table(started_cluster):
         started_cluster, files_path, files_to_generate, start_ind=0, row_num=100000
     )
     create_mv(node, table_name, dst_table_name)
-    node.wait_for_log_line(f"Reading from file: test_drop_data")
+    node.wait_for_log_line(f"rows from file: test_drop_data")
     node.query(f"DROP TABLE {table_name} SYNC")
     assert node.contains_in_log(
         f"StorageS3Queue (default.{table_name}): Table is being dropped"
@@ -1355,8 +1437,8 @@ def test_shards_distributed(started_cluster, mode, processing_threads):
     # A unique path is necessary for repeatable tests
     keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"
-    files_to_generate = 300
-    row_num = 300
+    files_to_generate = 600
+    row_num = 1000
     total_rows = row_num * files_to_generate
     shards_num = 2
 
@@ -1372,6 +1454,8 @@ def test_shards_distributed(started_cluster, mode, processing_threads):
                 "keeper_path": keeper_path,
                 "s3queue_processing_threads_num": processing_threads,
                 "s3queue_buckets": shards_num,
+                "polling_max_timeout_ms": 1000,
+                "polling_backoff_ms": 0,
             },
         )
         i += 1
@@ -1622,6 +1706,8 @@ def test_processed_file_setting_distributed(started_cluster, processing_threads)
                 "s3queue_processing_threads_num": processing_threads,
                 "s3queue_last_processed_path": f"{files_path}/test_5.csv",
                 "s3queue_buckets": 2,
+                "polling_max_timeout_ms": 2000,
+                "polling_backoff_ms": 1000,
             },
         )
 
@@ -1673,6 +1759,7 @@ def test_upgrade(started_cluster):
         files_path,
         additional_settings={
             "keeper_path": keeper_path,
+            "after_processing": "keep",
         },
     )
     total_values = generate_random_files(
@@ -1870,3 +1957,347 @@ def test_commit_on_limit(started_cluster):
     for value in expected_failed:
         assert value not in processed
         assert value in failed
+
+
+def test_upgrade_2(started_cluster):
+    node = started_cluster.instances["instance_24.5"]
+
+    table_name = f"test_upgrade_2_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    # A unique path is necessary for repeatable tests
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 10
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_current_shard_num": 0,
+            "s3queue_processing_threads_num": 2,
+        },
+    )
+    total_values = generate_random_files(
+        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
+    )
+
+    create_mv(node, table_name, dst_table_name)
+
+    def get_count():
+        return int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+    expected_rows = 10
+    for _ in range(20):
+        if expected_rows == get_count():
+            break
+        time.sleep(1)
+
+    assert expected_rows == get_count()
+
+    node.restart_with_latest_version()
+    assert table_name in node.query("SHOW TABLES")
+
+
+def test_replicated(started_cluster):
+    node1 = started_cluster.instances["node1"]
+    node2 = started_cluster.instances["node2"]
+
+    table_name = f"test_replicated_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 1000
+
+    node1.query("DROP DATABASE IF EXISTS r")
+    node2.query("DROP DATABASE IF EXISTS r")
+
+    node1.query(
+        "CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/replicateddb', 'shard1', 'node1')"
+    )
+    node2.query(
+        "CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/replicateddb', 'shard1', 'node2')"
+    )
+
+    create_table(
+        started_cluster,
+        node1,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+        },
+        database_name="r",
+    )
+
+    assert '"processing_threads_num":16' in node1.query(
+        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
+    )
+
+    total_values = generate_random_files(
+        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
+    )
+
+    create_mv(node1, f"r.{table_name}", dst_table_name)
+    create_mv(node2, f"r.{table_name}", dst_table_name)
+
+    def get_count():
+        return int(
+            node1.query(
+                f"SELECT count() FROM clusterAllReplicas(cluster, default.{dst_table_name})"
+            )
+        )
+
+    expected_rows = files_to_generate
+    for _ in range(20):
+        if expected_rows == get_count():
+            break
+        time.sleep(1)
+    assert expected_rows == get_count()
+
+
+def test_bad_settings(started_cluster):
+    node = started_cluster.instances["node_cloud_mode"]
+
+    table_name = f"test_bad_settings_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 10
+
+    try:
+        create_table(
+            started_cluster,
+            node,
+            table_name,
+            "ordered",
+            files_path,
+            additional_settings={
+                "keeper_path": keeper_path,
+                "processing_threads_num": 1,
+                "buckets": 0,
+            },
+        )
+        assert False
+    except Exception as e:
+        assert "Ordered mode in cloud without either" in str(e)
+
+
+def test_processing_threads(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    table_name = f"test_processing_threads_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    # A unique path is necessary for repeatable tests
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 10
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+        },
+    )
+
+    assert '"processing_threads_num":16' in node.query(
+        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
+    )
+
+    assert 16 == int(
+        node.query(
+            f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'processing_threads_num'"
+        )
+    )
+
+    total_values = generate_random_files(
+        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
+    )
+
+    create_mv(node, table_name, dst_table_name)
+
+    def get_count():
+        return int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+    expected_rows = 10
+    for _ in range(20):
+        if expected_rows == get_count():
+            break
+        time.sleep(1)
+
+    assert expected_rows == get_count()
+
+    assert node.contains_in_log(
+        f"StorageS3Queue (default.{table_name}): Using 16 processing threads"
+    )
+
+
+def test_alter_settings(started_cluster):
+    node1 = started_cluster.instances["node1"]
+    node2 = started_cluster.instances["node2"]
+
+    table_name = f"test_alter_settings_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 1000
+
+    node1.query("DROP DATABASE IF EXISTS r")
+    node2.query("DROP DATABASE IF EXISTS r")
+
+    node1.query(
+        f"CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/{table_name}', 'shard1', 'node1')"
+    )
+    node2.query(
+        f"CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/{table_name}', 'shard1', 'node2')"
+    )
+
+    create_table(
+        started_cluster,
+        node1,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "processing_threads_num": 10,
+            "loading_retries": 20,
+        },
+        database_name="r",
+    )
+
+    assert '"processing_threads_num":10' in node1.query(
+        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
+    )
+
+    assert '"loading_retries":20' in node1.query(
+        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
+    )
+
+    assert '"after_processing":"keep"' in node1.query(
+        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
+    )
+
+    total_values = generate_random_files(
+        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
+    )
+
+    create_mv(node1, f"r.{table_name}", dst_table_name)
+    create_mv(node2, f"r.{table_name}", dst_table_name)
+
+    def get_count():
+        return int(
+            node1.query(
+                f"SELECT count() FROM clusterAllReplicas(cluster, default.{dst_table_name})"
+            )
+        )
+
+    expected_rows = files_to_generate
+    for _ in range(20):
+        if expected_rows == get_count():
+            break
+        time.sleep(1)
+    assert expected_rows == get_count()
+
+    node1.query(
+        f"""
+        ALTER TABLE r.{table_name}
+        MODIFY SETTING processing_threads_num=5,
+        loading_retries=10,
+        after_processing='delete',
+        tracked_files_limit=50,
+        tracked_file_ttl_sec=10000,
+        polling_min_timeout_ms=222,
+        polling_max_timeout_ms=333,
+        polling_backoff_ms=111
+    """
+    )
+
+    int_settings = {
+        "processing_threads_num": 5,
+        "loading_retries": 10,
+        "tracked_files_ttl_sec": 10000,
+        "tracked_files_limit": 50,
+        "polling_min_timeout_ms": 222,
+        "polling_max_timeout_ms": 333,
+        "polling_backoff_ms": 111,
+    }
+    string_settings = {"after_processing": "delete"}
+
+    def with_keeper(setting):
+        return setting in {
+            "after_processing",
+            "loading_retries",
+            "processing_threads_num",
+            "tracked_files_limit",
+            "tracked_files_ttl_sec",
+        }
+
+    def check_int_settings(node, settings):
+        for setting, value in settings.items():
+            if with_keeper(setting):
+                assert f'"{setting}":{value}' in node.query(
+                    f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
+                )
+            if setting == "tracked_files_ttl_sec":
+                setting = "tracked_file_ttl_sec"
+            assert (
+                str(value)
+                == node.query(
+                    f"SELECT value FROM system.s3_queue_settings WHERE name = '{setting}' and table = '{table_name}'"
+                ).strip()
+            )
+
+    def check_string_settings(node, settings):
+        for setting, value in settings.items():
+            if with_keeper(setting):
+                assert f'"{setting}":"{value}"' in node.query(
+                    f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
+                )
+            assert (
+                str(value)
+                == node.query(
+                    f"SELECT value FROM system.s3_queue_settings WHERE name = '{setting}' and table = '{table_name}'"
+                ).strip()
+            )
+
+    for node in [node1, node2]:
+        check_int_settings(node, int_settings)
+        check_string_settings(node, string_settings)
+
+        node.restart_clickhouse()
+
+        check_int_settings(node, int_settings)
+        check_string_settings(node, string_settings)
+
+    node1.query(
+        f"""
+        ALTER TABLE r.{table_name} RESET SETTING after_processing, tracked_file_ttl_sec
+    """
+    )
+
+    int_settings = {
+        "processing_threads_num": 5,
+        "loading_retries": 10,
+        "tracked_files_ttl_sec": 0,
+        "tracked_files_limit": 50,
+    }
+    string_settings = {"after_processing": "keep"}
+
+    for node in [node1, node2]:
+        check_int_settings(node, int_settings)
+        check_string_settings(node, string_settings)
+
+        node.restart_clickhouse()
+        assert expected_rows == get_count()
+
+        check_int_settings(node, int_settings)
+        check_string_settings(node, string_settings)
