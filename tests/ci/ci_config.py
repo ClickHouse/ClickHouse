@@ -46,7 +46,13 @@ class CI:
                 JobNames.JEPSEN_KEEPER,
                 JobNames.JEPSEN_SERVER,
             ]
-        )
+        ),
+        WorkFlowNames.NIGHTLY: LabelConfig(
+            run_jobs=[
+                BuildNames.FUZZERS,
+                JobNames.LIBFUZZER_TEST,
+            ]
+        ),
     }  # type: Dict[str, LabelConfig]
 
     TAG_CONFIGS = {
@@ -81,7 +87,7 @@ class CI:
         BuildNames.PACKAGE_RELEASE: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.PACKAGE_RELEASE,
-                compiler="clang-18",
+                compiler="clang-19",
                 package_type="deb",
                 static_binary_name="amd64",
                 additional_pkgs=True,
@@ -90,7 +96,7 @@ class CI:
         BuildNames.PACKAGE_AARCH64: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.PACKAGE_AARCH64,
-                compiler="clang-18-aarch64",
+                compiler="clang-19-aarch64",
                 package_type="deb",
                 static_binary_name="aarch64",
                 additional_pkgs=True,
@@ -100,7 +106,7 @@ class CI:
         BuildNames.PACKAGE_AARCH64_ASAN: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.PACKAGE_AARCH64_ASAN,
-                compiler="clang-18-aarch64",
+                compiler="clang-19-aarch64",
                 sanitizer="address",
                 package_type="deb",
             ),
@@ -109,7 +115,7 @@ class CI:
         BuildNames.PACKAGE_ASAN: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.PACKAGE_ASAN,
-                compiler="clang-18",
+                compiler="clang-19",
                 sanitizer="address",
                 package_type="deb",
             ),
@@ -117,7 +123,7 @@ class CI:
         BuildNames.PACKAGE_UBSAN: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.PACKAGE_UBSAN,
-                compiler="clang-18",
+                compiler="clang-19",
                 sanitizer="undefined",
                 package_type="deb",
             ),
@@ -125,7 +131,7 @@ class CI:
         BuildNames.PACKAGE_TSAN: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.PACKAGE_TSAN,
-                compiler="clang-18",
+                compiler="clang-19",
                 sanitizer="thread",
                 package_type="deb",
             ),
@@ -133,7 +139,7 @@ class CI:
         BuildNames.PACKAGE_MSAN: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.PACKAGE_MSAN,
-                compiler="clang-18",
+                compiler="clang-19",
                 sanitizer="memory",
                 package_type="deb",
             ),
@@ -141,7 +147,7 @@ class CI:
         BuildNames.PACKAGE_DEBUG: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.PACKAGE_DEBUG,
-                compiler="clang-18",
+                compiler="clang-19",
                 debug_build=True,
                 package_type="deb",
                 sparse_checkout=True,  # Check that it works with at least one build, see also update-submodules.sh
@@ -150,7 +156,7 @@ class CI:
         BuildNames.PACKAGE_RELEASE_COVERAGE: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.PACKAGE_RELEASE_COVERAGE,
-                compiler="clang-18",
+                compiler="clang-19",
                 coverage=True,
                 package_type="deb",
             ),
@@ -158,14 +164,14 @@ class CI:
         BuildNames.BINARY_RELEASE: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.BINARY_RELEASE,
-                compiler="clang-18",
+                compiler="clang-19",
                 package_type="binary",
             ),
         ),
         BuildNames.BINARY_TIDY: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.BINARY_TIDY,
-                compiler="clang-18",
+                compiler="clang-19",
                 debug_build=True,
                 package_type="binary",
                 static_binary_name="debug-amd64",
@@ -177,7 +183,7 @@ class CI:
         BuildNames.BINARY_DARWIN: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.BINARY_DARWIN,
-                compiler="clang-18-darwin",
+                compiler="clang-19-darwin",
                 package_type="binary",
                 static_binary_name="macos",
             ),
@@ -185,14 +191,14 @@ class CI:
         BuildNames.BINARY_AARCH64: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.BINARY_AARCH64,
-                compiler="clang-18-aarch64",
+                compiler="clang-19-aarch64",
                 package_type="binary",
             ),
         ),
         BuildNames.BINARY_AARCH64_V80COMPAT: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.BINARY_AARCH64_V80COMPAT,
-                compiler="clang-18-aarch64-v80compat",
+                compiler="clang-19-aarch64-v80compat",
                 package_type="binary",
                 static_binary_name="aarch64v80compat",
                 comment="For ARMv8.1 and older",
@@ -201,7 +207,7 @@ class CI:
         BuildNames.BINARY_FREEBSD: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.BINARY_FREEBSD,
-                compiler="clang-18-freebsd",
+                compiler="clang-19-freebsd",
                 package_type="binary",
                 static_binary_name="freebsd",
             ),
@@ -209,7 +215,7 @@ class CI:
         BuildNames.BINARY_DARWIN_AARCH64: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.BINARY_DARWIN_AARCH64,
-                compiler="clang-18-darwin-aarch64",
+                compiler="clang-19-darwin-aarch64",
                 package_type="binary",
                 static_binary_name="macos-aarch64",
             ),
@@ -217,7 +223,7 @@ class CI:
         BuildNames.BINARY_PPC64LE: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.BINARY_PPC64LE,
-                compiler="clang-18-ppc64le",
+                compiler="clang-19-ppc64le",
                 package_type="binary",
                 static_binary_name="powerpc64le",
             ),
@@ -225,7 +231,7 @@ class CI:
         BuildNames.BINARY_AMD64_COMPAT: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.BINARY_AMD64_COMPAT,
-                compiler="clang-18-amd64-compat",
+                compiler="clang-19-amd64-compat",
                 package_type="binary",
                 static_binary_name="amd64compat",
                 comment="SSE2-only build",
@@ -234,7 +240,7 @@ class CI:
         BuildNames.BINARY_AMD64_MUSL: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.BINARY_AMD64_MUSL,
-                compiler="clang-18-amd64-musl",
+                compiler="clang-19-amd64-musl",
                 package_type="binary",
                 static_binary_name="amd64musl",
                 comment="Build with Musl",
@@ -243,7 +249,7 @@ class CI:
         BuildNames.BINARY_RISCV64: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.BINARY_RISCV64,
-                compiler="clang-18-riscv64",
+                compiler="clang-19-riscv64",
                 package_type="binary",
                 static_binary_name="riscv64",
             ),
@@ -251,7 +257,7 @@ class CI:
         BuildNames.BINARY_S390X: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.BINARY_S390X,
-                compiler="clang-18-s390x",
+                compiler="clang-19-s390x",
                 package_type="binary",
                 static_binary_name="s390x",
             ),
@@ -259,7 +265,7 @@ class CI:
         BuildNames.BINARY_LOONGARCH64: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.BINARY_LOONGARCH64,
-                compiler="clang-18-loongarch64",
+                compiler="clang-19-loongarch64",
                 package_type="binary",
                 static_binary_name="loongarch64",
             ),
@@ -267,7 +273,7 @@ class CI:
         BuildNames.FUZZERS: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.FUZZERS,
-                compiler="clang-18",
+                compiler="clang-19",
                 package_type="fuzzers",
             ),
             run_by_labels=[Tags.libFuzzer],
@@ -563,6 +569,8 @@ class CI:
                 include_paths=[
                     "./tests/queries/0_stateless/",
                     "./tests/docker_scripts/",
+                    "./tests/config/",
+                    "./tests/clickhouse-test",
                 ],
                 exclude_files=[".md"],
                 docker=["clickhouse/fasttest"],
