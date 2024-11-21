@@ -103,16 +103,19 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
 
     auto function_body_to_update = function_core_expression->children.at(1)->clone();
 
-    Aliases aliases;
-    QueryAliasesVisitor(aliases).visit(function_body_to_update);
+    if (context_.getSettingsRef()[Setting::skip_redundant_aliases_in_udf])
+    {
+        Aliases aliases;
+        QueryAliasesVisitor(aliases).visit(function_body_to_update);
 
-    /// Mark table ASTIdentifiers with not a column marker
-    MarkTableIdentifiersVisitor::Data identifiers_data{aliases};
-    MarkTableIdentifiersVisitor(identifiers_data).visit(function_body_to_update);
+        /// Mark table ASTIdentifiers with not a column marker
+        MarkTableIdentifiersVisitor::Data identifiers_data{aliases};
+        MarkTableIdentifiersVisitor(identifiers_data).visit(function_body_to_update);
 
-    /// Common subexpression elimination. Rewrite rules.
-    QueryNormalizer::Data normalizer_data(aliases, {}, true, context_->getSettingsRef(), true, false);
-    QueryNormalizer(normalizer_data).visit(function_body_to_update);
+        /// Common subexpression elimination. Rewrite rules.
+        QueryNormalizer::Data normalizer_data(aliases, {}, true, context_->getSettingsRef(), true, false);
+        QueryNormalizer(normalizer_data).visit(function_body_to_update);
+    }
 
     auto expression_list = std::make_shared<ASTExpressionList>();
     expression_list->children.emplace_back(std::move(function_body_to_update));

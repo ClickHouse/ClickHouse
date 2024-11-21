@@ -2251,6 +2251,48 @@ Result:
 ```
 )", 0) \
     \
+    DECLARE(Bool, skip_redundant_aliases_in_udf, false, R"(
+Redundant aliases are not used (substituted) in user-defined functions in order to simplify it's usage.
+
+Possible values:
+
+- 1 — The aliases are skipped (substituted) in UDFs.
+- 0 — The aliases are not skipped (substituted) in UDFs.
+
+**Example**
+
+The difference between enabled and disabled:
+
+Query:
+
+```sql
+SET skip_redundant_aliases_in_udf = 0;
+CREATE FUNCTION IF NOT EXISTS test_03274 AS ( x ) -> ((x + 1 as y, y + 2));
+
+EXPLAIN SYNTAX SELECT test_03274(4 + 2);
+```
+
+Result:
+
+```text
+SELECT ((4 + 2) + 1 AS y, y + 2)
+```
+
+Query:
+
+```sql
+SET skip_redundant_aliases_in_udf = 1;
+CREATE FUNCTION IF NOT EXISTS test_03274 AS ( x ) -> ((x + 1 as y, y + 2));
+
+EXPLAIN SYNTAX SELECT test_03274(4 + 2);
+```
+
+Result:
+
+```text
+SELECT ((4 + 2) + 1, ((4 + 2) + 1) + 2)
+```
+)", 0) \
     DECLARE(Bool, prefer_global_in_and_join, false, R"(
 Enables the replacement of `IN`/`JOIN` operators with `GLOBAL IN`/`GLOBAL JOIN`.
 
