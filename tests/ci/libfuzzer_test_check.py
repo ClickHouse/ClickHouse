@@ -292,7 +292,7 @@ def main():
                 and pr_info.head_ref == "master"
             ):
                 logging.info("Uploading corpus - running in master")
-                # upload_corpus(fuzzers_path)
+                upload_corpus(fuzzers_path)
             else:
                 logging.info("Not uploading corpus - running in PR")
         else:

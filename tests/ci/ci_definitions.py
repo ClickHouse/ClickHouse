@@ -123,6 +123,10 @@ class BuildNames(metaclass=WithIter):
     BINARY_S390X = "binary_s390x"
     BINARY_LOONGARCH64 = "binary_loongarch64"
     FUZZERS = "fuzzers"
+    FUZZERS_ASAN = "fuzzers_asan"
+    FUZZERS_UBSAN = "fuzzers_ubsan"
+    FUZZERS_TSAN = "fuzzers_tsan"
+    FUZZERS_MSAN = "fuzzers_msan"
 
 
 class JobNames(metaclass=WithIter):

@@ -278,6 +278,42 @@ class CI:
             ),
             run_by_labels=[Tags.libFuzzer],
         ),
+        BuildNames.FUZZERS_ASAN: CommonJobConfigs.BUILD.with_properties(
+            build_config=BuildConfig(
+                name=BuildNames.FUZZERS_ASAN,
+                compiler="clang-18",
+                sanitizer="address",
+                package_type="fuzzers",
+            ),
+            run_by_labels=[Tags.libFuzzer],
+        ),
+        BuildNames.FUZZERS_UBSAN: CommonJobConfigs.BUILD.with_properties(
+            build_config=BuildConfig(
+                name=BuildNames.FUZZERS_UBSAN,
+                compiler="clang-18",
+                sanitizer="undefined",
+                package_type="fuzzers",
+            ),
+            run_by_labels=[Tags.libFuzzer],
+        ),
+        BuildNames.FUZZERS_TSAN: CommonJobConfigs.BUILD.with_properties(
+            build_config=BuildConfig(
+                name=BuildNames.FUZZERS_TSAN,
+                compiler="clang-18",
+                sanitizer="thread",
+                package_type="fuzzers",
+            ),
+            run_by_labels=[Tags.libFuzzer],
+        ),
+        BuildNames.FUZZERS_MSAN: CommonJobConfigs.BUILD.with_properties(
+            build_config=BuildConfig(
+                name=BuildNames.FUZZERS_MSAN,
+                compiler="clang-18",
+                sanitizer="memory",
+                package_type="fuzzers",
+            ),
+            run_by_labels=[Tags.libFuzzer],
+        ),
         JobNames.BUILD_CHECK: CommonJobConfigs.BUILD_REPORT.with_properties(),
         JobNames.INSTALL_TEST_AMD: CommonJobConfigs.INSTALL_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE]
