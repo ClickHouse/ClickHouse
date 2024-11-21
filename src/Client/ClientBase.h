@@ -1,22 +1,35 @@
 #pragma once
 
-#include <string_view>
-#include "Common/NamePrompter.h"
-#include <Parsers/ASTCreateQuery.h>
-#include <Common/ProgressIndication.h>
-#include <Common/InterruptListener.h>
-#include <Common/ShellCommand.h>
-#include <Common/QueryFuzzer.h>
-#include <Common/Stopwatch.h>
-#include <Common/DNSResolver.h>
-#include <Core/ExternalTable.h>
-#include <Poco/Util/Application.h>
-#include <Interpreters/Context.h>
+
+#include <Client/ProgressTable.h>
 #include <Client/Suggest.h>
-#include <boost/program_options.hpp>
-#include <Storages/StorageFile.h>
-#include <Storages/SelectQueryInfo.h>
+#include <IO/WriteBuffer.h>
+#include <Common/DNSResolver.h>
+#include <Common/InterruptListener.h>
+#include <Common/ProgressIndication.h>
+#include <Common/QueryFuzzer.h>
+#include <Common/ShellCommand.h>
+#include <Common/Stopwatch.h>
+#include <Core/ExternalTable.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Poco/ConsoleChannel.h>
+#include <Poco/SimpleFileChannel.h>
+#include <Poco/SplitterChannel.h>
+#include <Poco/Util/Application.h>
+
+
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageFile.h>
+
+#include <boost/program_options.hpp>
+
+#include <atomic>
+#include <optional>
+#include <string_view>
+#include <string>
 
 namespace po = boost::program_options;
 
@@ -58,11 +71,19 @@ ProgressOption toProgressOption(std::string progress);
 std::istream& operator>> (std::istream & in, ProgressOption & progress);
 
 class InternalTextLogs;
+class TerminalKeystrokeInterceptor;
 class WriteBufferFromFileDescriptor;
 
-class ClientBase : public Poco::Util::Application, public IHints<2>
+/**
+ * The base class which encapsulates the core functionality of a client.
+ * Can be used in a standalone application (clickhouse-client or clickhouse-local),
+ * or be embedded into server.
+ * Always keep in mind that there can be several instances of this class within
+ * a process. Thus, it cannot keep its state in global shared variables or even use them.
+ * The best example - std::cin, std::cout and std::cerr.
+ */
+class ClientBase
 {
-
 public:
     using Arguments = std::vector<String>;
 
@@ -75,12 +96,11 @@ public:
         std::ostream & output_stream_ = std::cout,
         std::ostream & error_stream_ = std::cerr
     );
+    virtual ~ClientBase();
 
-    ~ClientBase() override;
+    bool tryStopQuery() { return query_interrupt_handler.tryStop(); }
+    void stopQuery() { query_interrupt_handler.stop(); }
 
-    void init(int argc, char ** argv);
-
-    std::vector<String> getAllRegisteredNames() const override { return cmd_options; }
     ASTPtr parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements);
 
 protected:
@@ -110,7 +130,7 @@ protected:
         ASTPtr parsed_query, std::optional<bool> echo_query_ = {}, bool report_error = false);
 
     static void adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, uint32_t max_parser_depth, uint32_t max_parser_backtracks);
-    static void setupSignalHandler();
+    virtual void setupSignalHandler() = 0;
 
     bool executeMultiQuery(const String & all_queries_text);
     MultiQueryProcessingStage analyzeMultiQueryText(
@@ -152,8 +172,6 @@ protected:
 
     void setInsertionTable(const ASTInsertQuery & insert_query);
 
-    void addMultiquery(std::string_view query, Arguments & common_arguments) const;
-
 private:
     void receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, bool partial_result_on_first_cancel);
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_);
@@ -186,14 +204,41 @@ private:
     String prompt() const;
 
     void resetOutput();
-    void parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments);
 
     void updateSuggest(const ASTPtr & ast);
 
     void initQueryIdFormats();
     bool addMergeTreeSettings(ASTCreateQuery & ast_create);
 
+    void startKeystrokeInterceptorIfExists();
+    void stopKeystrokeInterceptorIfExists();
+
 protected:
+
+    class QueryInterruptHandler : private boost::noncopyable
+    {
+    public:
+        /// Store how much interrupt signals can be before stopping the query
+        /// by default stop after the first interrupt signal.
+        void start(Int32 signals_before_stop = 1) { exit_after_signals.store(signals_before_stop); }
+
+        /// Set value not greater then 0 to mark the query as stopped.
+        void stop() { exit_after_signals.store(0); }
+
+        /// Return true if the query was stopped.
+        /// Query was stopped if it received at least "signals_before_stop" interrupt signals.
+        bool tryStop() { return exit_after_signals.fetch_sub(1) <= 0; }
+        bool cancelled() { return exit_after_signals.load() <= 0; }
+
+        /// Return how much interrupt signals remain before stop.
+        Int32 cancelled_status() { return exit_after_signals.load(); }
+
+    private:
+        std::atomic<Int32> exit_after_signals = 0;
+    };
+
+    QueryInterruptHandler query_interrupt_handler;
+
     static bool isSyncInsertWithData(const ASTInsertQuery & insert_query, const ContextPtr & context);
     bool processMultiQueryFromFile(const String & file_name);
 
@@ -202,17 +247,25 @@ protected:
     /// Adjust some settings after command line options and config had been processed.
     void adjustSettings();
 
+    /// Initializes the client context.
+    void initClientContext();
+
     void setDefaultFormatsAndCompressionFromConfiguration();
 
-    void initTTYBuffer(ProgressOption progress);
+    void initTTYBuffer(ProgressOption progress_option, ProgressOption progress_table_option);
+    void initKeystrokeInterceptor();
 
     /// Should be one of the first, to be destroyed the last,
     /// since other members can use them.
     SharedContextHolder shared_context;
     ContextMutablePtr global_context;
 
+    /// Client context is a context used only by the client to parse queries, process query parameters and to connect to clickhouse-server.
+    ContextMutablePtr client_context;
+
+    std::unique_ptr<TerminalKeystrokeInterceptor> keystroke_interceptor;
+
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.
-    bool is_multiquery = false;
     bool delayed_interactive = false;
 
     bool echo_queries = false; /// Print queries before execution in batch mode.
@@ -225,7 +278,6 @@ protected:
     std::vector<String> queries; /// Queries passed via '--query'
     std::vector<String> queries_files; /// If not empty, queries will be read from these files
     std::vector<String> interleave_queries_files; /// If not empty, run queries from these files before processing every file from 'queries_files'.
-    std::vector<String> cmd_options;
 
     bool stdin_is_a_tty = false; /// stdin is a terminal.
     bool stdout_is_a_tty = false; /// stdout is a terminal.
@@ -263,7 +315,7 @@ protected:
     /// Buffer that reads from stdin in batch mode.
     ReadBufferFromFileDescriptor std_in;
     /// Console output.
-    WriteBufferFromFileDescriptor std_out;
+    AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor> std_out;
     std::unique_ptr<ShellCommand> pager_cmd;
 
     /// The user can specify to redirect query output to a file.
@@ -278,9 +330,11 @@ protected:
     /// /dev/tty if accessible or std::cerr - for progress bar.
     /// We prefer to output progress bar directly to tty to allow user to redirect stdout and stderr and still get the progress indication.
     std::unique_ptr<WriteBufferFromFileDescriptor> tty_buf;
+    std::mutex tty_mutex;
 
     String home_path;
     String history_file; /// Path to a file containing command history.
+    UInt32 history_max_entries; /// Maximum number of entries in the history file.
 
     String current_profile;
 
@@ -290,7 +344,11 @@ protected:
     String server_display_name;
 
     ProgressIndication progress_indication;
+    ProgressTable progress_table;
     bool need_render_progress = true;
+    bool need_render_progress_table = true;
+    bool progress_table_toggle_enabled = true;
+    std::atomic_bool progress_table_toggle_on = false;
     bool need_render_profile_events = true;
     bool written_first_block = false;
     size_t processed_rows = 0; /// How many rows have been read or written.
@@ -342,9 +400,6 @@ protected:
     std::atomic_bool cancelled_printed = false;
 
     /// Unpacked descriptors and streams for the ease of use.
-    int in_fd = STDIN_FILENO;
-    int out_fd = STDOUT_FILENO;
-    int err_fd = STDERR_FILENO;
     std::istream & input_stream;
     std::ostream & output_stream;
     std::ostream & error_stream;

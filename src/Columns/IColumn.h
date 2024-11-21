@@ -49,6 +49,40 @@ struct EqualRange
 
 using EqualRanges = std::vector<EqualRange>;
 
+/// A checkpoint that contains size of column and all its subcolumns.
+/// It can be used to rollback column to the previous state, for example
+/// after failed parsing when column may be in inconsistent state.
+struct ColumnCheckpoint
+{
+    size_t size;
+
+    explicit ColumnCheckpoint(size_t size_) : size(size_) {}
+    virtual ~ColumnCheckpoint() = default;
+};
+
+using ColumnCheckpointPtr = std::shared_ptr<ColumnCheckpoint>;
+using ColumnCheckpoints = std::vector<ColumnCheckpointPtr>;
+
+struct ColumnCheckpointWithNested : public ColumnCheckpoint
+{
+    ColumnCheckpointWithNested(size_t size_, ColumnCheckpointPtr nested_)
+        : ColumnCheckpoint(size_), nested(std::move(nested_))
+    {
+    }
+
+    ColumnCheckpointPtr nested;
+};
+
+struct ColumnCheckpointWithMultipleNested : public ColumnCheckpoint
+{
+    ColumnCheckpointWithMultipleNested(size_t size_, ColumnCheckpoints nested_)
+        : ColumnCheckpoint(size_), nested(std::move(nested_))
+    {
+    }
+
+    ColumnCheckpoints nested;
+};
+
 /// Declares interface to store columns in memory.
 class IColumn : public COW<IColumn>
 {
@@ -179,7 +213,7 @@ public:
 
     /// Appends n-th element from other column with the same type.
     /// Is used in merge-sort and merges. It could be implemented in inherited classes more optimally than default implementation.
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     virtual void insertFrom(const IColumn & src, size_t n);
 #else
     void insertFrom(const IColumn & src, size_t n)
@@ -191,7 +225,7 @@ public:
 
     /// Appends range of elements from other column with the same type.
     /// Could be used to concatenate columns.
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     virtual void insertRangeFrom(const IColumn & src, size_t start, size_t length) = 0;
 #else
     void insertRangeFrom(const IColumn & src, size_t start, size_t length)
@@ -202,7 +236,7 @@ public:
 #endif
 
     /// Appends one element from other column with the same type multiple times.
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     virtual void insertManyFrom(const IColumn & src, size_t position, size_t length)
     {
         for (size_t i = 0; i < length; ++i)
@@ -300,10 +334,10 @@ public:
     ///  passed bytes to hash must identify sequence of values unambiguously.
     virtual void updateHashWithValue(size_t n, SipHash & hash) const = 0;
 
-    /// Update hash function value. Hash is calculated for each element.
+    /// Get hash function value. Hash is calculated for each element.
     /// It's a fast weak hash function. Mainly need to scatter data between threads.
     /// WeakHash32 must have the same size as column.
-    virtual void updateWeakHash32(WeakHash32 & hash) const = 0;
+    virtual WeakHash32 getWeakHash32() const = 0;
 
     /// Update state of hash with all column.
     virtual void updateHashFast(SipHash & hash) const = 0;
@@ -345,7 +379,7 @@ public:
       *
       * For non Nullable and non floating point types, nan_direction_hint is ignored.
       */
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     [[nodiscard]] virtual int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const = 0;
 #else
     [[nodiscard]] int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
@@ -475,6 +509,18 @@ public:
     /// It affects performance only (not correctness).
     virtual void reserve(size_t /*n*/) {}
 
+    /// Returns the number of elements allocated in reserve.
+    virtual size_t capacity() const { return size(); }
+
+    /// Reserve memory before squashing all specified source columns into this column.
+    virtual void prepareForSquashing(const std::vector<Ptr> & source_columns)
+    {
+        size_t new_size = size();
+        for (const auto & source_column : source_columns)
+            new_size += source_column->size();
+        reserve(new_size);
+    }
+
     /// Requests the removal of unused capacity.
     /// It is a non-binding request to reduce the capacity of the underlying container to its size.
     virtual void shrinkToFit() {}
@@ -496,6 +542,17 @@ public:
     /// Make memory region readonly with mprotect if it is large enough.
     /// The operation is slow and performed only for debug builds.
     virtual void protect() {}
+
+    /// Returns checkpoint of current state of column.
+    virtual ColumnCheckpointPtr getCheckpoint() const { return std::make_shared<ColumnCheckpoint>(size()); }
+
+    /// Updates the checkpoint with current state. It is used to avoid extra allocations in 'getCheckpoint'.
+    virtual void updateCheckpoint(ColumnCheckpoint & checkpoint) const { checkpoint.size = size(); }
+
+    /// Rollbacks column to the checkpoint.
+    /// Unlike 'popBack' this method should work correctly even if column has invalid state.
+    /// Sizes of columns in checkpoint must be less or equal than current size.
+    virtual void rollback(const ColumnCheckpoint & checkpoint) { popBack(size() - checkpoint.size); }
 
     /// If the column contains subcolumns (such as Array, Nullable, etc), do callback on them.
     /// Shallow: doesn't do recursive calls; don't do call for itself.
@@ -578,6 +635,9 @@ public:
 
     /// Checks if column has dynamic subcolumns.
     virtual bool hasDynamicStructure() const { return false; }
+
+    /// For columns with dynamic subcolumns checks if columns have equal dynamic structure.
+    [[nodiscard]] virtual bool dynamicStructureEquals(const IColumn & rhs) const { return structureEquals(rhs); }
     /// For columns with dynamic subcolumns this method takes dynamic structure from source columns
     /// and creates proper resulting dynamic structure in advance for merge of these source columns.
     virtual void takeDynamicStructureFromSourceColumns(const std::vector<Ptr> & /*source_columns*/) {}
@@ -667,7 +727,7 @@ protected:
         Sort full_sort,
         PartialSort partial_sort) const;
 
-#if defined(ABORT_ON_LOGICAL_ERROR)
+#if defined(DEBUG_OR_SANITIZER_BUILD)
     virtual void doInsertFrom(const IColumn & src, size_t n);
 
     virtual void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) = 0;

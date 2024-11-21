@@ -1,5 +1,7 @@
 #include "ODBCBridge.h"
 
+#include <iostream>
+
 int mainEntryClickHouseODBCBridge(int argc, char ** argv)
 {
     DB::ODBCBridge app;
@@ -11,7 +13,7 @@ int mainEntryClickHouseODBCBridge(int argc, char ** argv)
     {
         std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
         auto code = DB::getCurrentExceptionCode();
-        return code ? code : 1;
+        return static_cast<UInt8>(code) ? code : 1;
     }
 }
 
@@ -25,7 +27,7 @@ std::string ODBCBridge::bridgeName() const
 
 ODBCBridge::HandlerFactoryPtr ODBCBridge::getHandlerFactoryPtr(ContextPtr context) const
 {
-    return std::make_shared<ODBCBridgeHandlerFactory>("ODBCRequestHandlerFactory-factory", keep_alive_timeout, context);
+    return std::make_shared<ODBCBridgeHandlerFactory>("ODBCRequestHandlerFactory-factory", context);
 }
 
 }

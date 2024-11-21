@@ -1,16 +1,33 @@
 // Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
-/// This file was edited for ClickHouse.
 
 #include <memory>
 
 #include "rocksdb/version.h"
+#include "rocksdb/utilities/object_registry.h"
 #include "util/string_util.h"
 
 // The build script may replace these values with real values based
 // on whether or not GIT is available and the platform settings
-static const std::string rocksdb_build_git_sha  = "rocksdb_build_git_sha:0";
-static const std::string rocksdb_build_git_tag = "rocksdb_build_git_tag:master";
-static const std::string rocksdb_build_date = "rocksdb_build_date:2000-01-01";
+static const std::string rocksdb_build_git_sha  = "rocksdb_build_git_sha:72438a678872544809393b831c7273794c074215";
+static const std::string rocksdb_build_git_tag = "rocksdb_build_git_tag:main";
+#define HAS_GIT_CHANGES 0
+#if HAS_GIT_CHANGES == 0
+// If HAS_GIT_CHANGES is 0, the GIT date is used.
+// Use the time the branch/tag was last modified
+static const std::string rocksdb_build_date = "rocksdb_build_date:2024-07-12 16:01:57";
+#else
+// If HAS_GIT_CHANGES is > 0, the branch/tag has modifications.
+// Use the time the build was created.
+static const std::string rocksdb_build_date = "rocksdb_build_date:2024-07-13 17:15:50";
+#endif
+
+extern "C" {
+
+} // extern "C"
+
+std::unordered_map<std::string, ROCKSDB_NAMESPACE::RegistrarFunc> ROCKSDB_NAMESPACE::ObjectRegistry::builtins_ = {
+  
+};
 
 namespace ROCKSDB_NAMESPACE {
 static void AddProperty(std::unordered_map<std::string, std::string> *props, const std::string& name) {
@@ -39,12 +56,12 @@ const std::unordered_map<std::string, std::string>& GetRocksBuildProperties() {
 }
 
 std::string GetRocksVersionAsString(bool with_patch) {
-  std::string version = ToString(ROCKSDB_MAJOR) + "." + ToString(ROCKSDB_MINOR);
+  std::string version = std::to_string(ROCKSDB_MAJOR) + "." + std::to_string(ROCKSDB_MINOR);
   if (with_patch) {
-    return version + "." + ToString(ROCKSDB_PATCH);
+    return version + "." + std::to_string(ROCKSDB_PATCH);
   } else {
     return version;
-  }
+ }
 }
 
 std::string GetRocksBuildInfoAsString(const std::string& program, bool verbose) {

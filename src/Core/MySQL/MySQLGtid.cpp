@@ -24,9 +24,7 @@ void GTIDSet::tryMerge(size_t i)
 void GTIDSets::parse(String gtid_format)
 {
     if (gtid_format.empty())
-    {
         return;
-    }
 
     std::vector<String> gtid_sets;
     boost::split(gtid_sets, gtid_format, [](char c) { return c == ','; });

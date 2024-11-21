@@ -12,6 +12,8 @@
 namespace DB
 {
 
+struct SelectQueryInfo;
+
 /** Join clause represent single JOIN ON section clause.
   * Join clause consists of JOIN keys and conditions.
   *
@@ -182,15 +184,15 @@ struct JoinClausesAndActions
     /// Join clauses. Actions dag nodes point into join_expression_actions.
     JoinClauses join_clauses;
     /// Whole JOIN ON section expressions
-    ActionsDAGPtr left_join_tmp_expression_actions;
-    ActionsDAGPtr right_join_tmp_expression_actions;
+    ActionsDAG left_join_tmp_expression_actions;
+    ActionsDAG right_join_tmp_expression_actions;
     /// Left join expressions actions
-    ActionsDAGPtr left_join_expressions_actions;
+    ActionsDAG left_join_expressions_actions;
     /// Right join expressions actions
-    ActionsDAGPtr right_join_expressions_actions;
+    ActionsDAG right_join_expressions_actions;
     /// Originally used for inequal join. it's the total join expression.
     /// If there is no inequal join conditions, it's null.
-    ActionsDAGPtr mixed_join_expressions_actions;
+    std::optional<ActionsDAG> mixed_join_expressions_actions;
 };
 
 /** Calculate join clauses and actions for JOIN ON section.
@@ -218,10 +220,11 @@ std::optional<bool> tryExtractConstantFromJoinNode(const QueryTreeNodePtr & join
   * Table join structure can be modified during JOIN algorithm choosing for special JOIN algorithms.
   * For example JOIN with Dictionary engine, or JOIN with JOIN engine.
   */
-std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_join,
+std::shared_ptr<IJoin> chooseJoinAlgorithm(
+    std::shared_ptr<TableJoin> & table_join,
     const QueryTreeNodePtr & right_table_expression,
     const Block & left_table_expression_header,
     const Block & right_table_expression_header,
-    const PlannerContextPtr & planner_context);
-
+    const PlannerContextPtr & planner_context,
+    const SelectQueryInfo & select_query_info);
 }

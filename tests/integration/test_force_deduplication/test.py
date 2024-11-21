@@ -2,6 +2,7 @@
 # pylint: disable=redefined-outer-name
 
 import pytest
+
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
@@ -29,6 +30,8 @@ def get_counts():
 
 
 def test_basic(start_cluster):
+    old_src, old_a, old_b, old_c = 0, 0, 0, 0
+
     node.query(
         """
         CREATE TABLE test (A Int64) ENGINE = ReplicatedMergeTree ('/clickhouse/test/tables/test','1') ORDER BY tuple();
@@ -39,6 +42,15 @@ def test_basic(start_cluster):
         INSERT INTO test values(999);
         """
     )
+
+    src, a, b, c = get_counts()
+    assert src == old_src + 1
+    assert a == old_a + 2
+    assert b == old_b + 2
+    assert c == old_c + 2
+    old_src, old_a, old_b, old_c = src, a, b, c
+
+    # that issert fails on test_mv_b due to partitions by A
     with pytest.raises(QueryRuntimeException):
         node.query(
             """
@@ -46,22 +58,23 @@ def test_basic(start_cluster):
             INSERT INTO test SELECT number FROM numbers(10);
             """
         )
+    src, a, b, c = get_counts()
+    assert src == old_src + 10
+    assert a == old_a + 10
+    assert b == old_b
+    assert c == old_c + 10
+    old_src, old_a, old_b, old_c = src, a, b, c
 
-    old_src, old_a, old_b, old_c = get_counts()
-    # number of rows in test_mv_a and test_mv_c depends on order of inserts into views
-    assert old_src == 11
-    assert old_a in (1, 11)
-    assert old_b == 1
-    assert old_c in (1, 11)
-
+    # deduplication only for src table
     node.query("INSERT INTO test SELECT number FROM numbers(10)")
     src, a, b, c = get_counts()
-    # no changes because of deduplication in source table
     assert src == old_src
-    assert a == old_a
-    assert b == old_b
-    assert c == old_c
+    assert a == old_a + 10
+    assert b == old_b + 10
+    assert c == old_c + 10
+    old_src, old_a, old_b, old_c = src, a, b, c
 
+    # deduplication for MV tables does not work, because previous inserts have not written their deduplications tokens to the log due to `deduplicate_blocks_in_dependent_materialized_views = 0`.
     node.query(
         """
         SET deduplicate_blocks_in_dependent_materialized_views = 1;
@@ -69,11 +82,27 @@ def test_basic(start_cluster):
         """
     )
     src, a, b, c = get_counts()
-    assert src == 11
-    assert a == old_a + 10  # first insert could be succesfull with disabled dedup
-    assert b == 11
+    assert src == old_src
+    assert a == old_a + 10
+    assert b == old_b + 10
     assert c == old_c + 10
+    old_src, old_a, old_b, old_c = src, a, b, c
 
+    # deduplication for all the tables
+    node.query(
+        """
+        SET deduplicate_blocks_in_dependent_materialized_views = 1;
+        INSERT INTO test SELECT number FROM numbers(10);
+        """
+    )
+    src, a, b, c = get_counts()
+    assert src == old_src
+    assert a == old_a
+    assert b == old_b
+    assert c == old_c
+    old_src, old_a, old_b, old_c = src, a, b, c
+
+    # that issert fails on test_mv_b due to partitions by A, it is an uniq data which is not deduplicated
     with pytest.raises(QueryRuntimeException):
         node.query(
             """
@@ -82,16 +111,23 @@ def test_basic(start_cluster):
             INSERT INTO test SELECT number FROM numbers(100,10);
             """
         )
+    src, a, b, c = get_counts()
+    assert src == old_src + 10
+    assert a == old_a + 10
+    assert b == old_b
+    assert c == old_c + 10
+    old_src, old_a, old_b, old_c = src, a, b, c
 
+    # deduplication for all tables, except test_mv_b. For test_mv_b it is an uniq data which is not deduplicated due to exception at previous insert
     node.query(
         """
         SET deduplicate_blocks_in_dependent_materialized_views = 1;
         INSERT INTO test SELECT number FROM numbers(100,10);
         """
     )
-
     src, a, b, c = get_counts()
-    assert src == 21
-    assert a == old_a + 20
-    assert b == 21
-    assert c == old_c + 20
+    assert src == old_src
+    assert a == old_a
+    assert b == old_b + 10
+    assert c == old_c
+    old_src, old_a, old_b, old_c = src, a, b, c

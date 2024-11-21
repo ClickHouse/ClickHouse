@@ -141,31 +141,32 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
                 reader,
                 params.context,
                 params.is_internal_backup,
-                /* use_same_s3_credentials_for_base_backup*/ false);
+                /* use_same_s3_credentials_for_base_backup*/ false,
+                params.use_same_password_for_base_backup);
         }
-        else
-        {
-            auto writer = std::make_shared<BackupWriterAzureBlobStorage>(
-                connection_params,
-                blob_path,
-                params.allow_azure_native_copy,
-                params.read_settings,
-                params.write_settings,
-                params.context,
-                params.azure_attempt_to_create_container);
 
-            return std::make_unique<BackupImpl>(
-                params.backup_info,
-                archive_params,
-                params.base_backup_info,
-                writer,
-                params.context,
-                params.is_internal_backup,
-                params.backup_coordination,
-                params.backup_uuid,
-                params.deduplicate_files,
-                /* use_same_s3_credentials_for_base_backup */ false);
-        }
+        auto writer = std::make_shared<BackupWriterAzureBlobStorage>(
+            connection_params,
+            blob_path,
+            params.allow_azure_native_copy,
+            params.read_settings,
+            params.write_settings,
+            params.context,
+            params.azure_attempt_to_create_container);
+
+        return std::make_unique<BackupImpl>(
+            params.backup_info,
+            archive_params,
+            params.base_backup_info,
+            writer,
+            params.context,
+            params.is_internal_backup,
+            params.backup_coordination,
+            params.backup_uuid,
+            params.deduplicate_files,
+            /* use_same_s3_credentials_for_base_backup */ false,
+            params.use_same_password_for_base_backup);
+
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "AzureBlobStorage support is disabled");
 #endif

@@ -27,18 +27,12 @@ public:
         }
 
         ExceptionKeepingTransform::work();
-        if (finish_chunk)
-        {
-            data.chunk = std::move(finish_chunk);
-            ready_output = true;
-        }
     }
 
 protected:
     void onConsume(Chunk chunk) override
     {
-        if (auto res_chunk = DB::Squashing::squash(std::move(chunk)))
-            cur_chunk.setColumns(res_chunk.getColumns(), res_chunk.getNumRows());
+        cur_chunk = Squashing::squash(std::move(chunk));
     }
 
     GenerateResult onGenerate() override
@@ -48,16 +42,10 @@ protected:
         res.is_done = true;
         return res;
     }
-    void onFinish() override
-    {
-        auto chunk = DB::Squashing::squash({});
-        finish_chunk.setColumns(chunk.getColumns(), chunk.getNumRows());
-    }
 
 private:
     Squashing squashing;
     Chunk cur_chunk;
-    Chunk finish_chunk;
 };
 
 }

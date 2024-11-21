@@ -26,7 +26,10 @@ RUN apt-get update \
         zstd \
         --yes --no-install-recommends \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/* \
+    && groupadd --system --gid 1000 clickhouse \
+    && useradd --system --gid 1000 --uid 1000 -m clickhouse
+# ^ For some reason, groupadd and useradd are needed for tests with 'expect', but I don't know, why.
 
 COPY requirements.txt /
 RUN pip3 install --no-cache-dir -r /requirements.txt
@@ -80,7 +83,7 @@ RUN arch=${TARGETARCH:-amd64} \
 
 # Give suid to gdb to grant it attach permissions
 # chmod 777 to make the container user independent
-RUN chmod u+s /usr/bin/gdb \
+RUN chmod u+s /opt/gdb/bin/gdb \
   && mkdir -p /var/lib/clickhouse \
   && chmod 777 /var/lib/clickhouse
 
@@ -90,6 +93,3 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 ENV COMMIT_SHA=''
 ENV PULL_REQUEST_NUMBER=''
 ENV COPY_CLICKHOUSE_BINARY_TO_OUTPUT=0
-
-COPY run.sh /
-CMD ["/bin/bash", "/run.sh"]

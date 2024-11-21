@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2120
 
-# Don't check for ODR violation, since we may test shared build with ASAN
-export ASAN_OPTIONS=detect_odr_violation=0
-
 # If ClickHouse was built with coverage - dump the coverage information at exit
 # (in other cases this environment variable has no effect)
 export CLICKHOUSE_WRITE_COVERAGE="coverage"
@@ -132,7 +129,7 @@ export CLICKHOUSE_URL_INTERSERVER=${CLICKHOUSE_URL_INTERSERVER:="${CLICKHOUSE_PO
 export CLICKHOUSE_CURL_COMMAND=${CLICKHOUSE_CURL_COMMAND:="curl"}
 # The queries in CI are prone to sudden delays, and we often don't check for curl
 # errors, so it makes sense to set a relatively generous timeout.
-export CLICKHOUSE_CURL_TIMEOUT=${CLICKHOUSE_CURL_TIMEOUT:="60"}
+export CLICKHOUSE_CURL_TIMEOUT=${CLICKHOUSE_CURL_TIMEOUT:="120"}
 export CLICKHOUSE_CURL=${CLICKHOUSE_CURL:="${CLICKHOUSE_CURL_COMMAND} -q -s --max-time ${CLICKHOUSE_CURL_TIMEOUT}"}
 export CLICKHOUSE_TMP=${CLICKHOUSE_TMP:="."}
 mkdir -p ${CLICKHOUSE_TMP}
@@ -178,7 +175,7 @@ function random_str()
     tr -cd '[:lower:]' < /dev/urandom | head -c"$n"
 }
 
-function query_with_retry
+function query_with_retry()
 {
     local query="$1" && shift
 
@@ -196,4 +193,21 @@ function query_with_retry
         fi
     done
     echo "Query '$query' failed with '$result'"
+}
+
+function run_with_error()
+{
+    local cmd="$1"; shift
+
+    local stdout_tmp=""
+    stdout_tmp=$(mktemp -p ${CLICKHOUSE_TMP})
+    local stderr_tmp=""
+    stderr_tmp=$(mktemp -p ${CLICKHOUSE_TMP})
+
+    local retval=0
+    $cmd "$@" 1>${stdout_tmp} 2>${stderr_tmp} || retval="$?"
+
+    echo "${retval}" "${stdout_tmp}" "${stderr_tmp}"
+
+    return 0
 }

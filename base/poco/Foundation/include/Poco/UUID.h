@@ -19,6 +19,7 @@
 
 
 #include "Poco/Foundation.h"
+#include <Poco/Types.h>
 
 
 namespace Poco
@@ -134,6 +135,12 @@ public:
 
     static const UUID & x500();
     /// Returns the namespace identifier for the X500 namespace.
+
+    UInt32 getTimeLow() const { return _timeLow; }
+    UInt16 getTimeMid() const { return _timeMid; }
+    UInt16 getTimeHiAndVersion() const { return _timeHiAndVersion; }
+    UInt16 getClockSeq() const { return _clockSeq; }
+    std::array<UInt8, 6> getNode() const { return std::array<UInt8, 6>{_node[0], _node[1], _node[2], _node[3], _node[4], _node[5]}; }
 
 protected:
     UUID(UInt32 timeLow, UInt32 timeMid, UInt32 timeHiAndVersion, UInt16 clockSeq, UInt8 node[]);

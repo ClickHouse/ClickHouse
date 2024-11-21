@@ -1,3 +1,4 @@
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -23,6 +24,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool cast_keep_nullable;
+}
 
 namespace ErrorCodes
 {
@@ -41,10 +46,7 @@ public:
         return std::make_shared<FunctionCastOrDefault>(context);
     }
 
-    explicit FunctionCastOrDefault(ContextPtr context_)
-        : keep_nullable(context_->getSettingsRef().cast_keep_nullable)
-    {
-    }
+    explicit FunctionCastOrDefault(ContextPtr context_) : keep_nullable(context_->getSettingsRef()[Setting::cast_keep_nullable]) { }
 
     String getName() const override { return name; }
 

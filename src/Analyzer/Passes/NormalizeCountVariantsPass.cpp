@@ -7,11 +7,16 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/Utils.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypesNumber.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool optimize_normalize_count_variants;
+}
 
 namespace
 {
@@ -24,7 +29,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_normalize_count_variants)
+        if (!getSettings()[Setting::optimize_normalize_count_variants])
             return;
 
         auto * function_node = node->as<FunctionNode>();
@@ -53,7 +58,7 @@ public:
         }
         else if (function_node->getFunctionName() == "sum" &&
             first_argument_constant_literal.getType() == Field::Types::UInt64 &&
-            first_argument_constant_literal.get<UInt64>() == 1)
+            first_argument_constant_literal.safeGet<UInt64>() == 1)
         {
             function_node->getArguments().getNodes().clear();
             resolveAggregateFunctionNodeByName(*function_node, "count");

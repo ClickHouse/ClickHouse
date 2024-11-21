@@ -119,6 +119,8 @@ public:
 
     void resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, ContextPtr context);
 
+    void resolveConstantExpression(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, ContextPtr context);
+
 private:
     /// Utility functions
 
@@ -138,7 +140,8 @@ private:
         const ProjectionName & sort_expression_projection_name,
         const ProjectionName & fill_from_expression_projection_name,
         const ProjectionName & fill_to_expression_projection_name,
-        const ProjectionName & fill_step_expression_projection_name);
+        const ProjectionName & fill_step_expression_projection_name,
+        const ProjectionName & fill_staleness_expression_projection_name);
 
     QueryTreeNodePtr tryGetLambdaFromSQLUserDefinedFunctions(const std::string & function_name, ContextPtr context);
 
@@ -217,7 +220,11 @@ private:
 
     ProjectionNames resolveSortNodeList(QueryTreeNodePtr & sort_node_list, IdentifierResolveScope & scope);
 
+    void validateSortingKeyType(const DataTypePtr & sorting_key_type, const IdentifierResolveScope & scope) const;
+
     void resolveGroupByNode(QueryNode & query_node_typed, IdentifierResolveScope & scope);
+
+    void validateGroupByKeyType(const DataTypePtr & group_by_key_type, const IdentifierResolveScope & scope) const;
 
     void resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpolate_node_list, IdentifierResolveScope & scope);
 

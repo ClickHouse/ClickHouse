@@ -3,6 +3,7 @@
 import csv
 import logging
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -17,6 +18,18 @@ from pr_info import PRInfo
 from report import ERROR, JobReport, TestResults, read_test_results
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
+
+
+class SensitiveFormatter(logging.Formatter):
+    @staticmethod
+    def _filter(s):
+        return re.sub(
+            r"(.*)(AZURE_CONNECTION_STRING.*\')(.*)", r"\1AZURE_CONNECTION_STRING\3", s
+        )
+
+    def format(self, record):
+        original = logging.Formatter.format(self, record)
+        return self._filter(original)
 
 
 def get_additional_envs(check_name: str) -> List[str]:
@@ -44,9 +57,15 @@ def get_run_command(
     additional_envs: List[str],
     ci_logs_args: str,
     image: DockerImage,
+    upgrade_check: bool,
 ) -> str:
     envs = [f"-e {e}" for e in additional_envs]
     env_str = " ".join(envs)
+
+    if upgrade_check:
+        run_script = "/repo/tests/docker_scripts/upgrade_runner.sh"
+    else:
+        run_script = "/repo/tests/docker_scripts/stress_runner.sh"
 
     cmd = (
         "docker run --cap-add=SYS_PTRACE "
@@ -57,8 +76,8 @@ def get_run_command(
         f"{ci_logs_args}"
         f"--volume={build_path}:/package_folder "
         f"--volume={result_path}:/test_output "
-        f"--volume={repo_tests_path}:/usr/share/clickhouse-test "
-        f"--volume={server_log_path}:/var/log/clickhouse-server {env_str} {image} "
+        f"--volume={repo_tests_path}/..:/repo "
+        f"--volume={server_log_path}:/var/log/clickhouse-server {env_str} {image} {run_script}"
     )
 
     return cmd
@@ -115,8 +134,11 @@ def process_results(
     return state, description, test_results, additional_files
 
 
-def run_stress_test(docker_image_name: str) -> None:
+def run_stress_test(upgrade_check: bool = False) -> None:
     logging.basicConfig(level=logging.INFO)
+    for handler in logging.root.handlers:
+        # pylint: disable=protected-access
+        handler.setFormatter(SensitiveFormatter(handler.formatter._fmt))  # type: ignore
 
     stopwatch = Stopwatch()
     temp_path = Path(TEMP_PATH)
@@ -132,7 +154,7 @@ def run_stress_test(docker_image_name: str) -> None:
 
     pr_info = PRInfo()
 
-    docker_image = pull_image(get_docker_image(docker_image_name))
+    docker_image = pull_image(get_docker_image("clickhouse/stress-test"))
 
     packages_path = temp_path / "packages"
     packages_path.mkdir(parents=True, exist_ok=True)
@@ -161,6 +183,7 @@ def run_stress_test(docker_image_name: str) -> None:
         additional_envs,
         ci_logs_args,
         docker_image,
+        upgrade_check,
     )
     logging.info("Going to run stress test: %s", run_command)
 
@@ -192,4 +215,4 @@ def run_stress_test(docker_image_name: str) -> None:
 
 
 if __name__ == "__main__":
-    run_stress_test("clickhouse/stress-test")
+    run_stress_test()

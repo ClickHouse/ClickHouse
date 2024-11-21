@@ -39,9 +39,9 @@ public:
     ~TestKeeper() override;
 
     bool isExpired() const override { return expired; }
-    Int8 getConnectedNodeIdx() const override { return 0; }
+    std::optional<int8_t> getConnectedNodeIdx() const override { return 0; }
     String getConnectedHostPort() const override { return "TestKeeper:0000"; }
-    int32_t getConnectionXid() const override { return 0; }
+    int64_t getConnectionXid() const override { return 0; }
     int64_t getSessionID() const override { return 0; }
 
 
@@ -57,6 +57,11 @@ public:
             const String & path,
             int32_t version,
             RemoveCallback callback) override;
+
+    void removeRecursive(
+        const String & path,
+        uint32_t remove_nodes_limit,
+        RemoveRecursiveCallback callback) override;
 
     void exists(
             const String & path,

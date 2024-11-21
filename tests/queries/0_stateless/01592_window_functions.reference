@@ -79,16 +79,3 @@ iPhone	900	Smartphone	500	500
 Kindle Fire	150	Tablet	150	350
 Samsung Galaxy Tab	200	Tablet	175	350
 iPad	700	Tablet	350	350
----- Q8 ----
-Lenovo Thinkpad	Laptop	700	1	0
-Sony VAIO	Laptop	700	1	0
-Dell Vostro	Laptop	800	3	0.6666666666666666
-HP Elite	Laptop	1200	4	1
-Microsoft Lumia	Smartphone	200	1	0
-HTC One	Smartphone	400	2	0.3333333333333333
-Nexus	Smartphone	500	3	0.6666666666666666
-iPhone	Smartphone	900	4	1
-Kindle Fire	Tablet	150	1	0
-Samsung Galaxy Tab	Tablet	200	2	0.5
-iPad	Tablet	700	3	1
-Others	Unknow	200	1	0

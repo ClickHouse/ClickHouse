@@ -38,7 +38,6 @@ protected:
     virtual void writeChunk(const Chunk & chunk, PortKind port_kind);
     void writeMonoChunkIfNeeded();
     void writeSuffix() override;
-    void writeReadableNumberTip(const Chunk & chunk);
 
     void onRowsReadBeforeUpdate() override { total_rows = getRowsReadBefore(); }
 
@@ -56,9 +55,9 @@ protected:
     }
 
     bool color;
+    bool readable_number_tip = false;
 
 private:
-    bool readable_number_tip = false;
     bool mono_block;
     /// For mono_block == true only
     Chunk mono_chunk;
@@ -74,7 +73,8 @@ void registerPrettyFormatWithNoEscapesAndMonoBlock(FormatFactory & factory, cons
             const Block & sample,
             const FormatSettings & format_settings)
         {
-            bool color = !no_escapes && format_settings.pretty.color.valueOr(format_settings.is_writing_to_terminal);
+            bool color = !no_escapes
+                    && (format_settings.pretty.color == 1 || (format_settings.pretty.color == 2 && format_settings.is_writing_to_terminal));
             return std::make_shared<OutputFormat>(buf, sample, format_settings, mono_block, color);
         });
         if (!mono_block)

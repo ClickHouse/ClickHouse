@@ -1,4 +1,4 @@
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 SET optimize_move_to_prewhere = 0;
 SET query_plan_convert_outer_join_to_inner_join = 0;
 
@@ -7,13 +7,13 @@ CREATE TABLE test_table_1
 (
     id UInt64,
     value String
-) ENGINE=MergeTree ORDER BY id;
+) ENGINE=MergeTree ORDER BY id SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 CREATE TABLE test_table_2
 (
     id UInt64,
     value String
-) ENGINE=MergeTree ORDER BY id;
+) ENGINE=MergeTree ORDER BY id SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 INSERT INTO test_table_1 SELECT number, number FROM numbers(10);
 INSERT INTO test_table_2 SELECT number, number FROM numbers(10);

@@ -4,6 +4,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int NOT_IMPLEMENTED;
+}
+
 namespace
 {
 
@@ -20,7 +25,14 @@ struct LogName { static constexpr auto name = "log"; };
         template <typename T>
         static void execute(const T * src, size_t size, T * dst)
         {
-            NFastOps::Log<true>(src, size, dst);
+            if constexpr (std::is_same_v<T, BFloat16>)
+            {
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function `{}` is not implemented for BFloat16", name);
+            }
+            else
+            {
+                NFastOps::Log<true>(src, size, dst);
+            }
         }
     };
 
@@ -34,8 +46,8 @@ using FunctionLog = FunctionMathUnary<UnaryFunctionVectorized<LogName, log>>;
 
 REGISTER_FUNCTION(Log)
 {
-    factory.registerFunction<FunctionLog>({}, FunctionFactory::CaseInsensitive);
-    factory.registerAlias("ln", "log", FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionLog>({}, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("ln", "log", FunctionFactory::Case::Insensitive);
 }
 
 }

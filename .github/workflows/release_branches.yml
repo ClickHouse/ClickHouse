@@ -24,6 +24,8 @@ jobs:
           clear-repository: true # to ensure correct digests
           fetch-depth: 0 # to get version
           filter: tree:0
+      - name: Debug Info
+        uses: ./.github/actions/debug
       - name: Labels check
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
@@ -33,10 +35,6 @@ jobs:
           cd "$GITHUB_WORKSPACE/tests/ci"
           echo "Testing the main ci directory"
           python3 -m unittest discover -s . -p 'test_*.py'
-          for dir in *_lambda/; do
-            echo "Testing $dir"
-            python3 -m unittest discover -s "$dir" -p 'test_*.py'
-          done
       - name: PrepareRunConfig
         id: runconfig
         run: |
@@ -57,7 +55,7 @@ jobs:
   BuildDockers:
     needs: [RunConfig]
     if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_docker.yml
+    uses: ./.github/workflows/docker_test_images.yml
     with:
       data: ${{ needs.RunConfig.outputs.data }}
   CompatibilityCheckX86:
@@ -134,6 +132,7 @@ jobs:
     with:
       build_name: package_debug
       data: ${{ needs.RunConfig.outputs.data }}
+      force: true
   BuilderBinDarwin:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
@@ -375,7 +374,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stress test (asan)
-      runner_type: stress-tester
+      runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
   StressTestTsan:
     needs: [RunConfig, BuilderDebTsan]
@@ -383,7 +382,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stress test (tsan)
-      runner_type: stress-tester
+      runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
   StressTestMsan:
     needs: [RunConfig, BuilderDebMsan]
@@ -391,7 +390,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stress test (msan)
-      runner_type: stress-tester
+      runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
   StressTestUBsan:
     needs: [RunConfig, BuilderDebUBsan]
@@ -399,7 +398,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stress test (ubsan)
-      runner_type: stress-tester
+      runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
   StressTestDebug:
     needs: [RunConfig, BuilderDebDebug]
@@ -407,7 +406,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stress test (debug)
-      runner_type: stress-tester
+      runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
 #############################################################################################
 ############################# INTEGRATION TESTS #############################################
@@ -418,7 +417,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Integration tests (asan)
-      runner_type: stress-tester
+      runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
   IntegrationTestsAnalyzerAsan:
     needs: [RunConfig, BuilderDebAsan]
@@ -426,7 +425,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Integration tests (asan, old analyzer)
-      runner_type: stress-tester
+      runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
   IntegrationTestsTsan:
     needs: [RunConfig, BuilderDebTsan]
@@ -434,7 +433,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Integration tests (tsan)
-      runner_type: stress-tester
+      runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
   IntegrationTestsRelease:
     needs: [RunConfig, BuilderDebRelease]
@@ -442,11 +441,12 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Integration tests (release)
-      runner_type: stress-tester
+      runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
   FinishCheck:
-    if: ${{ !failure() && !cancelled() }}
+    if: ${{ !cancelled() }}
     needs:
+      - RunConfig
       - DockerServerImage
       - DockerKeeperImage
       - Builds_Report
@@ -482,9 +482,15 @@ jobs:
         with:
           clear-repository: true
       - name: Finish label
+        if: ${{ !failure() }}
         run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
-          # update mergeable check
-          python3 merge_pr.py --set-ci-status --wf-status ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
           # update overall ci report
-          python3 finish_check.py --wf-status ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
+          python3 ./tests/ci/finish_check.py --wf-status ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
+      - name: Check Workflow results
+        if: ${{ !cancelled() }}
+        run: |
+          export WORKFLOW_RESULT_FILE="/tmp/workflow_results.json"
+          cat > "$WORKFLOW_RESULT_FILE" << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          python3 ./tests/ci/ci_buddy.py --check-wf-status

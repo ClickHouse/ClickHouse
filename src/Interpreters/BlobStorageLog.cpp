@@ -96,6 +96,7 @@ void BlobStorageLog::prepareTable()
         std::unique_lock lock{prepare_mutex};
         const auto & relative_data_path = merge_tree_table->getRelativeDataPath();
         prefix_to_ignore = normalizePath(relative_data_path);
+        LOG_DEBUG(log, "Will ignore blobs with prefix {}", prefix_to_ignore);
     }
 }
 

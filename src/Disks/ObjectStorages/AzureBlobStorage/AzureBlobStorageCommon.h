@@ -11,13 +11,14 @@
 #include <azure/identity/managed_identity_credential.hpp>
 #include <azure/identity/workload_identity_credential.hpp>
 
-#include <Core/Settings.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/strong_typedef.h>
 
 namespace DB
 {
+
+struct Settings;
 
 namespace AzureBlobStorage
 {
@@ -49,6 +50,7 @@ struct RequestSettings
     size_t sdk_retry_initial_backoff_ms = 10;
     size_t sdk_retry_max_backoff_ms = 1000;
     bool use_native_copy = false;
+    bool check_objects_after_upload = false;
 
     using CurlOptions = Azure::Core::Http::CurlTransportOptions;
     CurlOptions::CurlOptIPResolve curl_ip_resolve = CurlOptions::CURL_IPRESOLVE_WHATEVER;

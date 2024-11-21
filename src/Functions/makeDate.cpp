@@ -10,6 +10,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
+#include <Core/DecimalFunctions.h>
 #include <Interpreters/castColumn.h>
 
 #include <Common/DateLUT.h>
@@ -724,7 +725,7 @@ public:
 
 REGISTER_FUNCTION(MakeDate)
 {
-    factory.registerFunction<FunctionMakeDate<DateTraits>>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionMakeDate<DateTraits>>({}, FunctionFactory::Case::Insensitive);
     factory.registerFunction<FunctionMakeDate<Date32Traits>>();
     factory.registerFunction<FunctionMakeDateTime>();
     factory.registerFunction<FunctionMakeDateTime64>();

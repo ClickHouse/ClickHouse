@@ -33,12 +33,11 @@ public:
     );
 
 private:
-    template <bool is_new_syntax = true>
     static std::shared_ptr<ProxyConfigurationResolver> getFromSettings(
+        bool is_new_syntax,
         Protocol protocol,
         const String & config_prefix,
-        const Poco::Util::AbstractConfiguration & configuration
-    );
+        const Poco::Util::AbstractConfiguration & configuration);
 };
 
 }

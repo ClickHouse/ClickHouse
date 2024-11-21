@@ -91,16 +91,16 @@ ${CLICKHOUSE_CLIENT} --user "admin" --query "INSERT INTO user_data (ID, userID) 
 
 # Test...
 ${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT '-- policy_1 test'"
-${CLICKHOUSE_CLIENT} --user "admin" --multiquery "SET ROLE user_role_1; SELECT * FROM user_data" # should only return rows with userID = 1
+${CLICKHOUSE_CLIENT} --user "admin" "SET ROLE user_role_1; SELECT * FROM user_data" # should only return rows with userID = 1
 
 ${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT '-- policy_2 test'"
-${CLICKHOUSE_CLIENT} --user "admin" --multiquery "SET ROLE user_role_2; SELECT * FROM user_data" # should only return rows with userID = 2
+${CLICKHOUSE_CLIENT} --user "admin" "SET ROLE user_role_2; SELECT * FROM user_data" # should only return rows with userID = 2
 
 ${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT '-- policy_1 with query cache test'"
-${CLICKHOUSE_CLIENT} --user "admin" --multiquery "SET ROLE user_role_1; SELECT * FROM user_data SETTINGS use_query_cache = 1" # should only return rows with userID = 1
+${CLICKHOUSE_CLIENT} --user "admin" "SET ROLE user_role_1; SELECT * FROM user_data SETTINGS use_query_cache = 1" # should only return rows with userID = 1
 
 ${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT '-- policy_2 with query cache test'"
-${CLICKHOUSE_CLIENT} --user "admin" --multiquery "SET ROLE user_role_2; SELECT * FROM user_data SETTINGS use_query_cache = 1" # should only return rows with userID = 2 (not userID = 1!)
+${CLICKHOUSE_CLIENT} --user "admin" "SET ROLE user_role_2; SELECT * FROM user_data SETTINGS use_query_cache = 1" # should only return rows with userID = 2 (not userID = 1!)
 
 # Cleanup
 ${CLICKHOUSE_CLIENT} --user "admin" --query "DROP ROLE user_role_1"

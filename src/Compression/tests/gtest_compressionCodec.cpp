@@ -7,7 +7,6 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/IParser.h>
 #include <Parsers/TokenIterator.h>
-#include <base/types.h>
 #include <Common/PODArray.h>
 #include <Common/Stopwatch.h>
 

@@ -1,15 +1,17 @@
 #pragma once
 
 #include <Storages/MergeTree/IDataPartStorage.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/MergeTreeIndexGranularity.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Common/Logger.h>
 
 namespace DB
 {
+
+struct MergeTreeSettings;
+using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 
 class IMergedBlockOutputStream
 {
@@ -26,10 +28,18 @@ public:
     using WrittenOffsetColumns = std::set<std::string>;
 
     virtual void write(const Block & block) = 0;
+    virtual void cancel() noexcept = 0;
 
-    const MergeTreeIndexGranularity & getIndexGranularity() const
+    MergeTreeIndexGranularityPtr getIndexGranularity() const
     {
         return writer->getIndexGranularity();
+    }
+
+    PlainMarksByName releaseCachedMarks();
+
+    size_t getNumberOfOpenStreams() const
+    {
+        return writer->getNumberOfOpenStreams();
     }
 
 protected:

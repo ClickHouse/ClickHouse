@@ -276,16 +276,15 @@ IAggregateFunction * createWithExtraTypes(const DataTypePtr & argument_type, TAr
 {
     WhichDataType which(argument_type);
     if (which.idx == TypeIndex::Date) return new AggregateFunctionGroupUniqArrayDate<HasLimit>(argument_type, args...);
-    else if (which.idx == TypeIndex::DateTime) return new AggregateFunctionGroupUniqArrayDateTime<HasLimit>(argument_type, args...);
-    else if (which.idx == TypeIndex::IPv4) return new AggregateFunctionGroupUniqArrayIPv4<HasLimit>(argument_type, args...);
-    else
-    {
-        /// Check that we can use plain version of AggregateFunctionGroupUniqArrayGeneric
-        if (argument_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
-            return new AggregateFunctionGroupUniqArrayGeneric<true, HasLimit>(argument_type, args...);
-        else
-            return new AggregateFunctionGroupUniqArrayGeneric<false, HasLimit>(argument_type, args...);
-    }
+    if (which.idx == TypeIndex::DateTime)
+        return new AggregateFunctionGroupUniqArrayDateTime<HasLimit>(argument_type, args...);
+    if (which.idx == TypeIndex::IPv4)
+        return new AggregateFunctionGroupUniqArrayIPv4<HasLimit>(argument_type, args...);
+
+    /// Check that we can use plain version of AggregateFunctionGroupUniqArrayGeneric
+    if (argument_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
+        return new AggregateFunctionGroupUniqArrayGeneric<true, HasLimit>(argument_type, args...);
+    return new AggregateFunctionGroupUniqArrayGeneric<false, HasLimit>(argument_type, args...);
 }
 
 template <typename HasLimit, typename ... TArgs>
@@ -323,12 +322,12 @@ AggregateFunctionPtr createAggregateFunctionGroupUniqArray(
         if (type != Field::Types::Int64 && type != Field::Types::UInt64)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
 
-        if ((type == Field::Types::Int64 && parameters[0].get<Int64>() < 0) ||
-            (type == Field::Types::UInt64 && parameters[0].get<UInt64>() == 0))
+        if ((type == Field::Types::Int64 && parameters[0].safeGet<Int64>() < 0) ||
+            (type == Field::Types::UInt64 && parameters[0].safeGet<UInt64>() == 0))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
 
         limit_size = true;
-        max_elems = parameters[0].get<UInt64>();
+        max_elems = parameters[0].safeGet<UInt64>();
     }
     else
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -336,8 +335,7 @@ AggregateFunctionPtr createAggregateFunctionGroupUniqArray(
 
     if (!limit_size)
         return createAggregateFunctionGroupUniqArrayImpl<std::false_type>(name, argument_types[0], parameters);
-    else
-        return createAggregateFunctionGroupUniqArrayImpl<std::true_type>(name, argument_types[0], parameters, max_elems);
+    return createAggregateFunctionGroupUniqArrayImpl<std::true_type>(name, argument_types[0], parameters, max_elems);
 }
 
 }

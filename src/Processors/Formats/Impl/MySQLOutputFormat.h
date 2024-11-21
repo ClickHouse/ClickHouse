@@ -1,11 +1,10 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Processors/Formats/IRowOutputFormat.h>
-
 #include <Core/MySQL/PacketEndpoint.h>
+#include <Interpreters/Context_fwd.h>
 #include <Processors/Formats/IOutputFormat.h>
-
+#include <Processors/Formats/IRowOutputFormat.h>
 
 namespace DB
 {

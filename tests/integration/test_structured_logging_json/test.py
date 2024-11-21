@@ -1,7 +1,10 @@
-import pytest
-from helpers.cluster import ClickHouseCluster
 import json
+from datetime import datetime
 from xml.etree import ElementTree as ET
+
+import pytest
+
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node_all_keys = cluster.add_instance(
@@ -56,12 +59,25 @@ def validate_log_level(config, logs):
     return True
 
 
+def is_valid_utc_datetime(datetime_str):
+    try:
+        datetime.strptime(datetime_str, "%Y-%m-%dT%H:%M:%S.%fZ")
+        return True
+    except ValueError:
+        try:
+            datetime.strptime(datetime_str, "%Y-%m-%dT%H:%M:%SZ")
+            return True
+        except ValueError:
+            return False
+
+
 def validate_log_config_relation(config, logs, config_type):
     root = ET.fromstring(config)
     keys_in_config = set()
 
     if config_type == "config_no_keys":
         keys_in_config.add("date_time")
+        keys_in_config.add("date_time_utc")
         keys_in_config.add("thread_name")
         keys_in_config.add("thread_id")
         keys_in_config.add("level")
@@ -78,14 +94,17 @@ def validate_log_config_relation(config, logs, config_type):
         length = min(10, len(logs))
         for i in range(0, length):
             json_log = json.loads(logs[i])
-            keys_in_log = set()
-            for log_key in json_log.keys():
-                keys_in_log.add(log_key)
-                if log_key not in keys_in_config:
-                    return False
-            for config_key in keys_in_config:
-                if config_key not in keys_in_log:
-                    return False
+            keys_in_log = set(json_log.keys())
+
+            if not keys_in_config.issubset(keys_in_log):
+                return False
+
+            # Validate the UTC datetime format in "date_time_utc" if it exists
+            if "date_time_utc" in json_log and not is_valid_utc_datetime(
+                json_log["date_time_utc"]
+            ):
+                return False
+
     except ValueError as e:
         return False
     return True
@@ -99,7 +118,7 @@ def validate_logs(logs):
     return result
 
 
-def valiade_everything(config, node, config_type):
+def validate_everything(config, node, config_type):
     node.query("SELECT 1")
     logs = node.grep_in_log("").split("\n")
     return (
@@ -120,8 +139,11 @@ def test_structured_logging_json_format(start_cluster):
         ["cat", "/etc/clickhouse-server/config.d/config_no_keys_json.xml"]
     )
 
-    assert valiade_everything(config_all_keys, node_all_keys, "config_all_keys") == True
     assert (
-        valiade_everything(config_some_keys, node_some_keys, "config_some_keys") == True
+        validate_everything(config_all_keys, node_all_keys, "config_all_keys") == True
     )
-    assert valiade_everything(config_no_keys, node_no_keys, "config_no_keys") == True
+    assert (
+        validate_everything(config_some_keys, node_some_keys, "config_some_keys")
+        == True
+    )
+    assert validate_everything(config_no_keys, node_no_keys, "config_no_keys") == True

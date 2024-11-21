@@ -6,6 +6,7 @@
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
+#include <Core/Settings.h>
 
 #include "config.h"
 
@@ -15,6 +16,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool log_queries;
+}
 
 namespace ErrorCodes
 {
@@ -79,7 +84,7 @@ ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::getDictionary(co
     std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
     auto dictionary = std::static_pointer_cast<const IDictionary>(load(resolved_dictionary_name));
 
-    if (local_context->hasQueryContext() && local_context->getSettingsRef().log_queries)
+    if (local_context->hasQueryContext() && local_context->getSettingsRef()[Setting::log_queries])
         local_context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Dictionary, dictionary->getQualifiedName());
 
     return dictionary;
@@ -90,7 +95,7 @@ ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::tryGetDictionary
     std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
     auto dictionary = std::static_pointer_cast<const IDictionary>(tryLoad(resolved_dictionary_name));
 
-    if (local_context->hasQueryContext() && local_context->getSettingsRef().log_queries && dictionary)
+    if (local_context->hasQueryContext() && local_context->getSettingsRef()[Setting::log_queries] && dictionary)
         local_context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Dictionary, dictionary->getQualifiedName());
 
     return dictionary;

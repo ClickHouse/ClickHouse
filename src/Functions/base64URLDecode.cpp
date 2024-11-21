@@ -5,6 +5,7 @@
 
 namespace DB
 {
+
 REGISTER_FUNCTION(Base64URLDecode)
 {
     FunctionDocumentation::Description description = R"(Accepts a base64-encoded URL and decodes it from base64 with URL-specific modifications, according to RFC 4648 (https://datatracker.ietf.org/doc/html/rfc4648#section-5).)";
@@ -16,6 +17,7 @@ REGISTER_FUNCTION(Base64URLDecode)
 
     factory.registerFunction<FunctionBase64Conversion<Base64Decode<Base64Variant::URL>>>({description, syntax, arguments, returned_value, examples, categories});
 }
+
 }
 
 #endif

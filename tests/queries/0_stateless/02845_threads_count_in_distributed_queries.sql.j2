@@ -1,5 +1,12 @@
+-- Tags: no-parallel, no-fasttest
+-- ^ because query_thread_log is not guaranteed to be written under high load
+-- (when the queue is full, events are silently dropped)
+
 -- enforce some defaults to be sure that the env settings will not affect the test
-SET max_threads=5, async_socket_for_remote=1, prefer_localhost_replica=1, optimize_read_in_order=1, load_marks_asynchronously=0, local_filesystem_read_method='pread', remote_filesystem_read_method='read';
+SET max_threads=5, async_socket_for_remote=1, prefer_localhost_replica=1, optimize_read_in_order=1, load_marks_asynchronously=0, local_filesystem_read_method='pread', remote_filesystem_read_method='read', trace_profile_events=0;
+
+-- we do not want concurrency control to limit the number of threads
+SET use_concurrency_control=0;
 
 -- we use query_thread_log to check peak thread usage
 -- after https://github.com/ClickHouse/ClickHouse/issues/53417 there is a simpler way to check it

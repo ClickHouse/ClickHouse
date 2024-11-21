@@ -123,7 +123,7 @@ public:
 
     void insert(const Field & x) override
     {
-        const String & s = x.get<const String &>();
+        const String & s = x.safeGet<const String &>();
         const size_t old_size = chars.size();
         const size_t size_to_append = s.size() + 1;
         const size_t new_size = old_size + size_to_append;
@@ -142,7 +142,7 @@ public:
         return true;
     }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn & src_, size_t n) override
 #else
     void doInsertFrom(const IColumn & src_, size_t n) override
@@ -169,7 +169,7 @@ public:
         }
     }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertManyFrom(const IColumn & src, size_t position, size_t length) override;
 #else
     void doInsertManyFrom(const IColumn & src, size_t position, size_t length) override;
@@ -194,6 +194,10 @@ public:
         offsets.resize_assume_reserved(offsets.size() - n);
     }
 
+    ColumnCheckpointPtr getCheckpoint() const override;
+    void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
+    void rollback(const ColumnCheckpoint & checkpoint) override;
+
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
 
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
@@ -212,7 +216,7 @@ public:
         hash.update(reinterpret_cast<const char *>(&chars[offset]), string_size);
     }
 
-    void updateWeakHash32(WeakHash32 & hash) const override;
+    WeakHash32 getWeakHash32() const override;
 
     void updateHashFast(SipHash & hash) const override
     {
@@ -220,7 +224,7 @@ public:
         hash.update(reinterpret_cast<const char *>(chars.data()), chars.size() * sizeof(chars[0]));
     }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 #else
     void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
@@ -250,7 +254,7 @@ public:
             offsets.push_back(offsets.back() + 1);
     }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int /*nan_direction_hint*/) const override
 #else
     int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int /*nan_direction_hint*/) const override
@@ -283,6 +287,8 @@ public:
     ColumnPtr compress() const override;
 
     void reserve(size_t n) override;
+    size_t capacity() const override;
+    void prepareForSquashing(const Columns & source_columns) override;
     void shrinkToFit() override;
 
     void getExtremes(Field & min, Field & max) const override;

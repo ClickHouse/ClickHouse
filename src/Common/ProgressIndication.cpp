@@ -1,6 +1,8 @@
 #include "ProgressIndication.h"
 #include <algorithm>
 #include <cstddef>
+#include <iostream>
+#include <mutex>
 #include <numeric>
 #include <filesystem>
 #include <cmath>
@@ -33,24 +35,28 @@ bool ProgressIndication::updateProgress(const Progress & value)
 
 void ProgressIndication::resetProgress()
 {
-    watch.restart();
-    progress.reset();
-    show_progress_bar = false;
-    written_progress_chars = 0;
-    write_progress_on_update = false;
+    {
+        std::lock_guard lock(progress_mutex);
+        progress.reset();
+        show_progress_bar = false;
+        written_progress_chars = 0;
+        write_progress_on_update = false;
+    }
     {
         std::lock_guard lock(profile_events_mutex);
+        watch.restart();
         cpu_usage_meter.reset(getElapsedNanoseconds());
         hosts_data.clear();
     }
 }
 
-void ProgressIndication::setFileProgressCallback(ContextMutablePtr context, WriteBufferFromFileDescriptor & message)
+void ProgressIndication::setFileProgressCallback(ContextMutablePtr context, WriteBufferFromFileDescriptor & message, std::mutex & message_mutex)
 {
     context->setFileProgressCallback([&](const FileProgress & file_progress)
     {
         progress.incrementPiecewiseAtomically(Progress(file_progress));
-        writeProgress(message);
+        std::unique_lock message_lock(message_mutex);
+        writeProgress(message, message_lock);
     });
 }
 
@@ -89,6 +95,8 @@ ProgressIndication::MemoryUsage ProgressIndication::getMemoryUsage() const
 
 void ProgressIndication::writeFinalProgress()
 {
+    std::lock_guard lock(progress_mutex);
+
     if (progress.read_rows < 1000)
         return;
 
@@ -107,7 +115,7 @@ void ProgressIndication::writeFinalProgress()
         output_stream << "\nPeak memory usage: " << formatReadableSizeWithBinarySuffix(peak_memory_usage) << ".";
 }
 
-void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message)
+void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> &)
 {
     std::lock_guard lock(progress_mutex);
 
@@ -268,8 +276,10 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message)
     message.next();
 }
 
-void ProgressIndication::clearProgressOutput(WriteBufferFromFileDescriptor & message)
+void ProgressIndication::clearProgressOutput(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> &)
 {
+    std::lock_guard lock(progress_mutex);
+
     if (written_progress_chars)
     {
         written_progress_chars = 0;

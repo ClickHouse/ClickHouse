@@ -417,8 +417,7 @@ public:
             auto it = map.find(key, hash);
             if (!it)
                 return decltype(&it->getMapped()){};
-            else
-                return &it->getMapped();
+            return &it->getMapped();
         }
     };
 

@@ -9,12 +9,17 @@
 #include <Parsers/queryToString.h>
 #include <Common/Macros.h>
 #include <Common/filesystemHelpers.h>
+#include <Core/Settings.h>
 
 
 namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool log_queries;
+}
 
 namespace ErrorCodes
 {
@@ -58,35 +63,27 @@ void cckMetadataPathForOrdinary(const ASTCreateQuery & create, const String & me
 
 }
 
-/// validate validates the database engine that's specified in the create query for
-/// engine arguments, settings and table overrides.
-void validate(const ASTCreateQuery & create_query)
-
+void DatabaseFactory::validate(const ASTCreateQuery & create_query) const
 {
     auto * storage = create_query.storage;
 
-    /// Check engine may have arguments
-    static const std::unordered_set<std::string_view> engines_with_arguments{"MySQL", "MaterializeMySQL", "MaterializedMySQL",
-        "Lazy", "Replicated", "PostgreSQL", "MaterializedPostgreSQL", "SQLite", "Filesystem", "S3", "HDFS"};
-
     const String & engine_name = storage->engine->name;
-    bool engine_may_have_arguments = engines_with_arguments.contains(engine_name);
+    const EngineFeatures & engine_features = database_engines.at(engine_name).features;
 
-    if (storage->engine->arguments && !engine_may_have_arguments)
+    /// Check engine may have arguments
+    if (storage->engine->arguments && !engine_features.supports_arguments)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine `{}` cannot have arguments", engine_name);
 
     /// Check engine may have settings
-    bool may_have_settings = endsWith(engine_name, "MySQL") || engine_name == "Replicated" || engine_name == "MaterializedPostgreSQL";
     bool has_unexpected_element = storage->engine->parameters || storage->partition_by ||
         storage->primary_key || storage->order_by ||
         storage->sample_by;
-    if (has_unexpected_element || (!may_have_settings && storage->settings))
+    if (has_unexpected_element || (!engine_features.supports_settings && storage->settings))
         throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_AST,
                         "Database engine `{}` cannot have parameters, primary_key, order_by, sample_by, settings", engine_name);
 
     /// Check engine with table overrides
-    static const std::unordered_set<std::string_view> engines_with_table_overrides{"MaterializeMySQL", "MaterializedMySQL", "MaterializedPostgreSQL"};
-    if (create_query.table_overrides && !engines_with_table_overrides.contains(engine_name))
+    if (create_query.table_overrides && !engine_features.supports_table_overrides)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine `{}` cannot have table overrides", engine_name);
 }
 
@@ -99,8 +96,7 @@ DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & m
         auto hints = getHints(engine_name);
         if (!hints.empty())
             throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine {}. Maybe you meant: {}", engine_name, toString(hints));
-        else
-            throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", create.storage->engine->name);
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", create.storage->engine->name);
     }
 
     /// if the engine is found (i.e. registered with the factory instance), then validate if the
@@ -110,7 +106,7 @@ DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & m
 
     DatabasePtr impl = getImpl(create, metadata_path, context);
 
-    if (impl && context->hasQueryContext() && context->getSettingsRef().log_queries)
+    if (impl && context->hasQueryContext() && context->getSettingsRef()[Setting::log_queries])
         context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Database, impl->getEngineName());
 
     /// Attach database metadata
@@ -120,9 +116,9 @@ DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & m
     return impl;
 }
 
-void DatabaseFactory::registerDatabase(const std::string & name, CreatorFn creator_fn)
+void DatabaseFactory::registerDatabase(const std::string & name, CreatorFn creator_fn, EngineFeatures features)
 {
-    if (!database_engines.emplace(name, std::move(creator_fn)).second)
+    if (!database_engines.emplace(name, Creator{std::move(creator_fn), features}).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DatabaseFactory: the database engine name '{}' is not unique", name);
 }
 
@@ -153,7 +149,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         .context = context};
 
     // creator_fn creates and returns a DatabasePtr with the supplied arguments
-    auto creator_fn = database_engines.at(engine_name);
+    auto creator_fn = database_engines.at(engine_name).creator_fn;
 
     return creator_fn(arguments);
 }

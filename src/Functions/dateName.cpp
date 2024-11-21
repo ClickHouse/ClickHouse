@@ -106,17 +106,22 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeString>();
+    }
+
     ColumnPtr executeImpl(
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type,
-        [[maybe_unused]] size_t input_rows_count) const override
+        size_t input_rows_count) const override
     {
         ColumnPtr res;
 
-        if (!((res = executeType<DataTypeDate>(arguments, result_type))
-            || (res = executeType<DataTypeDate32>(arguments, result_type))
-            || (res = executeType<DataTypeDateTime>(arguments, result_type))
-            || (res = executeType<DataTypeDateTime64>(arguments, result_type))))
+        if (!((res = executeType<DataTypeDate>(arguments, result_type, input_rows_count))
+            || (res = executeType<DataTypeDate32>(arguments, result_type, input_rows_count))
+            || (res = executeType<DataTypeDateTime>(arguments, result_type, input_rows_count))
+            || (res = executeType<DataTypeDateTime64>(arguments, result_type, input_rows_count))))
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
                 "Illegal column {} of function {}, must be Date or DateTime.",
@@ -127,7 +132,7 @@ public:
     }
 
     template <typename DataType>
-    ColumnPtr executeType(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const
+    ColumnPtr executeType(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
     {
         auto * times = checkAndGetColumn<typename DataType::ColumnType>(arguments[1].column.get());
         if (!times)
@@ -144,7 +149,7 @@ public:
         String date_part = date_part_column->getValue<String>();
 
         const DateLUTImpl * time_zone_tmp;
-        if (std::is_same_v<DataType, DataTypeDateTime64> || std::is_same_v<DataType, DataTypeDateTime>)
+        if constexpr (std::is_same_v<DataType, DataTypeDateTime64> || std::is_same_v<DataType, DataTypeDateTime>)
             time_zone_tmp = &extractTimeZoneFromFunctionArguments(arguments, 2, 1);
         else
             time_zone_tmp = &DateLUT::instance();
@@ -175,7 +180,7 @@ public:
         using TimeType = DateTypeToTimeType<DataType>;
         callOnDatePartWriter<TimeType>(date_part, [&](const auto & writer)
         {
-            for (size_t i = 0; i < times_data.size(); ++i)
+            for (size_t i = 0; i < input_rows_count; ++i)
             {
                 if constexpr (std::is_same_v<DataType, DataTypeDateTime64>)
                 {
@@ -354,7 +359,7 @@ private:
 
 REGISTER_FUNCTION(DateName)
 {
-    factory.registerFunction<FunctionDateNameImpl>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionDateNameImpl>({}, FunctionFactory::Case::Insensitive);
 }
 
 }

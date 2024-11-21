@@ -153,7 +153,7 @@ private:
                 (m_data[5] - '0') * 10 + (m_data[6] - '0'),
                 (m_data[8] - '0') * 10 + (m_data[9] - '0'));
         }
-        else if (m_length == 19)
+        if (m_length == 19)
         {
             return date_lut.makeDateTime(
                 (m_data[0] - '0') * 1000 + (m_data[1] - '0') * 100 + (m_data[2] - '0') * 10 + (m_data[3] - '0'),
@@ -163,10 +163,7 @@ private:
                 (m_data[14] - '0') * 10 + (m_data[15] - '0'),
                 (m_data[17] - '0') * 10 + (m_data[18] - '0'));
         }
-        else
-            throwException("Cannot parse DateTime");
-
-        return 0;    /// avoid warning. /// NOLINT
+        throwException("Cannot parse DateTime");
     }
 
 
@@ -181,8 +178,7 @@ private:
                 (m_data[5] - '0') * 10 + (m_data[6] - '0'),
                 (m_data[8] - '0') * 10 + (m_data[9] - '0'));
         }
-        else
-            throwException("Cannot parse Date");
+        throwException("Cannot parse Date");
 
         return 0;    /// avoid warning. /// NOLINT
     }
@@ -201,8 +197,7 @@ private:
 
         if (checkDateTime())
             return getDateTimeImpl();
-        else
-            return getIntImpl();
+        return getIntImpl();
     }
 
 
@@ -213,11 +208,9 @@ private:
 
         if (checkDateTime())
             return getDateImpl();
-        else
-        {
-            const auto & date_lut = DateLUT::instance();
-            return date_lut.toDate(getIntImpl());
-        }
+
+        const auto & date_lut = DateLUT::instance();
+        return date_lut.toDate(getIntImpl());
     }
 
 

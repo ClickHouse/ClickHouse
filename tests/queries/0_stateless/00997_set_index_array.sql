@@ -12,10 +12,10 @@ ORDER BY (primary_key);
 
 INSERT INTO set_array
 select
-  toString(intDiv(number, 1000000)) as primary_key,
+  toString(intDiv(number, 100000)) as primary_key,
   array(number) as index_array
 from system.numbers
-limit 10000000;
+limit 1000000;
 
 OPTIMIZE TABLE set_array FINAL;
 

@@ -34,17 +34,16 @@ public:
     bool exists(const UUID & id) const override;
 
     bool isBackupAllowed() const override { return backup_allowed; }
-    void restoreFromBackup(RestorerFromBackup & restorer) override;
 
 private:
     std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
     std::vector<UUID> findAllImpl(AccessEntityType type) const override;
     AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override;
-    bool insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) override;
+    bool insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id) override;
     bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
     bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override;
 
-    bool insertNoLock(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists);
+    bool insertNoLock(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id);
     bool removeNoLock(const UUID & id, bool throw_if_not_exists);
     bool updateNoLock(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists);
 

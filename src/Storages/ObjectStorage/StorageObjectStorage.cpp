@@ -1,5 +1,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Core/ColumnWithTypeAndName.h>
 
+#include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -12,24 +14,63 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Transforms/ExtractColumnsTransform.h>
 
-#include <Storages/StorageFactory.h>
 #include <Storages/Cache/SchemaCache.h>
-#include <Storages/VirtualColumnUtils.h>
-#include <Storages/ObjectStorage/Utils.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/ObjectStorage/ReadBufferIterator.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <Storages/ObjectStorage/ReadBufferIterator.h>
+#include <Storages/ObjectStorage/Utils.h>
+#include <Storages/StorageFactory.h>
+#include <Storages/VirtualColumnUtils.h>
+#include "Databases/LoadingStrictnessLevel.h"
+#include "Storages/ColumnsDescription.h"
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsMaxThreads max_threads;
+    extern const SettingsBool optimize_count_from_files;
+    extern const SettingsBool use_hive_partitioning;
+}
 
 namespace ErrorCodes
 {
     extern const int DATABASE_ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+}
+
+String StorageObjectStorage::getPathSample(StorageInMemoryMetadata metadata, ContextPtr context)
+{
+    auto query_settings = configuration->getQuerySettings(context);
+    /// We don't want to throw an exception if there are no files with specified path.
+    query_settings.throw_on_zero_files_match = false;
+    query_settings.ignore_non_existent_file = true;
+
+    bool local_distributed_processing = distributed_processing;
+    if (context->getSettingsRef()[Setting::use_hive_partitioning])
+        local_distributed_processing = false;
+
+    auto file_iterator = StorageObjectStorageSource::createFileIterator(
+        configuration,
+        query_settings,
+        object_storage,
+        local_distributed_processing,
+        context,
+        {}, // predicate
+        metadata.getColumns().getAll(), // virtual_columns
+        nullptr, // read_keys
+        {} // file_progress_callback
+    );
+
+    if (!configuration->isArchive() && !configuration->isPathWithGlobs() && !local_distributed_processing)
+        return configuration->getPath();
+
+    if (auto file = file_iterator->next(0))
+        return file->getPath();
+    return "";
 }
 
 StorageObjectStorage::StorageObjectStorage(
@@ -41,6 +82,7 @@ StorageObjectStorage::StorageObjectStorage(
     const ConstraintsDescription & constraints_,
     const String & comment,
     std::optional<FormatSettings> format_settings_,
+    LoadingStrictnessLevel mode,
     bool distributed_processing_,
     ASTPtr partition_by_)
     : IStorage(table_id_)
@@ -51,8 +93,26 @@ StorageObjectStorage::StorageObjectStorage(
     , distributed_processing(distributed_processing_)
     , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
 {
+    try
+    {
+        configuration->update(object_storage, context);
+    }
+    catch (...)
+    {
+        // If we don't have format or schema yet, we can't ignore failed configuration update, because relevant configuration is crucial for format and schema inference
+        if (mode <= LoadingStrictnessLevel::CREATE || columns_.empty() || (configuration->format == "auto"))
+        {
+            throw;
+        }
+        else
+        {
+            tryLogCurrentException(log);
+        }
+    }
+
+    std::string sample_path;
     ColumnsDescription columns{columns_};
-    resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, context);
+    resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
     configuration->check(context);
 
     StorageInMemoryMetadata metadata;
@@ -60,7 +120,10 @@ StorageObjectStorage::StorageObjectStorage(
     metadata.setConstraints(constraints_);
     metadata.setComment(comment);
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.getColumns()));
+    if (sample_path.empty() && context->getSettingsRef()[Setting::use_hive_partitioning])
+        sample_path = getPathSample(metadata, context);
+
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns, context, sample_path, format_settings));
     setInMemoryMetadata(metadata);
 }
 
@@ -84,12 +147,11 @@ bool StorageObjectStorage::supportsSubsetOfColumns(const ContextPtr & context) c
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context, format_settings);
 }
 
-void StorageObjectStorage::updateConfiguration(ContextPtr context)
+void StorageObjectStorage::Configuration::update(ObjectStoragePtr object_storage_ptr, ContextPtr context)
 {
-    IObjectStorage::ApplyNewSettingsOptions options{ .allow_client_change = !configuration->isStaticConfiguration() };
-    object_storage->applyNewSettings(context->getConfigRef(), configuration->getTypeName() + ".", context, options);
+    IObjectStorage::ApplyNewSettingsOptions options{.allow_client_change = !isStaticConfiguration()};
+    object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);
 }
-
 namespace
 {
 class ReadFromObjectStorageStep : public SourceStepWithFilter
@@ -112,7 +174,7 @@ public:
         ContextPtr context_,
         size_t max_block_size_,
         size_t num_streams_)
-        : SourceStepWithFilter(DataStream{.header = info_.source_header}, columns_to_read, query_info_, storage_snapshot_, context_)
+        : SourceStepWithFilter(info_.source_header, columns_to_read, query_info_, storage_snapshot_, context_)
         , object_storage(object_storage_)
         , configuration(configuration_)
         , info(std::move(info_))
@@ -143,7 +205,7 @@ public:
 
         Pipes pipes;
         auto context = getContext();
-        const size_t max_threads = context->getSettingsRef().max_threads;
+        const size_t max_threads = context->getSettingsRef()[Setting::max_threads];
         size_t estimated_keys_count = iterator_wrapper->estimatedKeysCount();
 
         if (estimated_keys_count > 1)
@@ -197,19 +259,25 @@ private:
             return;
         auto context = getContext();
         iterator_wrapper = StorageObjectStorageSource::createFileIterator(
-            configuration, object_storage, distributed_processing,
+            configuration, configuration->getQuerySettings(context), object_storage, distributed_processing,
             context, predicate, virtual_columns, nullptr, context->getFileProgressCallback());
     }
 };
 }
 
-ReadFromFormatInfo StorageObjectStorage::prepareReadingFromFormat(
+ReadFromFormatInfo StorageObjectStorage::Configuration::prepareReadingFromFormat(
+    ObjectStoragePtr,
     const Strings & requested_columns,
     const StorageSnapshotPtr & storage_snapshot,
     bool supports_subset_of_columns,
-    ContextPtr /* local_context */)
+    ContextPtr local_context)
 {
-    return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, supports_subset_of_columns);
+    return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, local_context, supports_subset_of_columns);
+}
+
+std::optional<ColumnsDescription> StorageObjectStorage::Configuration::tryGetTableStructureFromMetadata() const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method tryGetTableStructureFromMetadata is not implemented for basic configuration");
 }
 
 void StorageObjectStorage::read(
@@ -222,7 +290,7 @@ void StorageObjectStorage::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    updateConfiguration(local_context);
+    configuration->update(object_storage, local_context);
     if (partition_by && configuration->withPartitionWildcard())
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -230,10 +298,10 @@ void StorageObjectStorage::read(
                         getName());
     }
 
-    const auto read_from_format_info = prepareReadingFromFormat(
-        column_names, storage_snapshot, supportsSubsetOfColumns(local_context), local_context);
+    const auto read_from_format_info = configuration->prepareReadingFromFormat(
+        object_storage, column_names, storage_snapshot, supportsSubsetOfColumns(local_context), local_context);
     const bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
-        && local_context->getSettingsRef().optimize_count_from_files;
+        && local_context->getSettingsRef()[Setting::optimize_count_from_files];
 
     auto read_step = std::make_unique<ReadFromObjectStorageStep>(
         object_storage,
@@ -260,7 +328,7 @@ SinkToStoragePtr StorageObjectStorage::write(
     ContextPtr local_context,
     bool /* async_insert */)
 {
-    updateConfiguration(local_context);
+    configuration->update(object_storage, local_context);
     const auto sample_block = metadata_snapshot->getSampleBlock();
     const auto & settings = configuration->getQuerySettings(local_context);
 
@@ -349,6 +417,7 @@ std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterat
 {
     auto file_iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
+        configuration->getQuerySettings(context),
         object_storage,
         false/* distributed_processing */,
         context,
@@ -365,33 +434,51 @@ ColumnsDescription StorageObjectStorage::resolveSchemaFromData(
     const ObjectStoragePtr & object_storage,
     const ConfigurationPtr & configuration,
     const std::optional<FormatSettings> & format_settings,
+    std::string & sample_path,
     const ContextPtr & context)
 {
+    if (configuration->isDataLakeConfiguration())
+    {
+        configuration->update(object_storage, context);
+        auto table_structure = configuration->tryGetTableStructureFromMetadata();
+        if (table_structure)
+        {
+            return table_structure.value();
+        }
+    }
+
     ObjectInfos read_keys;
     auto iterator = createReadBufferIterator(object_storage, configuration, format_settings, read_keys, context);
-    return readSchemaFromFormat(configuration->format, format_settings, *iterator, context);
+    auto schema = readSchemaFromFormat(configuration->format, format_settings, *iterator, context);
+    sample_path = iterator->getLastFilePath();
+    return schema;
 }
 
 std::string StorageObjectStorage::resolveFormatFromData(
     const ObjectStoragePtr & object_storage,
     const ConfigurationPtr & configuration,
     const std::optional<FormatSettings> & format_settings,
+    std::string & sample_path,
     const ContextPtr & context)
 {
     ObjectInfos read_keys;
     auto iterator = createReadBufferIterator(object_storage, configuration, format_settings, read_keys, context);
-    return detectFormatAndReadSchema(format_settings, *iterator, context).second;
+    auto format_and_schema = detectFormatAndReadSchema(format_settings, *iterator, context).second;
+    sample_path = iterator->getLastFilePath();
+    return format_and_schema;
 }
 
 std::pair<ColumnsDescription, std::string> StorageObjectStorage::resolveSchemaAndFormatFromData(
     const ObjectStoragePtr & object_storage,
     const ConfigurationPtr & configuration,
     const std::optional<FormatSettings> & format_settings,
+    std::string & sample_path,
     const ContextPtr & context)
 {
     ObjectInfos read_keys;
     auto iterator = createReadBufferIterator(object_storage, configuration, format_settings, read_keys, context);
     auto [columns, format] = detectFormatAndReadSchema(format_settings, *iterator, context);
+    sample_path = iterator->getLastFilePath();
     configuration->format = format;
     return std::pair(columns, format);
 }
@@ -406,24 +493,25 @@ SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, c
                 DEFAULT_SCHEMA_CACHE_ELEMENTS));
         return schema_cache;
     }
-    else if (storage_type_name == "hdfs")
+    if (storage_type_name == "hdfs")
     {
         static SchemaCache schema_cache(
-            context->getConfigRef().getUInt(
-                "schema_inference_cache_max_elements_for_hdfs",
-                DEFAULT_SCHEMA_CACHE_ELEMENTS));
+            context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_hdfs", DEFAULT_SCHEMA_CACHE_ELEMENTS));
         return schema_cache;
     }
-    else if (storage_type_name == "azure")
+    if (storage_type_name == "azure")
     {
         static SchemaCache schema_cache(
-            context->getConfigRef().getUInt(
-                "schema_inference_cache_max_elements_for_azure",
-                DEFAULT_SCHEMA_CACHE_ELEMENTS));
+            context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_azure", DEFAULT_SCHEMA_CACHE_ELEMENTS));
         return schema_cache;
     }
-    else
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported storage type: {}", storage_type_name);
+    if (storage_type_name == "local")
+    {
+        static SchemaCache schema_cache(
+            context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_local", DEFAULT_SCHEMA_CACHE_ELEMENTS));
+        return schema_cache;
+    }
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported storage type: {}", storage_type_name);
 }
 
 void StorageObjectStorage::Configuration::initialize(
@@ -439,10 +527,17 @@ void StorageObjectStorage::Configuration::initialize(
 
     if (configuration.format == "auto")
     {
-        configuration.format = FormatFactory::instance().tryGetFormatFromFileName(
-            configuration.isArchive()
-            ? configuration.getPathInArchive()
-            : configuration.getPath()).value_or("auto");
+        if (configuration.isDataLakeConfiguration())
+        {
+            configuration.format = "Parquet";
+        }
+        else
+        {
+            configuration.format
+                = FormatFactory::instance()
+                      .tryGetFormatFromFileName(configuration.isArchive() ? configuration.getPathInArchive() : configuration.getPath())
+                      .value_or("auto");
+        }
     }
     else
         FormatFactory::instance().checkFormatName(configuration.format);
@@ -474,8 +569,7 @@ bool StorageObjectStorage::Configuration::withGlobsIgnorePartitionWildcard() con
 {
     if (!withPartitionWildcard())
         return withGlobs();
-    else
-        return PartitionedSink::replaceWildcards(getPath(), "").find_first_of("*?{") != std::string::npos;
+    return PartitionedSink::replaceWildcards(getPath(), "").find_first_of("*?{") != std::string::npos;
 }
 
 bool StorageObjectStorage::Configuration::isPathWithGlobs() const

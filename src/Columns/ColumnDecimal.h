@@ -1,14 +1,9 @@
 #pragma once
 
-#include <base/sort.h>
-#include <base/TypeName.h>
-#include <Core/Field.h>
-#include <Core/DecimalFunctions.h>
-#include <Core/TypeId.h>
-#include <Common/typeid_cast.h>
 #include <Columns/ColumnFixedSizeHelper.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
+#include <Core/Field.h>
 
 
 namespace DB
@@ -39,8 +34,8 @@ private:
     {}
 
 public:
-    const char * getFamilyName() const override { return TypeName<T>.data(); }
-    TypeIndex getDataType() const override { return TypeToTypeIndex<T>; }
+    const char * getFamilyName() const override;
+    TypeIndex getDataType() const override;
 
     bool isNumeric() const override { return false; }
     bool canBeInsideNullable() const override { return true; }
@@ -53,15 +48,16 @@ public:
     size_t allocatedBytes() const override { return data.allocated_bytes(); }
     void protect() override { data.protect(); }
     void reserve(size_t n) override { data.reserve_exact(n); }
+    size_t capacity() const override { return data.capacity(); }
     void shrinkToFit() override { data.shrink_to_fit(); }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn & src, size_t n) override { data.push_back(static_cast<const Self &>(src).getData()[n]); }
 #else
     void doInsertFrom(const IColumn & src, size_t n) override { data.push_back(static_cast<const Self &>(src).getData()[n]); }
 #endif
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertManyFrom(const IColumn & src, size_t position, size_t length) override
 #else
     void doInsertManyFrom(const IColumn & src, size_t position, size_t length) override
@@ -74,9 +70,9 @@ public:
     void insertData(const char * src, size_t /*length*/) override;
     void insertDefault() override { data.push_back(T()); }
     void insertManyDefaults(size_t length) override { data.resize_fill(data.size() + length); }
-    void insert(const Field & x) override { data.push_back(x.get<T>()); }
+    void insert(const Field & x) override { data.push_back(x.safeGet<T>()); }
     bool tryInsert(const Field & x) override;
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 #else
     void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
@@ -97,14 +93,14 @@ public:
         return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
     }
 
-    Float64 getFloat64(size_t n) const final { return DecimalUtils::convertTo<Float64>(data[n], scale); }
+    Float64 getFloat64(size_t n) const final;
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
     const char * skipSerializedInArena(const char * pos) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
-    void updateWeakHash32(WeakHash32 & hash) const override;
+    WeakHash32 getWeakHash32() const override;
     void updateHashFast(SipHash & hash) const override;
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override;
 #else
     int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override;

@@ -49,6 +49,18 @@ Default values are defined in [Settings.h](https://github.com/ClickHouse/ClickHo
 
 See also the description of [max_memory_usage](#settings_max_memory_usage).
 
+For example if you want to set `max_memory_usage_for_user` to 1000 bytes for a user named `clickhouse_read`, you can use the statement
+
+``` sql
+ALTER USER clickhouse_read SETTINGS max_memory_usage_for_user = 1000;
+```
+
+You can verify it worked by logging out of your client, logging back in, then use the `getSetting` function:
+
+```sql
+SELECT getSetting('max_memory_usage_for_user');
+```
+
 ## max_rows_to_read {#max-rows-to-read}
 
 The following restrictions can be checked on each block (instead of on each row). That is, the restrictions can be broken a little.
@@ -188,7 +200,7 @@ If you set `timeout_before_checking_execution_speed `to 0, ClickHouse will use c
 
 What to do if the query is run longer than `max_execution_time` or the estimated running time is longer than `max_estimated_execution_time`: `throw` or `break`. By default, `throw`.
 
-# max_execution_time_leaf
+## max_execution_time_leaf
 
 Similar semantic to `max_execution_time` but only apply on leaf node for distributed or remote queries.
 
@@ -204,7 +216,7 @@ We can use `max_execution_time_leaf` as the query settings:
 SELECT count() FROM cluster(cluster, view(SELECT * FROM t)) SETTINGS max_execution_time_leaf = 10;
 ```
 
-# timeout_overflow_mode_leaf
+## timeout_overflow_mode_leaf
 
 What to do when the query in leaf node run longer than `max_execution_time_leaf`: `throw` or `break`. By default, `throw`.
 
@@ -426,3 +438,17 @@ Example:
 ```
 
 Default value: 0 (Infinite count of simultaneous sessions).
+
+## max_partitions_to_read {#max-partitions-to-read}
+
+Limits the maximum number of partitions that can be accessed in one query.
+
+The setting value specified when the table is created can be overridden via query-level setting.
+
+Possible values:
+
+- Any positive integer.
+
+Default value: -1 (unlimited).
+
+You can also specify a MergeTree setting [max_partitions_to_read](merge-tree-settings#max-partitions-to-read) in tables' setting.
