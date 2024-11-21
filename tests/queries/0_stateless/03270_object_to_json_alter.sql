@@ -1,3 +1,5 @@
+-- Tags: long
+
 set allow_experimental_object_type = 1;
 set allow_experimental_json_type = 1;
 set max_block_size = 100;
