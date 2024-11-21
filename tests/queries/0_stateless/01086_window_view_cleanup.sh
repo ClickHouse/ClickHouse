@@ -36,6 +36,7 @@ while true; do
 done
 
 $CLICKHOUSE_CLIENT "${opts[@]}" --query="SELECT sleep(2);"
+$CLICKHOUSE_CLIENT "${opts[@]}" --query="SELECT sleep(2);"
 
 $CLICKHOUSE_CLIENT "${opts[@]}" --query="INSERT INTO ${DATABASE_ORDINARY}.mt VALUES (1, 6, toDateTime('1990/01/01 12:00:11', 'US/Samoa'));"
 
