@@ -601,7 +601,7 @@ def test_cluster_table_function(started_cluster, format_version, storage_type):
             mode=mode,
             format_version=format_version,
         )
- 
+
         files = default_upload_directory(
             started_cluster,
             storage_type,
