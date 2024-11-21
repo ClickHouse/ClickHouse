@@ -652,7 +652,9 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
 
 GraceHashJoin::InMemoryJoinPtr GraceHashJoin::makeInMemoryJoin(const String & bucket_id, size_t reserve_num)
 {
-    return std::make_unique<HashJoin>(table_join, right_sample_block, any_take_last_row, reserve_num, bucket_id);
+    auto join_ptr = std::make_unique<HashJoin>(table_join, right_sample_block, any_take_last_row, reserve_num, bucket_id);
+    join_ptr->setMaxJoinedBlockRows(0); /// remaining block is not handled in GraceHashJoin
+    return join_ptr;
 }
 
 Block GraceHashJoin::prepareRightBlock(const Block & block)
