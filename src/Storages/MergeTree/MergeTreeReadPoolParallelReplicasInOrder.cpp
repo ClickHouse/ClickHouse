@@ -117,7 +117,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
                 }
                 else
                 {
-                    /// for reverse order just reutrn one range
+                    /// for reverse order just return one range
                     MarkRanges result;
                     auto & range = desc.ranges.back();
                     if (range.begin + marks_in_range < range.end)
