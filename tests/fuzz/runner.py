@@ -30,7 +30,7 @@ class Stopwatch:
 
 
 def run_fuzzer(fuzzer: str, timeout: int):
-    logging.info("Running fuzzer %s...", fuzzer)
+    logging.info("Running fuzzer %s for %d seconds...", fuzzer, timeout)
 
     seed_corpus_dir = f"{fuzzer}.in"
     with Path(seed_corpus_dir) as path:
