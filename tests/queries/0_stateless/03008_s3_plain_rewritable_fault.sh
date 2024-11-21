@@ -58,4 +58,5 @@ ${CLICKHOUSE_CLIENT} --query "
 SYSTEM DISABLE FAILPOINT plain_object_storage_write_fail_on_directory_move;
 "
 
-${CLICKHOUSE_CLIENT} --query "DROP TABLE test_s3_mt_fault"
+# Filter out 'Removing temporary directory' because the fault injection prevents directory rename.
+${CLICKHOUSE_CLIENT} --query "DROP TABLE test_s3_mt_fault SYNC" 2>&1 | grep -v 'Removing temporary directory' ||:
