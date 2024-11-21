@@ -76,7 +76,7 @@ Allows to attach non-replicated MergeTree table as ReplicatedMergeTree. Replicat
 
 Note that table's data in ZooKeeper is not affected in this query. This means you have to add metadata in ZooKeeper using `SYSTEM RESTORE REPLICA` or clear it with `SYSTEM DROP REPLICA ... FROM ZKPATH ...` after attach.
 
-If you are trying to add a replica to an existing ReplicatedMergeTree table, keep in mind that all the data in converted MergeTree table will be replicated as well.
+If you are trying to add a replica to an existing ReplicatedMergeTree table, keep in mind that all the local data in converted MergeTree table will be detached.
 
 **Syntax**
 
