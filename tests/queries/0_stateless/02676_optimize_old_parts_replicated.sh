@@ -52,13 +52,12 @@ DROP TABLE test_replicated;
 
 SELECT 'With merge replicated partition only';
 
-CREATE TABLE test_replicated (i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test02676_partition_only6', 'node')  ORDER BY i
+CREATE TABLE test_replicated (i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test02676_partition_only', 'node')  ORDER BY i
 PARTITION BY i
 SETTINGS min_age_to_force_merge_seconds=1, merge_selecting_sleep_ms=1000, min_age_to_force_merge_on_partition_only=true;
 INSERT INTO test_replicated SELECT 1;
-SELECT sleep(1); -- Sleep so the first partition is older
 INSERT INTO test_replicated SELECT 2;
-SELECT sleep(1);
+SELECT sleep(3) FORMAT Null; -- Sleep so the first partition is older
 INSERT INTO test_replicated SELECT 2 SETTINGS insert_deduplicate = 0;"
 
 wait_for_number_of_parts 'test_replicated' 2 100
