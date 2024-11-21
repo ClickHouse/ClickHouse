@@ -42,7 +42,6 @@ private:
     ObjectStoragePtr object_storage;
     const std::string metadata_key_prefix;
 
-    bool write_created = false;
     bool write_finalized = false;
 
     std::unique_ptr<WriteBufferFromFileBase>

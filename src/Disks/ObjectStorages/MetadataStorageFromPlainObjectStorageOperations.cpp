@@ -25,6 +25,7 @@ extern const int FAULT_INJECTED;
 namespace FailPoints
 {
 extern const char plain_object_storage_write_fail_on_directory_create[];
+extern const char plain_object_storage_write_fail_on_directory_move[];
 }
 
 namespace
@@ -190,8 +191,10 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute(std::u
         getLogger("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation"), "Moving directory '{}' to '{}'", path_from, path_to);
 
     auto write_buf = createWriteBuf(path_from, path_to, /* validate_content */ true);
-    write_created = true;
     writeString(path_to.string(), *write_buf);
+    fiu_do_on(FailPoints::plain_object_storage_write_fail_on_directory_move, {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when moving from '{}' to '{}'", path_from, path_to);
+    });
     write_buf->finalize();
 
     /// parent_path() removes the trailing '/'.
@@ -216,10 +219,7 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::undo(std::uniq
         std::lock_guard lock(path_map.mutex);
         auto & map = path_map.map;
         map.emplace(path_from.parent_path(), map.extract(path_to.parent_path()).mapped());
-    }
 
-    if (write_created)
-    {
         auto write_buf = createWriteBuf(path_to, path_from, /* verify_content */ false);
         writeString(path_from.string(), *write_buf);
         write_buf->finalize();

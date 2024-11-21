@@ -78,6 +78,7 @@ static struct InitFiu
     REGULAR(zero_copy_lock_zk_fail_before_op) \
     REGULAR(zero_copy_lock_zk_fail_after_op) \
     REGULAR(plain_object_storage_write_fail_on_directory_create) \
+    REGULAR(plain_object_storage_write_fail_on_directory_move) \
 
 
 namespace FailPoints
