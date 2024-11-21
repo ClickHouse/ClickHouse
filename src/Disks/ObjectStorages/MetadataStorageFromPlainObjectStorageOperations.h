@@ -19,8 +19,6 @@ private:
     const std::string metadata_key_prefix;
     const std::string object_key_prefix;
 
-    bool write_finalized = false;
-
 public:
     MetadataStorageFromPlainObjectStorageCreateDirectoryOperation(
         /// path_ must end with a trailing '/'.

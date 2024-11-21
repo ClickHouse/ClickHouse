@@ -80,6 +80,14 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std:
         /* buf_size */ DBMS_DEFAULT_BUFFER_SIZE,
         /* settings */ {});
 
+    writeString(path.string(), *buf);
+    fiu_do_on(FailPoints::plain_object_storage_write_fail_on_directory_create, {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when creating '{}' directory", path);
+    });
+    buf->finalize();
+
+    auto event = object_storage->getMetadataStorageMetrics().directory_created;
+    ProfileEvents::increment(event);
     {
         std::lock_guard lock(path_map.mutex);
         auto & map = path_map.map;
@@ -89,35 +97,20 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std:
     }
     auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
     CurrentMetrics::add(metric, 1);
-
-    writeString(path.string(), *buf);
-    fiu_do_on(FailPoints::plain_object_storage_write_fail_on_directory_create, {
-        throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when creating '{}' directory", path);
-    });
-    buf->finalize();
-
-    write_finalized = true;
-
-    auto event = object_storage->getMetadataStorageMetrics().directory_created;
-    ProfileEvents::increment(event);
 }
 
 void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::undo(std::unique_lock<SharedMutex> &)
 {
-    auto metadata_object_key = createMetadataObjectKey(object_key_prefix, metadata_key_prefix);
-
-    if (write_finalized)
+    LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageCreateDirectoryOperation"), "Undoing '{}' directory creation", path);
+    const auto base_path = path.parent_path();
+    if (path_map.removePathIfExists(base_path))
     {
-        LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageCreateDirectoryOperation"), "Undoing '{}' directory creation", path);
-        const auto base_path = path.parent_path();
-        if (path_map.removePathIfExists(base_path))
-        {
-            auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
-            CurrentMetrics::sub(metric, 1);
-        }
-
-        object_storage->removeObjectIfExists(StoredObject(metadata_object_key.serialize(), path / PREFIX_PATH_FILE_NAME));
+        auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
+        CurrentMetrics::sub(metric, 1);
     }
+
+    auto metadata_object_key = createMetadataObjectKey(object_key_prefix, metadata_key_prefix);
+    object_storage->removeObjectIfExists(StoredObject(metadata_object_key.serialize(), path / PREFIX_PATH_FILE_NAME));
 }
 
 MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::MetadataStorageFromPlainObjectStorageMoveDirectoryOperation(
@@ -216,9 +209,11 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::undo(std::uniq
 {
     if (write_finalized)
     {
-        std::lock_guard lock(path_map.mutex);
-        auto & map = path_map.map;
-        map.emplace(path_from.parent_path(), map.extract(path_to.parent_path()).mapped());
+        {
+            std::lock_guard lock(path_map.mutex);
+            auto & map = path_map.map;
+            map.emplace(path_from.parent_path(), map.extract(path_to.parent_path()).mapped());
+        }
 
         auto write_buf = createWriteBuf(path_to, path_from, /* verify_content */ false);
         writeString(path_from.string(), *write_buf);
