@@ -5,7 +5,7 @@
 #include "FuzzConfig.h"
 #include "SQLCatalog.h"
 
-#ifdef USE_MYSQL
+#if defined USE_MYSQL && USE_MYSQL
 #    if __has_include(<mysql.h>)
 #        include <mysql.h>
 #    else
@@ -13,7 +13,7 @@
 #    endif
 #endif
 
-#ifdef USE_MONGODB
+#if defined USE_MONGODB && USE_MONGODB
 #    include <bsoncxx/builder/stream/array.hpp>
 #    include <bsoncxx/builder/stream/document.hpp>
 #    include <bsoncxx/json.hpp>
@@ -23,11 +23,11 @@
 #    include <mongocxx/database.hpp>
 #endif
 
-#ifdef USE_LIBPQXX
+#if defined USE_LIBPQXX && USE_LIBPQXX
 #    include <pqxx/pqxx>
 #endif
 
-#ifdef USE_SQLITE
+#if defined USE_SQLITE && USE_SQLITE
 #    include <sqlite3.h>
 #endif
 
@@ -114,7 +114,7 @@ public:
     ~ClickHouseIntegratedDatabase() override = default;
 };
 
-#ifdef USE_MYSQL
+#if defined USE_MYSQL && USE_MYSQL
 class MySQLIntegration : public ClickHouseIntegratedDatabase
 {
 private:
@@ -212,7 +212,7 @@ public:
 };
 #endif
 
-#ifdef USE_LIBPQXX
+#if defined USE_LIBPQXX && USE_LIBPQXX
 class PostgreSQLIntegration : public ClickHouseIntegratedDatabase
 {
 private:
@@ -361,7 +361,7 @@ public:
 };
 #endif
 
-#ifdef USE_SQLITE
+#if defined USE_SQLITE && USE_SQLITE
 class SQLiteIntegration : public ClickHouseIntegratedDatabase
 {
 private:
@@ -461,7 +461,7 @@ public:
     ~RedisIntegration() override = default;
 };
 
-#ifdef USE_MONGODB
+#if defined USE_MONGODB && USE_MONGODB
 class MongoDBIntegration : public ClickHouseIntegration
 {
 private:

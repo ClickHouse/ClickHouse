@@ -50,7 +50,7 @@
 
 #include <Poco/Util/Application.h>
 
-#ifdef BUZZHOUSE_ENABLED
+#if defined BUZZHOUSE_ENABLED && BUZZHOUSE_ENABLED
 #    include "QueryOracle.h"
 #    include "SQLProtoStr.h"
 #    include "StatementGenerator.h"
@@ -953,7 +953,7 @@ bool Client::processWithFuzzing(const String & full_query)
     return true;
 }
 
-#ifdef BUZZHOUSE_ENABLED
+#if defined BUZZHOUSE_ENABLED && BUZZHOUSE_ENABLED
 
 void Client::processQueryAndLog(std::ofstream & outf, const std::string & full_query)
 {

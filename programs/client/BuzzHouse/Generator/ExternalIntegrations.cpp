@@ -144,7 +144,7 @@ bool MinIOIntegration::sendRequest(const std::string & resource)
     return created;
 }
 
-#ifdef USE_MONGODB
+#if defined USE_MONGODB && USE_MONGODB
 template <typename T>
 void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const std::string & cname, T & output, const SQLType * tp)
 {

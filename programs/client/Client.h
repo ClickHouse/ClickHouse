@@ -52,7 +52,7 @@ protected:
 private:
     void printChangedSettings() const;
     void showWarnings();
-#ifdef BUZZHOUSE_ENABLED
+#if defined BUZZHOUSE_ENABLED && BUZZHOUSE_ENABLED
     void processQueryAndLog(std::ofstream & outf, const std::string & full_query);
     bool processBuzzHouseQuery(const std::string & full_query);
 #endif
