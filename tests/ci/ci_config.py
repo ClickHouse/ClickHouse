@@ -272,7 +272,7 @@ class CI:
         ),
         BuildNames.FUZZERS: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
-                name=BuildNames.FUZZERS_ASAN,
+                name=BuildNames.FUZZERS,
                 compiler="clang-18",
                 sanitizer="address",
                 package_type="fuzzers",
