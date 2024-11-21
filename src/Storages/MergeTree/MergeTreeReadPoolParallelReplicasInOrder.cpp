@@ -11,13 +11,13 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
+extern const int LOGICAL_ERROR;
+extern const int BAD_ARGUMENTS;
 }
 
 namespace MergeTreeSetting
 {
-    extern const MergeTreeSettingsUInt64 index_granularity;
+extern const MergeTreeSettingsUInt64 index_granularity;
 }
 
 MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrder(
@@ -71,15 +71,14 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
     std::lock_guard lock(mutex);
 
     if (task_idx >= per_part_infos.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Requested task with idx {}, but there are only {} parts",
-            task_idx, per_part_infos.size());
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Requested task with idx {}, but there are only {} parts", task_idx, per_part_infos.size());
 
     const auto & part_info = per_part_infos[task_idx]->data_part->info;
     const auto & data_settings = per_part_infos[task_idx]->data_part->storage.getSettings();
-    auto get_from_buffer = [&, 
-    rows_granularity = (*data_settings)[MergeTreeSetting::index_granularity], 
-    my_max_block_size = this->block_size_params.max_block_size_rows]() -> std::optional<MarkRanges>
+    auto get_from_buffer = [&,
+                            rows_granularity = (*data_settings)[MergeTreeSetting::index_granularity],
+                            my_max_block_size = this->block_size_params.max_block_size_rows]() -> std::optional<MarkRanges>
     {
         const size_t max_marks_in_range = (my_max_block_size + rows_granularity - 1) / rows_granularity;
         for (auto & desc : buffered_tasks)
@@ -127,12 +126,12 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
                         range.end -= marks_in_range;
                         marks_in_range = std::min(marks_in_range * 2, max_marks_in_range);
                     }
-                    else 
+                    else
                     {
                         result.emplace_front(range.begin, range.end);
                         desc.ranges.pop_back();
                     }
-                    
+
                     /// TODO: should we need reset for each ranges?
                     if (desc.ranges.empty())
                     {
