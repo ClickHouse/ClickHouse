@@ -101,7 +101,6 @@ def main():
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-client",
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-compressor",
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-local",
-            f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-disks",
             f"rm -rf {Settings.TEMP_DIR}/etc/ && mkdir -p {Settings.TEMP_DIR}/etc/clickhouse-client {Settings.TEMP_DIR}/etc/clickhouse-server",
             f"cp programs/server/config.xml programs/server/users.xml {Settings.TEMP_DIR}/etc/clickhouse-server/",
             # TODO: find a way to work with Azure secret so it's ok for local tests as well, for now keep azure disabled
@@ -115,7 +114,6 @@ def main():
             f"for file in /tmp/praktika/etc/clickhouse-server/*.xml; do [ -f $file ] && echo Change config $file && sed -i 's|>/var/log|>{Settings.TEMP_DIR}/var/log|g; s|>/etc/|>{Settings.TEMP_DIR}/etc/|g' $(readlink -f $file); done",
             f"for file in /tmp/praktika/etc/clickhouse-server/config.d/*.xml; do [ -f $file ] && echo Change config $file && sed -i 's|<path>local_disk|<path>{Settings.TEMP_DIR}/local_disk|g' $(readlink -f $file); done",
             f"clickhouse-server --version",
-            f"chmod +x /tmp/praktika/input/clickhouse-odbc-bridge",
         ]
         results.append(
             Result.create_from_command_execution(
@@ -140,7 +138,6 @@ def main():
         res = res and Shell.check(
             "aws s3 ls s3://test --endpoint-url http://localhost:11111/", verbose=True
         )
-        res = res and CH.log_cluster_config()
         res = res and CH.start()
         res = res and CH.wait_ready()
         if res:
@@ -173,7 +170,6 @@ def main():
             batch_total=total_batches,
             test=args.test,
         )
-        CH.log_cluster_stop_replication()
         results.append(FTResultsProcessor(wd=Settings.OUTPUT_DIR).run())
         results[-1].set_timing(stopwatch=stop_watch_)
         res = results[-1].is_ok()

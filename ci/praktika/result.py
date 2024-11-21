@@ -121,9 +121,6 @@ class Result(MetaClasses.Serializable):
     def set_success(self) -> "Result":
         return self.set_status(Result.Status.SUCCESS)
 
-    def set_failed(self) -> "Result":
-        return self.set_status(Result.Status.FAILED)
-
     def set_results(self, results: List["Result"]) -> "Result":
         self.results = results
         self.dump()
