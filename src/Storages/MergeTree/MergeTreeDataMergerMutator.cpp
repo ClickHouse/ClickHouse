@@ -640,7 +640,8 @@ String MergeTreeDataMergerMutator::getBestPartitionToOptimizeEntire(
     auto best_partition_it = std::max_element(
         partitions_info.begin(),
         partitions_info.end(),
-        [](const auto & e1, const auto & e2) {
+        [](const auto & e1, const auto & e2)
+        {
             // If one partition has only a single part, always select the other partition.
             if (e1.second.num_parts == 1)
                 return true;
