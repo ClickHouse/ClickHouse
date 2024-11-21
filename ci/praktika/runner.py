@@ -86,6 +86,7 @@ class Runner:
         print("Read GH Environment")
         env = _Environment.from_env()
         env.JOB_NAME = job.name
+        os.environ["JOB_NAME"] = job.name
         env.dump()
         print(env)
 
@@ -200,13 +201,15 @@ class Runner:
                             ResultInfo.TIMEOUT
                         )
                     elif result.is_running():
-                        info = f"ERROR: Job terminated with an error, exit code [{exit_code}]  - set status to [{Result.Status.ERROR}]"
+                        info = f"ERROR: Job killed, exit code [{exit_code}]  - set status to [{Result.Status.ERROR}]"
                         print(info)
                         result.set_status(Result.Status.ERROR).set_info(info)
+                        result.set_files([Settings.RUN_LOG])
                     else:
                         info = f"ERROR: Invalid status [{result.status}] for exit code [{exit_code}]  - switch to [{Result.Status.ERROR}]"
                         print(info)
                         result.set_status(Result.Status.ERROR).set_info(info)
+                        result.set_files([Settings.RUN_LOG])
             result.dump()
 
         return exit_code
@@ -257,10 +260,6 @@ class Runner:
             info = f"ERROR: {ResultInfo.KILLED}"
             print(info)
             result.set_info(info).set_status(Result.Status.ERROR).dump()
-        else:
-            # TODO: add setting with different ways of storing general praktika log: always, on error, never.
-            #   now let's store it on error only
-            result.files = [file for file in result.files if file != Settings.RUN_LOG]
 
         result.update_duration().dump()
 
