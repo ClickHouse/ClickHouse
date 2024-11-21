@@ -31,6 +31,7 @@ class Workflow:
         enable_report: bool = False
         enable_merge_ready_status: bool = False
         enable_cidb: bool = False
+        enable_merge_commit: bool = False
 
         def is_event_pull_request(self):
             return self.event == Workflow.Event.PULL_REQUEST

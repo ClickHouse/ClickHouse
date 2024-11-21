@@ -983,6 +983,7 @@ class MergeTreeSettingsRandomizer:
         "cache_populated_by_fetch": lambda: random.randint(0, 1),
         "concurrent_part_removal_threshold": threshold_generator(0.2, 0.3, 0, 100),
         "old_parts_lifetime": threshold_generator(0.2, 0.3, 10, 8 * 60),
+        "prewarm_mark_cache": lambda: random.randint(0, 1),
         "use_const_adaptive_granularity": lambda: random.randint(0, 1),
         "enable_index_granularity_compression": lambda: random.randint(0, 1),
     }
@@ -2158,9 +2159,9 @@ class TestSuite:
         self.sequential_tests = []
         self.parallel_tests = []
         for test_name in self.all_tests:
-            if self.is_sequential_test(test_name):
+            if self.is_sequential_test(test_name) and not args.no_sequential:
                 self.sequential_tests.append(test_name)
-            else:
+            elif not args.no_parallel:
                 self.parallel_tests.append(test_name)
 
     def is_sequential_test(self, test_name):
@@ -2624,14 +2625,14 @@ def run_tests_process(*args, **kwargs):
 
 
 def do_run_tests(jobs, test_suite: TestSuite):
-    if jobs > 1 and len(test_suite.parallel_tests) > 0:
-        print(
-            "Found",
-            len(test_suite.parallel_tests),
-            "parallel tests and",
-            len(test_suite.sequential_tests),
-            "sequential tests",
-        )
+    print(
+        "Found",
+        len(test_suite.parallel_tests),
+        "parallel tests and",
+        len(test_suite.sequential_tests),
+        "sequential tests",
+    )
+    if test_suite.parallel_tests:
         tests_n = len(test_suite.parallel_tests)
         jobs = min(jobs, tests_n)
 
@@ -2644,6 +2645,7 @@ def do_run_tests(jobs, test_suite: TestSuite):
         # It makes it more difficult to detect real flaky tests,
         # because the distribution and the amount
         # of failures will be nearly the same for all tests from the group.
+        # TODO: add shuffle for sequential tests
         random.shuffle(test_suite.parallel_tests)
 
         batch_size = len(test_suite.parallel_tests) // jobs
@@ -2689,6 +2691,7 @@ def do_run_tests(jobs, test_suite: TestSuite):
                 if not p.is_alive():
                     processes.remove(p)
 
+    if test_suite.sequential_tests:
         run_tests_array(
             (
                 test_suite.sequential_tests,
@@ -2698,17 +2701,7 @@ def do_run_tests(jobs, test_suite: TestSuite):
             )
         )
 
-        return len(test_suite.sequential_tests) + len(test_suite.parallel_tests)
-    num_tests = len(test_suite.all_tests)
-    run_tests_array(
-        (
-            test_suite.all_tests,
-            num_tests,
-            test_suite,
-            False,
-        )
-    )
-    return num_tests
+    return len(test_suite.sequential_tests) + len(test_suite.parallel_tests)
 
 
 def is_test_from_dir(suite_dir, case):
@@ -3295,7 +3288,10 @@ def parse_args():
         help='Replace random database name with "default" in stderr',
     )
     parser.add_argument(
-        "--parallel", default="1/1", help="One parallel test run number/total"
+        "--no-sequential", action="store_true", help="Not run no-parallel"
+    )
+    parser.add_argument(
+        "--no-parallel", action="store_true", help="Run only no-parallel"
     )
     parser.add_argument(
         "-j", "--jobs", default=1, nargs="?", type=int, help="Run all tests in parallel"
@@ -3344,7 +3340,7 @@ def parse_args():
     parser.add_argument(
         "--sequential",
         nargs="+",
-        help="Run these tests sequentially even if --parallel specified",
+        help="Run all tests sequentially",
     )
     parser.add_argument(
         "--no-long", action="store_true", dest="no_long", help="Do not run long tests"
