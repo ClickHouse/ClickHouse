@@ -141,6 +141,11 @@ bool operator==(const Poco::JSON::Object & first, const Poco::JSON::Object & sec
     }
     return first_string_stream.str() == second_string_stream.str();
 }
+
+bool operator!=(const Poco::JSON::Object & first, const Poco::JSON::Object & second)
+{
+    return !(first == second);
+}
 }
 
 
@@ -268,7 +273,7 @@ bool IcebergSchemaProcessor::allowPrimitiveTypeConversion(const String & old_typ
 std::shared_ptr<ActionsDAG>
 IcebergSchemaProcessor::getSchemaTransformationDag(const Poco::JSON::Object::Ptr & old_schema, const Poco::JSON::Object::Ptr & new_schema)
 {
-    std::map<size_t, std::pair<Poco::JSON::Object::Ptr, const ActionsDAG::Node *>> old_schema_entries;
+    std::unordered_map<size_t, std::pair<Poco::JSON::Object::Ptr, const ActionsDAG::Node *>> old_schema_entries;
     auto old_schema_fields = old_schema->get("fields").extract<Poco::JSON::Array::Ptr>();
     std::shared_ptr<ActionsDAG> dag = std::make_shared<ActionsDAG>();
     auto & outputs = dag->getOutputs();
@@ -288,12 +293,13 @@ IcebergSchemaProcessor::getSchemaTransformationDag(const Poco::JSON::Object::Ptr
         auto name = field->getValue<String>("name");
         bool required = field->getValue<bool>("required");
         auto type = getFieldType(field, "type", required);
-        if (old_schema_entries.contains(id))
+        auto old_node_it = old_schema_entries.find(id);
+        if (old_node_it != old_schema_entries.end())
         {
-            auto [old_json, old_node] = old_schema_entries.find(id)->second;
+            auto [old_json, old_node] = old_node_it->second;
             if (field->isObject("type"))
             {
-                if (!(*old_json == *field))
+                if (*old_json != *field)
                 {
                     throw Exception(
                         ErrorCodes::UNSUPPORTED_METHOD,
@@ -312,7 +318,7 @@ IcebergSchemaProcessor::getSchemaTransformationDag(const Poco::JSON::Object::Ptr
                 if (old_json->isObject("type"))
                 {
                     throw Exception(
-                        ErrorCodes::UNSUPPORTED_METHOD,
+                        ErrorCodes::LOGICAL_ERROR,
                         "Can't cast primitive type to the complex type, field id is {}, old schema id is {}, new schema id is {}",
                         id,
                         current_old_id,
@@ -342,7 +348,7 @@ IcebergSchemaProcessor::getSchemaTransformationDag(const Poco::JSON::Object::Ptr
             {
                 throw Exception(
                     ErrorCodes::UNSUPPORTED_METHOD,
-                    "Adding a default column with id {} and complex type is not supported yet, old schema id is {}, new schema id is {}",
+                    "Adding a default column with id {} and complex type is not supported yet. Old schema id is {}, new schema id is {}",
                     id,
                     current_old_id,
                     current_new_id);
@@ -350,8 +356,8 @@ IcebergSchemaProcessor::getSchemaTransformationDag(const Poco::JSON::Object::Ptr
             if (!type->isNullable())
             {
                 throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Cannot add a column with id {} with required values to the table during schema evolution, old schema id is {}, new "
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Cannot add a column with id {} with required values to the table during schema evolution. This is forbidden by Iceberg format specification. Old schema id is {}, new "
                     "schema id is {}",
                     id,
                     current_old_id,
@@ -404,7 +410,7 @@ void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schem
     Int32 schema_id = schema_ptr->getValue<Int32>("schema-id");
     if (iceberg_table_schemas_by_ids.contains(schema_id))
     {
-        chassert(clickhouse_table_schemas_by_ids.contains(schema_id) > 0);
+        chassert(clickhouse_table_schemas_by_ids.contains(schema_id));
         chassert(*iceberg_table_schemas_by_ids.at(schema_id) == *schema_ptr);
     }
     else
@@ -616,7 +622,7 @@ Strings IcebergMetadata::getDataFiles() const
         String schema_json_string = String(reinterpret_cast<char *>(schema_json.data()), schema_json.size());
         Poco::JSON::Parser parser;
         Poco::Dynamic::Var json = parser.parse(schema_json_string);
-        Poco::JSON::Object::Ptr schema_object = json.extract<Poco::JSON::Object::Ptr>();
+        const Poco::JSON::Object::Ptr & schema_object = json.extract<Poco::JSON::Object::Ptr>();
         Int32 schema_object_id = schema_object->getValue<int>("schema-id");
         avro::NodePtr root_node = manifest_file_reader->dataSchema().root();
         size_t leaves_num = root_node->leaves();

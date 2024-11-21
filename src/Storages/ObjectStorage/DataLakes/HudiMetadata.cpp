@@ -94,12 +94,7 @@ HudiMetadata::HudiMetadata(ObjectStoragePtr object_storage_, ConfigurationObserv
 Strings HudiMetadata::getDataFiles() const
 {
     if (data_files.empty())
-    {
-        for (const auto & data_file_name : getDataFilesImpl())
-        {
-            data_files.push_back(data_file_name);
-        }
-    }
+        data_files = getDataFilesImpl();
     return data_files;
 }
 

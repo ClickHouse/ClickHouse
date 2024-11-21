@@ -10,8 +10,6 @@
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 
-#include <vector>
-
 namespace DB
 {
 
