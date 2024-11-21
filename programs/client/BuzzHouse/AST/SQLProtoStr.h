@@ -6,7 +6,7 @@
 /* Protobuf generated files give lots of warnings, disable them */
 #if defined(__clang__)
 #    pragma clang diagnostic push
-#    pragma clang diagnostic ignored "-Weverything"
+#    pragma clang diagnostic ignored "-Wno-everything"
 #endif
 
 #include "SQLGrammar.pb.h"

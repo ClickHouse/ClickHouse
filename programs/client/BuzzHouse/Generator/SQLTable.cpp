@@ -722,6 +722,12 @@ int StatementGenerator::addTableColumn(
         }
         cd->set_is_pkey(is_pk);
     }
+    if (rg.nextSmallNumber() < 3)
+    {
+        buf.resize(0);
+        rg.nextString(buf, "'", true, rg.nextRandomUInt32() % 1009);
+        cd->set_comment(buf);
+    }
     to_add[cname] = std::move(col);
     return 0;
 }
@@ -1213,6 +1219,12 @@ int StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTabl
                 sv2->set_value(rg.nextBool() ? "'ordered'" : "'unordered'");
             }
         }
+    }
+    if (rg.nextSmallNumber() < 3)
+    {
+        buf.resize(0);
+        rg.nextString(buf, "'", true, rg.nextRandomUInt32() % 1009);
+        ct->set_comment(buf);
     }
     assert(!next.toption.has_value() || next.isMergeTreeFamily());
     this->staged_tables[tname] = std::move(next);

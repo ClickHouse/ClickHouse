@@ -977,7 +977,7 @@ void StatementGenerator::strAppendBottomValue(RandomGenerator & rg, std::string 
     }
     else if ((stp = dynamic_cast<const StringType *>(tp)))
     {
-        const uint32_t limit = stp->precision.value_or((rg.nextRandomUInt32() % 10000) + 1);
+        const uint32_t limit = stp->precision.value_or(rg.nextRandomUInt32() % 1009);
 
         rg.nextString(ret, "'", true, limit);
     }
@@ -1158,7 +1158,7 @@ void strBuildJSONElement(RandomGenerator & rg, std::string & ret)
         case 11:
         case 12:
         case 13: //string
-            rg.nextString(ret, "\"", false, (rg.nextRandomUInt32() % 10000) + 1);
+            rg.nextString(ret, "\"", false, rg.nextRandomUInt32() % 1009);
             break;
         case 14: //date
             ret += '"';

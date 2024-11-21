@@ -486,7 +486,7 @@ int StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<G
         if (rg.nextSmallNumber() < 5)
         {
             buf.resize(0);
-            rg.nextString(buf, "'", true, (rg.nextRandomUInt32() % 10000) + 1);
+            rg.nextString(buf, "'", true, rg.nextRandomUInt32() % 1009);
             expr2->mutable_lit_val()->set_no_quote_str(buf);
         }
         else

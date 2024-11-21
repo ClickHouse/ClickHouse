@@ -69,6 +69,12 @@ int StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, CreateD
     }
     next.dname = dname;
     cd->mutable_database()->set_database("d" + std::to_string(dname));
+    if (rg.nextSmallNumber() < 3)
+    {
+        buf.resize(0);
+        rg.nextString(buf, "'", true, rg.nextRandomUInt32() % 1009);
+        cd->set_comment(buf);
+    }
     this->staged_databases[dname] = std::make_shared<SQLDatabase>(std::move(next));
     return 0;
 }
@@ -194,6 +200,12 @@ int StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView 
     {
         this->setAllowNotDetermistic(true);
         this->enforceFinal(false);
+    }
+    if (rg.nextSmallNumber() < 3)
+    {
+        buf.resize(0);
+        rg.nextString(buf, "'", true, rg.nextRandomUInt32() % 1009);
+        cv->set_comment(buf);
     }
     assert(!next.toption.has_value() || next.isMergeTreeFamily());
     this->staged_views[tname] = std::move(next);
@@ -715,8 +727,8 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 = 3 * static_cast<uint32_t>(t.isMergeTreeFamily()),
                 heavy_delete = 30, heavy_update = 40, add_column = 2 * static_cast<uint32_t>(t.cols.size() < 10), materialize_column = 2,
                 drop_column = 2 * static_cast<uint32_t>(t.cols.size() > 1), rename_column = 2, clear_column = 2, modify_column = 2,
-                add_stats = 3 * static_cast<uint32_t>(t.isMergeTreeFamily()), mod_stats = 3 * static_cast<uint32_t>(t.isMergeTreeFamily()),
-                drop_stats = 3 * static_cast<uint32_t>(t.isMergeTreeFamily()),
+                comment_column = 2, add_stats = 3 * static_cast<uint32_t>(t.isMergeTreeFamily()),
+                mod_stats = 3 * static_cast<uint32_t>(t.isMergeTreeFamily()), drop_stats = 3 * static_cast<uint32_t>(t.isMergeTreeFamily()),
                 clear_stats = 3 * static_cast<uint32_t>(t.isMergeTreeFamily()),
                 mat_stats = 3 * static_cast<uint32_t>(t.isMergeTreeFamily()),
                 delete_mask = 8 * static_cast<uint32_t>(t.isMergeTreeFamily()), add_idx = 2 * static_cast<uint32_t>(t.idxs.size() < 3),
@@ -741,14 +753,14 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 clear_column_partition = 5 * static_cast<uint32_t>(table_has_partitions),
                 freeze_partition = 5 * static_cast<uint32_t>(t.isMergeTreeFamily()),
                 unfreeze_partition = 7 * static_cast<uint32_t>(!t.frozen_partitions.empty()),
-                clear_index_partition = 5 * static_cast<uint32_t>(table_has_partitions && !t.idxs.empty()),
+                clear_index_partition = 5 * static_cast<uint32_t>(table_has_partitions && !t.idxs.empty()), comment_table = 2,
                 prob_space = alter_order_by + heavy_delete + heavy_update + add_column + materialize_column + drop_column + rename_column
-                + clear_column + modify_column + delete_mask + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
-                + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + column_remove_setting
+                + clear_column + modify_column + comment_column + delete_mask + add_stats + mod_stats + drop_stats + clear_stats + mat_stats
+                + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + column_remove_setting
                 + table_modify_setting + table_remove_setting + add_projection + remove_projection + materialize_projection
                 + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition + drop_detached_partition
                 + forget_partition + attach_partition + move_partition_to + clear_column_partition + freeze_partition + unfreeze_partition
-                + clear_index_partition;
+                + clear_index_partition + comment_table;
             AlterTableItem * ati = i == 0 ? at->mutable_alter() : at->add_other_alters();
             std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
             const uint32_t nopt = next_dist(rg.generator);
@@ -885,10 +897,23 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 }
             }
             else if (
+                comment_column
+                && nopt
+                    < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
+                       + modify_column + comment_column + 1))
+            {
+                CommentColumn * ccol = ati->mutable_comment_column();
+
+                ccol->mutable_col()->set_column("c" + std::to_string(rg.pickKeyRandomlyFromMap(t.cols)));
+                buf.resize(0);
+                rg.nextString(buf, "'", true, rg.nextRandomUInt32() % 1009);
+                ccol->set_comment(buf);
+            }
+            else if (
                 delete_mask
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + delete_mask + 1))
+                       + modify_column + comment_column + delete_mask + 1))
             {
                 ApplyDeleteMask * adm = ati->mutable_delete_mask();
 
@@ -901,7 +926,7 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 heavy_update
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + delete_mask + heavy_update + 1))
+                       + modify_column + comment_column + delete_mask + heavy_update + 1))
             {
                 Update * upt = ati->mutable_update();
 
@@ -990,7 +1015,7 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 add_stats
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + delete_mask + heavy_update + add_stats + 1))
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + 1))
             {
                 AddStatistics * ads = ati->mutable_add_stats();
 
@@ -1001,7 +1026,7 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 mod_stats
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + 1))
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + 1))
             {
                 AddStatistics * ads = ati->mutable_mod_stats();
 
@@ -1012,7 +1037,7 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 drop_stats
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + 1))
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + 1))
             {
                 pickUpNextCols(rg, t, ati->mutable_drop_stats());
             }
@@ -1020,7 +1045,8 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 clear_stats
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + 1))
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
+                       + 1))
             {
                 pickUpNextCols(rg, t, ati->mutable_clear_stats());
             }
@@ -1028,7 +1054,8 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 mat_stats
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + 1))
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
+                       + mat_stats + 1))
             {
                 pickUpNextCols(rg, t, ati->mutable_mat_stats());
             }
@@ -1036,8 +1063,8 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 add_idx
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
-                       + 1))
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
+                       + mat_stats + add_idx + 1))
             {
                 AddIndex * add_index = ati->mutable_add_index();
 
@@ -1060,8 +1087,8 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 materialize_idx
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
-                       + materialize_idx + 1))
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
+                       + mat_stats + add_idx + materialize_idx + 1))
             {
                 IdxInPartition * iip = ati->mutable_materialize_index();
 
@@ -1075,8 +1102,8 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 clear_idx
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
-                       + materialize_idx + clear_idx + 1))
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
+                       + mat_stats + add_idx + materialize_idx + clear_idx + 1))
             {
                 IdxInPartition * iip = ati->mutable_clear_index();
 
@@ -1090,8 +1117,8 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 drop_idx
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
-                       + materialize_idx + clear_idx + drop_idx + 1))
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
+                       + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + 1))
             {
                 ati->mutable_drop_index()->set_index("i" + std::to_string(rg.pickKeyRandomlyFromMap(t.idxs)));
             }
@@ -1099,8 +1126,8 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 column_remove_property
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
-                       + materialize_idx + clear_idx + drop_idx + column_remove_property + 1))
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
+                       + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + 1))
             {
                 RemoveColumnProperty * rcs = ati->mutable_column_remove_property();
 
@@ -1112,8 +1139,8 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 column_modify_setting
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
-                       + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + 1))
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
+                       + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + 1))
             {
                 ModifyColumnSetting * mcp = ati->mutable_column_modify_setting();
                 const auto & csettings = allColumnSettings.at(t.teng);
@@ -1125,9 +1152,9 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 column_remove_setting
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
-                       + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + column_remove_setting
-                       + 1))
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
+                       + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
+                       + column_remove_setting + 1))
             {
                 RemoveColumnSetting * rcp = ati->mutable_column_remove_setting();
                 const auto & csettings = allColumnSettings.at(t.teng);
@@ -1139,9 +1166,9 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 table_modify_setting
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
-                       + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + column_remove_setting
-                       + table_modify_setting + 1))
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
+                       + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
+                       + column_remove_setting + table_modify_setting + 1))
             {
                 const auto & tsettings = allTableSettings.at(t.teng);
 
@@ -1151,9 +1178,9 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 table_remove_setting
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
-                       + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + column_remove_setting
-                       + table_modify_setting + table_remove_setting + 1))
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
+                       + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
+                       + column_remove_setting + table_modify_setting + table_remove_setting + 1))
             {
                 const auto & tsettings = allTableSettings.at(t.teng);
 
@@ -1163,9 +1190,9 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 add_projection
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
-                       + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + column_remove_setting
-                       + table_modify_setting + table_remove_setting + add_projection + 1))
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
+                       + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
+                       + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + 1))
             {
                 addTableProjection(rg, t, true, ati->mutable_add_projection());
             }
@@ -1173,9 +1200,9 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 remove_projection
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
-                       + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + column_remove_setting
-                       + table_modify_setting + table_remove_setting + add_projection + remove_projection + 1))
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
+                       + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
+                       + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection + 1))
             {
                 ati->mutable_remove_projection()->set_projection("p" + std::to_string(rg.pickRandomlyFromSet(t.projs)));
             }
@@ -1183,9 +1210,10 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 materialize_projection
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
-                       + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + column_remove_setting
-                       + table_modify_setting + table_remove_setting + add_projection + remove_projection + materialize_projection + 1))
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
+                       + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
+                       + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
+                       + materialize_projection + 1))
             {
                 ProjectionInPartition * pip = ati->mutable_materialize_projection();
 
@@ -1199,10 +1227,10 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 clear_projection
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
-                       + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + column_remove_setting
-                       + table_modify_setting + table_remove_setting + add_projection + remove_projection + materialize_projection
-                       + clear_projection + 1))
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
+                       + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
+                       + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
+                       + materialize_projection + clear_projection + 1))
             {
                 ProjectionInPartition * pip = ati->mutable_clear_projection();
 
@@ -1216,10 +1244,10 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 add_constraint
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
-                       + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + column_remove_setting
-                       + table_modify_setting + table_remove_setting + add_projection + remove_projection + materialize_projection
-                       + clear_projection + add_constraint + 1))
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
+                       + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
+                       + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
+                       + materialize_projection + clear_projection + add_constraint + 1))
             {
                 addTableConstraint(rg, t, true, ati->mutable_add_constraint());
             }
@@ -1227,10 +1255,10 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 remove_constraint
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
-                       + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + column_remove_setting
-                       + table_modify_setting + table_remove_setting + add_projection + remove_projection + materialize_projection
-                       + clear_projection + add_constraint + remove_constraint + 1))
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
+                       + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
+                       + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
+                       + materialize_projection + clear_projection + add_constraint + remove_constraint + 1))
             {
                 ati->mutable_remove_constraint()->set_constraint("c" + std::to_string(rg.pickRandomlyFromSet(t.constrs)));
             }
@@ -1238,10 +1266,10 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 detach_partition
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
-                       + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + column_remove_setting
-                       + table_modify_setting + table_remove_setting + add_projection + remove_projection + materialize_projection
-                       + clear_projection + add_constraint + remove_constraint + detach_partition + 1))
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
+                       + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
+                       + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
+                       + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition + 1))
             {
                 const uint32_t nopt2 = rg.nextSmallNumber();
                 PartitionExpr * pexpr = ati->mutable_detach_partition();
@@ -1265,10 +1293,11 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 drop_partition
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
-                       + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + column_remove_setting
-                       + table_modify_setting + table_remove_setting + add_projection + remove_projection + materialize_projection
-                       + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition + 1))
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
+                       + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
+                       + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
+                       + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition
+                       + 1))
             {
                 const uint32_t nopt2 = rg.nextSmallNumber();
                 PartitionExpr * pexpr = ati->mutable_drop_partition();
@@ -1292,10 +1321,11 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 drop_detached_partition
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
-                       + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + column_remove_setting
-                       + table_modify_setting + table_remove_setting + add_projection + remove_projection + materialize_projection
-                       + clear_projection + add_constraint + remove_constraint + detach_partition + drop_detached_partition + 1))
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
+                       + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
+                       + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
+                       + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition
+                       + drop_detached_partition + 1))
             {
                 const uint32_t nopt2 = rg.nextSmallNumber();
                 PartitionExpr * pexpr = ati->mutable_drop_detached_partition();
@@ -1320,11 +1350,11 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 forget_partition
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
-                       + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + column_remove_setting
-                       + table_modify_setting + table_remove_setting + add_projection + remove_projection + materialize_projection
-                       + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition + drop_detached_partition
-                       + forget_partition + 1))
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
+                       + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
+                       + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
+                       + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition
+                       + drop_detached_partition + forget_partition + 1))
             {
                 PartitionExpr * pexpr = ati->mutable_forget_partition();
 
@@ -1335,11 +1365,11 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 attach_partition
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
-                       + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + column_remove_setting
-                       + table_modify_setting + table_remove_setting + add_projection + remove_projection + materialize_projection
-                       + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition + drop_detached_partition
-                       + forget_partition + attach_partition + 1))
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
+                       + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
+                       + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
+                       + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition
+                       + drop_detached_partition + forget_partition + attach_partition + 1))
             {
                 const uint32_t nopt2 = rg.nextSmallNumber();
                 PartitionExpr * pexpr = ati->mutable_attach_partition();
@@ -1364,11 +1394,11 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 move_partition_to
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
-                       + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + column_remove_setting
-                       + table_modify_setting + table_remove_setting + add_projection + remove_projection + materialize_projection
-                       + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition + drop_detached_partition
-                       + forget_partition + attach_partition + move_partition_to + 1))
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
+                       + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
+                       + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
+                       + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition
+                       + drop_detached_partition + forget_partition + attach_partition + move_partition_to + 1))
             {
                 AttachPartitionFrom * apf = ati->mutable_move_partition_to();
                 PartitionExpr * pexpr = apf->mutable_partition();
@@ -1387,11 +1417,11 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 clear_column_partition
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
-                       + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + column_remove_setting
-                       + table_modify_setting + table_remove_setting + add_projection + remove_projection + materialize_projection
-                       + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition + drop_detached_partition
-                       + forget_partition + attach_partition + move_partition_to + clear_column_partition + 1))
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
+                       + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
+                       + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
+                       + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition
+                       + drop_detached_partition + forget_partition + attach_partition + move_partition_to + clear_column_partition + 1))
             {
                 ClearColumnInPartition * ccip = ati->mutable_clear_column_partition();
                 PartitionExpr * pexpr = ccip->mutable_partition();
@@ -1404,11 +1434,12 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 freeze_partition
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
-                       + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + column_remove_setting
-                       + table_modify_setting + table_remove_setting + add_projection + remove_projection + materialize_projection
-                       + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition + drop_detached_partition
-                       + forget_partition + attach_partition + move_partition_to + clear_column_partition + freeze_partition + 1))
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
+                       + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
+                       + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
+                       + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition
+                       + drop_detached_partition + forget_partition + attach_partition + move_partition_to + clear_column_partition
+                       + freeze_partition + 1))
             {
                 FreezePartition * fp = ati->mutable_freeze_partition();
 
@@ -1423,12 +1454,12 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 unfreeze_partition
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
-                       + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + column_remove_setting
-                       + table_modify_setting + table_remove_setting + add_projection + remove_projection + materialize_projection
-                       + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition + drop_detached_partition
-                       + forget_partition + attach_partition + move_partition_to + clear_column_partition + freeze_partition
-                       + unfreeze_partition + 1))
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
+                       + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
+                       + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
+                       + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition
+                       + drop_detached_partition + forget_partition + attach_partition + move_partition_to + clear_column_partition
+                       + freeze_partition + unfreeze_partition + 1))
             {
                 FreezePartition * fp = ati->mutable_unfreeze_partition();
                 const uint32_t fname = rg.pickKeyRandomlyFromMap(t.frozen_partitions);
@@ -1444,12 +1475,12 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 clear_index_partition
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats + mat_stats + add_idx
-                       + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + column_remove_setting
-                       + table_modify_setting + table_remove_setting + add_projection + remove_projection + materialize_projection
-                       + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition + drop_detached_partition
-                       + forget_partition + attach_partition + move_partition_to + clear_column_partition + freeze_partition
-                       + unfreeze_partition + clear_index_partition + 1))
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
+                       + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
+                       + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
+                       + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition
+                       + drop_detached_partition + forget_partition + attach_partition + move_partition_to + clear_column_partition
+                       + freeze_partition + unfreeze_partition + clear_index_partition + 1))
             {
                 ClearIndexInPartition * ccip = ati->mutable_clear_index_partition();
                 PartitionExpr * pexpr = ccip->mutable_partition();
@@ -1457,6 +1488,21 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 fc.tableGetRandomPartitionOrPart<false, true>(dname, tname, buf);
                 pexpr->set_partition_id(buf);
                 ccip->mutable_idx()->set_index("i" + std::to_string(rg.pickKeyRandomlyFromMap(t.idxs)));
+            }
+            else if (
+                comment_table
+                && nopt
+                    < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
+                       + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
+                       + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
+                       + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition
+                       + drop_detached_partition + forget_partition + attach_partition + move_partition_to + clear_column_partition
+                       + freeze_partition + unfreeze_partition + clear_index_partition + comment_table + 1))
+            {
+                buf.resize(0);
+                rg.nextString(buf, "'", true, rg.nextRandomUInt32() % 1009);
+                ati->set_comment(buf);
             }
             else
             {

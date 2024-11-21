@@ -312,7 +312,7 @@ int StatementGenerator::generateLiteralValue(RandomGenerator & rg, Expr * expr)
         }
         else
         {
-            rg.nextString(buf, "'", true, (rg.nextRandomUInt32() % 10000) + 1);
+            rg.nextString(buf, "'", true, rg.nextRandomUInt32() % 1009);
         }
         lv->set_no_quote_str(buf);
     }

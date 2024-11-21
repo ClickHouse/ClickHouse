@@ -2122,6 +2122,11 @@ CONV_FN(CreateDatabase, create_database)
     DatabaseToString(ret, create_database.database());
     ret += " ENGINE = ";
     DatabaseEngineToString(ret, create_database.dengine());
+    if (create_database.has_comment())
+    {
+        ret += " COMMENT ";
+        ret += create_database.comment();
+    }
 }
 
 CONV_FN(CreateFunction, create_function)
@@ -2156,6 +2161,11 @@ CONV_FN(ColumnDef, cdf)
     {
         ret += " ";
         DefaultModifierToString(ret, cdf.defaultv());
+    }
+    if (cdf.has_comment())
+    {
+        ret += " COMMENT ";
+        ret += cdf.comment();
     }
     if (cdf.codecs_size())
     {
@@ -2434,6 +2444,11 @@ CONV_FN(CreateTable, create_table)
         ret += " AS (";
         SelectToString(ret, create_table.as_select_stmt());
         ret += ")";
+    }
+    if (create_table.has_comment())
+    {
+        ret += " COMMENT ";
+        ret += create_table.comment();
     }
 }
 
@@ -2811,8 +2826,14 @@ CONV_FN(CreateView, create_view)
             ret += " EMPTY";
         }
     }
-    ret += " AS ";
+    ret += " AS (";
     SelectToString(ret, create_view.select());
+    ret += ")";
+    if (create_view.has_comment())
+    {
+        ret += " COMMENT ";
+        ret += create_view.comment();
+    }
 }
 
 CONV_FN(AddWhere, add)
@@ -2948,6 +2969,12 @@ CONV_FN(AlterTableItem, alter)
         case AlterType::kModifyColumn:
             ret += "MODIFY COLUMN ";
             AddColumnToString(ret, alter.modify_column());
+            break;
+        case AlterType::kCommentColumn:
+            ret += "COMMENT COLUMN ";
+            ColumnToString(ret, true, alter.comment_column().col());
+            ret += " ";
+            ret += alter.comment_column().comment();
             break;
         case AlterType::kDeleteMask:
             ret += "APPLY DELETED MASK";
@@ -3143,6 +3170,10 @@ CONV_FN(AlterTableItem, alter)
         case AlterType::kRefresh:
             ret += "MODIFY ";
             RefreshableViewToString(ret, alter.refresh());
+            break;
+        case AlterType::kComment:
+            ret += "MODIFY COMMENT ";
+            ret += alter.comment();
             break;
         default:
             ret += "DELETE WHERE TRUE";

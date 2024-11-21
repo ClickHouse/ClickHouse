@@ -2535,6 +2535,7 @@ message DatabaseEngine {
 message CreateDatabase {
     required Database database = 1;
     required DatabaseEngine dengine = 2;
+    optional string comment = 3;
 }
 
 message CreateFunction {
@@ -2724,10 +2725,11 @@ message ColumnDef {
     required TypeName type = 2;
     optional bool nullable = 3;
     optional DefaultModifier defaultv = 4;
-    repeated CodecParam codecs = 5;
-    optional ColumnStatistics stats = 6;
-    optional bool is_pkey = 7;
-    optional SettingValues settings = 8;
+    optional string comment = 5;
+    repeated CodecParam codecs = 6;
+    optional ColumnStatistics stats = 7;
+    optional bool is_pkey = 8;
+    optional SettingValues settings = 9;
 }
 
 enum IndexType {
@@ -2865,6 +2867,7 @@ message CreateTable {
     required TableEngine engine = 7;
     optional SettingValues settings = 8;
     optional Select as_select_stmt = 9;
+    optional string comment = 10;
 }
 
 enum SQLObject {
@@ -3064,6 +3067,11 @@ message ColInPartition {
     optional PartitionExpr partition = 2;
 }
 
+message CommentColumn {
+    required Column col = 1;
+    required string comment = 2;
+}
+
 message AddStatistics {
     required ColumnList cols = 1;
     required ColumnStatistics stats = 2;
@@ -3149,6 +3157,7 @@ message CreateView {
     optional bool populate = 7;
     optional bool empty = 8;
     required Select select = 9;
+    optional string comment = 10;
 }
 
 message ApplyDeleteMask {
@@ -3192,43 +3201,45 @@ message AlterTableItem {
         RenameCol rename_column = 7;
         ColInPartition clear_column = 8;
         AddColumn modify_column = 9;
-        ApplyDeleteMask delete_mask = 10;
-        AddStatistics add_stats = 11;
-        AddStatistics mod_stats = 12;
-        ColumnList drop_stats = 13;
-        ColumnList clear_stats = 14;
-        ColumnList mat_stats = 15;
-        AddIndex add_index = 16;
-        IdxInPartition materialize_index = 17;
-        Index drop_index = 18;
-        IdxInPartition clear_index = 19;
-        RemoveColumnProperty column_remove_property = 20;
-        ModifyColumnSetting column_modify_setting = 21;
-        RemoveColumnSetting column_remove_setting = 22;
-        SettingValues table_modify_setting = 23;
-        SettingList table_remove_setting = 24;
-        ProjectionDef add_projection = 25;
-        Projection remove_projection = 26;
-        ProjectionInPartition materialize_projection = 27;
-        ProjectionInPartition clear_projection = 28;
-        ConstraintDef add_constraint = 29;
-        Constraint remove_constraint = 30;
-        PartitionExpr detach_partition = 31;
-        PartitionExpr drop_partition = 32;
-        PartitionExpr drop_detached_partition = 33;
-        PartitionExpr forget_partition = 34;
-        PartitionExpr attach_partition = 35;
-        AttachPartitionFrom attach_partition_from = 36;
-        AttachPartitionFrom replace_partition_from = 37;
-        AttachPartitionFrom move_partition_to = 38;
-        ClearColumnInPartition clear_column_partition = 39;
-        FreezePartition freeze_partition = 40;
-        FreezePartition unfreeze_partition = 41;
-        ClearIndexInPartition clear_index_partition = 42;
-        MovePartition move_partition = 43;
+        CommentColumn comment_column = 10;
+        ApplyDeleteMask delete_mask = 11;
+        AddStatistics add_stats = 12;
+        AddStatistics mod_stats = 13;
+        ColumnList drop_stats = 14;
+        ColumnList clear_stats = 15;
+        ColumnList mat_stats = 16;
+        AddIndex add_index = 17;
+        IdxInPartition materialize_index = 18;
+        Index drop_index = 19;
+        IdxInPartition clear_index = 20;
+        RemoveColumnProperty column_remove_property = 21;
+        ModifyColumnSetting column_modify_setting = 22;
+        RemoveColumnSetting column_remove_setting = 23;
+        SettingValues table_modify_setting = 24;
+        SettingList table_remove_setting = 25;
+        ProjectionDef add_projection = 26;
+        Projection remove_projection = 27;
+        ProjectionInPartition materialize_projection = 28;
+        ProjectionInPartition clear_projection = 29;
+        ConstraintDef add_constraint = 30;
+        Constraint remove_constraint = 31;
+        PartitionExpr detach_partition = 32;
+        PartitionExpr drop_partition = 33;
+        PartitionExpr drop_detached_partition = 34;
+        PartitionExpr forget_partition = 35;
+        PartitionExpr attach_partition = 36;
+        AttachPartitionFrom attach_partition_from = 37;
+        AttachPartitionFrom replace_partition_from = 38;
+        AttachPartitionFrom move_partition_to = 39;
+        ClearColumnInPartition clear_column_partition = 40;
+        FreezePartition freeze_partition = 41;
+        FreezePartition unfreeze_partition = 42;
+        ClearIndexInPartition clear_index_partition = 43;
+        MovePartition move_partition = 44;
+        string comment = 45;
         //for views
-        Select modify_query = 44;
-        RefreshableView refresh = 45;
+        Select modify_query = 46;
+        RefreshableView refresh = 47;
     }
 }
 
