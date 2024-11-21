@@ -232,8 +232,13 @@ void BackupImpl::openArchive()
 
 void BackupImpl::closeArchive(bool finalize)
 {
-    if (finalize && archive_writer)
-        archive_writer->finalize();
+    if (archive_writer)
+    {
+        if (finalize)
+            archive_writer->finalize();
+        else
+            archive_writer->cancel();
+    }
 
     archive_reader.reset();
     archive_writer.reset();

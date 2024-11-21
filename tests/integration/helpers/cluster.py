@@ -2377,24 +2377,31 @@ class ClickHouseCluster:
         self.print_all_docker_pieces()
         self.rabbitmq_ip = self.get_instance_ip(self.rabbitmq_host)
 
-        try:
-            if check_rabbitmq_is_available(
-                self.rabbitmq_docker_id, self.rabbitmq_cookie, timeout
-            ):
-                logging.debug("RabbitMQ is available")
-                return True
-        except Exception as ex:
-            logging.debug("RabbitMQ await_startup failed", exc_info=True)
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                if check_rabbitmq_is_available(
+                    self.rabbitmq_docker_id, self.rabbitmq_cookie, timeout
+                ):
+                    logging.debug("RabbitMQ is available")
+                    return True
+            except Exception as ex:
+                logging.debug("RabbitMQ await_startup failed, %s:", ex)
+                time.sleep(0.5)
 
-        try:
-            with open(os.path.join(self.rabbitmq_dir, "docker.log"), "w+") as f:
-                subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
-                    self.base_rabbitmq_cmd + ["logs"], stdout=f
-                )
-            rabbitmq_debuginfo(self.rabbitmq_docker_id, self.rabbitmq_cookie)
-        except Exception as e:
-            logging.debug(f"Unable to get logs from docker: {e}.")
-        raise Exception("Cannot wait RabbitMQ container")
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                with open(os.path.join(self.rabbitmq_dir, "docker.log"), "w+") as f:
+                    subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
+                        self.base_rabbitmq_cmd + ["logs"], stdout=f
+                    )
+                rabbitmq_debuginfo(self.rabbitmq_docker_id, self.rabbitmq_cookie)
+            except Exception as ex:
+                logging.debug("Unable to get logs from docker: %s:", ex)
+                time.sleep(0.5)
+
+        raise RuntimeError("Cannot wait RabbitMQ container")
 
     def wait_nats_is_available(self, max_retries=5):
         retries = 0

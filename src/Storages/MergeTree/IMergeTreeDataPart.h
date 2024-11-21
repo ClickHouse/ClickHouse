@@ -434,6 +434,9 @@ public:
 
     bool isProjectionPart() const { return parent_part != nullptr; }
 
+    /// Check if the part is in the `/moving` directory
+    bool isMovingPart() const;
+
     const IMergeTreeDataPart * getParentPart() const { return parent_part; }
     String getParentPartName() const { return parent_part_name; }
 
@@ -629,7 +632,7 @@ protected:
 
     mutable PartMetadataManagerPtr metadata_manager;
 
-    void removeIfNeeded();
+    void removeIfNeeded() noexcept;
 
     /// Fill each_columns_size and total_size with sizes from columns files on
     /// disk using columns and checksums.
