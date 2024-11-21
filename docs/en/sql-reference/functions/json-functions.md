@@ -468,7 +468,7 @@ SELECT JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}') = 2
 
 ### JSONType
 
-Return the type of a JSON value. If the value does not exist, `Null` will be returned (not usual [Null](../data-types/nullable.md), but a special Null=0 of `Enum8('Null' = 0, 'String' = 34,...`). .
+Return the type of a JSON value. If the value does not exist, `Null=0` will be returned (not usual [Null](../data-types/nullable.md), but `Null=0` of `Enum8('Null' = 0, 'String' = 34,...`). .
 
 **Syntax**
 
