@@ -22,11 +22,13 @@ size_t computeMaxTableNameLength(const String & database_name, ContextPtr contex
     size_t max_dropped_length = get_max_name_length(metadata_dropped_path);
 
     size_t escaped_db_name_length = escapeForFileName(database_name).length();
+    const size_t dot = 1;
     const size_t uuid_length = 36; // Standard UUID length
     const size_t extension_length = strlen(".sql");
 
     // Adjust for database name and UUID in dropped table filenames
-    size_t max_to_drop = max_dropped_length - escaped_db_name_length - uuid_length - extension_length;
+    // Max path will look like this: ./metadata_dropped/{db_name}.{table_name}.{uuid}.{extension}
+    size_t max_to_drop = max_dropped_length - dot - escaped_db_name_length - dot - uuid_length - extension_length;
 
     // Return the minimum of the two calculated lengths
     return std::min(max_create_length, max_to_drop);
