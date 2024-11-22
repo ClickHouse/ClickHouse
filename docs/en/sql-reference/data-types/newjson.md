@@ -110,8 +110,6 @@ Using CAST from deprecated `Object('json')`:
 CAST from `Tuple`/`Map`/`Object('json')` to `JSON` is implemented via serializing the column into `String` column containing JSON objects and deserializing it back to `JSON` type column. 
 :::
 
-CAST between `JSON` types with different arguments will be supported later.
-
 ## Reading JSON paths as subcolumns
 
 JSON type supports reading every path as a separate subcolumn. If type of the requested path was not specified in the JSON type declaration, the subcolumn of the path will always have type [Dynamic](/docs/en/sql-reference/data-types/dynamic.md).
