@@ -576,11 +576,11 @@ struct OnDemandSimdJSONParser
         ALWAYS_INLINE bool isBool() const { return value.type() == simdjson::ondemand::json_type::boolean; }
         ALWAYS_INLINE bool isNull() const
         {
-            std::cerr <<"gethere isnull()" << std::endl;
+            //std::cerr <<"gethere isnull()" << std::endl;
             auto r = value.type();
             if (r.error())
             {
-                std::cerr << "error: " << r.error() << std::endl;
+                //std::cerr << "error: " << r.error() << std::endl;
                 return false;
             }
             return r.value() == simdjson::ondemand::json_type::null;
@@ -600,10 +600,10 @@ struct OnDemandSimdJSONParser
         }
         ALWAYS_INLINE Array getArray() const
         {
-            std::cerr << "gethere getarray" << std::endl;
+            //std::cerr << "gethere getarray" << std::endl;
             if (array)
             {
-                std::cerr << "gethere cached getarray" << std::endl;
+                //std::cerr << "gethere cached getarray" << std::endl;
                 return *array;
             }
 
@@ -650,25 +650,26 @@ struct OnDemandSimdJSONParser
             it = rhs.it;
             arr_size = rhs.arr_size;
         }
-        Array& operator=(const Array& rhs) {
-        if (this != &rhs) {
-            array = rhs.array;
-            last_index = rhs.last_index;
-            it = rhs.it;
-            arr_size = rhs.arr_size;
+        Array& operator=(const Array& rhs)
+        {
+            if (this != &rhs) {
+                array = rhs.array;
+                last_index = rhs.last_index;
+                it = rhs.it;
+                arr_size = rhs.arr_size;
+            }
+            return *this;
         }
-        return *this;
-    }
 
         ALWAYS_INLINE Iterator begin() const { return array.begin().value(); }
         ALWAYS_INLINE Iterator end() const { return array.end().value(); }
         ALWAYS_INLINE size_t size() const
         {
             reset();
-            std::cerr << "gethere array.size()" << std::endl;
+            //std::cerr << "gethere array.size()" << std::endl;
             if (arr_size)
             {
-                std::cerr << "gethere array size cached :" << *arr_size << std::endl;
+                //std::cerr << "gethere array size cached :" << *arr_size << std::endl;
                 return *arr_size;
             }
             arr_size = array.count_elements().value();
@@ -677,7 +678,7 @@ struct OnDemandSimdJSONParser
         }
         ALWAYS_INLINE Element operator[](size_t index) const
         {
-            std::cerr << "gethere array[] index:" << index << ", ln:" << last_index << std::endl;
+            //std::cerr << "gethere array[] index:" << index << ", ln:" << last_index << std::endl;
             if (index <= last_index)
             {
                 array.reset();

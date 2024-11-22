@@ -223,15 +223,15 @@ private:
     template <typename JSONParser>
     static bool performMoves(const ColumnsWithTypeAndName & arguments, size_t row,
                              const typename JSONParser::Element & document, const std::vector<Move> & moves,
-                             typename JSONParser::Element & element, std::string_view & last_key)
+                                typename JSONParser::Element & element, std::string_view & last_key)
     {
         typename JSONParser::Element res_element = document;
         std::string_view key;
 
-        std::cerr << "gethere move size: " << moves.size() << std::endl;
+        //std::cerr << "gethere move size: " << moves.size() << std::endl;
         for (size_t j = 0; j != moves.size(); ++j)
         {
-            std::cerr <<"gethere performe move: " << j << std::endl;
+            //std::cerr <<"gethere perform move: " << j << std::endl;
             switch (moves[j].type)
             {
                 case MoveType::ConstIndex:
@@ -262,7 +262,7 @@ private:
                     break;
                 }
             }
-            std::cerr <<"gethere performe move: " << j  << " done"<< std::endl;
+            //std::cerr <<"gethere perform move: " << j  << " done"<< std::endl;
         }
 
         element = res_element;

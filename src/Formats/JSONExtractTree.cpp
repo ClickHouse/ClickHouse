@@ -128,7 +128,7 @@ template <typename JSONParser, typename NumberType>
 bool tryGetNumericValueFromJSONElement(
     NumberType & value, const typename JSONParser::Element & element, bool convert_bool_to_integer, bool allow_type_conversion, String & error)
 {
-    std::cerr << "gethere in tryget " << static_cast<int>(element.type()) << std::endl;
+    //std::cerr << "gethere in tryget " << static_cast<int>(element.type()) << std::endl;
     switch (element.type())
     {
         case ElementType::DOUBLE:
@@ -155,7 +155,7 @@ bool tryGetNumericValueFromJSONElement(
         case ElementType::INT64:
         {
 
-            std::cerr << "gethere int64" << std::endl;
+            //std::cerr << "gethere int64" << std::endl;
             int64_t val = element.getInt64();
             if (!accurate::convertNumeric<Int64, NumberType, false>(val, value))
             {
@@ -1080,18 +1080,18 @@ public:
         const FormatSettings & format_settings,
         String & error) const override
     {
-        std::cerr << "gethere nullable, nested name: "  << nested->getName()<< std::endl;
+        //std::cerr << "gethere nullable, nested name: "  << nested->getName()<< std::endl;
         if (element.isNull())
         {
             column.insertDefault();
             return true;
         }
 
-        std::cerr << "gethere nullable 111" << std::endl;
+        //std::cerr << "gethere nullable 111" << std::endl;
         auto & col_null = assert_cast<ColumnNullable &>(column);
         if (!nested->insertResultToColumn(col_null.getNestedColumn(), element, insert_settings, format_settings, error))
             return false;
-        std::cerr << "gethere nullable 2" << std::endl;
+        //std::cerr << "gethere nullable 2" << std::endl;
         col_null.getNullMapColumn().insertValue(0);
         return true;
     }
@@ -1166,7 +1166,7 @@ public:
         }
 
         auto array = element.getArray();
-        std::cerr << "gethere array sz: " << array.size() << std::endl;
+        //std::cerr << "gethere array sz: " << array.size() << std::endl;
 
         auto & col_arr = assert_cast<ColumnArray &>(column);
         auto & data = col_arr.getData();
@@ -1175,8 +1175,8 @@ public:
 
         for (auto value : array)
         {
-            std::cerr << "gethere column type " << nested->getName() << std::endl;
-            std::cerr << "gethere value type " << static_cast<int>(value.type()) << std::endl;
+            //std::cerr << "gethere column type " << nested->getName() << std::endl;
+            //std::cerr << "gethere value type " << static_cast<int>(value.type()) << std::endl;
             if (nested->insertResultToColumn(data, value, insert_settings, format_settings, error))
             {
                 were_valid_elements = true;
