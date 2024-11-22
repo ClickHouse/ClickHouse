@@ -1,5 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionIfBase.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>

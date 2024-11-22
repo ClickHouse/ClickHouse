@@ -7,6 +7,7 @@ import os.path as p
 import platform
 import pprint
 import pwd
+import random
 import re
 import shlex
 import shutil
@@ -744,11 +745,13 @@ class ClickHouseCluster:
         # available when with_prometheus == True
         self.with_prometheus = False
         self.prometheus_writer_host = "prometheus_writer"
+        self.prometheus_writer_ip = None
         self.prometheus_writer_port = 9090
         self.prometheus_writer_logs_dir = p.abspath(
             p.join(self.instances_dir, "prometheus_writer/logs")
         )
         self.prometheus_reader_host = "prometheus_reader"
+        self.prometheus_reader_ip = None
         self.prometheus_reader_port = 9091
         self.prometheus_reader_logs_dir = p.abspath(
             p.join(self.instances_dir, "prometheus_reader/logs")
@@ -1648,6 +1651,8 @@ class ClickHouseCluster:
         minio_certs_dir=None,
         minio_data_dir=None,
         use_keeper=True,
+        keeper_randomize_feature_flags=True,
+        keeper_required_feature_flags=[],
         main_config_name="config.xml",
         users_config_name="users.xml",
         copy_common_configs=True,
@@ -1680,6 +1685,8 @@ class ClickHouseCluster:
         if not env_variables:
             env_variables = {}
         self.use_keeper = use_keeper
+        self.keeper_randomize_feature_flags = keeper_randomize_feature_flags
+        self.keeper_required_feature_flags = keeper_required_feature_flags
 
         # Code coverage files will be placed in database directory
         # (affect only WITH_COVERAGE=1 build)
@@ -2375,24 +2382,31 @@ class ClickHouseCluster:
         self.print_all_docker_pieces()
         self.rabbitmq_ip = self.get_instance_ip(self.rabbitmq_host)
 
-        try:
-            if check_rabbitmq_is_available(
-                self.rabbitmq_docker_id, self.rabbitmq_cookie, timeout
-            ):
-                logging.debug("RabbitMQ is available")
-                return True
-        except Exception as ex:
-            logging.debug("RabbitMQ await_startup failed", exc_info=True)
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                if check_rabbitmq_is_available(
+                    self.rabbitmq_docker_id, self.rabbitmq_cookie, timeout
+                ):
+                    logging.debug("RabbitMQ is available")
+                    return True
+            except Exception as ex:
+                logging.debug("RabbitMQ await_startup failed, %s:", ex)
+                time.sleep(0.5)
 
-        try:
-            with open(os.path.join(self.rabbitmq_dir, "docker.log"), "w+") as f:
-                subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
-                    self.base_rabbitmq_cmd + ["logs"], stdout=f
-                )
-            rabbitmq_debuginfo(self.rabbitmq_docker_id, self.rabbitmq_cookie)
-        except Exception as e:
-            logging.debug(f"Unable to get logs from docker: {e}.")
-        raise Exception("Cannot wait RabbitMQ container")
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                with open(os.path.join(self.rabbitmq_dir, "docker.log"), "w+") as f:
+                    subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
+                        self.base_rabbitmq_cmd + ["logs"], stdout=f
+                    )
+                rabbitmq_debuginfo(self.rabbitmq_docker_id, self.rabbitmq_cookie)
+            except Exception as ex:
+                logging.debug("Unable to get logs from docker: %s:", ex)
+                time.sleep(0.5)
+
+        raise RuntimeError("Cannot wait RabbitMQ container")
 
     def wait_nats_is_available(self, max_retries=5):
         retries = 0
@@ -2728,6 +2742,16 @@ class ClickHouseCluster:
 
         raise Exception("Can't wait LDAP to start")
 
+    def wait_prometheus_to_start(self):
+        self.prometheus_reader_ip = self.get_instance_ip(self.prometheus_reader_host)
+        self.prometheus_writer_ip = self.get_instance_ip(self.prometheus_writer_host)
+        self.wait_for_url(
+            f"http://{self.prometheus_reader_ip}:{self.prometheus_reader_port}/api/v1/query?query=time()"
+        )
+        self.wait_for_url(
+            f"http://{self.prometheus_writer_ip}:{self.prometheus_writer_port}/api/v1/query?query=time()"
+        )
+
     def start(self):
         pytest_xdist_logging_to_separate_files.setup()
         logging.info("Running tests in {}".format(self.base_path))
@@ -2809,14 +2833,50 @@ class ClickHouseCluster:
 
                 if self.use_keeper:  # TODO: remove hardcoded paths from here
                     for i in range(1, 4):
+                        current_keeper_config_dir = os.path.join(
+                            f"{self.keeper_instance_dir_prefix}{i}", "config"
+                        )
                         shutil.copy(
                             os.path.join(
                                 self.keeper_config_dir, f"keeper_config{i}.xml"
                             ),
-                            os.path.join(
-                                self.keeper_instance_dir_prefix + f"{i}", "config"
-                            ),
+                            current_keeper_config_dir,
                         )
+
+                        extra_configs_dir = os.path.join(
+                            current_keeper_config_dir, f"keeper_config{i}.d"
+                        )
+                        os.mkdir(extra_configs_dir)
+                        feature_flags_config = os.path.join(
+                            extra_configs_dir, "feature_flags.yaml"
+                        )
+
+                        indentation = 4 * " "
+
+                        def get_feature_flag_value(feature_flag):
+                            if not self.keeper_randomize_feature_flags:
+                                return 1
+
+                            if feature_flag in self.keeper_required_feature_flags:
+                                return 1
+
+                            return random.randint(0, 1)
+
+                        with open(feature_flags_config, "w") as ff_config:
+                            ff_config.write("keeper_server:\n")
+                            ff_config.write(f"{indentation}feature_flags:\n")
+                            indentation *= 2
+
+                            for feature_flag in [
+                                "filtered_list",
+                                "multi_read",
+                                "check_not_exists",
+                                "create_if_not_exists",
+                                "remove_recursive",
+                            ]:
+                                ff_config.write(
+                                    f"{indentation}{feature_flag}: {get_feature_flag_value(feature_flag)}\n"
+                                )
 
                 run_and_check(self.base_zookeeper_cmd + common_opts, env=self.env)
                 self.up_called = True
@@ -3083,11 +3143,22 @@ class ClickHouseCluster:
                     f"http://{self.jdbc_bridge_ip}:{self.jdbc_bridge_port}/ping"
                 )
 
-            if self.with_prometheus:
+            if self.with_prometheus and self.base_prometheus_cmd:
                 os.makedirs(self.prometheus_writer_logs_dir)
                 os.chmod(self.prometheus_writer_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
                 os.makedirs(self.prometheus_reader_logs_dir)
                 os.chmod(self.prometheus_reader_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+
+                prometheus_start_cmd = self.base_prometheus_cmd + common_opts
+
+                logging.info(
+                    "Trying to create Prometheus instances by command %s",
+                    " ".join(map(str, prometheus_start_cmd)),
+                )
+                run_and_check(prometheus_start_cmd)
+                self.up_called = True
+                logging.info("Trying to connect to Prometheus...")
+                self.wait_prometheus_to_start()
 
             clickhouse_start_cmd = self.base_cmd + ["up", "-d", "--no-recreate"]
             logging.debug(
