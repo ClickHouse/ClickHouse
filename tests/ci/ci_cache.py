@@ -1,23 +1,24 @@
 import json
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass, asdict
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Set, Union
+from typing import Dict, Optional, Any, Union, Sequence, List, Set
 
 from ci_config import CI
-from ci_utils import GH, Utils
+
+from ci_utils import Utils, GH
 from commit_status_helper import CommitStatusData
-from digest_helper import JobDigester
 from env_helper import (
+    TEMP_PATH,
     CI_CONFIG_PATH,
+    S3_BUILDS_BUCKET,
     GITHUB_RUN_URL,
     REPORT_PATH,
-    S3_BUILDS_BUCKET,
-    TEMP_PATH,
 )
 from report import BuildResult
 from s3_helper import S3Helper
+from digest_helper import JobDigester
 
 
 @dataclass
@@ -386,7 +387,8 @@ class CiCache:
         res = record_key in self.records[record_type]
         if release_branch:
             return res and self.records[record_type][record_key].release_branch
-        return res
+        else:
+            return res
 
     def push(
         self,
@@ -795,12 +797,11 @@ class CiCache:
             # start waiting for the next TIMEOUT seconds if there are more than X(=4) jobs to wait
             # wait TIMEOUT seconds in rounds. Y(=5) is the max number of rounds
             expired_sec = 0
-            start_at = time.time()
+            start_at = int(time.time())
             while expired_sec < TIMEOUT and self.jobs_to_wait:
                 await_finished: Set[str] = set()
                 if not dry_run:
-                    # Do not sleep longer than required
-                    time.sleep(min(poll_interval_sec, TIMEOUT - expired_sec))
+                    time.sleep(poll_interval_sec)
                 self.update()
                 for job_name, job_config in self.jobs_to_wait.items():
                     num_batches = job_config.num_batches
@@ -845,12 +846,10 @@ class CiCache:
                     del self.jobs_to_wait[job]
 
                 if not dry_run:
-                    expired_sec = int(time.time() - start_at)
-                    msg = f"...awaiting continues... seconds left [{TIMEOUT - expired_sec}]"
-                    if expired_sec >= TIMEOUT:
-                        # Avoid `seconds left [-3]`
-                        msg = f"awaiting for round {round_cnt} is finished"
-                    print(msg)
+                    expired_sec = int(time.time()) - start_at
+                    print(
+                        f"...awaiting continues... seconds left [{TIMEOUT - expired_sec}]"
+                    )
                 else:
                     # make up for 2 iterations in dry_run
                     expired_sec += int(TIMEOUT / 2) + 1

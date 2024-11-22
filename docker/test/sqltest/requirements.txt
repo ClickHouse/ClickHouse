@@ -17,6 +17,7 @@ pip==24.1.1
 pipdeptree==2.23.0
 PyJWT==2.3.0
 pyparsing==2.4.7
+python-apt==2.4.0+ubuntu3
 pytz==2024.1
 PyYAML==6.0.1
 SecretStorage==3.3.1

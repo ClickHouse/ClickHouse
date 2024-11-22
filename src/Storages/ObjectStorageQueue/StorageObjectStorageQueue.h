@@ -5,9 +5,9 @@
 #include <Common/logger_useful.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/System/StorageSystemObjectStorageQueueSettings.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageFactory.h>
 
@@ -15,7 +15,6 @@
 namespace DB
 {
 class ObjectStorageQueueMetadata;
-struct ObjectStorageQueueSettings;
 
 class StorageObjectStorageQueue : public IStorage, WithContext
 {
@@ -34,9 +33,7 @@ public:
         ASTStorage * engine_args,
         LoadingStrictnessLevel mode);
 
-    String getName() const override { return engine_name; }
-
-    ObjectStorageType getType() { return type; }
+    String getName() const override { return "ObjectStorageQueue"; }
 
     void read(
         QueryPlan & query_plan,
@@ -48,34 +45,18 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
-
-    void alter(
-        const AlterCommands & commands,
-        ContextPtr local_context,
-        AlterLockHolder & table_lock_holder) override;
-
     const auto & getFormatName() const { return configuration->format; }
 
     const fs::path & getZooKeeperPath() const { return zk_path; }
 
     zkutil::ZooKeeperPtr getZooKeeper() const;
 
-    ObjectStorageQueueSettings getSettings() const;
-
 private:
     friend class ReadFromObjectStorageQueue;
     using FileIterator = ObjectStorageQueueSource::FileIterator;
-    using CommitSettings = ObjectStorageQueueSource::CommitSettings;
 
-    ObjectStorageType type;
-    const std::string engine_name;
+    const std::unique_ptr<ObjectStorageQueueSettings> queue_settings;
     const fs::path zk_path;
-    const bool enable_logging_to_queue_log;
-    UInt64 polling_min_timeout_ms;
-    UInt64 polling_max_timeout_ms;
-    UInt64 polling_backoff_ms;
-    const CommitSettings commit_settings;
 
     std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
     ConfigurationPtr configuration;
@@ -100,7 +81,6 @@ private:
     bool supportsSubcolumns() const override { return true; }
     bool supportsOptimizationToSubcolumns() const override { return false; }
     bool supportsDynamicSubcolumns() const override { return true; }
-    const ObjectStorageQueueTableMetadata & getTableMetadata() const { return files_metadata->getTableMetadata(); }
 
     std::shared_ptr<FileIterator> createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate);
     std::shared_ptr<ObjectStorageQueueSource> createSource(
