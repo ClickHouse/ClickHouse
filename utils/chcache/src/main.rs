@@ -1,13 +1,22 @@
 use blake3::Hasher;
-use std::fs;
 use log::{info, trace, warn};
-
+use std::fs;
 
 #[derive(Debug, serde::Deserialize)]
 struct Config {
     hostname: String,
     user: String,
     password: String,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            hostname: "https://build-cache.clickhouse-staging.com".to_string(),
+            user: "reader".to_string(),
+            password: "reader".to_string(),
+        }
+    }
 }
 
 #[tokio::main]
@@ -17,32 +26,45 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .place_config_file("config.toml")
         .unwrap();
 
-    let config: Config = match config_path.exists() {
-        true => {
-            trace!("Loading config file contents from {}", config_path.display());
+    let mut env_vars_available = true;
+    let required_env_vars = vec!["CH_HOSTNAME", "CH_USER", "CH_PASSWORD"];
+    for var in required_env_vars {
+        if std::env::var(var).is_ok() {
+            continue;
+        }
+
+        env_vars_available = false;
+        break;
+    }
+
+    let config: Config = match (config_path.exists(), env_vars_available) {
+        (true, _) => {
+            trace!(
+                "Loading config file contents from {}",
+                config_path.display()
+            );
 
             let config_text = fs::read_to_string(config_path).expect("Missing config file?");
             toml::from_str(&config_text).expect("Unable to load config, is it a valid toml?")
         }
-        false => {
-            trace!("Config file not found at {}, trying env vars", config_path.display());
-
-            let required_env_vars = vec!["CH_HOSTNAME", "CH_USER", "CH_PASSWORD"];
-            for var in required_env_vars {
-                if std::env::var(var).is_err() {
-                    return Err(format!(
-                        "Please set a missing environment variable {} or place a config file at {}",
-                        var,
-                        config_path.display(),
-                    ).into());
-                }
-            }
+        (_, true) => {
+            trace!(
+                "Config file not found at {}, trying env vars",
+                config_path.display()
+            );
 
             Config {
                 hostname: std::env::var("CH_HOSTNAME").unwrap(),
                 user: std::env::var("CH_USER").unwrap(),
                 password: std::env::var("CH_PASSWORD").unwrap(),
             }
+        }
+        (false, false) => {
+            trace!(
+                "Config file not found at {}, and env vars are missing, using defaults",
+                config_path.display()
+            );
+            Config::default()
         }
     };
 
@@ -375,7 +397,7 @@ async fn compiler_cache_entrypoint(config: &Config) {
     };
 
     write_to_fscache(&total_hash, &compiled_bytes);
-    if !did_load_from_cache {
+    if !did_load_from_cache && config.user != "reader" {
         loop {
             let upload_result =
                 load_to_clickhouse(&client, &total_hash, &compiler_version, &compiled_bytes).await;
