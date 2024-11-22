@@ -44,6 +44,38 @@ ${CLICKHOUSE_CLIENT} -q "
     ;"
 }
 
+function check_http_attributes()
+{
+result=$(${CLICKHOUSE_CLIENT} -q "
+    SYSTEM FLUSH LOGS;
+    SELECT attribute['http.referer'],
+           attribute['http.user.agent'],
+           attribute['http.method']
+    FROM system.opentelemetry_span_log
+    WHERE finish_date                      >= yesterday()
+    AND   operation_name                   = 'query'
+    AND   attribute['clickhouse.query_id'] = '${1}'
+    FORMAT JSONEachRow;
+  ")
+
+    local referer="not found"
+    local agent="not found"
+    local method="not found"
+
+    if [[ $result == *"http.referer"* ]]; then
+        referer="present"
+    fi
+    if [[ $result == *"http.user.agent"* ]]; then
+        agent="present"
+    fi
+    if [[ $result == *"http.method"* ]]; then
+        method="present"
+    fi
+
+# Output the result as a JSON object
+    echo "{\"http.referer\":\"$referer\",\"http.user.agent\":\"$agent\",\"http.method\":\"$method\"}"
+}
+
 #
 # Set up
 #
@@ -73,6 +105,10 @@ query_id=$(${CLICKHOUSE_CLIENT} -q "select generateUUIDv4()");
 execute_query $query_id 'select * from opentelemetry_test format Null'
 check_query_span $query_id
 
+# Test 5: Executes a TCP SELECT query and checks for http attributes in OpenTelemetry spans.
+query_id=$(${CLICKHOUSE_CLIENT} -q "select generateUUIDv4()");
+execute_query $query_id 'select * from opentelemetry_test format Null'
+check_http_attributes $query_id
 
 #
 # Tear down
