@@ -234,13 +234,17 @@ void IdentifierResolver::collectScopeValidIdentifiersForTypoCorrection(
             assert(expression);
             auto expression_identifier = Identifier(name);
             valid_identifiers_result.insert(expression_identifier);
+        }
 
-            auto result_type = getExpressionNodeResultTypeOrNull(expression);
-
-            if (identifier_is_compound && result_type)
+        if (identifier_is_compound)
+        {
+            for (const auto & [name, expression_type] : scope.aliases.alias_name_to_expression_type)
             {
+                chassert(expression_type);
+                auto expression_identifier = Identifier(name);
+
                 collectCompoundExpressionValidIdentifiersForTypoCorrection(unresolved_identifier,
-                    result_type,
+                    expression_type,
                     expression_identifier,
                     valid_identifiers_result);
             }

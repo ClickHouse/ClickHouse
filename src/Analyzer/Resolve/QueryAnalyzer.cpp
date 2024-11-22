@@ -1267,6 +1267,12 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
             resolveExpressionNode(alias_node, *scope_to_resolve_alias_expression, false /*allow_lambda_expression*/, identifier_lookup.isTableExpressionLookup() /*allow_table_expression*/);
     }
 
+    if (identifier_lookup.isExpressionLookup() && alias_node)
+    {
+        // Remember resolved type for typo correction
+        scope_to_resolve_alias_expression->aliases.alias_name_to_expression_type[identifier_bind_part] = alias_node->getResultType();
+    }
+
     if (identifier_lookup.identifier.isCompound() && alias_node)
     {
         if (identifier_lookup.isExpressionLookup())
@@ -3808,8 +3814,6 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                     valid_identifiers);
 
                 auto hints = IdentifierResolver::collectIdentifierTypoHints(unresolved_identifier, valid_identifiers);
-
-                LOG_DEBUG(&Poco::Logger::get("resolveExpression"), "Will throw exception from here");
 
                 throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown {}{} identifier {} in scope {}{}",
                     toStringLowercase(IdentifierLookupContext::EXPRESSION),
