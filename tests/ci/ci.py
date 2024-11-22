@@ -427,7 +427,7 @@ def _mark_success_action(
         # do nothing, exit without failure
         print(f"ERROR: no status file for job [{job}]")
 
-    if job_config.run_by_labels or not job_config.has_digest():
+    if job_config.run_by_label or not job_config.has_digest():
         print(f"Job [{job}] has no digest or run by label in CI - do not cache")
     else:
         if pr_info.is_master:
@@ -798,6 +798,10 @@ def _upload_build_profile_data(
         logging.info("Unknown CI logs host, skip uploading build profile data")
         return
 
+    if not pr_info.number == 0:
+        logging.info("Skipping uploading build profile data for PRs")
+        return
+
     instance_type = get_instance_type()
     instance_id = get_instance_id()
     auth = {
@@ -991,7 +995,7 @@ def _run_test(job_name: str, run_command: str) -> int:
             jr = JobReport.load()
             if jr.dummy:
                 print(
-                    "ERROR: Run action failed with timeout and did not generate JobReport - update dummy report with execution time"
+                    f"ERROR: Run action failed with timeout and did not generate JobReport - update dummy report with execution time"
                 )
                 jr.test_results = [TestResult.create_check_timeout_expired()]
                 jr.duration = stopwatch.duration_seconds
@@ -1126,6 +1130,10 @@ def main() -> int:
         if IS_CI and pr_info.is_pr and not ci_settings.no_ci_cache:
             ci_cache.filter_out_not_affected_jobs()
             ci_cache.print_status()
+
+        if pr_info.is_release and not pr_info.is_master:
+            ### FIXME bug with Docs check in ci_cache.jobs_to_wait in release branches
+            ci_cache.jobs_to_wait.pop(CI.JobNames.DOCS_CHECK, None)
 
         if IS_CI and not pr_info.is_merge_queue:
 
@@ -1305,7 +1313,7 @@ def main() -> int:
         elif job_report.job_skipped:
             print(f"Skipped after rerun check {[args.job_name]} - do nothing")
         else:
-            print("ERROR: Job was killed - generate evidence")
+            print(f"ERROR: Job was killed - generate evidence")
             job_report.update_duration()
             ret_code = os.getenv("JOB_EXIT_CODE", "")
             if ret_code:

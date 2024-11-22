@@ -99,7 +99,6 @@ class TeePopen:
             for line in self.process.stdout:
                 sys.stdout.write(line)
                 self.log_file.write(line)
-                self.log_file.flush()
 
         return self.process.wait()
 

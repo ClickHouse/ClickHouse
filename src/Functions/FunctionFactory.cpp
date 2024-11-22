@@ -1,5 +1,4 @@
 #include <Functions/FunctionFactory.h>
-#include <Functions/IFunctionAdaptors.h>
 
 #include <Interpreters/Context.h>
 
@@ -82,7 +81,8 @@ FunctionOverloadResolverPtr FunctionFactory::getImpl(
         auto hints = this->getHints(name);
         if (!hints.empty())
             throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown function {}{}. Maybe you meant: {}", name, extra_info, toString(hints));
-        throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown function {}{}", name, extra_info);
+        else
+            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown function {}{}", name, extra_info);
     }
 
     return res;

@@ -36,7 +36,7 @@ void SettingsProfileElement::init(const ASTSettingsProfileElement & ast, const A
         if (id_mode)
             return parse<UUID>(name_);
         assert(access_control);
-        return access_control->getID<SettingsProfile>(name_);  /// NOLINT(clang-analyzer-core.CallAndMessage)
+        return access_control->getID<SettingsProfile>(name_);
     };
 
     if (!ast.parent_profile.empty())
