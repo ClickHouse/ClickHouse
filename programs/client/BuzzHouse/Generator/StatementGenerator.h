@@ -281,9 +281,9 @@ private:
     int generateDerivedTable(RandomGenerator & rg, SQLRelation & rel, uint32_t allowed_clauses, Select * sel);
     int generateFromStatement(RandomGenerator & rg, uint32_t allowed_clauses, FromStatement * ft);
     int addCTEs(RandomGenerator & rg, uint32_t allowed_clauses, CTEs * qctes);
-    int generateSelect(RandomGenerator & rg, bool top, uint32_t ncols, uint32_t allowed_clauses, Select * sel);
+    int generateSelect(RandomGenerator & rg, bool top, bool force_global_agg, uint32_t ncols, uint32_t allowed_clauses, Select * sel);
 
-    int generateTopSelect(RandomGenerator & rg, uint32_t allowed_clauses, TopSelect * sq);
+    int generateTopSelect(RandomGenerator & rg, bool force_global_agg, uint32_t allowed_clauses, TopSelect * sq);
     int generateNextExplain(RandomGenerator & rg, ExplainQuery * sq);
     int generateNextQuery(RandomGenerator & rg, SQLQueryInner * sq);
 

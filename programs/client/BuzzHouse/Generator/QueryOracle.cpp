@@ -514,15 +514,21 @@ int QueryOracle::generateSettingQuery(RandomGenerator & rg, StatementGenerator &
     const std::filesystem::path & qfile = fc.db_file_path / "query.data";
     TopSelect * ts = sq2.mutable_inner_query()->mutable_select();
     SelectIntoFile * sif = ts->mutable_intofile();
+    const bool global_aggregate = rg.nextSmallNumber() < 4;
 
     generator.setAllowNotDetermistic(false);
-    generator.generateTopSelect(rg, std::numeric_limits<uint32_t>::max(), ts);
+    generator.generateTopSelect(rg, global_aggregate, std::numeric_limits<uint32_t>::max(), ts);
     generator.setAllowNotDetermistic(true);
 
-    Select * osel = ts->release_sel();
-    SelectStatementCore * nsel = ts->mutable_sel()->mutable_select_core();
-    nsel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_derived_query()->set_allocated_select(osel);
-    nsel->mutable_orderby()->set_oall(true);
+    if (!global_aggregate)
+    {
+        //if not global aggregate, use ORDER BY clause
+        Select * osel = ts->release_sel();
+        SelectStatementCore * nsel = ts->mutable_sel()->mutable_select_core();
+        nsel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_derived_query()->set_allocated_select(
+            osel);
+        nsel->mutable_orderby()->set_oall(true);
+    }
     ts->set_format(OutFormat::OUT_CSV);
     sif->set_path(qfile.generic_string());
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);

@@ -878,7 +878,7 @@ int StatementGenerator::addTableProjection(RandomGenerator & rg, SQLTable & t, c
     pdef->mutable_proj()->set_projection("p" + std::to_string(pname));
     this->inside_projection = true;
     addTableRelation(rg, false, "", t);
-    generateSelect(rg, true, ncols, allow_groupby | allow_orderby, pdef->mutable_select());
+    generateSelect(rg, true, false, ncols, allow_groupby | allow_orderby, pdef->mutable_select());
     this->levels.clear();
     this->inside_projection = false;
     to_add.insert(pname);
@@ -1116,6 +1116,7 @@ int StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTabl
             generateSelect(
                 rg,
                 true,
+                false,
                 static_cast<uint32_t>(next.realNumberOfColumns()),
                 std::numeric_limits<uint32_t>::max(),
                 ct->mutable_as_select_stmt());

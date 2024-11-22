@@ -383,7 +383,7 @@ int StatementGenerator::generateSubquery(RandomGenerator & rg, Select * sel)
     this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = true;
     this->current_level++;
     this->levels[this->current_level] = QueryLevel(this->current_level);
-    this->generateSelect(rg, true, 1, std::numeric_limits<uint32_t>::max(), sel);
+    this->generateSelect(rg, true, false, 1, std::numeric_limits<uint32_t>::max(), sel);
     this->current_level--;
     this->levels[this->current_level].inside_aggregate = prev_inside_aggregate;
     this->levels[this->current_level].allow_aggregates = prev_allow_aggregates;

@@ -54,7 +54,7 @@ int StatementGenerator::generateDerivedTable(RandomGenerator & rg, SQLRelation &
 
     this->current_level++;
     this->levels[this->current_level] = QueryLevel(this->current_level);
-    generateSelect(rg, false, ncols, allowed_clauses, sel);
+    generateSelect(rg, false, false, ncols, allowed_clauses, sel);
     this->current_level--;
 
     for (const auto & entry : levels_backup)
@@ -1016,7 +1016,7 @@ int StatementGenerator::addCTEs(RandomGenerator & rg, const uint32_t allowed_cla
 }
 
 int StatementGenerator::generateSelect(
-    RandomGenerator & rg, const bool top, const uint32_t ncols, const uint32_t allowed_clauses, Select * sel)
+    RandomGenerator & rg, const bool top, const bool force_global_agg, const uint32_t ncols, const uint32_t allowed_clauses, Select * sel)
 {
     int res = 0;
 
@@ -1024,7 +1024,8 @@ int StatementGenerator::generateSelect(
     {
         this->addCTEs(rg, allowed_clauses, sel->mutable_ctes());
     }
-    if ((allowed_clauses & allow_set) && this->depth<this->fc.max_depth && this->fc.max_width> this->width + 1 && rg.nextSmallNumber() < 3)
+    if ((allowed_clauses & allow_set) && !force_global_agg && this->depth<this->fc.max_depth && this->fc.max_width> this->width + 1
+        && rg.nextSmallNumber() < 3)
     {
         SetQuery * setq = sel->mutable_set_query();
 
@@ -1034,10 +1035,10 @@ int StatementGenerator::generateSelect(
         this->depth++;
         this->current_level++;
         this->levels[this->current_level] = QueryLevel(this->current_level);
-        res = std::max<int>(res, generateSelect(rg, false, ncols, allowed_clauses, setq->mutable_sel1()));
+        res = std::max<int>(res, generateSelect(rg, false, false, ncols, allowed_clauses, setq->mutable_sel1()));
         this->width++;
         this->levels[this->current_level] = QueryLevel(this->current_level);
-        res = std::max<int>(res, generateSelect(rg, false, ncols, allowed_clauses, setq->mutable_sel2()));
+        res = std::max<int>(res, generateSelect(rg, false, false, ncols, allowed_clauses, setq->mutable_sel2()));
         this->current_level--;
         this->depth--;
         this->width--;
@@ -1068,14 +1069,14 @@ int StatementGenerator::generateSelect(
             generateWherePredicate(rg, ssc->mutable_where()->mutable_expr()->mutable_expr());
         }
 
-        if ((allowed_clauses & allow_groupby) && this->depth < this->fc.max_depth && this->width < this->fc.max_width
+        if ((allowed_clauses & allow_groupby) && !force_global_agg && this->depth < this->fc.max_depth && this->width < this->fc.max_width
             && rg.nextSmallNumber() < 4)
         {
             generateGroupBy(rg, ncols, false, (allowed_clauses & allow_groupby_settings), ssc->mutable_groupby());
         }
         else
         {
-            this->levels[this->current_level].global_aggregate = rg.nextSmallNumber() < 4;
+            this->levels[this->current_level].global_aggregate = force_global_agg || rg.nextSmallNumber() < 4;
         }
         this->levels[this->current_level].allow_aggregates = prev_allow_aggregates;
         this->levels[this->current_level].allow_window_funcs = prev_allow_window_funcs;
@@ -1126,14 +1127,14 @@ int StatementGenerator::generateSelect(
     return res;
 }
 
-int StatementGenerator::generateTopSelect(RandomGenerator & rg, const uint32_t allowed_clauses, TopSelect * ts)
+int StatementGenerator::generateTopSelect(RandomGenerator & rg, const bool force_global_agg, const uint32_t allowed_clauses, TopSelect * ts)
 {
     int res = 0;
     const uint32_t ncols = std::max(std::min(this->fc.max_width - this->width, (rg.nextMediumNumber() % UINT32_C(5)) + 1), UINT32_C(1));
 
     assert(this->levels.empty());
     this->levels[this->current_level] = QueryLevel(this->current_level);
-    if ((res = generateSelect(rg, true, ncols, allowed_clauses, ts->mutable_sel())))
+    if ((res = generateSelect(rg, true, force_global_agg, ncols, allowed_clauses, ts->mutable_sel())))
     {
         return res;
     }

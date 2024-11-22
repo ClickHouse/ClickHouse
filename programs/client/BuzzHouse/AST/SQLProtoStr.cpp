@@ -2,7 +2,6 @@
 #include <cctype>
 #include <cstdint>
 #include <limits>
-#include <random>
 
 #include "Hugeint.h"
 #include "SQLProtoStr.h"

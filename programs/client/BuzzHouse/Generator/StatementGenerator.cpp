@@ -195,7 +195,12 @@ int StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView 
     }
     this->levels[this->current_level] = QueryLevel(this->current_level);
     generateSelect(
-        rg, false, next.ncols, next.is_materialized ? (~allow_prewhere) : std::numeric_limits<uint32_t>::max(), cv->mutable_select());
+        rg,
+        false,
+        false,
+        next.ncols,
+        next.is_materialized ? (~allow_prewhere) : std::numeric_limits<uint32_t>::max(),
+        cv->mutable_select());
     if (next.is_deterministic)
     {
         this->setAllowNotDetermistic(true);
@@ -503,7 +508,8 @@ int StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
         {
             this->addCTEs(rg, std::numeric_limits<uint32_t>::max(), ins->mutable_ctes());
         }
-        generateSelect(rg, true, static_cast<uint32_t>(this->entries.size()), std::numeric_limits<uint32_t>::max(), ins->mutable_select());
+        generateSelect(
+            rg, true, false, static_cast<uint32_t>(this->entries.size()), std::numeric_limits<uint32_t>::max(), ins->mutable_select());
     }
     else
     {
@@ -690,6 +696,7 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 this->levels[this->current_level] = QueryLevel(this->current_level);
                 generateSelect(
                     rg,
+                    false,
                     false,
                     v.staged_ncols,
                     v.is_materialized ? (~allow_prewhere) : std::numeric_limits<uint32_t>::max(),
@@ -1763,7 +1770,7 @@ int StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner * 
     {
         return generateNextCreateFunction(rg, sq->mutable_create_function());
     }
-    return generateTopSelect(rg, std::numeric_limits<uint32_t>::max(), sq->mutable_select());
+    return generateTopSelect(rg, false, std::numeric_limits<uint32_t>::max(), sq->mutable_select());
 }
 
 static const std::vector<TestSetting> explain_settings{//QUERY TREE
