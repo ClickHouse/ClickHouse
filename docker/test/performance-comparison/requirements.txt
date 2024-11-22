@@ -19,6 +19,7 @@ pipdeptree==2.23.0
 Pygments==2.11.2
 PyJWT==2.3.0
 pyparsing==2.4.7
+python-apt==2.4.0+ubuntu3
 pytz==2023.4
 PyYAML==6.0.1
 scipy==1.12.0

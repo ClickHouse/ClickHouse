@@ -99,7 +99,7 @@ size_t RangesInDataPart::getMarksCount() const
 
 size_t RangesInDataPart::getRowsCount() const
 {
-    return data_part->index_granularity->getRowsCountInRanges(ranges);
+    return data_part->index_granularity.getRowsCountInRanges(ranges);
 }
 
 

@@ -26,7 +26,6 @@
 #include <Functions/FunctionIfBase.h>
 #include <Functions/GatherUtils/Algorithms.h>
 #include <Functions/IFunction.h>
-#include <Functions/IFunctionAdaptors.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <Common/assert_cast.h>

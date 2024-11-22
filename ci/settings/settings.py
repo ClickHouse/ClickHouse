@@ -1,10 +1,8 @@
-from ci.settings.definitions import (
+from ci_v2.settings.definitions import (
     S3_BUCKET_HTTP_ENDPOINT,
     S3_BUCKET_NAME,
     RunnerLabels,
 )
-
-MAIN_BRANCH = "master"
 
 S3_ARTIFACT_PATH = f"{S3_BUCKET_NAME}/artifacts"
 CI_CONFIG_RUNS_ON = [RunnerLabels.CI_SERVICES]

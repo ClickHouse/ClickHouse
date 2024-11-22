@@ -7,7 +7,6 @@ import os.path as p
 import platform
 import pprint
 import pwd
-import random
 import re
 import shlex
 import shutil
@@ -745,13 +744,11 @@ class ClickHouseCluster:
         # available when with_prometheus == True
         self.with_prometheus = False
         self.prometheus_writer_host = "prometheus_writer"
-        self.prometheus_writer_ip = None
         self.prometheus_writer_port = 9090
         self.prometheus_writer_logs_dir = p.abspath(
             p.join(self.instances_dir, "prometheus_writer/logs")
         )
         self.prometheus_reader_host = "prometheus_reader"
-        self.prometheus_reader_ip = None
         self.prometheus_reader_port = 9091
         self.prometheus_reader_logs_dir = p.abspath(
             p.join(self.instances_dir, "prometheus_reader/logs")
@@ -1651,14 +1648,11 @@ class ClickHouseCluster:
         minio_certs_dir=None,
         minio_data_dir=None,
         use_keeper=True,
-        keeper_randomize_feature_flags=True,
-        keeper_required_feature_flags=[],
         main_config_name="config.xml",
         users_config_name="users.xml",
         copy_common_configs=True,
         config_root_name="clickhouse",
         extra_configs=[],
-        extra_args="",
         randomize_settings=True,
     ) -> "ClickHouseInstance":
         """Add an instance to the cluster.
@@ -1685,8 +1679,6 @@ class ClickHouseCluster:
         if not env_variables:
             env_variables = {}
         self.use_keeper = use_keeper
-        self.keeper_randomize_feature_flags = keeper_randomize_feature_flags
-        self.keeper_required_feature_flags = keeper_required_feature_flags
 
         # Code coverage files will be placed in database directory
         # (affect only WITH_COVERAGE=1 build)
@@ -1748,7 +1740,6 @@ class ClickHouseCluster:
             with_postgres_cluster=with_postgres_cluster,
             with_postgresql_java_client=with_postgresql_java_client,
             clickhouse_start_command=clickhouse_start_command,
-            clickhouse_start_extra_args=extra_args,
             main_config_name=main_config_name,
             users_config_name=users_config_name,
             copy_common_configs=copy_common_configs,
@@ -2141,16 +2132,6 @@ class ClickHouseCluster:
                 ],
             )
 
-    def remove_file_from_container(self, container_id, path):
-        self.exec_in_container(
-            container_id,
-            [
-                "bash",
-                "-c",
-                "rm {}".format(path),
-            ],
-        )
-
     def wait_for_url(
         self, url="http://localhost:8123/ping", conn_timeout=2, interval=2, timeout=60
     ):
@@ -2378,7 +2359,7 @@ class ClickHouseCluster:
                 time.sleep(0.5)
         raise Exception("Cannot wait PostgreSQL Java Client container")
 
-    def wait_rabbitmq_to_start(self, timeout=120):
+    def wait_rabbitmq_to_start(self, timeout=60):
         self.print_all_docker_pieces()
         self.rabbitmq_ip = self.get_instance_ip(self.rabbitmq_host)
 
@@ -2742,16 +2723,6 @@ class ClickHouseCluster:
 
         raise Exception("Can't wait LDAP to start")
 
-    def wait_prometheus_to_start(self):
-        self.prometheus_reader_ip = self.get_instance_ip(self.prometheus_reader_host)
-        self.prometheus_writer_ip = self.get_instance_ip(self.prometheus_writer_host)
-        self.wait_for_url(
-            f"http://{self.prometheus_reader_ip}:{self.prometheus_reader_port}/api/v1/query?query=time()"
-        )
-        self.wait_for_url(
-            f"http://{self.prometheus_writer_ip}:{self.prometheus_writer_port}/api/v1/query?query=time()"
-        )
-
     def start(self):
         pytest_xdist_logging_to_separate_files.setup()
         logging.info("Running tests in {}".format(self.base_path))
@@ -2833,50 +2804,14 @@ class ClickHouseCluster:
 
                 if self.use_keeper:  # TODO: remove hardcoded paths from here
                     for i in range(1, 4):
-                        current_keeper_config_dir = os.path.join(
-                            f"{self.keeper_instance_dir_prefix}{i}", "config"
-                        )
                         shutil.copy(
                             os.path.join(
                                 self.keeper_config_dir, f"keeper_config{i}.xml"
                             ),
-                            current_keeper_config_dir,
+                            os.path.join(
+                                self.keeper_instance_dir_prefix + f"{i}", "config"
+                            ),
                         )
-
-                        extra_configs_dir = os.path.join(
-                            current_keeper_config_dir, f"keeper_config{i}.d"
-                        )
-                        os.mkdir(extra_configs_dir)
-                        feature_flags_config = os.path.join(
-                            extra_configs_dir, "feature_flags.yaml"
-                        )
-
-                        indentation = 4 * " "
-
-                        def get_feature_flag_value(feature_flag):
-                            if not self.keeper_randomize_feature_flags:
-                                return 1
-
-                            if feature_flag in self.keeper_required_feature_flags:
-                                return 1
-
-                            return random.randint(0, 1)
-
-                        with open(feature_flags_config, "w") as ff_config:
-                            ff_config.write("keeper_server:\n")
-                            ff_config.write(f"{indentation}feature_flags:\n")
-                            indentation *= 2
-
-                            for feature_flag in [
-                                "filtered_list",
-                                "multi_read",
-                                "check_not_exists",
-                                "create_if_not_exists",
-                                "remove_recursive",
-                            ]:
-                                ff_config.write(
-                                    f"{indentation}{feature_flag}: {get_feature_flag_value(feature_flag)}\n"
-                                )
 
                 run_and_check(self.base_zookeeper_cmd + common_opts, env=self.env)
                 self.up_called = True
@@ -3143,22 +3078,11 @@ class ClickHouseCluster:
                     f"http://{self.jdbc_bridge_ip}:{self.jdbc_bridge_port}/ping"
                 )
 
-            if self.with_prometheus and self.base_prometheus_cmd:
+            if self.with_prometheus:
                 os.makedirs(self.prometheus_writer_logs_dir)
                 os.chmod(self.prometheus_writer_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
                 os.makedirs(self.prometheus_reader_logs_dir)
                 os.chmod(self.prometheus_reader_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
-
-                prometheus_start_cmd = self.base_prometheus_cmd + common_opts
-
-                logging.info(
-                    "Trying to create Prometheus instances by command %s",
-                    " ".join(map(str, prometheus_start_cmd)),
-                )
-                run_and_check(prometheus_start_cmd)
-                self.up_called = True
-                logging.info("Trying to connect to Prometheus...")
-                self.wait_prometheus_to_start()
 
             clickhouse_start_cmd = self.base_cmd + ["up", "-d", "--no-recreate"]
             logging.debug(
@@ -3441,7 +3365,6 @@ class ClickHouseInstance:
         with_postgres_cluster,
         with_postgresql_java_client,
         clickhouse_start_command=CLICKHOUSE_START_COMMAND,
-        clickhouse_start_extra_args="",
         main_config_name="config.xml",
         users_config_name="users.xml",
         copy_common_configs=True,
@@ -3537,18 +3460,11 @@ class ClickHouseInstance:
         self.users_config_name = users_config_name
         self.copy_common_configs = copy_common_configs
 
-        clickhouse_start_command_with_conf = clickhouse_start_command.replace(
+        self.clickhouse_start_command = clickhouse_start_command.replace(
             "{main_config_file}", self.main_config_name
         )
-
-        self.clickhouse_start_command = "{} -- {}".format(
-            clickhouse_start_command_with_conf, clickhouse_start_extra_args
-        )
-        self.clickhouse_start_command_in_daemon = "{} --daemon -- {}".format(
-            clickhouse_start_command_with_conf, clickhouse_start_extra_args
-        )
-        self.clickhouse_stay_alive_command = "bash -c \"trap 'pkill tail' INT TERM; {}; coproc tail -f /dev/null; wait $$!\"".format(
-            self.clickhouse_start_command_in_daemon
+        self.clickhouse_stay_alive_command = "bash -c \"trap 'pkill tail' INT TERM; {} --daemon; coproc tail -f /dev/null; wait $$!\"".format(
+            clickhouse_start_command
         )
 
         self.path = p.join(self.cluster.instances_dir, name)
@@ -3991,7 +3907,7 @@ class ClickHouseInstance:
             if pid is None:
                 logging.debug("No clickhouse process running. Start new one.")
                 self.exec_in_container(
-                    ["bash", "-c", self.clickhouse_start_command_in_daemon],
+                    ["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)],
                     user=str(os.getuid()),
                 )
                 if expected_to_fail:
@@ -4046,11 +3962,11 @@ class ClickHouseInstance:
         )
         logging.info(f"PS RESULT:\n{ps_clickhouse}")
         pid = self.get_process_pid("clickhouse")
-        # if pid is not None:
-        #     self.exec_in_container(
-        #         ["bash", "-c", f"gdb -batch -ex 'thread apply all bt full' -p {pid}"],
-        #         user="root",
-        #     )
+        if pid is not None:
+            self.exec_in_container(
+                ["bash", "-c", f"gdb -batch -ex 'thread apply all bt full' -p {pid}"],
+                user="root",
+            )
         if last_err is not None:
             raise last_err
 
@@ -4230,9 +4146,6 @@ class ClickHouseInstance:
             self.docker_id, local_path, dest_path
         )
 
-    def remove_file_from_container(self, path):
-        return self.cluster.remove_file_from_container(self.docker_id, path)
-
     def get_process_pid(self, process_name):
         output = self.exec_in_container(
             [
@@ -4311,7 +4224,7 @@ class ClickHouseInstance:
             user="root",
         )
         self.exec_in_container(
-            ["bash", "-c", self.clickhouse_start_command_in_daemon],
+            ["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)],
             user=str(os.getuid()),
         )
 
@@ -4392,7 +4305,7 @@ class ClickHouseInstance:
                 ]
             )
         self.exec_in_container(
-            ["bash", "-c", self.clickhouse_start_command_in_daemon],
+            ["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)],
             user=str(os.getuid()),
         )
 
@@ -4780,7 +4693,9 @@ class ClickHouseInstance:
         entrypoint_cmd = self.clickhouse_start_command
 
         if self.stay_alive:
-            entrypoint_cmd = self.clickhouse_stay_alive_command
+            entrypoint_cmd = self.clickhouse_stay_alive_command.replace(
+                "{main_config_file}", self.main_config_name
+            )
         else:
             entrypoint_cmd = (
                 "["
