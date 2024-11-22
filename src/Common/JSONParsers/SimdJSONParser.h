@@ -652,7 +652,8 @@ struct OnDemandSimdJSONParser
         }
         Array& operator=(const Array& rhs)
         {
-            if (this != &rhs) {
+            if (this != &rhs)
+            {
                 array = rhs.array;
                 last_index = rhs.last_index;
                 it = rhs.it;
