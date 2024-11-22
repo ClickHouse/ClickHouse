@@ -557,7 +557,7 @@ int StatementGenerator::generateLambdaCall(RandomGenerator & rg, const uint32_t 
 
     for (const auto & entry : this->levels)
     {
-        levels_backup[entry.first] = std::move(entry.second);
+        levels_backup[entry.first] = entry.second;
     }
     this->levels.clear();
     this->levels[this->current_level].inside_aggregate = false;
@@ -566,7 +566,7 @@ int StatementGenerator::generateLambdaCall(RandomGenerator & rg, const uint32_t 
     for (uint32_t i = 0; i < nparams; i++)
     {
         buf.resize(0);
-        buf += ('x' + i);
+        buf += std::string(1, 'x' + i);
         lexpr->add_args()->set_column(buf);
         rel.cols.push_back(SQLRelationCol("", buf, std::nullopt));
     }
@@ -576,7 +576,7 @@ int StatementGenerator::generateLambdaCall(RandomGenerator & rg, const uint32_t 
     this->levels.clear();
     for (const auto & entry : levels_backup)
     {
-        this->levels[entry.first] = std::move(entry.second);
+        this->levels[entry.first] = entry.second;
     }
     this->levels[this->current_level].inside_aggregate = prev_inside_aggregate;
     this->levels[this->current_level].allow_aggregates = prev_allow_aggregates;
@@ -598,10 +598,11 @@ int StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow_
     {
         //aggregate
         const CHAggregate & agg = CHAggrs[nopt - static_cast<uint32_t>(nallow_funcs ? funcs_size : 0)];
-        const uint32_t max_params = std::min(this->fc.max_width - this->width, std::min(agg.max_params, UINT32_C(5))),
-                       max_args = std::min(this->fc.max_width - this->width, std::min(agg.max_args, UINT32_C(5))),
-                       ncombinators
-            = rg.nextSmallNumber() < 4 ? std::min(this->fc.max_width - this->width, (rg.nextSmallNumber() % 3) + 1) : 0;
+        const uint32_t agg_max_params
+            = std::min(agg.max_params, UINT32_C(5)),
+            max_params = std::min(this->fc.max_width - this->width, agg_max_params), agg_max_args = std::min(agg.max_args, UINT32_C(5)),
+            max_args = std::min(this->fc.max_width - this->width, agg_max_args),
+            ncombinators = rg.nextSmallNumber() < 4 ? std::min(this->fc.max_width - this->width, (rg.nextSmallNumber() % 3) + 1) : 0;
         const bool prev_inside_aggregate = this->levels[this->current_level].inside_aggregate,
                    prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;
 
@@ -711,10 +712,11 @@ int StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow_
         {
             //use a default catalog function
             const CHFunction & func = rg.nextLargeNumber() < 5 ? materialize : CHFuncs[nopt];
+            const uint32_t func_max_args = std::min(func.max_args, UINT32_C(5));
 
             n_lambda = std::max(func.min_lambda_param, func.max_lambda_param > 0 ? (rg.nextSmallNumber() % func.max_lambda_param) : 0);
             min_args = func.min_args;
-            max_args = std::min(this->fc.max_width - this->width, std::min(func.max_args, UINT32_C(5)));
+            max_args = std::min(this->fc.max_width - this->width, func_max_args);
             sfn->set_catalog_func(static_cast<SQLFunc>(func.fnum));
         }
 
@@ -761,13 +763,13 @@ int StatementGenerator::generateFrameBound(RandomGenerator & rg, Expr * expr)
 
         for (const auto & entry : this->levels)
         {
-            levels_backup[entry.first] = std::move(entry.second);
+            levels_backup[entry.first] = entry.second;
         }
         this->levels.clear();
         this->generateExpression(rg, expr);
         for (const auto & entry : levels_backup)
         {
-            this->levels[entry.first] = std::move(entry.second);
+            this->levels[entry.first] = entry.second;
         }
     }
     return 0;

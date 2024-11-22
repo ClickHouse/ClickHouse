@@ -1003,7 +1003,7 @@ bool Client::processBuzzHouseQuery(const std::string & full_query)
     return server_up;
 }
 
-typedef void (*sighandler_t)(int);
+using sighandler_t = void (*)(int);
 sighandler_t volatile prev_signal = nullptr;
 std::sig_atomic_t volatile buzz_done = 0;
 
@@ -1026,7 +1026,7 @@ bool Client::buzzHouse()
 
     //set time to run, but what if a query runs for too long?
     buzz_done = 0;
-    if (fc.time_to_run)
+    if (fc.time_to_run > 0)
     {
         prev_signal = std::signal(SIGALRM, finishBuzzHouse);
     }
@@ -1429,7 +1429,7 @@ void Client::processOptions(
 
     query_fuzzer_runs = options["query-fuzzer-runs"].as<int>();
     buzz_house_options_path = options.count("buzz-house-config") ? options["buzz-house-config"].as<std::string>() : "";
-    buzz_house = buzz_house_options_path != "";
+    buzz_house = !buzz_house_options_path.empty();
     if (query_fuzzer_runs || buzz_house)
     {
         // Ignore errors in parsing queries.

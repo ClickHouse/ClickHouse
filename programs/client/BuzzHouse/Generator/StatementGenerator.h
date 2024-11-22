@@ -218,14 +218,14 @@ private:
 
     int generateNextRefreshableView(RandomGenerator & rg, RefreshableView * cv);
     int generateNextCreateView(RandomGenerator & rg, CreateView * cv);
-    int generateNextDrop(RandomGenerator & rg, Drop * sq);
-    int generateNextInsert(RandomGenerator & rg, Insert * sq);
-    int generateNextDelete(RandomGenerator & rg, LightDelete * sq);
-    int generateNextTruncate(RandomGenerator & rg, Truncate * sq);
-    int generateNextOptimizeTable(RandomGenerator & rg, OptimizeTable * sq);
-    int generateNextCheckTable(RandomGenerator & rg, CheckTable * sq);
-    int generateNextDescTable(RandomGenerator & rg, DescTable * sq);
-    int generateNextExchangeTables(RandomGenerator & rg, ExchangeTables * sq);
+    int generateNextDrop(RandomGenerator & rg, Drop * dp);
+    int generateNextInsert(RandomGenerator & rg, Insert * ins);
+    int generateNextDelete(RandomGenerator & rg, LightDelete * del);
+    int generateNextTruncate(RandomGenerator & rg, Truncate * trunc);
+    int generateNextOptimizeTable(RandomGenerator & rg, OptimizeTable * ot);
+    int generateNextCheckTable(RandomGenerator & rg, CheckTable * ct);
+    int generateNextDescTable(RandomGenerator & rg, DescTable * dt);
+    int generateNextExchangeTables(RandomGenerator & rg, ExchangeTables * et);
     int generateUptDelWhere(RandomGenerator & rg, const SQLTable & t, Expr * expr);
     int generateAlterTable(RandomGenerator & rg, AlterTable * at);
     int generateSettingValues(
@@ -240,7 +240,7 @@ private:
     int generateSettingList(
         RandomGenerator & rg,
         const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> & settings,
-        SettingList * pl);
+        SettingList * sl);
     int generateAttach(RandomGenerator & rg, Attach * att);
     int generateDetach(RandomGenerator & rg, Detach * det);
     int generateNextCreateFunction(RandomGenerator & rg, CreateFunction * cf);
@@ -255,7 +255,7 @@ private:
     int generateFrameBound(RandomGenerator & rg, Expr * expr);
     int generateExpression(RandomGenerator & rg, Expr * expr);
     int generateLambdaCall(RandomGenerator & rg, uint32_t nparams, LambdaExpr * lexpr);
-    int generateFuncCall(RandomGenerator & rg, bool allow_funcs, bool allow_aggr, SQLFuncCall * expr);
+    int generateFuncCall(RandomGenerator & rg, bool allow_funcs, bool allow_aggr, SQLFuncCall * func_call);
 
     int generateOrderBy(RandomGenerator & rg, uint32_t ncols, bool allow_settings, OrderByStatement * ob);
 
@@ -283,8 +283,8 @@ private:
     int addCTEs(RandomGenerator & rg, uint32_t allowed_clauses, CTEs * qctes);
     int generateSelect(RandomGenerator & rg, bool top, bool force_global_agg, uint32_t ncols, uint32_t allowed_clauses, Select * sel);
 
-    int generateTopSelect(RandomGenerator & rg, bool force_global_agg, uint32_t allowed_clauses, TopSelect * sq);
-    int generateNextExplain(RandomGenerator & rg, ExplainQuery * sq);
+    int generateTopSelect(RandomGenerator & rg, bool force_global_agg, uint32_t allowed_clauses, TopSelect * ts);
+    int generateNextExplain(RandomGenerator & rg, ExplainQuery * eq);
     int generateNextQuery(RandomGenerator & rg, SQLQueryInner * sq);
 
     std::tuple<const SQLType *, Integers> randomIntType(RandomGenerator & rg, uint32_t allowed_types);
@@ -357,7 +357,7 @@ public:
         buf.reserve(2048);
     }
 
-    int generateNextCreateTable(RandomGenerator & rg, CreateTable * sq);
+    int generateNextCreateTable(RandomGenerator & rg, CreateTable * ct);
     int generateNextCreateDatabase(RandomGenerator & rg, CreateDatabase * cd);
     int generateNextStatement(RandomGenerator & rg, SQLQuery & sq);
 

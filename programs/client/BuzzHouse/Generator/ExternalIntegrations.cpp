@@ -1,13 +1,10 @@
 #include "ExternalIntegrations.h"
 
-#include <array>
 #include <cctype>
 #include <cinttypes>
 #include <cstring>
 #include <ctime>
 #include <iostream>
-#include <sstream>
-#include <stdexcept>
 #include <string>
 #include <netdb.h>
 #include <unistd.h>
@@ -25,7 +22,7 @@ static bool executeCommand(const char * cmd, std::string & result)
     char buffer[1024];
     FILE * pp = popen(cmd, "r");
 
-    if (!pp)
+    if (!pp || errno)
     {
         strerror_r(errno, buffer, sizeof(buffer));
         std::cerr << "popen error: " << buffer << std::endl;
@@ -145,6 +142,10 @@ bool MinIOIntegration::sendRequest(const std::string & resource)
 }
 
 #if defined USE_MONGODB && USE_MONGODB
+
+template <typename T>
+constexpr bool is_document = std::is_same<T, bsoncxx::v_noabi::builder::stream::document>::value;
+
 template <typename T>
 void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const std::string & cname, T & output, const SQLType * tp)
 {
@@ -165,7 +166,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const st
             case 32: {
                 const int32_t val = rg.nextRandomInt32();
 
-                if constexpr (std::is_same<T, bsoncxx::v_noabi::builder::stream::document>::value)
+                if constexpr (is_document<T>)
                 {
                     output << cname << val;
                 }
@@ -178,7 +179,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const st
             case 64: {
                 const int64_t val = rg.nextRandomInt64();
 
-                if constexpr (std::is_same<T, bsoncxx::v_noabi::builder::stream::document>::value)
+                if constexpr (is_document<T>)
                 {
                     output << cname << val;
                 }
@@ -193,7 +194,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const st
 
                 buf.resize(0);
                 val.toString(buf);
-                if constexpr (std::is_same<T, bsoncxx::v_noabi::builder::stream::document>::value)
+                if constexpr (is_document<T>)
                 {
                     output << cname << buf;
                 }
@@ -228,7 +229,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const st
 
             appendDecimal(rg, buf, left, right);
         }
-        if constexpr (std::is_same<T, bsoncxx::v_noabi::builder::stream::document>::value)
+        if constexpr (is_document<T>)
         {
             output << cname << buf;
         }
@@ -242,7 +243,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const st
         const bsoncxx::types::b_date val(
             {std::chrono::milliseconds(rg.nextBool() ? static_cast<uint64_t>(rg.nextRandomUInt32()) : rg.nextRandomUInt64())});
 
-        if constexpr (std::is_same<T, bsoncxx::v_noabi::builder::stream::document>::value)
+        if constexpr (is_document<T>)
         {
             output << cname << val;
         }
@@ -262,7 +263,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const st
         {
             rg.nextDateTime(buf);
         }
-        if constexpr (std::is_same<T, bsoncxx::v_noabi::builder::stream::document>::value)
+        if constexpr (is_document<T>)
         {
             output << cname << buf;
         }
@@ -281,7 +282,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const st
         {
             bsoncxx::types::b_decimal128 decimal_value(buf.c_str());
 
-            if constexpr (std::is_same<T, bsoncxx::v_noabi::builder::stream::document>::value)
+            if constexpr (is_document<T>)
             {
                 output << cname << decimal_value;
             }
@@ -290,7 +291,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const st
                 output << decimal_value;
             }
         }
-        else if constexpr (std::is_same<T, bsoncxx::v_noabi::builder::stream::document>::value)
+        else if constexpr (is_document<T>)
         {
             output << cname << buf;
         }
@@ -311,7 +312,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const st
             }
             bsoncxx::types::b_binary val{
                 bsoncxx::binary_sub_type::k_binary, limit, reinterpret_cast<const std::uint8_t *>(binary_data.data())};
-            if constexpr (std::is_same<T, bsoncxx::v_noabi::builder::stream::document>::value)
+            if constexpr (is_document<T>)
             {
                 output << cname << val;
             }
@@ -325,7 +326,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const st
         {
             buf.resize(0);
             rg.nextString(buf, "", true, limit);
-            if constexpr (std::is_same<T, bsoncxx::v_noabi::builder::stream::document>::value)
+            if constexpr (is_document<T>)
             {
                 output << cname << buf;
             }
@@ -339,7 +340,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const st
     {
         const bool val = rg.nextBool();
 
-        if constexpr (std::is_same<T, bsoncxx::v_noabi::builder::stream::document>::value)
+        if constexpr (is_document<T>)
         {
             output << cname << val;
         }
@@ -354,7 +355,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const st
 
         buf.resize(0);
         buf += nvalue.val;
-        if constexpr (std::is_same<T, bsoncxx::v_noabi::builder::stream::document>::value)
+        if constexpr (is_document<T>)
         {
             output << cname << buf;
         }
@@ -367,7 +368,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const st
     {
         buf.resize(0);
         rg.nextUUID(buf);
-        if constexpr (std::is_same<T, bsoncxx::v_noabi::builder::stream::document>::value)
+        if constexpr (is_document<T>)
         {
             output << cname << buf;
         }
@@ -380,7 +381,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const st
     {
         buf.resize(0);
         rg.nextIPv4(buf);
-        if constexpr (std::is_same<T, bsoncxx::v_noabi::builder::stream::document>::value)
+        if constexpr (is_document<T>)
         {
             output << cname << buf;
         }
@@ -393,7 +394,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const st
     {
         buf.resize(0);
         rg.nextIPv6(buf);
-        if constexpr (std::is_same<T, bsoncxx::v_noabi::builder::stream::document>::value)
+        if constexpr (is_document<T>)
         {
             output << cname << buf;
         }
@@ -408,7 +409,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const st
 
         buf.resize(0);
         strBuildJSON(rg, dopt(rg.generator), wopt(rg.generator), buf);
-        if constexpr (std::is_same<T, bsoncxx::v_noabi::builder::stream::document>::value)
+        if constexpr (is_document<T>)
         {
             output << cname << buf;
         }
@@ -421,7 +422,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const st
     {
         buf.resize(0);
         strAppendGeoValue(rg, buf, gtp->geo_type);
-        if constexpr (std::is_same<T, bsoncxx::v_noabi::builder::stream::document>::value)
+        if constexpr (is_document<T>)
         {
             output << cname << buf;
         }
@@ -443,7 +444,6 @@ void MongoDBIntegration::documentAppendArray(
     auto array = document << cname << bsoncxx::builder::stream::open_array; // Array
     const SQLType * tp = at->subtype;
     const Nullable * nl;
-    const ArrayType * att;
     const VariantType * vtp;
     const LowCardinality * lc;
 
@@ -491,7 +491,7 @@ void MongoDBIntegration::documentAppendArray(
         {
             documentAppendBottomType<decltype(array)>(rg, "", array, nl->subtype);
         }
-        else if ((att = dynamic_cast<const ArrayType *>(tp)))
+        else if (dynamic_cast<const ArrayType *>(tp))
         {
             array << bsoncxx::builder::stream::open_array << 1 << bsoncxx::builder::stream::close_array;
         }

@@ -301,10 +301,9 @@ int StatementGenerator::generateMergeTreeEngineDetails(
     {
         //try to add sample key
         assert(this->ids.empty());
-        for (size_t i = 0; i < this->entries.size(); i++)
+        for (const auto & entry : this->entries)
         {
             const IntType * itp = nullptr;
-            const InsertEntry & entry = this->entries[i];
 
             if (!entry.cname2.has_value() && (itp = dynamic_cast<const IntType *>(entry.tp)) && itp->is_unsigned)
             {

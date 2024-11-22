@@ -1,5 +1,4 @@
 #include "SQLTypes.h"
-#include "FuzzTimezones.h"
 #include "Hugeint.h"
 #include "StatementGenerator.h"
 #include "UHugeint.h"
@@ -103,6 +102,7 @@ const SQLType * TypeDeepCopy(const SQLType * tp)
     {
         std::vector<SubType> subtypes;
 
+        subtypes.reserve(ttp->subtypes.size());
         for (const auto & entry : ttp->subtypes)
         {
             subtypes.push_back(SubType(entry.cname, TypeDeepCopy(entry.subtype)));
@@ -113,6 +113,7 @@ const SQLType * TypeDeepCopy(const SQLType * tp)
     {
         std::vector<SQLType *> subtypes;
 
+        subtypes.reserve(vtp->subtypes.size());
         for (const auto & entry : vtp->subtypes)
         {
             subtypes.push_back(const_cast<SQLType *>(TypeDeepCopy(entry)));
@@ -123,6 +124,7 @@ const SQLType * TypeDeepCopy(const SQLType * tp)
     {
         std::vector<NestedSubType> subtypes;
 
+        subtypes.reserve(ntp->subtypes.size());
         for (const auto & entry : ntp->subtypes)
         {
             subtypes.push_back(NestedSubType(entry.cname, TypeDeepCopy(entry.subtype)));
@@ -265,7 +267,7 @@ const SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint3
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
-    if (int_type && nopt < (int_type + 1))
+    if (nopt < (int_type + 1))
     {
         Integers nint;
 
@@ -363,7 +365,10 @@ const SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint3
         const uint32_t nvalues = (rg.nextLargeNumber() % static_cast<uint32_t>(enum_values.size())) + 1;
         EnumDef * edef = tp ? tp->mutable_enum_def() : nullptr;
 
-        edef->set_bits(bits);
+        if (edef)
+        {
+            edef->set_bits(bits);
+        }
         std::shuffle(enum_values.begin(), enum_values.end(), rg.generator);
         for (uint32_t i = 0; i < nvalues; i++)
         {
@@ -499,7 +504,7 @@ const SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint3
         {
             desc += ")";
         }
-        res = new JSONType(std::move(desc));
+        res = new JSONType(desc);
     }
     else if (
         dynamic_type
@@ -561,10 +566,10 @@ StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_t allowed_
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
-    if (non_nullable_type && nopt < (non_nullable_type + 1))
+    if (/*non_nullable_type && */nopt < (non_nullable_type + 1))
     {
         //non nullable
-        const bool lcard = (allowed_types & allow_low_cardinality) && rg.nextMediumNumber() < 18;
+        const bool lcard = (allowed_types & allow_low_cardinality) != 0 && rg.nextMediumNumber() < 18;
         const SQLType * res
             = bottomType(rg, allowed_types, lcard, tp ? (lcard ? tp->mutable_non_nullable_lcard() : tp->mutable_non_nullable()) : nullptr);
         return lcard ? new LowCardinality(res) : res;
@@ -572,7 +577,7 @@ StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_t allowed_
     else if (nullable_type && nopt < (non_nullable_type + nullable_type + 1))
     {
         //nullable
-        const bool lcard = (allowed_types & allow_low_cardinality) && rg.nextMediumNumber() < 18;
+        const bool lcard = (allowed_types & allow_low_cardinality) != 0 && rg.nextMediumNumber() < 18;
         const SQLType * res = new Nullable(bottomType(
             rg,
             allowed_types & ~(allow_dynamic | allow_JSON),
@@ -1055,9 +1060,9 @@ void StatementGenerator::strAppendArray(RandomGenerator & rg, std::string & ret,
 void StatementGenerator::strAppendTuple(RandomGenerator & rg, std::string & ret, const TupleType * at)
 {
     ret += "(";
-    for (size_t i = 0; i < at->subtypes.size(); i++)
+    for (const auto & entry : at->subtypes)
     {
-        strAppendAnyValueInternal(rg, ret, at->subtypes[i].subtype);
+        strAppendAnyValueInternal(rg, ret, entry.subtype);
         ret += ", ";
     }
     ret += ")";

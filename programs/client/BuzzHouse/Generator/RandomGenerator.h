@@ -105,7 +105,8 @@ public:
     pcg64_fast generator;
 
     explicit RandomGenerator(const uint32_t in_seed)
-        : ints8(std::numeric_limits<int8_t>::min(), std::numeric_limits<int8_t>::max())
+        : seed(in_seed ? in_seed : randomSeed())
+        , ints8(std::numeric_limits<int8_t>::min(), std::numeric_limits<int8_t>::max())
         , uints8(std::numeric_limits<uint8_t>::min(), std::numeric_limits<uint8_t>::max())
         , digits(static_cast<uint8_t>('0'), static_cast<uint8_t>('9'))
         , hex_digits_dist(0, 15)
@@ -126,7 +127,7 @@ public:
         , ints64(std::numeric_limits<int64_t>::min(), std::numeric_limits<int64_t>::max())
         , uints64(std::numeric_limits<uint64_t>::min(), std::numeric_limits<uint64_t>::max())
         , zero_one(0, 1)
-        , generator(in_seed ? in_seed : randomSeed())
+        , generator(seed)
     {
     }
 

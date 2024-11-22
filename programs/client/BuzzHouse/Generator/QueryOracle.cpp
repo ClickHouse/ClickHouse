@@ -214,7 +214,7 @@ int QueryOracle::generateExportQuery(RandomGenerator & rg, const SQLTable & t, S
                 buf += entry.second.nullable.value() ? "" : " NOT";
                 buf += " NULL";
             }
-            sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_col()->set_column(std::move(cname));
+            sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_col()->set_column(cname);
             /* ArrowStream doesn't support UUID */
             if (outf == OutFormat::OUT_ArrowStream && dynamic_cast<const UUIDType *>(entry.second.tp))
             {

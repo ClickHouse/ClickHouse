@@ -48,7 +48,7 @@ int StatementGenerator::generateDerivedTable(RandomGenerator & rg, SQLRelation &
 
     for (const auto & entry : this->levels)
     {
-        levels_backup[entry.first] = std::move(entry.second);
+        levels_backup[entry.first] = entry.second;
     }
     this->levels.clear();
 
@@ -59,7 +59,7 @@ int StatementGenerator::generateDerivedTable(RandomGenerator & rg, SQLRelation &
 
     for (const auto & entry : levels_backup)
     {
-        this->levels[entry.first] = std::move(entry.second);
+        this->levels[entry.first] = entry.second;
     }
 
     if (sel->has_select_core())
@@ -196,7 +196,7 @@ int StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_t
         gsf->set_fname(val);
         for (const auto & entry : this->levels)
         {
-            levels_backup[entry.first] = std::move(entry.second);
+            levels_backup[entry.first] = entry.second;
         }
         this->levels.clear();
         if (val == GenerateSeriesFunc_GSName::GenerateSeriesFunc_GSName_numbers)
@@ -259,7 +259,7 @@ int StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_t
         }
         for (const auto & entry : levels_backup)
         {
-            this->levels[entry.first] = std::move(entry.second);
+            this->levels[entry.first] = entry.second;
         }
 
         limit->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rg.nextRandomUInt64() % 10000);
@@ -700,10 +700,10 @@ int StatementGenerator::generateGroupBy(
         std::vector<GroupCol> gcols;
         const uint32_t next_opt = rg.nextMediumNumber();
         GroupByList * gbl = gbs->mutable_glist();
-        const uint32_t nclauses = std::min<uint32_t>(
-            this->fc.max_width - this->width,
-            std::min<uint32_t>(
-                UINT32_C(5), (rg.nextRandomUInt32() % (available_cols.empty() ? 5 : static_cast<uint32_t>(available_cols.size()))) + 1));
+        const uint32_t nccols
+            = std::min<uint32_t>(
+                UINT32_C(5), (rg.nextRandomUInt32() % (available_cols.empty() ? 5 : static_cast<uint32_t>(available_cols.size()))) + 1),
+            nclauses = std::min<uint32_t>(this->fc.max_width - this->width, nccols);
         const bool no_grouping_sets = next_opt < 91 || !allow_settings,
                    has_gsm = !enforce_having && next_opt < 51 && allow_settings && rg.nextSmallNumber() < 4,
                    has_totals = !enforce_having && no_grouping_sets && allow_settings && rg.nextSmallNumber() < 4;
@@ -789,7 +789,7 @@ int StatementGenerator::generateOrderBy(RandomGenerator & rg, const uint32_t nco
             for (const auto & entry : this->levels[this->current_level].projections)
             {
                 const std::string cname = "c" + std::to_string(entry);
-                available_cols.push_back(GroupCol(SQLRelationCol("", std::move(cname), std::nullopt), nullptr));
+                available_cols.push_back(GroupCol(SQLRelationCol("", cname, std::nullopt), nullptr));
             }
         }
         else if (this->levels[this->current_level].gcols.empty() && !this->levels[this->current_level].global_aggregate)
@@ -813,10 +813,10 @@ int StatementGenerator::generateOrderBy(RandomGenerator & rg, const uint32_t nco
         {
             std::shuffle(available_cols.begin(), available_cols.end(), rg.generator);
         }
-        const uint32_t nclauses = std::min<uint32_t>(
-            this->fc.max_width - this->width,
-            std::min<uint32_t>(
-                UINT32_C(5), (rg.nextRandomUInt32() % (available_cols.empty() ? 5 : static_cast<uint32_t>(available_cols.size()))) + 1));
+        const uint32_t nccols
+            = std::min<uint32_t>(
+                UINT32_C(5), rg.nextRandomUInt32() % (available_cols.empty() ? 5 : static_cast<uint32_t>(available_cols.size())) + 1),
+            nclauses = std::min<uint32_t>(this->fc.max_width - this->width, nccols);
 
         for (uint32_t i = 0; i < nclauses; i++)
         {
@@ -884,11 +884,10 @@ int StatementGenerator::generateOrderBy(RandomGenerator & rg, const uint32_t nco
             && rg.nextSmallNumber() < 4)
         {
             std::vector<uint32_t> nids;
-            const uint32_t iclauses = std::min<uint32_t>(
-                this->fc.max_width - this->width,
-                std::min<uint32_t>(
-                    UINT32_C(3),
-                    (rg.nextRandomUInt32() % static_cast<uint32_t>(this->levels[this->current_level].projections.size())) + 1));
+            const uint32_t nprojs
+                = std::min<uint32_t>(
+                    UINT32_C(3), (rg.nextRandomUInt32() % static_cast<uint32_t>(this->levels[this->current_level].projections.size())) + 1),
+                iclauses = std::min<uint32_t>(this->fc.max_width - this->width, nprojs);
 
             nids.insert(
                 nids.end(), this->levels[this->current_level].projections.begin(), this->levels[this->current_level].projections.end());

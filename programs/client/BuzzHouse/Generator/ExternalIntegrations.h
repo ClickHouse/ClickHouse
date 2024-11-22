@@ -476,7 +476,7 @@ private:
     void documentAppendBottomType(RandomGenerator & rg, const std::string & cname, T & output, const SQLType * tp);
 
     void documentAppendArray(
-        RandomGenerator & rg, const std::string & cname, bsoncxx::builder::stream::document & document, const ArrayType * tp);
+        RandomGenerator & rg, const std::string & cname, bsoncxx::builder::stream::document & document, const ArrayType * at);
     void documentAppendAnyValue(
         RandomGenerator & rg, const std::string & cname, bsoncxx::builder::stream::document & document, const SQLType * tp);
 
