@@ -24,6 +24,8 @@ class DatabaseWithOwnTablesBase : public IDatabase, protected WithContext
 public:
     bool isTableExist(const String & table_name, ContextPtr context) const override;
 
+    bool isTableDetached(const String & /*name*/) const override;
+
     StoragePtr tryGetTable(const String & table_name, ContextPtr context) const override;
 
     bool empty() const override;
@@ -36,6 +38,8 @@ public:
 
     DatabaseDetachedTablesSnapshotIteratorPtr
     getDetachedTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
+
+    void dropTableFromSnapshotDetachedTables(const String & table_name);
 
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const override;
     void createTableRestoredFromBackup(const ASTPtr & create_table_query, ContextMutablePtr local_context, std::shared_ptr<IRestoreCoordination> restore_coordination, UInt64 timeout_ms) override;

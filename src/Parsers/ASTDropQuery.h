@@ -40,6 +40,9 @@ public:
     /// We detach the object permanently, so it will not be reattached back during server restart.
     bool permanently{false};
 
+    /// Drop a table that was previously detached.
+    bool detached{false};
+
     /// Used to drop multiple tables only, example: DROP TABLE t1, t2, t3...
     ASTPtr database_and_tables;
 

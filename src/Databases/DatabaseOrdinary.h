@@ -73,6 +73,8 @@ public:
         return permanently_detached_tables;
     }
 
+    void removeTableFromPermanentlyDetachedTables(const String & table_name) override;
+
 protected:
     virtual void commitAlterTable(
         const StorageID & table_id,

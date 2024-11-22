@@ -265,6 +265,12 @@ public:
     /// Check the existence of the table in memory (attached).
     virtual bool isTableExist(const String & name, ContextPtr context) const = 0;
 
+    /// Check the existence of the table not in memory (detached).
+    virtual bool isTableDetached(const String & /*table_name*/) const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
+    }
+
     /// Check the existence of the table in any state (in active / detached / detached permanently state).
     /// Throws exception when table exists.
     virtual void checkMetadataFilenameAvailability(const String & /*table_name*/) const {}
@@ -322,6 +328,15 @@ public:
         [[maybe_unused]] bool sync = false)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no DROP TABLE query for Database{}", getEngineName());
+    }
+
+    /// Delete the detached table from the database, drop table and delete the metadata.
+    virtual void dropDetachedTable( /// NOLINT
+        ContextPtr /*context*/,
+        const String & /*name*/,
+        bool /*sync*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no DROP DETACHED TABLE query for Database{}", getEngineName());
     }
 
     /// Add a table to the database, but do not add it to the metadata. The database may not support this method.

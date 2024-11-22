@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <atomic>
 #include <string>
 #include <mutex>
 #include <utility>
@@ -1078,7 +1079,8 @@ String DatabaseCatalog::getPathForMetadata(const StorageID & table_id) const
     return metadata_path + escapeForFileName(table_id.getTableName()) + ".sql";
 }
 
-void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr table, String dropped_metadata_path, bool ignore_delay)
+void DatabaseCatalog::enqueueDroppedTableCleanup(
+    StorageID table_id, StoragePtr table, String dropped_metadata_path, bool ignore_delay, const bool is_detached_table)
 {
     assert(table_id.hasUUID());
     assert(!table || table->getStorageID().uuid == table_id.uuid);
@@ -1112,6 +1114,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
             {
                 table = createTableFromAST(*create, table_id.getDatabaseName(), data_path, getContext(), LoadingStrictnessLevel::FORCE_RESTORE).second;
                 table->is_dropped = true;
+                table->is_detached.store(is_detached_table, std::memory_order_relaxed);
             }
             catch (...)
             {
@@ -1127,7 +1130,8 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
             LOG_WARNING(log, "Cannot parse metadata of partially dropped table {} from {}. Will remove metadata file and data directory. Garbage may be left in /store directory and ZooKeeper.", table_id.getNameForLogs(), dropped_metadata_path);
         }
 
-        addUUIDMapping(table_id.uuid);
+        if (!is_detached_table)
+            addUUIDMapping(table_id.uuid);
         drop_time = FS::getModificationTime(dropped_metadata_path);
     }
 
@@ -1379,6 +1383,21 @@ void DatabaseCatalog::dropTableDataTask()
     rescheduleDropTableTask();
 }
 
+void DatabaseCatalog::removeDetachedTableInfo(const TableMarkedAsDropped & table)
+{
+    auto database = tryGetDatabase(table.table_id.getDatabaseName());
+    if (!database)
+        return;
+
+    auto * database_ptr = dynamic_cast<DatabaseOnDisk *>(database.get());
+    if (!database_ptr)
+        return;
+
+    database_ptr->removeDetachedTableInfo(table.table_id);
+
+    database_ptr->DatabaseOnDisk::removeDetachedPermanentlyFlag(getContext(), table.table_id.getNameForLogs(), table.metadata_path, true);
+}
+
 void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
 {
     if (table.table)
@@ -1399,6 +1418,9 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
 
     LOG_INFO(log, "Removing metadata {} of dropped table {}", table.metadata_path, table.table_id.getNameForLogs());
     fs::remove(fs::path(table.metadata_path));
+
+    if (table.table->is_detached.load(std::memory_order_relaxed))
+        removeDetachedTableInfo(table);
 
     removeUUIDMappingFinally(table.table_id.uuid);
     CurrentMetrics::sub(CurrentMetrics::TablesToDropQueueSize, 1);

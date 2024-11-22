@@ -224,7 +224,8 @@ public:
 
     String getPathForDroppedMetadata(const StorageID & table_id) const;
     String getPathForMetadata(const StorageID & table_id) const;
-    void enqueueDroppedTableCleanup(StorageID table_id, StoragePtr table, String dropped_metadata_path, bool ignore_delay = false);
+    void enqueueDroppedTableCleanup(
+        StorageID table_id, StoragePtr table, String dropped_metadata_path, bool ignore_delay = false, bool is_detached_table = false);
     void undropTable(StorageID table_id);
 
     void waitTableFinallyDropped(const UUID & uuid);
@@ -310,6 +311,8 @@ private:
     bool maybeRemoveDirectory(const String & disk_name, const DiskPtr & disk, const String & unused_dir);
 
     void reloadDisksTask();
+
+    void removeDetachedTableInfo(const TableMarkedAsDropped & table);
 
     static constexpr size_t reschedule_time_ms = 100;
 
