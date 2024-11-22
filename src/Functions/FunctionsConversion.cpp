@@ -4091,10 +4091,10 @@ private:
     /// parameters of the original Object type (they are reduced by constant factors to avoid subcolumns
     /// explosion). And this logic is used to read typed subcolumns without knowing the reduced parameters
     /// like this: "SELECT json.a.b.:`Array(JSON)`" (or simply "SELECT json.a.b[]"). In this case we substitute the
-    /// nested JSON type to the type with reequired reduced parameters (see replaceJSONTypeNameIfNeeded function in DataTypeObject.cpp).
+    /// nested JSON type name to the JSON type name with reduced parameters (see replaceJSONTypeNameIfNeeded function in DataTypeObject.cpp).
     /// It's done to allow the user to request nested JSON subcolumns without specifying these parameters.
     /// All this means that during conversion from one Object type to another the max_dynamic_types/max_dynamic_paths
-    /// parameters may change and it means we should change the parameters of all nested Object types recursively.
+    /// parameters may change and it we should change the parameters of all nested Object types recursively.
     /// The next few functions are needed to do this conversion of nested Object types.
 
     /// Convert all nested object types to new provided object type. Go inside Array and Tuple types.
