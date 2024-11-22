@@ -270,9 +270,31 @@ bool IcebergSchemaProcessor::allowPrimitiveTypeConversion(const String & old_typ
     return allowed_type_conversion;
 }
 
-std::shared_ptr<ActionsDAG>
-IcebergSchemaProcessor::getSchemaTransformationDag(const Poco::JSON::Object::Ptr & old_schema, const Poco::JSON::Object::Ptr & new_schema)
+std::shared_ptr<const ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDagByIds(Int32 old_id, Int32 new_id)
 {
+    std::lock_guard lock(mutex);
+    Poco::JSON::Object::Ptr old_schema, new_schema;
+    auto required_transform_dag_it = transform_dags_by_ids.find({old_id, new_id});
+    if (required_transform_dag_it != transform_dags_by_ids.end())
+    {
+        return required_transform_dag_it->second;
+    }
+
+    if (old_id == new_id)
+    {
+        return nullptr;
+    }
+
+    auto old_schema_it = iceberg_table_schemas_by_ids.find(old_id);
+    if (old_schema_it == iceberg_table_schemas_by_ids.end())
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema with schema-id {} is unknown", old_id);
+    }
+    auto new_schema_it = iceberg_table_schemas_by_ids.find(new_id);
+    if (new_schema_it == iceberg_table_schemas_by_ids.end())
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema with schema-id {} is unknown", new_id);
+    }
     std::unordered_map<size_t, std::pair<Poco::JSON::Object::Ptr, const ActionsDAG::Node *>> old_schema_entries;
     auto old_schema_fields = old_schema->get("fields").extract<Poco::JSON::Array::Ptr>();
     std::shared_ptr<ActionsDAG> dag = std::make_shared<ActionsDAG>();
@@ -305,8 +327,8 @@ IcebergSchemaProcessor::getSchemaTransformationDag(const Poco::JSON::Object::Ptr
                         ErrorCodes::UNSUPPORTED_METHOD,
                         "Schema evolution is not supported for complex types yet, field id is {}, old schema id is {}, new schema id is {}",
                         id,
-                        current_old_id,
-                        current_new_id);
+                        old_id,
+                        new_id);
                 }
                 else
                 {
@@ -321,8 +343,8 @@ IcebergSchemaProcessor::getSchemaTransformationDag(const Poco::JSON::Object::Ptr
                         ErrorCodes::LOGICAL_ERROR,
                         "Can't cast primitive type to the complex type, field id is {}, old schema id is {}, new schema id is {}",
                         id,
-                        current_old_id,
-                        current_new_id);
+                        old_id,
+                        new_id);
                 }
                 String old_type = old_json->getValue<String>("type");
                 String new_type = field->getValue<String>("type");
@@ -350,59 +372,26 @@ IcebergSchemaProcessor::getSchemaTransformationDag(const Poco::JSON::Object::Ptr
                     ErrorCodes::UNSUPPORTED_METHOD,
                     "Adding a default column with id {} and complex type is not supported yet. Old schema id is {}, new schema id is {}",
                     id,
-                    current_old_id,
-                    current_new_id);
+                    old_id,
+                    new_id);
             }
             if (!type->isNullable())
             {
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
-                    "Cannot add a column with id {} with required values to the table during schema evolution. This is forbidden by Iceberg format specification. Old schema id is {}, new "
+                    "Cannot add a column with id {} with required values to the table during schema evolution. This is forbidden by "
+                    "Iceberg format specification. Old schema id is {}, new "
                     "schema id is {}",
                     id,
-                    current_old_id,
-                    current_new_id);
+                    old_id,
+                    new_id);
             }
             ColumnPtr default_type_column = type->createColumnConstWithDefaultValue(0);
             const auto & constant = dag->addColumn({default_type_column, type, name});
             outputs.push_back(&constant);
         }
     }
-    return dag;
-}
-
-std::shared_ptr<const ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDagByIds(Int32 old_id, Int32 new_id)
-{
-    std::lock_guard lock(mutex);
-    current_old_id = old_id;
-    current_new_id = new_id;
-    SCOPE_EXIT({
-        current_old_id = -1;
-        current_new_id = -1;
-    });
-    Poco::JSON::Object::Ptr old_schema, new_schema;
-    auto required_transform_dag_it = transform_dags_by_ids.find({old_id, new_id});
-    if (required_transform_dag_it != transform_dags_by_ids.end())
-    {
-        return required_transform_dag_it->second;
-    }
-
-    if (old_id == new_id)
-    {
-        return nullptr;
-    }
-
-    auto old_schema_it = iceberg_table_schemas_by_ids.find(old_id);
-    if (old_schema_it == iceberg_table_schemas_by_ids.end())
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema with schema-id {} is unknown", old_id);
-    }
-    auto new_schema_it = iceberg_table_schemas_by_ids.find(new_id);
-    if (new_schema_it == iceberg_table_schemas_by_ids.end())
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema with schema-id {} is unknown", new_id);
-    }
-    return transform_dags_by_ids[{old_id, new_id}] = getSchemaTransformationDag(old_schema_it->second, new_schema_it->second);
+    return transform_dags_by_ids[{old_id, new_id}] = dag;
 }
 
 void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schema_ptr)

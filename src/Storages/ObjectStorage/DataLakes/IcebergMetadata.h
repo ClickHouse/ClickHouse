@@ -95,15 +95,9 @@ private:
     DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type);
     DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool required);
     DataTypePtr getSimpleType(const String & type_name);
-    std::shared_ptr<ActionsDAG>
-    getSchemaTransformationDag(const Poco::JSON::Object::Ptr & old_schema, const Poco::JSON::Object::Ptr & new_schema);
 
     bool allowPrimitiveTypeConversion(const String & old_type, const String & new_type);
-
     const Node * getDefaultNodeForField(const Poco::JSON::Object::Ptr & field);
-
-    Int32 current_old_id = -1;
-    Int32 current_new_id = -1;
 
     std::mutex mutex;
 };
