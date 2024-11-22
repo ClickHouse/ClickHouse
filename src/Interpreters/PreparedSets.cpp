@@ -1,22 +1,21 @@
 #include <chrono>
 #include <variant>
-#include <Core/Block.h>
-#include <Core/Settings.h>
-#include <IO/Operators.h>
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/PreparedSets.h>
-#include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/Set.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <IO/Operators.h>
+#include <Common/logger_useful.h>
+#include <Core/Settings.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Sinks/NullSink.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Core/Block.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/SizeLimits.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -120,7 +119,7 @@ FutureSetFromSubquery::FutureSetFromSubquery(
     auto size_limits = getSizeLimitsForSet(settings);
     set_and_key->set
         = std::make_shared<Set>(size_limits, settings[Setting::use_index_for_in_with_subqueries_max_values], settings[Setting::transform_null_in]);
-    set_and_key->set->setHeader(source->getCurrentHeader().getColumnsWithTypeAndName());
+    set_and_key->set->setHeader(source->getCurrentDataStream().header.getColumnsWithTypeAndName());
 }
 
 FutureSetFromSubquery::FutureSetFromSubquery(
@@ -150,7 +149,7 @@ SetPtr FutureSetFromSubquery::get() const
 void FutureSetFromSubquery::setQueryPlan(std::unique_ptr<QueryPlan> source_)
 {
     source = std::move(source_);
-    set_and_key->set->setHeader(source->getCurrentHeader().getColumnsWithTypeAndName());
+    set_and_key->set->setHeader(source->getCurrentDataStream().header.getColumnsWithTypeAndName());
 }
 
 DataTypes FutureSetFromSubquery::getTypes() const
@@ -171,7 +170,7 @@ std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(const ContextPtr & conte
         return nullptr;
 
     auto creating_set = std::make_unique<CreatingSetStep>(
-        plan->getCurrentHeader(),
+        plan->getCurrentDataStream(),
         set_and_key,
         external_table,
         SizeLimits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]),
@@ -239,8 +238,6 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     /// the pipeline without setting `set_and_key->set->is_created` to true.
     if (!set_and_key->set->isCreated())
         return nullptr;
-
-    logProcessorProfile(context, pipeline.getProcessors());
 
     return set_and_key->set;
 }

@@ -13,6 +13,7 @@
 #include <Core/Field.h>
 #include <Core/Block.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/Hive/HiveSettings.h>
 #include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
 
 namespace orc
@@ -23,8 +24,6 @@ class ColumnStatistics;
 
 namespace DB
 {
-struct HiveSettings;
-
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;

@@ -14,7 +14,6 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/RowOrderOptimizer.h>
-#include "Common/logger_useful.h"
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
@@ -61,27 +60,13 @@ namespace Setting
     extern const SettingsBool materialize_statistics_on_insert;
     extern const SettingsBool optimize_on_insert;
     extern const SettingsBool throw_on_max_partitions_per_insert_block;
-    extern const SettingsUInt64 min_free_disk_bytes_to_perform_insert;
-    extern const SettingsFloat min_free_disk_ratio_to_perform_insert;
-}
-
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsBool assign_part_uuids;
-    extern const MergeTreeSettingsBool fsync_after_insert;
-    extern const MergeTreeSettingsBool fsync_part_directory;
-    extern const MergeTreeSettingsUInt64 min_free_disk_bytes_to_perform_insert;
-    extern const MergeTreeSettingsFloat min_free_disk_ratio_to_perform_insert;
-    extern const MergeTreeSettingsBool optimize_row_order;
-    extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
-    extern const MergeTreeSettingsBool prewarm_mark_cache;
 }
 
 namespace ErrorCodes
 {
+    extern const int ABORTED;
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_PARTS;
-    extern const int NOT_ENOUGH_SPACE;
 }
 
 namespace
@@ -206,14 +191,15 @@ void updateTTL(
 
 void MergeTreeDataWriter::TemporaryPart::cancel()
 {
-    for (auto & stream : streams)
+    try
     {
-        stream.stream->cancel();
-        stream.finalizer.cancel();
+        /// An exception context is needed to proper delete write buffers without finalization
+        throw Exception(ErrorCodes::ABORTED, "Cancel temporary part.");
     }
-
-    /// The part is trying to delete leftovers here
-    part.reset();
+    catch (...)
+    {
+        *this = TemporaryPart{};
+    }
 }
 
 void MergeTreeDataWriter::TemporaryPart::finalize()
@@ -542,7 +528,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
             ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocksAlreadySorted);
     }
 
-    if ((*data.getSettings())[MergeTreeSetting::optimize_row_order]
+    if (data.getSettings()->optimize_row_order
             && data.merging_params.mode == MergeTreeData::MergingParams::Mode::Ordinary) /// Nobody knows if this optimization messes up specialized MergeTree engines.
     {
         RowOrderOptimizer::optimize(block, sort_description, perm);
@@ -574,42 +560,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     VolumePtr volume = data.getStoragePolicy()->getVolume(0);
     VolumePtr data_part_volume = createVolumeFromReservation(reservation, volume);
 
-    const auto & global_settings = context->getSettingsRef();
-    const auto & data_settings = data.getSettings();
-
-    const UInt64 & min_bytes_to_perform_insert =
-            (*data_settings)[MergeTreeSetting::min_free_disk_bytes_to_perform_insert].changed
-            ? (*data_settings)[MergeTreeSetting::min_free_disk_bytes_to_perform_insert]
-            : global_settings[Setting::min_free_disk_bytes_to_perform_insert];
-
-    const Float32 & min_ratio_to_perform_insert =
-        (*data_settings)[MergeTreeSetting::min_free_disk_ratio_to_perform_insert].changed
-        ? (*data_settings)[MergeTreeSetting::min_free_disk_ratio_to_perform_insert]
-        : global_settings[Setting::min_free_disk_ratio_to_perform_insert];
-
-    if (min_bytes_to_perform_insert > 0 || min_ratio_to_perform_insert > 0.0)
-    {
-        const auto & disk = data_part_volume->getDisk();
-        const UInt64 & total_disk_bytes = disk->getTotalSpace().value_or(0);
-        const UInt64 & free_disk_bytes = disk->getAvailableSpace().value_or(0);
-
-        const UInt64 & min_bytes_from_ratio = static_cast<UInt64>(min_ratio_to_perform_insert * total_disk_bytes);
-        const UInt64 & needed_free_bytes = std::max(min_bytes_to_perform_insert, min_bytes_from_ratio);
-
-        if (needed_free_bytes > free_disk_bytes)
-        {
-            throw Exception(
-                ErrorCodes::NOT_ENOUGH_SPACE,
-                "Could not perform insert: less than {} free bytes left in the disk space ({}). "
-                "Configure this limit with user settings {} or {}",
-                needed_free_bytes,
-                free_disk_bytes,
-                "min_free_disk_bytes_to_perform_insert",
-                "min_free_disk_ratio_to_perform_insert");
-        }
-    }
-
-    auto new_data_part = data.getDataPartBuilder(part_name, data_part_volume, part_dir, getReadSettings())
+    auto new_data_part = data.getDataPartBuilder(part_name, data_part_volume, part_dir)
         .withPartFormat(data.choosePartFormat(expected_size, block.rows()))
         .withPartInfo(new_part_info)
         .build();
@@ -617,19 +568,14 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     auto data_part_storage = new_data_part->getDataPartStoragePtr();
     data_part_storage->beginTransaction();
 
-    if ((*data.storage_settings.get())[MergeTreeSetting::assign_part_uuids])
+    if (data.storage_settings.get()->assign_part_uuids)
         new_data_part->uuid = UUIDHelpers::generateV4();
 
-    SerializationInfo::Settings settings{(*data_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization], true};
+    const auto & data_settings = data.getSettings();
+
+    SerializationInfo::Settings settings{data_settings->ratio_of_defaults_for_sparse_serialization, true};
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
-
-    for (const auto & [column_name, _] : columns)
-    {
-        auto & column = block.getByName(column_name);
-        if (column.column->isSparse() && infos.getKind(column_name) != ISerialization::Kind::SPARSE)
-            column.column = recursiveRemoveSparse(column.column);
-    }
 
     new_data_part->setColumns(columns, infos, metadata_snapshot->getMetadataVersion());
     new_data_part->rows_count = block.rows();
@@ -656,7 +602,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
 
         data_part_storage->createDirectories();
 
-        if ((*data_settings)[MergeTreeSetting::fsync_part_directory])
+        if (data.getSettings()->fsync_part_directory)
         {
             const auto disk = data_part_volume->getDisk();
             sync_guard = disk->getDirectorySyncGuard(full_path);
@@ -684,14 +630,6 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     /// This effectively chooses minimal compression method:
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
     auto compression_codec = data.getContext()->chooseCompressionCodec(0, 0);
-    bool save_marks_in_cache = (*data_settings)[MergeTreeSetting::prewarm_mark_cache] && data.getContext()->getMarkCache();
-
-    auto index_granularity_ptr = createMergeTreeIndexGranularity(
-        block.rows(),
-        block.bytes(),
-        *data.getSettings(),
-        new_data_part->index_granularity_info,
-        /*blocks_are_granules=*/ false);
 
     auto out = std::make_unique<MergedBlockOutputStream>(
         new_data_part,
@@ -700,11 +638,9 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
         indices,
         statistics,
         compression_codec,
-        std::move(index_granularity_ptr),
         context->getCurrentTransaction() ? context->getCurrentTransaction()->tid : Tx::PrehistoricTID,
-        /*reset_columns=*/ false,
-        save_marks_in_cache,
-        /*blocks_are_granules_size=*/ false,
+        false,
+        false,
         context->getWriteSettings());
 
     out->writeWithPermutation(block, perm_ptr);
@@ -730,7 +666,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
 
     auto finalizer = out->finalizePartAsync(
         new_data_part,
-        (*data_settings)[MergeTreeSetting::fsync_after_insert],
+        data_settings->fsync_after_insert,
         nullptr, nullptr);
 
     temp_part.part = new_data_part;
@@ -772,7 +708,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     new_data_part->is_temp = is_temp;
 
     NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
-    SerializationInfo::Settings settings{(*data.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization], true};
+    SerializationInfo::Settings settings{data.getSettings()->ratio_of_defaults_for_sparse_serialization, true};
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
 
@@ -820,7 +756,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
             ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterBlocksAlreadySorted);
     }
 
-    if ((*data.getSettings())[MergeTreeSetting::optimize_row_order]
+    if (data.getSettings()->optimize_row_order
             && data.merging_params.mode == MergeTreeData::MergingParams::Mode::Ordinary) /// Nobody knows if this optimization messes up specialized MergeTree engines.
     {
         RowOrderOptimizer::optimize(block, sort_description, perm);
@@ -839,14 +775,6 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     /// This effectively chooses minimal compression method:
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
     auto compression_codec = data.getContext()->chooseCompressionCodec(0, 0);
-    bool save_marks_in_cache = (*data.getSettings())[MergeTreeSetting::prewarm_mark_cache] && data.getContext()->getMarkCache();
-
-    auto index_granularity_ptr = createMergeTreeIndexGranularity(
-        block.rows(),
-        block.bytes(),
-        *data.getSettings(),
-        new_data_part->index_granularity_info,
-        /*blocks_are_granules=*/ false);
 
     auto out = std::make_unique<MergedBlockOutputStream>(
         new_data_part,
@@ -856,12 +784,8 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
         /// TODO(hanfei): It should be helpful to write statistics for projection result.
         ColumnsStatistics{},
         compression_codec,
-        std::move(index_granularity_ptr),
         Tx::PrehistoricTID,
-        /*reset_columns=*/ false,
-        save_marks_in_cache,
-        /*blocks_are_granules_size=*/ false,
-        data.getContext()->getWriteSettings());
+        false, false, data.getContext()->getWriteSettings());
 
     out->writeWithPermutation(block, perm_ptr);
     auto finalizer = out->finalizePartAsync(new_data_part, false);

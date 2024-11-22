@@ -1,6 +1,6 @@
 import pytest
 
-from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, CLICKHOUSE_CI_MIN_TESTED_VERSION
 
 uuids = []
 
@@ -112,12 +112,11 @@ def test_usage(cluster, node_name):
     for i in range(3):
         node2.query(
             """
-            DROP TABLE IF EXISTS test{};
             CREATE TABLE test{} UUID '{}'
             (id Int32) ENGINE = MergeTree() ORDER BY id
             SETTINGS storage_policy = 'web';
         """.format(
-                i, i, uuids[i]
+                i, uuids[i]
             )
         )
 

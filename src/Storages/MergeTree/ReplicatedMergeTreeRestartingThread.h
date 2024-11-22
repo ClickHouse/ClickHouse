@@ -6,7 +6,6 @@
 #include <thread>
 #include <atomic>
 #include <Common/logger_useful.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
 
 
 namespace DB
@@ -69,9 +68,6 @@ private:
 
     /// Disable readonly mode for table
     void setNotReadonly();
-
-    /// Fix replica metadata_version if needed
-    Int32 fixReplicaMetadataVersionIfNeeded(zkutil::ZooKeeperPtr zookeeper);
 };
 
 

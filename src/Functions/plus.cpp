@@ -19,8 +19,8 @@ struct PlusImpl
         /// Next everywhere, static_cast - so that there is no wrong result in expressions of the form Int64 c = UInt32(a) * Int32(-1).
         if constexpr (is_big_int_v<A> || is_big_int_v<B>)
         {
-            using CastA = std::conditional_t<is_floating_point<B>, B, A>;
-            using CastB = std::conditional_t<is_floating_point<A>, A, B>;
+            using CastA = std::conditional_t<std::is_floating_point_v<B>, B, A>;
+            using CastB = std::conditional_t<std::is_floating_point_v<A>, A, B>;
 
             return static_cast<Result>(static_cast<CastA>(a)) + static_cast<Result>(static_cast<CastB>(b));
         }
