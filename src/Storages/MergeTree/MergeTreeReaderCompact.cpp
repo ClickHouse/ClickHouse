@@ -149,7 +149,8 @@ void MergeTreeReaderCompact::readData(
     size_t rows_to_read,
     const InputStreamGetter & getter,
     ISerialization::SubstreamsCache & cache,
-    std::unordered_map<String, ColumnPtr> & columns_cache_for_subcolumns)
+    std::unordered_map<String, ColumnPtr> & columns_cache_for_subcolumns,
+    const ColumnNameLevel & name_level_for_offsets)
 {
     try
     {
@@ -172,7 +173,8 @@ void MergeTreeReaderCompact::readData(
             const auto & type_in_storage = name_and_type.getTypeInStorage();
             const auto & name_in_storage = name_and_type.getNameInStorage();
 
-            if (auto cache_for_subcolumns_it = columns_cache_for_subcolumns.find(name_in_storage); cache_for_subcolumns_it != columns_cache_for_subcolumns.end())
+            auto cache_for_subcolumns_it = columns_cache_for_subcolumns.find(name_in_storage);
+            if (!name_level_for_offsets.has_value() && cache_for_subcolumns_it != columns_cache_for_subcolumns.end())
             {
                 auto subcolumn = type_in_storage->getSubcolumn(name_and_type.getSubcolumnName(), cache_for_subcolumns_it->second);
                 /// TODO: Avoid extra copying.
@@ -195,7 +197,8 @@ void MergeTreeReaderCompact::readData(
                 else
                     column->assumeMutable()->insertRangeFrom(*subcolumn, 0, subcolumn->size());
 
-                columns_cache_for_subcolumns[name_in_storage] = temp_column;
+                if (!name_level_for_offsets.has_value())
+                    columns_cache_for_subcolumns[name_in_storage] = temp_column;
             }
         }
         else
