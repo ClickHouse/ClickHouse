@@ -284,6 +284,8 @@ public:
         callback(variant_column);
     }
 
+    void forEachSubcolumn(ColumnCallback callback) const override { callback(variant_column); }
+
     void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
     {
         callback(*variant_column);
