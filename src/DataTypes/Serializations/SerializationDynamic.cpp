@@ -767,8 +767,12 @@ void SerializationDynamic::serializeTextJSON(const IColumn & column, size_t row_
 
 void SerializationDynamic::serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const
 {
-    const auto & dynamic_column = assert_cast<const ColumnDynamic &>(column);
-    dynamic_column.getVariantInfo().variant_type->getDefaultSerialization()->serializeTextJSONPretty(dynamic_column.getVariantColumn(), row_num, ostr, settings, indent);
+    auto nested_serialize = [&settings, indent](const ISerialization & serialization, const IColumn & col, size_t row, WriteBuffer & buf)
+    {
+        serialization.serializeTextJSONPretty(col, row, buf, settings, indent);
+    };
+
+    serializeTextImpl(column, row_num, ostr, settings, nested_serialize);
 }
 
 void SerializationDynamic::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
