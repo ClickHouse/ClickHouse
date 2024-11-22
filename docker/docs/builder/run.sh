@@ -14,7 +14,7 @@ fi
 
 # The repo is usually mounted to /ClickHouse
 
-for lang in en ru zh
+for lang in en ru zh ja
 do
   if [ -d "/ClickHouse/docs/${lang}" ]; then
     cp -rf "/ClickHouse/docs/${lang}" "/opt/clickhouse-docs/docs/"
