@@ -310,6 +310,8 @@ public:
         variant_column_ptr = assert_cast<ColumnVariant *>(variant_column.get());
     }
 
+    void forEachSubcolumn(ColumnCallback callback) const override { callback(variant_column); }
+
     void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
     {
         callback(*variant_column);
