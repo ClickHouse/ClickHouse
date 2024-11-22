@@ -240,7 +240,7 @@ void FilterStep::updateOutputHeader()
         return;
 }
 
-void FilterStep::setQueryConditionCacheAndKey(QueryConditionCachePtr query_condition_cache_, String & where_condition_)
+void FilterStep::setQueryConditionCacheAndKey(QueryConditionCachePtr query_condition_cache_, const String & where_condition_)
 {
     query_condition_cache = query_condition_cache_;
     where_condition = where_condition_;

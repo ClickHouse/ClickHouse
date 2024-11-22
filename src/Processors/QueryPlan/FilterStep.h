@@ -26,7 +26,7 @@ public:
     ActionsDAG & getExpression() { return actions_dag; }
     const String & getFilterColumnName() const { return filter_column_name; }
     bool removesFilterColumn() const { return remove_filter_column; }
-    void setQueryConditionCacheAndKey(QueryConditionCachePtr query_condition_cache_, String & where_condition_);
+    void setQueryConditionCacheAndKey(QueryConditionCachePtr query_condition_cache_, const String & where_condition_);
 
 private:
     void updateOutputHeader() override;

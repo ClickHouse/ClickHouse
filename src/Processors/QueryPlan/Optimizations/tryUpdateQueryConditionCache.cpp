@@ -18,22 +18,21 @@ void tryUpdateQueryConditionCache(const QueryPlanOptimizationSettings & optimiza
         return;
 
     const auto & query_info = read_from_merge_tree->getQueryInfo();
-    if (!query_info.filter_actions_dag)
+    auto filter_dag = query_info.filter_actions_dag;
+    if (!filter_dag || query_info.isFinal())
         return;
 
-    auto filter_dag = query_info.filter_actions_dag;
-    auto context = read_from_merge_tree->getContext();
+    if (!VirtualColumnUtils::isDeterministicInScopeOfQuery(filter_dag->getOutputs().front()))
+        return;
 
     for (auto iter = stack.rbegin() + 1; iter != stack.rend(); ++iter)
     {
         if (auto * filter_step = typeid_cast<FilterStep *>(iter->node->step.get()))
         {
-            if (VirtualColumnUtils::isDeterministicInScopeOfQuery(filter_dag->getOutputs().front()))
-            {
-                String where_condition = query_info.filter_actions_dag->getOutputs().front()->result_name;
-                filter_step->setQueryConditionCacheAndKey(context->getQueryConditionCache(), where_condition);
-                break;
-            }
+            const String & where_condition = filter_dag->getOutputs().front()->result_name;
+            auto context = read_from_merge_tree->getContext();
+            filter_step->setQueryConditionCacheAndKey(context->getQueryConditionCache(), where_condition);
+            return;
         }
     }
 }
