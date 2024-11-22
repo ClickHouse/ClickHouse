@@ -25,7 +25,6 @@ from typing import Any, List, Sequence, Tuple, Union
 
 import requests
 import urllib3
-import shlex
 
 try:
     # Please, add modules that required for specific tests only here.
@@ -50,8 +49,8 @@ except Exception as e:
     logging.warning(f"Cannot import some modules, some tests may not work: {e}")
 
 import docker
-from docker.models.containers import Container
 from dict2xml import dict2xml
+from docker.models.containers import Container
 from kazoo.client import KazooClient
 from kazoo.exceptions import KazooException
 from minio import Minio

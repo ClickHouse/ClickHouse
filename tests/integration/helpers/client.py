@@ -5,6 +5,7 @@ import tempfile
 from threading import Timer
 
 import numpy as np
+import pandas as pd
 
 DEFAULT_QUERY_TIMEOUT = 600
 
@@ -253,7 +254,6 @@ class CommandRequest:
             )
 
         if self.parse:
-            import pandas as pd
             from io import StringIO
 
             return (

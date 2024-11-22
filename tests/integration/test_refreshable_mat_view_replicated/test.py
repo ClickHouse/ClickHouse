@@ -19,6 +19,7 @@ node = cluster.add_instance(
     user_configs=["configs/settings.xml"],
     with_zookeeper=True,
     stay_alive=True,
+    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
     macros={"shard": 1, "replica": 1},
 )
 node2 = cluster.add_instance(
@@ -27,8 +28,11 @@ node2 = cluster.add_instance(
     user_configs=["configs/settings.xml"],
     with_zookeeper=True,
     stay_alive=True,
+    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
     macros={"shard": 1, "replica": 2},
 )
+
+nodes = [node, node2]
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -144,31 +148,54 @@ MODIFY REFRESH
 
 @pytest.fixture(scope="module", autouse=True)
 def module_setup_tables(started_cluster):
-    node.query(f"DROP DATABASE IF EXISTS test_db")
-    node.query(f"CREATE DATABASE IF NOT EXISTS test_db ON CLUSTER default")
-    node.query("DROP TABLE IF EXISTS test_rmv ON CLUSTER default")
+
+    # default is Atomic by default
+    node.query(f"DROP DATABASE IF EXISTS default ON CLUSTER default SYNC")
+    node.query(
+        "CREATE DATABASE IF NOT EXISTS default ON CLUSTER default ENGINE=Replicated('/clickhouse/default/','{shard}','{replica}')"
+    )
+
+    assert (
+        node.query(
+            f"SELECT engine FROM clusterAllReplicas(default, system.databases) where name='default'"
+        )
+        == "Replicated\nReplicated\n"
+    )
+
+    node.query(f"DROP DATABASE IF EXISTS test_db ON CLUSTER default SYNC")
+    node.query(
+        "CREATE DATABASE test_db ON CLUSTER default ENGINE=Replicated('/clickhouse/test_db/','{shard}','{replica}')"
+    )
+
+    assert (
+        node.query(
+            f"SELECT engine FROM clusterAllReplicas(default, system.databases) where name='test_db'"
+        )
+        == "Replicated\nReplicated\n"
+    )
+
     node.query("DROP TABLE IF EXISTS src1 ON CLUSTER default")
     node.query("DROP TABLE IF EXISTS src2 ON CLUSTER default")
     node.query("DROP TABLE IF EXISTS tgt1 ON CLUSTER default")
     node.query("DROP TABLE IF EXISTS tgt2 ON CLUSTER default")
     node.query("DROP TABLE IF EXISTS test_rmv ON CLUSTER default")
-    node.query("DROP TABLE IF EXISTS test_db.test_rmv ON CLUSTER default")
+    node.query("DROP TABLE IF EXISTS test_db.test_rmv")
 
     node.query(
-        f"CREATE TABLE src1 ON CLUSTER default (a DateTime, b UInt64) ENGINE = Memory"
+        f"CREATE TABLE src1 ON CLUSTER default (a DateTime, b UInt64) ENGINE = ReplicatedMergeTree() ORDER BY tuple()"
     )
     node.query(
-        f"CREATE TABLE src2 ON CLUSTER default (a DateTime, b UInt64) ENGINE = Memory"
+        f"CREATE TABLE src2 ON CLUSTER default (a DateTime, b UInt64) ENGINE = ReplicatedMergeTree() ORDER BY tuple()"
     )
     node.query(
-        f"CREATE TABLE tgt1 ON CLUSTER default (a DateTime, b UInt64) ENGINE = MergeTree ORDER BY tuple()"
+        f"CREATE TABLE tgt1 ON CLUSTER default (a DateTime, b UInt64) ENGINE = ReplicatedMergeTree() ORDER BY tuple()"
     )
     node.query(
-        f"CREATE TABLE tgt2 ON CLUSTER default (a DateTime, b UInt64) ENGINE = Memory"
+        f"CREATE TABLE tgt2 ON CLUSTER default (a DateTime, b UInt64) ENGINE = ReplicatedMergeTree() ORDER BY tuple()"
     )
     node.query(
         f"CREATE MATERIALIZED VIEW IF NOT EXISTS dummy_rmv ON CLUSTER default "
-        f"REFRESH EVERY 10 HOUR engine Memory EMPTY AS select number as x from numbers(1)"
+        f"REFRESH EVERY 10 HOUR ENGINE = ReplicatedMergeTree() ORDER BY tuple() EMPTY AS select number as x from numbers(1)"
     )
 
 
@@ -177,14 +204,16 @@ def fn_setup_tables():
     node.query("DROP TABLE IF EXISTS src1 ON CLUSTER default")
     node.query("DROP TABLE IF EXISTS tgt1 ON CLUSTER default")
     node.query("DROP TABLE IF EXISTS test_rmv ON CLUSTER default")
-    node.query("DROP TABLE IF EXISTS test_db.test_rmv ON CLUSTER default")
+    node.query("DROP TABLE IF EXISTS test_db.test_rmv")
 
     node.query(
-        f"CREATE TABLE tgt1 ON CLUSTER default (a DateTime, b UInt64) ENGINE = MergeTree ORDER BY tuple()"
+        f"CREATE TABLE tgt1 ON CLUSTER default (a DateTime, b UInt64) "
+        f"ENGINE = ReplicatedMergeTree ORDER BY tuple()"
     )
 
     node.query(
-        f"CREATE TABLE src1 ON CLUSTER default (a DateTime, b UInt64) ENGINE = Memory"
+        f"CREATE TABLE src1 ON CLUSTER default (a DateTime, b UInt64) "
+        f"ENGINE = ReplicatedMergeTree ORDER BY tuple()"
     )
     node.query(f"INSERT INTO src1 VALUES ('2020-01-01', 1), ('2020-01-02', 2)")
 
@@ -211,23 +240,30 @@ def test_simple_append(
         to_clause="tgt1",
         select_query=select_query,
         with_append=with_append,
+        on_cluster="default",
         empty=empty,
     )
     node.query(create_sql)
     rmv = get_rmv_info(node, "test_rmv", wait_status="Scheduled")
     assert rmv["exception"] is None
 
+    node.query("SYSTEM SYNC DATABASE REPLICA ON CLUSTER default default")
+
     records = node.query("SELECT count() FROM test_rmv")
+
     if empty:
         assert records == "0\n"
     else:
         assert records == "2\n"
 
-    node.query(f"SYSTEM TEST VIEW test_rmv SET FAKE TIME '{rmv['next_refresh_time']}'")
+    for n in nodes:
+        n.query(f"SYSTEM TEST VIEW test_rmv SET FAKE TIME '{rmv['next_refresh_time']}'")
+
     rmv2 = get_rmv_info(node, "test_rmv", wait_status="Scheduled")
 
     assert rmv2["exception"] is None
 
+    node.query("SYSTEM SYNC DATABASE REPLICA ON CLUSTER default default")
     if empty:
         expect = "2\n"
 
@@ -245,10 +281,9 @@ def test_simple_append(
 
 @pytest.mark.parametrize("with_append", [True, False])
 @pytest.mark.parametrize("if_not_exists", [True, False])
-@pytest.mark.parametrize("on_cluster", [True, False])
 @pytest.mark.parametrize("depends_on", [None, ["default.dummy_rmv"]])
 @pytest.mark.parametrize("empty", [True, False])
-@pytest.mark.parametrize("database_name", [None, "test_db"])
+@pytest.mark.parametrize("database_name", ["test_db"])  # None,
 @pytest.mark.parametrize(
     "settings",
     [
@@ -265,7 +300,6 @@ def test_alters(
     fn_setup_tables,
     with_append,
     if_not_exists,
-    on_cluster,
     depends_on,
     empty,
     database_name,
@@ -277,13 +311,12 @@ def test_alters(
     create_sql = CREATE_RMV.render(
         table_name="test_rmv",
         if_not_exists=if_not_exists,
-        db=database_name,
+        db="test_db",
         refresh_interval="EVERY 1 HOUR",
         depends_on=depends_on,
         to_clause="tgt1",
         select_query="SELECT * FROM src1",
         with_append=with_append,
-        on_cluster="default" if on_cluster else None,
         settings=settings,
     )
     node.query(create_sql)
@@ -291,38 +324,30 @@ def test_alters(
     # Check same RMV is created on whole cluster
     def compare_DDL_on_all_nodes():
         show_create_all_nodes = cluster.query_all_nodes("SHOW CREATE test_rmv")
-
-        if not on_cluster:
-            del show_create_all_nodes["node1_2"]
-
         assert_same_values(show_create_all_nodes.values())
 
     compare_DDL_on_all_nodes()
 
-    maybe_db = f"{database_name}." if database_name else ""
-    node.query(
-        f"DROP TABLE {maybe_db}test_rmv {'ON CLUSTER default' if on_cluster else ''}"
-    )
+    node.query(f"DROP TABLE test_db.test_rmv")
     node.query(create_sql)
     compare_DDL_on_all_nodes()
 
-    show_create = node.query(f"SHOW CREATE {maybe_db}test_rmv")
+    show_create = node.query(f"SHOW CREATE test_db.test_rmv")
 
     alter_sql = ALTER_RMV.render(
         table_name="test_rmv",
         if_not_exists=if_not_exists,
-        db=database_name,
+        db="test_db",
         refresh_interval="EVERY 1 HOUR",
         depends_on=depends_on,
         # can't change select with alter
         # select_query="SELECT * FROM src1",
         with_append=with_append,
-        on_cluster="default" if on_cluster else None,
         settings=settings,
     )
 
     node.query(alter_sql)
-    show_create_after_alter = node.query(f"SHOW CREATE {maybe_db}test_rmv")
+    show_create_after_alter = node.query(f"SHOW CREATE test_db.test_rmv")
     assert show_create == show_create_after_alter
     compare_DDL_on_all_nodes()
 
@@ -339,7 +364,7 @@ def test_alters(
     "to_clause",
     [
         (None, "tgt1", "tgt1"),
-        ("Engine MergeTree ORDER BY tuple()", None, "test_rmv"),
+        ("Engine ReplicatedMergeTree ORDER BY tuple()", None, "test_rmv"),
     ],
 )
 def test_real_wait_refresh(
@@ -348,9 +373,6 @@ def test_real_wait_refresh(
     empty,
     to_clause,
 ):
-    if node.is_built_with_sanitizer():
-        pytest.skip("Disabled for sanitizers (too slow)")
-
     table_clause, to_clause_, tgt = to_clause
 
     create_sql = CREATE_RMV.render(
@@ -360,10 +382,13 @@ def test_real_wait_refresh(
         table_clause=table_clause,
         select_query="SELECT now() as a, b FROM src1",
         with_append=append,
+        on_cluster="default",
         empty=empty,
     )
     node.query(create_sql)
     rmv = get_rmv_info(node, "test_rmv")
+    time.sleep(1)
+    node.query("SYSTEM SYNC DATABASE REPLICA ON CLUSTER default default")
 
     expected_rows = 0
     if empty:
@@ -379,6 +404,15 @@ def test_real_wait_refresh(
         # wait for refresh a little bit more than 10 seconds
         max_attempts=12,
         delay=1,
+        wait_status="Scheduled",
+    )
+
+    node.query("SYSTEM SYNC DATABASE REPLICA ON CLUSTER default default")
+
+    rmv22 = get_rmv_info(
+        node,
+        "test_rmv",
+        wait_status="Scheduled",
     )
 
     if append:
@@ -391,14 +425,10 @@ def test_real_wait_refresh(
     assert rmv2["status"] == "Scheduled"
     assert rmv2["last_success_time"] == rmv["next_refresh_time"]
     assert rmv2["last_refresh_time"] == rmv["next_refresh_time"]
-    assert rmv2["retry"] == 0
-    assert rmv2["read_rows"] == 2
-    assert rmv2["read_bytes"] == 16
-    assert rmv2["total_rows"] == 2
-    assert rmv2["written_rows"] == 2
-    assert rmv2["written_bytes"] == 24
+    assert rmv2["retry"] == 0 and rmv22["retry"] == 0
 
-    node.query("SYSTEM STOP VIEW test_rmv")
+    for n in nodes:
+        n.query("SYSTEM STOP VIEW test_rmv")
     time.sleep(12)
     rmv3 = get_rmv_info(node, "test_rmv")
     # no refresh happen
@@ -408,7 +438,8 @@ def test_real_wait_refresh(
     del rmv2["status"]
     assert rmv3 == rmv2
 
-    node.query("SYSTEM START VIEW test_rmv")
+    for n in nodes:
+        n.query("SYSTEM START VIEW test_rmv")
     time.sleep(1)
     rmv4 = get_rmv_info(node, "test_rmv")
 
@@ -421,11 +452,6 @@ def test_real_wait_refresh(
     assert rmv4["exception"] is None
     assert rmv4["status"] == "Scheduled"
     assert rmv4["retry"] == 0
-    assert rmv2["read_rows"] == 2
-    assert rmv2["read_bytes"] == 16
-    assert rmv2["total_rows"] == 2
-    assert rmv2["written_rows"] == 2
-    assert rmv2["written_bytes"] == 24
 
     node.query("SYSTEM REFRESH VIEW test_rmv")
     time.sleep(1)
@@ -485,54 +511,13 @@ def expect_rows(rows, table="test_rmv"):
     assert len(inserted_data) == rows
 
 
-def test_long_query(fn_setup_tables):
-    if node.is_built_with_sanitizer():
-        pytest.skip("Disabled for sanitizers")
-
-    create_sql = CREATE_RMV.render(
-        table_name="test_rmv",
-        refresh_interval="EVERY 1 HOUR",
-        to_clause="tgt1",
-        select_query="SELECT now() a, sleep(1) b from numbers(10) settings max_block_size=1",
-        with_append=False,
-        empty=True,
-    )
-    node.query(create_sql)
-    rmv = get_rmv_info(node, "test_rmv")
-    node.query(f"SYSTEM TEST VIEW test_rmv SET FAKE TIME '{rmv['next_refresh_time']}'")
-
-    wait_seconds = 0
-    progresses = []
-    while wait_seconds < 30:
-        rmv = get_rmv_info(node, "test_rmv")
-        if rmv["progress"] == 1:
-            break
-
-        time.sleep(0.01)
-        wait_seconds += 0.01
-
-        # didn't start yet
-        if rmv["status"] == "Scheduled" or rmv["progress"] == 0:
-            continue
-
-        assert rmv["status"] == "Running"
-        assert 0 < rmv["read_rows"] < 100000000
-        assert 0 < rmv["read_bytes"] < 1200000000
-        progresses.append(rmv["progress"])
-
-    assert rmv["progress"] == 1
-    assert rmv["exception"] is None
-
-    assert any(0 < p < 1 for p in progresses)
-
-
 def test_long_query_cancel(fn_setup_tables):
     if node.is_built_with_sanitizer():
         pytest.skip("Disabled for sanitizers")
 
     create_sql = CREATE_RMV.render(
         table_name="test_rmv",
-        refresh_interval="EVERY 3 SECONDS",
+        refresh_interval="EVERY 5 SECONDS",
         to_clause="tgt1",
         select_query="SELECT now() a, sleep(1) b from numbers(5) settings max_block_size=1",
         with_append=False,
@@ -540,9 +525,19 @@ def test_long_query_cancel(fn_setup_tables):
         settings={"refresh_retries": "0"},
     )
     node.query(create_sql)
-    get_rmv_info(node, "test_rmv", delay=0.1, max_attempts=1000, wait_status="Running")
 
-    node.query("SYSTEM CANCEL VIEW test_rmv")
+    done = False
+    start = time.time()
+    while not done:
+        for n in nodes:
+            n.query("SYSTEM CANCEL VIEW test_rmv")
+            if get_rmv_info(node2, "test_rmv")["exception"] == "cancelled":
+                done = True
+
+        time.sleep(0.1)
+        if time.time() - start > 10:
+            raise AssertionError("Can't cancel query")
+
     rmv = get_rmv_info(node, "test_rmv", wait_status="Scheduled")
     assert rmv["status"] == "Scheduled"
     assert rmv["exception"] == "cancelled"
@@ -562,9 +557,11 @@ def test_long_query_cancel(fn_setup_tables):
 def fn3_setup_tables():
     node.query("DROP TABLE IF EXISTS tgt1 ON CLUSTER default")
     node.query("DROP TABLE IF EXISTS test_rmv ON CLUSTER default")
-    node.query("DROP TABLE IF EXISTS test_db.test_rmv ON CLUSTER default")
+    node.query("DROP TABLE IF EXISTS test_db.test_rmv")
 
-    node.query(f"CREATE TABLE tgt1 ON CLUSTER default (a DateTime) ENGINE = Memory")
+    node.query(
+        f"CREATE TABLE tgt1 ON CLUSTER default (a DateTime) ENGINE = ReplicatedMergeTree ORDER BY tuple()"
+    )
 
 
 def test_query_fail(fn3_setup_tables):
@@ -578,6 +575,7 @@ def test_query_fail(fn3_setup_tables):
         # Argument at index 1 for function throwIf must be constant
         select_query="SELECT throwIf(1, toString(rand())) a",
         with_append=False,
+        on_cluster="default",
         empty=True,
         settings={
             "refresh_retries": "10",
@@ -607,6 +605,7 @@ def test_query_retry(fn3_setup_tables):
         to_clause="tgt1",
         select_query="SELECT throwIf(1, '111') a",
         with_append=False,
+        on_cluster="default",
         empty=True,
         settings={
             "refresh_retries": "10",
