@@ -1560,7 +1560,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
         }
     }
 
-    if (!resolve_result.resolved_identifier && identifier_lookup.isTableExpressionLookup())
+    if (!resolve_result.resolved_identifier && identifier_resolve_settings.allow_to_check_cte && identifier_lookup.isTableExpressionLookup())
     {
         auto full_name = identifier_lookup.identifier.getFullName();
         auto cte_query_node_it = scope.cte_name_to_query_node.find(full_name);
