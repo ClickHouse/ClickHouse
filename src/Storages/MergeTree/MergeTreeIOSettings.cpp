@@ -12,6 +12,7 @@ namespace Setting
     extern const SettingsBool low_cardinality_use_single_dictionary_for_part;
     extern const SettingsUInt64 min_compress_block_size;
     extern const SettingsUInt64 max_compress_block_size;
+    extern const SettingsBool merge_tree_use_v1_object_and_dynamic_serialization;
 }
 
 namespace MergeTreeSetting
@@ -55,6 +56,7 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     , low_cardinality_max_dictionary_size(global_settings[Setting::low_cardinality_max_dictionary_size])
     , low_cardinality_use_single_dictionary_for_part(global_settings[Setting::low_cardinality_use_single_dictionary_for_part] != 0)
     , use_compact_variant_discriminators_serialization((*storage_settings)[MergeTreeSetting::use_compact_variant_discriminators_serialization])
+    , use_v1_object_and_dynamic_serialization(global_settings[Setting::merge_tree_use_v1_object_and_dynamic_serialization])
     , use_adaptive_write_buffer_for_dynamic_subcolumns((*storage_settings)[MergeTreeSetting::use_adaptive_write_buffer_for_dynamic_subcolumns])
     , adaptive_write_buffer_initial_size((*storage_settings)[MergeTreeSetting::adaptive_write_buffer_initial_size])
 {

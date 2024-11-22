@@ -289,7 +289,10 @@ BlockIO InterpreterSystemQuery::execute()
 
     /// Use global context with fresh system profile settings
     auto system_context = Context::createCopy(getContext()->getGlobalContext());
-    system_context->setSetting("profile", getContext()->getSystemProfileName());
+    /// Don't check for constraints when changing profile. It was accepted before (for example it might include
+    /// some experimental settings)
+    bool check_constraints = false;
+    system_context->setCurrentProfile(getContext()->getSystemProfileName(), check_constraints);
 
     /// Make canonical query for simpler processing
     if (query.type == Type::RELOAD_DICTIONARY)
