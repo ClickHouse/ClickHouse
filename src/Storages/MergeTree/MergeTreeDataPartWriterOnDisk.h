@@ -189,6 +189,8 @@ protected:
     size_t current_mark = 0;
 
     GinIndexStoreFactory::GinIndexStores gin_index_stores;
+
+    Block block_sample;
 private:
     void initSkipIndices();
     void initPrimaryIndex();
