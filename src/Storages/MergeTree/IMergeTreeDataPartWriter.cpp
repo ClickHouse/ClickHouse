@@ -1,4 +1,3 @@
-#include <memory>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>

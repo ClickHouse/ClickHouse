@@ -338,13 +338,9 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
          */
         MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
-        if (settings.save_primary_index_in_memory)
+        if (settings.save_primary_index_in_memory && index_columns.empty())
         {
-            if (index_columns.empty())
-                index_columns = primary_index_block.cloneEmptyColumns();
-
-            for (const auto & column : index_columns)
-                column->reserve(column->size() + granules_to_write.size());
+            index_columns = primary_index_block.cloneEmptyColumns();
         }
 
         /// Write index. The index contains Primary Key value for each `index_granularity` row.

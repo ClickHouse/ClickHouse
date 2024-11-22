@@ -16,7 +16,7 @@ namespace DB
 
 using PrimaryIndex = std::vector<ColumnPtr>;
 
-/// Estimate of number of bytes in cache for primaryindexs.
+/// Estimate of number of bytes in cache for primary index.
 struct PrimaryIndexWeightFunction
 {
     /// We spent additional bytes on key in hashmap, linked lists, shared pointers, etc ...
@@ -33,8 +33,9 @@ struct PrimaryIndexWeightFunction
 
 extern template class CacheBase<UInt128, PrimaryIndex, UInt128TrivialHash, PrimaryIndexWeightFunction>;
 
-/** Cache of primary index for StorageMergeTree.
-  * PrimaryIndex is an index structure that addresses ranges in column file, corresponding to ranges of primary key.
+/** Cache of primary index for MergeTree tables.
+  * Primary index is a list of columns from primary key
+  * that store first row for each granule of data part.
   */
 class PrimaryIndexCache : public CacheBase<UInt128, PrimaryIndex, UInt128TrivialHash, PrimaryIndexWeightFunction>
 {

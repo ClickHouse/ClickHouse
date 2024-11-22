@@ -515,7 +515,7 @@ public:
     /// Returns a pointer to primary mark cache if it is required to be prewarmed.
     MarkCachePtr getMarkCacheToPrewarm() const;
 
-    /// Prewarm mark cache for the most recent data parts.
+    /// Prewarm mark cache and primary index cache for the most recent data parts.
     void prewarmCaches(ThreadPool & pool, MarkCachePtr mark_cache, PrimaryIndexCachePtr index_cache);
 
     String getLogName() const { return log.loadName(); }

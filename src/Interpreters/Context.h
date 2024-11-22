@@ -22,7 +22,6 @@
 #include <Server/HTTP/HTTPContext.h>
 #include <Storages/IStorage_fwd.h>
 
-#include "Storages/MergeTree/PrimaryIndexCache.h"
 #include "config.h"
 
 #include <functional>
@@ -90,6 +89,7 @@ class RefreshSet;
 class Cluster;
 class Compiler;
 class MarkCache;
+class PrimaryIndexCache;
 class PageCache;
 class MMappedFileCache;
 class UncompressedCache;

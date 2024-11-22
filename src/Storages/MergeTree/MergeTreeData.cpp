@@ -232,8 +232,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString storage_policy;
     extern const MergeTreeSettingsFloat zero_copy_concurrent_part_removal_max_postpone_ratio;
     extern const MergeTreeSettingsUInt64 zero_copy_concurrent_part_removal_max_split_times;
-    extern const MergeTreeSettingsBool use_primary_index_cache;
-    extern const MergeTreeSettingsBool prewarm_primary_index_cache;
+    extern const MergeTreeSettingsBool use_primary_key_cache;
+    extern const MergeTreeSettingsBool prewarm_primary_key_cache;
     extern const MergeTreeSettingsBool prewarm_mark_cache;
     extern const MergeTreeSettingsBool primary_key_lazy_load;
 }
@@ -2350,10 +2350,10 @@ void MergeTreeData::stopOutdatedAndUnexpectedDataPartsLoadingTask()
 
 PrimaryIndexCachePtr MergeTreeData::getPrimaryIndexCache() const
 {
-    bool use_primary_index_cache = (*getSettings())[MergeTreeSetting::use_primary_index_cache];
+    bool use_primary_key_cache = (*getSettings())[MergeTreeSetting::use_primary_key_cache];
     bool primary_key_lazy_load = (*getSettings())[MergeTreeSetting::primary_key_lazy_load];
 
-    if (!use_primary_index_cache || !primary_key_lazy_load)
+    if (!use_primary_key_cache || !primary_key_lazy_load)
         return nullptr;
 
     return getContext()->getPrimaryIndexCache();
@@ -2361,7 +2361,7 @@ PrimaryIndexCachePtr MergeTreeData::getPrimaryIndexCache() const
 
 PrimaryIndexCachePtr MergeTreeData::getPrimaryIndexCacheToPrewarm() const
 {
-    if (!(*getSettings())[MergeTreeSetting::prewarm_primary_index_cache])
+    if (!(*getSettings())[MergeTreeSetting::prewarm_primary_key_cache])
         return nullptr;
 
     return getPrimaryIndexCache();

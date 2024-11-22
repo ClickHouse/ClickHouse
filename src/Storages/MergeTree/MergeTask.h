@@ -6,8 +6,6 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/filesystemHelpers.h>
-#include "Storages/MergeTree/IMergeTreeDataPart.h"
-#include "Storages/MergeTree/PrimaryIndexCache.h"
 #include <Formats/MarkInCompressedFile.h>
 
 #include <Compression/CompressedReadBuffer.h>
@@ -223,9 +221,7 @@ private:
         std::promise<MergeTreeData::MutableDataPartPtr> promise{};
 
         IMergedBlockOutputStream::WrittenOffsetColumns written_offset_columns{};
-
         PlainMarksByName cached_marks;
-        std::unique_ptr<Columns> cached_index;
 
         MergeTreeTransactionPtr txn;
         bool need_prefix;

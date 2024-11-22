@@ -37,9 +37,9 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     , default_codec(default_codec_)
     , write_settings(write_settings_)
 {
-    /// Save marks in memory if prewarm is enabled to avoid rereading marks file.
+    /// Save marks in memory if prewarm is enabled to avoid re-reading marks file.
     bool save_marks_in_cache = data_part->storage.getMarkCacheToPrewarm() != nullptr;
-    /// Save primary index in memory if cache is disabled or is enabled with prewarm to avoid rereading marks file.
+    /// Save primary index in memory if cache is disabled or is enabled with prewarm to avoid re-reading primary index file.
     bool save_primary_index_in_memory = !data_part->storage.getPrimaryIndexCache() || data_part->storage.getPrimaryIndexCacheToPrewarm();
 
     MergeTreeWriterSettings writer_settings(

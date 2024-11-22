@@ -787,7 +787,7 @@ void LocalServer::processConfig()
     if (primary_index_cache_size > max_cache_size)
     {
         primary_index_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered primary index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(mark_cache_size));
+        LOG_INFO(log, "Lowered primary index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(primary_index_cache_size));
     }
     global_context->setPrimaryIndexCache(primary_index_cache_policy, primary_index_cache_size, primary_index_cache_size_ratio);
 

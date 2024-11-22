@@ -3259,9 +3259,9 @@ void Context::updatePrimaryIndexCacheConfiguration(const Poco::Util::AbstractCon
     std::lock_guard lock(shared->mutex);
 
     if (!shared->primary_index_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mark cache was not created yet.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Primary index cache was not created yet.");
 
-    size_t max_size_in_bytes = config.getUInt64("mark_cache_size", DEFAULT_MARK_CACHE_MAX_SIZE);
+    size_t max_size_in_bytes = config.getUInt64("primary_index_cache_size", DEFAULT_PRIMARY_INDEX_CACHE_MAX_SIZE);
     shared->primary_index_cache->setMaxSizeInBytes(max_size_in_bytes);
 }
 

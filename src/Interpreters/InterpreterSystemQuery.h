@@ -6,8 +6,6 @@
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Common/ActionLock.h>
-#include "Storages/MarkCache.h"
-#include "Storages/MergeTree/PrimaryIndexCache.h"
 #include <Disks/IVolume.h>
 
 

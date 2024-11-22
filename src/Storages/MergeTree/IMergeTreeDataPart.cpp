@@ -3,7 +3,6 @@
 #include <base/types.h>
 
 #include <exception>
-#include <memory>
 #include <optional>
 #include <string_view>
 #include <Compression/CompressedReadBuffer.h>

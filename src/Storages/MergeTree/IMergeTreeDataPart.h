@@ -25,7 +25,7 @@
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Storages/MergeTree/IPartMetadataManager.h>
-#include "Storages/MergeTree/PrimaryIndexCache.h"
+#include <Storages/MergeTree/PrimaryIndexCache.h>
 
 
 namespace zkutil
