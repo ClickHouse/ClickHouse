@@ -348,7 +348,9 @@ def assert_nested_table_is_created(
     # It may lead to error `Unknown table expression identifier...`
     while True:
         try:
-            instance.query(f"SELECT * FROM `{materialized_database}`.`{table}` LIMIT 1 FORMAT Null")
+            instance.query(
+                f"SELECT * FROM `{materialized_database}`.`{table}` LIMIT 1 FORMAT Null"
+            )
             break
         except Exception:
             time.sleep(0.2)
