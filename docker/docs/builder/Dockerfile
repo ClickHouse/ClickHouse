@@ -25,7 +25,7 @@ RUN yarn config set registry https://registry.npmjs.org \
     && yarn cache clean
 
 # Set NODE_OPTIONS to increase memory limit for Node.js processes
-ENV NODE_OPTIONS="--max-old-space-size=2048"
+ENV NODE_OPTIONS="--max-old-space-size=8192"
 
 ENV HOME /opt/clickhouse-docs
 
