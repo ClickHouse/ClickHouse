@@ -9,8 +9,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadBufferFromString.h>
 
-#include <Common/logger_useful.h>
-
 namespace DB
 {
 
