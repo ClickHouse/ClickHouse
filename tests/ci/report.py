@@ -23,6 +23,7 @@ from typing import (
 
 from build_download_helper import APIException, get_gh_api
 from ci_config import CI
+from ci_utils import Shell
 from env_helper import (
     GITHUB_JOB,
     GITHUB_REPOSITORY,
@@ -416,10 +417,11 @@ class JobReport:
     exit_code: int = -1
 
     def to_praktika_result(self, job_name):
-        sys.path.append("./ci")
-
         # ugly WA to exclude ci.py file form import
+        Shell.check("mkdir -p /tmp/praktika/")
         current_dir = os.path.dirname(os.path.abspath(__file__))
+        sys.path.append(current_dir + "/../../ci")
+        sys.path.append(current_dir + "/../../")
         if current_dir in sys.path:
             sys.path.remove(current_dir)
         from praktika.result import (  # pylint: disable=import-error,import-outside-toplevel
@@ -515,6 +517,12 @@ class JobReport:
         to_file = to_file or JOB_REPORT_FILE
         with open(to_file, "w", encoding="utf-8") as json_file:
             json.dump(asdict(self), json_file, default=path_converter, indent=2)
+
+        # temporary WA to ease integration with praktika
+        check_name = os.getenv("CHECK_NAME", "")
+        if check_name:
+            self.to_praktika_result(job_name=check_name).dump()
+
         return self
 
 
