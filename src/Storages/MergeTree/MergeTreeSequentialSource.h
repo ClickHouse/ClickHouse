@@ -21,13 +21,13 @@ Pipe createMergeTreeSequentialSource(
     const MergeTreeData & storage,
     const StorageSnapshotPtr & storage_snapshot,
     MergeTreeData::DataPartPtr data_part,
-    AlterConversionsPtr alter_conversions,
     Names columns_to_read,
     std::optional<MarkRanges> mark_ranges,
-    std::shared_ptr<std::atomic<size_t>> filtered_rows_count,
     bool apply_deleted_mask,
     bool read_with_direct_io,
-    bool prefetch);
+    bool take_column_types_from_storage,
+    bool quiet,
+    std::shared_ptr<std::atomic<size_t>> filtered_rows_count);
 
 class QueryPlan;
 
@@ -37,13 +37,9 @@ void createReadFromPartStep(
     const MergeTreeData & storage,
     const StorageSnapshotPtr & storage_snapshot,
     MergeTreeData::DataPartPtr data_part,
-    AlterConversionsPtr alter_conversions,
     Names columns_to_read,
-    std::shared_ptr<std::atomic<size_t>> filtered_rows_count,
     bool apply_deleted_mask,
-    std::optional<ActionsDAG> filter,
-    bool read_with_direct_io,
-    bool prefetch,
+    ActionsDAGPtr filter,
     ContextPtr context,
     LoggerPtr log);
 

@@ -2,6 +2,7 @@
 #include <sys/wait.h>
 #include <dlfcn.h>
 #include <unistd.h>
+#include <csignal>
 
 #include <Common/logger_useful.h>
 #include <base/errnoToString.h>
@@ -153,9 +154,6 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
     std::vector<std::unique_ptr<PipeFDs>> read_pipe_fds;
     std::vector<std::unique_ptr<PipeFDs>> write_pipe_fds;
 
-    read_pipe_fds.reserve(config.read_fds.size());
-    write_pipe_fds.reserve(config.write_fds.size());
-
     for (size_t i = 0; i < config.read_fds.size(); ++i)
         read_pipe_fds.emplace_back(std::make_unique<PipeFDs>());
 
@@ -239,14 +237,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
         res->write_fds.emplace(fd, fds.fds_rw[1]);
     }
 
-    LOG_TRACE(
-        getLogger(),
-        "Started shell command '{}' with pid {} and file descriptors: out {}, err {}",
-        filename,
-        pid,
-        res->out.getFD(),
-        res->err.getFD());
-
+    LOG_TRACE(getLogger(), "Started shell command '{}' with pid {}", filename, pid);
     return res;
 }
 

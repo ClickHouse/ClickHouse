@@ -87,7 +87,7 @@ public:
             {"array_1", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
             {"array_2", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
         };
-        validateFunctionArguments(*this, arguments, args);
+        validateFunctionArgumentTypes(*this, arguments, args);
         return std::make_shared<DataTypeNumber<ResultType>>();
     }
 
@@ -97,13 +97,13 @@ public:
         {
             if (const ColumnConst * col_const = typeid_cast<const ColumnConst *>(col.column.get()))
             {
-                const ColumnArray & col_const_array = checkAndGetColumn<ColumnArray>(*col_const->getDataColumnPtr());
-                return {&col_const_array, true};
+                const ColumnArray * col_const_array = checkAndGetColumn<ColumnArray>(col_const->getDataColumnPtr().get());
+                return {col_const_array, true};
             }
-            if (const ColumnArray * col_non_const_array = checkAndGetColumn<ColumnArray>(col.column.get()))
+            else if (const ColumnArray * col_non_const_array = checkAndGetColumn<ColumnArray>(col.column.get()))
                 return {col_non_const_array, false};
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN, "Argument for function {} must be array but it has type {}.", col.column->getName(), getName());
+            else
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Argument for function {} must be array but it has type {}.", col.column->getName(), getName());
         };
 
         const auto & [left_array, left_is_const] = cast_to_array(arguments[0]);
@@ -113,7 +113,7 @@ public:
 
         ColumnWithTypeAndName intersect_column;
         intersect_column.type = intersect_array->getResultType();
-        intersect_column.column = intersect_array->execute(arguments, intersect_column.type, input_rows_count, /* dry_run = */ false);
+        intersect_column.column = intersect_array->execute(arguments, intersect_column.type, input_rows_count);
 
         const auto * intersect_column_type = checkAndGetDataType<DataTypeArray>(intersect_column.type.get());
         if (!intersect_column_type)
@@ -128,8 +128,8 @@ public:
         vectorWithEmptyIntersect<left_is_const, right_is_const>(left_array->getOffsets(), right_array->getOffsets(), vec_res); \
     else \
     { \
-        const ColumnArray & intersect_column_array = checkAndGetColumn<ColumnArray>(*intersect_column.column); \
-        vector<left_is_const, right_is_const>(intersect_column_array.getOffsets(), left_array->getOffsets(), right_array->getOffsets(), vec_res); \
+        const ColumnArray * intersect_column_array = checkAndGetColumn<ColumnArray>(intersect_column.column.get()); \
+        vector<left_is_const, right_is_const>(intersect_column_array->getOffsets(), left_array->getOffsets(), right_array->getOffsets(), vec_res); \
     }
 
         if (!left_is_const && !right_is_const)

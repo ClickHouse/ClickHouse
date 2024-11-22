@@ -14,7 +14,7 @@ struct Settings;
 namespace ErrorCodes
 {
 
-extern const int INCORRECT_DATA;
+extern const int CORRUPTED_DATA;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int LOGICAL_ERROR;
 }
@@ -78,14 +78,6 @@ public:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of second argument of aggregate function {} because the values of that data type are not comparable",
                 type_val->getName(),
-                getName());
-
-        if (isDynamic(this->type_val) || isVariant(this->type_val))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of aggregate function {} because the column of that type can contain values with different "
-                "data types. Consider using typed subcolumns or cast column to a specific data type",
-                this->type_val->getName(),
                 getName());
     }
 
@@ -206,7 +198,7 @@ public:
         this->data(place).value().read(buf, *serialization_val, arena);
         if (unlikely(this->data(place).value().has() != this->data(place).result().has()))
             throw Exception(
-                ErrorCodes::INCORRECT_DATA,
+                ErrorCodes::CORRUPTED_DATA,
                 "Invalid state of the aggregate function {}: has_value ({}) != has_result ({})",
                 getName(),
                 this->data(place).value().has(),

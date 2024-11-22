@@ -1,26 +1,21 @@
 #pragma once
 
 #include <Storages/MutationCommands.h>
-#include <Interpreters/Context_fwd.h>
-#include <Storages/StorageInMemoryMetadata.h>
+#include <string>
+#include <unordered_map>
 
 
 namespace DB
 {
 
+
 /// Alter conversions which should be applied on-fly for part.
 /// Built from of the most recent mutation commands for part.
 /// Now only ALTER RENAME COLUMN is applied.
-class AlterConversions : private WithContext, boost::noncopyable
+class AlterConversions : private boost::noncopyable
 {
 public:
     AlterConversions() = default;
-
-    AlterConversions(StorageMetadataPtr metadata_snapshot_, ContextPtr context_)
-        : WithContext(context_)
-        , metadata_snapshot(std::move(metadata_snapshot_))
-    {
-    }
 
     struct RenamePair
     {
@@ -40,13 +35,11 @@ public:
     /// Get column old name before rename (lookup by key in rename_map)
     std::string getColumnOldName(const std::string & new_name) const;
 
-    static bool isSupportedDataMutation(MutationCommand::Type type);
-    static bool isSupportedMetadataMutation(MutationCommand::Type type);
+    static bool supportsMutationCommandType(MutationCommand::Type);
 
 private:
     /// Rename map new_name -> old_name.
     std::vector<RenamePair> rename_map;
-    StorageMetadataPtr metadata_snapshot;
 };
 
 using AlterConversionsPtr = std::shared_ptr<const AlterConversions>;

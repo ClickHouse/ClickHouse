@@ -97,7 +97,7 @@ ClickHouse从表的过时副本中选择最相关的副本。
 -   0 — Disabled.
 -   1 — Enabled.
 
-默认值：1。
+默认值：0。
 
 ## http_zlib_compression_level {#settings-http_zlib_compression_level}
 
@@ -1002,7 +1002,7 @@ ClickHouse生成异常
 
 ## count_distinct_implementation {#settings-count_distinct_implementation}
 
-指定其中的 `uniq*` 函数应用于执行 [COUNT(DISTINCT ...)](../../sql-reference/aggregate-functions/reference/count.md#agg_function-count) 建筑。
+指定其中的 `uniq*` 函数应用于执行 [COUNT(DISTINCT …)](../../sql-reference/aggregate-functions/reference/count.md#agg_function-count) 建筑。
 
 可能的值:
 

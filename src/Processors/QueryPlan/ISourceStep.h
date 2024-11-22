@@ -8,16 +8,13 @@ namespace DB
 class ISourceStep : public IQueryPlanStep
 {
 public:
-    explicit ISourceStep(Header output_header_);
+    explicit ISourceStep(DataStream output_stream_);
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
 
     virtual void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) = 0;
 
     void describePipeline(FormatSettings & settings) const override;
-
-protected:
-    void updateOutputHeader() override {}
 };
 
 }
