@@ -16,16 +16,6 @@ class ArtifactNames:
     CH_ARM_RELEASE = "CH_ARM_RELEASE"
     CH_ARM_ASAN = "CH_ARM_ASAN"
 
-    CH_ODBC_B_AMD_DEBUG = "CH_ODBC_B_AMD_DEBUG"
-    CH_ODBC_B_AMD_RELEASE = "CH_ODBC_B_AMD_RELEASE"
-    CH_ODBC_B_ARM_RELEASE = "CH_ODBC_B_ARM_RELEASE"
-    CH_ODBC_B_ARM_ASAN = "CH_ODBC_B_ARM_ASAN"
-
-    DEB_AMD_DEBUG = "DEB_AMD_DEBUG"
-    DEB_AMD_RELEASE = "DEB_AMD_RELEASE"
-    DEB_ARM_RELEASE = "DEB_ARM_RELEASE"
-    DEB_ARM_ASAN = "DEB_ARM_ASAN"
-
 
 style_check_job = Job.Config(
     name=JobNames.STYLE_CHECK,
@@ -51,7 +41,7 @@ fast_test_job = Job.Config(
 build_jobs = Job.Config(
     name=JobNames.BUILD,
     runs_on=["...from params..."],
-    requires=[],
+    requires=[JobNames.FAST_TEST],
     command="python3 ./ci/jobs/build_clickhouse.py --build-type {PARAMETER}",
     run_in_docker="clickhouse/fasttest",
     timeout=3600 * 2,
@@ -73,26 +63,10 @@ build_jobs = Job.Config(
 ).parametrize(
     parameter=["amd_debug", "amd_release", "arm_release", "arm_asan"],
     provides=[
-        [
-            ArtifactNames.CH_AMD_DEBUG,
-            ArtifactNames.DEB_AMD_DEBUG,
-            ArtifactNames.CH_ODBC_B_AMD_DEBUG,
-        ],
-        [
-            ArtifactNames.CH_AMD_RELEASE,
-            ArtifactNames.DEB_AMD_RELEASE,
-            ArtifactNames.CH_ODBC_B_AMD_RELEASE,
-        ],
-        [
-            ArtifactNames.CH_ARM_RELEASE,
-            ArtifactNames.DEB_ARM_RELEASE,
-            ArtifactNames.CH_ODBC_B_ARM_RELEASE,
-        ],
-        [
-            ArtifactNames.CH_ARM_ASAN,
-            ArtifactNames.DEB_ARM_ASAN,
-            ArtifactNames.CH_ODBC_B_ARM_ASAN,
-        ],
+        [ArtifactNames.CH_AMD_DEBUG],
+        [ArtifactNames.CH_AMD_RELEASE],
+        [ArtifactNames.CH_ARM_RELEASE],
+        [ArtifactNames.CH_ARM_ASAN],
     ],
     runs_on=[
         [RunnerLabels.BUILDER_AMD],
@@ -131,12 +105,12 @@ stateless_tests_jobs = Job.Config(
         [RunnerLabels.FUNC_TESTER_ARM],
     ],
     requires=[
-        [ArtifactNames.CH_AMD_DEBUG, ArtifactNames.CH_ODBC_B_AMD_DEBUG],
-        [ArtifactNames.CH_AMD_DEBUG, ArtifactNames.CH_ODBC_B_AMD_DEBUG],
-        [ArtifactNames.CH_AMD_RELEASE, ArtifactNames.CH_ODBC_B_AMD_RELEASE],
-        [ArtifactNames.CH_AMD_RELEASE, ArtifactNames.CH_ODBC_B_AMD_RELEASE],
-        [ArtifactNames.CH_ARM_ASAN, ArtifactNames.CH_ODBC_B_ARM_ASAN],
-        [ArtifactNames.CH_ARM_ASAN, ArtifactNames.CH_ODBC_B_ARM_ASAN],
+        [ArtifactNames.CH_AMD_DEBUG],
+        [ArtifactNames.CH_AMD_DEBUG],
+        [ArtifactNames.CH_AMD_RELEASE],
+        [ArtifactNames.CH_AMD_RELEASE],
+        [ArtifactNames.CH_ARM_ASAN],
+        [ArtifactNames.CH_ARM_ASAN],
     ],
 )
 
@@ -154,7 +128,7 @@ stateful_tests_jobs = Job.Config(
     ),
 ).parametrize(
     parameter=[
-        "amd_release,parallel",
+        "amd_debug,parallel",
     ],
     runs_on=[
         [RunnerLabels.BUILDER_AMD],
@@ -163,29 +137,6 @@ stateful_tests_jobs = Job.Config(
         [ArtifactNames.CH_AMD_DEBUG],
     ],
 )
-
-# TODO: refactor job to be aligned with praktika style (remove wrappers, run in docker)
-stress_test_jobs = Job.Config(
-    name=JobNames.STRESS,
-    runs_on=[RunnerLabels.BUILDER_ARM],
-    command="python3 ./tests/ci/stress_check.py {PARAMETER}",
-    digest_config=Job.CacheDigestConfig(
-        include_paths=[
-            "./ci/jobs/functional_stateful_tests.py",
-        ],
-    ),
-).parametrize(
-    parameter=[
-        "arm_release",
-    ],
-    runs_on=[
-        [RunnerLabels.FUNC_TESTER_ARM],
-    ],
-    requires=[
-        [ArtifactNames.DEB_ARM_RELEASE],
-    ],
-)
-
 
 workflow = Workflow.Config(
     name="PR",
@@ -197,52 +148,27 @@ workflow = Workflow.Config(
         *build_jobs,
         *stateless_tests_jobs,
         *stateful_tests_jobs,
-        *stress_test_jobs,
     ],
     artifacts=[
-        *Artifact.Config(
-            name="...",
+        Artifact.Config(
+            name=ArtifactNames.CH_AMD_DEBUG,
             type=Artifact.Type.S3,
             path=f"{Settings.TEMP_DIR}/build/programs/clickhouse",
-        ).parametrize(
-            names=[
-                ArtifactNames.CH_AMD_DEBUG,
-                ArtifactNames.CH_AMD_RELEASE,
-                ArtifactNames.CH_ARM_RELEASE,
-                ArtifactNames.CH_ARM_ASAN,
-            ]
-        ),
-        *Artifact.Config(
-            name="...",
-            type=Artifact.Type.S3,
-            path=f"{Settings.TEMP_DIR}/build/programs/clickhouse-odbc-bridge",
-        ).parametrize(
-            names=[
-                ArtifactNames.CH_ODBC_B_AMD_DEBUG,
-                ArtifactNames.CH_ODBC_B_AMD_RELEASE,
-                ArtifactNames.CH_ODBC_B_ARM_RELEASE,
-                ArtifactNames.CH_ODBC_B_ARM_ASAN,
-            ]
         ),
         Artifact.Config(
-            name=ArtifactNames.DEB_AMD_DEBUG,
+            name=ArtifactNames.CH_AMD_RELEASE,
             type=Artifact.Type.S3,
-            path=f"{Settings.TEMP_DIR}/output/*.deb",
+            path=f"{Settings.TEMP_DIR}/build/programs/clickhouse",
         ),
         Artifact.Config(
-            name=ArtifactNames.DEB_AMD_RELEASE,
+            name=ArtifactNames.CH_ARM_RELEASE,
             type=Artifact.Type.S3,
-            path=f"{Settings.TEMP_DIR}/output/*.deb",
+            path=f"{Settings.TEMP_DIR}/build/programs/clickhouse",
         ),
         Artifact.Config(
-            name=ArtifactNames.DEB_ARM_RELEASE,
+            name=ArtifactNames.CH_ARM_ASAN,
             type=Artifact.Type.S3,
-            path=f"{Settings.TEMP_DIR}/output/*.deb",
-        ),
-        Artifact.Config(
-            name=ArtifactNames.DEB_ARM_ASAN,
-            type=Artifact.Type.S3,
-            path=f"{Settings.TEMP_DIR}/output/*.deb",
+            path=f"{Settings.TEMP_DIR}/build/programs/clickhouse",
         ),
     ],
     dockers=DOCKERS,

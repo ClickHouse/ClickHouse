@@ -242,4 +242,3 @@ class JobNames:
     BUILD = "Build"
     STATELESS = "Stateless tests"
     STATEFUL = "Stateful tests"
-    STRESS = "Stress tests"
