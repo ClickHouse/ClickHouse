@@ -3243,11 +3243,9 @@ private:
     {
         auto function_adaptor = std::make_unique<FunctionToOverloadResolverAdaptor>(function)->build({ColumnWithTypeAndName{nullptr, from_type, ""}});
 
-        return [function_adaptor]
-            (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count)
-        {
-            return function_adaptor->execute(arguments, result_type, input_rows_count);
-        };
+        return [function_adaptor](
+                   ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count)
+        { return function_adaptor->execute(arguments, result_type, input_rows_count, /* dry_run = */ false); };
     }
 
     static WrapperType createToNullableColumnWrapper()
@@ -4206,7 +4204,7 @@ private:
     {
         try
         {
-            /// We can avoid try/catch here if we will implement check that 2 types can be casted, but it
+            /// We can avoid try/catch here if we will implement check that 2 types can be cast, but it
             /// requires quite a lot of work. By now let's simply use try/catch.
             /// First, check that we can create a wrapper.
             WrapperType wrapper = prepareUnpackDictionaries(from, to);
@@ -4252,31 +4250,31 @@ private:
             const auto & column_variant = assert_cast<const ColumnVariant &>(*arguments.front().column.get());
 
             /// First, cast each variant to the result type.
-            std::vector<ColumnPtr> casted_variant_columns;
-            casted_variant_columns.reserve(variant_types.size());
+            std::vector<ColumnPtr> cast_variant_columns;
+            cast_variant_columns.reserve(variant_types.size());
             for (size_t i = 0; i != variant_types.size(); ++i)
             {
                 auto variant_col = column_variant.getVariantPtrByGlobalDiscriminator(i);
                 ColumnsWithTypeAndName variant = {{variant_col, variant_types[i], "" }};
                 const auto & variant_wrapper = variant_wrappers[i];
-                ColumnPtr casted_variant;
+                ColumnPtr cast_variant;
                 /// Check if we have wrapper for this variant.
                 if (variant_wrapper)
-                    casted_variant = variant_wrapper(variant, result_type, nullptr, variant_col->size());
-                casted_variant_columns.push_back(std::move(casted_variant));
+                    cast_variant = variant_wrapper(variant, result_type, nullptr, variant_col->size());
+                cast_variant_columns.push_back(std::move(cast_variant));
             }
 
-            /// Second, construct resulting column from casted variant columns according to discriminators.
+            /// Second, construct resulting column from cast variant columns according to discriminators.
             const auto & local_discriminators = column_variant.getLocalDiscriminators();
             auto res = result_type->createColumn();
             res->reserve(input_rows_count);
             for (size_t i = 0; i != input_rows_count; ++i)
             {
                 auto global_discr = column_variant.globalDiscriminatorByLocal(local_discriminators[i]);
-                if (global_discr == ColumnVariant::NULL_DISCRIMINATOR || !casted_variant_columns[global_discr])
+                if (global_discr == ColumnVariant::NULL_DISCRIMINATOR || !cast_variant_columns[global_discr])
                     res->insertDefault();
                 else
-                    res->insertFrom(*casted_variant_columns[global_discr], column_variant.offsetAt(i));
+                    res->insertFrom(*cast_variant_columns[global_discr], column_variant.offsetAt(i));
             }
 
             return res;
@@ -4459,14 +4457,14 @@ private:
 
             /// First, cast usual variants to result type.
             const auto & variant_types = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
-            std::vector<ColumnPtr> casted_variant_columns;
-            casted_variant_columns.reserve(variant_types.size());
+            std::vector<ColumnPtr> cast_variant_columns;
+            cast_variant_columns.reserve(variant_types.size());
             for (size_t i = 0; i != variant_types.size(); ++i)
             {
                 /// Skip shared variant, it will be processed later.
                 if (i == column_dynamic.getSharedVariantDiscriminator())
                 {
-                    casted_variant_columns.push_back(nullptr);
+                    cast_variant_columns.push_back(nullptr);
                     continue;
                 }
 
@@ -4479,11 +4477,11 @@ private:
                 else
                     variant_wrapper = prepareUnpackDictionaries(variant_types[i], result_type);
 
-                ColumnPtr casted_variant;
+                ColumnPtr cast_variant;
                 /// Check if we have wrapper for this variant.
                 if (variant_wrapper)
-                    casted_variant = variant_wrapper(variant, result_type, nullptr, variant_col->size());
-                casted_variant_columns.push_back(casted_variant);
+                    cast_variant = variant_wrapper(variant, result_type, nullptr, variant_col->size());
+                cast_variant_columns.push_back(cast_variant);
             }
 
             /// Second, collect all variants stored in shared variant and cast them to result type.
@@ -4534,8 +4532,8 @@ private:
             }
 
             /// Cast all extracted variants into result type.
-            std::vector<ColumnPtr> casted_shared_variant_columns;
-            casted_shared_variant_columns.reserve(variant_types_from_shared_variant.size());
+            std::vector<ColumnPtr> cast_shared_variant_columns;
+            cast_shared_variant_columns.reserve(variant_types_from_shared_variant.size());
             for (size_t i = 0; i != variant_types_from_shared_variant.size(); ++i)
             {
                 ColumnsWithTypeAndName variant = {{variant_columns_from_shared_variant[i]->getPtr(), variant_types_from_shared_variant[i], ""}};
@@ -4546,14 +4544,14 @@ private:
                 else
                     variant_wrapper = prepareUnpackDictionaries(variant_types_from_shared_variant[i], result_type);
 
-                ColumnPtr casted_variant;
+                ColumnPtr cast_variant;
                 /// Check if we have wrapper for this variant.
                 if (variant_wrapper)
-                    casted_variant = variant_wrapper(variant, result_type, nullptr, variant_columns_from_shared_variant[i]->size());
-                casted_shared_variant_columns.push_back(casted_variant);
+                    cast_variant = variant_wrapper(variant, result_type, nullptr, variant_columns_from_shared_variant[i]->size());
+                cast_shared_variant_columns.push_back(cast_variant);
             }
 
-            /// Construct result column from all casted variants.
+            /// Construct result column from all cast variants.
             auto res = result_type->createColumn();
             res->reserve(input_rows_count);
             for (size_t i = 0; i != input_rows_count; ++i)
@@ -4565,15 +4563,15 @@ private:
                 }
                 else if (global_discr == shared_variant_discr)
                 {
-                    if (casted_shared_variant_columns[shared_variant_indexes[i]])
-                        res->insertFrom(*casted_shared_variant_columns[shared_variant_indexes[i]], shared_variant_offsets[i]);
+                    if (cast_shared_variant_columns[shared_variant_indexes[i]])
+                        res->insertFrom(*cast_shared_variant_columns[shared_variant_indexes[i]], shared_variant_offsets[i]);
                     else
                         res->insertDefault();
                 }
                 else
                 {
-                    if (casted_variant_columns[global_discr])
-                        res->insertFrom(*casted_variant_columns[global_discr], offsets[i]);
+                    if (cast_variant_columns[global_discr])
+                        res->insertFrom(*cast_variant_columns[global_discr], offsets[i]);
                     else
                         res->insertDefault();
                 }
@@ -5034,7 +5032,7 @@ private:
             ColumnPtr converted_column;
 
             ColumnPtr res_indexes;
-            /// For some types default can't be casted (for example, String to Int). In that case convert column to full.
+            /// For some types default can't be cast (for example, String to Int). In that case convert column to full.
             bool src_converted_to_full_column = false;
 
             {

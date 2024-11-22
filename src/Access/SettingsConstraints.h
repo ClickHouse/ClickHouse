@@ -40,7 +40,7 @@ class AccessControl;
   *               <const/>
   *           </force_index_by_date>
   *           <max_threads>
-  *               <changable_in_readonly/>
+  *               <changeable_in_readonly/>
   *           </max_threads>
   *       </constraints>
   *   </user_profile>
@@ -50,7 +50,7 @@ class AccessControl;
   * If a setting cannot be change due to the read-only mode this class throws an exception.
   * The value of `readonly` is understood as follows:
   * 0 - not read-only mode, no additional checks.
-  * 1 - only read queries, as well as changing settings with <changable_in_readonly/> flag.
+  * 1 - only read queries, as well as changing settings with <changeable_in_readonly/> flag.
   * 2 - only read queries and you can change the settings, except for the `readonly` setting.
   *
   */
