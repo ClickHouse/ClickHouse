@@ -538,7 +538,7 @@ struct Overloaded : Ts...
 // explicit deduction guide
 // https://en.cppreference.com/w/cpp/language/class_template_argument_deduction
 template <class... Ts>
-Overloaded(Ts...) -> Overloaded<Ts...>;
+Overloaded(Ts...) -> Overloaded<Ts...>;  /// NOLINT(misc-use-internal-linkage)
 
 template<typename Container>
 std::shared_ptr<typename Container::Node> KeeperStorage<Container>::UncommittedState::tryGetNodeFromStorage(StringRef path, bool should_lock_storage) const
