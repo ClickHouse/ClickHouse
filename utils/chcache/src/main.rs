@@ -11,27 +11,46 @@ struct Config {
 }
 
 #[tokio::main]
-async fn main() {
-    // let config_path = xdg::BaseDirectories::with_prefix("chcache")
-    //     .unwrap()
-    //     .place_config_file("config.toml")
-    //     .unwrap();
-    //
-    // if !config_path.exists() {
-    //     panic!("Config file not found at {}", config_path.display());
-    // }
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let config_path = xdg::BaseDirectories::with_prefix("chcache")
+        .unwrap()
+        .place_config_file("config.toml")
+        .unwrap();
 
-    // let config = fs::read_to_string(config_path).expect("Missing config file?");
-    // let config: Config = toml::from_str(&config).expect("Unable to load config, is it a valid toml?");
-    let config: Config = Config {
-        hostname: std::env::var("CH_HOSTNAME").unwrap(),
-        user: std::env::var("CH_USER").unwrap(),
-        password: std::env::var("CH_PASSWORD").unwrap(),
+    let config: Config = match config_path.exists() {
+        true => {
+            trace!("Loading config file contents from {}", config_path.display());
+
+            let config_text = fs::read_to_string(config_path).expect("Missing config file?");
+            toml::from_str(&config_text).expect("Unable to load config, is it a valid toml?")
+        }
+        false => {
+            trace!("Config file not found at {}, trying env vars", config_path.display());
+
+            let required_env_vars = vec!["CH_HOSTNAME", "CH_USER", "CH_PASSWORD"];
+            for var in required_env_vars {
+                if std::env::var(var).is_err() {
+                    return Err(format!(
+                        "Please set a missing environment variable {} or place a config file at {}",
+                        var,
+                        config_path.display(),
+                    ).into());
+                }
+            }
+
+            Config {
+                hostname: std::env::var("CH_HOSTNAME").unwrap(),
+                user: std::env::var("CH_USER").unwrap(),
+                password: std::env::var("CH_PASSWORD").unwrap(),
+            }
+        }
     };
 
     env_logger::init();
 
     compiler_cache_entrypoint(&config).await;
+
+    Ok(())
 }
 
 fn assume_base_path(args: &Vec<String>) -> String {
@@ -83,18 +102,6 @@ fn assume_base_path(args: &Vec<String>) -> String {
 }
 
 fn compiler_version(compiler: String) -> String {
-    // let find_compiler_vars = vec![
-    //     "CXX",
-    //     "CC",
-    // ];
-    //
-    // let compiler_from_env = find_compiler_vars
-    //     .iter()
-    //     .map(|x| std::env::var(x))
-    //     .find(|x| x.is_ok())
-    //     .unwrap_or_else(|| Ok(String::from("clang")))
-    //     .unwrap();
-
     trace!("Using compiler: {}", compiler);
 
     let compiler_version = std::process::Command::new(compiler)
@@ -247,6 +254,7 @@ async fn load_from_clickhouse(
 
 #[derive(Debug, clickhouse::Row, serde::Serialize, serde::Deserialize)]
 struct MyRow {
+    #[serde(with = "serde_bytes")]
     blob: Vec<u8>,
     hash: String,
     compiler_version: String,
@@ -353,7 +361,7 @@ async fn compiler_cache_entrypoint(config: &Config) {
                             .args(&rest_of_args)
                             .output()
                             .unwrap();
-                        if output.status.code().unwrap() != 0 {
+                        if !output.status.success() {
                             println!("{}", String::from_utf8_lossy(&output.stdout));
                             eprintln!("{}", String::from_utf8_lossy(&output.stderr));
                             return;

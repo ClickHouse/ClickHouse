@@ -600,7 +600,8 @@ if (COMPILER_CACHE STREQUAL "chcache")
         if (target IN_LIST chcache_targets)
             continue()
         endif()
-        add_dependencies(${target} chcache)
+
+        add_dependencies(${target} cargo-build_chcache)
     endforeach()
 endif()
 

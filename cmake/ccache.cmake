@@ -24,6 +24,7 @@ elseif(COMPILER_CACHE STREQUAL "chcache")
     include ("${ClickHouse_SOURCE_DIR}/contrib/corrosion/cmake/Corrosion.cmake")
     corrosion_import_crate(
         MANIFEST_PATH ${CMAKE_CURRENT_SOURCE_DIR}/utils/chcache/Cargo.toml
+        PROFILE release
         LOCKED
     )
     set_target_properties(chcache PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/programs/)
