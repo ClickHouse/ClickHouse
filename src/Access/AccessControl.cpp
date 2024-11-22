@@ -304,6 +304,7 @@ void AccessControl::setupFromMainConfig(const Poco::Util::AbstractConfiguration 
     setSelectFromInformationSchemaRequiresGrant(config_.getBool("access_control_improvements.select_from_information_schema_requires_grant", true));
     setSettingsConstraintsReplacePrevious(config_.getBool("access_control_improvements.settings_constraints_replace_previous", true));
     setTableEnginesRequireGrant(config_.getBool("access_control_improvements.table_engines_require_grant", false));
+    setUserSelfAlterAllowed(config_.getBool("access_control_improvements.allow_user_self_alter", false));
 
     addStoragesFromMainConfig(config_, config_path_, get_zookeeper_function_);
 

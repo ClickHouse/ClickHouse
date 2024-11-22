@@ -73,7 +73,7 @@ ASTs InterpreterShowAccessQuery::getCreateAndGrantQueries() const
     {
         create_queries.push_back(InterpreterShowCreateAccessEntityQuery::getCreateQuery(*entity, access_control));
         if (entity->isTypeOf(AccessEntityType::USER) || entity->isTypeOf(AccessEntityType::ROLE))
-            insertAtEnd(grant_queries, InterpreterShowGrantsQuery::getGrantQueries(*entity, access_control));
+            insertAtEnd(grant_queries, InterpreterShowGrantsQuery::getGrantQueries(getContext(), *entity, access_control));
     }
 
     ASTs result = std::move(create_queries);

@@ -128,12 +128,12 @@ enum class AccessType : uint8_t
     M(MOVE_PARTITION_BETWEEN_SHARDS, "", GLOBAL, ALL) /* required to be able to move a part/partition to a table
                                                          identified by its ZooKeeper path */\
     \
-    M(CREATE_USER, "", GLOBAL, ACCESS_MANAGEMENT) \
-    M(ALTER_USER, "", GLOBAL, ACCESS_MANAGEMENT) \
-    M(DROP_USER, "", GLOBAL, ACCESS_MANAGEMENT) \
-    M(CREATE_ROLE, "", GLOBAL, ACCESS_MANAGEMENT) \
-    M(ALTER_ROLE, "", GLOBAL, ACCESS_MANAGEMENT) \
-    M(DROP_ROLE, "", GLOBAL, ACCESS_MANAGEMENT) \
+    M(CREATE_USER, "", USER_NAME, ACCESS_MANAGEMENT) \
+    M(ALTER_USER, "", USER_NAME, ACCESS_MANAGEMENT) \
+    M(DROP_USER, "", USER_NAME, ACCESS_MANAGEMENT) \
+    M(CREATE_ROLE, "", USER_NAME, ACCESS_MANAGEMENT) \
+    M(ALTER_ROLE, "", USER_NAME, ACCESS_MANAGEMENT) \
+    M(DROP_ROLE, "", USER_NAME, ACCESS_MANAGEMENT) \
     M(ROLE_ADMIN, "", GLOBAL, ACCESS_MANAGEMENT) /* allows to grant and revoke the roles which are not granted to the current user with admin option */\
     M(CREATE_ROW_POLICY, "CREATE POLICY", TABLE, ACCESS_MANAGEMENT) \
     M(ALTER_ROW_POLICY, "ALTER POLICY", TABLE, ACCESS_MANAGEMENT) \

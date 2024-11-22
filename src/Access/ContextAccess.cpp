@@ -87,7 +87,7 @@ namespace
 }
 
 
-AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access, const AccessControl & access_control)
+AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access, const AccessControl & access_control, const UserPtr current_user)
 {
     AccessFlags max_flags;
 
@@ -273,6 +273,9 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
         }
     }
 
+    if (access_control.isUserSelfAlterAllowed() && current_user)
+        res.grant(AccessType::ALTER_USER, current_user->getName());
+
     return res;
 }
 
@@ -410,7 +413,7 @@ void ContextAccess::setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> &
 void ContextAccess::calculateAccessRights() const
 {
     access = std::make_shared<AccessRights>(mixAccessRightsFromUserAndRoles(*user, *roles_info));
-    access_with_implicit = std::make_shared<AccessRights>(addImplicitAccessRights(*access, *access_control));
+    access_with_implicit = std::make_shared<AccessRights>(addImplicitAccessRights(*access, *access_control, user));
 
     if (trace_log)
     {
