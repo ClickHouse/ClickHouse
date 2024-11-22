@@ -54,8 +54,8 @@ to see what version you have installed before setting this environment variable.
 :::
 
 ``` bash
-export CC=clang-18
-export CXX=clang++-18
+export CC=clang-19
+export CXX=clang++-19
 ```
 
 ### Install Rust compiler
@@ -109,7 +109,7 @@ The build requires the following components:
 
 - Git (used to checkout the sources, not needed for the build)
 - CMake 3.20 or newer
-- Compiler: clang-18 or newer
+- Compiler: clang-19 or newer
 - Linker: lld-17 or newer
 - Ninja
 - Yasm
