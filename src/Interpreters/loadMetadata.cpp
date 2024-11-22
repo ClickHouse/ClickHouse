@@ -133,8 +133,8 @@ static void checkUnsupportedVersion(ContextMutablePtr context, const String & da
 {
     auto shared_disk = Context::getGlobalContextInstance()->getSharedDisk();
     /// Produce better exception message
-    String metadata_path = context->getPath() + "metadata/" + database_name;
-    if (shared_disk->existsDirectory(fs::path(metadata_path)))
+    auto metadata_path = fs::path(context->getPath()) / "metadata" / database_name;
+    if (shared_disk->existsDirectory(metadata_path))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Data directory for {} database exists, but metadata file does not. "
                                                      "Probably you are trying to upgrade from version older than 20.7. "
                                                      "If so, you should upgrade through intermediate version.", database_name);
@@ -179,7 +179,7 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
 
     LoggerPtr log = getLogger("loadMetadata");
 
-    String path = context->getPath() + "metadata";
+    auto path = fs::path(context->getPath()) / "metadata";
 
     /// There may exist 'force_restore_data' file, which means skip safety threshold
     /// on difference of data parts while initializing tables.
@@ -292,7 +292,7 @@ static void loadSystemDatabaseImpl(ContextMutablePtr context, const String & dat
 {
     auto shared_disk = Context::getGlobalContextInstance()->getSharedDisk();
 
-    String path = context->getPath() + "metadata/" + database_name;
+    String path = fs::path(context->getPath()) / "metadata" / database_name;
     String metadata_file = path + ".sql";
     if (shared_disk->existsFile(metadata_file + ".tmp"))
         shared_disk->removeFileIfExists(metadata_file + ".tmp");
@@ -463,7 +463,7 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
         for (const auto & uuid : tables_uuids)
             DatabaseCatalog::instance().removeUUIDMappingFinally(uuid);
 
-        String path = context->getPath() + "metadata/" + escapeForFileName(database_name);
+        auto path = fs::path(context->getPath()) / "metadata" / escapeForFileName(database_name);
         /// force_restore_data is needed to re-create metadata symlinks
         loadDatabase(context, database_name, path, /* force_restore_data */ true);
 

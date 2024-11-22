@@ -558,7 +558,8 @@ struct ContextSharedPart : boost::noncopyable
 #endif
 
     ContextSharedPart()
-        : access_control(std::make_unique<AccessControl>())
+        : shared_disk(std::make_shared<DiskLocal>("shared", ""))
+        , access_control(std::make_unique<AccessControl>())
         , global_overcommit_tracker(&process_list)
         , macros(std::make_unique<Macros>())
     {
@@ -1224,8 +1225,6 @@ void Context::setPath(const String & path)
     std::lock_guard lock(shared->mutex);
 
     shared->path = path;
-
-    shared->shared_disk = std::make_shared<DiskLocal>("shared", path);
 
     if (shared->tmp_path.empty() && !shared->root_temp_data_on_disk)
         shared->tmp_path = shared->path + "tmp/";
