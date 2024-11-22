@@ -163,6 +163,8 @@ Clusters are configured in the [server configuration file](../../../operations/c
         <shard>
             <!-- Optional. Shard weight when writing data. Default: 1. -->
             <weight>1</weight>
+            <!-- Optional. The shard number. If not specified, numbers will be generated automatically. -->
+            <shard_number>1</shard_number>
             <!-- Optional. Whether to write data to just one of the replicas. Default: false (write data to all replicas). -->
             <internal_replication>false</internal_replication>
             <replica>
