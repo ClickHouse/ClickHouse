@@ -18,7 +18,7 @@ void SerializationIP<IPv>::deserializeText(DB::IColumn & column, DB::ReadBuffer 
     assert_cast<ColumnVector<IPv> &>(column).getData().push_back(x);
 
     if (whole && !istr.eof())
-        throwUnexpectedDataAfterParsedValue(column, istr, settings, TypeName<IPv>.data());
+        throwUnexpectedDataAfterParsedValue(column, istr, settings, {TypeName<IPv>.data(), TypeName<IPv>.size()});
 }
 
 template <typename IPv>
@@ -79,7 +79,7 @@ void SerializationIP<IPv>::deserializeTextJSON(DB::IColumn & column, DB::ReadBuf
         assertChar('"', istr);
     assert_cast<ColumnVector<IPv> &>(column).getData().push_back(x);
     if (*istr.position() != '"')
-        throwUnexpectedDataAfterParsedValue(column, istr, settings, TypeName<IPv>.data());
+        throwUnexpectedDataAfterParsedValue(column, istr, settings, {TypeName<IPv>.data(), TypeName<IPv>.size()});
     istr.ignore();
 }
 

@@ -642,7 +642,10 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     };
 
     /// Avoid cache fragmentation by choosing bigger buffer size.
-    bool prefer_bigger_buffer_size = object_storage->supportsCache() && read_settings.enable_filesystem_cache;
+    bool prefer_bigger_buffer_size = read_settings.filesystem_cache_prefer_bigger_buffer_size
+        && object_storage->supportsCache()
+        && read_settings.enable_filesystem_cache;
+
     size_t buffer_size = prefer_bigger_buffer_size
         ? std::max<size_t>(settings.remote_fs_buffer_size, DBMS_DEFAULT_BUFFER_SIZE)
         : settings.remote_fs_buffer_size;
@@ -746,7 +749,7 @@ void DiskObjectStorage::restoreMetadataIfNeeded(
     {
         metadata_helper->restore(config, config_prefix, context);
 
-        auto current_schema_version = metadata_helper->readSchemaVersion(object_storage.get(), object_key_prefix);
+        auto current_schema_version = DB::DiskObjectStorageRemoteMetadataRestoreHelper::readSchemaVersion(object_storage.get(), object_key_prefix);
         if (current_schema_version < DiskObjectStorageRemoteMetadataRestoreHelper::RESTORABLE_SCHEMA_VERSION)
             metadata_helper->migrateToRestorableSchema();
 
