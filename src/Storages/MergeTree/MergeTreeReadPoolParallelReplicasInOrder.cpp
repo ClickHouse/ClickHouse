@@ -108,7 +108,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
                             if (marks_in_range > max_marks_in_range)
                                 split = true;
                         }
-                        result.emplace_back(range.begin, range.begin + marks_in_range);
+                        result.emplace_back(range.begin, range.end);
                     }
                     chassert(!result.empty());
                     desc.ranges = MarkRanges{};
