@@ -200,29 +200,38 @@ bool SplitTokenExtractor::nextInStringPadded(const char * data, size_t length, s
 bool SplitTokenExtractor::nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const
 {
     token.clear();
-    bool bad_token = false; // % or _ before token
     bool escaped = false;
     while (*pos < length)
     {
-        if (!escaped && (data[*pos] == '%' || data[*pos] == '_'))
+        if (escaped && (data[*pos] == '%' || data[*pos] == '_' || data[*pos] == '\\'))
         {
+            // Append escaped characters directly to the token
+            token += data[*pos];
+            escaped = false;
+            ++*pos;
+        }
+        else if (!escaped && (data[*pos] == '%' || data[*pos] == '_'))
+        {
+            if (!token.empty())
+            {
+                return true; // Return the valid token
+            }
+            // Wildcard: reset token, continue to next character
             token.clear();
-            bad_token = true;
             ++*pos;
         }
         else if (!escaped && data[*pos] == '\\')
         {
+            // Escape character, set escape mode
             escaped = true;
             ++*pos;
         }
-        else if (isASCII(data[*pos]) && !isAlphaNumericASCII(data[*pos]))
+        else if (!escaped && isASCII(data[*pos]) && !isAlphaNumericASCII(data[*pos]))
         {
-            if (!bad_token && !token.empty())
+            if (!token.empty())
                 return true;
 
             token.clear();
-            bad_token = false;
-            escaped = false;
             ++*pos;
         }
         else
@@ -237,7 +246,7 @@ bool SplitTokenExtractor::nextInStringLike(const char * data, size_t length, siz
         }
     }
 
-    return !bad_token && !token.empty();
+    return !token.empty();
 }
 
 void SplitTokenExtractor::substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const
