@@ -3,6 +3,7 @@
 
 #include <Storages/StorageMergeTree.h>
 #include <Interpreters/TransactionLog.h>
+#include <Common/ErrorCodes.h>
 #include <Common/ProfileEventsScope.h>
 #include <Core/Settings.h>
 
@@ -110,7 +111,7 @@ bool MutatePlainMergeTreeTask::executeStep()
                 transaction.renameParts();
                 transaction.commit();
 
-                storage.updateMutationEntriesErrors(future_part, true, "");
+                storage.updateMutationEntriesErrors(future_part, true, "", "");
                 mutate_task->updateProfileEvents();
 
                 write_part_log({});
@@ -124,7 +125,8 @@ bool MutatePlainMergeTreeTask::executeStep()
                     merge_mutate_entry->txn->onException();
                 PreformattedMessage exception_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false);
                 LOG_ERROR(getLogger("MutatePlainMergeTreeTask"), exception_message);
-                storage.updateMutationEntriesErrors(future_part, false, exception_message.text);
+                String error_code_name(ErrorCodes::getName(getCurrentExceptionCode()));
+                storage.updateMutationEntriesErrors(future_part, false, exception_message.text, error_code_name);
                 mutate_task->updateProfileEvents();
                 write_part_log(ExecutionStatus::fromCurrentException("", true));
                 tryLogCurrentException(__PRETTY_FUNCTION__);
