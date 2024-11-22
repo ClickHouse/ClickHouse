@@ -984,6 +984,8 @@ class MergeTreeSettingsRandomizer:
         "prewarm_mark_cache": lambda: random.randint(0, 1),
         "use_const_adaptive_granularity": lambda: random.randint(0, 1),
         "enable_index_granularity_compression": lambda: random.randint(0, 1),
+        "enable_block_number_column": lambda: random.randint(0, 1),
+        "enable_block_offset_column": lambda: random.randint(0, 1),
     }
 
     @staticmethod
