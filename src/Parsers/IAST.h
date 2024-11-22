@@ -120,12 +120,12 @@ public:
         if (!child)
             return;
 
-        T * casted = dynamic_cast<T *>(child.get());
-        if (!casted)
+        T * cast = dynamic_cast<T *>(child.get());
+        if (!cast)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not cast AST subtree");
 
         children.push_back(child);
-        field = casted;
+        field = cast;
     }
 
     template <typename T>
@@ -134,8 +134,8 @@ public:
         if (!child)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to replace AST subtree with nullptr");
 
-        T * casted = dynamic_cast<T *>(child.get());
-        if (!casted)
+        T * cast = dynamic_cast<T *>(child.get());
+        if (!cast)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not cast AST subtree");
 
         for (ASTPtr & current_child : children)
@@ -143,7 +143,7 @@ public:
             if (current_child.get() == field)
             {
                 current_child = child;
-                field = casted;
+                field = cast;
                 return;
             }
         }
