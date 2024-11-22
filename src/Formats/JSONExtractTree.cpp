@@ -128,6 +128,7 @@ template <typename JSONParser, typename NumberType>
 bool tryGetNumericValueFromJSONElement(
     NumberType & value, const typename JSONParser::Element & element, bool convert_bool_to_integer, bool allow_type_conversion, String & error)
 {
+    std::cerr << "gethere in tryget " << static_cast<int>(element.type()) << std::endl;
     switch (element.type())
     {
         case ElementType::DOUBLE:
@@ -152,12 +153,17 @@ bool tryGetNumericValueFromJSONElement(
             }
             break;
         case ElementType::INT64:
-            if (!accurate::convertNumeric<Int64, NumberType, false>(element.getInt64(), value))
+        {
+
+            std::cerr << "gethere int64" << std::endl;
+            int64_t val = element.getInt64();
+            if (!accurate::convertNumeric<Int64, NumberType, false>(val, value))
             {
-                error = fmt::format("cannot convert Int64 value {} to {}", element.getInt64(), TypeName<NumberType>);
+                error = fmt::format("cannot convert Int64 value {} to {}", val, TypeName<NumberType>);
                 return false;
             }
             break;
+        }
         case ElementType::BOOL:
             if constexpr (is_integer<NumberType>)
             {
@@ -272,6 +278,11 @@ public:
         return true;
     }
 
+    String getName() const override
+    {
+        return String(TypeName<NumberType>);
+    }
+
 protected:
     bool is_bool_type;
 };
@@ -377,6 +388,7 @@ public:
         }
         return true;
     }
+    String getName() const override { return "String"; }
 };
 
 template <typename JSONParser>
@@ -421,6 +433,8 @@ public:
         return true;
     }
 
+    String getName() const override { return "LowCardinality(String)"; }
+
 private:
     bool is_nullable;
 };
@@ -457,7 +471,7 @@ public:
         }
         return checkValueSizeAndInsert(column, element.getString(), error);
     }
-
+    String getName() const override { return "FixedString"; }
 private:
     template <typename T>
     bool checkValueSizeAndInsert(IColumn & column, const T & value, String & error) const
@@ -508,6 +522,8 @@ public:
         }
         return checkValueSizeAndInsert(column, element.getString(), error);
     }
+
+    String getName() const override { return "LowCardinality(FixedString)"; }
 
 private:
     template <typename T>
@@ -580,6 +596,8 @@ public:
         ReadBufferFromMemory buf(data.data(), data.size());
         return tryReadUUIDText(uuid, buf) && buf.eof();
     }
+
+    String getName() const override { return "UUID"; }
 };
 
 template <typename JSONParser>
@@ -618,6 +636,8 @@ public:
         assert_cast<ColumnLowCardinality &>(column).insertData(reinterpret_cast<const char *>(&uuid), sizeof(uuid));
         return true;
     }
+
+    String getName() const override { return "LowCardinality(UUID)"; }
 
 private:
     bool is_nullable;
@@ -658,6 +678,8 @@ public:
         assert_cast<ColumnVector<ColumnNumericType> &>(column).insertValue(date);
         return true;
     }
+
+    String getName() const override { return String(TypeName<DateType>); }
 };
 
 template <typename JSONParser>
@@ -723,6 +745,8 @@ public:
 
         return false;
     }
+
+    String getName() const override { return "DateTime"; }
 };
 
 template <typename JSONParser, typename DecimalType>
@@ -780,6 +804,8 @@ public:
         assert_cast<ColumnDecimal<DecimalType> &>(column).insertValue(value);
         return true;
     }
+
+    String getName() const override { return String(TypeName<DecimalType>); }
 
 private:
     UInt32 scale;
@@ -864,6 +890,8 @@ public:
         return false;
     }
 
+    String getName() const override { return "DateTime64"; }
+
 private:
     UInt32 scale;
 };
@@ -942,6 +970,8 @@ public:
         return false;
     }
 
+    String getName() const override { return "Enum"; }
+
 private:
     std::vector<std::pair<String, Type>> name_value_pairs;
     std::unordered_map<std::string_view, Type> name_to_value_map;
@@ -988,6 +1018,8 @@ public:
         ReadBufferFromMemory buf(data.data(), data.size());
         return tryReadIPv4Text(value, buf) && buf.eof();
     }
+
+    String getName() const override { return "IPv4"; }
 };
 
 template <typename JSONParser>
@@ -1031,6 +1063,8 @@ public:
         ReadBufferFromMemory buf(data.data(), data.size());
         return tryReadIPv6Text(value, buf) && buf.eof();
     }
+
+    String getName() const override { return "IPv6"; }
 };
 
 template <typename JSONParser>
@@ -1046,18 +1080,23 @@ public:
         const FormatSettings & format_settings,
         String & error) const override
     {
+        std::cerr << "gethere nullable, nested name: "  << nested->getName()<< std::endl;
         if (element.isNull())
         {
             column.insertDefault();
             return true;
         }
 
+        std::cerr << "gethere nullable 111" << std::endl;
         auto & col_null = assert_cast<ColumnNullable &>(column);
         if (!nested->insertResultToColumn(col_null.getNestedColumn(), element, insert_settings, format_settings, error))
             return false;
+        std::cerr << "gethere nullable 2" << std::endl;
         col_null.getNullMapColumn().insertValue(0);
         return true;
     }
+
+    String getName() const override { return "Nullable " + nested->getName(); }
 
 private:
     std::unique_ptr<JSONExtractTreeNode<JSONParser>> nested;
@@ -1094,6 +1133,8 @@ public:
         return true;
     }
 
+    String getName() const override { return "LowCardinality"; }
+
 private:
     bool is_nullable;
     std::unique_ptr<JSONExtractTreeNode<JSONParser>> nested;
@@ -1125,6 +1166,7 @@ public:
         }
 
         auto array = element.getArray();
+        std::cerr << "gethere array sz: " << array.size() << std::endl;
 
         auto & col_arr = assert_cast<ColumnArray &>(column);
         auto & data = col_arr.getData();
@@ -1133,6 +1175,8 @@ public:
 
         for (auto value : array)
         {
+            std::cerr << "gethere column type " << nested->getName() << std::endl;
+            std::cerr << "gethere value type " << static_cast<int>(value.type()) << std::endl;
             if (nested->insertResultToColumn(data, value, insert_settings, format_settings, error))
             {
                 were_valid_elements = true;
@@ -1157,6 +1201,8 @@ public:
         col_arr.getOffsets().push_back(data.size());
         return true;
     }
+
+    String getName() const override { return "Array"; }
 
 private:
     std::unique_ptr<JSONExtractTreeNode<JSONParser>> nested;
@@ -1286,6 +1332,8 @@ public:
         return false;
     }
 
+    String getName() const override { return "Tuple"; }
+
 private:
     std::vector<std::unique_ptr<JSONExtractTreeNode<JSONParser>>> nested;
     std::vector<String> explicit_names;
@@ -1354,6 +1402,8 @@ public:
         return true;
     }
 
+    String getName() const override { return "Map"; }
+
 private:
     std::unique_ptr<JSONExtractTreeNode<JSONParser>> value;
 };
@@ -1397,6 +1447,8 @@ public:
         error = fmt::format("cannot read Map value from JSON element: {}", jsonElementToString<JSONParser>(element, format_settings));
         return false;
     }
+
+    String getName() const override { return "Variant"; }
 
 private:
     std::vector<std::unique_ptr<JSONExtractTreeNode<JSONParser>>> variant_nodes;
@@ -1506,6 +1558,8 @@ public:
         return type;
     }
 
+    String getName() const override { return "Dynamic"; }
+
 private:
     DataTypePtr elementToDataTypeImpl(const typename JSONParser::Element & element, const FormatSettings & format_settings, JSONInferenceInfo & json_inference_info) const
     {
@@ -1551,6 +1605,8 @@ private:
                 types.reserve(array.size());
                 for (auto value : array)
                     types.push_back(elementToDataTypeImpl(value, format_settings, json_inference_info));
+
+                array.reset();
 
                 if (types.empty())
                     return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNothing>());
@@ -1684,6 +1740,8 @@ public:
 
         return true;
     }
+
+    String getName() const override { return "ObjectJSON"; }
 
 private:
     bool traverseAndInsert(

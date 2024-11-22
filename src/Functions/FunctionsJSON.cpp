@@ -228,8 +228,10 @@ private:
         typename JSONParser::Element res_element = document;
         std::string_view key;
 
+        std::cerr << "gethere move size: " << moves.size() << std::endl;
         for (size_t j = 0; j != moves.size(); ++j)
         {
+            std::cerr <<"gethere performe move: " << j << std::endl;
             switch (moves[j].type)
             {
                 case MoveType::ConstIndex:
@@ -260,6 +262,7 @@ private:
                     break;
                 }
             }
+            std::cerr <<"gethere performe move: " << j  << " done"<< std::endl;
         }
 
         element = res_element;
@@ -272,8 +275,11 @@ private:
     {
         if (element.isArray())
         {
+            std::cerr << "gethere move array" << std::endl;
             auto array = element.getArray();
+            std::cerr <<"gethere getarray succ " << std::endl;
             size_t array_size = array.size();
+            std::cerr <<"gethere size succ " << array_size << std::endl;
             if (index >= 0)
                 --index;
             else
@@ -288,8 +294,10 @@ private:
 
         if constexpr (HasIndexOperator<typename JSONParser::Object>)
         {
+            std::cerr << "gethere move obj" << std::endl;
             if (element.isObject())
             {
+            std::cerr << "gethere move obj" << std::endl;
                 auto object = element.getObject();
                 size_t object_size = object.size();
                 if (index >= 0)

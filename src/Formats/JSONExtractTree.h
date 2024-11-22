@@ -29,6 +29,7 @@ public:
     JSONExtractTreeNode() = default;
     virtual ~JSONExtractTreeNode() = default;
     virtual bool insertResultToColumn(IColumn &, const typename JSONParser::Element &, const JSONExtractInsertSettings & insert_setting, const FormatSettings & format_settings, String & error) const = 0;
+    virtual String getName() const = 0;
 };
 
 /// Build a tree for insertion JSON element into a column with provided data type.

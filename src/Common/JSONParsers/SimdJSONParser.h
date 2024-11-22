@@ -574,7 +574,18 @@ struct OnDemandSimdJSONParser
             return !r.error() && r.value() == simdjson::ondemand::json_type::object;
         }
         ALWAYS_INLINE bool isBool() const { return value.type() == simdjson::ondemand::json_type::boolean; }
-        ALWAYS_INLINE bool isNull() const { return value.type() == simdjson::ondemand::json_type::null; }
+        ALWAYS_INLINE bool isNull() const
+        {
+            std::cerr <<"gethere isnull()" << std::endl;
+            auto r = value.type();
+            if (r.error())
+            {
+                std::cerr << "error: " << r.error() << std::endl;
+                return false;
+            }
+            return r.value() == simdjson::ondemand::json_type::null;
+            //return value.type() == simdjson::ondemand::json_type::null;
+        }
 
         ALWAYS_INLINE Int64 getInt64() const { return value.get_int64().value(); }
         ALWAYS_INLINE UInt64 getUInt64() const { return value.get_uint64().value(); }
@@ -589,8 +600,17 @@ struct OnDemandSimdJSONParser
         }
         ALWAYS_INLINE Array getArray() const
         {
-            SIMDJSON_ASSIGN_OR_THROW(auto arr, value.get_array());
-            return arr;
+            std::cerr << "gethere getarray" << std::endl;
+            if (array)
+            {
+                std::cerr << "gethere cached getarray" << std::endl;
+                return *array;
+            }
+
+            array = std::make_shared<Array>(value.get_array().value());
+            //SIMDJSON_ASSIGN_OR_THROW(auto arr, value.get_array());
+            //array = arr;
+            return *array;
         }
         ALWAYS_INLINE Object getObject() const
         {
@@ -602,6 +622,7 @@ struct OnDemandSimdJSONParser
 
     private:
         mutable simdjson::ondemand::value value;
+        mutable std::shared_ptr<Array> array;
     };
 
     /// References an array in a JSON document.
@@ -622,30 +643,77 @@ struct OnDemandSimdJSONParser
         };
 
         ALWAYS_INLINE Array(const simdjson::ondemand::array & array_) : array(array_) {} /// NOLINT
+        ALWAYS_INLINE Array(const Array & rhs)
+        {
+            array = rhs.array;
+            last_index = rhs.last_index;
+            it = rhs.it;
+            arr_size = rhs.arr_size;
+        }
+        Array& operator=(const Array& rhs) {
+        if (this != &rhs) {
+            array = rhs.array;
+            last_index = rhs.last_index;
+            it = rhs.it;
+            arr_size = rhs.arr_size;
+        }
+        return *this;
+    }
+
         ALWAYS_INLINE Iterator begin() const { return array.begin().value(); }
         ALWAYS_INLINE Iterator end() const { return array.end().value(); }
-        ALWAYS_INLINE size_t size() const { return array.count_elements().value(); }
+        ALWAYS_INLINE size_t size() const
+        {
+            reset();
+            std::cerr << "gethere array.size()" << std::endl;
+            if (arr_size)
+            {
+                std::cerr << "gethere array size cached :" << *arr_size << std::endl;
+                return *arr_size;
+            }
+            arr_size = array.count_elements().value();
+            return *arr_size;
+            //return array.count_elements().value();
+        }
         ALWAYS_INLINE Element operator[](size_t index) const
         {
-            if (index < last_index)
-                array.reset();
-            if (last_index == 0)
+            std::cerr << "gethere array[] index:" << index << ", ln:" << last_index << std::endl;
+            if (index <= last_index)
             {
-                SIMDJSON_ASSIGN_OR_THROW(auto iter, array.begin());
-                it = iter;
+                array.reset();
+                SIMDJSON_ASSIGN_OR_THROW(it, array.begin());
+                last_index = 0;
+                for (; last_index < index; ++(it.value()), ++last_index)
+                    ;
+                SIMDJSON_ASSIGN_OR_THROW(auto ele, *(it.value()));
+                return ele;
+            }
+            if (!it)
+            {
+                //SIMDJSON_ASSIGN_OR_THROW(auto iter, array.begin());
+                array.reset();
+                SIMDJSON_ASSIGN_OR_THROW(it, array.begin());
+                //it = iter;
             }
             size_t diff = index - last_index;
             while (diff--)
-                ++it;
+                ++(it.value());
             last_index = index;
-            SIMDJSON_ASSIGN_OR_THROW(auto ele, *it);
+            SIMDJSON_ASSIGN_OR_THROW(auto ele, *(it.value()));
             return ele;
+        }
+
+        void reset() const
+        {
+            array.reset();
+            last_index = 0;
         }
 
     private:
         mutable size_t last_index{};
-        mutable simdjson::ondemand::array_iterator it;
+        mutable std::optional<simdjson::ondemand::array_iterator> it;
         mutable simdjson::ondemand::array array;
+        mutable std::optional<size_t> arr_size{};
     };
 
     using KeyValuePair = std::pair<std::string_view, Element>;
