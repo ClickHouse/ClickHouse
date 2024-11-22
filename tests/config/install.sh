@@ -21,7 +21,7 @@ while [[ "$#" -gt 0 ]]; do
         --fast-test) FAST_TEST=1 ;;
         --s3-storage) EXPORT_S3_STORAGE_POLICIES=1 ;;
         --no-azure) NO_AZURE=1 ;;
-        *) echo "Unknown option: $1" ; exit 1 ;;
+        *) echo "Unknown option: $1" ;;
     esac
     shift
 done
