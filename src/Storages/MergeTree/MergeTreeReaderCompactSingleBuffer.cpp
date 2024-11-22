@@ -29,6 +29,12 @@ try
         /// Use cache to avoid reading the column with the same name twice.
         /// It may happen if there are empty array Nested in the part.
         ISerialization::SubstreamsCache cache;
+        /// If we need to read multiple subcolumns from a single column in storage,
+        /// we will read it this column only once and then reuse to extract all subcolumns.
+        /// We cannot use SubstreamsCache for it, because we may also read the full column itself
+        /// and it might me not empty inside res_columns (and SubstreamsCache contains the whole columns).
+        /// TODO: refactor the code in a way when we first read all full columns and then extract all subcolumns from them.
+        std::unordered_map<String, ColumnPtr> columns_cache_for_subcolumns;
 
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
@@ -56,7 +62,7 @@ try
             };
 
             readPrefix(columns_to_read[pos], buffer_getter, buffer_getter_for_prefix, columns_for_offsets[pos]);
-            readData(columns_to_read[pos], column, rows_to_read, buffer_getter, cache);
+            readData(columns_to_read[pos], column, rows_to_read, buffer_getter, cache, columns_cache_for_subcolumns);
         }
 
         ++from_mark;

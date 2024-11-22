@@ -148,7 +148,8 @@ void MergeTreeReaderCompact::readData(
     ColumnPtr & column,
     size_t rows_to_read,
     const InputStreamGetter & getter,
-    ISerialization::SubstreamsCache & cache)
+    ISerialization::SubstreamsCache & cache,
+    std::unordered_map<String, ColumnPtr> & columns_cache_for_subcolumns)
 {
     try
     {
@@ -171,17 +172,31 @@ void MergeTreeReaderCompact::readData(
             const auto & type_in_storage = name_and_type.getTypeInStorage();
             const auto & name_in_storage = name_and_type.getNameInStorage();
 
-            auto serialization = getSerializationInPart({name_in_storage, type_in_storage});
-            ColumnPtr temp_column = type_in_storage->createColumn(*serialization);
-
-            serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings, deserialize_binary_bulk_state_map[name], nullptr);
-            auto subcolumn = type_in_storage->getSubcolumn(name_and_type.getSubcolumnName(), temp_column);
-
-            /// TODO: Avoid extra copying.
-            if (column->empty())
-                column = subcolumn;
+            if (auto cache_for_subcolumns_it = columns_cache_for_subcolumns.find(name_in_storage); cache_for_subcolumns_it != columns_cache_for_subcolumns.end())
+            {
+                auto subcolumn = type_in_storage->getSubcolumn(name_and_type.getSubcolumnName(), cache_for_subcolumns_it->second);
+                /// TODO: Avoid extra copying.
+                if (column->empty())
+                    column = IColumn::mutate(subcolumn);
+                else
+                    column->assumeMutable()->insertRangeFrom(*subcolumn, 0, subcolumn->size());
+            }
             else
-                column->assumeMutable()->insertRangeFrom(*subcolumn, 0, subcolumn->size());
+            {
+                auto serialization = getSerializationInPart({name_in_storage, type_in_storage});
+                ColumnPtr temp_column = type_in_storage->createColumn(*serialization);
+
+                serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings, deserialize_binary_bulk_state_map[name], nullptr);
+                auto subcolumn = type_in_storage->getSubcolumn(name_and_type.getSubcolumnName(), temp_column);
+
+                /// TODO: Avoid extra copying.
+                if (column->empty())
+                    column = subcolumn;
+                else
+                    column->assumeMutable()->insertRangeFrom(*subcolumn, 0, subcolumn->size());
+
+                columns_cache_for_subcolumns[name_in_storage] = temp_column;
+            }
         }
         else
         {
