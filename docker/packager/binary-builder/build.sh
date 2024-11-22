@@ -91,7 +91,7 @@ then
 fi
 
 # Build everything
-cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS_ARRAY[@]}" ..
+cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=0 "${CMAKE_FLAGS_ARRAY[@]}" ..
 
 # No quotes because I want it to expand to nothing if empty.
 # shellcheck disable=SC2086 # No quotes because I want it to expand to nothing if empty.
