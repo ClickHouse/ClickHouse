@@ -138,7 +138,7 @@ bool CachedOnDiskReadBufferFromFile::nextFileSegmentsBatch()
         CreateFileSegmentSettings create_settings(FileSegmentKind::Regular);
         file_segments = cache->getOrSet(
             cache_key, file_offset_of_buffer_end, size, file_size.value(),
-            create_settings, settings.filesystem_cache_segments_batch_size, user);
+            create_settings, settings.filesystem_cache_segments_batch_size, user, settings.filesystem_cache_boundary_alignment);
     }
 
     return !file_segments->empty();
@@ -790,6 +790,7 @@ bool CachedOnDiskReadBufferFromFile::writeCache(char * data, size_t size, size_t
             LOG_INFO(log, "Insert into cache is skipped due to insufficient disk space. ({})", e.displayText());
             return false;
         }
+        chassert(file_segment.state() == FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
         throw;
     }
 

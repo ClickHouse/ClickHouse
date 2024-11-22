@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2984
+personal_ws-1.1 en 2985
 AArch
 ACLs
 ALTERs
@@ -186,7 +186,6 @@ ComplexKeyCache
 ComplexKeyDirect
 ComplexKeyHashed
 Composable
-composable
 ConcurrencyControlAcquired
 ConcurrencyControlSoftLimit
 Config
@@ -245,7 +244,10 @@ Deduplication
 DefaultTableEngine
 DelayedInserts
 DeliveryTag
+Deltalake
 DeltaLake
+deltalakeCluster
+deltaLakeCluster
 Denormalize
 DestroyAggregatesThreads
 DestroyAggregatesThreadsActive
@@ -378,10 +380,15 @@ Homebrew's
 HorizontalDivide
 Hostname
 HouseOps
+hudi
 Hudi
+hudiCluster
+HudiCluster
 HyperLogLog
 Hypot
 IANA
+icebergCluster
+IcebergCluster
 IDE
 IDEs
 IDNA
@@ -405,12 +412,12 @@ ITION
 Identifiant
 IdentifierQuotingRule
 IdentifierQuotingStyle
-Incrementing
-IndexesAreNeighbors
-InfluxDB
 InJodaSyntax
 InJodaSyntaxOrNull
 InJodaSyntaxOrZero
+Incrementing
+IndexesAreNeighbors
+InfluxDB
 Instana
 IntN
 Integrations
@@ -1381,7 +1388,6 @@ bools
 boringssl
 boundingRatio
 bozerkins
-broadcasted
 brotli
 bson
 bsoneachrow
@@ -1407,7 +1413,6 @@ cardinalities
 cardinality
 cartesian
 cassandra
-casted
 catboost
 catboostEvaluate
 categoricalInformationValue
@@ -1474,6 +1479,7 @@ collapsingmergetree
 combinator
 combinators
 comparising
+composable
 composable
 compressability
 concat
@@ -1811,6 +1817,7 @@ geocode
 geohash
 geohashDecode
 geohashEncode
+geohashes
 geohashesInBox
 geoip
 geospatial
@@ -1995,6 +2002,7 @@ jbod
 jdbc
 jemalloc
 jeprof
+joda
 joinGet
 joinGetOrNull
 json
@@ -2355,6 +2363,7 @@ parsedatetime
 parsers
 partitionID
 partitionId
+partsupp
 pathFull
 pclmulqdq
 pcre
@@ -2816,6 +2825,7 @@ summapwithoverflow
 summingmergetree
 sumwithoverflow
 superaggregates
+superset
 supertype
 supremum
 symlink
@@ -3154,3 +3164,4 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
+BFloat

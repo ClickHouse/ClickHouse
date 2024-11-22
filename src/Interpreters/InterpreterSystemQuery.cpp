@@ -289,7 +289,10 @@ BlockIO InterpreterSystemQuery::execute()
 
     /// Use global context with fresh system profile settings
     auto system_context = Context::createCopy(getContext()->getGlobalContext());
-    system_context->setSetting("profile", getContext()->getSystemProfileName());
+    /// Don't check for constraints when changing profile. It was accepted before (for example it might include
+    /// some experimental settings)
+    bool check_constraints = false;
+    system_context->setCurrentProfile(getContext()->getSystemProfileName(), check_constraints);
 
     /// Make canonical query for simpler processing
     if (query.type == Type::RELOAD_DICTIONARY)
@@ -795,9 +798,9 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::WAIT_FAILPOINT:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
-            LOG_TRACE(log, "waiting for failpoint {}", query.fail_point_name);
+            LOG_TRACE(log, "Waiting for failpoint {}", query.fail_point_name);
             FailPointInjection::pauseFailPoint(query.fail_point_name);
-            LOG_TRACE(log, "finished failpoint {}", query.fail_point_name);
+            LOG_TRACE(log, "Finished waiting for failpoint {}", query.fail_point_name);
             break;
         }
         case Type::RESET_COVERAGE:
