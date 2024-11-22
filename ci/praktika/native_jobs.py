@@ -310,7 +310,7 @@ def _finish_workflow(workflow, job_name):
     print(env.get_needs_statuses())
 
     print("Check Workflow results")
-    version = _ResultS3.copy_result_from_s3_with_version(
+    _ResultS3.copy_result_from_s3(
         Result.file_name_static(workflow.name),
     )
     workflow_result = Result.from_fs(workflow.name)
@@ -333,7 +333,7 @@ def _finish_workflow(workflow, job_name):
             # dump workflow result after update - to have an updated result in post
             workflow_result.dump()
             # add error into env - should apper in the report
-            env.add_info(f"{result.name}: {ResultInfo.NOT_FINALIZED}")
+            env.add_info(ResultInfo.NOT_FINALIZED + f" [{result.name}]")
             update_final_report = True
         job = workflow.get_job(result.name)
         if not job or not job.allow_merge_on_failure:
@@ -358,7 +358,9 @@ def _finish_workflow(workflow, job_name):
         env.add_info(ResultInfo.GH_STATUS_ERROR)
 
     if update_final_report:
-        _ResultS3.copy_result_to_s3_with_version(workflow_result, version + 1)
+        _ResultS3.copy_result_to_s3(
+            workflow_result,
+        )
 
     Result.from_fs(job_name).set_status(Result.Status.SUCCESS)
 
