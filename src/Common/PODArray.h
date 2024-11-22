@@ -1,20 +1,17 @@
 #pragma once
 
-#include "config.h"
-
-#include <base/getPageSize.h>
-#include <boost/noncopyable.hpp>
 #include <Common/Allocator.h>
 #include <Common/BitHelpers.h>
-#include <Common/GWPAsan.h>
-#include <Common/PODArray_fwd.h>
 #include <Common/memcpySmall.h>
-
-#include <algorithm>
-#include <cassert>
-#include <cstddef>
+#include <Common/PODArray_fwd.h>
+#include <base/getPageSize.h>
+#include <boost/noncopyable.hpp>
 #include <cstdlib>
 #include <cstring>
+#include <cstddef>
+#include <cassert>
+#include <algorithm>
+#include <memory>
 
 #ifndef NDEBUG
 #include <sys/mman.h>
@@ -287,7 +284,7 @@ public:
     }
 
     template <typename It1, typename It2>
-    void assertNotIntersects(It1 from_begin [[maybe_unused]], It2 from_end [[maybe_unused]])
+    inline void assertNotIntersects(It1 from_begin [[maybe_unused]], It2 from_end [[maybe_unused]])
     {
 #if !defined(NDEBUG)
         const char * ptr_begin = reinterpret_cast<const char *>(&*from_begin);
@@ -427,7 +424,7 @@ public:
         if (unlikely(this->c_end + sizeof(T) > this->c_end_of_storage))
             this->reserveForNextSize(std::forward<TAllocatorParams>(allocator_params)...);
 
-        new (reinterpret_cast<void*>(t_end())) T(std::forward<U>(x));
+        new (t_end()) T(std::forward<U>(x));
         this->c_end += sizeof(T);
     }
 
@@ -621,12 +618,12 @@ public:
         {
             return;
         }
-        if (!this->isInitialized() && rhs.isInitialized())
+        else if (!this->isInitialized() && rhs.isInitialized())
         {
             do_move(rhs, *this);
             return;
         }
-        if (this->isInitialized() && !rhs.isInitialized())
+        else if (this->isInitialized() && !rhs.isInitialized())
         {
             do_move(*this, rhs);
             return;

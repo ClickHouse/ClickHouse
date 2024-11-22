@@ -34,7 +34,7 @@ public:
 
     String getFileName() const override { return impl->getFileName(); }
 
-    std::optional<size_t> tryGetFileSize() override { return impl->tryGetFileSize(); }
+    size_t getFileSize() override { return impl->getFileSize(); }
 
     String getInfoForLog() override { return impl->getInfoForLog(); }
 
@@ -44,7 +44,7 @@ public:
 
     void setReadUntilPosition(size_t position) override; /// [..., position).
 
-    void setReadUntilEnd() override { setReadUntilPosition(getFileSize()); }
+    void setReadUntilEnd() override { return setReadUntilPosition(getFileSize()); }
 
     size_t getFileOffsetOfBufferEnd() const override  { return file_offset_of_buffer_end; }
 

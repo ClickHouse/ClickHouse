@@ -14,16 +14,15 @@
 #include <Parsers/IAST.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
-#include <Common/LockGuard.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
 #include <Common/OvercommitTracker.h>
-#include <base/defines.h>
 
 #include <condition_variable>
 #include <list>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
@@ -69,8 +68,6 @@ struct QueryStatusInfo
     std::shared_ptr<Settings> query_settings;
     std::string current_database;
 };
-
-using QueryStatusInfoPtr = std::shared_ptr<const QueryStatusInfo>;
 
 /// Query and information about its execution.
 class QueryStatus : public WithContext
@@ -146,14 +143,14 @@ protected:
     /// Container of PipelineExecutors to be cancelled when a cancelQuery is received
     std::unordered_map<PipelineExecutor *, ExecutorHolderPtr> executors;
 
-    enum class QueryStreamsStatus : uint8_t
+    enum QueryStreamsStatus
     {
         NotInitialized,
         Initialized,
         Released
     };
 
-    QueryStreamsStatus query_streams_status{QueryStreamsStatus::NotInitialized};
+    QueryStreamsStatus query_streams_status{NotInitialized};
 
     ProcessListForUser * user_process_list = nullptr;
 
@@ -167,6 +164,7 @@ protected:
     /// This field is unused in this class, but it
     /// increments/decrements metric in constructor/destructor.
     CurrentMetrics::Increment num_queries_increment;
+
 public:
     QueryStatus(
         ContextPtr context_,
@@ -327,10 +325,30 @@ public:
     QueryStatusPtr getQueryStatus() const { return *it; }
 };
 
+
+class ProcessListBase
+{
+    mutable std::mutex mutex;
+
+protected:
+    using Lock = std::unique_lock<std::mutex>;
+    struct LockAndBlocker
+    {
+        Lock lock;
+        OvercommitTrackerBlockerInThread blocker;
+    };
+
+    // It is forbidden to do allocations/deallocations with acquired mutex and
+    // enabled OvercommitTracker. This leads to deadlock in the case of OOM.
+    LockAndBlocker safeLock() const noexcept { return { std::unique_lock{mutex}, {} }; }
+    Lock unsafeLock() const noexcept { return std::unique_lock{mutex}; }
+};
+
+
 /** List of currently executing queries.
   * Also implements limit on their number.
   */
-class ProcessList
+class ProcessList : public ProcessListBase
 {
 public:
     using Element = QueryStatusPtr;
@@ -349,10 +367,6 @@ public:
 
     using QueryKindAmounts = std::unordered_map<IAST::QueryKind, QueryAmount>;
 
-    using Mutex = std::mutex;
-    using Lock = std::unique_lock<Mutex>;
-    using LockAndBlocker = LockAndOverCommitTrackerBlocker<LockGuard, Mutex>;
-
 protected:
     friend class ProcessListEntry;
     friend struct ::OvercommitTracker;
@@ -360,7 +374,6 @@ protected:
     friend struct ::GlobalOvercommitTracker;
 
     mutable std::condition_variable have_space;        /// Number of currently running queries has become less than maximum.
-    mutable Mutex mutex;
 
     /// List of queries
     Container processes;
@@ -382,10 +395,7 @@ protected:
     ThrottlerPtr total_network_throttler;
 
     /// Call under lock. Finds process with specified current_user and current_query_id.
-    QueryStatusPtr tryGetProcessListElement(const String & current_query_id, const String & current_user) TSA_REQUIRES(mutex);
-
-    /// Finds process with specified query_id.
-    QueryStatusPtr getProcessListElement(const String & query_id) const;
+    QueryStatusPtr tryGetProcessListElement(const String & current_query_id, const String & current_user);
 
     /// limit for insert. 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
     size_t max_insert_queries_amount = 0;
@@ -427,50 +437,42 @@ public:
     /// Get current state of process list.
     Info getInfo(bool get_thread_list = false, bool get_profile_events = false, bool get_settings = false) const;
 
-    // Get current state of a particular process.
-    QueryStatusInfoPtr getQueryInfo(const String & query_id, bool get_thread_list = false, bool get_profile_events = false, bool get_settings = false) const;
-
     /// Get current state of process list per user.
     UserInfo getUserInfo(bool get_profile_events = false) const;
 
-    Mutex & getMutex()
-    {
-        return mutex;
-    }
-
     void setMaxSize(size_t max_size_)
     {
-        Lock lock(mutex);
+        auto lock = unsafeLock();
         max_size = max_size_;
     }
 
     size_t getMaxSize() const
     {
-        Lock lock(mutex);
+        auto lock = unsafeLock();
         return max_size;
     }
 
     void setMaxInsertQueriesAmount(size_t max_insert_queries_amount_)
     {
-        Lock lock(mutex);
+        auto lock = unsafeLock();
         max_insert_queries_amount = max_insert_queries_amount_;
     }
 
     size_t getMaxInsertQueriesAmount() const
     {
-        Lock lock(mutex);
+        auto lock = unsafeLock();
         return max_insert_queries_amount;
     }
 
     void setMaxSelectQueriesAmount(size_t max_select_queries_amount_)
     {
-        Lock lock(mutex);
+        auto lock = unsafeLock();
         max_select_queries_amount = max_select_queries_amount_;
     }
 
     size_t getMaxSelectQueriesAmount() const
     {
-        Lock lock(mutex);
+        auto lock = unsafeLock();
         return max_select_queries_amount;
     }
 

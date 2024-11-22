@@ -43,7 +43,7 @@ SELECT * FROM d;
 SELECT '---';
 
 INSERT INTO m VALUES ('b');
-SELECT toString(v) FROM (SELECT v FROM d ORDER BY v) FORMAT Null; -- { serverError BAD_ARGUMENTS }
+SELECT toString(v) FROM (SELECT v FROM d ORDER BY v) FORMAT Null; -- { serverError 36 }
 
 
 DROP TABLE m;

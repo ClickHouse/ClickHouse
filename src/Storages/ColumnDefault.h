@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Parsers/IAST_fwd.h>
+#include <Parsers/IAST.h>
 
 #include <string>
 #include <unordered_map>
@@ -9,7 +9,7 @@
 namespace DB
 {
 
-enum class ColumnDefaultKind : uint8_t
+enum class ColumnDefaultKind
 {
     Default,
     Materialized,
