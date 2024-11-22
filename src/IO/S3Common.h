@@ -33,8 +33,7 @@ public:
     // Format message with fmt::format, like the logging functions.
     template <typename... Args>
     S3Exception(Aws::S3::S3Errors code_, fmt::format_string<Args...> fmt, Args &&... args)
-        : Exception(fmt::format(fmt, std::forward<Args>(args)...), ErrorCodes::S3_ERROR)
-        , code(code_)
+        : Exception(ErrorCodes::S3_ERROR, PreformattedMessage::create(fmt, std::forward<Args>(args)...)), code(code_)
     {
     }
 
