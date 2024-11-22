@@ -4,9 +4,8 @@ FROM ubuntu:22.04
 # ARG for quick switch to a given ubuntu mirror
 ARG apt_archive="http://archive.ubuntu.com"
 RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
-ARG LLVM_APT_VERSION="1:19.1.4~*"
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=19
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=18
 
 RUN apt-get update \
     && apt-get install \
@@ -29,7 +28,7 @@ RUN apt-get update \
     && echo "deb https://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-${LLVM_VERSION} main" >> \
         /etc/apt/sources.list \
     && apt-get update \
-    && apt-get install --yes --no-install-recommends --verbose-versions llvm-${LLVM_VERSION}>=${LLVM_APT_VERSION} \
+    && apt-get install --yes --no-install-recommends --verbose-versions llvm-${LLVM_VERSION} \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
@@ -56,6 +55,8 @@ RUN apt-get update \
         --yes --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+
+COPY process_functional_tests_result.py /
 
 COPY --from=clickhouse/cctools:0d6b90a7a490 /opt/gdb /opt/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"

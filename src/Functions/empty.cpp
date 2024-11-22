@@ -1,7 +1,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringOrArrayToT.h>
-#include <Functions/IFunctionAdaptors.h>
 #include <Functions/EmptyImpl.h>
 #include <Columns/ColumnObject.h>
 
@@ -142,11 +141,6 @@ public:
             && !isObject(arguments[0]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
 
-        return std::make_shared<DataTypeUInt8>();
-    }
-
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
         return std::make_shared<DataTypeUInt8>();
     }
 };

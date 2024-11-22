@@ -11,10 +11,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool log_queries;
-}
 
 namespace ErrorCodes
 {
@@ -47,7 +43,8 @@ TableFunctionPtr TableFunctionFactory::get(
         auto hints = getHints(table_function->name);
         if (!hints.empty())
             throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown table function {}. Maybe you meant: {}", table_function->name, toString(hints));
-        throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown table function {}", table_function->name);
+        else
+            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown table function {}", table_function->name);
     }
 
     res->parseArguments(ast_function, context);
@@ -79,7 +76,7 @@ TableFunctionPtr TableFunctionFactory::tryGet(
     if (CurrentThread::isInitialized())
     {
         auto query_context = CurrentThread::get().getQueryContext();
-        if (query_context && query_context->getSettingsRef()[Setting::log_queries])
+        if (query_context && query_context->getSettingsRef().log_queries)
             query_context->addQueryFactoriesInfo(Context::QueryLogFactories::TableFunction, name);
     }
 

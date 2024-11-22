@@ -468,7 +468,7 @@ SELECT JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}') = 2
 
 ### JSONType
 
-Return the type of a JSON value. If the value does not exist, `Null=0` will be returned (not usual [Null](../data-types/nullable.md), but `Null=0` of `Enum8('Null' = 0, 'String' = 34,...`). .
+Return the type of a JSON value. If the value does not exist, `Null` will be returned.
 
 **Syntax**
 
@@ -488,7 +488,7 @@ JSONType(json [, indices_or_keys]...)
 
 **Returned value**
 
-- Returns the type of a JSON value as a string, otherwise if the value doesn't exists it returns `Null=0`. [Enum](../data-types/enum.md).
+- Returns the type of a JSON value as a string, otherwise if the value doesn't exists it returns `Null`. [String](../data-types/string.md).
 
 **Examples**
 
@@ -520,7 +520,7 @@ JSONExtractUInt(json [, indices_or_keys]...)
 
 **Returned value**
 
-- Returns a UInt value if it exists, otherwise it returns `0`. [UInt64](../data-types/int-uint.md).
+- Returns a UInt value if it exists, otherwise it returns `Null`. [UInt64](../data-types/string.md).
 
 **Examples**
 
@@ -560,7 +560,7 @@ JSONExtractInt(json [, indices_or_keys]...)
 
 **Returned value**
 
-- Returns an Int value if it exists, otherwise it returns `0`. [Int64](../data-types/int-uint.md).
+- Returns an Int value if it exists, otherwise it returns `Null`. [Int64](../data-types/int-uint.md).
 
 **Examples**
 
@@ -600,7 +600,7 @@ JSONExtractFloat(json [, indices_or_keys]...)
 
 **Returned value**
 
-- Returns an Float value if it exists, otherwise it returns `0`. [Float64](../data-types/float.md).
+- Returns an Float value if it exists, otherwise it returns `Null`. [Float64](../data-types/float.md).
 
 **Examples**
 

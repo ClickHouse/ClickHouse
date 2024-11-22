@@ -1,7 +1,0 @@
-position: 5
-label: 'User and role management'
-collapsible: true
-collapsed: true
-link:
-  type: generated-index
-  slug: /ja/guides/sre/user-role

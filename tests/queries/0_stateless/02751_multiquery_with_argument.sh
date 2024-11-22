@@ -9,7 +9,7 @@ $CLICKHOUSE_LOCAL "SELECT 101;"
 $CLICKHOUSE_LOCAL "SELECT 102;SELECT 103;"
 
 # Invalid SQL.
-$CLICKHOUSE_LOCAL --implicit-select 0 "SELECT 200; S" 2>&1 | grep -o 'Syntax error'
+$CLICKHOUSE_LOCAL "SELECT 200; S" 2>&1 | grep -o 'Syntax error'
 $CLICKHOUSE_LOCAL "; SELECT 201;" 2>&1 | grep -o 'Empty query'
 $CLICKHOUSE_LOCAL "; S; SELECT 202" 2>&1 | grep -o 'Empty query'
 

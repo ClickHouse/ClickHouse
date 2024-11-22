@@ -75,9 +75,8 @@ IProcessor::Status JoiningTransform::prepare()
     /// Output if has data.
     if (has_output)
     {
-        output.push(std::move(output_chunks.front()));
-        output_chunks.pop_front();
-        has_output = !output_chunks.empty();
+        output.push(std::move(output_chunk));
+        has_output = false;
 
         return Status::PortFull;
     }
@@ -123,10 +122,10 @@ void JoiningTransform::work()
 {
     if (has_input)
     {
-        chassert(output_chunks.empty());
         transform(input_chunk);
+        output_chunk.swap(input_chunk);
         has_input = not_processed != nullptr;
-        has_output = !output_chunks.empty();
+        has_output = !output_chunk.empty();
     }
     else
     {
@@ -154,7 +153,8 @@ void JoiningTransform::work()
             return;
         }
 
-        output_chunks.emplace_back(block.getColumns(), block.rows());
+        auto rows = block.rows();
+        output_chunk.setColumns(block.getColumns(), rows);
         has_output = true;
     }
 }
@@ -173,7 +173,7 @@ void JoiningTransform::transform(Chunk & chunk)
         }
     }
 
-    Blocks res;
+    Block block;
     if (on_totals)
     {
         const auto & left_totals = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
@@ -184,58 +184,39 @@ void JoiningTransform::transform(Chunk & chunk)
         if (default_totals && !right_totals)
             return;
 
-        res.emplace_back();
-        res.back() = outputs.front().getHeader().cloneEmpty();
-        JoinCommon::joinTotals(left_totals, right_totals, join->getTableJoin(), res.back());
+        block = outputs.front().getHeader().cloneEmpty();
+        JoinCommon::joinTotals(left_totals, right_totals, join->getTableJoin(), block);
     }
     else
-        res = readExecute(chunk);
-
-    std::ranges::for_each(res, [this](Block & block) { output_chunks.emplace_back(block.getColumns(), block.rows()); });
+        block = readExecute(chunk);
+    auto num_rows = block.rows();
+    chunk.setColumns(block.getColumns(), num_rows);
 }
 
-Blocks JoiningTransform::readExecute(Chunk & chunk)
+Block JoiningTransform::readExecute(Chunk & chunk)
 {
-    Blocks res;
-    Block block;
-
-    auto join_block = [&]()
-    {
-        if (join->isScatteredJoin())
-        {
-            join->joinBlock(block, remaining_blocks, res);
-            if (remaining_blocks.rows())
-                not_processed = std::make_shared<ExtraBlock>();
-            else
-                not_processed.reset();
-        }
-        else
-        {
-            join->joinBlock(block, not_processed);
-            res.push_back(std::move(block));
-        }
-    };
+    Block res;
 
     if (!not_processed)
     {
         if (chunk.hasColumns())
-            block = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
+            res = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
 
-        if (block)
-            join_block();
+        if (res)
+            join->joinBlock(res, not_processed);
     }
     else if (not_processed->empty()) /// There's not processed data inside expression.
     {
         if (chunk.hasColumns())
-            block = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
+            res = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
 
         not_processed.reset();
-        join_block();
+        join->joinBlock(res, not_processed);
     }
     else
     {
-        block = std::move(not_processed->block);
-        join_block();
+        res = std::move(not_processed->block);
+        join->joinBlock(res, not_processed);
     }
 
     return res;
@@ -318,16 +299,12 @@ IProcessor::Status FillingRightJoinSideTransform::prepare()
 
 void FillingRightJoinSideTransform::work()
 {
-    auto & input = inputs.front();
-    auto block = input.getHeader().cloneWithColumns(chunk.detachColumns());
+    auto block = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
 
     if (for_totals)
         join->setTotals(block);
     else
         stop_reading = !join->addBlockToJoin(block);
-
-    if (input.isFinished())
-        join->tryRerangeRightTableData();
 
     set_totals = for_totals;
 }
