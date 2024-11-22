@@ -343,12 +343,6 @@ bool MutationsInterpreter::Source::supportsLightweightDelete() const
     return storage->supportsLightweightDelete();
 }
 
-
-bool MutationsInterpreter::Source::hasLightweightDeleteMask() const
-{
-    return part && part->hasLightweightDelete();
-}
-
 bool MutationsInterpreter::Source::materializeTTLRecalculateOnly() const
 {
     return data && (*data->getSettings())[MergeTreeSetting::materialize_ttl_recalculate_only];
