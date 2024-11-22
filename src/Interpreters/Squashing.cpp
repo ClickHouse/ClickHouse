@@ -147,14 +147,12 @@ Chunk Squashing::squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoColl
         {
             /// IColumn::structureEquals is not implemented for deprecated object type, ignore it and always convert to non-sparse.
             bool has_object_deprecated = false;
-            columns[j]->forEachSubcolumnRecursively([&has_object_deprecated](const auto & subcolumn)
+            auto has_object_deprecated_lambda = [&has_object_deprecated](const auto & subcolumn)
             {
                 has_object_deprecated = has_object_deprecated || subcolumn.getDataType() == TypeIndex::ObjectDeprecated;
-            });
-            mutable_columns[j]->forEachSubcolumnRecursively([&has_object_deprecated](const auto & subcolumn)
-            {
-                has_object_deprecated = has_object_deprecated || subcolumn.getDataType() == TypeIndex::ObjectDeprecated;
-            });
+            };
+            columns[j]->forEachSubcolumnRecursively(has_object_deprecated);
+            mutable_columns[j]->forEachSubcolumnRecursively(has_object_deprecated);
 
             /// Need to check if there are any sparse columns in subcolumns,
             /// since `IColumn::isSparse` is not recursive but sparse column can be inside a tuple, for example.
