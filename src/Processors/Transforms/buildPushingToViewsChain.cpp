@@ -11,7 +11,7 @@
 #include <Processors/Transforms/PlanSquashingTransform.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Storages/LiveView/StorageLiveView.h>
 #include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
@@ -148,7 +148,7 @@ private:
     struct State
     {
         QueryPipeline pipeline;
-        PullingPipelineExecutor executor;
+        PullingAsyncPipelineExecutor executor;
 
         explicit State(QueryPipeline pipeline_)
             : pipeline(std::move(pipeline_))
