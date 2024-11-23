@@ -429,7 +429,7 @@ void ColumnLowCardinality::getPermutation(IColumn::PermutationSortDirection dire
 namespace
 {
 
-/// Compator for sorting LowCardinality column with the help of sorted dictionary.
+/// Comparator for sorting LowCardinality column with the help of sorted dictionary.
 /// NOTE: Dictionary itself must be sorted in ASC or DESC order depending on the requested direction.
 template <typename IndexColumn, bool stable>
 struct LowCardinalityComparator
