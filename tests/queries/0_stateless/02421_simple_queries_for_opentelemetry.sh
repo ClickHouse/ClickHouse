@@ -14,12 +14,6 @@ function execute_query()
   "
 }
 
-function execute_query_HTTP() {
-    response=$(curl -s -X POST "$CLICKHOUSE_HTTP_URL" \
-        --data-urlencode "query=$2" \
-        --header "X-ClickHouse-Query-Id: $1")
-}
-
 # For some queries, it's not possible to know how many bytes/rows are read when tests are executed on CI,
 # so we only to check the db.statement only
 function check_query_span_query_only()
@@ -94,25 +88,33 @@ result=$(${CLICKHOUSE_CLIENT} -q "
     AND   attribute['clickhouse.query_id'] = '${1}'
     FORMAT JSONEachRow;
   ")
+  if [[ -z "$result" ]]; then
+    echo "Error: No result returned from ClickHouse server"
+    return 1
+  fi
     result_json=$(check_http_attributes_in_result "$result")
     echo "$result_json"
 }
 
-function check_http_attributes_HTTP()
-{
-    local query_id="$1"
-    result=$(curl -s -X POST "$CLICKHOUSE_URL" \
-        --data-urlencode "query=SYSTEM FLUSH LOGS; 
-        SELECT attribute['http.referer'],
-               attribute['http.user.agent'],
-               attribute['http.method']
-        FROM system.opentelemetry_span_log
-        WHERE finish_date >= yesterday() 
-        AND operation_name = 'query' 
-        AND attribute['clickhouse.query_id'] = '$query_id' 
-        FORMAT JSONEachRow")
-    result_json=$(check_http_attributes_in_result "$result")
-    echo "$result_json"
+# Function to URL-encode the query string
+function url_encode() {
+    local raw_str="$1"
+    printf "%s" "$raw_str" | xxd -p | tr -d '\n' | sed 's/\(..\)/%\1/g'
+}
+
+# Function to execute HTTP query
+function execute_query_HTTP() {
+    local query_id=$1
+    local query=$2
+    local PROTOCOL="http"
+    local HTTP_URL="${PROTOCOL}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/?database=${CLICKHOUSE_DATABASE}"
+    encoded_query=$(url_encode "$query")
+    if [ -z "$encoded_query" ]; then
+        echo "Error: Query is empty after URL encoding."
+        return 1
+    fi
+    local generated_url="${HTTP_URL}&query_id=${query_id}&query=${encoded_query}"
+    ${CLICKHOUSE_CURL} -sS "$generated_url" -d ' '
 }
 
 # Function to check if specific HTTP attributes are present in the result
@@ -168,16 +170,15 @@ execute_query "$query_id" 'SELECT * FROM opentelemetry_test FORMAT Null'
 check_query_span "$query_id"
 check_query_settings "$query_id" "max_execution_time"
 
-# Test 5: Executes a TCP SELECT query and checks for http attributes in OpenTelemetry spans.
-query_id=$(${CLICKHOUSE_CLIENT} -q "select generateUUIDv4()");
+# Test 6: Executes a TCP SELECT query and checks for http attributes in OpenTelemetry spans.
+query_id=$(${CLICKHOUSE_CLIENT} -q "select generateUUIDv4()")
 execute_query $query_id 'select * from opentelemetry_test format Null'
 check_http_attributes $query_id
 
-# Test 6: Executes a HTTP SELECT query and checks for HTTP attributes in OpenTelemetry spans.
-query_id=$(curl -s -X POST "$CLICKHOUSE_URL" \
-    --data-urlencode "query=select generateUUIDv4()" | tr -d '\r\n')
-execute_query_HTTP "$query_id" 'SELECT * FROM opentelemetry_test FORMAT Null'
-check_http_attributes_HTTP "$query_id"
+# Test 7: Executes a TCP SELECT query and checks for http attributes in OpenTelemetry spans.
+query_id=$(${CLICKHOUSE_CLIENT} -q "select generateUUIDv4()")
+execute_query_HTTP "$query_id" 'select * from opentelemetry_test FORMAT Null'
+check_http_attributes "$query_id"
 #
 # Tear down
 #
