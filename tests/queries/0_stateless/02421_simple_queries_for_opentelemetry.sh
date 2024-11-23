@@ -14,6 +14,12 @@ function execute_query()
   "
 }
 
+function execute_query_HTTP() {
+    response=$(curl -s -X POST "$CLICKHOUSE_HTTP_URL" \
+        --data-urlencode "query=$2" \
+        --header "X-ClickHouse-Query-Id: $1")
+}
+
 # For some queries, it's not possible to know how many bytes/rows are read when tests are executed on CI,
 # so we only to check the db.statement only
 function check_query_span_query_only()
@@ -57,11 +63,29 @@ result=$(${CLICKHOUSE_CLIENT} -q "
     AND   attribute['clickhouse.query_id'] = '${1}'
     FORMAT JSONEachRow;
   ")
+    result_json=$(check_http_attributes_in_result "$result")
+    echo "$result_json"
+}
 
+check_http_attributes_HTTP() {
+    local query_id="$1"
+    result=$(curl -s -X POST "$CLICKHOUSE_URL" \
+        --data-urlencode "query=SYSTEM FLUSH LOGS; 
+        SELECT attribute['http.referer'], attribute['http.user.agent'], attribute['http.method'] 
+        FROM system.opentelemetry_span_log 
+        WHERE finish_date >= yesterday() 
+        AND operation_name = 'query' 
+        AND attribute['clickhouse.query_id'] = '$query_id' 
+        FORMAT JSONEachRow")
+    result_json=$(check_http_attributes_in_result "$result")
+    echo "$result_json"
+}
+
+check_http_attributes_in_result() {
+    local result="$1"
     local referer="not found"
     local agent="not found"
     local method="not found"
-
     if [[ $result == *"http.referer"* ]]; then
         referer="present"
     fi
@@ -71,11 +95,8 @@ result=$(${CLICKHOUSE_CLIENT} -q "
     if [[ $result == *"http.method"* ]]; then
         method="present"
     fi
-
-# Output the result as a JSON object
     echo "{\"http.referer\":\"$referer\",\"http.user.agent\":\"$agent\",\"http.method\":\"$method\"}"
 }
-
 #
 # Set up
 #
@@ -110,6 +131,11 @@ query_id=$(${CLICKHOUSE_CLIENT} -q "select generateUUIDv4()");
 execute_query $query_id 'select * from opentelemetry_test format Null'
 check_http_attributes $query_id
 
+# Test 6: Executes a HTTP SELECT query and checks for HTTP attributes in OpenTelemetry spans.
+query_id=$(curl -s -X POST "$CLICKHOUSE_URL" \
+    --data-urlencode "query=SELECT generateUUIDv4() FROM default.some_table" | tr -d '\r\n')
+execute_query_HTTP "$query_id" 'SELECT * FROM opentelemetry_test FORMAT Null'
+check_http_attributes_HTTP "$query_id"
 #
 # Tear down
 #
