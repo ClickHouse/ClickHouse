@@ -66,7 +66,6 @@ if (ENABLE_CHECK_HEAVY_BUILDS)
         # Twice as large
         set (RLIMIT_DATA 10000000000)
         set (RLIMIT_AS 20000000000)
-        set (RLIMIT_CPU 2000)
     endif()
 
     # For some files currently building RISCV64/LOONGARCH64 might be too slow.
