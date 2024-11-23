@@ -389,6 +389,11 @@ private:
     int compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator * collator=nullptr) const;
 
     void getPermutationImpl(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability, size_t limit, int nan_direction_hint, Permutation & res, const Collator * collator = nullptr) const;
+
+    template <typename IndexColumn>
+    void updatePermutationWithIndexType(
+        IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+        size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const;
 };
 
 bool isColumnLowCardinalityNullable(const IColumn & column);
