@@ -13,17 +13,35 @@ struct Settings;
 
 namespace ErrorCodes
 {
-
-extern const int INCORRECT_DATA;
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
 {
 
-template <class ValueType>
+template <class ResultType, class ValueType>
 struct AggregateFunctionArgMinMaxData
+{
+private:
+    ResultType result_data;
+    ValueType value_data;
+
+public:
+    ResultType & result() { return result_data; }
+    const ResultType & result() const { return result_data; }
+    ValueType & value() { return value_data; }
+    const ValueType & value() const { return value_data; }
+
+    static bool allocatesMemoryInArena(TypeIndex)
+    {
+        return ResultType::allocatesMemoryInArena() || ValueType::allocatesMemoryInArena();
+    }
+};
+
+template <class ValueType>
+struct AggregateFunctionArgMinMaxDataGeneric
 {
 private:
     SingleValueDataBaseMemoryBlock result_data;
@@ -35,27 +53,22 @@ public:
     ValueType & value() { return value_data; }
     const ValueType & value() const { return value_data; }
 
-    [[noreturn]] explicit AggregateFunctionArgMinMaxData()
+    static bool allocatesMemoryInArena(TypeIndex result_type_index)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionArgMinMaxData initialized empty");
+        return singleValueTypeAllocatesMemoryInArena(result_type_index) || ValueType::allocatesMemoryInArena();
     }
 
-    explicit AggregateFunctionArgMinMaxData(TypeIndex result_type) : value_data()
-    {
-        generateSingleValueFromTypeIndex(result_type, result_data);
-    }
-
-    ~AggregateFunctionArgMinMaxData() { result().~SingleValueDataBase(); }
+    ~AggregateFunctionArgMinMaxDataGeneric() { result().~SingleValueDataBase(); }
 };
 
 static_assert(
-    sizeof(AggregateFunctionArgMinMaxData<Int8>) <= 2 * SingleValueDataBase::MAX_STORAGE_SIZE,
+    sizeof(AggregateFunctionArgMinMaxDataGeneric<Int8>) <= 2 * SingleValueDataBase::MAX_STORAGE_SIZE,
     "Incorrect size of AggregateFunctionArgMinMaxData struct");
 
 /// Returns the first arg value found for the minimum/maximum value. Example: argMin(arg, value).
-template <typename ValueData, bool isMin>
+template <typename Data, bool isMin>
 class AggregateFunctionArgMinMax final
-    : public IAggregateFunctionDataHelper<AggregateFunctionArgMinMaxData<ValueData>, AggregateFunctionArgMinMax<ValueData, isMin>>
+    : public IAggregateFunctionDataHelper<Data, AggregateFunctionArgMinMax<Data, isMin>>
 {
 private:
     const DataTypePtr & type_val;
@@ -63,7 +76,8 @@ private:
     const SerializationPtr serialization_val;
     const TypeIndex result_type_index;
 
-    using Base = IAggregateFunctionDataHelper<AggregateFunctionArgMinMaxData<ValueData>, AggregateFunctionArgMinMax<ValueData, isMin>>;
+
+    using Base = IAggregateFunctionDataHelper<Data, AggregateFunctionArgMinMax<Data, isMin>>;
 
 public:
     explicit AggregateFunctionArgMinMax(const DataTypes & argument_types_)
@@ -91,7 +105,7 @@ public:
 
     void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {
-        new (place) AggregateFunctionArgMinMaxData<ValueData>(result_type_index);
+        new (place) Data();
     }
 
     String getName() const override
@@ -215,7 +229,7 @@ public:
 
     bool allocatesMemoryInArena() const override
     {
-        return singleValueTypeAllocatesMemoryInArena(result_type_index) || ValueData::allocatesMemoryInArena();
+        return Data::allocatesMemoryInArena(result_type_index);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
@@ -224,12 +238,77 @@ public:
     }
 };
 
-template <bool isMin>
-AggregateFunctionPtr createAggregateFunctionArgMinMax(
-    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
+using AllTypes = std::tuple<UInt8, UInt16, UInt32, UInt64, Int8,
+                            Int16, Int32, Int64, Float32, Float64>;
+
+
+template <typename ResultType, typename ValueType, bool isMin>
+IAggregateFunction * createForPair(const TypeIndex & result_type, const TypeIndex & value_type, const DataTypes & argument_types)
 {
-    return AggregateFunctionPtr(createAggregateFunctionSingleValue<AggregateFunctionArgMinMax, /* unary */ false, isMin>(
-        name, argument_types, parameters, settings));
+    if (TypeToTypeIndex<ResultType> == result_type && value_type == TypeToTypeIndex<ValueType>)
+    {
+        using Data = AggregateFunctionArgMinMaxData<SingleValueDataFixed<ResultType>, SingleValueDataFixed<ValueType>>;
+        return new AggregateFunctionArgMinMax<Data, isMin>(argument_types);
+    }
+    return nullptr;
+}
+
+template <bool isMin, typename ResultType, typename... ValueTypes>
+IAggregateFunction * tryValueTypes(const DataTypes & argument_types, const TypeIndex & result_type, const TypeIndex & value_type, std::tuple<ValueTypes...>)
+{
+    IAggregateFunction * result = nullptr;
+    ((result = result ? result : createForPair<ResultType, ValueTypes, isMin>(result_type, value_type, argument_types)), ...); // Fold expression
+    return result;
+}
+
+template <bool isMin, typename... ResultTypes, typename... ValueTypes>
+IAggregateFunction * tryResultTypes(const DataTypes & argument_types, const TypeIndex result_idx, const TypeIndex value_idx, std::tuple<ResultTypes...>, std::tuple<ValueTypes...> value_tuple)
+{
+    IAggregateFunction * result = nullptr;
+    ((result = result ? result : tryValueTypes<isMin, ResultTypes>(argument_types, result_idx, value_idx, value_tuple)), ...); // Fold expression
+    return result;
+}
+
+template <bool isMin>
+AggregateFunctionPtr createAggregateFunctionArgMinMax(const std::string &, const DataTypes & argument_types, const Array &, const Settings *) {
+    using AllTypesTuple = AllTypes;
+
+    const DataTypePtr & result_type = argument_types[0];
+    const DataTypePtr & value_type = argument_types[1];
+
+    WhichDataType which_result(result_type);
+    WhichDataType which_value(value_type);
+
+    auto convert_date_type = [] (TypeIndex type_index)
+    {
+        if (type_index == TypeIndex::Date)
+            return TypeToTypeIndex<DataTypeDateTime::FieldType>;
+        else if (type_index == TypeIndex::DateTime)
+            return TypeToTypeIndex<DataTypeDateTime::FieldType>;
+        else
+            return type_index;
+    };
+
+    AggregateFunctionPtr result = AggregateFunctionPtr(tryResultTypes<isMin>(argument_types, convert_date_type(which_result.idx), convert_date_type(which_value.idx), AllTypesTuple{}, AllTypesTuple{}));
+    if (!result)
+    {
+        WhichDataType which(value_type);
+#define DISPATCH(TYPE) \
+        if (which_value.idx == TypeIndex::TYPE) \
+            return AggregateFunctionPtr(new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxDataGeneric<SingleValueDataFixed<TYPE>>, isMin>(argument_types));  /// NOLINT
+        FOR_SINGLE_VALUE_NUMERIC_TYPES(DISPATCH)
+#undef DISPATCH
+
+        if (which.idx == TypeIndex::Date)
+            return AggregateFunctionPtr(new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxDataGeneric<SingleValueDataFixed<DataTypeDate::FieldType>>, isMin>(argument_types));
+        if (which.idx == TypeIndex::DateTime)
+            return AggregateFunctionPtr(new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxDataGeneric<SingleValueDataFixed<DataTypeDateTime::FieldType>>, isMin>(argument_types));
+        if (which.idx == TypeIndex::String)
+            return AggregateFunctionPtr(new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxDataGeneric<SingleValueDataString>, isMin>(argument_types));
+
+        return AggregateFunctionPtr(new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxDataGeneric<SingleValueDataGeneric>, isMin>(argument_types));
+    }
+    return result;
 }
 
 }
