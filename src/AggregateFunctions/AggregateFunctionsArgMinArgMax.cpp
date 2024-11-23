@@ -270,7 +270,7 @@ template <bool isMin, typename ResultType, typename... ValueTypes>
 IAggregateFunction * tryValueTypes(const DataTypes & argument_types, const TypeIndex & result_type, const TypeIndex & value_type, std::tuple<ValueTypes...>)
 {
     IAggregateFunction * result = nullptr;
-    ((result = result ? result : createForPair<ResultType, ValueTypes, isMin>(result_type, value_type, argument_types)), ...); // Fold expression
+    ((result = result ? result : createForPair<ResultType, ValueTypes, isMin>(result_type, value_type, argument_types)), ...);
     return result;
 }
 
@@ -278,12 +278,13 @@ template <bool isMin, typename... ResultTypes, typename... ValueTypes>
 IAggregateFunction * tryResultTypes(const DataTypes & argument_types, const TypeIndex result_idx, const TypeIndex value_idx, std::tuple<ResultTypes...>, std::tuple<ValueTypes...> value_tuple)
 {
     IAggregateFunction * result = nullptr;
-    ((result = result ? result : tryValueTypes<isMin, ResultTypes>(argument_types, result_idx, value_idx, value_tuple)), ...); // Fold expression
+    ((result = result ? result : tryValueTypes<isMin, ResultTypes>(argument_types, result_idx, value_idx, value_tuple)), ...);
     return result;
 }
 
 template <bool isMin>
-AggregateFunctionPtr createAggregateFunctionArgMinMax(const std::string &, const DataTypes & argument_types, const Array &, const Settings *) {
+AggregateFunctionPtr createAggregateFunctionArgMinMax(const std::string &, const DataTypes & argument_types, const Array &, const Settings *)
+{
     using AllTypesTuple = AllTypes;
 
     const DataTypePtr & result_type = argument_types[0];
