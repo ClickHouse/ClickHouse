@@ -251,7 +251,8 @@ public:
     }
 };
 
-using AllTypes = std::tuple<UInt8, UInt16, UInt32, UInt64, Int8,
+/// If we will add more it will compile forever
+using TypesToCreateSpecializedData = std::tuple<UInt8, UInt16, UInt32, UInt64, Int8,
                             Int16, Int32, Int64, Float32, Float64>;
 
 
@@ -285,7 +286,7 @@ IAggregateFunction * tryResultTypes(const DataTypes & argument_types, const Type
 template <bool isMin>
 AggregateFunctionPtr createAggregateFunctionArgMinMax(const std::string &, const DataTypes & argument_types, const Array &, const Settings *)
 {
-    using AllTypesTuple = AllTypes;
+    using TypesToCreateSpecializedDataTuple = TypesToCreateSpecializedData;
 
     const DataTypePtr & result_type = argument_types[0];
     const DataTypePtr & value_type = argument_types[1];
@@ -303,7 +304,7 @@ AggregateFunctionPtr createAggregateFunctionArgMinMax(const std::string &, const
             return type_index;
     };
 
-    AggregateFunctionPtr result = AggregateFunctionPtr(tryResultTypes<isMin>(argument_types, convert_date_type(which_result.idx), convert_date_type(which_value.idx), AllTypesTuple{}, AllTypesTuple{}));
+    AggregateFunctionPtr result = AggregateFunctionPtr(tryResultTypes<isMin>(argument_types, convert_date_type(which_result.idx), convert_date_type(which_value.idx), TypesToCreateSpecializedDataTuple{}, TypesToCreateSpecializedDataTuple{}));
     if (!result)
     {
         WhichDataType which(value_type);
