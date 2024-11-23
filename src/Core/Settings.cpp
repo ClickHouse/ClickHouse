@@ -1797,7 +1797,7 @@ Possible values:
 
 - 0 — Disabled.
 - 1 — Enabled.
-)", 1) \
+)", 0) \
     DECLARE(Int64, http_zlib_compression_level, 3, R"(
 Sets the level of data compression in the response to an HTTP request if [enable_http_compression = 1](#enable_http_compression).
 
