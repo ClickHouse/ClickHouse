@@ -133,7 +133,7 @@ check_http_attributes $query_id
 
 # Test 6: Executes a HTTP SELECT query and checks for HTTP attributes in OpenTelemetry spans.
 query_id=$(curl -s -X POST "$CLICKHOUSE_URL" \
-    --data-urlencode "query=SELECT generateUUIDv4() FROM default.some_table" | tr -d '\r\n')
+    --data-urlencode "query=select generateUUIDv4()" | tr -d '\r\n')
 execute_query_HTTP "$query_id" 'SELECT * FROM opentelemetry_test FORMAT Null'
 check_http_attributes_HTTP "$query_id"
 #
