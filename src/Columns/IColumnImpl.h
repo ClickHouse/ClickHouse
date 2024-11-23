@@ -127,19 +127,20 @@ void IColumn::getPermutationImpl(
 }
 
 template <typename Compare, typename Equals, typename Sort, typename PartialSort>
-void IColumn::updatePermutationImpl(
+void updateColumnPermutationImpl(
     size_t limit,
-    Permutation & res,
+    size_t size,
+    IColumn::Permutation & res,
     EqualRanges & equal_ranges,
     Compare compare,
     Equals equals,
     Sort full_sort,
-    PartialSort partial_sort) const
+    PartialSort partial_sort)
 {
     if (equal_ranges.empty())
         return;
 
-    if (limit >= size() || limit > equal_ranges.back().to)
+    if (limit >= size || limit > equal_ranges.back().to)
         limit = 0;
 
     EqualRanges new_ranges;
@@ -208,6 +209,19 @@ void IColumn::updatePermutationImpl(
     }
 
     equal_ranges = std::move(new_ranges);
+}
+
+template <typename Compare, typename Equals, typename Sort, typename PartialSort>
+void IColumn::updatePermutationImpl(
+    size_t limit,
+    Permutation & res,
+    EqualRanges & equal_ranges,
+    Compare compare,
+    Equals equals,
+    Sort full_sort,
+    PartialSort partial_sort) const
+{
+    updateColumnPermutationImpl(limit, size(), res, equal_ranges, compare, equals, full_sort, partial_sort);
 }
 
 }
