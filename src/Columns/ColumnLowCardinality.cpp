@@ -430,7 +430,8 @@ namespace
 {
 
 /// Comapator for sorting LowCardinality column with the help of sorted dictionary.
-template <typename IndexColumn, bool ascending, bool stable>
+/// NOTE: Dictionary itself must be sorted in ASC or DESC order depending on the requested direction.
+template <typename IndexColumn, bool stable>
 struct LowCardinalityComparator
 {
     const IndexColumn & real_indexes;                   /// Indexes column
@@ -451,10 +452,7 @@ struct LowCardinalityComparator
         if (stable && ret == 0)
             return lhs < rhs;
 
-        if (ascending)
-            return ret < 0;
-
-        return ret > 0;
+        return ret < 0;
     }
 };
 
@@ -479,22 +477,11 @@ void updatePermutationWithIndexType(
         return real_indexes->getUInt(lhs) == real_indexes->getUInt(rhs);
     };
 
-    const bool ascending = (direction == IColumn::PermutationSortDirection::Ascending);
     const bool stable = (stability == IColumn::PermutationSortStability::Stable);
-    if (ascending)
-    {
-        if (stable)
-            updateColumnPermutationImpl(limit, column.size(), res, equal_ranges, LowCardinalityComparator<IndexColumn, true, true>{*real_indexes, position_by_index}, equal_comparator, DefaultSort(), DefaultPartialSort());
-        else
-            updateColumnPermutationImpl(limit, column.size(), res, equal_ranges, LowCardinalityComparator<IndexColumn, true, false>{*real_indexes, position_by_index}, equal_comparator, DefaultSort(), DefaultPartialSort());
-    }
+    if (stable)
+        updateColumnPermutationImpl(limit, column.size(), res, equal_ranges, LowCardinalityComparator<IndexColumn, true>{*real_indexes, position_by_index}, equal_comparator, DefaultSort(), DefaultPartialSort());
     else
-    {
-        if (stable)
-            updateColumnPermutationImpl(limit, column.size(), res, equal_ranges, LowCardinalityComparator<IndexColumn, false, true>{*real_indexes, position_by_index}, equal_comparator, DefaultSort(), DefaultPartialSort());
-        else
-            updateColumnPermutationImpl(limit, column.size(), res, equal_ranges, LowCardinalityComparator<IndexColumn, false, false>{*real_indexes, position_by_index}, equal_comparator, DefaultSort(), DefaultPartialSort());
-    }
+        updateColumnPermutationImpl(limit, column.size(), res, equal_ranges, LowCardinalityComparator<IndexColumn, false>{*real_indexes, position_by_index}, equal_comparator, DefaultSort(), DefaultPartialSort());
 }
 
 }
