@@ -325,7 +325,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
         result.reserve(partitions_count);
 
         for (size_t i = 0; i < partitions_count; ++i)
-            result.emplace_back(block.cloneEmpty(), get_partition(i));
+            result.emplace_back(block.cloneEmpty(), get_partition(partition_num_to_first_row[i]));
 
         for (size_t col = 0; col < block.columns(); ++col)
         {
