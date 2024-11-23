@@ -9,6 +9,8 @@
 
 #include <memory>
 
+#include "config.h"
+
 
 namespace Poco
 {
@@ -57,7 +59,7 @@ public:
     void shutdown() override;
 
     /// Initializes access storage (user directories).
-    void setUpFromMainConfig(const Poco::Util::AbstractConfiguration & config_, const String & config_path_,
+    void setupFromMainConfig(const Poco::Util::AbstractConfiguration & config_, const String & config_path_,
                              const zkutil::GetZooKeeper & get_zookeeper_function_);
 
     /// Parses access entities from a configuration loaded from users.xml.
@@ -238,6 +240,14 @@ public:
     /// Gets manager of notifications.
     AccessChangesNotifier & getChangesNotifier();
 
+    /// Allow all setting names - this can be used in clients to pass-through unknown settings to the server.
+    void allowAllSettings();
+
+    void setAllowTierSettings(UInt32 value);
+    UInt32 getAllowTierSettings() const;
+    bool getAllowExperimentalTierSettings() const;
+    bool getAllowBetaTierSettings() const;
+
 private:
     class ContextAccessCache;
     class CustomSettingsPrefixes;
@@ -267,6 +277,8 @@ private:
     std::atomic_bool table_engines_require_grant = false;
     std::atomic_int bcrypt_workfactor = 12;
     std::atomic<AuthenticationType> default_password_type = AuthenticationType::SHA256_PASSWORD;
+    std::atomic_bool allow_experimental_tier_settings = true;
+    std::atomic_bool allow_beta_tier_settings = true;
 };
 
 }

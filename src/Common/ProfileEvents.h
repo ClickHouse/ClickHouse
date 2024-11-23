@@ -38,6 +38,9 @@ namespace ProfileEvents
         };
         Timer(Counters & counters_, Event timer_event_, Resolution resolution_);
         Timer(Counters & counters_, Event timer_event_, Event counter_event, Resolution resolution_);
+        Timer(Timer && other) noexcept
+            : counters(other.counters), timer_event(std::move(other.timer_event)), watch(std::move(other.watch)), resolution(std::move(other.resolution))
+            {}
         ~Timer() { end(); }
         void cancel() { watch.reset(); }
         void restart() { watch.restart(); }

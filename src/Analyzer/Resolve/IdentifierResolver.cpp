@@ -432,6 +432,14 @@ QueryTreeNodePtr IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalo
     else
         storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
 
+    if (!storage && storage_id.hasUUID())
+    {
+        // If `storage_id` has UUID, it is possible that the UUID is removed from `DatabaseCatalog` after `context->resolveStorageID(storage_id)`
+        // We try to get the table with the database name and the table name.
+        auto database = DatabaseCatalog::instance().tryGetDatabase(storage_id.getDatabaseName());
+        if (database)
+            storage = database->tryGetTable(table_name, context);
+    }
     if (!storage)
         return {};
 
@@ -520,7 +528,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromCompoundExpression(
   *
   * Resolve strategy:
   * 1. Try to bind identifier to scope argument name to node map.
-  * 2. If identifier is binded but expression context and node type are incompatible return nullptr.
+  * 2. If identifier is bound but expression context and node type are incompatible return nullptr.
   *
   * It is important to support edge cases, where we lookup for table or function node, but argument has same name.
   * Example: WITH (x -> x + 1) AS func, (func -> func(1) + func) AS lambda SELECT lambda(1);

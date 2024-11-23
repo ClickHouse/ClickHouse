@@ -85,7 +85,8 @@ public:
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr) const override;
 
     /// Check access right, validate definer statement and replace `CURRENT USER` with actual name.
-    static void processSQLSecurityOption(ContextPtr context_, ASTSQLSecurity & sql_security, bool is_materialized_view = false, bool skip_check_permissions = false);
+    static void processSQLSecurityOption(
+        ContextPtr context_, ASTSQLSecurity & sql_security, bool is_materialized_view = false, bool skip_check_permissions = false);
 
 private:
     struct TableProperties
@@ -120,6 +121,8 @@ private:
     void addColumnsDescriptionToCreateQueryIfNecessary(ASTCreateQuery & create, const StoragePtr & storage);
 
     BlockIO executeQueryOnCluster(ASTCreateQuery & create);
+
+    void throwIfTooManyEntities(ASTCreateQuery & create, StoragePtr storage) const;
 
     ASTPtr query_ptr;
 

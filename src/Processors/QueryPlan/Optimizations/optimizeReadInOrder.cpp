@@ -324,12 +324,43 @@ void enrichFixedColumns(const ActionsDAG & dag, FixedColumns & fixed_columns)
     }
 }
 
+const ActionsDAG::Node * addMonotonicChain(ActionsDAG & dag, const ActionsDAG::Node * node, const MatchedTrees::Match * match, const std::string & input_name)
+{
+    if (!match->monotonicity)
+        return &dag.addInput(input_name, node->result_type);
+
+    if (node->type == ActionsDAG::ActionType::ALIAS)
+        return &dag.addAlias(*addMonotonicChain(dag, node->children.front(), match, input_name), node->result_name);
+
+    ActionsDAG::NodeRawConstPtrs args;
+    args.reserve(node->children.size());
+    for (const auto * child : node->children)
+    {
+        if (child == match->monotonicity->child_node)
+            args.push_back(addMonotonicChain(dag, match->monotonicity->child_node, match->monotonicity->child_match, input_name));
+        else
+            args.push_back(&dag.addColumn({child->column, child->result_type, child->result_name}));
+    }
+
+    return &dag.addFunction(node->function_base, std::move(args), {});
+}
+
+struct SortingInputOrder
+{
+    InputOrderInfoPtr input_order{};
+    /// This is needed for virtual row optimization.
+    /// Convert the PR values to ORDER BY key.
+    /// If empty, the optimization cannot be applied.
+    std::optional<ActionsDAG> virtual_row_conversion{};
+};
+
 /// For the case when the order of keys is important (ORDER BY keys).
-InputOrderInfoPtr buildInputOrderFromSortDescription(
+SortingInputOrder buildInputOrderFromSortDescription(
     const FixedColumns & fixed_columns,
     const std::optional<ActionsDAG> & dag,
     const SortDescription & description,
     const KeyDescription & sorting_key,
+    const Names & pk_column_names,
     size_t limit)
 {
     //std::cerr << "------- buildInputOrderInfo " << std::endl;
@@ -368,6 +399,18 @@ InputOrderInfoPtr buildInputOrderFromSortDescription(
     int read_direction = 0;
     size_t next_description_column = 0;
     size_t next_sort_key = 0;
+
+    bool can_optimize_virtual_row = true;
+
+    struct MatchInfo
+    {
+        const ActionsDAG::Node * source = nullptr;
+        const ActionsDAG::Node * fixed_column = nullptr;
+        const MatchedTrees::Match * monotonic = nullptr;
+    };
+
+    std::vector<MatchInfo> match_infos;
+    match_infos.reserve(description.size());
 
     while (next_description_column < description.size() && next_sort_key < sorting_key.column_names.size())
     {
@@ -410,6 +453,7 @@ InputOrderInfoPtr buildInputOrderFromSortDescription(
 
             //std::cerr << "====== (no dag) Found direct match" << std::endl;
 
+            match_infos.push_back({.source = sort_column_node});
             ++next_description_column;
             ++next_sort_key;
         }
@@ -438,24 +482,46 @@ InputOrderInfoPtr buildInputOrderFromSortDescription(
                 {
                     current_direction *= match.monotonicity->direction;
                     strict_monotonic = match.monotonicity->strict;
+                    match_infos.push_back({.source = sort_node, .monotonic = &match});
                 }
+                else
+                    match_infos.push_back({.source = sort_node});
 
                 ++next_description_column;
                 ++next_sort_key;
             }
             else if (fixed_key_columns.contains(sort_column_node))
             {
+
+                if (next_sort_key == 0)
+                {
+                    // Disable virtual row optimization.
+                    // For example, when pk is (a,b), a = 1, order by b, virtual row should be
+                    // disabled in the following case:
+                    // 1st part (0, 100), (1, 2), (1, 3), (1, 4)
+                    // 2nd part (0, 100), (1, 2), (1, 3), (1, 4).
+
+                    can_optimize_virtual_row = false;
+                }
+
                 //std::cerr << "+++++++++ Found fixed key by match" << std::endl;
                 ++next_sort_key;
             }
             else
             {
-
                 //std::cerr << "====== Check for fixed const : " << bool(sort_node->column) << " fixed : " << fixed_columns.contains(sort_node) << std::endl;
                 bool is_fixed_column = sort_node->column || fixed_columns.contains(sort_node);
                 if (!is_fixed_column)
                     break;
 
+                if (!sort_node->column)
+                    /// Virtual row for fixed column from order by is not supported now.
+                    /// TODO: we can do it for the simple case,
+                    /// But it's better to remove fixed columns from ORDER BY completely, e.g:
+                    /// WHERE x = 42 ORDER BY x, y    =>    WHERE x = 42 ORDER BY y
+                    can_optimize_virtual_row = false;
+
+                match_infos.push_back({.source = sort_node, .fixed_column = sort_node});
                 order_key_prefix_descr.push_back(sort_column_description);
                 ++next_description_column;
             }
@@ -477,9 +543,46 @@ InputOrderInfoPtr buildInputOrderFromSortDescription(
     }
 
     if (read_direction == 0 || order_key_prefix_descr.empty())
-        return nullptr;
+        return {};
 
-    return std::make_shared<InputOrderInfo>(order_key_prefix_descr, next_sort_key, read_direction, limit);
+    /// If the prefix description is used, we can't restore the full description from PK value.
+    /// TODO: partial sort description can be used as well. Implement support later.
+    if (order_key_prefix_descr.size() < description.size() || pk_column_names.size() < next_sort_key)
+        can_optimize_virtual_row = false;
+
+    auto order_info = std::make_shared<InputOrderInfo>(order_key_prefix_descr, next_sort_key, read_direction, limit);
+
+    std::optional<ActionsDAG> virtual_row_conversion;
+    if (can_optimize_virtual_row)
+    {
+        ActionsDAG virtual_row_dag;
+        virtual_row_dag.getOutputs().reserve(match_infos.size());
+        size_t next_pk_name = 0;
+        for (const auto & info : match_infos)
+        {
+            const ActionsDAG::Node * output;
+            if (info.fixed_column)
+                output = &virtual_row_dag.addColumn({info.fixed_column->column, info.fixed_column->result_type, info.fixed_column->result_name});
+            else
+            {
+                if (info.monotonic)
+                    output = addMonotonicChain(virtual_row_dag, info.source, info.monotonic, pk_column_names[next_pk_name]);
+                else
+                {
+                    output = &virtual_row_dag.addInput(pk_column_names[next_pk_name], info.source->result_type);
+                    if (pk_column_names[next_pk_name] != info.source->result_name)
+                        output = &virtual_row_dag.addAlias(*output, info.source->result_name);
+                }
+
+                ++next_pk_name;
+            }
+
+            virtual_row_dag.getOutputs().push_back(output);
+        }
+        virtual_row_conversion = std::move(virtual_row_dag);
+    }
+
+    return {std::move(order_info), std::move(virtual_row_conversion)};
 }
 
 /// We may need a few different sort descriptions here.
@@ -689,7 +792,7 @@ InputOrder buildInputOrderFromUnorderedKeys(
     return { std::move(input_order), std::move(sort_description) }; // std::move(group_by_sort_description) };
 }
 
-InputOrderInfoPtr buildInputOrderFromSortDescription(
+SortingInputOrder buildInputOrderFromSortDescription(
     const ReadFromMergeTree * reading,
     const FixedColumns & fixed_columns,
     const std::optional<ActionsDAG> & dag,
@@ -697,15 +800,17 @@ InputOrderInfoPtr buildInputOrderFromSortDescription(
     size_t limit)
 {
     const auto & sorting_key = reading->getStorageMetadata()->getSortingKey();
+    const auto & pk_column_names = reading->getStorageMetadata()->getPrimaryKey().column_names;
 
     return buildInputOrderFromSortDescription(
         fixed_columns,
         dag, description,
         sorting_key,
+        pk_column_names,
         limit);
 }
 
-InputOrderInfoPtr buildInputOrderFromSortDescription(
+SortingInputOrder buildInputOrderFromSortDescription(
     ReadFromMerge * merge,
     const FixedColumns & fixed_columns,
     const std::optional<ActionsDAG> & dag,
@@ -714,28 +819,31 @@ InputOrderInfoPtr buildInputOrderFromSortDescription(
 {
     const auto & tables = merge->getSelectedTables();
 
-    InputOrderInfoPtr order_info;
+    SortingInputOrder order_info;
     for (const auto & table : tables)
     {
         auto storage = std::get<StoragePtr>(table);
-        const auto & sorting_key = storage->getInMemoryMetadataPtr()->getSortingKey();
+        auto metadata = storage->getInMemoryMetadataPtr();
+        const auto & sorting_key = metadata->getSortingKey();
+        // const auto & pk_column_names = metadata->getPrimaryKey().column_names;
 
         if (sorting_key.column_names.empty())
-            return nullptr;
+            return {};
 
         auto table_order_info = buildInputOrderFromSortDescription(
             fixed_columns,
             dag, description,
             sorting_key,
+            {},
             limit);
 
-        if (!table_order_info)
-            return nullptr;
+        if (!table_order_info.input_order)
+            return {};
 
-        if (!order_info)
-            order_info = table_order_info;
-        else if (*order_info != *table_order_info)
-            return nullptr;
+        if (!order_info.input_order)
+            order_info = std::move(table_order_info);
+        else if (*order_info.input_order != *table_order_info.input_order)
+            return {};
     }
 
     return order_info;
@@ -791,7 +899,7 @@ InputOrder buildInputOrderFromUnorderedKeys(
     return order_info;
 }
 
-InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & node)
+InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtual_row, QueryPlan::Node & node)
 {
     QueryPlan::Node * reading_node = findReadingStep(node, /*allow_existing_order=*/ false);
     if (!reading_node)
@@ -815,14 +923,21 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & n
             dag, description,
             limit);
 
-        if (order_info)
+        if (order_info.input_order)
         {
-            bool can_read = reading->requestReadingInOrder(order_info->used_prefix_of_sorting_key_size, order_info->direction, order_info->limit);
+            apply_virtual_row = order_info.virtual_row_conversion != std::nullopt;
+
+            bool can_read = reading->requestReadingInOrder(
+                order_info.input_order->used_prefix_of_sorting_key_size,
+                order_info.input_order->direction,
+                order_info.input_order->limit,
+                std::move(order_info.virtual_row_conversion));
+
             if (!can_read)
                 return nullptr;
         }
 
-        return order_info;
+        return order_info.input_order;
     }
     if (auto * merge = typeid_cast<ReadFromMerge *>(reading_node->step.get()))
     {
@@ -832,14 +947,14 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & n
             dag, description,
             limit);
 
-        if (order_info)
+        if (order_info.input_order)
         {
-            bool can_read = merge->requestReadingInOrder(order_info);
+            bool can_read = merge->requestReadingInOrder(order_info.input_order);
             if (!can_read)
                 return nullptr;
         }
 
-        return order_info;
+        return order_info.input_order;
     }
 
     return nullptr;
@@ -873,7 +988,8 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
             bool can_read = reading->requestReadingInOrder(
                 order_info.input_order->used_prefix_of_sorting_key_size,
                 order_info.input_order->direction,
-                order_info.input_order->limit);
+                order_info.input_order->limit,
+                {});
             if (!can_read)
                 return {};
         }
@@ -962,7 +1078,7 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node)
         if (!reading->requestReadingInOrder(
             order_info.input_order->used_prefix_of_sorting_key_size,
             order_info.input_order->direction,
-            order_info.input_order->limit))
+            order_info.input_order->limit, {}))
             return {};
 
         return order_info;
@@ -1014,6 +1130,8 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     if (sorting->getType() != SortingStep::Type::Full)
         return;
 
+    bool apply_virtual_row = false;
+
     if (typeid_cast<UnionStep *>(node.children.front()->step.get()))
     {
         auto & union_node = node.children.front();
@@ -1036,7 +1154,7 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
 
         for (auto * child : union_node->children)
         {
-            infos.push_back(buildInputOrderInfo(*sorting, *child));
+            infos.push_back(buildInputOrderInfo(*sorting, apply_virtual_row, *child));
 
             if (infos.back())
             {
@@ -1064,7 +1182,7 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
                 /// We cannot sort up to partial read-in-order description with limit cause result set can be wrong.
                 const auto & descr = limit ? sorting->getSortDescription() : *max_sort_descr;
                 additional_sorting = std::make_unique<SortingStep>(
-                    child->step->getOutputStream(),
+                    child->step->getOutputHeader(),
                     descr,
                     limit, /// TODO: support limit with ties
                     sorting->getSettings());
@@ -1072,7 +1190,7 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
             else if (info->sort_description_for_merging.size() < max_sort_descr->size())
             {
                 additional_sorting = std::make_unique<SortingStep>(
-                    child->step->getOutputStream(),
+                    child->step->getOutputHeader(),
                     info->sort_description_for_merging,
                     *max_sort_descr,
                     sorting->getSettings().max_block_size,
@@ -1088,13 +1206,13 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
             }
         }
 
-        sorting->convertToFinishSorting(*max_sort_descr, use_buffering);
+        sorting->convertToFinishSorting(*max_sort_descr, use_buffering, false);
     }
-    else if (auto order_info = buildInputOrderInfo(*sorting, *node.children.front()))
+    else if (auto order_info = buildInputOrderInfo(*sorting, apply_virtual_row, *node.children.front()))
     {
         /// Use buffering only if have filter or don't have limit.
         bool use_buffering = order_info->limit == 0;
-        sorting->convertToFinishSorting(order_info->sort_description_for_merging, use_buffering);
+        sorting->convertToFinishSorting(order_info->sort_description_for_merging, use_buffering, apply_virtual_row);
     }
 }
 
@@ -1233,10 +1351,10 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
 
     if (order_info)
     {
-        bool can_read = read_from_merge_tree->requestReadingInOrder(order_info->used_prefix_of_sorting_key_size, order_info->direction, order_info->limit);
+        bool can_read = read_from_merge_tree->requestReadingInOrder(order_info->used_prefix_of_sorting_key_size, order_info->direction, order_info->limit, {});
         if (!can_read)
             return 0;
-        sorting->convertToFinishSorting(order_info->sort_description_for_merging, false);
+        sorting->convertToFinishSorting(order_info->sort_description_for_merging, false, false);
     }
 
     return 0;

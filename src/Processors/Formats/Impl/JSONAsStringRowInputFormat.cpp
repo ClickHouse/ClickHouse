@@ -172,7 +172,7 @@ JSONAsObjectRowInputFormat::JSONAsObjectRowInputFormat(
     const auto & type = header_.getByPosition(0).type;
     if (!isObject(type) && !isObjectDeprecated(type))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Input format JSONAsObject is only suitable for tables with a single column of type Object/JSON but the column type is {}",
+            "Input format JSONAsObject is only suitable for tables with a single column of type JSON but the column type is {}",
             type->getName());
 }
 
@@ -193,8 +193,8 @@ JSONAsObjectExternalSchemaReader::JSONAsObjectExternalSchemaReader(const FormatS
     if (!settings.json.allow_deprecated_object_type && !settings.json.allow_json_type)
         throw Exception(
             ErrorCodes::ILLEGAL_COLUMN,
-            "Cannot infer the data structure in JSONAsObject format because experimental Object/JSON type is not allowed. Set setting "
-            "allow_experimental_object_type = 1 or allow_experimental_json_type=1 in order to allow it");
+            "Cannot infer the data structure in JSONAsObject format because experimental JSON type is not allowed. Set setting "
+            "allow_experimental_json_type = 1 in order to allow it");
 }
 
 void registerInputFormatJSONAsString(FormatFactory & factory)

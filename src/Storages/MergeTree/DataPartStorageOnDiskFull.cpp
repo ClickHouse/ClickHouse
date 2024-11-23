@@ -42,17 +42,17 @@ DataPartStoragePtr DataPartStorageOnDiskFull::getProjection(const std::string & 
 
 bool DataPartStorageOnDiskFull::exists() const
 {
-    return volume->getDisk()->exists(fs::path(root_path) / part_dir);
+    return volume->getDisk()->existsDirectory(fs::path(root_path) / part_dir);
 }
 
-bool DataPartStorageOnDiskFull::exists(const std::string & name) const
+bool DataPartStorageOnDiskFull::existsFile(const std::string & name) const
 {
-    return volume->getDisk()->exists(fs::path(root_path) / part_dir / name);
+    return volume->getDisk()->existsFile(fs::path(root_path) / part_dir / name);
 }
 
-bool DataPartStorageOnDiskFull::isDirectory(const std::string & name) const
+bool DataPartStorageOnDiskFull::existsDirectory(const std::string & name) const
 {
-    return volume->getDisk()->isDirectory(fs::path(root_path) / part_dir / name);
+    return volume->getDisk()->existsDirectory(fs::path(root_path) / part_dir / name);
 }
 
 class DataPartStorageIteratorOnDisk final : public IDataPartStorageIterator
@@ -65,7 +65,7 @@ public:
 
     void next() override { it->next(); }
     bool isValid() const override { return it->isValid(); }
-    bool isFile() const override { return isValid() && disk->isFile(it->path()); }
+    bool isFile() const override { return isValid() && disk->existsFile(it->path()); }
     std::string name() const override { return it->name(); }
     std::string path() const override { return it->path(); }
 
@@ -126,6 +126,15 @@ std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskFull::readFile(
     std::optional<size_t> file_size) const
 {
     return volume->getDisk()->readFile(fs::path(root_path) / part_dir / name, settings, read_hint, file_size);
+}
+
+std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskFull::readFileIfExists(
+    const std::string & name,
+    const ReadSettings & settings,
+    std::optional<size_t> read_hint,
+    std::optional<size_t> file_size) const
+{
+    return volume->getDisk()->readFileIfExists(fs::path(root_path) / part_dir / name, settings, read_hint, file_size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDiskFull::writeFile(

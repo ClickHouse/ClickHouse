@@ -259,7 +259,7 @@ ReadFromSystemPartsBase::ReadFromSystemPartsBase(
     std::vector<UInt8> columns_mask_,
     bool has_state_column_)
     : SourceStepWithFilter(
-        DataStream{.header = std::move(sample_block)},
+        std::move(sample_block),
         column_names_,
         query_info_,
         storage_snapshot_,
@@ -328,7 +328,7 @@ void StorageSystemPartsBase::read(
 void ReadFromSystemPartsBase::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto stream = storage->getStoragesInfoStream(std::move(filter_by_database), std::move(filter_by_other_columns), context);
-    auto header = getOutputStream().header;
+    auto header = getOutputHeader();
 
     MutableColumns res_columns = header.cloneEmptyColumns();
 
