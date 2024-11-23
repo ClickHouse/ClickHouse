@@ -34,6 +34,9 @@ public:
     ValueType & value() { return value_data; }
     const ValueType & value() const { return value_data; }
 
+    AggregateFunctionArgMinMaxData() = default;
+    explicit AggregateFunctionArgMinMaxData(TypeIndex) {}
+
     static bool allocatesMemoryInArena(TypeIndex)
     {
         return ResultType::allocatesMemoryInArena() || ValueType::allocatesMemoryInArena();
@@ -52,6 +55,16 @@ public:
     const SingleValueDataBase & result() const { return result_data.get(); }
     ValueType & value() { return value_data; }
     const ValueType & value() const { return value_data; }
+
+    [[noreturn]] AggregateFunctionArgMinMaxDataGeneric()
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionArgMinMaxData initialized empty");
+    }
+
+    explicit AggregateFunctionArgMinMaxDataGeneric(TypeIndex result_type) : value_data()
+    {
+        generateSingleValueFromTypeIndex(result_type, result_data);
+    }
 
     static bool allocatesMemoryInArena(TypeIndex result_type_index)
     {
@@ -105,7 +118,7 @@ public:
 
     void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {
-        new (place) Data();
+        new (place) Data(result_type_index);
     }
 
     String getName() const override
