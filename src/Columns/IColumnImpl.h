@@ -129,7 +129,7 @@ void IColumn::getPermutationImpl(
 template <typename Compare, typename Equals, typename Sort, typename PartialSort>
 void IColumn::updatePermutationImpl(
     size_t limit,
-    IColumn::Permutation & res,
+    Permutation & res,
     EqualRanges & equal_ranges,
     Compare compare,
     Equals equals,
