@@ -1,4 +1,5 @@
 SET allow_experimental_dynamic_type=1;
+SET session_timezone = 'UTC';
 SET allow_suspicious_types_in_order_by=1;
 
 DROP TABLE IF EXISTS null_table;
@@ -21,11 +22,11 @@ CREATE TABLE to_table
 )
 ENGINE = MergeTree ORDER BY n1;
 
-INSERT INTO null_table ( n1, n2 ) VALUES (1, '2024-01-01'), (2, toDateTime64('2024-01-01', 3, 'Asia/Istanbul')), (3, toFloat32(1)), (4, toFloat64(2));
+INSERT INTO null_table ( n1, n2 ) VALUES (1, '2024-01-01'), (2, toDateTime64('2024-01-01', 3)), (3, toFloat32(1)), (4, toFloat64(2));
 SELECT *, dynamicType(n2) FROM to_table ORDER BY ALL;
 
 select '';
-INSERT INTO null_table ( n1, n2 ) VALUES (1, '2024-01-01'), (2, toDateTime64('2024-01-01', 3, 'Asia/Istanbul')), (3, toFloat32(1)), (4, toFloat64(2));
+INSERT INTO null_table ( n1, n2 ) VALUES (1, '2024-01-01'), (2, toDateTime64('2024-01-01', 3)), (3, toFloat32(1)), (4, toFloat64(2));
 SELECT *, dynamicType(n2) FROM to_table ORDER BY ALL;
 
 select '';
@@ -34,7 +35,7 @@ SELECT *, dynamicType(n2) FROM to_table ORDER BY ALL;
 
 select '';
 ALTER TABLE to_table MODIFY COLUMN n2 Dynamic(max_types=10);
-INSERT INTO null_table ( n1, n2 ) VALUES (1, '2024-01-01'), (2, toDateTime64('2024-01-01', 3, 'Asia/Istanbul')), (3, toFloat32(1)), (4, toFloat64(2));
+INSERT INTO null_table ( n1, n2 ) VALUES (1, '2024-01-01'), (2, toDateTime64('2024-01-01', 3)), (3, toFloat32(1)), (4, toFloat64(2));
 SELECT *, dynamicType(n2) FROM to_table ORDER BY ALL;
 
 DROP TABLE null_table;
