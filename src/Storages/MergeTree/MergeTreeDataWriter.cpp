@@ -14,6 +14,7 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/RowOrderOptimizer.h>
+#include "Common/logger_useful.h"
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
@@ -78,7 +79,6 @@ namespace MergeTreeSetting
 
 namespace ErrorCodes
 {
-    extern const int ABORTED;
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_PARTS;
     extern const int NOT_ENOUGH_SPACE;
@@ -206,15 +206,14 @@ void updateTTL(
 
 void MergeTreeDataWriter::TemporaryPart::cancel()
 {
-    try
+    for (auto & stream : streams)
     {
-        /// An exception context is needed to proper delete write buffers without finalization
-        throw Exception(ErrorCodes::ABORTED, "Cancel temporary part.");
+        stream.stream->cancel();
+        stream.finalizer.cancel();
     }
-    catch (...)
-    {
-        *this = TemporaryPart{};
-    }
+
+    /// The part is trying to delete leftovers here
+    part.reset();
 }
 
 void MergeTreeDataWriter::TemporaryPart::finalize()

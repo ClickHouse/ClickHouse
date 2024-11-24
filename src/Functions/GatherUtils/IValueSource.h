@@ -27,7 +27,7 @@ struct IValueSource
 };
 
 template <typename Derived>
-class ValueSourceImpl : public Visitable<Derived, IValueSource, ValueSourceVisitor> {};
+class ValueSourceImpl : public Visitable<Derived, IValueSource, ValueSourceVisitor> {};  /// NOLINT(bugprone-crtp-constructor-accessibility)
 
 }
 

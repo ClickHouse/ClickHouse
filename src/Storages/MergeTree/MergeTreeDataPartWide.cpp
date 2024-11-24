@@ -215,7 +215,10 @@ void MergeTreeDataPartWide::loadMarksToCache(const Names & column_names, MarkCac
 
     for (const auto & column_name : column_names)
     {
-        auto serialization = getSerialization(column_name);
+        auto serialization = tryGetSerialization(column_name);
+        if (!serialization)
+            continue;
+
         serialization->enumerateStreams([&](const auto & subpath)
         {
             auto stream_name = getStreamNameForColumn(column_name, subpath, checksums);
