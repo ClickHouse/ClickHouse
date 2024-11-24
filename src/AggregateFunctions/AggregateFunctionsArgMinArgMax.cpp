@@ -300,7 +300,7 @@ AggregateFunctionPtr createAggregateFunctionArgMinMax(const std::string & name, 
     auto convert_date_type = [] (TypeIndex type_index)
     {
         if (type_index == TypeIndex::Date)
-            return TypeToTypeIndex<DataTypeDateTime::FieldType>;
+            return TypeToTypeIndex<DataTypeDate::FieldType>;
         else if (type_index == TypeIndex::DateTime)
             return TypeToTypeIndex<DataTypeDateTime::FieldType>;
         else
