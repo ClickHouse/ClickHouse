@@ -48,6 +48,7 @@ enum class CompressionMethodByte : uint8_t
     FPC             = 0x98,
     GCD             = 0x9a,
     ZSTD_QPL        = 0x9b,
+    Chimp           = 0x9c,
 };
 
 }
