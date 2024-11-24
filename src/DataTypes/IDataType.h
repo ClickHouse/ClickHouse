@@ -414,7 +414,7 @@ struct WhichDataType
     constexpr bool isNativeFloat() const { return isFloat32() || isFloat64(); }
     constexpr bool isFloat() const { return isNativeFloat() || isBFloat16(); }
 
-    constexpr bool isNativeNumber() const { return isNativeInteger() || isFloat(); }
+    constexpr bool isNativeNumber() const { return isNativeInteger() || isNativeFloat(); }
     constexpr bool isNumber() const { return isInteger() || isFloat() || isDecimal(); }
 
     constexpr bool isEnum8() const { return idx == TypeIndex::Enum8; }
