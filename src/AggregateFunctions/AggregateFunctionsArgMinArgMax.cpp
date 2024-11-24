@@ -284,8 +284,11 @@ IAggregateFunction * tryResultTypes(const DataTypes & argument_types, const Type
 }
 
 template <bool isMin>
-AggregateFunctionPtr createAggregateFunctionArgMinMax(const std::string &, const DataTypes & argument_types, const Array &, const Settings *)
+AggregateFunctionPtr createAggregateFunctionArgMinMax(const std::string & name, const DataTypes & argument_types, const Array &, const Settings *)
 {
+
+    assertBinary(name, argument_types);
+
     using TypesToCreateSpecializedDataTuple = TypesToCreateSpecializedData;
 
     const DataTypePtr & result_type = argument_types[0];
