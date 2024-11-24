@@ -3,7 +3,7 @@
 namespace DB
 {
 
-namespace FunctionsConversion
+namespace detail
 {
 
 template class FunctionConvert<DataTypeUInt8, NameToUInt8, ToNumberMonotonicity<UInt8>>;

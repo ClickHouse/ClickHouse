@@ -5,20 +5,20 @@ namespace DB
 
 REGISTER_FUNCTION(Conversion)
 {
-    factory.registerFunction<FunctionsConversion::FunctionToUInt8>();
-    factory.registerFunction<FunctionsConversion::FunctionToUInt16>();
-    factory.registerFunction<FunctionsConversion::FunctionToUInt32>();
-    factory.registerFunction<FunctionsConversion::FunctionToUInt64>();
-    factory.registerFunction<FunctionsConversion::FunctionToUInt128>();
-    factory.registerFunction<FunctionsConversion::FunctionToUInt256>();
-    factory.registerFunction<FunctionsConversion::FunctionToInt8>();
-    factory.registerFunction<FunctionsConversion::FunctionToInt16>();
-    factory.registerFunction<FunctionsConversion::FunctionToInt32>();
-    factory.registerFunction<FunctionsConversion::FunctionToInt64>();
-    factory.registerFunction<FunctionsConversion::FunctionToInt128>();
-    factory.registerFunction<FunctionsConversion::FunctionToInt256>();
+    factory.registerFunction<detail::FunctionToUInt8>();
+    factory.registerFunction<detail::FunctionToUInt16>();
+    factory.registerFunction<detail::FunctionToUInt32>();
+    factory.registerFunction<detail::FunctionToUInt64>();
+    factory.registerFunction<detail::FunctionToUInt128>();
+    factory.registerFunction<detail::FunctionToUInt256>();
+    factory.registerFunction<detail::FunctionToInt8>();
+    factory.registerFunction<detail::FunctionToInt16>();
+    factory.registerFunction<detail::FunctionToInt32>();
+    factory.registerFunction<detail::FunctionToInt64>();
+    factory.registerFunction<detail::FunctionToInt128>();
+    factory.registerFunction<detail::FunctionToInt256>();
 
-    factory.registerFunction<FunctionsConversion::FunctionToBFloat16>(FunctionDocumentation{.description=R"(
+    factory.registerFunction<detail::FunctionToBFloat16>(FunctionDocumentation{.description=R"(
 Converts Float32 to BFloat16 with losing the precision.
 
 Example:
@@ -28,46 +28,46 @@ Example:
             {"typical", "SELECT toBFloat16(12.3::Float32);", "12.3125"}},
         .categories{"Conversion"}});
 
-    factory.registerFunction<FunctionsConversion::FunctionToFloat32>();
-    factory.registerFunction<FunctionsConversion::FunctionToFloat64>();
+    factory.registerFunction<detail::FunctionToFloat32>();
+    factory.registerFunction<detail::FunctionToFloat64>();
 
-    factory.registerFunction<FunctionsConversion::FunctionToDecimal32>();
-    factory.registerFunction<FunctionsConversion::FunctionToDecimal64>();
-    factory.registerFunction<FunctionsConversion::FunctionToDecimal128>();
-    factory.registerFunction<FunctionsConversion::FunctionToDecimal256>();
+    factory.registerFunction<detail::FunctionToDecimal32>();
+    factory.registerFunction<detail::FunctionToDecimal64>();
+    factory.registerFunction<detail::FunctionToDecimal128>();
+    factory.registerFunction<detail::FunctionToDecimal256>();
 
-    factory.registerFunction<FunctionsConversion::FunctionToDate>();
+    factory.registerFunction<detail::FunctionToDate>();
 
     /// MySQL compatibility alias. Cannot be registered as alias,
     /// because we don't want it to be normalized to toDate in queries,
     /// otherwise CREATE DICTIONARY query breaks.
-    factory.registerFunction("DATE", &FunctionsConversion::FunctionToDate::create, {}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction("DATE", &detail::FunctionToDate::create, {}, FunctionFactory::Case::Insensitive);
 
-    factory.registerFunction<FunctionsConversion::FunctionToDate32>();
-    factory.registerFunction<FunctionsConversion::FunctionToDateTime>();
-    factory.registerFunction<FunctionsConversion::FunctionToDateTime32>();
-    factory.registerFunction<FunctionsConversion::FunctionToDateTime64>();
-    factory.registerFunction<FunctionsConversion::FunctionToUUID>();
-    factory.registerFunction<FunctionsConversion::FunctionToIPv4>();
-    factory.registerFunction<FunctionsConversion::FunctionToIPv6>();
-    factory.registerFunction<FunctionsConversion::FunctionToString>();
+    factory.registerFunction<detail::FunctionToDate32>();
+    factory.registerFunction<detail::FunctionToDateTime>();
+    factory.registerFunction<detail::FunctionToDateTime32>();
+    factory.registerFunction<detail::FunctionToDateTime64>();
+    factory.registerFunction<detail::FunctionToUUID>();
+    factory.registerFunction<detail::FunctionToIPv4>();
+    factory.registerFunction<detail::FunctionToIPv6>();
+    factory.registerFunction<detail::FunctionToString>();
 
-    factory.registerFunction<FunctionsConversion::FunctionToUnixTimestamp>();
+    factory.registerFunction<detail::FunctionToUnixTimestamp>();
 
-    factory.registerFunction<FunctionsConversion::FunctionToUInt8OrZero>();
-    factory.registerFunction<FunctionsConversion::FunctionToUInt16OrZero>();
-    factory.registerFunction<FunctionsConversion::FunctionToUInt32OrZero>();
-    factory.registerFunction<FunctionsConversion::FunctionToUInt64OrZero>();
-    factory.registerFunction<FunctionsConversion::FunctionToUInt128OrZero>();
-    factory.registerFunction<FunctionsConversion::FunctionToUInt256OrZero>();
-    factory.registerFunction<FunctionsConversion::FunctionToInt8OrZero>();
-    factory.registerFunction<FunctionsConversion::FunctionToInt16OrZero>();
-    factory.registerFunction<FunctionsConversion::FunctionToInt32OrZero>();
-    factory.registerFunction<FunctionsConversion::FunctionToInt64OrZero>();
-    factory.registerFunction<FunctionsConversion::FunctionToInt128OrZero>();
-    factory.registerFunction<FunctionsConversion::FunctionToInt256OrZero>();
+    factory.registerFunction<detail::FunctionToUInt8OrZero>();
+    factory.registerFunction<detail::FunctionToUInt16OrZero>();
+    factory.registerFunction<detail::FunctionToUInt32OrZero>();
+    factory.registerFunction<detail::FunctionToUInt64OrZero>();
+    factory.registerFunction<detail::FunctionToUInt128OrZero>();
+    factory.registerFunction<detail::FunctionToUInt256OrZero>();
+    factory.registerFunction<detail::FunctionToInt8OrZero>();
+    factory.registerFunction<detail::FunctionToInt16OrZero>();
+    factory.registerFunction<detail::FunctionToInt32OrZero>();
+    factory.registerFunction<detail::FunctionToInt64OrZero>();
+    factory.registerFunction<detail::FunctionToInt128OrZero>();
+    factory.registerFunction<detail::FunctionToInt256OrZero>();
 
-    factory.registerFunction<FunctionsConversion::FunctionToBFloat16OrZero>(FunctionDocumentation{.description=R"(
+    factory.registerFunction<detail::FunctionToBFloat16OrZero>(FunctionDocumentation{.description=R"(
 Converts String to BFloat16.
 
 If the string does not represent a floating point value, the function returns zero.
@@ -91,36 +91,36 @@ Example of a loss of precision:
             {"precision", "SELECT toBFloat16OrZero('12.3456789');", "12.375"}},
         .categories{"Conversion"}});
 
-    factory.registerFunction<FunctionsConversion::FunctionToFloat32OrZero>();
-    factory.registerFunction<FunctionsConversion::FunctionToFloat64OrZero>();
-    factory.registerFunction<FunctionsConversion::FunctionToDateOrZero>();
-    factory.registerFunction<FunctionsConversion::FunctionToDate32OrZero>();
-    factory.registerFunction<FunctionsConversion::FunctionToDateTimeOrZero>();
-    factory.registerFunction<FunctionsConversion::FunctionToDateTime64OrZero>();
+    factory.registerFunction<detail::FunctionToFloat32OrZero>();
+    factory.registerFunction<detail::FunctionToFloat64OrZero>();
+    factory.registerFunction<detail::FunctionToDateOrZero>();
+    factory.registerFunction<detail::FunctionToDate32OrZero>();
+    factory.registerFunction<detail::FunctionToDateTimeOrZero>();
+    factory.registerFunction<detail::FunctionToDateTime64OrZero>();
 
-    factory.registerFunction<FunctionsConversion::FunctionToDecimal32OrZero>();
-    factory.registerFunction<FunctionsConversion::FunctionToDecimal64OrZero>();
-    factory.registerFunction<FunctionsConversion::FunctionToDecimal128OrZero>();
-    factory.registerFunction<FunctionsConversion::FunctionToDecimal256OrZero>();
+    factory.registerFunction<detail::FunctionToDecimal32OrZero>();
+    factory.registerFunction<detail::FunctionToDecimal64OrZero>();
+    factory.registerFunction<detail::FunctionToDecimal128OrZero>();
+    factory.registerFunction<detail::FunctionToDecimal256OrZero>();
 
-    factory.registerFunction<FunctionsConversion::FunctionToUUIDOrZero>();
-    factory.registerFunction<FunctionsConversion::FunctionToIPv4OrZero>();
-    factory.registerFunction<FunctionsConversion::FunctionToIPv6OrZero>();
+    factory.registerFunction<detail::FunctionToUUIDOrZero>();
+    factory.registerFunction<detail::FunctionToIPv4OrZero>();
+    factory.registerFunction<detail::FunctionToIPv6OrZero>();
 
-    factory.registerFunction<FunctionsConversion::FunctionToUInt8OrNull>();
-    factory.registerFunction<FunctionsConversion::FunctionToUInt16OrNull>();
-    factory.registerFunction<FunctionsConversion::FunctionToUInt32OrNull>();
-    factory.registerFunction<FunctionsConversion::FunctionToUInt64OrNull>();
-    factory.registerFunction<FunctionsConversion::FunctionToUInt128OrNull>();
-    factory.registerFunction<FunctionsConversion::FunctionToUInt256OrNull>();
-    factory.registerFunction<FunctionsConversion::FunctionToInt8OrNull>();
-    factory.registerFunction<FunctionsConversion::FunctionToInt16OrNull>();
-    factory.registerFunction<FunctionsConversion::FunctionToInt32OrNull>();
-    factory.registerFunction<FunctionsConversion::FunctionToInt64OrNull>();
-    factory.registerFunction<FunctionsConversion::FunctionToInt128OrNull>();
-    factory.registerFunction<FunctionsConversion::FunctionToInt256OrNull>();
+    factory.registerFunction<detail::FunctionToUInt8OrNull>();
+    factory.registerFunction<detail::FunctionToUInt16OrNull>();
+    factory.registerFunction<detail::FunctionToUInt32OrNull>();
+    factory.registerFunction<detail::FunctionToUInt64OrNull>();
+    factory.registerFunction<detail::FunctionToUInt128OrNull>();
+    factory.registerFunction<detail::FunctionToUInt256OrNull>();
+    factory.registerFunction<detail::FunctionToInt8OrNull>();
+    factory.registerFunction<detail::FunctionToInt16OrNull>();
+    factory.registerFunction<detail::FunctionToInt32OrNull>();
+    factory.registerFunction<detail::FunctionToInt64OrNull>();
+    factory.registerFunction<detail::FunctionToInt128OrNull>();
+    factory.registerFunction<detail::FunctionToInt256OrNull>();
 
-    factory.registerFunction<FunctionsConversion::FunctionToBFloat16OrNull>(FunctionDocumentation{.description=R"(
+    factory.registerFunction<detail::FunctionToBFloat16OrNull>(FunctionDocumentation{.description=R"(
 Converts String to Nullable(BFloat16).
 
 If the string does not represent a floating point value, the function returns NULL.
@@ -144,49 +144,49 @@ Example of a loss of precision:
         {"precision", "SELECT toBFloat16OrNull('12.3456789');", "12.375"}},
     .categories{"Conversion"}});
 
-    factory.registerFunction<FunctionsConversion::FunctionToFloat32OrNull>();
-    factory.registerFunction<FunctionsConversion::FunctionToFloat64OrNull>();
-    factory.registerFunction<FunctionsConversion::FunctionToDateOrNull>();
-    factory.registerFunction<FunctionsConversion::FunctionToDate32OrNull>();
-    factory.registerFunction<FunctionsConversion::FunctionToDateTimeOrNull>();
-    factory.registerFunction<FunctionsConversion::FunctionToDateTime64OrNull>();
+    factory.registerFunction<detail::FunctionToFloat32OrNull>();
+    factory.registerFunction<detail::FunctionToFloat64OrNull>();
+    factory.registerFunction<detail::FunctionToDateOrNull>();
+    factory.registerFunction<detail::FunctionToDate32OrNull>();
+    factory.registerFunction<detail::FunctionToDateTimeOrNull>();
+    factory.registerFunction<detail::FunctionToDateTime64OrNull>();
 
-    factory.registerFunction<FunctionsConversion::FunctionToDecimal32OrNull>();
-    factory.registerFunction<FunctionsConversion::FunctionToDecimal64OrNull>();
-    factory.registerFunction<FunctionsConversion::FunctionToDecimal128OrNull>();
-    factory.registerFunction<FunctionsConversion::FunctionToDecimal256OrNull>();
+    factory.registerFunction<detail::FunctionToDecimal32OrNull>();
+    factory.registerFunction<detail::FunctionToDecimal64OrNull>();
+    factory.registerFunction<detail::FunctionToDecimal128OrNull>();
+    factory.registerFunction<detail::FunctionToDecimal256OrNull>();
 
-    factory.registerFunction<FunctionsConversion::FunctionToUUIDOrNull>();
-    factory.registerFunction<FunctionsConversion::FunctionToIPv4OrNull>();
-    factory.registerFunction<FunctionsConversion::FunctionToIPv6OrNull>();
+    factory.registerFunction<detail::FunctionToUUIDOrNull>();
+    factory.registerFunction<detail::FunctionToIPv4OrNull>();
+    factory.registerFunction<detail::FunctionToIPv6OrNull>();
 
-    factory.registerFunction<FunctionsConversion::FunctionParseDateTimeBestEffort>();
-    factory.registerFunction<FunctionsConversion::FunctionParseDateTimeBestEffortOrZero>();
-    factory.registerFunction<FunctionsConversion::FunctionParseDateTimeBestEffortOrNull>();
-    factory.registerFunction<FunctionsConversion::FunctionParseDateTimeBestEffortUS>();
-    factory.registerFunction<FunctionsConversion::FunctionParseDateTimeBestEffortUSOrZero>();
-    factory.registerFunction<FunctionsConversion::FunctionParseDateTimeBestEffortUSOrNull>();
-    factory.registerFunction<FunctionsConversion::FunctionParseDateTime32BestEffort>();
-    factory.registerFunction<FunctionsConversion::FunctionParseDateTime32BestEffortOrZero>();
-    factory.registerFunction<FunctionsConversion::FunctionParseDateTime32BestEffortOrNull>();
-    factory.registerFunction<FunctionsConversion::FunctionParseDateTime64BestEffort>();
-    factory.registerFunction<FunctionsConversion::FunctionParseDateTime64BestEffortOrZero>();
-    factory.registerFunction<FunctionsConversion::FunctionParseDateTime64BestEffortOrNull>();
-    factory.registerFunction<FunctionsConversion::FunctionParseDateTime64BestEffortUS>();
-    factory.registerFunction<FunctionsConversion::FunctionParseDateTime64BestEffortUSOrZero>();
-    factory.registerFunction<FunctionsConversion::FunctionParseDateTime64BestEffortUSOrNull>();
+    factory.registerFunction<detail::FunctionParseDateTimeBestEffort>();
+    factory.registerFunction<detail::FunctionParseDateTimeBestEffortOrZero>();
+    factory.registerFunction<detail::FunctionParseDateTimeBestEffortOrNull>();
+    factory.registerFunction<detail::FunctionParseDateTimeBestEffortUS>();
+    factory.registerFunction<detail::FunctionParseDateTimeBestEffortUSOrZero>();
+    factory.registerFunction<detail::FunctionParseDateTimeBestEffortUSOrNull>();
+    factory.registerFunction<detail::FunctionParseDateTime32BestEffort>();
+    factory.registerFunction<detail::FunctionParseDateTime32BestEffortOrZero>();
+    factory.registerFunction<detail::FunctionParseDateTime32BestEffortOrNull>();
+    factory.registerFunction<detail::FunctionParseDateTime64BestEffort>();
+    factory.registerFunction<detail::FunctionParseDateTime64BestEffortOrZero>();
+    factory.registerFunction<detail::FunctionParseDateTime64BestEffortOrNull>();
+    factory.registerFunction<detail::FunctionParseDateTime64BestEffortUS>();
+    factory.registerFunction<detail::FunctionParseDateTime64BestEffortUSOrZero>();
+    factory.registerFunction<detail::FunctionParseDateTime64BestEffortUSOrNull>();
 
-    factory.registerFunction<FunctionsConversion::FunctionConvert<DataTypeInterval, FunctionsConversion::NameToIntervalNanosecond, FunctionsConversion::PositiveMonotonicity>>();
-    factory.registerFunction<FunctionsConversion::FunctionConvert<DataTypeInterval, FunctionsConversion::NameToIntervalMicrosecond, FunctionsConversion::PositiveMonotonicity>>();
-    factory.registerFunction<FunctionsConversion::FunctionConvert<DataTypeInterval, FunctionsConversion::NameToIntervalMillisecond, FunctionsConversion::PositiveMonotonicity>>();
-    factory.registerFunction<FunctionsConversion::FunctionConvert<DataTypeInterval, FunctionsConversion::NameToIntervalSecond, FunctionsConversion::PositiveMonotonicity>>();
-    factory.registerFunction<FunctionsConversion::FunctionConvert<DataTypeInterval, FunctionsConversion::NameToIntervalMinute, FunctionsConversion::PositiveMonotonicity>>();
-    factory.registerFunction<FunctionsConversion::FunctionConvert<DataTypeInterval, FunctionsConversion::NameToIntervalHour, FunctionsConversion::PositiveMonotonicity>>();
-    factory.registerFunction<FunctionsConversion::FunctionConvert<DataTypeInterval, FunctionsConversion::NameToIntervalDay, FunctionsConversion::PositiveMonotonicity>>();
-    factory.registerFunction<FunctionsConversion::FunctionConvert<DataTypeInterval, FunctionsConversion::NameToIntervalWeek, FunctionsConversion::PositiveMonotonicity>>();
-    factory.registerFunction<FunctionsConversion::FunctionConvert<DataTypeInterval, FunctionsConversion::NameToIntervalMonth, FunctionsConversion::PositiveMonotonicity>>();
-    factory.registerFunction<FunctionsConversion::FunctionConvert<DataTypeInterval, FunctionsConversion::NameToIntervalQuarter, FunctionsConversion::PositiveMonotonicity>>();
-    factory.registerFunction<FunctionsConversion::FunctionConvert<DataTypeInterval, FunctionsConversion::NameToIntervalYear, FunctionsConversion::PositiveMonotonicity>>();
+    factory.registerFunction<detail::FunctionConvert<DataTypeInterval, detail::NameToIntervalNanosecond, detail::PositiveMonotonicity>>();
+    factory.registerFunction<detail::FunctionConvert<DataTypeInterval, detail::NameToIntervalMicrosecond, detail::PositiveMonotonicity>>();
+    factory.registerFunction<detail::FunctionConvert<DataTypeInterval, detail::NameToIntervalMillisecond, detail::PositiveMonotonicity>>();
+    factory.registerFunction<detail::FunctionConvert<DataTypeInterval, detail::NameToIntervalSecond, detail::PositiveMonotonicity>>();
+    factory.registerFunction<detail::FunctionConvert<DataTypeInterval, detail::NameToIntervalMinute, detail::PositiveMonotonicity>>();
+    factory.registerFunction<detail::FunctionConvert<DataTypeInterval, detail::NameToIntervalHour, detail::PositiveMonotonicity>>();
+    factory.registerFunction<detail::FunctionConvert<DataTypeInterval, detail::NameToIntervalDay, detail::PositiveMonotonicity>>();
+    factory.registerFunction<detail::FunctionConvert<DataTypeInterval, detail::NameToIntervalWeek, detail::PositiveMonotonicity>>();
+    factory.registerFunction<detail::FunctionConvert<DataTypeInterval, detail::NameToIntervalMonth, detail::PositiveMonotonicity>>();
+    factory.registerFunction<detail::FunctionConvert<DataTypeInterval, detail::NameToIntervalQuarter, detail::PositiveMonotonicity>>();
+    factory.registerFunction<detail::FunctionConvert<DataTypeInterval, detail::NameToIntervalYear, detail::PositiveMonotonicity>>();
 }
 
 }

@@ -3,7 +3,7 @@
 namespace DB
 {
 
-namespace FunctionsConversion
+namespace detail
 {
 
 template class FunctionConvertFromString<

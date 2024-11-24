@@ -8,7 +8,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-namespace FunctionsConversion
+namespace detail
 {
 
 UInt32 extractToDecimalScale(const ColumnWithTypeAndName & named_column)
@@ -52,12 +52,12 @@ FunctionBasePtr createFunctionBaseCast(
     for (size_t i = 0; i < arguments.size(); ++i)
         data_types[i] = arguments[i].type;
 
-    FunctionsConversion::FunctionCast::MonotonicityForRange monotonicity;
+    detail::FunctionCast::MonotonicityForRange monotonicity;
 
     if (isEnum(arguments.front().type)
         && castTypeToEither<DataTypeEnum8, DataTypeEnum16>(return_type.get(), [&](auto & type)
         {
-            monotonicity = FunctionsConversion::FunctionTo<std::decay_t<decltype(type)>>::Type::Monotonic::get;
+            monotonicity = detail::FunctionTo<std::decay_t<decltype(type)>>::Type::Monotonic::get;
             return true;
         }))
     {
@@ -69,13 +69,13 @@ FunctionBasePtr createFunctionBaseCast(
         DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeDateTime64,
         DataTypeString>(recursiveRemoveLowCardinality(return_type).get(), [&](auto & type)
         {
-            monotonicity = FunctionsConversion::FunctionTo<std::decay_t<decltype(type)>>::Type::Monotonic::get;
+            monotonicity = detail::FunctionTo<std::decay_t<decltype(type)>>::Type::Monotonic::get;
             return true;
         }))
     {
     }
 
-    return std::make_unique<FunctionsConversion::FunctionCast>(context, name, std::move(monotonicity), data_types, return_type, diagnostic, cast_type);
+    return std::make_unique<detail::FunctionCast>(context, name, std::move(monotonicity), data_types, return_type, diagnostic, cast_type);
 }
 
 }

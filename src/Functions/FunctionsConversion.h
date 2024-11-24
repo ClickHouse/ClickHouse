@@ -114,7 +114,7 @@ namespace ErrorCodes
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
-namespace FunctionsConversion
+namespace detail
 {
 
 /** Type conversion functions.
