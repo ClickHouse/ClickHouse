@@ -8,7 +8,7 @@ SET enable_analyzer = 0;
 CREATE OR REPLACE TABLE tab(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance')) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;
 INSERT INTO tab VALUES (0, [1.0, 0.0]), (1, [1.1, 0.0]), (2, [1.2, 0.0]), (3, [1.3, 0.0]), (4, [1.4, 0.0]), (5, [0.0, 2.0]), (6, [0.0, 2.1]), (7, [0.0, 2.2]), (8, [0.0, 2.3]), (9, [0.0, 2.4]);
 
-SELECT id, vec, L2Distance(vec, [0.0, 2.0])
+SELECT id, vec
 FROM tab
 ORDER BY L2Distance(vec, [0.0, 2.0])
 LIMIT 3;
@@ -19,7 +19,7 @@ LIMIT 3;
 
 SET allow_experimental_vector_similarity_index = 1;
 
-SET enable_analyzer = 0;
+SET enable_analyzer = 1;
 
 SELECT '10 rows, index_granularity = 8192, GRANULARITY = 1 million --> 1 granule, 1 indexed block';
 

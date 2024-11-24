@@ -38,6 +38,13 @@ struct MergeTreeIndexFormat
     explicit operator bool() const { return version != 0; }
 };
 
+struct VectorSearchParameters
+{
+    String distance_function;
+    size_t limit;
+    std::vector<Float64> reference_vector;
+};
+
 /// Stores some info about a single block of data.
 struct IMergeTreeIndexGranule
 {
@@ -85,7 +92,6 @@ struct IMergeTreeIndexAggregator
 using MergeTreeIndexAggregatorPtr = std::shared_ptr<IMergeTreeIndexAggregator>;
 using MergeTreeIndexAggregators = std::vector<MergeTreeIndexAggregatorPtr>;
 
-
 /// Condition on the index.
 class IMergeTreeIndexCondition
 {
@@ -99,10 +105,7 @@ public:
     /// Special method for vector similarity indexes:
     /// Returns the row positions of the N nearest neighbors in the index granule
     /// The returned row numbers are guaranteed to be sorted and unique.
-    virtual std::vector<UInt64> calculateApproximateNearestNeighbors(
-        MergeTreeIndexGranulePtr /*granule*/,
-        size_t /*limit*/,
-        const std::vector<Float64> & /*reference_vector*/) const
+    virtual std::vector<UInt64> calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr /*granule*/) const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "calculateApproximateNearestNeighbors is not implemented for non-vector-similarity indexes");
     }
@@ -182,6 +185,15 @@ struct IMergeTreeIndex
 
     virtual MergeTreeIndexConditionPtr createIndexCondition(
         const ActionsDAG * filter_actions_dag, ContextPtr context) const = 0;
+
+    /// The vector similarity index overrides this method
+    virtual MergeTreeIndexConditionPtr createIndexCondition(
+        const ActionsDAG * /*filter_actions_dag*/, ContextPtr /*context*/,
+        const std::optional<VectorSearchParameters> & /*parameters*/) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "createIndexCondition is not implemented for index of type {}", index.type);
+    }
 
     virtual bool isVectorSimilarityIndex() const { return false; }
 

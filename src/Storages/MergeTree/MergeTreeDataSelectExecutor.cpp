@@ -628,8 +628,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     size_t num_streams,
     ReadFromMergeTree::IndexStats & index_stats,
     bool use_skip_indexes,
-    bool find_exact_ranges,
-    const std::optional<ReadFromMergeTree::VectorSimilarityIndexInput> & vec_sim_idx_input)
+    bool find_exact_ranges)
 {
     RangesInDataParts parts_with_ranges;
     parts_with_ranges.resize(parts.size());
@@ -734,8 +733,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     reader_settings,
                     mark_cache.get(),
                     uncompressed_cache.get(),
-                    log,
-                    vec_sim_idx_input);
+                    log);
 
                 stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
                 if (ranges.ranges.empty())
@@ -942,6 +940,7 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
     return ReadFromMergeTree::selectRangesToRead(
         std::move(parts),
         mutations_snapshot,
+        std::nullopt,
         metadata_snapshot,
         query_info,
         context,
@@ -951,8 +950,7 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         column_names_to_return,
         log,
         indexes,
-        /*find_exact_ranges*/false,
-        std::nullopt);
+        /*find_exact_ranges*/false);
 }
 
 QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
@@ -1366,8 +1364,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     const MergeTreeReaderSettings & reader_settings,
     MarkCache * mark_cache,
     UncompressedCache * uncompressed_cache,
-    LoggerPtr log,
-    const std::optional<ReadFromMergeTree::VectorSimilarityIndexInput> & vec_sim_idx_input)
+    LoggerPtr log)
 {
     if (!index_helper->getDeserializedFormat(part->getDataPartStorage(), index_helper->getFileName()))
     {
@@ -1427,9 +1424,9 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
                 reader.read(granule);
 
-            if (index_helper->isVectorSimilarityIndex() && vec_sim_idx_input)
+            if (index_helper->isVectorSimilarityIndex())
             {
-                auto rows = condition->calculateApproximateNearestNeighbors(granule, vec_sim_idx_input->limit, vec_sim_idx_input->reference_vector); /// TODO
+                auto rows = condition->calculateApproximateNearestNeighbors(granule);
 
                 for (auto row : rows)
                 {

@@ -131,18 +131,18 @@ struct MergeTreeIndexAggregatorVectorSimilarity final : IMergeTreeIndexAggregato
 class MergeTreeIndexConditionVectorSimilarity final : public IMergeTreeIndexCondition
 {
 public:
-    MergeTreeIndexConditionVectorSimilarity(ContextPtr context);
+    explicit MergeTreeIndexConditionVectorSimilarity(ContextPtr context, const std::optional<VectorSearchParameters> & parameters_, unum::usearch::metric_kind_t metric_kind_);
 
     ~MergeTreeIndexConditionVectorSimilarity() override = default;
 
     bool alwaysUnknownOrTrue() const override;
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule) const override;
-    std::vector<UInt64> calculateApproximateNearestNeighbors(
-        MergeTreeIndexGranulePtr granule,
-        size_t limit,
-        const std::vector<Float64> & reference_vector) const override;
+    std::vector<UInt64> calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr granule) const override;
 
 private:
+    std::optional<VectorSearchParameters> parameters;
+    const unum::usearch::metric_kind_t metric_kind;
+    const size_t max_limit_for_ann_queries;
     const size_t expansion_search;
 };
 
@@ -161,6 +161,7 @@ public:
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG * filter_actions_dag, ContextPtr context) const override;
+    MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG * filter_actions_dag, ContextPtr context, const std::optional<VectorSearchParameters> & parameters) const override;
     bool isVectorSimilarityIndex() const override { return true; }
 
 private:

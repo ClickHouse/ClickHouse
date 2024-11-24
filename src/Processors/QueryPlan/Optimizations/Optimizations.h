@@ -114,9 +114,7 @@ using Stack = std::vector<Frame>;
 
 /// Second pass optimizations
 void optimizePrimaryKeyConditionAndLimit(const Stack & stack);
-void optimizeVectorSearch(const Stack & stack);
 void optimizePrewhere(Stack & stack, QueryPlan::Nodes & nodes);
-void optimizeVectorSearch(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &);
 void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &);

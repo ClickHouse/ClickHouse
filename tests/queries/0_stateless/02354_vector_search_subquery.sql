@@ -1,7 +1,7 @@
 -- Tags: no-fasttest, no-ordinary-database
 
 SET allow_experimental_vector_similarity_index = 1;
-SET enable_analyzer = 0;
+SET enable_analyzer = 1;
 
 -- Reference vector for vector search is computed by a subquery (issue #69085)
 
@@ -21,7 +21,7 @@ FROM tab
 ORDER BY distance
 LIMIT 1;
 
--- does not work
+-- also work
 EXPLAIN indexes = 1
 WITH (
     SELECT vec
@@ -36,7 +36,7 @@ FROM tab
 ORDER BY distance
 LIMIT 1;
 
--- does not work as well
+-- and this also works
 EXPLAIN indexes = 1
 WITH (
     SELECT [0., 2.]

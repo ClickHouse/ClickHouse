@@ -166,22 +166,10 @@ public:
         std::optional<std::unordered_set<String>> part_values;
     };
 
-    enum class DistanceFunction
-    {
-        L2Distance,
-        cosineDistance
-    };
-
-    struct VectorSimilarityIndexInput
-    {
-        DistanceFunction distance_function;
-        size_t limit;
-        std::vector<Float64> reference_vector;
-    };
-
     static AnalysisResultPtr selectRangesToRead(
         MergeTreeData::DataPartsVector parts,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
+        const std::optional<VectorSearchParameters> & vector_search_parameters,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
@@ -191,8 +179,7 @@ public:
         const Names & all_column_names,
         LoggerPtr log,
         std::optional<Indexes> & indexes,
-        bool find_exact_ranges,
-        const std::optional<VectorSimilarityIndexInput> & vec_sim_idx_input);
+        bool find_exact_ranges);
 
     AnalysisResultPtr selectRangesToRead(MergeTreeData::DataPartsVector parts, bool find_exact_ranges = false) const;
 
@@ -226,7 +213,7 @@ public:
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
-    std::optional<VectorSimilarityIndexInput> vec_sim_idx_input;
+    std::optional<VectorSearchParameters> vector_search_parameters;
 
 private:
     MergeTreeReaderSettings reader_settings;
