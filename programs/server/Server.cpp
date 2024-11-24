@@ -166,6 +166,7 @@ namespace MergeTreeSetting
 
 namespace ServerSetting
 {
+    extern const ServerSettingsUInt32 allowed_feature_tier;
     extern const ServerSettingsUInt32 asynchronous_heavy_metrics_update_period_s;
     extern const ServerSettingsUInt32 asynchronous_metrics_update_period_s;
     extern const ServerSettingsBool asynchronous_metrics_enable_heavy_metrics;
@@ -343,7 +344,7 @@ int mainEntryClickHouseServer(int argc, char ** argv)
     {
         std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
         auto code = DB::getCurrentExceptionCode();
-        return code ? code : 1;
+        return static_cast<UInt8>(code) ? code : 1;
     }
 }
 
@@ -1353,9 +1354,11 @@ try
     }
 
     FailPointInjection::enableFromGlobalConfig(config());
+#endif
 
     memory_worker.start();
 
+#if defined(OS_LINUX)
     int default_oom_score = 0;
 
 #if !defined(NDEBUG)
@@ -1769,6 +1772,7 @@ try
             global_context->setMaxDictionaryNumToWarn(new_server_settings[ServerSetting::max_dictionary_num_to_warn]);
             global_context->setMaxDatabaseNumToWarn(new_server_settings[ServerSetting::max_database_num_to_warn]);
             global_context->setMaxPartNumToWarn(new_server_settings[ServerSetting::max_part_num_to_warn]);
+            global_context->getAccessControl().setAllowTierSettings(new_server_settings[ServerSetting::allowed_feature_tier]);
             /// Only for system.server_settings
             global_context->setConfigReloaderInterval(new_server_settings[ServerSetting::config_reload_interval_ms]);
 
@@ -2159,9 +2163,12 @@ try
 
     /// Check sanity of MergeTreeSettings on server startup
     {
+        /// All settings can be changed in the global config
+        bool allowed_experimental = true;
+        bool allowed_beta = true;
         size_t background_pool_tasks = global_context->getMergeMutateExecutor()->getMaxTasksCount();
-        global_context->getMergeTreeSettings().sanityCheck(background_pool_tasks);
-        global_context->getReplicatedMergeTreeSettings().sanityCheck(background_pool_tasks);
+        global_context->getMergeTreeSettings().sanityCheck(background_pool_tasks, allowed_experimental, allowed_beta);
+        global_context->getReplicatedMergeTreeSettings().sanityCheck(background_pool_tasks, allowed_experimental, allowed_beta);
     }
     /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
     CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
@@ -2341,6 +2348,7 @@ try
 
 #if USE_SSL
         CertificateReloader::instance().tryLoad(config());
+        CertificateReloader::instance().tryLoadClient(config());
 #endif
 
         /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
@@ -2534,7 +2542,7 @@ catch (...)
     /// Poco does not provide stacktrace.
     tryLogCurrentException("Application");
     auto code = getCurrentExceptionCode();
-    return code ? code : -1;
+    return static_cast<UInt8>(code) ? code : -1;
 }
 
 std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(

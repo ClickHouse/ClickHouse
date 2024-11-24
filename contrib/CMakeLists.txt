@@ -217,7 +217,11 @@ add_contrib (libssh-cmake libssh)
 
 add_contrib (prometheus-protobufs-cmake prometheus-protobufs prometheus-protobufs-gogo)
 
-add_contrib(numactl-cmake numactl)
+add_contrib (numactl-cmake numactl)
+
+add_contrib (google-cloud-cpp-cmake google-cloud-cpp) # requires grpc, protobuf, absl
+
+add_contrib (jwt-cpp-cmake jwt-cpp)
 
 add_contrib (libcotp-cmake libcotp)
 

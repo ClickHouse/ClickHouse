@@ -381,17 +381,15 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
 
         LimitReadBuffer limit_buf(
             *read_buf,
-            query_context->getSettingsRef()[Setting::async_insert_max_data_size],
-            /*throw_exception=*/false,
-            /*exact_limit=*/{});
+            {.read_no_more = query_context->getSettingsRef()[Setting::async_insert_max_data_size]});
 
-        WriteBufferFromString write_buf(bytes);
-        copyData(limit_buf, write_buf);
+        {
+            WriteBufferFromString write_buf(bytes);
+            copyData(limit_buf, write_buf);
+        }
 
         if (!read_buf->eof())
         {
-            write_buf.finalize();
-
             /// Concat read buffer with already extracted from insert
             /// query data and with the rest data from insert query.
             std::vector<std::unique_ptr<ReadBuffer>> buffers;
@@ -1120,6 +1118,13 @@ Chunk AsynchronousInsertQueue::processPreprocessedEntries(
                 "Expected entry with data kind Preprocessed. Got: {}", entry->chunk.getDataKind());
 
         Block block_to_insert = *block;
+        if (block_to_insert.rows() == 0)
+        {
+            add_to_async_insert_log(entry, /*parsing_exception=*/ "", block_to_insert.rows(), block_to_insert.bytes());
+            entry->resetChunk();
+            continue;
+        }
+
         if (!isCompatibleHeader(block_to_insert, header))
             convertBlockToHeader(block_to_insert, header);
 

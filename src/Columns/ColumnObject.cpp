@@ -380,9 +380,10 @@ void ColumnObject::insert(const Field & x)
         {
             shared_data_paths->insertData(path.data(), path.size());
             auto & shared_data_values_chars = shared_data_values->getChars();
-            WriteBufferFromVector<ColumnString::Chars> value_buf(shared_data_values_chars, AppendModeTag());
-            getDynamicSerialization()->serializeBinary(value_field, value_buf, getFormatSettings());
-            value_buf.finalize();
+            {
+                WriteBufferFromVector<ColumnString::Chars> value_buf(shared_data_values_chars, AppendModeTag());
+                getDynamicSerialization()->serializeBinary(value_field, value_buf, getFormatSettings());
+            }
             shared_data_values_chars.push_back(0);
             shared_data_values->getOffsets().push_back(shared_data_values_chars.size());
         }
@@ -439,7 +440,7 @@ bool ColumnObject::tryInsert(const Field & x)
                 column->popBack(column->size() - prev_size);
         }
 
-        if (shared_data_paths->size() != prev_paths_size)
+        if (shared_data_paths->size() != prev_paths_size)  /// NOLINT(clang-analyzer-core.NullDereference)
             shared_data_paths->popBack(shared_data_paths->size() - prev_paths_size);
         if (shared_data_values->size() != prev_values_size)
             shared_data_values->popBack(shared_data_values->size() - prev_values_size);
@@ -674,9 +675,10 @@ void ColumnObject::serializePathAndValueIntoSharedData(ColumnString * shared_dat
 
     shared_data_paths->insertData(path.data(), path.size());
     auto & shared_data_values_chars = shared_data_values->getChars();
-    WriteBufferFromVector<ColumnString::Chars> value_buf(shared_data_values_chars, AppendModeTag());
-    getDynamicSerialization()->serializeBinary(column, n, value_buf, getFormatSettings());
-    value_buf.finalize();
+    {
+        WriteBufferFromVector<ColumnString::Chars> value_buf(shared_data_values_chars, AppendModeTag());
+        getDynamicSerialization()->serializeBinary(column, n, value_buf, getFormatSettings());
+    }
     shared_data_values_chars.push_back(0);
     shared_data_values->getOffsets().push_back(shared_data_values_chars.size());
 }
@@ -1413,6 +1415,31 @@ void ColumnObject::prepareForSquashing(const std::vector<ColumnPtr> & source_col
         dynamic_paths_ptrs[path]->reserve(total_size);
         dynamic_paths_ptrs[path]->prepareVariantsForSquashing(source_dynamic_columns);
     }
+}
+
+bool ColumnObject::dynamicStructureEquals(const IColumn & rhs) const
+{
+    const auto * rhs_object = typeid_cast<const ColumnObject *>(&rhs);
+    if (!rhs_object || typed_paths.size() != rhs_object->typed_paths.size()
+        || global_max_dynamic_paths != rhs_object->global_max_dynamic_paths || max_dynamic_types != rhs_object->max_dynamic_types
+        || dynamic_paths.size() != rhs_object->dynamic_paths.size())
+        return false;
+
+    for (const auto & [path, column] : typed_paths)
+    {
+        auto it = rhs_object->typed_paths.find(path);
+        if (it == rhs_object->typed_paths.end() || !it->second->dynamicStructureEquals(*column))
+            return false;
+    }
+
+    for (const auto & [path, column] : dynamic_paths)
+    {
+        auto it = rhs_object->dynamic_paths.find(path);
+        if (it == rhs_object->dynamic_paths.end() || !it->second->dynamicStructureEquals(*column))
+            return false;
+    }
+
+    return true;
 }
 
 void ColumnObject::takeDynamicStructureFromSourceColumns(const DB::Columns & source_columns)
