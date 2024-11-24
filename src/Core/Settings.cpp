@@ -1225,9 +1225,6 @@ Possible values: non-negative numbers. Note that if the value is too small or to
 If true then data can be parsed directly to columns with custom serialization (e.g. Sparse) according to hints for serialization got from the table.
 )", 0) \
     \
-    DECLARE(Bool, merge_tree_use_v1_object_and_dynamic_serialization, false, R"(
-When enabled, V1 serialization version of JSON and Dynamic types will be used in MergeTree instead of V2. Changing this setting takes affect only after server restart.
-)", 0) \
     DECLARE(UInt64, merge_tree_min_rows_for_concurrent_read, (20 * 8192), R"(
 If the number of rows to be read from a file of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `merge_tree_min_rows_for_concurrent_read` then ClickHouse tries to perform a concurrent reading from this file on several threads.
 

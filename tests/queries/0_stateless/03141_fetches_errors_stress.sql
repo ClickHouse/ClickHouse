@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-parallel
+-- Tags: no-parallel
 -- Tag no-parallel -- due to failpoints
 
 create table data_r1 (key Int, value String) engine=ReplicatedMergeTree('/tables/{database}/data', '{table}') order by tuple();

@@ -622,11 +622,11 @@ private:
             column_before_cast.type,
             column_before_cast.name};
 
-        auto cast = IColumn::mutate(castColumnAccurate(column_to_cast, result_type));
+        auto casted = IColumn::mutate(castColumnAccurate(column_to_cast, result_type));
 
         auto mask_col = ColumnUInt8::create();
         mask_col->getData() = std::move(default_mask);
-        return {std::move(cast), std::move(mask_col)};
+        return {std::move(casted), std::move(mask_col)};
     }
 
     void restoreShortCircuitColumn(
@@ -1124,9 +1124,9 @@ private:
         const auto & hierarchical_attribute = FunctionDictHelper::getDictionaryHierarchicalAttribute(dictionary);
 
         auto key_column = ColumnWithTypeAndName{arguments[1].column, arguments[1].type, arguments[1].name};
-        auto key_column_cast = castColumnAccurate(key_column, removeNullable(hierarchical_attribute.type));
+        auto key_column_casted = castColumnAccurate(key_column, removeNullable(hierarchical_attribute.type));
 
-        ColumnPtr result = dictionary->getHierarchy(key_column_cast, hierarchical_attribute.type);
+        ColumnPtr result = dictionary->getHierarchy(key_column_casted, hierarchical_attribute.type);
 
         return result;
     }
@@ -1182,10 +1182,10 @@ private:
         auto in_key_column = ColumnWithTypeAndName{arguments[2].column->convertToFullColumnIfConst(), arguments[2].type, arguments[2].name};
 
         auto hierarchical_attribute_non_nullable = removeNullable(hierarchical_attribute.type);
-        auto key_column_cast = castColumnAccurate(key_column, hierarchical_attribute_non_nullable);
-        auto in_key_column_cast = castColumnAccurate(in_key_column, hierarchical_attribute_non_nullable);
+        auto key_column_casted = castColumnAccurate(key_column, hierarchical_attribute_non_nullable);
+        auto in_key_column_casted = castColumnAccurate(in_key_column, hierarchical_attribute_non_nullable);
 
-        ColumnPtr result = dictionary->isInHierarchy(key_column_cast, in_key_column_cast, hierarchical_attribute.type);
+        ColumnPtr result = dictionary->isInHierarchy(key_column_casted, in_key_column_casted, hierarchical_attribute.type);
 
         return result;
     }
@@ -1222,9 +1222,9 @@ public:
         const auto & hierarchical_attribute = FunctionDictHelper::getDictionaryHierarchicalAttribute(dictionary);
 
         auto key_column = ColumnWithTypeAndName{arguments[1].column->convertToFullColumnIfConst(), arguments[1].type, arguments[1].name};
-        auto key_column_cast = castColumnAccurate(key_column, removeNullable(hierarchical_attribute.type));
+        auto key_column_casted = castColumnAccurate(key_column, removeNullable(hierarchical_attribute.type));
 
-        return dictionary->getDescendants(key_column_cast, removeNullable(hierarchical_attribute.type), level, hierarchical_parent_to_child_index);
+        return dictionary->getDescendants(key_column_casted, removeNullable(hierarchical_attribute.type), level, hierarchical_parent_to_child_index);
     }
 
     String name;

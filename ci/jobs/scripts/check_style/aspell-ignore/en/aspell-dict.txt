@@ -1316,6 +1316,7 @@ bools
 boringssl
 boundingRatio
 bozerkins
+broadcasted
 brotli
 bson
 bsoneachrow
@@ -1341,6 +1342,7 @@ cardinalities
 cardinality
 cartesian
 cassandra
+casted
 catboost
 catboostEvaluate
 categoricalInformationValue

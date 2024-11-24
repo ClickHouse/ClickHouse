@@ -6257,7 +6257,7 @@ Code: 70. DB::Exception: Received from localhost:9000. DB::Exception: Value in c
 
 ## accurateCastOrNull(x, T)
 
-Converts input value `x` to the specified data type `T`. Always returns [Nullable](../data-types/nullable.md) type and returns [NULL](../syntax.md/#null-literal) if the cast value is not representable in the target type.
+Converts input value `x` to the specified data type `T`. Always returns [Nullable](../data-types/nullable.md) type and returns [NULL](../syntax.md/#null-literal) if the casted value is not representable in the target type.
 
 **Syntax**
 
@@ -6310,7 +6310,7 @@ Result:
 
 ## accurateCastOrDefault(x, T[, default_value])
 
-Converts input value `x` to the specified data type `T`. Returns default type value or `default_value` if specified if the cast value is not representable in the target type.
+Converts input value `x` to the specified data type `T`. Returns default type value or `default_value` if specified if the casted value is not representable in the target type.
 
 **Syntax**
 

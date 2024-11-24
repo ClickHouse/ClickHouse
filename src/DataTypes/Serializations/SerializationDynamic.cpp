@@ -108,22 +108,16 @@ void SerializationDynamic::serializeBinaryBulkStatePrefix(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing stream for Dynamic column structure during serialization of binary bulk state prefix");
 
     /// Write structure serialization version.
-    UInt64 structure_version = settings.use_v1_object_and_dynamic_serialization ? DynamicSerializationVersion::Value::V1 : DynamicSerializationVersion::Value::V2;
+    UInt64 structure_version = DynamicSerializationVersion::Value::V2;
     writeBinaryLittleEndian(structure_version, *stream);
     auto dynamic_state = std::make_shared<SerializeBinaryBulkStateDynamic>(structure_version);
+
     dynamic_state->variant_type = variant_info.variant_type;
     dynamic_state->variant_names = variant_info.variant_names;
     const auto & variant_column = column_dynamic.getVariantColumn();
 
     /// Write information about dynamic types.
     dynamic_state->num_dynamic_types = dynamic_state->variant_names.size() - 1; ///  -1 for SharedVariant
-
-    /// In V1 version we had max_dynamic_types parameter written, but now we need only actual number of variants.
-    /// For compatibility we need to write V1 version sometimes, but we should write number of variants instead of
-    /// max_dynamic_types (because now max_dynamic_types can be different in different serialized columns).
-    if (structure_version == DynamicSerializationVersion::Value::V1)
-        writeVarUInt(dynamic_state->num_dynamic_types, *stream);
-
     writeVarUInt(dynamic_state->num_dynamic_types, *stream);
     if (settings.data_types_binary_encoding)
     {

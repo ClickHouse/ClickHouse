@@ -100,7 +100,6 @@ namespace ErrorCodes
     DECLARE(String, merge_workload, "", "Name of workload to be used to access resources for merges", 0) \
     DECLARE(String, mutation_workload, "", "Name of workload to be used to access resources for mutations", 0) \
     DECLARE(Milliseconds, background_task_preferred_step_execution_time_ms, 50, "Target time to execution of one step of merge or mutation. Can be exceeded if one step takes longer time", 0) \
-    DECLARE(Bool, enforce_index_structure_match_on_partition_manipulation, false, "If this setting is enabled for destination table of a partition manipulation query (`ATTACH/MOVE/REPLACE PARTITION`), the indices and projections must be identical between the source and destination tables. Otherwise, the destination table can have a superset of the source table's indices and projections.", 0) \
     DECLARE(MergeSelectorAlgorithm, merge_selector_algorithm, MergeSelectorAlgorithm::SIMPLE, "The algorithm to select parts for merges assignment", EXPERIMENTAL) \
     DECLARE(Bool, merge_selector_enable_heuristic_to_remove_small_parts_at_right, true, "Enable heuristic for selecting parts for merge which removes parts from right side of range, if their size is less than specified ratio (0.01) of sum_size. Works for Simple and StochasticSimple merge selectors", 0) \
     DECLARE(Float, merge_selector_base, 5.0, "Affects write amplification of assigned merges (expert level setting, don't change if you don't understand what it is doing). Works for Simple and StochasticSimple merge selectors", 0) \
