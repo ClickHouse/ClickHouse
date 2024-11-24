@@ -79,8 +79,11 @@ void checkAllowedQueries(const ASTSelectWithUnionQuery & select)
     {
         auto * query = children->as<ASTSelectQuery>();
 
+        if (query == nullptr)
+            throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW, "MATERIALIZED VIEW support query with multiple simple UNION [ALL] only");
+
         if (query->prewhere() || query->final() || query->sampleSize())
-            throw Exception(DB::ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW, "MATERIALIZED VIEW cannot have PREWHERE, SAMPLE or FINAL.");
+            throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW, "MATERIALIZED VIEW cannot have PREWHERE, SAMPLE or FINAL.");
 
         ASTPtr subquery = extractTableExpression(*query, 0);
         if (!subquery)
