@@ -391,6 +391,15 @@ if(HAS_ARMV8_CRC)
     "${ROCKSDB_SOURCE_DIR}/util/crc32c_arm64.cc")
 endif(HAS_ARMV8_CRC)
 
+if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
+  # Files only needed on debug mode
+  list(APPEND SOURCES
+    ${ROCKSDB_SOURCE_DIR}/test_util/sync_point.cc
+    ${ROCKSDB_SOURCE_DIR}/test_util/sync_point_impl.cc
+    ${ROCKSDB_SOURCE_DIR}/test_util/transaction_test_util.cc
+    ${ROCKSDB_SOURCE_DIR}/monitoring/thread_status_util_debug.cc)
+ENDIF(CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
+
 list(APPEND SOURCES
     ${ROCKSDB_SOURCE_DIR}/port/port_posix.cc
     ${ROCKSDB_SOURCE_DIR}/env/env_posix.cc
