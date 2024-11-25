@@ -120,7 +120,7 @@ using SortDescriptionWithPositions = std::vector<SortColumnDescriptionWithColumn
 class SortDescription : public std::vector<SortColumnDescription>
 {
 public:
-    /// Can be safely casted into JITSortDescriptionFunc
+    /// Can be safely cast into JITSortDescriptionFunc
     void * compiled_sort_description = nullptr;
     std::shared_ptr<CompiledSortDescriptionFunctionHolder> compiled_sort_description_holder;
     size_t min_count_to_compile_sort_description = 3;

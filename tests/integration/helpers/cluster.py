@@ -7,6 +7,7 @@ import os.path as p
 import platform
 import pprint
 import pwd
+import random
 import re
 import shlex
 import shutil
@@ -67,6 +68,7 @@ DEFAULT_ENV_NAME = ".env"
 DEFAULT_BASE_CONFIG_DIR = os.environ.get(
     "CLICKHOUSE_TESTS_BASE_CONFIG_DIR", "/etc/clickhouse-server/"
 )
+DOCKER_BASE_TAG = os.environ.get("DOCKER_BASE_TAG", "latest")
 
 SANITIZER_SIGN = "=================="
 
@@ -503,7 +505,6 @@ class ClickHouseCluster:
             "CLICKHOUSE_TESTS_DOCKERD_HOST"
         )
         self.docker_api_version = os.environ.get("DOCKER_API_VERSION")
-        self.docker_base_tag = os.environ.get("DOCKER_BASE_TAG", "latest")
 
         self.base_cmd = ["docker", "compose"]
         if custom_dockerd_host:
@@ -1081,7 +1082,7 @@ class ClickHouseCluster:
 
         env_variables["keeper_binary"] = binary_path
         env_variables["keeper_cmd_prefix"] = keeper_cmd_prefix
-        env_variables["image"] = "clickhouse/integration-test:" + self.docker_base_tag
+        env_variables["image"] = "clickhouse/integration-test:" + DOCKER_BASE_TAG
         env_variables["user"] = str(os.getuid())
         env_variables["keeper_fs"] = "bind"
         for i in range(1, 4):
@@ -1650,6 +1651,8 @@ class ClickHouseCluster:
         minio_certs_dir=None,
         minio_data_dir=None,
         use_keeper=True,
+        keeper_randomize_feature_flags=True,
+        keeper_required_feature_flags=[],
         main_config_name="config.xml",
         users_config_name="users.xml",
         copy_common_configs=True,
@@ -1678,10 +1681,12 @@ class ClickHouseCluster:
             )
 
         if tag is None:
-            tag = self.docker_base_tag
+            tag = DOCKER_BASE_TAG
         if not env_variables:
             env_variables = {}
         self.use_keeper = use_keeper
+        self.keeper_randomize_feature_flags = keeper_randomize_feature_flags
+        self.keeper_required_feature_flags = keeper_required_feature_flags
 
         # Code coverage files will be placed in database directory
         # (affect only WITH_COVERAGE=1 build)
@@ -2828,14 +2833,50 @@ class ClickHouseCluster:
 
                 if self.use_keeper:  # TODO: remove hardcoded paths from here
                     for i in range(1, 4):
+                        current_keeper_config_dir = os.path.join(
+                            f"{self.keeper_instance_dir_prefix}{i}", "config"
+                        )
                         shutil.copy(
                             os.path.join(
                                 self.keeper_config_dir, f"keeper_config{i}.xml"
                             ),
-                            os.path.join(
-                                self.keeper_instance_dir_prefix + f"{i}", "config"
-                            ),
+                            current_keeper_config_dir,
                         )
+
+                        extra_configs_dir = os.path.join(
+                            current_keeper_config_dir, f"keeper_config{i}.d"
+                        )
+                        os.mkdir(extra_configs_dir)
+                        feature_flags_config = os.path.join(
+                            extra_configs_dir, "feature_flags.yaml"
+                        )
+
+                        indentation = 4 * " "
+
+                        def get_feature_flag_value(feature_flag):
+                            if not self.keeper_randomize_feature_flags:
+                                return 1
+
+                            if feature_flag in self.keeper_required_feature_flags:
+                                return 1
+
+                            return random.randint(0, 1)
+
+                        with open(feature_flags_config, "w") as ff_config:
+                            ff_config.write("keeper_server:\n")
+                            ff_config.write(f"{indentation}feature_flags:\n")
+                            indentation *= 2
+
+                            for feature_flag in [
+                                "filtered_list",
+                                "multi_read",
+                                "check_not_exists",
+                                "create_if_not_exists",
+                                "remove_recursive",
+                            ]:
+                                ff_config.write(
+                                    f"{indentation}{feature_flag}: {get_feature_flag_value(feature_flag)}\n"
+                                )
 
                 run_and_check(self.base_zookeeper_cmd + common_opts, env=self.env)
                 self.up_called = True
@@ -4578,7 +4619,12 @@ class ClickHouseInstance:
         if len(self.custom_dictionaries_paths):
             write_embedded_config("0_common_enable_dictionaries.xml", self.config_d_dir)
 
-        if self.randomize_settings and self.base_config_dir == DEFAULT_BASE_CONFIG_DIR:
+        if (
+            self.randomize_settings
+            and self.image == "clickhouse/integration-test"
+            and self.tag == DOCKER_BASE_TAG
+            and self.base_config_dir == DEFAULT_BASE_CONFIG_DIR
+        ):
             # If custom main config is used, do not apply random settings to it
             write_random_settings_config(Path(users_d_dir) / "0_random_settings.xml")
 
