@@ -82,7 +82,7 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeArray::getDynamicSubcolum
     nested_data->type = nested_type;
     nested_data->column = data.column ? assert_cast<const ColumnArray &>(*data.column).getDataPtr() : nullptr;
 
-    auto nested_subcolumn_data = nested_type->getSubcolumnData(subcolumn_name, *nested_data, throw_if_null);
+    auto nested_subcolumn_data = DB::IDataType::getSubcolumnData(subcolumn_name, *nested_data, throw_if_null);
     if (!nested_subcolumn_data)
         return nullptr;
 
