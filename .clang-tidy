@@ -28,7 +28,6 @@ Checks: [
   '-bugprone-multi-level-implicit-pointer-conversion',
   '-bugprone-narrowing-conversions',
   '-bugprone-not-null-terminated-result',
-  '-bugprone-reserved-identifier', # useful but too slow, TODO retry when https://reviews.llvm.org/rG1c282052624f9d0bd273bde0b47b30c96699c6c7 is merged
   '-bugprone-unchecked-optional-access',
   '-bugprone-crtp-constructor-accessibility',
 
