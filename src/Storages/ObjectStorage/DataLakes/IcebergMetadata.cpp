@@ -2,44 +2,44 @@
 
 #if USE_AVRO
 
-#include <Common/logger_useful.h>
-#include <Core/Settings.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/IColumn.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeUUID.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Formats/FormatFactory.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadBufferFromFileBase.h>
-#include <IO/ReadHelpers.h>
-#include <Processors/Formats/Impl/AvroRowInputFormat.h>
-#include <Storages/ObjectStorage/DataLakes/IcebergMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/Common.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#    include <Columns/ColumnString.h>
+#    include <Columns/ColumnTuple.h>
+#    include <Columns/IColumn.h>
+#    include <Core/Settings.h>
+#    include <DataTypes/DataTypeArray.h>
+#    include <DataTypes/DataTypeDate.h>
+#    include <DataTypes/DataTypeDateTime64.h>
+#    include <DataTypes/DataTypeFactory.h>
+#    include <DataTypes/DataTypeFixedString.h>
+#    include <DataTypes/DataTypeMap.h>
+#    include <DataTypes/DataTypeNullable.h>
+#    include <DataTypes/DataTypeString.h>
+#    include <DataTypes/DataTypeTuple.h>
+#    include <DataTypes/DataTypeUUID.h>
+#    include <DataTypes/DataTypesDecimal.h>
+#    include <DataTypes/DataTypesNumber.h>
+#    include <Formats/FormatFactory.h>
+#    include <IO/ReadBufferFromFileBase.h>
+#    include <IO/ReadBufferFromString.h>
+#    include <IO/ReadHelpers.h>
+#    include <Processors/Formats/Impl/AvroRowInputFormat.h>
+#    include <Storages/ObjectStorage/DataLakes/Common.h>
+#    include <Storages/ObjectStorage/DataLakes/IcebergMetadata.h>
+#    include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#    include <Common/logger_useful.h>
 
-#include <Poco/JSON/Array.h>
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Parser.h>
+#    include <Poco/JSON/Array.h>
+#    include <Poco/JSON/Object.h>
+#    include <Poco/JSON/Parser.h>
 
-#include <filesystem>
+#    include <filesystem>
 
 namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool iceberg_engine_ignore_schema_evolution;
-    extern const SettingsInt64 iceberg_query_at_timestamp_ms;
+extern const SettingsBool iceberg_engine_ignore_schema_evolution;
+extern const SettingsInt64 iceberg_query_at_timestamp_ms;
 }
 
 namespace ErrorCodes
@@ -248,10 +248,10 @@ DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & field, const String & t
     }
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected 'type' field: {}", type.toString());
-
 }
 
-NamesAndTypesList parseTableSchema(const Poco::JSON::Object::Ptr & metadata_object, int format_version, int schema_id, bool ignore_schema_evolution)
+NamesAndTypesList
+parseTableSchema(const Poco::JSON::Object::Ptr & metadata_object, int format_version, int schema_id, bool ignore_schema_evolution)
 {
     Poco::JSON::Object::Ptr schema;
 
@@ -280,20 +280,24 @@ NamesAndTypesList parseTableSchema(const Poco::JSON::Object::Ptr & metadata_obje
             }
 
             if (!schema)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, R"(There is no schema with "schema-id" that matches "current-schema-id" in metadata)");
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS, R"(There is no schema with "schema-id" that matches "current-schema-id" in metadata)");
         }
         else
         {
             if (schemas->size() != 1)
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                throw Exception(
+                    ErrorCodes::UNSUPPORTED_METHOD,
                     "Cannot read Iceberg table: the table schema has been changed at least 1 time, reading tables with evolved schema is "
-                    "supported. If you want to ignore schema evolution and read all files using latest schema saved on table creation, enable setting "
+                    "supported. If you want to ignore schema evolution and read all files using latest schema saved on table creation, "
+                    "enable setting "
                     "iceberg_engine_ignore_schema_evolution (Note: enabling this setting can lead to incorrect result)");
 
             /// Now we are sure that there is only one schema.
             schema = schemas->getObject(0);
             if (schema->getValue<int>("schema-id") != schema_id)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, R"(Field "schema-id" of the schema doesn't match "current-schema-id" in metadata)");
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS, R"(Field "schema-id" of the schema doesn't match "current-schema-id" in metadata)");
         }
     }
     else
@@ -301,10 +305,13 @@ NamesAndTypesList parseTableSchema(const Poco::JSON::Object::Ptr & metadata_obje
         schema = metadata_object->getObject("schema");
         /// Field "schemas" is optional for version 1, but after version 2 was introduced,
         /// in most cases this field is added for new tables in version 1 as well.
-        if (!ignore_schema_evolution && metadata_object->has("schemas") && metadata_object->get("schemas").extract<Poco::JSON::Array::Ptr>()->size() > 1)
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+        if (!ignore_schema_evolution && metadata_object->has("schemas")
+            && metadata_object->get("schemas").extract<Poco::JSON::Array::Ptr>()->size() > 1)
+            throw Exception(
+                ErrorCodes::UNSUPPORTED_METHOD,
                 "Cannot read Iceberg table: the table schema has been changed at least 1 time, reading tables with evolved schema is not "
-                "supported. If you want to ignore schema evolution and read all files using latest schema saved on table creation, enable setting "
+                "supported. If you want to ignore schema evolution and read all files using latest schema saved on table creation, enable "
+                "setting "
                 "iceberg_engine_ignore_schema_evolution (Note: enabling this setting can lead to incorrect result)");
     }
 
@@ -321,10 +328,7 @@ NamesAndTypesList parseTableSchema(const Poco::JSON::Object::Ptr & metadata_obje
     return names_and_types;
 }
 
-MutableColumns parseAvro(
-    avro::DataFileReaderBase & file_reader,
-    const Block & header,
-    const FormatSettings & settings)
+MutableColumns parseAvro(avro::DataFileReaderBase & file_reader, const Block & header, const FormatSettings & settings)
 {
     auto deserializer = std::make_unique<AvroDeserializer>(header, file_reader.dataSchema(), true, true, settings);
     MutableColumns columns = header.cloneEmptyColumns();
@@ -345,17 +349,14 @@ MutableColumns parseAvro(
  *   1) v<V>.metadata.json, where V - metadata version.
  *   2) <V>-<random-uuid>.metadata.json, where V - metadata version
  */
-std::pair<Int32, String> getMetadataFileAndVersion(
-    ObjectStoragePtr object_storage,
-    const StorageObjectStorage::Configuration & configuration)
+std::pair<Int32, String>
+getMetadataFileAndVersion(ObjectStoragePtr object_storage, const StorageObjectStorage::Configuration & configuration)
 {
     const auto metadata_files = listFiles(*object_storage, configuration, "metadata", ".metadata.json");
     if (metadata_files.empty())
     {
         throw Exception(
-            ErrorCodes::FILE_DOESNT_EXIST,
-            "The metadata file for Iceberg table with path {} doesn't exist",
-            configuration.getPath());
+            ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Iceberg table with path {} doesn't exist", configuration.getPath());
     }
 
     std::vector<std::pair<UInt32, String>> metadata_files_with_versions;
@@ -372,7 +373,8 @@ std::pair<Int32, String> getMetadataFileAndVersion(
             version_str = String(file_name.begin(), file_name.begin() + file_name.find_first_of('-'));
 
         if (!std::all_of(version_str.begin(), version_str.end(), isdigit))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad metadata file name: {}. Expected vN.metadata.json where N is a number", file_name);
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Bad metadata file name: {}. Expected vN.metadata.json where N is a number", file_name);
         metadata_files_with_versions.emplace_back(std::stoi(version_str), path);
     }
 
@@ -421,7 +423,8 @@ IcebergMetadata::create(ObjectStoragePtr object_storage, ConfigurationObserverPt
             if (snapshot->getValue<Int64>("snapshot-id") == snapshot_id)
             {
                 const auto path = snapshot->getValue<String>("manifest-list");
-                manifest_list_file = std::filesystem::path(configuration_ptr->getPath()) / "metadata" / std::filesystem::path(path).filename();
+                manifest_list_file
+                    = std::filesystem::path(configuration_ptr->getPath()) / "metadata" / std::filesystem::path(path).filename();
                 schema_id = snapshot->getValue<Int32>("schema-id");
                 break;
             }
@@ -429,10 +432,7 @@ IcebergMetadata::create(ObjectStoragePtr object_storage, ConfigurationObserverPt
 
         if (manifest_list_file.empty() || schema_id == -1 || snapshot_id == -1)
         {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Current snapshot not found"
-                );
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Current snapshot not found");
         }
     }
     else
@@ -449,7 +449,8 @@ IcebergMetadata::create(ObjectStoragePtr object_storage, ConfigurationObserverPt
             {
                 closest_timestamp = snapshot_timestamp;
                 const auto path = snapshot->getValue<String>("manifest-list");
-                manifest_list_file = std::filesystem::path(configuration_ptr->getPath()) / "metadata" / std::filesystem::path(path).filename();
+                manifest_list_file
+                    = std::filesystem::path(configuration_ptr->getPath()) / "metadata" / std::filesystem::path(path).filename();
                 schema_id = snapshot->getValue<Int32>("schema-id");
                 snapshot_id = snapshot->getValue<Int64>("snapshot-id");
             }
@@ -457,20 +458,23 @@ IcebergMetadata::create(ObjectStoragePtr object_storage, ConfigurationObserverPt
 
         if (manifest_list_file.empty() || schema_id == -1 || snapshot_id == -1)
         {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "No Iceberg snapshot found at or before timestamp {}",
-                query_timestamp
-                );
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "No Iceberg snapshot found at or before timestamp {}", query_timestamp);
         }
     }
 
-    chassert(schema_id == metadata->getValue<int>("current-schema-id"));
-
-    auto schema = parseTableSchema(metadata, format_version, schema_id, local_context->getSettingsRef()[Setting::iceberg_engine_ignore_schema_evolution]);
+    auto schema = parseTableSchema(
+        metadata, format_version, schema_id, local_context->getSettingsRef()[Setting::iceberg_engine_ignore_schema_evolution]);
 
     return std::make_unique<IcebergMetadata>(
-        object_storage, configuration_ptr, local_context, metadata_version, format_version, manifest_list_file, schema_id, snapshot_id, schema);
+        object_storage,
+        configuration_ptr,
+        local_context,
+        metadata_version,
+        format_version,
+        manifest_list_file,
+        schema_id,
+        snapshot_id,
+        schema);
 }
 
 /**
@@ -513,7 +517,8 @@ Strings IcebergMetadata::getDataFiles() const
     auto context = getContext();
     StorageObjectStorageSource::ObjectInfo object_info(manifest_list_file);
     auto manifest_list_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
-    auto manifest_list_file_reader = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*manifest_list_buf));
+    auto manifest_list_file_reader
+        = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*manifest_list_buf));
 
     auto data_type = AvroSchemaReader::avroNodeToDataType(manifest_list_file_reader->dataSchema().root()->leafAt(0));
     Block header{{data_type->createColumn(), data_type, "manifest_path"}};
@@ -559,7 +564,8 @@ Strings IcebergMetadata::getDataFiles() const
             throw Exception(
                 ErrorCodes::UNSUPPORTED_METHOD,
                 "Cannot read Iceberg table: the table schema has been changed at least 1 time, reading tables with evolved schema is not "
-                "supported. If you want to ignore schema evolution and read all files using latest schema saved on table creation, enable setting "
+                "supported. If you want to ignore schema evolution and read all files using latest schema saved on table creation, enable "
+                "setting "
                 "iceberg_engine_ignore_schema_evolution (Note: enabling this setting can lead to incorrect result)");
 
         avro::NodePtr root_node = manifest_file_reader->dataSchema().root();
@@ -568,9 +574,7 @@ Strings IcebergMetadata::getDataFiles() const
         if (leaves_num < expected_min_num)
         {
             throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Unexpected number of columns {}. Expected at least {}",
-                root_node->leaves(), expected_min_num);
+                ErrorCodes::BAD_ARGUMENTS, "Unexpected number of columns {}. Expected at least {}", root_node->leaves(), expected_min_num);
         }
 
         avro::NodePtr status_node = root_node->leafAt(0);
@@ -663,7 +667,8 @@ Strings IcebergMetadata::getDataFiles() const
             {
                 Int32 content_type = content_int_column->getElement(i);
                 if (DataFileContent(content_type) != DataFileContent::DATA)
-                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot read Iceberg table: positional and equality deletes are not supported");
+                    throw Exception(
+                        ErrorCodes::UNSUPPORTED_METHOD, "Cannot read Iceberg table: positional and equality deletes are not supported");
             }
 
             const auto status = status_int_column->getInt(i);
