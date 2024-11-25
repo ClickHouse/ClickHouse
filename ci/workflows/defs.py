@@ -11,7 +11,6 @@ class RunnerLabels:
     FUNC_TESTER_ARM = "func-tester-aarch64"
     STYLE_CHECK_AMD = "style-checker"
     STYLE_CHECK_ARM = "style-checker-aarch64"
-    CI_SERVICES = "ci_services"
 
 
 class CIFiles:
@@ -399,7 +398,7 @@ class Jobs:
         runs_on=["...from params..."],
         requires=[],
         command="python3 ./ci/jobs/build_clickhouse.py --build-type {PARAMETER}",
-        run_in_docker="clickhouse/binary-builder",
+        run_in_docker="clickhouse/binary-builder+--network=host",
         timeout=3600 * 2,
         digest_config=Job.CacheDigestConfig(
             include_paths=[
@@ -577,17 +576,23 @@ class Jobs:
 
     performance_test_job = Job.Config(
         name=JobNames.PERFORMANCE,
-        runs_on=[RunnerLabels.FUNC_TESTER_ARM],
-        command="./ci/jobs/scripts/performance_test.sh",
+        runs_on=["#from param"],
+        command="./ci/jobs/performance_tests.sh",
         run_in_docker="clickhouse/stateless-test",
-        requires=[ArtifactNames.CH_ARM_RELEASE],
-        # digest_config=Job.CacheDigestConfig(
-        #     include_paths=[
-        #         "./ci/jobs/fast_test.py",
-        #         "./tests/queries/0_stateless/",
-        #         "./src",
-        #     ],
-        # ),
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./tests/performance/",
+                "./ci/jobs/scripts/perf/",
+                "./ci/jobs/performance_tests.sh",
+            ],
+        ),
+    ).parametrize(
+        parameter=["amd_release", "arm_release"],
+        runs_on=[
+            [RunnerLabels.FUNC_TESTER_AMD],
+            [RunnerLabels.FUNC_TESTER_ARM],
+        ],
+        requires=[[ArtifactNames.CH_AMD_RELEASE], [ArtifactNames.CH_ARM_RELEASE]],
     )
 
     compatibility_test_jobs = Job.Config(

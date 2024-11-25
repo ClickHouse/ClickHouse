@@ -121,6 +121,9 @@ class Result(MetaClasses.Serializable):
     def is_ok(self):
         return self.status in (Result.Status.SKIPPED, Result.Status.SUCCESS)
 
+    def is_error(self):
+        return self.status in (Result.Status.ERROR,)
+
     def set_status(self, status) -> "Result":
         self.status = status
         self.dump()
@@ -144,6 +147,12 @@ class Result(MetaClasses.Serializable):
             ).is_file(), f"Not valid file [{file}] from file list [{files}]"
         if not self.files:
             self.files = []
+        for file in self.files:
+            if file in files:
+                print(
+                    f"WARNING: File [{file}] is already present in Result [{self.name}] - skip"
+                )
+                files.remove(files)
         self.files += files
         self.dump()
         return self

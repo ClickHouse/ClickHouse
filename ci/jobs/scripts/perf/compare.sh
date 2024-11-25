@@ -10,6 +10,8 @@ trap 'kill $(jobs -pr) ${watchdog_pid:-} ||:' EXIT
 stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
+cd /tmp/praktika
+
 # upstream/master
 LEFT_SERVER_PORT=9001
 LEFT_SERVER_KEEPER_PORT=9181
@@ -70,7 +72,6 @@ function left_or_right()
 
 function configure
 {
-    cd /tmp/praktika/
     # Use the new config for both servers, so that we can change it in a PR.
     rm right/config/config.d/text_log.xml ||:
     # backups disk uses absolute path, and this overlaps between servers, that could lead to errors

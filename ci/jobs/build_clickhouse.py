@@ -52,9 +52,8 @@ def main():
     args = parse_args()
 
     # # for sccache
-    # os.environ["SCCACHE_BUCKET"] = S3_BUILDS_BUCKET
-    # os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
-    # TODO: check with  SCCACHE_LOG=debug SCCACHE_NO_DAEMON=1
+    os.environ["SCCACHE_BUCKET"] = S3_BUILDS_BUCKET
+    os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
 
     stop_watch = Utils.Stopwatch()
 

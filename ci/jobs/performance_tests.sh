@@ -1,13 +1,19 @@
 #!/bin/bash
 
-set -e +x
+set -e -x
 
-CHPC_CHECK_START_TIMESTAMP="$(date +%s)"
-export CHPC_CHECK_START_TIMESTAMP
+export CHPC_CHECK_START_TIMESTAMP="$(date +%s)"
+export S3_URL=${S3_URL:="https://clickhouse-builds.s3.amazonaws.com"}
 
-S3_URL=${S3_URL:="https://clickhouse-builds.s3.amazonaws.com"}
-BUILD_NAME=${BUILD_NAME:-package_release}
-export S3_URL BUILD_NAME
+if [[ "arm" == *"$JOB_NAME"* ]]; then
+  export BUILD_NAME=package_aarch64
+elif [[ "amd" == *"$JOB_NAME"* ]]; then
+  export BUILD_NAME=package_release
+else
+  echo "ERROR: Invalid Job Name $JOB_NAME"
+  exit 1
+fi
+
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 
 # Sometimes AWS responds with DNS error and it's impossible to retry it with
@@ -130,7 +136,8 @@ cd /tmp/praktika/input
 chmod +x clickhouse
 ln -sf clickhouse clickhouse-local
 ln -sf clickhouse clickhouse-client
-#for file in /tmp/praktika/right/config/config.d/*.xml; do [ -f $file ] && echo Change config $file && sed -i 's|>/var/log|>/tmp/praktika/right/var/log|g; s|>/etc/|>/tmp/praktika/right/etc/|g' $(readlink -f $file); done
+for file in /tmp/praktika/right/config/*.xml; do [ -f $file ] && echo Change config $file && sed -i 's|>/var/log|>/tmp/praktika/right/var/log|g; s|>/etc/|>/tmp/praktika/right/etc/|g' $(readlink -f $file); done
+for file in /tmp/praktika/right/config/config.d/*.xml; do [ -f $file ] && echo Change config $file && sed -i 's|>/var/log|>/tmp/praktika/right/var/log|g; s|>/etc/|>/tmp/praktika/right/etc/|g' $(readlink -f $file); done
 cd -
 
 
@@ -163,8 +170,8 @@ script_path="tests/performance/scripts/"
 # Use clickhouse-client and clickhouse-local from the right server.
 
 
-export REF_PR
-export REF_SHA
+#export REF_PR
+#export REF_SHA
 
 # Try to collect some core dumps.
 # At least we remove the ulimit and then try to pack some common file names into output.
@@ -173,8 +180,8 @@ cat /proc/sys/kernel/core_pattern
 
 # Start the main comparison script.
 {
-#    time $SCRIPT_DIR/download.sh "$REF_PR" "$REF_SHA" "$PR_TO_TEST" "$SHA_TO_TEST" && \
-    time stage=configure ./ci/jobs/scripts/performance_compare.sh ; \
+    time ./ci/jobs/scripts/perf/download.sh "$REF_PR" "$REF_SHA" "$PR_TO_TEST" "$SHA_TO_TEST" && \
+    time stage=configure ./ci/jobs/scripts/perf/compare.sh ; \
 } 2>&1 | ts "$(printf '%%Y-%%m-%%d %%H:%%M:%%S\t')" | tee -a compare.log
 
 # Stop the servers to free memory. Normally they are restarted before getting

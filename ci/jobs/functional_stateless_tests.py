@@ -1,4 +1,5 @@
 import argparse
+import os
 import time
 from pathlib import Path
 
@@ -62,11 +63,12 @@ def main():
         if "/" in to:
             batch_num, total_batches = map(int, to.split("/"))
 
-    # os.environ["AZURE_CONNECTION_STRING"] = Shell.get_output(
-    #     f"aws ssm get-parameter --region us-east-1 --name azure_connection_string --with-decryption --output text --query Parameter.Value",
-    #     verbose=True,
-    #     strict=True
-    # )
+    # TODO: find a way to work with Azure secret so it's ok for local tests as well, for now keep azure disabled
+    os.environ["AZURE_CONNECTION_STRING"] = Shell.get_output(
+        f"aws ssm get-parameter --region us-east-1 --name azure_connection_string --with-decryption --output text --query Parameter.Value",
+        verbose=True,
+        strict=True,
+    )
 
     ch_path = args.ch_path
     assert Path(
@@ -103,8 +105,7 @@ def main():
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-disks",
             f"rm -rf {Settings.TEMP_DIR}/etc/ && mkdir -p {Settings.TEMP_DIR}/etc/clickhouse-client {Settings.TEMP_DIR}/etc/clickhouse-server",
             f"cp programs/server/config.xml programs/server/users.xml {Settings.TEMP_DIR}/etc/clickhouse-server/",
-            # TODO: find a way to work with Azure secret so it's ok for local tests as well, for now keep azure disabled
-            f"./tests/config/install.sh {Settings.TEMP_DIR}/etc/clickhouse-server {Settings.TEMP_DIR}/etc/clickhouse-client --s3-storage --no-azure",
+            f"./tests/config/install.sh {Settings.TEMP_DIR}/etc/clickhouse-server {Settings.TEMP_DIR}/etc/clickhouse-client --s3-storage",
             # clickhouse benchmark segfaults with --config-path, so provide client config by its default location
             f"cp {Settings.TEMP_DIR}/etc/clickhouse-client/* /etc/clickhouse-client/",
             # update_path_ch_config,
