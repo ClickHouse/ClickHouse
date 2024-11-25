@@ -1,11 +1,8 @@
 #include "ExternalIntegrations.h"
 
-#include <cctype>
 #include <cinttypes>
 #include <cstring>
 #include <ctime>
-#include <iostream>
-#include <string>
 #include <netdb.h>
 #include <unistd.h>
 #include <netinet/in.h>
@@ -14,42 +11,21 @@
 #include "Hugeint.h"
 #include "UHugeint.h"
 
+#include <IO/copyData.h>
+#include <Common/ShellCommand.h>
+
 namespace BuzzHouse
 {
-
-static bool executeCommand(const char * cmd, std::string & result)
-{
-    char buffer[1024];
-    FILE * pp = popen(cmd, "r");
-
-    if (!pp || errno)
-    {
-        strerror_r(errno, buffer, sizeof(buffer));
-        std::cerr << "popen error: " << buffer << std::endl;
-        return false;
-    }
-    std::unique_ptr<FILE, decltype(&pclose)> pipe(pp, pclose);
-    if (!pipe)
-    {
-        return false;
-    }
-    while (fgets(buffer, static_cast<int>(sizeof(buffer)), pipe.get()))
-    {
-        result += buffer;
-    }
-    return true;
-}
 
 bool MinIOIntegration::sendRequest(const std::string & resource)
 {
     struct tm ttm;
-    std::string sign;
     ssize_t nbytes = 0;
     bool created = false;
     int sock = -1, error = 0;
     char buffer[1024], found_ip[1024];
     const std::time_t time = std::time({});
-    DB::WriteBufferFromOwnString http_request, sign_cmd;
+    DB::WriteBufferFromOwnString http_request, sign_cmd, sign_out, sign_err;
     struct addrinfo hints = {}, *result = nullptr;
 
     hints.ai_family = AF_INET;
@@ -96,7 +72,6 @@ bool MinIOIntegration::sendRequest(const std::string & resource)
             }
             break;
         }
-        error = errno;
         close(sock);
         sock = -1;
     }
@@ -112,9 +87,15 @@ bool MinIOIntegration::sendRequest(const std::string & resource)
     sign_cmd << R"(printf "PUT\n\napplication/octet-stream\n)" << buffer << "\\n"
              << resource << "\""
              << " | openssl sha1 -hmac " << sc.password << " -binary | base64";
-    if (!executeCommand(sign_cmd.str().c_str(), sign))
+    auto res = DB::ShellCommand::execute(sign_cmd.str());
+    res->in.close();
+    copyData(res->out, sign_out);
+    copyData(res->err, sign_err);
+    res->wait();
+    if (!sign_err.str().empty())
     {
         close(sock);
+        std::cerr << "Error while executing shell command: " << sign_err.str() << std::endl;
         return false;
     }
 
@@ -123,7 +104,7 @@ bool MinIOIntegration::sendRequest(const std::string & resource)
                  << "Accept: */*\n"
                  << "Date: " << buffer << "\n"
                  << "Content-Type: application/octet-stream\n"
-                 << "Authorization: AWS " << sc.user << ":" << sign << "Content-Length: 0\n\n\n";
+                 << "Authorization: AWS " << sc.user << ":" << sign_out.str() << "Content-Length: 0\n\n\n";
 
     if (send(sock, http_request.str().c_str(), http_request.str().length(), 0) != static_cast<int>(http_request.str().length()))
     {
@@ -144,7 +125,7 @@ bool MinIOIntegration::sendRequest(const std::string & resource)
 #if defined USE_MONGODB && USE_MONGODB
 
 template <typename T>
-constexpr bool is_document = std::is_same<T, bsoncxx::v_noabi::builder::stream::document>::value;
+constexpr bool is_document = std::is_same_v<T, bsoncxx::v_noabi::builder::stream::document>;
 
 template <typename T>
 void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const std::string & cname, T & output, const SQLType * tp)

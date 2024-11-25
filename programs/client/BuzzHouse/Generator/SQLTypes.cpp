@@ -566,7 +566,7 @@ StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_t allowed_
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
-    if (/*non_nullable_type && */nopt < (non_nullable_type + 1))
+    if (/*non_nullable_type && */ nopt < (non_nullable_type + 1))
     {
         //non nullable
         const bool lcard = (allowed_types & allow_low_cardinality) != 0 && rg.nextMediumNumber() < 18;

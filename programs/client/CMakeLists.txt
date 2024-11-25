@@ -19,7 +19,7 @@ endif()
 list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE readpassphrase)
 
 if (ENABLE_BUZZHOUSE)
-    protobuf_generate_cpp(GRAMMAR_SRC GRAMMAR_HDR BuzzHouse/AST/SQLGrammar.proto)
+    add_subdirectory(BuzzHouse/Proto)
 
     list(APPEND CLICKHOUSE_CLIENT_SOURCES
         BuzzHouse/AST/SQLProtoStr.cpp
@@ -33,13 +33,9 @@ if (ENABLE_BUZZHOUSE)
         BuzzHouse/Generator/ExternalIntegrations.cpp
         BuzzHouse/Utils/Hugeint.cpp
         BuzzHouse/Utils/UHugeint.cpp
-        ${GRAMMAR_SRC}
     )
 
-    # Needed because of protobuf
-    set_source_files_properties(${GRAMMAR_SRC} PROPERTIES COMPILE_FLAGS "-Wno-reserved-identifier -Wno-extra-semi-stmt")
-
-    list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE ch_contrib::protoc)
+    list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE clickhouse_buzzhouse_proto)
     if (TARGET OpenSSL::Crypto)
         list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE OpenSSL::Crypto)
     endif()
@@ -61,8 +57,6 @@ if (ENABLE_BUZZHOUSE)
         BuzzHouse/AST
         BuzzHouse/Generator
         BuzzHouse/Utils
-        "${CMAKE_CURRENT_BINARY_DIR}"
-        "${CMAKE_CURRENT_BINARY_DIR}/BuzzHouse/AST"
     )
 endif()
 

@@ -212,8 +212,7 @@ int StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView 
         rg.nextString(buf, "'", true, rg.nextRandomUInt32() % 1009);
         cv->set_comment(buf);
     }
-    assert(!next.toption.has_value() || next.isMergeTreeFamily());
-    this->staged_views[tname] = std::move(next);
+    this->staged_views[tname] = next;
     return 0;
 }
 
@@ -2135,11 +2134,11 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
             const uint32_t dname = static_cast<uint32_t>(std::stoul(att.object().database().database().substr(1)));
 
             this->databases[dname]->attached = DetachStatus::ATTACHED;
-            for (auto it = this->tables.begin(); it != this->tables.end(); ++it)
+            for (auto & [_, table] : this->tables)
             {
-                if (it->second.db && it->second.db->dname == dname)
+                if (table.db && table.db->dname == dname)
                 {
-                    it->second.attached = std::max(it->second.attached, DetachStatus::DETACHED);
+                    table.attached = std::max(table.attached, DetachStatus::DETACHED);
                 }
             }
         }
@@ -2166,11 +2165,11 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
             const uint32_t dname = static_cast<uint32_t>(std::stoul(det.object().database().database().substr(1)));
 
             this->databases[dname]->attached = DetachStatus::DETACHED;
-            for (auto it = this->tables.begin(); it != this->tables.end(); ++it)
+            for (auto & [_, table] : this->tables)
             {
-                if (it->second.db && it->second.db->dname == dname)
+                if (table.db && table.db->dname == dname)
                 {
-                    it->second.attached = std::max(it->second.attached, DetachStatus::DETACHED);
+                    table.attached = std::max(table.attached, DetachStatus::DETACHED);
                 }
             }
         }

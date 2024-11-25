@@ -5,7 +5,7 @@
 # a) the new check is not controversial (this includes many checks in readability-* and google-*) or
 # b) too noisy (checks with > 100 new warnings are considered noisy, this includes e.g. cppcoreguidelines-*).
 
-HeaderFilterRegex: '^.*\/(base|src|programs|utils)\/.*(?<!\.pb)\.h(pp)?$'
+HeaderFilterRegex: '^.*/(base|src|programs|utils)/.*(h|hpp)$'
 
 Checks: [
   '*',

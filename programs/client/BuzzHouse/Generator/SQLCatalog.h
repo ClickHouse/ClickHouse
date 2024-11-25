@@ -79,8 +79,8 @@ public:
     uint32_t tname = 0;
     std::shared_ptr<SQLDatabase> db = nullptr;
     DetachStatus attached = ATTACHED;
-    std::optional<TableEngineOption> toption;
-    TableEngineValues teng;
+    std::optional<TableEngineOption> toption = std::nullopt;
+    TableEngineValues teng = TableEngineValues::Null;
 
     bool isMergeTreeFamily() const
     {
@@ -187,6 +187,7 @@ public:
 
 struct InsertEntry
 {
+public:
     std::optional<bool> nullable = std::nullopt;
     ColumnSpecial special = ColumnSpecial::NONE;
     uint32_t cname1 = 0;

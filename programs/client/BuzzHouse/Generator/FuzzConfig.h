@@ -4,7 +4,25 @@
 #include <fstream>
 #include <string>
 
-#include "simdjson.h"
+#if USE_SIMDJSON
+#    include <Common/JSONParsers/SimdJSONParser.h>
+namespace BuzzHouse
+{
+using JSONParserImpl = DB::SimdJSONParser;
+}
+#elif USE_RAPIDJSON
+#    include <Common/JSONParsers/RapidJSONParser.h>
+namespace BuzzHouse
+{
+using JSONParserImpl = DB::RapidJSONParser;
+}
+#else
+#    include <Common/JSONParsers/DummyJSONParser.h>
+namespace BuzzHouse
+{
+using JSONParserImpl = DB::DummyJSONParser;
+}
+#endif
 
 #include <Client/ClientBase.h>
 
@@ -68,41 +86,42 @@ public:
     }
 };
 
-static ServerCredentials loadServerCredentials(const simdjson::dom::object & jobj, const std::string & sname, const uint32_t & default_port)
+static ServerCredentials
+loadServerCredentials(const JSONParserImpl::Element & jobj, const std::string & sname, const uint32_t & default_port)
 {
     uint32_t port = default_port;
     std::string hostname = "localhost", unix_socket, user = "test", password, database = "test";
     std::filesystem::path query_log_file = std::filesystem::temp_directory_path() / (sname + ".sql");
 
-    for (const auto [key, value] : jobj)
+    for (const auto [key, value] : jobj.getObject())
     {
         if (key == "hostname")
         {
-            hostname = std::string(value.get_c_str());
+            hostname = std::string(value.getString());
         }
         else if (key == "port")
         {
-            port = static_cast<uint32_t>(value.get_int64());
+            port = static_cast<uint32_t>(value.getUInt64());
         }
         else if (key == "unix_socket")
         {
-            unix_socket = std::string(value.get_c_str());
+            unix_socket = std::string(value.getString());
         }
         else if (key == "user")
         {
-            user = std::string(value.get_c_str());
+            user = std::string(value.getString());
         }
         else if (key == "password")
         {
-            password = std::string(value.get_c_str());
+            password = std::string(value.getString());
         }
         else if (key == "database")
         {
-            database = std::string(value.get_c_str());
+            database = std::string(value.getString());
         }
         else if (key == "query_log_file")
         {
-            query_log_file = std::filesystem::path(std::string(value.get_c_str()));
+            query_log_file = std::filesystem::path(std::string(value.getString()));
         }
         else
         {
@@ -133,65 +152,76 @@ public:
 
     FuzzConfig(DB::ClientBase * c, const std::string & path) : cb(c)
     {
-        simdjson::dom::parser parser;
-        simdjson::dom::object object;
+        JSONParserImpl parser;
+        JSONParserImpl::Element object;
+        std::ifstream inputFile(path);
+        std::string fileContent;
 
         buf.reserve(512);
-        auto error = parser.load(path).get(object);
+        while (std::getline(inputFile, buf))
+        {
+            fileContent += buf;
+        }
+        inputFile.close();
+        auto error = parser.parse(fileContent, object);
         if (error)
         {
-            throw std::runtime_error("Could not parse BuzzHouse configuration file: " + parser.get_error_message());
+            throw std::runtime_error("Could not parse BuzzHouse JSON configuration file");
         }
-        for (const auto [key, value] : object)
+        else if (!object.isObject())
+        {
+            throw std::runtime_error("Parsed JSON value is not an object");
+        }
+        for (const auto [key, value] : object.getObject())
         {
             if (key == "db_file_path")
             {
-                db_file_path = std::filesystem::path(std::string(value.get_c_str()));
+                db_file_path = std::filesystem::path(std::string(value.getString()));
                 fuzz_out = db_file_path / "fuzz.data";
             }
             else if (key == "log_path")
             {
-                log_path = std::filesystem::path(std::string(value.get_c_str()));
+                log_path = std::filesystem::path(std::string(value.getString()));
             }
             else if (key == "read_log")
             {
-                read_log = value.get_bool();
+                read_log = value.getBool();
             }
             else if (key == "seed")
             {
-                seed = static_cast<uint32_t>(value.get_int64());
+                seed = static_cast<uint32_t>(value.getUInt64());
             }
             else if (key == "max_depth")
             {
-                max_depth = static_cast<uint32_t>(value.get_int64());
+                max_depth = static_cast<uint32_t>(value.getUInt64());
             }
             else if (key == "max_width")
             {
-                max_width = static_cast<uint32_t>(value.get_int64());
+                max_width = static_cast<uint32_t>(value.getUInt64());
             }
             else if (key == "max_databases")
             {
-                max_databases = static_cast<uint32_t>(value.get_int64());
+                max_databases = static_cast<uint32_t>(value.getUInt64());
             }
             else if (key == "max_functions")
             {
-                max_functions = static_cast<uint32_t>(value.get_int64());
+                max_functions = static_cast<uint32_t>(value.getUInt64());
             }
             else if (key == "max_tables")
             {
-                max_tables = static_cast<uint32_t>(value.get_int64());
+                max_tables = static_cast<uint32_t>(value.getUInt64());
             }
             else if (key == "max_views")
             {
-                max_views = static_cast<uint32_t>(value.get_int64());
+                max_views = static_cast<uint32_t>(value.getUInt64());
             }
             else if (key == "time_to_run")
             {
-                time_to_run = static_cast<uint32_t>(value.get_int64());
+                time_to_run = static_cast<uint32_t>(value.getUInt64());
             }
             else if (key == "fuzz_floating_points")
             {
-                fuzz_floating_points = value.get_bool();
+                fuzz_floating_points = value.getBool();
             }
             else if (key == "mysql")
             {
