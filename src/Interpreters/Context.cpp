@@ -303,6 +303,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int CLUSTER_DOESNT_EXIST;
     extern const int SET_NON_GRANTED_ROLE;
+    extern const int UNKNOWN_DISK;
     extern const int UNKNOWN_READ_METHOD;
 }
 
@@ -360,7 +361,7 @@ struct ContextSharedPart : boost::noncopyable
     ConfigurationPtr config TSA_GUARDED_BY(mutex);           /// Global configuration settings.
     String tmp_path TSA_GUARDED_BY(mutex);                   /// Path to the temporary files that occur when processing the request.
 
-    std::shared_ptr<IDisk> db_disk;
+    std::shared_ptr<IDisk> db_disk TSA_GUARDED_BY(mutex);
 
     /// All temporary files that occur when processing the requests accounted here.
     /// Child scopes for more fine-grained accounting are created per user/query/etc.
@@ -558,10 +559,7 @@ struct ContextSharedPart : boost::noncopyable
 #endif
 
     ContextSharedPart()
-        : db_disk(std::make_shared<DiskLocal>("shared", ""))
-        , access_control(std::make_unique<AccessControl>())
-        , global_overcommit_tracker(&process_list)
-        , macros(std::make_unique<Macros>())
+        : access_control(std::make_unique<AccessControl>()), global_overcommit_tracker(&process_list), macros(std::make_unique<Macros>())
     {
         /// TODO: make it singleton (?)
         static std::atomic<size_t> num_calls{0};
@@ -1135,7 +1133,35 @@ String Context::getFilesystemCachesPath() const
 
 std::shared_ptr<IDisk> Context::getDatabaseDisk() const
 {
-    return shared->db_disk;
+    {
+        SharedLockGuard lock(shared->mutex);
+        if (shared->db_disk)
+            return shared->db_disk;
+    }
+
+
+    std::lock_guard lock(shared->mutex);
+    if (shared->db_disk)
+        return shared->db_disk;
+
+    const auto & config = shared->getConfigRefWithLock(lock);
+
+    if (!config.has("database_disk.disk"))
+    {
+        LOG_INFO(shared->log, "No database_disk.disk configured, create one with DiskLocal");
+        return shared->db_disk = std::make_shared<DiskLocal>("database", "");
+    }
+
+    auto disk_name = config.getString("database_disk.disk");
+    const auto & disk_map = getDisksMap();
+
+    auto it = disk_map.find(disk_name);
+    if (it == disk_map.end())
+        throw Exception(ErrorCodes::UNKNOWN_DISK, "No disk {}", backQuote(disk_name));
+
+    LOG_INFO(shared->log, "Set db_disk to {}", backQuote(disk_name));
+    chassert(it->second);
+    return shared->db_disk = it->second;
 }
 
 String Context::getFilesystemCacheUser() const
@@ -1263,23 +1289,21 @@ try
 {
     LOG_DEBUG(log, "Setting up {} to store temporary data in it", path);
 
-    auto db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
-
-    if (db_disk->existsDirectory(path))
+    if (fs::exists(path))
     {
         /// Clearing old temporary files.
-        for (const auto dir_it = db_disk->iterateDirectory(path); dir_it->isValid(); dir_it->next())
+        fs::directory_iterator dir_end;
+        for (fs::directory_iterator it(path); it != dir_end; ++it)
         {
-            auto file_path = fs::path(dir_it->path());
-            if (db_disk->existsFile(file_path))
+            if (it->is_regular_file())
             {
-                if (startsWith(file_path.filename(), "tmp"))
+                if (startsWith(it->path().filename(), "tmp"))
                 {
-                    LOG_DEBUG(log, "Removing old temporary file {}", file_path.string());
-                    db_disk->removeFileIfExists(file_path);
+                    LOG_DEBUG(log, "Removing old temporary file {}", it->path().string());
+                    fs::remove(it->path());
                 }
                 else
-                    LOG_DEBUG(log, "Found unknown file in temporary path {}", file_path.string());
+                    LOG_DEBUG(log, "Found unknown file in temporary path {}", it->path().string());
             }
             /// We skip directories (for example, 'http_buffers' - it's used for buffering of the results) and all other file types.
         }
