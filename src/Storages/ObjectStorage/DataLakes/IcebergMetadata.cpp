@@ -352,7 +352,7 @@ std::pair<NamesAndTypesList, Int32> parseTableSchema(
                 LOG_WARNING(
                     metadata_logger,
                     "Iceberg table schema was parsed using v2 specification, but it was impossible to parse it using v1 specification. Be "
-                    "aware that you Iceberg writing Engine violates Iceberg specification. Error during parsing {}",
+                    "aware that you Iceberg writing engine violates Iceberg specification. Error during parsing {}",
                     first_error.displayText());
             }
             catch (const Exception & second_error)
@@ -362,9 +362,6 @@ std::pair<NamesAndTypesList, Int32> parseTableSchema(
                     "Cannot parse Iceberg table schema both with v1 and v2 methods. Old method error: {}. New method error: {}",
                     first_error.displayText(),
                     second_error.displayText());
-            }
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, e.displayText());
             }
         }
     }
@@ -563,7 +560,13 @@ Strings IcebergMetadata::getDataFiles() const
         /// Manifest file should always have table schema in avro file metadata. By now we don't support tables with evolved schema,
         /// so we should check if all manifest files have the same schema as in table metadata.
         auto avro_metadata = manifest_file_reader->metadata();
-        std::vector<uint8_t> schema_json = avro_metadata["schema"];
+        auto avro_schema_it = avro_metadata.find("schema");
+        if (avro_schema_it == avro_metadata.end())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot read Iceberg table: manifest file {} doesn't have table schema in its metadata",
+                manifest_file);
+        std::vector<uint8_t> schema_json = avro_schema_it->second;
         String schema_json_string = String(reinterpret_cast<char *>(schema_json.data()), schema_json.size());
         Poco::JSON::Parser parser;
         Poco::Dynamic::Var json = parser.parse(schema_json_string);
