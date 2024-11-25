@@ -9,6 +9,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int INVALID_GRANT;
+}
+
 namespace
 {
     void formatOptions(bool grant_option, bool is_partial_revoke, String & result)
@@ -211,18 +217,43 @@ AccessRightsElement::AccessRightsElement(
 {
 }
 
-void AccessRightsElement::eraseNonGrantable()
+AccessFlags AccessRightsElement::getGrantableFlags() const
 {
     if (isGlobalWithParameter() && !anyParameter())
-        access_flags &= AccessFlags::allFlagsGrantableOnGlobalWithParameterLevel();
+        return access_flags & AccessFlags::allFlagsGrantableOnGlobalWithParameterLevel();
     else if (!anyColumn())
-        access_flags &= AccessFlags::allFlagsGrantableOnColumnLevel();
+        return access_flags & AccessFlags::allFlagsGrantableOnColumnLevel();
     else if (!anyTable())
-        access_flags &= AccessFlags::allFlagsGrantableOnTableLevel();
+        return access_flags & AccessFlags::allFlagsGrantableOnTableLevel();
     else if (!anyDatabase())
-        access_flags &= AccessFlags::allFlagsGrantableOnDatabaseLevel();
+        return access_flags & AccessFlags::allFlagsGrantableOnDatabaseLevel();
     else
-        access_flags &= AccessFlags::allFlagsGrantableOnGlobalLevel();
+        return access_flags & AccessFlags::allFlagsGrantableOnGlobalLevel();
+}
+
+void AccessRightsElement::throwIfNotGrantable() const
+{
+    if (empty())
+        return;
+    auto grantable_flags = getGrantableFlags();
+    if (grantable_flags)
+        return;
+
+    if (!anyColumn())
+        throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted on the column level", access_flags.toString());
+    if (!anyTable())
+        throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted on the table level", access_flags.toString());
+    if (!anyDatabase())
+        throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted on the database level", access_flags.toString());
+    if (!anyParameter())
+        throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted on the global with parameter level", access_flags.toString());
+
+    throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted", access_flags.toString());
+}
+
+void AccessRightsElement::eraseNotGrantable()
+{
+    access_flags = getGrantableFlags();
 }
 
 void AccessRightsElement::replaceEmptyDatabase(const String & current_database)
@@ -251,11 +282,17 @@ bool AccessRightsElements::sameOptions() const
     return (size() < 2) || std::all_of(std::next(begin()), end(), [this](const AccessRightsElement & e) { return e.sameOptions(front()); });
 }
 
-void AccessRightsElements::eraseNonGrantable()
+void AccessRightsElements::throwIfNotGrantable() const
+{
+    for (const auto & element : *this)
+        element.throwIfNotGrantable();
+}
+
+void AccessRightsElements::eraseNotGrantable()
 {
     std::erase_if(*this, [](AccessRightsElement & element)
     {
-        element.eraseNonGrantable();
+        element.eraseNotGrantable();
         return element.empty();
     });
 }
@@ -268,5 +305,46 @@ void AccessRightsElements::replaceEmptyDatabase(const String & current_database)
 
 String AccessRightsElements::toString() const { return toStringImpl(*this, true); }
 String AccessRightsElements::toStringWithoutOptions() const { return toStringImpl(*this, false); }
+
+void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer, bool hilite) const
+{
+    bool no_output = true;
+    for (size_t i = 0; i != size(); ++i)
+    {
+        const auto & element = (*this)[i];
+        auto keywords = element.access_flags.toKeywords();
+        if (keywords.empty() || (!element.anyColumn() && element.columns.empty()))
+            continue;
+
+        for (const auto & keyword : keywords)
+        {
+            if (!std::exchange(no_output, false))
+                buffer << ", ";
+
+            buffer << (hilite ? IAST::hilite_keyword : "") << keyword << (hilite ? IAST::hilite_none : "");
+            if (!element.anyColumn())
+                element.formatColumnNames(buffer);
+        }
+
+        bool next_element_on_same_db_and_table = false;
+        if (i != size() - 1)
+        {
+            const auto & next_element = (*this)[i + 1];
+            if (element.sameDatabaseAndTableAndParameter(next_element))
+            {
+                next_element_on_same_db_and_table = true;
+            }
+        }
+
+        if (!next_element_on_same_db_and_table)
+        {
+            buffer << " ";
+            element.formatONClause(buffer, hilite);
+        }
+    }
+
+    if (no_output)
+        buffer << (hilite ? IAST::hilite_keyword : "") << "USAGE ON " << (hilite ? IAST::hilite_none : "") << "*.*";
+}
 
 }

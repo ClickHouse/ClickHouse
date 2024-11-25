@@ -76,7 +76,7 @@ struct HashTableNoState
 template <typename T>
 inline bool bitEquals(T a, T b)
 {
-    if constexpr (std::is_floating_point_v<T>)
+    if constexpr (is_floating_point<T>)
         /// Note that memcmp with constant size is a compiler builtin.
         return 0 == memcmp(&a, &b, sizeof(T)); /// NOLINT
     else
@@ -172,7 +172,7 @@ struct HashTableCell
     const value_type & getValue() const { return key; }
 
     /// Get the key (internally).
-    static const Key & getKey(const value_type & value) { return value; }
+    static const Key & getKey(const value_type & value) { return value; }  /// NOLINT(bugprone-return-const-ref-from-parameter)
 
     /// Are the keys at the cells equal?
     bool keyEquals(const Key & key_) const { return bitEquals(key, key_); }
@@ -658,16 +658,11 @@ protected:
     {
         if (!std::is_trivially_destructible_v<Cell>)
         {
-            for (iterator it = begin(), it_end = end(); it != it_end; ++it)
+            for (iterator it = begin(), it_end = end(); it != it_end;)
             {
-                it.ptr->~Cell();
-                /// In case of poison_in_dtor=1 it will be poisoned,
-                /// but it maybe used later, during iteration.
-                ///
-                /// NOTE, that technically this is UB [1], but OK for now.
-                ///
-                ///   [1]: https://github.com/google/sanitizers/issues/854#issuecomment-329661378
-                __msan_unpoison(it.ptr, sizeof(*it.ptr));
+                auto ptr = it.ptr;
+                ++it;
+                ptr->~Cell();
             }
 
             /// Everything had been destroyed in the loop above, reset the flag

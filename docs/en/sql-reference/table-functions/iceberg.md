@@ -72,3 +72,4 @@ Table function `iceberg` is an alias to `icebergS3` now.
 **See Also**
 
 - [Iceberg engine](/docs/en/engines/table-engines/integrations/iceberg.md)
+- [Iceberg cluster table function](/docs/en/sql-reference/table-functions/icebergCluster.md)

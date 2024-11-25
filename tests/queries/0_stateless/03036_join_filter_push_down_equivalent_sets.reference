@@ -3,7 +3,7 @@
 EXPLAIN header = 1, actions = 1
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs INNER JOIN test_table_2 AS rhs ON lhs.id = rhs.id
 WHERE lhs.id = 5
-SETTINGS query_plan_join_inner_table_selection = 'right'
+SETTINGS query_plan_join_swap_table = 'false'
 ;
 Expression ((Project names + (Projection + )))
 Header: id UInt64
@@ -72,7 +72,7 @@ SELECT '--';
 EXPLAIN header = 1, actions = 1
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs INNER JOIN test_table_2 AS rhs ON lhs.id = rhs.id
 WHERE rhs.id = 5
-SETTINGS query_plan_join_inner_table_selection = 'right';
+SETTINGS query_plan_join_swap_table = 'false';
 ;
 Expression ((Project names + (Projection + )))
 Header: id UInt64
@@ -141,7 +141,7 @@ SELECT '--';
 EXPLAIN header = 1, actions = 1
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs INNER JOIN test_table_2 AS rhs ON lhs.id = rhs.id
 WHERE lhs.id = 5 AND rhs.id = 6
-SETTINGS query_plan_join_inner_table_selection = 'right'
+SETTINGS query_plan_join_swap_table = 'false'
 ;
 Expression ((Project names + (Projection + )))
 Header: id UInt64
@@ -169,17 +169,21 @@ Positions: 4 1 0 2
     Filter (( + (JOIN actions + Change column names to column identifiers)))
     Header: __table1.id UInt64
             __table1.value String
-    Filter column: and(equals(__table1.id, 5_UInt8), equals(__table1.id, 6_UInt8)) (removed)
+    AND column: equals(__table1.id, 5_UInt8)
     Actions: INPUT : 0 -> id UInt64 : 0
-             INPUT : 1 -> value String : 1
+             COLUMN Const(UInt8) -> 5_UInt8 UInt8 : 1
+             FUNCTION equals(id : 0, 5_UInt8 :: 1) -> equals(__table1.id, 5_UInt8) UInt8 : 2
+    Positions: 2 0 2
+    Filter column: and(equals(__table1.id, 5_UInt8), equals(__table1.id, 6_UInt8)) (removed)
+    Actions: INPUT : 2 -> value String : 0
+             INPUT : 1 -> id UInt64 : 1
              COLUMN Const(UInt8) -> 6_UInt8 UInt8 : 2
-             COLUMN Const(UInt8) -> 5_UInt8 UInt8 : 3
-             ALIAS id : 0 -> __table1.id UInt64 : 4
-             ALIAS value :: 1 -> __table1.value String : 5
-             FUNCTION equals(id : 0, 6_UInt8 :: 2) -> equals(__table1.id, 6_UInt8) UInt8 : 1
-             FUNCTION equals(id :: 0, 5_UInt8 :: 3) -> equals(__table1.id, 5_UInt8) UInt8 : 2
-             FUNCTION and(equals(__table1.id, 5_UInt8) :: 2, equals(__table1.id, 6_UInt8) :: 1) -> and(equals(__table1.id, 5_UInt8), equals(__table1.id, 6_UInt8)) UInt8 : 3
-    Positions: 3 4 5
+             INPUT : 0 -> equals(__table1.id, 5_UInt8) UInt8 : 3
+             ALIAS value :: 0 -> __table1.value String : 4
+             ALIAS id : 1 -> __table1.id UInt64 : 0
+             FUNCTION equals(id :: 1, 6_UInt8 :: 2) -> equals(__table1.id, 6_UInt8) UInt8 : 5
+             FUNCTION and(equals(__table1.id, 5_UInt8) :: 3, equals(__table1.id, 6_UInt8) :: 5) -> and(equals(__table1.id, 5_UInt8), equals(__table1.id, 6_UInt8)) UInt8 : 2
+    Positions: 2 0 4
       ReadFromMergeTree (default.test_table_1)
       Header: id UInt64
               value String
@@ -189,17 +193,21 @@ Positions: 4 1 0 2
     Filter (( + (JOIN actions + Change column names to column identifiers)))
     Header: __table2.id UInt64
             __table2.value String
-    Filter column: and(equals(__table2.id, 6_UInt8), equals(__table2.id, 5_UInt8)) (removed)
+    AND column: equals(__table2.id, 6_UInt8)
     Actions: INPUT : 0 -> id UInt64 : 0
-             INPUT : 1 -> value String : 1
+             COLUMN Const(UInt8) -> 6_UInt8 UInt8 : 1
+             FUNCTION equals(id : 0, 6_UInt8 :: 1) -> equals(__table2.id, 6_UInt8) UInt8 : 2
+    Positions: 2 0 2
+    Filter column: and(equals(__table2.id, 6_UInt8), equals(__table2.id, 5_UInt8)) (removed)
+    Actions: INPUT : 2 -> value String : 0
+             INPUT : 1 -> id UInt64 : 1
              COLUMN Const(UInt8) -> 5_UInt8 UInt8 : 2
-             COLUMN Const(UInt8) -> 6_UInt8 UInt8 : 3
-             ALIAS id : 0 -> __table2.id UInt64 : 4
-             ALIAS value :: 1 -> __table2.value String : 5
-             FUNCTION equals(id : 0, 5_UInt8 :: 2) -> equals(__table2.id, 5_UInt8) UInt8 : 1
-             FUNCTION equals(id :: 0, 6_UInt8 :: 3) -> equals(__table2.id, 6_UInt8) UInt8 : 2
-             FUNCTION and(equals(__table2.id, 6_UInt8) :: 2, equals(__table2.id, 5_UInt8) :: 1) -> and(equals(__table2.id, 6_UInt8), equals(__table2.id, 5_UInt8)) UInt8 : 3
-    Positions: 3 4 5
+             INPUT : 0 -> equals(__table2.id, 6_UInt8) UInt8 : 3
+             ALIAS value :: 0 -> __table2.value String : 4
+             ALIAS id : 1 -> __table2.id UInt64 : 0
+             FUNCTION equals(id :: 1, 5_UInt8 :: 2) -> equals(__table2.id, 5_UInt8) UInt8 : 5
+             FUNCTION and(equals(__table2.id, 6_UInt8) :: 3, equals(__table2.id, 5_UInt8) :: 5) -> and(equals(__table2.id, 6_UInt8), equals(__table2.id, 5_UInt8)) UInt8 : 2
+    Positions: 2 0 4
       ReadFromMergeTree (default.test_table_2)
       Header: id UInt64
               value String
@@ -213,7 +221,7 @@ SELECT '--';
 EXPLAIN header = 1, actions = 1
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs LEFT JOIN test_table_2 AS rhs ON lhs.id = rhs.id
 WHERE lhs.id = 5
-SETTINGS query_plan_join_inner_table_selection = 'right'
+SETTINGS query_plan_join_swap_table = 'false'
 ;
 Expression ((Project names + (Projection + )))
 Header: id UInt64
@@ -282,7 +290,7 @@ SELECT '--';
 EXPLAIN header = 1, actions = 1
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs LEFT JOIN test_table_2 AS rhs ON lhs.id = rhs.id
 WHERE rhs.id = 5
-SETTINGS query_plan_join_inner_table_selection = 'right'
+SETTINGS query_plan_join_swap_table = 'false'
 ;
 Expression ((Project names + Projection))
 Header: id UInt64
@@ -358,7 +366,7 @@ SELECT '--';
 EXPLAIN header = 1, actions = 1
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs RIGHT JOIN test_table_2 AS rhs ON lhs.id = rhs.id
 WHERE lhs.id = 5
-SETTINGS query_plan_join_inner_table_selection = 'right'
+SETTINGS query_plan_join_swap_table = 'false'
 ;
 Expression ((Project names + Projection))
 Header: id UInt64
@@ -434,7 +442,7 @@ SELECT '--';
 EXPLAIN header = 1, actions = 1
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs RIGHT JOIN test_table_2 AS rhs ON lhs.id = rhs.id
 WHERE rhs.id = 5
-SETTINGS query_plan_join_inner_table_selection = 'right'
+SETTINGS query_plan_join_swap_table = 'false'
 ;
 Expression ((Project names + (Projection + )))
 Header: id UInt64
@@ -503,7 +511,7 @@ SELECT '--';
 EXPLAIN header = 1, actions = 1
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs FULL JOIN test_table_2 AS rhs ON lhs.id = rhs.id
 WHERE lhs.id = 5
-SETTINGS query_plan_join_inner_table_selection = 'right'
+SETTINGS query_plan_join_swap_table = 'false'
 ;
 Expression ((Project names + Projection))
 Header: id UInt64
@@ -579,7 +587,7 @@ SELECT '--';
 EXPLAIN header = 1, actions = 1
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs FULL JOIN test_table_2 AS rhs ON lhs.id = rhs.id
 WHERE rhs.id = 5
-SETTINGS query_plan_join_inner_table_selection = 'right'
+SETTINGS query_plan_join_swap_table = 'false'
 ;
 Expression ((Project names + Projection))
 Header: id UInt64
@@ -655,7 +663,7 @@ SELECT '--';
 EXPLAIN header = 1, actions = 1
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs FULL JOIN test_table_2 AS rhs ON lhs.id = rhs.id
 WHERE lhs.id = 5 AND rhs.id = 6
-SETTINGS query_plan_join_inner_table_selection = 'right'
+SETTINGS query_plan_join_swap_table = 'false'
 ;
 Expression ((Project names + Projection))
 Header: id UInt64
@@ -676,17 +684,21 @@ Positions: 4 1 0 2
           __table1.value String
           __table2.id UInt64
           __table2.value String
-  Filter column: and(equals(__table1.id, 5_UInt8), equals(__table2.id, 6_UInt8)) (removed)
+  AND column: equals(__table1.id, 5_UInt8)
   Actions: INPUT : 0 -> __table1.id UInt64 : 0
-           INPUT :: 1 -> __table1.value String : 1
-           INPUT : 2 -> __table2.id UInt64 : 2
-           INPUT :: 3 -> __table2.value String : 3
-           COLUMN Const(UInt8) -> 5_UInt8 UInt8 : 4
-           COLUMN Const(UInt8) -> 6_UInt8 UInt8 : 5
-           FUNCTION equals(__table1.id : 0, 5_UInt8 :: 4) -> equals(__table1.id, 5_UInt8) UInt8 : 6
-           FUNCTION equals(__table2.id : 2, 6_UInt8 :: 5) -> equals(__table2.id, 6_UInt8) UInt8 : 4
-           FUNCTION and(equals(__table1.id, 5_UInt8) :: 6, equals(__table2.id, 6_UInt8) :: 4) -> and(equals(__table1.id, 5_UInt8), equals(__table2.id, 6_UInt8)) UInt8 : 5
-  Positions: 5 0 1 2 3
+           COLUMN Const(UInt8) -> 5_UInt8 UInt8 : 1
+           FUNCTION equals(__table1.id : 0, 5_UInt8 :: 1) -> equals(__table1.id, 5_UInt8) UInt8 : 2
+  Positions: 2 0 2
+  Filter column: and(equals(__table1.id, 5_UInt8), equals(__table2.id, 6_UInt8)) (removed)
+  Actions: INPUT :: 1 -> __table1.id UInt64 : 0
+           INPUT :: 2 -> __table1.value String : 1
+           INPUT : 3 -> __table2.id UInt64 : 2
+           INPUT :: 4 -> __table2.value String : 3
+           COLUMN Const(UInt8) -> 6_UInt8 UInt8 : 4
+           INPUT : 0 -> equals(__table1.id, 5_UInt8) UInt8 : 5
+           FUNCTION equals(__table2.id : 2, 6_UInt8 :: 4) -> equals(__table2.id, 6_UInt8) UInt8 : 6
+           FUNCTION and(equals(__table1.id, 5_UInt8) :: 5, equals(__table2.id, 6_UInt8) :: 6) -> and(equals(__table1.id, 5_UInt8), equals(__table2.id, 6_UInt8)) UInt8 : 4
+  Positions: 4 0 1 2 3
     Join (JOIN FillRightFirst)
     Header: __table1.id UInt64
             __table1.value String
