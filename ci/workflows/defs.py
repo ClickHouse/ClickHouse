@@ -246,6 +246,7 @@ class JobNames:
     STATELESS = "Stateless tests"
     STATEFUL = "Stateful tests"
     STRESS = "Stress tests"
+    PERFORMANCE = "Performance tests"
 
 
 class ToolSet:
@@ -568,4 +569,19 @@ class Jobs:
         requires=[
             [ArtifactNames.DEB_ARM_RELEASE],
         ],
+    )
+
+    performance_test_job = Job.Config(
+        name=JobNames.PERFORMANCE,
+        runs_on=[RunnerLabels.FUNC_TESTER_ARM],
+        command="./ci/jobs/scripts/performance_test.sh",
+        run_in_docker="clickhouse/stateless-test",
+        requires=[ArtifactNames.CH_ARM_RELEASE]
+        # digest_config=Job.CacheDigestConfig(
+        #     include_paths=[
+        #         "./ci/jobs/fast_test.py",
+        #         "./tests/queries/0_stateless/",
+        #         "./src",
+        #     ],
+        # ),
     )
