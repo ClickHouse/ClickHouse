@@ -460,18 +460,11 @@ struct LowCardinalityComparator
 
 template <typename IndexColumn>
 void ColumnLowCardinality::updatePermutationWithIndexType(
-    IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
-    size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
+    IColumn::PermutationSortStability stability, size_t limit, const PaddedPODArray<UInt64> & position_by_index,
+    IColumn::Permutation & res, EqualRanges & equal_ranges) const
 {
     /// Cast indexes column to the real type so that compareAt and getUInt methods can be inlined.
     const IndexColumn * real_indexes = assert_cast<const IndexColumn *>(&getIndexes());
-
-    IColumn::Permutation dict_perm;
-    getDictionary().getNestedColumn()->getPermutation(direction, stability, 0, nan_direction_hint, dict_perm);
-
-    PaddedPODArray<UInt64> position_by_index(dict_perm.size());
-    for (size_t i = 0; i < dict_perm.size(); ++i)
-        position_by_index[dict_perm[i]] = i;
 
     auto equal_comparator = [real_indexes](size_t lhs, size_t rhs)
     {
@@ -488,20 +481,27 @@ void ColumnLowCardinality::updatePermutationWithIndexType(
 void ColumnLowCardinality::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                                         size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
 {
+    IColumn::Permutation dict_perm;
+    getDictionary().getNestedColumn()->getPermutation(direction, stability, 0, nan_direction_hint, dict_perm);
+
+    PaddedPODArray<UInt64> position_by_index(dict_perm.size());
+    for (size_t i = 0; i < dict_perm.size(); ++i)
+        position_by_index[dict_perm[i]] = i;
+
     /// Dispatch by index column type.
     switch (idx.getSizeOfIndexType())
     {
         case sizeof(UInt8):
-            updatePermutationWithIndexType<ColumnUInt8>(direction, stability, limit, nan_direction_hint, res, equal_ranges);
+            updatePermutationWithIndexType<ColumnUInt8>(stability, limit, position_by_index, res, equal_ranges);
             return;
         case sizeof(UInt16):
-            updatePermutationWithIndexType<ColumnUInt16>(direction, stability, limit, nan_direction_hint, res, equal_ranges);
+            updatePermutationWithIndexType<ColumnUInt16>(stability, limit, position_by_index, res, equal_ranges);
             return;
         case sizeof(UInt32):
-            updatePermutationWithIndexType<ColumnUInt32>(direction, stability, limit, nan_direction_hint, res, equal_ranges);
+            updatePermutationWithIndexType<ColumnUInt32>(stability, limit, position_by_index, res, equal_ranges);
             return;
         case sizeof(UInt64):
-            updatePermutationWithIndexType<ColumnUInt64>(direction, stability, limit, nan_direction_hint, res, equal_ranges);
+            updatePermutationWithIndexType<ColumnUInt64>(stability, limit, position_by_index, res, equal_ranges);
             return;
         default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for low cardinality column.");
     }

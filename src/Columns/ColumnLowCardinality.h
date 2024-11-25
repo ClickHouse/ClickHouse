@@ -392,8 +392,8 @@ private:
 
     template <typename IndexColumn>
     void updatePermutationWithIndexType(
-        IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
-        size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const;
+        IColumn::PermutationSortStability stability, size_t limit, const PaddedPODArray<UInt64> & position_by_index,
+        IColumn::Permutation & res, EqualRanges & equal_ranges) const;
 };
 
 bool isColumnLowCardinalityNullable(const IColumn & column);
