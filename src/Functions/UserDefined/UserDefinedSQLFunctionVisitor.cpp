@@ -54,6 +54,14 @@ void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast, ContextPtr context_)
         if (new_ptr != old_ptr)
             ast->updatePointerToChild(old_ptr, new_ptr);
     }
+
+    if (const auto * function = ast->template as<ASTFunction>())
+    {
+        std::unordered_set<std::string> udf_in_replace_process;
+        auto replace_result = tryToReplaceFunction(*function, udf_in_replace_process);
+        if (replace_result)
+            ast = replace_result;
+    }
 }
 
 void UserDefinedSQLFunctionVisitor::visit(IAST * ast, ContextPtr context_)
