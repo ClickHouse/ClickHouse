@@ -1,4 +1,4 @@
-# Approximate Nearest Neighbor Search Indexes [experimental]
+# Approximate Nearest Neighbor Search with Vector Similarity Indexes [experimental]
 
 Nearest neighborhood search is the problem of finding the M closest vectors to a given vector in an N-dimensional vector space. The most
 straightforward approach to solve this problem is an exhaustive (brute-force) search which computes the distance between the reference
