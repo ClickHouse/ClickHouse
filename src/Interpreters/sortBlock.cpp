@@ -16,6 +16,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_COLLATION;
+    extern const int LOGICAL_ERROR;
 }
 
 /// Column with description for sort
@@ -285,7 +286,7 @@ void checkSortedWithPermutationImpl(size_t rows, Comparator compare, UInt64 limi
 
         if (compare(current_row, previous_row))
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Rows are not sorted with permuation, position {}, previous_row index {}, current_row index {}", i, previous_row, current_row);
+                "Rows are not sorted with permutation, position {}, previous_row index {}, current_row index {}", i, previous_row, current_row);
     }
 }
 
