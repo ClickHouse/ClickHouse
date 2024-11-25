@@ -140,7 +140,7 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
             message.text = fmt::format("ZooKeeper error when loading config from '{}' config: {}", config_path, message.text);
             if (throw_on_error)
                 throw Exception(ErrorCodes::CANNOT_RELOAD_CONFIG, message);
-            
+
             LOG_ERROR(log, message)
             return std::nullopt;
         }
@@ -150,7 +150,7 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
             message.text = fmt::format("Error loading config from '{}' config: {}", config_path, message.text);
             if (throw_on_error)
                 throw Exception(ErrorCodes::CANNOT_RELOAD_CONFIG, message);
-            
+
             LOG_ERROR(log, message)
             return std::nullopt;
         }
@@ -179,7 +179,7 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
             message.text = fmt::format("Error updating configuration from '{}' config: {}", config_path, message.text);
             if (throw_on_error)
                 throw Exception(ErrorCodes::CANNOT_RELOAD_CONFIG, message);
-            
+
             LOG_ERROR(log, message)
             return std::nullopt;
         }
