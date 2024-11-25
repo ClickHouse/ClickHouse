@@ -63,7 +63,7 @@ install_packages previous_release_package_folder
 function save_settings_clean()
 {
   local out=$1 && shift
-  script -q -c "clickhouse-local -q \"select * from system.settings into outfile '$out'\"" --log-out /dev/null
+  script -q -c "clickhouse-local --implicit-select 0 -q \"select * from system.settings into outfile '$out'\"" --log-out /dev/null
 }
 
 # We save the (numeric) version of the old server to compare setting changes between the 2
@@ -147,7 +147,6 @@ then
   FROM new_settings
   LEFT JOIN old_settings ON new_settings.name = old_settings.name
   WHERE (new_value != old_value)
-      AND NOT (startsWith(new_value, 'auto(') AND old_value LIKE '%auto(%')
       AND (name NOT IN (
       SELECT arrayJoin(tupleElement(changes, 'name'))
       FROM

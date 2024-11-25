@@ -747,6 +747,7 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     /// so let's reconstruct.
     ObjectStorageQueueSettings settings;
     const auto & table_metadata = getTableMetadata();
+    settings[ObjectStorageQueueSetting::mode] = table_metadata.mode;
     settings[ObjectStorageQueueSetting::after_processing] = table_metadata.after_processing;
     settings[ObjectStorageQueueSetting::keeper_path] = zk_path;
     settings[ObjectStorageQueueSetting::loading_retries] = table_metadata.loading_retries;
@@ -764,6 +765,7 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     settings[ObjectStorageQueueSetting::max_processed_files_before_commit] = commit_settings.max_processed_files_before_commit;
     settings[ObjectStorageQueueSetting::max_processed_rows_before_commit] = commit_settings.max_processed_rows_before_commit;
     settings[ObjectStorageQueueSetting::max_processed_bytes_before_commit] = commit_settings.max_processed_bytes_before_commit;
+    settings[ObjectStorageQueueSetting::max_processing_time_sec_before_commit] = commit_settings.max_processing_time_sec_before_commit;
     return settings;
 }
 
