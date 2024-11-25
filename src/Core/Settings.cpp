@@ -1800,7 +1800,7 @@ Possible values:
 
 - 0 — Disabled.
 - 1 — Enabled.
-)", 1) \
+)", 0) \
     DECLARE(Int64, http_zlib_compression_level, 3, R"(
 Sets the level of data compression in the response to an HTTP request if [enable_http_compression = 1](#enable_http_compression).
 
@@ -1923,6 +1923,13 @@ See also:
     DECLARE(Bool, single_join_prefer_left_table, true, R"(
 For single JOIN in case of identifier ambiguity prefer left table
 )", IMPORTANT) \
+    \
+DECLARE(BoolAuto, query_plan_join_swap_table, Field("auto"), R"(
+    Determine which side of the join should be the build table (also called inner, the one inserted into the hash table for a hash join) in the query plan. This setting is supported only for `ALL` join strictness with the `JOIN ON` clause. Possible values are:
+    - 'auto': Let the planner decide which table to use as the build table.
+    - 'false': Never swap tables (the right table is the build table).
+    - 'true': Always swap tables (the left table is the build table).
+)", 0) \
     \
     DECLARE(UInt64, preferred_block_size_bytes, 1000000, R"(
 This setting adjusts the data block size for query processing and represents additional fine-tuning to the more rough 'max_block_size' setting. If the columns are large and with 'max_block_size' rows the block size is likely to be larger than the specified amount of bytes, its size will be lowered for better CPU cache locality.
@@ -5782,7 +5789,7 @@ Allow JSON data type
     DECLARE(Bool, allow_experimental_codecs, false, R"(
 If it is set to true, allow to specify experimental compression codecs (but we don't have those yet and this option does nothing).
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_shared_set_join, true, R"(
+    DECLARE(Bool, allow_experimental_shared_set_join, false, R"(
 Only in ClickHouse Cloud. Allow to create ShareSet and SharedJoin
 )", EXPERIMENTAL) \
     DECLARE(UInt64, max_limit_for_ann_queries, 1'000'000, R"(

@@ -128,6 +128,9 @@ class HtmlRunnerHooks:
         for job in _workflow.jobs:
             if job.name not in skip_jobs:
                 result = Result.generate_pending(job.name)
+                # Preemptively add the general job log to the result directory to ensure
+                #   the post-job handler can upload it, even if the job is terminated unexpectedly
+                result.set_files([Settings.RUN_LOG])
             else:
                 result = Result.generate_skipped(job.name, job_cache_records[job.name])
             results.append(result)
@@ -137,14 +140,14 @@ class HtmlRunnerHooks:
         summary_result.start_time = Utils.timestamp()
 
         assert _ResultS3.copy_result_to_s3_with_version(summary_result, version=0)
-        page_url = env.get_report_url(settings=Settings)
+        page_url = env.get_report_url(settings=Settings, latest=True)
         print(f"CI Status page url [{page_url}]")
 
         res1 = GH.post_commit_status(
             name=_workflow.name,
             status=Result.Status.PENDING,
             description="",
-            url=env.get_report_url(settings=Settings, latest=True),
+            url=page_url,
         )
         res2 = GH.post_pr_comment(
             comment_body=f"Workflow [[{_workflow.name}]({page_url})], commit [{_Environment.get().SHA[:8]}]",
