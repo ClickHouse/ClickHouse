@@ -1,8 +1,6 @@
 include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
 
 add_headers_and_sources(clickhouse_common_zookeeper .)
-# Needed to build without Keeper (FreeBSD and other builds)
-list(APPEND clickhouse_common_zookeeper_sources ${CMAKE_CURRENT_SOURCE_DIR}/../../../src/Coordination/KeeperFeatureFlags.cpp)
 
 # Needs to be built differently depending on ZOOKEEPER_LOG
 list(REMOVE_ITEM clickhouse_common_zookeeper_sources "ZooKeeperImpl.cpp")
