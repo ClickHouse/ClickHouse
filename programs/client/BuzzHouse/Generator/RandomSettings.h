@@ -683,9 +683,10 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
        {"allow_remote_fs_zero_copy_replication", trueOrFalse},
        {"allow_suspicious_indices", trueOrFalse},
        {"allow_vertical_merges_from_compact_to_wide_parts", trueOrFalse},
-       {"always_use_copy_instead_of_hardlinks", trueOrFalse},
        {"always_fetch_merged_part", trueOrFalse},
+       {"always_use_copy_instead_of_hardlinks", trueOrFalse},
        {"assign_part_uuids", trueOrFalse},
+       {"async_insert", trueOrFalse},
        {"cache_populated_by_fetch", trueOrFalse},
        {"check_sample_column_is_correct", trueOrFalse},
        {"compact_parts_max_bytes_to_buffer",
@@ -709,13 +710,16 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
             ret += "'";
         }},
        {"detach_not_byte_identical_parts", trueOrFalse},
+       {"detach_old_local_parts_when_cloning_replica", trueOrFalse},
        {"disable_detach_partition_for_zero_copy_replication", trueOrFalse},
        {"disable_fetch_partition_for_zero_copy_replication", trueOrFalse},
        {"disable_freeze_partition_for_zero_copy_replication", trueOrFalse},
        {"enable_block_number_column", trueOrFalse},
        {"enable_block_offset_column", trueOrFalse},
+       {"enable_index_granularity_compression", trueOrFalse},
        {"enable_mixed_granularity_parts", trueOrFalse},
        {"enable_vertical_merge_algorithm", trueOrFalse},
+       {"enforce_index_structure_match_on_partition_manipulation", trueOrFalse},
        {"exclude_deleted_rows_for_part_size_in_merge", trueOrFalse},
        {"force_read_through_cache_for_merges", trueOrFalse},
        {"fsync_after_insert", trueOrFalse},
@@ -735,6 +739,7 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
        {"load_existing_rows_count_for_old_parts", trueOrFalse},
        {"marks_compress_block_size",
         [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
+       {"materialize_ttl_recalculate_only", trueOrFalse},
        {"max_bytes_to_merge_at_max_space_in_pool",
         [](RandomGenerator & rg, std::string & ret)
         {
@@ -762,6 +767,10 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
        {"merge_max_block_size_bytes",
         [](RandomGenerator & rg, std::string & ret)
         { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 0, 128 * 1024 * 1024)); }},
+       {"merge_selector_enable_heuristic_to_remove_small_parts_at_right", trueOrFalse},
+       {"merge_selector_window_size",
+        [](RandomGenerator & rg, std::string & ret)
+        { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 0, 8192)); }},
        {"min_age_to_force_merge_on_partition_only", trueOrFalse},
        {"min_bytes_for_full_part_storage",
         [](RandomGenerator & rg, std::string & ret)
@@ -783,6 +792,9 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
             ret += std::to_string(
                 rg.thresholdGenerator<uint32_t>(0.25, 0.25, 1, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
         }},
+       {"min_parts_to_merge_at_once",
+        [](RandomGenerator & rg, std::string & ret)
+        { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 0, 128)); }},
        {"min_rows_for_full_part_storage",
         [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 0, 1000)); }},
        {"min_rows_to_fsync_after_merge",
@@ -806,6 +818,7 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
             ret += std::to_string(
                 rg.thresholdGenerator<uint32_t>(0.2, 0.5, 1, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
         }},
+       {"prewarm_mark_cache", trueOrFalse},
        {"primary_key_compress_block_size",
         [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
        {"primary_key_lazy_load", trueOrFalse},
@@ -823,10 +836,18 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
        {"s3_create_new_file_on_insert", trueOrFalse},
        {"s3_skip_empty_files", trueOrFalse},
        {"s3_truncate_on_insert", trueOrFalse},
+       {"shared_merge_tree_disable_merges_and_mutations_assignment", trueOrFalse}, /* ClickHouse cloud */
+       {"shared_merge_tree_parts_load_batch_size",
+        [](RandomGenerator & rg, std::string & ret)
+        { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 0, 128)); }}, /* ClickHouse cloud */
+       {"simultaneous_parts_removal_limit",
+        [](RandomGenerator & rg, std::string & ret)
+        { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 0, 128)); }},
        {"ttl_only_drop_parts", trueOrFalse},
        {"use_adaptive_write_buffer_for_dynamic_subcolumns", trueOrFalse},
        {"use_async_block_ids_cache", trueOrFalse},
        {"use_compact_variant_discriminators_serialization", trueOrFalse},
+       {"use_const_adaptive_granularity", trueOrFalse},
        {"use_index_for_in_with_subqueries", trueOrFalse},
        {"use_minimalistic_part_header_in_zookeeper", trueOrFalse},
        {"vertical_merge_algorithm_min_bytes_to_activate",
@@ -834,7 +855,8 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
        {"vertical_merge_algorithm_min_columns_to_activate",
         [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.4, 0.4, 1, 100)); }},
        {"vertical_merge_algorithm_min_rows_to_activate",
-        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.4, 0.4, 1, 10000)); }}};
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.4, 0.4, 1, 10000)); }},
+       {"vertical_merge_remote_filesystem_prefetch", trueOrFalse}};
 
 const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> memoryTableSettings
     = {{"min_bytes_to_keep",
