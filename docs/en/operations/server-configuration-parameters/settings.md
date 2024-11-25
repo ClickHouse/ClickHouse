@@ -1643,6 +1643,7 @@ You can specify the log format that will be outputted in the console log. Curren
 
 ```json
 {
+  "date_time_utc": "2024-11-06T09:06:09Z",
   "date_time": "1650918987.180175",
   "thread_name": "#1",
   "thread_id": "254545",
@@ -3276,4 +3277,16 @@ Type: UInt64
 
 Default value: 100
 
-Zero means unlimited
+## allowed_feature_tier
+
+Controls if the user can change settings related to the different feature tiers.
+0 - Changes to any setting are allowed (experimental, beta, production).
+1 - Only changes to beta and production feature settings are allowed. Changes to experimental settings are rejected.
+2 - Only changes to production settings are allowed. Changes to experimental or beta settings are rejected.
+
+This is equivalent to setting a readonly constraint on all EXPERIMENTAL / BETA features.
+```
+
+Type: UInt32
+
+Default value: `0` (all settings can be changed).

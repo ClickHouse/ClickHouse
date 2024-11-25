@@ -31,6 +31,7 @@
 #include <Parsers/Access/ParserCreateUserQuery.h>
 #include <Parsers/Access/ParserDropAccessEntityQuery.h>
 #include <Parsers/Access/ParserGrantQuery.h>
+#include <Parsers/Access/ParserCheckGrantQuery.h>
 #include <Parsers/Access/ParserMoveAccessEntityQuery.h>
 #include <Parsers/Access/ParserSetRoleQuery.h>
 
@@ -67,6 +68,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserDropAccessEntityQuery drop_access_entity_p;
     ParserMoveAccessEntityQuery move_access_entity_p;
     ParserGrantQuery grant_p;
+    ParserCheckGrantQuery check_grant_p;
     ParserSetRoleQuery set_role_p;
     ParserExternalDDLQuery external_ddl_p;
     ParserTransactionControl transaction_control_p;
@@ -102,6 +104,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || drop_access_entity_p.parse(pos, node, expected)
         || move_access_entity_p.parse(pos, node, expected)
         || grant_p.parse(pos, node, expected)
+        || check_grant_p.parse(pos, node, expected)
         || external_ddl_p.parse(pos, node, expected)
         || transaction_control_p.parse(pos, node, expected)
         || delete_p.parse(pos, node, expected)

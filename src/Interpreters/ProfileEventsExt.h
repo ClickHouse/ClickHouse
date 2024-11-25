@@ -25,10 +25,11 @@ using ThreadIdToCountersSnapshot = std::unordered_map<UInt64, Counters::Snapshot
 /// Dumps profile events to columns Map(String, UInt64)
 void dumpToMapColumn(const Counters::Snapshot & counters, DB::IColumn * column, bool nonzero_only = true);
 
-void getProfileEvents(
+DB::Block getSampleBlock();
+
+DB::Block getProfileEvents(
     const String & host_name,
     DB::InternalProfileEventsQueuePtr profile_queue,
-    DB::Block & block,
     ThreadIdToCountersSnapshot & last_sent_snapshots);
 
 /// This is for ProfileEvents packets.

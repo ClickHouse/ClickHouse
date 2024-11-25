@@ -241,13 +241,6 @@ String TemporaryDataBuffer::describeFilePath() const
     return file_holder->describeFilePath();
 }
 
-TemporaryDataBuffer::~TemporaryDataBuffer()
-{
-    if (out_compressed_buf)
-        // read() nor finishWriting() was called
-        cancel();
-}
-
 void TemporaryDataBuffer::cancelImpl() noexcept
 {
     if (out_compressed_buf)
@@ -255,7 +248,6 @@ void TemporaryDataBuffer::cancelImpl() noexcept
         /// CompressedWriteBuffer doesn't call cancel/finalize for wrapped buffer
         out_compressed_buf->cancel();
         out_compressed_buf.getHolder()->cancel();
-        out_compressed_buf.reset();
     }
 }
 
@@ -360,4 +352,9 @@ TemporaryBlockStreamReaderHolder TemporaryBlockStreamHolder::getReadStream() con
     return TemporaryBlockStreamReaderHolder(holder->read(), header, DBMS_TCP_PROTOCOL_VERSION);
 }
 
+TemporaryDataBuffer::~TemporaryDataBuffer()
+{
+    if (!finalized)
+        cancel();
+}
 }

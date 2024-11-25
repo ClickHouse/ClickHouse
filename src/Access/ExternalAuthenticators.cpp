@@ -371,7 +371,7 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
     }
 }
 
-UInt128 computeParamsHash(const LDAPClient::Params & params, const LDAPClient::RoleSearchParamsList * role_search_params)
+static UInt128 computeParamsHash(const LDAPClient::Params & params, const LDAPClient::RoleSearchParamsList * role_search_params)
 {
     SipHash hash;
     params.updateHash(hash);

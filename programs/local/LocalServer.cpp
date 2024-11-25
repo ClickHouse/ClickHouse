@@ -79,6 +79,7 @@ namespace Setting
 
 namespace ServerSetting
 {
+    extern const ServerSettingsUInt32 allowed_feature_tier;
     extern const ServerSettingsDouble cache_size_to_ram_max_ratio;
     extern const ServerSettingsUInt64 compiled_expression_cache_elements_size;
     extern const ServerSettingsUInt64 compiled_expression_cache_size;
@@ -787,6 +788,9 @@ void LocalServer::processConfig()
 
     /// Initialize a dummy query cache.
     global_context->setQueryCache(0, 0, 0, 0);
+
+    /// Initialize allowed tiers
+    global_context->getAccessControl().setAllowTierSettings(server_settings[ServerSetting::allowed_feature_tier]);
 
 #if USE_EMBEDDED_COMPILER
     size_t compiled_expression_cache_max_size_in_bytes = server_settings[ServerSetting::compiled_expression_cache_size];
