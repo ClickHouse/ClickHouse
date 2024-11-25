@@ -19,7 +19,7 @@ function layerFuncForBases(sizes)
         boundaries.push(Math.sqrt(lo * hi)); // Geometric mean
     }
 
-    console.log("BOUNDARIES", boundaries);
+    // console.log("BOUNDARIES", boundaries);
 
     return (size) => {
         for (let i = 0; i < boundaries.length; i++)
@@ -80,6 +80,8 @@ export function* floatLayerMerges({insertPartSize, layerBases})
         for (let begin = 0; begin < active_parts.length - 2; begin++)
         {
             const begin_part = active_parts[begin];
+            if (begin_part.merging)
+                continue;
             const begin_layer = layerFunc(begin_part.bytes);
             for (let layer = begin_layer; layer < best_layer; layer++)
             {
