@@ -282,10 +282,12 @@ void checkSortedWithPermutationImpl(size_t rows, Comparator compare, UInt64 limi
     if (limit && limit < rows)
         rows = limit;
 
+    const bool no_permutaiton = permutation.empty();
+
     for (size_t i = 1; i < rows; ++i)
     {
-        const size_t current_row = permutation[i];
-        const size_t previous_row = permutation[i - 1];
+        const size_t current_row = no_permutaiton ? i : permutation[i];
+        const size_t previous_row = no_permutaiton ? (i - 1) : permutation[i - 1];
 
         if (compare(current_row, previous_row))
             throw Exception(ErrorCodes::LOGICAL_ERROR,
