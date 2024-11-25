@@ -3,6 +3,23 @@ import { MergeTreeUtilityVisualizer, MergeTreeTimeVisualizer } from './MergeTree
 // Component that renders a scroll bar for MergeTree that rewinds time and controls
 // MergeTreeVisualizer(s)
 export class MergeTreeRewinder {
+    stepBackward() {
+        if (this.isPlaying) {
+            this.togglePlay(); // Stop playback if playing
+        }
+        this.time = Math.max(this.time - this.speed, this.minTime);
+        this.onTimeSet(this.time);
+        this.container.select("input").property("value", this.time);
+    }
+
+    stepForward() {
+        if (this.isPlaying) {
+            this.togglePlay(); // Stop playback if playing
+        }
+        this.time = Math.min(this.time + this.speed, this.maxTime);
+        this.onTimeSet(this.time);
+        this.container.select("input").property("value", this.time);
+    }
     toggleSpeed() {
         this.currentSpeedIndex = (this.currentSpeedIndex + 1) % this.speedMultipliers.length;
         this.speedButton.text(`x${this.speedMultipliers[this.currentSpeedIndex]}`);
@@ -29,7 +46,10 @@ export class MergeTreeRewinder {
         }
     }
     updateLabel() {
-        this.label.text(`Time: ${this.time.toFixed(1)}`);
+        const minutes = Math.floor(this.time / 60);
+        const seconds = Math.floor(this.time % 60).toString().padStart(2, '0');
+        const fraction = (this.time % 1).toFixed(2).substring(2);
+        this.label.text(`${minutes}:${seconds}.${fraction}`);
     }
     constructor(mt, visualizers, container) {
         this.mt = mt;
@@ -59,6 +79,16 @@ export class MergeTreeRewinder {
             .text(`x${this.speedMultipliers[this.currentSpeedIndex]}`)
             .on("click", () => this.toggleSpeed());
 
+        // Create step backward button
+        this.stepBackButton = this.container.append("button")
+            .attr("class", "btn btn-sm mr-1")
+            .style("padding", "0")
+            .style("background", "transparent")
+            .style("border", "none")
+            .style("color", "inherit")
+            .text("⏪")
+            .on("click", () => this.stepBackward());
+
         // Create play/pause button
         this.isPlaying = false;
         this.speed = 0.1;
@@ -70,6 +100,16 @@ export class MergeTreeRewinder {
             .style("color", "inherit")
             .text("▶️")
             .on("click", () => this.togglePlay());
+
+        // Create step forward button
+        this.stepForwardButton = this.container.append("button")
+            .attr("class", "btn btn-sm mr-1")
+            .style("padding", "0")
+            .style("background", "transparent")
+            .style("border", "none")
+            .style("color", "inherit")
+            .text("⏩")
+            .on("click", () => this.stepForward());
 
         // Create slider input
         const slider = this.container.append("input")
