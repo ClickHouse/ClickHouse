@@ -484,6 +484,12 @@ void ColumnLowCardinality::updatePermutation(IColumn::PermutationSortDirection d
     IColumn::Permutation dict_perm;
     getDictionary().getNestedColumn()->getPermutation(direction, stability, 0, nan_direction_hint, dict_perm);
 
+    /// This is a paranoid check, but in other places in code empty permutation is used to indicate that no sorting is needed.
+    if (dict_perm.size() != getDictionary().size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Dictionary permutation size {} is equal to dictionary size {}. It is a bug.",
+            dict_perm.size(), getDictionary().size());
+    
     PaddedPODArray<UInt64> position_by_index(dict_perm.size());
     for (size_t i = 0; i < dict_perm.size(); ++i)
         position_by_index[dict_perm[i]] = i;
