@@ -415,6 +415,7 @@ dbms_target_link_libraries (
         boost::filesystem
         boost::program_options
         clickhouse_common_config
+        clickhouse_common_zookeeper_base
         clickhouse_common_zookeeper
         clickhouse_dictionaries_embedded
         clickhouse_parsers
@@ -660,6 +661,7 @@ if (ENABLE_TESTS)
         clickhouse_parsers
         clickhouse_storages_system
         dbms
+        clickhouse_common_zookeeper_base
         clickhouse_common_config
         clickhouse_common_zookeeper
         hilite_comparator)
