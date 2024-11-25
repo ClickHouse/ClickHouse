@@ -2968,6 +2968,19 @@ bool Aggregator::mergeOnBlock(Block block, AggregatedDataVariants & result, bool
                 params.max_bytes_ratio_before_external_group_by);
             write_temporary_file = true;
         }
+        if (!write_temporary_file && params.max_bytes_ratio_before_external_group_by_for_server > 0.)
+        {
+            auto server_memory_usage = total_memory_tracker.get();
+            auto server_memory_limit = total_memory_tracker.getHardLimit();
+            if (server_memory_limit > 0 && server_memory_usage > server_memory_limit * params.max_bytes_ratio_before_external_group_by_for_server)
+            {
+                LOG_TEST(log, "Use external aggregation due to max_bytes_ratio_before_external_group_by_for_server reached. Current server memory usage is {} (> {}*{})",
+                    formatReadableSizeWithBinarySuffix(server_memory_usage),
+                    formatReadableSizeWithBinarySuffix(server_memory_limit),
+                    params.max_bytes_ratio_before_external_group_by_for_server);
+                write_temporary_file = true;
+            }
+        }
 
         if (write_temporary_file)
         {
