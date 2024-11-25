@@ -17,7 +17,7 @@ export class MergeTree {
         this.integral_active_part_count = 0;
 
         // Observers
-        this.insert_observers = []
+        this.insert_observers = [];
     }
 
     addInsertObserver(observer)
@@ -47,7 +47,6 @@ export class MergeTree {
             throw { message: "Times go backwards", from: this.time, to: now};
         const time_delta = now - this.time;
         this.integral_active_part_count += this.active_part_count * time_delta;
-        // console.log("ADVANCE TIME", this.time, "TO", now);
         this.time = now;
     }
 
@@ -63,7 +62,7 @@ export class MergeTree {
             log_bytes,
             utility,
             entropy: 0,
-            created: now,
+            created: this.time,
             level: 0,
             begin: this.inserted_part_count,
             end: this.inserted_part_count + 1,
@@ -73,6 +72,7 @@ export class MergeTree {
             is_rightmost: false,
             active: true,
             merging: false,
+            parent_started: Infinity,
             idx: this.parts.length,
             source_part_count: 0
         };
@@ -91,7 +91,7 @@ export class MergeTree {
         return result;
     }
 
-    // Execute merge
+    // Execute merge (for single merge worker models only)
     mergeParts(parts_to_merge)
     {
         // Compute time required for merge
@@ -112,6 +112,7 @@ export class MergeTree {
             if (p.merging == true)
                 throw { message: "Attempt to begin merge of part that already participates in another merge", part: p};
             p.merging = true;
+            p.parent_started = this.time;
             this.merging_part_count++;
         }
         // console.log("BEGIN MERGE", this.time, parts_to_merge);
@@ -152,6 +153,7 @@ export class MergeTree {
             right_bytes: Math.max(...parts_to_merge.map(d => d.right_bytes)),
             active: true,
             merging: false,
+            parent_started: Infinity,
             idx: this.parts.length,
             source_part_count: parts_to_merge.length,
         };

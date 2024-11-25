@@ -56,13 +56,32 @@ class MergeTreeVisualizer {
 
     // Colors
     getMergeColor() { return "red"; }
-    getPartColor(part) { return part.merging ? MERGE_COLOR : PART_COLOR; }
+    getPartColor(part) { return this.partMerging(part) ? MERGE_COLOR : PART_COLOR; }
     getPartMarkColor(part) { return "yellow"; }
 
     isYAxisReversed() { return false; }
 
+    // Access part properties that is aligned with partFilter
+    partMerging(part) {
+        let now = this.getTime();
+        if (part.parent_part !== undefined)
+            return part.parent_started <= now && now < part.parent_part.created;
+        else
+            return part.parent_started <= now;
+    }
+
+    partActive(part) {
+        let now = this.getTime();
+        if (part.parent_part !== undefined)
+            return part.created <= now && now < part.parent_part.created;
+        else
+            return part.created <= now;
+    }
+
     constructor(mt, container) {
         this.mt = mt;
+        this.partFilter = null;
+        this.time = null;
 
         // Cleanup previous visualization
         const oldSvg = container.select("svg");
@@ -85,13 +104,13 @@ class MergeTreeVisualizer {
         this.svgHeight = this.height;
 
         // Compute useful aggregates
-        this.log_min_bytes = Math.log2(d3.min(mt.parts, d => d.bytes));
-        this.log_max_bytes = Math.log2(d3.max(mt.parts, d => d.bytes));
-        this.max_source_part_count = d3.max(mt.parts, d => d.source_part_count);
+        this.log_min_bytes = Math.log2(d3.min(this.getParts(), d => d.bytes));
+        this.log_max_bytes = Math.log2(d3.max(this.getParts(), d => d.bytes));
+        this.max_source_part_count = d3.max(this.getParts(), d => d.source_part_count);
 
         // Compute scale ranges
-        this.computeXAggregates(mt);
-        this.computeYAggregates(mt);
+        this.computeXAggregates();
+        this.computeYAggregates();
 
         // Create the SVG container
         this.svgContainer = container
@@ -100,18 +119,18 @@ class MergeTreeVisualizer {
             .attr("height", this.svgHeight);
     }
 
-    computeXAggregates(mt) {
-        this.minXValue = d3.min(mt.parts, d => this.getLeft(d));
-        this.maxXValue = d3.max(mt.parts, d => this.getRight(d));
+    computeXAggregates() {
+        this.minXValue = d3.min(this.getParts(), d => this.getLeft(d));
+        this.maxXValue = d3.max(this.getParts(), d => this.getRight(d));
     }
 
-    computeYAggregates(mt) {
+    computeYAggregates() {
         if (this.isYAxisReversed()) {
-            this.minYValue = d3.min(mt.parts, d => this.getTop(d));
-            this.maxYValue = d3.max(mt.parts, d => this.getBottom(d));
+            this.minYValue = d3.min(this.getParts(), d => this.getTop(d));
+            this.maxYValue = d3.max(this.getParts(), d => this.getBottom(d));
         } else {
-            this.minYValue = d3.min(mt.parts, d => this.getBottom(d));
-            this.maxYValue = d3.max(mt.parts, d => this.getTop(d));
+            this.minYValue = d3.min(this.getParts(), d => this.getBottom(d));
+            this.maxYValue = d3.max(this.getParts(), d => this.getTop(d));
         }
     }
 
@@ -227,9 +246,9 @@ class MergeTreeVisualizer {
             .text("Source parts count");
     }
 
-    updateX(mt) {
+    updateX() {
         // Rescale axis
-        this.computeXAggregates(mt);
+        this.computeXAggregates();
         this.updateXDomain();
 
         // Update axes with transitions
@@ -242,9 +261,9 @@ class MergeTreeVisualizer {
             );
     };
 
-    updateY(mt) {
+    updateY() {
         // Rescale axis
-        this.computeYAggregates(mt);
+        this.computeYAggregates();
         this.updateYDomain();
 
         // Update axes with transitions
@@ -265,14 +284,14 @@ class MergeTreeVisualizer {
     pxt(value) { return value; }
     pxb(value) { return Math.max(1, value); }
 
-    processMerges(mt) {
+    processMerges() {
         // Check if the merges group already exists, create it if not, and save the reference
         if (!this.mergesGroup) {
             this.mergesGroup = this.svgContainer.append("g").attr("class", "viz-merge");
         }
 
         // Filter inactive parts and join the data to the rectangles
-        const inactiveParts = mt.parts.filter(d => !d.active);
+        const inactiveParts = this.getParts().filter(d => !this.partActive(d));
         const merges = this.mergesGroup.selectAll("rect")
             .data(inactiveParts, d => d.id); // Assuming each part has a unique 'id'
 
@@ -291,7 +310,7 @@ class MergeTreeVisualizer {
         merges.exit().remove();
     }
 
-    processParts(mt) {
+    processParts() {
         // Check if the parts group already exists, create it if not, and save the reference
         if (!this.partsGroup) {
             this.partsGroup = this.svgContainer.append("g").attr("class", "viz-part");
@@ -299,7 +318,7 @@ class MergeTreeVisualizer {
 
         // Join the data to the rectangles
         const parts = this.partsGroup.selectAll("rect")
-            .data(mt.parts, d => d.id); // Assuming each part has a unique 'id'
+            .data(this.getParts(), d => d.id); // Assuming each part has a unique 'id'
 
         // Handle the enter phase for new elements
         const partsEnter = parts.enter()
@@ -317,7 +336,7 @@ class MergeTreeVisualizer {
         parts.exit().remove();
     }
 
-    processPartMarks(mt) {
+    processPartMarks() {
         // Check if the part marks group already exists, create it if not, and save the reference
         if (!this.partMarksGroup) {
             this.partMarksGroup = this.svgContainer.append("g").attr("class", "viz-part-mark");
@@ -325,7 +344,7 @@ class MergeTreeVisualizer {
 
         // Join the data to the rectangles
         const partMarks = this.partMarksGroup.selectAll("rect")
-            .data(mt.parts, d => d.id); // Assuming each part has a unique 'id'
+            .data(this.getParts(), d => d.id); // Assuming each part has a unique 'id'
 
         // Handle the enter phase for new elements
         const partMarksEnter = partMarks.enter().append("rect");
@@ -342,13 +361,46 @@ class MergeTreeVisualizer {
         partMarks.exit().remove();
     }
 
-    update(mt) {
-        this.updateX(mt);
-        this.updateY(mt);
+    update() {
+        this.updateFilteredParts();
+        this.updateX();
+        this.updateY();
+        this.processData();
+    }
 
-        this.processMerges(mt);
-        this.processParts(mt);
-        this.processPartMarks(mt);
+    processData() {
+        this.processMerges();
+        this.processParts();
+        this.processPartMarks();
+    }
+
+    setPartFilter(filter = null) {
+        this.partFilter = filter;
+    }
+
+    setTime(time) {
+        this.time = time;
+    }
+
+    getTime() {
+        if (this.time == null)
+            return this.mt.time;
+        else
+            return this.time; // rewinded
+    }
+
+    updateFilteredParts() {
+        if (this.partFilter != null)
+            this.filteredParts = this.mt.parts.filter(this.partFilter);
+        else
+            this.filteredParts = this.mt.parts;
+    }
+
+    getParts() {
+        if (this.partFilter == null)
+            return this.mt.parts;
+        else
+            return this.filteredParts;
     }
 }
 
@@ -357,7 +409,7 @@ class MergeTreeUtilityVisualizer extends MergeTreeVisualizer {
     getXAxisTitleOffset() { return { x: 0, y: 5 }; }
     getYAxisTitleOffset() { return { x: -17, y: 0 }; }
 
-    getTop(part) { return part.active ? part.bytes : part.parent_part.bytes; }
+    getTop(part) { return this.partActive(part) ? part.bytes : part.parent_part.bytes; }
     getBottom(part) { return part.bytes; }
 
     getMergeColor(part) {
@@ -372,9 +424,7 @@ class MergeTreeUtilityVisualizer extends MergeTreeVisualizer {
         this.initXScaleLinear();
         this.initYScalePowersOfTwo();
 
-        this.processMerges(mt);
-        this.processParts(mt);
-        this.processPartMarks(mt);
+        this.processData();
 
         this.createXAxisLinear();
         this.createYAxisPowersOfTwo();
@@ -440,10 +490,10 @@ class MergeTreeTimeVisualizer extends MergeTreeVisualizer {
     // For one specific part exec time is shown above waiting time
     // Chronological order is from below upwards
     // Active parts do not show execution time, only waiting time
-    getExecTop(part)    { return part.active ? 0 : this.getWaitBottom(part.parent_part); }
-    getExecBottom(part) { return part.active ? 0 : this.getWaitBottom(part.parent_part) + part.parent_part.source_part_count; }
+    getExecTop(part)    { return this.partActive(part) ? 0 : this.getWaitBottom(part.parent_part); }
+    getExecBottom(part) { return this.partActive(part) ? 0 : this.getWaitBottom(part.parent_part) + part.parent_part.source_part_count; }
     getWaitTop(part)    { return this.getExecBottom(part); }
-    getWaitBottom(part) { return this.getExecBottom(part) + this.timeToArea((part.active ? this.mt.time : part.parent_part.started) - part.created) / part.bytes; }
+    getWaitBottom(part) { return this.getExecBottom(part) + this.timeToArea((this.partActive(part) ? this.getTime() : part.parent_part.started) - part.created) / part.bytes; }
 
     // This functions are used for aggregates, so they equal top and bottom of exec+wait
     getTop(part) { return this.getExecTop(part); }
@@ -465,10 +515,7 @@ class MergeTreeTimeVisualizer extends MergeTreeVisualizer {
         return this.timeToAreaCoef * time;
     }
 
-    update(mt) {
-        this.updateX(mt);
-        this.updateY(mt);
-
+    processData(mt) {
         this.processMerges(mt);
         this.processParts(mt);
         // this.processPartMarks(mt);
@@ -480,9 +527,7 @@ class MergeTreeTimeVisualizer extends MergeTreeVisualizer {
         this.initXScaleLinear();
         this.initYScaleLinear();
 
-        this.processMerges(mt);
-        this.processParts(mt);
-        // this.processPartMarks(mt);
+        this.processData();
 
         this.createXAxisLinear();
         this.createYAxisLinear();

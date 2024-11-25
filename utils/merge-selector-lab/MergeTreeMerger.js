@@ -51,6 +51,7 @@ export class MergeTreeMerger
 
     #beginMerge(parts_to_merge)
     {
+        this.mt.advanceTime(this.sim.time);
         this.mt.beginMergeParts(parts_to_merge);
         this.merges_running++;
 
