@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Tags: zookeeper, no-replicated-database, no-ordinary-database, no-shared-merge-tree
 
+# Creation of a database with Ordinary engine emits a warning.
+CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
+
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
-
-# Creation of a database with Ordinary engine emits a warning.
-CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
 
 ORDINARY_DB="ordinary_$CLICKHOUSE_DATABASE"
 ${CLICKHOUSE_CLIENT} --allow_deprecated_database_ordinary=1 -n -q "
