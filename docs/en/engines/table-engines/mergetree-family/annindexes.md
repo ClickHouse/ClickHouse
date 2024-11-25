@@ -123,8 +123,6 @@ ORDER BY Distance(vectors, reference_vector)
 LIMIT N
 ```
 
-Vector similarity search cannot be used if the analyzer is disabled (`SET enable_analyzer = 0`).
-
 To search using a different value of HNSW parameter `hnsw_candidate_list_size_for_search` (default: 256), also known as `ef_search` in the
 original [HNSW paper](https://doi.org/10.1109/TPAMI.2018.2889473), run the `SELECT` query with `SETTINGS hnsw_candidate_list_size_for_search
 = <value>`.
