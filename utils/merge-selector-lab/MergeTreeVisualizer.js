@@ -1,6 +1,10 @@
 import { valueToColor, determineTickStep } from './visualizeHelpers.js';
 import { infoButton } from './infoButton.js';
 
+const MERGE_COLOR = "orange";
+const PART_COLOR = "black";
+const WAIT_COLOR = "grey";
+
 function formatNumber(number)
 {
     if (number >= Math.pow(1000, 4))
@@ -52,12 +56,14 @@ class MergeTreeVisualizer {
 
     // Colors
     getMergeColor() { return "red"; }
-    getPartColor(part) { return part.merging ? "orange" : "black"; }
+    getPartColor(part) { return part.merging ? MERGE_COLOR : PART_COLOR; }
     getPartMarkColor(part) { return "yellow"; }
 
     isYAxisReversed() { return false; }
 
     constructor(mt, container) {
+        this.mt = mt;
+
         // Cleanup previous visualization
         const oldSvg = container.select("svg");
         if (oldSvg.node()) {
@@ -428,16 +434,44 @@ class MergeTreeTimeVisualizer extends MergeTreeVisualizer {
     getYAxisTitleOffset() { return { x: -7, y: 0 }; }
 
     isYAxisReversed() { return true; }
-    getTop(part) { return part.active ? 0 : this.getBottom(part.parent_part); }
-    getBottom(part) { return part.active ? 0 : part.parent_part.source_part_count + this.getBottom(part.parent_part); }
 
-    getMergeTop(part) {  return this.yScale(this.getTop(part)); }
-    getMergeBottom(part) { return this.yScale(this.getBottom(part)); }
+    // Every part rect represents waiting time (while the part was not merging)
+    // Every merge rect represents execution time (while the part was merging into its parent)
+    // For one specific part exec time is shown above waiting time
+    // Chronological order is from below upwards
+    // Active parts do not show execution time, only waiting time
+    getExecTop(part)    { return part.active ? 0 : this.getWaitBottom(part.parent_part); }
+    getExecBottom(part) { return part.active ? 0 : this.getWaitBottom(part.parent_part) + part.parent_part.source_part_count; }
+    getWaitTop(part)    { return this.getExecBottom(part); }
+    getWaitBottom(part) { return this.getExecBottom(part) + this.timeToArea((part.active ? this.mt.time : part.parent_part.started) - part.created) / part.bytes; }
 
-    getMergeColor(part) {
-        // TODO: choose consistent color scheme.
-        // TODO: There is no point in showing height again with color
-        return valueToColor(part.parent_part.source_part_count, 2, this.max_source_part_count, 90, 70, 270, 180);
+    // This functions are used for aggregates, so they equal top and bottom of exec+wait
+    getTop(part) { return this.getExecTop(part); }
+    getBottom(part) { return this.getWaitBottom(part); }
+
+    getMergeTop(part) {  return this.yScale(this.getExecTop(part)); }
+    getMergeBottom(part) { return this.yScale(this.getExecBottom(part)); }
+
+    getPartTop(part) { return this.yScale(this.getWaitTop(part)); }
+    getPartBottom(part) { return this.yScale(this.getWaitBottom(part)); }
+
+    getMergeColor() { return MERGE_COLOR; }
+    getPartColor(part) { return WAIT_COLOR; }
+    // getPartMarkColor(part) { return "yellow"; }
+
+    timeToArea(time) {
+        if (this.timeToAreaCoef === undefined)
+            this.timeToAreaCoef = 1.0 / this.mt.mergeDuration(1, 1);
+        return this.timeToAreaCoef * time;
+    }
+
+    update(mt) {
+        this.updateX(mt);
+        this.updateY(mt);
+
+        this.processMerges(mt);
+        this.processParts(mt);
+        // this.processPartMarks(mt);
     }
 
     constructor(mt, container) {
@@ -448,7 +482,7 @@ class MergeTreeTimeVisualizer extends MergeTreeVisualizer {
 
         this.processMerges(mt);
         this.processParts(mt);
-        this.processPartMarks(mt);
+        // this.processPartMarks(mt);
 
         this.createXAxisLinear();
         this.createYAxisLinear();

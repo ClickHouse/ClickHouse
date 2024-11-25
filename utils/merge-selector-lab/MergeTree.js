@@ -144,6 +144,7 @@ export class MergeTree {
             utility,
             entropy,
             created: this.time,
+            started: this.time - this.mergeDuration(bytes, parts_to_merge.length),
             level: 1 + Math.max(...parts_to_merge.map(d => d.level)),
             begin: Math.min(...parts_to_merge.map(d => d.begin)),
             end: Math.max(...parts_to_merge.map(d => d.end)),

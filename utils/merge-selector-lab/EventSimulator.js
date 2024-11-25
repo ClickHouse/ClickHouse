@@ -4,6 +4,7 @@ export class Event
 {
     constructor(name, callback, dependencies = [])
     {
+        this.stopped = false;
         this.time = 0;
         this.name = name;
         this.callback = callback;
@@ -35,7 +36,7 @@ export class Event
     // Execute the event
     async execute(sim)
     {
-        console.log("EXEC", sim.time, this.name, this);
+        // console.log("EXEC", sim.time, this.name, this);
         await this.callback(sim, this);
         this.executed = true;
 
@@ -87,12 +88,16 @@ export class EventSimulator
     }
 
     // Register a callback to be called every `interval` ms in realtime (not simulation)
-    addTimer(interval_ms, callback)
+    addTimer(interval_ms, callback, adjustable = true)
     {
         this.timers.push({
             last: performance.now(),
             interval_ms,
             callback,
+            adjustable,
+            calls: 0,
+            real_interval_ms: interval_ms,
+            avg_exec_ms: 0,
         });
         this.min_timer_interval_ms = Math.min(this.min_timer_interval_ms, interval_ms);
     }
@@ -108,10 +113,20 @@ export class EventSimulator
                 this.last_timer = now;
                 for (const timer of this.timers)
                 {
-                    if (timer.last + timer.interval_ms < now)
+                    if (timer.last + timer.real_interval_ms < now)
                     {
                         timer.last = now;
+                        timer.calls++;
+                        if (timer.started == undefined)
+                            timer.started = now;
+                        const before_ms = performance.now();
                         await timer.callback();
+                        const after_ms = performance.now();
+                        const exec_ms = after_ms - before_ms;
+                        timer.avg_exec_ms = 0.9 * timer.avg_exec_ms + 0.1 * exec_ms;
+                        if (timer.adjustable)
+                            // We dont want a timer to consume more than 10% of time
+                            timer.real_interval_ms = Math.max(timer.real_interval_ms, timer.avg_exec_ms * 10);
                     }
                 }
             }
@@ -122,11 +137,16 @@ export class EventSimulator
     async run()
     {
         const startTime = performance.now();
-        while (this.ready_events.length > 0 || this.pending_events.size() > 0)
+        while (!this.stopped && (this.ready_events.length > 0 || this.pending_events.size() > 0))
         {
             await this.#executeNextEvent();
             await this.#handleTimers();
         }
+    }
+
+    stop()
+    {
+        this.stopped = true;
     }
 
     // All dependencies of an event are now satisfied

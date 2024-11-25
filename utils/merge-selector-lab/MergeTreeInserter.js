@@ -20,14 +20,18 @@ export class MergeTreeInserter
         {
             const { value, done } = await this.inserter.next();
             if (done)
+            {
+                if (this.signals.on_inserter_end)
+                    await this.signals.on_inserter_end({sim: this.sim, mt: this.mt, inserter: this.inserter});
                 return; // No more inserts
+            }
             switch (value.type)
             {
                 case 'insert':
                     this.mt.advanceTime(this.sim.time);
                     const part = this.mt.insertPart(value.bytes);
                     if (this.signals.on_insert)
-                        await this.signals.on_insert({sim: this.sim, mt: this.mt, part});
+                        await this.signals.on_insert({sim: this.sim, mt: this.mt, inserter: this.inserter, part});
                     break;
                 case 'sleep':
                     if (value.delay > 0)
