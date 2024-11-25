@@ -332,6 +332,10 @@ public:
       */
     std::vector<Block> convertBlockToTwoLevel(const Block & block) const;
 
+    //// Handle:
+    /// - max_bytes_ratio_before_external_group_by
+    /// - max_bytes_ratio_before_external_group_by_for_server
+    void writeToTemporaryFileIfNeeded(AggregatedDataVariants & data_variants, Int64 current_memory_usage, Int64 memory_limit) const;
     /// For external aggregation.
     void writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size = 0) const;
 

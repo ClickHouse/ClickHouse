@@ -1502,42 +1502,44 @@ bool Aggregator::executeOnBlock(Columns columns,
       * Data can only be flushed to disk if a two-level aggregation structure is used.
       */
     if (worth_convert_to_two_level && result.isTwoLevel())
-    {
-        bool write_temporary_file = false;
-        if (params.max_bytes_before_external_group_by && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by))
-            write_temporary_file = true;
-        if (!write_temporary_file && memory_limit > 0 && params.max_bytes_ratio_before_external_group_by > 0. && current_memory_usage > memory_limit * params.max_bytes_ratio_before_external_group_by)
-        {
-            LOG_TEST(log, "Use external aggregation due to max_bytes_ratio_before_external_group_by reached. Current memory usage is {} (> {}*{})",
-                formatReadableSizeWithBinarySuffix(current_memory_usage),
-                formatReadableSizeWithBinarySuffix(memory_limit),
-                params.max_bytes_ratio_before_external_group_by);
-            write_temporary_file = true;
-        }
-        if (!write_temporary_file && params.max_bytes_ratio_before_external_group_by_for_server > 0.)
-        {
-            auto server_memory_usage = total_memory_tracker.get();
-            auto server_memory_limit = total_memory_tracker.getHardLimit();
-            if (server_memory_limit > 0 && server_memory_usage > server_memory_limit * params.max_bytes_ratio_before_external_group_by_for_server)
-            {
-                LOG_TEST(log, "Use external aggregation due to max_bytes_ratio_before_external_group_by_for_server reached. Current server memory usage is {} (> {}*{})",
-                    formatReadableSizeWithBinarySuffix(server_memory_usage),
-                    formatReadableSizeWithBinarySuffix(server_memory_limit),
-                    params.max_bytes_ratio_before_external_group_by_for_server);
-                write_temporary_file = true;
-            }
-        }
-
-        if (write_temporary_file)
-        {
-            size_t size = current_memory_usage + params.min_free_disk_space;
-            writeToTemporaryFile(result, size);
-        }
-    }
+        writeToTemporaryFileIfNeeded(result, current_memory_usage, memory_limit);
 
     return true;
 }
 
+void Aggregator::writeToTemporaryFileIfNeeded(AggregatedDataVariants & data_variants, Int64 current_memory_usage, Int64 memory_limit) const
+{
+    bool write_temporary_file = false;
+    if (params.max_bytes_before_external_group_by && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by))
+        write_temporary_file = true;
+    if (!write_temporary_file && memory_limit > 0 && params.max_bytes_ratio_before_external_group_by > 0. && current_memory_usage > memory_limit * params.max_bytes_ratio_before_external_group_by)
+    {
+        LOG_TEST(log, "Use external aggregation due to max_bytes_ratio_before_external_group_by reached. Current memory usage is {} (> {}*{})",
+            formatReadableSizeWithBinarySuffix(current_memory_usage),
+            formatReadableSizeWithBinarySuffix(memory_limit),
+            params.max_bytes_ratio_before_external_group_by);
+        write_temporary_file = true;
+    }
+    if (!write_temporary_file && params.max_bytes_ratio_before_external_group_by_for_server > 0.)
+    {
+        auto server_memory_usage = total_memory_tracker.get();
+        auto server_memory_limit = total_memory_tracker.getHardLimit();
+        if (server_memory_limit > 0 && server_memory_usage > server_memory_limit * params.max_bytes_ratio_before_external_group_by_for_server)
+        {
+            LOG_TEST(log, "Use external aggregation due to max_bytes_ratio_before_external_group_by_for_server reached. Current server memory usage is {} (> {}*{})",
+                formatReadableSizeWithBinarySuffix(server_memory_usage),
+                formatReadableSizeWithBinarySuffix(server_memory_limit),
+                params.max_bytes_ratio_before_external_group_by_for_server);
+            write_temporary_file = true;
+        }
+    }
+
+    if (write_temporary_file)
+    {
+        size_t size = current_memory_usage + params.min_free_disk_space;
+        writeToTemporaryFile(data_variants, size);
+    }
+}
 
 void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size) const
 {
@@ -2956,38 +2958,7 @@ bool Aggregator::mergeOnBlock(Block block, AggregatedDataVariants & result, bool
       * Data can only be flushed to disk if a two-level aggregation structure is used.
       */
     if (worth_convert_to_two_level && result.isTwoLevel())
-    {
-        bool write_temporary_file = false;
-        if (params.max_bytes_before_external_group_by && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by))
-            write_temporary_file = true;
-        if (memory_limit > 0 && params.max_bytes_ratio_before_external_group_by > 0. && current_memory_usage > memory_limit * params.max_bytes_ratio_before_external_group_by)
-        {
-            LOG_TEST(log, "Use external aggregation due to max_bytes_ratio_before_external_group_by reached. Current memory usage is {} (> {}*{})",
-                formatReadableSizeWithBinarySuffix(current_memory_usage),
-                formatReadableSizeWithBinarySuffix(memory_limit),
-                params.max_bytes_ratio_before_external_group_by);
-            write_temporary_file = true;
-        }
-        if (!write_temporary_file && params.max_bytes_ratio_before_external_group_by_for_server > 0.)
-        {
-            auto server_memory_usage = total_memory_tracker.get();
-            auto server_memory_limit = total_memory_tracker.getHardLimit();
-            if (server_memory_limit > 0 && server_memory_usage > server_memory_limit * params.max_bytes_ratio_before_external_group_by_for_server)
-            {
-                LOG_TEST(log, "Use external aggregation due to max_bytes_ratio_before_external_group_by_for_server reached. Current server memory usage is {} (> {}*{})",
-                    formatReadableSizeWithBinarySuffix(server_memory_usage),
-                    formatReadableSizeWithBinarySuffix(server_memory_limit),
-                    params.max_bytes_ratio_before_external_group_by_for_server);
-                write_temporary_file = true;
-            }
-        }
-
-        if (write_temporary_file)
-        {
-            size_t size = current_memory_usage + params.min_free_disk_space;
-            writeToTemporaryFile(result, size);
-        }
-    }
+        writeToTemporaryFileIfNeeded(result, current_memory_usage, memory_limit);
 
     return true;
 }
