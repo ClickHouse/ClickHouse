@@ -1,16 +1,20 @@
 import { Chart } from './Chart.js';
 import { MergeTree } from './MergeTree.js';
-import {  visualizeUtility } from './visualizeUtility.js';
-import {  visualizeExecutionTime } from './visualizeExecutionTime.js';
+import { SimulationContainer } from './SimulationContainer.js';
 import { runScenario, noArrivalsScenario } from './Scenarios.js';
+import { sequenceInserter } from './sequenceInserter.js';
 import { customScenario } from './customScenario.js';
 import { fixedBaseMerges } from './fixedBaseMerges.js';
 import { floatBaseMerges } from './floatBaseMerges.js';
 import { factorsAsBaseMerges } from './factorsAsBaseMerges.js';
 import { simpleMerges } from './simpleMerges.js';
+import { integerLayerMerges } from './integerLayerMerges.js';
+import { floatLayerMerges } from './floatLayerMerges.js';
 import { factorizeNumber, allFactorPermutations } from './factorization.js';
-
-const delayMs = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+import { clickHousePartsInserter } from './clickHousePartsInserter.js';
+import { getOptimalBases } from './getOptimalBases.js';
+import { gradientDescent } from './gradientDescent.js';
+import * as util from './util.js';
 
 async function iterateAnalyticalSolution(series, parts, total_time = 1.0)
 {
@@ -33,7 +37,7 @@ async function iterateAnalyticalSolution(series, parts, total_time = 1.0)
             best_base = base;
         }
 
-        await delayMs(1);
+        await util.delayMs(1);
     }
     return {y: min_y, base: best_base};
 }
@@ -60,7 +64,7 @@ async function iterateBaseLinear(selector, series, parts, total_time = 1.0)
             best = mt;
         }
 
-        await delayMs(1);
+        await util.delayMs(1);
     }
     return {y: min_y, mt: best};
 }
@@ -91,34 +95,9 @@ async function iteratePartsFactors(selector, series, parts, total_time = 1.0)
             best = mt;
         }
 
-        await delayMs(1);
+        await util.delayMs(1);
     }
     return {y: min_y, mt: best};
-}
-
-function showSimulation(data, automatic = false)
-{
-    if (automatic && window.__pause)
-        return;
-    if (!automatic)
-        console.log("SHOW", data);
-    const {mt} = data;
-    if (mt !== undefined)
-    {
-        visualizeUtility(mt, d3.select("#util-container"), true);
-        visualizeExecutionTime(mt, d3.select("#exec-container"));
-
-        // Append text with metrics
-        d3.select("#metrics-container")
-            .text(`
-                ${mt.title === undefined ? "" : mt.title}
-                Total: ${mt.written_bytes / 1024 / 1024} MB,
-                Inserted: ${mt.inserted_bytes / 1024 / 1024} MB,
-                WA: ${mt.writeAmplification().toFixed(2)},
-                AvgPartCount: ${mt.avgActivePartCount().toFixed(2)}
-                Time: ${(mt.time).toFixed(2)}s
-            `);
-    }
 }
 
 function argMin(array, func)
@@ -181,7 +160,11 @@ async function minimizeAvgPartCount(parts, chart)
 
 export async function demo()
 {
-    showSimulation({mt: runScenario()}, true);
+    const simContainer = new SimulationContainer();
+    const mt = runScenario();
+    simContainer.update({mt}, true);
+    if (mt.time > 30 * 86400)
+        simContainer.rewinder.setMinTime(30 * 86400);
 }
 
 export async function compareAvgPartCount()
@@ -222,11 +205,11 @@ export async function compareAvgPartCount()
                 series[name] = optimal_chart.addSeries(name, showSimulation);
             series[name].addPoint({x: parts, ...results[name]});
         }
-        await delayMs(10);
+        await util.delayMs(10);
 
         // Show what simple selector is doing
         // showSimulation(simple, true);
-        //await delayMs(100);
+        //await util.delayMs(100);
 
         // analytical_series.addPoint({x: parts, y: analytical.y});
         // analytical_series.addPoint({x: parts, y: analytical.base});
@@ -238,55 +221,149 @@ export async function compareAvgPartCount()
     }
 }
 
-function* sequenceInserter({start_time, interval, parts, bytes})
-{
-    yield {type: 'sleep', delay: start_time};
-    for (let i = 0; i < parts; i++)
-    {
-        yield {type: 'insert', bytes};
-        yield {type: 'sleep', delay: interval};
-    }
-}
-
 async function custom()
 {
+    const simContainer = new SimulationContainer();
+
     const scenario = {
         inserts: [
-            sequenceInserter({
-                start_time: 0,
-                interval: 0,
-                parts: 5000,
-                bytes: 10 << 20,
+            // sequenceInserter({
+            //     start_time: 0,
+            //     interval: 0,
+            //     parts: 260,
+            //     bytes: 10 << 20,
+            // }),
+            clickHousePartsInserter({
+                host: "http://localhost:8123",
+                user: "default",
+                password: "",
+                query: "SELECT * FROM parts WHERE active = 1 AND database='colossus_metrics_loadtest' AND table='local_samples' AND partition='202411' ORDER BY database, table, partition, min_block_number"
+                // database: "colossus_metrics_loadtest",
+                // table: "local_samples",
+                // partition: "202411",
             }),
         ],
         selector: simpleMerges(),
-        pool_size: 1000,
+        pool_size: 1,
     }
 
     let show_postponed = false;
     function showMergeTree({sim, mt}) {
-        showSimulation({mt}, true);
+        simContainer.update({mt}, true);
         if (!show_postponed)
         {
             show_postponed = true;
             sim.postpone("show", async () => {
-                show_postponed = false;
-                await delayMs(10);
+                //show_postponed = false;
+                await util.delayMs(10);
             });
         }
     }
+
+    let shown = false;
+    function showMergeTreeOnce({mt}) {
+        if (!shown)
+            simContainer.update({mt}, true);
+        shown = true;
+    }
+
+    async function updateMergeTree({mt}) {
+        simContainer.update({mt}, true);
+        await util.delayMs(100);
+    }
+
+    async function everySecond({mt}) {
+        updateMergeTree({mt}, true);
+        await util.delayMs(1);
+    }
+
     const signals = {
-        //on_merge_begin: showMergeTree,
-        on_merge_end: showMergeTree,
-        //on_insert: showMergeTree,
+        on_merge_begin: updateMergeTree,
+        on_merge_end: updateMergeTree,
+        // on_insert: updateMergeTree,
+        on_every_real_second: everySecond,
     };
+
     const mt = await customScenario(scenario, signals);
-    showSimulation({mt}, true);
+    simContainer.update({mt}, true);
+}
+
+function solverTest()
+{
+    // let n = 16; // Given constant n
+    // const f = (x) => x.reduce((a, xi) => a + Math.exp(xi), 0);
+    // const gradF = (x) => x.map(xi => Math.exp(xi));
+
+    const n = 101; // B / b
+    const Ni = 1;
+    const Ai = (xi) => Math.exp(xi) * (Ni + 0.5) - 0.5;
+    const f = (x) => x.reduce((a, xi) => a + Ai(xi), 0);
+    const diffAi = (xi) => Math.exp(xi) * (Ni + 0.5);
+    const gradF = (x) => x.map(xi => diffAi(xi));
+
+    let eta = 1e-3; // Step size
+    let fopt = Infinity;
+    let Lopt = 1;
+    let xopt = [];
+    for (let L = 1; L <= 2 * Math.log(n); L++) {
+        let x = gradientDescent(gradF, L, n, eta);
+        let fx = f(x);
+        if (fx < fopt) {
+            fopt = fx;
+            xopt = x;
+            Lopt = L;
+        }
+        console.log("OPTION", {L, x, fx});
+    }
+
+    console.log("OPTIMAL", {Lopt, xopt, fopt});
+}
+
+async function periodicArrivals()
+{
+    const simContainer = new SimulationContainer();
+
+    const insertPartSize = 10 << 20;
+    const layerBases = [Math.E, Math.E, Math.E, Math.E, Math.E, Math.E, Math.E, 3];
+
+    const scenario = {
+        inserts: [
+            sequenceInserter({
+                start_time: 0,
+                interval: 0.05,
+                parts: 10000,
+                bytes: insertPartSize,
+            }),
+        ],
+        selector: floatLayerMerges({insertPartSize, layerBases}),
+        pool_size: 100,
+    }
+
+    async function updateMergeTree({mt}) {
+        simContainer.update({mt}, true);
+        await util.delayMs(1);
+    }
+
+    const signals = {
+        // on_merge_begin: updateMergeTree,
+        // on_merge_end: updateMergeTree,
+        // on_insert: updateMergeTree,
+        on_every_frame: updateMergeTree,
+        on_inserter_end: ({sim}) => sim.stop(),
+    };
+
+    const mt = await customScenario(scenario, signals);
+    simContainer.update({mt}, true);
 }
 
 export async function main()
 {
     // demo();
     // compareAvgPartCount();
-    custom();
+    // custom();
+    // solverTest();
+    periodicArrivals();
 }
+
+// For experiments in console
+window.getOptimalBases = getOptimalBases;

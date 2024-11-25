@@ -3,6 +3,20 @@ import { MergeTreeUtilityVisualizer, MergeTreeTimeVisualizer } from './MergeTree
 // Component that renders a scroll bar for MergeTree that rewinds time and controls
 // MergeTreeVisualizer(s)
 export class MergeTreeRewinder {
+    constructor(mt, visualizers, container) {
+        this.mt = mt;
+        this.visualizers = visualizers;
+        this.time = mt.time;
+        this.minTime = 0;
+        this.maxTime = mt.time;
+        this.container = container;
+
+        // Render the initial slider
+        this.speedMultipliers = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000];
+        this.currentSpeedIndex = 0;
+        this.renderSlider();
+    }
+
     stepBackward() {
         if (this.isPlaying) {
             this.togglePlay(); // Stop playback if playing
@@ -20,11 +34,13 @@ export class MergeTreeRewinder {
         this.onTimeSet(this.time);
         this.container.select("input").property("value", this.time);
     }
+
     toggleSpeed() {
         this.currentSpeedIndex = (this.currentSpeedIndex + 1) % this.speedMultipliers.length;
         this.speedButton.text(`x${this.speedMultipliers[this.currentSpeedIndex]}`);
         this.speed = 0.1 * this.speedMultipliers[this.currentSpeedIndex];
     }
+
     togglePlay() {
         if (this.isPlaying) {
             clearInterval(this.playInterval);
@@ -45,24 +61,27 @@ export class MergeTreeRewinder {
             }, 100);
         }
     }
+
     updateLabel() {
-        const minutes = Math.floor(this.time / 60);
+        const days = Math.floor(this.time / 60 / 60 / 24);
+        const hours = Math.floor((this.time / 60 / 60) % 24).toString().padStart(2, '0');
+        const minutes = Math.floor((this.time / 60) % 60).toString().padStart(2, '0');
         const seconds = Math.floor(this.time % 60).toString().padStart(2, '0');
         const fraction = (this.time % 1).toFixed(2).substring(2);
-        this.label.text(`${minutes}:${seconds}.${fraction}`);
+        let text = `${minutes}:${seconds}.${fraction}`;
+        if (hours != 0 || days != 0)
+            text = `${hours}:${text}`;
+        if (days != 0)
+            text = `${days}d${text}`;
+        this.label.text(text);
     }
-    constructor(mt, visualizers, container) {
-        this.mt = mt;
-        this.visualizers = visualizers;
-        this.time = mt.time;
-        this.minTime = 0;
-        this.maxTime = mt.time;
-        this.container = container;
 
-        // Render the initial slider
-        this.speedMultipliers = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000];
-        this.currentSpeedIndex = 0;
-        this.renderSlider();
+    setMinTime(value) {
+        this.minTime = value;
+        if (this.time < this.minTime) {
+            this.time = this.minTime;
+        }
+        this.update();
     }
 
     // Render a slider [this.minTime, this.maxTime] using HTML in `container` element with callback to this.onTimeSet
@@ -112,7 +131,7 @@ export class MergeTreeRewinder {
             .on("click", () => this.stepForward());
 
         // Create slider input
-        const slider = this.container.append("input")
+        this.slider = this.container.append("input")
             .attr("type", "range")
             .attr("min", this.minTime)
             .attr("max", this.maxTime)
@@ -146,6 +165,7 @@ export class MergeTreeRewinder {
         // Update the slider attributes and label
         this.container.select("input")
             .attr("max", this.maxTime)
+            .attr("min", this.minTime)
             .property("value", this.time);
 
         this.updateLabel();
