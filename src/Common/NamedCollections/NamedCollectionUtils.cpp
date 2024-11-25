@@ -131,7 +131,7 @@ public:
             const auto & current_path = it->path();
             if (current_path.extension() == ".sql")
             {
-                collection_names.push_back(it->path().stem());
+                collection_names.push_back(escapeForFileName(it->path().stem()));
             }
             else
             {
