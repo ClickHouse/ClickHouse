@@ -346,6 +346,8 @@ std::pair<NamesAndTypesList, Int32> parseTableSchema(
         }
         catch (const Exception & first_error)
         {
+            if (first_error.code() != ErrorCodes::BAD_ARGUMENTS)
+                throw;
             try
             {
                 std::tie(schema, current_schema_id) = parseTableSchemaV2Method(metadata_object, ignore_schema_evolution);
@@ -357,6 +359,8 @@ std::pair<NamesAndTypesList, Int32> parseTableSchema(
             }
             catch (const Exception & second_error)
             {
+                if (first_error.code() != ErrorCodes::BAD_ARGUMENTS)
+                    throw;
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Cannot parse Iceberg table schema both with v1 and v2 methods. Old method error: {}. New method error: {}",
