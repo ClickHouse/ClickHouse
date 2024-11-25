@@ -198,7 +198,7 @@ void MergeSortingTransform::consume(Chunk chunk)
     if (!external_sort && max_bytes_ratio_before_external_sort > 0.)
     {
         auto [current_memory_usage, memory_limit] = getCurrentQueryMemoryUsageAndLimit();
-        if (current_memory_usage > memory_limit * max_bytes_ratio_before_external_sort)
+        if (memory_limit > 0 && current_memory_usage > memory_limit * max_bytes_ratio_before_external_sort)
         {
             external_sort = true;
             LOG_TEST(log, "Use external sort due to max_bytes_ratio_before_external_sort reached. Current memory usage is {} (> {}*{})",
@@ -211,7 +211,7 @@ void MergeSortingTransform::consume(Chunk chunk)
     {
         auto server_memory_usage = total_memory_tracker.get();
         auto server_memory_limit = total_memory_tracker.getHardLimit();
-        if (server_memory_usage > server_memory_limit * max_bytes_ratio_before_external_sort_for_server)
+        if (server_memory_limit > 0 && server_memory_usage > server_memory_limit * max_bytes_ratio_before_external_sort_for_server)
         {
             external_sort = true;
             LOG_TEST(log, "Use external sort due to max_bytes_ratio_before_external_sort_for_server reached. Current server memory usage is {} (> {}*{})",

@@ -1506,7 +1506,7 @@ bool Aggregator::executeOnBlock(Columns columns,
         bool write_temporary_file = false;
         if (params.max_bytes_before_external_group_by && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by))
             write_temporary_file = true;
-        if (!write_temporary_file && params.max_bytes_ratio_before_external_group_by > 0. && current_memory_usage > memory_limit * params.max_bytes_ratio_before_external_group_by)
+        if (!write_temporary_file && memory_limit > 0 && params.max_bytes_ratio_before_external_group_by > 0. && current_memory_usage > memory_limit * params.max_bytes_ratio_before_external_group_by)
         {
             LOG_TEST(log, "Use external aggregation due to max_bytes_ratio_before_external_group_by reached. Current memory usage is {} (> {}*{})",
                 formatReadableSizeWithBinarySuffix(current_memory_usage),
@@ -1518,7 +1518,7 @@ bool Aggregator::executeOnBlock(Columns columns,
         {
             auto server_memory_usage = total_memory_tracker.get();
             auto server_memory_limit = total_memory_tracker.getHardLimit();
-            if (server_memory_usage > server_memory_limit * params.max_bytes_ratio_before_external_group_by_for_server)
+            if (server_memory_limit > 0 && server_memory_usage > server_memory_limit * params.max_bytes_ratio_before_external_group_by_for_server)
             {
                 LOG_TEST(log, "Use external aggregation due to max_bytes_ratio_before_external_group_by_for_server reached. Current server memory usage is {} (> {}*{})",
                     formatReadableSizeWithBinarySuffix(server_memory_usage),
@@ -2960,7 +2960,7 @@ bool Aggregator::mergeOnBlock(Block block, AggregatedDataVariants & result, bool
         bool write_temporary_file = false;
         if (params.max_bytes_before_external_group_by && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by))
             write_temporary_file = true;
-        if (params.max_bytes_ratio_before_external_group_by > 0. && current_memory_usage > memory_limit * params.max_bytes_ratio_before_external_group_by)
+        if (memory_limit > 0 && params.max_bytes_ratio_before_external_group_by > 0. && current_memory_usage > memory_limit * params.max_bytes_ratio_before_external_group_by)
         {
             LOG_TEST(log, "Use external aggregation due to max_bytes_ratio_before_external_group_by reached. Current memory usage is {} (> {}*{})",
                 formatReadableSizeWithBinarySuffix(current_memory_usage),
