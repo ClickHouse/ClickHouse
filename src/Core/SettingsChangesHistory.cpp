@@ -61,7 +61,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     {"24.12",
         {
             {"query_plan_join_swap_table", "false", "auto", "New setting. Right table was always chosen before."},
-            {"iceberg_query_at_timestamp_ms", 0, 0, "New setting."}
+            {"iceberg_query_at_timestamp_ms", 0, 0, "New setting."},
         }
     },
     {"24.11",
