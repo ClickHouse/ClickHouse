@@ -378,7 +378,7 @@ std::optional<Chain> generateViewChain(
                 table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL));
         }
 
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
         out.addSource(std::make_shared<DeduplicationToken::CheckTokenTransform>("Before squashing", out.getInputHeader()));
 #endif
 
@@ -424,7 +424,7 @@ std::optional<Chain> generateViewChain(
 
     if (type == QueryViewsLogElement::ViewType::MATERIALIZED)
     {
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
         out.addSource(std::make_shared<DeduplicationToken::CheckTokenTransform>("Right after Inner query", out.getInputHeader()));
 #endif
 
@@ -434,7 +434,7 @@ std::optional<Chain> generateViewChain(
 
         out.addSource(std::move(executing_inner_query));
 
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
         out.addSource(std::make_shared<DeduplicationToken::CheckTokenTransform>("Right before Inner query", out.getInputHeader()));
 #endif
     }
