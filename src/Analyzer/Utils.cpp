@@ -35,8 +35,6 @@
 #include <Analyzer/UnionNode.h>
 
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
-#include "Common/Logger.h"
-#include "Common/logger_useful.h"
 
 namespace DB
 {
@@ -220,7 +218,6 @@ bool isDependentColumn(IdentifierResolveScope * scope_to_check, const QueryTreeN
 
     while (scope_to_check != nullptr)
     {
-        LOG_DEBUG(getLogger("isDependentColumn"), "Checking scope:\n{}", scope_to_check->dump());
         if (scope_to_check->registered_table_expression_nodes.contains(column_source))
             return false;
         if (isQueryOrUnionNode(scope_to_check->scope_node))

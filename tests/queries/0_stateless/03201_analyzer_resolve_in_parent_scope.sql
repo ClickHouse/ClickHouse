@@ -28,20 +28,6 @@ SELECT * FROM (SELECT paddedval);
 with ('408','420') as some_tuple
 select '408' in some_tuple as flag;
 
--- create or replace view v_test1 as
--- with ('408','420') as some_tuple
--- select '408' in some_tuple as flag;
-
--- WITH dummy BETWEEN 1 AND 2 AS block_filter
--- SELECT *
--- FROM system.one
--- WHERE block_filter 
--- AND (
---     dummy IN (
---       SELECT dummy FROM system.one WHERE block_filter
---     )
--- );
-
 CREATE VIEW another_fake AS SELECT bytes, table FROM system.parts;
 
 WITH
@@ -73,4 +59,29 @@ AND (
     Block_Date IN (
       SELECT Block_Date FROM test WHERE block_filter
     )
+);
+
+CREATE TABLE test_cte
+(
+    a UInt64,
+    b UInt64,
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+WITH
+   (a > b) as cte,
+   query AS
+    (
+        SELECT count()
+        FROM test_cte
+        WHERE cte
+    )
+SELECT *
+FROM query;
+
+WITH arrayMap(x -> (x + 1), [0]) AS a
+SELECT 1
+WHERE 1 IN (
+    SELECT arrayJoin(a)
 );
