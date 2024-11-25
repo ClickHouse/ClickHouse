@@ -5534,6 +5534,9 @@ Allow to ignore schema evolution in Iceberg table engine and read all data using
 Enabling this setting can lead to incorrect result as in case of evolved schema all data files will be read using the same schema.
 :::
 )", 0) \
+    DECLARE(Bool, allow_experimental_database_iceberg, false, R"(
+Allow experimental database engine Iceberg
+)", 0) \
     DECLARE(Bool, allow_deprecated_error_prone_window_functions, false, R"(
 Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)
 )", 0) \

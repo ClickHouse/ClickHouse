@@ -60,6 +60,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
 {
     {"24.12",
         {
+            {"allow_experimental_database_iceberg", false, false, "New setting."},
         }
     },
     {"24.11",

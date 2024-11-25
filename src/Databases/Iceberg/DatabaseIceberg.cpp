@@ -2,6 +2,7 @@
 
 #if USE_AVRO
 #include <Access/Common/HTTPAuthenticationScheme.h>
+#include <Core/Settings.h>
 
 #include <Databases/DatabaseFactory.h>
 #include <Databases/Iceberg/RestCatalog.h>
@@ -44,10 +45,15 @@ namespace DatabaseIcebergSetting
     extern const DatabaseIcebergSettingsString storage_endpoint;
     extern const DatabaseIcebergSettingsBool vended_credentials;
 }
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_database_iceberg;
+}
 
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -349,6 +355,14 @@ void registerDatabaseIceberg(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
     {
+        if (!args.create_query.attach
+            && !args.context->getSettingsRef()[Setting::allow_experimental_database_iceberg])
+        {
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                            "DatabaseIceberg engine is experimental. "
+                            "To allow its usage, enable setting allow_experimental_database_iceberg");
+        }
+
         const auto * database_engine_define = args.create_query.storage;
         const auto & database_engine_name = args.engine_name;
 
@@ -357,12 +371,8 @@ void registerDatabaseIceberg(DatabaseFactory & factory)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", database_engine_name);
 
         ASTs & engine_args = function_define->arguments->children;
-        if (engine_args.empty())
+        if (engine_args.size() < 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", database_engine_name);
-
-        const size_t max_args_num = 1;
-        if (engine_args.size() != max_args_num)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine must have {} arguments", max_args_num);
 
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.context);
