@@ -27,7 +27,6 @@
 #include <Analyzer/Resolve/IdentifierResolver.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 #include <Analyzer/Resolve/ReplaceColumnsVisitor.h>
-#include "Analyzer/Resolve/IdentifierLookup.h"
 
 #include <Core/Settings.h>
 
