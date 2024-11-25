@@ -16,10 +16,10 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool enable_dynamic_type;
-    extern const SettingsBool enable_json_type;
+    extern const SettingsBool allow_experimental_dynamic_type;
+    extern const SettingsBool allow_experimental_json_type;
     extern const SettingsBool allow_experimental_object_type;
-    extern const SettingsBool enable_variant_type;
+    extern const SettingsBool allow_experimental_variant_type;
     extern const SettingsBool allow_experimental_bfloat16_type;
     extern const SettingsBool allow_suspicious_fixed_string_types;
     extern const SettingsBool allow_suspicious_low_cardinality_types;
@@ -42,12 +42,12 @@ DataTypeValidationSettings::DataTypeValidationSettings(const DB::Settings & sett
     : allow_suspicious_low_cardinality_types(settings[Setting::allow_suspicious_low_cardinality_types])
     , allow_experimental_object_type(settings[Setting::allow_experimental_object_type])
     , allow_suspicious_fixed_string_types(settings[Setting::allow_suspicious_fixed_string_types])
-    , enable_variant_type(settings[Setting::enable_variant_type])
+    , enable_variant_type(settings[Setting::allow_experimental_variant_type])
     , allow_experimental_bfloat16_type(settings[Setting::allow_experimental_bfloat16_type])
     , allow_suspicious_variant_types(settings[Setting::allow_suspicious_variant_types])
     , validate_nested_types(settings[Setting::validate_experimental_and_suspicious_types_inside_nested_types])
-    , enable_dynamic_type(settings[Setting::enable_dynamic_type])
-    , enable_json_type(settings[Setting::enable_json_type])
+    , enable_dynamic_type(settings[Setting::allow_experimental_dynamic_type])
+    , enable_json_type(settings[Setting::allow_experimental_json_type])
 {
 }
 
