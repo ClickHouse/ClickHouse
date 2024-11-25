@@ -16,7 +16,9 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_COLLATION;
+#ifndef NDEBUG
     extern const int LOGICAL_ERROR;
+#endif
 }
 
 /// Column with description for sort
@@ -273,6 +275,7 @@ bool isAlreadySortedImpl(size_t rows, Comparator compare)
     return true;
 }
 
+#ifndef NDEBUG
 template <typename Comparator>
 void checkSortedWithPermutationImpl(size_t rows, Comparator compare, UInt64 limit, const IColumn::Permutation & permutation)
 {
@@ -322,6 +325,7 @@ void checkSortedWithPermutation(const Block & block, const SortDescription & des
         return;
     }
 }
+#endif
 
 }
 
