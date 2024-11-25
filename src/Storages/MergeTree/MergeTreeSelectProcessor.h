@@ -57,7 +57,6 @@ public:
         MergeTreeSelectAlgorithmPtr algorithm_,
         const PrewhereInfoPtr & prewhere_info_,
         const ExpressionActionsSettings & actions_settings_,
-        const MergeTreeReadTask::BlockSizeParams & block_size_params_,
         const MergeTreeReaderSettings & reader_settings_);
 
     String getName() const;
@@ -74,7 +73,8 @@ public:
     static PrewhereExprInfo getPrewhereActions(
         PrewhereInfoPtr prewhere_info,
         const ExpressionActionsSettings & actions_settings,
-        bool enable_multiple_prewhere_read_steps);
+        bool enable_multiple_prewhere_read_steps,
+        bool force_short_circuit_execution);
 
     void addPartLevelToChunk(bool add_part_level_) { add_part_level = add_part_level_; }
 

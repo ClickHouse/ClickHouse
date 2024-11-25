@@ -25,7 +25,7 @@ SerializationObject::SerializationObject(
     : typed_path_serializations(std::move(typed_path_serializations_))
     , paths_to_skip(paths_to_skip_)
     , dynamic_serialization(std::make_shared<SerializationDynamic>())
-    , shared_data_serialization(getTypeOfSharedData()->getDefaultSerialization())
+    , shared_data_serialization(DataTypeObject::getTypeOfSharedData()->getDefaultSerialization())
 {
     /// We will need sorted order of typed paths to serialize them in order for consistency.
     sorted_typed_paths.reserve(typed_path_serializations.size());
@@ -36,13 +36,6 @@ SerializationObject::SerializationObject(
     std::sort(sorted_paths_to_skip.begin(), sorted_paths_to_skip.end());
     for (const auto & regexp_str : path_regexps_to_skip_)
         path_regexps_to_skip.emplace_back(regexp_str);
-}
-
-const DataTypePtr & SerializationObject::getTypeOfSharedData()
-{
-    /// Array(Tuple(String, String))
-    static const DataTypePtr type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()}, Names{"paths", "values"}));
-    return type;
 }
 
 bool SerializationObject::shouldSkipPath(const String & path) const
@@ -70,14 +63,13 @@ SerializationObject::ObjectSerializationVersion::ObjectSerializationVersion(UInt
 
 void SerializationObject::ObjectSerializationVersion::checkVersion(UInt64 version)
 {
-    if (version != V1 && version != STRING)
+    if (version != V1 && version != V2 && version != STRING)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid version for Object structure serialization.");
 }
 
 struct SerializeBinaryBulkStateObject: public ISerialization::SerializeBinaryBulkState
 {
     SerializationObject::ObjectSerializationVersion serialization_version;
-    size_t max_dynamic_paths;
     std::vector<String> sorted_dynamic_paths;
     std::unordered_map<String, ISerialization::SerializeBinaryBulkStatePtr> typed_path_states;
     std::unordered_map<String, ISerialization::SerializeBinaryBulkStatePtr> dynamic_path_states;
@@ -168,7 +160,7 @@ void SerializationObject::enumerateStreams(EnumerateStreamsSettings & settings, 
 
     settings.path.push_back(Substream::ObjectSharedData);
     auto shared_data_substream_data = SubstreamData(shared_data_serialization)
-                                          .withType(getTypeOfSharedData())
+                                          .withType(DataTypeObject::getTypeOfSharedData())
                                           .withColumn(column_object ? column_object->getSharedDataPtr() : nullptr)
                                           .withSerializationInfo(data.serialization_info)
                                           .withDeserializeState(deserialize_state ? deserialize_state->shared_data_state : nullptr);
@@ -195,7 +187,11 @@ void SerializationObject::serializeBinaryBulkStatePrefix(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing stream for Object column structure during serialization of binary bulk state prefix");
 
     /// Write serialization version.
-    UInt64 serialization_version = settings.write_json_as_string ? ObjectSerializationVersion::Value::STRING : ObjectSerializationVersion::Value::V1;
+    UInt64 serialization_version = ObjectSerializationVersion::Value::V2;
+    if (settings.write_json_as_string)
+        serialization_version = ObjectSerializationVersion::Value::STRING;
+    else if (settings.use_v1_object_and_dynamic_serialization)
+        serialization_version = ObjectSerializationVersion::Value::V1;
     writeBinaryLittleEndian(serialization_version, *stream);
 
     auto object_state = std::make_shared<SerializeBinaryBulkStateObject>(serialization_version);
@@ -205,14 +201,18 @@ void SerializationObject::serializeBinaryBulkStatePrefix(
         return;
     }
 
-    object_state->max_dynamic_paths = column_object.getMaxDynamicPaths();
-    /// Write max_dynamic_paths parameter.
-    writeVarUInt(object_state->max_dynamic_paths, *stream);
     /// Write all dynamic paths in sorted order.
     object_state->sorted_dynamic_paths.reserve(dynamic_paths.size());
     for (const auto & [path, _] : dynamic_paths)
         object_state->sorted_dynamic_paths.push_back(path);
     std::sort(object_state->sorted_dynamic_paths.begin(), object_state->sorted_dynamic_paths.end());
+
+    /// In V1 version we had max_dynamic_paths parameter written, but now we need only actual number of dynamic paths.
+    /// For compatibility we need to write V1 version sometimes, but we should write number of dynamic paths instead of
+    /// max_dynamic_paths (because now max_dynamic_paths can be different in different serialized columns).
+    if (serialization_version == ObjectSerializationVersion::Value::V1)
+        writeVarUInt(object_state->sorted_dynamic_paths.size(), *stream);
+
     writeVarUInt(object_state->sorted_dynamic_paths.size(), *stream);
     for (const auto & path : object_state->sorted_dynamic_paths)
         writeStringBinary(path, *stream);
@@ -367,10 +367,15 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
         UInt64 serialization_version;
         readBinaryLittleEndian(serialization_version, *structure_stream);
         auto structure_state = std::make_shared<DeserializeBinaryBulkStateObjectStructure>(serialization_version);
-        if (structure_state->serialization_version.value == ObjectSerializationVersion::Value::V1)
+        if (structure_state->serialization_version.value == ObjectSerializationVersion::Value::V1 || structure_state->serialization_version.value == ObjectSerializationVersion::Value::V2)
         {
-            /// Read max_dynamic_paths parameter.
-            readVarUInt(structure_state->max_dynamic_paths, *structure_stream);
+            if (structure_state->serialization_version.value == ObjectSerializationVersion::Value::V1)
+            {
+                /// Skip max_dynamic_paths parameter in V1 serialization version.
+                size_t max_dynamic_paths;
+                readVarUInt(max_dynamic_paths, *structure_stream);
+            }
+
             /// Read the sorted list of dynamic paths.
             size_t dynamic_paths_size;
             readVarUInt(dynamic_paths_size, *structure_stream);
@@ -452,9 +457,6 @@ void SerializationObject::serializeBinaryBulkWithMultipleStreams(
     const auto & typed_paths = column_object.getTypedPaths();
     const auto & dynamic_paths = column_object.getDynamicPaths();
     const auto & shared_data = column_object.getSharedDataPtr();
-
-    if (column_object.getMaxDynamicPaths() != object_state->max_dynamic_paths)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mismatch of max_dynamic_paths parameter of Object. Expected: {}, Got: {}", object_state->max_dynamic_paths, column_object.getMaxDynamicPaths());
 
     if (column_object.getDynamicPaths().size() != object_state->sorted_dynamic_paths.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mismatch of number of dynamic paths in Object. Expected: {}, Got: {}", object_state->sorted_dynamic_paths.size(), column_object.getDynamicPaths().size());
@@ -604,7 +606,7 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
     /// If it's a new object column, set dynamic paths and statistics.
     if (column_object.empty())
     {
-        column_object.setMaxDynamicPaths(structure_state->max_dynamic_paths);
+        column_object.setMaxDynamicPaths(structure_state->sorted_dynamic_paths.size());
         column_object.setDynamicPaths(structure_state->sorted_dynamic_paths);
         column_object.setStatistics(structure_state->statistics);
     }

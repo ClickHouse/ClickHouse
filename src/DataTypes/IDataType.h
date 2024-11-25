@@ -88,6 +88,15 @@ public:
 
     DataTypePtr getPtr() const { return shared_from_this(); }
 
+    /// Returns the normalized form of the current type, currently handling the
+    /// conversion of named tuples to unnamed tuples.
+    ///
+    /// This is useful for converting aggregate states into a normalized form with
+    /// normalized argument types. E.g, `AggregateFunction(uniq, Tuple(a int, b int))`
+    /// should be convertible to `AggregateFunction(uniq, Tuple(int, int))`, as both
+    /// have same memory layouts for state representation and the same serialization.
+    virtual DataTypePtr getNormalizedType() const { return shared_from_this(); }
+
     /// Name of data type family (example: FixedString, Array).
     virtual const char * getFamilyName() const = 0;
 
@@ -399,9 +408,11 @@ struct WhichDataType
     constexpr bool isDecimal256() const { return idx == TypeIndex::Decimal256; }
     constexpr bool isDecimal() const { return isDecimal32() || isDecimal64() || isDecimal128() || isDecimal256(); }
 
+    constexpr bool isBFloat16() const { return idx == TypeIndex::BFloat16; }
     constexpr bool isFloat32() const { return idx == TypeIndex::Float32; }
     constexpr bool isFloat64() const { return idx == TypeIndex::Float64; }
-    constexpr bool isFloat() const { return isFloat32() || isFloat64(); }
+    constexpr bool isNativeFloat() const { return isFloat32() || isFloat64(); }
+    constexpr bool isFloat() const { return isNativeFloat() || isBFloat16(); }
 
     constexpr bool isNativeNumber() const { return isNativeInteger() || isFloat(); }
     constexpr bool isNumber() const { return isInteger() || isFloat() || isDecimal(); }
@@ -612,6 +623,7 @@ template <typename T> inline constexpr bool IsDataTypeEnum<DataTypeEnum<T>> = tr
     M(Int64) \
     M(Int128) \
     M(Int256) \
+    M(BFloat16) \
     M(Float32) \
     M(Float64)
 }

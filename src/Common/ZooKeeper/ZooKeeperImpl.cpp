@@ -306,6 +306,14 @@ void ZooKeeper::flushWriteBuffer()
     out->next();
 }
 
+void ZooKeeper::cancelWriteBuffer() noexcept
+{
+    if (compressed_out)
+         compressed_out->cancel();
+    if (out)
+        out->cancel();
+}
+
 ReadBuffer & ZooKeeper::getReadBuffer()
 {
     if (compressed_in)
@@ -440,7 +448,9 @@ void ZooKeeper::connect(
     if (nodes.empty())
         throw Exception::fromMessage(Error::ZBADARGUMENTS, "No nodes passed to ZooKeeper constructor");
 
-    static constexpr size_t num_tries = 3;
+    /// We always have at least one attempt to connect.
+    size_t num_tries = args.num_connection_retries + 1;
+
     bool connected = false;
     bool dns_error = false;
 
@@ -546,6 +556,7 @@ void ZooKeeper::connect(
             catch (...)
             {
                 fail_reasons << "\n" << getCurrentExceptionMessage(false) << ", " << node.address->toString();
+                cancelWriteBuffer();
             }
         }
 
@@ -1085,6 +1096,8 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
         /// Set expired flag after we sent close event
         expire_session_if_not_expired();
 
+        cancelWriteBuffer();
+
         try
         {
             /// This will also wakeup the receiving thread.
@@ -1226,6 +1239,9 @@ void ZooKeeper::pushRequest(RequestInfo && info)
         if (!info.request->xid)
         {
             info.request->xid = next_xid.fetch_add(1);
+            if (!use_xid_64)
+                info.request->xid = static_cast<int32_t>(info.request->xid);
+
             if (info.request->xid == close_xid)
                 throw Exception::fromMessage(Error::ZSESSIONEXPIRED, "xid equal to close_xid");
             if (info.request->xid < 0)
