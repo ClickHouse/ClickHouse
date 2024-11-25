@@ -22,6 +22,7 @@ public:
 class S3Credentials final : public IStorageCredentials
 {
 public:
+    /// TODO: support region as well.
     S3Credentials(
         const std::string & access_key_id_,
         const std::string & secret_access_key_,

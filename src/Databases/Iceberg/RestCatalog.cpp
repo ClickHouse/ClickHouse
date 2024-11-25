@@ -527,7 +527,15 @@ bool RestCatalog::getTableMetadataImpl(
 
     DB::HTTPHeaderEntries headers;
     if (result.requiresCredentials())
+    {
+        /// Header `X-Iceberg-Access-Delegation` tells catalog to include storage credentials in LoadTableResponse.
+        /// Value can be one of the two:
+        /// 1. `vended-credentials`
+        /// 2. `remote-signing`
+        /// Currently we support only the first.
+        /// https://github.com/apache/iceberg/blob/3badfe0c1fcf0c0adfc7aa4a10f0b50365c48cf9/open-api/rest-catalog-open-api.yaml#L1832
         headers.emplace_back("X-Iceberg-Access-Delegation", "vended-credentials");
+    }
 
     const auto endpoint = std::string(namespaces_endpoint) + "/" + namespace_name + "/tables/" + table_name;
     auto buf = createReadBuffer(config.prefix / endpoint, /* params */{}, headers);
