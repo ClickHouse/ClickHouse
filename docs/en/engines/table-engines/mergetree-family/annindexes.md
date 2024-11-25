@@ -35,8 +35,8 @@ where
 The query returns the `N` closest points in `vectors` to `reference_vector`.
 
 Exhaustive search computes the distance between `reference_vector` and all vectors in `vectors`. As such, its runtime is linear in the
-number of stored vectors. Approximate search relies on special data structures (e.g. graphs, random forrests, etc.) which allow to find the
-clostest vectors to a given reference vector quickly (i.e. in sub-linear time). ClickHouse provides such a data structure in the form of
+number of stored vectors. Approximate search relies on special data structures (e.g. graphs, random forests, etc.) which allow to find the
+closest vectors to a given reference vector quickly (i.e. in sub-linear time). ClickHouse provides such a data structure in the form of
 "vector similarity indexes", a type of [skipping index](mergetree.md#table_engine-mergetree-data_skipping-indexes).
 
 # Creating and Using Vector Similarity Indexes
