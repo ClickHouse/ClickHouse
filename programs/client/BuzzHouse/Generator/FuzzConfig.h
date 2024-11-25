@@ -163,8 +163,7 @@ public:
             fileContent += buf;
         }
         inputFile.close();
-        auto error = parser.parse(fileContent, object);
-        if (error)
+        if (!parser.parse(fileContent, object))
         {
             throw std::runtime_error("Could not parse BuzzHouse JSON configuration file");
         }
