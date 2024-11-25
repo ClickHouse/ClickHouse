@@ -4660,7 +4660,7 @@ private:
 
             return ColumnObject::create(new_typed_paths, new_dynamic_paths, new_shared_data, new_dynamic_paths.size(), new_max_dynamic_paths, new_max_dynamic_types);
         };
-    }
+    }Column
 
 
     WrapperType createObjectWrapper(const DataTypePtr & from_type, const DataTypeObject * to_object) const
@@ -5243,7 +5243,6 @@ private:
             return [to_max_types]
                    (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t) -> ColumnPtr
             {
-                LOG_DEBUG(getLogger("createDynamicToDynamicWrapper"), "Convert");
                 const auto & dynamic_column = assert_cast<const ColumnDynamic &>(*arguments[0].column);
                 /// We should use the same limit as already used in column and change only global limit.
                 /// It's needed because shared variant should contain values only when limit is exceeded,
