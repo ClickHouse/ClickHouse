@@ -94,7 +94,7 @@ SortingStep::SortingStep(
     , limit(limit_)
     , sort_settings(settings_)
 {
-    if ((sort_settings.max_bytes_before_external_sort || sort_settings.max_bytes_ratio_before_external_sort > 0.) && sort_settings.tmp_data == nullptr)
+    if ((sort_settings.max_bytes_before_external_sort || sort_settings.max_bytes_ratio_before_external_sort > 0. || sort_settings.max_bytes_ratio_before_external_sort_for_server > 0.) && sort_settings.tmp_data == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary data storage for external sorting is not provided");
 }
 
