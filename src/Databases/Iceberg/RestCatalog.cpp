@@ -1,4 +1,5 @@
 #include <Databases/Iceberg/RestCatalog.h>
+#include <Databases/Iceberg/StorageCredentials.h>
 
 #include <base/find_symbols.h>
 #include <Common/escapeForFileName.h>
@@ -170,7 +171,7 @@ void RestCatalog::parseCatalogConfigurationSettings(const Poco::JSON::Object::Pt
         result.default_base_location = object->get("default-base-location").extract<String>();
 }
 
-DB::HTTPHeaderEntries RestCatalog::getHeaders(bool update_token) const
+DB::HTTPHeaderEntries RestCatalog::getAuthHeaders(bool update_token) const
 {
     /// Option 1: user specified auth header manually.
     /// Header has format: 'Authorization: <scheme> <token>'.
@@ -248,7 +249,8 @@ std::optional<StorageType> RestCatalog::getStorageType() const
 
 DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
     const std::string & endpoint,
-    const Poco::URI::QueryParameters & params) const
+    const Poco::URI::QueryParameters & params,
+    const DB::HTTPHeaderEntries & headers) const
 {
     const auto & context = getContext();
 
@@ -258,13 +260,15 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
 
     auto create_buffer = [&](bool update_token)
     {
-        auto headers = getHeaders(update_token);
+        auto result_headers = getAuthHeaders(update_token);
+        std::move(headers.begin(), headers.end(), std::back_inserter(result_headers));
+
         return DB::BuilderRWBufferFromHTTP(url)
             .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
             .withSettings(getContext()->getReadSettings())
             .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
             .withHostFilter(&getContext()->getRemoteHostFilter())
-            .withHeaders(headers)
+            .withHeaders(result_headers)
             .withDelayInit(false)
             .withSkipNotFound(false)
             .create(credentials);
@@ -521,8 +525,12 @@ bool RestCatalog::getTableMetadataImpl(
 {
     LOG_TEST(log, "Checking table {} in namespace {}", table_name, namespace_name);
 
+    DB::HTTPHeaderEntries headers;
+    if (result.requiresCredentials())
+        headers.emplace_back("X-Iceberg-Access-Delegation", "vended-credentials");
+
     const auto endpoint = std::string(namespaces_endpoint) + "/" + namespace_name + "/tables/" + table_name;
-    auto buf = createReadBuffer(config.prefix / endpoint);
+    auto buf = createReadBuffer(config.prefix / endpoint, /* params */{}, headers);
 
     if (buf->eof())
     {
@@ -533,6 +541,7 @@ bool RestCatalog::getTableMetadataImpl(
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, *buf);
 
+    /// TODO: remove before merge because it might contain credentials.
     LOG_TEST(log, "Received metadata for table {}: {}", table_name, json_str);
 
     Poco::JSON::Parser parser;
@@ -543,9 +552,10 @@ bool RestCatalog::getTableMetadataImpl(
     if (!metadata_object)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot parse result");
 
+    std::string location;
     if (result.requiresLocation())
     {
-        const auto location = metadata_object->get("location").extract<String>();
+        location = metadata_object->get("location").extract<String>();
         result.setLocation(location);
         LOG_TEST(log, "Location for table {}: {}", table_name, location);
     }
@@ -556,23 +566,37 @@ bool RestCatalog::getTableMetadataImpl(
         result.setSchema(DB::IcebergMetadata::parseTableSchema(metadata_object, format_version, true).first);
     }
 
-    // if (result.requiresCredentials())
-    // {
-    //     try
-    //     {
-    //         const auto credentials_endpoint = std::filesystem::path(endpoint) / "credentials";
-    //         auto credentials_buf = createReadBuffer(config.prefix / credentials_endpoint);
+    if (result.requiresCredentials() && object->has("config"))
+    {
+        auto config_object = object->get("config").extract<Poco::JSON::Object::Ptr>();
+        if (!config_object)
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot parse config result");
 
-    //         String credentials_json_str;
-    //         readJSONObjectPossiblyInvalid(credentials_json_str, *credentials_buf);
+        auto storage_type = parseStorageTypeFromLocation(location);
+        switch (storage_type)
+        {
+            case StorageType::S3:
+            {
+                static constexpr auto access_key_id_str = "s3.access-key-id";
+                static constexpr auto secret_access_key_str = "s3.secret-access-key";
+                static constexpr auto session_token_str = "s3.session-token";
 
-    //         LOG_TEST(log, "Credentials : {}", credentials_json_str);
-    //     }
-    //     catch (...)
-    //     {
-    //         DB::tryLogCurrentException(log);
-    //     }
-    // }
+                std::string access_key_id, secret_access_key, session_token;
+                if (config_object->has(access_key_id_str))
+                    access_key_id = config_object->get(access_key_id_str).extract<String>();
+                if (config_object->has(secret_access_key_str))
+                    secret_access_key = config_object->get(secret_access_key_str).extract<String>();
+                if (config_object->has(session_token_str))
+                    session_token = config_object->get(session_token_str).extract<String>();
+
+                result.setStorageCredentials(
+                    std::make_shared<S3Credentials>(access_key_id, secret_access_key, session_token));
+                break;
+            }
+            default:
+                break;
+        }
+    }
 
     return true;
 }

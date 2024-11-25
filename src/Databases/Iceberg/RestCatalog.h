@@ -79,7 +79,8 @@ private:
 
     DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
         const std::string & endpoint,
-        const Poco::URI::QueryParameters & params = {}) const;
+        const Poco::URI::QueryParameters & params = {},
+        const DB::HTTPHeaderEntries & headers = {}) const;
 
     Poco::URI::QueryParameters createParentNamespaceParams(const std::string & base_namespace) const;
 
@@ -107,7 +108,7 @@ private:
 
     Config loadConfig();
     std::string retrieveAccessToken() const;
-    DB::HTTPHeaderEntries getHeaders(bool update_token = false) const;
+    DB::HTTPHeaderEntries getAuthHeaders(bool update_token = false) const;
     static void parseCatalogConfigurationSettings(const Poco::JSON::Object::Ptr & object, Config & result);
 };
 

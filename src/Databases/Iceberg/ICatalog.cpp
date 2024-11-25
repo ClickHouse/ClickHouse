@@ -68,4 +68,19 @@ const DB::NamesAndTypesList & TableMetadata::getSchema() const
     return schema;
 }
 
+void TableMetadata::setStorageCredentials(std::shared_ptr<IStorageCredentials> credentials_)
+{
+    if (!with_storage_credentials)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Storage credentials were not requested");
+
+    storage_credentials = std::move(credentials_);
+}
+
+std::shared_ptr<IStorageCredentials> TableMetadata::getStorageCredentials() const
+{
+    if (!with_storage_credentials)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data schema was not requested");
+
+    return storage_credentials;
+}
 }

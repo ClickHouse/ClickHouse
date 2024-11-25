@@ -2,6 +2,7 @@
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/SettingsEnums.h>
+#include <Databases/Iceberg/StorageCredentials.h>
 
 namespace Iceberg
 {
@@ -16,6 +17,7 @@ public:
 
     TableMetadata & withLocation() { with_location = true; return *this; }
     TableMetadata & withSchema() { with_schema = true; return *this; }
+    TableMetadata & withStorageCredentials() { with_storage_credentials = true; return *this; }
 
     void setLocation(const std::string & location_);
     std::string getLocation(bool path_only) const;
@@ -23,8 +25,12 @@ public:
     void setSchema(const DB::NamesAndTypesList & schema_);
     const DB::NamesAndTypesList & getSchema() const;
 
+    void setStorageCredentials(std::shared_ptr<IStorageCredentials> credentials_);
+    std::shared_ptr<IStorageCredentials> getStorageCredentials() const;
+
     bool requiresLocation() const { return with_location; }
     bool requiresSchema() const { return with_schema; }
+    bool requiresCredentials() const { return with_storage_credentials; }
 
 private:
     /// Starts with s3://, file://, etc.
@@ -34,10 +40,12 @@ private:
     std::string path;
     DB::NamesAndTypesList schema;
 
-    std::string credentials;
+    /// Storage credentials, which are called "vended credentials".
+    std::shared_ptr<IStorageCredentials> storage_credentials;
 
     bool with_location = false;
     bool with_schema = false;
+    bool with_storage_credentials = false;
 };
 
 
@@ -87,5 +95,6 @@ protected:
     /// which is sometimes also called "catalog name".
     const std::string warehouse;
 };
+
 
 }

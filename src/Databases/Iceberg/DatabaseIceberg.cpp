@@ -42,6 +42,7 @@ namespace DatabaseIcebergSetting
     extern const DatabaseIcebergSettingsString auth_header;
     extern const DatabaseIcebergSettingsString auth_scope;
     extern const DatabaseIcebergSettingsString storage_endpoint;
+    extern const DatabaseIcebergSettingsBool vended_credentials;
 }
 
 namespace ErrorCodes
@@ -192,6 +193,11 @@ StoragePtr DatabaseIceberg::tryGetTable(const String & name, ContextPtr context_
 {
     auto catalog = getCatalog(context_);
     auto table_metadata = Iceberg::TableMetadata().withLocation().withSchema();
+
+    const bool with_vended_credentials = settings[DatabaseIcebergSetting::vended_credentials].value;
+    if (with_vended_credentials)
+        table_metadata = table_metadata.withStorageCredentials();
+
     auto [namespace_name, table_name] = parseTableName(name);
 
     if (!catalog->tryGetTableMetadata(namespace_name, table_name, table_metadata))
@@ -204,6 +210,25 @@ StoragePtr DatabaseIceberg::tryGetTable(const String & name, ContextPtr context_
     /// Replace Iceberg Catalog endpoint with storage path endpoint of requested table.
     auto table_endpoint = getStorageEndpointForTable(table_metadata);
     args[0] = std::make_shared<ASTLiteral>(table_endpoint);
+
+    /// We either fetch storage credentials from catalog "
+    /// "or get storage credentials from database engine arguments
+    /// in CREATE query (e.g. in `args`).
+    /// Vended credentials can be disabled in catalog itself,
+    /// so we have a separate setting to know whether we should even try to fetch them.
+    if (with_vended_credentials && args.size() == 1)
+    {
+        auto storage_credentials = table_metadata.getStorageCredentials();
+        if (storage_credentials)
+            storage_credentials->addCredentialsToEngineArgs(args);
+    }
+    else if (args.size() == 1)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Either vended credentials need to be enabled "
+            "or storage credentials need to be specified in database engine arguements in CREATE query");
+    }
 
     LOG_TEST(log, "Using table endpoint: {}", table_endpoint);
 
@@ -238,7 +263,7 @@ DatabaseTablesIteratorPtr DatabaseIceberg::getTablesIterator(
     auto catalog = getCatalog(context_);
     const auto iceberg_tables = catalog->getTables();
 
-    auto & pool = getContext()->getIcebergCatalogThreadpool();
+    auto & pool = context_->getIcebergCatalogThreadpool();
     DB::ThreadPoolCallbackRunnerLocal<void> runner(pool, "RestCatalog");
     std::mutex mutexx;
 
@@ -335,7 +360,7 @@ void registerDatabaseIceberg(DatabaseFactory & factory)
         if (engine_args.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", database_engine_name);
 
-        const size_t max_args_num = 3;
+        const size_t max_args_num = 1;
         if (engine_args.size() != max_args_num)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine must have {} arguments", max_args_num);
 
