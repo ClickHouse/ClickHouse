@@ -1028,6 +1028,7 @@ void StorageKeeperMap::restoreDataImpl(
         temp_data_file.emplace(temporary_disk);
         auto out = std::make_unique<WriteBufferFromFile>(temp_data_file->getAbsolutePath());
         copyData(*in, *out);
+        out->finalize();
         out.reset();
         in = createReadBufferFromFileBase(temp_data_file->getAbsolutePath(), {});
     }
