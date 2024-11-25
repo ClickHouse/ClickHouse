@@ -79,7 +79,7 @@ struct QueryPlanOptimizationSettings
     bool optimize_use_implicit_projections = false;
 
     /// If query condition cache is enabled, the query condition cache needs to be updated in the WHERE stage.
-    bool enable_writes_to_query_condition_cache = false;
+    bool use_query_condition_cache = false;
 
     bool build_sets = true;
 

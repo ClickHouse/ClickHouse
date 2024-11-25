@@ -19,10 +19,10 @@ public:
     {}
 
     /// Read the filter and return empty if it does not exist.
-    std::optional<MarkFilter> read(const std::shared_ptr<const IMergeTreeDataPart> & data_part, const String & condition);
+    std::optional<MarkFilter> read(const std::shared_ptr<const IMergeTreeDataPart> & data_part, size_t condition_id);
 
     /// Take out the mark filter corresponding to the query condition and set it to false on the corresponding mark.
-    void write(const MergeTreeDataPartPtr & data_part, const String & condition, const MarkRanges & mark_ranges);
+    void write(const MergeTreeDataPartPtr & data_part, size_t condition_id, const MarkRanges & mark_ranges);
 
     void clear() { cache.clear(); }
 
@@ -33,9 +33,9 @@ private:
     {
         const UUID table_id;
         const String part_name;
-        const String condition;
+        const size_t condition_id;
 
-        bool operator==(const Key & other) const { return table_id == other.table_id && part_name == other.part_name && condition == other.condition; }
+        bool operator==(const Key & other) const { return table_id == other.table_id && part_name == other.part_name && condition_id == other.condition_id; }
     };
 
     struct KeyHasher

@@ -45,6 +45,9 @@ void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
 /// Recursively checks if all functions used in DAG are deterministic in scope of query.
 bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node);
 
+/// Recursively checks if all functions used in DAG are deterministic.
+bool isDeterministic(const ActionsDAG::Node * node);
+
 /// Extract a part of predicate that can be evaluated using only columns from input_names.
 /// When allow_partial_result is false, then the result will be empty if any part of if cannot be evaluated deterministically
 /// on the given inputs.

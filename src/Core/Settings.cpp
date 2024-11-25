@@ -4244,7 +4244,7 @@ Possible values:
     DECLARE(Bool, enable_sharing_sets_for_mutations, true, R"(
 Allow sharing set objects build for IN subqueries between different tasks of the same mutation. This reduces memory usage and CPU consumption
 )", 0) \
-    DECLARE(Bool, use_query_condition_cache, true, R"(
+    DECLARE(Bool, use_query_condition_cache, false, R"(
 Enable the query condition cache.
 
 Possible values:
@@ -4252,23 +4252,6 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
-    DECLARE(Bool, enable_writes_to_query_condition_cache, true, R"(
-Enable storing mark filter of PREWHERE and WHERE in the query condition cache.
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-)", 0) \
-DECLARE(Bool, enable_reads_to_query_condition_cache, true, R"(
-Enable reading mark filter of PREWHERE and WHERE from the query condition cache.
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-)", 0) \
-    \
     DECLARE(Bool, optimize_rewrite_sum_if_to_count_if, true, R"(
 Rewrite sumIf() and sum(if()) function countIf() function when logically equivalent
 )", 0) \

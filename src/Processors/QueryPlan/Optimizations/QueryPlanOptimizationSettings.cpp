@@ -33,7 +33,6 @@ namespace Setting
     extern const SettingsBool query_plan_reuse_storage_ordering_for_window_functions;
     extern const SettingsBool query_plan_split_filter;
     extern const SettingsBool use_query_condition_cache;
-    extern const SettingsBool enable_writes_to_query_condition_cache;
 }
 
 QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromSettings(const Settings & from)
@@ -84,7 +83,7 @@ QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromSettings(const 
     settings.force_projection_name = settings.optimize_projection ? from[Setting::force_optimize_projection_name].value : "";
     settings.optimize_use_implicit_projections = settings.optimize_projection && from[Setting::optimize_use_implicit_projections];
 
-    settings.enable_writes_to_query_condition_cache = from[Setting::use_query_condition_cache] && from[Setting::enable_writes_to_query_condition_cache];
+    settings.use_query_condition_cache = from[Setting::use_query_condition_cache];
 
     return settings;
 }

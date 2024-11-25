@@ -376,6 +376,23 @@ bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node)
     return true;
 }
 
+bool isDeterministic(const ActionsDAG::Node * node)
+{
+    for (const auto * child : node->children)
+    {
+        if (!isDeterministic(child))
+            return false;
+    }
+
+    if (node->type != ActionsDAG::ActionType::FUNCTION)
+        return true;
+
+    if (!node->function_base->isDeterministic())
+        return false;
+
+    return true;
+}
+
 static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
     const ActionsDAG::Node * node, const Block * allowed_inputs, ActionsDAG::Nodes & additional_nodes, bool allow_partial_result)
 {

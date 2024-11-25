@@ -127,6 +127,33 @@ void ActionsDAG::Node::toTree(JSONBuilder::JSONMap & map) const
         map.add("Compiled", is_function_compiled);
 }
 
+size_t ActionsDAG::Node::getHash() const
+{
+    SipHash hash_state;
+    updateHash(hash_state);
+    return hash_state.get64();
+}
+void ActionsDAG::Node::updateHash(SipHash & hash_state) const
+{
+    hash_state.update(type);
+
+    if (result_type)
+        hash_state.update(result_type->getName());
+
+    if (!result_name.empty())
+        hash_state.update(result_name);
+
+    if (column)
+        hash_state.update(column->getName());
+
+    if (function_base)
+        hash_state.update(function_base->getName());
+
+    hash_state.update(children.size());
+    for (const auto & child : children)
+        child->updateHash(hash_state);
+}
+
 
 ActionsDAG::ActionsDAG(const NamesAndTypesList & inputs_)
 {

@@ -181,7 +181,6 @@ namespace Setting
     extern const SettingsUInt64 merge_tree_min_read_task_size;
     extern const SettingsBool read_in_order_use_virtual_row;
     extern const SettingsBool use_query_condition_cache;
-    extern const SettingsBool enable_writes_to_query_condition_cache;
 }
 
 namespace MergeTreeSetting
@@ -213,7 +212,7 @@ static MergeTreeReaderSettings getMergeTreeReaderSettings(
             && (settings[Setting::max_streams_to_max_threads_ratio] > 1 || settings[Setting::max_streams_for_merge_tree_reading] > 1),
         .enable_multiple_prewhere_read_steps = settings[Setting::enable_multiple_prewhere_read_steps],
         .force_short_circuit_execution = settings[Setting::query_plan_merge_filters],
-        .enable_writes_to_query_condition_cache = settings[Setting::use_query_condition_cache] && settings[Setting::enable_writes_to_query_condition_cache]
+        .use_query_condition_cache = settings[Setting::use_query_condition_cache]
     };
 }
 
