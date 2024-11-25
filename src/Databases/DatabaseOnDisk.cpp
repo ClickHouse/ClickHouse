@@ -27,6 +27,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
+#include <Common/computeMaxTableNameLength.h>
 #include <Common/escapeForFileName.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
@@ -69,6 +70,7 @@ namespace ErrorCodes
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int DATABASE_NOT_EMPTY;
     extern const int INCORRECT_QUERY;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 
@@ -405,18 +407,31 @@ void DatabaseOnDisk::checkMetadataFilenameAvailability(const String & to_table_n
 
 void DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked(const String & to_table_name) const
 {
-    auto db_disk = getContext()->getDatabaseDisk();
+    // Compute allowed max length directly
+    size_t allowed_max_length = computeMaxTableNameLength(database_name, getContext());
     String table_metadata_path = getObjectMetadataPath(to_table_name);
+
+    const auto escaped_name_length = escapeForFileName(to_table_name).length();
+
+    if (escaped_name_length > allowed_max_length)
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                        "The max length of table name for database {} is {}, current length is {}",
+                        database_name, allowed_max_length, escaped_name_length);
+
+    auto db_disk = getContext()->getDatabaseDisk();
 
     if (db_disk->existsFile(table_metadata_path))
     {
         fs::path detached_permanently_flag(table_metadata_path + detached_suffix);
 
         if (db_disk->existsFile(detached_permanently_flag))
-            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists (detached permanently)",
+            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
+                            "Table {}.{} already exists (detached permanently)",
                             backQuote(database_name), backQuote(to_table_name));
-        throw Exception(
-            ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists (detached)", backQuote(database_name), backQuote(to_table_name));
+        else
+            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
+                            "Table {}.{} already exists (detached)",
+                            backQuote(database_name), backQuote(to_table_name));
     }
 }
 
