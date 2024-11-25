@@ -10,13 +10,13 @@
 
 namespace fs = std::filesystem;
 
+namespace DB
+{
+
 namespace ErrorCodes
 {
     extern const int CANNOT_RELOAD_CONFIG;
 }
-
-namespace DB
-{
 
 ConfigReloader::ConfigReloader(
         std::string_view config_path_,
@@ -141,7 +141,7 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
             if (throw_on_error)
                 throw Exception(ErrorCodes::CANNOT_RELOAD_CONFIG, message);
 
-            LOG_ERROR(log, message)
+            LOG_ERROR(log, message);
             return std::nullopt;
         }
         catch (...)
@@ -151,7 +151,7 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
             if (throw_on_error)
                 throw Exception(ErrorCodes::CANNOT_RELOAD_CONFIG, message);
 
-            LOG_ERROR(log, message)
+            LOG_ERROR(log, message);
             return std::nullopt;
         }
         config_processor.savePreprocessedConfig(loaded_config, preprocessed_dir);
@@ -180,7 +180,7 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
             if (throw_on_error)
                 throw Exception(ErrorCodes::CANNOT_RELOAD_CONFIG, message);
 
-            LOG_ERROR(log, message)
+            LOG_ERROR(log, message);
             return std::nullopt;
         }
 
