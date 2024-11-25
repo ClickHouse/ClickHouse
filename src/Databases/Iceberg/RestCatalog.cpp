@@ -24,6 +24,7 @@ namespace DB::ErrorCodes
     extern const int ICEBERG_CATALOG_ERROR;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace Iceberg

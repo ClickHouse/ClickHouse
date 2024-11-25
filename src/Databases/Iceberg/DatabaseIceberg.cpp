@@ -24,13 +24,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTDataType.h>
 
-namespace CurrentMetrics
-{
-    extern const Metric IcebergCatalogThreads;
-    extern const Metric IcebergCatalogThreadsActive;
-    extern const Metric IcebergCatalogThreadsScheduled;
-}
-
 
 namespace DB
 {
@@ -233,7 +226,7 @@ StoragePtr DatabaseIceberg::tryGetTable(const String & name, ContextPtr context_
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Either vended credentials need to be enabled "
-            "or storage credentials need to be specified in database engine arguements in CREATE query");
+            "or storage credentials need to be specified in database engine arguments in CREATE query");
     }
 
     LOG_TEST(log, "Using table endpoint: {}", table_endpoint);
