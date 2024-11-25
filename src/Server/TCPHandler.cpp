@@ -63,11 +63,16 @@
 
 #include <Core/Protocol.h>
 #include <Storages/MergeTree/RequestResponse.h>
+#include <Interpreters/ClientInfo.h>
+
 #include "TCPHandler.h"
 
 #include <Common/config_version.h>
 
 #include <fmt/format.h>
+
+#include <fmt/ostream.h>
+#include <Common/StringUtils.h>
 
 using namespace std::literals;
 using namespace DB;
@@ -1960,6 +1965,13 @@ void TCPHandler::processQuery(std::optional<QueryState> & state)
     Settings passed_settings;
     passed_settings.read(*in, settings_format);
 
+    std::string received_extra_roles;
+    // TODO: check if having `is_interserver_mode` doesn't break interoperability with the CH-client.
+    if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_EXTERNALLY_GRANTED_ROLES)
+    {
+        readStringBinary(received_extra_roles, *in);
+    }
+
     /// Interserver secret.
     std::string received_hash;
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET)
@@ -2019,6 +2031,7 @@ void TCPHandler::processQuery(std::optional<QueryState> & state)
         data += state->query;
         data += state->query_id;
         data += client_info.initial_user;
+        data += received_extra_roles;
 
         std::string calculated_hash = encodeSHA256(data);
         assert(calculated_hash.size() == 32);
@@ -2039,13 +2052,25 @@ void TCPHandler::processQuery(std::optional<QueryState> & state)
         }
         else
         {
+            // In a cluster, query originator may have an access to the external auth provider (like LDAP server),
+            // that grants specific roles to the user. We want these roles to be granted to the user on other nodes of cluster when
+            // query is executed.
+            Strings external_roles;
+            if (!received_extra_roles.empty())
+            {
+                ReadBufferFromString buffer(received_extra_roles);
+
+                readVectorBinary(external_roles, buffer);
+                LOG_DEBUG(log, "Parsed extra roles [{}]", fmt::join(external_roles, ", "));
+            }
+
             LOG_DEBUG(log, "User (initial, interserver mode): {} (client: {})", client_info.initial_user, getClientAddress(client_info).toString());
             /// In case of inter-server mode authorization is done with the
             /// initial address of the client, not the real address from which
             /// the query was come, since the real address is the address of
             /// the initiator server, while we are interested in client's
             /// address.
-            session->authenticate(AlwaysAllowCredentials{client_info.initial_user}, client_info.initial_address);
+            session->authenticate(AlwaysAllowCredentials{client_info.initial_user}, client_info.initial_address, external_roles);
         }
 
         is_interserver_authenticated = true;
