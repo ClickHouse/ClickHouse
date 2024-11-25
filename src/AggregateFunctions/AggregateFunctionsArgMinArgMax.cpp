@@ -258,23 +258,23 @@ IAggregateFunction * createWithTwoTypesSecond(const DataTypes & argument_types)
     const DataTypePtr & value_type = argument_types[1];
     WhichDataType which_value(value_type);
 
-   if (which_value.idx == TypeIndex::UInt8)
-   {
-       using Data = AggregateFunctionArgMinMaxData<SingleValueDataFixed<ResultType>, SingleValueDataFixed<UInt8>>;
-       return new AggregateFunctionArgMinMax<Data, isMin>(argument_types);
-   }
-   if (which_value.idx == TypeIndex::UInt16)
-   {
-       using Data = AggregateFunctionArgMinMaxData<SingleValueDataFixed<ResultType>, SingleValueDataFixed<UInt16>>;
-       return new AggregateFunctionArgMinMax<Data, isMin>(argument_types);
-   }
-   if (which_value.idx == TypeIndex::UInt32)
-   {
-       using Data = AggregateFunctionArgMinMaxData<SingleValueDataFixed<ResultType>, SingleValueDataFixed<UInt32>>;
-       return new AggregateFunctionArgMinMax<Data, isMin>(argument_types);
-   }
-   if (which_value.idx == TypeIndex::UInt64)
-   {
+    if (which_value.idx == TypeIndex::UInt8)
+    {
+        using Data = AggregateFunctionArgMinMaxData<SingleValueDataFixed<ResultType>, SingleValueDataFixed<UInt8>>;
+        return new AggregateFunctionArgMinMax<Data, isMin>(argument_types);
+    }
+    if (which_value.idx == TypeIndex::UInt16)
+    {
+        using Data = AggregateFunctionArgMinMaxData<SingleValueDataFixed<ResultType>, SingleValueDataFixed<UInt16>>;
+        return new AggregateFunctionArgMinMax<Data, isMin>(argument_types);
+    }
+    if (which_value.idx == TypeIndex::UInt32)
+    {
+        using Data = AggregateFunctionArgMinMaxData<SingleValueDataFixed<ResultType>, SingleValueDataFixed<UInt32>>;
+        return new AggregateFunctionArgMinMax<Data, isMin>(argument_types);
+    }
+    if (which_value.idx == TypeIndex::UInt64)
+    {
        using Data = AggregateFunctionArgMinMaxData<SingleValueDataFixed<ResultType>, SingleValueDataFixed<UInt64>>;
        return new AggregateFunctionArgMinMax<Data, isMin>(argument_types);
     }
