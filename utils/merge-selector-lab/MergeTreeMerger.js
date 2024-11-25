@@ -14,6 +14,7 @@ export class MergeTreeMerger
 
     async start()
     {
+        this.mt.addInsertObserver(() => this.sim.postpone("MergerInsertObserver", async () => await this.#iterateSelector()));
         if (this.mt.active_part_count == 0) // Hack to start only after initial parts are inserted
             this.sim.postpone("PostponeMergerInit", async () => await this.#iterateSelector());
         else
@@ -23,7 +24,7 @@ export class MergeTreeMerger
     async #iterateSelector()
     {
         let value_to_send = null;
-        loop: while (this.pool.isAvailable())
+        while (this.pool.isAvailable())
         {
             const { value, done } = await this.selector.next(value_to_send);
             value_to_send = null;
@@ -41,18 +42,11 @@ export class MergeTreeMerger
                         await this.signals.on_merge_begin({sim: this.sim, mt: this.mt, parts_to_merge});
                     break;
                 case 'wait':
-                    if (this.merges_running == 0)
-                        throw { message: "Merge selector wait for zero merges. Run at least one or use 'sleep' instead" };
-                    break loop; // No need to do anything iterateSelector() will be called on the end of any merge
-                case 'sleep':
-                    this.sim.scheduleAt(this.sim.time + value.delay, "MergerSleep", async () => await this.#iterateSelector());
-                    return;
+                    return; // No need to do anything iterateSelector() will be called on insert or the end of any merge
                 default:
                     throw { message: "Unknown merge selector yield type", value };
             }
         }
-        if (this.merges_running == 0)
-            throw { message: "Pool is unavailable although 0 merges are running" };
     }
 
     #beginMerge(parts_to_merge)
@@ -75,6 +69,11 @@ export class MergeTreeMerger
         if (this.signals.on_merge_end)
             await this.signals.on_merge_end({sim: this.sim, mt: this.mt, part, parts_to_merge});
         this.merges_running--;
-        this.#iterateSelector();
+        await this.#iterateSelector();
+    }
+
+    async #onInsert(part)
+    {
+        await this.#iterateSelector();
     }
 }

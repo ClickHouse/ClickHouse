@@ -24,6 +24,7 @@ export class MergeTreeInserter
             switch (value.type)
             {
                 case 'insert':
+                    this.mt.advanceTime(this.sim.time);
                     const part = this.mt.insertPart(value.bytes);
                     if (this.signals.on_insert)
                         await this.signals.on_insert({sim: this.sim, mt: this.mt, part});

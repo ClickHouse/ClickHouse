@@ -1,8 +1,8 @@
 export function* simpleMerges()
 {
-    let mt = yield {type: 'getMergeTree'};
+    const mt = yield {type: 'getMergeTree'};
 
-    let settings =
+    const settings =
     {
         /// Zero means unlimited. Can be overridden by the same merge tree setting.
         max_parts_to_merge_at_once: 100,

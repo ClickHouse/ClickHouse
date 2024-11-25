@@ -15,6 +15,14 @@ export class MergeTree {
         this.active_part_count = 0;
         this.merging_part_count = 0;
         this.integral_active_part_count = 0;
+
+        // Observers
+        this.insert_observers = []
+    }
+
+    addInsertObserver(observer)
+    {
+        this.insert_observers.push(observer);
     }
 
     writeAmplification()
@@ -76,6 +84,10 @@ export class MergeTree {
         this.written_bytes += bytes;
         this.inserted_utility += utility;
         //console.log("INSERT", result);
+
+        for (const observer of this.insert_observers)
+            observer(result);
+
         return result;
     }
 
@@ -169,10 +181,16 @@ export class MergeTree {
         return result;
     }
 
+    sortedActiveParts()
+    {
+        // TODO(serxa): optimize it by maintaining this array dynamically with merges and inserts
+        return this.parts.filter(d => d.active).sort((a, b) => a.begin - b.begin);
+    }
+
     // Returns all ranges to be considered by merge selector (excluding already merging parts)
     getRangesForMerge()
     {
-        const active_parts = this.parts.filter(d => d.active).sort((a, b) => a.begin - b.begin);
+        const active_parts = this.sortedActiveParts();
         const all_ranges = [];
         let cur_range = [];
         for (const p of active_parts)
