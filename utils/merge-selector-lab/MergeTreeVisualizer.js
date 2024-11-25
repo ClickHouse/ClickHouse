@@ -1,4 +1,4 @@
-import { valueToColor, formatBytesWithUnit, determineTickStep } from './visualizeHelpers.js';
+import { valueToColor, determineTickStep } from './visualizeHelpers.js';
 import { infoButton } from './infoButton.js';
 
 function formatNumber(number)
@@ -31,7 +31,9 @@ function formatBytes(bytes)
 }
 
 class MergeTreeVisualizer {
-    getMargin() { return { left: 50, right: 40, top: 60, bottom: 60 }; }
+    getMargin() { return { left: 60, right: 30, top: 60, bottom: 60 }; }
+    getXAxisTitleOffset() { return { x: 0, y: 0 }; }
+    getYAxisTitleOffset() { return { x: 0, y: 0 }; }
 
     getLeft(part) { return part.left_bytes; }
     getRight(part) { return part.right_bytes; }
@@ -50,8 +52,8 @@ class MergeTreeVisualizer {
 
     // Colors
     getMergeColor() { return "red"; }
-    getPartColor() { return "black"; }
-    getPartMarkColor() { return "yellow"; }
+    getPartColor(part) { return part.merging ? "orange" : "black"; }
+    getPartMarkColor(part) { return "yellow"; }
 
     isYAxisReversed() { return false; }
 
@@ -64,10 +66,13 @@ class MergeTreeVisualizer {
         }
         oldSvg.remove();
 
+        this.xAxisTitleOffset = this.getXAxisTitleOffset();
+        this.yAxisTitleOffset = this.getYAxisTitleOffset();
+
         // Input visuals (common settings)
         this.margin = this.getMargin();
-        this.width = 400;
-        this.height = 450;
+        this.width = 800;
+        this.height = 350;
         this.part_height = 4;
         this.part_mark_width = 1;
         this.svgWidth = this.width + this.margin.left + this.margin.right;
@@ -138,13 +143,13 @@ class MergeTreeVisualizer {
     }
 
     createXAxisLinear() {
-        this.xAxisFormatter = formatBytes; // formatBytesWithUnit;
+        this.xAxisFormatter = formatBytes;
+        this.xAxisTickValues = () => d3.range(this.minXValue, this.maxXValue, determineTickStep(this.maxXValue - this.minXValue, 1024));
         this.xAxisType = this.isYAxisReversed() ? d3.axisTop : d3.axisBottom;
 
-        const tickStep = determineTickStep(this.maxXValue - this.minXValue);
         const translateY = this.isYAxisReversed() ? this.margin.top : this.svgHeight - this.margin.bottom;
         this.xAxis = this.xAxisType(this.xScale)
-            .tickValues(d3.range(this.minXValue, this.maxXValue, tickStep))
+            .tickValues(this.xAxisTickValues())
             .tickFormat(this.xAxisFormatter);
         this.xAxisGroup = this.svgContainer.append("g")
             .attr("transform", `translate(0, ${translateY})`)
@@ -152,20 +157,22 @@ class MergeTreeVisualizer {
 
         // Add axis title
         this.svgContainer.append("text")
-            .attr("x", this.svgWidth / 2)
-            .attr("y", this.isYAxisReversed() ? (this.margin.top / 2 - 5) : (this.svgHeight - this.margin.bottom / 2 + 20) )
+            .attr("x", this.svgWidth / 2 + this.xAxisTitleOffset.x)
+            .attr("y", this.isYAxisReversed() ? (this.margin.top / 2 + this.xAxisTitleOffset.y) : (this.svgHeight - this.margin.bottom / 2 + this.xAxisTitleOffset.y) )
             .attr("text-anchor", "middle")
             .attr("font-size", "14px")
             .text("Bytes");
     }
 
     createYAxisPowersOfTwo() {
+        const powersOfTwo = Array.from({ length: 50 }, (v, i) => Math.pow(2, i + 1));
+
         this.yAxisFormatter = formatBytes; // d => `2^${Math.log2(d)}`;
+        this.yAxisTickValues = () => powersOfTwo.filter(d => d >= this.minYValue && d <= this.maxYValue)
         this.yAxisType = d3.axisLeft;
 
-        const powersOfTwo = Array.from({ length: 50 }, (v, i) => Math.pow(2, i + 1));
         this.yAxis = this.yAxisType(this.yScale)
-            .tickValues(powersOfTwo.filter(d => d >= this.minYValue && d <= this.maxYValue))
+            .tickValues(this.yAxisTickValues())
             .tickFormat(this.yAxisFormatter);
         this.yAxisGroup = this.svgContainer.append("g")
             .attr("transform", `translate(${this.margin.left}, 0)`)
@@ -174,8 +181,8 @@ class MergeTreeVisualizer {
         // Add axis title
         this.svgContainer.append("text")
             .attr("transform", "rotate(-90)")
-            .attr("x", -this.svgHeight / 2)
-            .attr("y", this.margin.left / 2 - 10)
+            .attr("x", -(this.svgHeight / 2 + this.yAxisTitleOffset.y))
+            .attr("y", this.margin.left / 2 + this.yAxisTitleOffset.x)
             .attr("text-anchor", "middle")
             .attr("font-size", "14px")
             .text("Log(PartSize)");
@@ -195,9 +202,10 @@ class MergeTreeVisualizer {
 
     createYAxisLinear() {
         this.yAxisFormatter = formatNumber;
+        this.yAxisTickValues = () => d3.range(this.minYValue, this.maxYValue + 1, determineTickStep(this.maxYValue - this.minYValue, 1000));
         this.yAxisType = d3.axisLeft;
         this.yAxis = this.yAxisType(this.yScale)
-            .tickArguments([5])
+            .tickValues(this.xAxisTickValues())
             .tickFormat(this.yAxisFormatter);
         this.yAxisGroup = this.svgContainer.append("g")
             .attr("transform", `translate(${this.margin.left}, 0)`)
@@ -206,8 +214,8 @@ class MergeTreeVisualizer {
         // Add axis title
         this.svgContainer.append("text")
             .attr("transform", "rotate(-90)")
-            .attr("x", -this.svgHeight / 2)
-            .attr("y", this.margin.left / 2 - 5)
+            .attr("x", -(this.svgHeight / 2 + this.yAxisTitleOffset.y))
+            .attr("y", this.margin.left / 2 + this.yAxisTitleOffset.x)
             .attr("text-anchor", "middle")
             .attr("font-size", "14px")
             .text("Source parts count");
@@ -219,8 +227,13 @@ class MergeTreeVisualizer {
         this.updateXDomain();
 
         // Update axes with transitions
-        this.xAxisGroup.transition() // .duration(1000)
-            .call(this.xAxisType(this.xScale).tickFormat(this.xAxisFormatter));
+        this.xAxis = this.xAxisType(this.xScale)
+        this.xAxisGroup //.transition().duration(100)
+            .call(
+                this.xAxisType(this.xScale)
+                    .tickFormat(this.xAxisFormatter)
+                    .tickValues(this.xAxisTickValues())
+            );
     };
 
     updateY(mt) {
@@ -229,8 +242,12 @@ class MergeTreeVisualizer {
         this.updateYDomain();
 
         // Update axes with transitions
-        this.yAxisGroup.transition() // .duration(1000)
-            .call(this.yAxisType(this.yScale).tickFormat(this.yAxisFormatter));
+        this.yAxisGroup //.transition().duration(100)
+            .call(
+                this.yAxisType(this.yScale)
+                    .tickFormat(this.yAxisFormatter)
+                    .tickValues(this.yAxisTickValues())
+            );
     };
 
     createDescription(text, x = 10, y = 60) {
@@ -330,7 +347,9 @@ class MergeTreeVisualizer {
 }
 
 class MergeTreeUtilityVisualizer extends MergeTreeVisualizer {
-    getMargin() { return { left: 50, right: 30, top: 60, bottom: 60 }; }
+    getMargin() { return { left: 60, right: 30, top: 60, bottom: 60 }; }
+    getXAxisTitleOffset() { return { x: 0, y: 5 }; }
+    getYAxisTitleOffset() { return { x: -17, y: 0 }; }
 
     getTop(part) { return part.active ? part.bytes : part.parent_part.bytes; }
     getBottom(part) { return part.bytes; }
@@ -339,14 +358,6 @@ class MergeTreeUtilityVisualizer extends MergeTreeVisualizer {
         // It is a constant to get consistent colors on all diagrams, merging more than 128 parts is not common
         const max_entropy = 7;
         return valueToColor(part.parent_part.entropy, 0, max_entropy);
-    }
-
-    getPartColor(part) {
-        return part.merging ? "grey" : "black";
-    }
-
-    getPartMarkColor(part) {
-        return "yellow";
     }
 
     constructor(mt, container) {
@@ -412,7 +423,9 @@ class MergeTreeUtilityVisualizer extends MergeTreeVisualizer {
 }
 
 class MergeTreeTimeVisualizer extends MergeTreeVisualizer {
-    getMargin() { return { left: 50, right: 40, top: 60, bottom: 60 }; }
+    getMargin() { return { left: 60, right: 30, top: 60, bottom: 60 }; }
+    getXAxisTitleOffset() { return { x: 0, y: 0 }; }
+    getYAxisTitleOffset() { return { x: -7, y: 0 }; }
 
     isYAxisReversed() { return true; }
     getTop(part) { return part.active ? 0 : this.getBottom(part.parent_part); }
@@ -425,14 +438,6 @@ class MergeTreeTimeVisualizer extends MergeTreeVisualizer {
         // TODO: choose consistent color scheme.
         // TODO: There is no point in showing height again with color
         return valueToColor(part.parent_part.source_part_count, 2, this.max_source_part_count, 90, 70, 270, 180);
-    }
-
-    getPartColor(part) {
-        return part.merging ? "orange" : "yellow";
-    }
-
-    getPartMarkColor(part) {
-        return "black";
     }
 
     constructor(mt, container) {

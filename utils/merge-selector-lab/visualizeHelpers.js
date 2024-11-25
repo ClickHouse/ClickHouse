@@ -14,36 +14,29 @@ export function valueToColor(value, min, max, saturation = 70, lightness = 50, h
     return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
 }
 
-// Custom tick format function for displaying bytes with dynamic scaling (KB, MB, GB)
-export function formatBytesWithUnit(bytes)
-{
-    if (bytes >= Math.pow(1024, 3))
-        return (bytes / Math.pow(1024, 3)).toFixed(1) + ' GB';
-    else if (bytes >= Math.pow(1024, 2))
-        return (bytes / Math.pow(1024, 2)).toFixed(1) + ' MB';
-    else if (bytes >= 1024)
-        return (bytes / 1024).toFixed(1) + ' KB';
-    else
-        return bytes + ' B';
-}
-
 // Dynamically determine appropriate tick step and unit based on the max value
-export function determineTickStep(maxValue)
+export function determineTickStep(maxValue, base = 1000)
 {
-    let step;
     let unit;
-
-    if (maxValue >= Math.pow(1024, 3)) // For GB range
-        unit = Math.pow(1024, 3); // 1 GB
-    else if (maxValue >= Math.pow(1024, 2)) // For MB range
-        unit = Math.pow(1024, 2); // 1 MB
-    else if (maxValue >= 1024) // For KB range
-        unit = 1024; // 1 KB
+    if (maxValue >= 4 * Math.pow(base, 5))
+        unit = Math.pow(base, 5); // 1 P
+    else if (maxValue >= 4 * Math.pow(base, 4))
+        unit = Math.pow(base, 4); // 1 T
+    else if (maxValue >= 4 * Math.pow(base, 3))
+        unit = Math.pow(base, 3); // 1 G
+    else if (maxValue >= 4 * Math.pow(base, 2))
+        unit = Math.pow(base, 2); // 1 M
+    else if (maxValue >= 4 * base)
+        unit = base; // 1 K
     else
-        unit = 1; // Bytes range
+        unit = 1;
 
-    // Determine appropriate tick step based on the range (1, 2, 5, 10, 20, 50, 100, 200...)
-    if (maxValue / unit > 500)
+    let step;
+    if (maxValue / unit > 2000)
+        step = 500 * unit;
+    else if (maxValue / unit > 1000)
+        step = 200 * unit;
+    else if (maxValue / unit > 500)
         step = 100 * unit;
     else if (maxValue / unit > 200)
         step = 50 * unit;
