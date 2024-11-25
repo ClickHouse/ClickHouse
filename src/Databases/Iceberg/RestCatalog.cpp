@@ -74,6 +74,21 @@ DB::HTTPHeaderEntry parseAuthHeader(const std::string & auth_header)
     return DB::HTTPHeaderEntry(auth_header.substr(0, pos), auth_header.substr(pos + 1));
 }
 
+StorageType parseStorageTypeFromLocation(const std::string & location)
+{
+    auto pos = location.find("://");
+    if (pos == std::string::npos)
+        throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unexpected path format: {}", location);
+
+    auto storage_type_str = location.substr(0, pos);
+    auto storage_type = magic_enum::enum_cast<StorageType>(Poco::toUpper(storage_type_str));
+
+    if (!storage_type)
+        throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unsupported storage type: {}", storage_type_str);
+
+    return *storage_type;
+}
+
 }
 
 std::string RestCatalog::Config::toString() const
@@ -220,7 +235,7 @@ std::optional<StorageType> RestCatalog::getStorageType() const
 {
     if (config.default_base_location.empty())
         return std::nullopt;
-    return ICatalog::getStorageType(config.default_base_location);
+    return parseStorageTypeFromLocation(config.default_base_location);
 }
 
 DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
@@ -288,7 +303,7 @@ bool RestCatalog::empty() const
     }
 }
 
-RestCatalog::Tables RestCatalog::getTables() const
+DB::Names RestCatalog::getTables() const
 {
     size_t num_threads = 10;
     ThreadPool pool(
@@ -299,18 +314,16 @@ RestCatalog::Tables RestCatalog::getTables() const
 
     DB::ThreadPoolCallbackRunnerLocal<void> runner(pool, "RestCatalog");
 
-    Tables tables;
+    DB::Names tables;
     std::mutex mutex;
 
     auto func = [&](const std::string & current_namespace)
     {
         runner(
-        [&]{
+        [=, &tables, &mutex, this]{
             auto tables_in_namespace = getTables(current_namespace);
-            {
-                std::lock_guard lock(mutex);
-                std::move(tables_in_namespace.begin(), tables_in_namespace.end(), std::back_inserter(tables));
-            }
+            std::lock_guard lock(mutex);
+            std::move(tables_in_namespace.begin(), tables_in_namespace.end(), std::back_inserter(tables));
         });
     };
 
@@ -369,7 +382,7 @@ RestCatalog::Namespaces RestCatalog::getNamespaces(const std::string & base_name
     {
         auto buf = createReadBuffer(config.prefix / namespaces_endpoint, params);
         auto namespaces = parseNamespaces(*buf, base_namespace);
-        LOG_TEST(log, "Loaded {} namespaces", namespaces.size());
+        LOG_TEST(log, "Loaded {} namespaces in base namespace {}", namespaces.size(), base_namespace);
         return namespaces;
     }
     catch (const DB::HTTPException & e)
@@ -426,14 +439,14 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
     return namespaces;
 }
 
-RestCatalog::Tables RestCatalog::getTables(const std::string & base_namespace, size_t limit) const
+DB::Names RestCatalog::getTables(const std::string & base_namespace, size_t limit) const
 {
     const auto endpoint = std::string(namespaces_endpoint) + "/" + base_namespace + "/tables";
     auto buf = createReadBuffer(config.prefix / endpoint);
     return parseTables(*buf, base_namespace, limit);
 }
 
-RestCatalog::Tables RestCatalog::parseTables(DB::ReadBuffer & buf, const std::string & base_namespace, size_t limit) const
+DB::Names RestCatalog::parseTables(DB::ReadBuffer & buf, const std::string & base_namespace, size_t limit) const
 {
     if (buf.eof())
         return {};
@@ -449,11 +462,14 @@ RestCatalog::Tables RestCatalog::parseTables(DB::ReadBuffer & buf, const std::st
     if (!identifiers_object)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot parse result");
 
-    Tables tables;
+    DB::Names tables;
     for (size_t i = 0; i < identifiers_object->size(); ++i)
     {
         const auto current_table_json = identifiers_object->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
         const auto table_name = current_table_json->get("name").extract<String>();
+
+        LOG_TEST(log, "Base namespace: {}", base_namespace);
+        LOG_TEST(log, "Table name: {}", table_name);
 
         tables.push_back(base_namespace + "." + table_name);
         if (limit && tables.size() >= limit)

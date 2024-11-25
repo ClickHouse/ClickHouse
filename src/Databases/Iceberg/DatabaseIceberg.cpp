@@ -249,7 +249,7 @@ DatabaseTablesIteratorPtr DatabaseIceberg::getTablesIterator(
         if (filter_by_table_name && !filter_by_table_name(table_name))
             continue;
 
-        runner([&]{
+        runner([=, &tables, &mutexx, this]{
             auto storage = tryGetTable(table_name, context_);
             {
                 std::lock_guard lock(mutexx);

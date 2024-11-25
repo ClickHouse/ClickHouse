@@ -68,19 +68,4 @@ const DB::NamesAndTypesList & TableMetadata::getSchema() const
     return schema;
 }
 
-StorageType ICatalog::getStorageType(const std::string & location)
-{
-    auto pos = location.find("://");
-    if (pos == std::string::npos)
-        throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unexpected path format: {}", location);
-
-    auto storage_type_str = location.substr(0, pos);
-    auto storage_type = magic_enum::enum_cast<StorageType>(Poco::toUpper(storage_type_str));
-
-    if (!storage_type)
-        throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unsupported storage type: {}", storage_type_str);
-
-    return *storage_type;
-}
-
 }

@@ -122,7 +122,10 @@ def create_clickhouse_iceberg_database(started_cluster, node, name):
         f"""
 DROP DATABASE IF EXISTS {name};
 CREATE DATABASE {name} ENGINE = Iceberg('{BASE_URL}', 'minio', 'minio123')
-SETTINGS catalog_type = 'rest', storage_endpoint = 'http://minio:9000/'
+SETTINGS catalog_type = 'rest',
+        storage_endpoint = 'http://minio:9000/warehouse',
+        warehouse='demo',
+        storage_type='s3'
     """
     )
 

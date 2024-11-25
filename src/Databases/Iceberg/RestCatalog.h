@@ -29,7 +29,7 @@ public:
 
     bool empty() const override;
 
-    Tables getTables() const override;
+    DB::Names getTables() const override;
 
     bool existsTable(const std::string & namespace_name, const std::string & table_name) const override;
 
@@ -93,9 +93,9 @@ private:
 
     Namespaces parseNamespaces(DB::ReadBuffer & buf, const std::string & base_namespace) const;
 
-    Tables getTables(const std::string & base_namespace, size_t limit = 0) const;
+    DB::Names getTables(const std::string & base_namespace, size_t limit = 0) const;
 
-    Tables parseTables(DB::ReadBuffer & buf, const std::string & base_namespace, size_t limit) const;
+    DB::Names parseTables(DB::ReadBuffer & buf, const std::string & base_namespace, size_t limit) const;
 
     bool getTableMetadataImpl(
         const std::string & namespace_name,
