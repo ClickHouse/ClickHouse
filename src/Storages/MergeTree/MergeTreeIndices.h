@@ -38,6 +38,7 @@ struct MergeTreeIndexFormat
     explicit operator bool() const { return version != 0; }
 };
 
+/// A vehicle which transports elements of the SELECT query to the vector similarity index.
 struct VectorSearchParameters
 {
     String distance_function;
@@ -92,6 +93,7 @@ struct IMergeTreeIndexAggregator
 using MergeTreeIndexAggregatorPtr = std::shared_ptr<IMergeTreeIndexAggregator>;
 using MergeTreeIndexAggregators = std::vector<MergeTreeIndexAggregatorPtr>;
 
+
 /// Condition on the index.
 class IMergeTreeIndexCondition
 {
@@ -116,6 +118,7 @@ using MergeTreeIndexConditions = std::vector<MergeTreeIndexConditionPtr>;
 
 struct IMergeTreeIndex;
 using MergeTreeIndexPtr = std::shared_ptr<const IMergeTreeIndex>;
+
 
 /// IndexCondition that checks several indexes at the same time.
 class IMergeTreeIndexMergedCondition

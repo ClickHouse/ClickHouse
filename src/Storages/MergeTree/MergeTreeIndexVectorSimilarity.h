@@ -131,7 +131,10 @@ struct MergeTreeIndexAggregatorVectorSimilarity final : IMergeTreeIndexAggregato
 class MergeTreeIndexConditionVectorSimilarity final : public IMergeTreeIndexCondition
 {
 public:
-    explicit MergeTreeIndexConditionVectorSimilarity(ContextPtr context, const std::optional<VectorSearchParameters> & parameters_, unum::usearch::metric_kind_t metric_kind_);
+    explicit MergeTreeIndexConditionVectorSimilarity(
+        const std::optional<VectorSearchParameters> & parameters_,
+        unum::usearch::metric_kind_t metric_kind_,
+        ContextPtr context);
 
     ~MergeTreeIndexConditionVectorSimilarity() override = default;
 

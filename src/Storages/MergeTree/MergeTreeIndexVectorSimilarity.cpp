@@ -401,7 +401,10 @@ void MergeTreeIndexAggregatorVectorSimilarity::update(const Block & block, size_
     *pos += rows_read;
 }
 
-MergeTreeIndexConditionVectorSimilarity::MergeTreeIndexConditionVectorSimilarity(ContextPtr context, const std::optional<VectorSearchParameters> & parameters_, unum::usearch::metric_kind_t metric_kind_)
+MergeTreeIndexConditionVectorSimilarity::MergeTreeIndexConditionVectorSimilarity(
+    const std::optional<VectorSearchParameters> & parameters_,
+    unum::usearch::metric_kind_t metric_kind_,
+    ContextPtr context)
     : parameters(parameters_)
     , metric_kind(metric_kind_)
     , max_limit_for_ann_queries(context->getSettingsRef()[Setting::max_limit_for_ann_queries])
@@ -502,7 +505,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarity::createIndexCondition(
 
 MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarity::createIndexCondition(const ActionsDAG * /*filter_actions_dag*/, ContextPtr context, const std::optional<VectorSearchParameters> & parameters) const
 {
-    return std::make_shared<MergeTreeIndexConditionVectorSimilarity>(context, parameters, metric_kind);
+    return std::make_shared<MergeTreeIndexConditionVectorSimilarity>(parameters, metric_kind, context);
 }
 
 MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)

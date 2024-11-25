@@ -70,8 +70,8 @@ struct QueryPlanOptimizationSettings
     /// If remove-redundant-distinct-steps optimization is enabled.
     bool remove_redundant_distinct = true;
 
-    /// If use vector search is enabled, the query will use the vector similarity index
-    bool use_vector_search = true;
+    /// If use vector search is enabled, the query will try use the vector similarity index
+    bool try_use_vector_search = true;
 
     bool optimize_prewhere = true;
 

@@ -155,7 +155,8 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* n
     if (reference_vector.empty())
         return updated_layers;
 
-    read_from_mergetree_step->vector_search_parameters = std::make_optional<VectorSearchParameters>(distance_function, n, reference_vector);
+    auto vector_search_parameters = std::make_optional<VectorSearchParameters>(distance_function, n, reference_vector);
+    read_from_mergetree_step->setVectorSearchParameters(std::move(vector_search_parameters));
 
     return updated_layers;
 }
