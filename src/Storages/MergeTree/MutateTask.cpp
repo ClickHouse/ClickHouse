@@ -1703,6 +1703,7 @@ private:
             MergeTreeIndices{},
             ColumnsStatistics{},
             ctx->data->getContext()->chooseCompressionCodec(0, 0),
+            ctx->projection_part->index_granularity,
             Tx::PrehistoricTID,
             /*reset_columns=*/ false,
             /*save_marks_in_cache=*/ false,
