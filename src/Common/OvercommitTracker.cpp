@@ -46,7 +46,7 @@ OvercommitResult OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int
     // always called with already acquired global mutex in
     // ProcessListEntry::~ProcessListEntry().
     auto global_lock = process_list->unsafeLock();
-    std::unique_lock<std::mutex> lk(overcommit_m);
+    std::unique_lock lk(overcommit_m);
 
     size_t id = next_id++;
 
@@ -115,12 +115,19 @@ void OvercommitTracker::tryContinueQueryExecutionAfterFree(Int64 amount)
     if (OvercommitTrackerBlockerInThread::isBlocked())
         return;
 
-    std::lock_guard guard(overcommit_m);
+    std::shared_lock read_lock(overcommit_m);
     if (cancellation_state != QueryCancellationState::NONE)
     {
-        freed_memory += amount;
-        if (freed_memory >= required_memory)
-            releaseThreads();
+        read_lock.unlock();
+        {
+            std::lock_guard lk(overcommit_m);
+            if (cancellation_state != QueryCancellationState::NONE)
+            {
+                freed_memory += amount;
+                if (freed_memory >= required_memory)
+                    releaseThreads();
+            }
+        }
     }
 }
 
@@ -128,11 +135,18 @@ void OvercommitTracker::onQueryStop(MemoryTracker * tracker)
 {
     DENY_ALLOCATIONS_IN_SCOPE;
 
-    std::lock_guard lk(overcommit_m);
+    std::shared_lock read_lock(overcommit_m);
     if (picked_tracker == tracker)
     {
-        reset();
-        cv.notify_all();
+        read_lock.unlock();
+        {
+            std::lock_guard lk(overcommit_m);
+            if (picked_tracker == tracker)
+            {
+                reset();
+                cv.notify_all();
+            }
+        }
     }
 }
 
