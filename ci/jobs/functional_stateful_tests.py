@@ -1,4 +1,5 @@
 import argparse
+import os
 import time
 from pathlib import Path
 
@@ -109,7 +110,7 @@ def main():
             f"clickhouse-server --version",
         ]
         results.append(
-            Result.create_from_command_execution(
+            Result.from_commands_run(
                 name="Install ClickHouse", command=commands, with_log=True
             )
         )
@@ -153,6 +154,10 @@ def main():
         stop_watch_ = Utils.Stopwatch()
         step_name = "Tests"
         print(step_name)
+
+        # TODO: fix tests dependent on this and remove:
+        os.environ["CLICKHOUSE_TMP"] = "tests/queries/1_stateful"
+
         # assert Shell.check("clickhouse-client -q \"insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')\"", verbose=True)
         run_test(
             no_parallel=no_parallel,

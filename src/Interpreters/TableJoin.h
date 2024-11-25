@@ -173,9 +173,6 @@ private:
 
     ASOFJoinInequality asof_inequality = ASOFJoinInequality::GreaterOrEquals;
 
-    NamesAndTypesList columns_from_left_table;
-    NamesAndTypesList result_columns_from_left_table;
-
     /// All columns which can be read from joined table. Duplicating names are qualified.
     NamesAndTypesList columns_from_joined_table;
     /// Columns will be added to block by JOIN.
@@ -210,8 +207,6 @@ private:
     std::string right_storage_name;
 
     bool is_join_with_constant = false;
-
-    bool enable_analyzer = false;
 
     Names requiredJoinedNames() const;
 
@@ -276,8 +271,6 @@ public:
 
     VolumePtr getGlobalTemporaryVolume() { return tmp_volume; }
 
-    bool enableEnalyzer() const { return enable_analyzer; }
-    void assertEnableEnalyzer() const;
     TemporaryDataOnDiskScopePtr getTempDataOnDisk() { return tmp_data ? tmp_data->childScope(CurrentMetrics::TemporaryFilesForJoin) : nullptr; }
 
     ActionsDAG createJoinedBlockActions(ContextPtr context) const;
@@ -297,7 +290,6 @@ public:
     }
 
     bool allowParallelHashJoin() const;
-    void swapSides();
 
     bool joinUseNulls() const { return join_use_nulls; }
 
@@ -388,9 +380,6 @@ public:
     bool leftBecomeNullable(const DataTypePtr & column_type) const;
     bool rightBecomeNullable(const DataTypePtr & column_type) const;
     void addJoinedColumn(const NameAndTypePair & joined_column);
-
-    void setUsedColumn(const NameAndTypePair & joined_column, JoinTableSide side);
-
     void setColumnsAddedByJoin(const NamesAndTypesList & columns_added_by_join_value)
     {
         columns_added_by_join = columns_added_by_join_value;
@@ -416,17 +405,11 @@ public:
     ASTPtr leftKeysList() const;
     ASTPtr rightKeysList() const; /// For ON syntax only
 
-    void setColumnsFromJoinedTable(NamesAndTypesList columns_from_joined_table_value, const NameSet & left_table_columns, const String & right_table_prefix, const NamesAndTypesList & columns_from_left_table_)
+    void setColumnsFromJoinedTable(NamesAndTypesList columns_from_joined_table_value, const NameSet & left_table_columns, const String & right_table_prefix)
     {
         columns_from_joined_table = std::move(columns_from_joined_table_value);
         deduplicateAndQualifyColumnNames(left_table_columns, right_table_prefix);
-        result_columns_from_left_table = columns_from_left_table_;
-        columns_from_left_table = columns_from_left_table_;
     }
-
-    void setInputColumns(NamesAndTypesList left_output_columns, NamesAndTypesList right_output_columns);
-    const NamesAndTypesList & getOutputColumns(JoinTableSide side);
-
     const NamesAndTypesList & columnsFromJoinedTable() const { return columns_from_joined_table; }
     const NamesAndTypesList & columnsAddedByJoin() const { return columns_added_by_join; }
 
