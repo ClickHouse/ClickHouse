@@ -274,6 +274,7 @@ class CI:
             build_config=BuildConfig(
                 name=BuildNames.FUZZERS,
                 compiler="clang-19",
+                sanitizer="address",
                 package_type="fuzzers",
             ),
             run_by_labels=[Tags.libFuzzer],
@@ -560,7 +561,7 @@ class CI:
         JobNames.LIBFUZZER_TEST: JobConfig(
             required_builds=[BuildNames.FUZZERS],
             run_by_labels=[Tags.libFuzzer],
-            timeout=5400,
+            timeout=10800,
             run_command='libfuzzer_test_check.py "$CHECK_NAME"',
             runner_type=Runners.FUNC_TESTER,
         ),
