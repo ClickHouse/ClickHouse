@@ -61,6 +61,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     {"24.12",
         {
             {"allow_experimental_database_iceberg", false, false, "New setting."},
+            {"query_plan_join_swap_table", "false", "auto", "New setting. Right table was always chosen before."},
         }
     },
     {"24.11",

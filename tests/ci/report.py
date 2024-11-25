@@ -519,7 +519,7 @@ class JobReport:
             json.dump(asdict(self), json_file, default=path_converter, indent=2)
 
         # temporary WA to ease integration with praktika
-        check_name = os.getenv("CHECK_NAME", "")
+        check_name = os.getenv("JOB_NAME", "")
         if check_name:
             self.to_praktika_result(job_name=check_name).dump()
 
