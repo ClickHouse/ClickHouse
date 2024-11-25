@@ -174,6 +174,9 @@ namespace CurrentMetrics
     extern const Metric AttachedDictionary;
     extern const Metric AttachedDatabase;
     extern const Metric PartsActive;
+    extern const Metric IcebergCatalogThreads;
+    extern const Metric IcebergCatalogThreadsActive;
+    extern const Metric IcebergCatalogThreadsScheduled;
 }
 
 
@@ -282,6 +285,8 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 load_marks_threadpool_queue_size;
     extern const ServerSettingsUInt64 threadpool_writer_pool_size;
     extern const ServerSettingsUInt64 threadpool_writer_queue_size;
+    extern const ServerSettingsUInt64 iceberg_catalog_threadpool_pool_size;
+    extern const ServerSettingsUInt64 iceberg_catalog_threadpool_queue_size;
 
 }
 
@@ -412,6 +417,8 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::unique_ptr<ThreadPool> load_marks_threadpool;  /// Threadpool for loading marks cache.
     mutable OnceFlag prefetch_threadpool_initialized;
     mutable std::unique_ptr<ThreadPool> prefetch_threadpool;    /// Threadpool for loading marks cache.
+    mutable std::unique_ptr<ThreadPool> iceberg_catalog_threadpool;
+    mutable OnceFlag iceberg_catalog_threadpool_initialized;
     mutable OnceFlag build_vector_similarity_index_threadpool_initialized;
     mutable std::unique_ptr<ThreadPool> build_vector_similarity_index_threadpool; /// Threadpool for vector-similarity index creation.
     mutable UncompressedCachePtr index_uncompressed_cache TSA_GUARDED_BY(mutex);      /// The cache of decompressed blocks for MergeTree indices.
@@ -3252,6 +3259,23 @@ ThreadPool & Context::getLoadMarksThreadpool() const
     });
 
     return *shared->load_marks_threadpool;
+}
+
+ThreadPool & Context::getIcebergCatalogThreadpool() const
+{
+    callOnce(shared->iceberg_catalog_threadpool_initialized, [&]
+    {
+        auto pool_size = shared->server_settings[ServerSetting::iceberg_catalog_threadpool_pool_size];
+        auto queue_size = shared->server_settings[ServerSetting::iceberg_catalog_threadpool_queue_size];
+
+        shared->iceberg_catalog_threadpool = std::make_unique<ThreadPool>(
+            CurrentMetrics::IcebergCatalogThreads,
+            CurrentMetrics::IcebergCatalogThreadsActive,
+            CurrentMetrics::IcebergCatalogThreadsScheduled,
+            pool_size, pool_size, queue_size);
+    });
+
+    return *shared->iceberg_catalog_threadpool;
 }
 
 void Context::setIndexUncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)

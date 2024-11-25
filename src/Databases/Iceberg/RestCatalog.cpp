@@ -25,13 +25,6 @@ namespace DB::ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace CurrentMetrics
-{
-    extern const Metric IcebergCatalogThreads;
-    extern const Metric IcebergCatalogThreadsActive;
-    extern const Metric IcebergCatalogThreadsScheduled;
-}
-
 namespace Iceberg
 {
 
@@ -76,15 +69,26 @@ DB::HTTPHeaderEntry parseAuthHeader(const std::string & auth_header)
 
 StorageType parseStorageTypeFromLocation(const std::string & location)
 {
+    /// Table location in catalog metadata always starts with one of s3://, file://, etc.
+    /// So just extract this part of the path and deduce storage type from it.
+
     auto pos = location.find("://");
     if (pos == std::string::npos)
-        throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unexpected path format: {}", location);
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::NOT_IMPLEMENTED,
+            "Unexpected path format: {}", location);
+    }
 
     auto storage_type_str = location.substr(0, pos);
     auto storage_type = magic_enum::enum_cast<StorageType>(Poco::toUpper(storage_type_str));
 
     if (!storage_type)
-        throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unsupported storage type: {}", storage_type_str);
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::NOT_IMPLEMENTED,
+            "Unsupported storage type: {}", storage_type_str);
+    }
 
     return *storage_type;
 }
@@ -108,15 +112,20 @@ RestCatalog::RestCatalog(
     const std::string & warehouse_,
     const std::string & base_url_,
     const std::string & catalog_credential_,
+    const std::string & auth_scope_,
     const std::string & auth_header_,
     DB::ContextPtr context_)
     : ICatalog(warehouse_)
     , DB::WithContext(context_)
     , base_url(base_url_)
     , log(getLogger("RestCatalog(" + warehouse_ + ")"))
+    , auth_scope(auth_scope_)
 {
     if (!catalog_credential_.empty())
+    {
         std::tie(client_id, client_secret) = parseCatalogCredential(catalog_credential_);
+        update_token_if_expired = true;
+    }
     else if (!auth_header_.empty())
         auth_header = parseAuthHeader(auth_header_);
 
@@ -163,11 +172,16 @@ void RestCatalog::parseCatalogConfigurationSettings(const Poco::JSON::Object::Pt
 
 DB::HTTPHeaderEntries RestCatalog::getHeaders(bool update_token) const
 {
+    /// Option 1: user specified auth header manually.
+    /// Header has format: 'Authorization: <scheme> <token>'.
     if (auth_header.has_value())
     {
         return DB::HTTPHeaderEntries{auth_header.value()};
     }
 
+    /// Option 2: user provided grant_type, client_id and client_secret.
+    /// We would make OAuthClientCredentialsRequest
+    /// https://github.com/apache/iceberg/blob/3badfe0c1fcf0c0adfc7aa4a10f0b50365c48cf9/open-api/rest-catalog-open-api.yaml#L3498C5-L3498C34
     if (!client_id.empty())
     {
         if (!access_token.has_value() || update_token)
@@ -191,12 +205,6 @@ std::string RestCatalog::retrieveAccessToken() const
     /// 1. support oauth2-server-uri
     /// https://github.com/apache/iceberg/blob/918f81f3c3f498f46afcea17c1ac9cdc6913cb5c/open-api/rest-catalog-open-api.yaml#L183C82-L183C99
 
-    Poco::JSON::Object json;
-    json.set("grant_type", "client_credentials");
-    json.set("scope", "PRINCIPAL_ROLE:ALL"); /// TODO: add it into setting.
-    json.set("client_id", client_id);
-    json.set("client_secret", client_secret);
-
     DB::HTTPHeaderEntries headers;
     headers.emplace_back("Content-Type", "application/x-www-form-urlencoded");
     headers.emplace_back("Accepts", "application/json; charset=UTF-8");
@@ -204,7 +212,7 @@ std::string RestCatalog::retrieveAccessToken() const
     Poco::URI url(base_url / oauth_tokens_endpoint);
     Poco::URI::QueryParameters params = {
         {"grant_type", "client_credentials"},
-        {"scope", "PRINCIPAL_ROLE:ALL"},
+        {"scope", auth_scope},
         {"client_id", client_id},
         {"client_secret", client_secret},
     };
@@ -248,34 +256,35 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
     if (!params.empty())
         url.setQueryParameters(params);
 
-    auto headers = getHeaders(false);
+    auto create_buffer = [&](bool update_token)
+    {
+        auto headers = getHeaders(update_token);
+        return DB::BuilderRWBufferFromHTTP(url)
+            .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
+            .withSettings(getContext()->getReadSettings())
+            .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
+            .withHostFilter(&getContext()->getRemoteHostFilter())
+            .withHeaders(headers)
+            .withDelayInit(false)
+            .withSkipNotFound(false)
+            .create(credentials);
+    };
 
     LOG_TEST(log, "Requesting: {}", url.toString());
 
     try
     {
-        return DB::BuilderRWBufferFromHTTP(url)
-            .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
-            .withSettings(getContext()->getReadSettings())
-            .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
-            .withHeaders(headers)
-            .withHostFilter(&getContext()->getRemoteHostFilter())
-            .withDelayInit(false)
-            .withSkipNotFound(false)
-            .create(credentials);
+        return create_buffer(false);
     }
-    catch (...)
+    catch (const DB::HTTPException & e)
     {
-        auto new_headers = getHeaders(true);
-        return DB::BuilderRWBufferFromHTTP(url)
-            .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
-            .withSettings(getContext()->getReadSettings())
-            .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
-            .withHeaders(new_headers)
-            .withHostFilter(&getContext()->getRemoteHostFilter())
-            .withDelayInit(false)
-            .withSkipNotFound(false)
-            .create(credentials);
+        if (update_token_if_expired &&
+            (e.code() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_UNAUTHORIZED
+             || e.code() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_FORBIDDEN))
+        {
+            return create_buffer(true);
+        }
+        throw;
     }
 }
 
@@ -292,7 +301,7 @@ bool RestCatalog::empty() const
         };
 
         Namespaces namespaces;
-        getNamespacesRecursive("", namespaces, stop_condition, {});
+        getNamespacesRecursive("", namespaces, stop_condition, /* execute_func */{});
 
         return found_table;
     }
@@ -305,22 +314,17 @@ bool RestCatalog::empty() const
 
 DB::Names RestCatalog::getTables() const
 {
-    size_t num_threads = 10;
-    ThreadPool pool(
-        CurrentMetrics::IcebergCatalogThreads,
-        CurrentMetrics::IcebergCatalogThreadsActive,
-        CurrentMetrics::IcebergCatalogThreadsScheduled,
-        num_threads);
-
+    auto & pool = getContext()->getIcebergCatalogThreadpool();
     DB::ThreadPoolCallbackRunnerLocal<void> runner(pool, "RestCatalog");
 
     DB::Names tables;
     std::mutex mutex;
 
-    auto func = [&](const std::string & current_namespace)
+    auto execute_for_each_namespace = [&](const std::string & current_namespace)
     {
         runner(
-        [=, &tables, &mutex, this]{
+        [=, &tables, &mutex, this]
+        {
             auto tables_in_namespace = getTables(current_namespace);
             std::lock_guard lock(mutex);
             std::move(tables_in_namespace.begin(), tables_in_namespace.end(), std::back_inserter(tables));
@@ -328,7 +332,11 @@ DB::Names RestCatalog::getTables() const
     };
 
     Namespaces namespaces;
-    getNamespacesRecursive("", namespaces, {}, func);
+    getNamespacesRecursive(
+        /* base_namespace */"", /// Empty base namespace means starting from root.
+        namespaces,
+        /* stop_condition */{},
+        /* execute_func */execute_for_each_namespace);
 
     runner.waitForAllToFinishAndRethrowFirstError();
     return tables;
@@ -468,9 +476,6 @@ DB::Names RestCatalog::parseTables(DB::ReadBuffer & buf, const std::string & bas
         const auto current_table_json = identifiers_object->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
         const auto table_name = current_table_json->get("name").extract<String>();
 
-        LOG_TEST(log, "Base namespace: {}", base_namespace);
-        LOG_TEST(log, "Table name: {}", table_name);
-
         tables.push_back(base_namespace + "." + table_name);
         if (limit && tables.size() >= limit)
             break;
@@ -550,6 +555,25 @@ bool RestCatalog::getTableMetadataImpl(
         int format_version = metadata_object->getValue<int>("format-version");
         result.setSchema(DB::IcebergMetadata::parseTableSchema(metadata_object, format_version, true).first);
     }
+
+    // if (result.requiresCredentials())
+    // {
+    //     try
+    //     {
+    //         const auto credentials_endpoint = std::filesystem::path(endpoint) / "credentials";
+    //         auto credentials_buf = createReadBuffer(config.prefix / credentials_endpoint);
+
+    //         String credentials_json_str;
+    //         readJSONObjectPossiblyInvalid(credentials_json_str, *credentials_buf);
+
+    //         LOG_TEST(log, "Credentials : {}", credentials_json_str);
+    //     }
+    //     catch (...)
+    //     {
+    //         DB::tryLogCurrentException(log);
+    //     }
+    // }
+
     return true;
 }
 

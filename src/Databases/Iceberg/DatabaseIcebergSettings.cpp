@@ -18,6 +18,7 @@ namespace ErrorCodes
     DECLARE(DatabaseIcebergCatalogType, catalog_type, DatabaseIcebergCatalogType::REST, "Catalog type", 0) \
     DECLARE(DatabaseIcebergStorageType, storage_type, DatabaseIcebergStorageType::S3, "Storage type: S3, Local, Azure, HDFS", 0) \
     DECLARE(String, catalog_credential, "", "", 0)             \
+    DECLARE(String, auth_scope, "PRINCIPAL_ROLE:ALL", "Authorization scope for client credentials or token exchange", 0)             \
     DECLARE(String, warehouse, "", "Warehouse name inside the catalog", 0)             \
     DECLARE(String, auth_header, "", "Authorization header of format 'Authorization: <scheme> <auth_info>'", 0)             \
     DECLARE(String, storage_endpoint, "", "Object storage endpoint", 0) \

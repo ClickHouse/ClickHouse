@@ -34,6 +34,8 @@ private:
     std::string path;
     DB::NamesAndTypesList schema;
 
+    std::string credentials;
+
     bool with_location = false;
     bool with_schema = false;
 };

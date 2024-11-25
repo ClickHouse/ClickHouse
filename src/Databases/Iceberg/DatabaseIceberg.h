@@ -11,10 +11,6 @@
 namespace DB
 {
 
-/// TODO:
-/// - auth: oauth, bearer token?
-/// - tests with azure, hdfs, local
-
 class DatabaseIceberg final : public IDatabase, WithContext
 {
 public:

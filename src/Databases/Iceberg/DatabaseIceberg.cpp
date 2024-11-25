@@ -40,6 +40,7 @@ namespace DatabaseIcebergSetting
     extern const DatabaseIcebergSettingsString warehouse;
     extern const DatabaseIcebergSettingsString catalog_credential;
     extern const DatabaseIcebergSettingsString auth_header;
+    extern const DatabaseIcebergSettingsString auth_scope;
     extern const DatabaseIcebergSettingsString storage_endpoint;
 }
 
@@ -116,6 +117,7 @@ std::shared_ptr<Iceberg::ICatalog> DatabaseIceberg::getCatalog(ContextPtr) const
                 settings[DatabaseIcebergSetting::warehouse].value,
                 url,
                 settings[DatabaseIcebergSetting::catalog_credential].value,
+                settings[DatabaseIcebergSetting::auth_scope].value,
                 settings[DatabaseIcebergSetting::auth_header],
                 Context::getGlobalContextInstance());
         }
@@ -125,6 +127,8 @@ std::shared_ptr<Iceberg::ICatalog> DatabaseIceberg::getCatalog(ContextPtr) const
 
 std::shared_ptr<StorageObjectStorage::Configuration> DatabaseIceberg::getConfiguration() const
 {
+    /// TODO: add tests for azure, local storage types.
+
     switch (settings[DatabaseIcebergSetting::storage_type].value)
     {
 #if USE_AWS_S3
@@ -232,15 +236,9 @@ DatabaseTablesIteratorPtr DatabaseIceberg::getTablesIterator(
 {
     Tables tables;
     auto catalog = getCatalog(context_);
+    const auto iceberg_tables = catalog->getTables();
 
-    auto iceberg_tables = catalog->getTables();
-    size_t num_threads = std::min<size_t>(10, iceberg_tables.size());
-    ThreadPool pool(
-        CurrentMetrics::IcebergCatalogThreads,
-        CurrentMetrics::IcebergCatalogThreadsActive,
-        CurrentMetrics::IcebergCatalogThreadsScheduled,
-        num_threads);
-
+    auto & pool = getContext()->getIcebergCatalogThreadpool();
     DB::ThreadPoolCallbackRunnerLocal<void> runner(pool, "RestCatalog");
     std::mutex mutexx;
 

@@ -22,6 +22,7 @@ public:
         const std::string & warehouse_,
         const std::string & base_url_,
         const std::string & catalog_credential_,
+        const std::string & auth_scope_,
         const std::string & auth_header_,
         DB::ContextPtr context_);
 
@@ -68,8 +69,10 @@ private:
     std::optional<DB::HTTPHeaderEntry> auth_header;
 
     /// Parameters for OAuth.
+    bool update_token_if_expired = false;
     std::string client_id;
     std::string client_secret;
+    std::string auth_scope;
     mutable std::optional<std::string> access_token;
 
     Poco::Net::HTTPBasicCredentials credentials{};
