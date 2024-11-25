@@ -297,7 +297,7 @@ public:
     {
         size_t hash_value = map.hash(key);
         auto it = map.find(key, hash_value);
-        if (it != map.end())
+        if (it == map.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not find key: '{}'", key);
 
         auto list_itr = it->getMapped();
@@ -354,7 +354,7 @@ public:
     const V & getValue(StringRef key) const
     {
         auto it = map.find(key);
-        if (it != map.end())
+        if (it == map.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not find key: '{}'", key);
         return it->getMapped()->value;
     }
