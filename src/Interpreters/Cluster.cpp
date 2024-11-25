@@ -424,7 +424,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
         throw Exception(ErrorCodes::SHARD_HAS_NO_CONNECTIONS, "No cluster elements (shard, node) specified in config at path {}", config_prefix);
 
 
-    size_t keys_with_static_shard_number = std::count_if(config_keys.begin(), config_keys.end(), [&config, &config_prefix](const std::string& key)
+    size_t keys_with_static_shard_number = std::ranges::count_if(config_keys.begin(), config_keys.end(), [& config, & config_prefix](const String& key)
     {
         return config.has(config_prefix + key + ".shard_number");
     });
@@ -446,7 +446,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
 
             const auto & prefix = config_prefix + key;
             const auto weight = config.getInt(prefix + ".weight", default_weight);
-            UInt32 shard_number = ((use_static_shard_number) ? config.getInt(prefix + ".shard_number") : current_shard_num);
+            UInt32 shard_number = use_static_shard_number ? config.getUInt(prefix + ".shard_number") : current_shard_num;
             addresses.emplace_back(config, prefix, cluster_name, secret, shard_number, 1);
             const auto & address = addresses.back();
 
@@ -496,7 +496,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
 
             const auto & partial_prefix = config_prefix + key + ".";
             const auto weight = config.getUInt(partial_prefix + ".weight", default_weight);
-            UInt32 shard_number = ((use_static_shard_number) ? config.getInt(partial_prefix + ".shard_number") : current_shard_num);
+            UInt32 shard_number = use_static_shard_number ? config.getUInt(partial_prefix + ".shard_number") : current_shard_num;
 
             bool internal_replication = config.getBool(partial_prefix + ".internal_replication", false);
 
