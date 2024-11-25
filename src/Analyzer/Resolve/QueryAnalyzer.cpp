@@ -537,7 +537,6 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
             "Node must have query or union type. Actual {} {}",
             node->getNodeTypeName(),
             node->formatASTForErrorMessage());
-    LOG_DEBUG(&Poco::Logger::get("evaluateScalarSubqueryIfNeeded"), "QT:\n{}", node->dumpTree());
 
     auto & context = scope.context;
 
@@ -1239,8 +1238,12 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
 
     if (identifier_lookup.isExpressionLookup() && alias_node)
     {
-        // Remember resolved type for typo correction
-        scope_to_resolve_alias_expression->aliases.alias_name_to_expression_type[identifier_bind_part] = alias_node->getResultType();
+        // Do not collect result rype in case of untuple() expression
+        if (alias_node->getNodeType() != QueryTreeNodeType::LIST)
+        {
+            // Remember resolved type for typo correction
+            scope_to_resolve_alias_expression->aliases.alias_name_to_expression_type[identifier_bind_part] = alias_node->getResultType();
+        }
     }
 
     if (identifier_lookup.identifier.isCompound() && alias_node)
