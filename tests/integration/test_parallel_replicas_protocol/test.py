@@ -42,6 +42,7 @@ def _create_tables(table_name):
 
 table_name = "t"
 
+
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
     try:
@@ -54,13 +55,11 @@ def start_cluster():
 
 # now mark_segment_size is part of the protocol and is communicated to the initiator.
 # let's check that the correct value is actually used by the coordinator
-@pytest.mark.parametrize(
-    "local_plan", [0,1]
-)
-@pytest.mark.parametrize(
-    "index_analysis_only_on_coordinator", [0,1]
-)
-def test_mark_segment_size_communicated_correctly(start_cluster, local_plan, index_analysis_only_on_coordinator):
+@pytest.mark.parametrize("local_plan", [0, 1])
+@pytest.mark.parametrize("index_analysis_only_on_coordinator", [0, 1])
+def test_mark_segment_size_communicated_correctly(
+    start_cluster, local_plan, index_analysis_only_on_coordinator
+):
 
     for local_plan in [0, 1]:
         query_id = f"query_id_{str(uuid.uuid4())}"
