@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 
+#include <Access/AccessControl.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Utils.h>
@@ -232,6 +233,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString storage_policy;
     extern const MergeTreeSettingsFloat zero_copy_concurrent_part_removal_max_postpone_ratio;
     extern const MergeTreeSettingsUInt64 zero_copy_concurrent_part_removal_max_split_times;
+    extern const MergeTreeSettingsBool enforce_index_structure_match_on_partition_manipulation;
     extern const MergeTreeSettingsBool prewarm_mark_cache;
 }
 
@@ -462,7 +464,12 @@ MergeTreeData::MergeTreeData(
 
     /// Check sanity of MergeTreeSettings. Only when table is created.
     if (sanity_checks)
-        settings->sanityCheck(getContext()->getMergeMutateExecutor()->getMaxTasksCount());
+    {
+        const auto & ac = getContext()->getAccessControl();
+        bool allow_experimental = ac.getAllowExperimentalTierSettings();
+        bool allow_beta = ac.getAllowBetaTierSettings();
+        settings->sanityCheck(getContext()->getMergeMutateExecutor()->getMaxTasksCount(), allow_experimental, allow_beta);
+    }
 
     if (!date_column_name.empty())
     {
@@ -3896,7 +3903,10 @@ void MergeTreeData::changeSettings(
         /// Reset to default settings before applying existing.
         auto copy = getDefaultSettings();
         copy->applyChanges(new_changes);
-        copy->sanityCheck(getContext()->getMergeMutateExecutor()->getMaxTasksCount());
+        const auto & ac = getContext()->getAccessControl();
+        bool allow_experimental = ac.getAllowExperimentalTierSettings();
+        bool allow_beta = ac.getAllowBetaTierSettings();
+        copy->sanityCheck(getContext()->getMergeMutateExecutor()->getMaxTasksCount(), allow_experimental, allow_beta);
 
         storage_settings.set(std::move(copy));
         StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
@@ -7524,10 +7534,11 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
 
     if (query_to_string(my_snapshot->getPrimaryKeyAST()) != query_to_string(src_snapshot->getPrimaryKeyAST()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different primary key");
-
-    const auto check_definitions = [](const auto & my_descriptions, const auto & src_descriptions)
+    const auto check_definitions = [this](const auto & my_descriptions, const auto & src_descriptions)
     {
-        if (my_descriptions.size() != src_descriptions.size())
+        bool strict_match = (*getSettings())[MergeTreeSetting::enforce_index_structure_match_on_partition_manipulation];
+        if ((my_descriptions.size() < src_descriptions.size()) ||
+            (strict_match && my_descriptions.size() != src_descriptions.size()))
             return false;
 
         std::unordered_set<std::string> my_query_strings;
