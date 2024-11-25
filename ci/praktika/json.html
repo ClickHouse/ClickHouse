@@ -601,7 +601,7 @@
                     td.classList.add('time-column');
                     td.textContent = value ? formatDuration(value) : '';
                 } else if (column === 'info') {
-                    td.textContent = value.includes('\n') ? '↵' : (value || '');
+                    td.textContent = value && value.includes('\n') ? '↵' : (value || '');
                     td.classList.add('info-column');
                 }
 
