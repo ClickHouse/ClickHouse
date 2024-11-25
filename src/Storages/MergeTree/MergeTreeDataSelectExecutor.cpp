@@ -81,7 +81,7 @@ namespace Setting
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
     extern const SettingsBool parallel_replicas_local_plan;
-    extern const SettingsBool parallel_replicas_skip_index_analysis_on_workers;
+    extern const SettingsBool parallel_replicas_index_analysis_only_on_coordinator;
 }
 
 namespace MergeTreeSetting
@@ -636,7 +636,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     const Settings & settings = context->getSettingsRef();
 
     if (context->canUseParallelReplicasOnFollower() && settings[Setting::parallel_replicas_local_plan]
-        && settings[Setting::parallel_replicas_skip_index_analysis_on_workers])
+        && settings[Setting::parallel_replicas_index_analysis_only_on_coordinator])
     {
         // Skip index analysis and return parts with all marks
         // The coordinator will chose ranges to read for workers based on index analysis on its side
