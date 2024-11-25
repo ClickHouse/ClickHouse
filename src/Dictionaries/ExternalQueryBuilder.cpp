@@ -53,6 +53,10 @@ void ExternalQueryBuilder::writeQuoted(const std::string & s, WriteBuffer & out)
 {
     switch (quoting_style)
     {
+        case IdentifierQuotingStyle::None:
+            writeString(s, out);
+            break;
+
         case IdentifierQuotingStyle::Backticks:
             writeBackQuotedString(s, out);
             break;
@@ -214,27 +218,29 @@ std::string ExternalQueryBuilder::composeUpdateQuery(const std::string & update_
 
         return out.str();
     }
-
-    writeString(query, out);
-
-    auto condition_position = query.find(CONDITION_PLACEHOLDER_TO_REPLACE_VALUE);
-    if (condition_position == std::string::npos)
+    else
     {
-        writeString(" WHERE ", out);
-        composeUpdateCondition(update_field, time_point, out);
-        writeString(";", out);
+        writeString(query, out);
 
-        return out.str();
+        auto condition_position = query.find(CONDITION_PLACEHOLDER_TO_REPLACE_VALUE);
+        if (condition_position == std::string::npos)
+        {
+            writeString(" WHERE ", out);
+            composeUpdateCondition(update_field, time_point, out);
+            writeString(";", out);
+
+            return out.str();
+        }
+
+        WriteBufferFromOwnString condition_value_buffer;
+        composeUpdateCondition(update_field, time_point, condition_value_buffer);
+        const auto & condition_value = condition_value_buffer.str();
+
+        auto query_copy = query;
+        query_copy.replace(condition_position, CONDITION_PLACEHOLDER_TO_REPLACE_VALUE.size(), condition_value);
+
+        return query_copy;
     }
-
-    WriteBufferFromOwnString condition_value_buffer;
-    composeUpdateCondition(update_field, time_point, condition_value_buffer);
-    const auto & condition_value = condition_value_buffer.str();
-
-    auto query_copy = query;
-    query_copy.replace(condition_position, CONDITION_PLACEHOLDER_TO_REPLACE_VALUE.size(), condition_value);
-
-    return query_copy;
 }
 
 
@@ -297,27 +303,29 @@ std::string ExternalQueryBuilder::composeLoadIdsQuery(const std::vector<UInt64> 
 
         return out.str();
     }
-
-    writeString(query, out);
-
-    auto condition_position = query.find(CONDITION_PLACEHOLDER_TO_REPLACE_VALUE);
-    if (condition_position == std::string::npos)
+    else
     {
-        writeString(" WHERE ", out);
-        composeIdsCondition(ids, out);
-        writeString(";", out);
+        writeString(query, out);
 
-        return out.str();
+        auto condition_position = query.find(CONDITION_PLACEHOLDER_TO_REPLACE_VALUE);
+        if (condition_position == std::string::npos)
+        {
+            writeString(" WHERE ", out);
+            composeIdsCondition(ids, out);
+            writeString(";", out);
+
+            return out.str();
+        }
+
+        WriteBufferFromOwnString condition_value_buffer;
+        composeIdsCondition(ids, condition_value_buffer);
+        const auto & condition_value = condition_value_buffer.str();
+
+        auto query_copy = query;
+        query_copy.replace(condition_position, CONDITION_PLACEHOLDER_TO_REPLACE_VALUE.size(), condition_value);
+
+        return query_copy;
     }
-
-    WriteBufferFromOwnString condition_value_buffer;
-    composeIdsCondition(ids, condition_value_buffer);
-    const auto & condition_value = condition_value_buffer.str();
-
-    auto query_copy = query;
-    query_copy.replace(condition_position, CONDITION_PLACEHOLDER_TO_REPLACE_VALUE.size(), condition_value);
-
-    return query_copy;
 }
 
 
@@ -386,29 +394,31 @@ std::string ExternalQueryBuilder::composeLoadKeysQuery(
 
         return out.str();
     }
-
-    auto condition_position = query.find(CONDITION_PLACEHOLDER_TO_REPLACE_VALUE);
-    if (condition_position == std::string::npos)
+    else
     {
-        writeString("SELECT * FROM (", out);
+        auto condition_position = query.find(CONDITION_PLACEHOLDER_TO_REPLACE_VALUE);
+        if (condition_position == std::string::npos)
+        {
+            writeString("SELECT * FROM (", out);
+            writeString(query, out);
+            writeString(") AS subquery WHERE ", out);
+            composeKeysCondition(key_columns, requested_rows, method, partition_key_prefix, out);
+            writeString(";", out);
+
+            return out.str();
+        }
+
         writeString(query, out);
-        writeString(") AS subquery WHERE ", out);
-        composeKeysCondition(key_columns, requested_rows, method, partition_key_prefix, out);
-        writeString(";", out);
 
-        return out.str();
+        WriteBufferFromOwnString condition_value_buffer;
+        composeKeysCondition(key_columns, requested_rows, method, partition_key_prefix, condition_value_buffer);
+        const auto & condition_value = condition_value_buffer.str();
+
+        auto query_copy = query;
+        query_copy.replace(condition_position, CONDITION_PLACEHOLDER_TO_REPLACE_VALUE.size(), condition_value);
+
+        return query_copy;
     }
-
-    writeString(query, out);
-
-    WriteBufferFromOwnString condition_value_buffer;
-    composeKeysCondition(key_columns, requested_rows, method, partition_key_prefix, condition_value_buffer);
-    const auto & condition_value = condition_value_buffer.str();
-
-    auto query_copy = query;
-    query_copy.replace(condition_position, CONDITION_PLACEHOLDER_TO_REPLACE_VALUE.size(), condition_value);
-
-    return query_copy;
 }
 
 

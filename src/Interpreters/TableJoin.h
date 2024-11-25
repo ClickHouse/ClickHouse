@@ -2,13 +2,13 @@
 
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/SettingsEnums.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/JoinUtils.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/IKeyValueEntity.h>
-#include <Interpreters/TemporaryDataOnDisk.h>
 
 #include <Common/Exception.h>
 #include <Parsers/IAST_fwd.h>
@@ -28,7 +28,6 @@ class ASTSelectQuery;
 struct DatabaseAndTableWithAlias;
 class Block;
 class DictionaryJoinAdapter;
-class ExpressionActions;
 class StorageJoin;
 class StorageDictionary;
 class IKeyValueEntity;
@@ -140,18 +139,12 @@ private:
     SizeLimits size_limits;
     const size_t default_max_bytes = 0;
     const bool join_use_nulls = false;
-    const UInt64 cross_join_min_rows_to_compress = 1000;
-    const UInt64 cross_join_min_bytes_to_compress = 10000;
     const size_t max_joined_block_rows = 0;
     std::vector<JoinAlgorithm> join_algorithm;
     const size_t partial_merge_join_rows_in_right_blocks = 0;
     const size_t partial_merge_join_left_table_buffer_bytes = 0;
     const size_t max_files_to_merge = 0;
     const String temporary_files_codec = "LZ4";
-    const size_t output_by_rowlist_perkey_rows_threshold = 0;
-    const size_t sort_right_minimum_perkey_rows = 0;
-    const size_t sort_right_maximum_table_rows = 0;
-    const bool allow_join_sorting = false;
 
     /// Value if setting max_memory_usage for query, can be used when max_bytes_in_join is not specified.
     size_t max_memory_usage = 0;
@@ -160,15 +153,10 @@ private:
     ASTs key_asts_right;
 
     Clauses clauses;
-    /// Originally used for inequal join. If there is no any inequal join condition, it will be nullptr.
-    std::shared_ptr<ExpressionActions> mixed_join_expression = nullptr;
 
     ASTTableJoin table_join;
 
     ASOFJoinInequality asof_inequality = ASOFJoinInequality::GreaterOrEquals;
-
-    NamesAndTypesList columns_from_left_table;
-    NamesAndTypesList result_columns_from_left_table;
 
     /// All columns which can be read from joined table. Duplicating names are qualified.
     NamesAndTypesList columns_from_joined_table;
@@ -195,8 +183,6 @@ private:
 
     VolumePtr tmp_volume;
 
-    TemporaryDataOnDiskScopePtr tmp_data;
-
     std::shared_ptr<StorageJoin> right_storage_join;
 
     std::shared_ptr<const IKeyValueEntity> right_kv_storage;
@@ -205,24 +191,22 @@ private:
 
     bool is_join_with_constant = false;
 
-    bool enable_analyzer = false;
-
     Names requiredJoinedNames() const;
 
     /// Create converting actions and change key column names if required
-    std::optional<ActionsDAG> applyKeyConvertToTable(
+    ActionsDAGPtr applyKeyConvertToTable(
         const ColumnsWithTypeAndName & cols_src,
         const NameToTypeMap & type_mapping,
         JoinTableSide table_side,
         NameToNameMap & key_column_rename);
 
-    std::optional<ActionsDAG> applyNullsafeWrapper(
+    ActionsDAGPtr applyNullsafeWrapper(
         const ColumnsWithTypeAndName & cols_src,
         const NameSet & columns_for_nullsafe_comparison,
         JoinTableSide table_side,
         NameToNameMap & key_column_rename);
 
-    std::optional<ActionsDAG> applyJoinUseNullsConversion(
+    ActionsDAGPtr applyJoinUseNullsConversion(
         const ColumnsWithTypeAndName & cols_src,
         const NameToNameMap & key_column_rename);
 
@@ -244,7 +228,7 @@ private:
 public:
     TableJoin() = default;
 
-    TableJoin(const Settings & settings, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_);
+    TableJoin(const Settings & settings, VolumePtr tmp_volume_);
 
     /// for StorageJoin
     TableJoin(SizeLimits limits, bool use_nulls, JoinKind kind, JoinStrictness strictness,
@@ -259,10 +243,7 @@ public:
         table_join.strictness = strictness;
     }
 
-    TableJoin(const TableJoin & rhs) = default;
-
     JoinKind kind() const { return table_join.kind; }
-    void setKind(JoinKind kind) { table_join.kind = kind; }
     JoinStrictness strictness() const { return table_join.strictness; }
     bool sameStrictnessAndKind(JoinStrictness, JoinKind) const;
     const SizeLimits & sizeLimits() const { return size_limits; }
@@ -270,11 +251,7 @@ public:
 
     VolumePtr getGlobalTemporaryVolume() { return tmp_volume; }
 
-    TemporaryDataOnDiskScopePtr getTempDataOnDisk() { return tmp_data; }
-    bool enableEnalyzer() const { return enable_analyzer; }
-    void assertEnableEnalyzer() const;
-
-    ActionsDAG createJoinedBlockActions(ContextPtr context) const;
+    ActionsDAGPtr createJoinedBlockActions(ContextPtr context) const;
 
     const std::vector<JoinAlgorithm> & getEnabledJoinAlgorithms() const { return join_algorithm; }
 
@@ -289,13 +266,8 @@ public:
     }
 
     bool allowParallelHashJoin() const;
-    void swapSides();
 
     bool joinUseNulls() const { return join_use_nulls; }
-
-    UInt64 crossJoinMinRowsToCompress() const { return cross_join_min_rows_to_compress; }
-
-    UInt64 crossJoinMinBytesToCompress() const { return cross_join_min_bytes_to_compress; }
 
     bool forceNullableRight() const
     {
@@ -307,10 +279,6 @@ public:
         return join_use_nulls && isRightOrFull(kind());
     }
 
-    size_t outputByRowListPerkeyRowsThreshold() const { return output_by_rowlist_perkey_rows_threshold; }
-    size_t sortRightMinimumPerkeyRows() const { return sort_right_minimum_perkey_rows; }
-    size_t sortRightMaximumTableRows() const { return sort_right_maximum_table_rows; }
-    bool allowJoinSorting() const { return allow_join_sorting; }
     size_t defaultMaxBytes() const { return default_max_bytes; }
     size_t maxJoinedBlockRows() const { return max_joined_block_rows; }
     size_t maxRowsInRightBlock() const { return partial_merge_join_rows_in_right_blocks; }
@@ -329,9 +297,6 @@ public:
 
     std::vector<JoinOnClause> & getClauses() { return clauses; }
     const std::vector<JoinOnClause> & getClauses() const { return clauses; }
-
-    const std::shared_ptr<ExpressionActions> & getMixedJoinExpression() const { return mixed_join_expression; }
-    std::shared_ptr<ExpressionActions> & getMixedJoinExpression() { return mixed_join_expression; }
 
     Names getAllNames(JoinTableSide side) const;
 
@@ -380,9 +345,6 @@ public:
     bool leftBecomeNullable(const DataTypePtr & column_type) const;
     bool rightBecomeNullable(const DataTypePtr & column_type) const;
     void addJoinedColumn(const NameAndTypePair & joined_column);
-
-    void setUsedColumn(const NameAndTypePair & joined_column, JoinTableSide side);
-
     void setColumnsAddedByJoin(const NamesAndTypesList & columns_added_by_join_value)
     {
         columns_added_by_join = columns_added_by_join_value;
@@ -397,7 +359,7 @@ public:
     /// Calculate converting actions, rename key columns in required
     /// For `USING` join we will convert key columns inplace and affect into types in the result table
     /// For `JOIN ON` we will create new columns with converted keys to join by.
-    std::pair<std::optional<ActionsDAG>, std::optional<ActionsDAG>>
+    std::pair<ActionsDAGPtr, ActionsDAGPtr>
     createConvertingActions(
         const ColumnsWithTypeAndName & left_sample_columns,
         const ColumnsWithTypeAndName & right_sample_columns);
@@ -408,17 +370,11 @@ public:
     ASTPtr leftKeysList() const;
     ASTPtr rightKeysList() const; /// For ON syntax only
 
-    void setColumnsFromJoinedTable(NamesAndTypesList columns_from_joined_table_value, const NameSet & left_table_columns, const String & right_table_prefix, const NamesAndTypesList & columns_from_left_table_)
+    void setColumnsFromJoinedTable(NamesAndTypesList columns_from_joined_table_value, const NameSet & left_table_columns, const String & right_table_prefix)
     {
         columns_from_joined_table = std::move(columns_from_joined_table_value);
         deduplicateAndQualifyColumnNames(left_table_columns, right_table_prefix);
-        result_columns_from_left_table = columns_from_left_table_;
-        columns_from_left_table = columns_from_left_table_;
     }
-
-    void setInputColumns(NamesAndTypesList left_output_columns, NamesAndTypesList right_output_columns);
-    const NamesAndTypesList & getOutputColumns(JoinTableSide side);
-
     const NamesAndTypesList & columnsFromJoinedTable() const { return columns_from_joined_table; }
     const NamesAndTypesList & columnsAddedByJoin() const { return columns_added_by_join; }
 

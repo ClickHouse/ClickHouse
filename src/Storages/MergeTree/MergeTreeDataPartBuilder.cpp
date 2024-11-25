@@ -150,7 +150,8 @@ MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withPartFormatFromDisk()
 {
     if (part_storage)
         return withPartFormatFromStorage();
-    return withPartFormatFromVolume();
+    else
+        return withPartFormatFromVolume();
 }
 
 MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withPartFormatFromVolume()

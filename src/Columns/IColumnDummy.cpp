@@ -60,9 +60,12 @@ ColumnPtr IColumnDummy::filter(const Filter & filt, ssize_t /*result_size_hint*/
     return cloneDummy(bytes);
 }
 
-void IColumnDummy::expand(const IColumn::Filter & mask, bool)
+void IColumnDummy::expand(const IColumn::Filter & mask, bool inverted)
 {
-    s = mask.size();
+    size_t bytes = countBytesInFilter(mask);
+    if (inverted)
+        bytes = mask.size() - bytes;
+    s = bytes;
 }
 
 ColumnPtr IColumnDummy::permute(const Permutation & perm, size_t limit) const
