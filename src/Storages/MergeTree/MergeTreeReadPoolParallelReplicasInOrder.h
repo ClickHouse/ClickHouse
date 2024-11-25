@@ -38,8 +38,7 @@ private:
     RangesInDataPartsDescription buffered_tasks;
 
     mutable std::mutex mutex;
-    bool split{false};
-    size_t marks_in_range{1};
+    std::vector<size_t> per_part_marks_in_range;
 };
 
 };
