@@ -144,7 +144,7 @@ def _config_workflow(workflow: Workflow.Config, job_name):
             f"git diff-index HEAD -- {Settings.WORKFLOW_PATH_PREFIX}"
         )
         info = ""
-        status = Result.Status.SUCCESS
+        status = Result.Status.FAILED
         if exit_code != 0:
             info = f"workspace has uncommitted files unexpectedly [{output}]"
             status = Result.Status.ERROR
@@ -154,10 +154,14 @@ def _config_workflow(workflow: Workflow.Config, job_name):
             exit_code, output, err = Shell.get_res_stdout_stderr(
                 f"git diff-index HEAD -- {Settings.WORKFLOW_PATH_PREFIX}"
             )
-            if exit_code != 0:
-                info = f"workspace has outdated workflows [{output}] - regenerate with [python -m praktika --generate]"
-                status = Result.Status.ERROR
+            if output:
+                info = f"workflows are outdated: [{output}]"
+                status = Result.Status.FAILED
                 print("ERROR: ", info)
+            elif exit_code == 0 and not err:
+                status = Result.Status.SUCCESS
+            else:
+                print(f"ERROR: exit code [{exit_code}], err [{err}]")
 
         return (
             Result(

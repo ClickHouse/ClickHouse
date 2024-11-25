@@ -9,6 +9,9 @@ class RunnerLabels:
     BUILDER_ARM = "builder-aarch64"
     FUNC_TESTER_AMD = "func-tester"
     FUNC_TESTER_ARM = "func-tester-aarch64"
+    STYLE_CHECK_AMD = "style-checker"
+    STYLE_CHECK_ARM = "style-checker-aarch64"
+    CI_SERVICES = "ci_services"
 
 
 class CIFiles:
@@ -52,18 +55,18 @@ DOCKERS = [
     #     platforms=Docker.Platforms.arm_amd,
     #     depends_on=[],
     # ),
-    # Docker.Config(
-    #     name="clickhouse/test-old-centos",
-    #     path="./ci/docker/test/compatibility/centos",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=[],
-    # ),
-    # Docker.Config(
-    #     name="clickhouse/test-old-ubuntu",
-    #     path="./ci/docker/test/compatibility/ubuntu",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=[],
-    # ),
+    Docker.Config(
+        name="clickhouse/test-old-centos",
+        path="./ci/docker/compatibility/centos",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
+        name="clickhouse/test-old-ubuntu",
+        path="./ci/docker/compatibility/ubuntu",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
     # Docker.Config(
     #     name="clickhouse/test-util",
     #     path="./ci/docker/test/util",
@@ -247,6 +250,7 @@ class JobNames:
     STATEFUL = "Stateful tests"
     STRESS = "Stress tests"
     PERFORMANCE = "Performance tests"
+    COMPATIBILITY = "Compatibility check"
 
 
 class ToolSet:
@@ -576,7 +580,7 @@ class Jobs:
         runs_on=[RunnerLabels.FUNC_TESTER_ARM],
         command="./ci/jobs/scripts/performance_test.sh",
         run_in_docker="clickhouse/stateless-test",
-        requires=[ArtifactNames.CH_ARM_RELEASE]
+        requires=[ArtifactNames.CH_ARM_RELEASE],
         # digest_config=Job.CacheDigestConfig(
         #     include_paths=[
         #         "./ci/jobs/fast_test.py",
@@ -584,4 +588,23 @@ class Jobs:
         #         "./src",
         #     ],
         # ),
+    )
+
+    compatibility_test_jobs = Job.Config(
+        name=JobNames.COMPATIBILITY,
+        runs_on=["#from param"],
+        command="python3 ./tests/ci/compatibility_check.py --check-name {PARAMETER}",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./tests/ci/compatibility_check.py",
+                "./docker/test/compatibility",
+            ],
+        ),
+    ).parametrize(
+        parameter=["amd_release", "arm_release"],
+        runs_on=[
+            [RunnerLabels.STYLE_CHECK_AMD],
+            [RunnerLabels.STYLE_CHECK_ARM],
+        ],
+        requires=[[ArtifactNames.DEB_AMD_RELEASE], [ArtifactNames.DEB_ARM_RELEASE]],
     )

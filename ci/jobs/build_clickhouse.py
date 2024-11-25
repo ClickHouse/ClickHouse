@@ -1,4 +1,5 @@
 import argparse
+import os
 
 from praktika.result import Result
 from praktika.settings import Settings
@@ -6,6 +7,7 @@ from praktika.utils import MetaClasses, Shell, Utils
 
 from ci.jobs.scripts.clickhouse_version import CHVersion
 from ci.workflows.defs import CIFiles, ToolSet
+from ci.workflows.pull_request import S3_BUILDS_BUCKET
 
 
 class JobStages(metaclass=MetaClasses.WithIter):
@@ -48,6 +50,11 @@ CMAKE_CMD = """cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA \
 
 def main():
     args = parse_args()
+
+    # # for sccache
+    # os.environ["SCCACHE_BUCKET"] = S3_BUILDS_BUCKET
+    # os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
+    # TODO: check with  SCCACHE_LOG=debug SCCACHE_NO_DAEMON=1
 
     stop_watch = Utils.Stopwatch()
 

@@ -61,8 +61,6 @@ class Runner:
                 docker, workflow.dockers
             )
 
-        # work around for old clickhouse jobs
-        os.environ["DOCKER_TAG"] = json.dumps(workflow_config.digest_dockers)
         workflow_config.dump()
 
         Result.generate_pending(job.name).dump()
@@ -148,6 +146,14 @@ class Runner:
         env = _Environment.get()
         env.JOB_NAME = job.name
         env.dump()
+
+        # work around for old clickhouse jobs
+        try:
+            os.environ["DOCKER_TAG"] = json.dumps(
+                RunConfig.from_fs(workflow.name).digest_dockers
+            )
+        except Exception as e:
+            print(f"WARNING: Failed to set DOCKER_TAG, ex [{e}]")
 
         if param:
             if not isinstance(param, str):

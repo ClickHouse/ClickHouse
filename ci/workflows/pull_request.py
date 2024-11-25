@@ -2,6 +2,8 @@ from praktika import Workflow
 
 from ci.workflows.defs import ARTIFACTS, BASE_BRANCH, DOCKERS, SECRETS, Jobs
 
+S3_BUILDS_BUCKET = "clickhouse-builds"
+
 workflow = Workflow.Config(
     name="PR",
     event=Workflow.Event.PULL_REQUEST,
@@ -14,6 +16,7 @@ workflow = Workflow.Config(
         *Jobs.stateful_tests_jobs,
         *Jobs.stress_test_jobs,
         Jobs.performance_test_job,
+        *Jobs.compatibility_test_jobs,
     ],
     artifacts=ARTIFACTS,
     dockers=DOCKERS,
