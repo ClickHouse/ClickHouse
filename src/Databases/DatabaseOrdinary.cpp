@@ -154,7 +154,7 @@ String DatabaseOrdinary::getConvertToReplicatedFlagPath(const String & name, con
 
 void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const QualifiedTableName & qualified_name, const String & file_name)
 {
-    auto shared_disk = getContext()->getSharedDisk();
+    auto db_disk = getContext()->getDatabaseDisk();
 
     fs::path path(getMetadataPath());
     fs::path file_path(file_name);
@@ -181,7 +181,7 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
         fs::is_regular_file(convert_to_replicated_flag_path),
         fs::exists(convert_to_replicated_flag_path));
 
-    if (!shared_disk->existsFile(convert_to_replicated_flag_path))
+    if (!db_disk->existsFile(convert_to_replicated_flag_path))
         return;
 
     if (getUUID() == UUIDHelpers::Nil)
@@ -204,7 +204,7 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
             out.sync();
         out.close();
     }
-    shared_disk->replaceFile(table_metadata_tmp_path, table_metadata_path);
+    db_disk->replaceFile(table_metadata_tmp_path, table_metadata_path);
 
     LOG_INFO(
         log,
@@ -216,12 +216,12 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
 
 void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTablesMetadata & metadata, bool is_startup)
 {
-    auto shared_disk = getContext()->getSharedDisk();
+    auto db_disk = getContext()->getDatabaseDisk();
 
     size_t prev_tables_count = metadata.parsed_tables.size();
     size_t prev_total_dictionaries = metadata.total_dictionaries;
 
-    auto process_metadata = [&metadata, is_startup, local_context, shared_disk, this](const String & file_name)
+    auto process_metadata = [&metadata, is_startup, local_context, db_disk, this](const String & file_name)
     {
         fs::path path(getMetadataPath());
         fs::path file_path(file_name);
@@ -262,7 +262,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                     fs::is_regular_file(full_path.string() + detached_suffix),
                     fs::exists(full_path.string() + detached_suffix));
 
-                if (shared_disk->existsFile(full_path.string() + detached_suffix))
+                if (db_disk->existsFile(full_path.string() + detached_suffix))
                 {
                     const std::string table_name = unescapeForFileName(file_name.substr(0, file_name.size() - 4));
                     LOG_DEBUG(log, "Skipping permanently detached table {}.", backQuote(table_name));
@@ -373,7 +373,7 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
     if (!rmt)
         return;
 
-    auto shared_disk = getContext()->getSharedDisk();
+    auto db_disk = getContext()->getDatabaseDisk();
 
     auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(name.table, table->getStoragePolicy(), true);
 
@@ -384,10 +384,10 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
         fs::is_regular_file(convert_to_replicated_flag_path),
         fs::exists(convert_to_replicated_flag_path));
 
-    if (!shared_disk->existsFile(convert_to_replicated_flag_path))
+    if (!db_disk->existsFile(convert_to_replicated_flag_path))
         return;
 
-    (void)shared_disk->removeFileIfExists(convert_to_replicated_flag_path);
+    (void)db_disk->removeFileIfExists(convert_to_replicated_flag_path);
     LOG_INFO
     (
         log,
@@ -623,15 +623,15 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
 
 void DatabaseOrdinary::commitAlterTable(const StorageID &, const String & table_metadata_tmp_path, const String & table_metadata_path, const String & /*statement*/, ContextPtr /*query_context*/)
 {
-    auto shared_disk = getContext()->getSharedDisk();
+    auto db_disk = getContext()->getDatabaseDisk();
     try
     {
         /// rename atomically replaces the old file with the new one.
-        (void)shared_disk->replaceFile(table_metadata_tmp_path, table_metadata_path);
+        (void)db_disk->replaceFile(table_metadata_tmp_path, table_metadata_path);
     }
     catch (...)
     {
-        (void)shared_disk->removeFileIfExists(table_metadata_tmp_path);
+        (void)db_disk->removeFileIfExists(table_metadata_tmp_path);
         throw;
     }
 }

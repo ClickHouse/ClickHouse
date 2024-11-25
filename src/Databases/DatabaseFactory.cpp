@@ -32,9 +32,9 @@ namespace ErrorCodes
 
 void cckMetadataPathForOrdinary(const ASTCreateQuery & create, const String & metadata_path)
 {
-    auto shared_disk = Context::getGlobalContextInstance()->getSharedDisk();
+    auto db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
 
-    if (!shared_disk->isSymlinkSupported())
+    if (!db_disk->isSymlinkSupported())
         return;
 
     const String & engine_name = create.storage->engine->name;
@@ -43,10 +43,10 @@ void cckMetadataPathForOrdinary(const ASTCreateQuery & create, const String & me
     if (engine_name != "Ordinary")
         return;
 
-    if (!shared_disk->isSymlink(metadata_path))
+    if (!db_disk->isSymlink(metadata_path))
         return;
 
-    String target_path = shared_disk->readSymlink(metadata_path);
+    String target_path = db_disk->readSymlink(metadata_path);
     fs::path path_to_remove = metadata_path;
     if (path_to_remove.filename().empty())
         path_to_remove = path_to_remove.parent_path();

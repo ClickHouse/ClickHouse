@@ -104,8 +104,8 @@ static void loadDatabase(
     String database_attach_query;
     String database_metadata_file = database_path + ".sql";
 
-    auto shared_disk = Context::getGlobalContextInstance()->getSharedDisk();
-    if (shared_disk->existsFile(fs::path(database_metadata_file)))
+    auto db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
+    if (db_disk->existsFile(fs::path(database_metadata_file)))
     {
         /// There is .sql file with database creation statement.
         ReadBufferFromFile in(database_metadata_file, 1024);
@@ -131,10 +131,10 @@ static void loadDatabase(
 
 static void checkUnsupportedVersion(ContextMutablePtr context, const String & database_name)
 {
-    auto shared_disk = Context::getGlobalContextInstance()->getSharedDisk();
+    auto db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
     /// Produce better exception message
     auto metadata_path = fs::path(context->getPath()) / "metadata" / database_name;
-    if (shared_disk->existsDirectory(metadata_path))
+    if (db_disk->existsDirectory(metadata_path))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Data directory for {} database exists, but metadata file does not. "
                                                      "Probably you are trying to upgrade from version older than 20.7. "
                                                      "If so, you should upgrade through intermediate version.", database_name);
@@ -145,10 +145,10 @@ static void checkIncompleteOrdinaryToAtomicConversion(ContextPtr context, const 
     if (context->getConfigRef().has("allow_reserved_database_name_tmp_convert"))
         return;
 
-    auto shared_disk = Context::getGlobalContextInstance()->getSharedDisk();
+    auto db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
 
     auto convert_flag_path = fs::path(context->getFlagsPath()) / "convert_ordinary_to_atomic";
-    if (!shared_disk->existsFile(convert_flag_path))
+    if (!db_disk->existsFile(convert_flag_path))
         return;
 
     /// Flag exists. Let's check if we had an unsuccessful conversion attempt previously
@@ -175,7 +175,7 @@ static void checkIncompleteOrdinaryToAtomicConversion(ContextPtr context, const 
 
 LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_database_name, bool async_load_databases)
 {
-    auto shared_disk = Context::getGlobalContextInstance()->getSharedDisk();
+    auto db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
 
     LoggerPtr log = getLogger("loadMetadata");
 
@@ -185,12 +185,12 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
     /// on difference of data parts while initializing tables.
     /// This file is immediately deleted i.e. "one-shot".
     auto force_restore_data_flag_file = fs::path(context->getFlagsPath()) / "force_restore_data";
-    bool has_force_restore_data_flag = shared_disk->existsFile(force_restore_data_flag_file);
+    bool has_force_restore_data_flag = db_disk->existsFile(force_restore_data_flag_file);
     if (has_force_restore_data_flag)
     {
         try
         {
-            shared_disk->removeFileIfExists(force_restore_data_flag_file);
+            db_disk->removeFileIfExists(force_restore_data_flag_file);
         }
         catch (...)
         {
@@ -201,16 +201,16 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
 
     /// Loop over databases.
     std::map<String, String> databases;
-    for (const auto it = shared_disk->iterateDirectory(path); it->isValid(); it->next())
+    for (const auto it = db_disk->iterateDirectory(path); it->isValid(); it->next())
     {
         auto sub_path = fs::path(it->path());
         if (sub_path.filename().empty())
             sub_path = sub_path.parent_path();
 
-        if (shared_disk->isSymlinkSupported() && shared_disk->isSymlink(sub_path))
+        if (db_disk->isSymlinkSupported() && db_disk->isSymlink(sub_path))
             continue;
 
-        if (shared_disk->existsDirectory(sub_path))
+        if (db_disk->existsDirectory(sub_path))
             continue;
 
         const auto current_file = sub_path.filename().string();
@@ -229,7 +229,7 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
             LOG_WARNING(log, "Removing temporary file {}", sub_path.string());
             try
             {
-                shared_disk->removeFileIfExists(sub_path);
+                db_disk->removeFileIfExists(sub_path);
             }
             catch (...)
             {
@@ -290,18 +290,18 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
 
 static void loadSystemDatabaseImpl(ContextMutablePtr context, const String & database_name, const String & default_engine)
 {
-    auto shared_disk = Context::getGlobalContextInstance()->getSharedDisk();
+    auto db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
 
     String path = fs::path(context->getPath()) / "metadata" / database_name;
     String metadata_file = path + ".sql";
-    if (shared_disk->existsFile(metadata_file + ".tmp"))
-        shared_disk->removeFileIfExists(metadata_file + ".tmp");
+    if (db_disk->existsFile(metadata_file + ".tmp"))
+        db_disk->removeFileIfExists(metadata_file + ".tmp");
     LOG_DEBUG(
         getLogger("loadSystemDatabaseImpl"),
         "metadata_file_path {}, existsFile {}",
         metadata_file,
-        shared_disk->existsFile(fs::path(metadata_file)));
-    if (shared_disk->existsFile(fs::path(metadata_file)))
+        db_disk->existsFile(fs::path(metadata_file)));
+    if (db_disk->existsFile(fs::path(metadata_file)))
     {
         /// 'has_force_restore_data_flag' is true, to not fail on loading query_log table, if it is corrupted.
         loadDatabase(context, database_name, path, true);
@@ -496,10 +496,10 @@ void maybeConvertSystemDatabase(ContextMutablePtr context, LoadTaskPtrs & load_s
 
 void convertDatabasesEnginesIfNeed(const LoadTaskPtrs & load_metadata, ContextMutablePtr context)
 {
-    auto shared_disk = Context::getGlobalContextInstance()->getSharedDisk();
+    auto db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
 
     auto convert_flag_path = fs::path(context->getFlagsPath()) / "convert_ordinary_to_atomic";
-    if (!shared_disk->existsFile(convert_flag_path))
+    if (!db_disk->existsFile(convert_flag_path))
         return;
 
     LOG_INFO(getLogger("loadMetadata"), "Found convert_ordinary_to_atomic file in flags directory, "
@@ -513,7 +513,7 @@ void convertDatabasesEnginesIfNeed(const LoadTaskPtrs & load_metadata, ContextMu
             maybeConvertOrdinaryDatabaseToAtomic(context, name);
 
     LOG_INFO(getLogger("loadMetadata"), "Conversion finished, removing convert_ordinary_to_atomic flag");
-    shared_disk->removeFileIfExists(convert_flag_path);
+    db_disk->removeFileIfExists(convert_flag_path);
 }
 
 LoadTaskPtrs loadMetadataSystem(ContextMutablePtr context, bool async_load_system_database)

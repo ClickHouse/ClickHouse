@@ -617,7 +617,7 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
 
     if (drop)
     {
-        auto shared_disk = getContext()->getSharedDisk();
+        auto db_disk = getContext()->getDatabaseDisk();
         UUID db_uuid = db->getUUID();
 
         /// Delete the database.
@@ -626,9 +626,9 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
         /// Old ClickHouse versions did not store database.sql files
         /// Remove metadata dir (if exists) to avoid recreation of .sql file on server startup
         fs::path database_metadata_dir = fs::path(getContext()->getPath()) / "metadata" / escapeForFileName(database_name);
-        shared_disk->removeDirectoryIfExists(database_metadata_dir);
+        db_disk->removeDirectoryIfExists(database_metadata_dir);
         fs::path database_metadata_file = fs::path(getContext()->getPath()) / "metadata" / (escapeForFileName(database_name) + ".sql");
-        shared_disk->removeFileIfExists(database_metadata_file);
+        db_disk->removeFileIfExists(database_metadata_file);
 
         if (db_uuid != UUIDHelpers::Nil)
             removeUUIDMappingFinally(db_uuid);
@@ -997,7 +997,7 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
 {
     assert(!cleanup_task);
 
-    auto shared_disk = getContext()->getSharedDisk();
+    auto db_disk = getContext()->getDatabaseDisk();
 
     /// /clickhouse_root/metadata_dropped/ contains files with metadata of tables,
     /// which where marked as dropped by Atomic databases.
@@ -1009,10 +1009,10 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
     std::map<String, StorageID> dropped_metadata;
     String path = std::filesystem::path(getContext()->getPath()) / "metadata_dropped" / "";
 
-    if (!shared_disk->existsDirectory(path))
+    if (!db_disk->existsDirectory(path))
         return;
 
-    for (const auto it = shared_disk->iterateDirectory(path); it->isValid(); it->next())
+    for (const auto it = db_disk->iterateDirectory(path); it->isValid(); it->next())
     {
         auto sub_path = fs::path(it->path());
         /// File name has the following format:
@@ -1087,7 +1087,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
     assert(!table || table->getStorageID().uuid == table_id.uuid);
     assert(dropped_metadata_path == getPathForDroppedMetadata(table_id));
 
-    auto shared_disk = getContext()->getSharedDisk();
+    auto db_disk = getContext()->getDatabaseDisk();
 
     /// Table was removed from database. Enqueue removal of its data from disk.
     time_t drop_time;
@@ -1133,7 +1133,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
         }
 
         addUUIDMapping(table_id.uuid);
-        drop_time = shared_disk->getLastModified(dropped_metadata_path).epochTime();
+        drop_time = db_disk->getLastModified(dropped_metadata_path).epochTime();
     }
 
     std::lock_guard lock(tables_marked_dropped_mutex);
@@ -1166,7 +1166,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
 
 void DatabaseCatalog::undropTable(StorageID table_id)
 {
-    auto shared_disk = getContext()->getSharedDisk();
+    auto db_disk = getContext()->getDatabaseDisk();
 
     String latest_metadata_dropped_path;
     TableMarkedAsDropped dropped_table;
@@ -1205,7 +1205,7 @@ void DatabaseCatalog::undropTable(StorageID table_id)
         /// a table is successfully marked undropped,
         /// if and only if its metadata file was moved to a database.
         /// This maybe throw exception.
-        shared_disk->moveFile(latest_metadata_dropped_path, table_metadata_path);
+        db_disk->moveFile(latest_metadata_dropped_path, table_metadata_path);
 
         if (first_async_drop_in_queue == it_dropped_table)
             ++first_async_drop_in_queue;
@@ -1388,7 +1388,7 @@ void DatabaseCatalog::dropTableDataTask()
 
 void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
 {
-    auto shared_disk = getContext()->getSharedDisk();
+    auto db_disk = getContext()->getDatabaseDisk();
 
     if (table.table)
     {
@@ -1407,7 +1407,7 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
     }
 
     LOG_INFO(log, "Removing metadata {} of dropped table {}", table.metadata_path, table.table_id.getNameForLogs());
-    shared_disk->removeFileIfExists(fs::path(table.metadata_path));
+    db_disk->removeFileIfExists(fs::path(table.metadata_path));
 
     removeUUIDMappingFinally(table.table_id.uuid);
     CurrentMetrics::sub(CurrentMetrics::TablesToDropQueueSize, 1);
