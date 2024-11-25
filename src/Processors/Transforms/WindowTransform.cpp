@@ -1153,7 +1153,7 @@ void WindowTransform::appendChunk(Chunk & chunk)
         // Initialize output columns.
         for (auto & ws : workspaces)
         {
-            block.casted_columns.push_back(ws.window_function_impl ? ws.window_function_impl->castColumn(block.input_columns, ws.argument_column_indices) : nullptr);
+            block.cast_columns.push_back(ws.window_function_impl ? ws.window_function_impl->castColumn(block.input_columns, ws.argument_column_indices) : nullptr);
 
             block.output_columns.push_back(ws.aggregate_function->getResultType()
                 ->createColumn());
@@ -2401,8 +2401,8 @@ struct WindowFunctionLagLeadInFrame final : public StatelessWindowFunction
             {
                 // Column with default values is specified.
                 const IColumn & default_column =
-                    current_block.casted_columns[function_index] ?
-                        *current_block.casted_columns[function_index].get() :
+                    current_block.cast_columns[function_index] ?
+                        *current_block.cast_columns[function_index].get() :
                         *current_block.input_columns[workspace.argument_column_indices[2]].get();
 
                 to.insert(default_column[transform->current_row.row]);
