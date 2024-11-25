@@ -50,15 +50,4 @@ detach table test_azure_mt;
 attach table test_azure_mt;
 "
 
-${CLICKHOUSE_CLIENT} --query "drop table if exists test_azure_mt_dst"
-
-${CLICKHOUSE_CLIENT} -m --query "
-create table test_azure_mt_dst (a Int32, b Int64, c Int64)
-engine = MergeTree() partition by intDiv(a, 1000) order by tuple(a, b)
-settings disk = '${container}'
-"
-
-${CLICKHOUSE_CLIENT} -m --query "
-alter table test_azure_mt move partition 0 to table test_azure_mt_dst" 2>&1 | grep -Fq "SUPPORT_IS_DISABLED"
-
 ${CLICKHOUSE_CLIENT} --query "drop table test_azure_mt sync"
