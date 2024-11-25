@@ -2,44 +2,44 @@
 
 #if USE_AVRO
 
-#    include <Columns/ColumnString.h>
-#    include <Columns/ColumnTuple.h>
-#    include <Columns/IColumn.h>
-#    include <Core/Settings.h>
-#    include <DataTypes/DataTypeArray.h>
-#    include <DataTypes/DataTypeDate.h>
-#    include <DataTypes/DataTypeDateTime64.h>
-#    include <DataTypes/DataTypeFactory.h>
-#    include <DataTypes/DataTypeFixedString.h>
-#    include <DataTypes/DataTypeMap.h>
-#    include <DataTypes/DataTypeNullable.h>
-#    include <DataTypes/DataTypeString.h>
-#    include <DataTypes/DataTypeTuple.h>
-#    include <DataTypes/DataTypeUUID.h>
-#    include <DataTypes/DataTypesDecimal.h>
-#    include <DataTypes/DataTypesNumber.h>
-#    include <Formats/FormatFactory.h>
-#    include <IO/ReadBufferFromFileBase.h>
-#    include <IO/ReadBufferFromString.h>
-#    include <IO/ReadHelpers.h>
-#    include <Processors/Formats/Impl/AvroRowInputFormat.h>
-#    include <Storages/ObjectStorage/DataLakes/Common.h>
-#    include <Storages/ObjectStorage/DataLakes/IcebergMetadata.h>
-#    include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#    include <Common/logger_useful.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/IColumn.h>
+#include <Core/Settings.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Formats/FormatFactory.h>
+#include <IO/ReadBufferFromFileBase.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <Processors/Formats/Impl/AvroRowInputFormat.h>
+#include <Storages/ObjectStorage/DataLakes/Common.h>
+#include <Storages/ObjectStorage/DataLakes/IcebergMetadata.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Common/logger_useful.h>
 
-#    include <Poco/JSON/Array.h>
-#    include <Poco/JSON/Object.h>
-#    include <Poco/JSON/Parser.h>
+#include <Poco/JSON/Array.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
 
-#    include <filesystem>
+#include <filesystem>
 
 namespace DB
 {
 namespace Setting
 {
-extern const SettingsBool iceberg_engine_ignore_schema_evolution;
-extern const SettingsInt64 iceberg_query_at_timestamp_ms;
+    extern const SettingsBool iceberg_engine_ignore_schema_evolution;
+    extern const SettingsInt64 iceberg_query_at_timestamp_ms;
 }
 
 namespace ErrorCodes
