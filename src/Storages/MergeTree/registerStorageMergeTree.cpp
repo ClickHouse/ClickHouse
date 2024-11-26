@@ -47,6 +47,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsBool enable_minmax_index_for_all_numeric_columns;
+    extern const MergeTreeSettingsBool enable_minmax_index_for_all_string_columns;
 }
 
 namespace ServerSetting
@@ -701,15 +702,24 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             for (auto &index: args.query.columns_list->indices->children)
                 metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, context));
 
-            if ((*storage_settings)[MergeTreeSetting::enable_minmax_index_for_all_numeric_columns])
+            if ((*storage_settings)[MergeTreeSetting::enable_minmax_index_for_all_numeric_columns]
+            || (*storage_settings)[MergeTreeSetting::enable_minmax_index_for_all_string_columns])
             {
                 for (const auto & column : metadata.columns)
                 {
-                    bool index_exists = false;
+                    if (!isNumber(column.type) && !isString(column.type))
+                        continue;
 
-                    for (auto &index: args.query.columns_list->indices->children)
+                    if (isNumber(column.type) && !(*storage_settings)[MergeTreeSetting::enable_minmax_index_for_all_numeric_columns])
+                        continue;
+
+                    if (isString(column.type) && !(*storage_settings)[MergeTreeSetting::enable_minmax_index_for_all_string_columns])
+                        continue;
+
+                    bool index_exists = false;
+                    for (auto &index: metadata.secondary_indices)
                     {
-                        if (index->children[0]->as<ASTIdentifier>() && index->children[0]->as<ASTIdentifier>()->full_name == column.name)
+                        if (index.column_names.front() == column.name)
                         {
                             index_exists = true;
                             break;
@@ -720,12 +730,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                         continue;
 
                     auto index_type = makeASTFunction("minmax");
-                    auto index = std::make_shared<ASTIndexDeclaration>(std::make_shared<ASTIdentifier>(column.name), index_type,
-                                                                  "_index_"+column.name);
-                    metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, context));
+                    auto index_ast = std::make_shared<ASTIndexDeclaration>(std::make_shared<ASTIdentifier>(column.name), index_type,
+                                                                           ( isNumber(column.type) ? "_index_n_" : "_index_s_") +column.name);
+                    metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index_ast, columns, context));
                 }
             }
-
         }
 
         if (args.query.columns_list && args.query.columns_list->projections)
