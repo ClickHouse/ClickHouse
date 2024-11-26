@@ -157,6 +157,7 @@ chmod +x clickhouse
 ln -sf clickhouse clickhouse-local
 ln -sf clickhouse clickhouse-client
 ln -sf clickhouse clickhouse-server
+ln -sf clickhouse clickhouse-keeeper
 cd -
 
 

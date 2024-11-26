@@ -67,8 +67,10 @@ def main():
     os.environ["AZURE_CONNECTION_STRING"] = Shell.get_output(
         f"aws ssm get-parameter --region us-east-1 --name azure_connection_string --with-decryption --output text --query Parameter.Value",
         verbose=True,
-        strict=True,
     )
+    no_azure = False
+    if not os.environ["AZURE_CONNECTION_STRING"]:
+        no_azure = True
 
     ch_path = args.ch_path
     assert Path(
@@ -103,9 +105,11 @@ def main():
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-compressor",
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-local",
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-disks",
+            f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-obfuscator",
+            f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-format",
             f"rm -rf {Settings.TEMP_DIR}/etc/ && mkdir -p {Settings.TEMP_DIR}/etc/clickhouse-client {Settings.TEMP_DIR}/etc/clickhouse-server",
             f"cp programs/server/config.xml programs/server/users.xml {Settings.TEMP_DIR}/etc/clickhouse-server/",
-            f"./tests/config/install.sh {Settings.TEMP_DIR}/etc/clickhouse-server {Settings.TEMP_DIR}/etc/clickhouse-client --s3-storage",
+            f"./tests/config/install.sh {Settings.TEMP_DIR}/etc/clickhouse-server {Settings.TEMP_DIR}/etc/clickhouse-client --s3-storage {'--no-azure' if no_azure else ''}",
             # clickhouse benchmark segfaults with --config-path, so provide client config by its default location
             f"cp {Settings.TEMP_DIR}/etc/clickhouse-client/* /etc/clickhouse-client/",
             # update_path_ch_config,
@@ -132,7 +136,7 @@ def main():
         hdfs_log = "/tmp/praktika/output/hdfs_mini.log"
         minio_log = "/tmp/praktika/output/minio.log"
         res = res and CH.start_hdfs(log_file_path=hdfs_log)
-        res = res and CH.start_minio(test_type="stateful", log_file_path=minio_log)
+        res = res and CH.start_minio(test_type="stateless", log_file_path=minio_log)
         logs_to_attach += [minio_log, hdfs_log]
         time.sleep(10)
         Shell.check("ps -ef | grep minio", verbose=True)
