@@ -22,7 +22,7 @@ public:
     FilterTransform(
         const Block & header_, ExpressionActionsPtr expression_, String filter_column_name_,
         bool remove_filter_column_, bool on_totals_ = false, std::shared_ptr<std::atomic<size_t>> rows_filtered_ = nullptr,
-        std::shared_ptr<QueryConditionCache> query_condition_cache_ = nullptr, std::optional<size_t> condition_id_ = std::nullopt);
+        std::optional<size_t> condition_id_ = std::nullopt);
 
     static Block
     transformHeader(const Block & header, const ActionsDAG * expression, const String & filter_column_name, bool remove_filter_column);
@@ -44,8 +44,9 @@ private:
 
     std::shared_ptr<std::atomic<size_t>> rows_filtered;
 
-    std::shared_ptr<QueryConditionCache> query_condition_cache;
+    /// If `condition_id` is not null, the query condition cache needs to be updated at runtime.
     std::optional<size_t> condition_id;
+    std::shared_ptr<QueryConditionCache> query_condition_cache;
 
     /// Header after expression, but before removing filter column.
     Block transformed_header;

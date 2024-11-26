@@ -165,12 +165,10 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type)
     {
         bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
-        if (condition_id)
-        {
-            auto query_condition_query = Context::getGlobalContextInstance()->getQueryConditionCache();
+        if (condition_id.has_value())
             return std::make_shared<FilterTransform>(header, expression, filter_column_name, remove_filter_column, on_totals,
-                nullptr, query_condition_query, condition_id);
-        }
+                nullptr, condition_id);
+
         return std::make_shared<FilterTransform>(header, expression, filter_column_name, remove_filter_column, on_totals);
     });
 

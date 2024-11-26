@@ -14,7 +14,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
-    extern const int LOGICAL_ERROR;
 }
 
 Block FilterTransform::transformHeader(
@@ -41,7 +40,6 @@ FilterTransform::FilterTransform(
     bool remove_filter_column_,
     bool on_totals_,
     std::shared_ptr<std::atomic<size_t>> rows_filtered_,
-    QueryConditionCachePtr query_condition_cache_,
     std::optional<size_t> condition_id_)
     : ISimpleTransform(
             header_,
@@ -52,7 +50,6 @@ FilterTransform::FilterTransform(
     , remove_filter_column(remove_filter_column_)
     , on_totals(on_totals_)
     , rows_filtered(rows_filtered_)
-    , query_condition_cache(query_condition_cache_)
     , condition_id(condition_id_)
 {
     transformed_header = getInputPort().getHeader();
@@ -63,6 +60,9 @@ FilterTransform::FilterTransform(
     auto & column = transformed_header.getByPosition(filter_column_position).column;
     if (column)
         constant_filter_description = ConstantFilterDescription(*column);
+
+    if (condition_id.has_value())
+        query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
 }
 
 IProcessor::Status FilterTransform::prepare()
@@ -113,8 +113,7 @@ void FilterTransform::doTransform(Chunk & chunk)
     {
         auto mark_info = chunk.getChunkInfos().get<MarkRangesInfo>();
         if (!mark_info)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Chunk should have MarkRangesInfo in FilterTransform.");
+            return;
 
         query_condition_cache->write(mark_info->getDataPart(), *condition_id, mark_info->getMarkRanges());
     };
