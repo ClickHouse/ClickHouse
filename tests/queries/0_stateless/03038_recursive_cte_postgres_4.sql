@@ -55,9 +55,7 @@ WITH RECURSIVE search_graph AS (
 	FROM graph g, search_graph sg
 	WHERE g.f = sg.t AND NOT is_cycle
 )
-SELECT * FROM search_graph
-SETTINGS query_plan_join_swap_table = 'false'
-;
+SELECT * FROM search_graph;
 
 -- ordering by the path column has same effect as SEARCH DEPTH FIRST
 WITH RECURSIVE search_graph AS (
