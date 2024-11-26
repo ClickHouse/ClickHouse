@@ -225,6 +225,7 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/monitoring/thread_status_impl.cc
     ${ROCKSDB_SOURCE_DIR}/monitoring/thread_status_updater.cc
     ${ROCKSDB_SOURCE_DIR}/monitoring/thread_status_util.cc
+    ${ROCKSDB_SOURCE_DIR}/monitoring/thread_status_util_debug.cc # Only needed on debug mode
     ${ROCKSDB_SOURCE_DIR}/options/cf_options.cc
     ${ROCKSDB_SOURCE_DIR}/options/configurable.cc
     ${ROCKSDB_SOURCE_DIR}/options/customizable.cc
@@ -285,6 +286,9 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/table/table_properties.cc
     ${ROCKSDB_SOURCE_DIR}/table/two_level_iterator.cc
     ${ROCKSDB_SOURCE_DIR}/table/unique_id.cc
+    ${ROCKSDB_SOURCE_DIR}/test_util/sync_point.cc # Only needed on debug mode
+    ${ROCKSDB_SOURCE_DIR}/test_util/sync_point_impl.cc # Only needed on debug mode
+    ${ROCKSDB_SOURCE_DIR}/test_util/transaction_test_util.cc # Only needed on debug mode
     ${ROCKSDB_SOURCE_DIR}/trace_replay/block_cache_tracer.cc
     ${ROCKSDB_SOURCE_DIR}/trace_replay/io_tracer.cc
     ${ROCKSDB_SOURCE_DIR}/trace_replay/trace_record_handler.cc
@@ -366,6 +370,8 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/utilities/types_util.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/ttl/db_ttl_impl.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/wal_filter.cc
+    ${ROCKSDB_SOURCE_DIR}/utilities/write_batch_with_index/write_batch_with_index.cc # Unused but dead code elimination is hard for some linkers
+    ${ROCKSDB_SOURCE_DIR}/utilities/write_batch_with_index/write_batch_with_index_internal.cc # Unused but dead code elimination is hard for some linkers
     ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/range/range_tree/lib/locktree/concurrent_tree.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/range/range_tree/lib/locktree/keyrange.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/range/range_tree/lib/locktree/lock_request.cc
@@ -390,15 +396,6 @@ if(HAS_ARMV8_CRC)
   list(APPEND SOURCES
     "${ROCKSDB_SOURCE_DIR}/util/crc32c_arm64.cc")
 endif(HAS_ARMV8_CRC)
-
-if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
-  # Files only needed on debug mode
-  list(APPEND SOURCES
-    ${ROCKSDB_SOURCE_DIR}/test_util/sync_point.cc
-    ${ROCKSDB_SOURCE_DIR}/test_util/sync_point_impl.cc
-    ${ROCKSDB_SOURCE_DIR}/test_util/transaction_test_util.cc
-    ${ROCKSDB_SOURCE_DIR}/monitoring/thread_status_util_debug.cc)
-ENDIF(CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
 
 list(APPEND SOURCES
     ${ROCKSDB_SOURCE_DIR}/port/port_posix.cc
