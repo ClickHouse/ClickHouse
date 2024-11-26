@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, long, no-asan
 
 set allow_experimental_json_type = 1;
 set max_block_size = 10000;
@@ -37,7 +37,7 @@ select distinct arrayJoin(JSONSharedDataPaths(json)) from test order by all;
 select json.k0, json.k1, json.k2, json.k3, json.k4, json.k5, json.k6, json.k7, json.k8, json.k9 from test;
 
 select 'Change typed paths';
-alter table test modify column json JSON(max_dynamic_paths=3, max_dynamic_types=1, k2 DateTime, k3 UInt32, k6 Bool, k0 UInt32);
+alter table test modify column json JSON(max_dynamic_paths=3, max_dynamic_types=1, k2 Date, k3 UInt32, k6 Bool, k0 UInt32);
 select json from test;
 select 'Dynamic paths:';
 select distinct arrayJoin(JSONDynamicPaths(json)) from test order by all;
@@ -46,7 +46,7 @@ select distinct arrayJoin(JSONSharedDataPaths(json)) from test order by all;
 select json.k0, json.k1, json.k2, json.k3, json.k4, json.k5, json.k6, json.k7, json.k8, json.k9 from test;
 
 select 'Add new skip rules';
-alter table test modify column json JSON(max_dynamic_paths=3, max_dynamic_types=1, k2 DateTime, k3 UInt32, k6 Bool, k0 UInt32, SKIP k5, SKIP k8);
+alter table test modify column json JSON(max_dynamic_paths=3, max_dynamic_types=1, k2 Date, k3 UInt32, k6 Bool, k0 UInt32, SKIP k5, SKIP k8);
 select json from test;
 select 'Dynamic paths:';
 select distinct arrayJoin(JSONDynamicPaths(json)) from test order by all;
@@ -55,7 +55,7 @@ select distinct arrayJoin(JSONSharedDataPaths(json)) from test order by all;
 select json.k0, json.k1, json.k2, json.k3, json.k4, json.k5, json.k6, json.k7, json.k8, json.k9 from test;
 
 select 'Decrease max_dynamic_paths and max_dynamic_types to 0';
-alter table test modify column json JSON(max_dynamic_paths=0, max_dynamic_types=0, k2 DateTime, k3 UInt32, k6 Bool, k0 UInt32, SKIP k5, SKIP k8);
+alter table test modify column json JSON(max_dynamic_paths=0, max_dynamic_types=0, k2 Date, k3 UInt32, k6 Bool, k0 UInt32, SKIP k5, SKIP k8);
 select json from test;
 select 'Dynamic paths:';
 select distinct arrayJoin(JSONDynamicPaths(json)) from test order by all;

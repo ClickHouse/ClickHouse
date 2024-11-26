@@ -1,4 +1,5 @@
 set allow_experimental_json_type = 1;
+set enable_analyzer = 1;
 
 drop table if exists test;
 create table test (json JSON(max_dynamic_paths=2, max_dynamic_types=2, a UInt32, b String, SKIP c)) engine=Memory;
