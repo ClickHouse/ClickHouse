@@ -70,6 +70,48 @@ It is supported by the [Atomic](../../engines/database-engines/atomic.md) databa
 ATTACH TABLE name UUID '<uuid>' (col1 Type1, ...)
 ```
 
+## Attach MergeTree table as ReplicatedMergeTree
+
+Allows to attach non-replicated MergeTree table as ReplicatedMergeTree. ReplicatedMergeTree table will be created with values of `default_replica_path` and `default_replica_name` settings. It is also possible to attach a replicated table as a regular MergeTree.
+
+Note that table's data in ZooKeeper is not affected in this query. This means you have to add metadata in ZooKeeper using `SYSTEM RESTORE REPLICA` or clear it with `SYSTEM DROP REPLICA ... FROM ZKPATH ...` after attach.
+
+If you are trying to add a replica to an existing ReplicatedMergeTree table, keep in mind that all the local data in converted MergeTree table will be detached.
+
+**Syntax**
+
+```sql
+ATTACH TABLE [db.]name AS [NOT] REPLICATED
+```
+
+**Convert table to replicated**
+
+```sql
+DETACH TABLE test;
+ATTACH TABLE test AS REPLICATED;
+SYSTEM RESTORE REPLICA test;
+```
+
+**Convert table to not replicated**
+
+Get ZooKeeper path and replica name for table:
+
+```sql
+SELECT replica_name, zookeeper_path FROM system.replicas WHERE table='test';
+```
+Result:
+```
+┌─replica_name─┬─zookeeper_path─────────────────────────────────────────────┐
+│ r1           │ /clickhouse/tables/401e6a1f-9bf2-41a3-a900-abb7e94dff98/s1 │
+└──────────────┴────────────────────────────────────────────────────────────┘
+```
+Attach table as not replicated and delete replica's data from ZooKeeper:
+```sql
+DETACH TABLE test;
+ATTACH TABLE test AS NOT REPLICATED;
+SYSTEM DROP REPLICA 'r1' FROM ZKPATH '/clickhouse/tables/401e6a1f-9bf2-41a3-a900-abb7e94dff98/s1';
+```
+
 ## Attach Existing Dictionary
 
 Attaches a previously detached dictionary.

@@ -137,14 +137,14 @@ class HtmlRunnerHooks:
         summary_result.start_time = Utils.timestamp()
 
         assert _ResultS3.copy_result_to_s3_with_version(summary_result, version=0)
-        page_url = env.get_report_url(settings=Settings)
+        page_url = env.get_report_url(settings=Settings, latest=True)
         print(f"CI Status page url [{page_url}]")
 
         res1 = GH.post_commit_status(
             name=_workflow.name,
             status=Result.Status.PENDING,
             description="",
-            url=env.get_report_url(settings=Settings, latest=True),
+            url=page_url,
         )
         res2 = GH.post_pr_comment(
             comment_body=f"Workflow [[{_workflow.name}]({page_url})], commit [{_Environment.get().SHA[:8]}]",
