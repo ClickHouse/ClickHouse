@@ -107,13 +107,7 @@ list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/new_dele
 
 
 add_headers_and_sources(clickhouse_compression Compression)
-add_headers_and_sources(clickhouse_compression Parsers)
-add_headers_and_sources(clickhouse_compression Core)
-#Included these specific files to avoid linking grpc
-add_glob(clickhouse_compression_headers Server/ServerType.h)
-add_glob(clickhouse_compression_sources Server/ServerType.cpp)
 add_library(clickhouse_compression ${clickhouse_compression_headers} ${clickhouse_compression_sources})
-
 
 add_headers_and_sources(dbms Disks/IO)
 add_headers_and_sources(dbms Disks/ObjectStorages)
@@ -222,7 +216,6 @@ add_object_library(clickhouse_access Access)
 add_object_library(clickhouse_backups Backups)
 add_object_library(clickhouse_core Core)
 add_object_library(clickhouse_core_mysql Core/MySQL)
-add_object_library(clickhouse_compression Compression)
 add_object_library(clickhouse_querypipeline QueryPipeline)
 add_object_library(clickhouse_datatypes DataTypes)
 add_object_library(clickhouse_datatypes_serializations DataTypes/Serializations)
@@ -422,6 +415,7 @@ dbms_target_link_libraries (
         boost::filesystem
         boost::program_options
         clickhouse_common_config
+        clickhouse_common_zookeeper_base
         clickhouse_common_zookeeper
         clickhouse_dictionaries_embedded
         clickhouse_parsers
@@ -429,6 +423,7 @@ dbms_target_link_libraries (
         Poco::JSON
     PUBLIC
         boost::system
+        clickhouse_compression
         clickhouse_common_io
         Poco::Redis
 )
@@ -639,6 +634,10 @@ if (TARGET ch_rust::skim)
     dbms_target_link_libraries(PUBLIC ch_rust::skim)
 endif()
 
+if (TARGET ch_contrib::google_cloud_cpp)
+    dbms_target_link_libraries(PUBLIC ch_contrib::google_cloud_cpp)
+endif()
+
 if (ENABLE_TESTS)
     macro (grep_gtest_sources BASE_DIR DST_VAR)
         # Cold match files that are not in tests/ directories
@@ -662,6 +661,7 @@ if (ENABLE_TESTS)
         clickhouse_parsers
         clickhouse_storages_system
         dbms
+        clickhouse_common_zookeeper_base
         clickhouse_common_config
         clickhouse_common_zookeeper
         hilite_comparator)
