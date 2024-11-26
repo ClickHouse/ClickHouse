@@ -72,8 +72,11 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
 {
 }
 
-Columns IMergeTreeDataPartWriter::releaseIndexColumns()
+std::optional<Columns> IMergeTreeDataPartWriter::releaseIndexColumns()
 {
+    if (!settings.save_primary_index_in_memory)
+        return {};
+
     /// The memory for index was allocated without thread memory tracker.
     /// We need to deallocate it in shrinkToFit without memory tracker as well.
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
