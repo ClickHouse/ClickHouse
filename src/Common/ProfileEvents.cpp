@@ -970,7 +970,7 @@ void Counters::resetCounters()
 
 void Counters::reset()
 {
-    parent = nullptr;
+    setParent(nullptr);
     resetCounters();
 }
 

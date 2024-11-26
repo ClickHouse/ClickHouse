@@ -60,7 +60,7 @@ namespace ProfileEvents
         Counter * counters = nullptr;
         std::unique_ptr<Counter[]> counters_holder;
         /// Used to propagate increments
-        Counters * parent = nullptr;
+        std::atomic<Counters *> parent = {};
         bool trace_profile_events = false;
 
     public:
@@ -114,13 +114,13 @@ namespace ProfileEvents
         /// Get parent (thread unsafe)
         Counters * getParent()
         {
-            return parent;
+            return parent.load(std::memory_order_relaxed);
         }
 
         /// Set parent (thread unsafe)
         void setParent(Counters * parent_)
         {
-            parent = parent_;
+            parent.store(parent_, std::memory_order_relaxed);
         }
 
         void setTraceProfileEvents(bool value)
