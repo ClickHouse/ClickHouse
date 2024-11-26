@@ -1076,7 +1076,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     DataTypes key_types;
     if (!key_indices.empty())
     {
-        const auto & index = part->getIndex();
+        const auto index = part->getIndex();
 
         for (size_t i : key_indices)
         {

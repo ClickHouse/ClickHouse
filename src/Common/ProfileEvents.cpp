@@ -63,6 +63,8 @@
     M(TableFunctionExecute, "Number of table function calls.", ValueType::Number) \
     M(MarkCacheHits, "Number of times an entry has been found in the mark cache, so we didn't have to load a mark file.", ValueType::Number) \
     M(MarkCacheMisses, "Number of times an entry has not been found in the mark cache, so we had to load a mark file in memory, which is a costly operation, adding to query latency.", ValueType::Number) \
+    M(PrimaryIndexCacheHits, "Number of times an entry has been found in the primary index cache, so we didn't have to load a index file.", ValueType::Number) \
+    M(PrimaryIndexCacheMisses, "Number of times an entry has not been found in the primary index cache, so we had to load a index file in memory, which is a costly operation, adding to query latency.", ValueType::Number) \
     M(SkippingIndexCacheHits, "Number of times an index granule has been found in the skipping index cache.", ValueType::Number) \
     M(SkippingIndexCacheMisses, "Number of times an index granule has not been found in the skipping index cache and had to be read from disk.", ValueType::Number) \
     M(SkippingIndexCacheWeightLost, "Approximate number of bytes evicted from the secondary index cache.", ValueType::Number) \
@@ -232,6 +234,9 @@
     M(BackgroundLoadingMarksTasks, "Number of background tasks for loading marks", ValueType::Number) \
     M(LoadedMarksCount, "Number of marks loaded (total across columns).", ValueType::Number) \
     M(LoadedMarksMemoryBytes, "Size of in-memory representations of loaded marks.", ValueType::Bytes) \
+    M(LoadedPrimaryIndexFiles, "Number of primary index files loaded.", ValueType::Number) \
+    M(LoadedPrimaryIndexRows, "Number of rows of primary key loaded.", ValueType::Number) \
+    M(LoadedPrimaryIndexBytes, "Number of rows of primary key loaded.", ValueType::Bytes) \
     \
     M(Merge, "Number of launched background merges.", ValueType::Number) \
     M(MergeSourceParts, "Number of source parts scheduled for merges.", ValueType::Number) \
