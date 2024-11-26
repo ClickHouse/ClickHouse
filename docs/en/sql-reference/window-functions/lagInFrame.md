@@ -11,7 +11,7 @@ Returns a value evaluated at the row that is at a specified physical offset row 
 :::warning
 `lagInFrame` behavior differs from the standard SQL `lag` window function.
 Clickhouse window function `lagInFrame` respects the window frame.
-To get behavior identical to the `lag`, use `rows between unbounded preceding and unbounded following`.
+To get behavior identical to the `lag`, use `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`.
 :::
 
 **Syntax**
