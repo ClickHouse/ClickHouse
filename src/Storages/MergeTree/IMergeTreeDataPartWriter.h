@@ -49,7 +49,7 @@ public:
 
     virtual size_t getNumberOfOpenStreams() const = 0;
 
-    Columns releaseIndexColumns();
+    std::optional<Columns> releaseIndexColumns();
 
     PlainMarksByName releaseCachedMarks();
 
