@@ -536,7 +536,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         }
 
         //Add secondary index for new column if enable_minmax_index_for_all_numeric_columns is enabled
-        if (isNumber(column.type) && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("enable_minmax_index_for_all_numeric_columns"))
+        if (isNumber(column.type) && metadata.settings_changes
+            && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("enable_minmax_index_for_all_numeric_columns"))
         {
             bool index_exists = false;
             for (auto &index: metadata.secondary_indices)
@@ -558,7 +559,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                         IndexDescription::getIndexFromAST(index_ast, metadata.columns, context));
             }
         }
-        else if (isString(column.type) && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("enable_minmax_index_for_all_string_columns"))
+        else if (isString(column.type) && metadata.settings_changes
+                 && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("enable_minmax_index_for_all_string_columns"))
         {
             bool index_exists = false;
             for (auto &index: metadata.secondary_indices)
@@ -586,7 +588,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     {
         auto column = metadata.columns.get(column_name);
         //Remove secondary index for new column if enable_minmax_index_for_all_numeric_columns is enabled
-        if (isNumber(column.type) && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("enable_minmax_index_for_all_numeric_columns"))
+        if (isNumber(column.type) && metadata.settings_changes
+            && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("enable_minmax_index_for_all_numeric_columns"))
         {
             for (auto index_iterator = metadata.secondary_indices.begin();
                  index_iterator != metadata.secondary_indices.end();)
@@ -600,7 +603,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                     ++index_iterator;
             }
         }
-        else if (isString(column.type) && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("enable_minmax_index_for_all_string_columns"))
+        else if (isString(column.type) && metadata.settings_changes
+                 && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("enable_minmax_index_for_all_string_columns"))
         {
             for (auto index_iterator = metadata.secondary_indices.begin();
                  index_iterator != metadata.secondary_indices.end();)

@@ -43,4 +43,16 @@ SELECT 'Enable enable_minmax_index_for_all_string_columns';
 ALTER TABLE tbl MODIFY SETTING enable_minmax_index_for_all_string_columns = true;
 SHOW INDICES FROM tbl;
 
+SELECT 'Add string column';
+ALTER TABLE tbl ADD COLUMN t String;
+SHOW INDICES FROM tbl;
+
+SELECT 'Drop string column';
+ALTER TABLE tbl DROP COLUMN t;
+SHOW INDICES FROM tbl;
+
+SELECT 'Disable enable_minmax_index_for_all_string_columns';
+ALTER TABLE tbl MODIFY SETTING enable_minmax_index_for_all_string_columns = false;
+SHOW INDICES FROM tbl;
+
 DROP TABLE IF EXISTS tbl;
