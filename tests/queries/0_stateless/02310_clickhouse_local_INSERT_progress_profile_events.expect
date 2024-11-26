@@ -2,8 +2,8 @@
 # This is the regression for the concurrent access in ProgressIndication,
 # so it is important to read enough rows here (10e6).
 #
-# Initially there was 100e6, but under thread fuzzer 10min may be not enough sometimes,
-# but I believe that CI will catch possible issues even with less rows anyway.
+# Initially, there was 100e6, but under thread fuzzer, 10 min could not be enough sometimes,
+# but I believe that the CI will catch possible issues even with fewer rows anyway.
 
 set basedir [file dirname $argv0]
 set basename [file tail $argv0]
@@ -30,7 +30,7 @@ expect_after {
 # Using standard chunk sizes would require pushing much larger data amounts, which
 # would be too slow on sanitizer and debug builds, potentially causing timeouts.
 #
-# interactive_delay allows progress to be printed more frequently.
+# `interactive_delay` allows progress to be printed more frequently.
 # The sleep command in the bash loop ensures that interactive_delay will be reached.
 spawn bash -c "
     source $basedir/../shell_config.sh; \
