@@ -29,6 +29,7 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
+#include <Common/randomSeed.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <QueryPipeline/Pipe.h>
@@ -39,6 +40,8 @@
 #include <Processors/Sinks/SinkToStorage.h>
 
 #include <Backups/BackupEntriesCollector.h>
+
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -51,6 +54,7 @@ namespace Setting
 namespace ServerSetting
 {
     extern const ServerSettingsUInt64 max_materialized_views_count_for_table;
+    extern const ServerSettingsUInt64 startup_mv_delay_ms;
 }
 
 namespace RefreshSetting
@@ -745,12 +749,34 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
         refresher->rename(new_table_id, getTargetTableId());
 }
 
+void StorageMaterializedView::pushDependencies()
+{
+    // assert(!dependencies_are_tracked);
+    if (!dependencies_are_tracked)
+    {
+        auto metadata_snapshot = getInMemoryMetadataPtr();
+        const auto & select_query = metadata_snapshot->getSelectQuery();
+        if (!select_query.select_table_id.empty())
+            DatabaseCatalog::instance().addViewDependency(select_query.select_table_id, getStorageID());
+        dependencies_are_tracked = true;
+    }
+}
+
 void StorageMaterializedView::startup()
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr();
-    const auto & select_query = metadata_snapshot->getSelectQuery();
-    if (!select_query.select_table_id.empty())
-        DatabaseCatalog::instance().addViewDependency(select_query.select_table_id, getStorageID());
+    if (const auto configured_delay_ms = getContext()->getServerSettings()[ServerSetting::startup_mv_delay_ms]; configured_delay_ms)
+    {
+        pcg64_fast gen{randomSeed()};
+        const auto delay_ms = std::uniform_int_distribution<>(0, 1)(gen) ? configured_delay_ms : 0UL;
+        if (delay_ms)
+        {
+            LOG_DEBUG(&Poco::Logger::get("StorageMaterializedView"), "sleeping in startup of {}", getStorageID().table_name);
+            std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+            LOG_DEBUG(&Poco::Logger::get("StorageMaterializedView"), "woken up in startup of {}", getStorageID().table_name);
+        }
+    }
+
+    pushDependencies();
 
     if (refresher)
         refresher->startup();

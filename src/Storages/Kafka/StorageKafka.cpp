@@ -187,6 +187,7 @@ StorageKafka::StorageKafka(
     , thread_per_consumer((*kafka_settings)[KafkaSetting::kafka_thread_per_consumer].value)
     , collection_name(collection_name_)
 {
+    LOG_TRACE(log, "Top of StorageKafka ctor.");
     kafka_settings->sanityCheck();
 
     if ((*kafka_settings)[KafkaSetting::kafka_handle_error_mode] == StreamingHandleErrorMode::STREAM)
@@ -524,6 +525,7 @@ size_t StorageKafka::getPollTimeoutMillisecond() const
 
 void StorageKafka::threadFunc(size_t idx)
 {
+    LOG_DEBUG(log, "Top of StorageKafka::threadFunc");
     assert(idx < tasks.size());
     auto task = tasks[idx];
     std::string exception_str;
@@ -533,15 +535,18 @@ void StorageKafka::threadFunc(size_t idx)
         auto table_id = getStorageID();
         // Check if at least one direct dependency is attached
         size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
+        LOG_DEBUG(log, "StorageKafka::threadFunc - before if");
         if (num_views)
         {
             auto start_time = std::chrono::steady_clock::now();
 
             mv_attached.store(true);
 
+            LOG_DEBUG(log, "StorageKafka::threadFunc - before while");
             // Keep streaming as long as there are attached views and streaming is not cancelled
             while (!task->stream_cancelled)
             {
+                LOG_DEBUG(log, "StorageKafka::threadFunc - before StorageKafkaUtils::checkDependencies");
                 if (!StorageKafkaUtils::checkDependencies(table_id, getContext()))
                     break;
 
@@ -564,6 +569,9 @@ void StorageKafka::threadFunc(size_t idx)
                 }
             }
         }
+        else
+            LOG_DEBUG(log, "No attached views");
+
     }
     catch (...)
     {
