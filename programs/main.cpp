@@ -20,18 +20,24 @@
 #include <vector>
 
 /// Universal executable for various clickhouse applications
-int mainEntryClickHouseServer(int argc, char ** argv);
-int mainEntryClickHouseClient(int argc, char ** argv);
-int mainEntryClickHouseLocal(int argc, char ** argv);
 int mainEntryClickHouseBenchmark(int argc, char ** argv);
-int mainEntryClickHouseExtractFromConfig(int argc, char ** argv);
+int mainEntryClickHouseCheckMarks(int argc, char ** argv);
+int mainEntryClickHouseChecksumForCompressedBlock(int, char **);
+int mainEntryClickHouseClient(int argc, char ** argv);
 int mainEntryClickHouseCompressor(int argc, char ** argv);
-int mainEntryClickHouseFormat(int argc, char ** argv);
-int mainEntryClickHouseObfuscator(int argc, char ** argv);
-int mainEntryClickHouseGitImport(int argc, char ** argv);
-int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
-int mainEntryClickHouseSU(int argc, char ** argv);
 int mainEntryClickHouseDisks(int argc, char ** argv);
+int mainEntryClickHouseExtractFromConfig(int argc, char ** argv);
+int mainEntryClickHouseFormat(int argc, char ** argv);
+int mainEntryClickHouseGitImport(int argc, char ** argv);
+int mainEntryClickHouseKeeperBench(int argc, char ** argv);
+int mainEntryClickHouseKeeperDataDumper(int argc, char ** argv);
+int mainEntryClickHouseLocal(int argc, char ** argv);
+int mainEntryClickHouseObfuscator(int argc, char ** argv);
+int mainEntryClickHouseSU(int argc, char ** argv);
+int mainEntryClickHouseServer(int argc, char ** argv);
+int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
+int mainEntryClickHouseZooKeeperDumpTree(int argc, char ** argv);
+int mainEntryClickHouseZooKeeperRemoveByList(int argc, char ** argv);
 
 int mainEntryClickHouseHashBinary(int, char **)
 {
@@ -66,19 +72,25 @@ using MainFunc = int (*)(int, char**);
 /// Add an item here to register new application
 std::pair<std::string_view, MainFunc> clickhouse_applications[] =
 {
-    {"local", mainEntryClickHouseLocal},
-    {"client", mainEntryClickHouseClient},
     {"benchmark", mainEntryClickHouseBenchmark},
-    {"server", mainEntryClickHouseServer},
-    {"extract-from-config", mainEntryClickHouseExtractFromConfig},
+    {"check-marks", mainEntryClickHouseCheckMarks},
+    {"checksum-for-compressed-block", mainEntryClickHouseChecksumForCompressedBlock},
+    {"client", mainEntryClickHouseClient},
     {"compressor", mainEntryClickHouseCompressor},
+    {"disks", mainEntryClickHouseDisks},
+    {"extract-from-config", mainEntryClickHouseExtractFromConfig},
     {"format", mainEntryClickHouseFormat},
-    {"obfuscator", mainEntryClickHouseObfuscator},
     {"git-import", mainEntryClickHouseGitImport},
+    {"hash-binary", mainEntryClickHouseHashBinary},
+    {"keeper-bench", mainEntryClickHouseKeeperBench},
+    {"keeper-data-dumper", mainEntryClickHouseKeeperDataDumper},
+    {"local", mainEntryClickHouseLocal},
+    {"obfuscator", mainEntryClickHouseObfuscator},
+    {"server", mainEntryClickHouseServer},
     {"static-files-disk-uploader", mainEntryClickHouseStaticFilesDiskUploader},
     {"su", mainEntryClickHouseSU},
-    {"hash-binary", mainEntryClickHouseHashBinary},
-    {"disks", mainEntryClickHouseDisks},
+    {"zookeeper-dump-tree", mainEntryClickHouseZooKeeperDumpTree},
+    {"zookeeper-remove-by-list", mainEntryClickHouseZooKeeperRemoveByList},
 
     // keeper
 #if ENABLE_CLICKHOUSE_KEEPER

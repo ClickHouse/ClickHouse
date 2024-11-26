@@ -11,7 +11,6 @@ endif ()
 
 # Not used in packages
 if (ENABLE_UTILS)
-    add_subdirectory (compressor)
     add_subdirectory (corrector_utf8)
     add_subdirectory (zookeeper-cli)
     add_subdirectory (zookeeper-dump-tree)
@@ -22,8 +21,4 @@ if (ENABLE_UTILS)
     add_subdirectory (keeper-bench)
     add_subdirectory (keeper-data-dumper)
     add_subdirectory (memcpy-bench)
-endif ()
-
-if (ENABLE_FUZZING AND ENABLE_FUZZER_TEST)
-    add_subdirectory (libfuzzer-test)
 endif ()
