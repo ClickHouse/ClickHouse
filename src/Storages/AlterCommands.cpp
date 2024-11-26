@@ -534,12 +534,54 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         {
             metadata.columns.add(column, after_column, first);
         }
+
+        //Add secondary index for new column if enable_minmax_index_for_all_numeric_columns is enabled
+        if (metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("enable_minmax_index_for_all_numeric_columns"))
+        {
+            bool index_exists = false;
+            for (auto &index: metadata.secondary_indices)
+            {
+                if (index.column_names.front() == column.name)
+                {
+                    index_exists = true;
+                    break;
+                }
+            }
+
+            if (!index_exists)
+            {
+                auto index_type = makeASTFunction("minmax");
+                auto index_ast = std::make_shared<ASTIndexDeclaration>(
+                        std::make_shared<ASTIdentifier>(column.name), index_type,
+                        "_index_" + column.name);
+                metadata.secondary_indices.push_back(
+                        IndexDescription::getIndexFromAST(index_ast, metadata.columns, context));
+            }
+        }
+
     }
     else if (type == DROP_COLUMN)
     {
         /// Otherwise just clear data on disk
         if (!clear && !partition)
             metadata.columns.remove(column_name);
+
+        //Remove secondary index for new column if enable_minmax_index_for_all_numeric_columns is enabled
+        if (metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("enable_minmax_index_for_all_numeric_columns"))
+        {
+            for (auto index_iterator = metadata.secondary_indices.begin();
+                 index_iterator != metadata.secondary_indices.end();)
+            {
+                if (index_iterator->name == "_index_"+column_name)
+                {
+                    index_iterator = metadata.secondary_indices.erase(index_iterator);
+                    break;
+                }
+                else
+                    ++index_iterator;
+            }
+        }
+
     }
     else if (type == MODIFY_COLUMN)
     {
