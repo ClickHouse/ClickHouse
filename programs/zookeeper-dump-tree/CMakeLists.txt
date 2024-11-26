@@ -2,6 +2,7 @@ set (CLICKHOUSE_ZOOKEEPER_DUMP_TREE_SOURCES ZooKeeperDumpTree.cpp)
 
 set (CLICKHOUSE_ZOOKEEPER_DUMP_TREE_LINK
     PRIVATE
+        clickhouse_common_zookeeper_base
         clickhouse_common_zookeeper_no_log
         clickhouse_common_io
         dbms
