@@ -1571,7 +1571,9 @@ def test_backup_database_except(include_database_name):
 
     omit_table_name = "test.omit_table" if include_database_name else "omit_table"
     backup_name = new_backup_name()
-    backup_command = f"BACKUP DATABASE test EXCEPT TABLES {omit_table_name} TO {backup_name}"
+    backup_command = (
+        f"BACKUP DATABASE test EXCEPT TABLES {omit_table_name} TO {backup_name}"
+    )
 
     instance.http_query(backup_command, params={"session_id": session_id})
 
@@ -1589,6 +1591,7 @@ def test_backup_database_except(include_database_name):
     assert instance.query("EXISTS TABLE test.omit_table") == "0\n"
 
     instance.query("DROP TABLE test.table")
+
 
 def test_operation_id():
     create_and_fill_table(n=30)
