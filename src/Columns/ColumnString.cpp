@@ -4,6 +4,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/MaskOperations.h>
+#include <Columns/ColumnSparse.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/HashTable/Hash.h>
@@ -504,6 +505,57 @@ void ColumnString::updatePermutationWithCollation(const Collator & collator, Per
             comparator_equal,
             DefaultSort(),
             DefaultPartialSort());
+}
+
+void ColumnString::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit, ssize_t result_size_hint) const
+{
+    size_t to = limit && from + limit < size() ? from + limit : size();
+    size_t num_rows = to - from;
+
+    if (num_rows == 0)
+        return;
+
+    size_t lookup_rows;
+    if (result_size_hint > 0)
+    {
+        static constexpr size_t min_lookup_rows = 8;
+        static constexpr size_t failed_lookups_rate = 4;
+
+        /// Let's consider that default rows are distributed uniformly.
+        /// Then we have at least one default rows in each `m = num_rows / result_size_hint` rows group.
+        /// If we want to have `1 / failed_lookups_rate` ratio of failed lookups
+        /// then we need to do lookups for each `m / failed_lookups_rate` rows.
+        lookup_rows = num_rows / (result_size_hint * failed_lookups_rate);
+
+        /// If it's too small do not lookup because it has some overhead.
+        if (lookup_rows < min_lookup_rows)
+            lookup_rows = num_rows;
+
+        indices.reserve_exact(static_cast<UInt64>(indices.size() + result_size_hint));
+    }
+    else
+    {
+        lookup_rows = num_rows;
+        if (result_size_hint == -1)
+            indices.reserve_exact(static_cast<UInt64>(indices.size() + num_rows * (1.0 - ColumnSparse::DEFAULT_RATIO_FOR_SPARSE_SERIALIZATION)));
+    }
+
+    for (size_t row = from; row < to;)
+    {
+        size_t row_to_lookup = std::min(row + lookup_rows, to);
+
+        if (offsetAt(row_to_lookup) - offsetAt(row) == lookup_rows)
+        {
+            row += lookup_rows;
+            continue;
+        }
+
+        for (; row < row_to_lookup; ++row)
+        {
+            if (!isDefaultAt(row))
+                indices.push_back(row);
+        }
+    }
 }
 
 size_t ColumnString::estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const

@@ -56,38 +56,6 @@ void IColumn::doInsertFrom(const IColumn & src, size_t n)
     insert(src[n]);
 }
 
-ColumnPtr IColumn::createWithOffsets(const Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const
-{
-    if (offsets.size() + shift != size())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Incompatible sizes of offsets ({}), shift ({}) and size of column {}",
-            offsets.size(),
-            shift,
-            size());
-
-    auto res = cloneEmpty();
-    res->reserve(total_rows);
-
-    ssize_t current_offset = -1;
-    for (size_t i = 0; i < offsets.size(); ++i)
-    {
-        ssize_t offsets_diff = static_cast<ssize_t>(offsets[i]) - current_offset;
-        current_offset = offsets[i];
-
-        if (offsets_diff > 1)
-            res->insertManyFrom(column_with_default_value.getDataColumn(), 0, offsets_diff - 1);
-
-        res->insertFrom(*this, i + shift);
-    }
-
-    ssize_t offsets_diff = static_cast<ssize_t>(total_rows) - current_offset;
-    if (offsets_diff > 1)
-        res->insertManyFrom(column_with_default_value.getDataColumn(), 0, offsets_diff - 1);
-
-    return res;
-}
-
 size_t IColumn::estimateCardinalityInPermutedRange(const IColumn::Permutation & /*permutation*/, const EqualRange & equal_range) const
 {
     return equal_range.size();
@@ -275,27 +243,42 @@ double IColumnHelper<Derived, Parent>::getRatioOfDefaultRows(double sample_ratio
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Value of 'sample_ratio' must be in interval (0.0; 1.0], but got: {}", sample_ratio);
 
+    const auto & self = static_cast<const Derived &>(*this);
     static constexpr auto max_number_of_rows_for_full_search = 1000;
 
-    const auto & self = static_cast<const Derived &>(*this);
     size_t num_rows = self.size();
-    size_t num_sampled_rows = std::min(static_cast<size_t>(num_rows * sample_ratio), num_rows);
+    size_t num_sampled_rows = static_cast<size_t>(num_rows * sample_ratio);
+
+    if (num_sampled_rows == 0)
+        return 0;
+
+    size_t num_defaults = 0;
     size_t num_checked_rows = 0;
-    size_t res = 0;
 
     if (num_sampled_rows == num_rows || num_rows <= max_number_of_rows_for_full_search)
     {
-        for (size_t i = 0; i < num_rows; ++i)
-            res += self.isDefaultAt(i);
         num_checked_rows = num_rows;
+
+        for (size_t i = 0; i < num_rows; ++i)
+            num_defaults += self.isDefaultAt(i);
     }
-    else if (num_sampled_rows != 0)
+    else if (sample_ratio <= 0.5)
+    {
+        /// In this case we may sample more rows than requested
+        /// if 1.0 / sample_ratio is not integer, but it's ok.
+        size_t sample_step = static_cast<size_t>(1.0 / sample_ratio);
+        num_checked_rows = num_rows / sample_step;
+
+        for (size_t i = 0; i < num_rows; i += sample_step)
+            num_defaults += self.isDefaultAt(i);
+    }
+    else
     {
         for (size_t i = 0; i < num_rows; ++i)
         {
             if (num_checked_rows * num_rows <= i * num_sampled_rows)
             {
-                res += self.isDefaultAt(i);
+                num_defaults += self.isDefaultAt(i);
                 ++num_checked_rows;
             }
         }
@@ -304,7 +287,7 @@ double IColumnHelper<Derived, Parent>::getRatioOfDefaultRows(double sample_ratio
     if (num_checked_rows == 0)
         return 0.0;
 
-    return static_cast<double>(res) / num_checked_rows;
+    return static_cast<double>(num_defaults) / num_checked_rows;
 }
 
 template <typename Derived, typename Parent>
@@ -319,17 +302,65 @@ UInt64 IColumnHelper<Derived, Parent>::getNumberOfDefaultRows() const
 }
 
 template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const
+void IColumnHelper<Derived, Parent>::getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit, ssize_t result_size_hint) const
 {
     const auto & self = static_cast<const Derived &>(*this);
     size_t to = limit && from + limit < self.size() ? from + limit : self.size();
-    indices.reserve_exact(indices.size() + to - from);
+
+    if (result_size_hint != -1)
+        indices.reserve_exact(static_cast<UInt64>(indices.size() + result_size_hint));
+    else
+        indices.reserve_exact(static_cast<UInt64>(indices.size() + (to - from) * (1.0 - ColumnSparse::DEFAULT_RATIO_FOR_SPARSE_SERIALIZATION)));
 
     for (size_t i = from; i < to; ++i)
     {
         if (!self.isDefaultAt(i))
             indices.push_back(i);
     }
+}
+
+template <typename Derived, typename Parent>
+ColumnPtr IColumnHelper<Derived, Parent>::createWithOffsets(const IColumn::Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const
+{
+    const auto & self = assert_cast<const Derived &>(*this);
+    const auto & defaults_column = column_with_default_value.getDataColumn();
+
+    if (offsets.size() + shift != self.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Incompatible sizes of offsets ({}), shift ({}) and size of column {}",
+            offsets.size(), shift, self.size());
+
+    auto res = self.cloneEmpty();
+    auto & res_typed = assert_cast<Derived &>(*res);
+    res_typed.reserve(total_rows);
+
+    auto fill_result = [&](auto && insert_defaults)
+    {
+        Int64 current_offset = -1;
+        for (size_t i = 0; i < offsets.size(); ++i)
+        {
+            Int64 offsets_diff = static_cast<Int64>(offsets[i]) - current_offset;
+            current_offset = offsets[i];
+
+            if (offsets_diff > 1)
+                insert_defaults(offsets_diff - 1);
+
+            res_typed.insertFrom(self, i + shift);
+        }
+
+        Int64 offsets_diff = static_cast<Int64>(total_rows) - current_offset;
+        if (offsets_diff > 1)
+            insert_defaults(offsets_diff - 1);
+    };
+
+    /// If the value to insert is default of type, it may be slightly
+    /// more effictient to use insertManyDefaults instead of insertManyFrom.
+    if (defaults_column.isDefaultAt(0))
+        fill_result([&](size_t n) { res_typed.insertManyDefaults(n); });
+    else
+        fill_result([&](size_t n) { res_typed.insertManyFrom(defaults_column, 0, n); });
+
+    return res;
 }
 
 template <typename Derived, typename Parent>

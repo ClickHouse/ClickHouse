@@ -161,9 +161,14 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getNumberOfDefaultRows' not implemented for ColumnUnique");
     }
 
-    void getIndicesOfNonDefaultRows(IColumn::Offsets &, size_t, size_t) const override
+    void getIndicesOfNonDefaultRows(IColumn::Offsets &, size_t, size_t, ssize_t) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getIndicesOfNonDefaultRows' not implemented for ColumnUnique");
+    }
+
+    ColumnPtr createWithOffsets(const IColumn::Offsets &, const ColumnConst &, size_t, size_t) const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'createWithOffsets' not implemented for ColumnUnique");
     }
 
     const UInt64 * tryGetSavedHash() const override { return reverse_index.tryGetSavedHash(); }

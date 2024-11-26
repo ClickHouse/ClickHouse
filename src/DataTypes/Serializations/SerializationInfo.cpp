@@ -59,6 +59,11 @@ void SerializationInfo::Data::addDefaults(size_t length)
     num_defaults += length;
 }
 
+double SerializationInfo::Data::getRatioOfDefaultRows() const
+{
+    return num_rows ? static_cast<double>(num_defaults) / num_rows : 1.0;
+}
+
 SerializationInfo::SerializationInfo(ISerialization::Kind kind_, const Settings & settings_)
     : settings(settings_)
     , kind(kind_)

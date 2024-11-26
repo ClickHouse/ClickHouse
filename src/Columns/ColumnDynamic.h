@@ -347,9 +347,9 @@ public:
         return variant_column_ptr->getNumberOfDefaultRows();
     }
 
-    void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
+    void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit, ssize_t result_size_hint) const override
     {
-        variant_column_ptr->getIndicesOfNonDefaultRows(indices, from, limit);
+        variant_column->getIndicesOfNonDefaultRows(indices, from, limit, result_size_hint);
     }
 
     void finalize() override

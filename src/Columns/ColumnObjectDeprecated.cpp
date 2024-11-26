@@ -261,7 +261,7 @@ void ColumnObjectDeprecated::Subcolumn::insert(Field field)
 
 void ColumnObjectDeprecated::Subcolumn::addNewColumnPart(DataTypePtr type)
 {
-    auto serialization = type->getSerialization(ISerialization::Kind::SPARSE);
+    auto serialization = type->getSparseSerialization();
     data.push_back(type->createColumn(*serialization));
     least_common_type = LeastCommonType{std::move(type)};
 }
@@ -476,7 +476,7 @@ void ColumnObjectDeprecated::Subcolumn::finalize()
             /// with default value of new type, because default values (which represents misses in data)
             /// may be inconsistent between types (e.g "0" in UInt64 and empty string in String).
 
-            part->getIndicesOfNonDefaultRows(offsets_data, 0, part_size);
+            part->getIndicesOfNonDefaultRows(offsets_data, 0, part_size, -1);
 
             if (offsets->size() == part_size)
             {

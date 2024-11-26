@@ -24,6 +24,7 @@ class SerializationSparse final : public ISerialization
 {
 public:
     explicit SerializationSparse(const SerializationPtr & nested_);
+    SerializationSparse(const SerializationPtr & nested_, double defaults_ratio_hint_);
 
     Kind getKind() const override { return Kind::SPARSE; }
 
@@ -103,6 +104,7 @@ private:
     void deserialize(IColumn & column, Reader && reader) const;
 
     SerializationPtr nested;
+    std::optional<double> defaults_ratio_hint;
 };
 
 }

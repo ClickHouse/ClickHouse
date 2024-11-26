@@ -590,14 +590,14 @@ public:
     [[nodiscard]] virtual UInt64 getNumberOfDefaultRows() const = 0;
 
     /// Returns indices of values in column, that not equal to default value of column.
-    virtual void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const = 0;
+    virtual void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit, ssize_t result_size_hint) const = 0;
 
     /// Returns column with @total_size elements.
     /// In result column values from current column are at positions from @offsets.
     /// Other values are filled by value from @column_with_default_value.
     /// @shift means how much rows to skip from the beginning of current column.
     /// Used to create full column from sparse.
-    [[nodiscard]] virtual Ptr createWithOffsets(const Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const;
+    [[nodiscard]] virtual Ptr createWithOffsets(const Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const = 0;
 
     /// Compress column in memory to some representation that allows to decompress it back.
     /// Return itself if compression is not applicable for this column type.
@@ -849,7 +849,10 @@ private:
     UInt64 getNumberOfDefaultRows() const override;
 
     /// Devirtualize isDefaultAt.
-    void getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const override;
+    void getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit, ssize_t result_size_hint) const override;
+
+    /// Devirtualize insertFrom and insertManyDefaults
+    ColumnPtr createWithOffsets(const IColumn::Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const override;
 
     /// Devirtualize byteSizeAt.
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;

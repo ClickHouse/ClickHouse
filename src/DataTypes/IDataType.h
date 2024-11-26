@@ -143,9 +143,6 @@ public:
     SerializationPtr getDefaultSerialization() const;
     SerializationPtr getSparseSerialization() const;
 
-    /// Chooses serialization according to serialization kind.
-    SerializationPtr getSerialization(ISerialization::Kind kind) const;
-
     /// Chooses serialization according to collected information about content of column.
     virtual SerializationPtr getSerialization(const SerializationInfo & info) const;
 

@@ -241,9 +241,9 @@ public:
         return getIndexes().getNumberOfDefaultRows();
     }
 
-    void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
+    void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit, ssize_t result_size_hint) const override
     {
-        getIndexes().getIndicesOfNonDefaultRows(indices, from, limit);
+        getIndexes().getIndicesOfNonDefaultRows(indices, from, limit, result_size_hint);
     }
 
     bool valuesHaveFixedSize() const override { return getDictionary().valuesHaveFixedSize(); }
