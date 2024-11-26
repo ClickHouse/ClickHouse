@@ -4991,7 +4991,7 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
 
     /// Don't check for constraints on first load. This makes the default profile consistent with other users, where
     /// the default value set in the config might be outside of the constraints range
-    /// It makes it possible to change the value of experimental settings with `allowed_feature_tier` != 2
+    /// It makes it possible to change the value of experimental settings with `allow_feature_tier` != 2
     bool check_constraints = false;
     setCurrentProfile(shared->system_profile_name, check_constraints);
 
