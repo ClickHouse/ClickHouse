@@ -116,10 +116,10 @@ protected:
     bool is_cancelling { false };
     /// KILL was send to the query
     std::atomic<bool> is_killed { false };
-    CancelReason cancel_reason { CancelReason::UNDEFINED };
 
-    std::exception_ptr cancellation_exception;
-    mutable std::mutex cancellation_exception_mutex;
+    mutable std::mutex cancel_mutex;
+    CancelReason cancel_reason { CancelReason::UNDEFINED };
+    std::exception_ptr cancellation_exception TSA_GUARDED_BY(cancel_mutex);
 
     /// All data to the client already had been sent.
     /// Including EndOfStream or Exception.
@@ -139,10 +139,9 @@ protected:
     /// A weak pointer is used here because it's a ProcessListEntry which owns this QueryStatus, and not vice versa.
     void setProcessListEntry(std::weak_ptr<ProcessListEntry> process_list_entry_);
 
-    [[noreturn]] void throwQueryWasCancelled() const;
+    [[noreturn]] void throwQueryWasCancelled() const TSA_REQUIRES(cancel_mutex);
 
     mutable std::mutex executors_mutex;
-    mutable std::mutex cancel_mutex;
 
     struct ExecutorHolder
     {

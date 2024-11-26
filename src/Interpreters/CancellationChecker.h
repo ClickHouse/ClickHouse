@@ -41,7 +41,7 @@ private:
     // Priority queue to manage tasks based on endTime
     std::multiset<QueryToTrack, CompareEndTime> querySet;
 
-    std::atomic<bool> stop_thread;
+    bool stop_thread;
     std::mutex m;
     std::condition_variable cond_var;
 
