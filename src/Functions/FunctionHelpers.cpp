@@ -59,12 +59,12 @@ ColumnWithTypeAndName columnGetNested(const ColumnWithTypeAndName & col)
         {
             return ColumnWithTypeAndName{nullptr, nested_type, col.name};
         }
-        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*col.column))
+        else if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*col.column))
         {
             const auto & nested_col = nullable->getNestedColumnPtr();
             return ColumnWithTypeAndName{nested_col, nested_type, col.name};
         }
-        if (const auto * const_column = checkAndGetColumn<ColumnConst>(&*col.column))
+        else if (const auto * const_column = checkAndGetColumn<ColumnConst>(&*col.column))
         {
             const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&const_column->getDataColumn());
 
@@ -78,9 +78,10 @@ ColumnWithTypeAndName columnGetNested(const ColumnWithTypeAndName & col)
             {
                 nullable_res = makeNullable(col.column);
             }
-            return ColumnWithTypeAndName{nullable_res, nested_type, col.name};
+            return ColumnWithTypeAndName{ nullable_res, nested_type, col.name };
         }
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} for DataTypeNullable", col.dumpStructure());
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} for DataTypeNullable", col.dumpStructure());
     }
     return col;
 }
@@ -201,7 +202,7 @@ checkAndGetNestedArrayOffset(const IColumn ** columns, size_t num_arguments)
         else if (*offsets_i != *offsets)
             throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Lengths of all arrays passed to aggregate function must be equal.");
     }
-    return {nested_columns, offsets->data()};  /// NOLINT(clang-analyzer-core.CallAndMessage)
+    return {nested_columns, offsets->data()};
 }
 
 ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count)
@@ -213,7 +214,7 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & a
 
     if (src->onlyNull())
         return src;
-    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*src))
+    else if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*src))
     {
         src_not_nullable = nullable->getNestedColumnPtr();
         result_null_map_column = nullable->getNullMapColumnPtr();

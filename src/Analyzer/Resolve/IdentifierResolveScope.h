@@ -174,7 +174,7 @@ struct IdentifierResolveScope
     size_t found_nullable_group_by_key_in_scope = 0;
 
     /** It's possible that after a JOIN, a column in the projection has a type different from the column in the source table.
-      * (For example, after join_use_nulls or USING column cast to supertype)
+      * (For example, after join_use_nulls or USING column casted to supertype)
       * However, the column in the projection still refers to the table as its source.
       * This map is used to revert these columns back to their original columns in the source table.
       */

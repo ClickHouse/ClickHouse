@@ -152,7 +152,7 @@ cat /proc/sys/kernel/core_pattern
 {
     time $SCRIPT_DIR/download.sh "$REF_PR" "$REF_SHA" "$PR_TO_TEST" "$SHA_TO_TEST" && \
     time stage=configure "$script_path"/compare.sh ; \
-} 2>&1 | ts "$(printf '%%Y-%%m-%%d %%H:%%M:%%S\t')" | tee -a compare.log
+} 2>&1 | ts "$(printf '%%Y-%%m-%%d %%H:%%M:%%S\t')" | tee compare.log
 
 # Stop the servers to free memory. Normally they are restarted before getting
 # the profile info, so they shouldn't use much, but if the comparison script

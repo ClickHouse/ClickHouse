@@ -20,7 +20,7 @@ BackupReaderDisk::~BackupReaderDisk() = default;
 
 bool BackupReaderDisk::fileExists(const String & file_name)
 {
-    return disk->existsFile(root_path / file_name);
+    return disk->exists(root_path / file_name);
 }
 
 UInt64 BackupReaderDisk::getFileSize(const String & file_name)
@@ -68,7 +68,7 @@ BackupWriterDisk::~BackupWriterDisk() = default;
 
 bool BackupWriterDisk::fileExists(const String & file_name)
 {
-    return disk->existsFile(root_path / file_name);
+    return disk->exists(root_path / file_name);
 }
 
 UInt64 BackupWriterDisk::getFileSize(const String & file_name)
@@ -91,36 +91,16 @@ std::unique_ptr<WriteBuffer> BackupWriterDisk::writeFile(const String & file_nam
 void BackupWriterDisk::removeFile(const String & file_name)
 {
     disk->removeFileIfExists(root_path / file_name);
+    if (disk->isDirectory(root_path) && disk->isDirectoryEmpty(root_path))
+        disk->removeDirectory(root_path);
 }
 
 void BackupWriterDisk::removeFiles(const Strings & file_names)
 {
     for (const auto & file_name : file_names)
         disk->removeFileIfExists(root_path / file_name);
-}
-
-void BackupWriterDisk::removeEmptyDirectories()
-{
-    removeEmptyDirectoriesImpl(root_path);
-}
-
-void BackupWriterDisk::removeEmptyDirectoriesImpl(const fs::path & current_dir)
-{
-    if (!disk->existsDirectory(current_dir))
-        return;
-
-    if (disk->isDirectoryEmpty(current_dir))
-    {
-        disk->removeDirectory(current_dir);
-        return;
-    }
-
-    /// Backups are not too deep, so recursion is good enough here.
-    for (auto it = disk->iterateDirectory(current_dir); it->isValid(); it->next())
-        removeEmptyDirectoriesImpl(current_dir / it->name());
-
-    if (disk->isDirectoryEmpty(current_dir))
-        disk->removeDirectory(current_dir);
+    if (disk->isDirectory(root_path) && disk->isDirectoryEmpty(root_path))
+        disk->removeDirectory(root_path);
 }
 
 void BackupWriterDisk::copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,

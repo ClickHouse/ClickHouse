@@ -1,5 +1,4 @@
 #include <Access/Common/AccessEntityType.h>
-#include <Access/AccessControl.h>
 #include <Backups/BackupCoordinationStage.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromMemory.h>
@@ -36,13 +35,6 @@ namespace ProfileEvents
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 backup_restore_keeper_retry_initial_backoff_ms;
-    extern const SettingsUInt64 backup_restore_keeper_retry_max_backoff_ms;
-    extern const SettingsUInt64 backup_restore_keeper_max_retries;
-    extern const SettingsSeconds lock_acquire_timeout;
-}
 
 namespace ErrorCodes
 {
@@ -102,6 +94,7 @@ BackupEntriesCollector::BackupEntriesCollector(
     , read_settings(read_settings_)
     , context(context_)
     , process_list_element(context->getProcessListElement())
+    , on_cluster_first_sync_timeout(context->getConfigRef().getUInt64("backups.on_cluster_first_sync_timeout", 180000))
     , collect_metadata_timeout(context->getConfigRef().getUInt64(
           "backups.collect_metadata_timeout", context->getConfigRef().getUInt64("backups.consistent_metadata_snapshot_timeout", 600000)))
     , attempts_to_collect_metadata_before_sleep(context->getConfigRef().getUInt("backups.attempts_to_collect_metadata_before_sleep", 2))
@@ -112,9 +105,9 @@ BackupEntriesCollector::BackupEntriesCollector(
     , compare_collected_metadata(context->getConfigRef().getBool("backups.compare_collected_metadata", true))
     , log(getLogger("BackupEntriesCollector"))
     , global_zookeeper_retries_info(
-          context->getSettingsRef()[Setting::backup_restore_keeper_max_retries],
-          context->getSettingsRef()[Setting::backup_restore_keeper_retry_initial_backoff_ms],
-          context->getSettingsRef()[Setting::backup_restore_keeper_retry_max_backoff_ms])
+          context->getSettingsRef().backup_restore_keeper_max_retries,
+          context->getSettingsRef().backup_restore_keeper_retry_initial_backoff_ms,
+          context->getSettingsRef().backup_restore_keeper_retry_max_backoff_ms)
     , threadpool(threadpool_)
 {
 }
@@ -175,7 +168,23 @@ Strings BackupEntriesCollector::setStage(const String & new_stage, const String 
     checkIsQueryCancelled();
 
     current_stage = new_stage;
-    return backup_coordination->setStage(new_stage, message, /* sync = */ true);
+    backup_coordination->setStage(new_stage, message);
+
+    if (new_stage == Stage::formatGatheringMetadata(0))
+    {
+        return backup_coordination->waitForStage(new_stage, on_cluster_first_sync_timeout);
+    }
+    else if (new_stage.starts_with(Stage::GATHERING_METADATA))
+    {
+        auto current_time = std::chrono::steady_clock::now();
+        auto end_of_timeout = std::max(current_time, collect_metadata_end_time);
+        return backup_coordination->waitForStage(
+            new_stage, std::chrono::duration_cast<std::chrono::milliseconds>(end_of_timeout - current_time));
+    }
+    else
+    {
+        return backup_coordination->waitForStage(new_stage);
+    }
 }
 
 void BackupEntriesCollector::checkIsQueryCancelled() const
@@ -644,7 +653,7 @@ void BackupEntriesCollector::lockTablesForReading()
 
         checkIsQueryCancelled();
 
-        table_info.table_lock = storage->tryLockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
+        table_info.table_lock = storage->tryLockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
     }
 
     std::erase_if(
@@ -699,20 +708,23 @@ bool BackupEntriesCollector::compareWithPrevious(String & mismatch_description)
         {
             if (mismatch->first == p_mismatch->first)
                 return {MismatchType::CHANGED, mismatch->first};
-            if (mismatch->first < p_mismatch->first)
+            else if (mismatch->first < p_mismatch->first)
                 return {MismatchType::ADDED, mismatch->first};
-            return {MismatchType::REMOVED, mismatch->first};
+            else
+                return {MismatchType::REMOVED, mismatch->first};
         }
-        if (mismatch != metadata.end())
+        else if (mismatch != metadata.end())
         {
             return {MismatchType::ADDED, mismatch->first};
         }
-        if (p_mismatch != previous_metadata.end())
+        else if (p_mismatch != previous_metadata.end())
         {
             return {MismatchType::REMOVED, p_mismatch->first};
         }
-
-        return {MismatchType::NONE, {}};
+        else
+        {
+            return {MismatchType::NONE, {}};
+        }
     };
 
     /// Databases must be the same as during the previous scan.
@@ -891,20 +903,11 @@ void BackupEntriesCollector::runPostTasks()
     LOG_TRACE(log, "All post tasks successfully executed");
 }
 
-std::unordered_map<UUID, AccessEntityPtr> BackupEntriesCollector::getAllAccessEntities()
+size_t BackupEntriesCollector::getAccessCounter(AccessEntityType type)
 {
     std::lock_guard lock(mutex);
-    if (!all_access_entities)
-    {
-        all_access_entities.emplace();
-        auto entities_with_ids = context->getAccessControl().readAllWithIDs();
-        for (const auto & [id, entity] : entities_with_ids)
-        {
-            if (entity->isBackupAllowed())
-                all_access_entities->emplace(id, entity);
-        }
-    }
-    return *all_access_entities;
+    access_counters.resize(static_cast<size_t>(AccessEntityType::MAX));
+    return access_counters[static_cast<size_t>(type)]++;
 }
 
 }

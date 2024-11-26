@@ -14,22 +14,20 @@ namespace ErrorCodes
 }
 
 MergeTreeDataPartBuilder::MergeTreeDataPartBuilder(
-    const MergeTreeData & data_, String name_, VolumePtr volume_, String root_path_, String part_dir_, const ReadSettings & read_settings_)
+    const MergeTreeData & data_, String name_, VolumePtr volume_, String root_path_, String part_dir_)
     : data(data_)
     , name(std::move(name_))
     , volume(std::move(volume_))
     , root_path(std::move(root_path_))
     , part_dir(std::move(part_dir_))
-    , read_settings(read_settings_)
 {
 }
 
 MergeTreeDataPartBuilder::MergeTreeDataPartBuilder(
-    const MergeTreeData & data_, String name_, MutableDataPartStoragePtr part_storage_, const ReadSettings & read_settings_)
+    const MergeTreeData & data_, String name_, MutableDataPartStoragePtr part_storage_)
     : data(data_)
     , name(std::move(name_))
     , part_storage(std::move(part_storage_))
-    , read_settings(read_settings_)
 {
 }
 
@@ -75,8 +73,7 @@ MutableDataPartStoragePtr MergeTreeDataPartBuilder::getPartStorageByType(
     MergeTreeDataPartStorageType storage_type_,
     const VolumePtr & volume_,
     const String & root_path_,
-    const String & part_dir_,
-    const ReadSettings &) /// Unused here, but used in private repo.
+    const String & part_dir_)
 {
     if (!volume_)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create part storage, because volume is not specified");
@@ -115,7 +112,7 @@ MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withPartType(MergeTreeDataP
 
 MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withPartStorageType(MergeTreeDataPartStorageType storage_type_)
 {
-    part_storage = getPartStorageByType(storage_type_, volume, root_path, part_dir, read_settings);
+    part_storage = getPartStorageByType(storage_type_, volume, root_path, part_dir);
     return *this;
 }
 
@@ -129,8 +126,7 @@ MergeTreeDataPartBuilder::PartStorageAndMarkType
 MergeTreeDataPartBuilder::getPartStorageAndMarkType(
     const VolumePtr & volume_,
     const String & root_path_,
-    const String & part_dir_,
-    const ReadSettings & read_settings_)
+    const String & part_dir_)
 {
     auto disk = volume_->getDisk();
     auto part_relative_path = fs::path(root_path_) / part_dir_;
@@ -142,7 +138,7 @@ MergeTreeDataPartBuilder::getPartStorageAndMarkType(
 
         if (MarkType::isMarkFileExtension(ext))
         {
-            auto storage = getPartStorageByType(MergeTreeDataPartStorageType::Full, volume_, root_path_, part_dir_, read_settings_);
+            auto storage = getPartStorageByType(MergeTreeDataPartStorageType::Full, volume_, root_path_, part_dir_);
             return {std::move(storage), MarkType(ext)};
         }
     }
@@ -154,13 +150,14 @@ MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withPartFormatFromDisk()
 {
     if (part_storage)
         return withPartFormatFromStorage();
-    return withPartFormatFromVolume();
+    else
+        return withPartFormatFromVolume();
 }
 
 MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withPartFormatFromVolume()
 {
     assert(volume);
-    auto [storage, mark_type] = getPartStorageAndMarkType(volume, root_path, part_dir, read_settings);
+    auto [storage, mark_type] = getPartStorageAndMarkType(volume, root_path, part_dir);
 
     if (!storage || !mark_type)
     {
