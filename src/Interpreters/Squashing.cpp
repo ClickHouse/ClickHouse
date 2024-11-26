@@ -148,7 +148,8 @@ Chunk Squashing::squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoColl
             /// IColumn::structureEquals is not implemented for deprecated object type, ignore it and always convert to non-sparse.
             bool has_object_deprecated = columns[j]->getDataType() == TypeIndex::ObjectDeprecated ||
                 mutable_columns[j]->getDataType() == TypeIndex::ObjectDeprecated;
-            auto has_object_deprecated_lambda = [&has_object_deprecated](const auto & subcolumn)
+            /// we need to use here template lambda because type T has to be different in each following call
+            auto has_object_deprecated_lambda = [&has_object_deprecated]<typename T>(const T & subcolumn)
             {
                 has_object_deprecated = has_object_deprecated || subcolumn.getDataType() == TypeIndex::ObjectDeprecated;
             };
