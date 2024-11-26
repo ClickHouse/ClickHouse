@@ -23,32 +23,32 @@ public:
     {
         this->cname = c.cname;
         this->special = c.special;
-        this->nullable = c.nullable;
-        this->dmod = c.dmod;
+        this->nullable = std::optional<bool>(c.nullable);
+        this->dmod = std::optional<DModifier>(c.dmod);
         this->tp = TypeDeepCopy(c.tp);
     }
     SQLColumn(SQLColumn && c) noexcept
     {
         this->cname = c.cname;
         this->special = c.special;
-        this->nullable = c.nullable;
-        this->dmod = c.dmod;
+        this->nullable = std::optional<bool>(c.nullable);
+        this->dmod = std::optional<DModifier>(c.dmod);
         this->tp = TypeDeepCopy(c.tp);
     }
     SQLColumn & operator=(const SQLColumn & c)
     {
         this->cname = c.cname;
         this->special = c.special;
-        this->nullable = c.nullable;
-        this->dmod = c.dmod;
+        this->nullable = std::optional<bool>(c.nullable);
+        this->dmod = std::optional<DModifier>(c.dmod);
         this->tp = TypeDeepCopy(c.tp);
         return *this;
     }
-    SQLColumn & operator=(SQLColumn && c)
+    SQLColumn & operator=(SQLColumn && c) noexcept
     {
         this->cname = c.cname;
         this->special = c.special;
-        this->nullable = c.nullable;
+        this->nullable = std::optional<bool>(c.nullable);
         this->dmod = std::optional<DModifier>(c.dmod);
         this->tp = c.tp;
         c.tp = nullptr;

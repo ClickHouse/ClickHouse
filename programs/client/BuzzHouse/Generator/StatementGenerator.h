@@ -42,7 +42,7 @@ public:
     SQLRelationCol col;
     Expr * gexpr = nullptr;
 
-    GroupCol() { }
+    GroupCol() = default;
     GroupCol(SQLRelationCol c, Expr * g) : col(c), gexpr(g) { }
 };
 
@@ -102,15 +102,15 @@ private:
     template <typename T>
     const std::map<uint32_t, T> & getNextCollection() const
     {
-        if constexpr (std::is_same<T, SQLTable>::value)
+        if constexpr (std::is_same_v<T, SQLTable>)
         {
             return tables;
         }
-        else if constexpr (std::is_same<T, SQLView>::value)
+        else if constexpr (std::is_same_v<T, SQLView>)
         {
             return views;
         }
-        else if constexpr (std::is_same<T, SQLFunction>::value)
+        else if constexpr (std::is_same_v<T, SQLFunction>)
         {
             return functions;
         }
@@ -153,15 +153,15 @@ private:
     template <typename T>
     std::vector<std::reference_wrapper<const T>> & getNextCollectionResult()
     {
-        if constexpr (std::is_same<T, SQLTable>::value)
+        if constexpr (std::is_same_v<T, SQLTable>)
         {
             return filtered_tables;
         }
-        else if constexpr (std::is_same<T, SQLView>::value)
+        else if constexpr (std::is_same_v<T, SQLView>)
         {
             return filtered_views;
         }
-        else if constexpr (std::is_same<T, SQLFunction>::value)
+        else if constexpr (std::is_same_v<T, SQLFunction>)
         {
             return filtered_functions;
         }
@@ -210,7 +210,7 @@ private:
     int addTableIndex(RandomGenerator & rg, SQLTable & t, bool staged, IndexDef * idef);
     int addTableProjection(RandomGenerator & rg, SQLTable & t, bool staged, ProjectionDef * pdef);
     int addTableConstraint(RandomGenerator & rg, SQLTable & t, bool staged, ConstraintDef * cdef);
-    int generateTableKey(RandomGenerator & rg, const TableEngineValues teng, TableKey * tkey);
+    int generateTableKey(RandomGenerator & rg, TableEngineValues teng, TableKey * tkey);
     int generateMergeTreeEngineDetails(RandomGenerator & rg, TableEngineValues teng, bool add_pkey, TableEngine * te);
     int generateEngineDetails(RandomGenerator & rg, SQLBase & b, bool add_pkey, TableEngine * te);
 

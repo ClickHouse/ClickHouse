@@ -769,8 +769,7 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
         { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 0, 128 * 1024 * 1024)); }},
        {"merge_selector_enable_heuristic_to_remove_small_parts_at_right", trueOrFalse},
        {"merge_selector_window_size",
-        [](RandomGenerator & rg, std::string & ret)
-        { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 0, 8192)); }},
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 0, 8192)); }},
        {"min_age_to_force_merge_on_partition_only", trueOrFalse},
        {"min_bytes_for_full_part_storage",
         [](RandomGenerator & rg, std::string & ret)
@@ -793,8 +792,7 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
                 rg.thresholdGenerator<uint32_t>(0.25, 0.25, 1, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
         }},
        {"min_parts_to_merge_at_once",
-        [](RandomGenerator & rg, std::string & ret)
-        { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 0, 128)); }},
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 0, 128)); }},
        {"min_rows_for_full_part_storage",
         [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 0, 1000)); }},
        {"min_rows_to_fsync_after_merge",
@@ -841,8 +839,7 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
         [](RandomGenerator & rg, std::string & ret)
         { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 0, 128)); }}, /* ClickHouse cloud */
        {"simultaneous_parts_removal_limit",
-        [](RandomGenerator & rg, std::string & ret)
-        { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 0, 128)); }},
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 0, 128)); }},
        {"ttl_only_drop_parts", trueOrFalse},
        {"use_adaptive_write_buffer_for_dynamic_subcolumns", trueOrFalse},
        {"use_async_block_ids_cache", trueOrFalse},

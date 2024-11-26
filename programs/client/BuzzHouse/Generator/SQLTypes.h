@@ -582,7 +582,7 @@ public:
 
     ~TupleType() override
     {
-        for (auto & entry : subtypes)
+        for (const auto & entry : subtypes)
         {
             delete entry.subtype;
         }
@@ -661,7 +661,7 @@ public:
 
     ~NestedType() override
     {
-        for (auto & entry : subtypes)
+        for (const auto & entry : subtypes)
         {
             delete entry.array_subtype;
             delete entry.subtype;

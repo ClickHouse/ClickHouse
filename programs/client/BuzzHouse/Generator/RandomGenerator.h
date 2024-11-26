@@ -290,12 +290,12 @@ public:
         {
             return max_val;
         }
-        if constexpr (std::is_same<T, uint32_t>::value)
+        if constexpr (std::is_same_v<T, uint32_t>)
         {
             std::uniform_int_distribution<uint32_t> d{min_val, max_val};
             return d(generator);
         }
-        if constexpr (std::is_same<T, double>::value)
+        if constexpr (std::is_same_v<T, double>)
         {
             std::uniform_real_distribution<double> d{min_val, max_val};
             return d(generator);

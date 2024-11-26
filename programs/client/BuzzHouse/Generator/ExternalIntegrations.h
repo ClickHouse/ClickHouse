@@ -300,14 +300,8 @@ public:
         {
             std::cerr << "PostgreSQL connection error: " << e.what() << std::endl;
         }
-        if (psql)
-        {
-            delete psql;
-        }
-        else
-        {
-            delete pcon;
-        }
+        delete psql;
+        delete pcon;
         return nullptr;
     }
 
@@ -558,12 +552,10 @@ public:
                 {
                     std::shuffle(entries.begin(), entries.end(), rg.generator);
                 }
-                for (size_t i = 0; i < entries.size(); i++)
+                for (const auto & entry : entries)
                 {
                     if (miss_cols && rg.nextSmallNumber() < 4)
                     { //sometimes the column is missing
-                        const InsertEntry & entry = entries[i];
-
                         buf2.resize(0);
                         buf2 += "c";
                         buf2 += std::to_string(entry.cname1);
