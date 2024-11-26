@@ -132,6 +132,7 @@ export PATH="/tmp/praktika/input:$PATH"
 rm -rf /tmp/praktika/right/config && mkdir -p /tmp/praktika/right/config
 cp -r ./tests/config /tmp/praktika/right/config
 cp ./programs/server/config.xml /tmp/praktika/right/config/
+cp ./programs/server/users.xml /tmp/praktika/right/config/
 cd /tmp/praktika/input
 chmod +x clickhouse
 ln -sf clickhouse clickhouse-local
