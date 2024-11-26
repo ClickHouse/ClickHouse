@@ -1499,7 +1499,7 @@ static void buildIndexes(
     const MergeTreeData & data,
     const MergeTreeData::DataPartsVector & parts,
     const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
-    const std::optional<VectorSearchParameters> & vector_search_parameters,
+    [[maybe_unused]] const std::optional<VectorSearchParameters> & vector_search_parameters,
     const ContextPtr & context,
     const SelectQueryInfo & query_info,
     const StorageMetadataPtr & metadata_snapshot,
