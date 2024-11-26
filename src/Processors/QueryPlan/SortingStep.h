@@ -84,7 +84,7 @@ public:
 
     bool isSortingForMergeJoin() const { return is_sorting_for_merge_join; }
 
-    void convertToFinishSorting(SortDescription prefix_description, bool use_buffering_);
+    void convertToFinishSorting(SortDescription prefix_description, bool use_buffering_, bool apply_virtual_row_conversions_);
 
     Type getType() const { return type; }
     const Settings & getSettings() const { return sort_settings; }
@@ -134,6 +134,7 @@ private:
     UInt64 limit;
     bool always_read_till_end = false;
     bool use_buffering = false;
+    bool apply_virtual_row_conversions = false;
 
     Settings sort_settings;
 };

@@ -597,6 +597,30 @@ If number of tables is greater than this value, server will throw an exception. 
 <max_table_num_to_throw>400</max_table_num_to_throw>
 ```
 
+## max\_replicated\_table\_num\_to\_throw {#max-replicated-table-num-to-throw}
+If number of replicated tables is greater than this value, server will throw an exception. 0 means no limitation. Only count table in Atomic/Ordinary/Replicated/Lazy database engine.
+
+**Example**
+```xml
+<max_replicated_table_num_to_throw>400</max_replicated_table_num_to_throw>
+```
+
+## max\_dictionary\_num\_to\_throw {#max-dictionary-num-to-throw}
+If number of dictionaries is greater than this value, server will throw an exception. 0 means no limitation. Only count table in Atomic/Ordinary/Replicated/Lazy database engine.
+
+**Example**
+```xml
+<max_dictionary_num_to_throw>400</max_dictionary_num_to_throw>
+```
+
+## max\_view\_num\_to\_throw {#max-view-num-to-throw}
+If number of views is greater than this value, server will throw an exception. 0 means no limitation. Only count table in Atomic/Ordinary/Replicated/Lazy database engine.
+
+**Example**
+```xml
+<max_view_num_to_throw>400</max_view_num_to_throw>
+```
+
 ## max\_database\_num\_to\_throw {#max-table-num-to-throw}
 If number of _database is greater than this value, server will throw an exception. 0 means no limitation.
 Default value: 0
@@ -1619,6 +1643,7 @@ You can specify the log format that will be outputted in the console log. Curren
 
 ```json
 {
+  "date_time_utc": "2024-11-06T09:06:09Z",
   "date_time": "1650918987.180175",
   "thread_name": "#1",
   "thread_id": "254545",
@@ -3261,3 +3286,17 @@ Use the legacy MongoDB integration implementation. Deprecated.
 Type: Bool
 
 Default value: `true`.
+
+## allow_feature_tier
+
+Controls if the user can change settings related to the different feature tiers.
+0 - Changes to any setting are allowed (experimental, beta, production).
+1 - Only changes to beta and production feature settings are allowed. Changes to experimental settings are rejected.
+2 - Only changes to production settings are allowed. Changes to experimental or beta settings are rejected.
+
+This is equivalent to setting a readonly constraint on all EXPERIMENTAL / BETA features.
+```
+
+Type: UInt32
+
+Default value: `0` (all settings can be changed).

@@ -943,7 +943,7 @@ bool MaterializedPostgreSQLConsumer::consume()
         /// https://github.com/postgres/postgres/blob/master/src/backend/replication/pgoutput/pgoutput.c#L1128
         /// So at some point will get out of limit and then they will be cleaned.
         std::string error_message = e.what();
-        if (error_message.find("out of relcache_callback_list slots") == std::string::npos)
+        if (!error_message.contains("out of relcache_callback_list slots"))
             tryLogCurrentException(__PRETTY_FUNCTION__);
 
         connection->tryUpdateConnection();
