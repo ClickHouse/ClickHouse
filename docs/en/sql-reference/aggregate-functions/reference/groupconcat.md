@@ -33,9 +33,9 @@ Input table:
 
 ``` text
 ┌─id─┬─name─┐
-│ 1  │  John│
-│ 2  │  Jane│
-│ 3  │   Bob│
+│ 1  │ John │
+│ 2  │ Jane │
+│ 3  │ Bob  │
 └────┴──────┘
 ```
 
