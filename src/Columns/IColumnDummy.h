@@ -32,6 +32,7 @@ public:
 #else
     int doCompareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
 #endif
+    bool equalsAt(size_t, size_t, const IColumn &) const override { return true; }
     void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
     {
     }

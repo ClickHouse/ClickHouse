@@ -221,6 +221,11 @@ public:
         return 0;
     }
 
+    bool equalsAt(size_t, size_t, const IColumn &) const override
+    {
+        return true;
+    }
+
     void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method compareColumn is not supported for ColumnAggregateFunction");

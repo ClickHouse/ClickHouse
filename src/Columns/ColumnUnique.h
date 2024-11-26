@@ -98,6 +98,8 @@ public:
     int doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
 #endif
 
+    bool equalsAt(size_t n, size_t m, const IColumn & rhs_) const override;
+
     void getExtremes(Field & min, Field & max) const override { column_holder->getExtremes(min, max); }
     bool valuesHaveFixedSize() const override { return column_holder->valuesHaveFixedSize(); }
     bool isFixedAndContiguous() const override { return column_holder->isFixedAndContiguous(); }
@@ -516,6 +518,23 @@ int ColumnUnique<ColumnType>::doCompareAt(size_t n, size_t m, const IColumn & rh
 
     const auto & column_unique = static_cast<const IColumnUnique &>(rhs);
     return getNestedColumn()->compareAt(n, m, *column_unique.getNestedColumn(), nan_direction_hint);
+}
+
+template <typename ColumnType>
+bool ColumnUnique<ColumnType>::equalsAt(size_t n, size_t m, const IColumn & rhs) const
+{
+    if (is_nullable)
+    {
+        /// See ColumnNullable::equalsAt
+        bool lval_is_null = n == getNullValueIndex();
+        bool rval_is_null = m == getNullValueIndex();
+
+        if (unlikely(lval_is_null || rval_is_null))
+            return lval_is_null && rval_is_null;
+    }
+
+    const auto & column_unique = static_cast<const IColumnUnique &>(rhs);
+    return getNestedColumn()->equalsAt(n, m, *column_unique.getNestedColumn());
 }
 
 template <typename IndexType>

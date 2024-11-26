@@ -118,7 +118,7 @@ struct ArrayCompactImpl
                 ++res_pos;
                 for (; src_pos < src_offset; ++src_pos)
                 {
-                    if (mapped->compareAt(src_pos - 1, src_pos, *mapped, 1))
+                    if (!mapped->equalsAt(src_pos - 1, src_pos, *mapped))
                     {
                         res_values_column->insertFrom(src_values, src_pos);
                         ++res_pos;

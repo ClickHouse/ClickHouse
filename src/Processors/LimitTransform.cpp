@@ -363,7 +363,7 @@ bool LimitTransform::sortColumnsEqualAt(const ColumnRawPtrs & current_chunk_sort
     size_t size = current_chunk_sort_columns.size();
     const auto & previous_row_sort_columns = previous_row_chunk.getColumns();
     for (size_t i = 0; i < size; ++i)
-        if (0 != current_chunk_sort_columns[i]->compareAt(current_chunk_row_num, 0, *previous_row_sort_columns[i], 1))
+        if (!current_chunk_sort_columns[i]->equalsAt(current_chunk_row_num, 0, *previous_row_sort_columns[i]))
             return false;
     return true;
 }

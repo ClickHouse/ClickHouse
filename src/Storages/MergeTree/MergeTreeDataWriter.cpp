@@ -319,6 +319,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
     ColumnRawPtrs partition_columns;
     partition_columns.reserve(partition_key_names_and_types.size());
     bool all_partition_columns_are_equal = true;
+
     for (const auto & element : partition_key_names_and_types)
     {
         partition_columns.emplace_back(block_copy.getByName(element.name).column.get());
@@ -332,7 +333,6 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
             partition[i] = (*partition_columns[i])[row_num];
         return partition;
     };
-
     if (!all_partition_columns_are_equal)
     {
         PODArray<size_t> partition_num_to_first_row;

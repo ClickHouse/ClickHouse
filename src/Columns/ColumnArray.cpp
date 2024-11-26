@@ -426,6 +426,24 @@ int ColumnArray::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_
     return compareAtImpl(n, m, rhs_, nan_direction_hint, &collator);
 }
 
+bool ColumnArray::equalsAt(size_t n, size_t m, const IColumn & rhs_) const
+{
+    const auto & rhs = assert_cast<const ColumnArray &>(rhs_);
+
+    size_t lhs_size = sizeAt(n);
+    size_t rhs_size = rhs.sizeAt(m);
+
+    if (lhs_size != rhs_size)
+        return false;
+
+    for (size_t i = 0; i < lhs_size; ++i)
+    {
+        if (!data->equalsAt(offsetAt(n) + i, rhs.offsetAt(m) + i, *rhs.data.get()))
+            return false;
+    }
+    return true;
+}
+
 struct ColumnArray::ComparatorBase
 {
     const ColumnArray & parent;

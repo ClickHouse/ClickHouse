@@ -148,6 +148,13 @@ public:
         return memcmpSmallAllowOverflow15(chars.data() + p1 * n, rhs.chars.data() + p2 * n, n);
     }
 
+    bool equalsAt(size_t p1, size_t p2, const IColumn & rhs_) const override
+    {
+        const auto & rhs = assert_cast<const ColumnFixedString &>(rhs_);
+        chassert(this->n == rhs.n);
+        return memequalSmallAllowOverflow15(chars.data() + p1 * n, n, rhs.chars.data() + p2 * n, n);
+    }
+
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                     size_t limit, int nan_direction_hint, Permutation & res) const override;
 

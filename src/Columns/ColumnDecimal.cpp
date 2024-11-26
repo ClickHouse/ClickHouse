@@ -64,6 +64,19 @@ int ColumnDecimal<T>::doCompareAt(size_t n, size_t m, const IColumn & rhs_, int)
 }
 
 template <is_decimal T>
+bool ColumnDecimal<T>::equalsAt(size_t n, size_t m, const IColumn & rhs_) const
+{
+    auto & other = static_cast<const Self &>(rhs_);
+    const T & a = data[n];
+    const T & b = other.data[m];
+
+    if (scale == other.scale)
+        return a == b;
+
+    return decimalEqual(a, b, scale, other.scale);
+}
+
+template <is_decimal T>
 Float64 ColumnDecimal<T>::getFloat64(size_t n) const
 {
     return DecimalUtils::convertTo<Float64>(data[n], scale);

@@ -490,12 +490,8 @@ void WindowTransform::advancePartitionEnd()
             const auto * compared_column
                 = inputAt(partition_end)[partition_by_indices[i]].get();
 
-            if (compared_column->compareAt(partition_end.row,
-                    prev_frame_start.row, *reference_column,
-                    1 /* nan_direction_hint */) != 0)
-            {
+            if (!compared_column->equalsAt(partition_end.row, prev_frame_start.row, *reference_column))
                 break;
-            }
         }
 
         if (i < partition_by_columns)
@@ -757,16 +753,12 @@ bool WindowTransform::arePeers(const RowNumber & x, const RowNumber & y) const
         return true;
     }
 
-    size_t i = 0;
-    for (; i < n; ++i)
+    for (size_t i = 0; i < n; ++i)
     {
         const auto * column_x = inputAt(x)[order_by_indices[i]].get();
         const auto * column_y = inputAt(y)[order_by_indices[i]].get();
-        if (column_x->compareAt(x.row, y.row, *column_y,
-                1 /* nan_direction_hint */) != 0)
-        {
+        if (!column_x->equalsAt(x.row, y.row, *column_y))
             return false;
-        }
     }
 
     return true;

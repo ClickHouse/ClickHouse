@@ -108,6 +108,7 @@ public:
 #else
     int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override;
 #endif
+    bool equalsAt(size_t n, size_t m, const IColumn & rhs_) const override;
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint, const Collator & collator) const override;
     void getPermutation(PermutationSortDirection direction, PermutationSortStability stability,
                             size_t limit, int nan_direction_hint, Permutation & res) const override;

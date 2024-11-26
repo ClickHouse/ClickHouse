@@ -110,6 +110,7 @@ public:
 #else
     int doCompareAt(size_t, size_t, const IColumn &, int) const override { throwMustBeDecompressed(); }
 #endif
+    bool equalsAt(size_t, size_t, const IColumn &) const override { throwMustBeDecompressed(); }
     void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
     {
         throwMustBeDecompressed();

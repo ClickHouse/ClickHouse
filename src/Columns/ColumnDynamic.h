@@ -248,6 +248,7 @@ public:
 #else
     int doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
 #endif
+    bool equalsAt(size_t n, size_t m, const IColumn & rhs) const override { return compareAt(n, m, rhs, 1) == 0; }
 
     bool hasEqualValues() const override
     {

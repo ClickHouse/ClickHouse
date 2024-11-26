@@ -971,7 +971,7 @@ void IMergeTreeDataPart::optimizeIndexColumns(size_t marks_count, Columns & inde
             size_t num_changes = 0;
             for (size_t i = 1; i < marks_count; ++i)
             {
-                if (0 != index_columns[j]->compareAt(i, i - 1, *index_columns[j], 0))
+                if (!index_columns[j]->equalsAt(i, i - 1, *index_columns[j]))
                     ++num_changes;
             }
 

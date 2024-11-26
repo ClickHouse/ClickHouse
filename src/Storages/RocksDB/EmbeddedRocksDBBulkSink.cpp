@@ -69,7 +69,7 @@ static rocksdb::Status buildSSTFile(const String & path, const ColumnString & ke
     {
         /// We will write the last row of the same key
         size_t next_idx = idx + 1;
-        while (next_idx < rows && keys.compareAt(perm[idx], perm[next_idx], keys, 1) == 0)
+        while (next_idx < rows && keys.equalsAt(perm[idx], perm[next_idx], keys))
             ++next_idx;
 
         auto row = perm[next_idx - 1];

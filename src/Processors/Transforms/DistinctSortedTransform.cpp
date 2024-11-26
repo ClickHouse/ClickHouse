@@ -228,11 +228,10 @@ bool DistinctSortedTransform::buildFilter(
 
 bool DistinctSortedTransform::rowsEqual(const ColumnRawPtrs & lhs, size_t n, const ColumnRawPtrs & rhs, size_t m)
 {
-    for (size_t column_index = 0, num_columns = lhs.size(); column_index < num_columns; ++column_index)
+    size_t num_columns = num_columns = lhs.size();
+    for (size_t i = 0; i < num_columns; ++i)
     {
-        const auto & lhs_column = *lhs[column_index];
-        const auto & rhs_column = *rhs[column_index];
-        if (lhs_column.compareAt(n, m, rhs_column, -1) != 0) /// not equal
+        if (!lhs[i]->equalsAt(n, m, *rhs[i]))
             return false;
     }
     return true;

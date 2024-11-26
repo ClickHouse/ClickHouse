@@ -457,7 +457,7 @@ namespace
         {
             auto it = lhs.find(node);
             /// If constants are different, the conjunction is invalid.
-            if (it != lhs.end() && column.column->compareAt(0, 0, *it->second.column, 1))
+            if (it != lhs.end() && !column.column->equalsAt(0, 0, *it->second.column))
                 return {};
 
             if (it == lhs.end())

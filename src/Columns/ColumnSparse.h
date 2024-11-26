@@ -111,6 +111,7 @@ public:
 #else
     int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const override;
 #endif
+    bool equalsAt(size_t n, size_t m, const IColumn & rhs_) const override;
     void compareColumn(const IColumn & rhs, size_t rhs_row_num,
                        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                        int direction, int nan_direction_hint) const override;

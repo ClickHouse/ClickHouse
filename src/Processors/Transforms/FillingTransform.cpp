@@ -804,8 +804,7 @@ void FillingTransform::transform(Chunk & chunk)
         new_sort_prefix = false;
         for (size_t i = 0; i < input_sort_prefix_columns.size(); ++i)
         {
-            const int res = input_sort_prefix_columns[i]->compareAt(0, 0, *last_sort_prefix_columns[i], sort_prefix[i].nulls_direction);
-            if (res != 0)
+            if (!input_sort_prefix_columns[i]->equalsAt(0, 0, *last_sort_prefix_columns[i]))
             {
                 new_sort_prefix = true;
                 break;
@@ -821,11 +820,9 @@ void FillingTransform::transform(Chunk & chunk)
             num_rows,
             [&](size_t pos_with_current_sort_prefix, size_t row_pos)
             {
-                for (size_t i = 0; i < input_sort_prefix_columns.size(); ++i)
+                for (const auto & column : input_sort_prefix_columns)
                 {
-                    const int res = input_sort_prefix_columns[i]->compareAt(
-                        pos_with_current_sort_prefix, row_pos, *input_sort_prefix_columns[i], sort_prefix[i].nulls_direction);
-                    if (res != 0)
+                    if (!column->equalsAt(pos_with_current_sort_prefix, row_pos, *column))
                         return false;
                 }
                 return true;

@@ -424,6 +424,19 @@ int ColumnNullable::compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int 
     return getNestedColumn().compareAt(n, m, nested_rhs, null_direction_hint);
 }
 
+bool ColumnNullable::equalsAt(size_t n, size_t m, const IColumn & rhs) const
+{
+    const auto & nullable_rhs = assert_cast<const ColumnNullable &>(rhs);
+
+    bool lval_is_null = isNullAt(n);
+    bool rval_is_null = nullable_rhs.isNullAt(m);
+
+    if (unlikely(lval_is_null || rval_is_null))
+        return lval_is_null && rval_is_null;
+
+    return getNestedColumn().equalsAt(n, m, nullable_rhs.getNestedColumn());
+}
+
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
 int ColumnNullable::compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const
 #else

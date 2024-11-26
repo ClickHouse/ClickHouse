@@ -246,6 +246,11 @@ public:
         return data->compareAt(0, 0, *assert_cast<const ColumnConst &>(rhs).data, nan_direction_hint);
     }
 
+    bool equalsAt(size_t, size_t, const IColumn & rhs) const override
+    {
+        return data->equalsAt(0, 0, *assert_cast<const ColumnConst &>(rhs).data);
+    }
+
     void compareColumn(const IColumn & rhs, size_t rhs_row_num,
                        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                        int direction, int nan_direction_hint) const override;
