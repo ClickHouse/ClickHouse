@@ -1138,7 +1138,8 @@ int StatementGenerator::generateSelect(
             }
         }
     }
-    if (this->allow_not_deterministic && rg.nextSmallNumber() < 3)
+    // this doesn't work: SELECT 1 FROM ((SELECT 1) UNION (SELECT 1) SETTINGS page_cache_inject_eviction = 1) x;
+    if (this->allow_not_deterministic && (top || sel->has_select_core()) && rg.nextSmallNumber() < 3)
     {
         generateSettingValues(rg, serverSettings, sel->mutable_setting_values());
     }
