@@ -731,7 +731,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
                     auto index_type = makeASTFunction("minmax");
                     auto index_ast = std::make_shared<ASTIndexDeclaration>(std::make_shared<ASTIdentifier>(column.name), index_type,
-                                                                           ( isNumber(column.type) ? "_index_n_" : "_index_s_") +column.name);
+                                                                           (isNumber(column.type) ? "_index_n_" : "_index_s_") + column.name);
                     metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index_ast, columns, context));
                 }
             }
