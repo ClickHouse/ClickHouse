@@ -1139,29 +1139,32 @@ std::shared_ptr<IDisk> Context::getDatabaseDisk() const
             return shared->db_disk;
     }
 
+    auto configured_db_disk = [&]() -> std::shared_ptr<IDisk>
+    {
+        const auto & config = shared->getConfigRef();
+        const auto & disk_map = getDisksMap();
+        if (!config.has("database_disk.disk"))
+            return nullptr;
+
+        auto disk_name = config.getString("database_disk.disk");
+
+        auto it = disk_map.find(disk_name);
+        if (it == disk_map.end())
+            throw Exception(ErrorCodes::UNKNOWN_DISK, "No disk {}", backQuote(disk_name));
+
+        chassert(it->second);
+        return it->second;
+    }();
 
     std::lock_guard lock(shared->mutex);
     if (shared->db_disk)
         return shared->db_disk;
 
-    const auto & config = shared->getConfigRefWithLock(lock);
+    if (configured_db_disk)
+        return shared->db_disk = configured_db_disk;
 
-    if (!config.has("database_disk.disk"))
-    {
-        LOG_INFO(shared->log, "No database_disk.disk configured, create one with DiskLocal");
-        return shared->db_disk = std::make_shared<DiskLocal>("database", "");
-    }
-
-    auto disk_name = config.getString("database_disk.disk");
-    const auto & disk_map = getDisksMap();
-
-    auto it = disk_map.find(disk_name);
-    if (it == disk_map.end())
-        throw Exception(ErrorCodes::UNKNOWN_DISK, "No disk {}", backQuote(disk_name));
-
-    LOG_INFO(shared->log, "Set db_disk to {}", backQuote(disk_name));
-    chassert(it->second);
-    return shared->db_disk = it->second;
+    LOG_INFO(shared->log, "No database_disk.disk configured, create one with DiskLocal");
+    return shared->db_disk = std::make_shared<DiskLocal>("database", "");
 }
 
 String Context::getFilesystemCacheUser() const
