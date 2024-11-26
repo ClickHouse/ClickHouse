@@ -5,14 +5,14 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
-    main_configs=["configs/allowed_feature_tier.xml"],
+    main_configs=["configs/allow_feature_tier.xml"],
     user_configs=[
         "configs/users.d/users.xml",
     ],
     stay_alive=True,
 )
 
-feature_tier_path = "/etc/clickhouse-server/config.d/allowed_feature_tier.xml"
+feature_tier_path = "/etc/clickhouse-server/config.d/allow_feature_tier.xml"
 
 
 @pytest.fixture(scope="module")
@@ -26,12 +26,12 @@ def start_cluster():
 
 def get_current_tier_value(instance):
     query_with_current_tier_value = (
-        "SELECT value FROM system.server_settings where name = 'allowed_feature_tier'"
+        "SELECT value FROM system.server_settings where name = 'allow_feature_tier'"
     )
     return instance.query(query_with_current_tier_value).strip()
 
 
-def test_allowed_feature_tier_in_general_settings(start_cluster):
+def test_allow_feature_tier_in_general_settings(start_cluster):
     # We use these settings as an example. If it fails in the future because you've changed the tier of the setting
     # please change it to another setting in the same tier. If there is none, feel free to comment out the test for that tier
     query_with_experimental_setting = (
@@ -82,7 +82,7 @@ def test_allowed_feature_tier_in_general_settings(start_cluster):
     assert "0" == get_current_tier_value(instance)
 
 
-def test_allowed_feature_tier_in_mergetree_settings(start_cluster):
+def test_allow_feature_tier_in_mergetree_settings(start_cluster):
     assert "0" == get_current_tier_value(instance)
     instance.query("DROP TABLE IF EXISTS test_experimental")
 
@@ -170,7 +170,7 @@ def test_allowed_feature_tier_in_mergetree_settings(start_cluster):
     instance.query("DROP TABLE IF EXISTS test_experimental")
 
 
-def test_allowed_feature_tier_in_user(start_cluster):
+def test_allow_feature_tier_in_user(start_cluster):
     instance.query("DROP USER IF EXISTS user_experimental")
     assert "0" == get_current_tier_value(instance)
 

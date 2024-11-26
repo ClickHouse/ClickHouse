@@ -396,14 +396,14 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
                 throw Exception(
                     ErrorCodes::READONLY,
                     "Cannot modify setting '{}'. Changes to EXPERIMENTAL settings are disabled in the server config "
-                    "('allowed_feature_tier')",
+                    "('allow_feature_tier')",
                     setting.getName());
             }
             if (!allow_beta && tier == BETA)
             {
                 throw Exception(
                     ErrorCodes::READONLY,
-                    "Cannot modify setting '{}'. Changes to BETA settings are disabled in the server config ('allowed_feature_tier')",
+                    "Cannot modify setting '{}'. Changes to BETA settings are disabled in the server config ('allow_feature_tier')",
                     setting.getName());
             }
         }
