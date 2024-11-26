@@ -17,6 +17,7 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [SAMPLE sample_coeff]
 [ARRAY JOIN ...]
 [GLOBAL] [ANY|ALL|ASOF] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI] JOIN (subquery)|table (ON <expr_list>)|(USING <column_list>)
+[(column1_name [, column2_name ...])]
 [PREWHERE expr]
 [WHERE expr]
 [GROUP BY expr_list] [WITH ROLLUP|WITH CUBE] [WITH TOTALS]
