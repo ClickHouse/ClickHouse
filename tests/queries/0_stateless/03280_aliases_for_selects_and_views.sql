@@ -36,6 +36,6 @@ SELECT c FROM test_view_03280;  -- { serverError UNKNOWN_IDENTIFIER }
 
 CREATE VIEW test_view_1_03280 (a) AS SELECT 1, 2; -- { serverError BAD_ARGUMENTS }
 
-CREATE VIEW test_view_1_03280 (a, b] AS SELECT 1, 2; -- { clientError SYNTAX_ERROR }
+EXPLAIN AST CREATE VIEW test_view_1_03280 (a, b] AS SELECT 1, 2; -- { clientError SYNTAX_ERROR }
 
-CREATE VIEW test_view_1_03280 ((a, b)) AS SELECT 1, 2; -- { clientError SYNTAX_ERROR }
+EXPLAIN AST CREATE VIEW test_view_1_03280 ((a, b)) AS SELECT 1, 2; -- { clientError SYNTAX_ERROR }

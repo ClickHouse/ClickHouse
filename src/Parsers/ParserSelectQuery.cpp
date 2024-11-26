@@ -191,7 +191,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
-    if (open_bracket.ignore(pos, expected))
+    if (tables && open_bracket.ignore(pos, expected))
     {
         if (!exp_list_after_from.parse(pos, expression_list_after_from, expected))
             return false;
