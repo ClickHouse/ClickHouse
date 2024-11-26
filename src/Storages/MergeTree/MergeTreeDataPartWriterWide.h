@@ -140,8 +140,6 @@ private:
     /// More than zero when incoming blocks are smaller then their granularity.
     size_t rows_written_in_last_mark = 0;
 
-    Block block_sample;
-
     bool is_dynamic_streams_initialized = false;
 };
 
