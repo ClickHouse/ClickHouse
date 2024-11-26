@@ -89,14 +89,14 @@ private:
     QueryTreeNodePtr buildSelectOrUnionExpression(const ASTPtr & select_or_union_query,
         bool is_subquery,
         const std::string & cte_name,
-        const ContextPtr & context,
-        const ASTPtr & aliases_to_override = nullptr) const;
+        const ASTPtr & aliases_to_override,
+        const ContextPtr & context) const;
 
     QueryTreeNodePtr buildSelectWithUnionExpression(const ASTPtr & select_with_union_query,
         bool is_subquery,
         const std::string & cte_name,
-        const ContextPtr & context,
-        const ASTPtr & aliases_to_override = nullptr) const;
+        const ASTPtr & aliases_to_override,
+        const ContextPtr & context) const;
 
     QueryTreeNodePtr buildSelectIntersectExceptQuery(const ASTPtr & select_intersect_except_query,
         bool is_subquery,
@@ -106,8 +106,8 @@ private:
     QueryTreeNodePtr buildSelectExpression(const ASTPtr & select_query,
         bool is_subquery,
         const std::string & cte_name,
-        const ContextPtr & context,
-        const ASTPtr & aliases_to_override = nullptr) const;
+        const ASTPtr & aliases_to_override,
+        const ContextPtr & context) const;
 
     QueryTreeNodePtr buildSortList(const ASTPtr & order_by_expression_list, const ContextPtr & context) const;
 
@@ -135,7 +135,7 @@ QueryTreeBuilder::QueryTreeBuilder(ASTPtr query_, ContextPtr context_)
     if (query->as<ASTSelectWithUnionQuery>() ||
         query->as<ASTSelectIntersectExceptQuery>() ||
         query->as<ASTSelectQuery>())
-        query_tree_node = buildSelectOrUnionExpression(query, false /*is_subquery*/, {} /*cte_name*/, context_);
+        query_tree_node = buildSelectOrUnionExpression(query, false /*is_subquery*/, {} /*cte_name*/, nullptr, context_);
     else if (query->as<ASTExpressionList>())
         query_tree_node = buildExpressionList(query, context_);
     else
@@ -145,17 +145,17 @@ QueryTreeBuilder::QueryTreeBuilder(ASTPtr query_, ContextPtr context_)
 QueryTreeNodePtr QueryTreeBuilder::buildSelectOrUnionExpression(const ASTPtr & select_or_union_query,
     bool is_subquery,
     const std::string & cte_name,
-    const ContextPtr & context,
-    const ASTPtr & aliases_to_override) const
+    const ASTPtr & aliases_to_override,
+    const ContextPtr & context) const
 {
     QueryTreeNodePtr query_node;
 
     if (select_or_union_query->as<ASTSelectWithUnionQuery>())
-        query_node = buildSelectWithUnionExpression(select_or_union_query, is_subquery /*is_subquery*/, cte_name /*cte_name*/, context);
+        query_node = buildSelectWithUnionExpression(select_or_union_query, is_subquery /*is_subquery*/, cte_name /*cte_name*/, nullptr /*aliases_to_override*/, context);
     else if (select_or_union_query->as<ASTSelectIntersectExceptQuery>())
         query_node = buildSelectIntersectExceptQuery(select_or_union_query, is_subquery /*is_subquery*/, cte_name /*cte_name*/, context);
     else if (select_or_union_query->as<ASTSelectQuery>())
-        query_node = buildSelectExpression(select_or_union_query, is_subquery /*is_subquery*/, cte_name /*cte_name*/, context, aliases_to_override);
+        query_node = buildSelectExpression(select_or_union_query, is_subquery /*is_subquery*/, cte_name /*cte_name*/, aliases_to_override, context);
     else
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "SELECT or UNION query {} is not supported",
                         select_or_union_query->formatForErrorMessage());
@@ -166,14 +166,14 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectOrUnionExpression(const ASTPtr & s
 QueryTreeNodePtr QueryTreeBuilder::buildSelectWithUnionExpression(const ASTPtr & select_with_union_query,
     bool is_subquery,
     const std::string & cte_name,
-    const ContextPtr & context,
-    const ASTPtr & aliases_to_override) const
+    const ASTPtr & aliases_to_override,
+    const ContextPtr & context) const
 {
     auto & select_with_union_query_typed = select_with_union_query->as<ASTSelectWithUnionQuery &>();
     auto & select_lists = select_with_union_query_typed.list_of_selects->as<ASTExpressionList &>();
 
     if (select_lists.children.size() == 1)
-        return buildSelectOrUnionExpression(select_lists.children[0], is_subquery, cte_name, context, aliases_to_override);
+        return buildSelectOrUnionExpression(select_lists.children[0], is_subquery, cte_name, aliases_to_override, context);
 
     auto union_node = std::make_shared<UnionNode>(Context::createCopy(context), select_with_union_query_typed.union_mode);
     union_node->setIsSubquery(is_subquery);
@@ -186,7 +186,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectWithUnionExpression(const ASTPtr &
     for (size_t i = 0; i < select_lists_children_size; ++i)
     {
         auto & select_list_node = select_lists.children[i];
-        QueryTreeNodePtr query_node = buildSelectOrUnionExpression(select_list_node, false /*is_subquery*/, {} /*cte_name*/, context, aliases_to_override);
+        QueryTreeNodePtr query_node = buildSelectOrUnionExpression(select_list_node, false /*is_subquery*/, {} /*cte_name*/, aliases_to_override, context);
         union_node->getQueries().getNodes().push_back(std::move(query_node));
     }
 
@@ -202,7 +202,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectIntersectExceptQuery(const ASTPtr 
     auto select_lists = select_intersect_except_query_typed.getListOfSelects();
 
     if (select_lists.size() == 1)
-        return buildSelectExpression(select_lists[0], is_subquery, cte_name, context);
+        return buildSelectExpression(select_lists[0], is_subquery, cte_name, nullptr /*aliases_to_override*/, context);
 
     SelectUnionMode union_mode;
     if (select_intersect_except_query_typed.final_operator == ASTSelectIntersectExceptQuery::Operator::INTERSECT_ALL)
@@ -227,7 +227,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectIntersectExceptQuery(const ASTPtr 
     for (size_t i = 0; i < select_lists_size; ++i)
     {
         auto & select_list_node = select_lists[i];
-        QueryTreeNodePtr query_node = buildSelectOrUnionExpression(select_list_node, false /*is_subquery*/, {} /*cte_name*/, context);
+        QueryTreeNodePtr query_node = buildSelectOrUnionExpression(select_list_node, false /*is_subquery*/, {} /*cte_name*/, nullptr /*aliases_to_override*/, context);
         union_node->getQueries().getNodes().push_back(std::move(query_node));
     }
 
@@ -237,8 +237,8 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectIntersectExceptQuery(const ASTPtr 
 QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_query,
     bool is_subquery,
     const std::string & cte_name,
-    const ContextPtr & context,
-    const ASTPtr & aliases_to_override) const
+    const ASTPtr & aliases_to_override,
+    const ContextPtr & context) const
 {
     const auto & select_query_typed = select_query->as<ASTSelectQuery &>();
 
@@ -698,19 +698,19 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     else if (const auto * subquery = expression->as<ASTSubquery>())
     {
         auto subquery_query = subquery->children[0];
-        auto query_node = buildSelectWithUnionExpression(subquery_query, true /*is_subquery*/, {} /*cte_name*/, context);
+        auto query_node = buildSelectWithUnionExpression(subquery_query, true /*is_subquery*/, {} /*cte_name*/, nullptr /*aliases_to_override*/, context);
 
         result = std::move(query_node);
     }
     else if (const auto * /*select_with_union_query*/ _ = expression->as<ASTSelectWithUnionQuery>())
     {
-        auto query_node = buildSelectWithUnionExpression(expression, false /*is_subquery*/, {} /*cte_name*/, context);
+        auto query_node = buildSelectWithUnionExpression(expression, false /*is_subquery*/, {} /*cte_name*/, nullptr /*aliases_to_override*/, context);
         result = std::move(query_node);
     }
     else if (const auto * with_element = expression->as<ASTWithElement>())
     {
         auto with_element_subquery = with_element->subquery->as<ASTSubquery &>().children.at(0);
-        auto query_node = buildSelectWithUnionExpression(with_element_subquery, true /*is_subquery*/, with_element->name /*cte_name*/, context);
+        auto query_node = buildSelectWithUnionExpression(with_element_subquery, true /*is_subquery*/, with_element->name /*cte_name*/, nullptr /*aliases_to_override*/, context);
 
         result = std::move(query_node);
     }
@@ -876,7 +876,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTSelectQuery & select_q
                 auto & subquery_expression = table_expression.subquery->as<ASTSubquery &>();
                 const auto & select_with_union_query = subquery_expression.children[0];
 
-                auto node = buildSelectWithUnionExpression(select_with_union_query, true /*is_subquery*/, {} /*cte_name*/, context, select_query.aliasesOverride());
+                auto node = buildSelectWithUnionExpression(select_with_union_query, true /*is_subquery*/, {} /*cte_name*/, select_query.aliasesOverride(), context);
                 node->setAlias(subquery_expression.tryGetAlias());
                 node->setOriginalAST(select_with_union_query);
 
@@ -906,7 +906,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTSelectQuery & select_q
                                 table_function_expression.formatForErrorMessage());
 
                         if (argument->as<ASTSelectQuery>() || argument->as<ASTSelectWithUnionQuery>() || argument->as<ASTSelectIntersectExceptQuery>())
-                            node->getArguments().getNodes().push_back(buildSelectOrUnionExpression(argument, false /*is_subquery*/, {} /*cte_name*/, context));
+                            node->getArguments().getNodes().push_back(buildSelectOrUnionExpression(argument, false /*is_subquery*/, {} /*cte_name*/, nullptr /*aliases_to_override*/, context));
                         else if (const auto * ast_set = argument->as<ASTSetQuery>())
                             node->setSettingsChanges(ast_set->changes);
                         else

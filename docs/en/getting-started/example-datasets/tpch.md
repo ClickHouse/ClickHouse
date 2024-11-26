@@ -812,26 +812,6 @@ ORDER BY
 DROP VIEW revenue0;
 ```
 
-::::note
-As of October 2024, the view definition does not work out-of-the box. Corresponding issue: https://github.com/ClickHouse/ClickHouse/issues/70139
-
-This alternative view definition does work:
-
-```sql
-CREATE VIEW revenue0 AS
-    SELECT
-        l_suppkey AS supplier_no,
-        sum(l_extendedprice * (1 - l_discount)) AS total_revenue
-    FROM
-        lineitem
-    WHERE
-        l_shipdate >= DATE '1996-01-01'
-        AND l_shipdate < DATE '1996-01-01' + INTERVAL '3' MONTH
-    GROUP BY
-        l_suppkey;
-```
-::::
-
 **Q16**
 
 ```sql

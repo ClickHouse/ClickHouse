@@ -511,7 +511,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     select_query->setExpression(ASTSelectQuery::Expression::WITH, std::move(with_expression_list));
     select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expression_list));
     select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
-    select_query->setExpression(ASTSelectQuery::Expression::ALIASES_OVERRIDE, std::move(expression_list_after_from));
+    select_query->setExpression(ASTSelectQuery::Expression::ALIAS, std::move(expression_list_after_from));
     select_query->setExpression(ASTSelectQuery::Expression::PREWHERE, std::move(prewhere_expression));
     select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_expression));
     select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::move(group_expression_list));

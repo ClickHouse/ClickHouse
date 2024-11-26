@@ -20,7 +20,7 @@ public:
         WITH,
         SELECT,
         TABLES,
-        ALIASES_OVERRIDE,
+        ALIAS,
         PREWHERE,
         WHERE,
         GROUP_BY,
@@ -47,8 +47,8 @@ public:
                 return "SELECT";
             case Expression::TABLES:
                 return "TABLES";
-            case Expression::ALIASES_OVERRIDE:
-                return "ALIASES_OVERRIDE";
+            case Expression::ALIAS:
+                return "ALIAS";
             case Expression::PREWHERE:
                 return "PREWHERE";
             case Expression::WHERE:
@@ -99,7 +99,7 @@ public:
 
     ASTPtr & refSelect()    { return getExpression(Expression::SELECT); }
     ASTPtr & refTables()    { return getExpression(Expression::TABLES); }
-    ASTPtr & refAliasesOverride()    { return getExpression(Expression::ALIASES_OVERRIDE); }
+    ASTPtr & refAliasesOverride()    { return getExpression(Expression::ALIAS); }
     ASTPtr & refPrewhere()  { return getExpression(Expression::PREWHERE); }
     ASTPtr & refWhere()     { return getExpression(Expression::WHERE); }
     ASTPtr & refHaving()    { return getExpression(Expression::HAVING); }
@@ -108,7 +108,7 @@ public:
     ASTPtr with()           const { return getExpression(Expression::WITH); }
     ASTPtr select()         const { return getExpression(Expression::SELECT); }
     ASTPtr tables()         const { return getExpression(Expression::TABLES); }
-    ASTPtr aliasesOverride()const { return getExpression(Expression::ALIASES_OVERRIDE); }
+    ASTPtr aliasesOverride()const { return getExpression(Expression::ALIAS); }
     ASTPtr prewhere()       const { return getExpression(Expression::PREWHERE); }
     ASTPtr where()          const { return getExpression(Expression::WHERE); }
     ASTPtr groupBy()        const { return getExpression(Expression::GROUP_BY); }
