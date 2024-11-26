@@ -144,7 +144,7 @@ def _config_workflow(workflow: Workflow.Config, job_name):
             f"git diff-index HEAD -- {Settings.WORKFLOW_PATH_PREFIX}"
         )
         info = ""
-        status = Result.Status.SUCCESS
+        status = Result.Status.FAILED
         if exit_code != 0:
             info = f"workspace has uncommitted files unexpectedly [{output}]"
             status = Result.Status.ERROR
@@ -154,10 +154,14 @@ def _config_workflow(workflow: Workflow.Config, job_name):
             exit_code, output, err = Shell.get_res_stdout_stderr(
                 f"git diff-index HEAD -- {Settings.WORKFLOW_PATH_PREFIX}"
             )
-            if exit_code != 0:
-                info = f"workspace has outdated workflows [{output}] - regenerate with [python -m praktika --generate]"
-                status = Result.Status.ERROR
+            if output:
+                info = f"workflows are outdated: [{output}]"
+                status = Result.Status.FAILED
                 print("ERROR: ", info)
+            elif exit_code == 0 and not err:
+                status = Result.Status.SUCCESS
+            else:
+                print(f"ERROR: exit code [{exit_code}], err [{err}]")
 
         return (
             Result(
@@ -310,7 +314,7 @@ def _finish_workflow(workflow, job_name):
     print(env.get_needs_statuses())
 
     print("Check Workflow results")
-    _ResultS3.copy_result_from_s3(
+    version = _ResultS3.copy_result_from_s3_with_version(
         Result.file_name_static(workflow.name),
     )
     workflow_result = Result.from_fs(workflow.name)
@@ -333,7 +337,7 @@ def _finish_workflow(workflow, job_name):
             # dump workflow result after update - to have an updated result in post
             workflow_result.dump()
             # add error into env - should apper in the report
-            env.add_info(ResultInfo.NOT_FINALIZED + f" [{result.name}]")
+            env.add_info(f"{result.name}: {ResultInfo.NOT_FINALIZED}")
             update_final_report = True
         job = workflow.get_job(result.name)
         if not job or not job.allow_merge_on_failure:
@@ -358,9 +362,7 @@ def _finish_workflow(workflow, job_name):
         env.add_info(ResultInfo.GH_STATUS_ERROR)
 
     if update_final_report:
-        _ResultS3.copy_result_to_s3(
-            workflow_result,
-        )
+        _ResultS3.copy_result_to_s3_with_version(workflow_result, version + 1)
 
     Result.from_fs(job_name).set_status(Result.Status.SUCCESS)
 
