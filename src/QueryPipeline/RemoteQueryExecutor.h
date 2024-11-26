@@ -260,6 +260,11 @@ private:
     /// Initiator identifier for distributed task processing
     std::shared_ptr<TaskIterator> task_iterator;
 
+    /// This is needed only for parallel reading from replicas, because
+    /// we create a RemoteQueryExecutor per replica and have to store additional info
+    /// about the number of the current replica or the count of replicas at all.
+    IConnections::ReplicaInfo replica_info;
+
     /// Streams for reading from temporary tables and following sending of data
     /// to remote servers for GLOBAL-subqueries
     std::vector<ExternalTablesData> external_tables_data;

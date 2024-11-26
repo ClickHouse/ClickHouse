@@ -16,6 +16,7 @@ public:
 
     void enableChunked();
     void finishChunk();
+    ~WriteBufferFromPocoSocketChunked() override;
 
 protected:
     void nextImpl() override;

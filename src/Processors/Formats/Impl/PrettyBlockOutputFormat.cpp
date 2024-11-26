@@ -1,6 +1,5 @@
 #include <Processors/Formats/Impl/PrettyBlockOutputFormat.h>
 #include <Formats/FormatFactory.h>
-#include <Formats/PrettyFormatHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -10,8 +9,6 @@
 #include <Common/formatReadable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
-
-#include <algorithm>
 
 
 namespace DB
@@ -80,9 +77,9 @@ void PrettyBlockOutputFormat::calculateWidths(
             }
 
             widths[i][j] = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size(), prefix);
-            max_padded_widths[i] = std::max<UInt64>(
-                max_padded_widths[i],
-                std::min<UInt64>({format_settings.pretty.max_column_pad_width, format_settings.pretty.max_value_width, widths[i][j]}));
+            max_padded_widths[i] = std::max<UInt64>(max_padded_widths[i],
+                std::min<UInt64>(format_settings.pretty.max_column_pad_width,
+                    std::min<UInt64>(format_settings.pretty.max_value_width, widths[i][j])));
         }
 
         /// And also calculate widths for names of columns.
@@ -353,8 +350,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         }
 
         writeCString(grid_symbols.bar, out);
-        if (readable_number_tip)
-            writeReadableNumberTipIfSingleValue(out, chunk, format_settings, color);
+        writeReadableNumberTip(chunk);
         writeCString("\n", out);
     }
 
@@ -391,6 +387,72 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         writeString(bottom_separator_s, out);
     }
     total_rows += num_rows;
+}
+
+
+static String highlightDigitGroups(String source)
+{
+    if (source.size() <= 4)
+        return source;
+
+    bool is_regular_number = true;
+    size_t num_digits_before_decimal = 0;
+    for (auto c : source)
+    {
+        if (c == '-' || c == ' ')
+            continue;
+        if (c == '.')
+            break;
+        if (c >= '0' && c <= '9')
+        {
+            ++num_digits_before_decimal;
+        }
+        else
+        {
+            is_regular_number = false;
+            break;
+        }
+    }
+
+    if (!is_regular_number || num_digits_before_decimal <= 4)
+        return source;
+
+    String result;
+    size_t size = source.size();
+    result.reserve(2 * size);
+
+    bool before_decimal = true;
+    size_t digit_num = 0;
+    for (size_t i = 0; i < size; ++i)
+    {
+        auto c = source[i];
+        if (before_decimal && c >= '0' && c <= '9')
+        {
+            ++digit_num;
+            size_t offset = num_digits_before_decimal - digit_num;
+            if (offset && offset % 3 == 0)
+            {
+                result += "\033[4m";
+                result += c;
+                result += "\033[0m";
+            }
+            else
+            {
+                result += c;
+            }
+        }
+        else if (c == '.')
+        {
+            before_decimal = false;
+            result += c;
+        }
+        else
+        {
+            result += c;
+        }
+    }
+
+    return result;
 }
 
 
@@ -486,6 +548,30 @@ void PrettyBlockOutputFormat::writeSuffix()
         writeCString("  Showed first ", out);
         writeIntText(format_settings.pretty.max_rows, out);
         writeCString(".\n", out);
+    }
+}
+
+void PrettyBlockOutputFormat::writeReadableNumberTip(const Chunk & chunk)
+{
+    auto columns = chunk.getColumns();
+    auto is_single_number = readable_number_tip && chunk.getNumRows() == 1 && chunk.getNumColumns() == 1;
+    if (!is_single_number)
+        return;
+
+    if (columns[0]->isNullAt(0))
+        return;
+
+    auto value = columns[0]->getFloat64(0);
+    auto threshold = format_settings.pretty.output_format_pretty_single_large_number_tip_threshold;
+
+    if (threshold && isFinite(value) && abs(value) > threshold)
+    {
+        if (color)
+            writeCString("\033[90m", out);
+        writeCString(" -- ", out);
+        formatReadableQuantity(value, out, 2);
+        if (color)
+            writeCString("\033[0m", out);
     }
 }
 
