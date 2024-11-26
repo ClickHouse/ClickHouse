@@ -185,7 +185,7 @@ int QueryOracle::generateExportQuery(RandomGenerator & rg, const SQLTable & t, S
     bool first = true;
     Insert * ins = sq2.mutable_inner_query()->mutable_insert();
     FileFunc * ff = ins->mutable_tfunction()->mutable_file();
-    SelectStatementCore * sel = ins->mutable_select()->mutable_select_core();
+    SelectStatementCore * sel = ins->mutable_insert_select()->mutable_select()->mutable_select_core();
     const std::filesystem::path & nfile = fc.db_file_path / "table.data";
     OutFormat outf = rg.pickKeyRandomlyFromMap(out_in);
 
@@ -260,7 +260,7 @@ int QueryOracle::generateImportQuery(const SQLTable & t, const SQLQuery & sq2, S
 {
     Insert * ins = sq4.mutable_inner_query()->mutable_insert();
     InsertIntoTable * iit = ins->mutable_itable();
-    InsertFromFile * iff = ins->mutable_ffile();
+    InsertFromFile * iff = ins->mutable_insert_file();
     const FileFunc & ff = sq2.inner_query().insert().tfunction().file();
     ExprSchemaTable * est = iit->mutable_est();
 

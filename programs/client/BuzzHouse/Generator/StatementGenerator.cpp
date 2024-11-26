@@ -273,6 +273,10 @@ int StatementGenerator::generateNextDrop(RandomGenerator & rg, Drop * dp)
         assert(0);
     }
     dp->set_sync(rg.nextSmallNumber() < 3);
+    if (rg.nextSmallNumber() < 3)
+    {
+        generateSettingValues(rg, serverSettings, dp->mutable_setting_values());
+    }
     return 0;
 }
 
@@ -352,6 +356,10 @@ int StatementGenerator::generateNextOptimizeTable(RandomGenerator & rg, Optimize
         }
     }
     ot->set_final((t.supportsFinal() || t.isMergeTreeFamily()) && rg.nextSmallNumber() < 3);
+    if (rg.nextSmallNumber() < 3)
+    {
+        generateSettingValues(rg, serverSettings, ot->mutable_setting_values());
+    }
     return 0;
 }
 
@@ -368,6 +376,19 @@ int StatementGenerator::generateNextCheckTable(RandomGenerator & rg, CheckTable 
     if (t.isMergeTreeFamily() && rg.nextBool())
     {
         generateNextTablePartition<true>(rg, t, ct->mutable_partition());
+    }
+    if (rg.nextSmallNumber() < 3)
+    {
+        SettingValues * vals = ct->mutable_setting_values();
+
+        generateSettingValues(rg, serverSettings, vals);
+        if (rg.nextSmallNumber() < 3)
+        {
+            SetValue * sv = vals->add_other_values();
+
+            sv->set_property("check_query_single_value_result");
+            sv->set_value(rg.nextBool() ? "1" : "0");
+        }
     }
     ct->set_single_result(rg.nextSmallNumber() < 4);
     return 0;
@@ -403,6 +424,19 @@ int StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescTable * 
         assert(0);
     }
     dt->set_sub_cols(rg.nextSmallNumber() < 4);
+    if (rg.nextSmallNumber() < 3)
+    {
+        SettingValues * vals = dt->mutable_setting_values();
+
+        generateSettingValues(rg, serverSettings, vals);
+        if (rg.nextSmallNumber() < 3)
+        {
+            SetValue * sv = vals->add_other_values();
+
+            sv->set_property("describe_include_subcolumns");
+            sv->set_value(rg.nextBool() ? "1" : "0");
+        }
+    }
     return 0;
 }
 
@@ -454,6 +488,7 @@ int StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
     if (noption < 901)
     {
         const uint32_t nrows = rg.nextMediumNumber();
+        InsertStringQuery * iquery = ins->mutable_query();
 
         buf.resize(0);
         for (uint32_t i = 0; i < nrows; i++)
@@ -498,17 +533,27 @@ int StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
             }
             buf += ")";
         }
-        ins->set_query(buf);
+        iquery->set_query(buf);
+        if (rg.nextSmallNumber() < 3)
+        {
+            generateSettingValues(rg, serverSettings, iquery->mutable_setting_values());
+        }
     }
     else if (noption < 951)
     {
+        InsertSelect * isel = ins->mutable_insert_select();
+
         this->levels[this->current_level] = QueryLevel(this->current_level);
         if (rg.nextMediumNumber() < 13)
         {
             this->addCTEs(rg, std::numeric_limits<uint32_t>::max(), ins->mutable_ctes());
         }
         generateSelect(
-            rg, true, false, static_cast<uint32_t>(this->entries.size()), std::numeric_limits<uint32_t>::max(), ins->mutable_select());
+            rg, true, false, static_cast<uint32_t>(this->entries.size()), std::numeric_limits<uint32_t>::max(), isel->mutable_select());
+        if (rg.nextSmallNumber() < 3)
+        {
+            generateSettingValues(rg, serverSettings, isel->mutable_setting_values());
+        }
     }
     else
     {
@@ -543,6 +588,10 @@ int StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
         }
         this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = true;
         this->levels.clear();
+        if (rg.nextSmallNumber() < 3)
+        {
+            generateSettingValues(rg, serverSettings, vs->mutable_setting_values());
+        }
     }
     this->entries.clear();
     return 0;
@@ -580,6 +629,10 @@ int StatementGenerator::generateNextDelete(RandomGenerator & rg, LightDelete * d
         generateNextTablePartition<false>(rg, t, del->mutable_partition());
     }
     generateUptDelWhere(rg, t, del->mutable_where()->mutable_expr()->mutable_expr());
+    if (rg.nextSmallNumber() < 3)
+    {
+        generateSettingValues(rg, serverSettings, del->mutable_setting_values());
+    }
     return 0;
 }
 
@@ -622,6 +675,10 @@ int StatementGenerator::generateNextTruncate(RandomGenerator & rg, Truncate * tr
         assert(0);
     }
     trunc->set_sync(rg.nextSmallNumber() < 4);
+    if (rg.nextSmallNumber() < 3)
+    {
+        generateSettingValues(rg, serverSettings, trunc->mutable_setting_values());
+    }
     return 0;
 }
 
@@ -648,6 +705,10 @@ int StatementGenerator::generateNextExchangeTables(RandomGenerator & rg, Exchang
     }
     est2->mutable_table()->set_table("t" + std::to_string(t2.tname));
     this->ids.clear();
+    if (rg.nextSmallNumber() < 3)
+    {
+        generateSettingValues(rg, serverSettings, et->mutable_setting_values());
+    }
     return 0;
 }
 
@@ -1520,6 +1581,10 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
     {
         assert(0);
     }
+    if (rg.nextSmallNumber() < 3)
+    {
+        generateSettingValues(rg, serverSettings, at->mutable_setting_values());
+    }
     return 0;
 }
 
@@ -1568,6 +1633,10 @@ int StatementGenerator::generateAttach(RandomGenerator & rg, Attach * att)
     else
     {
         assert(0);
+    }
+    if (rg.nextSmallNumber() < 3)
+    {
+        generateSettingValues(rg, serverSettings, att->mutable_setting_values());
     }
     return 0;
 }
@@ -1620,6 +1689,10 @@ int StatementGenerator::generateDetach(RandomGenerator & rg, Detach * det)
     }
     det->set_permanently(!detach_database && rg.nextSmallNumber() < 4);
     det->set_sync(rg.nextSmallNumber() < 4);
+    if (rg.nextSmallNumber() < 3)
+    {
+        generateSettingValues(rg, serverSettings, det->mutable_setting_values());
+    }
     return 0;
 }
 

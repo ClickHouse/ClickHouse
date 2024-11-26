@@ -1611,6 +1611,11 @@ CONV_FN(ArrayJoin, aj)
     }
     ret += " ARRAY JOIN ";
     ExprColAliasToString(ret, aj.constraint());
+    for (int i = 0; i < aj.other_constraints_size(); i++)
+    {
+        ret += ", ";
+        ExprColAliasToString(ret, aj.other_constraints(i));
+    }
 }
 
 CONV_FN(JoinClauseCore, jcc)
@@ -2037,6 +2042,23 @@ CONV_FN(CTEs, cteq)
     ret += " ";
 }
 
+CONV_FN(SetValue, setv)
+{
+    ret += setv.property();
+    ret += " = ";
+    ret += setv.value();
+}
+
+CONV_FN(SettingValues, setv)
+{
+    SetValueToString(ret, setv.set_value());
+    for (int i = 0; i < setv.other_values_size(); i++)
+    {
+        ret += ", ";
+        SetValueToString(ret, setv.other_values(i));
+    }
+}
+
 CONV_FN(Select, select)
 {
     if (select.has_ctes())
@@ -2054,6 +2076,11 @@ CONV_FN(Select, select)
     else
     {
         ret += "1";
+    }
+    if (select.has_setting_values())
+    {
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, select.setting_values());
     }
 }
 
@@ -2082,23 +2109,6 @@ CONV_FN(CodecParam, cp)
             ret += std::to_string(cp.params(i));
         }
         ret += ")";
-    }
-}
-
-CONV_FN(SetValue, setv)
-{
-    ret += setv.property();
-    ret += " = ";
-    ret += setv.value();
-}
-
-CONV_FN(SettingValues, setv)
-{
-    SetValueToString(ret, setv.set_value());
-    for (int i = 0; i < setv.other_values_size(); i++)
-    {
-        ret += ", ";
-        SetValueToString(ret, setv.other_values(i));
     }
 }
 
@@ -2500,18 +2510,10 @@ CONV_FN(Drop, dt)
     {
         ret += " SYNC";
     }
-}
-
-CONV_FN(ValuesStatement, values)
-{
-    ret += "VALUES (";
-    ExprListToString(ret, values.expr_list());
-    ret += ")";
-    for (int i = 0; i < values.extra_expr_lists_size(); i++)
+    if (dt.has_setting_values())
     {
-        ret += ", (";
-        ExprListToString(ret, values.extra_expr_lists(i));
-        ret += ")";
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, dt.setting_values());
     }
 }
 
@@ -2533,29 +2535,71 @@ CONV_FN(InsertIntoTable, insert)
     }
 }
 
-CONV_FN(InsertFromFile, ffile)
+CONV_FN(ValuesStatement, values)
+{
+    if (values.has_setting_values())
+    {
+        ret += "SETTINGS ";
+        SettingValuesToString(ret, values.setting_values());
+        ret += " ";
+    }
+    ret += "VALUES (";
+    ExprListToString(ret, values.expr_list());
+    ret += ")";
+    for (int i = 0; i < values.extra_expr_lists_size(); i++)
+    {
+        ret += ", (";
+        ExprListToString(ret, values.extra_expr_lists(i));
+        ret += ")";
+    }
+}
+
+CONV_FN(InsertFromFile, insert_file)
 {
     ret += "FROM INFILE '";
-    ret += ffile.path();
+    ret += insert_file.path();
     ret += "'";
-    if (ffile.has_fcomp())
+    if (insert_file.has_fcomp())
     {
         ret += " COMPRESSION '";
-        ret += FileCompression_Name(ffile.fcomp()).substr(4);
+        ret += FileCompression_Name(insert_file.fcomp()).substr(4);
         ret += "'";
     }
-    if (ffile.has_settings())
+    if (insert_file.has_settings())
     {
         ret += " SETTINGS ";
-        SettingValuesToString(ret, ffile.settings());
+        SettingValuesToString(ret, insert_file.settings());
     }
     ret += " FORMAT ";
-    ret += InFormat_Name(ffile.format()).substr(3);
+    ret += InFormat_Name(insert_file.format()).substr(3);
+}
+
+CONV_FN(InsertSelect, insert_sel)
+{
+    if (insert_sel.has_setting_values())
+    {
+        ret += "SETTINGS ";
+        SettingValuesToString(ret, insert_sel.setting_values());
+        ret += " ";
+    }
+    SelectToString(ret, insert_sel.select());
+}
+
+CONV_FN(InsertStringQuery, insert_query)
+{
+    if (insert_query.has_setting_values())
+    {
+        ret += "SETTINGS ";
+        SettingValuesToString(ret, insert_query.setting_values());
+        ret += " ";
+    }
+    ret += "VALUES ";
+    ret += insert_query.query();
 }
 
 CONV_FN(Insert, insert)
 {
-    if (insert.has_ctes() && insert.has_itable() && insert.has_select())
+    if (insert.has_ctes() && insert.has_itable() && insert.has_insert_select())
     {
         CTEsToString(ret, insert.ctes());
     }
@@ -2574,18 +2618,17 @@ CONV_FN(Insert, insert)
     {
         ValuesStatementToString(ret, insert.values());
     }
-    else if (insert.has_select())
+    else if (insert.has_insert_select())
     {
-        SelectToString(ret, insert.select());
+        InsertSelectToString(ret, insert.insert_select());
     }
-    else if (insert.has_ffile())
+    else if (insert.has_insert_file())
     {
-        InsertFromFileToString(ret, insert.ffile());
+        InsertFromFileToString(ret, insert.insert_file());
     }
     else if (insert.has_query())
     {
-        ret += "VALUES ";
-        ret += insert.query();
+        InsertStringQueryToString(ret, insert.query());
     }
     else
     {
@@ -2632,6 +2675,11 @@ CONV_FN(LightDelete, del)
     }
     ret += " WHERE ";
     WhereStatementToString(ret, del.where());
+    if (del.has_setting_values())
+    {
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, del.setting_values());
+    }
 }
 
 CONV_FN(Truncate, trunc)
@@ -2658,6 +2706,11 @@ CONV_FN(Truncate, trunc)
     {
         ret += " SYNC";
     }
+    if (trunc.has_setting_values())
+    {
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, trunc.setting_values());
+    }
 }
 
 CONV_FN(CheckTable, ct)
@@ -2669,10 +2722,10 @@ CONV_FN(CheckTable, ct)
         ret += " ";
         PartitionExprToString(ret, ct.partition());
     }
-    if (ct.has_single_result())
+    if (ct.has_setting_values())
     {
-        ret += " SETTINGS check_query_single_value_result = ";
-        ret += ct.single_result() ? "1" : "0";
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, ct.setting_values());
     }
 }
 
@@ -2680,10 +2733,10 @@ CONV_FN(DescTable, dt)
 {
     ret += "DESCRIBE TABLE ";
     ExprSchemaTableToString(ret, dt.est());
-    if (dt.has_sub_cols())
+    if (dt.has_setting_values())
     {
-        ret += " SETTINGS describe_include_subcolumns = ";
-        ret += dt.sub_cols() ? "1" : "0";
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, dt.setting_values());
     }
 }
 
@@ -2728,6 +2781,11 @@ CONV_FN(OptimizeTable, ot)
     {
         ret += " CLEANUP";
     }
+    if (ot.has_setting_values())
+    {
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, ot.setting_values());
+    }
 }
 
 CONV_FN(ExchangeTables, et)
@@ -2736,6 +2794,11 @@ CONV_FN(ExchangeTables, et)
     ExprSchemaTableToString(ret, et.est1());
     ret += " AND ";
     ExprSchemaTableToString(ret, et.est2());
+    if (et.has_setting_values())
+    {
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, et.setting_values());
+    }
 }
 
 CONV_FN(UpdateSet, upt)
@@ -3196,6 +3259,11 @@ CONV_FN(AlterTable, alter_table)
         ret += ", ";
         AlterTableItemToString(ret, alter_table.other_alters(i));
     }
+    if (alter_table.has_setting_values())
+    {
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, alter_table.setting_values());
+    }
 }
 
 CONV_FN(Attach, at)
@@ -3204,6 +3272,11 @@ CONV_FN(Attach, at)
     ret += SQLObject_Name(at.sobject());
     ret += " ";
     SQLObjectNameToString(ret, at.object());
+    if (at.has_setting_values())
+    {
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, at.setting_values());
+    }
 }
 
 CONV_FN(Detach, dt)
@@ -3219,6 +3292,11 @@ CONV_FN(Detach, dt)
     if (dt.sync())
     {
         ret += " SYNC";
+    }
+    if (dt.has_setting_values())
+    {
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, dt.setting_values());
     }
 }
 
@@ -3259,6 +3337,11 @@ CONV_FN(TopSelect, top)
     {
         ret += " FORMAT ";
         ret += OutFormat_Name(top.format()).substr(4);
+    }
+    if (top.has_setting_values())
+    {
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, top.setting_values());
     }
 }
 

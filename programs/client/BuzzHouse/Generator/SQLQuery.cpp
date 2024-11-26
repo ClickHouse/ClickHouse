@@ -7,37 +7,54 @@ namespace BuzzHouse
 int StatementGenerator::generateArrayJoin(RandomGenerator & rg, ArrayJoin * aj)
 {
     SQLRelation rel("");
-    std::string cname = "c" + std::to_string(this->levels[this->current_level].aliases_counter++);
-    ExprColAlias * eca = aj->mutable_constraint();
-    Expr * expr = eca->mutable_expr();
+    std::vector<SQLRelationCol> available_cols;
 
+    if (!this->levels[this->current_level].rels.empty())
+    {
+        for (const auto & entry : this->levels[this->current_level].rels)
+        {
+            available_cols.insert(available_cols.end(), entry.cols.begin(), entry.cols.end());
+        }
+        std::shuffle(available_cols.begin(), available_cols.end(), rg.generator);
+    }
     aj->set_left(rg.nextBool());
-    if (rg.nextSmallNumber() < 8)
-    {
-        const SQLRelation & rel1 = rg.pickRandomlyFromVector(this->levels[this->current_level].rels);
-        const SQLRelationCol & col1 = rg.pickRandomlyFromVector(rel1.cols);
-        ExprSchemaTableColumn * estc = expr->mutable_comp_expr()->mutable_expr_stc();
-        ExprColumn * ecol = estc->mutable_col();
+    const uint32_t nccols
+        = std::min<uint32_t>(
+            UINT32_C(3), (rg.nextRandomUInt32() % (available_cols.empty() ? 3 : static_cast<uint32_t>(available_cols.size()))) + 1),
+        nclauses = std::min<uint32_t>(this->fc.max_width - this->width, nccols);
 
-        if (!rel1.name.empty())
-        {
-            estc->mutable_table()->set_table(rel1.name);
-        }
-        ecol->mutable_col()->set_column(col1.name);
-        if (col1.name2.has_value())
-        {
-            ecol->mutable_subcol()->set_column(col1.name2.value());
-        }
-        addFieldAccess(rg, expr, 16);
-        addColNestedAccess(rg, ecol, 31);
-    }
-    else
+    for (uint32_t i = 0; i < nclauses; i++)
     {
-        generateExpression(rg, expr);
+        const std::string cname = "c" + std::to_string(this->levels[this->current_level].aliases_counter++);
+        ExprColAlias * eca = i == 0 ? aj->mutable_constraint() : aj->add_other_constraints();
+        Expr * expr = eca->mutable_expr();
+
+        if (!available_cols.empty() && rg.nextSmallNumber() < 8)
+        {
+            const SQLRelationCol & rel_col = available_cols[i];
+            ExprSchemaTableColumn * estc = expr->mutable_comp_expr()->mutable_expr_stc();
+            ExprColumn * ecol = estc->mutable_col();
+
+            if (!rel_col.rel_name.empty())
+            {
+                estc->mutable_table()->set_table(rel_col.rel_name);
+            }
+            ecol->mutable_col()->set_column(rel_col.name);
+            if (rel_col.name2.has_value())
+            {
+                ecol->mutable_subcol()->set_column(rel_col.name2.value());
+            }
+            addFieldAccess(rg, expr, 16);
+            addColNestedAccess(rg, ecol, 31);
+        }
+        else
+        {
+            generateExpression(rg, expr);
+        }
+        rel.cols.push_back(SQLRelationCol("", cname, std::nullopt));
+        eca->mutable_col_alias()->set_column(cname);
     }
-    rel.cols.push_back(SQLRelationCol("", cname, std::nullopt));
     this->levels[this->current_level].rels.push_back(std::move(rel));
-    eca->mutable_col_alias()->set_column(cname);
     return 0;
 }
 
@@ -1121,6 +1138,10 @@ int StatementGenerator::generateSelect(
             }
         }
     }
+    if (this->allow_not_deterministic && rg.nextSmallNumber() < 3)
+    {
+        generateSettingValues(rg, serverSettings, sel->mutable_setting_values());
+    }
     this->levels.erase(this->current_level);
     this->ctes.erase(this->current_level);
     return res;
@@ -1140,6 +1161,10 @@ int StatementGenerator::generateTopSelect(RandomGenerator & rg, const bool force
     if (rg.nextSmallNumber() < 3)
     {
         ts->set_format(static_cast<OutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(OutFormat_MAX)) + 1));
+    }
+    if (this->allow_not_deterministic && rg.nextSmallNumber() < 3)
+    {
+        generateSettingValues(rg, serverSettings, ts->mutable_setting_values());
     }
     return res;
 }

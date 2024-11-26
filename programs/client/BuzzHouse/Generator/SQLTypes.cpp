@@ -916,7 +916,7 @@ void StatementGenerator::strAppendBottomValue(RandomGenerator & rg, std::string 
                     ret += std::to_string(rg.nextRandomUInt64());
                     break;
                 default: {
-                    hugeint_t val(rg.nextRandomInt64(), rg.nextRandomUInt64());
+                    uhugeint_t val(rg.nextRandomInt64(), rg.nextRandomUInt64());
                     val.toString(ret);
                 }
             }
@@ -938,7 +938,7 @@ void StatementGenerator::strAppendBottomValue(RandomGenerator & rg, std::string 
                     ret += std::to_string(rg.nextRandomInt64());
                     break;
                 default: {
-                    uhugeint_t val(rg.nextRandomUInt64(), rg.nextRandomUInt64());
+                    hugeint_t val(rg.nextRandomUInt64(), rg.nextRandomUInt64());
                     val.toString(ret);
                 }
             }

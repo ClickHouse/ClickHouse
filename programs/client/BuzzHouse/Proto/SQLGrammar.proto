@@ -2309,6 +2309,7 @@ message JoinCore {
 message ArrayJoin {
     optional bool left = 1;
     required ExprColAlias constraint = 2;
+    repeated ExprColAlias other_constraints = 3;
 }
 
 message JoinClauseCore {
@@ -2513,12 +2514,23 @@ message CTEs {
     repeated CTEquery other_ctes = 2;
 }
 
+message SetValue {
+    required string property = 1;
+    required string value = 2;
+}
+
+message SettingValues {
+    required SetValue set_value = 1;
+    repeated SetValue other_values = 2;
+}
+
 message Select {
     optional CTEs ctes = 1;
     oneof select_oneof {
         SelectStatementCore select_core = 2;
         SetQuery set_query = 3;
     }
+    optional SettingValues setting_values = 4;
 }
 
 enum DatabaseEngineValues {
@@ -2673,16 +2685,6 @@ enum ColumnStat {
 message ColumnStatistics {
     required ColumnStat stat = 1;
     repeated ColumnStat other_stats = 2;
-}
-
-message SetValue {
-    required string property = 1;
-    required string value = 2;
-}
-
-message SettingValues {
-    required SetValue set_value = 1;
-    repeated SetValue other_values = 2;
 }
 
 enum DModifier {
@@ -2894,11 +2896,7 @@ message Drop {
     required SQLObjectName object = 5;
     repeated SQLObjectName other_objects = 6;
     optional bool sync = 7;
-}
-
-message ValuesStatement {
-    required ExprList expr_list = 1;
-    repeated ExprList extra_expr_lists = 2;
+    optional SettingValues setting_values = 8;
 }
 
 message InsertIntoTable {
@@ -2906,11 +2904,27 @@ message InsertIntoTable {
     repeated ColumnPath cols = 2;
 }
 
+message ValuesStatement {
+    optional SettingValues setting_values = 1;
+    required ExprList expr_list = 2;
+    repeated ExprList extra_expr_lists = 3;
+}
+
+message InsertSelect {
+    optional SettingValues setting_values = 1;
+    required Select select = 2;
+}
+
 message InsertFromFile {
     required string path = 1;
     optional FileCompression fcomp = 2;
     optional SettingValues settings = 3;
     required InFormat format = 4;
+}
+
+message InsertStringQuery {
+    optional SettingValues setting_values = 1;
+    required string query = 2;
 }
 
 message Insert {
@@ -2921,9 +2935,9 @@ message Insert {
     }
     oneof insert_oneof {
         ValuesStatement values = 4;
-        Select select = 5;
-        InsertFromFile ffile = 6;
-        string query = 7;
+        InsertSelect insert_select = 5;
+        InsertFromFile insert_file = 6;
+        InsertStringQuery query = 7;
     }
 }
 
@@ -2941,6 +2955,7 @@ message LightDelete {
     required ExprSchemaTable est = 1;
     optional PartitionExpr partition = 2;
     required WhereStatement where = 3;
+    optional SettingValues setting_values = 4;
 }
 
 message Truncate {
@@ -2950,6 +2965,7 @@ message Truncate {
         Database database = 3;
     }
     optional bool sync = 4;
+    optional SettingValues setting_values = 5;
 }
 
 enum ExpPlanOpt {
@@ -2993,17 +3009,20 @@ message TopSelect {
     required Select sel = 1;
     optional SelectIntoFile intofile = 2;
     optional OutFormat format = 3;
+    optional SettingValues setting_values = 4;
 }
 
 message CheckTable {
     required ExprSchemaTable est = 1;
     optional PartitionExpr partition = 2;
     optional bool single_result = 3;
+    optional SettingValues setting_values = 4;
 }
 
 message DescTable {
     required ExprSchemaTable est = 1;
     optional bool sub_cols = 2;
+    optional SettingValues setting_values = 3;
 }
 
 message DeduplicateExpr {
@@ -3020,11 +3039,13 @@ message OptimizeTable {
     optional bool final = 3;
     optional DeduplicateExpr dedup = 4;
     optional bool cleanup = 5;
+    optional SettingValues setting_values = 6;
 }
 
 message ExchangeTables {
     required ExprSchemaTable est1 = 1;
     required ExprSchemaTable est2 = 2;
+    optional SettingValues setting_values = 3;
 }
 
 message UpdateSet {
@@ -3248,11 +3269,13 @@ message AlterTable {
     required ExprSchemaTable est = 2;
     required AlterTableItem alter = 3;
     repeated AlterTableItem other_alters = 4;
+    optional SettingValues setting_values = 5;
 }
 
 message Attach {
     required SQLObject sobject = 1;
     required SQLObjectName object = 2;
+    optional SettingValues setting_values = 3;
 }
 
 message Detach {
@@ -3260,6 +3283,7 @@ message Detach {
     required SQLObjectName object = 2;
     optional bool permanently = 3;
     optional bool sync = 4;
+    optional SettingValues setting_values = 5;
 }
 
 message SQLQueryInner {
