@@ -10,7 +10,7 @@ HeaderFilterRegex: '^.*/(base|src|programs|utils)/.*(h|hpp)$'
 Checks: [
   '*',
 
-  '-abseil-*',
+  '-abseil-string-find-str-contains', # disabled to avoid a misleading suggestion (obsolete absl::StrContains() instead of C++23 std::string::contains())
 
   '-altera-*',
 
