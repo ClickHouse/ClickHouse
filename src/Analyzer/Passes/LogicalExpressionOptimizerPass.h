@@ -109,7 +109,7 @@ namespace DB
  * SELECT * FROM t1 WHERE NOT a IN (n)
  * -------------------------------
  *
- * 8. Extract common expressions from AND expressions of a single OR expression only in WHERE and ON expressions.
+ * 8. Extract common subexpressions from AND expressions of a single OR expression only in WHERE and ON expressions.
  * If possible, AND and OR expressions will be flattened during performing this.
  * This might break some lazily evaluated expressions, but this optimization can be turned off by optimize_extract_common_expressions = 0.
  * -------------------------------

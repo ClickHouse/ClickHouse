@@ -21,6 +21,11 @@ QUERY id: 0
                 COLUMN id: 8, column_name: A, result_type: UInt8, source_id: 3
                 COLUMN id: 12, column_name: C, result_type: UInt8, source_id: 3
   SETTINGS optimize_extract_common_expressions=0
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE (__table1.A AND __table1.B) OR (__table1.A AND __table1.C)
+SETTINGS optimize_extract_common_expressions = 0
 QUERY id: 0
   PROJECTION COLUMNS
     count() UInt64
@@ -40,6 +45,11 @@ QUERY id: 0
                 COLUMN id: 9, column_name: B, result_type: UInt8, source_id: 3
                 COLUMN id: 10, column_name: C, result_type: UInt8, source_id: 3
   SETTINGS optimize_extract_common_expressions=1
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE __table1.A AND (__table1.B OR __table1.C)
+SETTINGS optimize_extract_common_expressions = 1
 -4890149726841642150	1	1	1	0	0	0
 6142641079032712283	1	1	1	0	0	0
 -558050477524086008	1	1	1	0	0	0
@@ -75,6 +85,10 @@ QUERY id: 0
           COLUMN id: 6, column_name: A, result_type: UInt8, source_id: 3
           COLUMN id: 7, column_name: B, result_type: UInt8, source_id: 3
           COLUMN id: 8, column_name: C, result_type: UInt8, source_id: 3
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE __table1.A AND __table1.B AND __table1.C
 -1417696215412225994	1	1	1	0	0	1
 -7491222816216432223	1	1	1	0	0	1
 -7667054131998434193	1	1	1	0	0	1
@@ -115,6 +129,10 @@ QUERY id: 0
                 COLUMN id: 10, column_name: F, result_type: UInt8, source_id: 3
           COLUMN id: 11, column_name: B, result_type: UInt8, source_id: 3
           COLUMN id: 12, column_name: C, result_type: UInt8, source_id: 3
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE __table1.A AND (__table1.E OR __table1.F) AND __table1.B AND __table1.C
 -1417696215412225994	1	1	1	0	0	1
 -7491222816216432223	1	1	1	0	0	1
 -7667054131998434193	1	1	1	0	0	1
@@ -155,6 +173,10 @@ QUERY id: 0
                 COLUMN id: 10, column_name: F, result_type: UInt8, source_id: 3
           COLUMN id: 11, column_name: B, result_type: UInt8, source_id: 3
           COLUMN id: 12, column_name: C, result_type: UInt8, source_id: 3
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE __table1.A AND (__table1.E OR __table1.F) AND __table1.B AND __table1.C
 -7064227703501672459	1	1	0	0	1	0
 -5989383837337135212	1	1	0	0	1	0
 -2960971598243161531	1	1	0	0	1	0
@@ -195,6 +217,10 @@ QUERY id: 0
                 COLUMN id: 10, column_name: D, result_type: UInt8, source_id: 3
                 COLUMN id: 11, column_name: E, result_type: UInt8, source_id: 3
           COLUMN id: 12, column_name: B, result_type: UInt8, source_id: 3
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE __table1.A AND (__table1.C OR __table1.D OR __table1.E) AND __table1.B
 -7064227703501672459	1	1	0	0	1	0
 -5989383837337135212	1	1	0	0	1	0
 -2960971598243161531	1	1	0	0	1	0
@@ -235,6 +261,10 @@ QUERY id: 0
                 COLUMN id: 10, column_name: D, result_type: UInt8, source_id: 3
                 COLUMN id: 11, column_name: E, result_type: UInt8, source_id: 3
           COLUMN id: 12, column_name: B, result_type: UInt8, source_id: 3
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE __table1.A AND (__table1.C OR __table1.D OR __table1.E) AND __table1.B
 7046366705027993992	0	1	1	0	0	0
 5876398964123690873	0	1	1	0	0	0
 -4849840134697008981	0	1	1	0	0	0
@@ -269,6 +299,10 @@ QUERY id: 0
         LIST id: 5, nodes: 2
           COLUMN id: 6, column_name: B, result_type: UInt8, source_id: 3
           COLUMN id: 7, column_name: C, result_type: UInt8, source_id: 3
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE __table1.B AND __table1.C
 331058316081182921	0	1	1	0	0	1
 -2878539180531591201	0	1	1	0	0	1
 5634271855584736521	0	1	1	0	0	1
@@ -308,6 +342,10 @@ QUERY id: 0
               LIST id: 9, nodes: 2
                 COLUMN id: 10, column_name: E, result_type: UInt8, source_id: 3
                 COLUMN id: 11, column_name: F, result_type: UInt8, source_id: 3
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE __table1.B AND __table1.C AND (__table1.E OR __table1.F)
 331058316081182921	0	1	1	0	0	1
 -2878539180531591201	0	1	1	0	0	1
 5634271855584736521	0	1	1	0	0	1
@@ -347,6 +385,10 @@ QUERY id: 0
               LIST id: 9, nodes: 2
                 COLUMN id: 10, column_name: E, result_type: UInt8, source_id: 3
                 COLUMN id: 11, column_name: F, result_type: UInt8, source_id: 3
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE __table1.B AND __table1.C AND (__table1.E OR __table1.F)
 -8350064335402276481	0	1	0	0	1	0
 2766908592531260293	0	1	0	0	1	0
 -8500464668406226757	0	1	0	0	1	0
@@ -386,6 +428,10 @@ QUERY id: 0
                 COLUMN id: 9, column_name: C, result_type: UInt8, source_id: 3
                 COLUMN id: 10, column_name: D, result_type: UInt8, source_id: 3
                 COLUMN id: 11, column_name: E, result_type: UInt8, source_id: 3
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE __table1.B AND (__table1.C OR __table1.D OR __table1.E)
 -8350064335402276481	0	1	0	0	1	0
 2766908592531260293	0	1	0	0	1	0
 -8500464668406226757	0	1	0	0	1	0
@@ -425,6 +471,10 @@ QUERY id: 0
                 COLUMN id: 9, column_name: C, result_type: UInt8, source_id: 3
                 COLUMN id: 10, column_name: D, result_type: UInt8, source_id: 3
                 COLUMN id: 11, column_name: E, result_type: UInt8, source_id: 3
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE __table1.B AND (__table1.C OR __table1.D OR __table1.E)
 7296788055532769937	0	1	0	0	0	0
 -8085083078325036349	0	1	0	0	0	0
 8056746393406743698	0	1	0	0	0	0
@@ -473,6 +523,10 @@ QUERY id: 0
               LIST id: 15, nodes: 2
                 COLUMN id: 16, column_name: A, result_type: UInt8, source_id: 3
                 COLUMN id: 17, column_name: B, result_type: UInt8, source_id: 3
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE (sipHash64(__table1.C) = sipHash64(__table1.D)) AND (__table1.A OR __table1.B)
 2589067852420946093	0	0	0	0	1	1
 566510304360553038	0	0	0	0	1	1
 4712156778925374545	0	0	0	0	1	1
@@ -523,6 +577,10 @@ QUERY id: 0
                     LIST id: 17, nodes: 2
                       COLUMN id: 18, column_name: E, result_type: UInt8, source_id: 3
                       COLUMN id: 19, column_name: F, result_type: UInt8, source_id: 3
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE (__table1.A AND __table1.B) OR ((__table1.C AND __table1.D) OR (__table1.E AND __table1.F))
 813655996633899418	0	0	0	0	1	1
 6513794688600930866	0	0	0	0	1	1
 2151442296722776334	0	0	0	0	1	1
@@ -573,6 +631,10 @@ QUERY id: 0
                     LIST id: 16, nodes: 2
                       COLUMN id: 17, column_name: E, result_type: UInt8, source_id: 3
                       COLUMN id: 18, column_name: F, result_type: UInt8, source_id: 3
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE (__table1.A AND __table1.B) OR ((__table1.B AND __table1.D) OR (__table1.E AND __table1.F))
 6015136002503835948	1	1	0	0	0	1
 -3883799183493487473	1	1	0	0	0	1
 -3002427897361111856	1	1	0	0	0	1
@@ -604,9 +666,8 @@ QUERY id: 0
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
-        LIST id: 5, nodes: 4
+        LIST id: 5, nodes: 3
           COLUMN id: 6, column_name: A, result_type: UInt8, source_id: 3
-          COLUMN id: 7, column_name: B, result_type: UInt8, source_id: 3
           COLUMN id: 7, column_name: B, result_type: UInt8, source_id: 3
           FUNCTION id: 8, function_name: or, function_type: ordinary, result_type: UInt8
             ARGUMENTS
@@ -622,6 +683,58 @@ QUERY id: 0
                     LIST id: 15, nodes: 2
                       COLUMN id: 16, column_name: F, result_type: UInt8, source_id: 3
                       COLUMN id: 16, column_name: F, result_type: UInt8, source_id: 3
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE __table1.A AND __table1.B AND (__table1.C OR (__table1.E AND __table1.E) OR (__table1.F AND __table1.F))
+-7079903752397632178	1	1	0	1	0	1
+7410531019670261947	1	1	0	1	0	1
+233866682657554364	1	1	0	1	0	1
+704993795727957061	1	1	0	1	0	1
+4554773761331986827	1	1	0	1	0	1
+5016240913683434733	1	1	0	1	0	1
+21469839474705446	1	1	0	1	0	1
+2093705149861909566	1	1	0	1	0	1
+2363609859499966990	1	1	0	1	0	1
+5595451911922654649	1	1	0	1	0	1
+-7079903752397632178	1	1	0	1	0	1
+7410531019670261947	1	1	0	1	0	1
+233866682657554364	1	1	0	1	0	1
+704993795727957061	1	1	0	1	0	1
+4554773761331986827	1	1	0	1	0	1
+5016240913683434733	1	1	0	1	0	1
+21469839474705446	1	1	0	1	0	1
+2093705149861909566	1	1	0	1	0	1
+2363609859499966990	1	1	0	1	0	1
+5595451911922654649	1	1	0	1	0	1
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.x
+  WHERE
+    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 4
+          FUNCTION id: 6, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 7, nodes: 2
+                COLUMN id: 8, column_name: C, result_type: UInt8, source_id: 3
+                COLUMN id: 9, column_name: D, result_type: UInt8, source_id: 3
+          COLUMN id: 10, column_name: A, result_type: UInt8, source_id: 3
+          COLUMN id: 11, column_name: B, result_type: UInt8, source_id: 3
+          FUNCTION id: 12, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 13, nodes: 2
+                COLUMN id: 14, column_name: E, result_type: UInt8, source_id: 3
+                COLUMN id: 15, column_name: F, result_type: UInt8, source_id: 3
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE (__table1.C OR __table1.D) AND __table1.A AND __table1.B AND (__table1.E OR __table1.F)
 QUERY id: 0
   PROJECTION COLUMNS
     count() UInt64
@@ -652,6 +765,10 @@ QUERY id: 0
                           LIST id: 17, nodes: 2
                             COLUMN id: 14, column_name: C, result_type: UInt8, source_id: 3
                             COLUMN id: 18, column_name: E, result_type: UInt8, source_id: 3
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE __table1.A OR (__table1.B AND ((__table1.C AND __table1.D) OR (__table1.C AND __table1.E)))
 -9220342792229035180	1	1	0	1	0	1	-9218747728814747926	1	1	0	0	0	1
 -9220342792229035180	1	1	0	1	0	1	-9217081065560798881	1	0	0	1	0	1
 -9220342792229035180	1	1	0	1	0	1	-9211856624818647543	1	1	1	0	0	0
@@ -706,6 +823,10 @@ QUERY id: 0
                         LIST id: 19, nodes: 2
                           COLUMN id: 20, column_name: C, result_type: UInt8, source_id: 5
                           CONSTANT id: 21, constant_value: UInt64_1, constant_value_type: UInt8
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+ALL INNER JOIN default.y AS __table2 ON (__table1.A = __table2.A) AND ((__table1.B = 1) OR (__table2.C = 1))
 QUERY id: 0
   PROJECTION COLUMNS
     count() UInt64
@@ -764,6 +885,10 @@ QUERY id: 0
                                     LIST id: 37, nodes: 2
                                       COLUMN id: 38, column_name: E, result_type: UInt8, source_id: 4
                                       COLUMN id: 39, column_name: E, result_type: UInt8, source_id: 5
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+ALL INNER JOIN default.y AS __table2 ON (__table1.A = __table2.A) OR ((__table1.B = __table2.B) AND (((__table1.C = __table2.C) AND (__table1.D = __table2.D)) OR ((__table1.C = __table2.C) AND (__table1.E = __table2.E))))
 -9220342792229035180	1	1	0	1	0	1
 -9215479184005563028	0	1	1	1	0	1
 -9211524111550600160	0	0	1	1	1	0
@@ -796,3 +921,14 @@ QUERY id: 0
         LIST id: 11, nodes: 2
           COLUMN id: 12, column_name: C, result_type: UInt8, source_id: 3
           COLUMN id: 13, column_name: E, result_type: UInt8, source_id: 3
+
+SELECT
+    __table1.x AS x,
+    __table1.A AS A,
+    __table1.B AS B,
+    __table1.C AS C,
+    __table1.D AS D,
+    __table1.E AS E,
+    __table1.F AS F
+FROM default.x AS __table1
+WHERE __table1.C AND __table1.E
