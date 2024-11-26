@@ -240,6 +240,8 @@ ASTPtr ASTCreateQuery::clone() const
 
     if (columns_list)
         res->set(res->columns_list, columns_list->clone());
+    if (aliases_list)
+        res->set(res->aliases_list, aliases_list->clone());
     if (storage)
         res->set(res->storage, storage->clone());
     if (select)

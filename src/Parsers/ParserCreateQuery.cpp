@@ -1477,6 +1477,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserStorage storage_p{ParserStorage::TABLE_ENGINE};
     ParserIdentifier name_p;
     ParserTablePropertiesDeclarationList table_properties_p;
+    ParserAliasesExpressionList expr_list_aliases;
     ParserSelectWithUnionQuery select_p;
     ParserNameList names_p;
     ParserSQLSecurity sql_security_p;
@@ -1485,6 +1486,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ASTPtr to_table;
     ASTPtr to_inner_uuid;
     ASTPtr columns_list;
+    ASTPtr aliases_list;
     ASTPtr storage;
     ASTPtr as_database;
     ASTPtr as_table;
@@ -1560,15 +1562,33 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (!table_name_p.parse(pos, to_table, expected))
             return false;
     }
+    bool aliases_override = false;
 
     /// Optional - a list of columns can be specified. It must fully comply with SELECT.
-    if (s_lparen.ignore(pos, expected))
+    if (s_lparen.ignore(pos, expected)) // Parsing cases like CREATE VIEW (a Int64, b Int64) (a, b) SELECT ...
     {
         if (!table_properties_p.parse(pos, columns_list, expected))
-            return false;
+        {
+            if (!expr_list_aliases.parse(pos, aliases_list, expected))
+                return false;
+            else
+                aliases_override = true;
+        }
+        else
+        {
+            if (!s_rparen.ignore(pos, expected))
+                return false;
+            if (s_lparen.ignore(pos, expected))
+            {
+                aliases_override = true;
+                if (!expr_list_aliases.parse(pos, aliases_list, expected))
+                    return false;
+            }
+        }
 
-        if (!s_rparen.ignore(pos, expected))
-            return false;
+        if (aliases_override)
+            if (!s_rparen.ignore(pos, expected))
+                return false;
     }
 
     if (is_materialized_view)
@@ -1644,6 +1664,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         query->children.push_back(query->table);
 
     query->set(query->columns_list, columns_list);
+    query->set(query->aliases_list, aliases_list);
 
     if (refresh_strategy)
         query->set(query->refresh_strategy, refresh_strategy);

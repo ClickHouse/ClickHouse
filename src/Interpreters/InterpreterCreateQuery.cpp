@@ -934,6 +934,45 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         if (create.isParameterizedView())
             return properties;
 
+        if (create.aliases_list)
+        {
+            auto & aliases_children = create.aliases_list->children;
+            const auto * select_with_union_query = create.select->as<ASTSelectWithUnionQuery>();
+
+            if (!select_with_union_query)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ASTSelectWithUnionQuery");
+
+            const auto & selects = select_with_union_query->list_of_selects->children;
+
+            for (const auto & select_query_ptr : selects)
+            {
+                const auto * select_query = select_query_ptr->as<ASTSelectQuery>();
+
+                if (!select_query)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ASTSelectQuery inside ASTSelectWithUnionQuery");
+
+                auto select_expression_list = select_query->select();
+
+                if (!select_expression_list)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "No select expressions in SELECT query");
+
+                auto & select_expressions = select_expression_list->children;
+
+                if (select_expressions.size() != aliases_children.size())
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Number of aliases does not match number of expressions in SELECT list");
+                }
+
+                for (size_t i = 0; i < select_expressions.size(); ++i)
+                {
+                    auto & expr = select_expressions[i];
+                    const auto & alias_ast = aliases_children[i]->as<ASTIdentifier &>();
+                    expr->setAlias(alias_ast.name());
+                }
+            }
+        }
+
         Block as_select_sample;
 
         if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
