@@ -57,12 +57,6 @@ struct InMemoryDirectoryPathMap
         return it->second;
     }
 
-    bool removePathIfExists(const std::filesystem::path & path)
-    {
-        std::lock_guard lock(mutex);
-        return map.erase(path) != 0;
-    }
-
     mutable SharedMutex mutex;
 
 #ifdef OS_LINUX

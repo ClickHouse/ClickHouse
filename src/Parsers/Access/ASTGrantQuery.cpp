@@ -1,5 +1,6 @@
 #include <Parsers/Access/ASTGrantQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
+#include <Common/quoteString.h>
 #include <IO/Operators.h>
 
 
@@ -12,10 +13,52 @@ namespace ErrorCodes
 
 namespace
 {
+    void formatElementsWithoutOptions(const AccessRightsElements & elements, const IAST::FormatSettings & settings)
+    {
+        bool no_output = true;
+        for (size_t i = 0; i != elements.size(); ++i)
+        {
+            const auto & element = elements[i];
+            auto keywords = element.access_flags.toKeywords();
+            if (keywords.empty() || (!element.anyColumn() && element.columns.empty()))
+                continue;
+
+            for (const auto & keyword : keywords)
+            {
+                if (!std::exchange(no_output, false))
+                    settings.ostr << ", ";
+
+                settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << keyword << (settings.hilite ? IAST::hilite_none : "");
+                if (!element.anyColumn())
+                    element.formatColumnNames(settings.ostr);
+            }
+
+            bool next_element_on_same_db_and_table = false;
+            if (i != elements.size() - 1)
+            {
+                const auto & next_element = elements[i + 1];
+                if (element.sameDatabaseAndTableAndParameter(next_element))
+                {
+                    next_element_on_same_db_and_table = true;
+                }
+            }
+
+            if (!next_element_on_same_db_and_table)
+            {
+                settings.ostr << " ";
+                element.formatONClause(settings.ostr, settings.hilite);
+            }
+        }
+
+        if (no_output)
+            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "USAGE ON " << (settings.hilite ? IAST::hilite_none : "") << "*.*";
+    }
+
+
     void formatCurrentGrantsElements(const AccessRightsElements & elements, const IAST::FormatSettings & settings)
     {
         settings.ostr << "(";
-        elements.formatElementsWithoutOptions(settings.ostr, settings.hilite);
+        formatElementsWithoutOptions(elements, settings);
         settings.ostr << ")";
     }
 }
@@ -79,7 +122,7 @@ void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, F
     }
     else
     {
-        access_rights_elements.formatElementsWithoutOptions(settings.ostr, settings.hilite);
+        formatElementsWithoutOptions(access_rights_elements, settings);
     }
 
     settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << (is_revoke ? " FROM " : " TO ")

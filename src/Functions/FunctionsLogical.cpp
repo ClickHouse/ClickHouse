@@ -1,6 +1,5 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
-#include <Functions/IFunctionAdaptors.h>
 #include <Functions/logical.h>
 
 #include <Columns/ColumnConst.h>

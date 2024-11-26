@@ -89,9 +89,6 @@ namespace CurrentMetrics
     extern const Metric RestartReplicaThreads;
     extern const Metric RestartReplicaThreadsActive;
     extern const Metric RestartReplicaThreadsScheduled;
-    extern const Metric MergeTreePartsLoaderThreads;
-    extern const Metric MergeTreePartsLoaderThreadsActive;
-    extern const Metric MergeTreePartsLoaderThreadsScheduled;
 }
 
 namespace DB
@@ -100,7 +97,6 @@ namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsSeconds receive_timeout;
-    extern const SettingsMaxThreads max_threads;
 }
 
 namespace ServerSetting
@@ -289,10 +285,7 @@ BlockIO InterpreterSystemQuery::execute()
 
     /// Use global context with fresh system profile settings
     auto system_context = Context::createCopy(getContext()->getGlobalContext());
-    /// Don't check for constraints when changing profile. It was accepted before (for example it might include
-    /// some experimental settings)
-    bool check_constraints = false;
-    system_context->setCurrentProfile(getContext()->getSystemProfileName(), check_constraints);
+    system_context->setSetting("profile", getContext()->getSystemProfileName());
 
     /// Make canonical query for simpler processing
     if (query.type == Type::RELOAD_DICTIONARY)
@@ -364,11 +357,6 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_CONNECTIONS_CACHE);
             HTTPConnectionPools::instance().dropCache();
-            break;
-        }
-        case Type::PREWARM_MARK_CACHE:
-        {
-            prewarmMarkCache();
             break;
         }
         case Type::DROP_MARK_CACHE:
@@ -798,9 +786,9 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::WAIT_FAILPOINT:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
-            LOG_TRACE(log, "Waiting for failpoint {}", query.fail_point_name);
+            LOG_TRACE(log, "waiting for failpoint {}", query.fail_point_name);
             FailPointInjection::pauseFailPoint(query.fail_point_name);
-            LOG_TRACE(log, "Finished waiting for failpoint {}", query.fail_point_name);
+            LOG_TRACE(log, "finished failpoint {}", query.fail_point_name);
             break;
         }
         case Type::RESET_COVERAGE:
@@ -1028,7 +1016,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
                 {
                     ReplicatedTableStatus status;
                     storage_replicated->getStatus(status);
-                    if (status.replica_path == remote_replica_path)
+                    if (status.zookeeper_info.path == query.replica_zk_path)
                         throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED,
                                         "There is a local table {}, which has the same table path in ZooKeeper. "
                                         "Please check the path in query. "
@@ -1310,28 +1298,6 @@ RefreshTaskList InterpreterSystemQuery::getRefreshTasks()
     return tasks;
 }
 
-void InterpreterSystemQuery::prewarmMarkCache()
-{
-    if (table_id.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table is not specified for PREWARM MARK CACHE command");
-
-    getContext()->checkAccess(AccessType::SYSTEM_PREWARM_MARK_CACHE, table_id);
-
-    auto table_ptr = DatabaseCatalog::instance().getTable(table_id, getContext());
-    auto * merge_tree = dynamic_cast<MergeTreeData *>(table_ptr.get());
-
-    if (!merge_tree)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Command PREWARM MARK CACHE is supported only for MergeTree table, but got: {}", table_ptr->getName());
-
-    ThreadPool pool(
-        CurrentMetrics::MergeTreePartsLoaderThreads,
-        CurrentMetrics::MergeTreePartsLoaderThreadsActive,
-        CurrentMetrics::MergeTreePartsLoaderThreadsScheduled,
-        getContext()->getSettingsRef()[Setting::max_threads]);
-
-    merge_tree->prewarmMarkCache(pool);
-}
-
 
 AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() const
 {
@@ -1531,11 +1497,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::WAIT_LOADING_PARTS:
         {
             required_access.emplace_back(AccessType::SYSTEM_WAIT_LOADING_PARTS, query.getDatabase(), query.getTable());
-            break;
-        }
-        case Type::PREWARM_MARK_CACHE:
-        {
-            required_access.emplace_back(AccessType::SYSTEM_PREWARM_MARK_CACHE, query.getDatabase(), query.getTable());
             break;
         }
         case Type::SYNC_DATABASE_REPLICA:

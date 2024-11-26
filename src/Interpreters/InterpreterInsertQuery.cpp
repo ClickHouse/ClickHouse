@@ -121,7 +121,8 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
 
             if (current_context->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
-                header_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query.select, current_context, select_query_options);
+                InterpreterSelectQueryAnalyzer interpreter_select(query.select, current_context, select_query_options);
+                header_block = interpreter_select.getSampleBlock();
             }
             else
             {
