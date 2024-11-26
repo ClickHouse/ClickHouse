@@ -64,7 +64,6 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     },
     {"24.11",
         {
-            {"enable_http_compression", false, true, "Improvement for read-only clients since they can't change settings"},
             {"validate_mutation_query", false, true, "New setting to validate mutation queries by default."},
             {"enable_job_stack_trace", false, true, "Enable by default collecting stack traces from job's scheduling."},
             {"allow_suspicious_types_in_group_by", true, false, "Don't allow Variant/Dynamic types in GROUP BY by default"},
@@ -80,6 +79,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"backup_restore_finish_timeout_after_error_sec", 0, 180, "New setting."},
             {"query_plan_merge_filters", false, true, "Allow to merge filters in the query plan. This is required to properly support filter-push-down with a new analyzer."},
             {"parallel_replicas_local_plan", false, true, "Use local plan for local replica in a query with parallel replicas"},
+            {"allow_experimental_shared_set_join", 1, 0, "Disable a setting for ClickHouse Cloud"},
             {"merge_tree_use_v1_object_and_dynamic_serialization", true, false, "Add new serialization V2 version for JSON and Dynamic types"},
             {"min_joined_block_size_bytes", 524288, 524288, "New setting."},
             {"allow_experimental_bfloat16_type", false, false, "Add new experimental BFloat16 type"},
@@ -89,6 +89,9 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"s3_skip_empty_files", false, true, "We hope it will provide better UX"},
             {"filesystem_cache_boundary_alignment", 0, 0, "New setting"},
             {"push_external_roles_in_interserver_queries", false, false, "New setting."},
+            {"enable_variant_type", false, false, "Add alias to allow_experimental_variant_type"},
+            {"enable_dynamic_type", false, false, "Add alias to allow_experimental_dynamic_type"},
+            {"enable_json_type", false, false, "Add alias to allow_experimental_json_type"},
         }
     },
     {"24.10",

@@ -1800,7 +1800,7 @@ Possible values:
 
 - 0 — Disabled.
 - 1 — Enabled.
-)", 1) \
+)", 0) \
     DECLARE(Int64, http_zlib_compression_level, 3, R"(
 Sets the level of data compression in the response to an HTTP request if [enable_http_compression = 1](#enable_http_compression).
 
@@ -5735,6 +5735,16 @@ In `clickhouse-local` it is enabled by default and can be explicitly disabled.
 Enable pushing user roles from originator to other nodes while performing a query.
 )", 0) \
     \
+    DECLARE(Bool, allow_experimental_variant_type, false, R"(
+Allows creation of [Variant](../../sql-reference/data-types/variant.md) data type.
+)", BETA) ALIAS(enable_variant_type) \
+    DECLARE(Bool, allow_experimental_dynamic_type, false, R"(
+Allows creation of [Dynamic](../../sql-reference/data-types/dynamic.md) data type.
+)", BETA) ALIAS(enable_dynamic_type) \
+    DECLARE(Bool, allow_experimental_json_type, false, R"(
+Allows creation of [JSON](../../sql-reference/data-types/newjson.md) data type.
+)", BETA) ALIAS(enable_json_type) \
+    \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
@@ -5770,19 +5780,10 @@ Possible values:
     DECLARE(Bool, allow_experimental_vector_similarity_index, false, R"(
 Allow experimental vector similarity index
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_variant_type, false, R"(
-Allows creation of experimental [Variant](../../sql-reference/data-types/variant.md).
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_dynamic_type, false, R"(
-Allow Dynamic data type
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_json_type, false, R"(
-Allow JSON data type
-)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_codecs, false, R"(
 If it is set to true, allow to specify experimental compression codecs (but we don't have those yet and this option does nothing).
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_shared_set_join, true, R"(
+    DECLARE(Bool, allow_experimental_shared_set_join, false, R"(
 Only in ClickHouse Cloud. Allow to create ShareSet and SharedJoin
 )", EXPERIMENTAL) \
     DECLARE(UInt64, max_limit_for_ann_queries, 1'000'000, R"(
