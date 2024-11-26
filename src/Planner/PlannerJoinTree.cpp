@@ -1870,7 +1870,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
       */
     auto left_table_expression = table_expressions_stack.front();
     // find parent node in the table expressions stack
-    QueryTreeNodePtr parent_join_tree;
+    QueryTreeNodePtr parent_join_tree = join_tree_node;
     for (const auto & node : table_expressions_stack)
         if (node->getNodeType() == QueryTreeNodeType::JOIN || node->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
         {
