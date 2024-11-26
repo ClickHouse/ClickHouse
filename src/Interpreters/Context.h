@@ -89,7 +89,6 @@ class RefreshSet;
 class Cluster;
 class Compiler;
 class MarkCache;
-class PrimaryIndexCache;
 class PageCache;
 class MMappedFileCache;
 class UncompressedCache;
@@ -1077,11 +1076,6 @@ public:
     void clearMarkCache() const;
     ThreadPool & getLoadMarksThreadpool() const;
 
-    void setPrimaryIndexCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
-    void updatePrimaryIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
-    std::shared_ptr<PrimaryIndexCache> getPrimaryIndexCache() const;
-    void clearPrimaryIndexCache() const;
-
     void setIndexUncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
     void updateIndexUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<UncompressedCache> getIndexUncompressedCache() const;
@@ -1294,6 +1288,8 @@ public:
     /// Overrides values of existing parameters.
     void addQueryParameters(const NameToNameMap & parameters);
 
+    /// Add started bridge command. It will be killed after context destruction
+    void addBridgeCommand(std::unique_ptr<ShellCommand> cmd) const;
 
     IHostContextPtr & getHostContext();
     const IHostContextPtr & getHostContext() const;

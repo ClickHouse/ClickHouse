@@ -30,6 +30,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     MergeTreeIndexGranularityPtr index_granularity_ptr,
     TransactionID tid,
     bool reset_columns_,
+    bool save_marks_in_cache,
     bool blocks_are_granules_size,
     const WriteSettings & write_settings_)
     : IMergedBlockOutputStream(data_part->storage.getSettings(), data_part->getDataPartStoragePtr(), metadata_snapshot_, columns_list_, reset_columns_)
@@ -37,11 +38,6 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     , default_codec(default_codec_)
     , write_settings(write_settings_)
 {
-    /// Save marks in memory if prewarm is enabled to avoid re-reading marks file.
-    bool save_marks_in_cache = data_part->storage.getMarkCacheToPrewarm() != nullptr;
-    /// Save primary index in memory if cache is disabled or is enabled with prewarm to avoid re-reading primary index file.
-    bool save_primary_index_in_memory = !data_part->storage.getPrimaryIndexCache() || data_part->storage.getPrimaryIndexCacheToPrewarm();
-
     MergeTreeWriterSettings writer_settings(
         data_part->storage.getContext()->getSettingsRef(),
         write_settings,
@@ -49,7 +45,6 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         data_part->index_granularity_info.mark_type.adaptive,
         /* rewrite_primary_key = */ true,
         save_marks_in_cache,
-        save_primary_index_in_memory,
         blocks_are_granules_size);
 
     /// TODO: looks like isStoredOnDisk() is always true for MergeTreeDataPart
@@ -248,7 +243,7 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
 
     new_part->rows_count = rows_count;
     new_part->modification_time = time(nullptr);
-
+    new_part->setIndex(writer->releaseIndexColumns());
     new_part->checksums = checksums;
     new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
     new_part->setBytesUncompressedOnDisk(checksums.getTotalSizeUncompressedOnDisk());
@@ -260,9 +255,6 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
         if (auto new_index_granularity = new_part->index_granularity->optimize())
             new_part->index_granularity = std::move(new_index_granularity);
     }
-
-    if (auto computed_index = writer->releaseIndexColumns())
-        new_part->setIndex(std::move(*computed_index));
 
     /// In mutation, existing_rows_count is already calculated in PartMergerWriter
     /// In merge situation, lightweight deleted rows was physically deleted, existing_rows_count equals rows_count

@@ -21,7 +21,7 @@ from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
-TIMEOUT = 60 * 5
+TIMEOUT = 60
 NO_CHANGES_MSG = "Nothing to run"
 s3 = S3Helper()
 
@@ -286,15 +286,7 @@ def main():
         retcode = process.wait()
         if retcode == 0:
             logging.info("Run successfully")
-            if (
-                pr_info.number == 0
-                and pr_info.base_ref == "master"
-                and pr_info.head_ref == "master"
-            ):
-                logging.info("Uploading corpus - running in master")
-                upload_corpus(fuzzers_path)
-            else:
-                logging.info("Not uploading corpus - running in PR")
+            upload_corpus(fuzzers_path)
         else:
             logging.info("Run failed")
 

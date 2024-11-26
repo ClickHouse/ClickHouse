@@ -1,4 +1,4 @@
-#include <Common/ZooKeeper/KeeperFeatureFlags.h>
+#include <Coordination/KeeperFeatureFlags.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>

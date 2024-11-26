@@ -25,6 +25,7 @@ public:
         MergeTreeIndexGranularityPtr index_granularity_ptr,
         TransactionID tid,
         bool reset_columns_ = false,
+        bool save_marks_in_cache = false,
         bool blocks_are_granules_size = false,
         const WriteSettings & write_settings = {});
 

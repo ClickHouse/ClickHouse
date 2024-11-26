@@ -68,7 +68,9 @@ def _update_workflow_with_native_jobs(workflow):
         print(f"Enable native job [{_docker_build_job.name}] for [{workflow.name}]")
         aux_job = copy.deepcopy(_docker_build_job)
         if workflow.enable_cache:
-            print(f"Add automatic digest config for [{aux_job.name}] job")
+            print(
+                f"Add automatic digest config for [{aux_job.name}] job since cache is enabled"
+            )
             docker_digest_config = Job.CacheDigestConfig()
             for docker_config in workflow.dockers:
                 docker_digest_config.include_paths.append(docker_config.path)

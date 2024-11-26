@@ -110,7 +110,7 @@ def main():
             f"clickhouse-server --version",
         ]
         results.append(
-            Result.from_commands_run(
+            Result.create_from_command_execution(
                 name="Install ClickHouse", command=commands, with_log=True
             )
         )
@@ -131,10 +131,6 @@ def main():
         )
         res = res and CH.start()
         res = res and CH.wait_ready()
-        # TODO: Use --database-replicated optionally
-        res = res and Shell.check(
-            f"./ci/jobs/scripts/functional_tests/setup_ch_cluster.sh"
-        )
         if res:
             print("ch started")
         logs_to_attach += [
@@ -154,10 +150,6 @@ def main():
         stop_watch_ = Utils.Stopwatch()
         step_name = "Tests"
         print(step_name)
-
-        # TODO: fix tests dependent on this and remove:
-        os.environ["CLICKHOUSE_TMP"] = "tests/queries/1_stateful"
-
         # assert Shell.check("clickhouse-client -q \"insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')\"", verbose=True)
         run_test(
             no_parallel=no_parallel,

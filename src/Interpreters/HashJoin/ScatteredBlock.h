@@ -302,11 +302,10 @@ struct ScatteredBlock : private boost::noncopyable
     /// Cut first `num_rows` rows from `block` in place and returns block with remaining rows
     ScatteredBlock cut(size_t num_rows)
     {
+        SCOPE_EXIT(filterBySelector());
+
         if (num_rows >= rows())
-        {
-            filterBySelector();
             return ScatteredBlock{Block{}};
-        }
 
         chassert(block);
 
@@ -315,7 +314,6 @@ struct ScatteredBlock : private boost::noncopyable
         auto remaining = ScatteredBlock{block, std::move(remaining_selector)};
 
         selector = std::move(first_num_rows);
-        filterBySelector();
 
         return remaining;
     }
