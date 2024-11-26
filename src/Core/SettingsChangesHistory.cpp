@@ -80,6 +80,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"query_plan_merge_filters", false, true, "Allow to merge filters in the query plan. This is required to properly support filter-push-down with a new analyzer."},
             {"parallel_replicas_local_plan", false, true, "Use local plan for local replica in a query with parallel replicas"},
             {"allow_experimental_shared_set_join", 1, 0, "Disable a setting for ClickHouse Cloud"},
+            {"merge_tree_use_v1_object_and_dynamic_serialization", true, false, "Add new serialization V2 version for JSON and Dynamic types"},
             {"min_joined_block_size_bytes", 524288, 524288, "New setting."},
             {"allow_experimental_bfloat16_type", false, false, "Add new experimental BFloat16 type"},
             {"filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit", 1, 1, "Rename of setting skip_download_if_exceeds_query_cache_limit"},
