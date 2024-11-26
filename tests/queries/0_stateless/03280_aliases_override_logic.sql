@@ -1,14 +1,14 @@
 SELECT b FROM
 (
     SELECT number, number*2
-    FROM numbers(2) (a, b)
-) as x;
+    FROM numbers(2)
+) as x (a, b);
 
 SELECT a FROM
 (
     SELECT number, number*2
-    FROM numbers(2) (a, b)
-) as x;
+    FROM numbers(2)
+) as x (a, b);
 
 SELECT a FROM
 (
