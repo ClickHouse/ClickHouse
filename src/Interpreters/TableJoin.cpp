@@ -744,7 +744,7 @@ static std::optional<ActionsDAG> changeKeyTypes(const ColumnsWithTypeAndName & c
         /* result= */ cols_dst,
         /* mode= */ ActionsDAG::MatchColumnsMode::Name,
         /* ignore_constant_values= */ true,
-        /* add_casted_columns= */ add_new_cols,
+        /* add_cast_columns= */ add_new_cols,
         /* new_names= */ &key_column_rename);
 }
 
@@ -771,7 +771,7 @@ static std::optional<ActionsDAG> changeTypesToNullable(
         /* result= */ cols_dst,
         /* mode= */ ActionsDAG::MatchColumnsMode::Name,
         /* ignore_constant_values= */ true,
-        /* add_casted_columns= */ false,
+        /* add_cast_columns= */ false,
         /* new_names= */ nullptr);
 }
 

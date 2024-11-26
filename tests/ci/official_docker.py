@@ -299,8 +299,6 @@ class TagAttrs:
 
     # Only one latest can exist
     latest: ClickHouseVersion
-    # Only one can be a major one (the most fresh per a year)
-    majors: Dict[int, ClickHouseVersion]
     # Only one lts version can exist
     lts: Optional[ClickHouseVersion]
 
@@ -345,14 +343,6 @@ def ldf_tags(version: ClickHouseVersion, distro: str, tag_attrs: TagAttrs) -> st
             tags.append("lts")
         tags.append(f"lts-{distro}")
 
-    # If the tag `22`, `23`, `24` etc. should be included in the tags
-    with_major = tag_attrs.majors.get(version.major) in (None, version)
-    if with_major:
-        tag_attrs.majors[version.major] = version
-        if without_distro:
-            tags.append(f"{version.major}")
-        tags.append(f"{version.major}-{distro}")
-
     # Add all normal tags
     for tag in (
         f"{version.major}.{version.minor}",
@@ -384,7 +374,7 @@ def generate_ldf(args: argparse.Namespace) -> None:
         args.directory / git_runner(f"git -C {args.directory} rev-parse --show-cdup")
     ).absolute()
     lines = ldf_header(git, directory)
-    tag_attrs = TagAttrs(versions[-1], {}, None)
+    tag_attrs = TagAttrs(versions[-1], None)
 
     # We iterate from the most recent to the oldest version
     for version in reversed(versions):

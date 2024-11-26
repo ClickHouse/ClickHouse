@@ -10,6 +10,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
+#include <Core/DecimalFunctions.h>
 #include <Interpreters/castColumn.h>
 
 #include <Common/DateLUT.h>

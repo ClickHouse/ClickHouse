@@ -876,4 +876,28 @@ void AccessControl::allowAllSettings()
     custom_settings_prefixes->registerPrefixes({""});
 }
 
+void AccessControl::setAllowTierSettings(UInt32 value)
+{
+    allow_experimental_tier_settings = value == 0;
+    allow_beta_tier_settings = value <= 1;
+}
+
+UInt32 AccessControl::getAllowTierSettings() const
+{
+    if (allow_experimental_tier_settings)
+        return 0;
+    if (allow_beta_tier_settings)
+        return 1;
+    return 2;
+}
+
+bool AccessControl::getAllowExperimentalTierSettings() const
+{
+    return allow_experimental_tier_settings;
+}
+
+bool AccessControl::getAllowBetaTierSettings() const
+{
+    return allow_beta_tier_settings;
+}
 }
