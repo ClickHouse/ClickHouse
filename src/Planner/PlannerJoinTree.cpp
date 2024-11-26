@@ -667,6 +667,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
     bool is_single_table_expression,
     bool wrap_read_columns_in_subquery)
 {
+    // LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "\n{}", StackTrace().toString());
+
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
 
@@ -691,6 +693,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
     if (table_node || table_function_node)
     {
+        // if (table_node)
+        //     LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "table_expression={} parent={}\n{}", table_node->getStorageID().getTableName(), parent_join_tree->getNodeTypeName(), parent_join_tree->dumpTree());
+
         const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
         const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
 
@@ -912,6 +917,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 /// It is just a safety check needed until we have a proper sending plan to replicas.
                 /// If we have a non-trivial storage like View it might create its own Planner inside read(), run findTableForParallelReplicas()
                 /// and find some other table that might be used for reading with parallel replicas. It will lead to errors.
+                // chassert(planner_context->getGlobalPlannerContext()->parallel_replicas_table == nullptr);
                 const bool no_tables_or_another_table_chosen_for_reading_with_parallel_replicas_mode
                     = query_context->canUseParallelReplicasOnFollower()
                     && table_node != planner_context->getGlobalPlannerContext()->parallel_replicas_table;
@@ -1863,9 +1869,18 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
       * Examples: Distributed, LiveView, Merge storages.
       */
     auto left_table_expression = table_expressions_stack.front();
+    // find parent node in the table expressions stack
+    QueryTreeNodePtr parent_join_tree;
+    for (const auto & node : table_expressions_stack)
+        if (node->getNodeType() == QueryTreeNodeType::JOIN || node->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
+        {
+            parent_join_tree = node;
+            break;
+        }
+
     auto left_table_expression_query_plan = buildQueryPlanForTableExpression(
         left_table_expression,
-        join_tree_node,
+        parent_join_tree,
         select_query_info,
         select_query_options,
         planner_context,
@@ -1936,13 +1951,25 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
                 continue;
             }
 
+            // find parent node
+            parent_join_tree.reset();
+            for (size_t j = i + 1; j < table_expressions_stack.size(); ++j)
+            {
+                const auto & node = table_expressions_stack[j];
+                if (node->getNodeType() == QueryTreeNodeType::JOIN || node->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
+                {
+                    parent_join_tree = node;
+                    break;
+                }
+            }
+
             /** If table expression is remote and it is not left most table expression, we wrap read columns from such
               * table expression in subquery.
               */
             bool is_remote = planner_context->getTableExpressionDataOrThrow(table_expression).isRemote();
             query_plans_stack.push_back(buildQueryPlanForTableExpression(
                 table_expression,
-                join_tree_node,
+                parent_join_tree,
                 select_query_info,
                 select_query_options,
                 planner_context,
