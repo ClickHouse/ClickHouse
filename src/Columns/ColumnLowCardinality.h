@@ -190,6 +190,26 @@ public:
             callback(dictionary.getColumnUniquePtr());
     }
 
+    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override
+    {
+        /** It is important to have both const and non-const versions here.
+          * The behavior of ColumnUnique::forEachSubcolumnRecursively differs between const and non-const versions.
+          * The non-const version will update a field in ColumnUnique.
+          * In the meantime, the default implementation IColumn::forEachSubcolumnRecursively uses const_cast,
+          * so when the const version is called, the field will still be mutated.
+          * This can lead to a data race if constness is expected.
+          */
+        callback(*idx.getPositionsPtr());
+        idx.getPositionsPtr()->forEachSubcolumnRecursively(callback);
+
+        /// Column doesn't own dictionary if it's shared.
+        if (!dictionary.isShared())
+        {
+            callback(*dictionary.getColumnUniquePtr());
+            dictionary.getColumnUniquePtr()->forEachSubcolumnRecursively(callback);
+        }
+    }
+
     void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
     {
         callback(*idx.getPositionsPtr());
@@ -389,6 +409,11 @@ private:
     int compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator * collator=nullptr) const;
 
     void getPermutationImpl(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability, size_t limit, int nan_direction_hint, Permutation & res, const Collator * collator = nullptr) const;
+
+    template <typename IndexColumn>
+    void updatePermutationWithIndexType(
+        IColumn::PermutationSortStability stability, size_t limit, const PaddedPODArray<UInt64> & position_by_index,
+        IColumn::Permutation & res, EqualRanges & equal_ranges) const;
 };
 
 bool isColumnLowCardinalityNullable(const IColumn & column);
