@@ -68,7 +68,7 @@ protected:
         const auto & part_name_column = StorageMergeTreeIndex::part_name_column;
         const auto & mark_number_column = StorageMergeTreeIndex::mark_number_column;
         const auto & rows_in_granule_column = StorageMergeTreeIndex::rows_in_granule_column;
-        IMergeTreeDataPart::Index index_ptr;
+        IMergeTreeDataPart::IndexPtr index_ptr;
 
         Columns result_columns(num_columns);
         for (size_t pos = 0; pos < num_columns; ++pos)
