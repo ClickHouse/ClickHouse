@@ -93,7 +93,7 @@ inline static const Patterns & selectPatternsForMetricType(const Graphite::Param
     if (params.patterns_typed)
     {
         std::string_view path_view = path;
-        if (path_view.find("?"sv) == std::string::npos)
+        if (!path_view.contains("?"sv))
             return params.patterns_plain;
         return params.patterns_tagged;
     }

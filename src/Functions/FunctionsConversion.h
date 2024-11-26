@@ -2473,8 +2473,7 @@ public:
 
             if (!isStringOrFixedString(arguments[0].type))
             {
-                if (this->getName().find("OrZero") != std::string::npos ||
-                    this->getName().find("OrNull") != std::string::npos)
+                if (this->getName().contains("OrZero") || this->getName().contains("OrNull"))
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}. "
                             "Conversion functions with postfix 'OrZero' or 'OrNull' should take String argument",
                             arguments[0].type->getName(), getName());
