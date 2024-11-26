@@ -32,8 +32,6 @@ Checks: [
   '-bugprone-crtp-constructor-accessibility',
 
   '-cert-dcl16-c',
-  '-cert-dcl37-c',
-  '-cert-dcl51-cpp',
   '-cert-err58-cpp',
   '-cert-msc32-c',
   '-cert-msc51-cpp',
