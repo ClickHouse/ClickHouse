@@ -213,8 +213,6 @@ clickhouse_program_install(clickhouse-disks disks)
 clickhouse_program_install(clickhouse-extract-from-config extract-from-config)
 clickhouse_program_install(clickhouse-format format)
 clickhouse_program_install(clickhouse-git-import git-import)
-clickhouse_program_install(clickhouse-keeper-bench keeper-bench)
-clickhouse_program_install(clickhouse-keeper-data-dumper keeper-data-dumper)
 clickhouse_program_install(clickhouse-local local chl ch)
 clickhouse_program_install(clickhouse-obfuscator obfuscator)
 clickhouse_program_install(clickhouse-server server)
@@ -222,6 +220,14 @@ clickhouse_program_install(clickhouse-static-files-disk-uploader static-files-di
 clickhouse_program_install(clickhouse-su su)
 clickhouse_program_install(clickhouse-zookeeper-dump-tree zookeeper-dump-tree)
 clickhouse_program_install(clickhouse-zookeeper-remove-by-list zookeeper-remove-by-list)
+
+if (TARGET ch_contrib::nuraft)
+    clickhouse_program_install(clickhouse-keeper-data-dumper keeper-data-dumper)
+endif ()
+
+if (TARGET ch_contrib::rapidjson)
+    clickhouse_program_install(clickhouse-keeper-bench keeper-bench)
+endif ()
 
 if (ENABLE_CLICKHOUSE_KEEPER)
     if (NOT BUILD_STANDALONE_KEEPER AND CREATE_KEEPER_SYMLINK)
