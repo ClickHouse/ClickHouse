@@ -165,10 +165,8 @@ If the query omits the `DISTINCT`, `GROUP BY` and `ORDER BY` clauses and the `IN
 - `max_bytes_in_join`
 - `max_bytes_before_external_sort`
 - `max_bytes_ratio_before_external_sort`
-- `max_bytes_ratio_before_external_sort_for_server`
 - `max_bytes_before_external_group_by`
 - `max_bytes_ratio_before_external_group_by`
-- `max_bytes_ratio_before_external_group_by_for_server`
 
 For more information, see the section “Settings”. It is possible to use external sorting (saving temporary tables to a disk) and external aggregation.
 

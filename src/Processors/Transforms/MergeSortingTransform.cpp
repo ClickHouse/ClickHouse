@@ -1,7 +1,6 @@
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
-#include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
@@ -22,21 +21,6 @@ namespace ProfileEvents
     extern const Event ExternalSortUncompressedBytes;
     extern const Event ExternalProcessingCompressedBytesTotal;
     extern const Event ExternalProcessingUncompressedBytesTotal;
-}
-
-
-namespace
-{
-
-std::pair<Int64, Int64> getCurrentQueryMemoryUsageAndLimit()
-{
-    /// Use query-level memory tracker
-    if (auto * memory_tracker_child = DB::CurrentThread::getMemoryTracker())
-        if (auto * memory_tracker = memory_tracker_child->getParent())
-            return std::make_pair(memory_tracker->get(), memory_tracker->getHardLimit());
-    return std::make_pair(0, 0);
-}
-
 }
 
 
@@ -110,8 +94,6 @@ MergeSortingTransform::MergeSortingTransform(
     size_t max_bytes_before_remerge_,
     double remerge_lowered_memory_bytes_ratio_,
     size_t max_bytes_before_external_sort_,
-    double max_bytes_ratio_before_external_sort_,
-    double max_bytes_ratio_before_external_sort_for_server_,
     TemporaryDataOnDiskScopePtr tmp_data_,
     size_t min_free_disk_space_)
     : SortingTransform(header, description_, max_merged_block_size_, limit_, increase_sort_description_compile_attempts)
@@ -119,8 +101,6 @@ MergeSortingTransform::MergeSortingTransform(
     , remerge_lowered_memory_bytes_ratio(remerge_lowered_memory_bytes_ratio_)
     , max_bytes_before_external_sort(max_bytes_before_external_sort_)
     , tmp_data(std::move(tmp_data_))
-    , max_bytes_ratio_before_external_sort(max_bytes_ratio_before_external_sort_)
-    , max_bytes_ratio_before_external_sort_for_server(max_bytes_ratio_before_external_sort_for_server_)
     , min_free_disk_space(min_free_disk_space_)
     , max_block_bytes(max_block_bytes_)
 {
@@ -194,33 +174,7 @@ void MergeSortingTransform::consume(Chunk chunk)
       *  will merge blocks that we have in memory at this moment and write merged stream to temporary (compressed) file.
       * NOTE. It's possible to check free space in filesystem.
       */
-    bool external_sort = max_bytes_before_external_sort && sum_bytes_in_blocks > max_bytes_before_external_sort;
-    if (!external_sort && max_bytes_ratio_before_external_sort > 0.)
-    {
-        auto [current_memory_usage, memory_limit] = getCurrentQueryMemoryUsageAndLimit();
-        if (memory_limit > 0 && current_memory_usage > memory_limit * max_bytes_ratio_before_external_sort)
-        {
-            external_sort = true;
-            LOG_TEST(log, "Use external sort due to max_bytes_ratio_before_external_sort reached. Current memory usage is {} (> {}*{})",
-                formatReadableSizeWithBinarySuffix(current_memory_usage),
-                formatReadableSizeWithBinarySuffix(memory_limit),
-                max_bytes_ratio_before_external_sort);
-        }
-    }
-    if (!external_sort && max_bytes_ratio_before_external_sort_for_server > 0.)
-    {
-        auto server_memory_usage = total_memory_tracker.get();
-        auto server_memory_limit = total_memory_tracker.getHardLimit();
-        if (server_memory_limit > 0 && server_memory_usage > server_memory_limit * max_bytes_ratio_before_external_sort_for_server)
-        {
-            external_sort = true;
-            LOG_TEST(log, "Use external sort due to max_bytes_ratio_before_external_sort_for_server reached. Current server memory usage is {} (> {}*{})",
-                formatReadableSizeWithBinarySuffix(server_memory_usage),
-                formatReadableSizeWithBinarySuffix(server_memory_limit),
-                max_bytes_ratio_before_external_sort_for_server);
-        }
-    }
-    if (external_sort)
+    if (max_bytes_before_external_sort && sum_bytes_in_blocks > max_bytes_before_external_sort)
     {
         if (!tmp_data)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "TemporaryDataOnDisk is not set for MergeSortingTransform");

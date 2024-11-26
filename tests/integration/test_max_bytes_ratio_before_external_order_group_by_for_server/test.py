@@ -5,13 +5,11 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-# Nodes that allows to use only 10Gi of RAM
-node1 = cluster.add_instance("node1", main_configs=["config.d/memory_overrides.yaml"])
-# In addition to 10Gi RAM limitation, this node configured to use external
-# GROUP BY/ORDER BY when used memory reaches threshold
-node2 = cluster.add_instance(
-    "node2",
-    main_configs=["config.d/memory_overrides.yaml", "config.d/ratio_overrides.yaml"],
+node_server = cluster.add_instance(
+    "node_server", main_configs=["config.d/memory_overrides.yaml"]
+)
+node_user = cluster.add_instance(
+    "node_user", user_configs=["users.d/memory_overrides.yaml"]
 )
 
 
@@ -24,8 +22,15 @@ def start_cluster():
         cluster.shutdown()
 
 
-def test_max_bytes_ratio_before_external_group_by_for_server():
-    if node1.is_built_with_thread_sanitizer():
+@pytest.mark.parametrize(
+    "node",
+    [
+        pytest.param(node_server, id="server"),
+        pytest.param(node_user, id="user"),
+    ],
+)
+def test_max_bytes_ratio_before_external_group_by(node):
+    if node.is_built_with_thread_sanitizer():
         pytest.skip("TSan build is skipped due to memory overhead")
 
     # Peak memory usage: 15-16GiB
@@ -35,18 +40,28 @@ def test_max_bytes_ratio_before_external_group_by_for_server():
         uniqExact((number,number))
     FROM numbers(100e6) GROUP BY (number%1000)::String FORMAT Null
     """
+
     settings = {
         "max_bytes_before_external_group_by": 0,
-        "max_bytes_ratio_before_external_group_by": 0,
         "max_memory_usage": "0",
+        "max_bytes_ratio_before_external_group_by": 0.3,
     }
+    node.query(query, settings=settings)
+
+    settings["max_bytes_ratio_before_external_group_by"] = 0
     with pytest.raises(QueryRuntimeException):
-        node1.query(query, settings=settings)
-    node2.query(query, settings=settings)
+        node.query(query, settings=settings)
 
 
-def test_max_bytes_ratio_before_external_sort_for_server():
-    if node1.is_built_with_thread_sanitizer():
+@pytest.mark.parametrize(
+    "node",
+    [
+        pytest.param(node_server, id="server"),
+        pytest.param(node_user, id="user"),
+    ],
+)
+def test_max_bytes_ratio_before_external_sort(node):
+    if node.is_built_with_thread_sanitizer():
         pytest.skip("TSan build is skipped due to memory overhead")
 
     # Peak memory usage: 12GiB (each column in ORDER BY eats ~2GiB)
@@ -59,11 +74,14 @@ def test_max_bytes_ratio_before_external_sort_for_server():
         (number+4)::String
     ) FORMAT Null
     """
+
     settings = {
         "max_bytes_before_external_sort": 0,
-        "max_bytes_ratio_before_external_sort": 0,
         "max_memory_usage": "0",
+        "max_bytes_ratio_before_external_sort": 0.3,
     }
+    node.query(query, settings=settings)
+
+    settings["max_bytes_ratio_before_external_sort"] = 0
     with pytest.raises(QueryRuntimeException):
-        node1.query(query, settings=settings)
-    node2.query(query, settings=settings)
+        node.query(query, settings=settings)

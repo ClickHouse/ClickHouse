@@ -29,8 +29,6 @@ public:
         size_t max_bytes_before_remerge_,
         double remerge_lowered_memory_bytes_ratio_,
         size_t max_bytes_before_external_sort_,
-        double max_bytes_ratio_before_external_sort_,
-        double max_bytes_ratio_before_external_sort_for_server_,
         TemporaryDataOnDiskScopePtr tmp_data_,
         size_t min_free_disk_space_);
 
@@ -47,10 +45,8 @@ private:
     size_t max_bytes_before_remerge;
     double remerge_lowered_memory_bytes_ratio;
     size_t max_bytes_before_external_sort;
-    size_t temporary_files_num = 0;
     TemporaryDataOnDiskScopePtr tmp_data;
-    double max_bytes_ratio_before_external_sort;
-    double max_bytes_ratio_before_external_sort_for_server;
+    size_t temporary_files_num = 0;
     size_t min_free_disk_space;
     size_t max_block_bytes;
 

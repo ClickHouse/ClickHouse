@@ -1,3 +1,0 @@
----
-max_bytes_ratio_before_external_sort_for_server: 0.3
-max_bytes_ratio_before_external_group_by_for_server: 0.3

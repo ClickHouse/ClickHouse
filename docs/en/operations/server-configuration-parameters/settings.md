@@ -481,26 +481,6 @@ Type: Double
 
 Default: 0.9
 
-## max_bytes_ratio_before_external_group_by_for_server
-
-Ratio of used server memory (with respect to `max_server_memory_usage`) for
-automatically enable `GROUP BY` in external memory.
-
-For example, if set to `0.6`, `GROUP BY` in external memory will be used once
-server memory usage reaches `60%`.
-
-Default value: `0.0`.
-
-## max_bytes_ratio_before_external_sort_for_server
-
-Ratio of used server memory (with respect to `max_server_memory_usage`) for
-automatically enable `ORDER BY` in external memory.
-
-For example, if set to `0.6`, `ORDER BY` in external memory will be used once
-server memory usage reaches `60%`.
-
-Default value: `0.0`.
-
 ## max_build_vector_similarity_index_thread_pool_size {#server_configuration_parameters_max_build_vector_similarity_index_thread_pool_size}
 
 The maximum number of threads to use for building vector indexes. 0 means all cores.

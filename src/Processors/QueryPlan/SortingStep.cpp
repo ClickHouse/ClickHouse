@@ -8,9 +8,9 @@
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/QueryPlan/BufferChunksTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Common/JSONBuilder.h>
 #include <Core/Settings.h>
-#include <Core/ServerSettings.h>
 
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/ScatterByPartitionTransform.h>
@@ -38,31 +38,42 @@ namespace Setting
     extern const SettingsFloat remerge_sort_lowered_memory_bytes_ratio;
     extern const SettingsOverflowMode sort_overflow_mode;
 }
-namespace ServerSetting
-{
-    extern const ServerSettingsDouble max_bytes_ratio_before_external_sort_for_server;
-}
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 SortingStep::Settings::Settings(const Context & context)
 {
     const auto & settings = context.getSettingsRef();
-    const auto & server_settings = context.getServerSettings();
     max_block_size = settings[Setting::max_block_size];
     size_limits = SizeLimits(settings[Setting::max_rows_to_sort], settings[Setting::max_bytes_to_sort], settings[Setting::sort_overflow_mode]);
     max_bytes_before_remerge = settings[Setting::max_bytes_before_remerge_sort];
     remerge_lowered_memory_bytes_ratio = settings[Setting::remerge_sort_lowered_memory_bytes_ratio];
     max_bytes_before_external_sort = settings[Setting::max_bytes_before_external_sort];
-    max_bytes_ratio_before_external_sort = settings[Setting::max_bytes_ratio_before_external_sort];
-    max_bytes_ratio_before_external_sort_for_server = server_settings[ServerSetting::max_bytes_ratio_before_external_sort_for_server];
     tmp_data = context.getTempDataOnDisk();
     min_free_disk_space = settings[Setting::min_free_disk_space_for_temporary_data];
     max_block_bytes = settings[Setting::prefer_external_sort_block_bytes];
     read_in_order_use_buffering = settings[Setting::read_in_order_use_buffering];
+
+    if (settings[Setting::max_bytes_ratio_before_external_sort] != 0.)
+    {
+        if (settings[Setting::max_bytes_before_external_sort] > 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings max_bytes_ratio_before_external_sort and max_bytes_before_external_sort cannot be set simultaneously");
+
+        double ratio = settings[Setting::max_bytes_ratio_before_external_sort];
+        if (ratio < 0 || ratio >= 1.)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_sort should be >= 0 and < 1 ({})", ratio);
+
+        UInt64 available_system_memory = getMostStrictAvailableSystemMemory();
+        max_bytes_before_external_sort = static_cast<size_t>(available_system_memory * ratio);
+        LOG_TEST(getLogger("SortingStep"), "Set max_bytes_before_external_sort={} (ratio: {}, available system memory: {})",
+            formatReadableSizeWithBinarySuffix(max_bytes_before_external_sort),
+            ratio,
+            formatReadableSizeWithBinarySuffix(available_system_memory));
+    }
 }
 
 SortingStep::Settings::Settings(size_t max_block_size_)
@@ -94,7 +105,7 @@ SortingStep::SortingStep(
     , limit(limit_)
     , sort_settings(settings_)
 {
-    if ((sort_settings.max_bytes_before_external_sort || sort_settings.max_bytes_ratio_before_external_sort > 0. || sort_settings.max_bytes_ratio_before_external_sort_for_server > 0.) && sort_settings.tmp_data == nullptr)
+    if (sort_settings.max_bytes_before_external_sort && sort_settings.tmp_data == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary data storage for external sorting is not provided");
 }
 
@@ -305,8 +316,6 @@ void SortingStep::mergeSorting(
                 sort_settings.max_bytes_before_remerge / pipeline.getNumStreams(),
                 sort_settings.remerge_lowered_memory_bytes_ratio,
                 sort_settings.max_bytes_before_external_sort,
-                sort_settings.max_bytes_ratio_before_external_sort,
-                sort_settings.max_bytes_ratio_before_external_sort_for_server,
                 std::move(tmp_data_on_disk),
                 sort_settings.min_free_disk_space);
         });
