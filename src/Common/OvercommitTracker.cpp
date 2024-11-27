@@ -119,9 +119,8 @@ void OvercommitTracker::tryContinueQueryExecutionAfterFree(Int64 amount)
         std::shared_lock read_lock(overcommit_m);
         if (cancellation_state == QueryCancellationState::NONE)
             return;
+        read_lock.unlock();
     }
-
-    read_lock.unlock();
 
     std::lock_guard lk(overcommit_m);
     if (cancellation_state != QueryCancellationState::NONE)
@@ -140,9 +139,8 @@ void OvercommitTracker::onQueryStop(MemoryTracker * tracker)
         std::shared_lock read_lock(overcommit_m);
         if (picked_tracker != tracker)
             return;
+        read_lock.unlock();
     }
-
-    read_lock.unlock();
 
     std::lock_guard lk(overcommit_m);
     if (picked_tracker == tracker)
@@ -150,7 +148,6 @@ void OvercommitTracker::onQueryStop(MemoryTracker * tracker)
         reset();
         cv.notify_all();
     }
-
 }
 
 void OvercommitTracker::releaseThreads()
