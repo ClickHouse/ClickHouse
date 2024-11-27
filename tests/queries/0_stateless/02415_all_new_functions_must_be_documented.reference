@@ -364,6 +364,7 @@ in
 inIgnoreSet
 indexHint
 indexOf
+indexOfAssumeSorted
 initcap
 initcapUTF8
 initialQueryID
