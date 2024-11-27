@@ -1,9 +1,9 @@
 from dataclasses import dataclass
 from typing import Dict, List
 
-from praktika.cache import Cache
-from praktika.settings import Settings
-from praktika.utils import MetaClasses, Utils
+from .cache import Cache
+from .settings import Settings
+from .utils import MetaClasses, Utils
 
 
 @dataclass
