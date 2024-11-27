@@ -1,0 +1,8 @@
+<test>
+    <query>SELECT sparseGrams(randomString(500))</query>
+    <query>SELECT sparseGrams(randomString(500), 5)</query>
+    <query>SELECT sparseGrams(randomString(700), 100)</query>
+    <query>SELECT sparseGramsUTF8(randomString(500))</query>
+    <query>SELECT sparseGramsUTF8(randomString(500), 5)</query>
+    <query>SELECT sparseGramsUTF8(randomString(700), 100)</query>
+</test>
