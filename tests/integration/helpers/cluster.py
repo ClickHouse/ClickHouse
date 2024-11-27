@@ -17,6 +17,8 @@ import time
 import traceback
 import urllib.parse
 import shlex
+from typing import List
+
 import urllib3
 import requests
 
