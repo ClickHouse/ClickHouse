@@ -1,5 +1,6 @@
 #pragma once
 #include <cstddef>
+#include <type_traits>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -14,6 +15,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
+#include "Common/FieldVisitors.h"
 #include "Common/Logger.h"
 #include "Common/logger_useful.h"
 #include <Common/FieldVisitorsAccurateComparison.h>
@@ -115,15 +117,25 @@ private:
         return 0 == left.compareAt(i, RightArgIsConstant ? 0 : j, right, 1);
     }
 
-    static constexpr bool less(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t) noexcept
+    static bool compare(const Array & arr, const Field& rhs, size_t pos, size_t)
+    {
+        return applyVisitor(FieldVisitorAccurateEquals(), arr[pos], rhs);
+    }
+
+    static constexpr bool lessOrEqual(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t) noexcept
     {
         return left[i] >= right;
     }
 
-    static constexpr bool less(const IColumn & left, const Result & right, size_t i, size_t) noexcept { return left[i] >= right; }
+    static constexpr bool lessOrEqual(const IColumn & left, const Result & right, size_t i, size_t) noexcept { return left[i] >= right; }
+
+    static constexpr bool lessOrEqual(const Array& arr, const Field& rhs, size_t pos, size_t) noexcept {
+        return applyVisitor(FieldVisitorAccurateLessOrEqual(), rhs, arr[pos]);
+    }
 
 #pragma clang diagnostic pop
 
+public:
     /** Assuming that the array is sorted, use a binary search */
     template <typename Data, typename Target>
     static constexpr ResultType lowerBound(const Data & data, const Target & target, size_t array_size, ArrOffset current_offset)
@@ -133,7 +145,7 @@ private:
         while (high - low > 0)
         {
             auto middle = low + ((high - low) >> 1);
-            auto compare_result = less(data, target, current_offset + middle, 0);
+            auto compare_result = lessOrEqual(data, target, current_offset + middle, 0);
             /// avoid conditional branching
             high = compare_result ? middle : high;
             low = compare_result ? low : middle + 1;
@@ -187,6 +199,22 @@ private:
         return current;
     }
 
+    static ResultType linearSearchConst(const Array & arr, const Field& value) {
+        ResultType current = 0;
+        for (size_t i = 0, size = arr.size(); i < size; ++i)
+        {
+            if (!applyVisitor(FieldVisitorAccurateEquals(), arr[i], value))
+                continue;
+
+            ConcreteAction::apply(current, i);
+
+            if constexpr (!ConcreteAction::resume_execution)
+                break;
+        }
+        return current;
+    }
+
+private:
     /** Looking for the target element index in the data (array) */
     template <size_t Case, typename Data, typename Target>
     static constexpr ResultType getIndex(
@@ -920,18 +948,12 @@ private:
 
         if (isColumnConst(*item_arg))
         {
-            ResultType current = 0;
+            ResultType current;
             const auto & value = (*item_arg)[0];
-
-            for (size_t i = 0, size = arr.size(); i < size; ++i)
-            {
-                if (!applyVisitor(FieldVisitorAccurateEquals(), arr[i], value))
-                    continue;
-
-                ConcreteAction::apply(current, i);
-
-                if constexpr (!ConcreteAction::resume_execution)
-                    break;
+            if constexpr (std::is_same_v<ConcreteAction, IndexOfAssumeSorted>) {
+                current = Impl::Main<ConcreteAction, true>::lowerBound(arr, value, arr.size(), 0);
+            } else {
+                current = Impl::Main<ConcreteAction, true>::linearSearchConst(arr, value);
             }
 
             return result_type->createColumnConst(item_arg->size(), current);
