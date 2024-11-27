@@ -7,6 +7,7 @@ import os.path as p
 import platform
 import pprint
 import pwd
+import random
 import re
 import shlex
 import shutil
@@ -1650,6 +1651,8 @@ class ClickHouseCluster:
         minio_certs_dir=None,
         minio_data_dir=None,
         use_keeper=True,
+        keeper_randomize_feature_flags=True,
+        keeper_required_feature_flags=[],
         main_config_name="config.xml",
         users_config_name="users.xml",
         copy_common_configs=True,
@@ -1657,6 +1660,7 @@ class ClickHouseCluster:
         extra_configs=[],
         extra_args="",
         randomize_settings=True,
+        use_docker_init_flag=False,
     ) -> "ClickHouseInstance":
         """Add an instance to the cluster.
 
@@ -1682,6 +1686,8 @@ class ClickHouseCluster:
         if not env_variables:
             env_variables = {}
         self.use_keeper = use_keeper
+        self.keeper_randomize_feature_flags = keeper_randomize_feature_flags
+        self.keeper_required_feature_flags = keeper_required_feature_flags
 
         # Code coverage files will be placed in database directory
         # (affect only WITH_COVERAGE=1 build)
@@ -1762,6 +1768,7 @@ class ClickHouseCluster:
             config_root_name=config_root_name,
             extra_configs=extra_configs,
             randomize_settings=randomize_settings,
+            use_docker_init_flag=use_docker_init_flag,
         )
 
         docker_compose_yml_dir = get_docker_compose_path()
@@ -2828,14 +2835,50 @@ class ClickHouseCluster:
 
                 if self.use_keeper:  # TODO: remove hardcoded paths from here
                     for i in range(1, 4):
+                        current_keeper_config_dir = os.path.join(
+                            f"{self.keeper_instance_dir_prefix}{i}", "config"
+                        )
                         shutil.copy(
                             os.path.join(
                                 self.keeper_config_dir, f"keeper_config{i}.xml"
                             ),
-                            os.path.join(
-                                self.keeper_instance_dir_prefix + f"{i}", "config"
-                            ),
+                            current_keeper_config_dir,
                         )
+
+                        extra_configs_dir = os.path.join(
+                            current_keeper_config_dir, f"keeper_config{i}.d"
+                        )
+                        os.mkdir(extra_configs_dir)
+                        feature_flags_config = os.path.join(
+                            extra_configs_dir, "feature_flags.yaml"
+                        )
+
+                        indentation = 4 * " "
+
+                        def get_feature_flag_value(feature_flag):
+                            if not self.keeper_randomize_feature_flags:
+                                return 1
+
+                            if feature_flag in self.keeper_required_feature_flags:
+                                return 1
+
+                            return random.randint(0, 1)
+
+                        with open(feature_flags_config, "w") as ff_config:
+                            ff_config.write("keeper_server:\n")
+                            ff_config.write(f"{indentation}feature_flags:\n")
+                            indentation *= 2
+
+                            for feature_flag in [
+                                "filtered_list",
+                                "multi_read",
+                                "check_not_exists",
+                                "create_if_not_exists",
+                                "remove_recursive",
+                            ]:
+                                ff_config.write(
+                                    f"{indentation}{feature_flag}: {get_feature_flag_value(feature_flag)}\n"
+                                )
 
                 run_and_check(self.base_zookeeper_cmd + common_opts, env=self.env)
                 self.up_called = True
@@ -3353,6 +3396,7 @@ services:
                 {ipv6_address}
                 {net_aliases}
                     {net_alias1}
+        init: {init_flag}
 """
 
 
@@ -3419,6 +3463,7 @@ class ClickHouseInstance:
         config_root_name="clickhouse",
         extra_configs=[],
         randomize_settings=True,
+        use_docker_init_flag=False,
     ):
         self.name = name
         self.base_cmd = cluster.base_cmd
@@ -3545,6 +3590,7 @@ class ClickHouseInstance:
         self.with_installed_binary = with_installed_binary
         self.is_up = False
         self.config_root_name = config_root_name
+        self.docker_init_flag = use_docker_init_flag
 
     def is_built_with_sanitizer(self, sanitizer_name=""):
         build_opts = self.query(
@@ -4838,6 +4884,7 @@ class ClickHouseInstance:
                     ipv6_address=ipv6_address,
                     net_aliases=net_aliases,
                     net_alias1=net_alias1,
+                    init_flag="true" if self.docker_init_flag else "false",
                 )
             )
 

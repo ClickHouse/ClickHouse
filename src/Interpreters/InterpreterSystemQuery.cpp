@@ -371,9 +371,18 @@ BlockIO InterpreterSystemQuery::execute()
             prewarmMarkCache();
             break;
         }
+        case Type::PREWARM_PRIMARY_INDEX_CACHE:
+        {
+            prewarmPrimaryIndexCache();
+            break;
+        }
         case Type::DROP_MARK_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MARK_CACHE);
             system_context->clearMarkCache();
+            break;
+        case Type::DROP_PRIMARY_INDEX_CACHE:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_PRIMARY_INDEX_CACHE);
+            system_context->clearPrimaryIndexCache();
             break;
         case Type::DROP_UNCOMPRESSED_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
@@ -1319,9 +1328,12 @@ void InterpreterSystemQuery::prewarmMarkCache()
 
     auto table_ptr = DatabaseCatalog::instance().getTable(table_id, getContext());
     auto * merge_tree = dynamic_cast<MergeTreeData *>(table_ptr.get());
-
     if (!merge_tree)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Command PREWARM MARK CACHE is supported only for MergeTree table, but got: {}", table_ptr->getName());
+
+    auto mark_cache = getContext()->getMarkCache();
+    if (!mark_cache)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mark cache is not configured");
 
     ThreadPool pool(
         CurrentMetrics::MergeTreePartsLoaderThreads,
@@ -1329,7 +1341,32 @@ void InterpreterSystemQuery::prewarmMarkCache()
         CurrentMetrics::MergeTreePartsLoaderThreadsScheduled,
         getContext()->getSettingsRef()[Setting::max_threads]);
 
-    merge_tree->prewarmMarkCache(pool);
+    merge_tree->prewarmCaches(pool, std::move(mark_cache), nullptr);
+}
+
+void InterpreterSystemQuery::prewarmPrimaryIndexCache()
+{
+    if (table_id.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table is not specified for PREWARM PRIMARY INDEX CACHE command");
+
+    getContext()->checkAccess(AccessType::SYSTEM_PREWARM_PRIMARY_INDEX_CACHE, table_id);
+
+    auto table_ptr = DatabaseCatalog::instance().getTable(table_id, getContext());
+    auto * merge_tree = dynamic_cast<MergeTreeData *>(table_ptr.get());
+    if (!merge_tree)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Command PREWARM PRIMARY INDEX CACHE is supported only for MergeTree table, but got: {}", table_ptr->getName());
+
+    auto index_cache = merge_tree->getPrimaryIndexCache();
+    if (!index_cache)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary index cache is not configured or is not enabled for table {}", table_id.getFullTableName());
+
+    ThreadPool pool(
+        CurrentMetrics::MergeTreePartsLoaderThreads,
+        CurrentMetrics::MergeTreePartsLoaderThreadsActive,
+        CurrentMetrics::MergeTreePartsLoaderThreadsScheduled,
+        getContext()->getSettingsRef()[Setting::max_threads]);
+
+    merge_tree->prewarmCaches(pool, nullptr, std::move(index_cache));
 }
 
 
@@ -1351,6 +1388,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_DNS_CACHE:
         case Type::DROP_CONNECTIONS_CACHE:
         case Type::DROP_MARK_CACHE:
+        case Type::DROP_PRIMARY_INDEX_CACHE:
         case Type::DROP_MMAP_CACHE:
         case Type::DROP_QUERY_CACHE:
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
@@ -1534,6 +1572,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             break;
         }
         case Type::PREWARM_MARK_CACHE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_PREWARM_MARK_CACHE, query.getDatabase(), query.getTable());
+            break;
+        }
+        case Type::PREWARM_PRIMARY_INDEX_CACHE:
         {
             required_access.emplace_back(AccessType::SYSTEM_PREWARM_MARK_CACHE, query.getDatabase(), query.getTable());
             break;
