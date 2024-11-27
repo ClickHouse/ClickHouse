@@ -17,6 +17,7 @@ def make_instance(name, *args, **kwargs):
     main_configs.append("configs/remote_servers.xml")
     user_configs = kwargs.pop("user_configs", [])
     user_configs.append("configs/users.xml")
+
     return cluster.add_instance(
         name,
         with_zookeeper=True,

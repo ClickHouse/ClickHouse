@@ -28,10 +28,10 @@ JEPSEN_GROUP_NAME = "jepsen_group"
 KEEPER_DESIRED_INSTANCE_COUNT = 3
 SERVER_DESIRED_INSTANCE_COUNT = 4
 
-KEEPER_IMAGE_NAME = "clickhouse/keeper-jepsen-test"
+KEEPER_IMAGE_NAME = "altinityinfra/keeper-jepsen-test"
 KEEPER_CHECK_NAME = CI.JobNames.JEPSEN_KEEPER
 
-SERVER_IMAGE_NAME = "clickhouse/server-jepsen-test"
+SERVER_IMAGE_NAME = "altinityinfra/server-jepsen-test"
 SERVER_CHECK_NAME = CI.JobNames.JEPSEN_SERVER
 
 SUCCESSFUL_TESTS_ANCHOR = "# Successful tests"

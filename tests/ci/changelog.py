@@ -161,7 +161,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--repo",
-        default="ClickHouse/ClickHouse",
+        default="Altinity/ClickHouse",
         help="a repository to query for pull-requests from GitHub",
     )
     parser.add_argument(

@@ -208,4 +208,4 @@ def run_stress_test(docker_image_name: str) -> None:
 
 
 if __name__ == "__main__":
-    run_stress_test("clickhouse/stress-test")
+    run_stress_test("altinityinfra/stress-test")
