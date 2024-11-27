@@ -55,8 +55,8 @@ public:
 
 DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, UUID uuid, const String & logger_name, ContextPtr context_)
     : DatabaseOrdinary(name_, metadata_path_, "store/", logger_name, context_)
-    , path_to_table_symlinks(fs::path(getContext()->getPath()) / "data" / escapeForFileName(name_) / "")
-    , path_to_metadata_symlink(fs::path(getContext()->getPath()) / "metadata" / escapeForFileName(name_))
+    , path_to_table_symlinks(fs::path("data") / escapeForFileName(name_) / "")
+    , path_to_metadata_symlink(fs::path("metadata") / escapeForFileName(name_))
     , db_uuid(uuid)
 {
     assert(db_uuid != UUIDHelpers::Nil);
@@ -77,7 +77,7 @@ void DatabaseAtomic::createDirectoriesUnlocked()
 {
     DatabaseOnDisk::createDirectoriesUnlocked();
     auto db_disk = getContext()->getDatabaseDisk();
-    db_disk->createDirectories(fs::path(getContext()->getPath()) / "metadata");
+    db_disk->createDirectories("metadata");
     if (db_disk->isSymlinkSupported())
         db_disk->createDirectories(path_to_table_symlinks);
     tryCreateMetadataSymlink();
@@ -382,7 +382,7 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
         /// TODO better detection and recovery
 
         /// It throws if `table_metadata_path` already exists (it's possible if table was detached)
-        renameNoReplace(table_metadata_tmp_path, table_metadata_path);  /// Commit point (a sort of)
+        db_disk->moveFile(table_metadata_tmp_path, table_metadata_path); /// Commit point (a sort of)
         attachTableUnlocked(query.getTable(), table);   /// Should never throw
         table_name_to_path.emplace(query.getTable(), table_data_path);
     }
@@ -419,7 +419,7 @@ void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String &
     /// NOTE: replica will be lost if server crashes before the following rename
     /// TODO better detection and recovery
 
-    check_file_exists = renameExchangeIfSupported(table_metadata_tmp_path, table_metadata_path);
+    check_file_exists = db_disk->renameExchangeIfSupported(table_metadata_tmp_path, table_metadata_path);
     if (!check_file_exists)
         db_disk->replaceFile(table_metadata_tmp_path, table_metadata_path);
 }
@@ -686,9 +686,9 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     }
 
     auto new_name_escaped = escapeForFileName(new_name);
-    auto old_database_metadata_path = getContext()->getPath() + "metadata/" + escapeForFileName(getDatabaseName()) + ".sql";
-    auto new_database_metadata_path = getContext()->getPath() + "metadata/" + new_name_escaped + ".sql";
-    renameNoReplace(old_database_metadata_path, new_database_metadata_path);
+    auto old_database_metadata_path = fs::path("metadata") / (escapeForFileName(getDatabaseName()) + ".sql");
+    auto new_database_metadata_path = fs::path("metadata") / (new_name_escaped + ".sql");
+    db_disk->moveFile(old_database_metadata_path, new_database_metadata_path);
 
     String old_path_to_table_symlinks;
 
@@ -710,9 +710,9 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
             table.second->renameInMemory(table_id);
         }
 
-        path_to_metadata_symlink = getContext()->getPath() + "metadata/" + new_name_escaped;
+        path_to_metadata_symlink = fs::path("metadata") / new_name_escaped;
         old_path_to_table_symlinks = path_to_table_symlinks;
-        path_to_table_symlinks = getContext()->getPath() + "data/" + new_name_escaped + "/";
+        path_to_table_symlinks = fs::path("data") / new_name_escaped / "";
     }
 
     if (db_disk->isSymlinkSupported())

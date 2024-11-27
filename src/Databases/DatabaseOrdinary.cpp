@@ -136,9 +136,7 @@ static void setReplicatedEngine(ASTCreateQuery * create_query, ContextPtr contex
 String DatabaseOrdinary::getConvertToReplicatedFlagPath(const String & name, const StoragePolicyPtr storage_policy, bool tableStarted)
 {
     fs::path data_path;
-    if (storage_policy->getDisks().empty())
-        data_path = getContext()->getPath();
-    else
+    if (!storage_policy->getDisks().empty())
         data_path = storage_policy->getDisks()[0]->getPath();
 
     if (!tableStarted)
@@ -174,13 +172,6 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
 
     auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(qualified_name.table, policy, false);
 
-    LOG_DEBUG(
-        log,
-        "Debug-test DatabaseOrdinary existsFile [1] path {}, is_regular_file: {}, fs::exists {}",
-        convert_to_replicated_flag_path,
-        fs::is_regular_file(convert_to_replicated_flag_path),
-        fs::exists(convert_to_replicated_flag_path));
-
     if (!db_disk->existsFile(convert_to_replicated_flag_path))
         return;
 
@@ -197,12 +188,14 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
     String table_metadata_tmp_path = table_metadata_path + ".tmp";
     String statement = getObjectDefinitionFromCreateQuery(ast);
     {
-        WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
-        writeString(statement, out);
-        out.next();
+        auto out = db_disk->writeFile(table_metadata_tmp_path, statement.size());
+        writeString(statement, *out);
+
+        out->next();
         if (getContext()->getSettingsRef()[Setting::fsync_metadata])
-            out.sync();
-        out.close();
+            out->sync();
+        out->finalize();
+        out.reset();
     }
     db_disk->replaceFile(table_metadata_tmp_path, table_metadata_path);
 
@@ -254,13 +247,6 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create_query->uuid);
                     }
                 }
-
-                LOG_DEBUG(
-                    log,
-                    "Debug-test DatabaseOrdinary existsFile [2] path {}, is_regular_file: {}, fs::exists {}",
-                    full_path.string() + detached_suffix,
-                    fs::is_regular_file(full_path.string() + detached_suffix),
-                    fs::exists(full_path.string() + detached_suffix));
 
                 if (db_disk->existsFile(full_path.string() + detached_suffix))
                 {
@@ -376,13 +362,6 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
     auto db_disk = getContext()->getDatabaseDisk();
 
     auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(name.table, table->getStoragePolicy(), true);
-
-    LOG_DEBUG(
-        log,
-        "Debug-test DatabaseOrdinary existsFile [3] path {}, is_regular_file: {}, fs::exists {}",
-        convert_to_replicated_flag_path,
-        fs::is_regular_file(convert_to_replicated_flag_path),
-        fs::exists(convert_to_replicated_flag_path));
 
     if (!db_disk->existsFile(convert_to_replicated_flag_path))
         return;
@@ -587,8 +566,12 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
     String statement;
 
     {
-        ReadBufferFromFile in(table_metadata_path, METADATA_FILE_BUFFER_SIZE);
-        readStringUntilEOF(statement, in);
+        auto db_disk = getContext()->getDatabaseDisk();
+
+        ReadSettings settings;
+        settings.local_fs_buffer_size = METADATA_FILE_BUFFER_SIZE;
+        auto in = db_disk->readFile(table_metadata_path, settings);
+        readStringUntilEOF(statement, *in);
     }
 
     ParserCreateQuery parser;
@@ -605,12 +588,15 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
 
     statement = getObjectDefinitionFromCreateQuery(ast);
     {
-        WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
-        writeString(statement, out);
-        out.next();
-        if (local_context->getSettingsRef()[Setting::fsync_metadata])
-            out.sync();
-        out.close();
+        auto db_disk = getContext()->getDatabaseDisk();
+        auto out = db_disk->writeFile(table_metadata_tmp_path, statement.size());
+        writeString(statement, *out);
+
+        out->next();
+        if (getContext()->getSettingsRef()[Setting::fsync_metadata])
+            out->sync();
+        out->finalize();
+        out.reset();
     }
 
     /// The create query of the table has been just changed, we need to update dependencies too.

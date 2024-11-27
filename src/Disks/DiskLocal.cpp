@@ -436,33 +436,33 @@ void DiskLocal::createHardLink(const String & src_path, const String & dst_path)
 
 bool DiskLocal::isSymlink(const String & path) const
 {
-    return FS::isSymlink(path);
+    return FS::isSymlink(fs::path(disk_path) / path);
 }
 
 bool DiskLocal::isSymlinkNoThrow(const String & path) const
 {
-    return FS::isSymlinkNoThrow(path);
+    return FS::isSymlinkNoThrow(fs::path(disk_path) / path);
 }
 
 void DiskLocal::createDirectoriesSymlink(const String & target, const String & link)
 {
-    fs::create_directory_symlink(target, link);
+    fs::create_directory_symlink(fs::path(disk_path) / target, fs::path(disk_path) / link);
 }
 
 String DiskLocal::readSymlink(const fs::path & path) const
 {
-    return FS::readSymlink(path);
+    return FS::readSymlink(fs::path(disk_path) / path);
 }
 
 bool DiskLocal::equivalent(const String & p1, const String & p2) const
 {
-    return fs::equivalent(p1, p2);
+    return fs::equivalent(fs::path(disk_path) / p1, fs::path(disk_path) / p2);
 }
 
 bool DiskLocal::equivalentNoThrow(const String & p1, const String & p2) const
 {
     std::error_code ec;
-    return fs::equivalent(p1, p2, ec);
+    return fs::equivalent(fs::path(disk_path) / p1, fs::path(disk_path) / p2, ec);
 }
 
 void DiskLocal::truncateFile(const String & path, size_t size)

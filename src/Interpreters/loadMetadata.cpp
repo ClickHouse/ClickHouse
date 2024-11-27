@@ -108,8 +108,10 @@ static void loadDatabase(
     if (db_disk->existsFile(fs::path(database_metadata_file)))
     {
         /// There is .sql file with database creation statement.
-        ReadBufferFromFile in(database_metadata_file, 1024);
-        readStringUntilEOF(database_attach_query, in);
+        ReadSettings read_settings;
+        read_settings.local_fs_buffer_size = 1024;
+        auto in = db_disk->readFile(database_metadata_file, read_settings);
+        readStringUntilEOF(database_attach_query, *in);
     }
     else
     {
@@ -129,11 +131,11 @@ static void loadDatabase(
     }
 }
 
-static void checkUnsupportedVersion(ContextMutablePtr context, const String & database_name)
+static void checkUnsupportedVersion(ContextMutablePtr, const String & database_name)
 {
     auto db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
     /// Produce better exception message
-    auto metadata_path = fs::path(context->getPath()) / "metadata" / database_name;
+    auto metadata_path = fs::path("metadata") / database_name;
     if (db_disk->existsDirectory(metadata_path))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Data directory for {} database exists, but metadata file does not. "
                                                      "Probably you are trying to upgrade from version older than 20.7. "
@@ -179,8 +181,6 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
 
     LoggerPtr log = getLogger("loadMetadata");
 
-    auto path = fs::path(context->getPath()) / "metadata";
-
     /// There may exist 'force_restore_data' file, which means skip safety threshold
     /// on difference of data parts while initializing tables.
     /// This file is immediately deleted i.e. "one-shot".
@@ -199,9 +199,11 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
     }
 
 
+    auto metadata_dir_path = fs::path("metadata");
+
     /// Loop over databases.
     std::map<String, String> databases;
-    for (const auto it = db_disk->iterateDirectory(path); it->isValid(); it->next())
+    for (const auto it = db_disk->iterateDirectory(metadata_dir_path); it->isValid(); it->next())
     {
         auto sub_path = fs::path(it->path());
         if (sub_path.filename().empty())
@@ -220,7 +222,7 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
         {
             String db_name = fs::path(current_file).stem();
             if (!isSystemOrInformationSchema(db_name))
-                databases.emplace(unescapeForFileName(db_name), fs::path(path) / db_name);
+                databases.emplace(unescapeForFileName(db_name), metadata_dir_path / db_name);
         }
 
         /// Temporary fails may be left from previous server runs.
@@ -248,7 +250,7 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
     if (create_default_db_if_not_exists && !metadata_dir_for_default_db_already_exists)
     {
         checkUnsupportedVersion(context, default_database_name);
-        databases.emplace(default_database_name, std::filesystem::path(path) / escapeForFileName(default_database_name));
+        databases.emplace(default_database_name, metadata_dir_path / escapeForFileName(default_database_name));
     }
 
     TablesLoader::Databases loaded_databases;
@@ -292,19 +294,20 @@ static void loadSystemDatabaseImpl(ContextMutablePtr context, const String & dat
 {
     auto db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
 
-    String path = fs::path(context->getPath()) / "metadata" / database_name;
-    String metadata_file = path + ".sql";
-    if (db_disk->existsFile(metadata_file + ".tmp"))
-        db_disk->removeFileIfExists(metadata_file + ".tmp");
+    String database_name_escaped = escapeForFileName(database_name);
+    auto metadata_dir_path = fs::path("metadata");
+    auto metadata_file = metadata_dir_path / (database_name_escaped + ".sql");
+    auto metadata_file_tmp = metadata_dir_path / (database_name_escaped + ".sql" + ".tmp");
+    db_disk->removeFileIfExists(metadata_file_tmp);
     LOG_DEBUG(
-        getLogger("loadSystemDatabaseImpl"),
+        getLogger("loadSystemDatabase"),
         "metadata_file_path {}, existsFile {}",
         metadata_file,
         db_disk->existsFile(fs::path(metadata_file)));
     if (db_disk->existsFile(fs::path(metadata_file)))
     {
         /// 'has_force_restore_data_flag' is true, to not fail on loading query_log table, if it is corrupted.
-        loadDatabase(context, database_name, path, true);
+        loadDatabase(context, database_name, metadata_dir_path, true);
     }
     else
     {

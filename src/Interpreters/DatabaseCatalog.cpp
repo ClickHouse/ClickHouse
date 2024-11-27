@@ -625,9 +625,9 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
 
         /// Old ClickHouse versions did not store database.sql files
         /// Remove metadata dir (if exists) to avoid recreation of .sql file on server startup
-        fs::path database_metadata_dir = fs::path(getContext()->getPath()) / "metadata" / escapeForFileName(database_name);
+        fs::path database_metadata_dir = fs::path("metadata") / escapeForFileName(database_name);
         db_disk->removeDirectoryIfExists(database_metadata_dir);
-        fs::path database_metadata_file = fs::path(getContext()->getPath()) / "metadata" / (escapeForFileName(database_name) + ".sql");
+        fs::path database_metadata_file = fs::path("metadata") / (escapeForFileName(database_name) + ".sql");
         db_disk->removeFileIfExists(database_metadata_file);
 
         if (db_uuid != UUIDHelpers::Nil)
@@ -1007,7 +1007,7 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
     /// we should load them and enqueue cleanup to remove data from store/ and metadata from ZooKeeper
 
     std::map<String, StorageID> dropped_metadata;
-    String path = std::filesystem::path(getContext()->getPath()) / "metadata_dropped" / "";
+    String path = fs::path("metadata_dropped") / "";
 
     if (!db_disk->existsDirectory(path))
         return;
@@ -1059,11 +1059,12 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
 
 String DatabaseCatalog::getPathForDroppedMetadata(const StorageID & table_id) const
 {
-    return std::filesystem::path(getContext()->getPath()) / "metadata_dropped" /
-        fmt::format("{}.{}.{}.sql",
-            escapeForFileName(table_id.getDatabaseName()),
-            escapeForFileName(table_id.getTableName()),
-            toString(table_id.uuid));
+    return fs::path("metadata_dropped")
+        / fmt::format(
+               "{}.{}.{}.sql",
+               escapeForFileName(table_id.getDatabaseName()),
+               escapeForFileName(table_id.getTableName()),
+               toString(table_id.uuid));
 }
 
 String DatabaseCatalog::getPathForMetadata(const StorageID & table_id) const

@@ -1836,9 +1836,15 @@ void DatabaseReplicated::removeDetachedPermanentlyFlag(ContextPtr local_context,
 
 String DatabaseReplicated::readMetadataFile(const String & table_name) const
 {
+    auto db_disk = getContext()->getDatabaseDisk();
+
+    ReadSettings settings;
+    settings.local_fs_buffer_size = METADATA_FILE_BUFFER_SIZE;
+    auto in = db_disk->readFile(getObjectMetadataPath(table_name), settings);
+
     String statement;
-    ReadBufferFromFile in(getObjectMetadataPath(table_name), METADATA_FILE_BUFFER_SIZE);
-    readStringUntilEOF(statement, in);
+    readStringUntilEOF(statement, *in);
+
     return statement;
 }
 

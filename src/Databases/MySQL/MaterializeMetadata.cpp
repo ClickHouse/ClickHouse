@@ -17,6 +17,8 @@
 #include <filesystem>
 #include <base/FnTraits.h>
 
+#include <Disks/IDisk.h>
+
 namespace fs = std::filesystem;
 
 namespace DB
@@ -242,18 +244,19 @@ void MaterializeMetadata::transaction(const MySQLReplication::Position & positio
     String persistent_tmp_path = persistent_path + ".tmp";
 
     {
-        WriteBufferFromFile out(persistent_tmp_path, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_TRUNC | O_CREAT);
+        auto db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
+        auto out = db_disk->writeFile(persistent_tmp_path, DBMS_DEFAULT_BUFFER_SIZE);
 
         /// TSV format metadata file.
-        writeString("Version:\t" + toString(meta_version), out);
-        writeString("\nBinlog File:\t" + binlog_file, out);
-        writeString("\nExecuted GTID:\t" + executed_gtid_set, out);
-        writeString("\nBinlog Position:\t" + toString(binlog_position), out);
-        writeString("\nData Version:\t" + toString(data_version), out);
+        writeString("Version:\t" + toString(meta_version), *out);
+        writeString("\nBinlog File:\t" + binlog_file, *out);
+        writeString("\nExecuted GTID:\t" + executed_gtid_set, *out);
+        writeString("\nBinlog Position:\t" + toString(binlog_position), *out);
+        writeString("\nData Version:\t" + toString(data_version), *out);
 
-        out.next();
-        out.sync();
-        out.close();
+        out->next();
+        out->finalize();
+        out.reset();
     }
 
     commitMetadata(fun, persistent_tmp_path, persistent_path);
@@ -261,19 +264,23 @@ void MaterializeMetadata::transaction(const MySQLReplication::Position & positio
 
 MaterializeMetadata::MaterializeMetadata(const String & path_, const Settings & settings_) : persistent_path(path_), settings(settings_)
 {
-    if (fs::exists(persistent_path))
-    {
-        ReadBufferFromFile in(persistent_path, DBMS_DEFAULT_BUFFER_SIZE);
-        assertString("Version:\t" + toString(meta_version), in);
-        assertString("\nBinlog File:\t", in);
-        readString(binlog_file, in);
-        assertString("\nExecuted GTID:\t", in);
-        readString(executed_gtid_set, in);
-        assertString("\nBinlog Position:\t", in);
-        readIntText(binlog_position, in);
-        assertString("\nData Version:\t", in);
-        readIntText(data_version, in);
+    auto db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
 
+    if (db_disk->existsFile(persistent_path))
+    {
+        ReadSettings read_settings;
+        read_settings.local_fs_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
+        auto in = db_disk->readFile(persistent_path, read_settings);
+
+        assertString("Version:\t" + toString(meta_version), *in);
+        assertString("\nBinlog File:\t", *in);
+        readString(binlog_file, *in);
+        assertString("\nExecuted GTID:\t", *in);
+        readString(executed_gtid_set, *in);
+        assertString("\nBinlog Position:\t", *in);
+        readIntText(binlog_position, *in);
+        assertString("\nData Version:\t", *in);
+        readIntText(data_version, *in);
     }
 }
 

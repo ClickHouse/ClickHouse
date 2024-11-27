@@ -232,11 +232,13 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
     /// Will write file with database metadata, if needed.
     String database_name_escaped = escapeForFileName(database_name);
-    fs::path metadata_path = fs::weakly_canonical(getContext()->getPath());
-    db_disk->createDirectories(metadata_path / "metadata");
-    fs::path metadata_file_tmp_path = metadata_path / "metadata" / (database_name_escaped + ".sql.tmp");
-    fs::path metadata_file_path = metadata_path / "metadata" / (database_name_escaped + ".sql");
+    fs::path metadata_dir_path("metadata");
+    fs::path store_dir_path("store");
+    db_disk->createDirectories(metadata_dir_path);
+    fs::path metadata_file_tmp_path = metadata_dir_path / (database_name_escaped + ".sql.tmp");
+    fs::path metadata_file_path = metadata_dir_path / (database_name_escaped + ".sql");
 
+    fs::path metadata_path;
     if (!create.storage && create.attach)
     {
         if (!db_disk->existsFile(metadata_file_path))
@@ -284,7 +286,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         if (create.uuid == UUIDHelpers::Nil)
             create.uuid = UUIDHelpers::generateV4();
 
-        metadata_path = metadata_path / "store" / DatabaseCatalog::getPathForUUID(create.uuid);
+        metadata_path = store_dir_path / DatabaseCatalog::getPathForUUID(create.uuid);
 
         if (!create.attach && db_disk->existsDirectory(metadata_path) && !db_disk->isDirectoryEmpty(metadata_path))
             throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Metadata directory {} already exists and is not empty", metadata_path.string());
@@ -315,9 +317,9 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
         /// Set metadata path according to nested engine
         if (create.uuid == UUIDHelpers::Nil)
-            metadata_path = metadata_path / "metadata" / database_name_escaped;
+            metadata_path = metadata_dir_path / database_name_escaped;
         else
-            metadata_path = metadata_path / "store" / DatabaseCatalog::getPathForUUID(create.uuid);
+            metadata_path = store_dir_path / DatabaseCatalog::getPathForUUID(create.uuid);
     }
     else
     {
@@ -329,7 +331,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         /// a) the initiator of `ON CLUSTER` query generated it to ensure the same UUIDs are used on different hosts; or
         /// b) `RESTORE from backup` query generated it to ensure the same UUIDs are used on different hosts.
         create.uuid = UUIDHelpers::Nil;
-        metadata_path = metadata_path / "metadata" / database_name_escaped;
+        metadata_path = metadata_dir_path / database_name_escaped;
     }
 
     if (create.storage->engine->name == "Replicated" && !internal && !create.attach && create.storage->engine->arguments)
@@ -389,13 +391,14 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         db_disk->removeFileIfExists(metadata_file_tmp_path);
 
         /// Exclusive flag guarantees, that database is not created right now in another thread.
-        WriteBufferFromFile out(metadata_file_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
-        writeString(statement, out);
+        auto out = db_disk->writeFile(metadata_file_tmp_path, statement.size());
+        writeString(statement, *out);
 
-        out.next();
+        out->next();
         if (getContext()->getSettingsRef()[Setting::fsync_metadata])
-            out.sync();
-        out.close();
+            out->sync();
+        out->finalize();
+        out.reset();
     }
 
     /// We attach database before loading it's tables, so do not allow concurrent DDL queries
@@ -1548,8 +1551,11 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.attach_from_path)
     {
         chassert(!ddl_guard);
+
+        auto db_disk = getContext()->getDatabaseDisk();
+
         fs::path user_files = fs::path(getContext()->getUserFilesPath()).lexically_normal();
-        fs::path root_path = fs::path(getContext()->getPath()).lexically_normal();
+        fs::path root_path = fs::path(db_disk->getPath()).lexically_normal();
 
         if (getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
         {
@@ -1796,10 +1802,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     }
 
     data_path = database->getTableDataPath(create);
-    auto full_data_path = fs::path{getContext()->getPath()} / data_path;
     auto db_disk = getContext()->getDatabaseDisk();
 
-    if (!create.attach && !data_path.empty() && db_disk->existsDirectory(full_data_path))
+    if (!create.attach && !data_path.empty() && db_disk->existsDirectory(data_path))
     {
         if (getContext()->getZooKeeperMetadataTransaction() &&
             !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery() &&
@@ -1811,11 +1816,11 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             /// We don't have a table with this UUID (and all metadata is loaded),
             /// so the existing directory probably contains some leftovers from previous unsuccessful attempts to create the table
 
-            fs::path trash_path = fs::path{getContext()->getPath()} / "trash" / data_path / getHexUIntLowercase(thread_local_rng());
+            fs::path trash_path = fs::path("trash") / data_path / getHexUIntLowercase(thread_local_rng());
             LOG_WARNING(getLogger("InterpreterCreateQuery"), "Directory for {} data {} already exists. Will move it to {}",
                         Poco::toLower(storage_name), String(data_path), trash_path);
             db_disk->createDirectories(trash_path.parent_path());
-            db_disk->moveFile(full_data_path, trash_path);
+            db_disk->moveFile(data_path, trash_path);
         }
         else
         {

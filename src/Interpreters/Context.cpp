@@ -1139,32 +1139,28 @@ std::shared_ptr<IDisk> Context::getDatabaseDisk() const
             return shared->db_disk;
     }
 
-    auto configured_db_disk = [&]() -> std::shared_ptr<IDisk>
+    auto target_db_disk = [&]() -> std::shared_ptr<IDisk>
     {
         const auto & config = shared->getConfigRef();
         const auto & disk_map = getDisksMap();
-        if (!config.has("database_disk.disk"))
-            return nullptr;
+        auto disk_name = config.getString("database_disk.disk", DiskSelector::DEFAULT_DISK_NAME);
 
-        auto disk_name = config.getString("database_disk.disk");
+        LOG_INFO(shared->log, "Database disk name: {}", disk_name);
 
         auto it = disk_map.find(disk_name);
         if (it == disk_map.end())
             throw Exception(ErrorCodes::UNKNOWN_DISK, "No disk {}", backQuote(disk_name));
 
-        chassert(it->second);
         return it->second;
     }();
+
+    chassert(target_db_disk);
 
     std::lock_guard lock(shared->mutex);
     if (shared->db_disk)
         return shared->db_disk;
 
-    if (configured_db_disk)
-        return shared->db_disk = configured_db_disk;
-
-    LOG_INFO(shared->log, "No database_disk.disk configured, create one with DiskLocal");
-    return shared->db_disk = std::make_shared<DiskLocal>("database", "");
+    return shared->db_disk = target_db_disk;
 }
 
 String Context::getFilesystemCacheUser() const
