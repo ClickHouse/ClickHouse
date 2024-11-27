@@ -49,7 +49,7 @@ public:
         return nullptr;
     }
 
-    bool isRowFiltered(size_t row) const
+    inline bool isRowFiltered(size_t row) const
     {
         return !assert_cast<const ColumnUInt8 &>(*column).getData()[row];
     }

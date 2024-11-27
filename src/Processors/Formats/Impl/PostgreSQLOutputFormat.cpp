@@ -1,6 +1,5 @@
-#include "PostgreSQLOutputFormat.h"
-#include <Formats/FormatFactory.h>
 #include <Interpreters/ProcessList.h>
+#include "PostgreSQLOutputFormat.h"
 
 namespace DB
 {

@@ -1,5 +1,7 @@
 -- Tags: no-parallel
 
+SET allow_experimental_bigint_types = 1;
+
 DROP TABLE IF EXISTS dictionary_decimal_source_table;
 CREATE TABLE dictionary_decimal_source_table
 (
@@ -22,8 +24,6 @@ LAYOUT(FLAT());
 
 SELECT 'Flat dictionary';
 SELECT dictGet('flat_dictionary', 'decimal_value', toUInt64(1));
-
-DROP DICTIONARY flat_dictionary;
 
 DROP DICTIONARY IF EXISTS hashed_dictionary;
 CREATE DICTIONARY hashed_dictionary
