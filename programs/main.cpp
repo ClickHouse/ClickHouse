@@ -73,24 +73,27 @@ namespace
 
 using MainFunc = int (*)(int, char**);
 
-/// Add an item here to register new application
+/// Add an item here to register new application.
+/// This list has a "priority" - e.g. we need to disambiguate clickhouse --format being
+/// either clickouse-format or clickhouse-{local, client} --format.
+/// Currently we will prefer the latter option.
 std::pair<std::string_view, MainFunc> clickhouse_applications[] =
 {
-    {"benchmark", mainEntryClickHouseBenchmark},
-    {"check-marks", mainEntryClickHouseCheckMarks},
-    {"checksum-for-compressed-block", mainEntryClickHouseChecksumForCompressedBlock},
-    {"client", mainEntryClickHouseClient},
-    {"compressor", mainEntryClickHouseCompressor},
-    {"disks", mainEntryClickHouseDisks},
-    {"extract-from-config", mainEntryClickHouseExtractFromConfig},
-    {"format", mainEntryClickHouseFormat},
-    {"git-import", mainEntryClickHouseGitImport},
-    {"hash-binary", mainEntryClickHouseHashBinary},
     {"local", mainEntryClickHouseLocal},
-    {"obfuscator", mainEntryClickHouseObfuscator},
+    {"client", mainEntryClickHouseClient},
+    {"benchmark", mainEntryClickHouseBenchmark},
     {"server", mainEntryClickHouseServer},
+    {"extract-from-config", mainEntryClickHouseExtractFromConfig},
+    {"compressor", mainEntryClickHouseCompressor},
+    {"format", mainEntryClickHouseFormat},
+    {"obfuscator", mainEntryClickHouseObfuscator},
+    {"git-import", mainEntryClickHouseGitImport},
     {"static-files-disk-uploader", mainEntryClickHouseStaticFilesDiskUploader},
     {"su", mainEntryClickHouseSU},
+    {"hash-binary", mainEntryClickHouseHashBinary},
+    {"disks", mainEntryClickHouseDisks},
+    {"check-marks", mainEntryClickHouseCheckMarks},
+    {"checksum-for-compressed-block", mainEntryClickHouseChecksumForCompressedBlock},
     {"zookeeper-dump-tree", mainEntryClickHouseZooKeeperDumpTree},
     {"zookeeper-remove-by-list", mainEntryClickHouseZooKeeperRemoveByList},
 
