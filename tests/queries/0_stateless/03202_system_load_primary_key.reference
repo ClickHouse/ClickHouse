@@ -1,14 +1,25 @@
-tab1	0	0
-tab2	0	0
-tab1	1	1
-tab2	1	1
-tab1	1	1
-tab2	1	1
-tab1	1	1
-tab2	0	0
-1	a
-2	b
-3	c
-1	x
-2	y
-3	z
+-- Insert data into columns
+100000	100000
+-- Check primary key memory after inserting into both tables
+test	100000000	100000000
+test2	100000000	100000000
+-- Unload primary keys for all tables in the database
+OK
+-- Check the primary key memory after unloading all tables
+test	0	0
+test2	0	0
+-- Load primary key for all tables
+OK
+-- Check the primary key memory after loading all tables
+test	100000000	100000000
+test2	100000000	100000000
+-- Unload primary keys for all tables in the database
+OK
+-- Check the primary key memory after unloading all tables
+test	0	0
+test2	0	0
+-- Load primary key for only one table
+OK
+-- Check the primary key memory after loading only one table
+test	100000000	100000000
+test2	0	0
