@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS sample_table;
+CREATE TABLE sample_table ( `id` UInt128 CODEC(ZSTD(1)), `value` Int64 CODEC(ZSTD(1)), `request_timestamp` DateTime64(3) CODEC(ZSTD(1))) ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{database}/', '{replica}') ORDER BY (id, toStartOfMinute(request_timestamp), request_timestamp) TTL toDateTime(request_timestamp) + toIntervalDay(2) GROUP BY id, toStartOfMinute(request_timestamp) SET request_timestamp = max(request_timestamp) SETTINGS index_granularity = 8192; -- { clientError SYNTAX_ERROR }
