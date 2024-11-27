@@ -6,7 +6,7 @@ namespace DB
 {
 
 /// @note Except explicitly described you should not assume on TypeIndex numbers and/or their orders in this enum.
-enum class TypeIndex
+enum class TypeIndex : uint8_t
 {
     Nothing = 0,
     UInt8,
@@ -21,6 +21,7 @@ enum class TypeIndex
     Int64,
     Int128,
     Int256,
+    BFloat16,
     Float32,
     Float64,
     Date,
@@ -45,11 +46,13 @@ enum class TypeIndex
     AggregateFunction,
     LowCardinality,
     Map,
+    ObjectDeprecated,
     Object,
     IPv4,
     IPv6,
     JSONPaths,
     Variant,
+    Dynamic
 };
 
 /**
@@ -92,6 +95,7 @@ TYPEID_MAP(Int32)
 TYPEID_MAP(Int64)
 TYPEID_MAP(Int128)
 TYPEID_MAP(Int256)
+TYPEID_MAP(BFloat16)
 TYPEID_MAP(Float32)
 TYPEID_MAP(Float64)
 TYPEID_MAP(UUID)

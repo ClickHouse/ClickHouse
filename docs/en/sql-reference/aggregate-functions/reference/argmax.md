@@ -1,11 +1,11 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/argmax
-sidebar_position: 106
+sidebar_position: 109
 ---
 
 # argMax
 
-Calculates the `arg` value for a maximum `val` value. If there are several different values of `arg` for maximum values of `val`, returns the first of these values encountered.
+Calculates the `arg` value for a maximum `val` value. If there are multiple rows with equal `val` being the maximum, which of the associated `arg` is returned is not deterministic.
 Both parts the `arg` and the `max` behave as [aggregate functions](/docs/en/sql-reference/aggregate-functions/index.md), they both [skip `Null`](/docs/en/sql-reference/aggregate-functions/index.md#null-processing) during processing and return not `Null` values if not `Null` values are available.
 
 **Syntax**

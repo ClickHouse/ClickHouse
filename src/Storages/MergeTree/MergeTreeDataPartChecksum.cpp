@@ -61,16 +61,16 @@ void MergeTreeDataPartChecksum::checkEqual(const MergeTreeDataPartChecksum & rhs
 
 void MergeTreeDataPartChecksum::checkSize(const IDataPartStorage & storage, const String & name) const
 {
-    /// Skip inverted index files, these have a default MergeTreeDataPartChecksum with file_size == 0
+    /// Skip full-text index files, these have a default MergeTreeDataPartChecksum with file_size == 0
     if (isGinFile(name))
         return;
 
-    if (!storage.exists(name))
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "{} doesn't exist", fs::path(storage.getRelativePath()) / name);
-
     // This is a projection, no need to check its size.
-    if (storage.isDirectory(name))
+    if (storage.existsDirectory(name))
         return;
+
+    if (!storage.existsFile(name))
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "{} doesn't exist", fs::path(storage.getRelativePath()) / name);
 
     UInt64 size = storage.getFileSize(name);
     if (size != file_size)
@@ -88,7 +88,7 @@ void MergeTreeDataPartChecksums::checkEqual(const MergeTreeDataPartChecksums & r
 
     for (const auto & [name, checksum] : files)
     {
-        /// Exclude files written by inverted index from check. No correct checksums are available for them currently.
+        /// Exclude files written by full-text index from check. No correct checksums are available for them currently.
         if (name.ends_with(".gin_dict") || name.ends_with(".gin_post") || name.ends_with(".gin_seg") || name.ends_with(".gin_sid"))
             continue;
 
@@ -98,12 +98,6 @@ void MergeTreeDataPartChecksums::checkEqual(const MergeTreeDataPartChecksums & r
 
         checksum.checkEqual(it->second, have_uncompressed, name, part_name);
     }
-}
-
-void MergeTreeDataPartChecksums::checkSizes(const IDataPartStorage & storage) const
-{
-    for (const auto & [name, checksum] : files)
-        checksum.checkSize(storage, name);
 }
 
 UInt64 MergeTreeDataPartChecksums::getTotalSizeOnDisk() const
@@ -245,6 +239,8 @@ void MergeTreeDataPartChecksums::write(WriteBuffer & to) const
             writeBinaryLittleEndian(sum.uncompressed_hash, out);
         }
     }
+
+    out.finalize();
 }
 
 void MergeTreeDataPartChecksums::addFile(const String & file_name, UInt64 file_size, MergeTreeDataPartChecksum::uint128 file_hash)

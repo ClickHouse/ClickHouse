@@ -63,14 +63,22 @@ public:
                 "Illegal type {} for combinator {} because the values of that data type are not comparable",
                 arguments[key_col]->getName(),
                 getName());
+
+        if (isDynamic(arguments[key_col]) || isVariant(arguments[key_col]))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument of aggregate function {} because the column of that type can contain values with different "
+                "data types. Consider using typed subcolumns or cast column to a specific data type",
+                arguments[key_col]->getName(),
+                getName());
     }
 
     String getName() const override
     {
         if constexpr (isMin)
-            return "ArgMin";
+            return nested_function->getName() + "ArgMin";
         else
-            return "ArgMax";
+            return nested_function->getName() + "ArgMax";
     }
 
     bool isState() const override { return nested_function->isState(); }

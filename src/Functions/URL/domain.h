@@ -1,9 +1,10 @@
 #pragma once
 
-#include "protocol.h"
+#include <Common/StringUtils.h>
+#include <Functions/URL/protocol.h>
 #include <base/find_symbols.h>
+
 #include <cstring>
-#include <Common/StringUtils/StringUtils.h>
 
 namespace DB
 {
@@ -276,7 +277,7 @@ struct ExtractDomain
         }
         else
         {
-            if (without_www && host.size() > 4 && !strncmp(host.data(), "www.", 4))
+            if (without_www && host.size() > 4 && !strncmp(host.data(), "www.", 4))  /// NOLINT(bugprone-suspicious-stringview-data-usage)
                 host = { host.data() + 4, host.size() - 4 };
 
             res_data = host.data();

@@ -41,6 +41,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Functions/IsOperation.h>
 #include <Functions/castTypeToEither.h>
 #include <Interpreters/Context.h>
@@ -110,6 +111,7 @@ template <typename DataType> constexpr bool IsIntegralOrExtendedOrDecimal =
     IsDataTypeDecimal<DataType>;
 
 template <typename DataType> constexpr bool IsFloatingPoint = false;
+template <> inline constexpr bool IsFloatingPoint<DataTypeBFloat16> = true;
 template <> inline constexpr bool IsFloatingPoint<DataTypeFloat32> = true;
 template <> inline constexpr bool IsFloatingPoint<DataTypeFloat64> = true;
 
@@ -230,13 +232,39 @@ public:
 namespace impl_
 {
 
+template <bool is_multiply, bool is_division, typename T, typename U, template <typename> typename DecimalType>
+inline auto decimalResultType(const DecimalType<T> & tx, const DecimalType<U> & ty)
+{
+    const auto result_trait = DecimalUtils::binaryOpResult<is_multiply, is_division>(tx, ty);
+    return DecimalType<typename decltype(result_trait)::FieldType>(result_trait.precision, result_trait.scale);
+}
+
+template <bool is_multiply, bool is_division, typename T, typename U, template <typename> typename DecimalType>
+inline DecimalType<T> decimalResultType(const DecimalType<T> & tx, const DataTypeNumber<U> & ty)
+{
+    const auto result_trait = DecimalUtils::binaryOpResult<is_multiply, is_division>(tx, ty);
+    return DecimalType<typename decltype(result_trait)::FieldType>(result_trait.precision, result_trait.scale);
+}
+
+template <bool is_multiply, bool is_division, typename T, typename U, template <typename> typename DecimalType>
+inline DecimalType<U> decimalResultType(const DataTypeNumber<T> & tx, const DecimalType<U> & ty)
+{
+    const auto result_trait = DecimalUtils::binaryOpResult<is_multiply, is_division>(tx, ty);
+    return DecimalType<typename decltype(result_trait)::FieldType>(result_trait.precision, result_trait.scale);
+}
+
 /** Arithmetic operations: +, -, *, /, %,
   * intDiv (integer division)
   * Bitwise operations: |, &, ^, ~.
   * Etc.
   */
 
-enum class OpCase { Vector, LeftConstant, RightConstant };
+enum class OpCase : uint8_t
+{
+    Vector,
+    LeftConstant,
+    RightConstant
+};
 
 constexpr const auto & undec(const auto & x) { return x; }
 constexpr const auto & undec(const is_decimal auto & x) { return x.value; }
@@ -279,7 +307,7 @@ struct BinaryOperation
 
 private:
     template <OpCase op_case>
-    static inline void apply(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t i)
+    static void apply(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t i)
     {
         if constexpr (op_case == OpCase::Vector)
             c[i] = Op::template apply<ResultType>(a[i], b[i]);
@@ -427,7 +455,7 @@ template <typename Op>
 struct FixedStringReduceOperationImpl
 {
     template <OpCase op_case>
-    static void inline process(const UInt8 * __restrict a, const UInt8 * __restrict b, UInt16 * __restrict result, size_t size, size_t N)
+    static void process(const UInt8 * __restrict a, const UInt8 * __restrict b, UInt16 * __restrict result, size_t size, size_t N)
     {
         if constexpr (op_case == OpCase::Vector)
             vectorVector(a, b, result, size, N);
@@ -498,7 +526,7 @@ struct StringReduceOperationImpl
         }
     }
 
-    static inline UInt64 constConst(std::string_view a, std::string_view b)
+    static UInt64 constConst(std::string_view a, std::string_view b)
     {
         return process(
             reinterpret_cast<const UInt8 *>(a.data()),
@@ -567,7 +595,7 @@ public:
                         scale_a);
                 return;
             }
-            else if (scale_b != 1)
+            if (scale_b != 1)
             {
                 for (size_t i = 0; i < size; ++i)
                     c[i] = applyScaled<false>(
@@ -588,7 +616,7 @@ public:
                         scale_a);
                 return;
             }
-            else if (scale_b != 1)
+            if (scale_b != 1)
             {
                 for (size_t i = 0; i < size; ++i)
                     c[i] = applyScaled<false, false>(
@@ -597,7 +625,6 @@ public:
                         scale_b);
                 return;
             }
-
         }
         else if constexpr (is_division && is_decimal_b)
         {
@@ -638,7 +665,7 @@ public:
 
 private:
     template <OpCase op_case, typename ApplyFunc>
-    static inline void processWithRightNullmapImpl(const auto & a, const auto & b, ResultContainerType & c, size_t size, const NullMap * right_nullmap, ApplyFunc apply_func)
+    static void processWithRightNullmapImpl(const auto & a, const auto & b, ResultContainerType & c, size_t size, const NullMap * right_nullmap, ApplyFunc apply_func)
     {
         if (right_nullmap)
         {
@@ -799,7 +826,7 @@ class FunctionBinaryArithmetic : public IFunction
             DataTypeFixedString, DataTypeString,
             DataTypeInterval>;
 
-        using Floats = TypeList<DataTypeFloat32, DataTypeFloat64>;
+        using Floats = TypeList<DataTypeFloat32, DataTypeFloat64, DataTypeBFloat16>;
 
         using ValidTypes = std::conditional_t<valid_on_float_arguments,
             TypeListConcat<Types, Floats>,
@@ -1112,8 +1139,7 @@ class FunctionBinaryArithmetic : public IFunction
 
         if (agg_state_is_const)
             return ColumnConst::create(std::move(column_to), input_rows_count);
-        else
-            return column_to;
+        return column_to;
     }
 
     /// Merge two aggregation states together.
@@ -1145,8 +1171,7 @@ class FunctionBinaryArithmetic : public IFunction
 
         if (lhs_is_const && rhs_is_const)
             return ColumnConst::create(std::move(column_to), input_rows_count);
-        else
-            return column_to;
+        return column_to;
     }
 
     ColumnPtr executeDateTimeIntervalPlusMinus(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
@@ -1163,7 +1188,7 @@ class FunctionBinaryArithmetic : public IFunction
             new_arguments[1].type = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
 
         auto function = function_builder->build(new_arguments);
-        return function->execute(new_arguments, result_type, input_rows_count);
+        return function->execute(new_arguments, result_type, input_rows_count, /* dry_run = */ false);
     }
 
     ColumnPtr executeDateTimeTupleOfIntervalsPlusMinus(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
@@ -1177,7 +1202,7 @@ class FunctionBinaryArithmetic : public IFunction
 
         auto function = function_builder->build(new_arguments);
 
-        return function->execute(new_arguments, result_type, input_rows_count);
+        return function->execute(new_arguments, result_type, input_rows_count, /* dry_run = */ false);
     }
 
     ColumnPtr executeIntervalTupleOfIntervalsPlusMinus(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
@@ -1185,7 +1210,7 @@ class FunctionBinaryArithmetic : public IFunction
     {
         auto function = function_builder->build(arguments);
 
-        return function->execute(arguments, result_type, input_rows_count);
+        return function->execute(arguments, result_type, input_rows_count, /* dry_run = */ false);
     }
 
     ColumnPtr executeArraysImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
@@ -1275,7 +1300,7 @@ class FunctionBinaryArithmetic : public IFunction
             new_arguments[1] = {right_const->convertToFullColumnIfConst(), arguments[1].type, arguments[1].name};
             return executeImpl(new_arguments, result_type, input_rows_count);
         }
-        else if (left_const && !is_swapped)
+        if (left_const && !is_swapped)
         {
             new_arguments[0] = {left_const->convertToFullColumnIfConst(), arguments[0].type, arguments[0].name};
             new_arguments[1] = {arguments[1].column.get()->getPtr(), arguments[1].type, arguments[1].name};
@@ -1320,7 +1345,7 @@ class FunctionBinaryArithmetic : public IFunction
 
         auto function = function_builder->build(new_arguments);
 
-        return function->execute(new_arguments, result_type, input_rows_count);
+        return function->execute(new_arguments, result_type, input_rows_count, /* dry_run = */ false);
     }
 
     template <typename T, typename ResultDataType>
@@ -1688,6 +1713,13 @@ public:
             }
             else
             {
+                if constexpr ((std::is_same_v<LeftDataType, DataTypeBFloat16> || std::is_same_v<RightDataType, DataTypeBFloat16>)
+                    && (sizeof(typename LeftDataType::FieldType) > 8 || sizeof(typename RightDataType::FieldType) > 8))
+                {
+                    /// Big integers and BFloat16 are not supported together.
+                    return false;
+                }
+
                 using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
 
                 if constexpr (!std::is_same_v<ResultDataType, InvalidType>)
@@ -1698,7 +1730,7 @@ public:
                     {
                         if constexpr (is_division)
                         {
-                            if (context->getSettingsRef().decimal_check_overflow)
+                            if (decimalCheckArithmeticOverflow(context))
                             {
                                 /// Check overflow by using operands scale (based on big decimal division implementation details):
                                 /// big decimal arithmetic is based on big integers, decimal operands are converted to big integers
@@ -1767,8 +1799,8 @@ public:
         {
             if (const auto * col_right_const = checkAndGetColumnConst<ColumnFixedString>(col_right_raw))
             {
-                const auto * col_left = checkAndGetColumn<ColumnFixedString>(col_left_const->getDataColumn());
-                const auto * col_right = checkAndGetColumn<ColumnFixedString>(col_right_const->getDataColumn());
+                const auto * col_left = &checkAndGetColumn<ColumnFixedString>(col_left_const->getDataColumn());
+                const auto * col_right = &checkAndGetColumn<ColumnFixedString>(col_right_const->getDataColumn());
 
                 if (col_left->getN() != col_right->getN())
                     return nullptr;
@@ -1805,11 +1837,11 @@ public:
 
         const auto * col_left = is_left_column_const
                         ? checkAndGetColumn<ColumnFixedString>(
-                            checkAndGetColumnConst<ColumnFixedString>(col_left_raw)->getDataColumn())
+                            &checkAndGetColumnConst<ColumnFixedString>(col_left_raw)->getDataColumn())
                         : checkAndGetColumn<ColumnFixedString>(col_left_raw);
         const auto * col_right = is_right_column_const
                         ? checkAndGetColumn<ColumnFixedString>(
-                            checkAndGetColumnConst<ColumnFixedString>(col_right_raw)->getDataColumn())
+                            &checkAndGetColumnConst<ColumnFixedString>(col_right_raw)->getDataColumn())
                         : checkAndGetColumn<ColumnFixedString>(col_right_raw);
 
         if (col_left && col_right)
@@ -1881,8 +1913,8 @@ public:
         {
             if (const auto * col_right_const = checkAndGetColumnConst<ColumnString>(col_right_raw))
             {
-                const auto * col_left = checkAndGetColumn<ColumnString>(col_left_const->getDataColumn());
-                const auto * col_right = checkAndGetColumn<ColumnString>(col_right_const->getDataColumn());
+                const auto * col_left = &checkAndGetColumn<ColumnString>(col_left_const->getDataColumn());
+                const auto * col_right = &checkAndGetColumn<ColumnString>(col_right_const->getDataColumn());
 
                 std::string_view a = col_left->getDataAt(0).toView();
                 std::string_view b = col_right->getDataAt(0).toView();
@@ -1897,10 +1929,10 @@ public:
         const bool is_right_column_const = checkAndGetColumnConst<ColumnString>(col_right_raw) != nullptr;
 
         const auto * col_left = is_left_column_const
-            ? checkAndGetColumn<ColumnString>(checkAndGetColumnConst<ColumnString>(col_left_raw)->getDataColumn())
+            ? &checkAndGetColumn<ColumnString>(checkAndGetColumnConst<ColumnString>(col_left_raw)->getDataColumn())
             : checkAndGetColumn<ColumnString>(col_left_raw);
         const auto * col_right = is_right_column_const
-            ? checkAndGetColumn<ColumnString>(checkAndGetColumnConst<ColumnString>(col_right_raw)->getDataColumn())
+            ? &checkAndGetColumn<ColumnString>(checkAndGetColumnConst<ColumnString>(col_right_raw)->getDataColumn())
             : checkAndGetColumn<ColumnString>(col_right_raw);
 
         if (col_left && col_right)
@@ -1948,7 +1980,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
 
         const ColumnConst * const col_left_const = checkAndGetColumnConst<LeftColumnType>(col_left_raw);
 
-        const auto * col_left = col_left_const ? checkAndGetColumn<LeftColumnType>(col_left_const->getDataColumn())
+        const auto * col_left = col_left_const ? &checkAndGetColumn<LeftColumnType>(col_left_const->getDataColumn())
                                                : checkAndGetColumn<LeftColumnType>(col_left_raw);
 
         if (!col_left)
@@ -1979,11 +2011,12 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
 
             return ColumnConst::create(std::move(col_res), col_left_const->size());
         }
-        else if (!col_left_const && !col_right_const && col_right)
+        if (!col_left_const && !col_right_const && col_right)
         {
             if constexpr (std::is_same_v<LeftDataType, DataTypeFixedString>)
             {
-                OpImpl::template processFixedString<OpCase::Vector>(in_vec.data(), col_left->getN(), col_right->getData().data(), out_vec, col_left->size());
+                OpImpl::template processFixedString<OpCase::Vector>(
+                    in_vec.data(), col_left->getN(), col_right->getData().data(), out_vec, col_left->size());
             }
             else
             {
@@ -2013,7 +2046,8 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             const T1 value = col_right_const->template getValue<T1>();
             if constexpr (std::is_same_v<LeftDataType, DataTypeFixedString>)
             {
-                OpImpl::template processFixedString<OpCase::RightConstant>(in_vec.data(), col_left->getN(), &value, out_vec, col_left->size());
+                OpImpl::template processFixedString<OpCase::RightConstant>(
+                    in_vec.data(), col_left->getN(), &value, out_vec, col_left->size());
             }
             else
             {
@@ -2038,7 +2072,15 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
         using DecimalResultType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::DecimalResultDataType;
 
         if constexpr (std::is_same_v<ResultDataType, InvalidType>)
+        {
             return nullptr;
+        }
+        else if constexpr ((std::is_same_v<LeftDataType, DataTypeBFloat16> || std::is_same_v<RightDataType, DataTypeBFloat16>)
+            && (sizeof(typename LeftDataType::FieldType) > 8 || sizeof(typename RightDataType::FieldType) > 8))
+        {
+            /// Big integers and BFloat16 are not supported together.
+            return nullptr;
+        }
         else // we can't avoid the else because otherwise the compiler may assume the ResultDataType may be Invalid
              // and that would produce the compile error.
         {
@@ -2055,7 +2097,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             ColumnPtr left_col = nullptr;
             ColumnPtr right_col = nullptr;
 
-            /// When Decimal op Float32/64, convert both of them into Float64
+            /// When Decimal op Float32/64/16, convert both of them into Float64
             if constexpr (decimal_with_float)
             {
                 const auto converted_type = std::make_shared<DataTypeFloat64>();
@@ -2090,7 +2132,6 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             /// Here we check if we have `intDiv` or `intDivOrZero` and at least one of the arguments is decimal, because in this case originally we had result as decimal, so we need to convert result into integer after calculations
             else if constexpr (!decimal_with_float && (is_int_div || is_int_div_or_zero) && (IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>))
             {
-
                 if constexpr (!std::is_same_v<DecimalResultType, InvalidType>)
                 {
                     DataTypePtr type_res;
@@ -2206,7 +2247,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
         /// Special case when the function is plus, minus or multiply, both arguments are tuples.
         if (auto function_builder = getFunctionForTupleArithmetic(arguments[0].type, arguments[1].type, context))
         {
-            return function_builder->build(arguments)->execute(arguments, result_type, input_rows_count);
+            return function_builder->build(arguments)->execute(arguments, result_type, input_rows_count, /* dry_run = */ false);
         }
 
         /// Special case when the function is multiply or divide, one of arguments is Tuple and another is Number.
@@ -2231,7 +2272,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
 
             bool is_const = checkColumnConst<ColumnNullable>(right_argument.column.get());
             const ColumnNullable * nullable_column = is_const ? checkAndGetColumnConstData<ColumnNullable>(right_argument.column.get())
-                                                              : checkAndGetColumn<ColumnNullable>(*right_argument.column);
+                                                              : checkAndGetColumn<ColumnNullable>(right_argument.column.get());
 
             const auto & null_bytemap = nullable_column->getNullMapData();
             auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, &null_bytemap);
@@ -2443,16 +2484,14 @@ public:
 
             return Base::executeImpl(columns_with_constant, result_type, input_rows_count);
         }
-        else if (right.column && isColumnConst(*right.column) && arguments.size() == 1)
+        if (right.column && isColumnConst(*right.column) && arguments.size() == 1)
         {
             ColumnsWithTypeAndName columns_with_constant
-                = {arguments[0],
-                   {right.column->cloneResized(input_rows_count), right.type, right.name}};
+                = {arguments[0], {right.column->cloneResized(input_rows_count), right.type, right.name}};
 
             return Base::executeImpl(columns_with_constant, result_type, input_rows_count);
         }
-        else
-            return Base::executeImpl(arguments, result_type, input_rows_count);
+        return Base::executeImpl(arguments, result_type, input_rows_count);
     }
 
     bool hasInformationAboutMonotonicity() const override
@@ -2521,20 +2560,16 @@ public:
                     // Check if there is an overflow
                     if (is_positive_monotonicity)
                         return {true, true, false, true};
-                    else
-                        return {false, true, false, false};
+                    return {false, true, false, false};
                 }
-                else
-                {
-                    // Check if there is an overflow
-                    if (!is_positive_monotonicity)
-                        return {true, false, false, true};
-                    else
-                        return {false, false, false, false};
-                }
+
+                // Check if there is an overflow
+                if (!is_positive_monotonicity)
+                    return {true, false, false, true};
+                return {false, false, false, false};
             }
             // variable +|- constant
-            else if (right.column && isColumnConst(*right.column))
+            if (right.column && isColumnConst(*right.column))
             {
                 auto left_type = removeNullable(removeLowCardinality(left.type));
                 auto right_type = removeNullable(removeLowCardinality(right.type));
@@ -2556,8 +2591,7 @@ public:
                 if (applyVisitor(FieldVisitorAccurateLess(), left_point, right_point)
                     == applyVisitor(FieldVisitorAccurateLess(), transform(left_point), transform(right_point)))
                     return {true, true, false, true};
-                else
-                    return {false, true, false, false};
+                return {false, true, false, false};
             }
         }
         if (name_view == "divide" || name_view == "intDiv")
@@ -2577,8 +2611,7 @@ public:
                 {
                     return {true, is_constant_positive, false, is_strict};
                 }
-                else if (
-                    applyVisitor(FieldVisitorAccurateLess(), Field(0), left_point)
+                if (applyVisitor(FieldVisitorAccurateLess(), Field(0), left_point)
                     && applyVisitor(FieldVisitorAccurateLess(), Field(0), right_point))
                 {
                     return {true, !is_constant_positive, false, is_strict};

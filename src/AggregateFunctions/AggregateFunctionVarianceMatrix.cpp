@@ -20,7 +20,7 @@ namespace ErrorCodes
 namespace
 {
 
-enum class StatisticsMatrixFunctionKind
+enum class StatisticsMatrixFunctionKind : uint8_t
 {
     covarPopMatrix,
     covarSampMatrix,

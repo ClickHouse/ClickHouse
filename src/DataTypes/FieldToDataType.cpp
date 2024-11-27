@@ -20,7 +20,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int EMPTY_DATA_PASSED;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -146,9 +145,6 @@ DataTypePtr FieldToDataType<on_error>::operator() (const Array & x) const
 template <LeastSupertypeOnError on_error>
 DataTypePtr FieldToDataType<on_error>::operator() (const Tuple & tuple) const
 {
-    if (tuple.empty())
-        throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Cannot infer type of an empty tuple");
-
     DataTypes element_types;
     element_types.reserve(tuple.size());
 
@@ -182,15 +178,13 @@ DataTypePtr FieldToDataType<on_error>::operator() (const Map & map) const
 template <LeastSupertypeOnError on_error>
 DataTypePtr FieldToDataType<on_error>::operator() (const Object &) const
 {
-    /// TODO: Do we need different parameters for type Object?
-    return std::make_shared<DataTypeObject>("json", false);
+    return std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
 }
 
 template <LeastSupertypeOnError on_error>
 DataTypePtr FieldToDataType<on_error>::operator() (const AggregateFunctionStateData & x) const
 {
-    const auto & name = static_cast<const AggregateFunctionStateData &>(x).name;
-    return DataTypeFactory::instance().get(name);
+    return DataTypeFactory::instance().get(x.name);
 }
 
 template <LeastSupertypeOnError on_error>

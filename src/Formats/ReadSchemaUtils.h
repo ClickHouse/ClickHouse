@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Formats/FormatFactory.h>
+#include <Formats/FormatSettings.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/ColumnsDescription.h>
 
@@ -56,8 +56,8 @@ struct IReadBufferIterator
     /// Set auto detected format name.
     virtual void setFormatName(const String & /*format_name*/) {}
 
-    /// Get last processed file name for better exception messages.
-    virtual String getLastFileName() const { return ""; }
+    /// Get last processed file path for better exception messages.
+    virtual String getLastFilePath() const { return ""; }
 
     /// Return true if method recreateLastReadBuffer is implemented.
     virtual bool supportsLastReadBufferRecreation() const { return false; }

@@ -11,11 +11,13 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnObject.h>
+#include <Columns/ColumnObjectDeprecated.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
+#include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnObject.h>
 #include <Columns/ColumnVector.h>
 #include <Core/Field.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
@@ -45,7 +47,11 @@ String IColumn::dumpStructure() const
     return res.str();
 }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void IColumn::insertFrom(const IColumn & src, size_t n)
+#else
+void IColumn::doInsertFrom(const IColumn & src, size_t n)
+#endif
 {
     insert(src[n]);
 }
@@ -80,6 +86,11 @@ ColumnPtr IColumn::createWithOffsets(const Offsets & offsets, const ColumnConst 
         res->insertManyFrom(column_with_default_value.getDataColumn(), 0, offsets_diff - 1);
 
     return res;
+}
+
+size_t IColumn::estimateCardinalityInPermutedRange(const IColumn::Permutation & /*permutation*/, const EqualRange & equal_range) const
+{
+    return equal_range.size();
 }
 
 void IColumn::forEachSubcolumn(ColumnCallback callback) const
@@ -342,10 +353,8 @@ IColumnHelper<Derived, Parent>::serializeValueIntoArenaWithNull(size_t n, Arena 
         self.serializeValueIntoMemory(n, memory + 1);
         return {memory, sz};
     }
-    else
-    {
-        return self.serializeValueIntoArena(n, arena, begin);
-    }
+
+    return self.serializeValueIntoArena(n, arena, begin);
 }
 
 template <typename Derived, typename Parent>
@@ -434,6 +443,7 @@ template class IColumnHelper<ColumnVector<Int32>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<Int64>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<Int128>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<Int256>, ColumnFixedSizeHelper>;
+template class IColumnHelper<ColumnVector<BFloat16>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<Float32>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<Float64>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<UUID>, ColumnFixedSizeHelper>;
@@ -456,11 +466,13 @@ template class IColumnHelper<ColumnArray, IColumn>;
 template class IColumnHelper<ColumnTuple, IColumn>;
 template class IColumnHelper<ColumnMap, IColumn>;
 template class IColumnHelper<ColumnSparse, IColumn>;
-template class IColumnHelper<ColumnObject, IColumn>;
+template class IColumnHelper<ColumnObjectDeprecated, IColumn>;
 template class IColumnHelper<ColumnAggregateFunction, IColumn>;
 template class IColumnHelper<ColumnFunction, IColumn>;
 template class IColumnHelper<ColumnCompressed, IColumn>;
 template class IColumnHelper<ColumnVariant, IColumn>;
+template class IColumnHelper<ColumnDynamic, IColumn>;
+template class IColumnHelper<ColumnObject, IColumn>;
 
 template class IColumnHelper<IColumnDummy, IColumn>;
 

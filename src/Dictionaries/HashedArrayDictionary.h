@@ -228,7 +228,7 @@ private:
         DefaultValueExtractor & default_value_extractor) const;
 
     template <typename AttributeType, bool is_nullable, typename ValueSetter>
-    size_t getItemsShortCircuitImpl(
+    void getItemsShortCircuitImpl(
         const Attribute & attribute,
         DictionaryKeysExtractor<dictionary_key_type> & keys_extractor,
         ValueSetter && set_value,
@@ -244,7 +244,7 @@ private:
         DefaultValueExtractor & default_value_extractor) const;
 
     template <typename AttributeType, bool is_nullable, typename ValueSetter>
-    size_t getItemsShortCircuitImpl(
+    void getItemsShortCircuitImpl(
         const Attribute & attribute,
         const KeyIndexToElementIndex & key_index_to_element_index,
         ValueSetter && set_value,

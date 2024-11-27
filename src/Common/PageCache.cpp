@@ -112,8 +112,7 @@ bool AtomicBitSet::set(size_t i, bool val) const
 {
     if (val)
         return set(i);
-    else
-        return unset(i);
+    return unset(i);
 }
 
 bool AtomicBitSet::unset(size_t i) const
@@ -198,12 +197,18 @@ size_t PageCache::getPinnedSize() const
 PageCache::MemoryStats PageCache::getResidentSetSize() const
 {
     MemoryStats stats;
+
 #ifdef OS_LINUX
     if (use_madv_free)
     {
         std::unordered_set<UInt64> cache_mmap_addrs;
         {
             std::lock_guard lock(global_mutex);
+
+            /// Don't spend time on reading smaps if page cache is not used.
+            if (mmaps.empty())
+                return stats;
+
             for (const auto & m : mmaps)
                 cache_mmap_addrs.insert(reinterpret_cast<UInt64>(m.ptr));
         }
@@ -258,7 +263,7 @@ PageCache::MemoryStats PageCache::getResidentSetSize() const
                 UInt64 addr = unhexUInt<UInt64>(s.c_str());
                 current_range_is_cache = cache_mmap_addrs.contains(addr);
             }
-            else if (s == "Rss:" || s == "LazyFree")
+            else if (s == "Rss:" || s == "LazyFree:")
             {
                 skip_whitespace();
                 size_t val;
@@ -418,7 +423,7 @@ static void logUnexpectedSyscallError(std::string name)
 {
     std::string message = fmt::format("{} failed: {}", name, errnoToString());
     LOG_WARNING(&Poco::Logger::get("PageCache"), "{}", message);
-#if defined(ABORT_ON_LOGICAL_ERROR)
+#if defined(DEBUG_OR_SANITIZER_BUILD)
     volatile bool true_ = true;
     if (true_) // suppress warning about missing [[noreturn]]
         abortOnFailedAssertion(message);
@@ -520,7 +525,7 @@ PageChunk * PageCache::getFreeChunk()
     PageChunk * chunk = &lru.front();
     lru.erase(lru.iterator_to(*chunk));
 
-    size_t prev_pin_count = chunk->pin_count.fetch_add(1);
+    size_t prev_pin_count = chunk->pin_count.fetch_add(1);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
     chassert(prev_pin_count == 0);
 
     evictChunk(chunk);
@@ -532,7 +537,7 @@ void PageCache::evictChunk(PageChunk * chunk)
 {
     if (chunk->key.has_value())
     {
-        size_t erased = chunk_by_key.erase(chunk->key.value());
+        size_t erased = chunk_by_key.erase(chunk->key.value());  /// NOLINT(clang-analyzer-deadcode.DeadStores)
         chassert(erased);
         chunk->key.reset();
     }

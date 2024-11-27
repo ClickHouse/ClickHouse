@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/approxtopk
-sidebar_position: 212
+sidebar_position: 107
 ---
 
 # approx_top_k

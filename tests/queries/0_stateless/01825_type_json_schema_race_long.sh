@@ -8,7 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_json_race"
-$CLICKHOUSE_CLIENT -q "CREATE TABLE t_json_race (data JSON) ENGINE = MergeTree ORDER BY tuple()" --allow_experimental_object_type 1
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_json_race (data Object('json')) ENGINE = MergeTree ORDER BY tuple()" --allow_experimental_object_type 1
 
 function test_case()
 {

@@ -5,6 +5,7 @@
 #include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 #include <Common/FailPoint.h>
+#include <Core/Settings.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Planner/Utils.h>
@@ -35,6 +36,13 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool fallback_to_stale_replicas_for_distributed_queries;
+    extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
+    extern const SettingsBool prefer_localhost_replica;
+}
 
 namespace ErrorCodes
 {
@@ -67,7 +75,7 @@ ASTPtr rewriteSelectQuery(
     // are written into the query context and will be sent by the query pipeline.
     select_query.setExpression(ASTSelectQuery::Expression::SETTINGS, {});
 
-    if (!context->getSettingsRef().allow_experimental_analyzer)
+    if (!context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         if (table_function_ptr)
             select_query.addTableFunction(table_function_ptr);
@@ -164,7 +172,7 @@ void SelectStreamFactory::createForShardImpl(
     auto emplace_remote_stream = [&](bool lazy = false, time_t local_delay = 0)
     {
         Block shard_header;
-        if (context->getSettingsRef().allow_experimental_analyzer)
+        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
             shard_header = InterpreterSelectQueryAnalyzer::getSampleBlock(query_tree, context, SelectQueryOptions(processed_stage).analyze());
         else
             shard_header = header;
@@ -193,7 +201,7 @@ void SelectStreamFactory::createForShardImpl(
     // prefer_localhost_replica is not effective in case of parallel replicas
     // (1) prefer_localhost_replica is about choosing one replica on a shard
     // (2) parallel replica coordinator has own logic to choose replicas to read from
-    if (settings.prefer_localhost_replica && shard_info.isLocal() && !parallel_replicas_enabled)
+    if (settings[Setting::prefer_localhost_replica] && shard_info.isLocal() && !parallel_replicas_enabled)
     {
         StoragePtr main_table_storage;
 
@@ -234,7 +242,7 @@ void SelectStreamFactory::createForShardImpl(
             return;
         }
 
-        const UInt64 max_allowed_delay = settings.max_replica_delay_for_distributed_queries;
+        const UInt64 max_allowed_delay = settings[Setting::max_replica_delay_for_distributed_queries];
 
         if (!max_allowed_delay)
         {
@@ -254,7 +262,7 @@ void SelectStreamFactory::createForShardImpl(
         ProfileEvents::increment(ProfileEvents::DistributedConnectionStaleReplica);
         LOG_WARNING(getLogger("ClusterProxy::SelectStreamFactory"), "Local replica of shard {} is stale (delay: {}s.)", shard_info.shard_num, local_delay);
 
-        if (!settings.fallback_to_stale_replicas_for_distributed_queries)
+        if (!settings[Setting::fallback_to_stale_replicas_for_distributed_queries])
         {
             if (shard_info.hasRemoteConnections())
             {
@@ -262,9 +270,12 @@ void SelectStreamFactory::createForShardImpl(
                 emplace_remote_stream();
                 return;
             }
-            else
-                throw Exception(ErrorCodes::ALL_REPLICAS_ARE_STALE, "Local replica of shard {} is stale (delay: "
-                    "{}s.), but no other replica configured", shard_info.shard_num, toString(local_delay));
+            throw Exception(
+                ErrorCodes::ALL_REPLICAS_ARE_STALE,
+                "Local replica of shard {} is stale (delay: "
+                "{}s.), but no other replica configured",
+                shard_info.shard_num,
+                toString(local_delay));
         }
 
         if (!shard_info.hasRemoteConnections())

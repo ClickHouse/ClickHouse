@@ -30,6 +30,10 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsString query_cache_tag;
+}
 
 namespace
 {
@@ -85,11 +89,40 @@ struct HasSystemTablesMatcher
         {
             database_table = identifier->name();
         }
-        /// Handle SELECT [...] FROM clusterAllReplicas(<cluster>, '<table>')
-        else if (const auto * literal = node->as<ASTLiteral>())
+        /// SELECT [...] FROM clusterAllReplicas(<cluster>, '<table>')
+        /// This SQL syntax is quite common but we need to be careful. A naive attempt to cast 'node' to an ASTLiteral will be too general
+        /// and introduce false positives in queries like
+        ///     'SELECT * FROM users WHERE name = 'system.metrics' SETTINGS use_query_cache = true;'
+        /// Therefore, make sure we are really in `clusterAllReplicas`. EXPLAIN AST for
+        ///     'SELECT * FROM clusterAllReplicas('default', system.one) SETTINGS use_query_cache = 1'
+        /// returns:
+        ///     [...]
+        ///     Function clusterAllReplicas (children 1)
+        ///       ExpressionList (children 2)
+        ///         Literal 'test_shard_localhost'
+        ///         Literal 'system.one'
+        ///     [...]
+        else if (const auto * function = node->as<ASTFunction>())
         {
-            const auto & value = literal->value;
-            database_table = toString(value);
+            if (function->name == "clusterAllReplicas")
+            {
+                const ASTs & function_children = function->children;
+                if (!function_children.empty())
+                {
+                    if (const auto * expression_list = function_children[0]->as<ASTExpressionList>())
+                    {
+                        const ASTs & expression_list_children = expression_list->children;
+                        if (expression_list_children.size() >= 2)
+                        {
+                            if (const auto * literal = expression_list_children[1]->as<ASTLiteral>())
+                            {
+                                const auto & value = literal->value;
+                                database_table = toString(value);
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         Tokens tokens(database_table.c_str(), database_table.c_str() + database_table.size(), /*max_query_size*/ 2048, /*skip_insignificant*/ true);
@@ -126,6 +159,11 @@ bool astContainsSystemTables(ASTPtr ast, ContextPtr context)
 namespace
 {
 
+bool isQueryCacheRelatedSetting(const String & setting_name)
+{
+    return (setting_name.starts_with("query_cache_") || setting_name.ends_with("_query_cache")) && setting_name != "query_cache_tag";
+}
+
 class RemoveQueryCacheSettingsMatcher
 {
 public:
@@ -141,7 +179,7 @@ public:
 
             auto is_query_cache_related_setting = [](const auto & change)
             {
-                return change.name.starts_with("query_cache_") || change.name.ends_with("_query_cache");
+                return isQueryCacheRelatedSetting(change.name);
             };
 
             std::erase_if(set_clause->changes, is_query_cache_related_setting);
@@ -177,6 +215,39 @@ ASTPtr removeQueryCacheSettings(ASTPtr ast)
     return transformed_ast;
 }
 
+IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database, const Settings & settings)
+{
+    ast = removeQueryCacheSettings(ast);
+
+    /// Hash the AST, we must consider aliases (issue #56258)
+    SipHash hash;
+    ast->updateTreeHash(hash, /*ignore_aliases=*/ false);
+
+    /// Also hash the database specified via SQL `USE db`, otherwise identifiers in same query (AST) may mean different columns in different
+    /// tables (issue #64136)
+    hash.update(current_database);
+
+    /// Finally, hash the (changed) settings as they might affect the query result (e.g. think of settings `additional_table_filters` and `limit`).
+    /// Note: allChanged() returns the settings in random order. Also, update()-s of the composite hash must be done in deterministic order.
+    ///       Therefore, collect and sort the settings first, then hash them.
+    auto changed_settings = settings.changes();
+    std::vector<std::pair<String, String>> changed_settings_sorted; /// (name, value)
+    for (const auto & change : changed_settings)
+    {
+        const String & name = change.name;
+        if (!isQueryCacheRelatedSetting(name)) /// see removeQueryCacheSettings() why this is a good idea
+            changed_settings_sorted.push_back({name, Settings::valueToStringUtil(change.name, change.value)});
+    }
+    std::sort(changed_settings_sorted.begin(), changed_settings_sorted.end(), [](auto & lhs, auto & rhs) { return lhs.first < rhs.first; });
+    for (const auto & setting : changed_settings_sorted)
+    {
+        hash.update(setting.first);
+        hash.update(setting.second);
+    }
+
+    return getSipHash128AsPair(hash);
+}
+
 String queryStringFromAST(ASTPtr ast)
 {
     WriteBufferFromOwnString buf;
@@ -188,12 +259,15 @@ String queryStringFromAST(ASTPtr ast)
 
 QueryCache::Key::Key(
     ASTPtr ast_,
+    const String & current_database,
+    const Settings & settings,
     Block header_,
-    std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
+    std::optional<UUID> user_id_,
+    const std::vector<UUID> & current_user_roles_,
     bool is_shared_,
     std::chrono::time_point<std::chrono::system_clock> expires_at_,
     bool is_compressed_)
-    : ast(removeQueryCacheSettings(ast_))
+    : ast_hash(calculateAstHash(ast_, current_database, settings))
     , header(header_)
     , user_id(user_id_)
     , current_user_roles(current_user_roles_)
@@ -201,26 +275,29 @@ QueryCache::Key::Key(
     , expires_at(expires_at_)
     , is_compressed(is_compressed_)
     , query_string(queryStringFromAST(ast_))
+    , tag(settings[Setting::query_cache_tag])
 {
 }
 
-QueryCache::Key::Key(ASTPtr ast_, std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_)
-    : QueryCache::Key(ast_, {}, user_id_, current_user_roles_, false, std::chrono::system_clock::from_time_t(1), false) /// dummy values for everything != AST or user name
+QueryCache::Key::Key(
+    ASTPtr ast_,
+    const String & current_database,
+    const Settings & settings,
+    std::optional<UUID> user_id_,
+    const std::vector<UUID> & current_user_roles_)
+    : QueryCache::Key(ast_, current_database, settings, {}, user_id_, current_user_roles_, false, std::chrono::system_clock::from_time_t(1), false)
+    /// ^^ dummy values for everything != AST, current database, user name/roles
 {
 }
-
-/// Hashing of ASTs must consider aliases (issue #56258)
-static constexpr bool ignore_aliases = false;
 
 bool QueryCache::Key::operator==(const Key & other) const
 {
-    return ast->getTreeHash(ignore_aliases) == other.ast->getTreeHash(ignore_aliases);
+    return ast_hash == other.ast_hash;
 }
 
 size_t QueryCache::KeyHasher::operator()(const Key & key) const
 {
-    IAST::Hash hash = key.ast->getTreeHash(ignore_aliases);
-    return hash.low64;
+    return key.ast_hash.low64;
 }
 
 size_t QueryCache::QueryCacheEntryWeight::operator()(const Entry & entry) const
@@ -575,9 +652,18 @@ QueryCache::Writer QueryCache::createWriter(const Key & key, std::chrono::millis
     return Writer(cache, key, max_entry_size_in_bytes, max_entry_size_in_rows, min_query_runtime, squash_partial_results, max_block_size);
 }
 
-void QueryCache::clear()
+void QueryCache::clear(const std::optional<String> & tag)
 {
-    cache.clear();
+    if (tag)
+    {
+        auto predicate = [tag](const Key & key, const Cache::MappedPtr &) { return key.tag == tag.value(); };
+        cache.remove(predicate);
+    }
+    else
+    {
+        cache.clear();
+    }
+
     std::lock_guard lock(mutex);
     times_executed.clear();
 }

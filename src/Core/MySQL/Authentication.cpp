@@ -86,7 +86,7 @@ void Native41::authenticate(
 {
     if (!auth_response)
     {
-        packet_endpoint->sendPacket(AuthSwitchRequest(getName(), scramble), true);
+        packet_endpoint->sendPacket(AuthSwitchRequest(getName(), scramble));
         AuthSwitchResponse response;
         packet_endpoint->receivePacket(response);
         auth_response = response.value;
@@ -123,7 +123,7 @@ void Sha256Password::authenticate(
 {
     if (!auth_response)
     {
-        packet_endpoint->sendPacket(AuthSwitchRequest(getName(), scramble), true);
+        packet_endpoint->sendPacket(AuthSwitchRequest(getName(), scramble));
 
         if (packet_endpoint->in->eof())
             throw Exception(ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES,
@@ -158,7 +158,7 @@ void Sha256Password::authenticate(
         LOG_TRACE(log, "Key: {}", pem);
 
         AuthMoreData data(pem);
-        packet_endpoint->sendPacket(data, true);
+        packet_endpoint->sendPacket(data);
         sent_public_key = true;
 
         AuthSwitchResponse response;
@@ -184,11 +184,7 @@ void Sha256Password::authenticate(
         const auto * ciphertext = reinterpret_cast<const unsigned char *>(unpack_auth_response.data());
 
         unsigned char plaintext[RSA_size(&private_key)];
-#if USE_BORINGSSL
-        int plaintext_size = RSA_private_decrypt(unpack_auth_response.size(), ciphertext, plaintext, &private_key, RSA_PKCS1_OAEP_PADDING);
-#else
         int plaintext_size = RSA_private_decrypt(static_cast<int>(unpack_auth_response.size()), ciphertext, plaintext, &private_key, RSA_PKCS1_OAEP_PADDING);
-#endif
         if (plaintext_size == -1)
         {
             if (!sent_public_key)

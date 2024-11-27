@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/quantiletdigestweighted
-sidebar_position: 208
+sidebar_position: 179
 ---
 
 # quantileTDigestWeighted

@@ -41,8 +41,7 @@ REGISTER_FUNCTION(Hashing)
             .description="Calculates value of XXH3 64-bit hash function. Refer to https://github.com/Cyan4973/xxHash for detailed documentation.",
             .examples{{"hash", "SELECT xxh3('ClickHouse')", ""}},
             .categories{"Hash"}
-        },
-        FunctionFactory::CaseSensitive);
+        });
 
     factory.registerFunction<FunctionWyHash64>();
 

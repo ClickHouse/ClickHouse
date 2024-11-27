@@ -1,7 +1,8 @@
 from time import sleep
-import pytest
-from helpers.cluster import ClickHouseCluster
 
+import pytest
+
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 

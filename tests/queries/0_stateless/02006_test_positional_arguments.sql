@@ -46,10 +46,10 @@ explain syntax select max(x1), x2 from test group by -1 order by -2, -1;
 explain syntax select 1 + greatest(x1, 1), x2 from test group by 1, 2;
 explain syntax select 1 + greatest(x1, 1), x2 from test group by -2, -1;
 
-select max(x1), x2 from test group by 1, 2; -- { serverError 43, 184 }
-select 1 + max(x1), x2 from test group by 1, 2; -- { serverError 43, 184 }
-select max(x1), x2 from test group by -2, -1; -- { serverError 43, 184 }
-select 1 + max(x1), x2 from test group by -2, -1; -- { serverError 43, 184 }
+select max(x1), x2 from test group by 1, 2; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT, 184 }
+select 1 + max(x1), x2 from test group by 1, 2; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT, 184 }
+select max(x1), x2 from test group by -2, -1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT, 184 }
+select 1 + max(x1), x2 from test group by -2, -1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT, 184 }
 
 explain syntax select x1 + x3, x3 from test group by 1, 2;
 explain syntax select x1 + x3, x3 from test group by -2, -1;

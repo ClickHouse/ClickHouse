@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <Storages/MemorySettings.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/parseQuery.h>
@@ -7,6 +8,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -74,6 +76,7 @@ private:
                 {"a", std::make_shared<DataTypeUInt8>()},
                 {"b", std::make_shared<DataTypeDate>()},
                 {"foo", std::make_shared<DataTypeString>()},
+                {"is_value", DataTypeFactory::instance().get("Bool")},
             }),
         TableWithColumnNamesAndTypes(
             createDBAndTable("table2"),
@@ -103,7 +106,7 @@ private:
                 context,
                 table_name,
                 std::make_shared<StorageMemory>(
-                    StorageID(db_name, table_name), ColumnsDescription{tab.columns}, ConstraintsDescription{}, String{}));
+                    StorageID(db_name, table_name), ColumnsDescription{tab.columns}, ConstraintsDescription{}, String{}, MemorySettings{}));
         }
         DatabaseCatalog::instance().attachDatabase(database->getDatabaseName(), database);
 
@@ -368,17 +371,21 @@ TEST(TransformQueryForExternalDatabase, Null)
 
     check(state, 1, {"field"},
           "SELECT field FROM table WHERE field IS NULL",
-          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NULL)");
+          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NULL)",
+          R"(SELECT "field" FROM "test"."table" WHERE 1 = 0)");
     check(state, 1, {"field"},
           "SELECT field FROM table WHERE field IS NOT NULL",
-          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NOT NULL)");
+          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NOT NULL)",
+          R"(SELECT "field" FROM "test"."table")");
 
     check(state, 1, {"field"},
           "SELECT field FROM table WHERE isNull(field)",
-          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NULL)");
+          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NULL)",
+          R"(SELECT "field" FROM "test"."table" WHERE 1 = 0)");
     check(state, 1, {"field"},
           "SELECT field FROM table WHERE isNotNull(field)",
-          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NOT NULL)");
+          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NOT NULL)",
+          R"(SELECT "field" FROM "test"."table")");
 }
 
 TEST(TransformQueryForExternalDatabase, ToDate)
@@ -407,6 +414,14 @@ TEST(TransformQueryForExternalDatabase, Analyzer)
         R"(SELECT "column" FROM "test"."table")");
 
     check(state, 1, {"column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo"},
-        "SELECT * FROM table WHERE (column) IN (1)",
+        "SELECT * EXCEPT (is_value) FROM table WHERE (column) IN (1)",
         R"(SELECT "column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo" FROM "test"."table" WHERE "column" IN (1))");
+
+    check(state, 1, {"is_value"},
+        "SELECT is_value FROM table WHERE is_value = true",
+        R"(SELECT "is_value" FROM "test"."table" WHERE "is_value" = true)");
+
+    check(state, 1, {"is_value"},
+        "SELECT is_value FROM table WHERE is_value = 1",
+        R"(SELECT "is_value" FROM "test"."table" WHERE "is_value" = 1)");
 }

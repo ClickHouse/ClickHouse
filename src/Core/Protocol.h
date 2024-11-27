@@ -63,6 +63,9 @@ const char USER_INTERSERVER_MARKER[] = " INTERSERVER SECRET ";
 /// Marker for SSH-keys-based authentication (passed as the user name)
 const char SSH_KEY_AUTHENTICAION_MARKER[] = " SSH KEY AUTHENTICATION ";
 
+/// Marker for JSON Web Token authentication
+const char JWT_AUTHENTICAION_MARKER[] = " JWT AUTHENTICATION ";
+
 };
 
 namespace Protocol
@@ -190,14 +193,14 @@ namespace Protocol
     }
 
     /// Whether the compression must be used.
-    enum class Compression
+    enum class Compression : uint8_t
     {
         Disable = 0,
         Enable = 1,
     };
 
     /// Whether the ssl must be used.
-    enum class Secure
+    enum class Secure : uint8_t
     {
         Disable = 0,
         Enable = 1,

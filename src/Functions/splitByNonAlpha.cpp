@@ -9,7 +9,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/Regexps.h>
 #include <Interpreters/Context.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 

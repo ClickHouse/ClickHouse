@@ -11,6 +11,10 @@ assignees: ''
 
 > You have to provide the following information whenever possible.
 
+**Company or project name**
+
+> Put your company name or project description here
+
 **Describe what's wrong**
 
 > A clear and concise description of what works not as it is supposed to.

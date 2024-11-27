@@ -48,7 +48,7 @@ struct MaxIntersectionsData
     Array value;
 };
 
-enum class AggregateFunctionIntersectionsKind
+enum class AggregateFunctionIntersectionsKind : uint8_t
 {
     Count,
     Position
@@ -87,11 +87,11 @@ public:
     {
         if (kind_ == AggregateFunctionIntersectionsKind::Count)
             return std::make_shared<DataTypeUInt64>();
-        else
-            return std::make_shared<DataTypeNumber<PointType>>();
+        return std::make_shared<DataTypeNumber<PointType>>();
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    /// MaxIntersectionsData::Allocator uses the arena
+    bool allocatesMemoryInArena() const override { return true; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
@@ -155,9 +155,9 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        Int64 current_intersections = 0;
-        Int64 max_intersections = 0;
-        PointType position_of_max_intersections = 0;
+        Int64 current_intersections{};
+        Int64 max_intersections{};
+        PointType position_of_max_intersections{};
 
         /// const_cast because we will sort the array
         auto & array = this->data(place).value;

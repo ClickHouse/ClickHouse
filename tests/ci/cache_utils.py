@@ -197,7 +197,6 @@ class CargoCache(Cache):
             logging.info("Cache for Cargo.lock md5 %s will be uploaded", self.lock_hash)
             self._force_upload_cache = True
             self.directory.mkdir(parents=True, exist_ok=True)
-            return
 
     def upload(self):
         self._upload(f"{self.PREFIX}/{self.archive_name}", self._force_upload_cache)

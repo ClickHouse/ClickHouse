@@ -137,16 +137,13 @@ bool DatatypeInt::convertImpl(String & out, IParser::Pos & pos)
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
         return false;
-    String guid_str;
 
     ++pos;
     if (pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "String is not parsed as int literal.");
-    else
-    {
-        auto arg = getConvertedArgument(fn_name, pos);
-        out = std::format("toInt32({})", arg);
-    }
+
+    auto arg = getConvertedArgument(fn_name, pos);
+    out = std::format("toInt32({})", arg);
     return true;
 }
 
@@ -164,11 +161,9 @@ bool DatatypeReal::convertImpl(String & out, IParser::Pos & pos)
     ++pos;
     if (pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "String is not parsed as double literal.");
-    else
-    {
-        auto arg = getConvertedArgument(fn_name, pos);
-        out = std::format("toFloat64({})", arg);
-    }
+
+    auto arg = getConvertedArgument(fn_name, pos);
+    out = std::format("toFloat64({})", arg);
     return true;
 }
 

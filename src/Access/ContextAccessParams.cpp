@@ -1,16 +1,24 @@
 #include <Access/ContextAccessParams.h>
 #include <Core/Settings.h>
+#include <IO/Operators.h>
 #include <Common/typeid_cast.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_ddl;
+    extern const SettingsBool allow_introspection_functions;
+    extern const SettingsUInt64 readonly;
+}
 
 ContextAccessParams::ContextAccessParams(
     std::optional<UUID> user_id_,
     bool full_access_,
     bool use_default_roles_,
     const std::shared_ptr<const std::vector<UUID>> & current_roles_,
+    const std::shared_ptr<const std::vector<UUID>> & external_roles_,
     const Settings & settings_,
     const String & current_database_,
     const ClientInfo & client_info_)
@@ -18,9 +26,10 @@ ContextAccessParams::ContextAccessParams(
     , full_access(full_access_)
     , use_default_roles(use_default_roles_)
     , current_roles(current_roles_)
-    , readonly(settings_.readonly)
-    , allow_ddl(settings_.allow_ddl)
-    , allow_introspection(settings_.allow_introspection_functions)
+    , external_roles(external_roles_)
+    , readonly(settings_[Setting::readonly])
+    , allow_ddl(settings_[Setting::allow_ddl])
+    , allow_introspection(settings_[Setting::allow_introspection_functions])
     , current_database(current_database_)
     , interface(client_info_.interface)
     , http_method(client_info_.http_method)
@@ -49,6 +58,17 @@ String ContextAccessParams::toString() const
             if (i)
                 out << ", ";
             out << (*current_roles)[i];
+        }
+        out << "]";
+    }
+    if (external_roles && !external_roles->empty())
+    {
+        out << separator() << "external_roles = [";
+        for (size_t i = 0; i != external_roles->size(); ++i)
+        {
+            if (i)
+                out << ", ";
+            out << (*external_roles)[i];
         }
         out << "]";
     }
@@ -82,10 +102,9 @@ bool operator ==(const ContextAccessParams & left, const ContextAccessParams & r
         {
             if (!x)
                 return !y;
-            else if (!y)
+            if (!y)
                 return false;
-            else
-                return *x == *y;
+            return *x == *y;
         }
         else
         {
@@ -101,6 +120,7 @@ bool operator ==(const ContextAccessParams & left, const ContextAccessParams & r
     CONTEXT_ACCESS_PARAMS_EQUALS(full_access)
     CONTEXT_ACCESS_PARAMS_EQUALS(use_default_roles)
     CONTEXT_ACCESS_PARAMS_EQUALS(current_roles)
+    CONTEXT_ACCESS_PARAMS_EQUALS(external_roles)
     CONTEXT_ACCESS_PARAMS_EQUALS(readonly)
     CONTEXT_ACCESS_PARAMS_EQUALS(allow_ddl)
     CONTEXT_ACCESS_PARAMS_EQUALS(allow_introspection)
@@ -125,23 +145,21 @@ bool operator <(const ContextAccessParams & left, const ContextAccessParams & ri
         {
             if (!x)
                 return y ? -1 : 0;
-            else if (!y)
+            if (!y)
                 return 1;
-            else if (*x == *y)
+            if (*x == *y)
                 return 0;
-            else if (*x < *y)
+            if (*x < *y)
                 return -1;
-            else
-                return 1;
+            return 1;
         }
         else
         {
             if (x == y)
                 return 0;
-            else if (x < y)
+            if (x < y)
                 return -1;
-            else
-                return 1;
+            return 1;
         }
     };
 
@@ -153,6 +171,7 @@ bool operator <(const ContextAccessParams & left, const ContextAccessParams & ri
     CONTEXT_ACCESS_PARAMS_LESS(full_access)
     CONTEXT_ACCESS_PARAMS_LESS(use_default_roles)
     CONTEXT_ACCESS_PARAMS_LESS(current_roles)
+    CONTEXT_ACCESS_PARAMS_LESS(external_roles)
     CONTEXT_ACCESS_PARAMS_LESS(readonly)
     CONTEXT_ACCESS_PARAMS_LESS(allow_ddl)
     CONTEXT_ACCESS_PARAMS_LESS(allow_introspection)

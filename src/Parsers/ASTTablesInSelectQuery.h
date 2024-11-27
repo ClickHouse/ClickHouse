@@ -80,12 +80,15 @@ struct ASTTableJoin : public IAST
     void formatImplAfterTable(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+
+protected:
+    void forEachPointerToChild(std::function<void(void **)> f) override;
 };
 
 /// Specification of ARRAY JOIN.
 struct ASTArrayJoin : public IAST
 {
-    enum class Kind
+    enum class Kind : uint8_t
     {
         Inner,   /// If array is empty, row will not present (default).
         Left,    /// If array is empty, leave row with default values instead of array elements.

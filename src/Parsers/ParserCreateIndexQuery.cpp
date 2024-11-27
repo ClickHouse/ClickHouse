@@ -7,8 +7,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/ParserDataType.h>
 #include <Parsers/parseDatabaseAndTableName.h>
+
 
 namespace DB
 {
@@ -17,11 +17,11 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
 {
     ParserKeyword s_type(Keyword::TYPE);
     ParserKeyword s_granularity(Keyword::GRANULARITY);
-    ParserToken open(TokenType::OpeningRoundBracket);
-    ParserToken close(TokenType::ClosingRoundBracket);
-    ParserOrderByExpressionList order_list;
+    ParserToken open_p(TokenType::OpeningRoundBracket);
+    ParserToken close_p(TokenType::ClosingRoundBracket);
+    ParserOrderByExpressionList order_list_p;
 
-    ParserDataType data_type_p;
+    ParserExpressionWithOptionalArguments type_p;
     ParserExpression expression_p;
     ParserUnsignedInteger granularity_p;
 
@@ -29,22 +29,46 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
     ASTPtr type;
     ASTPtr granularity;
 
-    /// Skip name parser for SQL-standard CREATE INDEX
-    if (expression_p.parse(pos, expr, expected))
+    if (open_p.ignore(pos, expected))
     {
-    }
-    else if (open.ignore(pos, expected))
-    {
-        if (!order_list.parse(pos, expr, expected))
+        ASTPtr order_list;
+        if (!order_list_p.parse(pos, order_list, expected))
             return false;
 
-        if (!close.ignore(pos, expected))
+        if (!close_p.ignore(pos, expected))
             return false;
+
+        if (order_list->children.empty())
+            return false;
+
+        /// CREATE INDEX with ASC, DESC is implemented only for SQL compatibility.
+        /// ASC and DESC modifiers are not supported and are ignored further.
+        if (order_list->children.size() == 1)
+        {
+            auto order_by_elem = order_list->children[0];
+            expr = order_by_elem->children[0];
+        }
+        else
+        {
+            auto tuple_func = makeASTFunction("tuple");
+            tuple_func->arguments = std::make_shared<ASTExpressionList>();
+
+            for (const auto & order_by_elem : order_list->children)
+            {
+                auto elem_expr = order_by_elem->children[0];
+                tuple_func->arguments->children.push_back(std::move(elem_expr));
+            }
+            expr = std::move(tuple_func);
+        }
+    }
+    else if (!expression_p.parse(pos, expr, expected))
+    {
+        return false;
     }
 
     if (s_type.ignore(pos, expected))
     {
-        if (!data_type_p.parse(pos, type, expected))
+        if (!type_p.parse(pos, type, expected))
             return false;
     }
 
@@ -59,14 +83,14 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
     index->part_of_create_index_query = true;
 
     if (granularity)
+    {
         index->granularity = granularity->as<ASTLiteral &>().value.safeGet<UInt64>();
+    }
     else
     {
         auto index_type = index->getType();
-        if (index_type && index_type->name == "annoy")
-            index->granularity = ASTIndexDeclaration::DEFAULT_ANNOY_INDEX_GRANULARITY;
-        else if (index_type && index_type->name == "usearch")
-            index->granularity = ASTIndexDeclaration::DEFAULT_USEARCH_INDEX_GRANULARITY;
+        if (index_type && index_type->name == "vector_similarity")
+            index->granularity = ASTIndexDeclaration::DEFAULT_VECTOR_SIMILARITY_INDEX_GRANULARITY;
         else
             index->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
     }

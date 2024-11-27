@@ -163,14 +163,20 @@ public:
             // we have a file we need to finalize first
             if (tryGetFileBaseBuffer() && prealloc_done)
             {
-                finalizeCurrentFile();
-
                 assert(current_file_description);
                 // if we wrote at least 1 log in the log file we can rename the file to reflect correctly the
                 // contained logs
                 // file can be deleted from disk earlier by compaction
-                if (!current_file_description->deleted)
+                if (current_file_description->deleted)
                 {
+                    LOG_WARNING(log, "Log {} is already deleted", current_file_description->path);
+                    prealloc_done = false;
+                    cancelCurrentFile();
+                }
+                else
+                {
+                    finalizeCurrentFile();
+
                     auto log_disk = current_file_description->disk;
                     const auto & path = current_file_description->path;
                     std::string new_path = path;
@@ -204,6 +210,10 @@ public:
                     }
                 }
             }
+            else
+            {
+                cancelCurrentFile();
+            }
 
             auto latest_log_disk = getLatestLogDisk();
             chassert(file_description->disk == latest_log_disk);
@@ -217,7 +227,7 @@ public:
                     std::move(file_buf),
                     /* compressi)on level = */ 3,
                     /* append_to_existing_file_ = */ mode == WriteMode::Append,
-                    [latest_log_disk, path = current_file_description->path] { return latest_log_disk->readFile(path); });
+                    [latest_log_disk, path = current_file_description->path, read_settings = getReadSettings()] { return latest_log_disk->readFile(path, read_settings); });
 
             prealloc_done = false;
         }
@@ -348,6 +358,8 @@ public:
     {
         if (isFileSet() && prealloc_done)
             finalizeCurrentFile();
+        else
+            cancelCurrentFile();
     }
 
 private:
@@ -357,16 +369,15 @@ private:
 
         chassert(current_file_description);
         // compact can delete the file and we don't need to do anything
-        if (current_file_description->deleted)
-        {
-            LOG_WARNING(log, "Log {} is already deleted", current_file_description->path);
-            return;
-        }
+        chassert(!current_file_description->deleted);
 
-        if (log_file_settings.compress_logs)
+        if (compressed_buffer)
             compressed_buffer->finalize();
 
         flush();
+
+        if (file_buf)
+            file_buf->finalize();
 
         const auto * file_buffer = tryGetFileBuffer();
 
@@ -382,16 +393,20 @@ private:
                 LOG_WARNING(log, "Could not ftruncate file. Error: {}, errno: {}", errnoToString(), errno);
         }
 
-        if (log_file_settings.compress_logs)
-        {
-            compressed_buffer.reset();
-        }
-        else
-        {
-            chassert(file_buf);
-            file_buf->finalize();
-            file_buf.reset();
-        }
+        compressed_buffer.reset();
+        file_buf.reset();
+    }
+
+    void cancelCurrentFile()
+    {
+        if (compressed_buffer)
+            compressed_buffer->cancel();
+
+        if (file_buf)
+            file_buf->cancel();
+
+        compressed_buffer.reset();
+        file_buf.reset();
     }
 
     WriteBuffer & getBuffer()
@@ -601,7 +616,7 @@ public:
     explicit ChangelogReader(ChangelogFileDescriptionPtr changelog_description_) : changelog_description(changelog_description_)
     {
         compression_method = chooseCompressionMethod(changelog_description->path, "");
-        auto read_buffer_from_file = changelog_description->disk->readFile(changelog_description->path);
+        auto read_buffer_from_file = changelog_description->disk->readFile(changelog_description->path, getReadSettings());
         read_buf = wrapReadBufferWithCompressionMethod(std::move(read_buffer_from_file), compression_method);
     }
 
@@ -728,7 +743,7 @@ void LogEntryStorage::prefetchCommitLogs()
                     [&]
                     {
                         const auto & [changelog_description, position, count] = prefetch_file_info;
-                        auto file = changelog_description->disk->readFile(changelog_description->path, ReadSettings());
+                        auto file = changelog_description->disk->readFile(changelog_description->path, getReadSettings());
                         file->seek(position, SEEK_SET);
                         LOG_TRACE(
                             log, "Prefetching {} log entries from path {}, from position {}", count, changelog_description->path, position);
@@ -808,7 +823,11 @@ void LogEntryStorage::startCommitLogsPrefetch(uint64_t last_committed_index) con
 
     for (; current_index <= max_index_for_prefetch; ++current_index)
     {
-        const auto & [changelog_description, position, size] = logs_location.at(current_index);
+        auto location_it = logs_location.find(current_index);
+        if (location_it == logs_location.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Location of log entry with index {} is missing", current_index);
+
+        const auto & [changelog_description, position, size] = location_it->second;
         if (total_size == 0)
             current_file_info = &file_infos.emplace_back(changelog_description, position, /* count */ 1);
         else if (total_size + size > commit_logs_cache.size_threshold)
@@ -829,7 +848,7 @@ void LogEntryStorage::startCommitLogsPrefetch(uint64_t last_committed_index) con
         LOG_TRACE(log, "Will prefetch {} commit log entries [{} - {}]", prefetch_to - prefetch_from + 1, prefetch_from, prefetch_to);
 
         current_prefetch_info->file_infos = std::move(file_infos);
-        auto inserted = prefetch_queue.push(current_prefetch_info);
+        auto inserted = prefetch_queue.push(current_prefetch_info);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
         chassert(inserted);
     }
 }
@@ -1262,7 +1281,7 @@ LogEntryPtr LogEntryStorage::getEntry(uint64_t index) const
             [&]
             {
                 const auto & [changelog_description, position, size] = it->second;
-                auto file = changelog_description->disk->readFile(changelog_description->path, ReadSettings());
+                auto file = changelog_description->disk->readFile(changelog_description->path, getReadSettings());
                 file->seek(position, SEEK_SET);
                 LOG_TRACE(
                     log,
@@ -1388,7 +1407,7 @@ LogEntriesPtr LogEntryStorage::getLogEntriesBetween(uint64_t start, uint64_t end
             [&]
             {
                 const auto & [file_description, start_position, count] = *read_info;
-                auto file = file_description->disk->readFile(file_description->path);
+                auto file = file_description->disk->readFile(file_description->path, getReadSettings());
                 file->seek(start_position, SEEK_SET);
 
                 for (size_t i = 0; i < count; ++i)
@@ -1416,7 +1435,11 @@ LogEntriesPtr LogEntryStorage::getLogEntriesBetween(uint64_t start, uint64_t end
         }
         else
         {
-            const auto & log_location = logs_location.at(i);
+            auto location_it = logs_location.find(i);
+            if (location_it == logs_location.end())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Location of log entry with index {} is missing", i);
+
+            const auto & log_location = location_it->second;
 
             if (!read_info)
                 set_new_file(log_location);
@@ -1679,7 +1702,7 @@ try
                     initialized = true;
                     return;
                 }
-                else if (changelog_description.from_log_index > start_to_read_from)
+                if (changelog_description.from_log_index > start_to_read_from)
                 {
                     /// We don't have required amount of reserved logs, but nothing was lost.
                     LOG_WARNING(
@@ -1882,7 +1905,7 @@ void Changelog::removeExistingLogs(ChangelogIter begin, ChangelogIter end)
     {
         auto & changelog_description = itr->second;
 
-        if (!disk->exists(timestamp_folder))
+        if (!disk->existsDirectory(timestamp_folder))
         {
             LOG_WARNING(log, "Moving broken logs to {}", timestamp_folder);
             disk->createDirectories(timestamp_folder);
@@ -2262,7 +2285,7 @@ nuraft::ptr<nuraft::buffer> Changelog::serializeEntriesToBuffer(uint64_t index, 
 
     nuraft::ptr<nuraft::buffer> buf_out = nuraft::buffer::alloc(sizeof(int32_t) + count * sizeof(int32_t) + size_total);
     buf_out->pos(0);
-    buf_out->put(static_cast<int32_t>(count));
+    buf_out->put(count);
 
     for (auto & entry : returned_logs)
     {

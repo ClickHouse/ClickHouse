@@ -63,13 +63,13 @@ protected:
             marks_loader = createMarksLoader(part, MergeTreeDataPartCompact::DATA_FILE_NAME, part->getColumns().size());
 
         size_t num_columns = header.columns();
-        size_t num_rows = index_granularity.getMarksCount();
+        size_t num_rows = index_granularity->getMarksCount();
 
         const auto & part_name_column = StorageMergeTreeIndex::part_name_column;
         const auto & mark_number_column = StorageMergeTreeIndex::mark_number_column;
         const auto & rows_in_granule_column = StorageMergeTreeIndex::rows_in_granule_column;
-
         const auto & index = part->getIndex();
+
         Columns result_columns(num_columns);
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
@@ -79,7 +79,19 @@ protected:
             if (index_header.has(column_name))
             {
                 size_t index_position = index_header.getPositionByName(column_name);
-                result_columns[pos] = index[index_position];
+
+                /// Some of the columns from suffix of primary index may be not loaded
+                /// according to setting 'primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns'.
+                if (index_position < index->size())
+                {
+                    result_columns[pos] = index->at(index_position);
+                }
+                else
+                {
+                    const auto & index_type = index_header.getByPosition(index_position).type;
+                    auto index_column = index_type->createColumnConstWithDefaultValue(num_rows);
+                    result_columns[pos] = index_column->convertToFullColumnIfConst();
+                }
             }
             else if (column_name == part_name_column.name)
             {
@@ -103,7 +115,7 @@ protected:
 
                 data.resize(num_rows);
                 for (size_t i = 0; i < num_rows; ++i)
-                    data[i] = index_granularity.getMarkRows(i);
+                    data[i] = index_granularity->getMarkRows(i);
 
                 result_columns[pos] = std::move(column);
             }
@@ -147,11 +159,11 @@ private:
     {
         size_t col_idx = 0;
         bool has_marks_in_part = false;
-        size_t num_rows = part->index_granularity.getMarksCount();
+        size_t num_rows = part->index_granularity->getMarksCount();
 
         if (isWidePart(part))
         {
-            if (auto stream_name = part->getStreamNameOrHash(column_name, part->checksums))
+            if (auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(column_name, part->checksums))
             {
                 col_idx = 0;
                 has_marks_in_part = true;
@@ -248,7 +260,7 @@ public:
         Block sample_block,
         std::shared_ptr<StorageMergeTreeIndex> storage_)
         : SourceStepWithFilter(
-            DataStream{.header = std::move(sample_block)},
+            std::move(sample_block),
             column_names_,
             query_info_,
             storage_snapshot_,
@@ -263,14 +275,24 @@ public:
 private:
     std::shared_ptr<StorageMergeTreeIndex> storage;
     Poco::Logger * log;
-    const ActionsDAG::Node * predicate = nullptr;
+    ExpressionActionsPtr virtual_columns_filter;
 };
 
 void ReadFromMergeTreeIndex::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
+    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
+
     if (filter_actions_dag)
-        predicate = filter_actions_dag->getOutputs().at(0);
+    {
+        Block block_to_filter
+        {
+            { {}, std::make_shared<DataTypeString>(), StorageMergeTreeIndex::part_name_column.name },
+        };
+
+        auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter);
+        if (dag)
+            virtual_columns_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
+    }
 }
 
 void StorageMergeTreeIndex::read(
@@ -322,19 +344,19 @@ void StorageMergeTreeIndex::read(
 
 void ReadFromMergeTreeIndex::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto filtered_parts = storage->getFilteredDataParts(predicate, context);
+    auto filtered_parts = storage->getFilteredDataParts(virtual_columns_filter);
 
     LOG_DEBUG(log, "Reading index{}from {} parts of table {}",
         storage->with_marks ? " with marks " : " ",
         filtered_parts.size(),
         storage->source_table->getStorageID().getNameForLogs());
 
-    pipeline.init(Pipe(std::make_shared<MergeTreeIndexSource>(getOutputStream().header, storage->key_sample_block, std::move(filtered_parts), context, storage->with_marks)));
+    pipeline.init(Pipe(std::make_shared<MergeTreeIndexSource>(getOutputHeader(), storage->key_sample_block, std::move(filtered_parts), context, storage->with_marks)));
 }
 
-MergeTreeData::DataPartsVector StorageMergeTreeIndex::getFilteredDataParts(const ActionsDAG::Node * predicate, const ContextPtr & context) const
+MergeTreeData::DataPartsVector StorageMergeTreeIndex::getFilteredDataParts(const ExpressionActionsPtr & virtual_columns_filter) const
 {
-    if (!predicate)
+    if (!virtual_columns_filter)
         return data_parts;
 
     auto all_part_names = ColumnString::create();
@@ -342,7 +364,7 @@ MergeTreeData::DataPartsVector StorageMergeTreeIndex::getFilteredDataParts(const
         all_part_names->insert(part->name);
 
     Block filtered_block{{std::move(all_part_names), std::make_shared<DataTypeString>(), part_name_column.name}};
-    VirtualColumnUtils::filterBlockWithPredicate(predicate, filtered_block, context);
+    VirtualColumnUtils::filterBlockWithExpression(virtual_columns_filter, filtered_block);
 
     if (!filtered_block.rows())
         return {};

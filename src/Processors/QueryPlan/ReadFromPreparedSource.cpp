@@ -1,13 +1,12 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Processors/SourceWithKeyCondition.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
 {
 
 ReadFromPreparedSource::ReadFromPreparedSource(Pipe pipe_)
-    : ISourceStep(DataStream{.header = pipe_.getHeader()})
+    : ISourceStep(pipe_.getHeader())
     , pipe(std::move(pipe_))
 {
 }

@@ -40,7 +40,7 @@ class BaseDaemon : public Poco::Util::ServerApplication, public Loggers
     friend class SignalListener;
 
 public:
-    static inline constexpr char DEFAULT_GRAPHITE_CONFIG_NAME[] = "graphite";
+    static constexpr char DEFAULT_GRAPHITE_CONFIG_NAME[] = "graphite";
 
     BaseDaemon();
     ~BaseDaemon() override;
@@ -165,10 +165,7 @@ protected:
     Poco::Util::AbstractConfiguration * last_configuration = nullptr;
 
     String build_id;
-    String git_hash;
     String stored_binary_hash;
-
-    std::vector<int> handled_signals;
 
     bool should_setup_watchdog = false;
     char * argv0 = nullptr;
@@ -190,8 +187,7 @@ std::optional<std::reference_wrapper<Daemon>> BaseDaemon::tryGetInstance()
 
     if (ptr)
         return std::optional<std::reference_wrapper<Daemon>>(*ptr);
-    else
-        return {};
+    return {};
 }
 
 #if defined(OS_LINUX)

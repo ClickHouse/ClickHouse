@@ -160,10 +160,7 @@ void AggregationMethodKeysFixed<TData, has_nullable_keys, has_low_cardinality,co
         else
         {
             size_t size = key_sizes[i];
-            size_t offset_to = pos;
-            if constexpr (std::endian::native == std::endian::big)
-                offset_to = sizeof(Key) - size - pos;
-            observed_column->insertData(reinterpret_cast<const char *>(&key) + offset_to, size);
+            observed_column->insertData(reinterpret_cast<const char *>(&key) + pos, size);
             pos += size;
         }
     }

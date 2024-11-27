@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/simplelinearregression
-sidebar_position: 220
+sidebar_position: 183
 ---
 
 # simpleLinearRegression
@@ -18,7 +18,7 @@ Parameters:
 
 Returned values:
 
-Constants `(a, b)` of the resulting line `y = a*x + b`.
+Constants `(k, b)` of the resulting line `y = k*x + b`.
 
 **Examples**
 

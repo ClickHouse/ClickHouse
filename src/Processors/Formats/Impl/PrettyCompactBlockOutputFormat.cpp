@@ -4,6 +4,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/PrettyFormatHelpers.h>
 #include <Processors/Formats/Impl/PrettyCompactBlockOutputFormat.h>
 
 
@@ -57,7 +58,8 @@ PrettyCompactBlockOutputFormat::PrettyCompactBlockOutputFormat(WriteBuffer & out
 void PrettyCompactBlockOutputFormat::writeHeader(
     const Block & block,
     const Widths & max_widths,
-    const Widths & name_widths)
+    const Widths & name_widths,
+    const bool write_footer)
 {
     if (format_settings.pretty.output_format_pretty_row_numbers)
     {
@@ -70,14 +72,20 @@ void PrettyCompactBlockOutputFormat::writeHeader(
                                        ascii_grid_symbols;
 
     /// Names
-    writeCString(grid_symbols.left_top_corner, out);
+    if (write_footer)
+        writeCString(grid_symbols.left_bottom_corner, out);
+    else
+        writeCString(grid_symbols.left_top_corner, out);
     writeCString(grid_symbols.dash, out);
     for (size_t i = 0; i < max_widths.size(); ++i)
     {
         if (i != 0)
         {
             writeCString(grid_symbols.dash, out);
-            writeCString(grid_symbols.top_separator, out);
+            if (write_footer)
+                writeCString(grid_symbols.bottom_separator, out);
+            else
+                writeCString(grid_symbols.top_separator, out);
             writeCString(grid_symbols.dash, out);
         }
 
@@ -107,7 +115,10 @@ void PrettyCompactBlockOutputFormat::writeHeader(
         }
     }
     writeCString(grid_symbols.dash, out);
-    writeCString(grid_symbols.right_top_corner, out);
+    if (write_footer)
+        writeCString(grid_symbols.right_bottom_corner, out);
+    else
+        writeCString(grid_symbols.right_top_corner, out);
     writeCString("\n", out);
 }
 
@@ -179,7 +190,8 @@ void PrettyCompactBlockOutputFormat::writeRow(
     }
 
     writeCString(grid_symbols.bar, out);
-    writeReadableNumberTip(chunk);
+    if (readable_number_tip)
+        writeReadableNumberTipIfSingleValue(out, chunk, format_settings, color);
     writeCString("\n", out);
 }
 
@@ -195,13 +207,19 @@ void PrettyCompactBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind po
     Widths name_widths;
     calculateWidths(header, chunk, widths, max_widths, name_widths);
 
-    writeHeader(header, max_widths, name_widths);
+    writeHeader(header, max_widths, name_widths, false);
 
     for (size_t i = 0; i < num_rows && total_rows + i < max_rows; ++i)
         writeRow(i, header, chunk, widths, max_widths);
 
-
-    writeBottom(max_widths);
+    if ((num_rows >= format_settings.pretty.output_format_pretty_display_footer_column_names_min_rows) && format_settings.pretty.output_format_pretty_display_footer_column_names)
+    {
+        writeHeader(header, max_widths, name_widths, true);
+    }
+    else
+    {
+        writeBottom(max_widths);
+    }
 
     total_rows += num_rows;
 }

@@ -38,11 +38,7 @@ struct ASTCheckTableQuery : public ASTQueryWithTableAndOutput
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
-        std::string nl_or_nothing = settings.one_line ? "" : "\n";
-
         std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
-        std::string nl_or_ws = settings.one_line ? " " : "\n";
-
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "CHECK TABLE " << (settings.hilite ? hilite_none : "");
 
         if (table)
@@ -62,8 +58,15 @@ protected:
             settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " PARTITION " << (settings.hilite ? hilite_none : "");
             partition->formatImpl(settings, state, frame);
         }
+
+        if (!part_name.empty())
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " PART " << (settings.hilite ? hilite_none : "")
+                << quoteString(part_name);
+        }
     }
 };
+
 
 struct ASTCheckAllTablesQuery : public ASTQueryWithOutput
 {
@@ -83,11 +86,7 @@ struct ASTCheckAllTablesQuery : public ASTQueryWithOutput
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & /* state */, FormatStateStacked frame) const override
     {
-        std::string nl_or_nothing = settings.one_line ? "" : "\n";
-
         std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
-        std::string nl_or_ws = settings.one_line ? " " : "\n";
-
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "CHECK ALL TABLES" << (settings.hilite ? hilite_none : "");
     }
 };

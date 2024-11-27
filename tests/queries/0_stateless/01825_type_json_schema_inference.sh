@@ -10,11 +10,10 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_json_inference"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_json_inference (id UInt64, obj Object(Nullable('json')), s String) \
     ENGINE = MergeTree ORDER BY id" --allow_experimental_object_type 1
 
-user_files_path=$($CLICKHOUSE_CLIENT_BINARY --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
-mkdir -p ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/
-rm -rf ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME:?}/*
+mkdir -p ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/
+rm -rf ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME:?}/*
 
-filename="${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/data.json"
+filename="${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/data.json"
 
 echo '{"id": 1, "obj": {"k1": 1, "k2": {"k3": 2, "k4": [{"k5": 3}, {"k5": 4}]}}, "s": "foo"}' > $filename
 echo '{"id": 2, "obj": {"k2": {"k3": "str", "k4": [{"k6": 55}]}, "some": 42}, "s": "bar"}' >> $filename

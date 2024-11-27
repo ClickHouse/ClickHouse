@@ -52,14 +52,13 @@ RuleType ruleType(const String & s)
 {
     if (s == "all")
         return RuleTypeAll;
-    else if (s == "plain")
+    if (s == "plain")
         return RuleTypePlain;
-    else if (s == "tagged")
+    if (s == "tagged")
         return RuleTypeTagged;
-    else if (s == "tag_list")
+    if (s == "tag_list")
         return RuleTypeTagList;
-    else
-        throw Exception(DB::ErrorCodes::BAD_ARGUMENTS, "invalid rule type: {}", s);
+    throw Exception(DB::ErrorCodes::BAD_ARGUMENTS, "invalid rule type: {}", s);
 }
 
 void Pattern::updateHash(SipHash & hash) const
@@ -94,15 +93,12 @@ inline static const Patterns & selectPatternsForMetricType(const Graphite::Param
     if (params.patterns_typed)
     {
         std::string_view path_view = path;
-        if (path_view.find("?"sv) == std::string::npos)
+        if (!path_view.contains("?"sv))
             return params.patterns_plain;
-        else
-            return params.patterns_tagged;
+        return params.patterns_tagged;
     }
-    else
-    {
-        return params.patterns;
-    }
+
+    return params.patterns;
 }
 
 Graphite::RollupRule selectPatternForPath(
@@ -177,7 +173,7 @@ static bool compareRetentions(const Retention & a, const Retention & b)
     {
         return true;
     }
-    else if (a.age < b.age && a.precision < b.precision)
+    if (a.age < b.age && a.precision < b.precision)
     {
         return false;
     }
@@ -291,7 +287,7 @@ std::string buildTaggedRegex(std::string regexp_str)
     /* remove empty elements */
     using namespace std::string_literals;
     std::erase(tags, ""s);
-    if (tags[0].find('=') == tags[0].npos)
+    if (tags[0].find('=') == tags[0].npos)  /// NOLINT(readability-static-accessed-through-instance)
     {
         if (tags.size() == 1) /* only name */
             return "^" + tags[0] + "\\?";

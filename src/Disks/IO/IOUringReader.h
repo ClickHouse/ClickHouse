@@ -61,12 +61,12 @@ private:
 
     void monitorRing();
 
-    template<typename T> inline void failPromise(std::promise<T> & promise, const Exception & ex)
+    template<typename T> void failPromise(std::promise<T> & promise, const Exception & ex)
     {
         promise.set_exception(std::make_exception_ptr(ex));
     }
 
-    inline std::future<Result> makeFailedResult(const Exception & ex)
+    std::future<Result> makeFailedResult(const Exception & ex)
     {
         auto promise = std::promise<Result>{};
         failPromise(promise, ex);

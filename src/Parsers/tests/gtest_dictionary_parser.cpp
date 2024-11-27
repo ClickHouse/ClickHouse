@@ -56,21 +56,21 @@ TEST(ParserDictionaryDDL, SimpleDictionary)
     EXPECT_EQ(create->dictionary->source->name, "clickhouse");
     auto children = create->dictionary->source->elements->children;
     EXPECT_EQ(children[0]->as<ASTPair>() -> first, "host");
-    EXPECT_EQ(children[0]->as<ASTPair>()->second->as<ASTLiteral>()->value.get<String>(), "localhost");
+    EXPECT_EQ(children[0]->as<ASTPair>()->second->as<ASTLiteral>()->value.safeGet<String>(), "localhost");
 
     EXPECT_EQ(children[1]->as<ASTPair>()->first, "port");
-    EXPECT_EQ(children[1]->as<ASTPair>()->second->as<ASTLiteral>()->value.get<UInt64>(), 9000);
+    EXPECT_EQ(children[1]->as<ASTPair>()->second->as<ASTLiteral>()->value.safeGet<UInt64>(), 9000);
 
     EXPECT_EQ(children[2]->as<ASTPair>()->first, "user");
-    EXPECT_EQ(children[2]->as<ASTPair>()->second->as<ASTLiteral>()->value.get<String>(), "default");
+    EXPECT_EQ(children[2]->as<ASTPair>()->second->as<ASTLiteral>()->value.safeGet<String>(), "default");
     EXPECT_EQ(children[3]->as<ASTPair>()->first, "password");
-    EXPECT_EQ(children[3]->as<ASTPair>()->second->as<ASTLiteral>()->value.get<String>(), "");
+    EXPECT_EQ(children[3]->as<ASTPair>()->second->as<ASTLiteral>()->value.safeGet<String>(), "");
 
     EXPECT_EQ(children[4]->as<ASTPair>()->first, "db");
-    EXPECT_EQ(children[4]->as<ASTPair>()->second->as<ASTLiteral>()->value.get<String>(), "test");
+    EXPECT_EQ(children[4]->as<ASTPair>()->second->as<ASTLiteral>()->value.safeGet<String>(), "test");
 
     EXPECT_EQ(children[5]->as<ASTPair>()->first, "table");
-    EXPECT_EQ(children[5]->as<ASTPair>()->second->as<ASTLiteral>()->value.get<String>(), "table_for_dict");
+    EXPECT_EQ(children[5]->as<ASTPair>()->second->as<ASTLiteral>()->value.safeGet<String>(), "table_for_dict");
 
     /// layout test
     auto * layout = create->dictionary->layout;
@@ -102,9 +102,9 @@ TEST(ParserDictionaryDDL, SimpleDictionary)
     EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->name, "second_column");
     EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->name, "third_column");
 
-    EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->default_value->as<ASTLiteral>()->value.get<UInt64>(), 0);
-    EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->default_value->as<ASTLiteral>()->value.get<UInt64>(), 1);
-    EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->default_value->as<ASTLiteral>()->value.get<UInt64>(), 2);
+    EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->default_value->as<ASTLiteral>()->value.safeGet<UInt64>(), 0);
+    EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->default_value->as<ASTLiteral>()->value.safeGet<UInt64>(), 1);
+    EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->default_value->as<ASTLiteral>()->value.safeGet<UInt64>(), 2);
 
     EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->expression, nullptr);
     EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->expression, nullptr);
@@ -150,8 +150,8 @@ TEST(ParserDictionaryDDL, AttributesWithMultipleProperties)
     EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->name, "third_column");
 
     EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->default_value, nullptr);
-    EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->default_value->as<ASTLiteral>()->value.get<UInt64>(), 1);
-    EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->default_value->as<ASTLiteral>()->value.get<UInt64>(), 2);
+    EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->default_value->as<ASTLiteral>()->value.safeGet<UInt64>(), 1);
+    EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->default_value->as<ASTLiteral>()->value.safeGet<UInt64>(), 2);
 
     EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->expression, nullptr);
     EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->expression, nullptr);
@@ -195,9 +195,9 @@ TEST(ParserDictionaryDDL, CustomAttributePropertiesOrder)
     EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->name, "second_column");
     EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->name, "third_column");
 
-    EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->default_value->as<ASTLiteral>()->value.get<UInt64>(), 100);
-    EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->default_value->as<ASTLiteral>()->value.get<UInt64>(), 1);
-    EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->default_value->as<ASTLiteral>()->value.get<UInt64>(), 2);
+    EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->default_value->as<ASTLiteral>()->value.safeGet<UInt64>(), 100);
+    EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->default_value->as<ASTLiteral>()->value.safeGet<UInt64>(), 1);
+    EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->default_value->as<ASTLiteral>()->value.safeGet<UInt64>(), 2);
 
     EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->expression, nullptr);
     EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->expression, nullptr);
@@ -248,25 +248,25 @@ TEST(ParserDictionaryDDL, NestedSource)
     auto children = create->dictionary->source->elements->children;
 
     EXPECT_EQ(children[0]->as<ASTPair>()->first, "host");
-    EXPECT_EQ(children[0]->as<ASTPair>()->second->as<ASTLiteral>()->value.get<String>(), "localhost");
+    EXPECT_EQ(children[0]->as<ASTPair>()->second->as<ASTLiteral>()->value.safeGet<String>(), "localhost");
 
     EXPECT_EQ(children[1]->as<ASTPair>()->first, "port");
-    EXPECT_EQ(children[1]->as<ASTPair>()->second->as<ASTLiteral>()->value.get<UInt64>(), 9000);
+    EXPECT_EQ(children[1]->as<ASTPair>()->second->as<ASTLiteral>()->value.safeGet<UInt64>(), 9000);
 
     EXPECT_EQ(children[2]->as<ASTPair>()->first, "user");
-    EXPECT_EQ(children[2]->as<ASTPair>()->second->as<ASTLiteral>()->value.get<String>(), "default");
+    EXPECT_EQ(children[2]->as<ASTPair>()->second->as<ASTLiteral>()->value.safeGet<String>(), "default");
 
     EXPECT_EQ(children[3]->as<ASTPair>()->first, "replica");
     auto replica = children[3]->as<ASTPair>()->second->children;
 
     EXPECT_EQ(replica[0]->as<ASTPair>()->first, "host");
-    EXPECT_EQ(replica[0]->as<ASTPair>()->second->as<ASTLiteral>()->value.get<String>(), "127.0.0.1");
+    EXPECT_EQ(replica[0]->as<ASTPair>()->second->as<ASTLiteral>()->value.safeGet<String>(), "127.0.0.1");
 
     EXPECT_EQ(replica[1]->as<ASTPair>()->first, "priority");
-    EXPECT_EQ(replica[1]->as<ASTPair>()->second->as<ASTLiteral>()->value.get<UInt64>(), 1);
+    EXPECT_EQ(replica[1]->as<ASTPair>()->second->as<ASTLiteral>()->value.safeGet<UInt64>(), 1);
 
     EXPECT_EQ(children[4]->as<ASTPair>()->first, "password");
-    EXPECT_EQ(children[4]->as<ASTPair>()->second->as<ASTLiteral>()->value.get<String>(), "");
+    EXPECT_EQ(children[4]->as<ASTPair>()->second->as<ASTLiteral>()->value.safeGet<String>(), "");
 }
 
 
@@ -301,10 +301,8 @@ TEST(ParserDictionaryDDL, ParseDropQuery)
     ASTDropQuery * drop1 = ast1->as<ASTDropQuery>();
 
     EXPECT_TRUE(drop1->is_dictionary);
-    auto & database_and_tables1 = drop1->database_and_tables->as<ASTExpressionList &>();
-    auto identifier1 = dynamic_pointer_cast<ASTTableIdentifier>(database_and_tables1.children[0]);
-    EXPECT_EQ(identifier1->getDatabaseName(), "test");
-    EXPECT_EQ(identifier1->shortName(), "dict1");
+    EXPECT_EQ(drop1->getDatabase(), "test");
+    EXPECT_EQ(drop1->getTable(), "dict1");
     auto str1 = serializeAST(*drop1);
     EXPECT_EQ(input1, str1);
 
@@ -314,10 +312,8 @@ TEST(ParserDictionaryDDL, ParseDropQuery)
     ASTDropQuery * drop2 = ast2->as<ASTDropQuery>();
 
     EXPECT_TRUE(drop2->is_dictionary);
-    auto & database_and_tables2 = drop2->database_and_tables->as<ASTExpressionList &>();
-    auto identifier2 = dynamic_pointer_cast<ASTTableIdentifier>(database_and_tables2.children[0]);
-    EXPECT_EQ(identifier2->getDatabaseName(), "");
-    EXPECT_EQ(identifier2->shortName(), "dict2");
+    EXPECT_EQ(drop2->getDatabase(), "");
+    EXPECT_EQ(drop2->getTable(), "dict2");
     auto str2 = serializeAST(*drop2);
     EXPECT_EQ(input2, str2);
 }

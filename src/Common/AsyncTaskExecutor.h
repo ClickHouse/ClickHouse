@@ -13,7 +13,7 @@
 namespace DB
 {
 
-enum class AsyncEventTimeoutType
+enum class AsyncEventTimeoutType : uint8_t
 {
     CONNECT,
     RECEIVE,

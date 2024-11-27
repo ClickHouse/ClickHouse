@@ -4,7 +4,7 @@
 #include <Interpreters/IdentifierSemantic.h>
 
 #include <Common/typeid_cast.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <DataTypes/DataTypeTuple.h>
 
 #include <Parsers/ASTIdentifier.h>

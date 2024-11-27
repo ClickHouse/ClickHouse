@@ -29,7 +29,10 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
         if (!config.has(config_prefix + ".metadata_type"))
         {
             if (object_storage->isPlain())
-                compatibility_metadata_type_hint = "plain";
+                if (object_storage->isWriteOnce())
+                    compatibility_metadata_type_hint = "plain";
+                else
+                    compatibility_metadata_type_hint = "plain_rewritable";
             else
                 compatibility_metadata_type_hint = MetadataStorageFactory::getCompatibilityMetadataTypeHint(object_storage->getType());
         }
@@ -53,6 +56,7 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
 #if USE_AWS_S3
     factory.registerDiskType("s3", creator); /// For compatibility
     factory.registerDiskType("s3_plain", creator); /// For compatibility
+    factory.registerDiskType("s3_plain_rewritable", creator); // For compatibility
 #endif
 #if USE_HDFS
     factory.registerDiskType("hdfs", creator); /// For compatibility

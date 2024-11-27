@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-s3-storage
+-- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-object-storage
 
 drop table if exists t_multi_prewhere;
 drop row policy if exists policy_02834 on t_multi_prewhere;

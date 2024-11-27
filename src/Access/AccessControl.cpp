@@ -21,10 +21,11 @@
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <base/defines.h>
+#include <base/range.h>
 #include <IO/Operators.h>
 #include <Common/re2.h>
+
 #include <Poco/AccessExpireCache.h>
 #include <boost/algorithm/string/join.hpp>
 #include <filesystem>
@@ -133,8 +134,8 @@ public:
                             "' registered for user-defined settings",
                             String{setting_name}, boost::algorithm::join(registered_prefixes, "' or '"));
         }
-        else
-            BaseSettingsHelpers::throwSettingNotFound(setting_name);
+
+        throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting '{}'", String{setting_name});
     }
 
 private:
@@ -261,10 +262,27 @@ AccessControl::AccessControl()
 }
 
 
-AccessControl::~AccessControl() = default;
+AccessControl::~AccessControl()
+{
+    try
+    {
+        AccessControl::shutdown();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
 
 
-void AccessControl::setUpFromMainConfig(const Poco::Util::AbstractConfiguration & config_, const String & config_path_,
+void AccessControl::shutdown()
+{
+    MultipleAccessStorage::shutdown();
+    removeAllStorages();
+}
+
+
+void AccessControl::setupFromMainConfig(const Poco::Util::AbstractConfiguration & config_, const String & config_path_,
                                         const zkutil::GetZooKeeper & get_zookeeper_function_)
 {
     if (config_.has("custom_settings_prefixes"))
@@ -280,11 +298,12 @@ void AccessControl::setUpFromMainConfig(const Poco::Util::AbstractConfiguration 
 
     /// Optional improvements in access control system.
     /// The default values are false because we need to be compatible with earlier access configurations
-    setEnabledUsersWithoutRowPoliciesCanReadRows(config_.getBool("access_control_improvements.users_without_row_policies_can_read_rows", false));
-    setOnClusterQueriesRequireClusterGrant(config_.getBool("access_control_improvements.on_cluster_queries_require_cluster_grant", false));
-    setSelectFromSystemDatabaseRequiresGrant(config_.getBool("access_control_improvements.select_from_system_db_requires_grant", false));
-    setSelectFromInformationSchemaRequiresGrant(config_.getBool("access_control_improvements.select_from_information_schema_requires_grant", false));
-    setSettingsConstraintsReplacePrevious(config_.getBool("access_control_improvements.settings_constraints_replace_previous", false));
+    setEnabledUsersWithoutRowPoliciesCanReadRows(config_.getBool("access_control_improvements.users_without_row_policies_can_read_rows", true));
+    setOnClusterQueriesRequireClusterGrant(config_.getBool("access_control_improvements.on_cluster_queries_require_cluster_grant", true));
+    setSelectFromSystemDatabaseRequiresGrant(config_.getBool("access_control_improvements.select_from_system_db_requires_grant", true));
+    setSelectFromInformationSchemaRequiresGrant(config_.getBool("access_control_improvements.select_from_information_schema_requires_grant", true));
+    setSettingsConstraintsReplacePrevious(config_.getBool("access_control_improvements.settings_constraints_replace_previous", true));
+    setTableEnginesRequireGrant(config_.getBool("access_control_improvements.table_engines_require_grant", false));
 
     addStoragesFromMainConfig(config_, config_path_, get_zookeeper_function_);
 
@@ -527,9 +546,9 @@ scope_guard AccessControl::subscribeForChanges(const std::vector<UUID> & ids, co
     return changes_notifier->subscribeForChanges(ids, handler);
 }
 
-bool AccessControl::insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists)
+bool AccessControl::insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id)
 {
-    if (MultipleAccessStorage::insertImpl(id, entity, replace_if_exists, throw_if_exists))
+    if (MultipleAccessStorage::insertImpl(id, entity, replace_if_exists, throw_if_exists, conflicting_id))
     {
         changes_notifier->sendNotifications();
         return true;
@@ -589,7 +608,7 @@ AuthResult AccessControl::authenticate(const Credentials & credentials, const Po
     }
     catch (...)
     {
-        tryLogCurrentException(getLogger(), "from: " + address.toString() + ", user: " + credentials.getUserName()  + ": Authentication failed");
+        tryLogCurrentException(getLogger(), "from: " + address.toString() + ", user: " + credentials.getUserName()  + ": Authentication failed", LogsLevel::information);
 
         WriteBufferFromOwnString message;
         message << credentials.getUserName() << ": Authentication failed: password is incorrect, or there is no user with such name.";
@@ -603,17 +622,19 @@ AuthResult AccessControl::authenticate(const Credentials & credentials, const Po
                 << "and deleting this file will reset the password.\n"
                 << "See also /etc/clickhouse-server/users.xml on the server where ClickHouse is installed.\n\n";
 
-        /// We use the same message for all authentication failures because we don't want to give away any unnecessary information for security reasons,
-        /// only the log will show the exact reason.
+        /// We use the same message for all authentication failures because we don't want to give away any unnecessary information for security reasons.
+        /// Only the log ((*), above) will show the exact reason. Note that (*) logs at information level instead of the default error level as
+        /// authentication failures are not an unusual event.
         throw Exception(PreformattedMessage{message.str(),
-                                            "{}: Authentication failed: password is incorrect, or there is no user with such name.{}"},
+                                            "{}: Authentication failed: password is incorrect, or there is no user with such name",
+                                            std::vector<std::string>{credentials.getUserName()}},
                         ErrorCodes::AUTHENTICATION_FAILED);
     }
 }
 
-void AccessControl::restoreFromBackup(RestorerFromBackup & restorer)
+void AccessControl::restoreFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup)
 {
-    MultipleAccessStorage::restoreFromBackup(restorer);
+    MultipleAccessStorage::restoreFromBackup(restorer, data_path_in_backup);
     changes_notifier->sendNotifications();
 }
 
@@ -810,8 +831,7 @@ std::shared_ptr<const EnabledQuota> AccessControl::getAuthenticationQuota(
                                             quota_key,
                                             throw_if_client_key_empty);
     }
-    else
-        return nullptr;
+    return nullptr;
 }
 
 
@@ -850,4 +870,34 @@ const ExternalAuthenticators & AccessControl::getExternalAuthenticators() const
     return *external_authenticators;
 }
 
+
+void AccessControl::allowAllSettings()
+{
+    custom_settings_prefixes->registerPrefixes({""});
+}
+
+void AccessControl::setAllowTierSettings(UInt32 value)
+{
+    allow_experimental_tier_settings = value == 0;
+    allow_beta_tier_settings = value <= 1;
+}
+
+UInt32 AccessControl::getAllowTierSettings() const
+{
+    if (allow_experimental_tier_settings)
+        return 0;
+    if (allow_beta_tier_settings)
+        return 1;
+    return 2;
+}
+
+bool AccessControl::getAllowExperimentalTierSettings() const
+{
+    return allow_experimental_tier_settings;
+}
+
+bool AccessControl::getAllowBetaTierSettings() const
+{
+    return allow_beta_tier_settings;
+}
 }

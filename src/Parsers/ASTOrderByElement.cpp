@@ -1,4 +1,3 @@
-#include <Columns/Collator.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Common/SipHash.h>
 #include <IO/Operators.h>
@@ -54,6 +53,11 @@ void ASTOrderByElement::formatImpl(const FormatSettings & settings, FormatState 
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " STEP " << (settings.hilite ? hilite_none : "");
             fill_step->formatImpl(settings, state, frame);
+        }
+        if (auto fill_staleness = getFillStaleness())
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " STALENESS " << (settings.hilite ? hilite_none : "");
+            fill_staleness->formatImpl(settings, state, frame);
         }
     }
 }

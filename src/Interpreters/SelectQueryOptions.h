@@ -56,6 +56,14 @@ struct SelectQueryOptions
     std::optional<UInt32> shard_num;
     std::optional<UInt32> shard_count;
 
+    /** During read from MergeTree parts will be removed from snapshot after they are not needed.
+      * This optimization will break subsequent execution of the same query tree, because table node
+      * will no more have valid snapshot.
+      *
+      * TODO: Implement this functionality in safer way
+      */
+    bool merge_tree_enable_remove_parts_from_snapshot_optimization = true;
+
     SelectQueryOptions( /// NOLINT(google-explicit-constructor)
         QueryProcessingStage::Enum stage = QueryProcessingStage::Complete,
         size_t depth = 0,

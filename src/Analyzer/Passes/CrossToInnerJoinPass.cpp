@@ -9,16 +9,22 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/Utils.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Functions/logical.h>
 
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 cross_to_inner_join_rewrite;
+}
 
 namespace ErrorCodes
 {
@@ -28,7 +34,7 @@ namespace ErrorCodes
 namespace
 {
 
-void exctractJoinConditions(const QueryTreeNodePtr & node, QueryTreeNodes & equi_conditions, QueryTreeNodes & other)
+void extractJoinConditions(const QueryTreeNodePtr & node, QueryTreeNodes & equi_conditions, QueryTreeNodes & other)
 {
     auto * func = node->as<FunctionNode>();
     if (!func)
@@ -46,7 +52,7 @@ void exctractJoinConditions(const QueryTreeNodePtr & node, QueryTreeNodes & equi
     else if (func->getFunctionName() == "and")
     {
         for (const auto & arg : args)
-            exctractJoinConditions(arg, equi_conditions, other);
+            extractJoinConditions(arg, equi_conditions, other);
     }
     else
     {
@@ -61,47 +67,7 @@ const QueryTreeNodePtr & getEquiArgument(const QueryTreeNodePtr & cond, size_t i
     return func->getArguments().getNodes()[index];
 }
 
-
-/// Check that node has only one source and return it.
-/// {_, false} - multiple sources
-/// {nullptr, true} - no sources
-/// {source, true} - single source
-std::pair<const IQueryTreeNode *, bool> getExpressionSource(const QueryTreeNodePtr & node)
-{
-    if (const auto * column = node->as<ColumnNode>())
-    {
-        auto source = column->getColumnSourceOrNull();
-        if (!source)
-            return {nullptr, false};
-        return {source.get(), true};
-    }
-
-    if (const auto * func = node->as<FunctionNode>())
-    {
-        const IQueryTreeNode * source = nullptr;
-        const auto & args = func->getArguments().getNodes();
-        for (const auto & arg : args)
-        {
-            auto [arg_source, is_ok] = getExpressionSource(arg);
-            if (!is_ok)
-                return {nullptr, false};
-
-            if (!source)
-                source = arg_source;
-            else if (arg_source && !source->isEqual(*arg_source))
-                return {nullptr, false};
-        }
-        return {source, true};
-
-    }
-
-    if (node->as<ConstantNode>())
-        return {nullptr, true};
-
-    return {nullptr, false};
-}
-
-bool findInTableExpression(const IQueryTreeNode * source, const QueryTreeNodePtr & table_expression)
+bool findInTableExpression(const QueryTreeNodePtr & source, const QueryTreeNodePtr & table_expression)
 {
     if (!source)
         return true;
@@ -114,7 +80,6 @@ bool findInTableExpression(const IQueryTreeNode * source, const QueryTreeNodePtr
         return findInTableExpression(source, join_node->getLeftTableExpression())
             || findInTableExpression(source, join_node->getRightTableExpression());
     }
-
 
     return false;
 }
@@ -153,7 +118,7 @@ public:
 
         QueryTreeNodes equi_conditions;
         QueryTreeNodes other_conditions;
-        exctractJoinConditions(where_condition, equi_conditions, other_conditions);
+        extractJoinConditions(where_condition, equi_conditions, other_conditions);
         bool can_convert_cross_to_inner = false;
         for (auto & condition : equi_conditions)
         {
@@ -169,10 +134,10 @@ public:
                 auto left_src = getExpressionSource(lhs_equi_argument);
                 auto right_src = getExpressionSource(rhs_equi_argument);
 
-                if (left_src.second && right_src.second && left_src.first && right_src.first)
+                if (left_src && right_src)
                 {
-                    if ((findInTableExpression(left_src.first, left_table) && findInTableExpression(right_src.first, right_table)) ||
-                        (findInTableExpression(left_src.first, right_table) && findInTableExpression(right_src.first, left_table)))
+                    if ((findInTableExpression(left_src, left_table) && findInTableExpression(right_src, right_table)) ||
+                        (findInTableExpression(left_src, right_table) && findInTableExpression(right_src, left_table)))
                     {
                         can_convert_cross_to_inner = true;
                         continue;
@@ -232,17 +197,14 @@ public:
     }
 
 private:
-    bool isEnabled() const
-    {
-        return getSettings().cross_to_inner_join_rewrite;
-    }
+    bool isEnabled() const { return getSettings()[Setting::cross_to_inner_join_rewrite]; }
 
     bool forceRewrite(JoinKind kind) const
     {
         if (kind == JoinKind::Cross)
             return false;
         /// Comma join can be forced to rewrite
-        return getSettings().cross_to_inner_join_rewrite >= 2;
+        return getSettings()[Setting::cross_to_inner_join_rewrite] >= 2;
     }
 
     QueryTreeNodePtr makeConjunction(const QueryTreeNodes & nodes)

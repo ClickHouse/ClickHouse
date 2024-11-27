@@ -15,7 +15,7 @@ struct SetWithState : public Set
     using Set::Set;
 
     /// Flow: Creating -> Finished or Suspended
-    enum class State
+    enum class State : uint8_t
     {
         /// Set is not yet created,
         /// Creating processor continues to build set.

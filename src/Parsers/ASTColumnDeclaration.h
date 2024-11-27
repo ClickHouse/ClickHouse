@@ -19,7 +19,7 @@ public:
     bool ephemeral_default = false;
     ASTPtr comment;
     ASTPtr codec;
-    ASTPtr stat_type;
+    ASTPtr statistics_desc;
     ASTPtr ttl;
     ASTPtr collation;
     ASTPtr settings;
@@ -29,6 +29,9 @@ public:
 
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & format_settings, FormatState & state, FormatStateStacked frame) const override;
+
+protected:
+    void forEachPointerToChild(std::function<void(void **)> f) override;
 };
 
 }

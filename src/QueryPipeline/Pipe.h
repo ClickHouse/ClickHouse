@@ -74,7 +74,7 @@ public:
         InputPort * totals_in, InputPort * extremes_in,
         OutputPort * totals_out, OutputPort * extremes_out);
 
-    enum class StreamType
+    enum class StreamType : uint8_t
     {
         Main = 0, /// Stream for query data. There may be several streams of this type.
         Totals,  /// Stream for totals. No more than one.

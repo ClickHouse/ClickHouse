@@ -8,10 +8,7 @@ import subprocess
 import sys
 from typing import List, Tuple
 
-# isort: off
 from github import Github
-
-# isort: on
 
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from commit_status_helper import format_description, get_commit, post_commit_status
@@ -186,7 +183,9 @@ def main():
     pr_info = PRInfo()
     s3_helper = S3Helper()
 
-    url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, [], NAME)
+    url = upload_results(
+        s3_helper, pr_info.number, pr_info.sha, pr_info.head_ref, test_results, [], NAME
+    )
 
     print(f"::notice ::Report url: {url}")
 

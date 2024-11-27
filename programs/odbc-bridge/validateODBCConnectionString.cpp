@@ -4,7 +4,7 @@
 #include <Poco/String.h>
 #include <base/find_symbols.h>
 #include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include "validateODBCConnectionString.h"
 
 
@@ -127,8 +127,8 @@ std::string validateODBCConnectionString(const std::string & connection_string)
 
         if (*pos == '{')
             return read_escaped_value();
-        else
-            return read_plain_value();
+
+        return read_plain_value();
     };
 
     std::map<std::string, std::string> parameters;
@@ -206,12 +206,10 @@ std::string validateODBCConnectionString(const std::string & connection_string)
                 reconstructed_connection_string.append(value_pos, next_pos - value_pos);
                 break;
             }
-            else
-            {
-                reconstructed_connection_string.append(value_pos, next_pos - value_pos);
-                reconstructed_connection_string.append("}}");
-                value_pos = next_pos + 1;
-            }
+
+            reconstructed_connection_string.append(value_pos, next_pos - value_pos);
+            reconstructed_connection_string.append("}}");
+            value_pos = next_pos + 1;
         }
 
         reconstructed_connection_string += '}';

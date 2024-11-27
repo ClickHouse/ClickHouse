@@ -47,6 +47,12 @@ public:
         }
     }
 
+    void cancelImpl() noexcept override
+    {
+        Base::cancelImpl();
+        out->cancel();
+    }
+
     WriteBuffer * getNestedBuffer() { return out; }
 
 protected:

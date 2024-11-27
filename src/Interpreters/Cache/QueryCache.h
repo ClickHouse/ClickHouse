@@ -3,7 +3,7 @@
 #include <Common/CacheBase.h>
 #include <Common/logger_useful.h>
 #include <Core/Block.h>
-#include <Parsers/IAST_fwd.h>
+#include <Parsers/IAST.h>
 #include <Processors/Chunk.h>
 #include <Processors/Sources/SourceFromChunks.h>
 #include <QueryPipeline/Pipe.h>
@@ -13,6 +13,8 @@
 
 namespace DB
 {
+
+struct Settings;
 
 /// Does AST contain non-deterministic functions like rand() and now()?
 bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context);
@@ -30,7 +32,7 @@ bool astContainsSystemTables(ASTPtr ast, ContextPtr context);
 class QueryCache
 {
 public:
-    enum class Usage
+    enum class Usage : uint8_t
     {
         Unknown,  /// we don't know what what happened
         None,     /// query result neither written nor read into/from query cache
@@ -44,8 +46,10 @@ public:
         /// ----------------------------------------------------
         /// The actual key (data which gets hashed):
 
+
+        /// The hash of the query AST.
         /// Unlike the query string, the AST is agnostic to lower/upper case (SELECT vs. select).
-        const ASTPtr ast;
+        IAST::Hash ast_hash;
 
         /// Note: For a transactionally consistent cache, we would need to include the system settings in the cache key or invalidate the
         /// cache whenever the settings change. This is because certain settings (e.g. "additional_table_filters") can affect the query
@@ -84,8 +88,15 @@ public:
         /// SYSTEM.QUERY_CACHE.
         const String query_string;
 
+        /// A tag (namespace) for distinguish multiple entries of the same query.
+        /// This member has currently no use besides that SYSTEM.QUERY_CACHE can populate the 'tag' column conveniently without having to
+        /// compute the tag from the query AST.
+        const String tag;
+
         /// Ctor to construct a Key for writing into query cache.
         Key(ASTPtr ast_,
+            const String & current_database,
+            const Settings & settings,
             Block header_,
             std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
             bool is_shared_,
@@ -93,7 +104,10 @@ public:
             bool is_compressed);
 
         /// Ctor to construct a Key for reading from query cache (this operation only needs the AST + user name).
-        Key(ASTPtr ast_, std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_);
+        Key(ASTPtr ast_,
+            const String & current_database,
+            const Settings & settings,
+            std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_);
 
         bool operator==(const Key & other) const;
     };
@@ -142,7 +156,7 @@ public:
 
         Writer(const Writer & other);
 
-        enum class ChunkType {Result, Totals, Extremes};
+        enum class ChunkType : uint8_t {Result, Totals, Extremes};
         void buffer(Chunk && chunk, ChunkType chunk_type);
 
         void finalizeWrite();
@@ -197,7 +211,7 @@ public:
     Reader createReader(const Key & key);
     Writer createWriter(const Key & key, std::chrono::milliseconds min_query_runtime, bool squash_partial_results, size_t max_block_size, size_t max_query_cache_size_in_bytes_quota, size_t max_query_cache_entries_quota);
 
-    void clear();
+    void clear(const std::optional<String> & tag);
 
     size_t sizeInBytes() const;
     size_t count() const;

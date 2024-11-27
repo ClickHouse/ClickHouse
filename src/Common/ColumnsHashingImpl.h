@@ -161,7 +161,7 @@ public:
 
     FindResultImpl(Mapped * value_, bool found_, size_t off)
         : FindResultImplBase(found_), FindResultImplOffsetBase<need_offset>(off), value(value_) {}
-    Mapped & getMapped() const { return *value; }
+    Mapped & getMapped() const { return *value; }  /// NOLINT(clang-analyzer-core.uninitialized.UndefReturn)
 };
 
 template <bool need_offset>
@@ -305,7 +305,7 @@ protected:
         }
 
         if constexpr (nullable)
-            null_map = &checkAndGetColumn<ColumnNullable>(column)->getNullMapColumn();
+            null_map = &checkAndGetColumn<ColumnNullable>(*column).getNullMapColumn();
     }
 
     template <typename Data, typename KeyHolder>
@@ -453,7 +453,7 @@ protected:
     /// Return the columns which actually contain the values of the keys.
     /// For a given key column, if it is nullable, we return its nested
     /// column. Otherwise we return the key column itself.
-    inline const ColumnRawPtrs & getActualColumns() const
+    const ColumnRawPtrs & getActualColumns() const
     {
         return actual_columns;
     }

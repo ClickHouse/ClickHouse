@@ -51,14 +51,14 @@ SELECT isIPAddressInRange('::127.0.0.1', '127.0.0.1/32');
 
 SELECT '# Unparsable arguments';
 
-SELECT isIPAddressInRange('unparsable', '127.0.0.0/8'); -- { serverError 6 }
-SELECT isIPAddressInRange('127.0.0.1', 'unparsable'); -- { serverError 6 }
+SELECT isIPAddressInRange('unparsable', '127.0.0.0/8'); -- { serverError CANNOT_PARSE_TEXT }
+SELECT isIPAddressInRange('127.0.0.1', 'unparsable'); -- { serverError CANNOT_PARSE_TEXT }
 
 SELECT '# Wrong argument types';
 
-SELECT isIPAddressInRange(100, '127.0.0.0/8'); -- { serverError 43 }
-SELECT isIPAddressInRange(NULL, '127.0.0.0/8'); -- { serverError 43 }
-SELECT isIPAddressInRange(CAST(NULL, 'Nullable(String)'), '127.0.0.0/8'); -- { serverError 43 }
-SELECT isIPAddressInRange('127.0.0.1', 100); -- { serverError 43 }
-SELECT isIPAddressInRange(100, NULL); -- { serverError 43 }
-WITH arrayJoin([NULL, NULL, NULL, NULL]) AS prefix SELECT isIPAddressInRange([NULL, NULL, 0, 255, 0], prefix); -- { serverError 43 }
+SELECT isIPAddressInRange(100, '127.0.0.0/8'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT isIPAddressInRange(NULL, '127.0.0.0/8'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT isIPAddressInRange(CAST(NULL, 'Nullable(String)'), '127.0.0.0/8'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT isIPAddressInRange('127.0.0.1', 100); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT isIPAddressInRange(100, NULL); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+WITH arrayJoin([NULL, NULL, NULL, NULL]) AS prefix SELECT isIPAddressInRange([NULL, NULL, 0, 255, 0], prefix); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

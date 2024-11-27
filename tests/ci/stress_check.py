@@ -3,27 +3,49 @@
 import csv
 import logging
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
 from typing import List, Tuple
 
 from build_download_helper import download_all_deb_packages
+from ci_utils import Shell
 from clickhouse_helper import CiLogsCredentials
 from docker_images_helper import DockerImage, get_docker_image, pull_image
 from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
+from get_robot_token import get_parameter_from_ssm
 from pr_info import PRInfo
-from report import ERROR, JobReport, TestResult, TestResults, read_test_results
+from report import ERROR, JobReport, TestResults, read_test_results
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
 
-def get_additional_envs() -> List[str]:
+class SensitiveFormatter(logging.Formatter):
+    @staticmethod
+    def _filter(s):
+        return re.sub(
+            r"(.*)(AZURE_CONNECTION_STRING.*\')(.*)", r"\1AZURE_CONNECTION_STRING\3", s
+        )
+
+    def format(self, record):
+        original = logging.Formatter.format(self, record)
+        return self._filter(original)
+
+
+def get_additional_envs(check_name: str) -> List[str]:
     result = []
+    azure_connection_string = get_parameter_from_ssm("azure_connection_string")
+    result.append(f"AZURE_CONNECTION_STRING='{azure_connection_string}'")
     # some cloud-specific features require feature flags enabled
     # so we need this ENV to be able to disable the randomization
     # of feature flags
     result.append("RANDOMIZE_KEEPER_FEATURE_FLAGS=1")
+    if "azure" in check_name:
+        result.append("USE_AZURE_STORAGE_FOR_MERGE_TREE=1")
+
+    if "s3" in check_name:
+        result.append("USE_S3_STORAGE_FOR_MERGE_TREE=1")
 
     return result
 
@@ -36,9 +58,15 @@ def get_run_command(
     additional_envs: List[str],
     ci_logs_args: str,
     image: DockerImage,
+    upgrade_check: bool,
 ) -> str:
     envs = [f"-e {e}" for e in additional_envs]
     env_str = " ".join(envs)
+
+    if upgrade_check:
+        run_script = "/repo/tests/docker_scripts/upgrade_runner.sh"
+    else:
+        run_script = "/repo/tests/docker_scripts/stress_runner.sh"
 
     cmd = (
         "docker run --cap-add=SYS_PTRACE "
@@ -49,8 +77,8 @@ def get_run_command(
         f"{ci_logs_args}"
         f"--volume={build_path}:/package_folder "
         f"--volume={result_path}:/test_output "
-        f"--volume={repo_tests_path}:/usr/share/clickhouse-test "
-        f"--volume={server_log_path}:/var/log/clickhouse-server {env_str} {image} "
+        f"--volume={repo_tests_path}/..:/repo "
+        f"--volume={server_log_path}:/var/log/clickhouse-server {env_str} {image} {run_script}"
     )
 
     return cmd
@@ -107,8 +135,11 @@ def process_results(
     return state, description, test_results, additional_files
 
 
-def run_stress_test(docker_image_name: str) -> None:
+def run_stress_test(upgrade_check: bool = False) -> None:
     logging.basicConfig(level=logging.INFO)
+    for handler in logging.root.handlers:
+        # pylint: disable=protected-access
+        handler.setFormatter(SensitiveFormatter(handler.formatter._fmt))  # type: ignore
 
     stopwatch = Stopwatch()
     temp_path = Path(TEMP_PATH)
@@ -124,12 +155,19 @@ def run_stress_test(docker_image_name: str) -> None:
 
     pr_info = PRInfo()
 
-    docker_image = pull_image(get_docker_image(docker_image_name))
-
     packages_path = temp_path / "packages"
     packages_path.mkdir(parents=True, exist_ok=True)
 
-    download_all_deb_packages(check_name, reports_path, packages_path)
+    if check_name in ("amd_release", "amd_debug", "arm_release"):
+        # this is praktika based CI
+        print("Copy input *.deb artifacts")
+        assert Shell.check(
+            f"cp /tmp/praktika/input/*.deb {packages_path}", verbose=True
+        )
+        docker_image = pull_image(get_docker_image("clickhouse/stateful-test"))
+    else:
+        download_all_deb_packages(check_name, reports_path, packages_path)
+        docker_image = pull_image(get_docker_image("clickhouse/stress-test"))
 
     server_log_path = temp_path / "server_log"
     server_log_path.mkdir(parents=True, exist_ok=True)
@@ -143,7 +181,7 @@ def run_stress_test(docker_image_name: str) -> None:
         pr_info, stopwatch.start_time_str, check_name
     )
 
-    additional_envs = get_additional_envs()
+    additional_envs = get_additional_envs(check_name)
 
     run_command = get_run_command(
         packages_path,
@@ -153,17 +191,13 @@ def run_stress_test(docker_image_name: str) -> None:
         additional_envs,
         ci_logs_args,
         docker_image,
+        upgrade_check,
     )
     logging.info("Going to run stress test: %s", run_command)
 
-    timeout_expired = False
-    timeout = 60 * 150
-    with TeePopen(run_command, run_log_path, timeout=timeout) as process:
+    with TeePopen(run_command, run_log_path) as process:
         retcode = process.wait()
-        if process.timeout_exceeded:
-            logging.info("Timeout expired for command: %s", run_command)
-            timeout_expired = True
-        elif retcode == 0:
+        if retcode == 0:
             logging.info("Run successfully")
         else:
             logging.info("Run failed")
@@ -175,11 +209,7 @@ def run_stress_test(docker_image_name: str) -> None:
         result_path, server_log_path, run_log_path
     )
 
-    if timeout_expired:
-        test_results.append(TestResult.create_check_timeout_expired(timeout))
-        state = "failure"
-        description = test_results[-1].name
-
+    Shell.check("pwd", verbose=True)
     JobReport(
         description=description,
         test_results=test_results,
@@ -194,4 +224,4 @@ def run_stress_test(docker_image_name: str) -> None:
 
 
 if __name__ == "__main__":
-    run_stress_test("clickhouse/stress-test")
+    run_stress_test()

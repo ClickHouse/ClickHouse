@@ -4,7 +4,7 @@ sidebar_position: 39
 sidebar_label: DELETE
 ---
 
-# ALTER TABLE … DELETE 语句 {#alter-mutations}
+# ALTER TABLE ... DELETE 语句 {#alter-mutations}
 
 ``` sql
 ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE WHERE filter_expr

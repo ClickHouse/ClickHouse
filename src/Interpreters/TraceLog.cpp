@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Common/ClickHouseRevision.h>
+#include <Common/SymbolIndex.h>
 
 
 namespace DB
@@ -50,6 +51,18 @@ ColumnsDescription TraceLogElement::getColumnsDescription()
         {"ptr", std::make_shared<DataTypeUInt64>(), "The address of the allocated chunk."},
         {"event", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "For trace type ProfileEvent is the name of updated profile event, for other trace types is an empty string."},
         {"increment", std::make_shared<DataTypeInt64>(), "For trace type ProfileEvent is the amount of increment of profile event, for other trace types is 0."},
+    };
+}
+
+NamesAndAliases TraceLogElement::getNamesAndAliases()
+{
+    String build_id_hex;
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+    build_id_hex = SymbolIndex::instance().getBuildIDHex();
+#endif
+    return
+    {
+        {"build_id", std::make_shared<DataTypeString>(), "\'" + build_id_hex + "\'"},
     };
 }
 

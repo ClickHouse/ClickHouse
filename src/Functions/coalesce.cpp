@@ -133,11 +133,11 @@ public:
             {
                 tmp_args[0] = filtered_args[i];
                 auto & cond = multi_if_args.emplace_back(ColumnWithTypeAndName{nullptr, std::make_shared<DataTypeUInt8>(), ""});
-                cond.column = is_not_null->build(tmp_args)->execute(tmp_args, cond.type, input_rows_count);
+                cond.column = is_not_null->build(tmp_args)->execute(tmp_args, cond.type, input_rows_count, /* dry_run = */ false);
 
                 tmp_args[0] = filtered_args[i];
                 auto & val = multi_if_args.emplace_back(ColumnWithTypeAndName{nullptr, removeNullable(filtered_args[i].type), ""});
-                val.column = assume_not_null->build(tmp_args)->execute(tmp_args, val.type, input_rows_count);
+                val.column = assume_not_null->build(tmp_args)->execute(tmp_args, val.type, input_rows_count, /* dry_run = */ false);
             }
         }
 
@@ -152,17 +152,17 @@ public:
         /// use function "if" instead, because it's implemented more efficient.
         /// TODO: make "multiIf" the same efficient.
         FunctionOverloadResolverPtr if_or_multi_if = multi_if_args.size() == 3 ? if_function : multi_if_function;
-        ColumnPtr res = if_or_multi_if->build(multi_if_args)->execute(multi_if_args, result_type, input_rows_count);
+        ColumnPtr res = if_or_multi_if->build(multi_if_args)->execute(multi_if_args, result_type, input_rows_count, /* dry_run = */ false);
 
         /// if last argument is not nullable, result should be also not nullable
         if (!multi_if_args.back().column->isNullable() && res->isNullable())
         {
-            if (const auto * column_lc = checkAndGetColumn<ColumnLowCardinality>(*res))
-                res = checkAndGetColumn<ColumnNullable>(*column_lc->convertToFullColumn())->getNestedColumnPtr();
-            else if (const auto * column_const = checkAndGetColumn<ColumnConst>(*res))
-                res = checkAndGetColumn<ColumnNullable>(column_const->getDataColumn())->getNestedColumnPtr();
+            if (const auto * column_lc = checkAndGetColumn<ColumnLowCardinality>(&*res))
+                res = checkAndGetColumn<ColumnNullable>(*column_lc->convertToFullColumn()).getNestedColumnPtr();
+            else if (const auto * column_const = checkAndGetColumn<ColumnConst>(&*res))
+                res = checkAndGetColumn<ColumnNullable>(column_const->getDataColumn()).getNestedColumnPtr();
             else
-                res = checkAndGetColumn<ColumnNullable>(*res)->getNestedColumnPtr();
+                res = checkAndGetColumn<ColumnNullable>(&*res)->getNestedColumnPtr();
         }
 
         return res;
@@ -180,7 +180,7 @@ private:
 
 REGISTER_FUNCTION(Coalesce)
 {
-    factory.registerFunction<FunctionCoalesce>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionCoalesce>({}, FunctionFactory::Case::Insensitive);
 }
 
 }

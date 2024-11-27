@@ -31,7 +31,20 @@ public:
     }
 
     std::string getName() const override { return "FullSortingMergeJoin"; }
+
     const TableJoin & getTableJoin() const override { return *table_join; }
+
+    bool isCloneSupported() const override
+    {
+        return true;
+    }
+
+    std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_,
+        const Block &,
+        const Block & right_sample_block_) const override
+    {
+        return std::make_shared<FullSortingMergeJoin>(table_join_, right_sample_block_, null_direction);
+    }
 
     int getNullDirection() const { return null_direction; }
 

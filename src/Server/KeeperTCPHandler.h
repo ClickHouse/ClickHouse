@@ -26,7 +26,13 @@ namespace DB
 struct SocketInterruptablePollWrapper;
 using SocketInterruptablePollWrapperPtr = std::unique_ptr<SocketInterruptablePollWrapper>;
 
-using ThreadSafeResponseQueue = ConcurrentBoundedQueue<Coordination::ZooKeeperResponsePtr>;
+struct RequestWithResponse
+{
+    Coordination::ZooKeeperResponsePtr response;
+    Coordination::ZooKeeperRequestPtr request; /// it can be nullptr for some responses
+};
+
+using ThreadSafeResponseQueue = ConcurrentBoundedQueue<RequestWithResponse>;
 using ThreadSafeResponseQueuePtr = std::shared_ptr<ThreadSafeResponseQueue>;
 
 struct LastOp;
@@ -78,6 +84,7 @@ private:
     ThreadSafeResponseQueuePtr responses;
 
     Coordination::XID close_xid = Coordination::CLOSE_XID;
+    bool use_xid_64 = false;
 
     /// Streams for reading/writing from/to client connection socket.
     std::optional<ReadBufferFromPocoSocket> in;
@@ -91,6 +98,8 @@ private:
 
     WriteBuffer & getWriteBuffer();
     void flushWriteBuffer();
+    void finalizeWriteBuffer();
+    void cancelWriteBuffer() noexcept;
     ReadBuffer & getReadBuffer();
 
     void sendHandshake(bool has_leader, bool & use_compression);
@@ -104,7 +113,7 @@ private:
     void packageSent();
     void packageReceived();
 
-    void updateStats(Coordination::ZooKeeperResponsePtr & response);
+    void updateStats(Coordination::ZooKeeperResponsePtr & response, const Coordination::ZooKeeperRequestPtr & request);
 
     Poco::Timestamp established;
 

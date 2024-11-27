@@ -697,7 +697,13 @@ void MaterializedPostgreSQLConsumer::syncTables()
                     insert->table_id = storage->getStorageID();
                     insert->columns = std::make_shared<ASTExpressionList>(buffer->columns_ast);
 
-                    InterpreterInsertQuery interpreter(insert, insert_context, true);
+                    InterpreterInsertQuery interpreter(
+                        insert,
+                        insert_context,
+                        /* allow_materialized */ true,
+                        /* no_squash */ false,
+                        /* no_destination */ false,
+                        /* async_isnert */ false);
                     auto io = interpreter.execute();
                     auto input = std::make_shared<SourceFromSingleChunk>(
                         result_rows.cloneEmpty(), Chunk(result_rows.getColumns(), result_rows.rows()));
@@ -719,7 +725,7 @@ void MaterializedPostgreSQLConsumer::syncTables()
             }
         }
 
-        tables_to_sync.erase(tables_to_sync.begin());
+        tables_to_sync.erase(table_name);
     }
 
     LOG_DEBUG(log, "Table sync end for {} tables, last lsn: {} = {}, (attempted lsn {})",
@@ -937,7 +943,7 @@ bool MaterializedPostgreSQLConsumer::consume()
         /// https://github.com/postgres/postgres/blob/master/src/backend/replication/pgoutput/pgoutput.c#L1128
         /// So at some point will get out of limit and then they will be cleaned.
         std::string error_message = e.what();
-        if (error_message.find("out of relcache_callback_list slots") == std::string::npos)
+        if (!error_message.contains("out of relcache_callback_list slots"))
             tryLogCurrentException(__PRETTY_FUNCTION__);
 
         connection->tryUpdateConnection();

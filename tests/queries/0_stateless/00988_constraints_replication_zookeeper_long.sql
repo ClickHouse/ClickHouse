@@ -23,7 +23,7 @@ INSERT INTO replicated_constraints2 VALUES (3, 4);
 SYSTEM SYNC REPLICA replicated_constraints1;
 SYSTEM SYNC REPLICA replicated_constraints2;
 
-INSERT INTO replicated_constraints1 VALUES (10, 10); -- { serverError 469 }
+INSERT INTO replicated_constraints1 VALUES (10, 10); -- { serverError VIOLATED_CONSTRAINT }
 
 ALTER TABLE replicated_constraints1 DROP CONSTRAINT a_constraint;
 
@@ -43,8 +43,8 @@ ALTER TABLE replicated_constraints2 ADD CONSTRAINT a_constraint CHECK a < 10;
 SYSTEM SYNC REPLICA replicated_constraints1;
 SYSTEM SYNC REPLICA replicated_constraints2;
 
-INSERT INTO replicated_constraints1 VALUES (10, 11); -- { serverError 469 }
-INSERT INTO replicated_constraints2 VALUES (9, 10); -- { serverError 469 }
+INSERT INTO replicated_constraints1 VALUES (10, 11); -- { serverError VIOLATED_CONSTRAINT }
+INSERT INTO replicated_constraints2 VALUES (9, 10); -- { serverError VIOLATED_CONSTRAINT }
 
 DROP TABLE replicated_constraints1;
 DROP TABLE replicated_constraints2;

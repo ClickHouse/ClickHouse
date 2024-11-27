@@ -1,4 +1,5 @@
 #include <Common/Arena.h>
+#include <Common/HashTable/StringHashSet.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
@@ -7,6 +8,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/MaskOperations.h>
 
 #if USE_EMBEDDED_COMPILER
 #include <DataTypes/Native.h>
@@ -22,6 +24,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
     extern const int NOT_IMPLEMENTED;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -54,25 +57,21 @@ void ColumnNullable::updateHashWithValue(size_t n, SipHash & hash) const
         getNestedColumn().updateHashWithValue(n, hash);
 }
 
-void ColumnNullable::updateWeakHash32(WeakHash32 & hash) const
+WeakHash32 ColumnNullable::getWeakHash32() const
 {
     auto s = size();
 
-    if (hash.getData().size() != s)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
-                        "column size is {}, hash size is {}", std::to_string(s), std::to_string(hash.getData().size()));
-
-    WeakHash32 old_hash = hash;
-    nested_column->updateWeakHash32(hash);
+    WeakHash32 hash = nested_column->getWeakHash32();
 
     const auto & null_map_data = getNullMapData();
     auto & hash_data = hash.getData();
-    auto & old_hash_data = old_hash.getData();
 
-    /// Use old data for nulls.
+    /// Use default for nulls.
     for (size_t row = 0; row < s; ++row)
         if (null_map_data[row])
-            hash_data[row] = old_hash_data[row];
+            hash_data[row] = WeakHash32::kDefaultInitialValue;
+
+    return hash;
 }
 
 void ColumnNullable::updateHashFast(SipHash & hash) const
@@ -114,6 +113,34 @@ void ColumnNullable::get(size_t n, Field & res) const
         res = Null();
     else
         getNestedColumn().get(n, res);
+}
+
+Float64 ColumnNullable::getFloat64(size_t n) const
+{
+    if (isNullAt(n))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of {} at {} is NULL while calling method getFloat64", getName(), n);
+    return getNestedColumn().getFloat64(n);
+}
+
+Float32 ColumnNullable::getFloat32(size_t n) const
+{
+    if (isNullAt(n))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of {} at {} is NULL while calling method getFloat32", getName(), n);
+    return getNestedColumn().getFloat32(n);
+}
+
+UInt64 ColumnNullable::getUInt(size_t n) const
+{
+    if (isNullAt(n))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of {} at {} is NULL while calling method getUInt", getName(), n);
+    return getNestedColumn().getUInt(n);
+}
+
+Int64 ColumnNullable::getInt(size_t n) const
+{
+    if (isNullAt(n))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of {} at {} is NULL while calling method getInt", getName(), n);
+    return getNestedColumn().getInt(n);
 }
 
 void ColumnNullable::insertData(const char * pos, size_t length)
@@ -187,7 +214,11 @@ const char * ColumnNullable::skipSerializedInArena(const char * pos) const
     return pos;
 }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnNullable::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+#else
+void ColumnNullable::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
+#endif
 {
     const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(src);
     getNullMapColumn().insertRangeFrom(*nullable_col.null_map, start, length);
@@ -224,7 +255,11 @@ bool ColumnNullable::tryInsert(const Field & x)
     return true;
 }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnNullable::insertFrom(const IColumn & src, size_t n)
+#else
+void ColumnNullable::doInsertFrom(const IColumn & src, size_t n)
+#endif
 {
     const ColumnNullable & src_concrete = assert_cast<const ColumnNullable &>(src);
     getNestedColumn().insertFrom(src_concrete.getNestedColumn(), n);
@@ -232,7 +267,11 @@ void ColumnNullable::insertFrom(const IColumn & src, size_t n)
 }
 
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnNullable::insertManyFrom(const IColumn & src, size_t position, size_t length)
+#else
+void ColumnNullable::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
+#endif
 {
     const ColumnNullable & src_concrete = assert_cast<const ColumnNullable &>(src);
     getNestedColumn().insertManyFrom(src_concrete.getNestedColumn(), position, length);
@@ -263,6 +302,23 @@ void ColumnNullable::popBack(size_t n)
     getNullMapColumn().popBack(n);
 }
 
+ColumnCheckpointPtr ColumnNullable::getCheckpoint() const
+{
+    return std::make_shared<ColumnCheckpointWithNested>(size(), nested_column->getCheckpoint());
+}
+
+void ColumnNullable::updateCheckpoint(ColumnCheckpoint & checkpoint) const
+{
+    checkpoint.size = size();
+    nested_column->updateCheckpoint(*assert_cast<ColumnCheckpointWithNested &>(checkpoint).nested);
+}
+
+void ColumnNullable::rollback(const ColumnCheckpoint & checkpoint)
+{
+    getNullMapData().resize_assume_reserved(checkpoint.size);
+    nested_column->rollback(*assert_cast<const ColumnCheckpointWithNested &>(checkpoint).nested);
+}
+
 ColumnPtr ColumnNullable::filter(const Filter & filt, ssize_t result_size_hint) const
 {
     ColumnPtr filtered_data = getNestedColumn().filter(filt, result_size_hint);
@@ -273,7 +329,8 @@ ColumnPtr ColumnNullable::filter(const Filter & filt, ssize_t result_size_hint) 
 void ColumnNullable::expand(const IColumn::Filter & mask, bool inverted)
 {
     nested_column->expand(mask, inverted);
-    null_map->expand(mask, inverted);
+    /// Use 1 as default value so column will contain NULLs on rows where filter has 0.
+    expandDataByMask<UInt8>(getNullMapData(), mask, inverted, 1);
 }
 
 ColumnPtr ColumnNullable::permute(const Permutation & perm, size_t limit) const
@@ -357,8 +414,7 @@ int ColumnNullable::compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int 
     {
         if (lval_is_null && rval_is_null)
             return 0;
-        else
-            return lval_is_null ? null_direction_hint : -null_direction_hint;
+        return lval_is_null ? null_direction_hint : -null_direction_hint;
     }
 
     const IColumn & nested_rhs = nullable_rhs.getNestedColumn();
@@ -368,7 +424,11 @@ int ColumnNullable::compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int 
     return getNestedColumn().compareAt(n, m, nested_rhs, null_direction_hint);
 }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 int ColumnNullable::compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const
+#else
+int ColumnNullable::doCompareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const
+#endif
 {
     return compareAtImpl(n, m, rhs_, null_direction_hint);
 }
@@ -588,7 +648,7 @@ void ColumnNullable::updatePermutationImpl(IColumn::PermutationSortDirection dir
     if (unlikely(stability == PermutationSortStability::Stable))
     {
         for (auto & null_range : null_ranges)
-            ::sort(res.begin() + null_range.first, res.begin() + null_range.second);
+            ::sort(std::ranges::next(res.begin(), null_range.from), std::ranges::next(res.begin(), null_range.to));
     }
 
     if (is_nulls_last || null_ranges.empty())
@@ -627,10 +687,58 @@ void ColumnNullable::updatePermutationWithCollation(const Collator & collator, I
     updatePermutationImpl(direction, stability, limit, null_direction_hint, res, equal_ranges, &collator);
 }
 
+
+size_t ColumnNullable::estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const
+{
+    const size_t range_size = equal_range.size();
+    if (range_size <= 1)
+        return range_size;
+
+    /// TODO use sampling if the range is too large (e.g. 16k elements, but configurable)
+    StringHashSet elements;
+    bool has_null = false;
+    bool inserted = false;
+    for (size_t i = equal_range.from; i < equal_range.to; ++i)
+    {
+        size_t permuted_i = permutation[i];
+        if (isNullAt(permuted_i))
+        {
+            has_null = true;
+        }
+        else
+        {
+            StringRef value = getDataAt(permuted_i);
+            elements.emplace(value, inserted);
+        }
+    }
+    return elements.size() + (has_null ? 1 : 0);
+}
+
 void ColumnNullable::reserve(size_t n)
 {
     getNestedColumn().reserve(n);
     getNullMapData().reserve(n);
+}
+
+size_t ColumnNullable::capacity() const
+{
+    return getNullMapData().capacity();
+}
+
+void ColumnNullable::prepareForSquashing(const Columns & source_columns)
+{
+    size_t new_size = size();
+    Columns nested_source_columns;
+    nested_source_columns.reserve(source_columns.size());
+    for (const auto & source_column : source_columns)
+    {
+        const auto & source_nullable_column = assert_cast<const ColumnNullable &>(*source_column);
+        new_size += source_nullable_column.size();
+        nested_source_columns.push_back(source_nullable_column.getNestedColumnPtr());
+    }
+
+    nested_column->prepareForSquashing(nested_source_columns);
+    getNullMapData().reserve(new_size);
 }
 
 void ColumnNullable::shrinkToFit()
@@ -835,6 +943,15 @@ ColumnPtr ColumnNullable::getNestedColumnWithDefaultOnNull() const
     return res;
 }
 
+void ColumnNullable::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
+{
+    Columns nested_source_columns;
+    nested_source_columns.reserve(source_columns.size());
+    for (const auto & source_column : source_columns)
+        nested_source_columns.push_back(assert_cast<const ColumnNullable &>(*source_column).getNestedColumnPtr());
+    nested_column->takeDynamicStructureFromSourceColumns(nested_source_columns);
+}
+
 ColumnPtr makeNullable(const ColumnPtr & column)
 {
     if (isColumnNullable(*column))
@@ -889,6 +1006,25 @@ ColumnPtr makeNullableOrLowCardinalityNullableSafe(const ColumnPtr & column)
         return makeNullable(column);
 
     return column;
+}
+
+ColumnPtr removeNullable(const ColumnPtr & column)
+{
+    if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))
+        return column_nullable->getNestedColumnPtr();
+    return column;
+}
+
+ColumnPtr removeNullableOrLowCardinalityNullable(const ColumnPtr & column)
+{
+    if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(column.get()))
+    {
+        if (!column_low_cardinality->nestedIsNullable())
+            return column;
+        return column_low_cardinality->cloneWithDefaultOnNull();
+    }
+
+    return removeNullable(column);
 }
 
 }

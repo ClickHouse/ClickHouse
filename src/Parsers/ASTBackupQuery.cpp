@@ -46,7 +46,7 @@ namespace
         }
     }
 
-    void formatExceptTables(const std::set<DatabaseAndTableName> & except_tables, const IAST::FormatSettings & format)
+    void formatExceptTables(const std::set<DatabaseAndTableName> & except_tables, const IAST::FormatSettings & format, bool only_table_names=false)
     {
         if (except_tables.empty())
             return;
@@ -60,7 +60,7 @@ namespace
             if (std::exchange(need_comma, true))
                 format.ostr << ", ";
 
-            if (!table_name.first.empty())
+            if (!table_name.first.empty() && !only_table_names)
                 format.ostr << backQuoteIfNeed(table_name.first) << ".";
             format.ostr << backQuoteIfNeed(table_name.second);
         }
@@ -117,7 +117,7 @@ namespace
                     format.ostr << backQuoteIfNeed(element.new_database_name);
                 }
 
-                formatExceptTables(element.except_tables, format);
+                formatExceptTables(element.except_tables, format, /*only_table_names*/true);
                 break;
             }
 
@@ -180,7 +180,7 @@ namespace
         if (settings)
             changes = assert_cast<ASTSetQuery *>(settings.get())->changes;
 
-        boost::remove_erase_if(
+        std::erase_if(
             changes,
             [](const SettingChange & change)
             {
@@ -286,7 +286,7 @@ ASTPtr ASTBackupQuery::getRewrittenASTWithoutOnCluster(const WithoutOnClusterAST
     auto new_query = std::static_pointer_cast<ASTBackupQuery>(clone());
     new_query->cluster.clear();
     new_query->settings = rewriteSettingsWithoutOnCluster(new_query->settings, params);
-    new_query->setCurrentDatabase(new_query->elements, params.default_database);
+    ASTBackupQuery::setCurrentDatabase(new_query->elements, params.default_database);
     return new_query;
 }
 
