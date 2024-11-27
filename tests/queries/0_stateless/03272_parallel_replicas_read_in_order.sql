@@ -1,4 +1,5 @@
 SET log_queries = 1;
+SET optimize_read_in_order=1;
 DROP TABLE IF EXISTS read_in_order_with_parallel_replicas;
 CREATE TABLE read_in_order_with_parallel_replicas(id UInt64) ENGINE=MergeTree ORDER BY id SETTINGS index_granularity=1;
 
