@@ -174,7 +174,7 @@ FROM salaries;
 ```
 
 ```text
-┌─player──────────┬─salary─┬─team──────────────────────┬─teamAvg─┬───diff─┐
+┌─player──────────┬─salary─┬─team──────────────────────┬─teamMax─┬───diff─┐
 │ Charles Juarez  │ 190000 │ New Coreystad Archdukes   │  190000 │      0 │
 │ Scott Harrison  │ 150000 │ New Coreystad Archdukes   │  190000 │ -40000 │
 │ Gary Chen       │ 195000 │ Port Elizabeth Barbarians │  195000 │      0 │
