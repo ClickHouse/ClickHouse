@@ -104,17 +104,12 @@ function url_encode() {
 
 # Function to execute HTTP query
 function execute_query_HTTP() {
-    local query_id=$1
-    local query=$2
     local PROTOCOL="http"
     local HTTP_URL="${PROTOCOL}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/?database=${CLICKHOUSE_DATABASE}"
-    encoded_query=$(url_encode "$query")
-    if [ -z "$encoded_query" ]; then
-        echo "Error: Query is empty after URL encoding."
-        return 1
-    fi
-    local generated_url="${HTTP_URL}&query_id=${query_id}&query=${encoded_query}"
-    ${CLICKHOUSE_CURL} -sS "$generated_url" -d ' '
+    local encoded_query=$(url_encode "$2")
+    local encoded_query_id=$(url_encode "$1")
+    local generated_url="${HTTP_URL}&opentelemetry_start_trace_probability=1&query_id=${encoded_query_id}&query=${encoded_query}"
+    ${CLICKHOUSE_CURL} -sS "$generated_url"
 }
 
 # Function to check if specific HTTP attributes are present in the result
