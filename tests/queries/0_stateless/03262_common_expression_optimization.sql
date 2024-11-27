@@ -77,6 +77,8 @@ EXPLAIN QUERY TREE dump_ast = 1 SELECT count() FROM x WHERE ((A AND B AND C) OR 
 
 -- Optimization is not applied if the result type would change in nullability, thus `toNullable(F)` cannot be eliminated
 EXPLAIN QUERY TREE dump_ast = 1 SELECT count() FROM x WHERE ((B AND C) OR (B AND C AND toNullable(F)));
+-- Here the result type stays nullable because of `toNullable(C)`, so optimization will be applied
+EXPLAIN QUERY TREE dump_ast = 1 SELECT count() FROM x WHERE ((B AND toNullable(C)) OR (B AND toNullable(C) AND toNullable(F)));
 
 -- Check that optimization only happen on top level, (C AND D) OR (C AND E) shouldn't be optimized
 EXPLAIN QUERY TREE dump_ast = 1 SELECT count() FROM x WHERE A OR (B AND ((C AND D) OR (C AND E)));
@@ -99,3 +101,5 @@ EXPLAIN QUERY TREE dump_ast = 1 SELECT count() FROM x INNER JOIN y ON (x.A = y.A
 SELECT * FROM x WHERE (D AND 5) OR ((C AND E) AND (C AND E)) ORDER BY ALL LIMIT 3 SETTINGS optimize_extract_common_expressions = 0;
 SELECT * FROM x WHERE (D AND 5) OR ((C AND E) AND (C AND E)) ORDER BY ALL LIMIT 3 SETTINGS optimize_extract_common_expressions = 1;
 EXPLAIN QUERY TREE dump_ast = 1 SELECT * FROM x WHERE (C AND E) OR ((C AND E) AND (C AND E));
+
+-- TODO(antaljanosbenjamin): Add test for HAVING and QUALIFY
