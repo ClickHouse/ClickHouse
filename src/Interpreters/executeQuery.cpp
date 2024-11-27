@@ -363,7 +363,7 @@ QueryLogElement logQueryStart(
             if (settings.log_queries_min_type.changed)
                 LOG_TRACE(
                     getLogger("executeQuery"),
-                    "Query start record will not be added to query_log due to query type is bigger than `log_queries_min_type` setting."
+                    "Query start record will not be added to query_log because the query type is smaller than `log_queries_min_type` setting"
                     " The setting has been changed for the query");
         }
         else if (settings.log_queries_min_query_duration_ms.totalMilliseconds())
