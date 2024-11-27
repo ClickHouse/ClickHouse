@@ -14,7 +14,6 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Common.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
@@ -186,8 +185,7 @@ struct DeltaLakeMetadataImpl
         std::set<String> & result)
     {
         auto read_settings = context->getReadSettings();
-        StorageObjectStorageSource::ObjectInfo object_info(metadata_file_path);
-        auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
+        auto buf = object_storage->readObject(StoredObject(metadata_file_path), read_settings);
 
         char c;
         while (!buf->eof())
@@ -207,7 +205,7 @@ struct DeltaLakeMetadataImpl
 
             Poco::JSON::Parser parser;
             Poco::Dynamic::Var json = parser.parse(json_str);
-            const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+            Poco::JSON::Object::Ptr object = json.extract<Poco::JSON::Object::Ptr>();
 
             if (!object)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to parse metadata file");
@@ -355,33 +353,33 @@ struct DeltaLakeMetadataImpl
         WhichDataType which(check_type->getTypeId());
         if (which.isStringOrFixedString())
             return value;
-        if (isBool(check_type))
+        else if (isBool(check_type))
             return parse<bool>(value);
-        if (which.isInt8())
+        else if (which.isInt8())
             return parse<Int8>(value);
-        if (which.isUInt8())
+        else if (which.isUInt8())
             return parse<UInt8>(value);
-        if (which.isInt16())
+        else if (which.isInt16())
             return parse<Int16>(value);
-        if (which.isUInt16())
+        else if (which.isUInt16())
             return parse<UInt16>(value);
-        if (which.isInt32())
+        else if (which.isInt32())
             return parse<Int32>(value);
-        if (which.isUInt32())
+        else if (which.isUInt32())
             return parse<UInt32>(value);
-        if (which.isInt64())
+        else if (which.isInt64())
             return parse<Int64>(value);
-        if (which.isUInt64())
+        else if (which.isUInt64())
             return parse<UInt64>(value);
-        if (which.isFloat32())
+        else if (which.isFloat32())
             return parse<Float32>(value);
-        if (which.isFloat64())
+        else if (which.isFloat64())
             return parse<Float64>(value);
-        if (which.isDate())
+        else if (which.isDate())
             return UInt16{LocalDate{std::string(value)}.getDayNum()};
-        if (which.isDate32())
+        else if (which.isDate32())
             return Int32{LocalDate{std::string(value)}.getExtenedDayNum()};
-        if (which.isDateTime64())
+        else if (which.isDateTime64())
         {
             ReadBufferFromString in(value);
             DateTime64 time = 0;
@@ -494,8 +492,7 @@ struct DeltaLakeMetadataImpl
 
         String json_str;
         auto read_settings = context->getReadSettings();
-        StorageObjectStorageSource::ObjectInfo object_info(last_checkpoint_file);
-        auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
+        auto buf = object_storage->readObject(StoredObject(last_checkpoint_file), read_settings);
         readJSONObjectPossiblyInvalid(json_str, *buf);
 
         const JSON json(json_str);
@@ -560,8 +557,7 @@ struct DeltaLakeMetadataImpl
         LOG_TRACE(log, "Using checkpoint file: {}", checkpoint_path.string());
 
         auto read_settings = context->getReadSettings();
-        StorageObjectStorageSource::ObjectInfo object_info(checkpoint_path);
-        auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
+        auto buf = object_storage->readObject(StoredObject(checkpoint_path), read_settings);
         auto format_settings = getFormatSettings(context);
 
         /// Force nullable, because this parquet file for some reason does not have nullable

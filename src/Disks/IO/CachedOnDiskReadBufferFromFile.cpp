@@ -295,10 +295,12 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegment & file_s
             read_type = ReadType::CACHED;
             return getCacheReadBuffer(file_segment);
         }
-
-        LOG_TEST(log, "Bypassing cache because `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` option is used");
-        read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
-        return getRemoteReadBuffer(file_segment, read_type);
+        else
+        {
+            LOG_TEST(log, "Bypassing cache because `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` option is used");
+            read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
+            return getRemoteReadBuffer(file_segment, read_type);
+        }
     }
 
     while (true)
@@ -401,13 +403,14 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegment & file_s
                     read_type = ReadType::CACHED;
                     return getCacheReadBuffer(file_segment);
                 }
-
-                LOG_TRACE(
-                    log,
-                    "Bypassing cache because file segment state is "
-                    "`PARTIALLY_DOWNLOADED_NO_CONTINUATION` and downloaded part already used");
-                read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
-                return getRemoteReadBuffer(file_segment, read_type);
+                else
+                {
+                    LOG_TRACE(
+                        log, "Bypassing cache because file segment state is "
+                        "`PARTIALLY_DOWNLOADED_NO_CONTINUATION` and downloaded part already used");
+                    read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
+                    return getRemoteReadBuffer(file_segment, read_type);
+                }
             }
         }
     }

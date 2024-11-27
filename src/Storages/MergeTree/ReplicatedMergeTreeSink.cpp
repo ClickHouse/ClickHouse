@@ -3,8 +3,8 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include <Storages/MergeTree/InsertBlockInfo.h>
 #include <Interpreters/PartLog.h>
-#include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Common/Exception.h>
+#include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/SipHash.h>
@@ -37,11 +37,6 @@ namespace Setting
     extern const SettingsUInt64 insert_keeper_retry_max_backoff_ms;
     extern const SettingsUInt64 max_insert_delayed_streams_for_parallel_write;
     extern const SettingsBool optimize_on_insert;
-}
-
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsMilliseconds sleep_before_commit_local_part_in_replicated_table_ms;
 }
 
 namespace FailPoints
@@ -481,17 +476,6 @@ void ReplicatedMergeTreeSinkImpl<false>::finishDelayedChunk(const ZooKeeperWithF
 
             /// Set a special error code if the block is duplicate
             int error = (deduplicate && deduplicated) ? ErrorCodes::INSERT_WAS_DEDUPLICATED : 0;
-            auto * mark_cache = storage.getContext()->getMarkCache().get();
-
-            if (!error && mark_cache)
-            {
-                for (const auto & stream : partition.temp_part.streams)
-                {
-                    auto marks = stream.stream->releaseCachedMarks();
-                    addMarksToCache(*part, marks, mark_cache);
-                }
-            }
-
             auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
             PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot), ExecutionStatus(error));
             StorageReplicatedMergeTree::incrementInsertedPartsProfileEvent(part->getType());
@@ -532,18 +516,8 @@ void ReplicatedMergeTreeSinkImpl<true>::finishDelayedChunk(const ZooKeeperWithFa
         {
             partition.temp_part.finalize();
             auto conflict_block_ids = commitPart(zookeeper, partition.temp_part.part, partition.block_id, delayed_chunk->replicas_num).first;
-
             if (conflict_block_ids.empty())
             {
-                if (auto * mark_cache = storage.getContext()->getMarkCache().get())
-                {
-                    for (const auto & stream : partition.temp_part.streams)
-                    {
-                        auto marks = stream.stream->releaseCachedMarks();
-                        addMarksToCache(*partition.temp_part.part, marks, mark_cache);
-                    }
-                }
-
                 auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
                 PartLog::addNewPart(
                     storage.getContext(),
@@ -837,7 +811,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
 
     auto sleep_before_commit_for_tests = [&] ()
     {
-        auto sleep_before_commit_local_part_in_replicated_table_ms = (*storage.getSettings())[MergeTreeSetting::sleep_before_commit_local_part_in_replicated_table_ms];
+        auto sleep_before_commit_local_part_in_replicated_table_ms = storage.getSettings()->sleep_before_commit_local_part_in_replicated_table_ms;
         if (sleep_before_commit_local_part_in_replicated_table_ms.totalMilliseconds())
         {
             LOG_INFO(log, "committing part {}, triggered sleep_before_commit_local_part_in_replicated_table_ms {}",
@@ -943,7 +917,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         try
         {
             auto lock = storage.lockParts();
-            storage.renameTempPartAndAdd(part, transaction, lock, /*rename_in_transaction=*/ true);
+            storage.renameTempPartAndAdd(part, transaction, lock);
         }
         catch (const Exception & e)
         {
@@ -957,9 +931,6 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
 
             throw;
         }
-
-        /// Rename parts before committing to ZooKeeper without holding DataPartsLock.
-        transaction.renameParts();
 
         ThreadFuzzer::maybeInjectSleep();
 
@@ -1030,19 +1001,21 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                 block_number_lock->assumeUnlocked();
                 return CommitRetryContext::SUCCESS;
             }
-
-            LOG_DEBUG(log, "Insert of part {} was not committed to keeper. Will try again with a new block", part->name);
-            /// We checked in keeper and the the data in ops being written so we can retry the process again, but
-            /// there is a caveat: as we lost the connection the block number that we got (EphemeralSequential)
-            /// might or might not be there (and it belongs to a different session anyway) so we need to assume
-            /// it's not there and will be removed automatically, and start from scratch
-            /// In order to start from scratch we need to undo the changes that we've done as part of the
-            /// transaction: renameTempPartAndAdd
-            transaction.rollbackPartsToTemporaryState();
-            part->is_temp = true;
-            part->renameTo(temporary_part_relative_path, false);
-            /// Throw an exception to set the proper keeper error and force a retry (if possible)
-            zkutil::KeeperMultiException::check(multi_code, ops, responses);
+            else
+            {
+                LOG_DEBUG(log, "Insert of part {} was not committed to keeper. Will try again with a new block", part->name);
+                /// We checked in keeper and the the data in ops being written so we can retry the process again, but
+                /// there is a caveat: as we lost the connection the block number that we got (EphemeralSequential)
+                /// might or might not be there (and it belongs to a different session anyway) so we need to assume
+                /// it's not there and will be removed automatically, and start from scratch
+                /// In order to start from scratch we need to undo the changes that we've done as part of the
+                /// transaction: renameTempPartAndAdd
+                transaction.rollbackPartsToTemporaryState();
+                part->is_temp = true;
+                part->renameTo(temporary_part_relative_path, false);
+                /// Throw an exception to set the proper keeper error and force a retry (if possible)
+                zkutil::KeeperMultiException::check(multi_code, ops, responses);
+            }
         }
 
         transaction.rollback();

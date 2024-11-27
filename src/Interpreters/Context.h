@@ -7,9 +7,7 @@
 #include <Common/SettingSource.h>
 #include <Common/SharedMutex.h>
 #include <Common/SharedMutexHelper.h>
-#include <Common/StopToken.h>
 #include <Core/UUID.h>
-#include <Core/ParallelReplicasMode.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <Disks/IO/getThreadPoolReader.h>
@@ -39,12 +37,6 @@ namespace zkutil
 {
     class ZooKeeper;
     using ZooKeeperPtr = std::shared_ptr<ZooKeeper>;
-}
-namespace Coordination
-{
-    struct Request;
-    using RequestPtr = std::shared_ptr<Request>;
-    using Requests = std::vector<RequestPtr>;
 }
 
 struct OvercommitTracker;
@@ -76,7 +68,6 @@ class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
 class ExternalUserDefinedExecutableFunctionsLoader;
 class IUserDefinedSQLObjectsStorage;
-class IWorkloadEntityStorage;
 class InterserverCredentials;
 using InterserverCredentialsPtr = std::shared_ptr<const InterserverCredentials>;
 class InterserverIOHandler;
@@ -102,7 +93,6 @@ class Clusters;
 class QueryCache;
 class ISystemLog;
 class QueryLog;
-class QueryMetricLog;
 class QueryThreadLog;
 class QueryViewsLog;
 class PartLog;
@@ -527,9 +517,6 @@ protected:
                                                     /// to DatabaseOnDisk::commitCreateTable(...) or IStorage::alter(...) without changing
                                                     /// thousands of signatures.
                                                     /// And I hope it will be replaced with more common Transaction sometime.
-    std::optional<UUID> parent_table_uuid; /// See comment on setParentTable().
-    StopToken ddl_query_cancellation; // See comment on setDDLQueryCancellation().
-    Coordination::Requests ddl_additional_checks_on_enqueue; // See comment on setDDLAdditionalChecksOnEnqueue().
 
     MergeTreeTransactionPtr merge_tree_transaction;     /// Current transaction context. Can be inside session or query context.
                                                         /// It's shared with all children contexts.
@@ -894,8 +881,6 @@ public:
     void setUserDefinedSQLObjectsStorage(std::unique_ptr<IUserDefinedSQLObjectsStorage> storage);
     void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
 
-    IWorkloadEntityStorage & getWorkloadEntityStorage() const;
-
 #if USE_NLP
     SynonymsExtensions & getSynonymsExtensions() const;
     Lemmatizers & getLemmatizers() const;
@@ -1178,7 +1163,6 @@ public:
     std::shared_ptr<AsynchronousInsertLog> getAsynchronousInsertLog() const;
     std::shared_ptr<BackupLog> getBackupLog() const;
     std::shared_ptr<BlobStorageLog> getBlobStorageLog() const;
-    std::shared_ptr<QueryMetricLog> getQueryMetricLog() const;
 
     SystemLogs getSystemLogs() const;
 
@@ -1300,26 +1284,6 @@ public:
     /// Removes context of current distributed DDL.
     void resetZooKeeperMetadataTransaction();
 
-    /// Tells DatabaseReplicated to make this query conditional: it'll only succeed if table with the given UUID exists.
-    /// Used by refreshable materialized views to prevent creating inner tables after the MV is dropped.
-    /// Doesn't do anything if not in DatabaseReplicated.
-    void setParentTable(UUID uuid);
-    std::optional<UUID> getParentTable() const;
-    /// Allows cancelling DDL query in DatabaseReplicated. Usage:
-    ///  1. Call this.
-    ///  2. Do a query that goes through DatabaseReplicated's DDL queue (e.g. CREATE TABLE).
-    ///  3. The query will wait to complete all previous queries in DDL queue before running this one.
-    ///     You can interrupt this wait (and cancel the query from step 2) by cancelling the StopToken.
-    ///     (In particular, such cancellation can be done from DDL worker thread itself.
-    ///      We do it when dropping refreshable materialized views.)
-    ///  4. If the query was interrupted, it'll throw a QUERY_WAS_CANCELLED and will have no effect.
-    ///     If the query already started execution, interruption won't happen, and the query will complete normally.
-    void setDDLQueryCancellation(StopToken cancel);
-    StopToken getDDLQueryCancellation() const;
-    /// Allows adding extra zookeeper operations to the transaction that enqueues a DDL query in DatabaseReplicated.
-    void setDDLAdditionalChecksOnEnqueue(Coordination::Requests requests);
-    Coordination::Requests getDDLAdditionalChecksOnEnqueue() const;
-
     void checkTransactionsAreAllowed(bool explicit_tcl_query = false) const;
     void initCurrentTransaction(MergeTreeTransactionPtr txn);
     void setCurrentTransaction(MergeTreeTransactionPtr txn);
@@ -1381,6 +1345,15 @@ public:
     void disableOffsetParallelReplicas();
 
     ClusterPtr getClusterForParallelReplicas() const;
+
+    enum class ParallelReplicasMode : uint8_t
+    {
+        SAMPLE_KEY,
+        CUSTOM_KEY,
+        READ_TASKS,
+    };
+
+    ParallelReplicasMode getParallelReplicasMode() const;
 
     void setPreparedSetsCache(const PreparedSetsCachePtr & cache);
     PreparedSetsCachePtr getPreparedSetsCache() const;

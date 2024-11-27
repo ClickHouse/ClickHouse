@@ -93,12 +93,12 @@ void StorageExternalDistributed::read(
         return;
     }
 
-    Headers input_headers;
-    input_headers.reserve(plans.size());
+    DataStreams input_streams;
+    input_streams.reserve(plans.size());
     for (auto & plan : plans)
-        input_headers.emplace_back(plan->getCurrentHeader());
+        input_streams.emplace_back(plan->getCurrentDataStream());
 
-    auto union_step = std::make_unique<UnionStep>(std::move(input_headers));
+    auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
     query_plan.unitePlans(std::move(union_step), std::move(plans));
 }
 

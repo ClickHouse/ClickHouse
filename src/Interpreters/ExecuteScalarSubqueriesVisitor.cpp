@@ -37,7 +37,6 @@ namespace Setting
     extern const SettingsBool enable_scalar_subquery_optimization;
     extern const SettingsBool extremes;
     extern const SettingsUInt64 max_result_rows;
-    extern const SettingsBool use_concurrency_control;
 }
 
 namespace ErrorCodes
@@ -65,6 +64,18 @@ bool ExecuteScalarSubqueriesMatcher::needChildVisit(ASTPtr & node, const ASTPtr 
         /// Do not go to FROM, JOIN, UNION.
         if (child->as<ASTTableExpression>() || child->as<ASTSelectQuery>())
             return false;
+    }
+
+    if (auto * tables = node->as<ASTTablesInSelectQueryElement>())
+    {
+        /// Contrary to what's said in the code block above, ARRAY JOIN needs to resolve the subquery if possible
+        /// and assign an alias for 02367_optimize_trivial_count_with_array_join to pass. Otherwise it will fail in
+        /// ArrayJoinedColumnsVisitor (`No alias for non-trivial value in ARRAY JOIN: _a`)
+        /// This looks 100% as a incomplete code working on top of a bug, but this code has already been made obsolete
+        /// by the new analyzer, so it's an inconvenience we can live with until we deprecate it.
+        if (child == tables->array_join)
+            return true;
+        return false;
     }
 
     return true;
@@ -200,7 +211,6 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
 
             PullingAsyncPipelineExecutor executor(io.pipeline);
             io.pipeline.setProgressCallback(data.getContext()->getProgressCallback());
-            io.pipeline.setConcurrencyControl(data.getContext()->getSettingsRef()[Setting::use_concurrency_control]);
             while (block.rows() == 0 && executor.pull(block))
             {
             }

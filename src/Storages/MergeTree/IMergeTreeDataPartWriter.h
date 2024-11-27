@@ -8,7 +8,6 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/VirtualColumnsDescription.h>
-#include <Formats/MarkInCompressedFile.h>
 
 
 namespace DB
@@ -17,7 +16,7 @@ namespace DB
 struct MergeTreeSettings;
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 
-Block getIndexBlockAndPermute(const Block & block, const Names & names, const IColumn::Permutation * permutation);
+Block getBlockAndPermute(const Block & block, const Names & names, const IColumn::Permutation * permutation);
 
 Block permuteBlockIfNeeded(const Block & block, const IColumn::Permutation * permutation);
 
@@ -47,9 +46,6 @@ public:
     virtual void finish(bool sync) = 0;
 
     Columns releaseIndexColumns();
-
-    PlainMarksByName releaseCachedMarks();
-
     const MergeTreeIndexGranularity & getIndexGranularity() const { return index_granularity; }
 
 protected:
@@ -73,8 +69,6 @@ protected:
     MutableDataPartStoragePtr data_part_storage;
     MutableColumns index_columns;
     MergeTreeIndexGranularity index_granularity;
-    /// Marks that will be saved to cache on finish.
-    PlainMarksByName cached_marks;
 };
 
 using MergeTreeDataPartWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;

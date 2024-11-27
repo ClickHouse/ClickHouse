@@ -122,6 +122,11 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
         query_limit = std::make_unique<FileCacheQueryLimit>();
 }
 
+FileCache::Key FileCache::createKeyForPath(const String & path)
+{
+    return Key(path);
+}
+
 const FileCache::UserInfo & FileCache::getCommonUser()
 {
     static UserInfo user(getCommonUserID(), 0);
@@ -1078,7 +1083,7 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
         if (eviction_candidates.size() > 0)
         {
             LOG_TRACE(log, "Current usage {}/{} in size, {}/{} in elements count "
-                    "(trying to keep size ratio at {} and elements ratio at {}). "
+                    "(trying to keep size ration at {} and elements ratio at {}). "
                     "Collected {} eviction candidates, "
                     "skipped {} candidates while iterating",
                     main_priority->getSize(lock), size_limit,
@@ -1163,7 +1168,7 @@ void FileCache::removeFileSegment(const Key & key, size_t offset, const UserID &
 
 void FileCache::removePathIfExists(const String & path, const UserID & user_id)
 {
-    removeKeyIfExists(Key::fromPath(path), user_id);
+    removeKeyIfExists(createKeyForPath(path), user_id);
 }
 
 void FileCache::removeAllReleasable(const UserID & user_id)

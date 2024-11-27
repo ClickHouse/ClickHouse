@@ -584,7 +584,7 @@ StorageKeeperMap::StorageKeeperMap(
                         log, "It looks like a table on path {} was created by another server at the same moment, will retry", zk_root_path);
                     return;
                 }
-                if (code != Coordination::Error::ZOK)
+                else if (code != Coordination::Error::ZOK)
                 {
                     zkutil::KeeperMultiException::check(code, create_requests, create_responses);
                 }
@@ -792,12 +792,12 @@ void StorageKeeperMap::drop()
         LOG_INFO(log, "Metadata is being removed by another table");
         return;
     }
-    if (code == Coordination::Error::ZNOTEMPTY)
+    else if (code == Coordination::Error::ZNOTEMPTY)
     {
         LOG_WARNING(log, "Another table is using the same path, metadata will not be deleted");
         return;
     }
-    if (code != Coordination::Error::ZOK)
+    else if (code != Coordination::Error::ZOK)
         zkutil::KeeperMultiException::check(code, ops, responses);
 
     auto metadata_drop_lock = zkutil::EphemeralNodeHolder::existing(zk_dropped_lock_path, *client);

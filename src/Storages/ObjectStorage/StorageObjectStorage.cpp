@@ -152,7 +152,7 @@ public:
         ContextPtr context_,
         size_t max_block_size_,
         size_t num_streams_)
-        : SourceStepWithFilter(info_.source_header, columns_to_read, query_info_, storage_snapshot_, context_)
+        : SourceStepWithFilter(DataStream{.header = info_.source_header}, columns_to_read, query_info_, storage_snapshot_, context_)
         , object_storage(object_storage_)
         , configuration(configuration_)
         , info(std::move(info_))
@@ -247,9 +247,9 @@ ReadFromFormatInfo StorageObjectStorage::prepareReadingFromFormat(
     const Strings & requested_columns,
     const StorageSnapshotPtr & storage_snapshot,
     bool supports_subset_of_columns,
-    ContextPtr local_context)
+    ContextPtr /* local_context */)
 {
-    return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, local_context, supports_subset_of_columns);
+    return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, supports_subset_of_columns);
 }
 
 void StorageObjectStorage::read(
@@ -455,25 +455,30 @@ SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, c
                 DEFAULT_SCHEMA_CACHE_ELEMENTS));
         return schema_cache;
     }
-    if (storage_type_name == "hdfs")
+    else if (storage_type_name == "hdfs")
     {
         static SchemaCache schema_cache(
-            context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_hdfs", DEFAULT_SCHEMA_CACHE_ELEMENTS));
+            context->getConfigRef().getUInt(
+                "schema_inference_cache_max_elements_for_hdfs",
+                DEFAULT_SCHEMA_CACHE_ELEMENTS));
         return schema_cache;
     }
-    if (storage_type_name == "azure")
+    else if (storage_type_name == "azure")
     {
         static SchemaCache schema_cache(
-            context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_azure", DEFAULT_SCHEMA_CACHE_ELEMENTS));
+            context->getConfigRef().getUInt(
+                "schema_inference_cache_max_elements_for_azure",
+                DEFAULT_SCHEMA_CACHE_ELEMENTS));
         return schema_cache;
     }
-    if (storage_type_name == "local")
+    else if (storage_type_name == "local")
     {
         static SchemaCache schema_cache(
             context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_local", DEFAULT_SCHEMA_CACHE_ELEMENTS));
         return schema_cache;
     }
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported storage type: {}", storage_type_name);
+    else
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported storage type: {}", storage_type_name);
 }
 
 void StorageObjectStorage::Configuration::initialize(
@@ -524,7 +529,8 @@ bool StorageObjectStorage::Configuration::withGlobsIgnorePartitionWildcard() con
 {
     if (!withPartitionWildcard())
         return withGlobs();
-    return PartitionedSink::replaceWildcards(getPath(), "").find_first_of("*?{") != std::string::npos;
+    else
+        return PartitionedSink::replaceWildcards(getPath(), "").find_first_of("*?{") != std::string::npos;
 }
 
 bool StorageObjectStorage::Configuration::isPathWithGlobs() const

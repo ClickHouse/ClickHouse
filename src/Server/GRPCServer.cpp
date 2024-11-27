@@ -71,7 +71,6 @@ namespace Setting
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
     extern const SettingsBool throw_if_no_data_to_insert;
-    extern const SettingsBool use_concurrency_control;
 }
 
 namespace ErrorCodes
@@ -1006,12 +1005,14 @@ namespace
         {
             if (!insert_query)
                 throw Exception(ErrorCodes::NO_DATA_TO_INSERT, "Query requires data to insert, but it is not an INSERT query");
-
-            const auto & settings = query_context->getSettingsRef();
-            if (settings[Setting::throw_if_no_data_to_insert])
-                throw Exception(ErrorCodes::NO_DATA_TO_INSERT, "No data to insert");
-
-            return;
+            else
+            {
+                const auto & settings = query_context->getSettingsRef();
+                if (settings[Setting::throw_if_no_data_to_insert])
+                    throw Exception(ErrorCodes::NO_DATA_TO_INSERT, "No data to insert");
+                else
+                    return;
+            }
         }
 
         /// This is significant, because parallel parsing may be used.
@@ -1245,7 +1246,6 @@ namespace
         if (io.pipeline.pulling())
         {
             auto executor = std::make_shared<PullingAsyncPipelineExecutor>(io.pipeline);
-            io.pipeline.setConcurrencyControl(query_context->getSettingsRef()[Setting::use_concurrency_control]);
             auto check_for_cancel = [&]
             {
                 if (isQueryCancelled())
@@ -1486,7 +1486,8 @@ namespace
         {
             if (initial_query_info_read)
                 throw Exception(ErrorCodes::NETWORK_ERROR, "Failed to read extra QueryInfo");
-            throw Exception(ErrorCodes::NETWORK_ERROR, "Failed to read initial QueryInfo");
+            else
+                throw Exception(ErrorCodes::NETWORK_ERROR, "Failed to read initial QueryInfo");
         }
     }
 

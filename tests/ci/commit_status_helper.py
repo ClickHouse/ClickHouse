@@ -315,7 +315,13 @@ def create_ci_report(pr_info: PRInfo, statuses: CommitStatuses) -> str:
             )
         )
     return upload_results(
-        S3Helper(), pr_info.number, pr_info.sha, test_results, [], CI.StatusNames.CI
+        S3Helper(),
+        pr_info.number,
+        pr_info.sha,
+        pr_info.head_ref,
+        test_results,
+        [],
+        CI.StatusNames.CI,
     )
 
 
@@ -398,7 +404,7 @@ def get_commit_filtered_statuses(commit: Commit) -> CommitStatuses:
 
 
 def get_repo(gh: Github) -> Repository:
-    global GH_REPO  # pylint:disable=global-statement
+    global GH_REPO
     if GH_REPO is not None:
         return GH_REPO
     GH_REPO = gh.get_repo(GITHUB_REPOSITORY)

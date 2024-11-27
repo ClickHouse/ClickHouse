@@ -77,6 +77,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/QueryParameterVisitor.h>
@@ -1055,7 +1056,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 static std::shared_ptr<IJoin> chooseJoinAlgorithm(
     std::shared_ptr<TableJoin> analyzed_join, const ColumnsWithTypeAndName & left_sample_columns, std::unique_ptr<QueryPlan> & joined_plan, ContextPtr context)
 {
-    Block right_sample_block = joined_plan->getCurrentHeader();
+    Block right_sample_block = joined_plan->getCurrentDataStream().header;
     const auto & join_algorithms = analyzed_join->getEnabledJoinAlgorithms();
     for (const auto alg : join_algorithms)
     {
@@ -1108,13 +1109,13 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
                 rename_dag.getOutputs()[pos] = &alias;
             }
         }
-        rename_dag.appendInputsForUnusedColumns(joined_plan->getCurrentHeader());
-        auto rename_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentHeader(), std::move(rename_dag));
+        rename_dag.appendInputsForUnusedColumns(joined_plan->getCurrentDataStream().header);
+        auto rename_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), std::move(rename_dag));
         rename_step->setStepDescription("Rename joined columns");
         joined_plan->addStep(std::move(rename_step));
     }
 
-    auto joined_actions_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentHeader(), std::move(joined_block_actions));
+    auto joined_actions_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), std::move(joined_block_actions));
     joined_actions_step->setStepDescription("Joined actions");
     joined_plan->addStep(std::move(joined_actions_step));
 
@@ -1196,11 +1197,11 @@ JoinPtr SelectQueryExpressionAnalyzer::makeJoin(
 
     joined_plan = buildJoinedPlan(getContext(), join_element, *analyzed_join, query_options);
 
-    const ColumnsWithTypeAndName & right_columns = joined_plan->getCurrentHeader().getColumnsWithTypeAndName();
+    const ColumnsWithTypeAndName & right_columns = joined_plan->getCurrentDataStream().header.getColumnsWithTypeAndName();
     std::tie(left_convert_actions, right_convert_actions) = analyzed_join->createConvertingActions(left_columns, right_columns);
     if (right_convert_actions)
     {
-        auto converting_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentHeader(), std::move(*right_convert_actions));
+        auto converting_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), std::move(*right_convert_actions));
         converting_step->setStepDescription("Convert joined columns");
         joined_plan->addStep(std::move(converting_step));
     }
@@ -1981,7 +1982,9 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                 Block before_prewhere_sample = source_header;
                 if (sanitizeBlock(before_prewhere_sample))
                 {
-                    before_prewhere_sample = prewhere_dag_and_flags->dag.updateHeader(before_prewhere_sample);
+                    ExpressionActions(
+                        prewhere_dag_and_flags->dag.clone(),
+                        ExpressionActionsSettings::fromSettings(context->getSettingsRef())).execute(before_prewhere_sample);
                     auto & column_elem = before_prewhere_sample.getByName(query.prewhere()->getColumnName());
                     /// If the filter column is a constant, record it.
                     if (column_elem.column)
@@ -2013,7 +2016,9 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                     before_where_sample = source_header;
                 if (sanitizeBlock(before_where_sample))
                 {
-                    before_where_sample = before_where->dag.updateHeader(before_where_sample);
+                    ExpressionActions(
+                        before_where->dag.clone(),
+                        ExpressionActionsSettings::fromSettings(context->getSettingsRef())).execute(before_where_sample);
 
                     auto & column_elem
                         = before_where_sample.getByName(query.where()->getColumnName());
