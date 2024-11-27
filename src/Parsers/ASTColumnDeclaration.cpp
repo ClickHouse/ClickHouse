@@ -66,12 +66,17 @@ void ASTColumnDeclaration::formatImpl(const FormatSettings & format_settings, Fo
 {
     frame.need_parens = false;
 
-    format_settings.writeIdentifier(name, /*ambiguous=*/true);
+    /// We have to always backquote column names to avoid ambiguouty with INDEX and other declarations in CREATE query.
+    format_settings.ostr << backQuote(name);
 
     if (type)
     {
         format_settings.ostr << ' ';
-        type->formatImpl(format_settings, state, frame);
+
+        FormatStateStacked type_frame = frame;
+        type_frame.indent = 0;
+
+        type->formatImpl(format_settings, state, type_frame);
     }
 
     if (null_modifier)
@@ -128,4 +133,14 @@ void ASTColumnDeclaration::formatImpl(const FormatSettings & format_settings, Fo
     }
 }
 
+void ASTColumnDeclaration::forEachPointerToChild(std::function<void(void **)> f)
+{
+    f(reinterpret_cast<void **>(&default_expression));
+    f(reinterpret_cast<void **>(&comment));
+    f(reinterpret_cast<void **>(&codec));
+    f(reinterpret_cast<void **>(&statistics_desc));
+    f(reinterpret_cast<void **>(&ttl));
+    f(reinterpret_cast<void **>(&collation));
+    f(reinterpret_cast<void **>(&settings));
+}
 }

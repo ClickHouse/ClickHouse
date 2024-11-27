@@ -1,9 +1,7 @@
-import time
-from http import HTTPStatus
-
 import pytest
+import time
 import requests
-
+from http import HTTPStatus
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)

@@ -13,13 +13,6 @@ extern const Event MergeTreeDataWriterStatisticsCalculationMicroseconds;
 
 namespace DB
 {
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsUInt64 index_granularity;
-    extern const MergeTreeSettingsUInt64 index_granularity_bytes;
-    extern const MergeTreeSettingsUInt64 max_digestion_size_per_segment;
-}
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -92,11 +85,11 @@ MergeTreeDataPartWriterOnDisk::Stream<false>::Stream(
     marks_file_extension{marks_file_extension_},
     plain_file(data_part_storage->writeFile(data_path_ + data_file_extension, max_compress_block_size_, query_write_settings)),
     plain_hashing(*plain_file),
-    compressor(plain_hashing, compression_codec_, max_compress_block_size_, query_write_settings.use_adaptive_write_buffer, query_write_settings.adaptive_write_buffer_initial_size),
+    compressor(plain_hashing, compression_codec_, max_compress_block_size_),
     compressed_hashing(compressor),
     marks_file(data_part_storage->writeFile(marks_path_ + marks_file_extension, 4096, query_write_settings)),
     marks_hashing(*marks_file),
-    marks_compressor(marks_hashing, marks_compression_codec_, marks_compress_block_size_, query_write_settings.use_adaptive_write_buffer, query_write_settings.adaptive_write_buffer_initial_size),
+    marks_compressor(marks_hashing, marks_compression_codec_, marks_compress_block_size_),
     marks_compressed_hashing(marks_compressor),
     compress_marks(MarkType(marks_file_extension).compressed)
 {
@@ -115,7 +108,7 @@ MergeTreeDataPartWriterOnDisk::Stream<true>::Stream(
     data_file_extension{data_file_extension_},
     plain_file(data_part_storage->writeFile(data_path_ + data_file_extension, max_compress_block_size_, query_write_settings)),
     plain_hashing(*plain_file),
-    compressor(plain_hashing, compression_codec_, max_compress_block_size_, query_write_settings.use_adaptive_write_buffer, query_write_settings.adaptive_write_buffer_initial_size),
+    compressor(plain_hashing, compression_codec_, max_compress_block_size_),
     compressed_hashing(compressor),
     compress_marks(false)
 {
@@ -179,8 +172,8 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Can't take information about index granularity from blocks, when non empty index_granularity array specified");
 
-    /// We don't need to check if it exists or not, createDirectories doesn't throw
-    getDataPartStorage().createDirectories();
+    if (!getDataPartStorage().exists())
+        getDataPartStorage().createDirectories();
 
     if (settings.rewrite_primary_key)
         initPrimaryIndex();
@@ -242,8 +235,8 @@ size_t MergeTreeDataPartWriterOnDisk::computeIndexGranularity(const Block & bloc
 {
     return computeIndexGranularityImpl(
             block,
-            (*storage_settings)[MergeTreeSetting::index_granularity_bytes],
-            (*storage_settings)[MergeTreeSetting::index_granularity],
+            storage_settings->index_granularity_bytes,
+            storage_settings->index_granularity,
             settings.blocks_are_granules_size,
             settings.can_use_adaptive_granularity);
 }
@@ -310,7 +303,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
         GinIndexStorePtr store = nullptr;
         if (typeid_cast<const MergeTreeIndexFullText *>(&*skip_index) != nullptr)
         {
-            store = std::make_shared<GinIndexStore>(stream_name, data_part_storage, data_part_storage, (*storage_settings)[MergeTreeSetting::max_digestion_size_per_segment]);
+            store = std::make_shared<GinIndexStore>(stream_name, data_part_storage, data_part_storage, storage_settings->max_digestion_size_per_segment);
             gin_index_stores[stream_name] = store;
         }
 
@@ -369,7 +362,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeStatistics(const Block 
     {
         const auto & stat_ptr = stats[i];
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
-        stat_ptr->build(block.getByName(stat_ptr->columnName()).column);
+        stat_ptr->update(block.getByName(stat_ptr->columnName()).column);
         execution_stats.statistics_build_us[i] += watch.elapsed();
     }
 }

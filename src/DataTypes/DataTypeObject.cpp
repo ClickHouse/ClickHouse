@@ -20,8 +20,6 @@
 #include <Core/Settings.h>
 #include <IO/Operators.h>
 
-#include "config.h"
-
 #if USE_SIMDJSON
 #  include <Common/JSONParsers/SimdJSONParser.h>
 #endif
@@ -33,12 +31,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_object_type;
-    extern const SettingsBool use_json_alias_for_old_object_type;
-    extern const SettingsBool allow_simdjson;
-}
 
 namespace ErrorCodes
 {
@@ -132,7 +124,7 @@ SerializationPtr DataTypeObject::doGetDefaultSerialization() const
             auto context = CurrentThread::getQueryContext();
             if (!context)
                 context = Context::getGlobalContextInstance();
-            if (context->getSettingsRef()[Setting::allow_simdjson])
+            if (context->getSettingsRef().allow_simdjson)
                 return std::make_shared<SerializationJSON<SimdJSONParser>>(
                     std::move(typed_path_serializations),
                     paths_to_skip,
@@ -228,6 +220,15 @@ MutableColumnPtr DataTypeObject::createColumn() const
         typed_path_columns[path] = type->createColumn();
 
     return ColumnObject::create(std::move(typed_path_columns), max_dynamic_paths, max_dynamic_types);
+}
+
+void DataTypeObject::forEachChild(const ChildCallback & callback) const
+{
+    for (const auto & [path, type] : typed_paths)
+    {
+        callback(*type);
+        type->forEachChild(callback);
+    }
 }
 
 namespace
@@ -528,7 +529,7 @@ static DataTypePtr createJSON(const ASTPtr & arguments)
     if (!context)
         context = Context::getGlobalContextInstance();
 
-    if (context->getSettingsRef()[Setting::allow_experimental_object_type] && context->getSettingsRef()[Setting::use_json_alias_for_old_object_type])
+    if (context->getSettingsRef().allow_experimental_object_type && context->getSettingsRef().use_json_alias_for_old_object_type)
     {
         if (arguments && !arguments->children.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Experimental Object type doesn't support any arguments. If you want to use new JSON type, set settings allow_experimental_json_type = 1 and use_json_alias_for_old_object_type = 0");

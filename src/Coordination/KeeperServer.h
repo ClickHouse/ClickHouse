@@ -70,6 +70,7 @@ private:
 
     const bool create_snapshot_on_exit;
     const bool enable_reconfiguration;
+
 public:
     KeeperServer(
         const KeeperConfigurationAndSettingsPtr & settings_,

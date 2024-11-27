@@ -4,7 +4,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS mv;
     DROP TABLE IF EXISTS output;
     DROP TABLE IF EXISTS input;
@@ -17,7 +17,7 @@ $CLICKHOUSE_CLIENT -q "
 for enable_analyzer in 0 1; do
     query_id="$(random_str 10)"
     $CLICKHOUSE_CLIENT --enable_analyzer "$enable_analyzer" --query_id "$query_id" -q "INSERT INTO input SELECT * FROM numbers(1)"
-    $CLICKHOUSE_CLIENT -m -q "
+    $CLICKHOUSE_CLIENT -mn -q "
         SYSTEM FLUSH LOGS;
         SELECT
             1 view,
@@ -35,7 +35,7 @@ for enable_analyzer in 0 1; do
 
     query_id="$(random_str 10)"
     $CLICKHOUSE_CLIENT --enable_analyzer "$enable_analyzer" --query_id "$query_id" -q "SELECT * FROM system.one WHERE dummy IN (SELECT * FROM system.one) FORMAT Null"
-    $CLICKHOUSE_CLIENT -m -q "
+    $CLICKHOUSE_CLIENT -mn -q "
         SYSTEM FLUSH LOGS;
         SELECT
             1 subquery,
@@ -52,7 +52,7 @@ for enable_analyzer in 0 1; do
 
     query_id="$(random_str 10)"
     $CLICKHOUSE_CLIENT --enable_analyzer "$enable_analyzer" --query_id "$query_id" -q "WITH (SELECT * FROM system.one) AS x SELECT x FORMAT Null"
-    $CLICKHOUSE_CLIENT -m -q "
+    $CLICKHOUSE_CLIENT -mn -q "
         SYSTEM FLUSH LOGS;
         SELECT
             1 CSE,
@@ -69,7 +69,7 @@ for enable_analyzer in 0 1; do
 
     query_id="$(random_str 10)"
     $CLICKHOUSE_CLIENT --enable_analyzer "$enable_analyzer" --query_id "$query_id" -q "WITH (SELECT * FROM system.one) AS x SELECT x, x FORMAT Null"
-    $CLICKHOUSE_CLIENT -m -q "
+    $CLICKHOUSE_CLIENT -mn -q "
         SYSTEM FLUSH LOGS;
         SELECT
             1 CSE_Multi,
@@ -86,7 +86,7 @@ for enable_analyzer in 0 1; do
 
     query_id="$(random_str 10)"
     $CLICKHOUSE_CLIENT --enable_analyzer "$enable_analyzer" --query_id "$query_id" -q "WITH x AS (SELECT * FROM system.one) SELECT * FROM x FORMAT Null"
-    $CLICKHOUSE_CLIENT -m -q "
+    $CLICKHOUSE_CLIENT -mn -q "
         SYSTEM FLUSH LOGS;
         SELECT
             1 CTE,
@@ -103,7 +103,7 @@ for enable_analyzer in 0 1; do
 
     query_id="$(random_str 10)"
     $CLICKHOUSE_CLIENT --enable_analyzer "$enable_analyzer" --query_id "$query_id" -q "WITH x AS (SELECT * FROM system.one) SELECT * FROM x UNION ALL SELECT * FROM x FORMAT Null"
-    $CLICKHOUSE_CLIENT -m -q "
+    $CLICKHOUSE_CLIENT -mn -q "
         SYSTEM FLUSH LOGS;
         SELECT
             1 CTE_Multi,

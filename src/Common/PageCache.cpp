@@ -112,7 +112,8 @@ bool AtomicBitSet::set(size_t i, bool val) const
 {
     if (val)
         return set(i);
-    return unset(i);
+    else
+        return unset(i);
 }
 
 bool AtomicBitSet::unset(size_t i) const

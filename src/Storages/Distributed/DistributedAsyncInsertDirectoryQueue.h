@@ -1,13 +1,12 @@
 #pragma once
 
-#include <mutex>
-#include <Client/ConnectionPool.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Disks/IDisk.h>
+#include <Common/ConcurrentBoundedQueue.h>
+#include <Client/ConnectionPool.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Cluster.h>
-#include <Common/ConcurrentBoundedQueue.h>
-#include <Common/SettingsChanges.h>
+#include <Disks/IDisk.h>
+#include <mutex>
 
 
 namespace CurrentMetrics { class Increment; }
