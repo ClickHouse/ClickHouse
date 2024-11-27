@@ -7,7 +7,6 @@
 #include <IO/WriteBufferFromFile.h>
 #include <Interpreters/Access/InterpreterCreateUserQuery.h>
 #include <Interpreters/Access/InterpreterShowGrantsQuery.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Poco/JSON/JSON.h>
@@ -20,11 +19,6 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
-
-namespace CurrentMetrics
-{
-    extern const Metric AttachedAccessEntity;
-}
 
 namespace DB
 {
@@ -395,7 +389,6 @@ void DiskAccessStorage::reloadAllAndRebuildLists()
     for (auto type : collections::range(AccessEntityType::MAX))
         types_of_lists_to_write.insert(type);
 
-    CurrentMetrics::add(CurrentMetrics::AttachedAccessEntity, entries_by_id.size());
     failed_to_write_lists = false; /// Try again writing lists.
     writeLists();
 }
