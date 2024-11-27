@@ -106,7 +106,7 @@ private:
     QueryTreeNodePtr buildSelectExpression(const ASTPtr & select_query,
         bool is_subquery,
         const std::string & cte_name,
-        const ASTPtr & aliases
+        const ASTPtr & aliases,
         const ContextPtr & context) const;
 
     QueryTreeNodePtr buildSortList(const ASTPtr & order_by_expression_list, const ContextPtr & context) const;
