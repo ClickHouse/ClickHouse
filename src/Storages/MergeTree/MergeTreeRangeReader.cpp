@@ -1148,6 +1148,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
 
             /// If reader can't read part of granule, we have to increase number of reading rows
             ///  to read complete granules and exceed max_rows a bit.
+            /// When using query condition cache, you need to ensure that the read Mark is complete.
             if (use_query_condition_cache || !merge_tree_reader->canReadIncompleteGranules())
                 current_space = stream.ceilRowsToCompleteGranules(space_left);
 

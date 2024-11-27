@@ -2105,6 +2105,10 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
     auto query_id_holder = MergeTreeDataSelectExecutor::checkLimits(data, result, context);
 
+    /// When the query condition cache is enabled, the complete Mark needs to be read every time. When both where and prewhere are null, it is disabled.
+    if (reader_settings.use_query_condition_cache && !query_info.prewhere_info && !query_info.filter_actions_dag)
+        reader_settings.use_query_condition_cache = false;
+
     if (result.parts_with_ranges.empty())
     {
         pipeline.init(Pipe(std::make_shared<NullSource>(getOutputHeader())));
