@@ -621,12 +621,11 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                         ++index_iterator;
                 }
             }
-
-            /// Otherwise just clear data on disk
-            if (!clear && !partition)
-                metadata.columns.remove(column_name);
         }
 
+        /// Otherwise just clear data on disk
+        if (!clear && !partition)
+            metadata.columns.remove(column_name);
     }
     else if (type == MODIFY_COLUMN)
     {
