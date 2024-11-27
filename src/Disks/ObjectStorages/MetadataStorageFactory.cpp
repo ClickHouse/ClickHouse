@@ -66,7 +66,8 @@ MetadataStoragePtr MetadataStorageFactory::create(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
     ObjectStoragePtr object_storage,
-    const std::string & compatibility_type_hint) const
+    const std::string & compatibility_type_hint,
+    bool requires_object_storage) const
 {
     const auto type = getMetadataType(config, config_prefix, compatibility_type_hint);
     const auto it = registry.find(type);
@@ -77,7 +78,7 @@ MetadataStoragePtr MetadataStorageFactory::create(
                         "MetadataStorageFactory: unknown metadata storage type: {}", type);
     }
 
-    return it->second(name, config, config_prefix, object_storage);
+    return it->second(name, config, config_prefix, object_storage, requires_object_storage);
 }
 
 static std::string getObjectKeyCompatiblePrefix(
@@ -94,7 +95,8 @@ void registerMetadataStorageFromDisk(MetadataStorageFactory & factory)
         const std::string & name,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        ObjectStoragePtr object_storage) -> MetadataStoragePtr
+        ObjectStoragePtr object_storage,
+        bool requires_object_storage) -> MetadataStoragePtr
     {
         auto metadata_path = config.getString(config_prefix + ".metadata_path",
                                               fs::path(Context::getGlobalContextInstance()->getPath()) / "disks" / name / "");
@@ -102,7 +104,18 @@ void registerMetadataStorageFromDisk(MetadataStorageFactory & factory)
 
         fs::create_directories(metadata_path);
         auto metadata_disk = std::make_shared<DiskLocal>(name + "-metadata", metadata_path, metadata_keep_free_space_bytes, config, config_prefix);
-        auto key_compatibility_prefix = getObjectKeyCompatiblePrefix(*object_storage, config, config_prefix);
+        String key_compatibility_prefix;
+        if (requires_object_storage)
+        {
+            if (!object_storage)
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "MetadataStorageFactory: object_storage is nullptr when requires_object_storage is true in creating disk metadata storage");
+            } else
+            {
+                key_compatibility_prefix = getObjectKeyCompatiblePrefix(*object_storage, config, config_prefix);
+            }
+        }
         return std::make_shared<MetadataStorageFromDisk>(metadata_disk, key_compatibility_prefix);
     });
 }
@@ -113,8 +126,14 @@ void registerPlainMetadataStorage(MetadataStorageFactory & factory)
         const std::string & /* name */,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        ObjectStoragePtr object_storage) -> MetadataStoragePtr
+        ObjectStoragePtr object_storage,
+        bool requires_object_storage) -> MetadataStoragePtr
     {
+        if (!requires_object_storage)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "MetadataStorageFactory: requires_object_storage can be false only in case of disk metadata storages");
+        }
         auto key_compatibility_prefix = getObjectKeyCompatiblePrefix(*object_storage, config, config_prefix);
         return std::make_shared<MetadataStorageFromPlainObjectStorage>(
             object_storage, key_compatibility_prefix, config.getUInt64(config_prefix + ".object_metadata_cache_size", 0));
@@ -128,8 +147,14 @@ void registerPlainRewritableMetadataStorage(MetadataStorageFactory & factory)
         [](const std::string & /* name */,
            const Poco::Util::AbstractConfiguration & config,
            const std::string & config_prefix,
-           ObjectStoragePtr object_storage) -> MetadataStoragePtr
+           ObjectStoragePtr object_storage,
+           bool requires_object_storage) -> MetadataStoragePtr
+    {
+        if (!requires_object_storage)
         {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "MetadataStorageFactory: requires_object_storage can be false only in case of disk metadata storages");
+        }
             auto key_compatibility_prefix = getObjectKeyCompatiblePrefix(*object_storage, config, config_prefix);
             return std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(
                 object_storage, key_compatibility_prefix, config.getUInt64(config_prefix + ".object_metadata_cache_size", 0));
@@ -142,8 +167,14 @@ void registerMetadataStorageFromStaticFilesWebServer(MetadataStorageFactory & fa
         const std::string & /* name */,
         const Poco::Util::AbstractConfiguration & /* config */,
         const std::string & /* config_prefix */,
-        ObjectStoragePtr object_storage) -> MetadataStoragePtr
+        ObjectStoragePtr object_storage,
+        bool requires_object_storage) -> MetadataStoragePtr
     {
+        if (!requires_object_storage)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "MetadataStorageFactory: requires_object_storage can be false only in case of disk metadata storages");
+        }
         return std::make_shared<MetadataStorageFromStaticFilesWebServer>(assert_cast<const WebObjectStorage &>(*object_storage));
     });
 }
