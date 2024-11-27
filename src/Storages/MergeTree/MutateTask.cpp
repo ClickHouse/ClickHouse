@@ -995,7 +995,7 @@ void finalizeMutatedPart(
     }
 
     if (!new_data_part->storage.getPrimaryIndexCache())
-        new_data_part->setIndex(*source_part->getIndex());
+        new_data_part->setIndex(source_part->getIndex());
 
     /// Load rest projections which are hardlinked
     bool noop;

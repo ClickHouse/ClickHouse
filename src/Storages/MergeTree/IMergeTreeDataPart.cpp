@@ -431,6 +431,15 @@ void IMergeTreeDataPart::setIndex(Columns index_columns)
     index = std::make_shared<PrimaryIndex>(std::move(index_columns), std::move(num_equal_ranges), primary_index_settings);
 }
 
+void IMergeTreeDataPart::setIndex(IndexPtr new_index)
+{
+    std::scoped_lock lock(index_mutex);
+    if (index)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The index of data part can be set only once");
+
+    index = std::move(new_index);
+}
+
 void IMergeTreeDataPart::unloadIndex()
 {
     std::scoped_lock lock(index_mutex);
@@ -456,7 +465,10 @@ String IMergeTreeDataPart::getNewName(const MergeTreePartInfo & new_part_info) c
     {
         /// NOTE: getting min and max dates from the part name (instead of part data) because we want
         /// the merged part name be determined only by source part names.
+        DayNum min_date;
+        DayNum max_date;
         MergeTreePartInfo::parseMinMaxDatesFromPartName(name, min_date, max_date);
+        return new_part_info.getPartNameV0(min_date, max_date);
     }
     return new_part_info.getPartNameV1();
 }
@@ -1028,8 +1040,9 @@ std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
             key_serializations[j]->deserializeBinary(*loaded_index[j], *index_file, {});
     }
 
-    optimizeIndexColumns(marks_count, loaded_index);
     size_t total_bytes = 0;
+    std::vector<size_t> num_equal_ranges;
+    optimizeIndexColumns(marks_count, loaded_index, num_equal_ranges);
 
     for (const auto & column : loaded_index)
     {
@@ -1049,7 +1062,8 @@ std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
     ProfileEvents::increment(ProfileEvents::LoadedPrimaryIndexRows, marks_count);
     ProfileEvents::increment(ProfileEvents::LoadedPrimaryIndexBytes, total_bytes);
 
-    return std::make_shared<Index>(std::make_move_iterator(loaded_index.begin()), std::make_move_iterator(loaded_index.end()));
+    Columns index_columns(std::make_move_iterator(loaded_index.begin()), std::make_move_iterator(loaded_index.end()));
+    return std::make_shared<Index>(std::move(index_columns), std::move(num_equal_ranges), primary_index_settings);
 }
 
 void IMergeTreeDataPart::appendFilesOfIndex(Strings & files) const

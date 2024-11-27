@@ -379,6 +379,7 @@ public:
     void moveIndexToCache(PrimaryIndexCache & index_cache);
 
     void setIndex(Columns index_columns);
+    void setIndex(IndexPtr new_index);
     void unloadIndex();
     bool isIndexLoaded() const;
 

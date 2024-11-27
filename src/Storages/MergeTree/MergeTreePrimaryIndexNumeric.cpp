@@ -19,7 +19,7 @@ constexpr size_t getNumberOfElementsForBits(size_t num_bits)
     return divRoundUp(num_bits, 64) + 1;
 }
 
-bool needCompress(size_t compressed, size_t uncompressed, double max_ratio)
+constexpr bool needCompress(size_t compressed, size_t uncompressed, double max_ratio)
 {
     return static_cast<double>(compressed) / uncompressed <= max_ratio;
 }
@@ -105,19 +105,26 @@ IndexBlockPtr buildDeltaBlock(UInt8 bit_size, U base, const PaddedPODArray<U> & 
     return block;
 }
 
+template <typename U>
 struct ChosenCompression
 {
     IIndexBlock::Type type = IIndexBlock::Type::Raw;
+
+    /// Potential size of compressed block.
     UInt64 compressed_size = 0;
 
-    UInt64 delta_base = 0;
-    UInt8 delta_bit_size = 0;
-
+    /// Number of bytes required for offsets for RLE compression.
     UInt8 rle_offset_bytes = 0;
+
+    /// The minimal element in block that can be used for Delta compression.
+    U delta_base = 0;
+
+    /// Number of bits requried to store all deltas in block for Delta compression.
+    UInt8 delta_bit_size = 0;
 };
 
 template <typename U>
-ChosenCompression chooseCompression(const PaddedPODArray<U> & data, size_t from, size_t num_rows, double max_ratio)
+ChosenCompression<U> chooseCompression(const PaddedPODArray<U> & data, size_t from, size_t num_rows, double max_ratio)
 {
     using Type = IIndexBlock::Type;
 
@@ -134,9 +141,10 @@ ChosenCompression chooseCompression(const PaddedPODArray<U> & data, size_t from,
             ++num_groups;
     }
 
-    ChosenCompression chosen;
+    ChosenCompression<U> chosen;
     size_t uncompressed_bytes = sizeof(U) * num_rows;
 
+    /// Use minimal number of bytes to store offsets. Max offset can be `num_rows - 1`.
     size_t rle_offset_bytes = getNumBytesForRLEOffset(num_rows);
     size_t rle_encoding_bytes = (sizeof(U) + rle_offset_bytes) * num_groups;
 
@@ -159,7 +167,7 @@ ChosenCompression chooseCompression(const PaddedPODArray<U> & data, size_t from,
     {
         chosen.type = Type::Delta;
         chosen.compressed_size = delta_enconding_bytes;
-        chosen.delta_base = static_cast<UInt64>(min_value);
+        chosen.delta_base = min_value;
         chosen.delta_bit_size = delta_bit_size;
     }
 
@@ -182,7 +190,7 @@ IndexBlocks buildBlocks(const Column & column, size_t block_size, double max_rat
     size_t total_compressed_bytes = 0;
     size_t total_bytes = column.byteSize();
 
-    std::vector<ChosenCompression> compressions;
+    std::vector<ChosenCompression<U>> compressions;
     compressions.reserve(column_size / block_size);
 
     for (size_t i = 0; i < column_size; i += block_size)

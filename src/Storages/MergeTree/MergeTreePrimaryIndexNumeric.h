@@ -27,7 +27,7 @@ struct IndexBlockDelta final : public IIndexBlock
     void get(size_t n, Field & field) const override
     {
         UInt64 delta_value = readBitsPacked(delta.begin(), n * bit_size, bit_size);
-        field = base + delta_value;
+        field = base + static_cast<T>(delta_value);
     }
 };
 

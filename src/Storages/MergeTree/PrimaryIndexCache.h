@@ -4,6 +4,7 @@
 #include <Common/SipHash.h>
 #include <Common/HashTable/Hash.h>
 #include <Columns/IColumn.h>
+#include <Storages/MergeTree/MergeTreePrimaryIndex.h>
 
 namespace ProfileEvents
 {
@@ -14,21 +15,13 @@ namespace ProfileEvents
 namespace DB
 {
 
-using PrimaryIndex = std::vector<ColumnPtr>;
-
 /// Estimate of number of bytes in cache for primary index.
 struct PrimaryIndexWeightFunction
 {
     /// We spent additional bytes on key in hashmap, linked lists, shared pointers, etc ...
     static constexpr size_t PRIMARY_INDEX_CACHE_OVERHEAD = 128;
 
-    size_t operator()(const PrimaryIndex & index) const
-    {
-        size_t res = 0;
-        for (const auto & column : index)
-            res += column->byteSize();
-        return res;
-    }
+    size_t operator()(const PrimaryIndex & index) const { return index.bytes(); }
 };
 
 extern template class CacheBase<UInt128, PrimaryIndex, UInt128TrivialHash, PrimaryIndexWeightFunction>;
