@@ -361,7 +361,7 @@ QueryLogElement logQueryStart(
         else if (elem.type < settings.log_queries_min_type)
         {
             if (settings.log_queries_min_type.changed)
-                LOG_DEBUG(
+                LOG_TRACE(
                     getLogger("executeQuery"),
                     "Query start record will not be added to query_log due to query type is bigger than `log_queries_min_type` setting."
                     " The setting has been changed for the query");
