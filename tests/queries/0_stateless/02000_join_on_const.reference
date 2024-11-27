@@ -54,6 +54,8 @@ SELECT * FROM t1 FULL JOIN t2 ON t1.id = t2.id AND 1 = 2 ORDER BY 2, 1 SETTINGS 
 2	0
 0	2
 0	3
+1	0
+2	0
 SELECT * FROM (SELECT 1 as a) as t1 INNER JOIN  ( SELECT ('b', 256) as b ) AS t2 ON NULL;
 SELECT * FROM (SELECT 1 as a) as t1 LEFT JOIN  ( SELECT ('b', 256) as b ) AS t2 ON NULL;
 1	('',0)
