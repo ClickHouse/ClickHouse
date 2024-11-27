@@ -20,6 +20,7 @@ import shlex
 import urllib3
 import requests
 from pathlib import Path
+from typing import List
 
 try:
     # Please, add modules that required for specific tests only here.
