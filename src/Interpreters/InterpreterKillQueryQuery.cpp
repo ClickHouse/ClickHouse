@@ -434,7 +434,14 @@ Block InterpreterKillQueryQuery::getSelectResult(const String & columns, const S
     if (where_expression)
         select_query += " WHERE " + queryToString(where_expression);
 
-    auto io = executeQuery(select_query, getContext(), QueryFlags{ .internal = true }).second;
+    auto context_to_read_from_table = getContext();
+
+    /// The current user can be not having the access rights required to read from "system.processes",
+    /// but should be able to kill his own query.
+    if (table == "system.processes")
+        context_to_read_from_table = context_to_read_from_table->getGlobalContext();
+
+    auto io = executeQuery(select_query, context_to_read_from_table, QueryFlags{ .internal = true }).second;
     PullingPipelineExecutor executor(io.pipeline);
     Block res;
     while (!res && executor.pull(res));
