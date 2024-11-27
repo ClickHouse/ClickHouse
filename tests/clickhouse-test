@@ -43,6 +43,7 @@ from errno import ESRCH
 from subprocess import PIPE, Popen
 from time import sleep, time
 from typing import Dict, List, Optional, Set, Tuple, Union
+
 from cpuinfo import get_cpu_info
 
 try:
