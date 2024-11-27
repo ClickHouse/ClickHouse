@@ -261,6 +261,7 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
             new_part->index_granularity = std::move(new_index_granularity);
     }
 
+    /// It's important to set index after index granularity.
     if (auto computed_index = writer->releaseIndexColumns())
         new_part->setIndex(std::move(*computed_index));
 
