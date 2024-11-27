@@ -944,9 +944,9 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
             const auto & selects = select_with_union_query->list_of_selects->children;
 
-            for (const auto & select_query_ptr : selects)
+            for (const auto & select : selects)
             {
-                const auto * select_query = select_query_ptr->as<ASTSelectQuery>();
+                const auto * select_query = select->as<ASTSelectQuery>();
 
                 if (!select_query)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ASTSelectQuery inside ASTSelectWithUnionQuery");

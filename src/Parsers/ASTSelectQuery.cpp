@@ -87,6 +87,18 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         tables()->formatImpl(s, state, frame);
     }
 
+    if (aliases())
+    {
+        const bool prep_whitespace = frame.expression_list_prepend_whitespace;
+        frame.expression_list_prepend_whitespace = false;
+
+        s.ostr << (s.hilite ? hilite_none : "") << indent_str << " (";
+        aliases()->formatImpl(s, state, frame);
+        s.ostr << (s.hilite ? hilite_none : "") << indent_str << ")";
+
+        frame.expression_list_prepend_whitespace = prep_whitespace;
+    }
+
     if (prewhere())
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "PREWHERE " << (s.hilite ? hilite_none : "");

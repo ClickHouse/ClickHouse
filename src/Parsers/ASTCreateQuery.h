@@ -4,7 +4,6 @@
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTDictionary.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTTableOverrides.h>
 #include <Parsers/ASTViewTargets.h>
 #include <Parsers/ASTSQLSecurity.h>
@@ -106,7 +105,7 @@ public:
     bool has_uuid{false}; // CREATE TABLE x UUID '...'
 
     ASTColumns * columns_list = nullptr;
-    ASTExpressionList * aliases_list = nullptr; // Explicit aliases for syntax like CREATE VIEW my_view (a, b) AS SELECT 1, 2
+    ASTExpressionList * aliases_list = nullptr; /// Aliases such as "(a, b)" in "CREATE VIEW my_view (a, b) AS SELECT 1, 2"
     ASTStorage * storage = nullptr;
 
     ASTPtr watermark_function;

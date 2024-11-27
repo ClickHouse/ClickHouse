@@ -1562,17 +1562,17 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (!table_name_p.parse(pos, to_table, expected))
             return false;
     }
-    bool aliases_override = false;
 
     /// Optional - a list of columns can be specified. It must fully comply with SELECT.
     if (s_lparen.ignore(pos, expected)) // Parsing cases like CREATE VIEW (a Int64, b Int64) (a, b) SELECT ...
     {
+        bool has_aliases = false;
         if (!table_properties_p.parse(pos, columns_list, expected))
         {
             if (!expr_list_aliases.parse(pos, aliases_list, expected))
                 return false;
             else
-                aliases_override = true;
+                has_aliases = true;
         }
         else
         {
@@ -1580,13 +1580,13 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
                 return false;
             if (s_lparen.ignore(pos, expected))
             {
-                aliases_override = true;
+                has_aliases = true;
                 if (!expr_list_aliases.parse(pos, aliases_list, expected))
                     return false;
             }
         }
 
-        if (aliases_override)
+        if (has_aliases)
             if (!s_rparen.ignore(pos, expected))
                 return false;
     }
