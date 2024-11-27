@@ -64,6 +64,7 @@ private:
     void readRow(MutableColumns & columns, size_t row_num);
     void readUntilTheEndOfRowAndReTokenize(size_t current_column_idx);
 
+    bool tryReadDefaultValue(IColumn & column, size_t column_idx);
     bool tryParseExpressionUsingTemplate(MutableColumnPtr & column, size_t column_idx);
     ALWAYS_INLINE inline bool tryReadValue(IColumn & column, size_t column_idx);
     bool parseExpression(IColumn & column, size_t column_idx);
