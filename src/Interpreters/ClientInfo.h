@@ -39,6 +39,7 @@ public:
         LOCAL = 6,
         TCP_INTERSERVER = 7,
         PROMETHEUS = 8,
+        MONGODB = 9
     };
 
     enum class HTTPMethod : uint8_t
@@ -102,7 +103,7 @@ public:
     String http_referer;
     std::unordered_map<String, String> http_headers;
 
-    /// For mysql and postgresql
+    /// For mysql, postgresql, mongodb
     UInt64 connection_id = 0;
 
     /// Comma separated list of forwarded IP addresses (from X-Forwarded-For for HTTP interface).

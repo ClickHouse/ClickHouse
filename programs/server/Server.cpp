@@ -112,6 +112,7 @@
 #include <filesystem>
 #include <unordered_set>
 
+#include "Server/MongoDBHandlerFactory.h"
 #include <Common/Jemalloc.h>
 
 #include "config.h"
@@ -447,7 +448,6 @@ void Server::createServer(
     /// For testing purposes, user may omit tcp_port or http_port or https_port in configuration file.
     if (config.getString(port_name, "").empty())
         return;
-
     /// If we already have an active server for this listen_host/port_name, don't create it again
     for (const auto & server : servers)
     {
@@ -2583,6 +2583,8 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
             return TCPServerConnectionFactory::Ptr(new MySQLHandlerFactory(*this, ProfileEvents::InterfaceMySQLReceiveBytes, ProfileEvents::InterfaceMySQLSendBytes));
         if (type == "postgres")
             return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this, ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes));
+        if (type == "mongodb")
+            return TCPServerConnectionFactory::Ptr(new MongoDBHandlerFactory(*this));
         if (type == "http")
             return TCPServerConnectionFactory::Ptr(
                 new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes)
@@ -2857,6 +2859,23 @@ void Server::createServers(
                     port_name,
                     "PostgreSQL compatibility protocol: " + address.toString(),
                     std::make_unique<TCPServer>(new PostgreSQLHandlerFactory(*this, ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes), server_pool, socket, new Poco::Net::TCPServerParams));
+            });
+        }
+
+        if (server_type.shouldStart(ServerType::Type::MONGODB))
+        {
+            port_name = "mongodb_port"; // FIXME add a const map Type->port_name
+            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            {
+                Poco::Net::ServerSocket socket;
+                auto address = socketBindListen(config, socket, listen_host, port, /* secure = */ true);
+                socket.setReceiveTimeout(Poco::Timespan());
+                socket.setSendTimeout(settings[Setting::send_timeout]);
+                return ProtocolServerAdapter(
+                    listen_host,
+                    port_name,
+                    "MongoDB compatibility protocol: " + address.toString(),
+                    std::make_unique<TCPServer>(new MongoDBHandlerFactory(*this), server_pool, socket, new Poco::Net::TCPServerParams));
             });
         }
 

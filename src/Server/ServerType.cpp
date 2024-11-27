@@ -54,6 +54,7 @@ bool ServerType::shouldStart(Type server_type, const std::string & server_custom
             case Type::MYSQL:
             case Type::GRPC:
             case Type::POSTGRESQL:
+            case Type::MONGODB:
             case Type::PROMETHEUS:
             case Type::INTERSERVER_HTTP:
             case Type::INTERSERVER_HTTPS:
@@ -121,6 +122,9 @@ bool ServerType::shouldStop(const std::string & port_name) const
 
     else if (port_name == "postgresql_port")
         port_type = Type::POSTGRESQL;
+
+    else if (port_name == "mongodb_port")
+        port_type = Type::MONGODB;
 
     else if (port_name == "grpc_port")
         port_type = Type::GRPC;

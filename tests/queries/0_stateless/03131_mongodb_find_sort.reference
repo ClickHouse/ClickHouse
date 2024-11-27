@@ -1,0 +1,49 @@
+test> switched to db default
+default> [
+  { id: 1, name: 'Alex', age: 15 },
+  { id: 2, name: 'John', age: 23 },
+  { id: 3, name: 'Mike', age: 32 },
+  { id: 4, name: 'George', age: 51 },
+  { id: 5, name: 'George', age: 28 }
+]
+default> test> switched to db default
+default> [
+  { id: 5, name: 'George', age: 28 },
+  { id: 4, name: 'George', age: 51 },
+  { id: 3, name: 'Mike', age: 32 },
+  { id: 2, name: 'John', age: 23 },
+  { id: 1, name: 'Alex', age: 15 }
+]
+default> test> switched to db default
+default> [
+  { id: 1, name: 'Alex', age: 15 },
+  { id: 5, name: 'George', age: 28 },
+  { id: 4, name: 'George', age: 51 },
+  { id: 2, name: 'John', age: 23 },
+  { id: 3, name: 'Mike', age: 32 }
+]
+default> test> switched to db default
+default> [
+  { id: 3, name: 'Mike', age: 32 },
+  { id: 2, name: 'John', age: 23 },
+  { id: 5, name: 'George', age: 28 },
+  { id: 4, name: 'George', age: 51 },
+  { id: 1, name: 'Alex', age: 15 }
+]
+default> test> switched to db default
+default> [
+  { id: 1, name: 'Alex', age: 15 },
+  { id: 4, name: 'George', age: 51 },
+  { id: 5, name: 'George', age: 28 },
+  { id: 2, name: 'John', age: 23 },
+  { id: 3, name: 'Mike', age: 32 }
+]
+default> test> switched to db default
+default> [
+  { id: 1, name: 'Alex', age: 15 },
+  { id: 5, name: 'George', age: 28 },
+  { id: 4, name: 'George', age: 51 },
+  { id: 2, name: 'John', age: 23 },
+  { id: 3, name: 'Mike', age: 32 }
+]
+default> 
