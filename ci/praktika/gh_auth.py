@@ -11,6 +11,7 @@ from .settings import Settings
 from .utils import Shell
 
 
+# XXX: dead code with a bug in return installations[0]["id"] and using legacy jwt module
 class GHAuth:
     @staticmethod
     def _generate_jwt(client_id, pem):
