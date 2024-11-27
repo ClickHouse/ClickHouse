@@ -82,8 +82,9 @@ export function* floatLayerMerges({insertPartSize, layerBases})
             const begin_part = active_parts[begin];
             if (begin_part.merging)
                 continue;
-            const begin_layer = layerFunc(begin_part.bytes);
-            for (let layer = begin_layer; layer < best_layer; layer++)
+            const layer = layerFunc(begin_part.bytes);
+            // Only check merges of parts of the same layer
+            if (layer < best_layer)
             {
                 const target = sizes[layer + 1]; // Approximate target size of resulting part
 
@@ -129,6 +130,8 @@ export function* floatLayerMerges({insertPartSize, layerBases})
                         break;
                     }
                     if (part.merging)
+                        break;
+                    if (layerFunc(part.bytes) != layer)
                         break;
                 }
 

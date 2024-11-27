@@ -243,7 +243,7 @@ class MergeTreeVisualizer {
             .attr("y", this.margin.left / 2 + this.yAxisTitleOffset.x)
             .attr("text-anchor", "middle")
             .attr("font-size", "14px")
-            .text("Source parts count");
+            .text("Time * PartCount / Bytes");
     }
 
     updateX() {
@@ -539,27 +539,29 @@ class MergeTreeTimeVisualizer extends MergeTreeVisualizer {
             <p>
             The diagram is constructed from the top downwards.
             Final parts are at the top.
-            Part is a horizontal yellow bar with a black mark on the left side.
-            Bar width equals part size.
+            Part is a grey rectangle with width equal to part size.
             Parts are positioned on the X-axis in the insertion order: older part are on the left, newer are on the right.
             The y-position of a part depends of history of merges (see below).
             </p>
 
+            <h6>Waiting time</h6>
+            <p>
+            Area of a grey part rectangle represents a waiting time.
+            The time while a part was active, but not yet participating in a merge.
+            The height of the rectangle is waiting time divided by part size (to keep area meaningful value).
+            </p>
+
             <h6>Merges</h6>
             <p>
-            One merge is represented by one rectangle.
+            One merge is represented by one orange rectangle.
             It connects the children at the bottom to the parent (resulting) part at the top.
-            The height of the rectangle equals the number of source parts.
-            It determines the y-position of all parts relative to their parents.
-            Color also represents the number of source parts in the merge.
             </p>
 
             <h6>Execution time</h6>
             <p>
-            The X-axis is in bytes.
-            In model merge duration is proportional to number of bytes to be written.
-            So width of merges also represents duration (execution time) of a merge.
-            Such a model assumes there is no overhead for merges and speed of all merges expressed in bytes written per second is the same.
+            Area of orange merge rectangle represents is execution time multiplied by the source part count.
+            If merge duration is proportional to the number of bytes to be written, then width of merges represents duration of a merge.
+            The height of the rectangle equals the source part count.
             </p>
 
             <h6>Part count time integral</h6>
@@ -567,13 +569,11 @@ class MergeTreeTimeVisualizer extends MergeTreeVisualizer {
             Average active part count is computed as an integral of part count over time interval:
             $$I = T \\cdot \\mathbb{E}[Active] = \\int_0^T Active(t) \\, dt$$
             To minimize part count one should minimize the integral.
-            It can be computed as total area of all rectangles in the diagram plus "waiting" time $W$.
-            The area of one merge rectangle equals its contribution to the integral.
-            $$I = W + \\sum_{i} d_{i} \\cdot n_{i}$$
-            where $d_{i}$ – merge execution time of $i$-th part, $n_{i}$ – number of children of $i$-th part.
-            </p>
-            <p>
-            It is important to note that diagram does not show "waiting" time, while parts are active, but not merging.
+            It can be computed as total area of all rectangles in the diagram.
+            The area of every rectangle equals its contribution to the integral.
+            Waiting time $W_{i}$ for part rectangles and execution time $E_{i}$ for merge rectangles:
+            $$I = \\sum_{i} W_{i} + \\sum_{i} E_{i}$$
+            where $E_{i} = d_{i} \\cdot n_{i}$, and $d_{i}$ – merge execution time of $i$-th part, $n_{i}$ – number of children of $i$-th part.
             </p>
         `, 15, 60);
     }
