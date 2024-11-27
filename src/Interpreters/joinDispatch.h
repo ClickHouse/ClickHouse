@@ -26,11 +26,6 @@ namespace DB
 template <JoinKind kind, JoinStrictness join_strictness, bool prefer_use_maps_all>
 struct MapGetter;
 
-template <bool prefer_use_maps_all> struct MapGetter<JoinKind::Left, JoinStrictness::RightAny, prefer_use_maps_all>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
-template <bool prefer_use_maps_all> struct MapGetter<JoinKind::Inner, JoinStrictness::RightAny, prefer_use_maps_all> { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
-template <bool prefer_use_maps_all> struct MapGetter<JoinKind::Right, JoinStrictness::RightAny, prefer_use_maps_all> { using Map = HashJoin::MapsOne; static constexpr bool flagged = true; };
-template <bool prefer_use_maps_all> struct MapGetter<JoinKind::Full, JoinStrictness::RightAny, prefer_use_maps_all>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = true; };
-
 template <> struct MapGetter<JoinKind::Left, JoinStrictness::Any, false>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
 template <> struct MapGetter<JoinKind::Left, JoinStrictness::Any, true>  { using Map = HashJoin::MapsAll; static constexpr bool flagged = false; };
 template <> struct MapGetter<JoinKind::Inner, JoinStrictness::Any, true> { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
@@ -60,8 +55,7 @@ template <bool prefer_use_maps_all> struct MapGetter<JoinKind::Full, JoinStrictn
 template <JoinKind kind, bool prefer_use_maps_all>
 struct MapGetter<kind, JoinStrictness::Asof, prefer_use_maps_all> { using Map = HashJoin::MapsAsof; static constexpr bool flagged = false; };
 
-static constexpr std::array<JoinStrictness, 6> STRICTNESSES = {
-    JoinStrictness::RightAny,
+static constexpr std::array<JoinStrictness, 5> STRICTNESSES = {
     JoinStrictness::Any,
     JoinStrictness::All,
     JoinStrictness::Asof,

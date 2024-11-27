@@ -68,7 +68,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool aggregate_functions_null_for_empty;
-    extern const SettingsBool any_join_distinct_right_table_keys;
     extern const SettingsString count_distinct_implementation;
     extern const SettingsBool enable_order_by_all;
     extern const SettingsBool enable_positional_arguments;
@@ -579,7 +578,7 @@ void getArrayJoinedColumns(ASTPtr & query, TreeRewriterResult & result, const AS
     }
 }
 
-void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_default_strictness, bool old_any, std::shared_ptr<TableJoin> & analyzed_join)
+void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_default_strictness, std::shared_ptr<TableJoin> & analyzed_join)
 {
     const ASTTablesInSelectQueryElement * node = select_query.join();
     if (!node)
@@ -599,23 +598,8 @@ void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_defaul
                             "Expected ANY or ALL in JOIN section, because setting (join_default_strictness) is empty");
     }
 
-    if (old_any)
-    {
-        if (table_join.strictness == JoinStrictness::Any &&
-            table_join.kind == JoinKind::Inner)
-        {
-            table_join.strictness = JoinStrictness::Semi;
-            table_join.kind = JoinKind::Left;
-        }
-
-        if (table_join.strictness == JoinStrictness::Any)
-            table_join.strictness = JoinStrictness::RightAny;
-    }
-    else
-    {
-        if (table_join.strictness == JoinStrictness::Any && table_join.kind == JoinKind::Full)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ANY FULL JOINs are not implemented");
-    }
+    if (table_join.strictness == JoinStrictness::Any && table_join.kind == JoinKind::Full)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ANY FULL JOINs are not implemented");
 
     analyzed_join->getTableJoin() = table_join;
 }
@@ -1430,7 +1414,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     /// array_join_alias_to_name, array_join_result_to_source.
     getArrayJoinedColumns(query, result, select_query, result.source_columns, source_columns_set);
 
-    setJoinStrictness(*select_query, settings[Setting::join_default_strictness], settings[Setting::any_join_distinct_right_table_keys], result.analyzed_join);
+    setJoinStrictness(*select_query, settings[Setting::join_default_strictness], result.analyzed_join);
 
     auto * table_join_ast = select_query->join() ? select_query->join()->table_join->as<ASTTableJoin>() : nullptr;
     if (table_join_ast && tables_with_columns.size() >= 2)

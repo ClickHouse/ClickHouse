@@ -22,7 +22,6 @@ const char * toString(JoinStrictness strictness)
     switch (strictness)
     {
         case JoinStrictness::Unspecified: return "UNSPECIFIED";
-        case JoinStrictness::RightAny: return "RIGHT_ANY";
         case JoinStrictness::Any: return "ANY";
         case JoinStrictness::All: return "ALL";
         case JoinStrictness::Asof: return "ASOF";

@@ -53,7 +53,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_variant_type;
-    extern const SettingsBool any_join_distinct_right_table_keys;
     extern const SettingsJoinStrictness join_default_strictness;
     extern const SettingsBool enable_order_by_all;
     extern const SettingsUInt64 limit;
@@ -922,7 +921,6 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTPtr & tables_in_select
 
             const auto & settings = context->getSettingsRef();
             auto join_default_strictness = settings[Setting::join_default_strictness];
-            auto any_join_distinct_right_table_keys = settings[Setting::any_join_distinct_right_table_keys];
 
             JoinStrictness result_join_strictness = table_join.strictness;
             JoinKind result_join_kind = table_join.kind;
@@ -938,18 +936,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTPtr & tables_in_select
                         "Expected ANY or ALL in JOIN section, because setting (join_default_strictness) is empty");
             }
 
-            if (any_join_distinct_right_table_keys)
-            {
-                if (result_join_strictness == JoinStrictness::Any && result_join_kind == JoinKind::Inner)
-                {
-                    result_join_strictness = JoinStrictness::Semi;
-                    result_join_kind = JoinKind::Left;
-                }
-
-                if (result_join_strictness == JoinStrictness::Any)
-                    result_join_strictness = JoinStrictness::RightAny;
-            }
-            else if (result_join_strictness == JoinStrictness::Any && result_join_kind == JoinKind::Full)
+            if (result_join_strictness == JoinStrictness::Any && result_join_kind == JoinKind::Full)
             {
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ANY FULL JOINs are not implemented");
             }

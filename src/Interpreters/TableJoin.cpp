@@ -432,18 +432,7 @@ void TableJoin::addJoinedColumnsAndCorrectTypesImpl(TColumns & left_columns, boo
 
 bool TableJoin::sameStrictnessAndKind(JoinStrictness strictness_, JoinKind kind_) const
 {
-    if (strictness_ == strictness() && kind_ == kind())
-        return true;
-
-    /// Compatibility: old ANY INNER == new SEMI LEFT
-    if (strictness_ == JoinStrictness::Semi && isLeft(kind_) &&
-        strictness() == JoinStrictness::RightAny && isInner(kind()))
-        return true;
-    if (strictness() == JoinStrictness::Semi && isLeft(kind()) &&
-        strictness_ == JoinStrictness::RightAny && isInner(kind_))
-        return true;
-
-    return false;
+    return strictness_ == strictness() && kind_ == kind();
 }
 
 bool TableJoin::oneDisjunct() const

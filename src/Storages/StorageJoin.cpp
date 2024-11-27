@@ -34,7 +34,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool any_join_distinct_right_table_keys;
     extern const SettingsBool join_any_take_last_row;
     extern const SettingsOverflowMode join_overflow_mode;
     extern const SettingsBool join_use_nulls;
@@ -376,7 +375,6 @@ void registerStorageJoin(StorageFactory & factory)
         auto max_bytes_in_join = settings[Setting::max_bytes_in_join];
         auto join_overflow_mode = settings[Setting::join_overflow_mode];
         auto join_any_take_last_row = settings[Setting::join_any_take_last_row];
-        auto old_any_join = settings[Setting::any_join_distinct_right_table_keys];
         bool persistent = true;
         String disk_name = "default";
 
@@ -395,7 +393,7 @@ void registerStorageJoin(StorageFactory & factory)
                 else if (setting.name == "join_any_take_last_row")
                     join_any_take_last_row = setting.value;
                 else if (setting.name == "any_join_distinct_right_table_keys")
-                    old_any_join = setting.value;
+                { /* pass obsolete setting */ }
                 else if (setting.name == "disk")
                     disk_name = setting.value.safeGet<String>();
                 else if (setting.name == "persistent")
@@ -422,12 +420,7 @@ void registerStorageJoin(StorageFactory & factory)
             const String strictness_str = Poco::toLower(*opt_strictness_id);
 
             if (strictness_str == "any")
-            {
-                if (old_any_join)
-                    strictness = JoinStrictness::RightAny;
-                else
-                    strictness = JoinStrictness::Any;
-            }
+                strictness = JoinStrictness::Any;
             else if (strictness_str == "all")
                 strictness = JoinStrictness::All;
             else if (strictness_str == "semi")
@@ -645,11 +638,7 @@ private:
 
         for (; it != end; ++it)
         {
-            if constexpr (STRICTNESS == JoinStrictness::RightAny)
-            {
-                fillOne<Map>(columns, column_indices, it, key_pos, rows_added);
-            }
-            else if constexpr (STRICTNESS == JoinStrictness::All)
+            if constexpr (STRICTNESS == JoinStrictness::All)
             {
                 fillAll<Map>(columns, column_indices, it, key_pos, rows_added);
             }

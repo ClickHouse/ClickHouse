@@ -492,7 +492,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
                     if constexpr (join_features.right && join_features.need_flags)
                         used_flags.template setUsed<join_features.need_flags, flag_per_row>(find_result);
                 }
-                else /// ANY LEFT, SEMI LEFT, old ANY (RightAny)
+                else /// ANY LEFT, SEMI LEFT
                 {
                     setUsed<need_filter>(added_columns.filter, i);
                     used_flags.template setUsed<join_features.need_flags, flag_per_row>(find_result);

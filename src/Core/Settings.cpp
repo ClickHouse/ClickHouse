@@ -1894,32 +1894,6 @@ Possible values:
 - `ASOF` — For joining sequences with an uncertain match.
 - `Empty string` — If `ALL` or `ANY` is not specified in the query, ClickHouse throws an exception.
 )", 0) \
-    DECLARE(Bool, any_join_distinct_right_table_keys, false, R"(
-Enables legacy ClickHouse server behaviour in `ANY INNER|LEFT JOIN` operations.
-
-:::note
-Use this setting only for backward compatibility if your use cases depend on legacy `JOIN` behaviour.
-:::
-
-When the legacy behaviour is enabled:
-
-- Results of `t1 ANY LEFT JOIN t2` and `t2 ANY RIGHT JOIN t1` operations are not equal because ClickHouse uses the logic with many-to-one left-to-right table keys mapping.
-- Results of `ANY INNER JOIN` operations contain all rows from the left table like the `SEMI LEFT JOIN` operations do.
-
-When the legacy behaviour is disabled:
-
-- Results of `t1 ANY LEFT JOIN t2` and `t2 ANY RIGHT JOIN t1` operations are equal because ClickHouse uses the logic which provides one-to-many keys mapping in `ANY RIGHT JOIN` operations.
-- Results of `ANY INNER JOIN` operations contain one row per key from both the left and right tables.
-
-Possible values:
-
-- 0 — Legacy behaviour is disabled.
-- 1 — Legacy behaviour is enabled.
-
-See also:
-
-- [JOIN strictness](../../sql-reference/statements/select/join.md/#join-settings)
-)", IMPORTANT) \
     DECLARE(Bool, single_join_prefer_left_table, true, R"(
 For single JOIN in case of identifier ambiguity prefer left table
 )", IMPORTANT) \
@@ -5962,6 +5936,7 @@ Experimental data deduplication for SELECT queries based on part UUIDs
     MAKE_OBSOLETE(M, Bool, optimize_monotonous_functions_in_order_by, false) \
     MAKE_OBSOLETE(M, UInt64, http_max_chunk_size, 100_GiB) \
     MAKE_OBSOLETE(M, Bool, enable_deflate_qpl_codec, false) \
+    MAKE_OBSOLETE(M, Bool, any_join_distinct_right_table_keys, false) \
 
     /** The section above is for obsolete settings. Do not add anything there. */
 #endif /// __CLION_IDE__

@@ -949,7 +949,7 @@ DataTypePtr HashJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types,
 /// TODO: return array of values when strictness == JoinStrictness::All
 ColumnWithTypeAndName HashJoin::joinGet(const Block & block, const Block & block_with_columns_to_add) const
 {
-    bool is_valid = (strictness == JoinStrictness::Any || strictness == JoinStrictness::RightAny) && kind == JoinKind::Left;
+    bool is_valid = strictness == JoinStrictness::Any && kind == JoinKind::Left;
     if (!is_valid)
         throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN, "joinGet only supports StorageJoin of type Left Any");
     const auto & key_names_right = table_join->getOnlyClause().key_names_right;

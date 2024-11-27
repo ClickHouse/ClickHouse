@@ -11,7 +11,7 @@ struct JoinFeatures
     static constexpr bool is_asof_join = STRICTNESS == JoinStrictness::Asof;
     static constexpr bool is_semi_join = STRICTNESS == JoinStrictness::Semi;
     static constexpr bool is_anti_join = STRICTNESS == JoinStrictness::Anti;
-    static constexpr bool is_any_or_semi_join = is_any_join || STRICTNESS == JoinStrictness::RightAny || (is_semi_join && KIND == JoinKind::Left);
+    static constexpr bool is_any_or_semi_join = is_any_join || (is_semi_join && KIND == JoinKind::Left);
 
     static constexpr bool left = KIND == JoinKind::Left;
     static constexpr bool right = KIND == JoinKind::Right;
