@@ -5528,6 +5528,8 @@ The default value is `CURRENT_USER`.
     DECLARE(UInt64, cache_warmer_threads, 4, R"(
 Only available in ClickHouse Cloud. Number of background threads for speculatively downloading new data parts into file cache, when cache_populated_by_fetch is enabled. Zero to disable.
 )", 0) \
+    DECLARE(Bool, use_async_executor_for_materialized_views, false, R"(
+Use async and potentially multithreaded execution of materialized view query, can speedup views processing during INSERT, but also consume more memory.)", 0) \
     DECLARE(Int64, ignore_cold_parts_seconds, 0, R"(
 Only available in ClickHouse Cloud. Exclude new data parts from SELECT queries until they're either pre-warmed (see cache_populated_by_fetch) or this many seconds old. Only for Replicated-/SharedMergeTree.
 )", 0) \
