@@ -74,6 +74,8 @@ namespace ProfileEvents
         explicit Counters(Counter * allocated_counters) noexcept
             : counters(allocated_counters), parent(nullptr), level(VariableContext::Global) {}
 
+        Counters(Counters && src) noexcept;
+
         Counter & operator[] (Event event)
         {
             return counters[event];

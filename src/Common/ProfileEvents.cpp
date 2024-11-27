@@ -959,6 +959,15 @@ Counters::Counters(VariableContext level_, Counters * parent_)
     counters = counters_holder.get();
 }
 
+Counters::Counters(Counters && src) noexcept
+    : counters(std::exchange(src.counters, nullptr))
+    , counters_holder(std::move(src.counters_holder))
+    , parent(src.parent.exchange(nullptr))
+    , trace_profile_events(src.trace_profile_events)
+    , level(src.level)
+{
+}
+
 void Counters::resetCounters()
 {
     if (counters)
