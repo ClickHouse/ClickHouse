@@ -5766,7 +5766,7 @@ Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting
 If enabled, only allow identifiers containing alphanumeric characters and underscores.
 )", 0) \
     DECLARE(Bool, mongodb_throw_on_unsupported_query, true, R"(
-If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally. This option does not apply to the legacy implementation or when 'allow_experimental_analyzer=0'.
+If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally. This option is not applied when 'enable_analyzer=0'.
 )", 0) \
     DECLARE(Bool, implicit_select, false, R"(
 Allow writing simple SELECT queries without the leading SELECT keyword, which makes it simple for calculator-style usage, e.g. `1 + 2` becomes a valid query.
@@ -5776,6 +5776,16 @@ In `clickhouse-local` it is enabled by default and can be explicitly disabled.
     DECLARE(Bool, push_external_roles_in_interserver_queries, true, R"(
 Enable pushing user roles from originator to other nodes while performing a query.
 )", 0) \
+    \
+    DECLARE(Bool, allow_experimental_variant_type, false, R"(
+Allows creation of [Variant](../../sql-reference/data-types/variant.md) data type.
+)", BETA) ALIAS(enable_variant_type) \
+    DECLARE(Bool, allow_experimental_dynamic_type, false, R"(
+Allows creation of [Dynamic](../../sql-reference/data-types/dynamic.md) data type.
+)", BETA) ALIAS(enable_dynamic_type) \
+    DECLARE(Bool, allow_experimental_json_type, false, R"(
+Allows creation of [JSON](../../sql-reference/data-types/newjson.md) data type.
+)", BETA) ALIAS(enable_json_type) \
     \
     \
     /* ####################################################### */ \
@@ -5811,15 +5821,6 @@ Possible values:
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_vector_similarity_index, false, R"(
 Allow experimental vector similarity index
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_variant_type, false, R"(
-Allows creation of experimental [Variant](../../sql-reference/data-types/variant.md).
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_dynamic_type, false, R"(
-Allow Dynamic data type
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_json_type, false, R"(
-Allow JSON data type
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_codecs, false, R"(
 If it is set to true, allow to specify experimental compression codecs (but we don't have those yet and this option does nothing).
