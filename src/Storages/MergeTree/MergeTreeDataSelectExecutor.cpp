@@ -963,9 +963,15 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(RangesInDataP
 
     if (auto prewhere_info = query_info_.prewhere_info)
     {
-        const auto * dag = prewhere_info->prewhere_actions.getOutputs().front();
-        auto stat = dropMarkRanges(dag);
-        LOG_DEBUG(log, "PREWHERE contition {} by query condition cache has dropped {}/{} granules.", prewhere_info->prewhere_column_name, stat.granules_dropped, stat.total_granules);
+        for (const auto * dag : prewhere_info->prewhere_actions.getOutputs())
+        {
+            if (dag->result_name == prewhere_info->prewhere_column_name)
+            {
+                auto stat = dropMarkRanges(dag);
+                LOG_DEBUG(log, "PREWHERE contition {} by query condition cache has dropped {}/{} granules.", prewhere_info->prewhere_column_name, stat.granules_dropped, stat.total_granules);
+                break;
+            }
+        }
     }
 
     if (auto filter_dag = query_info_.filter_actions_dag)

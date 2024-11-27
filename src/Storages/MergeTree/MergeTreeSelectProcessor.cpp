@@ -218,10 +218,16 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
         }
         if (reader_settings.use_query_condition_cache && prewhere_info)
         {
-            auto data_part = task->getInfo().data_part;
-            const auto * dag = prewhere_info->prewhere_actions.getOutputs().front();
-            auto query_condition_cache = data_part->storage.getContext()->getQueryConditionCache();
-            query_condition_cache->write(data_part, dag->getHash(), res.read_mark_ranges);
+            for (const auto * dag : prewhere_info->prewhere_actions.getOutputs())
+            {
+                if (dag->result_name == prewhere_info->prewhere_column_name)
+                {
+                    auto data_part = task->getInfo().data_part;
+                    auto query_condition_cache = data_part->storage.getContext()->getQueryConditionCache();
+                    query_condition_cache->write(data_part, dag->getHash(), res.read_mark_ranges);
+                    break;
+                }
+            }
         }
 
         return {Chunk(), res.num_read_rows, res.num_read_bytes, false};
