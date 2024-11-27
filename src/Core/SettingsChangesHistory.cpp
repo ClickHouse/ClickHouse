@@ -117,7 +117,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"min_free_disk_ratio_to_perform_insert", 0.0, 0.0, "New setting."},
             {"enable_named_columns_in_function_tuple", false, false, "Disabled pending usability improvements"},
             {"cloud_mode_database_engine", 1, 1, "A setting for ClickHouse Cloud"},
-            {"allow_experimental_shared_set_join", 1, 1, "A setting for ClickHouse Cloud"},
+            {"allow_experimental_shared_set_join", 0, 0, "A setting for ClickHouse Cloud"},
             {"read_through_distributed_cache", 0, 0, "A setting for ClickHouse Cloud"},
             {"write_through_distributed_cache", 0, 0, "A setting for ClickHouse Cloud"},
             {"distributed_cache_throw_on_error", 0, 0, "A setting for ClickHouse Cloud"},
