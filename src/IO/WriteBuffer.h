@@ -134,7 +134,7 @@ public:
     }
 
     /// This method may be called before finalize() to tell there would not be any more data written.
-    /// Used does not have to call it, implementation should check it itself if needed.
+    /// User does not have to call it, implementation should check it itself if needed.
     ///
     /// The idea is similar to prefetch. In case if all data is written, we can flush the buffer
     /// and start sending data asynchronously. It may improve writing performance in case you have
