@@ -1,6 +1,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/CreateQueryUUIDs.h>
@@ -416,6 +417,19 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
                       << (settings.hilite ? hilite_none : "") << " "
                       << (!to_table_id.database_name.empty() ? backQuoteIfNeed(to_table_id.database_name) + "." : "")
                       << backQuoteIfNeed(to_table_id.table_name);
+    }
+    else if (to_table)
+    {
+        assert((is_materialized_view || is_window_view) && to_inner_uuid == UUIDHelpers::Nil);
+        settings.ostr
+            << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "");
+        if (to_database)
+        {
+            to_database->formatImpl(settings, state, frame);
+            settings.ostr << '.';
+        }
+        chassert(to_table);
+        to_table->formatImpl(settings, state, frame);
     }
 
     if (auto to_inner_uuid = getTargetInnerUUID(ViewTarget::To); to_inner_uuid != UUIDHelpers::Nil)
