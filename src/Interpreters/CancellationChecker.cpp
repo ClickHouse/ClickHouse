@@ -37,6 +37,7 @@ CancellationChecker& CancellationChecker::getInstance()
 
 void CancellationChecker::terminateThread()
 {
+    std::unique_lock<std::mutex> lock(m);
     LOG_TRACE(getLogger("CancellationChecker"), "Stopping CancellationChecker");
     stop_thread = true;
     cond_var.notify_all();
