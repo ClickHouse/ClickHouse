@@ -78,6 +78,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool primary_key_lazy_load;
     extern const MergeTreeSettingsFloat primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
+    extern const MergeTreeSettingsBool allow_generate_min_max_data_insert_file;
 }
 
 namespace ErrorCodes
@@ -519,26 +520,24 @@ std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
 
 time_t IMergeTreeDataPart::getMinTimeOfDataInsertion() const
 {
+    if (!(*storage.getSettings())[MergeTreeSetting::allow_generate_min_max_data_insert_file])
+        return 0;
+
     if (min_time_of_data_insert.has_value())
     {
         return *min_time_of_data_insert;
-    }
-    if (modification_time == static_cast<time_t>(0))
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent state of the part {}: min_time_of_data_insert doesn't contains value and modification_time is zero.", name);
     }
     return modification_time;
 }
 
 time_t IMergeTreeDataPart::getMaxTimeOfDataInsertion() const
 {
+    if (!(*storage.getSettings())[MergeTreeSetting::allow_generate_min_max_data_insert_file])
+        return 0;
+
     if (max_time_of_data_insert.has_value())
     {
         return *max_time_of_data_insert;
-    }
-    if (modification_time == static_cast<time_t>(0))
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent state of the part {}: max_time_of_data_insert doesn't contains value and modification_time is zero.", name);
     }
     return modification_time;
 }
@@ -859,7 +858,10 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
             checkConsistency(require_columns_checksums);
 
         loadDefaultCompressionCodec();
-        loadInsertTimeInfo();
+        if ((*storage.getSettings())[MergeTreeSetting::allow_generate_min_max_data_insert_file])
+        {
+            loadInsertTimeInfo();
+        }
     }
     catch (...)
     {
@@ -1090,7 +1092,7 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
     if (getDataPartStorage().existsFile(METADATA_VERSION_FILE_NAME))
         result.emplace(METADATA_VERSION_FILE_NAME);
 
-    if (getDataPartStorage().exists(MIN_MAX_TIME_OF_DATA_INSERT_FILE))
+    if (getDataPartStorage().existsFile(MIN_MAX_TIME_OF_DATA_INSERT_FILE))
         result.emplace(MIN_MAX_TIME_OF_DATA_INSERT_FILE);
 
     return result;

@@ -76,6 +76,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool replace_long_file_name_to_hash;
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
     extern const MergeTreeSettingsBool enable_index_granularity_compression;
+    extern const MergeTreeSettingsBool allow_generate_min_max_data_insert_file;
 }
 
 namespace ErrorCodes
@@ -951,6 +952,7 @@ void finalizeMutatedPart(
         written_files.push_back(std::move(out_comp));
     }
 
+    if ((*new_data_part->storage.getSettings())[MergeTreeSetting::allow_generate_min_max_data_insert_file])
     {
         auto out = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::MIN_MAX_TIME_OF_DATA_INSERT_FILE, 4096, context->getWriteSettings());
         DB::writeIntText(new_data_part->getMinTimeOfDataInsertion(), *out);
@@ -2259,9 +2261,11 @@ bool MutateTask::prepare()
     ctx->new_data_part->is_temp = true;
     ctx->new_data_part->ttl_infos = ctx->source_part->ttl_infos;
 
-    ctx->new_data_part->min_time_of_data_insert = ctx->future_part->parts.front()->getMinTimeOfDataInsertion();
-    ctx->new_data_part->max_time_of_data_insert = ctx->future_part->parts.front()->getMaxTimeOfDataInsertion();
-
+    if ((*ctx->new_data_part->storage.getSettings())[MergeTreeSetting::allow_generate_min_max_data_insert_file])
+    {
+        ctx->new_data_part->min_time_of_data_insert = ctx->future_part->parts.front()->getMinTimeOfDataInsertion();
+        ctx->new_data_part->max_time_of_data_insert = ctx->future_part->parts.front()->getMaxTimeOfDataInsertion();
+    }
     /// It shouldn't be changed by mutation.
     ctx->new_data_part->index_granularity_info = ctx->source_part->index_granularity_info;
 
