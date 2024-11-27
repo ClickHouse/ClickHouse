@@ -345,7 +345,7 @@ std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressions(cons
         }
         else if (filtered_and_arguments.size() == 1)
         {
-            insertIfNotPresentInSet(new_or_arguments_set, new_or_arguments, std::move( filtered_and_arguments.front()));
+            insertIfNotPresentInSet(new_or_arguments_set, new_or_arguments, std::move(filtered_and_arguments.front()));
         }
         else
         {
