@@ -89,6 +89,7 @@ class RefreshSet;
 class Cluster;
 class Compiler;
 class MarkCache;
+class PrimaryIndexCache;
 class PageCache;
 class MMappedFileCache;
 class UncompressedCache;
@@ -289,6 +290,7 @@ protected:
 
     std::optional<UUID> user_id;
     std::shared_ptr<std::vector<UUID>> current_roles;
+    std::shared_ptr<std::vector<UUID>> external_roles;
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> settings_constraints_and_current_profiles;
     mutable std::shared_ptr<const ContextAccess> access;
     mutable bool need_recalculate_access = true;
@@ -634,7 +636,7 @@ public:
 
     /// Sets the current user assuming that he/she is already authenticated.
     /// WARNING: This function doesn't check password!
-    void setUser(const UUID & user_id_);
+    void setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_ = {});
     UserPtr getUser() const;
 
     std::optional<UUID> getUserID() const;
@@ -1075,6 +1077,11 @@ public:
     void clearMarkCache() const;
     ThreadPool & getLoadMarksThreadpool() const;
 
+    void setPrimaryIndexCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
+    void updatePrimaryIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
+    std::shared_ptr<PrimaryIndexCache> getPrimaryIndexCache() const;
+    void clearPrimaryIndexCache() const;
+
     void setIndexUncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
     void updateIndexUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<UncompressedCache> getIndexUncompressedCache() const;
@@ -1287,8 +1294,6 @@ public:
     /// Overrides values of existing parameters.
     void addQueryParameters(const NameToNameMap & parameters);
 
-    /// Add started bridge command. It will be killed after context destruction
-    void addBridgeCommand(std::unique_ptr<ShellCommand> cmd) const;
 
     IHostContextPtr & getHostContext();
     const IHostContextPtr & getHostContext() const;
@@ -1397,6 +1402,8 @@ private:
     void setCurrentProfilesWithLock(const SettingsProfilesInfo & profiles_info, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock);
 
     void setCurrentRolesWithLock(const std::vector<UUID> & new_current_roles, const std::lock_guard<ContextSharedMutex> & lock);
+
+    void setExternalRolesWithLock(const std::vector<UUID> & new_external_roles, const std::lock_guard<ContextSharedMutex> & lock);
 
     void setSettingWithLock(std::string_view name, const String & value, const std::lock_guard<ContextSharedMutex> & lock);
 
