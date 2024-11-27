@@ -378,7 +378,7 @@ QueryLogElement logQueryStart(
     else if (!internal && !settings.log_queries)
     {
         if (settings.log_queries.changed)
-            LOG_DEBUG(
+            LOG_TRACE(
                 getLogger("executeQuery"),
                 "Query will not be added to query_log since setting `log_queries` has been set to false."
                 " The setting has been changed for the query");
