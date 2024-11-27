@@ -6,7 +6,7 @@ CREATE TABLE read_in_order_with_parallel_replicas(id UInt64) ENGINE=MergeTree OR
 
 INSERT INTO read_in_order_with_parallel_replicas SELECT number from system.numbers limit 100000;
 
-SELECT * from read_in_order_with_parallel_replicas ORDER BY id desc limit 1;
+SELECT * from read_in_order_with_parallel_replicas ORDER BY id desc limit 1 settings max_threads=1;
 
 SELECT * from read_in_order_with_parallel_replicas ORDER BY id desc limit 1
 SETTINGS max_parallel_replicas = 2,
