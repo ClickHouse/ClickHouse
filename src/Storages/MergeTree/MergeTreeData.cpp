@@ -2659,8 +2659,8 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
     }
 
     if (!res.empty())
-        LOG_TRACE(log, "Found {} old parts to remove. Parts: [{}]",
-                  res.size(), fmt::join(getPartsNames(res), ", "));
+        LOG_TRACE(log, "Skipped {} old parts, Found {} old parts to remove. Parts: [{}]",
+                  skipped_parts.size(), res.size(), fmt::join(getPartsNames(res), ", "));
 
     return res;
 }
