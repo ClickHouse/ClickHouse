@@ -60,6 +60,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
 {
     {"24.12",
         {
+            {"iceberg_query_at_timestamp_ms", 0, 0, "New setting."},
         }
     },
     {"24.11",

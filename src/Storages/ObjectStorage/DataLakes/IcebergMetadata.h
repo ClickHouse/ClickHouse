@@ -74,7 +74,8 @@ public:
         Int32 metadata_version_,
         Int32 format_version_,
         String manifest_list_file_,
-        Int32 current_schema_id_,
+        Int32 schema_id_,
+        Int64 snapshot_id_,
         NamesAndTypesList schema_);
 
     /// Get data files. On first request it reads manifest_list file and iterates through manifest files to find all data files.
@@ -97,14 +98,15 @@ public:
     static DataLakeMetadataPtr create(ObjectStoragePtr object_storage, ConfigurationObserverPtr configuration, ContextPtr local_context);
 
 private:
-    size_t getVersion() const { return metadata_version; }
+    std::tuple<Int32, Int32, Int64> getVersion() const { return std::make_tuple(metadata_version, schema_id, snapshot_id); }
 
     const ObjectStoragePtr object_storage;
     const ConfigurationObserverPtr configuration;
     Int32 metadata_version;
     Int32 format_version;
     String manifest_list_file;
-    Int32 current_schema_id;
+    Int32 schema_id;
+    Int64 snapshot_id;
     NamesAndTypesList schema;
     mutable Strings data_files;
     std::unordered_map<String, String> column_name_to_physical_name;
