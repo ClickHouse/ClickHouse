@@ -115,19 +115,20 @@ void OvercommitTracker::tryContinueQueryExecutionAfterFree(Int64 amount)
     if (OvercommitTrackerBlockerInThread::isBlocked())
         return;
 
-    std::shared_lock read_lock(overcommit_m);
+    {
+        std::shared_lock read_lock(overcommit_m);
+        if (cancellation_state == QueryCancellationState::NONE)
+            return;
+    }
+
+    read_lock.unlock();
+
+    std::lock_guard lk(overcommit_m);
     if (cancellation_state != QueryCancellationState::NONE)
     {
-        read_lock.unlock();
-        {
-            std::lock_guard lk(overcommit_m);
-            if (cancellation_state != QueryCancellationState::NONE)
-            {
-                freed_memory += amount;
-                if (freed_memory >= required_memory)
-                    releaseThreads();
-            }
-        }
+        freed_memory += amount;
+        if (freed_memory >= required_memory)
+            releaseThreads();
     }
 }
 
@@ -135,19 +136,21 @@ void OvercommitTracker::onQueryStop(MemoryTracker * tracker)
 {
     DENY_ALLOCATIONS_IN_SCOPE;
 
-    std::shared_lock read_lock(overcommit_m);
+    {
+        std::shared_lock read_lock(overcommit_m);
+        if (picked_tracker != tracker)
+            return;
+    }
+
+    read_lock.unlock();
+
+    std::lock_guard lk(overcommit_m);
     if (picked_tracker == tracker)
     {
-        read_lock.unlock();
-        {
-            std::lock_guard lk(overcommit_m);
-            if (picked_tracker == tracker)
-            {
-                reset();
-                cv.notify_all();
-            }
-        }
+        reset();
+        cv.notify_all();
     }
+
 }
 
 void OvercommitTracker::releaseThreads()
