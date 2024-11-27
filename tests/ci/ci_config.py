@@ -46,16 +46,22 @@ class CI:
                 JobNames.JEPSEN_KEEPER,
                 JobNames.JEPSEN_SERVER,
             ]
-        )
+        ),
+        WorkFlowNames.NIGHTLY: LabelConfig(
+            run_jobs=[
+                BuildNames.FUZZERS,
+                JobNames.LIBFUZZER_TEST,
+            ]
+        ),
     }  # type: Dict[str, LabelConfig]
 
     TAG_CONFIGS = {
         Tags.DO_NOT_TEST_LABEL: LabelConfig(run_jobs=[JobNames.STYLE_CHECK]),
-        Tags.CI_SET_ARM: LabelConfig(
+        Tags.CI_SET_AARCH64: LabelConfig(
             run_jobs=[
                 JobNames.STYLE_CHECK,
                 BuildNames.PACKAGE_AARCH64,
-                JobNames.INTEGRATION_TEST_ARM,
+                JobNames.INTEGRATION_TEST_AARCH64,
             ]
         ),
         Tags.CI_SET_REQUIRED: LabelConfig(
@@ -81,7 +87,7 @@ class CI:
         BuildNames.PACKAGE_RELEASE: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.PACKAGE_RELEASE,
-                compiler="clang-18",
+                compiler="clang-19",
                 package_type="deb",
                 static_binary_name="amd64",
                 additional_pkgs=True,
@@ -90,26 +96,26 @@ class CI:
         BuildNames.PACKAGE_AARCH64: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.PACKAGE_AARCH64,
-                compiler="clang-18-aarch64",
+                compiler="clang-19-aarch64",
                 package_type="deb",
                 static_binary_name="aarch64",
                 additional_pkgs=True,
             ),
-            runner_type=Runners.BUILDER_ARM,
+            runner_type=Runners.BUILDER_AARCH64,
         ),
         BuildNames.PACKAGE_AARCH64_ASAN: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.PACKAGE_AARCH64_ASAN,
-                compiler="clang-18-aarch64",
+                compiler="clang-19-aarch64",
                 sanitizer="address",
                 package_type="deb",
             ),
-            runner_type=Runners.BUILDER_ARM,
+            runner_type=Runners.BUILDER_AARCH64,
         ),
         BuildNames.PACKAGE_ASAN: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.PACKAGE_ASAN,
-                compiler="clang-18",
+                compiler="clang-19",
                 sanitizer="address",
                 package_type="deb",
             ),
@@ -117,7 +123,7 @@ class CI:
         BuildNames.PACKAGE_UBSAN: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.PACKAGE_UBSAN,
-                compiler="clang-18",
+                compiler="clang-19",
                 sanitizer="undefined",
                 package_type="deb",
             ),
@@ -125,7 +131,7 @@ class CI:
         BuildNames.PACKAGE_TSAN: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.PACKAGE_TSAN,
-                compiler="clang-18",
+                compiler="clang-19",
                 sanitizer="thread",
                 package_type="deb",
             ),
@@ -133,7 +139,7 @@ class CI:
         BuildNames.PACKAGE_MSAN: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.PACKAGE_MSAN,
-                compiler="clang-18",
+                compiler="clang-19",
                 sanitizer="memory",
                 package_type="deb",
             ),
@@ -141,7 +147,7 @@ class CI:
         BuildNames.PACKAGE_DEBUG: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.PACKAGE_DEBUG,
-                compiler="clang-18",
+                compiler="clang-19",
                 debug_build=True,
                 package_type="deb",
                 sparse_checkout=True,  # Check that it works with at least one build, see also update-submodules.sh
@@ -150,7 +156,7 @@ class CI:
         BuildNames.PACKAGE_RELEASE_COVERAGE: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.PACKAGE_RELEASE_COVERAGE,
-                compiler="clang-18",
+                compiler="clang-19",
                 coverage=True,
                 package_type="deb",
             ),
@@ -158,14 +164,14 @@ class CI:
         BuildNames.BINARY_RELEASE: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.BINARY_RELEASE,
-                compiler="clang-18",
+                compiler="clang-19",
                 package_type="binary",
             ),
         ),
         BuildNames.BINARY_TIDY: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.BINARY_TIDY,
-                compiler="clang-18",
+                compiler="clang-19",
                 debug_build=True,
                 package_type="binary",
                 static_binary_name="debug-amd64",
@@ -177,7 +183,7 @@ class CI:
         BuildNames.BINARY_DARWIN: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.BINARY_DARWIN,
-                compiler="clang-18-darwin",
+                compiler="clang-19-darwin",
                 package_type="binary",
                 static_binary_name="macos",
             ),
@@ -185,14 +191,14 @@ class CI:
         BuildNames.BINARY_AARCH64: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.BINARY_AARCH64,
-                compiler="clang-18-aarch64",
+                compiler="clang-19-aarch64",
                 package_type="binary",
             ),
         ),
         BuildNames.BINARY_AARCH64_V80COMPAT: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.BINARY_AARCH64_V80COMPAT,
-                compiler="clang-18-aarch64-v80compat",
+                compiler="clang-19-aarch64-v80compat",
                 package_type="binary",
                 static_binary_name="aarch64v80compat",
                 comment="For ARMv8.1 and older",
@@ -201,7 +207,7 @@ class CI:
         BuildNames.BINARY_FREEBSD: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.BINARY_FREEBSD,
-                compiler="clang-18-freebsd",
+                compiler="clang-19-freebsd",
                 package_type="binary",
                 static_binary_name="freebsd",
             ),
@@ -209,7 +215,7 @@ class CI:
         BuildNames.BINARY_DARWIN_AARCH64: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.BINARY_DARWIN_AARCH64,
-                compiler="clang-18-darwin-aarch64",
+                compiler="clang-19-darwin-aarch64",
                 package_type="binary",
                 static_binary_name="macos-aarch64",
             ),
@@ -217,7 +223,7 @@ class CI:
         BuildNames.BINARY_PPC64LE: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.BINARY_PPC64LE,
-                compiler="clang-18-ppc64le",
+                compiler="clang-19-ppc64le",
                 package_type="binary",
                 static_binary_name="powerpc64le",
             ),
@@ -225,7 +231,7 @@ class CI:
         BuildNames.BINARY_AMD64_COMPAT: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.BINARY_AMD64_COMPAT,
-                compiler="clang-18-amd64-compat",
+                compiler="clang-19-amd64-compat",
                 package_type="binary",
                 static_binary_name="amd64compat",
                 comment="SSE2-only build",
@@ -234,7 +240,7 @@ class CI:
         BuildNames.BINARY_AMD64_MUSL: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.BINARY_AMD64_MUSL,
-                compiler="clang-18-amd64-musl",
+                compiler="clang-19-amd64-musl",
                 package_type="binary",
                 static_binary_name="amd64musl",
                 comment="Build with Musl",
@@ -243,7 +249,7 @@ class CI:
         BuildNames.BINARY_RISCV64: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.BINARY_RISCV64,
-                compiler="clang-18-riscv64",
+                compiler="clang-19-riscv64",
                 package_type="binary",
                 static_binary_name="riscv64",
             ),
@@ -251,7 +257,7 @@ class CI:
         BuildNames.BINARY_S390X: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.BINARY_S390X,
-                compiler="clang-18-s390x",
+                compiler="clang-19-s390x",
                 package_type="binary",
                 static_binary_name="s390x",
             ),
@@ -259,7 +265,7 @@ class CI:
         BuildNames.BINARY_LOONGARCH64: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.BINARY_LOONGARCH64,
-                compiler="clang-18-loongarch64",
+                compiler="clang-19-loongarch64",
                 package_type="binary",
                 static_binary_name="loongarch64",
             ),
@@ -267,7 +273,8 @@ class CI:
         BuildNames.FUZZERS: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.FUZZERS,
-                compiler="clang-18",
+                compiler="clang-19",
+                sanitizer="address",
                 package_type="fuzzers",
             ),
             run_by_labels=[Tags.libFuzzer],
@@ -276,12 +283,16 @@ class CI:
         JobNames.INSTALL_TEST_AMD: CommonJobConfigs.INSTALL_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE]
         ),
-        JobNames.INSTALL_TEST_ARM: CommonJobConfigs.INSTALL_TEST.with_properties(
+        JobNames.INSTALL_TEST_AARCH64: CommonJobConfigs.INSTALL_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
-            runner_type=Runners.STYLE_CHECKER_ARM,
+            runner_type=Runners.STYLE_CHECKER_AARCH64,
         ),
         JobNames.STATEFUL_TEST_ASAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_ASAN]
+        ),
+        JobNames.STATEFUL_TEST_AARCH64_ASAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
+            required_builds=[BuildNames.PACKAGE_AARCH64_ASAN],
+            runner_type=Runners.FUNC_TESTER_AARCH64,
         ),
         JobNames.STATEFUL_TEST_TSAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_TSAN]
@@ -303,7 +314,7 @@ class CI:
         ),
         JobNames.STATEFUL_TEST_AARCH64: CommonJobConfigs.STATEFUL_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
-            runner_type=Runners.FUNC_TESTER_ARM,
+            runner_type=Runners.FUNC_TESTER_AARCH64,
         ),
         JobNames.STATEFUL_TEST_PARALLEL_REPL_RELEASE: CommonJobConfigs.STATEFUL_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE]
@@ -331,6 +342,11 @@ class CI:
         JobNames.STATELESS_TEST_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_ASAN], num_batches=2
         ),
+        JobNames.STATELESS_TEST_AARCH64_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
+            required_builds=[BuildNames.PACKAGE_AARCH64_ASAN],
+            num_batches=2,
+            runner_type=Runners.FUNC_TESTER_AARCH64,
+        ),
         JobNames.STATELESS_TEST_TSAN: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_TSAN], num_batches=4
         ),
@@ -351,7 +367,7 @@ class CI:
         ),
         JobNames.STATELESS_TEST_AARCH64: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
-            runner_type=Runners.FUNC_TESTER_ARM,
+            runner_type=Runners.FUNC_TESTER_AARCH64,
         ),
         JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE], num_batches=2
@@ -423,10 +439,10 @@ class CI:
             num_batches=6,
             timeout=9000,  # the job timed out with default value (7200)
         ),
-        JobNames.INTEGRATION_TEST_ARM: CommonJobConfigs.INTEGRATION_TEST.with_properties(
+        JobNames.INTEGRATION_TEST_AARCH64: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
             num_batches=6,
-            runner_type=Runners.FUNC_TESTER_ARM,
+            runner_type=Runners.FUNC_TESTER_AARCH64,
         ),
         JobNames.INTEGRATION_TEST: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE],
@@ -444,10 +460,10 @@ class CI:
             required_builds=[BuildNames.PACKAGE_RELEASE],
             required_on_release_branch=True,
         ),
-        JobNames.COMPATIBILITY_TEST_ARM: CommonJobConfigs.COMPATIBILITY_TEST.with_properties(
+        JobNames.COMPATIBILITY_TEST_AARCH64: CommonJobConfigs.COMPATIBILITY_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
             required_on_release_branch=True,
-            runner_type=Runners.STYLE_CHECKER_ARM,
+            runner_type=Runners.STYLE_CHECKER_AARCH64,
         ),
         JobNames.UNIT_TEST: CommonJobConfigs.UNIT_TEST.with_properties(
             required_builds=[BuildNames.BINARY_RELEASE],
@@ -490,22 +506,22 @@ class CI:
             required_builds=[BuildNames.BINARY_RELEASE],
             run_by_labels=[Labels.JEPSEN_TEST],
             run_command="jepsen_check.py keeper",
-            runner_type=Runners.STYLE_CHECKER_ARM,
+            runner_type=Runners.STYLE_CHECKER_AARCH64,
         ),
         JobNames.JEPSEN_SERVER: JobConfig(
             required_builds=[BuildNames.BINARY_RELEASE],
             run_by_labels=[Labels.JEPSEN_TEST],
             run_command="jepsen_check.py server",
-            runner_type=Runners.STYLE_CHECKER_ARM,
+            runner_type=Runners.STYLE_CHECKER_AARCH64,
         ),
         JobNames.PERFORMANCE_TEST_AMD64: CommonJobConfigs.PERF_TESTS.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE], num_batches=4
         ),
-        JobNames.PERFORMANCE_TEST_ARM64: CommonJobConfigs.PERF_TESTS.with_properties(
+        JobNames.PERFORMANCE_TEST_AARCH64: CommonJobConfigs.PERF_TESTS.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
             num_batches=4,
             run_by_labels=[Labels.PR_PERFORMANCE],
-            runner_type=Runners.FUNC_TESTER_ARM,
+            runner_type=Runners.FUNC_TESTER_AARCH64,
         ),
         JobNames.SQLANCER: CommonJobConfigs.SQLLANCER_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE],
@@ -523,16 +539,16 @@ class CI:
         JobNames.CLICKBENCH_TEST: CommonJobConfigs.CLICKBENCH_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE],
         ),
-        JobNames.CLICKBENCH_TEST_ARM: CommonJobConfigs.CLICKBENCH_TEST.with_properties(
+        JobNames.CLICKBENCH_TEST_AARCH64: CommonJobConfigs.CLICKBENCH_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
-            runner_type=Runners.FUNC_TESTER_ARM,
+            runner_type=Runners.FUNC_TESTER_AARCH64,
         ),
         JobNames.LIBFUZZER_TEST: JobConfig(
             required_builds=[BuildNames.FUZZERS],
             run_by_labels=[Tags.libFuzzer],
             timeout=10800,
             run_command='libfuzzer_test_check.py "$CHECK_NAME"',
-            runner_type=Runners.STYLE_CHECKER,
+            runner_type=Runners.FUNC_TESTER,
         ),
         JobNames.DOCKER_SERVER: CommonJobConfigs.DOCKER_SERVER.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE, BuildNames.PACKAGE_AARCH64]
@@ -554,6 +570,8 @@ class CI:
                 include_paths=[
                     "./tests/queries/0_stateless/",
                     "./tests/docker_scripts/",
+                    "./tests/config/",
+                    "./tests/clickhouse-test",
                 ],
                 exclude_files=[".md"],
                 docker=["clickhouse/fasttest"],
@@ -563,7 +581,7 @@ class CI:
         ),
         JobNames.STYLE_CHECK: JobConfig(
             run_always=True,
-            runner_type=Runners.STYLE_CHECKER_ARM,
+            runner_type=Runners.STYLE_CHECKER_AARCH64,
         ),
         JobNames.BUGFIX_VALIDATE: JobConfig(
             run_by_labels=[Labels.PR_BUGFIX, Labels.PR_CRITICAL_BUGFIX],

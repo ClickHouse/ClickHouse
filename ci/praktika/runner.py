@@ -1,3 +1,5 @@
+import glob
+import json
 import os
 import re
 import sys
@@ -19,7 +21,7 @@ from praktika.utils import Shell, TeePopen, Utils
 
 class Runner:
     @staticmethod
-    def generate_dummy_environment(workflow, job):
+    def generate_local_run_environment(workflow, job, pr=None, branch=None, sha=None):
         print("WARNING: Generate dummy env for local test")
         Shell.check(
             f"mkdir -p {Settings.TEMP_DIR} {Settings.INPUT_DIR} {Settings.OUTPUT_DIR}"
@@ -28,9 +30,9 @@ class Runner:
             WORKFLOW_NAME=workflow.name,
             JOB_NAME=job.name,
             REPOSITORY="",
-            BRANCH="",
-            SHA="",
-            PR_NUMBER=-1,
+            BRANCH=branch or Settings.MAIN_BRANCH if not pr else "",
+            SHA=sha or Shell.get_output("git rev-parse HEAD"),
+            PR_NUMBER=pr or -1,
             EVENT_TYPE="",
             JOB_OUTPUT_STREAM="",
             EVENT_FILE_PATH="",
@@ -52,11 +54,13 @@ class Runner:
             cache_success=[],
             cache_success_base64=[],
             cache_artifacts={},
+            cache_jobs={},
         )
         for docker in workflow.dockers:
             workflow_config.digest_dockers[docker.name] = Digest().calc_docker_digest(
                 docker, workflow.dockers
             )
+
         workflow_config.dump()
 
         Result.generate_pending(job.name).dump()
@@ -80,13 +84,13 @@ class Runner:
         print("Read GH Environment")
         env = _Environment.from_env()
         env.JOB_NAME = job.name
-        env.PARAMETER = job.parameter
+        os.environ["JOB_NAME"] = job.name
         env.dump()
         print(env)
 
         return 0
 
-    def _pre_run(self, workflow, job):
+    def _pre_run(self, workflow, job, local_run=False):
         env = _Environment.get()
 
         result = Result(
@@ -96,9 +100,10 @@ class Runner:
         )
         result.dump()
 
-        if workflow.enable_report and job.name != Settings.CI_CONFIG_JOB_NAME:
-            print("Update Job and Workflow Report")
-            HtmlRunnerHooks.pre_run(workflow, job)
+        if not local_run:
+            if workflow.enable_report and job.name != Settings.CI_CONFIG_JOB_NAME:
+                print("Update Job and Workflow Report")
+                HtmlRunnerHooks.pre_run(workflow, job)
 
         print("Download required artifacts")
         required_artifacts = []
@@ -118,33 +123,74 @@ class Runner:
         else:
             prefixes = [env.get_s3_prefix()] * len(required_artifacts)
         for artifact, prefix in zip(required_artifacts, prefixes):
-            s3_path = f"{Settings.S3_ARTIFACT_PATH}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/{Path(artifact.path).name}"
-            assert S3.copy_file_from_s3(s3_path=s3_path, local_path=Settings.INPUT_DIR)
+            recursive = False
+            include_pattern = ""
+            if "*" in artifact.path:
+                s3_path = f"{Settings.S3_ARTIFACT_PATH}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/"
+                recursive = True
+                include_pattern = Path(artifact.path).name
+                assert "*" in include_pattern
+            else:
+                s3_path = f"{Settings.S3_ARTIFACT_PATH}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/{Path(artifact.path).name}"
+            assert S3.copy_file_from_s3(
+                s3_path=s3_path,
+                local_path=Settings.INPUT_DIR,
+                recursive=recursive,
+                include_pattern=include_pattern,
+            )
 
         return 0
 
-    def _run(self, workflow, job, docker="", no_docker=False, param=None):
+    def _run(self, workflow, job, docker="", no_docker=False, param=None, test=""):
+        # re-set envs for local run
+        env = _Environment.get()
+        env.JOB_NAME = job.name
+        env.dump()
+
+        # work around for old clickhouse jobs
+        try:
+            os.environ["DOCKER_TAG"] = json.dumps(
+                RunConfig.from_fs(workflow.name).digest_dockers
+            )
+        except Exception as e:
+            print(f"WARNING: Failed to set DOCKER_TAG, ex [{e}]")
+
         if param:
             if not isinstance(param, str):
                 Utils.raise_with_error(
                     f"Custom param for local tests must be of type str, got [{type(param)}]"
                 )
-            env = _Environment.get()
-            env.dump()
 
         if job.run_in_docker and not no_docker:
-            # TODO: add support for any image, including not from ci config (e.g. ubuntu:latest)
-            docker_tag = RunConfig.from_fs(workflow.name).digest_dockers[
-                job.run_in_docker
-            ]
-            docker = docker or f"{job.run_in_docker}:{docker_tag}"
-            cmd = f"docker run --rm --user \"$(id -u):$(id -g)\" -e PYTHONPATH='{Settings.DOCKER_WD}:{Settings.DOCKER_WD}/ci' --volume ./:{Settings.DOCKER_WD} --volume {Settings.TEMP_DIR}:{Settings.TEMP_DIR} --workdir={Settings.DOCKER_WD} {docker} {job.command}"
+            job.run_in_docker, docker_settings = (
+                job.run_in_docker.split("+")[0],
+                job.run_in_docker.split("+")[1:],
+            )
+            from_root = "root" in docker_settings
+            settings = [s for s in docker_settings if s.startswith("--")]
+            if ":" in job.run_in_docker:
+                docker_name, docker_tag = job.run_in_docker.split(":")
+                print(
+                    f"WARNING: Job [{job.name}] use custom docker image with a tag - praktika won't control docker version"
+                )
+            else:
+                docker_name, docker_tag = (
+                    job.run_in_docker,
+                    RunConfig.from_fs(workflow.name).digest_dockers[job.run_in_docker],
+                )
+            docker = docker or f"{docker_name}:{docker_tag}"
+            cmd = f"docker run --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONPATH='{Settings.DOCKER_WD}:{Settings.DOCKER_WD}/ci' --volume ./:{Settings.DOCKER_WD} --volume {Settings.TEMP_DIR}:{Settings.TEMP_DIR} --workdir={Settings.DOCKER_WD} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
+            python_path = os.getenv("PYTHONPATH", ":")
+            os.environ["PYTHONPATH"] = f".:{python_path}"
 
         if param:
             print(f"Custom --param [{param}] will be passed to job's script")
             cmd += f" --param {param}"
+        if test:
+            print(f"Custom --test [{test}] will be passed to job's script")
+            cmd += f" --test {test}"
         print(f"--- Run command [{cmd}]")
 
         with TeePopen(cmd, timeout=job.timeout) as process:
@@ -161,13 +207,15 @@ class Runner:
                             ResultInfo.TIMEOUT
                         )
                     elif result.is_running():
-                        info = f"ERROR: Job terminated with an error, exit code [{exit_code}]  - set status to [{Result.Status.ERROR}]"
+                        info = f"ERROR: Job killed, exit code [{exit_code}]  - set status to [{Result.Status.ERROR}]"
                         print(info)
                         result.set_status(Result.Status.ERROR).set_info(info)
+                        result.set_files([Settings.RUN_LOG])
                     else:
                         info = f"ERROR: Invalid status [{result.status}] for exit code [{exit_code}]  - switch to [{Result.Status.ERROR}]"
                         print(info)
                         result.set_status(Result.Status.ERROR).set_info(info)
+                        result.set_files([Settings.RUN_LOG])
             result.dump()
 
         return exit_code
@@ -219,12 +267,7 @@ class Runner:
             print(info)
             result.set_info(info).set_status(Result.Status.ERROR).dump()
 
-        result.set_files(files=[Settings.RUN_LOG])
         result.update_duration().dump()
-
-        if result.info and result.status != Result.Status.SUCCESS:
-            # provide job info to workflow level
-            info_errors.append(result.info)
 
         if run_exit_code == 0:
             providing_artifacts = []
@@ -244,10 +287,11 @@ class Runner:
                             f"ls -l {artifact.path}", verbose=True
                         ), f"Artifact {artifact.path} not found"
                         s3_path = f"{Settings.S3_ARTIFACT_PATH}/{env.get_s3_prefix()}/{Utils.normalize_string(env.JOB_NAME)}"
-                        link = S3.copy_file_to_s3(
-                            s3_path=s3_path, local_path=artifact.path
-                        )
-                        result.set_link(link)
+                        for file_path in glob.glob(artifact.path):
+                            link = S3.copy_file_to_s3(
+                                s3_path=s3_path, local_path=file_path
+                            )
+                            result.set_link(link)
                     except Exception as e:
                         error = (
                             f"ERROR: Failed to upload artifact [{artifact}], ex [{e}]"
@@ -285,14 +329,24 @@ class Runner:
         return True
 
     def run(
-        self, workflow, job, docker="", dummy_env=False, no_docker=False, param=None
+        self,
+        workflow,
+        job,
+        docker="",
+        local_run=False,
+        no_docker=False,
+        param=None,
+        test="",
+        pr=None,
+        sha=None,
+        branch=None,
     ):
         res = True
         setup_env_code = -10
         prerun_code = -10
         run_code = -10
 
-        if res and not dummy_env:
+        if res and not local_run:
             print(
                 f"\n\n=== Setup env script [{job.name}], workflow [{workflow.name}] ==="
             )
@@ -309,13 +363,15 @@ class Runner:
                 traceback.print_exc()
             print(f"=== Setup env finished ===\n\n")
         else:
-            self.generate_dummy_environment(workflow, job)
+            self.generate_local_run_environment(
+                workflow, job, pr=pr, branch=branch, sha=sha
+            )
 
-        if res and not dummy_env:
+        if res and (not local_run or pr or sha or branch):
             res = False
             print(f"=== Pre run script [{job.name}], workflow [{workflow.name}] ===")
             try:
-                prerun_code = self._pre_run(workflow, job)
+                prerun_code = self._pre_run(workflow, job, local_run=local_run)
                 res = prerun_code == 0
                 if not res:
                     print(f"ERROR: Pre-run failed with exit code [{prerun_code}]")
@@ -329,7 +385,12 @@ class Runner:
             print(f"=== Run script [{job.name}], workflow [{workflow.name}] ===")
             try:
                 run_code = self._run(
-                    workflow, job, docker=docker, no_docker=no_docker, param=param
+                    workflow,
+                    job,
+                    docker=docker,
+                    no_docker=no_docker,
+                    param=param,
+                    test=test,
                 )
                 res = run_code == 0
                 if not res:
@@ -339,7 +400,7 @@ class Runner:
                 traceback.print_exc()
             print(f"=== Run scrip finished ===\n\n")
 
-        if not dummy_env:
+        if not local_run:
             print(f"=== Post run script [{job.name}], workflow [{workflow.name}] ===")
             self._post_run(workflow, job, setup_env_code, prerun_code, run_code)
             print(f"=== Post run scrip finished ===")

@@ -58,6 +58,11 @@ struct ReadSettings
     bool enable_filesystem_cache_log = false;
     size_t filesystem_cache_segments_batch_size = 20;
     size_t filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
+    bool filesystem_cache_allow_background_download = true;
+    bool filesystem_cache_allow_background_download_for_metadata_files_in_packed_storage = true;
+    bool filesystem_cache_allow_background_download_during_fetch = true;
+    bool filesystem_cache_prefer_bigger_buffer_size = true;
+    std::optional<size_t> filesystem_cache_boundary_alignment;
 
     bool use_page_cache_for_disks_without_file_cache = false;
     bool read_from_page_cache_if_exists_otherwise_bypass_cache = false;
@@ -65,7 +70,7 @@ struct ReadSettings
     std::shared_ptr<PageCache> page_cache;
 
     size_t filesystem_cache_max_download_size = (128UL * 1024 * 1024 * 1024);
-    bool skip_download_if_exceeds_query_cache = true;
+    bool filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit = true;
 
     size_t remote_read_min_bytes_for_seek = DBMS_DEFAULT_BUFFER_SIZE;
 

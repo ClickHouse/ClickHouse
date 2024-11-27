@@ -277,6 +277,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::SYNC_REPLICA:
         case Type::WAIT_LOADING_PARTS:
         case Type::PREWARM_MARK_CACHE:
+        case Type::PREWARM_PRIMARY_INDEX_CACHE:
         {
             if (!parseQueryWithOnCluster(res, pos, expected))
                 return false;

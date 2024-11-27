@@ -24,11 +24,13 @@ void JSONEachRowWithProgressRowOutputFormat::onProgress(const Progress & value)
 {
     progress.incrementPiecewiseAtomically(value);
     String progress_line;
-    WriteBufferFromString buf(progress_line);
-    writeCString("{\"progress\":", buf);
-    progress.writeJSON(buf);
-    writeCString("}\n", buf);
-    buf.finalize();
+    {
+        WriteBufferFromString buf(progress_line);
+        writeCString("{\"progress\":", buf);
+        progress.writeJSON(buf);
+        writeCString("}\n", buf);
+    }
+
     std::lock_guard lock(progress_lines_mutex);
     progress_lines.emplace_back(std::move(progress_line));
     has_progress = true;

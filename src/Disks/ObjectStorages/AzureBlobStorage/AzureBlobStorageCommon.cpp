@@ -39,6 +39,7 @@ namespace Setting
     extern const SettingsUInt64 azure_sdk_max_retries;
     extern const SettingsUInt64 azure_sdk_retry_initial_backoff_ms;
     extern const SettingsUInt64 azure_sdk_retry_max_backoff_ms;
+    extern const SettingsBool azure_check_objects_after_upload;
 }
 
 namespace ErrorCodes
@@ -352,6 +353,7 @@ std::unique_ptr<RequestSettings> getRequestSettings(const Settings & query_setti
     settings->sdk_max_retries = query_settings[Setting::azure_sdk_max_retries];
     settings->sdk_retry_initial_backoff_ms = query_settings[Setting::azure_sdk_retry_initial_backoff_ms];
     settings->sdk_retry_max_backoff_ms = query_settings[Setting::azure_sdk_retry_max_backoff_ms];
+    settings->check_objects_after_upload = query_settings[Setting::azure_check_objects_after_upload];
 
     return settings;
 }
@@ -388,6 +390,8 @@ std::unique_ptr<RequestSettings> getRequestSettings(const Poco::Util::AbstractCo
     settings->sdk_max_retries = config.getUInt64(config_prefix + ".max_tries", settings_ref[Setting::azure_sdk_max_retries]);
     settings->sdk_retry_initial_backoff_ms = config.getUInt64(config_prefix + ".retry_initial_backoff_ms", settings_ref[Setting::azure_sdk_retry_initial_backoff_ms]);
     settings->sdk_retry_max_backoff_ms = config.getUInt64(config_prefix + ".retry_max_backoff_ms", settings_ref[Setting::azure_sdk_retry_max_backoff_ms]);
+
+    settings->check_objects_after_upload = config.getBool(config_prefix + ".check_objects_after_upload", settings_ref[Setting::azure_check_objects_after_upload]);
 
     if (config.has(config_prefix + ".curl_ip_resolve"))
     {
