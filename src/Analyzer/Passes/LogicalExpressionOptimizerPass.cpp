@@ -325,31 +325,36 @@ std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressions(cons
         if (auto it = flattened_ands.find(or_argument); it != flattened_ands.end())
             or_argument = it->second;
 
-        auto & and_node = or_argument->as<FunctionNode &>();
-        auto & and_arguments = and_node.getArguments().getNodes();
-        and_arguments.erase(
-            std::remove_if(
-                and_arguments.begin(),
-                and_arguments.end(),
-                [&common_exprs_set](const QueryTreeNodePtr & ptr) { return common_exprs_set.contains(ptr); }),
-            and_arguments.end());
+        // Avoid changing the original tree, it might be used later
+        const auto & and_node = or_argument->as<FunctionNode &>();
+        const auto & and_arguments = and_node.getArguments().getNodes();
 
-        if (and_arguments.empty())
+        QueryTreeNodes filtered_and_arguments;
+        filtered_and_arguments.reserve(and_arguments.size());
+        std::copy_if(
+            and_arguments.begin(),
+            and_arguments.end(),
+            std::back_inserter(filtered_and_arguments),
+            [&common_exprs_set](const QueryTreeNodePtr & ptr) { return !common_exprs_set.contains(ptr); });
+
+        if (filtered_and_arguments.empty())
         {
             has_completely_extracted_and_expression = true;
             // As we will discard new_or_arguments, no need for further processing
             break;
         }
-        else if (and_arguments.size() == 1)
+        else if (filtered_and_arguments.size() == 1)
         {
-            insertIfNotPresentInSet(new_or_arguments_set, new_or_arguments, and_arguments.front());
+            insertIfNotPresentInSet(new_or_arguments_set, new_or_arguments, std::move( filtered_and_arguments.front()));
         }
         else
         {
+            auto new_and_node = std::make_shared<FunctionNode>("and");
+            new_and_node->getArguments().getNodes() = std::move(filtered_and_arguments);
             auto and_function_resolver = FunctionFactory::instance().get("and", context);
-            and_node.resolveAsFunction(and_function_resolver);
+            new_and_node->resolveAsFunction(and_function_resolver);
 
-            insertIfNotPresentInSet(new_or_arguments_set, new_or_arguments, or_argument);
+            insertIfNotPresentInSet(new_or_arguments_set, new_or_arguments, std::move(new_and_node));
         }
     }
 
@@ -375,25 +380,35 @@ void tryOptimizeCommonExpressionsInOr(QueryTreeNodePtr & node, const ContextPtr 
     auto * root_node = node->as<FunctionNode>();
     chassert(root_node && root_node->getFunctionName() == "or");
 
+    QueryTreeNodePtr new_root_node{};
+
     if (auto maybe_result = tryExtractCommonExpressions(node, context); maybe_result.has_value())
     {
         auto & result = *maybe_result;
-        auto & root_arguments = root_node->getArguments().getNodes();
-        root_arguments = std::move(result.common_expressions);
+        QueryTreeNodes new_root_arguments = std::move(result.common_expressions);
         if (result.new_node != nullptr)
-            root_arguments.push_back(std::move(result.new_node));
+            new_root_arguments.push_back(std::move(result.new_node));
 
-        if (root_arguments.size() == 1)
+        if (new_root_arguments.size() == 1)
         {
-            node = std::move(root_arguments[0]);
-            return;
+            new_root_node = std::move(new_root_arguments.front());
         }
-
-        // The OR expression must be replaced by and AND expression that will contain the common expressions
-        // and the new_node, if it is not nullptr.
-        auto and_function_resolver = FunctionFactory::instance().get("and", context);
-        root_node->resolveAsFunction(and_function_resolver);
+        else
+        {
+            // The OR expression must be replaced by and AND expression that will contain the common expressions
+            // and the new_node, if it is not nullptr.
+            auto new_function_node = std::make_shared<FunctionNode>("and");
+            new_function_node->getArguments().getNodes() = std::move(new_root_arguments);
+            auto and_function_resolver = FunctionFactory::instance().get("and", context);
+            new_function_node->resolveAsFunction(and_function_resolver);
+            new_root_node = std::move(new_function_node);
+        }
     }
+
+    // As only equivalent transformations are done on logical expressions (deduplication/flattening/elimination) (in other words we don't modify the values in (in)equalities),
+    // we can be sure the result type always remains convertible to UInt8 or Nullable(UInt8). We shouldn't change the nullability of the expression though.
+    if (new_root_node != nullptr && new_root_node->getResultType()->isNullable() == node->getResultType()->isNullable())
+        node = std::move(new_root_node);
 }
 
 void tryOptimizeCommonExpressionsInAnd(QueryTreeNodePtr & node, const ContextPtr & context)
@@ -409,7 +424,6 @@ void tryOptimizeCommonExpressionsInAnd(QueryTreeNodePtr & node, const ContextPtr
         insertIfNotPresentInSet(new_top_level_arguments_set, new_top_level_arguments, std::move(node_to_insert));
     };
     auto extracted_something = false;
-    auto & root_arguments = root_node->getArguments();
 
     for (const auto & argument : root_node->getArguments())
     {
@@ -431,10 +445,15 @@ void tryOptimizeCommonExpressionsInAnd(QueryTreeNodePtr & node, const ContextPtr
     if (!extracted_something)
         return;
 
-    root_arguments.getNodes() = std::move(new_top_level_arguments);
-
+    auto new_root_node = std::make_shared<FunctionNode>("and");
+    new_root_node->getArguments().getNodes() = std::move(new_top_level_arguments);
     auto and_function_resolver = FunctionFactory::instance().get("and", context);
-    root_node->resolveAsFunction(and_function_resolver);
+    new_root_node->resolveAsFunction(and_function_resolver);
+
+    // As only equivalent transformations are done on logical expressions (deduplication/flattening/elimination) (in other words we don't modify the values in (in)equalities),
+    // we can be sure the result type always remains convertible to UInt8 or Nullable(UInt8). We shouldn't change the nullability of the expression though.
+    if (new_root_node != nullptr && new_root_node->getResultType()->isNullable() == node->getResultType()->isNullable())
+        node = std::move(new_root_node);
 }
 
 void tryOptimizeCommonExpressions(QueryTreeNodePtr & node, FunctionNode& function_node, const ContextPtr & context)

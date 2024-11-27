@@ -744,6 +744,36 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 3, alias: __table1, table_name: default.x
   WHERE
+    FUNCTION id: 4, function_name: or, function_type: ordinary, result_type: Nullable(UInt8)
+      ARGUMENTS
+        LIST id: 5, nodes: 2
+          FUNCTION id: 6, function_name: and, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 7, nodes: 2
+                COLUMN id: 8, column_name: B, result_type: UInt8, source_id: 3
+                COLUMN id: 9, column_name: C, result_type: UInt8, source_id: 3
+          FUNCTION id: 10, function_name: and, function_type: ordinary, result_type: Nullable(UInt8)
+            ARGUMENTS
+              LIST id: 11, nodes: 3
+                COLUMN id: 8, column_name: B, result_type: UInt8, source_id: 3
+                COLUMN id: 9, column_name: C, result_type: UInt8, source_id: 3
+                FUNCTION id: 12, function_name: toNullable, function_type: ordinary, result_type: Nullable(UInt8)
+                  ARGUMENTS
+                    LIST id: 13, nodes: 1
+                      COLUMN id: 14, column_name: F, result_type: UInt8, source_id: 3
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE (__table1.B AND __table1.C) OR (__table1.B AND __table1.C AND toNullable(__table1.F))
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.x
+  WHERE
     FUNCTION id: 4, function_name: or, function_type: ordinary, result_type: UInt8
       ARGUMENTS
         LIST id: 5, nodes: 2

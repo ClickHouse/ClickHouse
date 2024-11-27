@@ -74,6 +74,10 @@ SELECT * FROM x WHERE ((A AND B AND C) OR (A AND B AND D)) AND ((B AND A AND E) 
 SELECT * FROM x WHERE ((A AND B AND C) OR (A AND B AND D)) AND ((B AND A AND E) OR (B AND A AND F)) ORDER BY A, B, C, D, E, F LIMIT 10;
 EXPLAIN QUERY TREE dump_ast = 1 SELECT count() FROM x WHERE ((A AND B AND C) OR (A AND B AND D)) AND ((B AND A AND E) OR (B AND A AND F));
 
+
+-- Optimization is not applied if the result type would change in nullability, thus `toNullable(F)` cannot be eliminated
+EXPLAIN QUERY TREE dump_ast = 1 SELECT count() FROM x WHERE ((B AND C) OR (B AND C AND toNullable(F)));
+
 -- Check that optimization only happen on top level, (C AND D) OR (C AND E) shouldn't be optimized
 EXPLAIN QUERY TREE dump_ast = 1 SELECT count() FROM x WHERE A OR (B AND ((C AND D) OR (C AND E)));
 
