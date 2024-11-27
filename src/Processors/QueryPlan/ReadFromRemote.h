@@ -3,6 +3,7 @@
 #include <Core/QueryProcessingStage.h>
 #include <Client/IConnections.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/IStorageCluster.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Core/UUID.h>
@@ -34,7 +35,8 @@ public:
         LoggerPtr log_,
         UInt32 shard_count_,
         std::shared_ptr<const StorageLimitsList> storage_limits_,
-        const String & cluster_name_);
+        const String & cluster_name_,
+        std::shared_ptr<IStorageCluster> storage_cluster_);
 
     String getName() const override { return "ReadFromRemote"; }
 
@@ -57,6 +59,7 @@ private:
     UInt32 shard_count;
     const String cluster_name;
     std::optional<GetPriorityForLoadBalancing> priority_func_factory;
+    std::shared_ptr<IStorageCluster> storage_cluster;
 
     void addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard);
     void addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard);

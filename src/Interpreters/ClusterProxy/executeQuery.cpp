@@ -9,6 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/JoinedTables.h>
 #include <Interpreters/OptimizeShardingKeyRewriteInVisitor.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
@@ -425,6 +426,22 @@ void executeQuery(
             "_shard_count", Block{{DataTypeUInt32().createColumnConst(1, shards), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
         auto external_tables = context->getExternalTables();
 
+        std::shared_ptr<IStorageCluster> storage = nullptr;
+        {
+            auto & select_query = query_info.query->as<ASTSelectQuery &>();
+
+            StoragePtr src_storage;
+
+            JoinedTables joined_tables(Context::createCopy(context), select_query);
+
+            if (joined_tables.tablesCount() == 1)
+            {
+                src_storage = joined_tables.getLeftTableStorage();
+
+                storage = std::dynamic_pointer_cast<IStorageCluster>(src_storage);
+            }
+        }
+
         auto plan = std::make_unique<QueryPlan>();
         auto read_from_remote = std::make_unique<ReadFromRemote>(
             std::move(remote_shards),
@@ -439,7 +456,8 @@ void executeQuery(
             log,
             shards,
             query_info.storage_limits,
-            not_optimized_cluster->getName());
+            not_optimized_cluster->getName(),
+            storage);
 
         read_from_remote->setStepDescription("Read from remote replica");
         plan->addStep(std::move(read_from_remote));
