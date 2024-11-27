@@ -14,12 +14,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
-#include <filesystem>
 #include <base/FnTraits.h>
-
 #include <Disks/IDisk.h>
-
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -223,14 +219,15 @@ bool MaterializeMetadata::checkBinlogFileExists(const mysqlxx::PoolWithFailover:
 
 void commitMetadata(Fn<void()> auto && function, const String & persistent_tmp_path, const String & persistent_path)
 {
+    auto db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
     try
     {
         function();
-        fs::rename(persistent_tmp_path, persistent_path);
+        db_disk->replaceFile(persistent_tmp_path, persistent_path);
     }
     catch (...)
     {
-        (void)fs::remove(persistent_tmp_path);
+        (void)db_disk->removeFileIfExists(persistent_tmp_path);
         throw;
     }
 }

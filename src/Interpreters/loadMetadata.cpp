@@ -296,6 +296,7 @@ static void loadSystemDatabaseImpl(ContextMutablePtr context, const String & dat
 
     String database_name_escaped = escapeForFileName(database_name);
     auto metadata_dir_path = fs::path("metadata");
+    auto database_dir_path = metadata_dir_path / database_name_escaped;
     auto metadata_file = metadata_dir_path / (database_name_escaped + ".sql");
     auto metadata_file_tmp = metadata_dir_path / (database_name_escaped + ".sql" + ".tmp");
     db_disk->removeFileIfExists(metadata_file_tmp);
@@ -307,7 +308,7 @@ static void loadSystemDatabaseImpl(ContextMutablePtr context, const String & dat
     if (db_disk->existsFile(fs::path(metadata_file)))
     {
         /// 'has_force_restore_data_flag' is true, to not fail on loading query_log table, if it is corrupted.
-        loadDatabase(context, database_name, metadata_dir_path, true);
+        loadDatabase(context, database_name, database_dir_path, true);
     }
     else
     {

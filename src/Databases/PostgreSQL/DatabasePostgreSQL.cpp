@@ -25,7 +25,7 @@
 #include <Core/Settings.h>
 #include <filesystem>
 
-
+#include <Disks/IDisk.h>
 namespace fs = std::filesystem;
 
 namespace DB
@@ -70,7 +70,8 @@ DatabasePostgreSQL::DatabasePostgreSQL(
     , cache_tables(cache_tables_)
     , log(getLogger("DatabasePostgreSQL(" + dbname_ + ")"))
 {
-    fs::create_directories(metadata_path);
+    auto db_disk = getContext()->getDatabaseDisk();
+    db_disk->createDirectories(metadata_path);
     cleaner_task = getContext()->getSchedulePool().createTask("PostgreSQLCleanerTask", [this]{ removeOutdatedTables(); });
     cleaner_task->deactivate();
 }
@@ -251,8 +252,8 @@ void DatabasePostgreSQL::attachTable(ContextPtr /* context_ */, const String & t
     detached_or_dropped.erase(table_name);
 
     fs::path table_marked_as_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
-    if (fs::exists(table_marked_as_removed))
-        (void)fs::remove(table_marked_as_removed);
+    auto db_disk = getContext()->getDatabaseDisk();
+    db_disk->removeFileIfExists(table_marked_as_removed);
 }
 
 
@@ -309,7 +310,8 @@ void DatabasePostgreSQL::dropTable(ContextPtr, const String & table_name, bool /
 
 void DatabasePostgreSQL::drop(ContextPtr /*context*/)
 {
-    (void)fs::remove_all(getMetadataPath());
+    auto db_disk = getContext()->getDatabaseDisk();
+    (void)db_disk->removeRecursive(getMetadataPath());
 }
 
 
@@ -317,14 +319,17 @@ void DatabasePostgreSQL::loadStoredObjects(ContextMutablePtr /* context */, Load
 {
     {
         std::lock_guard lock{mutex};
-        fs::directory_iterator iter(getMetadataPath());
-
+        auto db_disk = getContext()->getDatabaseDisk();
         /// Check for previously dropped tables
-        for (fs::directory_iterator end; iter != end; ++iter)
+        for (const auto it = db_disk->iterateDirectory(getMetadataPath()); it->isValid(); it->next())
         {
-            if (fs::is_regular_file(iter->path()) && endsWith(iter->path().filename(), suffix))
+            auto path = fs::path(it->path());
+            if (path.filename().empty())
+                path = path.parent_path();
+
+            if (db_disk->existsFile(path) && endsWith(path.filename(), suffix))
             {
-                const auto & file_name = iter->path().filename().string();
+                const auto & file_name = path.filename().string();
                 const auto & table_name = unescapeForFileName(file_name.substr(0, file_name.size() - strlen(suffix)));
                 detached_or_dropped.emplace(table_name);
             }
@@ -371,6 +376,7 @@ void DatabasePostgreSQL::removeOutdatedTables()
         }
     }
 
+    auto db_disk = getContext()->getDatabaseDisk();
     for (auto iter = detached_or_dropped.begin(); iter != detached_or_dropped.end();)
     {
         if (!actual_tables.contains(*iter))
@@ -378,8 +384,7 @@ void DatabasePostgreSQL::removeOutdatedTables()
             auto table_name = *iter;
             iter = detached_or_dropped.erase(iter);
             fs::path table_marked_as_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
-            if (fs::exists(table_marked_as_removed))
-                (void)fs::remove(table_marked_as_removed);
+            db_disk->removeFileIfExists(table_marked_as_removed);
         }
         else
             ++iter;

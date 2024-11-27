@@ -60,7 +60,7 @@ mv_metadata_path=$(${CLICKHOUSE_CLIENT} -q "SELECT metadata_path FROM system.tab
 ${CLICKHOUSE_CLIENT} -q "DETACH TABLE mv"
 
 #cat $mv_metadata_path
-sed -i -e 's/`timestamp` DateTime,/`timestamp` DateTime64(9),/g' -e 's/`c12` Nullable(String)/`c12` String/g' "$mv_metadata_path"
+sed -i -e 's/`timestamp` DateTime,/`timestamp` DateTime64(9),/g' -e 's/`c12` Nullable(String)/`c12` String/g' "/var/lib/clickhouse/$mv_metadata_path"
 #cat $mv_metadata_path
 
 ${CLICKHOUSE_CLIENT} -q "ATTACH TABLE mv"
