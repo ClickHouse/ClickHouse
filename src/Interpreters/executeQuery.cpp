@@ -369,7 +369,7 @@ QueryLogElement logQueryStart(
         else if (settings.log_queries_min_query_duration_ms.totalMilliseconds())
         {
             if (settings.log_queries_min_query_duration_ms.changed)
-                LOG_DEBUG(
+                LOG_TRACE(
                     getLogger("executeQuery"),
                     "Query start record will not be added to query_log due to `log_queries_min_query_duration_ms` > 0."
                     " The setting has been changed for the query");
