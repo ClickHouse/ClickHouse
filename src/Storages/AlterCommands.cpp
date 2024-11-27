@@ -586,42 +586,46 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     }
     else if (type == DROP_COLUMN)
     {
-        auto column = metadata.columns.get(column_name);
-        //Remove secondary index for new column if enable_minmax_index_for_all_numeric_columns is enabled
-        if (isNumber(column.type) && metadata.settings_changes
-            && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("enable_minmax_index_for_all_numeric_columns"))
+        auto column = metadata.columns.tryGet(column_name);
+        if (column)
         {
-            for (auto index_iterator = metadata.secondary_indices.begin();
-                 index_iterator != metadata.secondary_indices.end();)
+            if (isNumber(column->type) && metadata.settings_changes
+                && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet(
+                    "enable_minmax_index_for_all_numeric_columns"))
             {
-                if (index_iterator->name == "_index_n_"+column_name)
+                for (auto index_iterator = metadata.secondary_indices.begin();
+                     index_iterator != metadata.secondary_indices.end();)
                 {
-                    index_iterator = metadata.secondary_indices.erase(index_iterator);
-                    break;
+                    if (index_iterator->name == "_index_n_" + column_name)
+                    {
+                        index_iterator = metadata.secondary_indices.erase(index_iterator);
+                        break;
+                    }
+                    else
+                        ++index_iterator;
                 }
-                else
-                    ++index_iterator;
             }
-        }
-        else if (isString(column.type) && metadata.settings_changes
-                 && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("enable_minmax_index_for_all_string_columns"))
-        {
-            for (auto index_iterator = metadata.secondary_indices.begin();
-                 index_iterator != metadata.secondary_indices.end();)
+            else if (isString(column->type) && metadata.settings_changes
+                       && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet(
+                    "enable_minmax_index_for_all_string_columns"))
             {
-                if (index_iterator->name == "_index_s_"+column_name)
+                for (auto index_iterator = metadata.secondary_indices.begin();
+                     index_iterator != metadata.secondary_indices.end();)
                 {
-                    index_iterator = metadata.secondary_indices.erase(index_iterator);
-                    break;
+                    if (index_iterator->name == "_index_s_" + column_name)
+                    {
+                        index_iterator = metadata.secondary_indices.erase(index_iterator);
+                        break;
+                    }
+                    else
+                        ++index_iterator;
                 }
-                else
-                    ++index_iterator;
             }
-        }
 
-        /// Otherwise just clear data on disk
-        if (!clear && !partition)
-            metadata.columns.remove(column_name);
+            /// Otherwise just clear data on disk
+            if (!clear && !partition)
+                metadata.columns.remove(column_name);
+        }
 
     }
     else if (type == MODIFY_COLUMN)
