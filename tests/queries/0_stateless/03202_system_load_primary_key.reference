@@ -1,14 +1,14 @@
-tab1    0    0
-tab2    0    0
-tab1    0    0
-tab2    0    0
-tab1    10000000    10000000  -- Expected non-zero memory after loading primary keys
-tab2    10000000    10000000
-tab1    0    0
-tab2    0    0
-1    a
-2    b
-3    c
-1    x
-2    y
-3    z
+tab1	0	0
+tab2	0	0
+tab1	1	1
+tab2	1	1
+tab1	1	1
+tab2	1	1
+tab1	1	1
+tab2	0	0
+1	a
+2	b
+3	c
+1	x
+2	y
+3	z

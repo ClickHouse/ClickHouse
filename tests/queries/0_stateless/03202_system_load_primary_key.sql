@@ -16,8 +16,8 @@ INSERT INTO tab2 VALUES (1, 'x'), (2, 'y'), (3, 'z');
 -- Check primary key memory before loading (this checks if it's not loaded yet) for both tables
 SELECT
     table,
-    round(primary_key_bytes_in_memory, -7),
-    round(primary_key_bytes_in_memory_allocated, -7)
+    primary_key_bytes_in_memory == 0,
+    primary_key_bytes_in_memory_allocated == 0
 FROM system.parts
 WHERE
     database = currentDatabase()
@@ -31,8 +31,8 @@ SYSTEM LOAD PRIMARY KEY;
 -- Ensure .reference file has non-zero values here to reflect expected primary key loading
 SELECT
     table,
-    round(primary_key_bytes_in_memory, -7),
-    round(primary_key_bytes_in_memory_allocated, -7)
+    primary_key_bytes_in_memory > 0,
+    primary_key_bytes_in_memory_allocated > 0
 FROM system.parts
 WHERE
     database = currentDatabase()
@@ -45,8 +45,8 @@ SYSTEM UNLOAD PRIMARY KEY;
 -- Verify primary key memory after unloading for both tables
 SELECT
     table,
-    round(primary_key_bytes_in_memory, -7),
-    round(primary_key_bytes_in_memory_allocated, -7)
+    primary_key_bytes_in_memory == 0,
+    primary_key_bytes_in_memory_allocated == 0
 FROM system.parts
 WHERE
     database = currentDatabase()
@@ -59,8 +59,8 @@ SYSTEM LOAD PRIMARY KEY tab1;
 -- Verify that only one table's primary key is loaded
 SELECT
     table,
-    round(primary_key_bytes_in_memory, -7),
-    round(primary_key_bytes_in_memory_allocated, -7)
+    primary_key_bytes_in_memory > 0,
+    primary_key_bytes_in_memory_allocated > 0
 FROM system.parts
 WHERE
     database = currentDatabase()
