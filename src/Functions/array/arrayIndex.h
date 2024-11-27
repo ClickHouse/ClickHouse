@@ -948,7 +948,7 @@ private:
 
         if (isColumnConst(*item_arg))
         {
-            ResultType current;
+            ResultType current = 0;
             const auto & value = (*item_arg)[0];
             if constexpr (std::is_same_v<ConcreteAction, IndexOfAssumeSorted>) {
                 current = Impl::Main<ConcreteAction, true>::lowerBound(arr, value, arr.size(), 0);
