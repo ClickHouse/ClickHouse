@@ -97,18 +97,17 @@ result=$(${CLICKHOUSE_CLIENT} -q "
 }
 
 # Function to URL-encode the query string
-function url_encode() {
+function url_encode()
+{
     local raw_str="$1"
     printf "%s" "$raw_str" | xxd -p | tr -d '\n' | sed 's/\(..\)/%\1/g'
 }
 
 # Function to execute HTTP query
-function execute_query_HTTP() {
-    local PROTOCOL="http"
-    local HTTP_URL="${PROTOCOL}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/?database=${CLICKHOUSE_DATABASE}"
-    local encoded_query=$(url_encode "$2")
-    local encoded_query_id=$(url_encode "$1")
-    local generated_url="${HTTP_URL}&opentelemetry_start_trace_probability=1&query_id=${encoded_query_id}&query=${encoded_query}"
+function execute_query_HTTP()
+{
+    local HTTP_URL="http://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/?database=${CLICKHOUSE_DATABASE}"
+    local generated_url="${HTTP_URL}&opentelemetry_start_trace_probability=1&query_id=$(url_encode "$1")&query=$(url_encode "$2")"
     ${CLICKHOUSE_CURL} -sS "$generated_url"
 }
 
