@@ -42,7 +42,7 @@ static bool checkCanAddAdditionalInfoToException(const DB::Exception & exception
            && exception.code() != ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT;
 }
 
-static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_progress_callback)
+static bool executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_progress_callback)
 {
     try
     {
@@ -62,7 +62,7 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
                     read_progress_callback->addTotalBytes(read_progress->counters.total_bytes);
 
                 if (!read_progress_callback->onProgress(read_progress->counters.read_rows, read_progress->counters.read_bytes, read_progress->limits))
-                    node->processor->cancel();
+                    return false;
             }
         }
     }
@@ -73,6 +73,7 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
             exception.addMessage("While executing " + node->processor->getName());
         throw exception;
     }
+    return true;
 }
 
 bool ExecutionThreadContext::executeTask()
@@ -93,9 +94,10 @@ bool ExecutionThreadContext::executeTask()
         execution_time_watch.emplace();
 #endif
 
+    bool ok = false;
     try
     {
-        executeJob(node, read_progress_callback);
+        ok = executeJob(node, read_progress_callback);
         ++node->num_executed_jobs;
     }
     catch (...)
@@ -115,7 +117,7 @@ bool ExecutionThreadContext::executeTask()
     if (trace_processors)
         span->addAttribute("execution_time_ns", execution_time_watch->elapsed());
 #endif
-    return node->exception == nullptr;
+    return ok;
 }
 
 void ExecutionThreadContext::rethrowExceptionIfHas()
