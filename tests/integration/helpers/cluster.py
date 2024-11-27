@@ -19,6 +19,7 @@ import urllib.parse
 import shlex
 import urllib3
 import requests
+from typing import List
 
 try:
     # Please, add modules that required for specific tests only here.
