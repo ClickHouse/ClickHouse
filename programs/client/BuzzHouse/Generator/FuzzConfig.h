@@ -52,28 +52,9 @@ public:
     }
 
     ServerCredentials(const ServerCredentials & c) = default;
-    ServerCredentials(ServerCredentials && c) noexcept
-    {
-        this->hostname = c.hostname;
-        this->port = c.port;
-        this->user = c.user;
-        this->unix_socket = c.unix_socket;
-        this->password = c.password;
-        this->database = c.database;
-        this->query_log_file = c.query_log_file;
-    }
+    ServerCredentials(ServerCredentials && c) = default;
     ServerCredentials & operator=(const ServerCredentials & c) = default;
-    ServerCredentials & operator=(ServerCredentials && c) noexcept
-    {
-        this->hostname = c.hostname;
-        this->port = c.port;
-        this->user = c.user;
-        this->unix_socket = c.unix_socket;
-        this->password = c.password;
-        this->database = c.database;
-        this->query_log_file = c.query_log_file;
-        return *this;
-    }
+    ServerCredentials & operator=(ServerCredentials && c) = default;
 };
 
 static ServerCredentials
