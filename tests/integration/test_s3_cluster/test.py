@@ -360,7 +360,7 @@ def test_parallel_distributed_insert_select_with_schema_inference(started_cluste
     node.query(
         """
     CREATE TABLE parallel_insert_select ON CLUSTER 'first_shard' (a String, b UInt64)
-    ENGINE=ReplicatedMergeTree('/clickhouse/tables/{shard}/insert_select_with_replicated', '{replica}')
+    ENGINE=ReplicatedMergeTree('/clickhouse/tables/{shard}/parallel_insert_select', '{replica}')
     ORDER BY (a, b);
         """
     )
@@ -508,3 +508,57 @@ def test_cluster_default_expression(started_cluster):
     )
 
     assert result == expected_result
+
+
+def test_remote_hedged(started_cluster):
+    node = started_cluster.instances["s0_0_0"]
+    pure_s3 = node.query(
+        """
+    SELECT * from s3(
+        'http://minio1:9001/root/data/{clickhouse,database}/*',
+        'minio', 'minio123', 'CSV',
+        'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
+    ORDER BY (name, value, polygon)
+    LIMIT 1
+        """
+    )
+    s3_distributed = node.query(
+        """
+    SELECT * from remote('s0_0_1', s3Cluster(
+        'cluster_simple',
+        'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV',
+        'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))'))
+    ORDER BY (name, value, polygon)
+    LIMIT 1
+    SETTINGS use_hedged_requests=True
+        """
+    )
+
+    assert TSV(pure_s3) == TSV(s3_distributed)
+
+
+def test_remote_no_hedged(started_cluster):
+    node = started_cluster.instances["s0_0_0"]
+    pure_s3 = node.query(
+        """
+    SELECT * from s3(
+        'http://minio1:9001/root/data/{clickhouse,database}/*',
+        'minio', 'minio123', 'CSV',
+        'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
+    ORDER BY (name, value, polygon)
+    LIMIT 1
+        """
+    )
+    s3_distributed = node.query(
+        """
+    SELECT * from remote('s0_0_1', s3Cluster(
+        'cluster_simple',
+        'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV',
+        'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))'))
+    ORDER BY (name, value, polygon)
+    LIMIT 1
+    SETTINGS use_hedged_requests=False
+        """
+    )
+
+    assert TSV(pure_s3) == TSV(s3_distributed)
