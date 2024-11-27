@@ -61,23 +61,22 @@ def test_mark_segment_size_communicated_correctly(
     start_cluster, local_plan, index_analysis_only_on_coordinator
 ):
 
-    for local_plan in [0, 1]:
-        query_id = f"query_id_{str(uuid.uuid4())}"
-        nodes[0].query(
-            f"SELECT sum(value) FROM {table_name}",
-            settings={
-                "allow_experimental_parallel_reading_from_replicas": 2,
-                "max_parallel_replicas": 100,
-                "cluster_for_parallel_replicas": "parallel_replicas",
-                "parallel_replicas_mark_segment_size": 0,
-                "parallel_replicas_local_plan": local_plan,
-                "query_id": query_id,
-                "parallel_replicas_index_analysis_only_on_coordinator": index_analysis_only_on_coordinator,
-            },
-        )
+    query_id = f"query_id_{str(uuid.uuid4())}"
+    nodes[0].query(
+        f"SELECT sum(value) FROM {table_name}",
+        settings={
+            "allow_experimental_parallel_reading_from_replicas": 2,
+            "max_parallel_replicas": 100,
+            "cluster_for_parallel_replicas": "parallel_replicas",
+            "parallel_replicas_mark_segment_size": 0,
+            "parallel_replicas_local_plan": local_plan,
+            "query_id": query_id,
+            "parallel_replicas_index_analysis_only_on_coordinator": index_analysis_only_on_coordinator,
+        },
+    )
 
-        nodes[0].query("SYSTEM FLUSH LOGS")
-        log_line = nodes[0].grep_in_log(
-            f"{query_id}.*Reading state is fully initialized"
-        )
-        assert re.search(r"mark_segment_size: (\d+)", log_line).group(1) == "16384"
+    nodes[0].query("SYSTEM FLUSH LOGS")
+    log_line = nodes[0].grep_in_log(
+        f"{query_id}.*Reading state is fully initialized"
+    )
+    assert re.search(r"mark_segment_size: (\d+)", log_line).group(1) == "16384"
