@@ -133,14 +133,11 @@ def main():
         stop_watch_ = Utils.Stopwatch()
         step_name = "Start ClickHouse Server"
         print(step_name)
-        hdfs_log = "/tmp/praktika/output/hdfs_mini.log"
         minio_log = "/tmp/praktika/output/minio.log"
-        res = res and CH.start_hdfs(log_file_path=hdfs_log)
         res = res and CH.start_minio(test_type="stateless", log_file_path=minio_log)
-        logs_to_attach += [minio_log, hdfs_log]
+        logs_to_attach += [minio_log]
         time.sleep(10)
         Shell.check("ps -ef | grep minio", verbose=True)
-        Shell.check("ps -ef | grep hdfs", verbose=True)
         res = res and Shell.check(
             "aws s3 ls s3://test --endpoint-url http://localhost:11111/", verbose=True
         )

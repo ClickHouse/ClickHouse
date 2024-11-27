@@ -109,12 +109,6 @@ ENV HOME="/home"
 ENV TEMP_DIR="/tmp/praktika"
 ENV PATH="/wd/tests:/tmp/praktika/input:$PATH"
 
-RUN curl -L --no-verbose -O 'https://archive.apache.org/dist/hadoop/common/hadoop-3.3.1/hadoop-3.3.1.tar.gz' \
-    && tar -xvf hadoop-3.3.1.tar.gz \
-    && rm -rf hadoop-3.3.1.tar.gz \
-    && chmod 777 /hadoop-3.3.1
-
-
 RUN npm install -g azurite@3.30.0 \
     && npm install -g tslib && npm install -g node
 

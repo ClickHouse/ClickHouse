@@ -668,8 +668,23 @@ class ResultTranslator:
                 f"No test result file [{cls.GTEST_RESULT_FILE}]",
             )
 
-        with open(cls.GTEST_RESULT_FILE, "r", encoding="utf-8") as j:
-            report = json.load(j)
+        try:
+            with open(cls.GTEST_RESULT_FILE, "r", encoding="utf-8") as j:
+                report = json.load(j)
+        except Exception as e:
+            print(f"ERROR: failed to read json [{e}]")
+            return (
+                Result.Status.ERROR,
+                [
+                    Result(
+                        name="Parsing Error",
+                        status=Result.Status.ERROR,
+                        files=[cls.GTEST_RESULT_FILE],
+                        info=str(e)
+                    )
+                ],
+                "ERROR: failed to read gtest json",
+            )
 
         total_counter = report["tests"]
         failed_counter = report["failures"]
@@ -715,7 +730,7 @@ class ResultTranslator:
                 )
 
         check_status = Result.Status.SUCCESS
-        tests_status = Result.Status.SUCCESS
+        test_status = Result.Status.SUCCESS
         tests_time = float(report["time"][:-1])
         if failed_counter:
             check_status = Result.Status.FAILED
@@ -723,7 +738,7 @@ class ResultTranslator:
         if error_counter:
             check_status = Result.Status.ERROR
             test_status = Result.Status.ERROR
-        test_results.append(Result(report["name"], tests_status, duration=tests_time))
+        test_results.append(Result(report["name"], test_status, duration=tests_time))
 
         if not description:
             description += (

@@ -780,11 +780,11 @@ jobs:
             python3 -m praktika run "Stateless tests (arm_asan,non-parallel)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
           fi
 
-  stateful_tests_amd_releaseparallel:
-    runs-on: [builder]
-    needs: [config_workflow, docker_builds, build_amd_debug]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVmdWwgdGVzdHMgKGFtZF9yZWxlYXNlLHBhcmFsbGVsKQ==') }}
-    name: "Stateful tests (amd_release,parallel)"
+  stateful_tests_arm_release:
+    runs-on: [func-tester-aarch64]
+    needs: [config_workflow, docker_builds, build_arm_release]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVmdWwgdGVzdHMgKGFybV9yZWxlYXNlKQ==') }}
+    name: "Stateful tests (arm_release)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -815,9 +815,209 @@ jobs:
           . /tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Stateful tests (amd_release,parallel)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Stateful tests (arm_release)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
           else
-            python3 -m praktika run "Stateful tests (amd_release,parallel)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Stateful tests (arm_release)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+          fi
+
+  stateful_tests_amd_asan:
+    runs-on: [func-tester]
+    needs: [config_workflow, docker_builds, build_amd_asan]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVmdWwgdGVzdHMgKGFtZF9hc2FuKQ==') }}
+    name: "Stateful tests (amd_asan)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+            ref: ${{ github.head_ref }}
+
+      - name: Prepare env script
+        run: |
+          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.
+
+          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
+          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
+
+      - name: Run
+        id: run
+        run: |
+          . /tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run "Stateful tests (amd_asan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+          else
+            python3 -m praktika run "Stateful tests (amd_asan)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+          fi
+
+  stateful_tests_amd_tsan:
+    runs-on: [func-tester]
+    needs: [config_workflow, docker_builds, build_amd_tsan]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVmdWwgdGVzdHMgKGFtZF90c2FuKQ==') }}
+    name: "Stateful tests (amd_tsan)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+            ref: ${{ github.head_ref }}
+
+      - name: Prepare env script
+        run: |
+          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.
+
+          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
+          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
+
+      - name: Run
+        id: run
+        run: |
+          . /tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run "Stateful tests (amd_tsan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+          else
+            python3 -m praktika run "Stateful tests (amd_tsan)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+          fi
+
+  stateful_tests_amd_msan:
+    runs-on: [func-tester]
+    needs: [config_workflow, docker_builds, build_amd_msan]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVmdWwgdGVzdHMgKGFtZF9tc2FuKQ==') }}
+    name: "Stateful tests (amd_msan)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+            ref: ${{ github.head_ref }}
+
+      - name: Prepare env script
+        run: |
+          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.
+
+          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
+          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
+
+      - name: Run
+        id: run
+        run: |
+          . /tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run "Stateful tests (amd_msan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+          else
+            python3 -m praktika run "Stateful tests (amd_msan)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+          fi
+
+  stateful_tests_amd_ubsan:
+    runs-on: [func-tester]
+    needs: [config_workflow, docker_builds, build_amd_ubsan]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVmdWwgdGVzdHMgKGFtZF91YnNhbik=') }}
+    name: "Stateful tests (amd_ubsan)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+            ref: ${{ github.head_ref }}
+
+      - name: Prepare env script
+        run: |
+          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.
+
+          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
+          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
+
+      - name: Run
+        id: run
+        run: |
+          . /tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run "Stateful tests (amd_ubsan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+          else
+            python3 -m praktika run "Stateful tests (amd_ubsan)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+          fi
+
+  stateful_tests_amd_debug:
+    runs-on: [func-tester]
+    needs: [config_workflow, docker_builds, build_amd_debug]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVmdWwgdGVzdHMgKGFtZF9kZWJ1Zyk=') }}
+    name: "Stateful tests (amd_debug)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+            ref: ${{ github.head_ref }}
+
+      - name: Prepare env script
+        run: |
+          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.
+
+          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
+          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
+
+      - name: Run
+        id: run
+        run: |
+          . /tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run "Stateful tests (amd_debug)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+          else
+            python3 -m praktika run "Stateful tests (amd_debug)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
           fi
 
   stress_tests_arm_release:
@@ -858,6 +1058,166 @@ jobs:
             python3 -m praktika run "Stress tests (arm_release)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
           else
             python3 -m praktika run "Stress tests (arm_release)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+          fi
+
+  upgrade_tests_amd_debug:
+    runs-on: [func-tester]
+    needs: [config_workflow, docker_builds, build_amd_debug]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'VXBncmFkZSB0ZXN0cyAoYW1kX2RlYnVnKQ==') }}
+    name: "Upgrade tests (amd_debug)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+            ref: ${{ github.head_ref }}
+
+      - name: Prepare env script
+        run: |
+          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.
+
+          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
+          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
+
+      - name: Run
+        id: run
+        run: |
+          . /tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run "Upgrade tests (amd_debug)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+          else
+            python3 -m praktika run "Upgrade tests (amd_debug)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+          fi
+
+  upgrade_tests_amd_msan:
+    runs-on: [func-tester]
+    needs: [config_workflow, docker_builds, build_amd_tsan]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'VXBncmFkZSB0ZXN0cyAoYW1kX21zYW4p') }}
+    name: "Upgrade tests (amd_msan)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+            ref: ${{ github.head_ref }}
+
+      - name: Prepare env script
+        run: |
+          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.
+
+          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
+          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
+
+      - name: Run
+        id: run
+        run: |
+          . /tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run "Upgrade tests (amd_msan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+          else
+            python3 -m praktika run "Upgrade tests (amd_msan)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+          fi
+
+  upgrade_tests_amd_tsan:
+    runs-on: [func-tester]
+    needs: [config_workflow, docker_builds, build_amd_msan]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'VXBncmFkZSB0ZXN0cyAoYW1kX3RzYW4p') }}
+    name: "Upgrade tests (amd_tsan)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+            ref: ${{ github.head_ref }}
+
+      - name: Prepare env script
+        run: |
+          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.
+
+          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
+          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
+
+      - name: Run
+        id: run
+        run: |
+          . /tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run "Upgrade tests (amd_tsan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+          else
+            python3 -m praktika run "Upgrade tests (amd_tsan)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+          fi
+
+  upgrade_tests_arm_asan:
+    runs-on: [func-tester-aarch64]
+    needs: [config_workflow, docker_builds, build_arm_asan]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'VXBncmFkZSB0ZXN0cyAoYXJtX2FzYW4p') }}
+    name: "Upgrade tests (arm_asan)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+            ref: ${{ github.head_ref }}
+
+      - name: Prepare env script
+        run: |
+          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.
+
+          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
+          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
+
+      - name: Run
+        id: run
+        run: |
+          . /tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run "Upgrade tests (arm_asan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+          else
+            python3 -m praktika run "Upgrade tests (arm_asan)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
           fi
 
   performance_tests_amd_release:
@@ -1022,7 +1382,7 @@ jobs:
 
   finish_workflow:
     runs-on: [ci_services]
-    needs: [config_workflow, docker_builds, style_check, fast_test, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_release, build_arm_asan, stateless_tests_amd_debugparallel, stateless_tests_amd_debugnon_parallel, stateless_tests_amd_releaseparallel, stateless_tests_amd_releasenon_parallel, stateless_tests_arm_asanparallel, stateless_tests_arm_asannon_parallel, stateful_tests_amd_releaseparallel, stress_tests_arm_release, performance_tests_amd_release, performance_tests_arm_release, compatibility_check_amd_release, compatibility_check_arm_release]
+    needs: [config_workflow, docker_builds, style_check, fast_test, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_release, build_arm_asan, stateless_tests_amd_debugparallel, stateless_tests_amd_debugnon_parallel, stateless_tests_amd_releaseparallel, stateless_tests_amd_releasenon_parallel, stateless_tests_arm_asanparallel, stateless_tests_arm_asannon_parallel, stateful_tests_arm_release, stateful_tests_amd_asan, stateful_tests_amd_tsan, stateful_tests_amd_msan, stateful_tests_amd_ubsan, stateful_tests_amd_debug, stress_tests_arm_release, upgrade_tests_amd_debug, upgrade_tests_amd_msan, upgrade_tests_amd_tsan, upgrade_tests_arm_asan, performance_tests_amd_release, performance_tests_arm_release, compatibility_check_amd_release, compatibility_check_arm_release]
     if: ${{ !cancelled() }}
     name: "Finish Workflow"
     outputs:
