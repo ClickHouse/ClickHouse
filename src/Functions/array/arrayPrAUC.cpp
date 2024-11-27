@@ -29,7 +29,7 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
   * f(object) = score
   * predicted_label = score > threshold
   *
-  * This way classifier may predict positive or negative value correctly - true positive (tp) or true negative (tn) 
+  * This way classifier may predict positive or negative value correctly - true positive (tp) or true negative (tn)
   *   or have false positive (fp) or false negative (fn) result.
   * Varying the threshold we can get different probabilities of false positive or false negatives or true positives, etc...
   *
@@ -44,7 +44,7 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
   * Recall = P(score > threshold | label = positive)
   *
   * We can draw a curve of values of Precision and Recall with different threshold on [0..1] x [0..1] unit square.
-  * This curve is named "Precision Recall curve" (PR). 
+  * This curve is named "Precision Recall curve" (PR).
   *
   * For the curve we can calculate, literally, Area Under the Curve, that will be in the range of [0..1].
   *
@@ -64,10 +64,10 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
   * threshold = 0,    TP = 2, FP = 2, FN = 0, Recall = 1.0, Precision = 0.5
   *
   * This implementation uses the right Riemann sum (see https://en.wikipedia.org/wiki/Riemann_sum) to calculate the AUC.
-  * That is, each increment in area is calculated using `(R_n - R_{n-1}) * P_n`, 
+  * That is, each increment in area is calculated using `(R_n - R_{n-1}) * P_n`,
   *   where `R_n` is the Recall at the `n`-th point and `P_n` is the Precision at the `n`-th point.
   *
-  * This implementation is not interpolated and is different from computing the AUC with the trapezoidal rule, 
+  * This implementation is not interpolated and is different from computing the AUC with the trapezoidal rule,
   *   which uses linear interpolation and can be too optimistic for the Precision Recall AUC metric.
   */
 
@@ -112,15 +112,15 @@ private:
         {
             if (sorted_labels[i].score != prev_score)
             {
-                /* Precision = TP / (TP + FP) 
+                /* Precision = TP / (TP + FP)
                  * Recall = TP / (TP + FN)
                  *
                  * Instead of calculating
-                 *   d_Area = Precision_n * (Recall_n - Recall_{n-1}), 
-                 * we can just calculate 
-                 *   d_Area = Precision_n * (TP_n - TP_{n-1}) 
-                 * and later divide it by (TP + FN). 
-                 * 
+                 *   d_Area = Precision_n * (Recall_n - Recall_{n-1}),
+                 * we can just calculate
+                 *   d_Area = Precision_n * (TP_n - TP_{n-1})
+                 * and later divide it by (TP + FN).
+                 *
                  * This can be done because (TP + FN) is constant and equal to total positive labels.
                  */
                 curr_precision = static_cast<Float64>(curr_tp) / curr_p;
