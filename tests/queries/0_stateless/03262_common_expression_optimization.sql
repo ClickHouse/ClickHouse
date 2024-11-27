@@ -102,4 +102,38 @@ SELECT * FROM x WHERE (D AND 5) OR ((C AND E) AND (C AND E)) ORDER BY ALL LIMIT 
 SELECT * FROM x WHERE (D AND 5) OR ((C AND E) AND (C AND E)) ORDER BY ALL LIMIT 3 SETTINGS optimize_extract_common_expressions = 1;
 EXPLAIN QUERY TREE dump_ast = 1 SELECT * FROM x WHERE (C AND E) OR ((C AND E) AND (C AND E));
 
--- TODO(antaljanosbenjamin): Add test for HAVING and QUALIFY
+-- HAVING
+SELECT x, max(A) AS mA, max(B) AS mB, max(C) AS mC FROM x GROUP BY x HAVING (mA AND mB) OR (mA AND mC) ORDER BY x LIMIT 10 SETTINGS optimize_extract_common_expressions = 0;
+SELECT x, max(A) AS mA, max(B) AS mB, max(C) AS mC FROM x GROUP BY x HAVING (mA AND mB) OR (mA AND mC) ORDER BY x LIMIT 10;
+EXPLAIN QUERY TREE dump_ast = 1 SELECT x, max(A) AS mA, max(B) AS mB, max(C) AS mC FROM x GROUP BY x HAVING (mA AND mB) OR (mA AND mC);
+
+-- QUALIFY
+SELECT
+	x,
+	max(A) OVER (PARTITION BY x % 1000) AS mA,
+	max(B) OVER (PARTITION BY x % 1000) AS mB,
+	max(C) OVER (PARTITION BY x % 1000) AS mC
+FROM x
+QUALIFY (mA AND mB) OR (mA AND mC)
+ORDER BY x
+LIMIT 10
+SETTINGS optimize_extract_common_expressions = 0;
+
+SELECT
+	x,
+	max(A) OVER (PARTITION BY x % 1000) AS mA,
+	max(B) OVER (PARTITION BY x % 1000) AS mB,
+	max(C) OVER (PARTITION BY x % 1000) AS mC
+FROM x
+QUALIFY (mA AND mB) OR (mA AND mC)
+ORDER BY x
+LIMIT 10;
+
+EXPLAIN QUERY TREE dump_ast = 1
+SELECT
+	x,
+	max(A) OVER (PARTITION BY x % 1000) AS mA,
+	max(B) OVER (PARTITION BY x % 1000) AS mB,
+	max(C) OVER (PARTITION BY x % 1000) AS mC
+FROM x
+QUALIFY (mA AND mB) OR (mA AND mC);
