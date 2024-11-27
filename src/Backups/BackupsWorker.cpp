@@ -51,6 +51,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
 }
 
 using OperationID = BackupOperationID;
@@ -90,14 +91,14 @@ namespace
 
     BackupStatus getBackupStatusFromCurrentException()
     {
-        if (getCurrentExceptionCode() == ErrorCodes::QUERY_WAS_CANCELLED)
+        if (getCurrentExceptionCode() == ErrorCodes::QUERY_WAS_CANCELLED || getCurrentExceptionCode() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
             return BackupStatus::BACKUP_CANCELLED;
         return BackupStatus::BACKUP_FAILED;
     }
 
     BackupStatus getRestoreStatusFromCurrentException()
     {
-        if (getCurrentExceptionCode() == ErrorCodes::QUERY_WAS_CANCELLED)
+        if (getCurrentExceptionCode() == ErrorCodes::QUERY_WAS_CANCELLED || getCurrentExceptionCode() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
             return BackupStatus::RESTORE_CANCELLED;
         return BackupStatus::RESTORE_FAILED;
     }

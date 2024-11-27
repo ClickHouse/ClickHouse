@@ -26,6 +26,7 @@
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Storages/MergeTree/IPartMetadataManager.h>
 #include <Storages/MergeTree/MergeTreePrimaryIndex.h>
+#include <Storages/MergeTree/PrimaryIndexCache.h>
 
 
 namespace zkutil
@@ -78,7 +79,8 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     using NameToNumber = std::unordered_map<std::string, size_t>;
 
-    using IndexPtr = PrimaryIndexPtr;
+    using Index = PrimaryIndex;
+    using IndexPtr = std::shared_ptr<const PrimaryIndex>;
     using IndexSizeByName = std::unordered_map<std::string, ColumnSize>;
 
     using Type = MergeTreeDataPartType;
@@ -322,7 +324,7 @@ public:
 
     /// Amount of rows between marks
     /// As index always loaded into memory
-    MergeTreeIndexGranularity index_granularity;
+    MergeTreeIndexGranularityPtr index_granularity;
 
     /// Index that for each part stores min and max values of a set of columns. This allows quickly excluding
     /// parts based on conditions on these columns imposed by a query.
@@ -373,9 +375,10 @@ public:
     int32_t metadata_version;
 
     IndexPtr getIndex() const;
-    void setIndex(const Columns & raw_columns);
-    void setIndex(Columns && raw_columns);
-    void setIndex(IndexPtr new_index);
+    IndexPtr loadIndexToCache(PrimaryIndexCache & index_cache) const;
+    void moveIndexToCache(PrimaryIndexCache & index_cache);
+
+    void setIndex(Columns index_columns);
     void unloadIndex();
     bool isIndexLoaded() const;
 
@@ -435,6 +438,9 @@ public:
     std::optional<String> getRelativePathForPrefix(const String & prefix, bool detached = false, bool broken = false) const;
 
     bool isProjectionPart() const { return parent_part != nullptr; }
+
+    /// Check if the part is in the `/moving` directory
+    bool isMovingPart() const;
 
     const IMergeTreeDataPart * getParentPart() const { return parent_part; }
     String getParentPartName() const { return parent_part_name; }
@@ -600,8 +606,7 @@ protected:
     /// Lazily loaded in RAM. Contains each index_granularity-th value of primary key tuple.
     /// Note that marks (also correspond to primary key) are not always in RAM, but cached. See MarkCache.h.
     mutable std::mutex index_mutex;
-    mutable IndexPtr index TSA_GUARDED_BY(index_mutex);
-    mutable bool index_loaded TSA_GUARDED_BY(index_mutex) = false;
+    mutable IndexPtr index;
 
     /// Settings to create primary index.
     PrimaryIndex::Settings primary_index_settings;
@@ -634,7 +639,7 @@ protected:
 
     mutable PartMetadataManagerPtr metadata_manager;
 
-    void removeIfNeeded();
+    void removeIfNeeded() noexcept;
 
     /// Fill each_columns_size and total_size with sizes from columns files on
     /// disk using columns and checksums.
@@ -699,7 +704,11 @@ private:
     virtual void appendFilesOfIndexGranularity(Strings & files) const;
 
     /// Loads the index file.
-    void loadIndex() const TSA_REQUIRES(index_mutex);
+    std::shared_ptr<Index> loadIndex() const;
+
+    /// Optimize index. Drop useless columns from suffix of primary key.
+    template <typename Columns>
+    void optimizeIndexColumns(size_t marks_count, Columns & index_columns) const;
 
     template <typename ColumnsVector>
     void optimizeIndexColumns(size_t marks_count, ColumnsVector & index_columns, std::vector<size_t> & num_equal_ranges) const;

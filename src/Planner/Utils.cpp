@@ -11,11 +11,13 @@
 #include <DataTypes/DataTypeNullable.h>
 
 #include <Columns/getLeastSuperColumn.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 
 #include <IO/WriteBufferFromString.h>
 
 #include <Functions/FunctionFactory.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Functions/indexHint.h>
 
 #include <Storages/StorageDummy.h>

@@ -47,6 +47,7 @@ String StorageObjectStorage::getPathSample(StorageInMemoryMetadata metadata, Con
     auto query_settings = configuration->getQuerySettings(context);
     /// We don't want to throw an exception if there are no files with specified path.
     query_settings.throw_on_zero_files_match = false;
+    query_settings.ignore_non_existent_file = true;
 
     bool local_distributed_processing = distributed_processing;
     if (context->getSettingsRef()[Setting::use_hive_partitioning])
@@ -63,6 +64,9 @@ String StorageObjectStorage::getPathSample(StorageInMemoryMetadata metadata, Con
         nullptr, // read_keys
         {} // file_progress_callback
     );
+
+    if (!configuration->isArchive() && !configuration->isPathWithGlobs() && !local_distributed_processing)
+        return configuration->getPath();
 
     if (auto file = file_iterator->next(0))
         return file->getPath();

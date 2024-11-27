@@ -61,12 +61,12 @@ Filter column: notEquals(__table1.y, 0_UInt8)
 7	8
 8	9
 9	10
-> one condition of filter should be pushed down after aggregating, other condition is casted
+> one condition of filter should be pushed down after aggregating, other condition is cast
 Filter column
 FUNCTION and(minus(s, 4) :: 5, 1 :: 3) -> and(notEquals(y, 0), minus(s, 4))
 Aggregating
 Filter column: notEquals(y, 0)
-> (analyzer) one condition of filter should be pushed down after aggregating, other condition is casted
+> (analyzer) one condition of filter should be pushed down after aggregating, other condition is cast
 Filter column
 FUNCTION and(minus(__table1.s, 4_UInt8) :: 1, 1 :: 3) -> and(notEquals(__table1.y, 0_UInt8), minus(__table1.s, 4_UInt8))
 Aggregating
@@ -162,7 +162,6 @@ Filter column: notEquals(__table1.y, 2_UInt8)
 0	37
 > filter is pushed down before CreatingSets
 CreatingSets
-Filter
 Filter
 1
 3

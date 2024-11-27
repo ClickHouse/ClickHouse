@@ -29,6 +29,7 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/Backup.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 #include <base/JSON.h>
 #include <boost/algorithm/string/join.hpp>
 #include <Common/CurrentMetrics.h>
@@ -56,6 +57,13 @@ namespace CurrentMetrics
 
     extern const Metric PartsWide;
     extern const Metric PartsCompact;
+}
+
+namespace ProfileEvents
+{
+    extern const Event LoadedPrimaryIndexFiles;
+    extern const Event LoadedPrimaryIndexRows;
+    extern const Event LoadedPrimaryIndexBytes;
 }
 
 namespace DB
@@ -355,7 +363,6 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     incrementStateMetric(state);
     incrementTypeMetric(part_type);
 
-    index = std::make_shared<PrimaryIndex>();
     minmax_idx = std::make_shared<MinMaxIndex>();
 
     initializeIndexGranularityInfo();
@@ -377,55 +384,63 @@ IMergeTreeDataPart::~IMergeTreeDataPart()
     decrementTypeMetric(part_type);
 }
 
-
 IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::getIndex() const
 {
     std::scoped_lock lock(index_mutex);
-    if (!index_loaded)
-        loadIndex();
-    index_loaded = true;
+
+    if (index)
+        return index;
+
+    if (auto index_cache = storage.getPrimaryIndexCache())
+        return loadIndexToCache(*index_cache);
+
+    index = loadIndex();
     return index;
 }
 
-
-void IMergeTreeDataPart::setIndex(const Columns & raw_columns)
+IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::loadIndexToCache(PrimaryIndexCache & index_cache) const
 {
-    auto raw_columns_copy = raw_columns;
-    setIndex(std::move(raw_columns_copy));
+    auto key = PrimaryIndexCache::hash(getDataPartStorage().getFullPath());
+    auto callback = [this] { return loadIndex(); };
+    return index_cache.getOrSet(key, callback);
 }
 
-void IMergeTreeDataPart::setIndex(Columns && raw_columns)
+void IMergeTreeDataPart::moveIndexToCache(PrimaryIndexCache & index_cache)
 {
     std::scoped_lock lock(index_mutex);
+    if (!index)
+        return;
 
-    if (!index->empty())
+    auto key = PrimaryIndexCache::hash(getDataPartStorage().getFullPath());
+    index_cache.set(key, std::const_pointer_cast<Index>(index));
+    index.reset();
+
+    for (const auto & [_, projection] : projection_parts)
+        projection->moveIndexToCache(index_cache);
+}
+
+void IMergeTreeDataPart::setIndex(Columns index_columns)
+{
+    std::scoped_lock lock(index_mutex);
+    if (index)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The index of data part can be set only once");
 
     std::vector<size_t> num_equal_ranges;
-    optimizeIndexColumns(index_granularity.getMarksCount(), raw_columns, num_equal_ranges);
+    optimizeIndexColumns(index_granularity->getMarksCount(), index_columns, num_equal_ranges);
 
-    index = std::make_shared<PrimaryIndex>(std::move(raw_columns), std::move(num_equal_ranges), primary_index_settings);
-    index_loaded = true;
-}
-
-void IMergeTreeDataPart::setIndex(IndexPtr new_index)
-{
-    std::scoped_lock lock(index_mutex);
-    index = std::move(new_index);
-    index_loaded = true;
+    index = std::make_shared<PrimaryIndex>(std::move(index_columns), std::move(num_equal_ranges), primary_index_settings);
 }
 
 void IMergeTreeDataPart::unloadIndex()
 {
     std::scoped_lock lock(index_mutex);
-    index = std::make_shared<PrimaryIndex>();
-    index_loaded = false;
+    index.reset();
 }
 
 bool IMergeTreeDataPart::isIndexLoaded() const
 {
     std::scoped_lock lock(index_mutex);
-    return index_loaded;
+    return index != nullptr;
 }
 
 void IMergeTreeDataPart::setName(const String & new_name)
@@ -441,12 +456,7 @@ String IMergeTreeDataPart::getNewName(const MergeTreePartInfo & new_part_info) c
     {
         /// NOTE: getting min and max dates from the part name (instead of part data) because we want
         /// the merged part name be determined only by source part names.
-        /// It is simpler this way when the real min and max dates for the block range can change
-        /// (e.g. after an ALTER DELETE command).
-        DayNum min_date;
-        DayNum max_date;
         MergeTreePartInfo::parseMinMaxDatesFromPartName(name, min_date, max_date);
-        return new_part_info.getPartNameV0(min_date, max_date);
     }
     return new_part_info.getPartNameV1();
 }
@@ -566,7 +576,15 @@ SerializationPtr IMergeTreeDataPart::tryGetSerialization(const String & column_n
     return it == serializations.end() ? nullptr : it->second;
 }
 
-void IMergeTreeDataPart::removeIfNeeded()
+bool IMergeTreeDataPart::isMovingPart() const
+{
+    fs::path part_directory_path = getDataPartStorage().getRelativePath();
+    if (part_directory_path.filename().empty())
+        part_directory_path = part_directory_path.parent_path();
+    return part_directory_path.parent_path().filename() == "moving";
+}
+
+void IMergeTreeDataPart::removeIfNeeded() noexcept
 {
     assert(assertHasValidVersionMetadata());
     if (!is_temp && state != MergeTreeDataPartState::DeleteOnDestroy)
@@ -590,10 +608,7 @@ void IMergeTreeDataPart::removeIfNeeded()
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "relative_path {} of part {} is invalid or not set",
                                 getDataPartStorage().getPartDirectory(), name);
 
-            fs::path part_directory_path = getDataPartStorage().getRelativePath();
-            if (part_directory_path.filename().empty())
-                part_directory_path = part_directory_path.parent_path();
-            bool is_moving_part = part_directory_path.parent_path().filename() == "moving";
+            bool is_moving_part = isMovingPart();
             if (!startsWith(file_name, "tmp") && !endsWith(file_name, ".tmp_proj") && !is_moving_part)
             {
                 LOG_ERROR(
@@ -631,22 +646,23 @@ void IMergeTreeDataPart::removeIfNeeded()
 UInt64 IMergeTreeDataPart::getIndexSizeInBytes() const
 {
     std::scoped_lock lock(index_mutex);
-    return index->bytes();
+    return index ? index->bytes() : 0;
 }
 
 UInt64 IMergeTreeDataPart::getIndexSizeInAllocatedBytes() const
 {
     std::scoped_lock lock(index_mutex);
-    return index->allocatedBytes();
+    return index ? index->allocatedBytes() : 0;
 }
 
 UInt64 IMergeTreeDataPart::getIndexGranularityBytes() const
 {
-    return index_granularity.getBytesSize();
+    return index_granularity->getBytesSize();
 }
+
 UInt64 IMergeTreeDataPart::getIndexGranularityAllocatedBytes() const
 {
-    return index_granularity.getBytesAllocated();
+    return index_granularity->getBytesAllocated();
 }
 
 void IMergeTreeDataPart::assertState(const std::initializer_list<MergeTreeDataPartState> & affordable_states) const
@@ -677,7 +693,7 @@ void IMergeTreeDataPart::assertOnDisk() const
 
 UInt64 IMergeTreeDataPart::getMarksCount() const
 {
-    return index_granularity.getMarksCount();
+    return index_granularity->getMarksCount();
 }
 
 UInt64 IMergeTreeDataPart::getExistingBytesOnDisk() const
@@ -762,10 +778,9 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
         loadChecksums(require_columns_checksums);
 
         loadIndexGranularity();
-        index_granularity.shrinkToFitInMemory();
 
         if (!(*storage.getSettings())[MergeTreeSetting::primary_key_lazy_load])
-            getIndex();
+            index = loadIndex();
 
         calculateColumnsAndSecondaryIndicesSizesOnDisk();
         loadRowsCount(); /// Must be called after loadIndexGranularity() as it uses the value of `index_granularity`.
@@ -969,10 +984,12 @@ void IMergeTreeDataPart::optimizeIndexColumns(size_t marks_count, ColumnsVector 
                 break;
             }
         }
+
+        LOG_TEST(storage.log, "Loaded primary key index for part {}, {} columns are kept in memory", name, key_size);
     }
 }
 
-void IMergeTreeDataPart::loadIndex() const
+std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
 {
     /// Memory for index must not be accounted as memory usage for query, because it belongs to a table.
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
@@ -984,49 +1001,55 @@ void IMergeTreeDataPart::loadIndex() const
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     size_t key_size = primary_key.column_names.size();
 
-    if (key_size)
+    if (!key_size)
+        return std::make_shared<Index>();
+
+    MutableColumns loaded_index;
+    loaded_index.resize(key_size);
+
+    for (size_t i = 0; i < key_size; ++i)
     {
-        MutableColumns loaded_index;
-        loaded_index.resize(key_size);
-
-        for (size_t i = 0; i < key_size; ++i)
-        {
-            loaded_index[i] = primary_key.data_types[i]->createColumn();
-            loaded_index[i]->reserve(index_granularity.getMarksCount());
-        }
-
-        String index_name = "primary" + getIndexExtensionFromFilesystem(getDataPartStorage());
-        String index_path = fs::path(getDataPartStorage().getRelativePath()) / index_name;
-        auto index_file = metadata_manager->read(index_name);
-        size_t marks_count = index_granularity.getMarksCount();
-
-        Serializations key_serializations(key_size);
-        for (size_t j = 0; j < key_size; ++j)
-            key_serializations[j] = primary_key.data_types[j]->getDefaultSerialization();
-
-        for (size_t i = 0; i < marks_count; ++i)
-            for (size_t j = 0; j < key_size; ++j)
-                key_serializations[j]->deserializeBinary(*loaded_index[j], *index_file, {});
-
-        if (!index_file->eof())
-            throw Exception(ErrorCodes::EXPECTED_END_OF_FILE, "Index file {} is unexpectedly long", index_path);
-
-        std::vector<size_t> num_equal_ranges;
-        optimizeIndexColumns(marks_count, loaded_index, num_equal_ranges);
-
-        for (const auto & index_column : loaded_index)
-        {
-            index_column->shrinkToFit();
-            index_column->protect();
-
-            if (index_column->size() != marks_count)
-                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all data from index file {}(expected size: "
-                    "{}, read: {})", index_path, marks_count, index_column->size());
-        }
-
-        Columns index_columns(std::make_move_iterator(loaded_index.begin()), std::make_move_iterator(loaded_index.end()));
-        index = std::make_shared<PrimaryIndex>(std::move(index_columns), std::move(num_equal_ranges), primary_index_settings);
+        loaded_index[i] = primary_key.data_types[i]->createColumn();
+        loaded_index[i]->reserve(index_granularity->getMarksCount());
     }
+
+    String index_name = "primary" + getIndexExtensionFromFilesystem(getDataPartStorage());
+    String index_path = fs::path(getDataPartStorage().getRelativePath()) / index_name;
+    auto index_file = metadata_manager->read(index_name);
+    size_t marks_count = index_granularity->getMarksCount();
+
+    Serializations key_serializations(key_size);
+    for (size_t j = 0; j < key_size; ++j)
+        key_serializations[j] = primary_key.data_types[j]->getDefaultSerialization();
+
+    for (size_t i = 0; i < marks_count; ++i)
+    {
+        for (size_t j = 0; j < key_size; ++j)
+            key_serializations[j]->deserializeBinary(*loaded_index[j], *index_file, {});
+    }
+
+    optimizeIndexColumns(marks_count, loaded_index);
+    size_t total_bytes = 0;
+
+    for (const auto & column : loaded_index)
+    {
+        column->shrinkToFit();
+        column->protect();
+        total_bytes += column->byteSize();
+
+        if (column->size() != marks_count)
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all data from index file {}(expected size: "
+                "{}, read: {})", index_path, marks_count, column->size());
+    }
+
+    if (!index_file->eof())
+        throw Exception(ErrorCodes::EXPECTED_END_OF_FILE, "Index file {} is unexpectedly long", index_path);
+
+    ProfileEvents::increment(ProfileEvents::LoadedPrimaryIndexFiles);
+    ProfileEvents::increment(ProfileEvents::LoadedPrimaryIndexRows, marks_count);
+    ProfileEvents::increment(ProfileEvents::LoadedPrimaryIndexBytes, total_bytes);
+
+    return std::make_shared<Index>(std::make_move_iterator(loaded_index.begin()), std::make_move_iterator(loaded_index.end()));
 }
 
 void IMergeTreeDataPart::appendFilesOfIndex(Strings & files) const
@@ -1324,7 +1347,7 @@ void IMergeTreeDataPart::appendFilesOfPartitionAndMinMaxIndex(Strings & files) c
         MergeTreePartition::appendFiles(storage, files);
 
     if (!parent_part)
-        minmax_idx->appendFiles(storage, files);
+        IMergeTreeDataPart::MinMaxIndex::appendFiles(storage, files);
 }
 
 void IMergeTreeDataPart::loadChecksums(bool require)
@@ -1395,7 +1418,7 @@ void IMergeTreeDataPart::loadRowsCount()
         assertEOF(*buf);
     };
 
-    if (index_granularity.empty())
+    if (index_granularity->empty())
     {
         rows_count = 0;
     }
@@ -1430,9 +1453,9 @@ void IMergeTreeDataPart::loadRowsCount()
                                     backQuote(column.name), rows_in_column, name, rows_count);
                 }
 
-                size_t last_possibly_incomplete_mark_rows = index_granularity.getLastNonFinalMarkRows();
+                size_t last_possibly_incomplete_mark_rows = index_granularity->getLastNonFinalMarkRows();
                 /// All this rows have to be written in column
-                size_t index_granularity_without_last_mark = index_granularity.getTotalRows() - last_possibly_incomplete_mark_rows;
+                size_t index_granularity_without_last_mark = index_granularity->getTotalRows() - last_possibly_incomplete_mark_rows;
                 /// We have more rows in column than in index granularity without last possibly incomplete mark
                 if (rows_in_column < index_granularity_without_last_mark)
                 {
@@ -1442,7 +1465,7 @@ void IMergeTreeDataPart::loadRowsCount()
                                     "and size of single value, "
                                     "but index granularity in part {} without last mark has {} rows, which "
                                     "is more than in column",
-                                    backQuote(column.name), rows_in_column, name, index_granularity.getTotalRows());
+                                    backQuote(column.name), rows_in_column, name, index_granularity->getTotalRows());
                 }
 
                 /// In last mark we actually written less or equal rows than stored in last mark of index granularity
@@ -1490,8 +1513,8 @@ void IMergeTreeDataPart::loadRowsCount()
                                 column.name, column_size, sizeof_field);
             }
 
-            size_t last_mark_index_granularity = index_granularity.getLastNonFinalMarkRows();
-            size_t rows_approx = index_granularity.getTotalRows();
+            size_t last_mark_index_granularity = index_granularity->getLastNonFinalMarkRows();
+            size_t rows_approx = index_granularity->getTotalRows();
             if (!(rows_count <= rows_approx && rows_approx < rows_count + last_mark_index_granularity))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of column {}: "
                     "{} rows, expected {}+-{} rows according to the index",
@@ -1554,7 +1577,7 @@ UInt64 IMergeTreeDataPart::readExistingRowsCount()
 
     while (current_row < rows_count)
     {
-        size_t rows_to_read = index_granularity.getMarkRows(current_mark);
+        size_t rows_to_read = index_granularity->getMarkRows(current_mark);
         continue_reading = (current_mark != 0);
 
         Columns result;
@@ -2002,6 +2025,9 @@ void IMergeTreeDataPart::initializeIndexGranularityInfo()
         index_granularity_info = MergeTreeIndexGranularityInfo(storage, *mrk_type);
     else
         index_granularity_info = MergeTreeIndexGranularityInfo(storage, part_type);
+
+    /// It may be converted to constant index granularity after loading it.
+    index_granularity = std::make_unique<MergeTreeIndexGranularityAdaptive>();
 }
 
 void IMergeTreeDataPart::remove()
@@ -2275,9 +2301,9 @@ void IMergeTreeDataPart::checkConsistency(bool require_part_metadata) const
             "part_state: [{}]",
             columns.toString(),
             index_granularity_info.getMarkSizeInBytes(columns.size()),
-            index_granularity.getMarksCount(),
+            index_granularity->getMarksCount(),
             index_granularity_info.describe(),
-            index_granularity.describe(),
+            index_granularity->describe(),
             part_state);
 
         e.addMessage(debug_info);
