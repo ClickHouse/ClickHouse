@@ -1391,7 +1391,6 @@ public:
         });
     }
 
-    // bool isCompilableImpl(const DataTypes &, const DataTypePtr &) const override { return false; }
     bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr & result_type) const override
     {
         if (2 != arguments.size())
