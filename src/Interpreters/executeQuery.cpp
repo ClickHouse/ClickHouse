@@ -657,7 +657,7 @@ void logExceptionBeforeStart(
             && !settings.log_queries_min_query_duration_ms.totalMilliseconds())
         {
             if (!settings.log_query_settings && settings.log_query_settings.changed)
-                LOG_DEBUG(
+                LOG_TRACE(
                     getLogger("executeQuery"),
                     "Query settings will not be added to query_log since setting `log_query_settings` has been set to false."
                     " The setting has been changed for the query");
