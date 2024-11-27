@@ -1366,16 +1366,40 @@ bool PartMergerWriter::iterateThroughAllProjections()
 
 bool PartMergerWriter::iterateThroughAllProjectionsToMask()
 {
-    for (size_t i = 0, size = ctx->projections_to_mask.size(); i < size; ++i)
+    Stopwatch watch(CLOCK_MONOTONIC_COARSE);
+    UInt64 step_time_ms = (*ctx->data->getSettings())[MergeTreeSetting::background_task_preferred_step_execution_time_ms].totalMilliseconds();
+
+    do
     {
-    }
-    return false;
+        Block cur_block;
+
+        if (!ctx->checkOperationIsNotCanceled() || !ctx->projection_mutating_executor->pull(cur_block))
+            return false;
+
+        ctx->projection_out->write(cur_block);
+
+    } while (watch.elapsedMilliseconds() < step_time_ms);
+
+    /// Need execute again
+    return true;
+
+    // for (size_t i = 0, size = ctx->projections_to_mask.size(); i < size; ++i)
+    // {
+    // }
+    // return false;
 }
 
 void PartMergerWriter::finalize()
 {
     if (ctx->count_lightweight_deleted_rows)
         ctx->new_data_part->existing_rows_count = existing_rows_count;
+
+    ctx->projection_mutating_executor.reset();
+    ctx->projection_mutating_pipeline.reset();
+
+    static_pointer_cast<MergedBlockOutputStream>(ctx->projection_out)->finalizePart(
+        ctx->new_projection_part, ctx->need_sync, nullptr, nullptr);
+    ctx->projection_out.reset();
 }
 
 class MutateAllPartColumnsTask : public IExecutableTask
@@ -1692,12 +1716,8 @@ private:
         chassert (ctx->projection_mutating_pipeline_builder.initialized());
         builder = std::make_unique<QueryPipelineBuilder>(std::move(ctx->projection_mutating_pipeline_builder));
 
-        const auto & projections_name_and_part = ctx->source_part->getProjectionParts();
-        auto part_name = fmt::format("{}", projections_name_and_part.begin()->first);
-        auto new_data_part = ctx->new_data_part->getProjectionPartBuilder(part_name, true).withPartType(ctx->projection_part->getType()).build();
-
         ctx->projection_out = std::make_shared<MergedBlockOutputStream>(
-            new_data_part,
+            ctx->new_projection_part,
             ctx->projection_metadata_snapshot,
             ctx->projection_metadata_snapshot->getColumns().getAllPhysical(),
             MergeTreeIndices{},
@@ -2363,6 +2383,9 @@ bool MutateTask::prepare()
 
     bool lightweight_delete_mode = false;
 
+    MutationCommands projection_commands;
+    Block projection_updated_header;
+
     if (!ctx->for_interpreter.empty())
     {
         /// Always disable filtering in mutations: we want to read and write all rows because for updates we rewrite only some of the
@@ -2387,8 +2410,6 @@ bool MutateTask::prepare()
         const auto & projections_name_and_part = ctx->source_part->getProjectionParts();
         ctx->projection_part = projections_name_and_part.begin()->second;
 
-        MutationCommands projection_commands;
-
         MutationHelpers::splitAndModifyMutationCommands(
             ctx->projection_part,
             proj_desc.metadata,
@@ -2407,6 +2428,7 @@ bool MutateTask::prepare()
             proj_desc.metadata->getColumns().getNamesOfPhysical(), context_for_reading, settings);
 
         ctx->projection_mutating_pipeline_builder = projection_interpreter->execute();
+        projection_updated_header = projection_interpreter->getUpdatedHeader();
 
         lightweight_delete_mode = ctx->updated_header.has(RowExistsColumn::name);
         /// If under the condition of lightweight delete mode with rebuild option, add projections again here as we can only know
@@ -2452,6 +2474,18 @@ bool MutateTask::prepare()
 
     ctx->new_data_part->setColumns(new_columns, new_infos, ctx->metadata_snapshot->getMetadataVersion());
     ctx->new_data_part->partition.assign(ctx->source_part->partition);
+
+
+    const auto & projections_name_and_part = ctx->source_part->getProjectionParts();
+    auto part_name = fmt::format("{}", projections_name_and_part.begin()->first);
+    ctx->new_projection_part = ctx->new_data_part->getProjectionPartBuilder(part_name, true).withPartType(ctx->projection_part->getType()).build();
+
+    auto [projection_new_columns, projection_new_infos] = MutationHelpers::getColumnsForNewDataPart(
+        ctx->projection_part, projection_updated_header, ctx->projection_metadata_snapshot->getColumns().getAllPhysical(),
+        ctx->projection_part->getSerializationInfos(), projection_commands, ctx->for_file_renames);
+
+    ctx->new_projection_part->setColumns(projection_new_columns, projection_new_infos, ctx->projection_metadata_snapshot->getMetadataVersion());
+
 
     /// Don't change granularity type while mutating subset of columns
     ctx->mrk_extension = ctx->source_part->index_granularity_info.mark_type.getFileExtension();

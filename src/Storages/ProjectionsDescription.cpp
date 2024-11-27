@@ -334,18 +334,6 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
     return ret;
 }
 
-void ProjectionDescription::mask(const Block & block[[maybe_unused]], ContextPtr context[[maybe_unused]]) const
-{
-    // auto mut_context = Context::createCopy(context);
-    // query_ast_copy = query_ast->clone();
-    // auto builder = InterpreterAlterQuery(query_ast_copy, mut_context,
-    //                    Pipe(std::make_shared<SourceFromSingleChunk>(block)))
-    //                    .buildQueryPipeline();
-    // auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
-    // PullingPipelineExecutor executor(pipeline);
-    // executor.pull(ret);
-}
-
 String ProjectionsDescription::toString() const
 {
     if (empty())
