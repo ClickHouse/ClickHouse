@@ -1953,6 +1953,7 @@ ilike
 incrementing
 indexHint
 indexOf
+indexOfAssumeSorted
 inequal
 infi
 inflight
