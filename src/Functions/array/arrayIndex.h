@@ -150,7 +150,8 @@ public:
             high = compare_result ? middle : high;
             low = compare_result ? low : middle + 1;
         }
-        if (low < array_size && compare(data, target, current_offset + low, 0)) {
+        if (low < array_size && compare(data, target, current_offset + low, 0))
+        {
             ConcreteAction::apply(current, low);
         }
         return current;
@@ -199,7 +200,8 @@ public:
         return current;
     }
 
-    static ResultType linearSearchConst(const Array & arr, const Field& value) {
+    static ResultType linearSearchConst(const Array & arr, const Field & value)
+    {
         ResultType current = 0;
         for (size_t i = 0, size = arr.size(); i < size; ++i)
         {
@@ -950,9 +952,12 @@ private:
         {
             ResultType current = 0;
             const auto & value = (*item_arg)[0];
-            if constexpr (std::is_same_v<ConcreteAction, IndexOfAssumeSorted>) {
+            if constexpr (std::is_same_v<ConcreteAction, IndexOfAssumeSorted>)
+            {
                 current = Impl::Main<ConcreteAction, true>::lowerBound(arr, value, arr.size(), 0);
-            } else {
+            }
+            else
+            {
                 current = Impl::Main<ConcreteAction, true>::linearSearchConst(arr, value);
             }
 
