@@ -2,6 +2,8 @@ DROP TABLE IF EXISTS src;
 DROP TABLE IF EXISTS dst;
 DROP TABLE IF EXISTS matview;
 
+SET use_async_executor_for_materialized_views=1;
+
 CREATE TABLE src (
     event_time DateTime,
     key UInt64,
