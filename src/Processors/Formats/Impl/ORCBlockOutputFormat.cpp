@@ -462,11 +462,24 @@ void ORCBlockOutputFormat::writeColumn(
         }
         case TypeIndex::Nullable:
         {
-            chassert(!null_bytemap);
             const auto & nullable_column = assert_cast<const ColumnNullable &>(column);
-            const PaddedPODArray<UInt8> & new_null_bytemap = assert_cast<const ColumnVector<UInt8> &>(*nullable_column.getNullMapColumnPtr()).getData();
             auto nested_type = removeNullable(type);
-            writeColumn(orc_column, nullable_column.getNestedColumn(), nested_type, &new_null_bytemap);
+            if (null_bytemap)
+            {
+                /// Consider Nullable(Tuple(a Nullable(Int))), the outside null_bytemap belongs to Tuple, the inside null_bytemap belongs to Int.
+                /// In CH, inside null_bytemap[i] isn't guranteed to be true when outside null_bytemap[i] is true.
+                /// But in ORC, intBatch.notNulls[i] must be false when structBatch.notNull[i] is false, otherwise the issue(https://github.com/apache/incubator-gluten/issues/8032) may happen.
+                /// To solve it, we combine the outside null_bytemap and inside null_bytemap as the new null_bytemap for inside Int field.
+                const NullMap * curr_null_bytemap = &nullable_column.getNullMapData();
+                chassert(null_bytemap->size() == curr_null_bytemap->size());
+                PaddedPODArray<UInt8> combined_null_bytemap(null_bytemap->size());
+                for (size_t i = 0; i < null_bytemap->size(); ++i)
+                    combined_null_bytemap[i] = (*null_bytemap)[i] || (*curr_null_bytemap)[i];
+
+                writeColumn(orc_column, nullable_column.getNestedColumn(), nested_type, &combined_null_bytemap);
+            }
+            else
+                writeColumn(orc_column, nullable_column.getNestedColumn(), nested_type, &nullable_column.getNullMapData());
             break;
         }
         case TypeIndex::Array:
@@ -494,7 +507,7 @@ void ORCBlockOutputFormat::writeColumn(
             const auto & tuple_column = assert_cast<const ColumnTuple &>(column);
             auto nested_types = assert_cast<const DataTypeTuple *>(type.get())->getElements();
             for (size_t i = 0; i != tuple_column.tupleSize(); ++i)
-                writeColumn(*struct_orc_column.fields[i], tuple_column.getColumn(i), nested_types[i], nullptr);
+                writeColumn(*struct_orc_column.fields[i], tuple_column.getColumn(i), nested_types[i], null_bytemap);
             break;
         }
         case TypeIndex::Map:
