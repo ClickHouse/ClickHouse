@@ -31,16 +31,24 @@ namespace ErrorCodes
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
 {
+
+enum GroupConcatOverload
+{
+    ONE_ARGUMENT,
+    TWO_ARGUMENTS
+};
 
 struct GroupConcatDataBase
 {
     UInt64 data_size = 0;
     UInt64 allocated_size = 0;
     char * data = nullptr;
+    String data_delimiter;
 
     void checkAndUpdateSize(UInt64 add, Arena * arena)
     {
@@ -117,16 +125,18 @@ class GroupConcatImpl final
     UInt64 limit;
     const String delimiter;
     const DataTypePtr type;
+    GroupConcatOverload overload = ONE_ARGUMENT;
 
 public:
-    GroupConcatImpl(const DataTypePtr & data_type_, const Array & parameters_, UInt64 limit_, const String & delimiter_)
+    GroupConcatImpl(const DataTypes & data_types, const Array & parameters_, UInt64 limit_, const String & delimiter_)
         : IAggregateFunctionDataHelper<GroupConcatData<has_limit>, GroupConcatImpl<has_limit>>(
-            {data_type_}, parameters_, std::make_shared<DataTypeString>())
+            {data_types}, parameters_, std::make_shared<DataTypeString>())
         , limit(limit_)
         , delimiter(delimiter_)
-        , type(data_type_)
+        , type(data_types[0])
     {
         serialization = isFixedString(type) ? std::make_shared<DataTypeString>()->getDefaultSerialization() : this->argument_types[0]->getDefaultSerialization();
+        overload = data_types.size() > 1 ? TWO_ARGUMENTS : ONE_ARGUMENT;
     }
 
     String getName() const override { return name; }
@@ -134,13 +144,20 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         auto & cur_data = this->data(place);
+        if (cur_data.data_delimiter.empty())
+        {
+            cur_data.data_delimiter = delimiter;
+            if (overload == GroupConcatOverload::TWO_ARGUMENTS)
+                cur_data.data_delimiter = columns[1]->getDataAt(0).toString();
+        }
+        const String & delim = cur_data.data_delimiter;
 
         if constexpr (has_limit)
             if (cur_data.num_rows >= limit)
                 return;
 
         if (cur_data.data_size != 0)
-            cur_data.insertChar(delimiter.c_str(), delimiter.size(), arena);
+            cur_data.insertChar(delim.c_str(), delim.size(), arena);
 
         if (isFixedString(type))
         {
@@ -160,13 +177,15 @@ public:
         if (rhs_data.data_size == 0)
             return;
 
+        const String & delim = cur_data.data_delimiter;
+
         if constexpr (has_limit)
         {
             UInt64 new_elems_count = std::min(rhs_data.num_rows, limit - cur_data.num_rows);
             for (UInt64 i = 0; i < new_elems_count; ++i)
             {
                 if (cur_data.data_size != 0)
-                    cur_data.insertChar(delimiter.c_str(), delimiter.size(), arena);
+                    cur_data.insertChar(delim.c_str(), delim.size(), arena);
 
                 cur_data.offsets.push_back(cur_data.data_size, arena);
                 cur_data.insertChar(rhs_data.data + rhs_data.getString(i), rhs_data.getSize(i), arena);
@@ -177,7 +196,7 @@ public:
         else
         {
             if (cur_data.data_size != 0)
-                cur_data.insertChar(delimiter.c_str(), delimiter.size(), arena);
+                cur_data.insertChar(delim.c_str(), delim.size(), arena);
 
             cur_data.insertChar(rhs_data.data, rhs_data.data_size, arena);
         }
@@ -238,9 +257,16 @@ public:
 };
 
 AggregateFunctionPtr createAggregateFunctionGroupConcat(
-    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+    const std::string & name,
+    const DataTypes & argument_types,
+    const Array & parameters,
+    const Settings * /* settings */
+)
 {
-    assertUnary(name, argument_types);
+    // Ensure the number of arguments is between 1 and 2
+    if (argument_types.empty() || argument_types.size() > 2)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Incorrect number of arguments for function {}, expected 1 to 2, got {}", name, argument_types.size());
 
     bool has_limit = false;
     UInt64 limit = 0;
@@ -273,9 +299,19 @@ AggregateFunctionPtr createAggregateFunctionGroupConcat(
         limit = parameters[1].safeGet<UInt64>();
     }
 
+    // Handle additional arguments if provided (delimiter and limit as arguments)
+    if (argument_types.size() == 2)
+    {
+        // Second argument should be delimiter (string)
+        const DataTypePtr & delimiter_type = argument_types[1];
+        if (!isString(delimiter_type))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Second argument for function {} must be a string", name);
+    }
+
     if (has_limit)
-        return std::make_shared<GroupConcatImpl</* has_limit= */ true>>(argument_types[0], parameters, limit, delimiter);
-    return std::make_shared<GroupConcatImpl</* has_limit= */ false>>(argument_types[0], parameters, limit, delimiter);
+        return std::make_shared<GroupConcatImpl</* has_limit= */ true>>(argument_types, parameters, limit, delimiter);
+    return std::make_shared<GroupConcatImpl</* has_limit= */ false>>(argument_types, parameters, limit, delimiter);
 }
 
 }
