@@ -106,8 +106,10 @@ function url_encode()
 # Function to execute HTTP query
 function execute_query_HTTP()
 {
-    local HTTP_URL="http://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/?database=${CLICKHOUSE_DATABASE}"
-    local generated_url="${HTTP_URL}&opentelemetry_start_trace_probability=1&query_id=$(url_encode "$1")&query=$(url_encode "$2")"
+    query_id="$1"
+    query="$2"
+    HTTP_URL="http://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/?database=${CLICKHOUSE_DATABASE}"
+    generated_url="${HTTP_URL}&opentelemetry_start_trace_probability=1&query_id=$(url_encode "$query_id")&query=$(url_encode "$query")"
     ${CLICKHOUSE_CURL} -sS "$generated_url"
 }
 
