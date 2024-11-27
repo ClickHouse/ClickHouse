@@ -1,0 +1,32 @@
+<clickhouse>
+    <remote_servers>
+        <test_static_shard_nums>
+            <shard>
+                <shard_number>3</shard_number>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <shard_number>10</shard_number>
+                <replica>
+                    <host>localhost</host>
+                    <port>1</port>
+                </replica>
+            </shard>
+        </test_static_shard_nums>
+        <test_static_nodes_nums>
+            <node>
+                <shard_number>3</shard_number>
+                <host>localhost</host>
+                <port>9000</port>
+            </node>
+            <node>
+                <shard_number>6</shard_number>
+                <host>localhost</host>
+                <port>9000</port>
+            </node>
+        </test_static_nodes_nums>
+    </remote_servers>
+</clickhouse>
