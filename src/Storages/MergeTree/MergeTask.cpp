@@ -103,6 +103,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool vertical_merge_remote_filesystem_prefetch;
     extern const MergeTreeSettingsBool prewarm_mark_cache;
     extern const MergeTreeSettingsBool use_const_adaptive_granularity;
+    extern const MergeTreeSettingsBool allow_generate_min_max_data_insert_file;
 }
 
 namespace ErrorCodes
@@ -426,8 +427,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     SerializationInfoByName infos(global_ctx->storage_columns, info_settings);
     global_ctx->alter_conversions.reserve(global_ctx->future_part->parts.size());
-    time_t min_insert_time_res = global_ctx->future_part->parts.front()->getMinTimeOfDataInsertion();
-    time_t max_insert_time_res = global_ctx->future_part->parts.front()->getMaxTimeOfDataInsertion();
 
     for (const auto & part : global_ctx->future_part->parts)
     {
@@ -454,13 +453,21 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             infos.add(part_infos);
         }
         global_ctx->alter_conversions.push_back(MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->metadata_snapshot, global_ctx->context));
-
-        min_insert_time_res = std::min(min_insert_time_res, part->getMinTimeOfDataInsertion());
-        max_insert_time_res = std::max(max_insert_time_res, part->getMaxTimeOfDataInsertion());
     }
 
-    global_ctx->new_data_part->max_time_of_data_insert = max_insert_time_res;
-    global_ctx->new_data_part->min_time_of_data_insert = min_insert_time_res;
+    if (enabledMinMaxInsertFile(global_ctx))
+    {
+        time_t min_insert_time_res = std::numeric_limits<time_t>::max();
+        time_t max_insert_time_res = std::numeric_limits<time_t>::min();
+
+        for (const auto & part : global_ctx->future_part->parts)
+        {
+            min_insert_time_res = std::min(min_insert_time_res, part->getMinTimeOfDataInsertion());
+            max_insert_time_res = std::max(max_insert_time_res, part->getMaxTimeOfDataInsertion());
+        }
+        global_ctx->new_data_part->max_time_of_data_insert = max_insert_time_res;
+        global_ctx->new_data_part->min_time_of_data_insert = min_insert_time_res;
+    }
 
     const auto & local_part_min_ttl = global_ctx->new_data_part->ttl_infos.part_min_ttl;
     if (local_part_min_ttl && local_part_min_ttl <= global_ctx->time_of_merge)
@@ -610,6 +617,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 bool MergeTask::enabledBlockNumberColumn(GlobalRuntimeContextPtr global_ctx)
 {
     return (*global_ctx->data->getSettings())[MergeTreeSetting::enable_block_number_column] && global_ctx->metadata_snapshot->getGroupByTTLs().empty();
+}
+
+bool MergeTask::enabledMinMaxInsertFile(GlobalRuntimeContextPtr global_ctx)
+{
+    return (*global_ctx->data->getSettings())[MergeTreeSetting::allow_generate_min_max_data_insert_file];
 }
 
 bool MergeTask::enabledBlockOffsetColumn(GlobalRuntimeContextPtr global_ctx)

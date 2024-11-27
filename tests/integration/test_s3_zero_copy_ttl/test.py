@@ -87,9 +87,9 @@ def test_ttl_move_and_s3(started_cluster):
 
         print(f"Total objects: {counter}")
 
-        if counter == 360:
+        if counter == 330:
             break
 
         print(f"Attempts remaining: {attempt}")
 
-    assert counter == 360
+    assert counter == 330
