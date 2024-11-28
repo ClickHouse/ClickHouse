@@ -252,7 +252,7 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     written_files = finalizePartOnDisk(new_part, checksums);
 
     new_part->rows_count = rows_count;
-    new_part->setIndex(writer->releaseIndexColumns());
+
     new_part->checksums = checksums;
     new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
     new_part->setBytesUncompressedOnDisk(checksums.getTotalSizeUncompressedOnDisk());
