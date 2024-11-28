@@ -212,7 +212,7 @@ def test_drop_table(cluster):
 
     # Wait for drop to actually finish
     node.wait_for_log_line(
-        "Removing metadata /var/lib/clickhouse/metadata_dropped/default.test_drop_table",
+        "Removing metadata metadata_dropped/default.test_drop_table",
         timeout=60,
         look_behind_lines=1000000,
     )
