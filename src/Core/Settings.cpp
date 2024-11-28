@@ -2407,6 +2407,9 @@ What to do when the limit is exceeded.
     DECLARE(UInt64, prefer_external_sort_block_bytes, DEFAULT_BLOCK_SIZE * 256, R"(
 Prefer maximum block bytes for external sort, reduce the memory usage during merging.
 )", 0) \
+    DECLARE(UInt64, min_external_sort_block_bytes, "100Mi", R"(
+Minimal block size in bytes for external sort that will be dumped to disk, to avoid too many files.
+)", 0) \
     DECLARE(UInt64, max_bytes_before_external_sort, 0, R"(
 If memory usage during ORDER BY operation is exceeding this threshold in bytes, activate the 'external sorting' mode (spill data to disk). Recommended value is half of the available system memory.
 )", 0) \
