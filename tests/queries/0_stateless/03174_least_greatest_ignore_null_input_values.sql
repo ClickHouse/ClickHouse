@@ -6,8 +6,8 @@ SELECT greatest(NULL), least(NULL);
 SELECT 'Test with two const arguments';
 SELECT greatest(1, NULL), least(1, NULL);
 SELECT greatest(NULL, 1), least(NULL, 1);
-SELECT greatest(NULL, 1.0), least(NULL, 1.0);
-SELECT greatest(1.0, NULL), least(1.0, NULL);
+SELECT greatest(NULL, 1.1), least(NULL, 1.1);
+SELECT greatest(1.1, NULL), least(1.1, NULL);
 SELECT greatest(NULL, 'a'), least(NULL, 'a');
 SELECT greatest('a', NULL), least('a', NULL);
 
@@ -17,8 +17,8 @@ SELECT greatest(materialize(NULL)), least(materialize(NULL));
 SELECT 'Test with two non-const arguments';
 SELECT greatest(materialize(1), NULL), least(materialize(1), NULL);
 SELECT greatest(materialize(NULL), 1), least(materialize(NULL), 1);
-SELECT greatest(materialize(NULL), 1.0), least(materialize(NULL), 1.0);
-SELECT greatest(materialize(1.0), NULL), least(materialize(1.0), NULL);
+SELECT greatest(materialize(NULL), 1.1), least(materialize(NULL), 1.1);
+SELECT greatest(materialize(1.1), NULL), least(materialize(1.1), NULL);
 SELECT greatest(materialize(NULL), 'a'), least(materialize(NULL), 'a');
 SELECT greatest(materialize('a'), NULL), least(materialize('a'), NULL);
 
