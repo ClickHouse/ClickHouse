@@ -138,6 +138,7 @@ public:
                 }
 
                 bool added_to_column = false;
+                //std::cerr <<"gethere doc ok?" << document_ok<< std::endl;
                 if (document_ok)
                 {
                     /// Perform moves.
@@ -228,10 +229,10 @@ private:
         typename JSONParser::Element res_element = document;
         std::string_view key;
 
-        //std::cerr << "gethere move size: " << moves.size() << std::endl;
+        ////std::cerr << "gethere move size: " << moves.size() << std::endl;
         for (size_t j = 0; j != moves.size(); ++j)
         {
-            //std::cerr <<"gethere perform move: " << j << std::endl;
+            ////std::cerr <<"gethere perform move: " << j << std::endl;
             switch (moves[j].type)
             {
                 case MoveType::ConstIndex:
@@ -262,7 +263,7 @@ private:
                     break;
                 }
             }
-            //std::cerr <<"gethere perform move: " << j  << " done"<< std::endl;
+            ////std::cerr <<"gethere perform move: " << j  << " done"<< std::endl;
         }
 
         element = res_element;
@@ -275,11 +276,11 @@ private:
     {
         if (element.isArray())
         {
-            //std::cerr << "gethere move array" << std::endl;
+            ////std::cerr << "gethere move array" << std::endl;
             auto array = element.getArray();
-            //std::cerr <<"gethere getarray succ " << std::endl;
+            ////std::cerr <<"gethere getarray succ " << std::endl;
             size_t array_size = array.size();
-            //std::cerr <<"gethere size succ " << array_size << std::endl;
+            ////std::cerr <<"gethere size succ " << array_size << std::endl;
             if (index >= 0)
                 --index;
             else
@@ -294,10 +295,10 @@ private:
 
         if constexpr (HasIndexOperator<typename JSONParser::Object>)
         {
-            //std::cerr << "gethere move obj" << std::endl;
+            ////std::cerr << "gethere move obj" << std::endl;
             if (element.isObject())
             {
-            //std::cerr << "gethere move obj" << std::endl;
+            ////std::cerr << "gethere move obj" << std::endl;
                 auto object = element.getObject();
                 size_t object_size = object.size();
                 if (index >= 0)
@@ -360,6 +361,23 @@ constexpr bool functionForcesTheReturnType()
 {
     return std::is_same_v<Impl<void>, JSONExtractImpl<void>> || std::is_same_v<Impl<void>, JSONExtractKeysAndValuesImpl<void>>;
 }
+
+struct NameJSONHas { static constexpr auto name{"JSONHas"}; };
+struct NameIsValidJSON { static constexpr auto name{"isValidJSON"}; };
+struct NameJSONLength { static constexpr auto name{"JSONLength"}; };
+struct NameJSONKey { static constexpr auto name{"JSONKey"}; };
+struct NameJSONType { static constexpr auto name{"JSONType"}; };
+struct NameJSONExtractInt { static constexpr auto name{"JSONExtractInt"}; };
+struct NameJSONExtractUInt { static constexpr auto name{"JSONExtractUInt"}; };
+struct NameJSONExtractFloat { static constexpr auto name{"JSONExtractFloat"}; };
+struct NameJSONExtractBool { static constexpr auto name{"JSONExtractBool"}; };
+struct NameJSONExtractString { static constexpr auto name{"JSONExtractString"}; };
+struct NameJSONExtract { static constexpr auto name{"JSONExtract"}; };
+struct NameJSONExtractKeysAndValues { static constexpr auto name{"JSONExtractKeysAndValues"}; };
+struct NameJSONExtractRaw { static constexpr auto name{"JSONExtractRaw"}; };
+struct NameJSONExtractArrayRaw { static constexpr auto name{"JSONExtractArrayRaw"}; };
+struct NameJSONExtractKeysAndValuesRaw { static constexpr auto name{"JSONExtractKeysAndValuesRaw"}; };
+struct NameJSONExtractKeys { static constexpr auto name{"JSONExtractKeys"}; };
 
 template <typename Name, template<typename> typename Impl>
 class ExecutableFunctionJSON : public IExecutableFunction
@@ -432,7 +450,12 @@ private:
     {
 #if USE_SIMDJSON
         if (allow_simdjson)
-            return FunctionJSONHelpers::Executor<Name, Impl, SimdJSONParser>::run(arguments, result_type, input_rows_count, format_settings);
+        {
+            if constexpr (std::is_same_v<Name, NameIsValidJSON>)
+                return FunctionJSONHelpers::Executor<Name, Impl, DomSimdJSONParser>::run(arguments, result_type, input_rows_count, format_settings);
+            else
+                return FunctionJSONHelpers::Executor<Name, Impl, SimdJSONParser>::run(arguments, result_type, input_rows_count, format_settings);
+        }
 #endif
 
 #if USE_RAPIDJSON
@@ -549,22 +572,7 @@ public:
     }
 };
 
-struct NameJSONHas { static constexpr auto name{"JSONHas"}; };
-struct NameIsValidJSON { static constexpr auto name{"isValidJSON"}; };
-struct NameJSONLength { static constexpr auto name{"JSONLength"}; };
-struct NameJSONKey { static constexpr auto name{"JSONKey"}; };
-struct NameJSONType { static constexpr auto name{"JSONType"}; };
-struct NameJSONExtractInt { static constexpr auto name{"JSONExtractInt"}; };
-struct NameJSONExtractUInt { static constexpr auto name{"JSONExtractUInt"}; };
-struct NameJSONExtractFloat { static constexpr auto name{"JSONExtractFloat"}; };
-struct NameJSONExtractBool { static constexpr auto name{"JSONExtractBool"}; };
-struct NameJSONExtractString { static constexpr auto name{"JSONExtractString"}; };
-struct NameJSONExtract { static constexpr auto name{"JSONExtract"}; };
-struct NameJSONExtractKeysAndValues { static constexpr auto name{"JSONExtractKeysAndValues"}; };
-struct NameJSONExtractRaw { static constexpr auto name{"JSONExtractRaw"}; };
-struct NameJSONExtractArrayRaw { static constexpr auto name{"JSONExtractArrayRaw"}; };
-struct NameJSONExtractKeysAndValuesRaw { static constexpr auto name{"JSONExtractKeysAndValuesRaw"}; };
-struct NameJSONExtractKeys { static constexpr auto name{"JSONExtractKeys"}; };
+
 
 
 template <typename JSONParser>
@@ -786,18 +794,23 @@ public:
     static bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view, const FormatSettings &, String &)
     {
         bool value;
+        //std::cerr << "gethere extract bool, ele type" << std::endl;
         switch (element.type())
         {
             case ElementType::BOOL:
+                //std::cerr << "gethere extract bool, bool" << std::endl;
                 value = element.getBool();
                 break;
             case ElementType::INT64:
+                //std::cerr << "gethere extract bool, int64" << std::endl;
                 value = element.getInt64() != 0;
                 break;
             case ElementType::UINT64:
+                //std::cerr << "gethere extract bool, uint64" << std::endl;
                 value = element.getUInt64() != 0;
                 break;
             default:
+                //std::cerr << "gethere extract bool, default" << std::endl;
                 return false;
         }
 

@@ -21,10 +21,11 @@ namespace ErrorCodes
     extern const int JSON_PARSE_ERROR;
 }
 
+// NOLINTNEXTLINE(bugprone-macro-parentheses)
 #define SIMDJSON_ASSIGN_OR_THROW_IMPL(_result, _lhs, _rexpr) \
-    auto && _result = (_rexpr);                               \
-    if (_result.error() != ::simdjson::SUCCESS)                \
-        throw DB::ErrnoException(ErrorCodes::JSON_PARSE_ERROR, "simdjson error: {}", std::string(::simdjson::error_message(_result.error()))); \
+    auto && (_result) = (_rexpr);                               \
+    if ((_result).error() != ::simdjson::SUCCESS)                \
+        throw DB::ErrnoException(ErrorCodes::JSON_PARSE_ERROR, "simdjson error: {}", std::string(::simdjson::error_message((_result).error()))); \
     _lhs = std::move(_result).value_unsafe()
 
 #define SIMDJSON_ASSIGN_OR_THROW(_lhs, _rexpr) \
@@ -434,6 +435,7 @@ struct DomSimdJSONParser
         ALWAYS_INLINE Iterator end() const { return array.end(); }
         ALWAYS_INLINE size_t size() const { return array.size(); }
         ALWAYS_INLINE Element operator[](size_t index) const { assert(index < size()); return array.at(index).value_unsafe(); }
+        void reset() {}
 
     private:
         simdjson::dom::array array;
@@ -492,9 +494,12 @@ struct DomSimdJSONParser
     bool parse(std::string_view json, Element & result)
     {
         auto document = parser.parse(json.data(), json.size());
+        //std::cerr << "gethere json: " << json << std::endl;
         if (document.error())
+        {
+            //std::cerr <<"gethere dom parser error" << std::endl;
             return false;
-
+        }
         result = document.value_unsafe();
         return true;
     }
@@ -531,7 +536,7 @@ struct OnDemandSimdJSONParser
     {
     public:
         ALWAYS_INLINE Element() {} /// NOLINT
-        ALWAYS_INLINE Element(simdjson::ondemand::value && value_) { value = std::move(value_); }
+        ALWAYS_INLINE explicit Element(simdjson::ondemand::value && value_) { value = std::move(value_); }
         ALWAYS_INLINE Element & operator=(const simdjson::ondemand::value & value_) { value = value_; return *this; }
 
         ALWAYS_INLINE ElementType type() const
@@ -565,11 +570,14 @@ struct OnDemandSimdJSONParser
         ALWAYS_INLINE bool isString() const { auto r = value.type(); return !r.error() && r.value() == simdjson::ondemand::json_type::string; }
         ALWAYS_INLINE bool isArray() const
         {
+            //std::cerr <<"gethere is array" << std::endl;
             auto r = value.type();
+            //std::cerr <<"gethere is r" << r.error() << std::endl;
             return !r.error() && r.value() == simdjson::ondemand::json_type::array;
         }
         ALWAYS_INLINE bool isObject() const
         {
+            //std::cerr <<"gethere is obj" << std::endl;
             auto r = value.type();
             return !r.error() && r.value() == simdjson::ondemand::json_type::object;
         }
@@ -601,20 +609,17 @@ struct OnDemandSimdJSONParser
         ALWAYS_INLINE Array getArray() const
         {
             //std::cerr << "gethere getarray" << std::endl;
-            if (array)
-            {
-                //std::cerr << "gethere cached getarray" << std::endl;
-                return *array;
-            }
 
-            array = std::make_shared<Array>(value.get_array().value());
-            //SIMDJSON_ASSIGN_OR_THROW(auto arr, value.get_array());
+            //array = std::make_shared<Array>(value.get_array().value());
+            SIMDJSON_ASSIGN_OR_THROW(auto arr, value.get_array());
             //array = arr;
-            return *array;
+            return arr;
         }
         ALWAYS_INLINE Object getObject() const
         {
+            //std::cerr <<"gethere getobj" << std::endl;
             SIMDJSON_ASSIGN_OR_THROW(auto obj, value.get_object());
+            //std::cerr <<"gethere getobj suc" << std::endl;
             return obj;
         }
 
@@ -622,7 +627,6 @@ struct OnDemandSimdJSONParser
 
     private:
         mutable simdjson::ondemand::value value;
-        mutable std::shared_ptr<Array> array;
     };
 
     /// References an array in a JSON document.
@@ -634,7 +638,7 @@ struct OnDemandSimdJSONParser
         public:
             Iterator() = default;
             ALWAYS_INLINE Iterator(const simdjson::ondemand::array_iterator & it_) : it(it_) {} /// NOLINT
-            ALWAYS_INLINE Element operator*() const { return (*it).value(); }
+            ALWAYS_INLINE Element operator*() const { return Element((*it).value()); }
             ALWAYS_INLINE Iterator & operator++() { ++it; return *this; }
             ALWAYS_INLINE friend bool operator!=(const Iterator & left, const Iterator & right) { return left.it != right.it; }
             ALWAYS_INLINE friend bool operator==(const Iterator & left, const Iterator & right) { return !(left != right); }
@@ -673,6 +677,7 @@ struct OnDemandSimdJSONParser
                 //std::cerr << "gethere array size cached :" << *arr_size << std::endl;
                 return *arr_size;
             }
+            //std::cerr << "gethere array.size() no cached " << std::endl;
             arr_size = array.count_elements().value();
             return *arr_size;
             //return array.count_elements().value();
@@ -688,7 +693,7 @@ struct OnDemandSimdJSONParser
                 for (; last_index < index; ++(it.value()), ++last_index)
                     ;
                 SIMDJSON_ASSIGN_OR_THROW(auto ele, *(it.value()));
-                return ele;
+                return Element(std::move(ele));
             }
             if (!it)
             {
@@ -702,7 +707,7 @@ struct OnDemandSimdJSONParser
                 ++(it.value());
             last_index = index;
             SIMDJSON_ASSIGN_OR_THROW(auto ele, *(it.value()));
-            return ele;
+            return Element(std::move(ele));
         }
 
         void reset() const
@@ -759,6 +764,7 @@ struct OnDemandSimdJSONParser
         ///NOTE: call size() before iterate
         ALWAYS_INLINE size_t size() const
         {
+            //std::cerr << "gethere obj size" << std::endl;
             return object.count_fields().value();
         }
 
@@ -803,15 +809,64 @@ struct OnDemandSimdJSONParser
     bool parse(std::string_view json, Element & result)
     {
         padstr = json;
-        auto res = parser.iterate(padstr);
-        if (res.error())
+        auto doc = parser.iterate(padstr);
+        if (doc.error())
+        {
+            //std::cerr << "gethere parse json fail, " << doc.error() << std::endl;
             return false;
+        }
+        //std::cerr << "gethere parse json ok: " << json << std::endl;
+        //std::cerr << "gethere is_scalar ok? " << r.error()<< std::endl;
+        document = std::move(doc.value());
+        auto scalar = document.is_scalar();
+        if (scalar.error())
+        {
+            //std::cerr << "gethere is_scalar call fail:" << scalar.error() << std::endl;
+            return false;
+        }
+        auto type = document.type();
+        if (type.error())
+        {
+            //std::cerr << "gethere type call fail:" << type.error() << std::endl;
+            return false;
+        }
+        //std::cerr << "gethere type " << type.value() << std::endl;
+        if (scalar.value())
+        {
+            //std::cerr << "gethere scala: " << json << std::endl;
+            padded_scalar_string.reserve(2 + json.size() + simdjson::SIMDJSON_PADDING);
+            padded_scalar_string.insert(0, "[");
+            padded_scalar_string.insert(1, json.data(), json.size());
+            padded_scalar_string.insert(json.size() + 1, "]");
+            padded_scalar_string.insert(json.size() + 2, '\0', simdjson::SIMDJSON_PADDING);
 
-        document = std::move(res.value());
+            auto res = parser.iterate(simdjson::padded_string_view(padded_scalar_string));
+            if (res.error())
+            {
+                //std::cerr << "gethere parse json fail, " << res.error() << std::endl;
+                return false;
+            }
+            document = std::move(res.value());
+            auto v = document.get_value();
+            if (v.error())
+            {
+                //std::cerr << "gethere get value fail, " << v.error() << std::endl;
+                return false;
+            }
+            result = v.get_array().at(0);
+            return true;
+        }
+        //std::cerr << "gethere parse json not scalar" << std::endl;
+        //document = std::move(res.value());
+
         auto v = document.get_value();
         if (v.error())
+        {
+            //std::cerr << "gethere get value fail, " << v.error() << std::endl;
             return false;
+        }
 
+        //std::cerr << "gethere get value ok" << std::endl;
         result = v.value();
         return true;
     }
@@ -820,9 +875,12 @@ private:
     simdjson::ondemand::parser parser;
     simdjson::ondemand::document document{};
     simdjson::padded_string padstr;
+    std::string padded_scalar_string;
+    simdjson::padded_string_view padstr_view;
 };
 
 using SimdJSONParser = OnDemandSimdJSONParser;
+//using SimdJSONParser = DomSimdJSONParser;
 
 }
 
