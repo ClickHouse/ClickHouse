@@ -354,7 +354,7 @@ void SortingStep::mergeSorting(
                 increase_sort_description_compile_attempts_current,
                 sort_settings.max_bytes_before_remerge / pipeline.getNumStreams(),
                 sort_settings.remerge_lowered_memory_bytes_ratio,
-                sort_settings.max_bytes_before_external_sort,
+                sort_settings.max_bytes_before_external_sort / pipeline.getNumStreams(),
                 std::move(tmp_data_on_disk),
                 sort_settings.min_free_disk_space);
         });
