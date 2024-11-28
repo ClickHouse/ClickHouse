@@ -112,7 +112,8 @@ public:
     std::vector<std::string> collations;
     ServerCredentials mysql_server, postgresql_server, sqlite_server, mongodb_server, redis_server, minio_server;
     bool read_log = false, fuzz_floating_points = true;
-    uint32_t seed = 0, max_depth = 3, max_width = 3, max_databases = 4, max_functions = 4, max_tables = 10, max_views = 5, time_to_run = 0;
+    uint64_t seed = 0;
+    uint32_t max_depth = 3, max_width = 3, max_databases = 4, max_functions = 4, max_tables = 10, max_views = 5, time_to_run = 0;
     std::filesystem::path log_path = std::filesystem::temp_directory_path() / "out.sql",
                           db_file_path = std::filesystem::temp_directory_path() / "db", fuzz_out = db_file_path / "fuzz.data";
 
@@ -159,7 +160,7 @@ public:
             }
             else if (key == "seed")
             {
-                seed = static_cast<uint32_t>(value.getUInt64());
+                seed = value.getUInt64();
             }
             else if (key == "max_depth")
             {

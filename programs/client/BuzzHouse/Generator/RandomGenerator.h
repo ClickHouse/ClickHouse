@@ -30,7 +30,7 @@ const constexpr char hex_digits[] = "0123456789abcdef";
 class RandomGenerator
 {
 private:
-    uint32_t seed;
+    uint64_t seed;
 
     std::uniform_int_distribution<int8_t> ints8;
 
@@ -104,7 +104,7 @@ private:
 public:
     pcg64_fast generator;
 
-    explicit RandomGenerator(const uint32_t in_seed)
+    explicit RandomGenerator(const uint64_t in_seed)
         : seed(in_seed ? in_seed : randomSeed())
         , ints8(std::numeric_limits<int8_t>::min(), std::numeric_limits<int8_t>::max())
         , uints8(std::numeric_limits<uint8_t>::min(), std::numeric_limits<uint8_t>::max())
