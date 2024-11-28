@@ -6,7 +6,7 @@ namespace DB
 {
 
 /** Implements [LIMIT INRANGE FROM from_expr TO to_expr, window] operation.
-  * Filtering condition columns are added to the block during the Expression Transform processor.
+  * Filtering condition columns are added to the block during the Expression transform processor.
   * The bounds are computed considering the existence of the 'window', and the resulting chunks include only rows within these bounds.
   * If remove_filter_column is true, remove filter column from block.
   */

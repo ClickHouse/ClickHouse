@@ -6,6 +6,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
 
+
 namespace DB
 {
 
