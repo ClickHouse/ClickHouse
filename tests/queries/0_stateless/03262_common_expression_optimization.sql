@@ -75,9 +75,10 @@ SELECT * FROM x WHERE ((A AND B AND C) OR (A AND B AND D)) AND ((B AND A AND E) 
 EXPLAIN QUERY TREE dump_ast = 1 SELECT count() FROM x WHERE ((A AND B AND C) OR (A AND B AND D)) AND ((B AND A AND E) OR (B AND A AND F));
 
 
--- Optimization is not applied if the result type would change in nullability, thus `toNullable(F)` cannot be eliminated
+-- _CAST function has to be used to maintain the same result type
 EXPLAIN QUERY TREE dump_ast = 1 SELECT count() FROM x WHERE ((B AND C) OR (B AND C AND toNullable(F)));
--- Here the result type stays nullable because of `toNullable(C)`, so optimization will be applied
+EXPLAIN QUERY TREE dump_ast = 1 SELECT count() FROM x WHERE (x AND x) OR (x AND x);
+-- Here the result type stays nullable because of `toNullable(C)`, so no cast is needed
 EXPLAIN QUERY TREE dump_ast = 1 SELECT count() FROM x WHERE ((B AND toNullable(C)) OR (B AND toNullable(C) AND toNullable(F)));
 
 -- Check that optimization only happen on top level, (C AND D) OR (C AND E) shouldn't be optimized
@@ -91,7 +92,7 @@ INSERT INTO y SELECT x, A%2 AS A, B%2 AS B, C%2 AS C, D%2 AS D, E%2 AS E, F%2 AS
 -- JOIN expressions
 -- As the optimization code is shared between ON and WHERE, it is enough to test that the optimization is done also in ON
 SELECT * FROM x INNER JOIN y ON ((x.A = y.A ) AND x.B = 1) OR ((x.A = y.A) AND y.C = 1) ORDER BY ALL LIMIT 10 SETTINGS allow_experimental_join_condition = 1, optimize_extract_common_expressions = 0;
-SELECT * FROM x INNER JOIN y ON ((x.A = y.A ) AND x.B = 1) OR ((x.A = y.A) AND y.C = 1) ORDER BY ALL LIMIT 10 SETTINGS allow_experimental_join_condition = 1, optimize_extract_common_expressions = 1;
+SELECT * FROM x INNER JOIN y ON ((x.A = y.A ) AND x.B = 1) OR ((x.A = y.A) AND y.C = 1) ORDER BY ALL LIMIT 10 SETTINGS allow_experimental_join_condition = 1;
 EXPLAIN QUERY TREE dump_ast = 1 SELECT count() FROM x INNER JOIN y ON ((x.A = y.A ) AND x.B = 1) OR ((x.A = y.A) AND y.C = 1);
 
 -- Check that optimization only happen on top level, (x.C = y.C AND x.D = y.D) OR (x.C = y.C AND x.E = y.E) shouldn't be optimized
@@ -99,7 +100,7 @@ EXPLAIN QUERY TREE dump_ast = 1 SELECT count() FROM x INNER JOIN y ON (x.A = y.A
 
 -- Duplicated subexpressions, found by fuzzer
 SELECT * FROM x WHERE (D AND 5) OR ((C AND E) AND (C AND E)) ORDER BY ALL LIMIT 3 SETTINGS optimize_extract_common_expressions = 0;
-SELECT * FROM x WHERE (D AND 5) OR ((C AND E) AND (C AND E)) ORDER BY ALL LIMIT 3 SETTINGS optimize_extract_common_expressions = 1;
+SELECT * FROM x WHERE (D AND 5) OR ((C AND E) AND (C AND E)) ORDER BY ALL LIMIT 3;
 EXPLAIN QUERY TREE dump_ast = 1 SELECT * FROM x WHERE (C AND E) OR ((C AND E) AND (C AND E));
 
 -- HAVING

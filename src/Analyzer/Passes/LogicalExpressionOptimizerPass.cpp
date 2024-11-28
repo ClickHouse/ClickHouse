@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include "Analyzer/IQueryTreeNode.h"
 
 namespace DB
 {
@@ -403,12 +404,11 @@ void tryOptimizeCommonExpressionsInOr(QueryTreeNodePtr & node, const ContextPtr 
             new_function_node->resolveAsFunction(and_function_resolver);
             new_root_node = std::move(new_function_node);
         }
-    }
 
-    // As only equivalent transformations are done on logical expressions (deduplication/flattening/elimination) (in other words we don't modify the values in (in)equalities),
-    // we can be sure the result type always remains convertible to UInt8 or Nullable(UInt8). We shouldn't change the nullability of the expression though.
-    if (new_root_node != nullptr && new_root_node->getResultType()->isNullable() == node->getResultType()->isNullable())
+        if (!new_root_node->getResultType()->equals(*node->getResultType()))
+            new_root_node = buildCastFunction(new_root_node, node->getResultType(), context);
         node = std::move(new_root_node);
+    }
 }
 
 void tryOptimizeCommonExpressionsInAnd(QueryTreeNodePtr & node, const ContextPtr & context)
@@ -445,15 +445,15 @@ void tryOptimizeCommonExpressionsInAnd(QueryTreeNodePtr & node, const ContextPtr
     if (!extracted_something)
         return;
 
-    auto new_root_node = std::make_shared<FunctionNode>("and");
-    new_root_node->getArguments().getNodes() = std::move(new_top_level_arguments);
+    auto and_function_node = std::make_shared<FunctionNode>("and");
+    and_function_node->getArguments().getNodes() = std::move(new_top_level_arguments);
     auto and_function_resolver = FunctionFactory::instance().get("and", context);
-    new_root_node->resolveAsFunction(and_function_resolver);
+    and_function_node->resolveAsFunction(and_function_resolver);
+    QueryTreeNodePtr new_root_node = and_function_node;
 
-    // As only equivalent transformations are done on logical expressions (deduplication/flattening/elimination) (in other words we don't modify the values in (in)equalities),
-    // we can be sure the result type always remains convertible to UInt8 or Nullable(UInt8). We shouldn't change the nullability of the expression though.
-    if (new_root_node != nullptr && new_root_node->getResultType()->isNullable() == node->getResultType()->isNullable())
-        node = std::move(new_root_node);
+    if (!new_root_node->getResultType()->equals(*node->getResultType()))
+        new_root_node = buildCastFunction(new_root_node, node->getResultType(), context);
+    node = std::move(new_root_node);
 }
 
 void tryOptimizeCommonExpressions(QueryTreeNodePtr & node, FunctionNode& function_node, const ContextPtr & context)
