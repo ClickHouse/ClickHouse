@@ -1225,6 +1225,9 @@ Possible values: non-negative numbers. Note that if the value is too small or to
 If true then data can be parsed directly to columns with custom serialization (e.g. Sparse) according to hints for serialization got from the table.
 )", 0) \
     \
+    DECLARE(Bool, merge_tree_use_v1_object_and_dynamic_serialization, false, R"(
+When enabled, V1 serialization version of JSON and Dynamic types will be used in MergeTree instead of V2. Changing this setting takes affect only after server restart.
+)", 0) \
     DECLARE(UInt64, merge_tree_min_rows_for_concurrent_read, (20 * 8192), R"(
 If the number of rows to be read from a file of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `merge_tree_min_rows_for_concurrent_read` then ClickHouse tries to perform a concurrent reading from this file on several threads.
 
@@ -1797,7 +1800,7 @@ Possible values:
 
 - 0 — Disabled.
 - 1 — Enabled.
-)", 1) \
+)", 0) \
     DECLARE(Int64, http_zlib_compression_level, 3, R"(
 Sets the level of data compression in the response to an HTTP request if [enable_http_compression = 1](#enable_http_compression).
 
@@ -2458,7 +2461,7 @@ Possible values:
 
 - default
 
- This is the equivalent of `hash` or `direct`, if possible (same as `direct,hash`)
+ This is the equivalent of `hash`, `parallel_hash` or `direct`, if possible (same as `direct,parallel_hash,hash`)
 
 - grace_hash
 
@@ -2472,11 +2475,13 @@ Possible values:
 
  [Hash join algorithm](https://en.wikipedia.org/wiki/Hash_join) is used. The most generic implementation that supports all combinations of kind and strictness and multiple join keys that are combined with `OR` in the `JOIN ON` section.
 
+ When using the `hash` algorithm, the right part of `JOIN` is uploaded into RAM.
+
 - parallel_hash
 
  A variation of `hash` join that splits the data into buckets and builds several hashtables instead of one concurrently to speed up this process.
 
- When using the `hash` algorithm, the right part of `JOIN` is uploaded into RAM.
+ When using the `parallel_hash` algorithm, the right part of `JOIN` is uploaded into RAM.
 
 - partial_merge
 
@@ -5518,15 +5523,10 @@ The default value is `CURRENT_USER`.
     DECLARE(UInt64, cache_warmer_threads, 4, R"(
 Only available in ClickHouse Cloud. Number of background threads for speculatively downloading new data parts into file cache, when cache_populated_by_fetch is enabled. Zero to disable.
 )", 0) \
+    DECLARE(Bool, use_async_executor_for_materialized_views, false, R"(
+Use async and potentially multithreaded execution of materialized view query, can speedup views processing during INSERT, but also consume more memory.)", 0) \
     DECLARE(Int64, ignore_cold_parts_seconds, 0, R"(
 Only available in ClickHouse Cloud. Exclude new data parts from SELECT queries until they're either pre-warmed (see cache_populated_by_fetch) or this many seconds old. Only for Replicated-/SharedMergeTree.
-)", 0) \
-    DECLARE(Bool, short_circuit_function_evaluation_for_nulls, true, R"(
-Allows to execute functions with Nullable arguments only on rows with non-NULL values in all arguments when ratio of NULL values in arguments exceeds short_circuit_function_evaluation_for_nulls_threshold. Applies only to functions that return NULL value for rows with at least one NULL value in arguments.
-)", 0) \
-    DECLARE(Double, short_circuit_function_evaluation_for_nulls_threshold, 1.0, R"(
-Ratio threshold of NULL values to execute functions with Nullable arguments only on rows with non-NULL values in all arguments. Applies when setting short_circuit_function_evaluation_for_nulls is enabled.
-When the ratio of rows containing NULL values to the total number of rows exceeds this threshold, these rows containing NULL values will not be evaluated.
 )", 0) \
     DECLARE(Int64, prefer_warmed_unmerged_parts_seconds, 0, R"(
 Only available in ClickHouse Cloud. If a merged part is less than this many seconds old and is not pre-warmed (see cache_populated_by_fetch), but all its source parts are available and pre-warmed, SELECT queries will read from those parts instead. Only for ReplicatedMergeTree. Note that this only checks whether CacheWarmer processed the part; if the part was fetched into cache by something else, it'll still be considered cold until CacheWarmer gets to it; if it was warmed, then evicted from cache, it'll still be considered warm.
@@ -5728,7 +5728,7 @@ Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting
 If enabled, only allow identifiers containing alphanumeric characters and underscores.
 )", 0) \
     DECLARE(Bool, mongodb_throw_on_unsupported_query, true, R"(
-If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally. This option does not apply to the legacy implementation or when 'allow_experimental_analyzer=0'.
+If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally. This option is not applied when 'enable_analyzer=0'.
 )", 0) \
     DECLARE(Bool, implicit_select, false, R"(
 Allow writing simple SELECT queries without the leading SELECT keyword, which makes it simple for calculator-style usage, e.g. `1 + 2` becomes a valid query.
@@ -5743,6 +5743,16 @@ Allow extracting common expressions from disjunctions in WHERE and ON expression
     DECLARE(Bool, push_external_roles_in_interserver_queries, true, R"(
 Enable pushing user roles from originator to other nodes while performing a query.
 )", 0) \
+    \
+    DECLARE(Bool, allow_experimental_variant_type, false, R"(
+Allows creation of [Variant](../../sql-reference/data-types/variant.md) data type.
+)", BETA) ALIAS(enable_variant_type) \
+    DECLARE(Bool, allow_experimental_dynamic_type, false, R"(
+Allows creation of [Dynamic](../../sql-reference/data-types/dynamic.md) data type.
+)", BETA) ALIAS(enable_dynamic_type) \
+    DECLARE(Bool, allow_experimental_json_type, false, R"(
+Allows creation of [JSON](../../sql-reference/data-types/newjson.md) data type.
+)", BETA) ALIAS(enable_json_type) \
     \
     \
     /* ####################################################### */ \
@@ -5779,19 +5789,10 @@ Possible values:
     DECLARE(Bool, allow_experimental_vector_similarity_index, false, R"(
 Allow experimental vector similarity index
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_variant_type, false, R"(
-Allows creation of experimental [Variant](../../sql-reference/data-types/variant.md).
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_dynamic_type, false, R"(
-Allow Dynamic data type
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_json_type, false, R"(
-Allow JSON data type
-)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_codecs, false, R"(
 If it is set to true, allow to specify experimental compression codecs (but we don't have those yet and this option does nothing).
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_shared_set_join, true, R"(
+    DECLARE(Bool, allow_experimental_shared_set_join, false, R"(
 Only in ClickHouse Cloud. Allow to create ShareSet and SharedJoin
 )", EXPERIMENTAL) \
     DECLARE(UInt64, max_limit_for_ann_queries, 1'000'000, R"(
@@ -6169,7 +6170,7 @@ void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
 
 namespace Setting
 {
-    LIST_OF_SETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)
+    LIST_OF_SETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)  /// NOLINT (misc-use-internal-linkage)
 }
 
 #undef INITIALIZE_SETTING_EXTERN

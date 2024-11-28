@@ -1,3 +1,5 @@
+SET join_algorithm = 'hash';
+
 SELECT L1Distance([0, 0, 0], [1, 2, 3]);
 SELECT L2Distance([1, 2, 3], [0, 0, 0]);
 SELECT L2SquaredDistance([1, 2, 3], [0, 0, 0]);
