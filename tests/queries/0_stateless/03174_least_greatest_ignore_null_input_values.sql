@@ -1,3 +1,5 @@
+-- Tests functions "greatest" and "least" with NULL arguments
+
 SELECT 'Test with one const argument';
 SELECT greatest(NULL), least(NULL);
 
