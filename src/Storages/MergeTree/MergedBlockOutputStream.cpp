@@ -198,16 +198,18 @@ void MergedBlockOutputStream::finalizePart(
     const MergeTreeMutableDataPartPtr & new_part,
     bool sync,
     const NamesAndTypesList * total_columns_list,
-    MergeTreeData::DataPart::Checksums * additional_column_checksums)
+    MergeTreeData::DataPart::Checksums * additional_column_checksums,
+    ColumnsWithTypeAndName * additional_columns_samples)
 {
-    finalizePartAsync(new_part, sync, total_columns_list, additional_column_checksums).finish();
+    finalizePartAsync(new_part, sync, total_columns_list, additional_column_checksums, additional_columns_samples).finish();
 }
 
 MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     const MergeTreeMutableDataPartPtr & new_part,
     bool sync,
     const NamesAndTypesList * total_columns_list,
-    MergeTreeData::DataPart::Checksums * additional_column_checksums)
+    MergeTreeData::DataPart::Checksums * additional_column_checksums,
+    ColumnsWithTypeAndName * additional_columns_samples)
 {
     /// Finish write and get checksums.
     MergeTreeData::DataPart::Checksums checksums;
@@ -253,7 +255,14 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
     new_part->setBytesUncompressedOnDisk(checksums.getTotalSizeUncompressedOnDisk());
     new_part->index_granularity = writer->getIndexGranularity();
-    new_part->calculateColumnsAndSecondaryIndicesSizesOnDisk(writer->getColumnsSample());
+
+    auto columns_sample = writer->getColumnsSample();
+    if (additional_columns_samples)
+    {
+       for (const auto & column : *additional_columns_samples)
+            columns_sample.insert(column);
+    }
+    new_part->calculateColumnsAndSecondaryIndicesSizesOnDisk(columns_sample);
 
     if ((*new_part->storage.getSettings())[MergeTreeSetting::enable_index_granularity_compression])
     {
