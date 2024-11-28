@@ -283,12 +283,14 @@ EOF
         exit 1
     fi
 
+    FUZZER_ARGS_SPLIT=($FUZZER_ARGS)
+
     timeout -s TERM --preserve-status 30m clickhouse-client \
         --max_memory_usage_in_client=1000000000 \
         --receive_timeout=10 \
         --receive_data_timeout_ms=10000 \
         --stacktrace \
-        $FUZZER_ARGS \
+        ${FUZZER_ARGS_SPLIT[@]} \
         > fuzzer.log \
         2>&1 &
     fuzzer_pid=$!
