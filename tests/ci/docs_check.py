@@ -77,7 +77,7 @@ def main():
     test_output.mkdir(parents=True, exist_ok=True)
 
     cmd = (
-        f"docker run --cap-add=SYS_PTRACE --memory=8g --user={os.geteuid()}:{os.getegid()} "
+        f"docker run --cap-add=SYS_PTRACE --memory=12g --user={os.geteuid()}:{os.getegid()} "
         f"-e GIT_DOCS_BRANCH={args.docs_branch} "
         f"--volume={repo_path}:/ClickHouse --volume={test_output}:/output_path "
         f"{docker_image}"
