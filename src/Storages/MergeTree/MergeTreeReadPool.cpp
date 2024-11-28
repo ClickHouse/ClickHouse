@@ -69,13 +69,12 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(size_t task_idx, MergeTreeReadTa
 {
     auto init = [this]()
     {
+        // LOG_TRACE(getLogger("MergeTreeReadPool"), "Init callback called for {}", storage_snapshot->storage.getStorageID().getNameForLogs());
         auto parts_ranges_and_lock = parts_ranges_ptr->get();
         const auto & parts_ranges = parts_ranges_and_lock.parts_ranges;
 
         fillPerPartInfos(parts_ranges);
         fillPerThreadInfo(parts_ranges, pool_settings.threads, pool_settings.sum_marks);
-
-        LOG_TRACE(getLogger("MergeTreeReadPool"), "Init callback done");
     };
     std::call_once(init_flag, init);
 

@@ -45,7 +45,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolInOrder::getTask(size_t task_idx, MergeTre
     {
         auto parts_ranges_and_lock = parts_ranges_ptr->get();
 
-        LOG_TRACE(getLogger("MergeTreeReadPoolInOrder"), "Init callback called\n{}", StackTrace().toString());
+        // LOG_TRACE(getLogger("MergeTreeReadPoolInOrder"), "Init callback called for {}", storage_snapshot->storage.getStorageID().getNameForLogs());
         const auto & parts_ranges = parts_ranges_and_lock.parts_ranges;
 
         fillPerPartInfos(parts_ranges);

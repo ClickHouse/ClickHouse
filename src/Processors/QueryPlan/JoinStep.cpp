@@ -7,8 +7,10 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <IO/Operators.h>
+// #include "Common/FieldVisitorToString.h"
 #include <Common/JSONBuilder.h>
 #include <Common/typeid_cast.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnSet.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 
@@ -46,6 +48,8 @@ ColumnsWithTypeAndName squashBlocks(const Names & keys, const BlocksList & block
     ColumnsWithTypeAndName squashed;
     std::vector<size_t> positions;
 
+    auto log = getLogger("squashBlocks");
+
     // std::cerr << "===== " << blocks.front().dumpStructure() << std::endl;
     for (const auto & name : keys)
     {
@@ -56,11 +60,18 @@ ColumnsWithTypeAndName squashBlocks(const Names & keys, const BlocksList & block
     bool first = true;
     for (const auto & block : blocks)
     {
+        // std::cerr << "===== " << block.dumpStructure() << std::endl;
+        // for (size_t row = 0; row < block.getByPosition(0).column->size(); ++row)
+        //     LOG_TRACE(log, "{} : {}", row, applyVisitor(FieldVisitorToString(), (*block.getByPosition(0).column)[row]));
+
         if (first)
         {
             first = false;
             for (size_t pos : positions)
+            {
                 squashed.push_back(blocks.front().getByPosition(pos));
+                squashed.back().column = recursiveRemoveSparse(squashed.back().column);
+            }
             continue;
         }
 
@@ -69,10 +80,10 @@ ColumnsWithTypeAndName squashBlocks(const Names & keys, const BlocksList & block
             auto & sq_col = squashed[i];
             auto col_mutable = IColumn::mutate(std::move(sq_col.column));
 
-            const auto & rhs_col = block.getByPosition(positions[i]);
-            size_t rows = rhs_col.column->size();
+            auto rhs_col = recursiveRemoveSparse(block.getByPosition(positions[i]).column);
+            size_t rows = rhs_col->size();
 
-            col_mutable->insertRangeFrom(*rhs_col.column, 0, rows);
+            col_mutable->insertRangeFrom(*rhs_col, 0, rows);
             sq_col.column = std::move(col_mutable);
         }
     }
@@ -84,6 +95,8 @@ ColumnsWithTypeAndName squashBlocks(const Names & keys, const BlocksList & block
 
 void DynamicJoinFilters::filterDynamicPartsByFilledJoin(const IJoin & join)
 {
+    auto log = getLogger("DynamicJoinFilter");
+    LOG_TRACE(log, "DynamicJoinFilters::filterDynamicPartsByFilledJoin parts {}", parts != nullptr);
     if (!parts)
         return;
 
@@ -112,9 +125,7 @@ void DynamicJoinFilters::filterDynamicPartsByFilledJoin(const IJoin & join)
     const Names & primary_key_column_names = primary_key.column_names;
 
     KeyCondition key_condition(&actions, context, primary_key_column_names, primary_key.expression);
-    // std::cerr << "======== " << key_condition.toString() << std::endl;
-
-    auto log = getLogger("DynamicJoinFilter");
+    LOG_TRACE(log, "Key condition: {}", key_condition.toString());
 
     auto parts_with_lock = parts->parts_ranges_ptr->get();
 
@@ -192,7 +203,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
 
     auto finish_callback = [filter = this->dynamic_filter, algo = this->join]()
     {
-        LOG_TRACE(getLogger("JoinStep"), "Finish callback called");
+        // LOG_TRACE(getLogger("JoinStep"), "Finish callback called. Filter {}", filter != nullptr);
         if (filter)
             filter->filterDynamicPartsByFilledJoin(*algo);
     };

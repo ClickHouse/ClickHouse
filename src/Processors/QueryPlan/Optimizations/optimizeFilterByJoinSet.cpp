@@ -17,6 +17,7 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Functions/FunctionsLogical.h>
+#include <Functions/IFunctionAdaptors.h>
 
 namespace DB
 {
