@@ -3,8 +3,8 @@ Test with one const argument
 Test with two const arguments
 1	1
 1	1
-1.0	1.0
-1.0	1.0
+1.1	1.1
+1.1	1.1
 a	a
 a	a
 Test with one non-const argument
@@ -12,8 +12,8 @@ Test with one non-const argument
 Test with two non-const arguments
 1	1
 1	1
-1.0	1.0
-1.0	1.0
+1.1	1.1
+1.1	1.1
 a	a
 a	a
 Special cases
