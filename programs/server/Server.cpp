@@ -1245,9 +1245,14 @@ try
     if (loaded_config.has_zk_includes)
     {
         auto old_configuration = loaded_config.configuration;
+        bool config_reload_sync_zookeeper = old_configuration->getBool("config_reload_sync_zookeeper", false);
         ConfigProcessor config_processor(config_path);
         loaded_config = config_processor.loadConfigWithZooKeeperIncludes(
-            main_config_zk_node_cache, main_config_zk_changed_event, /* fallback_to_preprocessed = */ true);
+            main_config_zk_node_cache,
+            main_config_zk_changed_event,
+            /*fallback_to_preprocessed =*/ true,
+            /*is_config_changed=*/ true,
+            config_reload_sync_zookeeper);
         config_processor.savePreprocessedConfig(loaded_config, path_str);
         config().removeConfiguration(old_configuration.get());
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);

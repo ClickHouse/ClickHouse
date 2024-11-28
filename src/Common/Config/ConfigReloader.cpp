@@ -123,8 +123,15 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
         {
             loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true, is_config_changed);
             if (loaded_config.has_zk_includes)
+            {
+                bool config_reload_sync_zookeeper = loaded_config.configuration->getBool("config_reload_sync_zookeeper", false);
                 loaded_config = config_processor.loadConfigWithZooKeeperIncludes(
-                    zk_node_cache, zk_changed_event, fallback_to_preprocessed, is_config_changed);
+                    zk_node_cache,
+                    zk_changed_event,
+                    fallback_to_preprocessed,
+                    is_config_changed,
+                    config_reload_sync_zookeeper);
+            }
         }
         catch (const Coordination::Exception & e)
         {

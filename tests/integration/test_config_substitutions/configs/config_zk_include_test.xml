@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <clickhouse>
+  <config_reload_sync_zookeeper>true</config_reload_sync_zookeeper>
+
   <background_pool_size>44</background_pool_size>
   <merge_tree>
     <include from_zk="/merge_max_block_size" merge="true"/>
