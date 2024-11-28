@@ -93,10 +93,7 @@ public:
         bool with_pending_data,
         const std::vector<String> & external_roles) override;
 
-    void sendReadTaskResponse(const String &) override
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "sendReadTaskResponse in not supported with HedgedConnections");
-    }
+    void sendReadTaskResponse(const String & response) override;
 
     void sendMergeTreeReadTaskResponse(const ParallelReadResponse &) override
     {

@@ -322,6 +322,7 @@ Packet HedgedConnections::drain()
             case Protocol::Server::Totals:
             case Protocol::Server::Extremes:
             case Protocol::Server::EndOfStream:
+            case Protocol::Server::ReadTaskRequest:
                 break;
 
             case Protocol::Server::Exception:
@@ -477,6 +478,7 @@ Packet HedgedConnections::receivePacketFromReplica(const ReplicaLocation & repli
         case Protocol::Server::Extremes:
         case Protocol::Server::Log:
         case Protocol::Server::ProfileEvents:
+        case Protocol::Server::ReadTaskRequest:
             replica_with_last_received_packet = replica_location;
             break;
 
@@ -633,6 +635,20 @@ void HedgedConnections::setAsyncCallback(AsyncCallback async_callback)
             if (replica.connection)
                 replica.connection->setAsyncCallback(async_callback);
         }
+    }
+}
+
+void HedgedConnections::sendReadTaskResponse(const String & response)
+{
+    std::lock_guard lock(cancel_mutex);
+    if (cancelled)
+        return;
+
+    if (replica_with_last_received_packet)
+    {
+        auto location = replica_with_last_received_packet.value();
+        if (offset_states[location.offset].replicas[location.index].connection)
+            offset_states[location.offset].replicas[location.index].connection->sendReadTaskResponse(response);
     }
 }
 
