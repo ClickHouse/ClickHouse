@@ -3461,7 +3461,9 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
                 auto capture_dag = ActionsDAG::deserialize(in, registry, context);
 
                 node.function_base = std::make_shared<FunctionCapture>(
-                    std::make_shared<ActionsDAG>(std::move(capture_dag)),
+                    std::make_shared<ExpressionActions>(
+                        std::move(capture_dag),
+                        ExpressionActionsSettings::fromContext(context, CompileExpressions::yes)),
                     std::make_shared<ExecutableFunctionCapture::Capture>(std::move(capture)),
                     node.result_type,
                     function_name);

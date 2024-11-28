@@ -124,8 +124,8 @@ public:
 
     using CapturePtr = std::shared_ptr<Capture>;
 
-    ExecutableFunctionCapture(std::shared_ptr<ActionsDAG> actions_dag_, CapturePtr capture_)
-        : actions_dag(std::move(actions_dag_)), capture(std::move(capture_)) {}
+    ExecutableFunctionCapture(ExpressionActionsPtr expression_actions_, CapturePtr capture_)
+        : expression_actions(std::move(expression_actions_)), capture(std::move(capture_)) {}
 
     String getName() const override { return "FunctionCapture"; }
 
@@ -179,18 +179,9 @@ public:
         }
     }
 
-    void buildExpressionActions(const ExpressionActionsSettings & settings)
-    {
-        /// In rare situations this function can be called a few times (e.g. ActonsDAG was clonned).
-        if (!expression_actions)
-            expression_actions = std::make_shared<ExpressionActions>(actions_dag->clone(), settings);
-    }
-
 private:
-    std::shared_ptr<ActionsDAG> actions_dag;
-    CapturePtr capture;
-
     ExpressionActionsPtr expression_actions;
+    CapturePtr capture;
 };
 
 class FunctionCapture : public IFunctionBase
@@ -199,11 +190,11 @@ public:
     using CapturePtr = ExecutableFunctionCapture::CapturePtr;
 
     FunctionCapture(
-        std::shared_ptr<ActionsDAG> actions_dag_,
+        ExpressionActionsPtr expression_actions_,
         CapturePtr capture_,
         DataTypePtr return_type_,
         String name_)
-        : actions_dag(std::move(actions_dag_))
+        : expression_actions(std::move(expression_actions_))
         , capture(std::move(capture_))
         , return_type(std::move(return_type_))
         , name(std::move(name_))
@@ -219,14 +210,14 @@ public:
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
-        return std::make_unique<ExecutableFunctionCapture>(actions_dag, capture);
+        return std::make_unique<ExecutableFunctionCapture>(expression_actions, capture);
     }
 
     const ExecutableFunctionCapture::Capture & getCapture() const { return *capture; }
-    const ActionsDAG & getAcionsDAG() const { return *actions_dag; }
+    const ActionsDAG & getAcionsDAG() const { return expression_actions->getActionsDAG(); }
 
 private:
-    std::shared_ptr<ActionsDAG> actions_dag;
+    ExpressionActionsPtr expression_actions;
     CapturePtr capture;
     DataTypePtr return_type;
     String name;
@@ -239,21 +230,21 @@ public:
     using CapturePtr = ExecutableFunctionCapture::CapturePtr;
 
     FunctionCaptureOverloadResolver(
-            std::shared_ptr<ActionsDAG> actions_dag_,
+            ActionsDAG actions_dag,
+            const ExpressionActionsSettings & actions_settings,
             const Names & captured_names,
             const NamesAndTypesList & lambda_arguments,
             const DataTypePtr & function_return_type,
             const String & expression_return_name,
             bool allow_constant_folding)
-        : actions_dag(std::move(actions_dag_))
     {
         /// Check that expression does not contain unusual actions that will break columns structure.
-        if (actions_dag->hasArrayJoin())
+        if (actions_dag.hasArrayJoin())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression with arrayJoin or other unusual action cannot be captured");
 
         std::unordered_map<std::string, DataTypePtr> arguments_map;
 
-        for (const auto * input : actions_dag->getInputs())
+        for (const auto * input : actions_dag.getInputs())
             arguments_map[input->result_name] = input->result_type;
 
         DataTypes captured_types;
@@ -287,6 +278,8 @@ public:
                 .return_type = function_return_type,
                 .allow_constant_folding = allow_constant_folding,
         });
+
+        expression_actions = std::make_shared<ExpressionActions>(std::move(actions_dag), actions_settings);
     }
 
     String getName() const override { return name; }
@@ -299,11 +292,11 @@ public:
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName &, const DataTypePtr &) const override
     {
-        return std::make_unique<FunctionCapture>(actions_dag, capture, return_type, name);
+        return std::make_unique<FunctionCapture>(expression_actions, capture, return_type, name);
     }
 
 private:
-    std::shared_ptr<ActionsDAG> actions_dag;
+    ExpressionActionsPtr expression_actions;
     CapturePtr capture;
     DataTypePtr return_type;
     String name;
