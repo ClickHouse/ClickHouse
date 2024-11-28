@@ -67,12 +67,19 @@ SortingStep::Settings::Settings(const Context & context)
         if (ratio < 0 || ratio >= 1.)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_sort should be >= 0 and < 1 ({})", ratio);
 
-        UInt64 available_system_memory = getMostStrictAvailableSystemMemory();
-        max_bytes_before_external_sort = static_cast<size_t>(available_system_memory * ratio);
-        LOG_TEST(getLogger("SortingStep"), "Set max_bytes_before_external_sort={} (ratio: {}, available system memory: {})",
-            formatReadableSizeWithBinarySuffix(max_bytes_before_external_sort),
-            ratio,
-            formatReadableSizeWithBinarySuffix(available_system_memory));
+        auto available_system_memory = getMostStrictAvailableSystemMemory();
+        if (available_system_memory.has_value())
+        {
+            max_bytes_before_external_sort = static_cast<size_t>(*available_system_memory * ratio);
+            LOG_TEST(getLogger("SortingStep"), "Set max_bytes_before_external_sort={} (ratio: {}, available system memory: {})",
+                formatReadableSizeWithBinarySuffix(max_bytes_before_external_sort),
+                ratio,
+                formatReadableSizeWithBinarySuffix(*available_system_memory));
+        }
+        else
+        {
+            LOG_WARNING(getLogger("SortingStep"), "No system memory limits configured. Ignoring max_bytes_ratio_before_external_sort");
+        }
     }
 }
 

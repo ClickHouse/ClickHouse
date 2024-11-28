@@ -3,7 +3,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTrackerUtils.h>
 
-UInt64 getMostStrictAvailableSystemMemory()
+std::optional<UInt64> getMostStrictAvailableSystemMemory()
 {
     MemoryTracker * query_memory_tracker;
     if (query_memory_tracker = DB::CurrentThread::getMemoryTracker(); !query_memory_tracker)
@@ -24,6 +24,8 @@ UInt64 getMostStrictAvailableSystemMemory()
         }
         system_memory_tracker = system_memory_tracker->getParent();
     }
+    if (available == std::numeric_limits<Int64>::max())
+        return {};
     return available;
 }
 
