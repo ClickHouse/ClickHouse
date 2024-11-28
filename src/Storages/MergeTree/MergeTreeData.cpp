@@ -22,6 +22,7 @@
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/typeid_cast.h>
+#include "base/defines.h"
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
@@ -9090,26 +9091,16 @@ bool MergeTreeData::initializeDiskOnConfigChange(const std::set<String> & new_ad
 
 void MergeTreeData::loadPrimaryKeys()
 {
-    /// Thread pool to process parts within each table in parallel
-    auto & thread_pool = DB::getActivePartsLoadingThreadPool().get();
-
-    DataPartStates affordable_states = { MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated, MergeTreeDataPartState::Deleting };
+    static DataPartStates affordable_states = { MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated, MergeTreeDataPartState::Deleting };
     for (const auto & data_part : getDataParts(affordable_states))
     {
         if (data_part->isProjectionPart())
             continue;
 
         if (!data_part->isIndexLoaded())
-        {
-            /// Use thread pool to parallelize part loading
-            thread_pool.scheduleOrThrowOnError([data_part] {
-                const_cast<IMergeTreeDataPart &>(*data_part).getIndex();
-            });
-        }
+            /// We call getIndex() because it calls loadIndex() after locking its mutex, but we don't need its value.
+            UNUSED(const_cast<IMergeTreeDataPart &>(*data_part).getIndex());
     }
-
-    /// Wait for all parts to finish loading
-    thread_pool.wait();
 }
 
 void MergeTreeData::unloadPrimaryKeys()
