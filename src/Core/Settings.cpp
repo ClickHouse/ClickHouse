@@ -4690,8 +4690,8 @@ Possible values:
 Enable multithreading after evaluating window functions to allow parallel stream processing
 )", 0) \
     \
-    M(Bool, serialize_query_plan, true, R"(
-Serialize query plan for distributed processing"\
+    DECLARE(Bool, serialize_query_plan, true, R"(
+Serialize query plan for distributed processing
 )", 0) \
     \
     DECLARE(UInt64, regexp_max_matches_per_row, 1000, R"(

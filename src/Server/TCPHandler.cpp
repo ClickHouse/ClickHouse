@@ -2189,7 +2189,7 @@ void TCPHandler::processUnexpectedQuery()
 
 bool TCPHandler::receiveQueryPlan(QueryState & state)
 {
-    bool unexpected_packet = state.empty() || state.stage != QueryProcessingStage::QueryPlan || state.plan_and_sets || !state.query_context || state.read_all_data;
+    bool unexpected_packet = state.stage != QueryProcessingStage::QueryPlan || state.plan_and_sets || !state.query_context || state.read_all_data;
     auto context = unexpected_packet ? Context::getGlobalContextInstance() : state.query_context;
 
     auto plan_and_sets = QueryPlan::deserialize(*in, context);
