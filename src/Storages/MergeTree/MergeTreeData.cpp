@@ -9090,7 +9090,7 @@ bool MergeTreeData::initializeDiskOnConfigChange(const std::set<String> & new_ad
 
 void MergeTreeData::loadPrimaryKeys()
 {
-    static DataPartStates affordable_states = { MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated, MergeTreeDataPartState::Deleting };
+    static DataPartStates affordable_states = { MergeTreeDataPartState::Active };
     for (const auto & data_part : getDataParts(affordable_states))
     {
         if (data_part->isProjectionPart())
