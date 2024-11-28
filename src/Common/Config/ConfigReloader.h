@@ -35,6 +35,7 @@ public:
         const std::string & preprocessed_dir,
         zkutil::ZooKeeperNodeCache && zk_node_cache,
         const zkutil::EventPtr & zk_changed_event,
+        bool sync_zookeeper_,
         Updater && updater);
 
     ~ConfigReloader();
@@ -86,6 +87,8 @@ private:
 
     /// Locked inside reloadIfNewer.
     std::mutex reload_mutex;
+
+    bool sync_zookeeper;
 };
 
 }

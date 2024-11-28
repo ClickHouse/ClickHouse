@@ -579,6 +579,7 @@ try
         getKeeperPath(config()),
         std::move(unused_cache),
         unused_event,
+        config().getBool("config_reload_sync_zookeeper", false),
         [&](ConfigurationPtr config, bool /* initial_loading */)
         {
             updateLevels(*config, logger());
