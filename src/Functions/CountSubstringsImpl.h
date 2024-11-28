@@ -65,7 +65,7 @@ struct CountSubstringsImpl
             while (i < input_rows_count - 1 && begin + haystack_offsets[i] <= pos)
                 ++i;
 
-            auto start = start_pos != nullptr ? start_pos->getUInt(i) : 0;
+            auto start = start_pos != nullptr ? std::max<Int64>(start_pos->getInt(i), 0) : 0;
 
             /// We check that the entry does not pass through the boundaries of strings.
             if (pos + needle.size() < begin + haystack_offsets[i])
@@ -135,7 +135,7 @@ struct CountSubstringsImpl
         size_t size = start_pos != nullptr ? start_pos->size() : 0;
         for (size_t i = 0; i < size; ++i)
         {
-            auto start = start_pos->getUInt(i);
+            auto start = std::max<Int64>(start_pos->getInt(i), 0);
 
             if (start > haystack_size + 1)
             {
@@ -170,7 +170,7 @@ struct CountSubstringsImpl
             size_t needle_size = needle_offsets[i] - prev_needle_offset - 1;
             size_t haystack_size = haystack_offsets[i] - prev_haystack_offset - 1;
 
-            auto start = start_pos != nullptr ? std::max(start_pos->getUInt(i), UInt64(1)) : UInt64(1);
+            auto start = start_pos != nullptr ? std::max(start_pos->getInt(i), Int64(1)) : UInt64(1);
 
             res[i] = 0;
             if (start > haystack_size + 1)
@@ -226,7 +226,7 @@ struct CountSubstringsImpl
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             res[i] = 0;
-            auto start = start_pos != nullptr ? std::max(start_pos->getUInt(i), UInt64(1)) : UInt64(1);
+            auto start = start_pos != nullptr ? std::max(start_pos->getInt(i), Int64(1)) : UInt64(1);
             if (start <= haystack.size() + 1)
             {
                 const char * needle_beg = reinterpret_cast<const char *>(&needle_data[prev_needle_offset]);
