@@ -60,7 +60,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
 {
     {"24.12",
         {
-            {"optimize_extract_common_expressions", false, false, "Introduce setting to optimize WHERE and ON expressions by extracting common expressions out from disjunction of conjunctions."},
+            {"optimize_extract_common_expressions", false, false, "Introduce setting to optimize WHERE, PREWHERE, ON, HAVING and QUALIFY expressions by extracting common expressions out from disjunction of conjunctions."},
             {"use_async_executor_for_materialized_views", false, false, "New setting."},
         }
     },
