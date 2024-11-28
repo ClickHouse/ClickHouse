@@ -1495,7 +1495,8 @@ public:
         auto shared_variant_discr = column_dynamic.getSharedVariantDiscriminator();
         auto insert_settings_with_no_type_conversion = insert_settings;
         insert_settings_with_no_type_conversion.allow_type_conversion = false;
-        for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
+        auto order = SerializationVariant::getVariantsDeserializeTextOrder(assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants());
+        for (size_t i : order)
         {
             if (i != shared_variant_discr)
             {

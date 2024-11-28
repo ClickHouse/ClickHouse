@@ -493,7 +493,7 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
             /// We assume that function will not take arguments and will return constant value like tcpPort or hostName
             /// Such functions will return column with size equal to input_rows_count.
             size_t input_rows_count = 1;
-            auto result = function->execute({}, function->getResultType(), input_rows_count);
+            auto result = function->execute({}, function->getResultType(), input_rows_count, /* dry_run = */ false);
 
             Field value;
             result->get(0, value);

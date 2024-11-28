@@ -10,8 +10,8 @@ keywords: [json, data type]
 Stores JavaScript Object Notation (JSON) documents in a single column.
 
 :::note
-This feature is experimental and is not production-ready. If you need to work with JSON documents, consider using [this guide](/docs/en/integrations/data-formats/json/overview) instead.
-If you want to use JSON type, set `allow_experimental_json_type = 1`. 
+This feature is beta and is not production-ready. If you need to work with JSON documents, consider using [this guide](/docs/en/integrations/data-formats/json/overview) instead.
+If you want to use JSON type, set `enable_json_type = 1`. 
 :::
 
 To declare a column of `JSON` type, use the following syntax:
@@ -187,7 +187,7 @@ select json.a.g.:Float64, dynamicType(json.a.g), json.d.:Date, dynamicType(json.
 └─────────────────────┴───────────────────────┴────────────────┴─────────────────────┘
 ```
 
-`Dynamic` subcolumns can be casted to any data type. In this case the exception will be thrown if internal type inside `Dynamic` cannot be casted to the requested type:
+`Dynamic` subcolumns can be cast to any data type. In this case the exception will be thrown if internal type inside `Dynamic` cannot be cast to the requested type:
 
 ```sql
 select json.a.g::UInt64 as uint FROM test;
