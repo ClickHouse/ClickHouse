@@ -1,4 +1,4 @@
-#include <Analyzer/createUniqueTableAliases.h>
+#include <Analyzer/createUniqueAliasesIfNecessary.h>
 
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/ColumnNode.h>
