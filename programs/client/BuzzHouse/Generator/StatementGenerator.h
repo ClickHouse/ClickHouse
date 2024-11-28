@@ -85,6 +85,17 @@ private:
         = {"'-1'",    "'0'",       "'1'",    "'10'",   "'1000'", "'is'",     "'was'",      "'are'",  "'be'",       "'have'", "'had'",
            "'were'",  "'can'",     "'said'", "'use'",  "','",    "'😀'",     "'😀😀😀😀'", "'名字'", "'兄弟姐妹'", "''",     "'\\n'",
            "x'c328'", "x'e28228'", "x'ff'",  "b'101'", "b'100'", "b'10001'", "' '",        "'c0'",   "'c1'",       "'11'"};
+    std::vector<int8_t> enum8_ids = {
+        -1,  -2,  -3,  -4,  -5,  -6,  -7,  -8,  -9,  -10, -11, -12, -13, -14, -15, -16, -17, -18, -19, -20, -21, -22,  -23,  -24,  -25, -26,
+        -27, -28, -29, -30, -31, -32, -33, -34, -35, -36, -37, -38, -39, -40, -41, -42, -43, -44, -45, -46, -47, -126, -127, -128, 0,   1,
+        2,   3,   4,   5,   6,   7,   8,   9,   10,  11,  12,  13,  14,  15,  16,  17,  18,  19,  20,  21,  22,  23,   24,   25,   26,  27,
+        28,  29,  30,  31,  32,  33,  34,  35,  36,  37,  38,  39,  40,  41,  42,  43,  44,  45,  46,  47,  125, 126,  127};
+    std::vector<int16_t> enum16_ids
+        = {-1,  -2,   -3,   -4,   -5,   -6,     -7,     -8,     -9,  -10, -11, -12, -13, -14, -15, -16,   -17,  -18, -19, -20, -21,
+           -22, -23,  -24,  -25,  -26,  -27,    -28,    -29,    -30, -31, -32, -33, -34, -35, -36, -37,   -38,  -39, -40, -41, -42,
+           -43, -126, -127, -128, -129, -32766, -32767, -32768, 0,   1,   2,   3,   4,   5,   6,   7,     8,    9,   10,  11,  12,
+           13,  14,   15,   16,   17,   18,     19,     20,     21,  22,  23,  24,  25,  26,  27,  28,    29,   30,  31,  32,  33,
+           34,  35,   36,   37,   38,   39,     40,     41,     42,  43,  44,  126, 127, 128, 129, 32766, 32767};
 
     std::vector<uint32_t> ids;
     std::vector<InsertEntry> entries;
@@ -215,6 +226,7 @@ private:
     int generateEngineDetails(RandomGenerator & rg, SQLBase & b, bool add_pkey, TableEngine * te);
 
     TableEngineValues getNextTableEngine(RandomGenerator & rg, bool use_external_integrations);
+    PeerTableDatabase getNextPeerTableDatabase(RandomGenerator & rg, TableEngineValues teng);
 
     int generateNextRefreshableView(RandomGenerator & rg, RefreshableView * cv);
     int generateNextCreateView(RandomGenerator & rg, CreateView * cv);
@@ -298,6 +310,7 @@ private:
     const SQLType * randomNextType(RandomGenerator & rg, uint32_t allowed_types);
     const SQLType * randomNextType(RandomGenerator & rg, uint32_t allowed_types, uint32_t & col_counter, TopTypeName * tp);
 
+    void dropTable(bool staged, uint32_t tname);
     void dropDatabase(uint32_t dname);
 
     template <bool AllowParts>
@@ -355,6 +368,7 @@ public:
         : fc(fuzzc), connections(conn), supports_cloud_features(scf)
     {
         buf.reserve(2048);
+        assert(enum8_ids.size() > enum_values.size() && enum16_ids.size() > enum_values.size());
     }
 
     int generateNextCreateTable(RandomGenerator & rg, CreateTable * ct);

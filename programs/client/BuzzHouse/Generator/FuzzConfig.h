@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <string>
 
 #if USE_SIMDJSON
@@ -57,7 +58,7 @@ public:
     ServerCredentials & operator=(ServerCredentials && c) = default;
 };
 
-static ServerCredentials
+static std::optional<ServerCredentials>
 loadServerCredentials(const JSONParserImpl::Element & jobj, const std::string & sname, const uint32_t & default_port)
 {
     uint32_t port = default_port;
@@ -99,7 +100,7 @@ loadServerCredentials(const JSONParserImpl::Element & jobj, const std::string & 
             throw std::runtime_error("Unknown option: " + std::string(key));
         }
     }
-    return ServerCredentials(hostname, port, unix_socket, user, password, database, query_log_file);
+    return std::optional<ServerCredentials>(ServerCredentials(hostname, port, unix_socket, user, password, database, query_log_file));
 }
 
 class FuzzConfig
@@ -110,17 +111,16 @@ private:
 
 public:
     std::vector<std::string> collations;
-    ServerCredentials mysql_server, postgresql_server, sqlite_server, mongodb_server, redis_server, minio_server;
+    std::optional<ServerCredentials> clickhouse_server = std::nullopt, mysql_server = std::nullopt, postgresql_server = std::nullopt,
+                                     sqlite_server = std::nullopt, mongodb_server = std::nullopt, redis_server = std::nullopt,
+                                     minio_server = std::nullopt;
     bool read_log = false, fuzz_floating_points = true;
     uint64_t seed = 0;
     uint32_t max_depth = 3, max_width = 3, max_databases = 4, max_functions = 4, max_tables = 10, max_views = 5, time_to_run = 0;
     std::filesystem::path log_path = std::filesystem::temp_directory_path() / "out.sql",
                           db_file_path = std::filesystem::temp_directory_path() / "db", fuzz_out = db_file_path / "fuzz.data";
 
-    FuzzConfig() : cb(nullptr), mysql_server(), postgresql_server(), sqlite_server(), mongodb_server(), redis_server(), minio_server()
-    {
-        buf.reserve(512);
-    }
+    FuzzConfig() : cb(nullptr) { buf.reserve(512); }
 
     FuzzConfig(DB::ClientBase * c, const std::string & path) : cb(c)
     {
@@ -194,6 +194,10 @@ public:
             {
                 fuzz_floating_points = value.getBool();
             }
+            else if (key == "clickhouse")
+            {
+                clickhouse_server = loadServerCredentials(value, "clickhouse", 9004);
+            }
             else if (key == "mysql")
             {
                 mysql_server = loadServerCredentials(value, "mysql", 33060);
@@ -225,7 +229,18 @@ public:
         }
     }
 
-    void processServerQuery(const std::string & input) const { this->cb->processTextAsSingleQuery(input); }
+    bool processServerQuery(const std::string & input) const
+    {
+        try
+        {
+            this->cb->processTextAsSingleQuery(input);
+        }
+        catch (...)
+        {
+            return false;
+        }
+        return true;
+    }
 
     void loadCollations()
     {

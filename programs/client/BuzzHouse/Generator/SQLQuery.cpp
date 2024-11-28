@@ -1032,7 +1032,7 @@ int StatementGenerator::addCTEs(RandomGenerator & rg, const uint32_t allowed_cla
 }
 
 int StatementGenerator::generateSelect(
-    RandomGenerator & rg, const bool top, const bool force_global_agg, const uint32_t ncols, const uint32_t allowed_clauses, Select * sel)
+    RandomGenerator & rg, const bool top, bool force_global_agg, const uint32_t ncols, const uint32_t allowed_clauses, Select * sel)
 {
     int res = 0;
 
@@ -1061,6 +1061,8 @@ int StatementGenerator::generateSelect(
     }
     else
     {
+        bool force_group_by = false, force_order_by = false;
+
         SelectStatementCore * ssc = sel->mutable_select_core();
 
         if ((allowed_clauses & allow_distinct) && rg.nextSmallNumber() < 3)
@@ -1085,8 +1087,17 @@ int StatementGenerator::generateSelect(
             generateWherePredicate(rg, ssc->mutable_where()->mutable_expr()->mutable_expr());
         }
 
+        if (this->inside_projection)
+        {
+            const uint32_t nopt = rg.nextSmallNumber();
+
+            force_global_agg |= nopt < 4;
+            force_group_by |= nopt > 3 && nopt < 7;
+            force_order_by |= nopt > 6;
+        }
+
         if ((allowed_clauses & allow_groupby) && !force_global_agg && this->depth < this->fc.max_depth && this->width < this->fc.max_width
-            && rg.nextSmallNumber() < 4)
+            && (force_group_by || rg.nextSmallNumber() < 4))
         {
             generateGroupBy(rg, ncols, false, (allowed_clauses & allow_groupby_settings), ssc->mutable_groupby());
         }
@@ -1120,7 +1131,7 @@ int StatementGenerator::generateSelect(
         this->width -= ncols;
 
         if ((allowed_clauses & allow_orderby) && this->depth < this->fc.max_depth && this->width < this->fc.max_width
-            && (!this->allow_not_deterministic || rg.nextSmallNumber() < 4))
+            && (!this->allow_not_deterministic || force_order_by || rg.nextSmallNumber() < 4))
         {
             this->depth++;
             generateOrderBy(rg, ncols, (allowed_clauses & allow_orderby_settings), ssc->mutable_orderby());
@@ -1139,7 +1150,7 @@ int StatementGenerator::generateSelect(
         }
     }
     // this doesn't work: SELECT 1 FROM ((SELECT 1) UNION (SELECT 1) SETTINGS page_cache_inject_eviction = 1) x;
-    if (this->allow_not_deterministic && (top || sel->has_select_core()) && rg.nextSmallNumber() < 3)
+    if (this->allow_not_deterministic && !this->inside_projection && (top || sel->has_select_core()) && rg.nextSmallNumber() < 3)
     {
         generateSettingValues(rg, serverSettings, sel->mutable_setting_values());
     }

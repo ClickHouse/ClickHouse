@@ -9,6 +9,8 @@ using ColumnSpecial = enum ColumnSpecial { NONE = 0, SIGN = 1, IS_DELETED = 2, V
 
 using DetachStatus = enum DetachStatus { ATTACHED = 0, DETACHED = 1, PERM_DETACHED = 2 };
 
+using PeerTableDatabase = enum PeerTableDatabase { PeerNone = 0, PeerMySQL = 1, PeerPostgreSQL = 2, PeerSQLite = 3, PeerClickHouse = 4 };
+
 struct SQLColumn
 {
 public:
@@ -140,6 +142,7 @@ struct SQLTable : SQLBase
 {
 public:
     bool is_temp = false;
+    PeerTableDatabase peer_table = PeerTableDatabase::PeerNone;
     uint32_t col_counter = 0, idx_counter = 0, proj_counter = 0, constr_counter = 0, freeze_counter = 0;
     std::map<uint32_t, SQLColumn> cols, staged_cols;
     std::map<uint32_t, SQLIndex> idxs, staged_idxs;
@@ -177,6 +180,18 @@ public:
     }
 
     bool hasVersionColumn() const { return teng == TableEngineValues::VersionedCollapsingMergeTree; }
+
+    bool hasDatabasePeer() const { return peer_table != PeerTableDatabase::PeerNone; }
+
+    bool hasMySQLPeer() const { return peer_table == PeerTableDatabase::PeerMySQL; }
+
+    bool hasPostgreSQLPeer() const { return peer_table == PeerTableDatabase::PeerPostgreSQL; }
+
+    bool hasSQLitePeer() const { return peer_table == PeerTableDatabase::PeerSQLite; }
+
+    bool hasClickHousePeer() const { return peer_table == PeerTableDatabase::PeerClickHouse; }
+
+    std::string getPeerName() const { return "peer_t" + std::to_string(tname); }
 };
 
 struct SQLView : SQLBase

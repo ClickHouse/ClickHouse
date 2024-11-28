@@ -217,6 +217,7 @@ std::tuple<const SQLType *, Dates> StatementGenerator::randomDateType(RandomGene
 
 const SQLType * StatementGenerator::randomDateTimeType(RandomGenerator & rg, const uint32_t allowed_types, DateTimeTp * dt)
 {
+    bool has_precision = false;
     const bool use64 = (allowed_types & allow_datetime64) && rg.nextBool();
     std::optional<uint32_t> precision = std::nullopt;
     std::optional<std::string> timezone = std::nullopt;
@@ -225,7 +226,7 @@ const SQLType * StatementGenerator::randomDateTimeType(RandomGenerator & rg, con
     {
         dt->set_type(use64 ? DateTimes::DateTime64 : DateTimes::DateTime);
     }
-    if (use64 && rg.nextSmallNumber() < 5)
+    if (use64 && (has_precision = rg.nextSmallNumber() < 5))
     {
         precision = std::optional<uint32_t>(rg.nextSmallNumber() - 1);
         if (dt)
@@ -233,7 +234,7 @@ const SQLType * StatementGenerator::randomDateTimeType(RandomGenerator & rg, con
             dt->set_precision(precision.value());
         }
     }
-    if (rg.nextSmallNumber() < 5)
+    if ((!use64 || has_precision) && rg.nextSmallNumber() < 5)
     {
         timezone = std::optional<std::string>(rg.pickRandomlyFromVector(timezones));
         if (dt)
@@ -360,20 +361,28 @@ const SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint3
         enum_type
         && nopt < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + enum_type + 1))
     {
-        const bool bits = rg.nextBool();
+        const bool bits16 = rg.nextBool();
         std::vector<EnumValue> evs;
         const uint32_t nvalues = (rg.nextLargeNumber() % static_cast<uint32_t>(enum_values.size())) + 1;
         EnumDef * edef = tp ? tp->mutable_enum_def() : nullptr;
 
         if (edef)
         {
-            edef->set_bits(bits);
+            edef->set_bits(bits16);
         }
         std::shuffle(enum_values.begin(), enum_values.end(), rg.generator);
+        if (bits16)
+        {
+            std::shuffle(enum16_ids.begin(), enum16_ids.end(), rg.generator);
+        }
+        else
+        {
+            std::shuffle(enum8_ids.begin(), enum8_ids.end(), rg.generator);
+        }
         for (uint32_t i = 0; i < nvalues; i++)
         {
             const std::string & nval = enum_values[i];
-            const int32_t num = static_cast<const int32_t>(bits ? rg.nextRandomInt16() : rg.nextRandomInt8());
+            const int32_t num = static_cast<const int32_t>(bits16 ? enum16_ids[i] : enum8_ids[i]);
 
             if (edef)
             {
@@ -384,7 +393,7 @@ const SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint3
             }
             evs.push_back(EnumValue(nval, num));
         }
-        res = new EnumType(bits ? 16 : 8, evs);
+        res = new EnumType(bits16 ? 16 : 8, evs);
     }
     else if (
         uuid_type
@@ -551,7 +560,7 @@ const SQLType * StatementGenerator::generateArraytype(RandomGenerator & rg, cons
 const SQLType *
 StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_t allowed_types, uint32_t & col_counter, TopTypeName * tp)
 {
-    const uint32_t non_nullable_type = 50, nullable_type = 30 * static_cast<uint32_t>((allowed_types & allow_nullable) != 0),
+    const uint32_t non_nullable_type = 60, nullable_type = 25 * static_cast<uint32_t>((allowed_types & allow_nullable) != 0),
                    array_type = 10 * static_cast<uint32_t>((allowed_types & allow_array) != 0 && this->depth < this->fc.max_depth),
                    map_type = 10
         * static_cast<uint32_t>((allowed_types & allow_map) != 0 && this->depth < this->fc.max_depth && this->width < this->fc.max_width),

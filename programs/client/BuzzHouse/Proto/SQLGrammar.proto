@@ -2565,6 +2565,11 @@ message ColumnPath {
     repeated Column sub_cols = 2;
 }
 
+message ColumnPathList {
+    required ColumnPath col = 1;
+    repeated ColumnPath other_cols = 2;
+}
+
 message JSONPathType {
     required ColumnPath col = 1;
     required TopTypeName type = 2;
@@ -2706,15 +2711,14 @@ enum CompressionCodec {
     COMP_LZ4HC = 4;
     COMP_ZSTD = 5;
     COMP_ZSTD_QAT = 6;
-    COMP_DEFLATE_QPL = 7;
-    COMP_Delta = 8;
-    COMP_DoubleDelta = 9;
-    COMP_GCD = 10;
-    COMP_Gorilla = 11;
-    COMP_FPC = 12;
-    COMP_T64 = 13;
-    COMP_AES_128_GCM_SIV = 14;
-    COMP_AES_256_GCM_SIV = 15;
+    COMP_Delta = 7;
+    COMP_DoubleDelta = 8;
+    COMP_GCD = 9;
+    COMP_Gorilla = 10;
+    COMP_FPC = 11;
+    COMP_T64 = 12;
+    COMP_AES_128_GCM_SIV = 13;
+    COMP_AES_256_GCM_SIV = 14;
 }
 
 message CodecParam {
@@ -2839,6 +2843,7 @@ message TableEngineParam {
         Table table = 8;
         uint32 num = 9;
         string svalue = 10;
+        ColumnPathList col_list = 11;
     }
 }
 

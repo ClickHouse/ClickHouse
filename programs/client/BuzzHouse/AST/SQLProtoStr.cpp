@@ -659,6 +659,16 @@ CONV_FN_QUOTE(ColumnPath, ic)
     }
 }
 
+CONV_FN_QUOTE(ColumnPathList, cols)
+{
+    ColumnPathToString(ret, quote, cols.col());
+    for (int i = 0; i < cols.other_cols_size(); i++)
+    {
+        ret += ", ";
+        ColumnPathToString(ret, quote, cols.other_cols(i));
+    }
+}
+
 CONV_FN(EnumDefValue, edf)
 {
     ret += edf.enumv();
@@ -2266,8 +2276,9 @@ CONV_FN(ConstraintDef, const_def)
     ConstraintToString(ret, const_def.constr());
     ret += " ";
     ret += ConstraintDef_ConstraintType_Name(const_def.ctype());
-    ret += " ";
+    ret += " (";
     ExprToString(ret, const_def.expr());
+    ret += ")";
 }
 
 CONV_FN(TableDefItem, tdef)
@@ -2359,6 +2370,11 @@ CONV_FN(TableEngineParam, tep)
             ret += "'";
             ret += tep.svalue();
             ret += "'";
+            break;
+        case TableEngineParamType::kColList:
+            ret += "(";
+            ColumnPathListToString(ret, true, tep.col_list());
+            ret += ")";
             break;
         default:
             ret += "c0";

@@ -83,7 +83,6 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
     {"distributed_foreground_insert", trueOrFalse},
     {"distributed_group_by_no_merge", zeroOneTwo},
     {"enable_analyzer", trueOrFalse},
-    {"enable_deflate_qpl_codec", trueOrFalse},
     {"enable_early_constant_folding", trueOrFalse},
     {"enable_extended_results_for_datetime_functions", trueOrFalse},
     {"enable_http_compression", trueOrFalse},
@@ -830,9 +829,6 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
        {"replicated_can_become_leader", trueOrFalse},
        {"replicated_max_mutations_in_one_entry",
         [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.3, 0, 10000)); }},
-       {"s3_create_new_file_on_insert", trueOrFalse},
-       {"s3_skip_empty_files", trueOrFalse},
-       {"s3_truncate_on_insert", trueOrFalse},
        {"shared_merge_tree_disable_merges_and_mutations_assignment", trueOrFalse}, /* ClickHouse cloud */
        {"shared_merge_tree_parts_load_batch_size",
         [](RandomGenerator & rg, std::string & ret)
@@ -904,7 +900,9 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
             ret += rg.pickRandomlyFromVector(choices);
             ret += "'";
         }},
-       {"s3_skip_empty_files", trueOrFalse}};
+       {"s3_create_new_file_on_insert", trueOrFalse},
+       {"s3_skip_empty_files", trueOrFalse},
+       {"s3_truncate_on_insert", trueOrFalse}};
 
 const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> S3QueueTableSettings
     = {{"after_processing",

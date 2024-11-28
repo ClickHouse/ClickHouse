@@ -1088,8 +1088,8 @@ bool Client::buzzHouse()
             "allow_statistics_optimize = 1, allow_suspicious_codecs = 1, allow_suspicious_fixed_string_types = 1, allow_suspicious_indices "
             "= 1, allow_suspicious_low_cardinality_types = 1, allow_suspicious_primary_key = 1, allow_suspicious_ttl_expressions = 1, "
             "allow_suspicious_variant_types = 1, allow_suspicious_types_in_group_by = 1, allow_suspicious_types_in_order_by = 1, "
-            "allow_unrestricted_reads_from_keeper = 1, enable_analyzer = 1, enable_deflate_qpl_codec = 1, enable_zstd_qat_codec = 1, "
-            "type_json_skip_duplicated_paths = 1, allow_experimental_s3queue = 1;");
+            "allow_unrestricted_reads_from_keeper = 1, enable_analyzer = 1, enable_zstd_qat_codec = 1, type_json_skip_duplicated_paths = "
+            "1;");
         processQueryAndLog(outf, rg.nextBool() ? "SET s3_truncate_on_insert = 1;" : "SET s3_create_new_file_on_insert = 1;");
 
         //Load collations

@@ -18,6 +18,7 @@
 namespace BuzzHouse
 {
 
+void CreateTableToString(std::string & ret, const CreateTable &);
 void SQLQueryToString(std::string & ret, const SQLQuery &);
 
 }

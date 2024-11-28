@@ -586,7 +586,6 @@ int StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
                 first = false;
             }
         }
-        this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = true;
         this->levels.clear();
         if (rg.nextSmallNumber() < 3)
         {
@@ -604,7 +603,6 @@ int StatementGenerator::generateUptDelWhere(RandomGenerator & rg, const SQLTable
         addTableRelation(rg, true, "", t);
         this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = false;
         generateWherePredicate(rg, expr);
-        this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = true;
         this->levels.clear();
     }
     else
@@ -685,7 +683,9 @@ int StatementGenerator::generateNextTruncate(RandomGenerator & rg, Truncate * tr
 int StatementGenerator::generateNextExchangeTables(RandomGenerator & rg, ExchangeTables * et)
 {
     ExprSchemaTable *est1 = et->mutable_est1(), *est2 = et->mutable_est2();
-    const auto & input = filterCollection<SQLTable>(attached_tables);
+    const auto & input = filterCollection<SQLTable>(
+        [](const SQLTable & t)
+        { return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED && !t.hasDatabasePeer(); });
 
     for (const auto & entry : input)
     {
@@ -792,10 +792,12 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
         {
             const uint32_t alter_order_by
                 = 3 * static_cast<uint32_t>(t.isMergeTreeFamily()),
-                heavy_delete = 30, heavy_update = 40, add_column = 2 * static_cast<uint32_t>(t.cols.size() < 10), materialize_column = 2,
-                drop_column = 2 * static_cast<uint32_t>(t.cols.size() > 1), rename_column = 2, clear_column = 2, modify_column = 2,
-                comment_column = 2, add_stats = 3 * static_cast<uint32_t>(t.isMergeTreeFamily()),
-                mod_stats = 3 * static_cast<uint32_t>(t.isMergeTreeFamily()), drop_stats = 3 * static_cast<uint32_t>(t.isMergeTreeFamily()),
+                heavy_delete = 30, heavy_update = 40, add_column = 2 * static_cast<uint32_t>(!t.hasDatabasePeer() && t.cols.size() < 10),
+                materialize_column = 2, drop_column = 2 * static_cast<uint32_t>(!t.hasDatabasePeer() && t.cols.size() > 1),
+                rename_column = 2 * static_cast<uint32_t>(!t.hasDatabasePeer()), clear_column = 2,
+                modify_column = 2 * static_cast<uint32_t>(!t.hasDatabasePeer()), comment_column = 2,
+                add_stats = 3 * static_cast<uint32_t>(t.isMergeTreeFamily()), mod_stats = 3 * static_cast<uint32_t>(t.isMergeTreeFamily()),
+                drop_stats = 3 * static_cast<uint32_t>(t.isMergeTreeFamily()),
                 clear_stats = 3 * static_cast<uint32_t>(t.isMergeTreeFamily()),
                 mat_stats = 3 * static_cast<uint32_t>(t.isMergeTreeFamily()),
                 delete_mask = 8 * static_cast<uint32_t>(t.isMergeTreeFamily()), add_idx = 2 * static_cast<uint32_t>(t.idxs.size() < 3),
@@ -1071,7 +1073,6 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                             generateExpression(rg, expr);
                         }
                     }
-                    this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = true;
                     this->levels.clear();
                     this->entries.clear();
                 }
@@ -1722,7 +1723,14 @@ int StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner * 
                    check_table = 2 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables)),
                    desc_table
         = 2 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables) || collectionHas<SQLView>(attached_views)),
-                   exchange_tables = 1 * static_cast<uint32_t>(collectionCount<SQLTable>(attached_tables) > 1),
+                   exchange_tables = 1
+        * static_cast<uint32_t>(collectionCount<SQLTable>(
+                                    [](const SQLTable & t)
+                                    {
+                                        return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED
+                                            && !t.hasDatabasePeer();
+                                    })
+                                > 1),
                    alter_table = 6
         * static_cast<uint32_t>(collectionHas<SQLTable>(
                                     [](const SQLTable & t)
@@ -1957,28 +1965,33 @@ int StatementGenerator::generateNextStatement(RandomGenerator & rg, SQLQuery & s
     }
 }
 
+void StatementGenerator::dropTable(const bool staged, const uint32_t tname)
+{
+    auto & map_to_delete = staged ? this->staged_tables : this->tables;
+
+    if (map_to_delete.find(tname) != map_to_delete.end())
+    {
+        connections.dropPeerTable(map_to_delete[tname]);
+        map_to_delete.erase(tname);
+    }
+}
+
 void StatementGenerator::dropDatabase(const uint32_t dname)
 {
-    for (auto it = this->tables.cbegin(); it != this->tables.cend();)
+    for (auto it = this->tables.cbegin(), next_it = it; it != this->tables.cend(); it = next_it)
     {
+        ++next_it;
         if (it->second.db && it->second.db->dname == dname)
         {
-            this->tables.erase(it++);
-        }
-        else
-        {
-            ++it;
+            dropTable(false, it->first);
         }
     }
-    for (auto it = this->views.cbegin(); it != this->views.cend();)
+    for (auto it = this->views.cbegin(), next_it = it; it != this->views.cend(); it = next_it)
     {
+        ++next_it;
         if (it->second.db && it->second.db->dname == dname)
         {
-            this->views.erase(it++);
-        }
-        else
-        {
-            ++it;
+            this->views.erase(it);
         }
     }
     this->databases.erase(dname);
@@ -1990,25 +2003,25 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
 
     success &= (!ei.getRequiresExternalCallCheck() || ei.getNextExternalCallSucceeded());
 
-    if (sq.has_inner_query() && query.has_create_table())
+    if ((sq.has_explain() || sq.has_inner_query()) && query.has_create_table())
     {
         const uint32_t tname = static_cast<uint32_t>(std::stoul(query.create_table().est().table().table().substr(1)));
 
-        if (success)
+        if (sq.has_inner_query() && success)
         {
             if (query.create_table().replace())
             {
-                this->tables.erase(tname);
+                dropTable(false, tname);
             }
             this->tables[tname] = std::move(this->staged_tables[tname]);
         }
-        this->staged_tables.erase(tname);
+        dropTable(true, tname);
     }
-    else if (sq.has_inner_query() && query.has_create_view())
+    else if ((sq.has_explain() || sq.has_inner_query()) && query.has_create_view())
     {
         const uint32_t tname = static_cast<uint32_t>(std::stoul(query.create_view().est().table().table().substr(1)));
 
-        if (success)
+        if (sq.has_inner_query() && success)
         {
             if (query.create_view().replace())
             {
@@ -2024,7 +2037,7 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
 
         if (drp.sobject() == SQLObject::TABLE)
         {
-            this->tables.erase(static_cast<uint32_t>(std::stoul(drp.object().est().table().table().substr(1))));
+            dropTable(false, static_cast<uint32_t>(std::stoul(drp.object().est().table().table().substr(1))));
         }
         else if (drp.sobject() == SQLObject::VIEW)
         {
@@ -2247,21 +2260,21 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
             }
         }
     }
-    else if (sq.has_inner_query() && query.has_create_database())
+    else if ((sq.has_explain() || sq.has_inner_query()) && query.has_create_database())
     {
         const uint32_t dname = static_cast<uint32_t>(std::stoul(query.create_database().database().database().substr(1)));
 
-        if (success)
+        if (sq.has_inner_query() && success)
         {
             this->databases[dname] = std::move(this->staged_databases[dname]);
         }
         this->staged_databases.erase(dname);
     }
-    else if (sq.has_inner_query() && query.has_create_function())
+    else if ((sq.has_explain() || sq.has_inner_query()) && query.has_create_function())
     {
         const uint32_t fname = static_cast<uint32_t>(std::stoul(query.create_function().function().function().substr(1)));
 
-        if (success)
+        if (sq.has_inner_query() && success)
         {
             this->functions[fname] = std::move(this->staged_functions[fname]);
         }
