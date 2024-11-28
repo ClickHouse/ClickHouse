@@ -35,7 +35,7 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
     }
     std::string escaped_with_globs = buf_for_escaping.str();
 
-    static const re2::RE2 enum_or_range(R"({([\d]+\.\.[\d]+|[^{}*,]+,[^{}*]*[^{}*,])})");    /// regexp for {expr1,expr2,expr3} or {M..N}, where M and N - non-negative integers, expr's should be without "{", "}", "*" and ","
+    static const re2::RE2 enum_or_range(R"({([\d]+\.\.[\d]+|[^{}*,]+[^{}*]*[^{}*,])})");    /// regexp for {expr1,expr2,expr3} or {M..N}, where M and N - non-negative integers, expr's should be without "{", "}", "*" and ","
     std::string_view input(escaped_with_globs);
     std::string_view matched;
     std::ostringstream oss_for_replacing;       // STYLE_CHECK_ALLOW_STD_STRING_STREAM
@@ -48,6 +48,15 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
 
         if (!buffer.contains(','))
         {
+            /// No dot or one dot in the filename. This is not a range.
+            if (buffer.find('.') == std::string::npos || buffer.find('.') == buffer.find_last_of('.'))
+            {
+                oss_for_replacing << buffer;
+                oss_for_replacing << ")";
+                current_index = input.data() - escaped_with_globs.data();
+                break;
+            }
+
             size_t range_begin = 0;
             size_t range_end = 0;
             char point;
