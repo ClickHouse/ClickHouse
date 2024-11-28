@@ -266,7 +266,7 @@ struct KeeperServer::KeeperRaftServer : public nuraft::raft_server
         }
 
         const size_t voting_members = get_num_voting_members();
-        const auto not_responding_peers = get_not_responding_peers();
+        const auto not_responding_peers = get_not_responding_peers_count();
         const auto quorum_size = voting_members / 2 + 1;
         const auto max_not_responding_peers = voting_members - quorum_size;
 
