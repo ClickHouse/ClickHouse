@@ -2461,7 +2461,7 @@ Possible values:
 
 - default
 
- This is the equivalent of `hash` or `direct`, if possible (same as `direct,hash`)
+ This is the equivalent of `hash`, `parallel_hash` or `direct`, if possible (same as `direct,parallel_hash,hash`)
 
 - grace_hash
 
@@ -2475,11 +2475,13 @@ Possible values:
 
  [Hash join algorithm](https://en.wikipedia.org/wiki/Hash_join) is used. The most generic implementation that supports all combinations of kind and strictness and multiple join keys that are combined with `OR` in the `JOIN ON` section.
 
+ When using the `hash` algorithm, the right part of `JOIN` is uploaded into RAM.
+
 - parallel_hash
 
  A variation of `hash` join that splits the data into buckets and builds several hashtables instead of one concurrently to speed up this process.
 
- When using the `hash` algorithm, the right part of `JOIN` is uploaded into RAM.
+ When using the `parallel_hash` algorithm, the right part of `JOIN` is uploaded into RAM.
 
 - partial_merge
 
@@ -5650,6 +5652,9 @@ Parts virtually divided into segments to be distributed between replicas for par
 )", BETA) \
     DECLARE(Bool, parallel_replicas_local_plan, true, R"(
 Build local plan for local replica
+)", BETA) \
+    DECLARE(Bool, parallel_replicas_index_analysis_only_on_coordinator, true, R"(
+Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan
 )", BETA) \
     \
     DECLARE(Bool, allow_experimental_analyzer, true, R"(

@@ -994,6 +994,7 @@ void finalizeMutatedPart(
             new_data_part->index_granularity = std::move(new_index_granularity);
     }
 
+    /// It's important to set index after index granularity.
     if (!new_data_part->storage.getPrimaryIndexCache())
         new_data_part->setIndex(*source_part->getIndex());
 
