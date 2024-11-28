@@ -49,12 +49,11 @@ private:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        size_t num_arguments = arguments.size();
-        if (1 == num_arguments)
+        if (arguments.size() == 1)
             return arguments[0].column;
 
         Columns converted_columns;
-        for (size_t arg = 0; arg < num_arguments; ++arg)
+        for (size_t arg = 0; arg < arguments.size(); ++arg)
         {
             if (arguments[arg].type->onlyNull())
                 continue; /// ignore NULL arguments
