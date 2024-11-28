@@ -868,44 +868,6 @@ Behavior for
   * Functions `toStartOfDay`, `toStartOfHour`, `toStartOfFifteenMinutes`, `toStartOfTenMinutes`, `toStartOfFiveMinutes`, `toStartOfMinute`, `timeSlot` return `DateTime` if their argument is a `Date` or `DateTime`, and they return `DateTime64` if their argument is a `Date32` or `DateTime64`.
 :::
 
-## toUnixTimestampEx
-
-Like `toUnixTimestamp`, converts a string, a date or a date with time to the [Unix Timestamp](https://en.wikipedia.org/wiki/Unix_time) in `Int64` representation.
-
-If the function is called with a string, it accepts an optional timezone argument.
-
-**Syntax**
-
-``` sql
-toUnixTimestampEx(date)
-toUnixTimestampEx(str, [timezone])
-```
-
-**Returned value**
-
-- Returns the unix timestamp. [UInt32](../data-types/int-uint.md).
-
-**Example**
-
-``` sql
-SELECT
-    '1969-01-01 00:00:00' AS dt_str,
-    toUnixTimestamp(dt_str) AS from_str,
-    toUnixTimestampEx(dt_str) AS ex_str,
-    toUnixTimestamp(dt_str, 'Asia/Tokyo') AS from_str_tokyo,
-    toUnixTimestampEx(dt_str, 'Asia/Tokyo') AS ex_str_tokyo,
-    toUnixTimestamp(toDateTime(dt_str)) AS from_datetime,
-    toUnixTimestampEx(toDateTime64(dt_str, 0)) AS ex_datetime64
-```
-
-Result:
-
-```
-┌─dt_str──────────────┬─from_str─┬────ex_str─┬─from_str_tokyo─┬─ex_str_tokyo─┬─from_datetime─┬─ex_datetime64─┐
-│ 1969-01-01 00:00:00 │        0 │ -31564800 │              0 │    -31568400 │             0 │     -31564800 │
-└─────────────────────┴──────────┴───────────┴────────────────┴──────────────┴───────────────┴───────────────┘
-```
-
 ## toStartOfYear
 
 Rounds down a date or date with time to the first day of the year. Returns the date as a `Date` object.
