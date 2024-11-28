@@ -4977,24 +4977,22 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "ARRAY JOIN requires at least single expression");
 
+    /// Register expression aliases in the scope
+    for (const auto & elem : array_join_nodes)
+    {
+        for (auto & child : elem->getChildren())
+        {
+            if (child)
+                expressions_visitor.visit(child);
+        }
+    }
+
     std::vector<QueryTreeNodePtr> array_join_column_expressions;
     array_join_column_expressions.reserve(array_join_nodes_size);
 
     for (auto & array_join_expression : array_join_nodes)
     {
         auto array_join_expression_alias = array_join_expression->getAlias();
-
-        for (const auto & elem : array_join_nodes)
-        {
-            if (elem->hasAlias())
-                scope.aliases.array_join_aliases.insert(elem->getAlias());
-
-            for (auto & child : elem->getChildren())
-            {
-                if (child)
-                    expressions_visitor.visit(child);
-            }
-        }
 
         std::string identifier_full_name;
 
