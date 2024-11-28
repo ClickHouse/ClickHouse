@@ -1,9 +1,7 @@
-import random
 import time
-from multiprocessing.dummy import Pool
-import datetime
 
 import pytest
+
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
