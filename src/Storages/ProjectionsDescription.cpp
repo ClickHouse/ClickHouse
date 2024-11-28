@@ -334,6 +334,7 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
     return ret;
 }
 
+
 String ProjectionsDescription::toString() const
 {
     if (empty())

@@ -1008,6 +1008,7 @@ void finalizeMutatedPart(
 
     new_data_part->default_codec = codec;
 }
+
 }
 
 struct MutationContext
@@ -1242,6 +1243,8 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
     Stopwatch watch(CLOCK_MONOTONIC_COARSE);
     UInt64 step_time_ms = (*ctx->data->getSettings())[MergeTreeSetting::background_task_preferred_step_execution_time_ms].totalMilliseconds();
 
+    ctx->projections_to_build.clear();
+
     do
     {
         Block cur_block;
@@ -1400,6 +1403,8 @@ void PartMergerWriter::finalize()
     static_pointer_cast<MergedBlockOutputStream>(ctx->projection_out)->finalizePart(
         ctx->new_projection_part, ctx->need_sync, nullptr, nullptr);
     ctx->projection_out.reset();
+
+    ctx->new_data_part->addProjectionPart("p1", std::move(ctx->new_projection_part));
 }
 
 class MutateAllPartColumnsTask : public IExecutableTask
@@ -2478,7 +2483,7 @@ bool MutateTask::prepare()
 
     const auto & projections_name_and_part = ctx->source_part->getProjectionParts();
     auto part_name = fmt::format("{}", projections_name_and_part.begin()->first);
-    ctx->new_projection_part = ctx->new_data_part->getProjectionPartBuilder(part_name, true).withPartType(ctx->projection_part->getType()).build();
+    ctx->new_projection_part = ctx->new_data_part->getProjectionPartBuilder(part_name, false).withPartType(ctx->projection_part->getType()).build();
 
     auto [projection_new_columns, projection_new_infos] = MutationHelpers::getColumnsForNewDataPart(
         ctx->projection_part, projection_updated_header, ctx->projection_metadata_snapshot->getColumns().getAllPhysical(),
