@@ -22,7 +22,6 @@
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/typeid_cast.h>
-#include "base/defines.h"
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
