@@ -572,9 +572,6 @@ public:
     }
 };
 
-
-
-
 template <typename JSONParser>
 class JSONHasImpl
 {
