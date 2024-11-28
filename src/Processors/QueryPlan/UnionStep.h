@@ -19,8 +19,6 @@ public:
 
     size_t getMaxThreads() const { return max_threads; }
 
-    bool canUpdateInputHeader() const override { return true; }
-
     void serialize(Serialization & ctx) const override;
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 

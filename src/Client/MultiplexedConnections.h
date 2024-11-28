@@ -36,7 +36,8 @@ public:
         const String & query_id,
         UInt64 stage,
         ClientInfo & client_info,
-        bool with_pending_data) override;
+        bool with_pending_data,
+        const std::vector<String> & external_roles) override;
 
     void sendQueryPlan(const QueryPlan & query_plan) override;
 

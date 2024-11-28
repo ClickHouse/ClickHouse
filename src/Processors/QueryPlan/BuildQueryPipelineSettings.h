@@ -17,6 +17,8 @@ using TemporaryFileLookupPtr = std::shared_ptr<ITemporaryFileLookup>;
 
 struct BuildQueryPipelineSettings
 {
+    bool enable_multiple_filters_transforms_for_and_chain = true;
+
     ExpressionActionsSettings actions_settings;
     QueryStatusPtr process_list_element;
     ProgressCallback progress_callback = nullptr;

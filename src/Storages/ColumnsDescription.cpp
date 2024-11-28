@@ -157,18 +157,6 @@ void ColumnDescription::writeText(WriteBuffer & buf, IAST::FormatState & state, 
         writeEscapedString(formatASTStateAware(*codec, state), buf);
     }
 
-    if (!settings.empty())
-    {
-        writeChar('\t', buf);
-        DB::writeText("SETTINGS ", buf);
-        DB::writeText("(", buf);
-        ASTSetQuery ast;
-        ast.is_standalone = false;
-        ast.changes = settings;
-        writeEscapedString(formatASTStateAware(ast, state), buf);
-        DB::writeText(")", buf);
-    }
-
     if (!statistics.empty())
     {
         writeChar('\t', buf);
@@ -180,6 +168,18 @@ void ColumnDescription::writeText(WriteBuffer & buf, IAST::FormatState & state, 
         writeChar('\t', buf);
         DB::writeText("TTL ", buf);
         writeEscapedString(formatASTStateAware(*ttl, state), buf);
+    }
+
+    if (!settings.empty())
+    {
+        writeChar('\t', buf);
+        DB::writeText("SETTINGS ", buf);
+        DB::writeText("(", buf);
+        ASTSetQuery ast;
+        ast.is_standalone = false;
+        ast.changes = settings;
+        writeEscapedString(formatASTStateAware(ast, state), buf);
+        DB::writeText(")", buf);
     }
 
     writeChar('\n', buf);
@@ -215,7 +215,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
                 comment = col_ast->comment->as<ASTLiteral &>().value.safeGet<String>();
 
             if (col_ast->codec)
-                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false, true, true, true);
+                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false, true, true);
 
             if (col_ast->ttl)
                 ttl = col_ast->ttl;
@@ -970,7 +970,7 @@ std::vector<String> ColumnsDescription::getAllRegisteredNames() const
     names.reserve(columns.size());
     for (const auto & column : columns)
     {
-        if (column.name.find('.') == std::string::npos)
+        if (!column.name.contains('.'))
             names.push_back(column.name);
     }
     return names;

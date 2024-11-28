@@ -17,7 +17,7 @@ To declare a column of `Dynamic` type, use the following syntax:
 Where `N` is an optional parameter between `0` and `254` indicating how many different data types can be stored as separate subcolumns inside a column with type `Dynamic` across single block of data that is stored separately (for example across single data part for MergeTree table). If this limit is exceeded, all values with new types will be stored together in a special shared data structure in binary form. Default value of `max_types` is `32`.
 
 :::note
-The Dynamic data type is an experimental feature. To use it, set `allow_experimental_dynamic_type = 1`.
+The Dynamic data type is a beta feature. To use it, set `enable_dynamic_type = 1`.
 :::
 
 ## Creating Dynamic
@@ -54,7 +54,7 @@ SELECT 'Hello, World!'::Dynamic as d, dynamicType(d);
 Using CAST from `Variant` column:
 
 ```sql
-SET allow_experimental_variant_type = 1, use_variant_as_common_type = 1;
+SET enable_variant_type = 1, use_variant_as_common_type = 1;
 SELECT multiIf((number % 3) = 0, number, (number % 3) = 1, range(number + 1), NULL)::Dynamic AS d, dynamicType(d) FROM numbers(3)
 ```
 
@@ -512,6 +512,8 @@ The result of operator `<` for values `d1` with underlying type `T1` and `d2` wi
 - If `T1 = T2 = T`, the result will be `d1.T < d2.T` (underlying values will be compared).
 - If `T1 != T2`, the result will be `T1 < T2` (type names will be compared).
 
+By default `Dynamic` type is not allowed in `GROUP BY`/`ORDER BY` keys, if you want to use it consider its special comparison rule and enable `allow_suspicious_types_in_group_by`/`allow_suspicious_types_in_order_by` settings.
+
 Examples:
 ```sql
 CREATE TABLE test (d Dynamic) ENGINE=Memory;
@@ -535,7 +537,7 @@ SELECT d, dynamicType(d) FROM test;
 ```
 
 ```sql
-SELECT d, dynamicType(d) FROM test ORDER BY d;
+SELECT d, dynamicType(d) FROM test ORDER BY d SETTINGS allow_suspicious_types_in_order_by=1;
 ```
 
 ```sql
@@ -557,7 +559,7 @@ Example:
 ```sql
 CREATE TABLE test (d Dynamic) ENGINE=Memory;
 INSERT INTO test VALUES (1::UInt32), (1::Int64), (100::UInt32), (100::Int64);
-SELECT d, dynamicType(d) FROM test ORDER by d;
+SELECT d, dynamicType(d) FROM test ORDER BY d SETTINGS allow_suspicious_types_in_order_by=1;
 ```
 
 ```text
@@ -570,7 +572,7 @@ SELECT d, dynamicType(d) FROM test ORDER by d;
 ```
 
 ```sql
-SELECT d, dynamicType(d) FROM test GROUP by d;
+SELECT d, dynamicType(d) FROM test GROUP by d SETTINGS allow_suspicious_types_in_group_by=1;
 ```
 
 ```text
@@ -582,7 +584,7 @@ SELECT d, dynamicType(d) FROM test GROUP by d;
 └─────┴────────────────┘
 ```
 
-**Note**: the described comparison rule is not applied during execution of comparison functions like `<`/`>`/`=` and others because of [special work](#using-dynamic-type-in-functions) of functions with `Dynamic` type
+**Note:** the described comparison rule is not applied during execution of comparison functions like `<`/`>`/`=` and others because of [special work](#using-dynamic-type-in-functions) of functions with `Dynamic` type
 
 ## Reaching the limit in number of different data types stored inside Dynamic
 

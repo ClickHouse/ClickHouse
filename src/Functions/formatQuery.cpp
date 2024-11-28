@@ -18,6 +18,7 @@ namespace Setting
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
     extern const SettingsBool print_pretty_type_names;
+    extern const SettingsBool implicit_select;
 }
 
 namespace ErrorCodes
@@ -51,6 +52,7 @@ public:
         max_parser_depth = settings[Setting::max_parser_depth];
         max_parser_backtracks = settings[Setting::max_parser_backtracks];
         print_pretty_type_names = settings[Setting::print_pretty_type_names];
+        implicit_select = settings[Setting::implicit_select];
     }
 
     String getName() const override { return name; }
@@ -111,7 +113,7 @@ private:
             const char * begin = reinterpret_cast<const char *>(&data[prev_offset]);
             const char * end = begin + offsets[i] - prev_offset - 1;
 
-            ParserQuery parser(end);
+            ParserQuery parser(end, false, implicit_select);
             ASTPtr ast;
             WriteBufferFromOwnString buf;
 
@@ -173,6 +175,7 @@ private:
     size_t max_parser_depth;
     size_t max_parser_backtracks;
     bool print_pretty_type_names;
+    bool implicit_select;
 };
 
 }

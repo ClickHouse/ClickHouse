@@ -130,6 +130,8 @@ public:
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
 
 private:
+    void updateOutputHeader() override;
+
     Aggregator::Params params;
     bool final;
     size_t merge_threads;

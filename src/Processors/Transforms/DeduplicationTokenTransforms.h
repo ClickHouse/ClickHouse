@@ -4,7 +4,7 @@
 #include <Processors/ISimpleTransform.h>
 
 #include <base/defines.h>
-#include "Common/Logger.h"
+#include <Common/Logger.h>
 
 
 namespace DB

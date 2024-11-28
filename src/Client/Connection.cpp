@@ -14,6 +14,7 @@
 #include <Client/ClientBase.h>
 #include <Client/Connection.h>
 #include <Client/ConnectionParameters.h>
+#include "Common/logger_useful.h"
 #include <Common/ClickHouseRevision.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
@@ -22,8 +23,8 @@
 #include <Common/StringUtils.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/randomSeed.h>
-#include <Common/logger_useful.h>
 #include <Core/Block.h>
+#include <Core/ProtocolDefines.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Compression/CompressionFactory.h>
@@ -56,7 +57,6 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_suspicious_codecs;
-    extern const SettingsBool enable_deflate_qpl_codec;
     extern const SettingsBool enable_zstd_qat_codec;
     extern const SettingsString network_compression_method;
     extern const SettingsInt64 network_zstd_compression_level;
@@ -80,14 +80,8 @@ namespace ErrorCodes
 
 Connection::~Connection()
 {
-    try{
-        if (connected)
-            Connection::disconnect();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    if (connected)
+        Connection::cancel();
 }
 
 Connection::Connection(const String & host_, UInt16 port_,
@@ -144,7 +138,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
             have_more_addresses_to_connect = it != std::prev(addresses.end());
 
             if (connected)
-                disconnect();
+                cancel();
 
             if (static_cast<bool>(secure))
             {
@@ -295,7 +289,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     }
     catch (DB::NetException & e)
     {
-        disconnect();
+        cancel();
 
         /// Remove this possible stale entry from cache
         DNSResolver::instance().removeHostFromCache(host);
@@ -306,7 +300,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     }
     catch (Poco::Net::NetException & e)
     {
-        disconnect();
+        cancel();
 
         /// Remove this possible stale entry from cache
         DNSResolver::instance().removeHostFromCache(host);
@@ -316,7 +310,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     }
     catch (Poco::TimeoutException & e)
     {
-        disconnect();
+        cancel();
 
         /// Remove this possible stale entry from cache
         DNSResolver::instance().removeHostFromCache(host);
@@ -331,55 +325,45 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
             getDescription(/*with_extra*/ true),
             connection_timeout.totalMilliseconds());
     }
+    catch (...)
+    {
+        cancel();
+        throw;
+    }
+}
+
+void Connection::cancel() noexcept
+{
+    if (maybe_compressed_out)
+        maybe_compressed_out->cancel();
+
+    if (out)
+        out->cancel();
+
+    if (socket)
+        socket->close();
+
+    reset();
+}
+
+void Connection::reset() noexcept
+{
+    maybe_compressed_out.reset();
+    out.reset();
+    socket.reset();
+    nonce.reset();
+
+    connected = false;
 }
 
 
 void Connection::disconnect()
 {
-    in = nullptr;
+    in.reset();
     last_input_packet_type.reset();
-    std::exception_ptr finalize_exception;
 
-    try
-    {
-        // finalize() can write and throw an exception.
-        if (maybe_compressed_out)
-            maybe_compressed_out->finalize();
-    }
-    catch (...)
-    {
-        /// Don't throw an exception here, it will leave Connection in invalid state.
-        finalize_exception = std::current_exception();
-
-        if (out)
-        {
-            out->cancel();
-            out = nullptr;
-        }
-    }
-    maybe_compressed_out = nullptr;
-
-    try
-    {
-        if (out)
-            out->finalize();
-    }
-    catch (...)
-    {
-        /// Don't throw an exception here, it will leave Connection in invalid state.
-        finalize_exception = std::current_exception();
-    }
-    out = nullptr;
-
-    if (socket)
-        socket->close();
-
-    socket = nullptr;
-    connected = false;
-    nonce.reset();
-
-    if (finalize_exception)
-        std::rethrow_exception(finalize_exception);
+    // no point to finalize tcp connections
+    cancel();
 }
 
 
@@ -770,6 +754,7 @@ void Connection::sendQuery(
     const Settings * settings,
     const ClientInfo * client_info,
     bool with_pending_data,
+    const std::vector<String> & external_roles,
     std::function<void(const Progress &)>)
 {
     OpenTelemetry::SpanHolder span("Connection::sendQuery()", OpenTelemetry::SpanKind::CLIENT);
@@ -812,7 +797,6 @@ void Connection::sendQuery(
             level,
             !(*settings)[Setting::allow_suspicious_codecs],
             (*settings)[Setting::allow_experimental_codecs],
-            (*settings)[Setting::enable_deflate_qpl_codec],
             (*settings)[Setting::enable_zstd_qat_codec]);
         compression_codec = CompressionCodecFactory::instance().get(method, level);
     }
@@ -843,6 +827,18 @@ void Connection::sendQuery(
     else
         writeStringBinary("" /* empty string is a marker of the end of settings */, *out);
 
+    String external_roles_str;
+    if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_EXTERNALLY_GRANTED_ROLES)
+    {
+        WriteBufferFromString buffer(external_roles_str);
+        writeVectorBinary(external_roles, buffer);
+        buffer.finalize();
+
+        LOG_TRACE(log_wrapper.get(), "Sending external_roles with query: [{}] ({})", fmt::join(external_roles, ", "), external_roles.size());
+
+        writeStringBinary(external_roles_str, *out);
+    }
+
     /// Interserver secret
     if (server_revision >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET)
     {
@@ -863,6 +859,9 @@ void Connection::sendQuery(
             data += query;
             data += query_id;
             data += client_info->initial_user;
+            // Also for backwards compatibility
+            if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_EXTERNALLY_GRANTED_ROLES)
+                data += external_roles_str;
             /// TODO: add source/target host/ip-address
 
             std::string hash = encodeSHA256(data);
@@ -891,7 +890,7 @@ void Connection::sendQuery(
 
     maybe_compressed_in.reset();
     if (maybe_compressed_out && maybe_compressed_out != out)
-        maybe_compressed_out->cancel();
+        maybe_compressed_out->finalize();
     maybe_compressed_out.reset();
     block_in.reset();
     block_logs_in.reset();

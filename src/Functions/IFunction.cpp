@@ -1,26 +1,27 @@
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionDynamicAdaptor.h>
 
-#include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
-#include <Common/SipHash.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnNothing.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnSparse.h>
+#include <Columns/ColumnTuple.h>
 #include <Core/Block.h>
 #include <Core/TypeId.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnLowCardinality.h>
-#include <Columns/ColumnSparse.h>
-#include <Columns/ColumnNothing.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/Native.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <Functions/FunctionHelpers.h>
-#include <cstdlib>
-#include <memory>
+#include <Common/SipHash.h>
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 
 #include "config.h"
+
+#include <cstdlib>
+#include <memory>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -389,6 +390,13 @@ ColumnPtr IExecutableFunction::execute(const ColumnsWithTypeAndName & arguments,
     return executeWithoutSparseColumns(arguments, result_type, input_rows_count, dry_run);
 }
 
+ColumnPtr IFunctionBase::execute(const DB::ColumnsWithTypeAndName& arguments, const DB::DataTypePtr& result_type,
+        size_t input_rows_count, bool dry_run) const
+{
+    checkFunctionArgumentSizes(arguments, input_rows_count);
+    return prepare(arguments)->execute(arguments, result_type, input_rows_count, dry_run);
+}
+
 void IFunctionOverloadResolver::checkNumberOfArguments(size_t number_of_arguments) const
 {
     if (isVariadic())
@@ -451,6 +459,7 @@ FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & 
     /// Use FunctionBaseDynamicAdaptor if default implementation for Dynamic is enabled and we have Dynamic type in arguments.
     if (useDefaultImplementationForDynamic())
     {
+        checkNumberOfArguments(arguments.size());
         for (const auto & arg : arguments)
         {
             if (isDynamic(arg.type))

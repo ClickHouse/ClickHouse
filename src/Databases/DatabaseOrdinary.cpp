@@ -56,6 +56,12 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString storage_policy;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsString default_replica_name;
+    extern const ServerSettingsString default_replica_path;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -85,46 +91,65 @@ void DatabaseOrdinary::loadStoredObjects(ContextMutablePtr, LoadingStrictnessLev
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
 }
 
-static void setReplicatedEngine(ASTCreateQuery * create_query, ContextPtr context)
+static void checkReplicaPathExists(ASTCreateQuery & create_query, ContextPtr local_context)
 {
-    auto * storage = create_query->storage;
-
-    /// Get replicated engine
-    const auto & server_settings = context->getServerSettings();
-    String replica_path = server_settings.default_replica_path;
-    String replica_name = server_settings.default_replica_name;
-
-    /// Check that replica path doesn't exist
     Macros::MacroExpansionInfo info;
-    StorageID table_id = StorageID(create_query->getDatabase(), create_query->getTable(), create_query->uuid);
+    StorageID table_id = StorageID(create_query.getDatabase(), create_query.getTable(), create_query.uuid);
     info.table_id = table_id;
     info.expand_special_macros_only = false;
 
-    String zookeeper_path = context->getMacros()->expand(replica_path, info);
-    if (context->getZooKeeper()->exists(zookeeper_path))
+    const auto & server_settings = local_context->getServerSettings();
+    String replica_path = server_settings[ServerSetting::default_replica_path];
+    String zookeeper_path = local_context->getMacros()->expand(replica_path, info);
+    if (local_context->getZooKeeper()->exists(zookeeper_path))
         throw Exception(
             ErrorCodes::UNEXPECTED_NODE_IN_ZOOKEEPER,
             "Found existing ZooKeeper path {} while trying to convert table {} to replicated. Table will not be converted.",
             zookeeper_path, backQuote(table_id.getFullTableName())
         );
+}
 
+void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr local_context, bool replicated)
+{
+    auto * storage = create_query.storage;
     auto args = std::make_shared<ASTExpressionList>();
-    args->children.push_back(std::make_shared<ASTLiteral>(replica_path));
-    args->children.push_back(std::make_shared<ASTLiteral>(replica_name));
+    auto engine = std::make_shared<ASTFunction>();
+    String engine_name;
 
-    /// Add old engine's arguments
-    if (storage->engine->arguments)
+    if (replicated)
     {
-        for (size_t i = 0; i < storage->engine->arguments->children.size(); ++i)
-            args->children.push_back(storage->engine->arguments->children[i]->clone());
+        const auto & server_settings = local_context->getServerSettings();
+        String replica_path = server_settings[ServerSetting::default_replica_path];
+        String replica_name = server_settings[ServerSetting::default_replica_name];
+
+        args->children.push_back(std::make_shared<ASTLiteral>(replica_path));
+        args->children.push_back(std::make_shared<ASTLiteral>(replica_name));
+
+        /// Add old engine's arguments
+        if (storage->engine->arguments)
+        {
+            for (size_t i = 0; i < storage->engine->arguments->children.size(); ++i)
+                args->children.push_back(storage->engine->arguments->children[i]->clone());
+        }
+
+        engine_name = "Replicated" + storage->engine->name;
+    }
+    else
+    {
+        /// Add old engine's arguments without first two
+        if (storage->engine->arguments)
+        {
+            for (size_t i = 2; i < storage->engine->arguments->children.size(); ++i)
+                args->children.push_back(storage->engine->arguments->children[i]->clone());
+        }
+
+        engine_name = storage->engine->name.substr(strlen("Replicated"));
     }
 
-    auto engine = std::make_shared<ASTFunction>();
-    engine->name = "Replicated" + storage->engine->name;
-    engine->arguments = args;
-
     /// Set new engine for the old query
-    create_query->storage->set(create_query->storage->engine, engine->clone());
+    engine->name = engine_name;
+    engine->arguments = args;
+    create_query.storage->set(create_query.storage->engine, engine->clone());
 }
 
 String DatabaseOrdinary::getConvertToReplicatedFlagPath(const String & name, const StoragePolicyPtr storage_policy, bool tableStarted)
@@ -152,15 +177,15 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
     fs::path file_path(file_name);
     fs::path full_path = path / file_path;
 
-    auto * create_query = ast->as<ASTCreateQuery>();
+    auto & create_query = ast->as<ASTCreateQuery &>();
 
-    if (!create_query->storage || !create_query->storage->engine->name.ends_with("MergeTree") || create_query->storage->engine->name.starts_with("Replicated") || create_query->storage->engine->name.starts_with("Shared"))
+    if (!create_query.storage || !create_query.storage->engine->name.ends_with("MergeTree") || create_query.storage->engine->name.starts_with("Replicated") || create_query.storage->engine->name.starts_with("Shared"))
         return;
 
     /// Get table's storage policy
     MergeTreeSettings default_settings = getContext()->getMergeTreeSettings();
     auto policy = getContext()->getStoragePolicy(default_settings[MergeTreeSetting::storage_policy]);
-    if (auto * query_settings = create_query->storage->settings)
+    if (auto * query_settings = create_query.storage->settings)
         if (Field * policy_setting = query_settings->changes.tryGet("storage_policy"))
             policy = getContext()->getStoragePolicy(policy_setting->safeGet<String>());
 
@@ -175,7 +200,8 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
 
     LOG_INFO(log, "Found {} flag for table {}. Will try to change it's engine in metadata to replicated.", CONVERT_TO_REPLICATED_FLAG_NAME, backQuote(qualified_name.getFullName()));
 
-    setReplicatedEngine(create_query, getContext());
+    checkReplicaPathExists(create_query, getContext());
+    setMergeTreeEngine(create_query, getContext(), /*replicated*/ true);
 
     /// Write changes to metadata
     String table_metadata_path = full_path;

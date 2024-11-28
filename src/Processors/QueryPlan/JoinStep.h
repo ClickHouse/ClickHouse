@@ -18,6 +18,7 @@ public:
         const Header & right_header_,
         JoinPtr join_,
         size_t max_block_size_,
+        size_t min_block_size_bytes_,
         size_t max_streams_,
         bool keep_left_read_in_order_);
 
@@ -34,13 +35,12 @@ public:
     void setJoin(JoinPtr join_) { join = std::move(join_); }
     bool allowPushDownToRight() const;
 
-    bool canUpdateInputHeader() const override { return true; }
-
 private:
     void updateOutputHeader() override;
 
     JoinPtr join;
     size_t max_block_size;
+    size_t min_block_size_bytes;
     size_t max_streams;
     bool keep_left_read_in_order;
 };

@@ -1466,7 +1466,7 @@ ActionsDAG ActionsDAG::makeConvertingActions(
     const ColumnsWithTypeAndName & result,
     MatchColumnsMode mode,
     bool ignore_constant_values,
-    bool add_casted_columns,
+    bool add_cast_columns,
     NameToNameMap * new_names)
 {
     size_t num_input_columns = source.size();
@@ -1475,8 +1475,8 @@ ActionsDAG ActionsDAG::makeConvertingActions(
     if (mode == MatchColumnsMode::Position && num_input_columns != num_result_columns)
         throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH, "Number of columns doesn't match (source: {} and result: {})", num_input_columns, num_result_columns);
 
-    if (add_casted_columns && mode != MatchColumnsMode::Name)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Converting with add_casted_columns supported only for MatchColumnsMode::Name");
+    if (add_cast_columns && mode != MatchColumnsMode::Name)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Converting with add_cast_columns supported only for MatchColumnsMode::Name");
 
     ActionsDAG actions_dag(source);
     NodeRawConstPtrs projection(num_result_columns);
@@ -1574,7 +1574,7 @@ ActionsDAG ActionsDAG::makeConvertingActions(
 
         if (dst_node->result_name != res_elem.name)
         {
-            if (add_casted_columns)
+            if (add_cast_columns)
             {
                 if (inputs.contains(dst_node->result_name))
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot convert column `{}` to `{}` because other column have same name",
