@@ -1803,7 +1803,11 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
                 tuple_names.emplace_back(std::move(element.name));
             }
 
-            auto tuple_column = ColumnTuple::create(std::move(tuple_elements));
+            ColumnPtr tuple_column;
+            if (tuple_elements.empty())
+                tuple_column = ColumnTuple::create(orc_column->numElements);
+            else
+                tuple_column = ColumnTuple::create(std::move(tuple_elements));
             auto tuple_type = std::make_shared<DataTypeTuple>(std::move(tuple_types), std::move(tuple_names));
             return {std::move(tuple_column), std::move(tuple_type), column_name};
         }
