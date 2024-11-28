@@ -42,7 +42,7 @@ bool ParserWithElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return true;
         }
     }
-    
+
     pos = old_pos;
     ParserExpressionWithOptionalAlias s_expr(false);
     if (!s_expr.parse(pos, node, expected))
