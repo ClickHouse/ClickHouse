@@ -704,7 +704,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
         thread_trace_context->root_span.addAttribute("clickhouse.uri", request.getURI());
         thread_trace_context->root_span.addAttribute("http.referer", request.get("Referer", ""));
-        thread_trace_context->root_span.addAttribute("http.user.agent", request.get("User-Agent", "(none)"));
+        thread_trace_context->root_span.addAttribute("http.user.agent", request.get("User-Agent", ""));
         thread_trace_context->root_span.addAttribute("http.method", request.getMethod());
 
         response.setContentType("text/plain; charset=UTF-8");
