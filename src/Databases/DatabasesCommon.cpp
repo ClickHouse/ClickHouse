@@ -382,8 +382,7 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
     if (!table_storage->isSystemStorage() && !DatabaseCatalog::isPredefinedDatabase(database_name))
     {
         LOG_TEST(log, "Counting detached table {} to database {}", table_name, database_name);
-        for (auto metric : getAttachedCountersForStorage(table_storage))
-            CurrentMetrics::sub(metric);
+        CurrentMetrics::sub(getAttachedCounterForStorage(table_storage));
     }
 
     auto table_id = table_storage->getStorageID();
@@ -431,8 +430,7 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, c
     if (!table->isSystemStorage() && !DatabaseCatalog::isPredefinedDatabase(database_name))
     {
         LOG_TEST(log, "Counting attached table {} to database {}", table_name, database_name);
-        for (auto metric : getAttachedCountersForStorage(table))
-            CurrentMetrics::add(metric);
+        CurrentMetrics::add(getAttachedCounterForStorage(table));
     }
 }
 

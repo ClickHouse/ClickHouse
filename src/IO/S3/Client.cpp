@@ -156,10 +156,10 @@ namespace
 
 ProviderType deduceProviderType(const std::string & url)
 {
-    if (url.contains(".amazonaws.com"))
+    if (url.find(".amazonaws.com") != std::string::npos)
         return ProviderType::AWS;
 
-    if (url.contains("storage.googleapis.com"))
+    if (url.find("storage.googleapis.com") != std::string::npos)
         return ProviderType::GCS;
 
     return ProviderType::UNKNOWN;
@@ -645,7 +645,7 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
             try
             {
                 /// S3 does retries network errors actually.
-                /// But it does matter when errors occur.
+                /// But it is matter when errors occur.
                 /// This code retries a specific case when
                 /// network error happens when XML document is being read from the response body.
                 /// Hence, the response body is a stream, network errors are possible at reading.
@@ -656,9 +656,8 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                 /// Requests that expose the response stream as an answer are not retried with that code. E.g. GetObject.
                 return request_fn_(request_);
             }
-            catch (Poco::Net::NetException &)
+            catch (Poco::Net::ConnectionResetException &)
             {
-                /// This includes "connection reset", "malformed message", and possibly other exceptions.
 
                 if constexpr (IsReadMethod)
                 {

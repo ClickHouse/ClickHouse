@@ -93,7 +93,7 @@ inline static const Patterns & selectPatternsForMetricType(const Graphite::Param
     if (params.patterns_typed)
     {
         std::string_view path_view = path;
-        if (!path_view.contains("?"sv))
+        if (path_view.find("?"sv) == std::string::npos)
             return params.patterns_plain;
         return params.patterns_tagged;
     }
@@ -287,7 +287,7 @@ std::string buildTaggedRegex(std::string regexp_str)
     /* remove empty elements */
     using namespace std::string_literals;
     std::erase(tags, ""s);
-    if (tags[0].find('=') == tags[0].npos)  /// NOLINT(readability-static-accessed-through-instance)
+    if (tags[0].find('=') == tags[0].npos)
     {
         if (tags.size() == 1) /* only name */
             return "^" + tags[0] + "\\?";

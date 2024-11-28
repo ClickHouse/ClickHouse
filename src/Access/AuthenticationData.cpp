@@ -1,16 +1,12 @@
 #include <Access/AccessControl.h>
 #include <Access/AuthenticationData.h>
 #include <Common/Exception.h>
-#include <Interpreters/Access/getValidUntilFromAST.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/Access/ASTPublicSSHKey.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include <IO/parseDateTimeBestEffort.h>
-#include <IO/ReadHelpers.h>
-#include <IO/ReadBufferFromString.h>
 
 #include <Common/OpenSSLHelpers.h>
 #include <Poco/SHA1Engine.h>
@@ -80,7 +76,7 @@ AuthenticationData::Digest AuthenticationData::Util::encodeBcrypt(std::string_vi
     if (ret != 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "BCrypt library failed: bcrypt_gensalt returned {}", ret);
 
-    ret = bcrypt_hashpw(text.data(), salt, reinterpret_cast<char *>(hash.data()));  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    ret = bcrypt_hashpw(text.data(), salt, reinterpret_cast<char *>(hash.data()));
     if (ret != 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "BCrypt library failed: bcrypt_hashpw returned {}", ret);
 
@@ -95,7 +91,7 @@ AuthenticationData::Digest AuthenticationData::Util::encodeBcrypt(std::string_vi
 bool AuthenticationData::Util::checkPasswordBcrypt(std::string_view password [[maybe_unused]], const Digest & password_bcrypt [[maybe_unused]])
 {
 #if USE_BCRYPT
-    int ret = bcrypt_checkpw(password.data(), reinterpret_cast<const char *>(password_bcrypt.data()));  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    int ret = bcrypt_checkpw(password.data(), reinterpret_cast<const char *>(password_bcrypt.data()));
     /// Before 24.6 we didn't validate hashes on creation, so it could be that the stored hash is invalid
     /// and it could not be decoded by the library
     if (ret == -1)
@@ -117,8 +113,7 @@ bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs)
         && (lhs.ssh_keys == rhs.ssh_keys)
 #endif
         && (lhs.http_auth_scheme == rhs.http_auth_scheme)
-        && (lhs.http_auth_server_name == rhs.http_auth_server_name)
-        && (lhs.valid_until == rhs.valid_until);
+        && (lhs.http_auth_server_name == rhs.http_auth_server_name);
 }
 
 
@@ -389,34 +384,14 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
             throw Exception(ErrorCodes::LOGICAL_ERROR, "AST: Unexpected authentication type {}", toString(auth_type));
     }
 
-
-    if (valid_until)
-    {
-        WriteBufferFromOwnString out;
-        writeDateTimeText(valid_until, out);
-
-        node->valid_until = std::make_shared<ASTLiteral>(out.str());
-    }
-
     return node;
 }
 
 
 AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & query, ContextPtr context, bool validate)
 {
-    time_t valid_until = 0;
-
-    if (query.valid_until)
-    {
-        valid_until = getValidUntilFromAST(query.valid_until, context);
-    }
-
     if (query.type && query.type == AuthenticationType::NO_PASSWORD)
-    {
-        AuthenticationData auth_data;
-        auth_data.setValidUntil(valid_until);
-        return auth_data;
-    }
+        return AuthenticationData();
 
     /// For this type of authentication we have ASTPublicSSHKey as children for ASTAuthenticationData
     if (query.type && query.type == AuthenticationType::SSH_KEY)
@@ -443,7 +418,6 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
         }
 
         auth_data.setSSHKeys(std::move(keys));
-        auth_data.setValidUntil(valid_until);
         return auth_data;
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without libssh");
@@ -476,8 +450,6 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
             current_type = context->getAccessControl().getDefaultPasswordType();
 
         AuthenticationData auth_data(current_type);
-
-        auth_data.setValidUntil(valid_until);
 
         if (validate)
             context->getAccessControl().checkPasswordComplexityRules(value);
@@ -522,7 +494,6 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
     }
 
     AuthenticationData auth_data(*query.type);
-    auth_data.setValidUntil(valid_until);
 
     if (query.contains_hash)
     {

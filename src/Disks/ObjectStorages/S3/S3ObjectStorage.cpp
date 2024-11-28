@@ -9,7 +9,6 @@
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
-#include <Disks/IO/getThreadPoolReader.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/S3/getObjectInfo.h>
@@ -326,9 +325,19 @@ void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_e
                       ProfileEvents::DiskS3DeleteObjects);
 }
 
+void S3ObjectStorage::removeObject(const StoredObject & object)
+{
+    removeObjectImpl(object, false);
+}
+
 void S3ObjectStorage::removeObjectIfExists(const StoredObject & object)
 {
     removeObjectImpl(object, true);
+}
+
+void S3ObjectStorage::removeObjects(const StoredObjects & objects)
+{
+    removeObjectsImpl(objects, false);
 }
 
 void S3ObjectStorage::removeObjectsIfExist(const StoredObjects & objects)

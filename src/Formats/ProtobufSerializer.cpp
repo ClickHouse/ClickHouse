@@ -227,33 +227,33 @@ namespace
         template <typename NumberType>
         void writeInt(NumberType value)
         {
-            auto cast = castNumber<Int64>(value);
-            if (cast != 0 || !skip_zero_or_empty)
-                writer->writeInt(field_tag, cast);
+            auto casted = castNumber<Int64>(value);
+            if (casted != 0 || !skip_zero_or_empty)
+                writer->writeInt(field_tag, casted);
         }
 
         template <typename NumberType>
         void writeSInt(NumberType value)
         {
-            auto cast = castNumber<Int64>(value);
-            if (cast != 0 || !skip_zero_or_empty)
-                writer->writeSInt(field_tag, cast);
+            auto casted = castNumber<Int64>(value);
+            if (casted != 0 || !skip_zero_or_empty)
+                writer->writeSInt(field_tag, casted);
         }
 
         template <typename NumberType>
         void writeUInt(NumberType value)
         {
-            auto cast = castNumber<UInt64>(value);
-            if (cast != 0 || !skip_zero_or_empty)
-                writer->writeUInt(field_tag, cast);
+            auto casted = castNumber<UInt64>(value);
+            if (casted != 0 || !skip_zero_or_empty)
+                writer->writeUInt(field_tag, casted);
         }
 
         template <typename FieldType, typename NumberType>
         void writeFixed(NumberType value)
         {
-            auto cast = castNumber<FieldType>(value);
-            if (cast != 0 || !skip_zero_or_empty)
-                writer->writeFixed(field_tag, cast);
+            auto casted = castNumber<FieldType>(value);
+            if (casted != 0 || !skip_zero_or_empty)
+                writer->writeFixed(field_tag, casted);
         }
 
         Int64 readInt() { return reader->readInt(); }
@@ -522,10 +522,9 @@ namespace
                 {
                     write_function = [this](NumberType value)
                     {
-                        {
-                            WriteBufferFromString buf{text_buffer};
-                            writeText(value, buf);
-                        }
+                        WriteBufferFromString buf{text_buffer};
+                        writeText(value, buf);
+                        buf.finalize();
                         writeStr(text_buffer);
                     };
 
@@ -541,7 +540,7 @@ namespace
 
                 case FieldTypeId::TYPE_ENUM:
                 {
-                    if (is_floating_point<NumberType>)
+                    if (std::is_floating_point_v<NumberType>)
                         incompatibleColumnType(TypeName<NumberType>);
 
                     write_function = [this](NumberType value)
@@ -895,7 +894,7 @@ namespace
         template <typename NumberType>
         void toStringAppend(NumberType value, PaddedPODArray<UInt8> & str)
         {
-            auto buf = WriteBufferFromVector<PaddedPODArray<UInt8>>(str, AppendModeTag{});
+            WriteBufferFromVector buf{str, AppendModeTag{}};
             writeText(value, buf);
         }
 
@@ -1308,8 +1307,7 @@ namespace
                         {
                             if (decimal.value == 0)
                                 writeInt(0);
-                            else if (DecimalComparison<DecimalType, int, EqualsOp>::compare(
-                                         decimal, 1, scale, 0, /* check overflow */ true))
+                            else if (DecimalComparison<DecimalType, int, EqualsOp>::compare(decimal, 1, scale, 0))
                                 writeInt(1);
                             else
                             {

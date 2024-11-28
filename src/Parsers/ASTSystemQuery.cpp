@@ -191,8 +191,6 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
         case Type::SYNC_REPLICA:
         case Type::WAIT_LOADING_PARTS:
         case Type::FLUSH_DISTRIBUTED:
-        case Type::PREWARM_MARK_CACHE:
-        case Type::PREWARM_PRIMARY_INDEX_CACHE:
         {
             if (table)
             {
@@ -409,7 +407,6 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
         case Type::DROP_MMAP_CACHE:
         case Type::DROP_QUERY_CACHE:
         case Type::DROP_MARK_CACHE:
-        case Type::DROP_PRIMARY_INDEX_CACHE:
         case Type::DROP_INDEX_MARK_CACHE:
         case Type::DROP_UNCOMPRESSED_CACHE:
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:

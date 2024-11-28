@@ -1817,21 +1817,6 @@ void DatabaseCatalog::triggerReloadDisksTask(const Strings & new_added_disks)
     (*reload_disks_task)->schedule();
 }
 
-void DatabaseCatalog::stopReplicatedDDLQueries()
-{
-    replicated_ddl_queries_enabled = false;
-}
-
-void DatabaseCatalog::startReplicatedDDLQueries()
-{
-    replicated_ddl_queries_enabled = true;
-}
-
-bool DatabaseCatalog::canPerformReplicatedDDLQueries() const
-{
-    return replicated_ddl_queries_enabled;
-}
-
 static void maybeUnlockUUID(UUID uuid)
 {
     if (uuid == UUIDHelpers::Nil)

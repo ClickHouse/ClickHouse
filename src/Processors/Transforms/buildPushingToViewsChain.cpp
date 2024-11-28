@@ -11,7 +11,6 @@
 #include <Processors/Transforms/PlanSquashingTransform.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Storages/LiveView/StorageLiveView.h>
 #include <Storages/WindowView/StorageWindowView.h>
@@ -64,7 +63,6 @@ namespace Setting
     extern const SettingsUInt64 min_insert_block_size_rows_for_materialized_views;
     extern const SettingsBool parallel_view_processing;
     extern const SettingsBool use_concurrency_control;
-    extern const SettingsBool use_async_executor_for_materialized_views;
 }
 
 namespace ErrorCodes
@@ -131,7 +129,6 @@ private:
 };
 
 /// For source chunk, execute view query over it.
-template <typename Executor>
 class ExecutingInnerQueryFromViewTransform final : public ExceptionKeepingTransform
 {
 public:
@@ -151,7 +148,7 @@ private:
     struct State
     {
         QueryPipeline pipeline;
-        Executor executor;
+        PullingPipelineExecutor executor;
 
         explicit State(QueryPipeline pipeline_)
             : pipeline(std::move(pipeline_))
@@ -431,30 +428,16 @@ std::optional<Chain> generateViewChain(
         out.addSource(std::make_shared<DeduplicationToken::CheckTokenTransform>("Right after Inner query", out.getInputHeader()));
 #endif
 
-        if (context->getSettingsRef()[Setting::use_async_executor_for_materialized_views])
-        {
-             auto executing_inner_query = std::make_shared<ExecutingInnerQueryFromViewTransform<PullingAsyncPipelineExecutor>>(
-                 storage_header, views_data->views.back(), views_data, disable_deduplication_for_children);
-             executing_inner_query->setRuntimeData(view_thread_status, view_counter_ms);
+        auto executing_inner_query = std::make_shared<ExecutingInnerQueryFromViewTransform>(
+            storage_header, views_data->views.back(), views_data, disable_deduplication_for_children);
+        executing_inner_query->setRuntimeData(view_thread_status, view_counter_ms);
 
-             out.addSource(std::move(executing_inner_query));
-        }
-        else
-        {
-
-             auto executing_inner_query = std::make_shared<ExecutingInnerQueryFromViewTransform<PullingPipelineExecutor>>(
-                 storage_header, views_data->views.back(), views_data, disable_deduplication_for_children);
-             executing_inner_query->setRuntimeData(view_thread_status, view_counter_ms);
-
-             out.addSource(std::move(executing_inner_query));
-
-        }
+        out.addSource(std::move(executing_inner_query));
 
 #ifdef ABORT_ON_LOGICAL_ERROR
         out.addSource(std::make_shared<DeduplicationToken::CheckTokenTransform>("Right before Inner query", out.getInputHeader()));
 #endif
     }
-
 
     return out;
 }
@@ -783,8 +766,7 @@ IProcessor::Status CopyingDataToViewsTransform::prepare()
 }
 
 
-template <typename Executor>
-ExecutingInnerQueryFromViewTransform<Executor>::ExecutingInnerQueryFromViewTransform(
+ExecutingInnerQueryFromViewTransform::ExecutingInnerQueryFromViewTransform(
     const Block & header,
     ViewRuntimeData & view_,
     std::shared_ptr<ViewsData> views_data_,
@@ -796,16 +778,14 @@ ExecutingInnerQueryFromViewTransform<Executor>::ExecutingInnerQueryFromViewTrans
 {
 }
 
-template <typename Executor>
-void ExecutingInnerQueryFromViewTransform<Executor>::onConsume(Chunk chunk)
+void ExecutingInnerQueryFromViewTransform::onConsume(Chunk chunk)
 {
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
     state.emplace(process(std::move(block), view, *views_data, std::move(chunk.getChunkInfos()), disable_deduplication_for_children));
 }
 
 
-template <typename Executor>
-ExecutingInnerQueryFromViewTransform<Executor>::GenerateResult ExecutingInnerQueryFromViewTransform<Executor>::onGenerate()
+ExecutingInnerQueryFromViewTransform::GenerateResult ExecutingInnerQueryFromViewTransform::onGenerate()
 {
     GenerateResult res;
     if (!state.has_value())
