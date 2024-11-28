@@ -59,6 +59,10 @@ static struct InitFiu
     REGULAR(replicated_merge_tree_all_replicas_stale) \
     REGULAR(zero_copy_lock_zk_fail_before_op) \
     REGULAR(zero_copy_lock_zk_fail_after_op) \
+    REGULAR(plain_object_storage_write_fail_on_directory_create) \
+    REGULAR(plain_object_storage_write_fail_on_directory_move) \
+    REGULAR(zero_copy_unlock_zk_fail_before_op) \
+    REGULAR(zero_copy_unlock_zk_fail_after_op) \
     ONCE(execute_query_calling_empty_set_result_func_on_exception)
 
 namespace FailPoints
