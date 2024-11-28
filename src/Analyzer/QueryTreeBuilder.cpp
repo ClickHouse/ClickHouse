@@ -391,6 +391,10 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     if (select_limit_inrange_to)
         current_query_tree->getLimitInrangeTo() = buildExpression(select_limit_inrange_to, current_context);
 
+    auto select_limit_inrange_window = select_query_typed.limitInRangeWindow();
+    if (select_limit_inrange_window)
+        current_query_tree->getInrangeWindow() = buildExpression(select_limit_inrange_window, current_context);
+
     auto select_limit_by = select_query_typed.limitBy();
     if (select_limit_by)
         current_query_tree->getLimitByNode() = buildExpressionList(select_limit_by, current_context);

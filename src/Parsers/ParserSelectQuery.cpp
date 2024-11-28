@@ -103,6 +103,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr settings;
     ASTPtr limit_inrange_from_expression;
     ASTPtr limit_inrange_to_expression;
+    ASTPtr limit_inrange_window;
 
     /// WITH expr_list
     {
@@ -440,6 +441,14 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 to_occured = true;
             }
 
+            ParserToken s_comma(TokenType::Comma);
+
+            if (s_comma.ignore(pos, expected))
+            {
+                if (!exp_elem.parse(pos, limit_inrange_window, expected))
+                    return false;
+            }
+
             if (!from_occured && !to_occured)
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "LIMIT INRANGE requires at least a FROM or TO expression");
 
@@ -565,6 +574,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(order_expression_list));
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_INRANGE_FROM, std::move(limit_inrange_from_expression));
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_INRANGE_TO, std::move(limit_inrange_to_expression));
+    select_query->setExpression(ASTSelectQuery::Expression::LIMIT_INRANGE_WINDOW, std::move(limit_inrange_window));
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, std::move(limit_by_offset));
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, std::move(limit_by_length));
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY, std::move(limit_by_expression_list));

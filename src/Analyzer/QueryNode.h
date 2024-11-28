@@ -632,6 +632,24 @@ public:
         return children[offset_child_index];
     }
 
+    /// Returns true if query node INRANGE 'window' section is not empty, false otherwise
+    bool hasInrangeWindow() const
+    {
+        return children[inrange_window_child_index] != nullptr;
+    }
+
+    /// Get INRANGE 'window' section node
+    const QueryTreeNodePtr & getInrangeWindow() const
+    {
+        return children[inrange_window_child_index];
+    }
+
+    /// Get INRANGE 'window' section node
+    QueryTreeNodePtr & getInrangeWindow()
+    {
+        return children[inrange_window_child_index];
+    }
+
     /// Get query node projection columns
     const NamesAndTypes & getProjectionColumns() const
     {
@@ -706,11 +724,12 @@ private:
     static constexpr size_t interpolate_child_index = 10;
     static constexpr size_t limit_inrange_from_child_index = 11;
     static constexpr size_t limit_inrange_to_child_index = 12;
-    static constexpr size_t limit_by_limit_child_index = 13;
-    static constexpr size_t limit_by_offset_child_index = 14;
-    static constexpr size_t limit_by_child_index = 15;
-    static constexpr size_t limit_child_index = 16;
-    static constexpr size_t offset_child_index = 17;
+    static constexpr size_t inrange_window_child_index = 13;
+    static constexpr size_t limit_by_limit_child_index = 14;
+    static constexpr size_t limit_by_offset_child_index = 15;
+    static constexpr size_t limit_by_child_index = 16;
+    static constexpr size_t limit_child_index = 17;
+    static constexpr size_t offset_child_index = 18;
     static constexpr size_t children_size = offset_child_index + 1;
 };
 

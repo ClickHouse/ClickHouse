@@ -11,8 +11,7 @@ namespace DB
 
 static ITransformingStep::Traits getTraits()
 {
-    return ITransformingStep::Traits
-    {
+    return ITransformingStep::Traits{
         {
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
@@ -20,19 +19,20 @@ static ITransformingStep::Traits getTraits()
         },
         {
             .preserves_number_of_rows = false,
-        }
-    };
+        }};
 }
 
 LimitInRangeStep::LimitInRangeStep(
-    const DataStream & input_stream_, String from_filter_column_name_, String to_filter_column_name_, bool remove_filter_column_)
+    const DataStream & input_stream_, String from_filter_column_name_, String to_filter_column_name_,
+    UInt64 limit_inrange_window_, bool remove_filter_column_)
     : ITransformingStep(
         input_stream_,
         LimitInRangeTransform::transformHeader(
-            input_stream_.header, from_filter_column_name_, to_filter_column_name_, remove_filter_column_),
+            input_stream_.header, from_filter_column_name_, to_filter_column_name_, limit_inrange_window_, remove_filter_column_),
         getTraits())
     , from_filter_column_name(std::move(from_filter_column_name_))
     , to_filter_column_name(std::move(to_filter_column_name_))
+    , limit_inrange_window(limit_inrange_window_)
     , remove_filter_column(remove_filter_column_)
 {
 }
@@ -44,7 +44,7 @@ void LimitInRangeStep::transformPipeline(QueryPipelineBuilder & pipeline, const 
         {
             bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
             return std::make_shared<LimitInRangeTransform>(
-                header, from_filter_column_name, to_filter_column_name, remove_filter_column, on_totals);
+                header, from_filter_column_name, to_filter_column_name, limit_inrange_window, remove_filter_column, on_totals);
         });
 
     if (!blocksHaveEqualStructure(pipeline.getHeader(), output_stream->header))
@@ -64,6 +64,7 @@ void LimitInRangeStep::describeActions(FormatSettings & settings) const
     String prefix(settings.offset, settings.indent_char);
     settings.out << prefix << "From filter column: " << from_filter_column_name;
     settings.out << prefix << "To filter column: " << to_filter_column_name;
+    settings.out << prefix << "Window size: " << limit_inrange_window;
 
     if (remove_filter_column)
         settings.out << " (removed)";
@@ -74,6 +75,7 @@ void LimitInRangeStep::describeActions(JSONBuilder::JSONMap & map) const
 {
     map.add("From filter Column", from_filter_column_name);
     map.add("To filter Column", to_filter_column_name);
+    map.add("Window Size", limit_inrange_window);
     map.add("Removes Filter", remove_filter_column);
 }
 
@@ -82,7 +84,7 @@ void LimitInRangeStep::updateOutputStream()
     output_stream = createOutputStream(
         input_streams.front(),
         LimitInRangeTransform::transformHeader(
-            input_streams.front().header, from_filter_column_name, to_filter_column_name, remove_filter_column),
+            input_streams.front().header, from_filter_column_name, to_filter_column_name, limit_inrange_window, remove_filter_column),
         getDataStreamTraits());
 }
 

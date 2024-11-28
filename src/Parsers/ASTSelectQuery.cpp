@@ -207,6 +207,12 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         limitInRangeTo()->formatImpl(s, state, frame);
     }
 
+    if (limitInRangeWindow())
+    {
+        s.ostr << ", ";
+        limitInRangeWindow()->formatImpl(s, state, frame);
+    }
+
     if (limitByLength())
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "LIMIT " << (s.hilite ? hilite_none : "");

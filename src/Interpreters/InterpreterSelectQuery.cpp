@@ -3210,11 +3210,20 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
 
 void InterpreterSelectQuery::executeLimitInRange(QueryPlan & query_plan, bool remove_filter_column)
 {
+    auto & query = getSelectQuery();
+    if (!query.limitInRangeFrom() && !query.limitInRangeTo())
+        return;
+
+    UInt64 limit_inrange_window = getLimitUIntValue(query.limitInRangeWindow(), context, "INRANGE WINDOW");
+    const Settings & settings = context->getSettingsRef();
+    limit_inrange_window = std::min<UInt64>(limit_inrange_window, settings.max_block_size);
+
     remove_filter_column = true;
     auto limit_inrange_step = std::make_unique<LimitInRangeStep>(
         query_plan.getCurrentDataStream(),
         getSelectQuery().limitInRangeFrom() ? getSelectQuery().limitInRangeFrom()->getColumnName() : "",
         getSelectQuery().limitInRangeTo() ? getSelectQuery().limitInRangeTo()->getColumnName() : "",
+        limit_inrange_window,
         remove_filter_column);
 
     limit_inrange_step->setStepDescription("LIMIT INRANGE");

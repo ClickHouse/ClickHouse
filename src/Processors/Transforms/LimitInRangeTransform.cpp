@@ -1,5 +1,7 @@
-#include <algorithm>
 #include <Processors/Transforms/LimitInRangeTransform.h>
+
+#include <algorithm>
+#include <optional>
 
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsCommon.h>
@@ -15,12 +17,16 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
-extern const int UNEXPECTED_EXPRESSION;
+    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
+    extern const int UNEXPECTED_EXPRESSION;
 }
 
 Block LimitInRangeTransform::transformHeader(
-    Block header, const String & from_filter_column_name, const String & to_filter_column_name, bool remove_filter_column)
+    Block header,
+    const String & from_filter_column_name,
+    const String & to_filter_column_name,
+    UInt64 limit_inrange_window,
+    bool remove_filter_column)
 {
     auto processFilterColumn = [&](const String & filter_column_name, const char * filter_name)
     {
@@ -42,12 +48,15 @@ Block LimitInRangeTransform::transformHeader(
             // else
             // replaceFilterToConstant(header, filter_column_name);
 
-            /** #TODO
-            * case: SELECT metric > 1 FROM my_first_table LIMIT INRANGE FROM metric > 1
-            * check remove_filter_column in PlannerExpressionAnalysis.cpp
+            /** TODO:
+            * Case: SELECT metric > 1 FROM my_first_table LIMIT INRANGE FROM metric > 1
+            * Check remove_filter_column in PlannerExpressionAnalysis.cpp;
+            * Case: SELECT * FROM my_first_table LIMIT INRANGE FROM metric > 1 TO metric > 1
             **/
         }
     };
+
+    (void)limit_inrange_window;
 
     processFilterColumn(from_filter_column_name, "from_filter");
     processFilterColumn(to_filter_column_name, "to_filter");
@@ -55,16 +64,20 @@ Block LimitInRangeTransform::transformHeader(
     return header;
 }
 
-
 LimitInRangeTransform::LimitInRangeTransform(
     const Block & header_,
     String from_filter_column_name_,
     String to_filter_column_name_,
+    UInt64 limit_inrange_window_,
     bool remove_filter_column_,
     bool on_totals_)
-    : ISimpleTransform(header_, transformHeader(header_, from_filter_column_name_, to_filter_column_name_, remove_filter_column_), true)
+    : ISimpleTransform(
+        header_,
+        transformHeader(header_, from_filter_column_name_, to_filter_column_name_, limit_inrange_window_, remove_filter_column_),
+        true)
     , from_filter_column_name(std::move(from_filter_column_name_))
     , to_filter_column_name(std::move(to_filter_column_name_))
+    , limit_inrange_window(limit_inrange_window_)
     , remove_filter_column(remove_filter_column_)
     , on_totals(on_totals_)
 {
@@ -87,7 +100,7 @@ LimitInRangeTransform::LimitInRangeTransform(
 
 IProcessor::Status LimitInRangeTransform::prepare()
 {
-    // TODO: may be some optimizations here. check other transforms.
+    /// TODO: May be some optimizations here. Check other transforms.
 
     if (!on_totals && !from_filter_column_name.empty() && constant_from_filter_description.always_false
         /// Optimization for `LIMIT INRANGE FROM column in (empty set)`.
@@ -138,12 +151,11 @@ IProcessor::Status LimitInRangeTransform::prepare()
             output.finish();
             if (!from_filter_column_name.empty() && !to_filter_column_name.empty() && !from_index_found)
             {
-            } // if from index is not found in FROM expr TO expr, then do not throw. The to_index_found is optional here.
+            } /// if from index is not found in FROM expr TO expr, then do not throw. The to_index_found is optional here.
             else if (!to_filter_column_name.empty() && !to_index_found)
             {
                 throw Exception(
-                    ErrorCodes::UNEXPECTED_EXPRESSION,
-                    "The 'TO' condition was not satisfied: 'TO' index was not found in the data");
+                    ErrorCodes::UNEXPECTED_EXPRESSION, "The 'TO' condition was not satisfied: 'TO' index was not found in the data");
             }
             return Status::Finished;
         }
@@ -196,116 +208,207 @@ void cutChunkColumns(Chunk & chunk, size_t start, size_t length)
     chunk.setColumns(std::move(columns), length);
 }
 
-std::optional<size_t> findFirstMatchingIndex(const IColumn::Filter * filter, size_t start = 0)
+bool LimitInRangeTransform::processRemainingWindow(Chunk & chunk)
 {
-    /// if all elements are zero or starting index is out-of-bound.
+    if (remaining_window == 0)
+        return false;
+
+    cutChunkColumns(chunk, 0, std::min<UInt64>(remaining_window, chunk.getNumRows()));
+    stopReading();
+    return true;
+}
+
+/// Processes a chunk when a 'from_index' is found, considering the 'limit_inrange_window',
+/// If a 'to_index' is also provided, it handles that case accordingly.
+void LimitInRangeTransform::processChunkFromCaseWithWindow(Chunk & chunk, std::optional<size_t> from_index, std::optional<size_t> to_index)
+{
+    /// If 'from_index' by considering with 'limit_inrange_window', is located in the previous chunk.
+    if (*from_index < limit_inrange_window)
+    {
+        if (!bufferized_chunk.empty())
+        {
+            size_t buffer_start = bufferized_chunk.getNumRows() - (limit_inrange_window - *from_index);
+            size_t buffer_length = limit_inrange_window - *from_index;
+
+            cutChunkColumns(bufferized_chunk, buffer_start, buffer_length);
+
+            if (!to_index)
+            {
+                bufferized_chunk.append(chunk);
+                chunk = std::move(bufferized_chunk);
+            }
+            else
+            {
+                processChunkToCaseWithWindow(chunk, 0, limit_inrange_window + *to_index + 1, true);
+            }
+        }
+    }
+    else /// In current chunk.
+    {
+        size_t start = *from_index - limit_inrange_window;
+        if (!to_index)
+            cutChunkColumns(chunk, start, chunk.getNumRows() - start);
+        else
+            processChunkToCaseWithWindow(chunk, start, *to_index + limit_inrange_window - start + 1);
+    }
+}
+
+void LimitInRangeTransform::processChunkToCaseWithWindow(Chunk & chunk, size_t start, size_t length, bool use_bufferized)
+{
+    auto processBufferized = [&]()
+    {
+        if (use_bufferized)
+        {
+            bufferized_chunk.append(chunk);
+            chunk = std::move(bufferized_chunk);
+        }
+    };
+
+    if (length + start > chunk.getNumRows())
+    {
+        remaining_window = length + start - chunk.getNumRows();
+        cutChunkColumns(chunk, start, chunk.getNumRows() - start);
+        processBufferized();
+        return;
+    }
+
+    cutChunkColumns(chunk, start, length);
+    processBufferized();
+
+    stopReading();
+}
+
+std::optional<size_t> findFirstOneIndex(const IColumn::Filter * filter, size_t start = 0)
+{
+    /// If all elements are zero or starting index is out-of-bound.
     if (!filter || memoryIsZero(filter->data(), 0, filter->size()) || start >= filter->size())
         return std::nullopt;
 
+    /// Can be optimized.
     const auto * it = std::find(filter->begin() + start, filter->end(), 1);
     if (it == filter->end())
         return std::nullopt;
 
-    /// the index of the found element.
     return static_cast<size_t>(std::distance(filter->begin(), it));
 }
 
 void LimitInRangeTransform::transform(Chunk & chunk)
 {
+    if (!bufferized_chunk.empty())
+        limit_inrange_window = std::min<UInt64>(limit_inrange_window, bufferized_chunk.getNumRows());
+
     if (!from_filter_column_name.empty() && !to_filter_column_name.empty())
         doFromAndToTransform(chunk);
     else if (!from_filter_column_name.empty())
         doFromTransform(chunk);
     else if (!to_filter_column_name.empty())
         doToTransform(chunk);
+
+    removeFilterIfNeed(chunk);
+}
+
+std::optional<size_t> LimitInRangeTransform::findIndex(Chunk & chunk, size_t column_position, bool & index_found)
+{
+    auto filter_description = initializeColumn(chunk.getColumns(), column_position);
+    std::optional<size_t> index = findFirstOneIndex(filter_description.data);
+
+    if (index)
+        index_found = true;
+
+    return index;
+}
+
+void LimitInRangeTransform::handleFromCase(Chunk & chunk, std::optional<size_t> from_index)
+{
+    if (limit_inrange_window != 0)
+        processChunkFromCaseWithWindow(chunk, from_index, std::nullopt);
+    else
+        cutChunkColumns(chunk, *from_index, chunk.getNumRows() - *from_index);
+}
+
+void LimitInRangeTransform::handleToCase(Chunk & chunk, std::optional<size_t> from_index, std::optional<size_t> to_index)
+{
+    if (limit_inrange_window != 0)
+    {
+        if (!from_index)
+            processChunkToCaseWithWindow(chunk, 0, limit_inrange_window + *to_index + 1);
+        else
+            processChunkFromCaseWithWindow(chunk, from_index, to_index);
+    }
+    else
+    {
+        if (!from_index)
+            cutChunkColumns(chunk, 0, *to_index + 1);
+        else
+            cutChunkColumns(chunk, *from_index, *to_index - *from_index + 1);
+        stopReading();
+    }
 }
 
 void LimitInRangeTransform::doFromTransform(Chunk & chunk)
 {
-    // TODO: constant_filter_description
+    /// TODO: constant_filter_description
 
-    if (from_index_found) /// in prev chunks
+    /// If 'from_index' has already been found in previous chunks.
+    if (from_index_found)
+        return;
+
+    /// Search it in current chunk/column.
+    auto from_index = findIndex(chunk, from_filter_column_position, from_index_found);
+    if (!from_index)
     {
-        removeFilterIfNeed(chunk);
+        /// Bufferize every previous chunk.
+        bufferized_chunk = std::move(chunk);
         return;
     }
 
-    auto from_filter_description = initializeColumn(chunk.getColumns(), from_filter_column_position);
-
-    std::optional<size_t> index = findFirstMatchingIndex(from_filter_description.data);
-    if (!index)
-    {
-        chunk.clear();
-        return;
-    }
-    from_index_found = true;
-
-    cutChunkColumns(chunk, *index, chunk.getNumRows() - *index);
-    removeFilterIfNeed(chunk);
+    handleFromCase(chunk, from_index);
 }
 
 void LimitInRangeTransform::doToTransform(Chunk & chunk)
 {
-    /// If 'to index' is not found, return all chunks and then throw an exception.
+    /// If 'to index' is not found, return all chunks and then throw an exception in prepare.
 
-    auto to_filter_description = initializeColumn(chunk.getColumns(), to_filter_column_position);
-
-    std::optional<size_t> index = findFirstMatchingIndex(to_filter_description.data);
-    if (!index)
-    {
-        removeFilterIfNeed(chunk);
+    /// Processing the case when the 'to index', considering the window, fell into the next chunk.
+    if (processRemainingWindow(chunk))
         return;
-    }
-    to_index_found = true;
 
-    cutChunkColumns(chunk, 0, *index + 1);
-    removeFilterIfNeed(chunk);
+    auto to_index = findIndex(chunk, to_filter_column_position, to_index_found);
+    if (!to_index)
+        return;
 
-    stopReading();
+    handleToCase(chunk, std::nullopt, to_index);
 }
 
 void LimitInRangeTransform::doFromAndToTransform(Chunk & chunk)
 {
-    auto from_filter_description = initializeColumn(chunk.getColumns(), from_filter_column_position);
-    auto to_filter_description = initializeColumn(chunk.getColumns(), to_filter_column_position);
+    if (processRemainingWindow(chunk))
+        return;
 
     if (from_index_found)
     {
-        std::optional<size_t> to_index = findFirstMatchingIndex(to_filter_description.data);
-        if (to_index)
-        {
-            to_index_found = true;
-
-            cutChunkColumns(chunk, 0, *to_index + 1);
-            stopReading();
-        }
-        removeFilterIfNeed(chunk);
+        /// Just a LIMIT INRANGE TO case.
+        doToTransform(chunk);
         return;
     }
 
-    std::optional<size_t> from_index = findFirstMatchingIndex(from_filter_description.data);
-    if (from_index)
+    /// Search for 'from index' and 'to index' in current chunk.
+    auto from_index = findIndex(chunk, from_filter_column_position, from_index_found);
+    if (!from_index)
     {
-        from_index_found = true;
-
-        std::optional<size_t> to_index = findFirstMatchingIndex(to_filter_description.data, *from_index + 1);
-        if (to_index)
-        {
-            cutChunkColumns(chunk, *from_index, *to_index - *from_index + 1);
-            stopReading();
-        }
-        else
-        {
-            cutChunkColumns(chunk, *from_index, chunk.getNumRows() - *from_index);
-        }
-
-        removeFilterIfNeed(chunk);
+        bufferized_chunk = std::move(chunk);
         return;
     }
 
-    chunk.clear();
-    /// return nothing if none of the indices are found.
-}
+    auto to_index = findIndex(chunk, to_filter_column_position, to_index_found);
+    if (!to_index)
+    {
+        handleFromCase(chunk, from_index);
+        return;
+    }
 
+    handleToCase(chunk, from_index, to_index);
+    /// Return nothing when none of the indices are found.
+}
 
 }
