@@ -64,10 +64,7 @@ private:
     void syncReplica(ASTSystemQuery & query);
     void setReplicaReadiness(bool ready);
     void waitLoadingParts();
-
-    void loadPrimaryKeys();
     void unloadPrimaryKeys();
-    void loadOrUnloadPrimaryKeysImpl(bool load);
 
     void syncReplicatedDatabase(ASTSystemQuery & query);
 
