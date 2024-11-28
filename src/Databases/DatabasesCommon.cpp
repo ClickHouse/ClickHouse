@@ -298,7 +298,7 @@ void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query)
 
 
 DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context_)
-        : IDatabase(name_), WithContext(context_->getGlobalContext()), log(getLogger(logger))
+    : IDatabase(name_), WithContext(context_->getGlobalContext()), db_disk(context_->getDatabaseDisk()), log(getLogger(logger))
 {
 }
 

@@ -189,8 +189,6 @@ void DatabaseOnDisk::createDirectories()
 
 void DatabaseOnDisk::createDirectoriesUnlocked()
 {
-    auto db_disk = getContext()->getDatabaseDisk();
-
     db_disk->createDirectories(metadata_path);
     db_disk->createDirectories(data_path);
 }
@@ -209,8 +207,6 @@ void DatabaseOnDisk::createTable(
     const StoragePtr & table,
     const ASTPtr & query)
 {
-    auto db_disk = getContext()->getDatabaseDisk();
-
     createDirectories();
 
     const auto & settings = local_context->getSettingsRef();
@@ -289,7 +285,6 @@ void DatabaseOnDisk::createTable(
 /// .sql.detached extension, is not needed anymore since we attached the table back
 void DatabaseOnDisk::removeDetachedPermanentlyFlag(ContextPtr, const String & table_name, const String & table_metadata_path, bool)
 {
-    auto db_disk = getContext()->getDatabaseDisk();
     try
     {
         fs::path detached_permanently_flag(table_metadata_path + detached_suffix);
@@ -306,7 +301,6 @@ void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const Stora
                                        const String & table_metadata_tmp_path, const String & table_metadata_path,
                                        ContextPtr query_context)
 {
-    auto db_disk = getContext()->getDatabaseDisk();
     try
     {
         createDirectories();
@@ -328,8 +322,6 @@ void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const Stora
 void DatabaseOnDisk::detachTablePermanently(ContextPtr query_context, const String & table_name)
 {
     waitDatabaseStarted();
-
-    auto db_disk = getContext()->getDatabaseDisk();
 
     auto table = detachTable(query_context, table_name);
 
@@ -357,8 +349,6 @@ void DatabaseOnDisk::detachTablePermanently(ContextPtr query_context, const Stri
 void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_name, bool /*sync*/)
 {
     waitDatabaseStarted();
-
-    auto db_disk = getContext()->getDatabaseDisk();
 
     String table_metadata_path = getObjectMetadataPath(table_name);
     String table_metadata_path_drop = table_metadata_path + drop_suffix;
@@ -420,8 +410,6 @@ void DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked(const String & to
                         "The max length of table name for database {} is {}, current length is {}",
                         database_name, allowed_max_length, escaped_name_length);
 
-    auto db_disk = getContext()->getDatabaseDisk();
-
     if (db_disk->existsFile(table_metadata_path))
     {
         fs::path detached_permanently_flag(table_metadata_path + detached_suffix);
@@ -447,8 +435,6 @@ void DatabaseOnDisk::renameTable(
 {
     if (exchange)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Tables can be exchanged only in Atomic databases");
-
-    auto db_disk = getContext()->getDatabaseDisk();
 
     bool from_ordinary_to_atomic = false;
     bool from_atomic_to_ordinary = false;
@@ -611,8 +597,6 @@ void DatabaseOnDisk::drop(ContextPtr local_context)
 {
     waitDatabaseStarted();
 
-    auto db_disk = getContext()->getDatabaseDisk();
-
     assert(TSA_SUPPRESS_WARNING_FOR_READ(tables).empty());
     if (local_context->getSettingsRef()[Setting::force_remove_data_recursively_on_drop])
     {
@@ -648,8 +632,6 @@ String DatabaseOnDisk::getObjectMetadataPath(const String & object_name) const
 
 time_t DatabaseOnDisk::getObjectMetadataModificationTime(const String & object_name) const
 {
-    auto db_disk = getContext()->getDatabaseDisk();
-
     String table_metadata_path = getObjectMetadataPath(object_name);
     if (!db_disk->existsFileOrDirectory(table_metadata_path))
         return static_cast<time_t>(0);
@@ -674,7 +656,6 @@ time_t DatabaseOnDisk::getObjectMetadataModificationTime(const String & object_n
 
 void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_metadata_file) const
 {
-    auto db_disk = getContext()->getDatabaseDisk();
     if (!db_disk->existsDirectory(metadata_path))
         return;
 
@@ -768,7 +749,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
     bool throw_on_error /*= true*/,
     bool remove_empty /*= false*/)
 {
-    auto db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
+    auto db_disk = local_context->getDatabaseDisk();
 
     if (!db_disk->existsFile(metadata_file_path))
     {
@@ -924,7 +905,6 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
     fs::path metadata_file_tmp_path = fs::path("metadata") / (database_name_escaped + ".sql.tmp");
     fs::path metadata_file_path = fs::path("metadata") / (database_name_escaped + ".sql");
 
-    auto db_disk = getContext()->getDatabaseDisk();
     auto out = db_disk->writeFile(metadata_file_tmp_path, statement.size());
 
     writeString(statement, *out);

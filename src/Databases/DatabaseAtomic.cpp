@@ -76,7 +76,6 @@ void DatabaseAtomic::createDirectories()
 void DatabaseAtomic::createDirectoriesUnlocked()
 {
     DatabaseOnDisk::createDirectoriesUnlocked();
-    auto db_disk = getContext()->getDatabaseDisk();
     db_disk->createDirectories("metadata");
     if (db_disk->isSymlinkSupported())
         db_disk->createDirectories(path_to_table_symlinks);
@@ -102,7 +101,6 @@ String DatabaseAtomic::getTableDataPath(const ASTCreateQuery & query) const
 
 void DatabaseAtomic::drop(ContextPtr)
 {
-    auto db_disk = getContext()->getDatabaseDisk();
     waitDatabaseStarted();
     assert(TSA_SUPPRESS_WARNING_FOR_READ(tables).empty());
     try
@@ -172,8 +170,6 @@ void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_na
 
 void DatabaseAtomic::dropTableImpl(ContextPtr local_context, const String & table_name, bool sync)
 {
-    auto db_disk = getContext()->getDatabaseDisk();
-
     String table_metadata_path = getObjectMetadataPath(table_name);
     String table_metadata_path_drop;
     StoragePtr table;
@@ -326,8 +322,6 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
 
     /// NOTE: replica will be lost if server crashes before the following rename
     /// TODO better detection and recovery
-    auto db_disk = getContext()->getDatabaseDisk();
-
     if (exchange)
         db_disk->renameExchange(old_metadata_path, new_metadata_path);
     else
@@ -358,8 +352,6 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
                                        const String & table_metadata_tmp_path, const String & table_metadata_path,
                                        ContextPtr query_context)
 {
-    auto db_disk = getContext()->getDatabaseDisk();
-
     createDirectories();
     DetachedTables not_in_use;
     auto table_data_path = getTableDataPath(query);
@@ -398,8 +390,6 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
 void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path,
                                       const String & /*statement*/, ContextPtr query_context)
 {
-    auto db_disk = getContext()->getDatabaseDisk();
-
     bool check_file_exists = true;
     SCOPE_EXIT({
         if (check_file_exists)
@@ -495,7 +485,6 @@ UUID DatabaseAtomic::tryGetTableUUID(const String & table_name) const
 
 void DatabaseAtomic::beforeLoadingMetadata(ContextMutablePtr /*context*/, LoadingStrictnessLevel mode)
 {
-    auto db_disk = getContext()->getDatabaseDisk();
     if (mode < LoadingStrictnessLevel::FORCE_RESTORE)
         return;
 
@@ -523,13 +512,12 @@ void DatabaseAtomic::beforeLoadingMetadata(ContextMutablePtr /*context*/, Loadin
 
 LoadTaskPtr DatabaseAtomic::startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode)
 {
-    auto db_disk = getContext()->getDatabaseDisk();
     auto base = DatabaseOrdinary::startupDatabaseAsync(async_loader, std::move(startup_after), mode);
     auto job = makeLoadJob(
         base->goals(),
         TablesLoaderBackgroundStartupPoolId,
         fmt::format("startup Atomic database {}", getDatabaseName()),
-        [this, mode, db_disk](AsyncLoader &, const LoadJobPtr &)
+        [this, mode](AsyncLoader &, const LoadJobPtr &)
         {
             if (mode < LoadingStrictnessLevel::FORCE_RESTORE)
                 return;
@@ -581,7 +569,6 @@ void DatabaseAtomic::stopLoading()
 
 void DatabaseAtomic::tryCreateSymlink(const StoragePtr & table, bool if_data_path_exist)
 {
-    auto db_disk = getContext()->getDatabaseDisk();
     if (!db_disk->isSymlinkSupported())
         return;
     try
@@ -611,7 +598,6 @@ void DatabaseAtomic::tryCreateSymlink(const StoragePtr & table, bool if_data_pat
 
 void DatabaseAtomic::tryRemoveSymlink(const String & table_name)
 {
-    auto db_disk = getContext()->getDatabaseDisk();
     if (!db_disk->isSymlinkSupported())
         return;
 
@@ -628,8 +614,6 @@ void DatabaseAtomic::tryRemoveSymlink(const String & table_name)
 
 void DatabaseAtomic::tryCreateMetadataSymlink()
 {
-    auto db_disk = getContext()->getDatabaseDisk();
-
     if (!db_disk->isSymlinkSupported())
         return;
 
@@ -661,8 +645,6 @@ void DatabaseAtomic::tryCreateMetadataSymlink()
 void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new_name)
 {
     /// CREATE, ATTACH, DROP, DETACH and RENAME DATABASE must hold DDLGuard
-    auto db_disk = getContext()->getDatabaseDisk();
-
     createDirectories();
     waitDatabaseStarted();
 

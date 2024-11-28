@@ -186,7 +186,6 @@ void DatabaseMaterializedMySQL::drop(ContextPtr context_)
 {
     LOG_TRACE(log, "Dropping MaterializeMySQL database");
 
-    auto db_disk = getContext()->getDatabaseDisk();
     /// Remove metadata info
     fs::path metadata(getMetadataPath() + "/.metadata");
 

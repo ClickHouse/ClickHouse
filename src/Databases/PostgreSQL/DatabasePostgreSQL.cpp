@@ -68,9 +68,9 @@ DatabasePostgreSQL::DatabasePostgreSQL(
     , configuration(configuration_)
     , pool(std::move(pool_))
     , cache_tables(cache_tables_)
+    , db_disk(getContext()->getDatabaseDisk())
     , log(getLogger("DatabasePostgreSQL(" + dbname_ + ")"))
 {
-    auto db_disk = getContext()->getDatabaseDisk();
     db_disk->createDirectories(metadata_path);
     cleaner_task = getContext()->getSchedulePool().createTask("PostgreSQLCleanerTask", [this]{ removeOutdatedTables(); });
     cleaner_task->deactivate();
@@ -251,7 +251,6 @@ void DatabasePostgreSQL::attachTable(ContextPtr /* context_ */, const String & t
     detached_or_dropped.erase(table_name);
 
     fs::path table_marked_as_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
-    auto db_disk = getContext()->getDatabaseDisk();
     db_disk->removeFileIfExists(table_marked_as_removed);
 }
 
@@ -298,7 +297,7 @@ void DatabasePostgreSQL::dropTable(ContextPtr, const String & table_name, bool /
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is already dropped/detached", getTableNameForLogs(table_name));
 
     fs::path mark_table_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
-    FS::createFile(mark_table_removed);
+    db_disk->createFile(mark_table_removed);
 
     if (cache_tables)
         cached_tables.erase(table_name);
@@ -309,7 +308,6 @@ void DatabasePostgreSQL::dropTable(ContextPtr, const String & table_name, bool /
 
 void DatabasePostgreSQL::drop(ContextPtr /*context*/)
 {
-    auto db_disk = getContext()->getDatabaseDisk();
     (void)db_disk->removeRecursive(getMetadataPath());
 }
 
@@ -318,7 +316,6 @@ void DatabasePostgreSQL::loadStoredObjects(ContextMutablePtr /* context */, Load
 {
     {
         std::lock_guard lock{mutex};
-        auto db_disk = getContext()->getDatabaseDisk();
         /// Check for previously dropped tables
         for (const auto it = db_disk->iterateDirectory(getMetadataPath()); it->isValid(); it->next())
         {
@@ -375,7 +372,6 @@ void DatabasePostgreSQL::removeOutdatedTables()
         }
     }
 
-    auto db_disk = getContext()->getDatabaseDisk();
     for (auto iter = detached_or_dropped.begin(); iter != detached_or_dropped.end();)
     {
         if (!actual_tables.contains(*iter))

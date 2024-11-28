@@ -84,6 +84,7 @@ DatabaseMySQL::DatabaseMySQL(
     , database_name_in_mysql(database_name_in_mysql_)
     , mysql_settings(std::move(settings_))
     , mysql_pool(std::move(pool)) /// NOLINT
+    , db_disk(getContext()->getDatabaseDisk())
 {
     try
     {
@@ -97,7 +98,6 @@ DatabaseMySQL::DatabaseMySQL(
         else
             throw;
     }
-    auto db_disk = getContext()->getDatabaseDisk();
     db_disk->createDirectories(metadata_path);
 
     thread = ThreadFromGlobalPool{&DatabaseMySQL::cleanOutdatedTables, this};
@@ -355,7 +355,6 @@ void DatabaseMySQL::shutdown()
 
 void DatabaseMySQL::drop(ContextPtr /*context*/)
 {
-    auto db_disk = getContext()->getDatabaseDisk();
     db_disk->removeRecursive(getMetadataPath());
 }
 
@@ -404,7 +403,6 @@ void DatabaseMySQL::attachTable(ContextPtr /* context_ */, const String & table_
     remove_or_detach_tables.erase(table_name);
     fs::path remove_flag = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
 
-    auto db_disk = getContext()->getDatabaseDisk();
     db_disk->removeFileIfExists(remove_flag);
 }
 
@@ -432,7 +430,6 @@ String DatabaseMySQL::getMetadataPath() const
 void DatabaseMySQL::loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel /*mode*/)
 {
     std::lock_guard lock{mutex};
-    auto db_disk = getContext()->getDatabaseDisk();
     for (const auto it = db_disk->iterateDirectory(metadata_path); it->isValid(); it->next())
     {
         auto path = fs::path(it->path());
@@ -457,7 +454,6 @@ void DatabaseMySQL::detachTablePermanently(ContextPtr, const String & table_name
     if (remove_or_detach_tables.contains(table_name))
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {}.{} is dropped", backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
 
-    auto db_disk = getContext()->getDatabaseDisk();
     if (db_disk->existsFile(remove_flag))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The remove flag file already exists but the {}.{} does not exist remove tables, it is bug.",
                         backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
@@ -471,7 +467,7 @@ void DatabaseMySQL::detachTablePermanently(ContextPtr, const String & table_name
     try
     {
         table_iter->second.second->drop();
-        FS::createFile(remove_flag);
+        db_disk->createFile(remove_flag);
     }
     catch (...)
     {

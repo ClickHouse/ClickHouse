@@ -75,7 +75,6 @@ void DatabaseMemory::dropTable(
 
         if (table->storesDataOnDisk())
         {
-            auto db_disk = getContext()->getDatabaseDisk();
             db_disk->removeRecursive(getTableDataPath(table_name));
         }
     }
@@ -131,7 +130,6 @@ UUID DatabaseMemory::tryGetTableUUID(const String & table_name) const
 
 void DatabaseMemory::removeDataPath(ContextPtr)
 {
-    auto db_disk = getContext()->getDatabaseDisk();
     db_disk->removeRecursive(data_path);
 }
 

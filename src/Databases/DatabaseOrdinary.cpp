@@ -171,8 +171,6 @@ String DatabaseOrdinary::getConvertToReplicatedFlagPath(const String & name, con
 
 void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const QualifiedTableName & qualified_name, const String & file_name)
 {
-    auto db_disk = getContext()->getDatabaseDisk();
-
     fs::path path(getMetadataPath());
     fs::path file_path(file_name);
     fs::path full_path = path / file_path;
@@ -229,12 +227,10 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
 
 void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTablesMetadata & metadata, bool is_startup)
 {
-    auto db_disk = getContext()->getDatabaseDisk();
-
     size_t prev_tables_count = metadata.parsed_tables.size();
     size_t prev_total_dictionaries = metadata.total_dictionaries;
 
-    auto process_metadata = [&metadata, is_startup, local_context, db_disk, this](const String & file_name)
+    auto process_metadata = [&metadata, is_startup, local_context, this](const String & file_name)
     {
         fs::path path(getMetadataPath());
         fs::path file_path(file_name);
@@ -378,8 +374,6 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
     auto * rmt = table->as<StorageReplicatedMergeTree>();
     if (!rmt)
         return;
-
-    auto db_disk = getContext()->getDatabaseDisk();
 
     auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(name.table, table->getStoragePolicy(), true);
 
@@ -586,8 +580,6 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
     String statement;
 
     {
-        auto db_disk = getContext()->getDatabaseDisk();
-
         ReadSettings settings;
         settings.local_fs_buffer_size = METADATA_FILE_BUFFER_SIZE;
         auto in = db_disk->readFile(table_metadata_path, settings);
@@ -608,7 +600,6 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
 
     statement = getObjectDefinitionFromCreateQuery(ast);
     {
-        auto db_disk = getContext()->getDatabaseDisk();
         auto out = db_disk->writeFile(table_metadata_tmp_path, statement.size());
         writeString(statement, *out);
 
@@ -629,7 +620,6 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
 
 void DatabaseOrdinary::commitAlterTable(const StorageID &, const String & table_metadata_tmp_path, const String & table_metadata_path, const String & /*statement*/, ContextPtr /*query_context*/)
 {
-    auto db_disk = getContext()->getDatabaseDisk();
     try
     {
         /// rename atomically replaces the old file with the new one.
