@@ -4,10 +4,9 @@
 #include <Core/Field.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
+#include <Core/SettingsTierType.h>
 #include <Core/SettingsWriteFormat.h>
-#include <Core/ParallelReplicasMode.h>
 #include <base/types.h>
-#include <Common/SettingConstraintWritability.h>
 #include <Common/SettingsChanges.h>
 
 #include <string_view>
@@ -119,6 +118,7 @@ struct Settings
     /// General API as needed
     bool has(std::string_view name) const;
     bool isChanged(std::string_view name) const;
+    SettingsTierType getTier(std::string_view name) const;
 
     bool tryGet(std::string_view name, Field & value) const;
     Field get(std::string_view name) const;

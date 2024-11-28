@@ -131,16 +131,6 @@ Type: UInt64
 
 Default: 8
 
-## background_pool_size
-
-Sets the number of threads performing background merges and mutations for tables with MergeTree engines. You can only increase the number of threads at runtime. To lower the number of threads you have to restart the server. By adjusting this setting, you manage CPU and disk load. Smaller pool size utilizes less CPU and disk resources, but background processes advance slower which might eventually impact query performance.
-
-Before changing it, please also take a look at related MergeTree settings, such as `number_of_free_entries_in_pool_to_lower_max_size_of_merge` and `number_of_free_entries_in_pool_to_execute_mutation`.
-
-Type: UInt64
-
-Default: 16
-
 ## background_schedule_pool_size
 
 The maximum number of threads that will be used for constantly executing some lightweight periodic operations for replicated tables, Kafka streaming, and DNS cache updates.
@@ -605,6 +595,30 @@ If number of tables is greater than this value, server will throw an exception. 
 **Example**
 ```xml
 <max_table_num_to_throw>400</max_table_num_to_throw>
+```
+
+## max\_replicated\_table\_num\_to\_throw {#max-replicated-table-num-to-throw}
+If number of replicated tables is greater than this value, server will throw an exception. 0 means no limitation. Only count table in Atomic/Ordinary/Replicated/Lazy database engine.
+
+**Example**
+```xml
+<max_replicated_table_num_to_throw>400</max_replicated_table_num_to_throw>
+```
+
+## max\_dictionary\_num\_to\_throw {#max-dictionary-num-to-throw}
+If number of dictionaries is greater than this value, server will throw an exception. 0 means no limitation. Only count table in Atomic/Ordinary/Replicated/Lazy database engine.
+
+**Example**
+```xml
+<max_dictionary_num_to_throw>400</max_dictionary_num_to_throw>
+```
+
+## max\_view\_num\_to\_throw {#max-view-num-to-throw}
+If number of views is greater than this value, server will throw an exception. 0 means no limitation. Only count table in Atomic/Ordinary/Replicated/Lazy database engine.
+
+**Example**
+```xml
+<max_view_num_to_throw>400</max_view_num_to_throw>
 ```
 
 ## max\_database\_num\_to\_throw {#max-table-num-to-throw}
@@ -1629,6 +1643,7 @@ You can specify the log format that will be outputted in the console log. Curren
 
 ```json
 {
+  "date_time_utc": "2024-11-06T09:06:09Z",
   "date_time": "1650918987.180175",
   "thread_name": "#1",
   "thread_id": "254545",
@@ -1975,6 +1990,22 @@ The default is `false`.
 <async_load_databases>true</async_load_databases>
 ```
 
+## async_load_system_database {#async_load_system_database}
+
+Asynchronous loading of system tables. Helpful if there is a high amount of log tables and parts in the `system` database. Independent of the `async_load_databases` setting.
+
+If set to `true`, all system databases with `Ordinary`, `Atomic`, and `Replicated` engines will be loaded asynchronously after the ClickHouse server starts. See `system.asynchronous_loader` table, `tables_loader_background_pool_size` and `tables_loader_foreground_pool_size` server settings. Any query that tries to access a system table, that is not yet loaded, will wait for exactly this table to be started up. The table that is waited for by at least one query will be loaded with higher priority. Also consider setting the `max_waiting_queries` setting to limit the total number of waiting queries.
+
+If `false`, system database loads before server start.
+
+The default is `false`.
+
+**Example**
+
+``` xml
+<async_load_system_database>true</async_load_system_database>
+```
+
 ## tables_loader_foreground_pool_size {#tables_loader_foreground_pool_size}
 
 Sets the number of threads performing load jobs in foreground pool. The foreground pool is used for loading table synchronously before server start listening on a port and for loading tables that are waited for. Foreground pool has higher priority than background pool. It means that no job starts in background pool while there are jobs running in foreground pool.
@@ -2215,6 +2246,39 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
     <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
 </query_log>
+```
+
+# query_metric_log {#query_metric_log}
+
+It is disabled by default.
+
+**Enabling**
+
+To manually turn on metrics history collection [`system.query_metric_log`](../../operations/system-tables/query_metric_log.md), create `/etc/clickhouse-server/config.d/query_metric_log.xml` with the following content:
+
+``` xml
+<clickhouse>
+    <query_metric_log>
+        <database>system</database>
+        <table>query_metric_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+    </query_metric_log>
+</clickhouse>
+```
+
+**Disabling**
+
+To disable `query_metric_log` setting, you should create the following file `/etc/clickhouse-server/config.d/disable_query_metric_log.xml` with the following content:
+
+``` xml
+<clickhouse>
+<query_metric_log remove="1" />
+</clickhouse>
 ```
 
 ## query_cache {#server_configuration_parameters_query-cache}
@@ -3109,7 +3173,7 @@ By default, tunneling (i.e, `HTTP CONNECT`) is used to make `HTTPS` requests ove
 
 ### no_proxy
 By default, all requests will go through the proxy. In order to disable it for specific hosts, the `no_proxy` variable must be set.
-It can be set inside the `<proxy>` clause for list and remote resolvers and as an environment variable for environment resolver. 
+It can be set inside the `<proxy>` clause for list and remote resolvers and as an environment variable for environment resolver.
 It supports IP addresses, domains, subdomains and `'*'` wildcard for full bypass. Leading dots are stripped just like curl does.
 
 Example:
@@ -3175,6 +3239,34 @@ Default value: "default"
 **See Also**
 - [Workload Scheduling](/docs/en/operations/workload-scheduling.md)
 
+## workload_path {#workload_path}
+
+The directory used as a storage for all `CREATE WORKLOAD` and `CREATE RESOURCE` queries. By default `/workload/` folder under server working directory is used.
+
+**Example**
+
+``` xml
+<workload_path>/var/lib/clickhouse/workload/</workload_path>
+```
+
+**See Also**
+- [Workload Hierarchy](/docs/en/operations/workload-scheduling.md#workloads)
+- [workload_zookeeper_path](#workload_zookeeper_path)
+
+## workload_zookeeper_path {#workload_zookeeper_path}
+
+The path to a ZooKeeper node, which is used as a storage for all `CREATE WORKLOAD` and `CREATE RESOURCE` queries. For consistency all SQL definitions are stored as a value of this single znode. By default ZooKeeper is not used and definitions are stored on [disk](#workload_path).
+
+**Example**
+
+``` xml
+<workload_zookeeper_path>/clickhouse/workload/definitions.sql</workload_zookeeper_path>
+```
+
+**See Also**
+- [Workload Hierarchy](/docs/en/operations/workload-scheduling.md#workloads)
+- [workload_path](#workload_path)
+
 ## max_authentication_methods_per_user {#max_authentication_methods_per_user}
 
 The maximum number of authentication methods a user can be created with or altered to.
@@ -3187,10 +3279,16 @@ Default value: 100
 
 Zero means unlimited
 
-## use_legacy_mongodb_integration
+## allow_feature_tier
 
-Use the legacy MongoDB integration implementation. Deprecated.
+Controls if the user can change settings related to the different feature tiers.
+0 - Changes to any setting are allowed (experimental, beta, production).
+1 - Only changes to beta and production feature settings are allowed. Changes to experimental settings are rejected.
+2 - Only changes to production settings are allowed. Changes to experimental or beta settings are rejected.
 
-Type: Bool
+This is equivalent to setting a readonly constraint on all EXPERIMENTAL / BETA features.
+```
 
-Default value: `true`.
+Type: UInt32
+
+Default value: `0` (all settings can be changed).

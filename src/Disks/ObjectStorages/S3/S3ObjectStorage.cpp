@@ -9,6 +9,7 @@
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
+#include <Disks/IO/getThreadPoolReader.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/S3/getObjectInfo.h>
@@ -195,7 +196,7 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
     if (mode != WriteMode::Rewrite)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 doesn't support append to files");
 
-    S3::RequestSettings request_settings = s3_settings.get()->request_settings;
+    S3::S3RequestSettings request_settings = s3_settings.get()->request_settings;
     /// NOTE: For background operations settings are not propagated from session or query. They are taken from
     /// default user's .xml config. It's obscure and unclear behavior. For them it's always better
     /// to rely on settings from disk.
@@ -325,19 +326,9 @@ void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_e
                       ProfileEvents::DiskS3DeleteObjects);
 }
 
-void S3ObjectStorage::removeObject(const StoredObject & object)
-{
-    removeObjectImpl(object, false);
-}
-
 void S3ObjectStorage::removeObjectIfExists(const StoredObject & object)
 {
     removeObjectImpl(object, true);
-}
-
-void S3ObjectStorage::removeObjects(const StoredObjects & objects)
-{
-    removeObjectsImpl(objects, false);
 }
 
 void S3ObjectStorage::removeObjectsIfExist(const StoredObjects & objects)

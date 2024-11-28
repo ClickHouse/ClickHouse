@@ -11,7 +11,7 @@
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ThreadPool.h>
 #include <Common/ConcurrentBoundedQueue.h>
-#include <Coordination/KeeperFeatureFlags.h>
+#include <Common/ZooKeeper/KeeperFeatureFlags.h>
 
 
 namespace Coordination

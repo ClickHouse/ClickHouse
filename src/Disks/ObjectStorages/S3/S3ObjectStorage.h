@@ -20,8 +20,8 @@ struct S3ObjectStorageSettings
     S3ObjectStorageSettings() = default;
 
     S3ObjectStorageSettings(
-        const S3::RequestSettings & request_settings_,
-        const S3::AuthSettings & auth_settings_,
+        const S3::S3RequestSettings & request_settings_,
+        const S3::S3AuthSettings & auth_settings_,
         uint64_t min_bytes_for_seek_,
         int32_t list_object_keys_size_,
         int32_t objects_chunk_size_to_delete_,
@@ -34,8 +34,8 @@ struct S3ObjectStorageSettings
         , read_only(read_only_)
     {}
 
-    S3::RequestSettings request_settings;
-    S3::AuthSettings auth_settings;
+    S3::S3RequestSettings request_settings;
+    S3::S3AuthSettings auth_settings;
 
     uint64_t min_bytes_for_seek;
     int32_t list_object_keys_size;
@@ -100,13 +100,6 @@ public:
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
     ObjectStorageIteratorPtr iterate(const std::string & path_prefix, size_t max_keys) const override;
-
-    /// Uses `DeleteObjectRequest`.
-    void removeObject(const StoredObject & object) override;
-
-    /// Uses `DeleteObjectsRequest` if it is allowed by `s3_capabilities`, otherwise `DeleteObjectRequest`.
-    /// `DeleteObjectsRequest` is not supported on GCS, see https://issuetracker.google.com/issues/162653700 .
-    void removeObjects(const StoredObjects & objects) override;
 
     /// Uses `DeleteObjectRequest`.
     void removeObjectIfExists(const StoredObject & object) override;

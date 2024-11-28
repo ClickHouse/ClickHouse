@@ -1,6 +1,9 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeObjectDeprecated.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/Serializations/SerializationJSON.h>
 #include <DataTypes/Serializations/SerializationObjectTypedPath.h>
 #include <DataTypes/Serializations/SerializationObjectDynamicPath.h>
@@ -230,6 +233,15 @@ MutableColumnPtr DataTypeObject::createColumn() const
     return ColumnObject::create(std::move(typed_path_columns), max_dynamic_paths, max_dynamic_types);
 }
 
+void DataTypeObject::forEachChild(const ChildCallback & callback) const
+{
+    for (const auto & [path, type] : typed_paths)
+    {
+        callback(*type);
+        type->forEachChild(callback);
+    }
+}
+
 namespace
 {
 
@@ -438,7 +450,7 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
     /// Get subcolumn for Dynamic type if needed.
     if (!path_subcolumn.empty())
     {
-        res = res->type->getSubcolumnData(path_subcolumn, *res, throw_if_null);
+        res = DB::IDataType::getSubcolumnData(path_subcolumn, *res, throw_if_null);
         if (!res)
             return nullptr;
     }
@@ -522,6 +534,13 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
     return std::make_shared<DataTypeObject>(schema_format, std::move(typed_paths), std::move(paths_to_skip), std::move(path_regexps_to_skip), max_dynamic_paths, max_dynamic_types);
 }
 
+const DataTypePtr & DataTypeObject::getTypeOfSharedData()
+{
+    /// Array(Tuple(String, String))
+    static const DataTypePtr type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()}, Names{"paths", "values"}));
+    return type;
+}
+
 static DataTypePtr createJSON(const ASTPtr & arguments)
 {
     auto context = CurrentThread::getQueryContext();
@@ -531,7 +550,7 @@ static DataTypePtr createJSON(const ASTPtr & arguments)
     if (context->getSettingsRef()[Setting::allow_experimental_object_type] && context->getSettingsRef()[Setting::use_json_alias_for_old_object_type])
     {
         if (arguments && !arguments->children.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Experimental Object type doesn't support any arguments. If you want to use new JSON type, set settings allow_experimental_json_type = 1 and use_json_alias_for_old_object_type = 0");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Experimental Object type doesn't support any arguments. If you want to use new JSON type, set settings enable_json_type = 1 and use_json_alias_for_old_object_type = 0");
 
         return std::make_shared<DataTypeObjectDeprecated>("JSON", false);
     }

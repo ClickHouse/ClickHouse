@@ -1502,6 +1502,7 @@ def test_backup_all(exclude_system_log_tables):
         # See the list of log tables in src/Interpreters/SystemLog.cpp
         log_tables = [
             "query_log",
+            "query_metric_log",
             "query_thread_log",
             "part_log",
             "trace_log",
@@ -1557,6 +1558,39 @@ def test_backup_all(exclude_system_log_tables):
     instance.query("DROP TABLE test.table")
     instance.query("DROP FUNCTION two_and_half")
     instance.query("DROP USER u1")
+
+
+@pytest.mark.parametrize("include_database_name", [False, True])
+def test_backup_database_except(include_database_name):
+    create_and_fill_table()
+
+    session_id = new_session_id()
+    instance.query(
+        "CREATE TABLE test.omit_table (s String) ENGINE = MergeTree ORDER BY s",
+    )
+
+    omit_table_name = "test.omit_table" if include_database_name else "omit_table"
+    backup_name = new_backup_name()
+    backup_command = (
+        f"BACKUP DATABASE test EXCEPT TABLES {omit_table_name} TO {backup_name}"
+    )
+
+    instance.http_query(backup_command, params={"session_id": session_id})
+
+    instance.query("DROP TABLE test.table")
+    instance.query("DROP TABLE test.omit_table")
+
+    restore_command = f"RESTORE ALL FROM {backup_name}"
+
+    session_id = new_session_id()
+    instance.http_query(
+        restore_command, params={"session_id": session_id}, method="POST"
+    )
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+    assert instance.query("EXISTS TABLE test.omit_table") == "0\n"
+
+    instance.query("DROP TABLE test.table")
 
 
 def test_operation_id():

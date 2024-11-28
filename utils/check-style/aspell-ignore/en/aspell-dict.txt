@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2984
+personal_ws-1.1 en 2985
 AArch
 ACLs
 ALTERs
@@ -186,7 +186,6 @@ ComplexKeyCache
 ComplexKeyDirect
 ComplexKeyHashed
 Composable
-composable
 ConcurrencyControlAcquired
 ConcurrencyControlSoftLimit
 Config
@@ -245,7 +244,10 @@ Deduplication
 DefaultTableEngine
 DelayedInserts
 DeliveryTag
+Deltalake
 DeltaLake
+deltalakeCluster
+deltaLakeCluster
 Denormalize
 DestroyAggregatesThreads
 DestroyAggregatesThreadsActive
@@ -378,10 +380,15 @@ Homebrew's
 HorizontalDivide
 Hostname
 HouseOps
+hudi
 Hudi
+hudiCluster
+HudiCluster
 HyperLogLog
 Hypot
 IANA
+icebergCluster
+IcebergCluster
 IDE
 IDEs
 IDNA
@@ -405,6 +412,9 @@ ITION
 Identifiant
 IdentifierQuotingRule
 IdentifierQuotingStyle
+InJodaSyntax
+InJodaSyntaxOrNull
+InJodaSyntaxOrZero
 Incrementing
 IndexesAreNeighbors
 InfluxDB
@@ -1378,7 +1388,6 @@ bools
 boringssl
 boundingRatio
 bozerkins
-broadcasted
 brotli
 bson
 bsoneachrow
@@ -1404,7 +1413,6 @@ cardinalities
 cardinality
 cartesian
 cassandra
-casted
 catboost
 catboostEvaluate
 categoricalInformationValue
@@ -1471,6 +1479,7 @@ collapsingmergetree
 combinator
 combinators
 comparising
+composable
 composable
 compressability
 concat
@@ -1808,11 +1817,13 @@ geocode
 geohash
 geohashDecode
 geohashEncode
+geohashes
 geohashesInBox
 geoip
 geospatial
 getClientHTTPHeader
 getMacro
+getMaxTableNameLengthForDatabase
 getOSKernelVersion
 getServerPort
 getSetting
@@ -1992,6 +2003,7 @@ jbod
 jdbc
 jemalloc
 jeprof
+joda
 joinGet
 joinGetOrNull
 json
@@ -2352,6 +2364,7 @@ parsedatetime
 parsers
 partitionID
 partitionId
+partsupp
 pathFull
 pclmulqdq
 pcre
@@ -2466,6 +2479,7 @@ quantileExactHigh
 quantileExactInclusive
 quantileExactLow
 quantileExactWeighted
+quantileExactWeightedInterpolated
 quantileGK
 quantileInterpolatedWeighted
 quantileTDigest
@@ -2477,6 +2491,7 @@ quantileddsketch
 quantiledeterministic
 quantileexact
 quantileexactweighted
+quantileexactweightedinterpolated
 quantiles
 quantilesExactExclusive
 quantilesExactInclusive
@@ -2811,6 +2826,7 @@ summapwithoverflow
 summingmergetree
 sumwithoverflow
 superaggregates
+superset
 supertype
 supremum
 symlink
@@ -3149,3 +3165,4 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
+BFloat

@@ -1,5 +1,4 @@
 #include <Server/KeeperTCPHandler.h>
-#include "Common/ZooKeeper/ZooKeeperConstants.h"
 
 #if USE_NURAFT
 
@@ -19,6 +18,8 @@
 #    include <Common/NetException.h>
 #    include <Common/PipeFDs.h>
 #    include <Common/Stopwatch.h>
+#    include <Common/ZooKeeper/ZooKeeperCommon.h>
+#    include <Common/ZooKeeper/ZooKeeperConstants.h>
 #    include <Common/ZooKeeper/ZooKeeperIO.h>
 #    include <Common/logger_useful.h>
 #    include <Common/setThreadName.h>
@@ -43,6 +44,7 @@ namespace CoordinationSetting
 {
     extern const CoordinationSettingsUInt64 log_slow_connection_operation_threshold_ms;
     extern const CoordinationSettingsUInt64 log_slow_total_threshold_ms;
+    extern const CoordinationSettingsBool use_xid_64;
 }
 
 struct LastOp
@@ -62,6 +64,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int BAD_ARGUMENTS;
 }
 
 struct PollResult
@@ -312,6 +315,10 @@ Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length, bool
     }
     else if (protocol_version >= Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_XID_64)
     {
+        if (!keeper_dispatcher->getKeeperContext()->getCoordinationSettings()[CoordinationSetting::use_xid_64])
+            throw Exception(
+                ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+                "keeper_server.coordination_settings.use_xid_64 is set to 'false' while client has it enabled");
         close_xid = Coordination::CLOSE_XID_64;
         use_xid_64 = true;
         Coordination::read(use_compression, *in);
@@ -529,12 +536,14 @@ void KeeperTCPHandler::runImpl()
                 break;
             }
         }
+        finalizeWriteBuffer();
     }
     catch (const Exception & ex)
     {
         log_long_operation("Unknown operation");
         LOG_TRACE(log, "Has {} responses in the queue", responses->size());
         LOG_INFO(log, "Got exception processing session #{}: {}", session_id, getExceptionMessage(ex, true));
+        cancelWriteBuffer();
         keeper_dispatcher->finishSession(session_id);
     }
 }
@@ -589,6 +598,20 @@ void KeeperTCPHandler::flushWriteBuffer()
     out->next();
 }
 
+void KeeperTCPHandler::finalizeWriteBuffer()
+{
+    if (compressed_out)
+        compressed_out->finalize();
+    out->finalize();
+}
+
+void KeeperTCPHandler::cancelWriteBuffer() noexcept
+{
+    if (compressed_out)
+        compressed_out->cancel();
+    out->cancel();
+}
+
 ReadBuffer & KeeperTCPHandler::getReadBuffer()
 {
     if (compressed_in)
@@ -616,9 +639,25 @@ std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveReque
 
     Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
     request->xid = xid;
-    request->readImpl(read_buffer);
 
-    if (!keeper_dispatcher->putRequest(request, session_id))
+    auto request_validator = [&](const Coordination::ZooKeeperRequest & current_request)
+    {
+        if (!keeper_dispatcher->getKeeperContext()->isOperationSupported(current_request.getOpNum()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported operation: {}", current_request.getOpNum());
+    };
+
+    if (auto * multi_request = dynamic_cast<Coordination::ZooKeeperMultiRequest *>(request.get()))
+    {
+        multi_request->readImpl(read_buffer, request_validator);
+    }
+    else
+    {
+        request->readImpl(read_buffer);
+        request_validator(*request);
+    }
+
+
+    if (!keeper_dispatcher->putRequest(request, session_id, use_xid_64))
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Session {} already disconnected", session_id);
     return std::make_pair(opnum, xid);
 }
@@ -734,6 +773,7 @@ void KeeperTCPHandler::resetStats()
 
 KeeperTCPHandler::~KeeperTCPHandler()
 {
+    cancelWriteBuffer();
     KeeperTCPHandler::unregisterConnection(this);
 }
 

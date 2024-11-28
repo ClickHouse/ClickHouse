@@ -231,9 +231,14 @@ bool StorageMerge::isRemote() const
     return first_remote_table != nullptr;
 }
 
-bool StorageMerge::tableSupportsPrewhere() const
+bool StorageMerge::supportsPrewhere() const
 {
-    /// NOTE: This check is used during query analysis as condition for applying
+    return getFirstTable([](const auto & table) { return !table->supportsPrewhere(); }) == nullptr;
+}
+
+bool StorageMerge::canMoveConditionsToPrewhere() const
+{
+    /// NOTE: This check and the above check are used during query analysis as condition for applying
     /// "move to PREWHERE" optimization. However, it contains a logical race:
     /// If new table that matches regexp for current storage and doesn't support PREWHERE
     /// will appear after this check and before calling "read" method, the optimized query may fail.
@@ -1558,7 +1563,7 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_)
     auto request_read_in_order = [order_info_](ReadFromMergeTree & read_from_merge_tree)
     {
         return read_from_merge_tree.requestReadingInOrder(
-            order_info_->used_prefix_of_sorting_key_size, order_info_->direction, order_info_->limit);
+            order_info_->used_prefix_of_sorting_key_size, order_info_->direction, order_info_->limit, {});
     };
 
     bool ok = true;

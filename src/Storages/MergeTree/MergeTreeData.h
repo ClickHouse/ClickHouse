@@ -31,6 +31,8 @@
 #include <Storages/DataDestinationType.h>
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
+#include <Storages/MarkCache.h>
+#include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Interpreters/PartLog.h>
 #include <Poco/Timestamp.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -241,7 +243,7 @@ public:
 
     MergeTreeDataPartFormat choosePartFormat(size_t bytes_uncompressed, size_t rows_count) const;
     MergeTreeDataPartFormat choosePartFormatOnDisk(size_t bytes_uncompressed, size_t rows_count) const;
-    MergeTreeDataPartBuilder getDataPartBuilder(const String & name, const VolumePtr & volume, const String & part_dir) const;
+    MergeTreeDataPartBuilder getDataPartBuilder(const String & name, const VolumePtr & volume, const String & part_dir, const ReadSettings & read_settings_) const;
 
     /// Auxiliary object to add a set of parts into the working set in two steps:
     /// * First, as PreActive parts (the parts are ready, but not yet in the active set).
@@ -505,6 +507,16 @@ public:
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts);
+
+    /// Returns a pointer to primary index cache if it is enabled.
+    PrimaryIndexCachePtr getPrimaryIndexCache() const;
+    /// Returns a pointer to primary index cache if it is enabled and required to be prewarmed.
+    PrimaryIndexCachePtr getPrimaryIndexCacheToPrewarm() const;
+    /// Returns a pointer to primary mark cache if it is required to be prewarmed.
+    MarkCachePtr getMarkCacheToPrewarm() const;
+
+    /// Prewarm mark cache and primary index cache for the most recent data parts.
+    void prewarmCaches(ThreadPool & pool, MarkCachePtr mark_cache, PrimaryIndexCachePtr index_cache);
 
     String getLogName() const { return log.loadName(); }
 
