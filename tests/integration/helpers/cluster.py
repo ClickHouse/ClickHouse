@@ -17,6 +17,8 @@ import time
 import traceback
 import urllib.parse
 import shlex
+from typing import List
+
 import urllib3
 import requests
 
@@ -74,6 +76,8 @@ CLICKHOUSE_ERROR_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.err.lo
 # Keep in mind that we only support upgrading between releases that are at most 1 year different.
 # This means that this minimum need to be, at least, 1 year older than the current release
 CLICKHOUSE_CI_MIN_TESTED_VERSION = "23.3"
+
+ZOOKEEPER_CONTAINERS = ("zoo1", "zoo2", "zoo3")
 
 
 # to create docker-compose env file
@@ -2029,6 +2033,11 @@ class ClickHouseCluster:
         container_id = self.get_container_id(instance_name)
         return self.docker_client.api.logs(container_id).decode()
 
+    def query_zookeeper(self, query, node=ZOOKEEPER_CONTAINERS[0], nothrow=False):
+        cmd = f'clickhouse keeper-client -p {self.zookeeper_port} -q "{query}"'
+        container_id = self.get_container_id(node)
+        return self.exec_in_container(container_id, cmd, nothrow=nothrow, use_cli=False)
+
     def exec_in_container(
         self, container_id, cmd, detach=False, nothrow=False, use_cli=True, **kwargs
     ):
@@ -2361,10 +2370,21 @@ class ClickHouseCluster:
 
     def wait_zookeeper_secure_to_start(self, timeout=20):
         logging.debug("Wait ZooKeeper Secure to start")
+        self.wait_zookeeper_nodes_to_start(ZOOKEEPER_CONTAINERS, timeout)
+
+    def wait_zookeeper_to_start(self, timeout: float = 180) -> None:
+        logging.debug("Wait ZooKeeper to start")
+        self.wait_zookeeper_nodes_to_start(ZOOKEEPER_CONTAINERS, timeout)
+
+    def wait_zookeeper_nodes_to_start(
+        self,
+        nodes: List[str],
+        timeout: float = 60,
+    ) -> None:
         start = time.time()
         while time.time() - start < timeout:
             try:
-                for instance in ["zoo1", "zoo2", "zoo3"]:
+                for instance in nodes:
                     conn = self.get_kazoo_client(instance)
                     conn.get_children("/")
                     conn.stop()
@@ -2375,25 +2395,6 @@ class ClickHouseCluster:
                 time.sleep(0.5)
 
         raise Exception("Cannot wait ZooKeeper secure container")
-
-    def wait_zookeeper_to_start(self, timeout=180):
-        logging.debug("Wait ZooKeeper to start")
-        start = time.time()
-        while time.time() - start < timeout:
-            try:
-                for instance in ["zoo1", "zoo2", "zoo3"]:
-                    conn = self.get_kazoo_client(instance)
-                    conn.get_children("/")
-                    conn.stop()
-                logging.debug("All instances of ZooKeeper started")
-                return
-            except Exception as ex:
-                logging.debug(f"Can't connect to ZooKeeper {instance}: {ex}")
-                time.sleep(0.5)
-
-        raise Exception(
-            "Cannot wait ZooKeeper container (probably it's a `iptables-nft` issue, you may try to `sudo iptables -P FORWARD ACCEPT`)"
-        )
 
     def make_hdfs_api(self, timeout=180, kerberized=False):
         if kerberized:
@@ -3151,7 +3152,11 @@ class ClickHouseCluster:
         return zk
 
     def run_kazoo_commands_with_retries(
-        self, kazoo_callback, zoo_instance_name="zoo1", repeats=1, sleep_for=1
+        self,
+        kazoo_callback,
+        zoo_instance_name=ZOOKEEPER_CONTAINERS[0],
+        repeats=1,
+        sleep_for=1,
     ):
         zk = self.get_kazoo_client(zoo_instance_name)
         logging.debug(
@@ -4536,9 +4541,7 @@ class ClickHouseInstance:
             depends_on.append("nats1")
 
         if self.with_zookeeper:
-            depends_on.append("zoo1")
-            depends_on.append("zoo2")
-            depends_on.append("zoo3")
+            depends_on += list(ZOOKEEPER_CONTAINERS)
 
         if self.with_minio:
             depends_on.append("minio1")
