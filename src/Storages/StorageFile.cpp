@@ -2025,17 +2025,14 @@ SinkToStoragePtr StorageFile::write(
                     new_path = path.substr(0, pos) + "." + std::to_string(index) + (pos == std::string::npos ? "" : path.substr(pos));
                     ++index;
                 }
-                while (fs::exists(new_path));
-                paths.push_back(new_path);
-                path = new_path;
             }
             else
                 throw Exception(
                     ErrorCodes::CANNOT_APPEND_TO_FILE,
-                    "Cannot append data in format {} to file, because this format doesn't support appends."
-                    " You can allow to create a new file "
-                    "on each insert by enabling setting engine_file_allow_create_multiple_files",
-                    format_name);
+                        "File {} already exists and data cannot be appended to this file as the {} format doesn't support appends."
+                        " You can configure ClickHouse to create a new file "
+                        "on each insert by enabling the setting `engine_file_allow_create_multiple_files`",
+                        path, format_name);
         }
     }
 
