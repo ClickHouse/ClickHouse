@@ -1724,7 +1724,7 @@ private:
         ctx->projection_out = std::make_shared<MergedBlockOutputStream>(
             ctx->new_projection_part,
             ctx->projection_metadata_snapshot,
-            ctx->projection_metadata_snapshot->getColumns().getAllPhysical(),
+            ctx->new_projection_part->getColumns(),
             MergeTreeIndices{},
             ColumnsStatistics{},
             ctx->data->getContext()->chooseCompressionCodec(0, 0),
