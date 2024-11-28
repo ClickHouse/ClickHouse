@@ -305,6 +305,9 @@ class ArtifactNames:
     DEB_ARM_RELEASE = "DEB_ARM_RELEASE"
     DEB_ARM_ASAN = "DEB_ARM_ASAN"
 
+    PERF_REPORTS_AMD = "PERF_REPORTS_AMD"
+    PERF_REPORTS_ARM = "PERF_REPORTS_ARM"
+
 
 ARTIFACTS = [
     *Artifact.Config(
@@ -380,6 +383,16 @@ ARTIFACTS = [
         name=ArtifactNames.DEB_ARM_ASAN,
         type=Artifact.Type.S3,
         path=f"{Settings.TEMP_DIR}/output/*.deb",
+    ),
+    Artifact.Config(
+        name=ArtifactNames.PERF_REPORTS_AMD,
+        type=Artifact.Type.S3,
+        path=f"{Settings.TEMP_DIR}/*.html",
+    ),
+    Artifact.Config(
+        name=ArtifactNames.PERF_REPORTS_ARM,
+        type=Artifact.Type.S3,
+        path=f"{Settings.TEMP_DIR}/*.html",
     ),
 ]
 
@@ -660,6 +673,7 @@ class Jobs:
             [RunnerLabels.FUNC_TESTER_ARM],
         ],
         requires=[[ArtifactNames.CH_AMD_RELEASE], [ArtifactNames.CH_ARM_RELEASE]],
+        provides=[[ArtifactNames.PERF_REPORTS_AMD], [ArtifactNames.PERF_REPORTS_ARM]],
     )
 
     compatibility_test_jobs = Job.Config(

@@ -55,16 +55,31 @@ function download
 #        cp -an right/* left &
 #    fi
 
+    cd db0
     for dataset_name in $datasets
     do
         dataset_path="${dataset_paths[$dataset_name]}"
-        if [ "$dataset_path" = "" ]
-        then
+        done_flag="${dataset_name}.done"
+
+        # Check if the dataset path exists
+        if [ "$dataset_path" = "" ]; then
             >&2 echo "Unknown dataset '$dataset_name'"
             exit 1
         fi
-        cd db0 && wget -nv -nd -c "$dataset_path" -O- | tar --extract --verbose &
+        if [ -f "$done_flag" ]; then
+            echo "Dataset '$dataset_name' already downloaded and unpacked. Skipping."
+            continue
+        fi
+        echo "Processing dataset '$dataset_name'..."
+        if wget -nv -nd -c "$dataset_path" -O- | tar --extract --verbose; then
+            touch "$done_flag"
+            echo "Dataset '$dataset_name' completed."
+        else
+            >&2 echo "Failed to process dataset '$dataset_name'."
+            exit 1
+        fi
     done
+    cd -
 
     mkdir ~/fg ||:
     (

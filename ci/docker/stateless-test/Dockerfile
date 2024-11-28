@@ -18,6 +18,9 @@ RUN addgroup --gid 1001 clickhouse2 && adduser --uid 1001 --gid 1001 --disabled-
 # expect, bzip2 - requried by FT
 # bsdmainutils - provides hexdump for FT
 # git - required in one of FT TC
+# gnuplot - for perf tests
+# imagemagick - for perf tests
+# parallel - for perf tests
 
 # golang version 1.13 on Ubuntu 20 is enough for tests
 RUN apt-get update -y \
@@ -62,6 +65,9 @@ RUN apt-get update -y \
             wget \
             xz-utils \
             ripgrep \
+            gnuplot \
+            imagemagick \
+            parallel \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 

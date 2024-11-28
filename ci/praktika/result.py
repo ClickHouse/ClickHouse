@@ -680,7 +680,7 @@ class ResultTranslator:
                         name="Parsing Error",
                         status=Result.Status.ERROR,
                         files=[cls.GTEST_RESULT_FILE],
-                        info=str(e)
+                        info=str(e),
                     )
                 ],
                 "ERROR: failed to read gtest json",

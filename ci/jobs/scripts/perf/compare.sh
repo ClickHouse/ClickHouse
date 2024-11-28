@@ -151,7 +151,8 @@ function restart
         --zookeeper.node.port $LEFT_SERVER_KEEPER_PORT
         --interserver_http_port $LEFT_SERVER_INTERSERVER_PORT
     )
-    left/clickhouse-server "${left_server_opts[@]}" &>> left-server-log.log &
+    rm -f left-server-log.log
+    left/clickhouse-server "${left_server_opts[@]}" &> left-server-log.log &
     left_pid=$!
     kill -0 $left_pid
     disown $left_pid
@@ -171,7 +172,7 @@ function restart
         --zookeeper.node.port $RIGHT_SERVER_KEEPER_PORT
         --interserver_http_port $RIGHT_SERVER_INTERSERVER_PORT
     )
-    right/clickhouse-server "${right_server_opts[@]}" &>> right-server-log.log &
+    right/clickhouse-server "${right_server_opts[@]}" &> right-server-log.log &
     right_pid=$!
     kill -0 $right_pid
     disown $right_pid
@@ -199,19 +200,18 @@ function restart
 function run_tests
 {
     # Just check that the script runs at all
-    "$script_dir/perf.py" --help > /dev/null
-
+    "$script_dir/../../../../tests/performance/scripts/perf.py" --help > /dev/null
     # Find the directory with test files.
     if [ -v CHPC_TEST_PATH ]
     then
         # Use the explicitly set path to directory with test files.
         test_prefix="$CHPC_TEST_PATH"
-    elif [ "$PR_TO_TEST" == "0" ]
-    then
-        # When testing commits from master, use the older test files. This
-        # allows the tests to pass even when we add new functions and tests for
-        # them, that are not supported in the old revision.
-        test_prefix=left/performance
+#    elif [ "$PR_TO_TEST" == "0" ]
+#    then
+#        # When testing commits from master, use the older test files. This
+#        # allows the tests to pass even when we add new functions and tests for
+#        # them, that are not supported in the old revision.
+#        test_prefix=left/performance
     else
         # For PRs, use newer test files so we can test these changes.
         test_prefix=right/performance
@@ -225,15 +225,15 @@ function run_tests
         # Run only explicitly specified tests, if any.
         # shellcheck disable=SC2010
         test_files=($(ls "$test_prefix" | rg "$CHPC_TEST_GREP" | xargs -I{} -n1 readlink -f "$test_prefix/{}"))
-    elif [ "$PR_TO_TEST" -ne 0 ] \
-        && [ "$(wc -l < changed-test-definitions.txt)" -gt 0 ] \
-        && [ "$(wc -l < other-changed-files.txt)" -eq 0 ]
-    then
-        # If only the perf tests were changed in the PR, we will run only these
-        # tests. The lists of changed files are prepared in entrypoint.sh because
-        # it has the repository.
-        test_files=($(sed "s/tests\/performance/${test_prefix//\//\\/}/" changed-test-definitions.txt))
-        run_only_changed_tests=1
+#    elif [ "$PR_TO_TEST" -ne 0 ] \
+#        && [ "$(wc -l < changed-test-definitions.txt)" -gt 0 ] \
+#        && [ "$(wc -l < other-changed-files.txt)" -eq 0 ]
+#    then
+#        # If only the perf tests were changed in the PR, we will run only these
+#        # tests. The lists of changed files are prepared in entrypoint.sh because
+#        # it has the repository.
+#        test_files=($(sed "s/tests\/performance/${test_prefix//\//\\/}/" changed-test-definitions.txt))
+#        run_only_changed_tests=1
     else
         # The default -- run all tests found in the test dir.
         test_files=($(ls "$test_prefix"/*.xml))
@@ -259,7 +259,7 @@ function run_tests
 
     if [ "$run_only_changed_tests" -ne 0 ]; then
         if [ ${#test_files[@]} -eq 0 ]; then
-            time "$script_dir/report.py" --no-tests-run > report.html
+            time "$script_dir/../../../../tests/performance/scripts/report.py" --no-tests-run > report.html
             exit 0
         fi
     fi
@@ -323,13 +323,14 @@ function run_tests
         # Use awk because bash doesn't support floating point arithmetic.
         profile_seconds=$(awk "BEGIN { print ($profile_seconds_left > 0 ? 10 : 0) }")
 
-        if rg --quiet "$(basename $test)" changed-test-definitions.txt
-        then
-          # Run all queries from changed test files to ensure that all new queries will be tested.
-          max_queries=0
-        else
-          max_queries=$CHPC_MAX_QUERIES
-        fi
+        max_queries=0
+#        if rg --quiet "$(basename $test)" changed-test-definitions.txt
+#        then
+#          # Run all queries from changed test files to ensure that all new queries will be tested.
+#          max_queries=0
+#        else
+#          max_queries=$CHPC_MAX_QUERIES
+#        fi
 
         (
             set +x
@@ -345,7 +346,7 @@ function run_tests
             TIMEFORMAT=$(printf "$test_name\t%%3R\t%%3U\t%%3S\n")
             # one more subshell to suppress trace output for "set +x"
             (
-                time "$script_dir/perf.py" "${argv[@]}" > "$test_name-raw.tsv" 2> "$test_name-err.log"
+                time "$script_dir/../../../../tests/performance/scripts/perf.py" "${argv[@]}" > "$test_name-raw.tsv" 2> "$test_name-err.log"
             ) 2>>wall-clock-times.tsv >/dev/null \
                 || echo "Test $test_name failed with error code $?" >> "$test_name-err.log"
         ) 2>/dev/null
@@ -558,7 +559,7 @@ do
         "clickhouse-local \
             --file \"$file\" \
             --structure 'test text, query text, run int, version UInt8, metrics Array(float)' \
-            --query \"$(cat "$script_dir/eqmed.sql")\" \
+            --query \"$(cat "$script_dir/../../../../tests/performance/scripts/eqmed.sql")\" \
             >> \"analyze/query-metric-stats.tsv\"" \
             2>> analyze/errors.log \
         >> analyze/commands.txt
@@ -570,8 +571,10 @@ unset IFS
 # The comparison script might be bound to one NUMA node for better test
 # stability, and the calculation runs out of memory because of this. Use
 # all nodes.
-numactl --show
-numactl --cpunodebind=all --membind=all numactl --show
+if command -v numactl >/dev/null 2>&1; then
+  numactl --show
+  numactl --cpunodebind=all --membind=all numactl --show
+fi
 
 # Notes for parallel:
 #
@@ -585,7 +588,16 @@ numactl --cpunodebind=all --membind=all numactl --show
 # --memsuspend:
 #
 #   If the available memory falls below 2 * size, GNU parallel will suspend some of the running jobs.
-numactl --cpunodebind=all --membind=all parallel -v --joblog analyze/parallel-log.txt --memsuspend 15G --null < analyze/commands.txt 2>> analyze/errors.log
+
+if ! echo pwd | parallel -v >/dev/null 2>&1; then
+   echo "ERROR: parallel not installed or wrong version, apt-get install parallel?"
+   exit 1
+fi
+if command -v numactl >/dev/null 2>&1; then
+    numactl --cpunodebind=all --membind=all parallel -v --joblog analyze/parallel-log.txt --memsuspend 15G --null < analyze/commands.txt 2>> analyze/errors.log
+else
+    parallel -v --joblog analyze/parallel-log.txt --memsuspend 15G --null < analyze/commands.txt 2>> analyze/errors.log
+fi
 
 clickhouse-local --query "
 -- Join the metric names back to the metric statistics we've calculated, and make
@@ -1375,10 +1387,14 @@ case "$stage" in
     time configure
     ;&
 "restart")
-    numactl --show ||:
-    numactl --hardware ||:
-    lscpu ||:
-    dmidecode -t 4 ||:
+    if command -v numactl >/dev/null 2>&1; then
+      numactl --show
+      numactl --hardware
+    fi
+    lscpu
+    if command -v dmidecode >/dev/null 2>&1; then
+      dmidecode -t 4 ||:
+    fi
     time restart
     ;&
 "run_tests")
@@ -1432,14 +1448,14 @@ case "$stage" in
     cat metrics/errors.log >> report/errors.log ||:
     ;&
 "report_html")
-    time "$script_dir/report.py" --report=all-queries > all-queries.html 2> >(tee -a report/errors.log 1>&2) ||:
-    time "$script_dir/report.py" > report.html
+    time "$script_dir/../../../../tests/performance/scripts/report.py" --report=all-queries > all-queries.html 2> >(tee -a report/errors.log 1>&2) ||:
+    time "$script_dir/../../../../tests/performance/scripts/report.py" > report.html
     ;&
-"upload_results")
-    time upload_results ||:
-    ;&
+#"upload_results")
+#    time upload_results ||:
+#    ;&
 esac
 
 # Print some final debug info to help debug Weirdness, of which there is plenty.
 jobs
-pstree -apgT
+#pstree -apgT
