@@ -256,6 +256,9 @@ select 'number of too noisy messages',
 select 'number of noisy messages',
     greatest(count(), 10) from (select count() / (select count() from logs) as freq, message_format_string from logs group by message_format_string having freq > 0.05);
 
+with noisy_messages AS (select count() / (select count() from logs) as freq, message_format_string from logs group by message_format_string having freq > 0.05)
+select * from noisy_messages where (select count() from noisy_messages) > 10;
+
 -- Each message matches its pattern (returns 0 rows)
 -- Note: maybe we should make it stricter ('Code:%Exception: '||s||'%'), but it's not easy because of addMessage
 select 'incorrect patterns', greatest(uniqExact(message_format_string), 15) from (
