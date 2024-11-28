@@ -17,7 +17,10 @@ node3 = cluster.add_instance(
     user_configs=[
         "configs/config_zk.xml",
     ],
-    main_configs=["configs/config_zk_include_test.xml"],
+    main_configs=[
+        "configs/config_zk_include_test.xml",
+        "configs/overrides.xml",
+    ],
     with_zookeeper=True,
 )
 node4 = cluster.add_instance(
