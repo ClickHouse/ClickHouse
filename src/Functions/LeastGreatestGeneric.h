@@ -53,11 +53,11 @@ private:
             return arguments[0].column;
 
         Columns converted_columns;
-        for (size_t arg = 0; arg < arguments.size(); ++arg)
+        for (const auto & argument : arguments)
         {
-            if (arguments[arg].type->onlyNull())
+            if (argument.type->onlyNull())
                 continue; /// ignore NULL arguments
-            auto converted_col = castColumn(arguments[arg], result_type)->convertToFullColumnIfConst();
+            auto converted_col = castColumn(argument, result_type)->convertToFullColumnIfConst();
             converted_columns.emplace_back(converted_col);
         }
 
