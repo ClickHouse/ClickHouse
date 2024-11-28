@@ -24,7 +24,7 @@ Positions: 4 2 0 1
           __table2.id UInt64
   Type: INNER
   Strictness: ALL
-  Algorithm: HashJoin
+  Algorithm: ConcurrentHashJoin
   Clauses: [(__table1.id) = (__table2.id)]
   Dynamic Filter
   Actions: INPUT : 0 -> id UInt64 : 0
@@ -97,7 +97,7 @@ Positions: 4 2 0 1
           __table2.id UInt64
   Type: INNER
   Strictness: ALL
-  Algorithm: HashJoin
+  Algorithm: ConcurrentHashJoin
   Clauses: [(__table1.id) = (__table2.id)]
   Dynamic Filter
   Actions: INPUT : 0 -> id UInt64 : 0
@@ -170,7 +170,7 @@ Positions: 4 2 0 1
           __table2.id UInt64
   Type: INNER
   Strictness: ALL
-  Algorithm: HashJoin
+  Algorithm: ConcurrentHashJoin
   Clauses: [(__table1.id) = (__table2.id)]
   Dynamic Filter
   Actions: INPUT : 0 -> id UInt64 : 0
@@ -254,7 +254,7 @@ Positions: 4 2 0 1
           __table2.id UInt64
   Type: LEFT
   Strictness: ALL
-  Algorithm: HashJoin
+  Algorithm: ConcurrentHashJoin
   Clauses: [(__table1.id) = (__table2.id)]
     Filter (( + (JOIN actions + Change column names to column identifiers)))
     Header: __table1.id UInt64
@@ -334,7 +334,7 @@ Positions: 4 2 0 1
             __table2.id UInt64
     Type: LEFT
     Strictness: ALL
-    Algorithm: HashJoin
+    Algorithm: ConcurrentHashJoin
     Clauses: [(__table1.id) = (__table2.id)]
       Expression ((JOIN actions + Change column names to column identifiers))
       Header: __table1.id UInt64

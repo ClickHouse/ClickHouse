@@ -242,7 +242,7 @@ public:
             }
         }
 
-        auto res = function_concat->build(concat_args)->execute(concat_args, std::make_shared<DataTypeString>(), input_rows_count);
+        auto res = function_concat->build(concat_args)->execute(concat_args, std::make_shared<DataTypeString>(), input_rows_count, /* dry_run = */ false);
         return res;
     }
 
