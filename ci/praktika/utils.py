@@ -15,9 +15,9 @@ from datetime import datetime
 from pathlib import Path
 from threading import Thread
 from types import SimpleNamespace
-from typing import Any, Dict, Iterator, List, Optional, Type, TypeVar, Union
+from typing import Any, Dict, Iterator, List, NoReturn, Optional, Type, TypeVar, Union
 
-T = TypeVar("T", bound="Serializable")
+T = TypeVar("T", bound="MetaClasses.Serializable")
 
 
 class MetaClasses:
@@ -143,7 +143,7 @@ class Shell:
     @classmethod
     def check(
         cls,
-        command,
+        command: str,
         log_file=None,
         strict=False,
         verbose=False,
@@ -152,7 +152,7 @@ class Shell:
         timeout=None,
         retries=0,
         **kwargs,
-    ):
+    ) -> bool:
         return (
             cls.run(
                 command,
@@ -171,7 +171,7 @@ class Shell:
     @classmethod
     def run(
         cls,
-        command,
+        command: str,
         log_file=None,
         strict=False,
         verbose=False,
@@ -180,7 +180,7 @@ class Shell:
         timeout=None,
         retries=0,
         **kwargs,
-    ):
+    ) -> int:
         def _check_timeout(timeout, process) -> None:
             if not timeout:
                 return
@@ -334,7 +334,9 @@ class Utils:
         os.environ[key] = val
 
     @staticmethod
-    def print_formatted_error(error_message, stdout="", stderr=""):
+    def print_formatted_error(
+        error_message: str, stdout: str = "", stderr: str = ""
+    ) -> None:
         stdout_lines = stdout.splitlines() if stdout else []
         stderr_lines = stderr.splitlines() if stderr else []
         print(f"ERROR: {error_message}")
@@ -348,28 +350,33 @@ class Utils:
                 print(f"     | {line}")
 
     @staticmethod
-    def sleep(seconds):
+    def sleep(seconds: float) -> None:
         time.sleep(seconds)
 
     @staticmethod
-    def cwd():
+    def cwd() -> Path:
         return Path.cwd()
 
     @staticmethod
-    def cpu_count():
+    def cpu_count() -> int:
         return multiprocessing.cpu_count()
 
     @staticmethod
-    def raise_with_error(error_message, stdout="", stderr="", ex=None):
+    def raise_with_error(
+        error_message: str,
+        stdout: str = "",
+        stderr: str = "",
+        ex: Optional[Exception] = None,
+    ) -> NoReturn:
         Utils.print_formatted_error(error_message, stdout, stderr)
         raise ex or RuntimeError()
 
     @staticmethod
-    def timestamp():
+    def timestamp() -> float:
         return datetime.utcnow().timestamp()
 
     @staticmethod
-    def timestamp_to_str(timestamp):
+    def timestamp_to_str(timestamp) -> str:
         return datetime.utcfromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
 
     @staticmethod
@@ -382,8 +389,10 @@ class Utils:
             return int(match.group(1))
         return None
 
+    # XXX: this will return all the messages from the runner start
+    # It should use `--since time` to check the job start time
     @staticmethod
-    def is_killed_with_oom():
+    def is_killed_with_oom() -> bool:
         if Shell.check(
             "sudo dmesg -T | grep -q -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE'"
         ):

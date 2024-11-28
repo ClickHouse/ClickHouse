@@ -1,13 +1,15 @@
 import copy
 import importlib.util
 from pathlib import Path
+from typing import Optional
 
 from . import Job
 from .settings import Settings
 from .utils import Utils
+from .workflow import Workflows
 
 
-def _get_workflows(name=None, file=None):
+def _get_workflows(name: Optional[str] = None, file: Optional[str] = None) -> Workflows:
     """
     Gets user's workflow configs
     """
