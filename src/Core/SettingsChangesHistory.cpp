@@ -60,6 +60,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
 {
     {"24.12",
         {
+            {"use_async_executor_for_materialized_views", false, false, "New setting."},
         }
     },
     {"24.11",
