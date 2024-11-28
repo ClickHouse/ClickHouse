@@ -283,8 +283,9 @@ EOF
         exit 1
     fi
 
-    FUZZER_ARGS_SPLIT=($FUZZER_ARGS)
+    FUZZER_ARGS_SPLIT=("$FUZZER_ARGS")
 
+    # shellcheck disable=SC2068
     timeout -s TERM --preserve-status 30m clickhouse-client \
         --max_memory_usage_in_client=1000000000 \
         --receive_timeout=10 \
