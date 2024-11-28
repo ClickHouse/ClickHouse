@@ -4,7 +4,7 @@ DROP TABLE IF EXISTS t_primary_index_cache;
 
 CREATE TABLE t_primary_index_cache (a UInt64, b UInt64)
 ENGINE = MergeTree ORDER BY a PARTITION BY a % 2
-SETTINGS use_primary_key_cache = 1, prewarm_primary_key_cache = 0, index_granularity = 64, index_granularity_bytes = '10M', min_bytes_for_wide_part = 0;
+SETTINGS use_primary_key_cache = 1, prewarm_primary_key_cache = 0, index_granularity = 64, index_granularity_bytes = '10M', min_bytes_for_wide_part = 0, primary_key_compress_in_memory = 0;
 
 SYSTEM DROP PRIMARY INDEX CACHE;
 
