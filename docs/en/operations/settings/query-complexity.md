@@ -124,7 +124,7 @@ Cloud default value: half the memory amount per replica.
 
 ## max_bytes_ratio_before_external_group_by {#settings-max_bytes_ratio_before_external_group_by}
 
-The ratio of available memory that is allowed for `GROUP BY`, once reached, uses external sort.
+The ratio of available memory that is allowed for `GROUP BY`, once reached, uses external memory for aggregation.
 
 For example, if set to `0.6`, `GROUP BY` will allow to use `60%` of available memory (to server/user/merges) at the beginning of the execution, after that, it will start using external aggregation.
 
