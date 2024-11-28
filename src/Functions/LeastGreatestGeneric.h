@@ -54,11 +54,10 @@ private:
             return arguments[0].column;
 
         Columns converted_columns;
-        /// Remove the only null column, not need to compare
         for (size_t arg = 0; arg < num_arguments; ++arg)
         {
             if (arguments[arg].type->onlyNull())
-                continue;
+                continue; /// ignore NULL arguments
             auto converted_col = castColumn(arguments[arg], result_type)->convertToFullColumnIfConst();
             converted_columns.emplace_back(converted_col);
         }
