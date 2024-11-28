@@ -86,7 +86,7 @@
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Common/Scheduler/Nodes/registerSchedulerNodes.h>
-#include <Common/Scheduler/Nodes/registerResourceManagers.h>
+#include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Server/HTTPHandlerFactory.h>
 #include "MetricsTransmitter.h"
@@ -166,8 +166,10 @@ namespace MergeTreeSetting
 
 namespace ServerSetting
 {
+    extern const ServerSettingsUInt32 allow_feature_tier;
     extern const ServerSettingsUInt32 asynchronous_heavy_metrics_update_period_s;
     extern const ServerSettingsUInt32 asynchronous_metrics_update_period_s;
+    extern const ServerSettingsBool asynchronous_metrics_enable_heavy_metrics;
     extern const ServerSettingsBool async_insert_queue_flush_on_shutdown;
     extern const ServerSettingsUInt64 async_insert_threads;
     extern const ServerSettingsBool async_load_databases;
@@ -206,7 +208,6 @@ namespace ServerSetting
     extern const ServerSettingsBool format_alter_operations_with_parentheses;
     extern const ServerSettingsUInt64 global_profiler_cpu_time_period_ns;
     extern const ServerSettingsUInt64 global_profiler_real_time_period_ns;
-    extern const ServerSettingsDouble gwp_asan_force_sample_probability;
     extern const ServerSettingsUInt64 http_connections_soft_limit;
     extern const ServerSettingsUInt64 http_connections_store_limit;
     extern const ServerSettingsUInt64 http_connections_warn_limit;
@@ -279,7 +280,9 @@ namespace ServerSetting
     extern const ServerSettingsString uncompressed_cache_policy;
     extern const ServerSettingsUInt64 uncompressed_cache_size;
     extern const ServerSettingsDouble uncompressed_cache_size_ratio;
-    extern const ServerSettingsBool use_legacy_mongodb_integration;
+    extern const ServerSettingsString primary_index_cache_policy;
+    extern const ServerSettingsUInt64 primary_index_cache_size;
+    extern const ServerSettingsDouble primary_index_cache_size_ratio;
 }
 
 }
@@ -343,7 +346,7 @@ int mainEntryClickHouseServer(int argc, char ** argv)
     {
         std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
         auto code = DB::getCurrentExceptionCode();
-        return code ? code : 1;
+        return static_cast<UInt8>(code) ? code : 1;
     }
 }
 
@@ -621,7 +624,7 @@ void sanityChecks(Server & server)
 #if defined(OS_LINUX)
     try
     {
-        const std::unordered_set<std::string> fastClockSources = {
+        const std::unordered_set<std::string> fast_clock_sources = {
             // ARM clock
             "arch_sys_counter",
             // KVM guest clock
@@ -630,7 +633,7 @@ void sanityChecks(Server & server)
             "tsc",
         };
         const char * filename = "/sys/devices/system/clocksource/clocksource0/current_clocksource";
-        if (!fastClockSources.contains(readLine(filename)))
+        if (!fast_clock_sources.contains(readLine(filename)))
             server.context()->addWarningMessage("Linux is not using a fast clock source. Performance can be degraded. Check " + String(filename));
     }
     catch (...) // NOLINT(bugprone-empty-catch)
@@ -912,15 +915,14 @@ try
     registerInterpreters();
     registerFunctions();
     registerAggregateFunctions();
-    registerTableFunctions(server_settings[ServerSetting::use_legacy_mongodb_integration]);
+    registerTableFunctions();
     registerDatabases();
-    registerStorages(server_settings[ServerSetting::use_legacy_mongodb_integration]);
-    registerDictionaries(server_settings[ServerSetting::use_legacy_mongodb_integration]);
+    registerStorages();
+    registerDictionaries();
     registerDisks(/* global_skip_access_check= */ false);
     registerFormats();
     registerRemoteFileMetadatas();
     registerSchedulerNodes();
-    registerResourceManagers();
 
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::getVersionRevision());
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
@@ -1061,6 +1063,7 @@ try
     ServerAsynchronousMetrics async_metrics(
         global_context,
         server_settings[ServerSetting::asynchronous_metrics_update_period_s],
+        server_settings[ServerSetting::asynchronous_metrics_enable_heavy_metrics],
         server_settings[ServerSetting::asynchronous_heavy_metrics_update_period_s],
         [&]() -> std::vector<ProtocolServerMetrics>
         {
@@ -1353,9 +1356,11 @@ try
     }
 
     FailPointInjection::enableFromGlobalConfig(config());
+#endif
 
     memory_worker.start();
 
+#if defined(OS_LINUX)
     int default_oom_score = 0;
 
 #if !defined(NDEBUG)
@@ -1559,6 +1564,16 @@ try
         LOG_INFO(log, "Lowered mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(mark_cache_size));
     }
     global_context->setMarkCache(mark_cache_policy, mark_cache_size, mark_cache_size_ratio);
+
+    String primary_index_cache_policy = server_settings[ServerSetting::primary_index_cache_policy];
+    size_t primary_index_cache_size = server_settings[ServerSetting::primary_index_cache_size];
+    double primary_index_cache_size_ratio = server_settings[ServerSetting::primary_index_cache_size_ratio];
+    if (primary_index_cache_size > max_cache_size)
+    {
+        primary_index_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered primary index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(primary_index_cache_size));
+    }
+    global_context->setPrimaryIndexCache(primary_index_cache_policy, primary_index_cache_size, primary_index_cache_size_ratio);
 
     size_t page_cache_size = server_settings[ServerSetting::page_cache_size];
     if (page_cache_size != 0)
@@ -1769,6 +1784,7 @@ try
             global_context->setMaxDictionaryNumToWarn(new_server_settings[ServerSetting::max_dictionary_num_to_warn]);
             global_context->setMaxDatabaseNumToWarn(new_server_settings[ServerSetting::max_database_num_to_warn]);
             global_context->setMaxPartNumToWarn(new_server_settings[ServerSetting::max_part_num_to_warn]);
+            global_context->getAccessControl().setAllowTierSettings(new_server_settings[ServerSetting::allow_feature_tier]);
             /// Only for system.server_settings
             global_context->setConfigReloaderInterval(new_server_settings[ServerSetting::config_reload_interval_ms]);
 
@@ -1893,6 +1909,7 @@ try
 
             global_context->updateUncompressedCacheConfiguration(*config);
             global_context->updateMarkCacheConfiguration(*config);
+            global_context->updatePrimaryIndexCacheConfiguration(*config);
             global_context->updateIndexUncompressedCacheConfiguration(*config);
             global_context->updateIndexMarkCacheConfiguration(*config);
             global_context->updateMMappedFileCacheConfiguration(*config);
@@ -1927,10 +1944,6 @@ try
 
             if (global_context->isServerCompletelyStarted())
                 CannotAllocateThreadFaultInjector::setFaultProbability(new_server_settings[ServerSetting::cannot_allocate_thread_fault_injection_probability]);
-
-#if USE_GWP_ASAN
-            GWPAsan::setForceSampleProbability(new_server_settings[ServerSetting::gwp_asan_force_sample_probability]);
-#endif
 
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
 
@@ -2163,9 +2176,12 @@ try
 
     /// Check sanity of MergeTreeSettings on server startup
     {
+        /// All settings can be changed in the global config
+        bool allowed_experimental = true;
+        bool allowed_beta = true;
         size_t background_pool_tasks = global_context->getMergeMutateExecutor()->getMaxTasksCount();
-        global_context->getMergeTreeSettings().sanityCheck(background_pool_tasks);
-        global_context->getReplicatedMergeTreeSettings().sanityCheck(background_pool_tasks);
+        global_context->getMergeTreeSettings().sanityCheck(background_pool_tasks, allowed_experimental, allowed_beta);
+        global_context->getReplicatedMergeTreeSettings().sanityCheck(background_pool_tasks, allowed_experimental, allowed_beta);
     }
     /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
     CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
@@ -2256,6 +2272,8 @@ try
         database_catalog.assertDatabaseExists(default_database);
         /// Load user-defined SQL functions.
         global_context->getUserDefinedSQLObjectsStorage().loadObjects();
+        /// Load WORKLOADs and RESOURCEs.
+        global_context->getWorkloadEntityStorage().loadEntities();
 
         global_context->getRefreshSet().setRefreshesStopped(false);
     }
@@ -2343,6 +2361,7 @@ try
 
 #if USE_SSL
         CertificateReloader::instance().tryLoad(config());
+        CertificateReloader::instance().tryLoadClient(config());
 #endif
 
         /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
@@ -2438,7 +2457,6 @@ try
 
 #if USE_GWP_ASAN
         GWPAsan::initFinished();
-        GWPAsan::setForceSampleProbability(server_settings[ServerSetting::gwp_asan_force_sample_probability]);
 #endif
 
         try
@@ -2537,7 +2555,7 @@ catch (...)
     /// Poco does not provide stacktrace.
     tryLogCurrentException("Application");
     auto code = getCurrentExceptionCode();
-    return code ? code : -1;
+    return static_cast<UInt8>(code) ? code : -1;
 }
 
 std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(

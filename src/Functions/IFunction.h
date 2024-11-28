@@ -7,7 +7,6 @@
 #include <Core/Names.h>
 #include <Core/ValuesWithType.h>
 #include <DataTypes/IDataType.h>
-#include <Functions/FunctionHelpers.h>
 #include <Common/Exception.h>
 
 #include "config.h"
@@ -137,11 +136,7 @@ public:
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type,
         size_t input_rows_count,
-        bool dry_run = false) const
-    {
-        checkFunctionArgumentSizes(arguments, input_rows_count);
-        return prepare(arguments)->execute(arguments, result_type, input_rows_count, dry_run);
-    }
+        bool dry_run) const;
 
     /// Get the main function name.
     virtual String getName() const = 0;
@@ -184,7 +179,7 @@ public:
 
     /** If function isSuitableForConstantFolding then, this method will be called during query analysis
       * if some arguments are constants. For example logical functions (AndFunction, OrFunction) can
-      * return they result based on some constant arguments.
+      * return the result based on some constant arguments.
       * Arguments are passed without modifications, useDefaultImplementationForNulls, useDefaultImplementationForNothing,
       * useDefaultImplementationForConstants, useDefaultImplementationForLowCardinality are not applied.
       */

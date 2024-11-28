@@ -49,7 +49,7 @@ std::string HDFSObjectStorage::extractObjectKeyFromURL(const StoredObject & obje
     if (path.starts_with(url))
         path = path.substr(url.size());
     if (path.starts_with("/"))
-        path.substr(1);
+        path = path.substr(1);
     return path;
 }
 
@@ -103,15 +103,15 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
             ErrorCodes::UNSUPPORTED_METHOD,
             "HDFS API doesn't support custom attributes/metadata for stored objects");
 
-    std::string path = object.remote_path;
-    if (path.starts_with("/"))
-        path = path.substr(1);
-    if (!path.starts_with(url))
-        path = fs::path(url) / path;
-
+    auto path = extractObjectKeyFromURL(object);
     /// Single O_WRONLY in libhdfs adds O_TRUNC
     return std::make_unique<WriteBufferFromHDFS>(
-        path, config, settings->replication, patchSettings(write_settings), buf_size,
+        url_without_path,
+        fs::path(data_directory) / path,
+        config,
+        settings->replication,
+        patchSettings(write_settings),
+        buf_size,
         mode == WriteMode::Rewrite ? O_WRONLY : O_WRONLY | O_APPEND);
 }
 

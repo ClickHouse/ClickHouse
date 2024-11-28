@@ -286,6 +286,9 @@ public:
             SUFFIX, /// Write statistics in suffix.
         };
         ObjectAndDynamicStatisticsMode object_and_dynamic_write_statistics = ObjectAndDynamicStatisticsMode::NONE;
+
+        /// Use old V1 serialization of JSON and Dynamic types. Needed for compatibility.
+        bool use_v1_object_and_dynamic_serialization = false;
     };
 
     struct DeserializeBinaryBulkSettings
@@ -462,6 +465,8 @@ public:
 
     /// Returns true if stream with specified path corresponds to dynamic subcolumn.
     static bool isDynamicSubcolumn(const SubstreamPath & path, size_t prefix_len);
+
+    static bool isLowCardinalityDictionarySubcolumn(const SubstreamPath & path);
 
 protected:
     template <typename State, typename StatePtr>

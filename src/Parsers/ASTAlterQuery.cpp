@@ -70,8 +70,12 @@ ASTPtr ASTAlterCommand::clone() const
 
 void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    scope_guard closing_bracket_guard;
     if (format_alter_commands_with_parentheses)
+    {
         settings.ostr << "(";
+        closing_bracket_guard = make_scope_guard(std::function<void(void)>([&settings]() { settings.ostr << ")"; }));
+    }
 
     if (type == ASTAlterCommand::ADD_COLUMN)
     {
@@ -498,9 +502,6 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
     }
     else
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected type of ALTER");
-
-    if (format_alter_commands_with_parentheses)
-        settings.ostr << ")";
 }
 
 void ASTAlterCommand::forEachPointerToChild(std::function<void(void**)> f)

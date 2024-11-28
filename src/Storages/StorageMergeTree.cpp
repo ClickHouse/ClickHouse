@@ -38,6 +38,7 @@
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/escapeForFileName.h>
+#include <IO/SharedThreadPools.h>
 
 
 namespace DB
@@ -154,6 +155,11 @@ StorageMergeTree::StorageMergeTree(
 
     loadMutations();
     loadDeduplicationLog();
+
+    prewarmCaches(
+        getActivePartsLoadingThreadPool().get(),
+        getMarkCacheToPrewarm(),
+        getPrimaryIndexCacheToPrewarm());
 }
 
 
@@ -274,9 +280,7 @@ void StorageMergeTree::read(
     }
 
     const bool enable_parallel_reading = local_context->canUseParallelReplicasOnFollower()
-        && local_context->getSettingsRef()[Setting::parallel_replicas_for_non_replicated_merge_tree]
-        && (!local_context->getSettingsRef()[Setting::allow_experimental_analyzer]
-            || query_info.current_table_chosen_for_reading_with_parallel_replicas);
+        && local_context->getSettingsRef()[Setting::parallel_replicas_for_non_replicated_merge_tree];
 
     if (auto plan = reader.read(
             column_names,
