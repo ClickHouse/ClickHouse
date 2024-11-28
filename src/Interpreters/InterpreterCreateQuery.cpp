@@ -73,6 +73,7 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabaseOnDisk.h>
+#include <Databases/DatabaseOrdinary.h>
 #include <Databases/TablesLoader.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/NormalizeAndEvaluateConstantsVisitor.h>
@@ -1528,6 +1529,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         FunctionNameNormalizer::visit(query.get());
         auto create_query = query->as<ASTCreateQuery &>();
 
+        /// Set replicated or not replicated MergeTree engine in metadata and query
+        if (create.attach_as_replicated.has_value())
+            convertMergeTreeTableIfPossible(create_query, database, create.attach_as_replicated.value());
+
         if (!create.is_dictionary && create_query.is_dictionary)
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                 "Cannot ATTACH TABLE {}.{}, it is a Dictionary",
@@ -1550,6 +1555,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     }
 
     /// TODO throw exception if !create.attach_short_syntax && !create.attach_from_path && !internal
+    if (!create.attach_short_syntax && create.attach_as_replicated.has_value())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Attaching table as [not] replicated is supported only for short attach queries");
 
     if (create.attach_from_path)
     {
@@ -2256,6 +2264,11 @@ BlockIO InterpreterCreateQuery::execute()
     bool is_create_database = create.database && !create.table;
     if (!create.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
+        if (create.attach_as_replicated.has_value())
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "ATTACH AS [NOT] REPLICATED is not supported for ON CLUSTER queries");
+
         auto on_cluster_version = getContext()->getSettingsRef()[Setting::distributed_ddl_entry_format_version];
         if (is_create_database || on_cluster_version < DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION)
             return executeQueryOnCluster(create);
@@ -2417,6 +2430,44 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextPtr context_, ASTSQ
 
     if (sql_security.type == SQLSecurityType::NONE && !skip_check_permissions)
         context_->checkAccess(AccessType::ALLOW_SQL_SECURITY_NONE);
+}
+
+void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & create, DatabasePtr database, bool to_replicated)
+{
+    /// Check engine can be changed
+    if (database->getEngineName() != "Atomic")
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Table engine conversion to replicated is supported only for Atomic databases");
+
+    if (!create.storage || !create.storage->engine || create.storage->engine->name.find("MergeTree") == std::string::npos)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Table engine conversion is supported only for MergeTree family engines");
+
+    String engine_name = create.storage->engine->name;
+    if (engine_name.starts_with("Replicated"))
+    {
+        if (to_replicated)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Can not attach table as replicated, table is already replicated");
+    }
+    else if (!to_replicated)
+       throw Exception(ErrorCodes::INCORRECT_QUERY, "Can not attach table as not replicated, table is already not replicated");
+
+    /// Set new engine
+    DatabaseOrdinary::setMergeTreeEngine(create, getContext(), to_replicated);
+
+    /// Save new metadata
+    String table_metadata_path = database->getObjectMetadataPath(create.getTable());
+    String table_metadata_tmp_path = table_metadata_path + ".tmp";
+    String statement = DB::getObjectDefinitionFromCreateQuery(create.clone());
+    {
+        WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
+        writeString(statement, out);
+        out.next();
+        if (getContext()->getSettingsRef()[Setting::fsync_metadata])
+            out.sync();
+        out.close();
+    }
+    fs::rename(table_metadata_tmp_path, table_metadata_path);
 }
 
 void registerInterpreterCreateQuery(InterpreterFactory & factory)

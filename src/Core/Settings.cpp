@@ -1924,13 +1924,6 @@ See also:
 For single JOIN in case of identifier ambiguity prefer left table
 )", IMPORTANT) \
     \
-DECLARE(BoolAuto, query_plan_join_swap_table, Field("auto"), R"(
-    Determine which side of the join should be the build table (also called inner, the one inserted into the hash table for a hash join) in the query plan. This setting is supported only for `ALL` join strictness with the `JOIN ON` clause. Possible values are:
-    - 'auto': Let the planner decide which table to use as the build table.
-    - 'false': Never swap tables (the right table is the build table).
-    - 'true': Always swap tables (the left table is the build table).
-)", 0) \
-    \
     DECLARE(UInt64, preferred_block_size_bytes, 1000000, R"(
 This setting adjusts the data block size for query processing and represents additional fine-tuning to the more rough 'max_block_size' setting. If the columns are large and with 'max_block_size' rows the block size is likely to be larger than the specified amount of bytes, its size will be lowered for better CPU cache locality.
 )", 0) \
@@ -2468,7 +2461,7 @@ Possible values:
 
 - default
 
- This is the equivalent of `hash` or `direct`, if possible (same as `direct,hash`)
+ This is the equivalent of `hash`, `parallel_hash` or `direct`, if possible (same as `direct,parallel_hash,hash`)
 
 - grace_hash
 
@@ -2482,11 +2475,13 @@ Possible values:
 
  [Hash join algorithm](https://en.wikipedia.org/wiki/Hash_join) is used. The most generic implementation that supports all combinations of kind and strictness and multiple join keys that are combined with `OR` in the `JOIN ON` section.
 
+ When using the `hash` algorithm, the right part of `JOIN` is uploaded into RAM.
+
 - parallel_hash
 
  A variation of `hash` join that splits the data into buckets and builds several hashtables instead of one concurrently to speed up this process.
 
- When using the `hash` algorithm, the right part of `JOIN` is uploaded into RAM.
+ When using the `parallel_hash` algorithm, the right part of `JOIN` is uploaded into RAM.
 
 - partial_merge
 
@@ -5528,6 +5523,8 @@ The default value is `CURRENT_USER`.
     DECLARE(UInt64, cache_warmer_threads, 4, R"(
 Only available in ClickHouse Cloud. Number of background threads for speculatively downloading new data parts into file cache, when cache_populated_by_fetch is enabled. Zero to disable.
 )", 0) \
+    DECLARE(Bool, use_async_executor_for_materialized_views, false, R"(
+Use async and potentially multithreaded execution of materialized view query, can speedup views processing during INSERT, but also consume more memory.)", 0) \
     DECLARE(Int64, ignore_cold_parts_seconds, 0, R"(
 Only available in ClickHouse Cloud. Exclude new data parts from SELECT queries until they're either pre-warmed (see cache_populated_by_fetch) or this many seconds old. Only for Replicated-/SharedMergeTree.
 )", 0) \
@@ -5731,7 +5728,7 @@ Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting
 If enabled, only allow identifiers containing alphanumeric characters and underscores.
 )", 0) \
     DECLARE(Bool, mongodb_throw_on_unsupported_query, true, R"(
-If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally. This option does not apply to the legacy implementation or when 'allow_experimental_analyzer=0'.
+If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally. This option is not applied when 'enable_analyzer=0'.
 )", 0) \
     DECLARE(Bool, implicit_select, false, R"(
 Allow writing simple SELECT queries without the leading SELECT keyword, which makes it simple for calculator-style usage, e.g. `1 + 2` becomes a valid query.
@@ -5741,6 +5738,16 @@ In `clickhouse-local` it is enabled by default and can be explicitly disabled.
     DECLARE(Bool, push_external_roles_in_interserver_queries, true, R"(
 Enable pushing user roles from originator to other nodes while performing a query.
 )", 0) \
+    \
+    DECLARE(Bool, allow_experimental_variant_type, false, R"(
+Allows creation of [Variant](../../sql-reference/data-types/variant.md) data type.
+)", BETA) ALIAS(enable_variant_type) \
+    DECLARE(Bool, allow_experimental_dynamic_type, false, R"(
+Allows creation of [Dynamic](../../sql-reference/data-types/dynamic.md) data type.
+)", BETA) ALIAS(enable_dynamic_type) \
+    DECLARE(Bool, allow_experimental_json_type, false, R"(
+Allows creation of [JSON](../../sql-reference/data-types/newjson.md) data type.
+)", BETA) ALIAS(enable_json_type) \
     \
     \
     /* ####################################################### */ \
@@ -5776,15 +5783,6 @@ Possible values:
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_vector_similarity_index, false, R"(
 Allow experimental vector similarity index
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_variant_type, false, R"(
-Allows creation of experimental [Variant](../../sql-reference/data-types/variant.md).
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_dynamic_type, false, R"(
-Allow Dynamic data type
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_json_type, false, R"(
-Allow JSON data type
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_codecs, false, R"(
 If it is set to true, allow to specify experimental compression codecs (but we don't have those yet and this option does nothing).
