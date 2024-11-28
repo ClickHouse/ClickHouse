@@ -170,7 +170,7 @@ struct CountSubstringsImpl
             size_t needle_size = needle_offsets[i] - prev_needle_offset - 1;
             size_t haystack_size = haystack_offsets[i] - prev_haystack_offset - 1;
 
-            auto start = start_pos != nullptr ? std::max(start_pos->getInt(i), Int64(1)) : UInt64(1);
+            auto start = start_pos != nullptr ? std::max(start_pos->getInt(i), Int64(1)) : Int64(1);
 
             res[i] = 0;
             if (start > haystack_size + 1)
@@ -226,7 +226,7 @@ struct CountSubstringsImpl
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             res[i] = 0;
-            auto start = start_pos != nullptr ? std::max(start_pos->getInt(i), Int64(1)) : UInt64(1);
+            auto start = start_pos != nullptr ? std::max(start_pos->getInt(i), Int64(1)) : Int64(1);
             if (start <= haystack.size() + 1)
             {
                 const char * needle_beg = reinterpret_cast<const char *>(&needle_data[prev_needle_offset]);
