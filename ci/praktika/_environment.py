@@ -5,9 +5,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, List, Type
 
-from praktika import Workflow
-from praktika.settings import Settings
-from praktika.utils import MetaClasses, T
+from . import Workflow
+from .settings import Settings
+from .utils import MetaClasses, T
 
 
 @dataclasses.dataclass

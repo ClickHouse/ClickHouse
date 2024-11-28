@@ -119,7 +119,7 @@ struct ChosenCompression
     /// The minimal element in block that can be used for Delta compression.
     U delta_base = 0;
 
-    /// Number of bits requried to store all deltas in block for Delta compression.
+    /// Number of bits required to store max delta in block for Delta compression.
     UInt8 delta_bit_size = 0;
 };
 

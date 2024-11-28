@@ -88,7 +88,7 @@ protected:
         const auto & part_name_column = StorageMergeTreeIndex::part_name_column;
         const auto & mark_number_column = StorageMergeTreeIndex::mark_number_column;
         const auto & rows_in_granule_column = StorageMergeTreeIndex::rows_in_granule_column;
-        const auto index = part->getIndex();
+        IMergeTreeDataPart::IndexPtr index_ptr;
 
         Columns result_columns(num_columns);
         for (size_t pos = 0; pos < num_columns; ++pos)
@@ -98,13 +98,16 @@ protected:
 
             if (index_header.has(column_name))
             {
+                if (!index_ptr)
+                    index_ptr = part->getIndex();
+
                 size_t index_position = index_header.getPositionByName(column_name);
 
                 /// Some of the columns from suffix of primary index may be not loaded
                 /// according to setting 'primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns'.
-                if (index_position < index->getNumColumns())
+                if (index_position < index_ptr->getNumColumns())
                 {
-                    result_columns[pos] = convertIndexColumnToFull(*index, *column_type, index_position);
+                    result_columns[pos] = convertIndexColumnToFull(*index_ptr, *column_type, index_position);
                 }
                 else
                 {

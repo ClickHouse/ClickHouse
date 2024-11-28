@@ -1,19 +1,19 @@
 import sys
 from typing import Dict
 
-from praktika import Job, Workflow
-from praktika._environment import _Environment
-from praktika.cidb import CIDB
-from praktika.digest import Digest
-from praktika.docker import Docker
-from praktika.gh import GH
-from praktika.hook_cache import CacheRunnerHooks
-from praktika.hook_html import HtmlRunnerHooks
-from praktika.mangle import _get_workflows
-from praktika.result import Result, ResultInfo, _ResultS3
-from praktika.runtime import RunConfig
-from praktika.settings import Settings
-from praktika.utils import Shell, Utils
+from . import Job, Workflow
+from ._environment import _Environment
+from .cidb import CIDB
+from .digest import Digest
+from .docker import Docker
+from .gh import GH
+from .hook_cache import CacheRunnerHooks
+from .hook_html import HtmlRunnerHooks
+from .mangle import _get_workflows
+from .result import Result, ResultInfo, _ResultS3
+from .runtime import RunConfig
+from .settings import Settings
+from .utils import Shell, Utils
 
 assert Settings.CI_CONFIG_RUNS_ON
 
