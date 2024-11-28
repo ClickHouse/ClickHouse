@@ -152,21 +152,18 @@ void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, Context
     create_query.storage->set(create_query.storage->engine, engine->clone());
 }
 
-String DatabaseOrdinary::getConvertToReplicatedFlagPath(const String & name, const StoragePolicyPtr storage_policy, bool tableStarted)
+String DatabaseOrdinary::getConvertToReplicatedFlagPath(const String & name, bool tableStarted)
 {
     fs::path data_path;
-    if (!storage_policy->getDisks().empty())
-        data_path = storage_policy->getDisks()[0]->getPath();
-
     if (!tableStarted)
     {
         auto create_query = tryGetCreateTableQuery(name, getContext());
-        data_path = data_path / getTableDataPath(create_query->as<ASTCreateQuery &>());
+        data_path = getTableDataPath(create_query->as<ASTCreateQuery &>());
     }
     else
-        data_path = data_path / getTableDataPath(name);
+        data_path = getTableDataPath(name);
 
-    return (data_path / CONVERT_TO_REPLICATED_FLAG_NAME).string();
+    return (data_path / CONVERT_TO_REPLICATED_FLAG_NAME);
 }
 
 void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const QualifiedTableName & qualified_name, const String & file_name)
@@ -187,9 +184,11 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
         if (Field * policy_setting = query_settings->changes.tryGet("storage_policy"))
             policy = getContext()->getStoragePolicy(policy_setting->safeGet<String>());
 
-    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(qualified_name.table, policy, false);
+    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(qualified_name.table, false);
 
-    if (!db_disk->existsFile(convert_to_replicated_flag_path))
+    auto storage_disks = policy->getDisks();
+    auto checking_disk = storage_disks.empty() ? db_disk : storage_disks[0];
+    if (!checking_disk->existsFile(convert_to_replicated_flag_path))
         return;
 
     if (getUUID() == UUIDHelpers::Nil)
@@ -375,9 +374,11 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
     if (!rmt)
         return;
 
-    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(name.table, table->getStoragePolicy(), true);
+    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(name.table, true);
 
-    if (!db_disk->existsFile(convert_to_replicated_flag_path))
+    auto storage_disks = table->getStoragePolicy()->getDisks();
+    auto checking_disk = storage_disks.empty() ? db_disk : storage_disks[0];
+    if (!checking_disk->existsFile(convert_to_replicated_flag_path))
         return;
 
     (void)db_disk->removeFileIfExists(convert_to_replicated_flag_path);
