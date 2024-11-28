@@ -1150,10 +1150,11 @@ std::shared_ptr<IDisk> Context::getDatabaseDisk() const
         if (it == disk_map.end())
             throw Exception(ErrorCodes::UNKNOWN_DISK, "No disk {}", backQuote(disk_name));
 
+        chassert(it->second);
+
+        LOG_INFO(shared->log, "Database disk name: {}, path: {}", disk_name, it->second->getPath());
         return it->second;
     }();
-
-    chassert(target_db_disk);
 
     std::lock_guard lock(shared->mutex);
     if (shared->db_disk)
