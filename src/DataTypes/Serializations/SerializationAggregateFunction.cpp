@@ -62,7 +62,7 @@ void SerializationAggregateFunction::serializeBinaryBulk(const IColumn & column,
 
     size_t end = vec.size();
     if (limit)
-        end = std::min(end, limit);
+        end = std::min(end, offset + limit);
 
     function->serializeBatch(vec, offset, end, ostr, version);
 }
