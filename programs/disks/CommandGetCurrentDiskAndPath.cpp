@@ -18,7 +18,7 @@ public:
 
     void executeImpl(const CommandLineOptions &, DisksClient & client) override
     {
-        auto disk = client.getCurrentDiskWithPath();
+        const auto & disk = client.getCurrentDiskWithPath();
         std::cout << "Disk: " << disk.getDisk()->getName() << "\nPath: " << disk.getCurrentPath() << std::endl;
     }
 };

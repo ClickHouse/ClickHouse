@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include "Analyzer/IQueryTreeNode.h"
 
 namespace DB
 {
@@ -180,43 +181,50 @@ void insertIfNotPresentInSet(QueryTreeNodePtrWithHashSet& set, QueryTreeNodes &n
 }
 
 // Returns the flattened AND/OR node if the passed-in node can be flattened. Doesn't modify the passed-in node.
-std::shared_ptr<FunctionNode> getFlattenedAndOrOr(const FunctionNode & node, const ContextPtr & context)
+std::shared_ptr<FunctionNode> getFlattenedLogicalExpression(const FunctionNode & node, const ContextPtr & context)
 {
     const auto & function_name = node.getFunctionName();
     if (function_name != "or" && function_name != "and")
         return nullptr;
 
     const auto & arguments = node.getArguments().getNodes();
-    QueryTreeNodePtrWithHashMap<QueryTreeNodes> arguments_to_replace;
+    QueryTreeNodes new_arguments;
+
+    bool flattened_anything = false;
 
     for (const auto & argument : arguments)
     {
         auto * maybe_function = argument->as<FunctionNode>();
+        // If the nested function is not the same, just use it as is
         if (!maybe_function || maybe_function->getFunctionName() != function_name)
+        {
+            new_arguments.push_back(argument);
             continue;
+        }
 
-        auto maybe_flattened = getFlattenedAndOrOr(*maybe_function, context);
+        flattened_anything = true;
+
+        // If the nested function is the same, just lift the its or its flattened form's arguments
+        auto maybe_flattened = getFlattenedLogicalExpression(*maybe_function, context);
         if (maybe_flattened)
-            arguments_to_replace.emplace(argument, std::move(maybe_flattened->getArguments().getNodes()));
+        {
+            for (auto & flattened_argument : maybe_flattened->getArguments().getNodes())
+                new_arguments.emplace_back(std::move(flattened_argument));
+        }
         else
-            arguments_to_replace.emplace(argument, maybe_function->getArguments().getNodes());
+        {
+            for (auto & nested_argument : maybe_function->getArguments().getNodes())
+                new_arguments.push_back(nested_argument);
+        }
     }
 
-    if (arguments_to_replace.empty())
-        return nullptr; // nothing to flatten
+    // Nothing has changed, let's no create a flattened node
+    if (!flattened_anything && new_arguments.size() == arguments.size())
+        return {};
 
     auto flattened = std::make_shared<FunctionNode>(function_name);
 
-    auto & new_arguments = flattened->getArguments().getNodes();
-    new_arguments.reserve(arguments.size());
-    for (const auto & argument : arguments)
-    {
-        if (auto it = arguments_to_replace.find(argument); it != arguments_to_replace.end())
-            new_arguments.insert(
-                new_arguments.end(), std::make_move_iterator(it->second.begin()), std::make_move_iterator(it->second.end()));
-        else
-            new_arguments.push_back(argument);
-    }
+    flattened->getArguments().getNodes() = std::move(new_arguments);
 
     auto function_resolver = FunctionFactory::instance().get(function_name, context);
     flattened->resolveAsFunction(function_resolver);
@@ -252,7 +260,7 @@ std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressions(cons
     if (!or_node || or_node->getFunctionName() != "or")
         return {}; // the optimization can only be done on or nodes
 
-    auto flattened_or_node = getFlattenedAndOrOr(*or_node, context);
+    auto flattened_or_node = getFlattenedLogicalExpression(*or_node, context);
     if (flattened_or_node)
         or_node = flattened_or_node.get();
 
@@ -265,18 +273,13 @@ std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressions(cons
     QueryTreeNodes common_exprs;
     QueryTreeNodePtrWithHashMap<QueryTreeNodePtr> flattened_ands;
 
-    auto insert_possible_new_common_expr = [&common_exprs_set, &common_exprs](QueryTreeNodePtr node_to_insert)
-    {
-        insertIfNotPresentInSet(common_exprs_set, common_exprs, std::move(node_to_insert));
-    };
-
     for (auto & maybe_and_node : or_argument_nodes)
     {
         auto * and_node = maybe_and_node->as<FunctionNode>();
         if (!and_node || and_node->getFunctionName() != "and")
             return {}; // one of the nodes is not an "AND", thus there is no common expression to extract
 
-        auto flattened_and_node = getFlattenedAndOrOr(*and_node, context);
+        auto flattened_and_node = getFlattenedLogicalExpression(*and_node, context);
         if (flattened_and_node)
         {
             flattened_ands.emplace(maybe_and_node, flattened_and_node);
@@ -288,8 +291,9 @@ std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressions(cons
             auto & current_arguments = and_node->getArguments().getNodes();
             common_exprs.reserve(current_arguments.size());
 
-            for (auto & or_argument : current_arguments)
-                insert_possible_new_common_expr(or_argument);
+            for (auto & and_argument : current_arguments)
+                insertIfNotPresentInSet(common_exprs_set, common_exprs, and_argument);
+
             first_argument = false;
         }
         else
@@ -297,14 +301,10 @@ std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressions(cons
             QueryTreeNodePtrWithHashSet new_common_exprs_set;
             QueryTreeNodes new_common_exprs;
 
-
-            for (auto & or_argument : and_node->getArguments())
+            for (auto & and_argument : and_node->getArguments())
             {
-                if (auto ptr_with_hash = QueryTreeNodePtrWithHash{or_argument}; common_exprs_set.contains(ptr_with_hash))
-                 {
-                    new_common_exprs.push_back(or_argument);
-                    new_common_exprs_set.insert(std::move(ptr_with_hash));
-                 }
+                if (common_exprs_set.contains(and_argument))
+                    insertIfNotPresentInSet(new_common_exprs_set, new_common_exprs, and_argument);
             }
 
             common_exprs_set = std::move(new_common_exprs_set);
@@ -326,39 +326,36 @@ std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressions(cons
         if (auto it = flattened_ands.find(or_argument); it != flattened_ands.end())
             or_argument = it->second;
 
-        auto & and_node = or_argument->as<FunctionNode &>();
-        auto & and_arguments = and_node.getArguments().getNodes();
-        and_arguments.erase(
-            std::remove_if(
-                and_arguments.begin(),
-                and_arguments.end(),
-                [&common_exprs_set](const QueryTreeNodePtr & ptr)
-                {
-                    QueryTreeNodeWithHash ptr_with_hash{ptr};
-                    return common_exprs_set.contains(ptr_with_hash);
-                }),
-            and_arguments.end());
+        // Avoid changing the original tree, it might be used later
+        const auto & and_node = or_argument->as<FunctionNode &>();
+        const auto & and_arguments = and_node.getArguments().getNodes();
 
-        if (and_arguments.empty())
+        QueryTreeNodes filtered_and_arguments;
+        filtered_and_arguments.reserve(and_arguments.size());
+        std::copy_if(
+            and_arguments.begin(),
+            and_arguments.end(),
+            std::back_inserter(filtered_and_arguments),
+            [&common_exprs_set](const QueryTreeNodePtr & ptr) { return !common_exprs_set.contains(ptr); });
+
+        if (filtered_and_arguments.empty())
         {
             has_completely_extracted_and_expression = true;
             // As we will discard new_or_arguments, no need for further processing
             break;
         }
-        else if (and_arguments.size() == 1)
+        else if (filtered_and_arguments.size() == 1)
         {
-            const auto [_, inserted] = new_or_arguments_set.insert(and_arguments.front());
-            if (inserted)
-                new_or_arguments.push_back(std::move(and_arguments.front()));
-
+            insertIfNotPresentInSet(new_or_arguments_set, new_or_arguments, std::move(filtered_and_arguments.front()));
         }
         else
         {
+            auto new_and_node = std::make_shared<FunctionNode>("and");
+            new_and_node->getArguments().getNodes() = std::move(filtered_and_arguments);
             auto and_function_resolver = FunctionFactory::instance().get("and", context);
-            and_node.resolveAsFunction(and_function_resolver);
-            const auto [_, inserted] = new_or_arguments_set.insert(or_argument);
-            if (inserted)
-                new_or_arguments.push_back(std::move(or_argument));
+            new_and_node->resolveAsFunction(and_function_resolver);
+
+            insertIfNotPresentInSet(new_or_arguments_set, new_or_arguments, std::move(new_and_node));
         }
     }
 
@@ -384,24 +381,33 @@ void tryOptimizeCommonExpressionsInOr(QueryTreeNodePtr & node, const ContextPtr 
     auto * root_node = node->as<FunctionNode>();
     chassert(root_node && root_node->getFunctionName() == "or");
 
+    QueryTreeNodePtr new_root_node{};
+
     if (auto maybe_result = tryExtractCommonExpressions(node, context); maybe_result.has_value())
     {
         auto & result = *maybe_result;
-        auto & root_arguments = root_node->getArguments().getNodes();
-        root_arguments = std::move(result.common_expressions);
+        QueryTreeNodes new_root_arguments = std::move(result.common_expressions);
         if (result.new_node != nullptr)
-            root_arguments.push_back(std::move(result.new_node));
+            new_root_arguments.push_back(std::move(result.new_node));
 
-        if (root_arguments.size() == 1)
+        if (new_root_arguments.size() == 1)
         {
-            node = std::move(root_arguments[0]);
-            return;
+            new_root_node = std::move(new_root_arguments.front());
+        }
+        else
+        {
+            // The OR expression must be replaced by and AND expression that will contain the common expressions
+            // and the new_node, if it is not nullptr.
+            auto new_function_node = std::make_shared<FunctionNode>("and");
+            new_function_node->getArguments().getNodes() = std::move(new_root_arguments);
+            auto and_function_resolver = FunctionFactory::instance().get("and", context);
+            new_function_node->resolveAsFunction(and_function_resolver);
+            new_root_node = std::move(new_function_node);
         }
 
-        // The OR expression must be replaced by and AND expression that will contain the common expressions
-        // and the new_node, if it is not nullptr.
-        auto and_function_resolver = FunctionFactory::instance().get("and", context);
-        root_node->resolveAsFunction(and_function_resolver);
+        if (!new_root_node->getResultType()->equals(*node->getResultType()))
+            new_root_node = buildCastFunction(new_root_node, node->getResultType(), context);
+        node = std::move(new_root_node);
     }
 }
 
@@ -418,7 +424,6 @@ void tryOptimizeCommonExpressionsInAnd(QueryTreeNodePtr & node, const ContextPtr
         insertIfNotPresentInSet(new_top_level_arguments_set, new_top_level_arguments, std::move(node_to_insert));
     };
     auto extracted_something = false;
-    auto & root_arguments = root_node->getArguments();
 
     for (const auto & argument : root_node->getArguments())
     {
@@ -440,10 +445,15 @@ void tryOptimizeCommonExpressionsInAnd(QueryTreeNodePtr & node, const ContextPtr
     if (!extracted_something)
         return;
 
-    root_arguments.getNodes() = std::move(new_top_level_arguments);
-
+    auto and_function_node = std::make_shared<FunctionNode>("and");
+    and_function_node->getArguments().getNodes() = std::move(new_top_level_arguments);
     auto and_function_resolver = FunctionFactory::instance().get("and", context);
-    root_node->resolveAsFunction(and_function_resolver);
+    and_function_node->resolveAsFunction(and_function_resolver);
+    QueryTreeNodePtr new_root_node = and_function_node;
+
+    if (!new_root_node->getResultType()->equals(*node->getResultType()))
+        new_root_node = buildCastFunction(new_root_node, node->getResultType(), context);
+    node = std::move(new_root_node);
 }
 
 void tryOptimizeCommonExpressions(QueryTreeNodePtr & node, FunctionNode& function_node, const ContextPtr & context)
@@ -759,15 +769,20 @@ public:
         if (!query_node)
             return;
 
-        auto & where_node = query_node->getWhere();
-        if (!where_node)
-            return;
+        const auto try_optimize_if_function = [this](QueryTreeNodePtr & maybe_node)
+        {
+            if (!maybe_node)
+                return;
+            auto * function_node = maybe_node->as<FunctionNode>();
+            if (!function_node)
+                return;
+            tryOptimizeCommonExpressions(maybe_node, *function_node, getContext());
+        };
 
-        auto * function_node = where_node->as<FunctionNode>();
-        if (!function_node)
-            return;
-
-        tryOptimizeCommonExpressions(where_node, *function_node, getContext());
+        try_optimize_if_function(query_node->getWhere());
+        try_optimize_if_function(query_node->getPrewhere());
+        try_optimize_if_function(query_node->getHaving());
+        try_optimize_if_function(query_node->getQualify());
     }
 
 private:

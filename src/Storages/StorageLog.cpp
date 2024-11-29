@@ -134,7 +134,7 @@ private:
 
             if (limited_by_file_size)
             {
-                limited.emplace(*plain, file_size - offset, /* trow_exception */ false, /* exact_limit */ std::optional<size_t>());
+                limited.emplace(*plain, LimitReadBuffer::Settings{.read_no_more = file_size - offset});
                 compressed.emplace(*limited);
             }
             else

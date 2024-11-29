@@ -10,7 +10,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/parseDateTimeBestEffort.h>
-#include <Parsers/TokenIterator.h>
 
 
 namespace DB

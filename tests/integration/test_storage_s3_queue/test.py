@@ -99,6 +99,7 @@ def started_cluster():
             with_minio=True,
             with_azurite=True,
             with_zookeeper=True,
+            keeper_required_feature_flags=["create_if_not_exists"],
             main_configs=[
                 "configs/zookeeper.xml",
                 "configs/s3queue_log.xml",
@@ -110,6 +111,7 @@ def started_cluster():
             user_configs=["configs/users.xml"],
             with_minio=True,
             with_zookeeper=True,
+            keeper_required_feature_flags=["create_if_not_exists"],
             main_configs=[
                 "configs/s3queue_log.xml",
             ],
@@ -118,6 +120,7 @@ def started_cluster():
         cluster.add_instance(
             "old_instance",
             with_zookeeper=True,
+            keeper_required_feature_flags=["create_if_not_exists"],
             image="clickhouse/clickhouse-server",
             tag="23.12",
             stay_alive=True,
@@ -127,6 +130,7 @@ def started_cluster():
         cluster.add_instance(
             "node1",
             with_zookeeper=True,
+            keeper_required_feature_flags=["create_if_not_exists"],
             stay_alive=True,
             main_configs=[
                 "configs/zookeeper.xml",
@@ -137,6 +141,7 @@ def started_cluster():
         cluster.add_instance(
             "node2",
             with_zookeeper=True,
+            keeper_required_feature_flags=["create_if_not_exists"],
             stay_alive=True,
             main_configs=[
                 "configs/zookeeper.xml",
@@ -149,6 +154,7 @@ def started_cluster():
             user_configs=["configs/users.xml"],
             with_minio=True,
             with_zookeeper=True,
+            keeper_required_feature_flags=["create_if_not_exists"],
             main_configs=[
                 "configs/s3queue_log.xml",
                 "configs/merge_tree.xml",
@@ -158,6 +164,7 @@ def started_cluster():
         cluster.add_instance(
             "instance_24.5",
             with_zookeeper=True,
+            keeper_required_feature_flags=["create_if_not_exists"],
             image="clickhouse/clickhouse-server",
             tag="24.5",
             stay_alive=True,
@@ -170,6 +177,7 @@ def started_cluster():
         cluster.add_instance(
             "node_cloud_mode",
             with_zookeeper=True,
+            keeper_required_feature_flags=["create_if_not_exists"],
             stay_alive=True,
             main_configs=[
                 "configs/zookeeper.xml",
@@ -319,7 +327,9 @@ def generate_random_string(length=6):
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
 def test_delete_after_processing(started_cluster, mode, engine_name):
     node = started_cluster.instances["instance"]
-    table_name = f"delete_after_processing_{mode}_{engine_name}"
+    table_name = (
+        f"delete_after_processing_{mode}_{engine_name}_{generate_random_string()}"
+    )
     dst_table_name = f"{table_name}_dst"
     files_path = f"{table_name}_data"
     files_num = 5
@@ -361,6 +371,21 @@ def test_delete_after_processing(started_cluster, mode, engine_name):
             f"SELECT column1, column2, column3 FROM {dst_table_name} ORDER BY column1, column2, column3"
         ).splitlines()
     ] == sorted(total_values, key=lambda x: (x[0], x[1], x[2]))
+
+    node.query("system flush logs")
+
+    if engine_name == "S3Queue":
+        system_table_name = "s3queue_log"
+    else:
+        system_table_name = "azure_queue_log"
+    assert (
+        int(
+            node.query(
+                f"SELECT sum(rows_processed) FROM system.{system_table_name} WHERE table = '{table_name}'"
+            )
+        )
+        == files_num * row_num
+    )
 
     if engine_name == "S3Queue":
         minio = started_cluster.minio_client
