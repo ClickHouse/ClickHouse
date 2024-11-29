@@ -451,10 +451,8 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
         const auto shard_number = use_static_shard_number ? config.getUInt(prefix + ".shard_number") : current_shard_num;
         if (use_static_shard_number)
         {
-            if (!shard_number || used_shard_nums.find(shard_number) != used_shard_nums.end())
+            if (!shard_number || !used_shard_nums.insert(shard_number).second)
                 throw Exception(ErrorCodes::INVALID_SHARD_ID, "Field shard_number is incorrect. It must be unique in cluster and 1-based.");
-
-            used_shard_nums.insert(shard_number);
         }
 
         if (shard_without_replicas)
