@@ -70,7 +70,7 @@ cat > "$config_path" <<EOL
      </remote_servers>
  </clickhouse>
 EOL
-$CLICKHOUSE_CLIENT --query="SYSTEM RELOAD CONFIG; -- { serverError 577 }" 
+$CLICKHOUSE_CLIENT --query="SYSTEM RELOAD CONFIG; -- { serverError INVALID_SHARD_ID }"
 
 ## Test incorrect static nodes numbers, dublicates.
 cat > "$config_path" <<EOL
@@ -91,7 +91,7 @@ cat > "$config_path" <<EOL
      </remote_servers>
  </clickhouse>
 EOL
-$CLICKHOUSE_CLIENT --query="SYSTEM RELOAD CONFIG; -- { serverError 577 }" 
+$CLICKHOUSE_CLIENT --query="SYSTEM RELOAD CONFIG; -- { serverError INVALID_SHARD_ID }"
 
 rm $config_path
 $CLICKHOUSE_CLIENT --query="SYSTEM RELOAD CONFIG;"
