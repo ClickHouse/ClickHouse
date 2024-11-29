@@ -26,6 +26,7 @@
 #include <stack>
 #include <base/sort.h>
 #include <Common/JSONBuilder.h>
+#include <DataTypes/DataTypeSet.h>
 
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/inlined_vector.h>
@@ -3202,16 +3203,8 @@ const ActionsDAG::Node * FindOriginalNodeForOutputName::find(const String & outp
     return it->second;
 }
 
-static const ColumnSet * tryGetColumnSet(const ColumnPtr & colunm)
-{
-    const IColumn * maybe_set = colunm.get();
-    if (const auto * column_const = typeid_cast<const ColumnConst *>(maybe_set))
-        maybe_set = &column_const->getDataColumn();
 
-    return typeid_cast<const ColumnSet *>(maybe_set);
-}
-
-static void serializeCapture(const ExecutableFunctionCapture::Capture & capture, WriteBuffer & out)
+static void serializeCapture(const LambdaCapture & capture, WriteBuffer & out)
 {
     writeStringBinary(capture.return_name, out);
     encodeDataType(capture.return_type, out);
@@ -3232,7 +3225,7 @@ static void serializeCapture(const ExecutableFunctionCapture::Capture & capture,
     }
 }
 
-static void deserializeCapture(ExecutableFunctionCapture::Capture & capture, ReadBuffer & in)
+static void deserializeCapture(LambdaCapture & capture, ReadBuffer & in)
 {
     readStringBinary(capture.return_name, in);
     capture.return_type = decodeDataType(in);
@@ -3261,6 +3254,120 @@ static void deserializeCapture(ExecutableFunctionCapture::Capture & capture, Rea
     }
 }
 
+static void serialzieConstant(
+    const IDataType & type,
+    const IColumn & value,
+    WriteBuffer & out,
+    SerializedSetsRegistry & registry)
+{
+    if (WhichDataType(type).isSet())
+    {
+        const IColumn * maybe_set = &value;
+        if (const auto * column_const = typeid_cast<const ColumnConst *>(maybe_set))
+            maybe_set = &column_const->getDataColumn();
+
+        const auto * column_set = typeid_cast<const ColumnSet *>(maybe_set);
+        if (!column_set)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "ColumnSet is expected for DataTypeSet. Got {}", value.getName());
+
+        auto hash = column_set->getData()->getHash();
+        writeBinary(hash, out);
+        registry.sets.emplace(hash, column_set->getData());
+        return;
+    }
+
+    if (WhichDataType(type).isFunction())
+    {
+        const IColumn * maybe_function = &value;
+        if (const auto * column_const = typeid_cast<const ColumnConst *>(maybe_function))
+            maybe_function = &column_const->getDataColumn();
+
+        const auto * column_function = typeid_cast<const ColumnFunction *>(maybe_function);
+        if (!column_function)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "ColumnSet is expected for DataTypeSet. Got {}", value.getName());
+
+        auto function = column_function->getFunction();
+        const auto * function_expression = typeid_cast<const FunctionExpression *>(function.get());
+        if (!function_expression)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Expected FunctionExpression for ColumnFunction. Got {}", function->getName());
+
+        serializeCapture(function_expression->getCapture(), out);
+        function_expression->getAcionsDAG().serialize(out, registry);
+
+        const auto & captured_columns = column_function->getCapturedColumns();
+        writeVarUInt(captured_columns.size(), out);
+        for (const auto & captured_column : captured_columns)
+        {
+            encodeDataType(captured_column.type, out);
+            serialzieConstant(*captured_column.type, *captured_column.column, out, registry);
+        }
+
+        return;
+    }
+
+    const auto * const_column = typeid_cast<const ColumnConst *>(&value);
+    if (!const_column)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot serialize non-constant column {}", value.getName());
+
+    const auto & data = const_column->getDataColumn();
+    type.getDefaultSerialization()->serializeBinary(data, 0, out, FormatSettings{});
+}
+
+static MutableColumnPtr deserializeConstant(
+    const IDataType & type,
+    ReadBuffer & in,
+    DeserializedSetsRegistry & registry,
+    const ContextPtr & context)
+{
+    if (WhichDataType(type).isSet())
+    {
+        FutureSet::Hash hash;
+        readBinary(hash, in);
+
+        auto column_set = ColumnSet::create(0, nullptr);
+        registry.sets[hash].push_back(column_set.get());
+
+        return column_set;
+    }
+
+    if (WhichDataType(type).isFunction())
+    {
+        LambdaCapture capture;
+        deserializeCapture(capture, in);
+        auto capture_dag = ActionsDAG::deserialize(in, registry, context);
+
+        UInt64 num_captured_columns;
+        readVarUInt(num_captured_columns, in);
+        ColumnsWithTypeAndName captured_columns(num_captured_columns);
+
+        for (auto & captured_column : captured_columns)
+        {
+            captured_column.type = decodeDataType(in);
+            captured_column.column = deserializeConstant(*captured_column.type, in, registry, context);
+        }
+
+        auto function_expression = std::make_shared<FunctionExpression>(
+            std::make_shared<LambdaCapture>(std::move(capture)),
+            std::make_shared<ExpressionActions>(
+                std::move(capture_dag),
+                ExpressionActionsSettings::fromContext(context, CompileExpressions::yes)));
+
+        return ColumnFunction::create(1, std::move(function_expression), std::move(captured_columns));
+    }
+
+    auto column = type.createColumn();
+    type.getDefaultSerialization()->deserializeBinary(*column, in, FormatSettings{});
+    return ColumnConst::create(std::move(column), 0);
+}
+
 void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry) const
 {
     size_t nodes_size = nodes.size();
@@ -3285,40 +3392,22 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry)
 
         /// Serialize column if it is present
         const bool has_column = node.column != nullptr;
-        const ColumnSet * column_set = nullptr;
         UInt8 column_flags = 0;
         if (has_column)
         {
             column_flags |= 1;
             if (node.is_deterministic_constant)
                 column_flags |= 2;
-
-            column_set = tryGetColumnSet(node.column);
-            if (column_set)
-                column_flags |= 4;
         }
 
         const auto * function_capture = typeid_cast<const FunctionCapture *>(node.function_base.get());
         if (function_capture)
-            column_flags |= 8;
+            column_flags |= 4;
 
         writeIntBinary(column_flags, out);
-        if (column_set)
-        {
-            auto hash = column_set->getData()->getHash();
-            writeBinary(hash, out);
-            registry.sets.emplace(hash, column_set->getData());
-        }
-        else if (has_column)
-        {
-            const auto * const_column = typeid_cast<const ColumnConst *>(node.column.get());
-            if (!const_column)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Cannot serialize non-constant column {}", node.column->getName());
 
-            auto value = const_column->getField();
-            node.result_type->getDefaultSerialization()->serializeBinary(value, out, FormatSettings{});
-        }
+        if (has_column)
+            serialzieConstant(*node.result_type, *node.column, out, registry);
 
         if (node.type == ActionType::INPUT)
         {
@@ -3401,22 +3490,7 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
             if ((column_flags & 2) == 0)
                 node.is_deterministic_constant = false;
 
-            if (column_flags & 4)
-            {
-                FutureSet::Hash hash;
-                readBinary(hash, in);
-
-                auto column_set = ColumnSet::create(0, nullptr);
-                registry.sets[hash].push_back(column_set.get());
-
-                node.column = std::move(column_set);
-            }
-            else
-            {
-                Field value;
-                node.result_type->getDefaultSerialization()->deserializeBinary(value, in, FormatSettings{});
-                node.column = node.result_type->createColumnConst(0, value);
-            }
+            node.column = deserializeConstant(*node.result_type, in, registry, context);
         }
 
         if (node.type == ActionType::INPUT)
@@ -3454,9 +3528,9 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
                 arguments.emplace_back(std::move(argument));
             }
 
-            if (column_flags & 8)
+            if (column_flags & 4)
             {
-                ExecutableFunctionCapture::Capture capture;
+                LambdaCapture capture;
                 deserializeCapture(capture, in);
                 auto capture_dag = ActionsDAG::deserialize(in, registry, context);
 
@@ -3464,7 +3538,7 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
                     std::make_shared<ExpressionActions>(
                         std::move(capture_dag),
                         ExpressionActionsSettings::fromContext(context, CompileExpressions::yes)),
-                    std::make_shared<ExecutableFunctionCapture::Capture>(std::move(capture)),
+                    std::make_shared<LambdaCapture>(std::move(capture)),
                     node.result_type,
                     function_name);
 
