@@ -2,55 +2,61 @@ Default
 tbl	1	x_idx	1		\N	0	\N	\N	\N	MINMAX			YES	x
 tbl	1	PRIMARY	1	key	A	0	\N	\N	\N	PRIMARY			YES	
 Enable enable_minmax_index_for_all_numeric_columns
-tbl	1	_index_n_key	1		\N	0	\N	\N	\N	MINMAX			YES	key
+tbl	1	_idx_minmax_n_key	1		\N	0	\N	\N	\N	MINMAX			YES	key
 tbl	1	x_idx	1		\N	0	\N	\N	\N	MINMAX			YES	x
-tbl	1	_index_n_y	1		\N	0	\N	\N	\N	MINMAX			YES	y
+tbl	1	_idx_minmax_n_y	1		\N	0	\N	\N	\N	MINMAX			YES	y
 tbl	1	PRIMARY	1	key	A	0	\N	\N	\N	PRIMARY			YES	
 Disable enable_minmax_index_for_all_numeric_columns
 tbl	1	x_idx	1		\N	0	\N	\N	\N	MINMAX			YES	x
 tbl	1	PRIMARY	1	key	A	0	\N	\N	\N	PRIMARY			YES	
 Enable enable_minmax_index_for_all_numeric_columns again
-tbl	1	_index_n_key	1		\N	0	\N	\N	\N	MINMAX			YES	key
+tbl	1	_idx_minmax_n_key	1		\N	0	\N	\N	\N	MINMAX			YES	key
 tbl	1	x_idx	1		\N	0	\N	\N	\N	MINMAX			YES	x
-tbl	1	_index_n_y	1		\N	0	\N	\N	\N	MINMAX			YES	y
+tbl	1	_idx_minmax_n_y	1		\N	0	\N	\N	\N	MINMAX			YES	y
 tbl	1	PRIMARY	1	key	A	0	\N	\N	\N	PRIMARY			YES	
 Add numeric column
-tbl	1	_index_n_key	1		\N	0	\N	\N	\N	MINMAX			YES	key
-tbl	1	_index_n_w	1		\N	0	\N	\N	\N	MINMAX			YES	w
+tbl	1	_idx_minmax_n_key	1		\N	0	\N	\N	\N	MINMAX			YES	key
+tbl	1	_idx_minmax_n_w	1		\N	0	\N	\N	\N	MINMAX			YES	w
 tbl	1	x_idx	1		\N	0	\N	\N	\N	MINMAX			YES	x
-tbl	1	_index_n_y	1		\N	0	\N	\N	\N	MINMAX			YES	y
+tbl	1	_idx_minmax_n_y	1		\N	0	\N	\N	\N	MINMAX			YES	y
 tbl	1	PRIMARY	1	key	A	0	\N	\N	\N	PRIMARY			YES	
 Drop numeric column
-tbl	1	_index_n_key	1		\N	0	\N	\N	\N	MINMAX			YES	key
+tbl	1	_idx_minmax_n_key	1		\N	0	\N	\N	\N	MINMAX			YES	key
 tbl	1	x_idx	1		\N	0	\N	\N	\N	MINMAX			YES	x
-tbl	1	_index_n_y	1		\N	0	\N	\N	\N	MINMAX			YES	y
+tbl	1	_idx_minmax_n_y	1		\N	0	\N	\N	\N	MINMAX			YES	y
 tbl	1	PRIMARY	1	key	A	0	\N	\N	\N	PRIMARY			YES	
 Add string column
-tbl	1	_index_n_key	1		\N	0	\N	\N	\N	MINMAX			YES	key
+tbl	1	_idx_minmax_n_key	1		\N	0	\N	\N	\N	MINMAX			YES	key
 tbl	1	x_idx	1		\N	0	\N	\N	\N	MINMAX			YES	x
-tbl	1	_index_n_y	1		\N	0	\N	\N	\N	MINMAX			YES	y
+tbl	1	_idx_minmax_n_y	1		\N	0	\N	\N	\N	MINMAX			YES	y
 tbl	1	PRIMARY	1	key	A	0	\N	\N	\N	PRIMARY			YES	
 Enable enable_minmax_index_for_all_string_columns
-tbl	1	_index_n_key	1		\N	0	\N	\N	\N	MINMAX			YES	key
-tbl	1	_index_s_s	1		\N	0	\N	\N	\N	MINMAX			YES	s
+tbl	1	_idx_minmax_n_key	1		\N	0	\N	\N	\N	MINMAX			YES	key
+tbl	1	_idx_minmax_s_s	1		\N	0	\N	\N	\N	MINMAX			YES	s
 tbl	1	x_idx	1		\N	0	\N	\N	\N	MINMAX			YES	x
-tbl	1	_index_n_y	1		\N	0	\N	\N	\N	MINMAX			YES	y
+tbl	1	_idx_minmax_n_y	1		\N	0	\N	\N	\N	MINMAX			YES	y
 tbl	1	PRIMARY	1	key	A	0	\N	\N	\N	PRIMARY			YES	
 Add string column
-tbl	1	_index_n_key	1		\N	0	\N	\N	\N	MINMAX			YES	key
-tbl	1	_index_s_s	1		\N	0	\N	\N	\N	MINMAX			YES	s
-tbl	1	_index_s_t	1		\N	0	\N	\N	\N	MINMAX			YES	t
+tbl	1	_idx_minmax_n_key	1		\N	0	\N	\N	\N	MINMAX			YES	key
+tbl	1	_idx_minmax_s_s	1		\N	0	\N	\N	\N	MINMAX			YES	s
+tbl	1	_idx_minmax_s_t	1		\N	0	\N	\N	\N	MINMAX			YES	t
 tbl	1	x_idx	1		\N	0	\N	\N	\N	MINMAX			YES	x
-tbl	1	_index_n_y	1		\N	0	\N	\N	\N	MINMAX			YES	y
+tbl	1	_idx_minmax_n_y	1		\N	0	\N	\N	\N	MINMAX			YES	y
 tbl	1	PRIMARY	1	key	A	0	\N	\N	\N	PRIMARY			YES	
 Drop string column
-tbl	1	_index_n_key	1		\N	0	\N	\N	\N	MINMAX			YES	key
-tbl	1	_index_s_s	1		\N	0	\N	\N	\N	MINMAX			YES	s
+tbl	1	_idx_minmax_n_key	1		\N	0	\N	\N	\N	MINMAX			YES	key
+tbl	1	_idx_minmax_s_s	1		\N	0	\N	\N	\N	MINMAX			YES	s
 tbl	1	x_idx	1		\N	0	\N	\N	\N	MINMAX			YES	x
-tbl	1	_index_n_y	1		\N	0	\N	\N	\N	MINMAX			YES	y
+tbl	1	_idx_minmax_n_y	1		\N	0	\N	\N	\N	MINMAX			YES	y
+tbl	1	PRIMARY	1	key	A	0	\N	\N	\N	PRIMARY			YES	
+Rename column s to ss
+tbl	1	_idx_minmax_n_key	1		\N	0	\N	\N	\N	MINMAX			YES	key
+tbl	1	_idx_minmax_s_ss	1		\N	0	\N	\N	\N	MINMAX			YES	ss
+tbl	1	x_idx	1		\N	0	\N	\N	\N	MINMAX			YES	x
+tbl	1	_idx_minmax_n_y	1		\N	0	\N	\N	\N	MINMAX			YES	y
 tbl	1	PRIMARY	1	key	A	0	\N	\N	\N	PRIMARY			YES	
 Disable enable_minmax_index_for_all_string_columns
-tbl	1	_index_n_key	1		\N	0	\N	\N	\N	MINMAX			YES	key
+tbl	1	_idx_minmax_n_key	1		\N	0	\N	\N	\N	MINMAX			YES	key
 tbl	1	x_idx	1		\N	0	\N	\N	\N	MINMAX			YES	x
-tbl	1	_index_n_y	1		\N	0	\N	\N	\N	MINMAX			YES	y
+tbl	1	_idx_minmax_n_y	1		\N	0	\N	\N	\N	MINMAX			YES	y
 tbl	1	PRIMARY	1	key	A	0	\N	\N	\N	PRIMARY			YES	

@@ -700,7 +700,15 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.query.columns_list && args.query.columns_list->indices)
         {
             for (auto &index: args.query.columns_list->indices->children)
+            {
+                auto index_name = index->as<ASTIndexDeclaration>()->name;
+                if (index_name.starts_with(INDEX_MINMAX_NUMERIC_PREFIX) || index_name.starts_with(INDEX_MINMAX_STRING_PREFIX))
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot add index {}: index has prefix {} or {} which are reserved for "
+                                                                "default minmax indices", index_name, INDEX_MINMAX_NUMERIC_PREFIX, INDEX_MINMAX_STRING_PREFIX);
+                }
                 metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, context));
+            }
 
             if ((*storage_settings)[MergeTreeSetting::enable_minmax_index_for_all_numeric_columns]
             || (*storage_settings)[MergeTreeSetting::enable_minmax_index_for_all_string_columns])
@@ -731,7 +739,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
                     auto index_type = makeASTFunction("minmax");
                     auto index_ast = std::make_shared<ASTIndexDeclaration>(std::make_shared<ASTIdentifier>(column.name), index_type,
-                                                                           (isNumber(column.type) ? "_index_n_" : "_index_s_") + column.name);
+                                                                           (isNumber(column.type) ? INDEX_MINMAX_NUMERIC_PREFIX : INDEX_MINMAX_STRING_PREFIX) + column.name);
                     metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index_ast, columns, context));
                 }
             }

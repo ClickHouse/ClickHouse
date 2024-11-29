@@ -1,6 +1,7 @@
 set mutations_sync = 2;
 
 DROP TABLE IF EXISTS tbl;
+DROP TABLE IF EXISTS tbl2;
 
 CREATE TABLE tbl
 (
@@ -51,8 +52,34 @@ SELECT 'Drop string column';
 ALTER TABLE tbl DROP COLUMN t;
 SHOW INDICES FROM tbl;
 
+SELECT 'Rename column s to ss';
+ALTER TABLE tbl RENAME COLUMN s to ss;
+SHOW INDICES FROM tbl;
+
 SELECT 'Disable enable_minmax_index_for_all_string_columns';
 ALTER TABLE tbl MODIFY SETTING enable_minmax_index_for_all_string_columns = false;
 SHOW INDICES FROM tbl;
 
+CREATE TABLE tbl2
+(
+    key Int,
+    x Int,
+    y Int,
+    INDEX _idx_minmax_n_x x TYPE minmax GRANULARITY 1
+)
+Engine=MergeTree()
+ORDER BY key; -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE tbl2
+(
+    key Int,
+    x Int,
+    y Int
+)
+Engine=MergeTree()
+ORDER BY key;
+
+ALTER TABLE tbl2 ADD INDEX _idx_minmax_n_y y TYPE minmax GRANULARITY 1; -- { serverError BAD_ARGUMENTS }
+
 DROP TABLE IF EXISTS tbl;
+DROP TABLE IF EXISTS tbl2;
