@@ -325,8 +325,12 @@ public:
     {
         size_t input_rows = 0;
         size_t input_bytes = 0;
+        size_t input_allocated_bytes = 0;
         size_t output_rows = 0;
         size_t output_bytes = 0;
+        size_t output_allocated_bytes = 0;
+        Int64 alloc_bytes = 0;
+        Int64 free_bytes = 0;
     };
 
     ProcessorDataStats getProcessorDataStats() const
@@ -337,13 +341,17 @@ public:
         {
             stats.input_rows += input.rows;
             stats.input_bytes += input.bytes;
+            stats.input_allocated_bytes += input.allocated_bytes;
         }
 
         for (const auto & output : outputs)
         {
             stats.output_rows += output.rows;
             stats.output_bytes += output.bytes;
+            stats.output_allocated_bytes += output.allocated_bytes;
         }
+        stats.alloc_bytes = processor_memory_tracker.getAllocBytes();
+        stats.free_bytes = processor_memory_tracker.getFreeBytes();
 
         return stats;
     }
@@ -380,6 +388,8 @@ public:
     /// This counter is used to calculate the number of rows right before AggregatingTransform.
     virtual void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr /* counter */) { }
 
+    MemoryTracker & getMemoryTracker() { return processor_memory_tracker; }
+
 protected:
     virtual void onCancel() noexcept {}
 
@@ -412,6 +422,8 @@ private:
     size_t processor_index = 0;
     String plan_step_name;
     String plan_step_description;
+
+    MemoryTracker processor_memory_tracker;
 };
 
 

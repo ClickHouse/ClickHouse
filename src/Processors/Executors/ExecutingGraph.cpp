@@ -272,10 +272,22 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(uint64_t pid, Queue 
 
                 try
                 {
+#ifndef NDEBUG
+                    auto * thread_memory_tracker = CurrentThread::getMemoryTracker();
+                    auto * thread_parent_memory_tracker = thread_memory_tracker->getParent();
+                    auto & processor_memory_tracker = node.processor->getMemoryTracker();
+                    processor_memory_tracker.setParent(thread_parent_memory_tracker);
+                    thread_memory_tracker->setParent(&processor_memory_tracker);
+#endif
                     auto & processor = *node.processor;
                     const auto last_status = node.last_processor_status;
                     IProcessor::Status status = processor.prepare(node.updated_input_ports, node.updated_output_ports);
                     node.last_processor_status = status;
+
+#ifndef NDEBUG
+                    thread_memory_tracker->setParent(thread_parent_memory_tracker);
+                    processor_memory_tracker.setParent(nullptr);
+#endif
 
                     if (profile_processors)
                     {

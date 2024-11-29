@@ -450,14 +450,21 @@ String PipelineExecutor::dumpPipeline() const
     {
         {
             WriteBufferFromOwnString buffer;
-            buffer << "(" << node->num_executed_jobs << " jobs";
-
+            buffer << "\njobs:" << node->num_executed_jobs << "\\l";
 #ifndef NDEBUG
-            buffer << ", execution time: " << node->execution_time_ns / 1e9 << " sec.";
-            buffer << ", preparation time: " << node->preparation_time_ns / 1e9 << " sec.";
+            buffer << "execution time: " << node->execution_time_ns / 1e9 << " sec.\\l";
+            buffer << "preparation time: " << node->preparation_time_ns / 1e9 << " sec.\\l";
+            auto processor_stats = node->processor->getProcessorDataStats();
+            buffer << "input bytes: " << processor_stats.input_bytes << "\\l";
+            buffer << "input rows: " << processor_stats.input_rows << "\\l";
+            buffer << "output bytes: " << processor_stats.output_bytes << "\\l";
+            buffer << "output rows: " << processor_stats.output_rows << "\\l";
+            buffer << "input allocated_bytes: " << processor_stats.input_allocated_bytes << "\\l";
+            buffer << "alloc bytes: " << processor_stats.alloc_bytes << "\\l";
+            buffer << "output allocated bytes: " << processor_stats.output_allocated_bytes << "\\l";
+            buffer << "free bytes: " << processor_stats.free_bytes << "\\l";
 #endif
 
-            buffer << ")";
             node->processor->setDescription(buffer.str());
         }
     }

@@ -233,6 +233,9 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
             /// For global memory tracker always update memory usage.
             amount.fetch_add(size, std::memory_order_relaxed);
             rss.fetch_add(size, std::memory_order_relaxed);
+#ifndef NDEBUG
+            alloc_bytes.fetch_add(size, std::memory_order_relaxed);
+#endif
 
             auto metric_loaded = metric.load(std::memory_order_relaxed);
             if (metric_loaded != CurrentMetrics::end())
@@ -245,7 +248,6 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
             MemoryTracker * tracker = level == VariableContext::Process ? this : query_tracker;
             return loaded_next->allocImpl(size, throw_if_memory_exceeded, tracker, _sample_probability);
         }
-
         return AllocationTrace(_sample_probability);
     }
 
@@ -349,6 +351,9 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
             debugLogBigAllocationWithoutCheck(size);
         }
     }
+#ifndef NDEBUG
+    alloc_bytes.fetch_add(size, std::memory_order_relaxed);
+#endif
 
     bool peak_updated = false;
     /// In case of MEMORY_LIMIT_EXCEEDED was ignored, will_be may include
@@ -425,6 +430,9 @@ AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
             /// For global memory tracker always update memory usage.
             amount.fetch_sub(size, std::memory_order_relaxed);
             rss.fetch_sub(size, std::memory_order_relaxed);
+#ifndef NDEBUG
+            free_bytes.fetch_add(size, std::memory_order_relaxed);
+#endif
             auto metric_loaded = metric.load(std::memory_order_relaxed);
             if (metric_loaded != CurrentMetrics::end())
                 CurrentMetrics::sub(metric_loaded, size);
@@ -464,6 +472,9 @@ AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
             accounted_size += new_amount;
         }
     }
+#ifndef NDEBUG
+    free_bytes.fetch_add(size, std::memory_order_relaxed);
+#endif
     if (auto * overcommit_tracker_ptr = overcommit_tracker.load(std::memory_order_relaxed))
         overcommit_tracker_ptr->tryContinueQueryExecutionAfterFree(accounted_size);
 

@@ -46,7 +46,19 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
 {
     try
     {
+#ifndef NDEBUG
+        auto * thread_memory_tracker = CurrentThread::getMemoryTracker();
+        auto * thread_parent_memory_tracker = thread_memory_tracker->getParent();
+        auto & processor_memory_tracker = node->processor->getMemoryTracker();
+        processor_memory_tracker.setParent(thread_parent_memory_tracker);
+        thread_memory_tracker->setParent(&processor_memory_tracker);
+#endif
         node->processor->work();
+
+#ifndef NDEBUG
+        thread_memory_tracker->setParent(thread_parent_memory_tracker);
+        processor_memory_tracker.setParent(nullptr);
+#endif
 
         /// Update read progress only for source nodes.
         bool is_source = node->back_edges.empty();

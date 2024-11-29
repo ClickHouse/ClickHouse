@@ -258,6 +258,7 @@ protected:
     /// For processors_profile_log
     size_t rows = 0;
     size_t bytes = 0;
+    size_t allocated_bytes = 0;
 };
 
 /// Invariants:
@@ -306,6 +307,7 @@ public:
 
         rows += data->chunk.getNumRows();
         bytes += data->chunk.bytes();
+        allocated_bytes += data->chunk.allocatedBytes();
 
         return std::move(*data);
     }
@@ -432,6 +434,7 @@ public:
 
         rows += data->chunk.getNumRows();
         bytes += data->chunk.bytes();
+        allocated_bytes += data->chunk.allocatedBytes();
 
         state->push(data, flags);
     }

@@ -56,6 +56,8 @@ private:
     std::atomic<Int64> soft_limit {0};
     std::atomic<Int64> hard_limit {0};
     std::atomic<Int64> profiler_limit {0};
+    std::atomic<Int64> alloc_bytes {0};
+    std::atomic<Int64> free_bytes {0};
 
     std::atomic<Int64> rss{0};
 
@@ -118,6 +120,16 @@ public:
     Int64 get() const
     {
         return amount.load(std::memory_order_relaxed);
+    }
+
+    Int64 getAllocBytes() const
+    {
+        return alloc_bytes.load(std::memory_order_relaxed);
+    }
+
+    Int64 getFreeBytes() const
+    {
+        return free_bytes.load(std::memory_order_relaxed);
     }
 
     Int64 getRSS() const
