@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-random-settings
 DROP TABLE IF EXISTS test;
 DROP TABLE IF EXISTS test2;
 
