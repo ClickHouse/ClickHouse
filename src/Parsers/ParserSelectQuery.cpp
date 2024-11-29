@@ -14,6 +14,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTWithElement.h>
 #include <Poco/String.h>
 
 
