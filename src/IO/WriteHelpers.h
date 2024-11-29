@@ -150,12 +150,11 @@ inline void writeBoolText(bool x, WriteBuffer & buf)
 
 
 template <typename T>
-requires is_floating_point<T>
 inline size_t writeFloatTextFastPath(T x, char * buffer)
 {
     Int64 result = 0;
 
-    if constexpr (std::is_same_v<T, Float64>)
+    if constexpr (std::is_same_v<T, double>)
     {
         /// The library Ryu has low performance on integers.
         /// This workaround improves performance 6..10 times.
@@ -165,21 +164,12 @@ inline size_t writeFloatTextFastPath(T x, char * buffer)
         else
             result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
     }
-    else if constexpr (std::is_same_v<T, Float32>)
+    else
     {
         if (DecomposedFloat32(x).isIntegerInRepresentableRange())
             result = itoa(Int32(x), buffer) - buffer;
         else
             result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
-    }
-    else if constexpr (std::is_same_v<T, BFloat16>)
-    {
-        Float32 f32 = Float32(x);
-
-        if (DecomposedFloat32(f32).isIntegerInRepresentableRange())
-            result = itoa(Int32(f32), buffer) - buffer;
-        else
-            result = jkj::dragonbox::to_chars_n(f32, buffer) - buffer;
     }
 
     if (result <= 0)
@@ -188,9 +178,10 @@ inline size_t writeFloatTextFastPath(T x, char * buffer)
 }
 
 template <typename T>
-requires is_floating_point<T>
 inline void writeFloatText(T x, WriteBuffer & buf)
 {
+    static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for writeFloatText must be float or double");
+
     using Converter = DoubleConverter<false>;
     if (likely(buf.available() >= Converter::MAX_REPRESENTATION_LENGTH))
     {
@@ -327,7 +318,6 @@ void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & b
         /// On purpose we will escape more characters than minimally necessary.
         const char * next_pos = find_first_symbols<'\b', '\f', '\n', '\r', '\t', '\0', '\\', quote_character>(pos, end);
 
-        /// NOLINTBEGIN(readability-else-after-return)
         if (next_pos == end)
         {
             buf.write(pos, next_pos - pos);
@@ -382,7 +372,6 @@ void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & b
             }
             ++pos;
         }
-        /// NOLINTEND(readability-else-after-return)
     }
 }
 
@@ -549,9 +538,9 @@ void writeJSONNumber(T x, WriteBuffer & ostr, const FormatSettings & settings)
         writeCString("null", ostr);
     else
     {
-        if constexpr (is_floating_point<T>)
+        if constexpr (std::is_floating_point_v<T>)
         {
-            if (signBit(x))
+            if (std::signbit(x))
             {
                 if (isNaN(x))
                     writeCString("-nan", ostr);
@@ -694,11 +683,12 @@ void writeCSVString(const char * begin, const char * end, WriteBuffer & buf)
             buf.write(pos, end - pos);
             break;
         }
-
-        /// Quotation.
-        ++next_pos;
-        buf.write(pos, next_pos - pos);
-        writeChar(quote, buf);
+        else /// Quotation.
+        {
+            ++next_pos;
+            buf.write(pos, next_pos - pos);
+            writeChar(quote, buf);
+        }
 
         pos = next_pos;
     }
@@ -730,7 +720,7 @@ inline void writeXMLStringForTextElementOrAttributeValue(const char * begin, con
             buf.write(pos, end - pos);
             break;
         }
-        if (*next_pos == '<')
+        else if (*next_pos == '<')
         {
             buf.write(pos, next_pos - pos);
             ++next_pos;
@@ -784,7 +774,7 @@ inline void writeXMLStringForTextElement(const char * begin, const char * end, W
             buf.write(pos, end - pos);
             break;
         }
-        if (*next_pos == '<')
+        else if (*next_pos == '<')
         {
             buf.write(pos, next_pos - pos);
             ++next_pos;
@@ -807,6 +797,7 @@ inline void writeXMLStringForTextElement(std::string_view s, WriteBuffer & buf)
 }
 
 /// @brief Serialize `uuid` into an array of characters in big-endian byte order.
+/// @param uuid UUID to serialize.
 /// @return Array of characters in big-endian byte order.
 std::array<char, 36> formatUUID(const UUID & uuid);
 
@@ -819,7 +810,7 @@ inline void writeUUIDText(const UUID & uuid, WriteBuffer & buf)
 void writeIPv4Text(const IPv4 & ip, WriteBuffer & buf);
 void writeIPv6Text(const IPv6 & ip, WriteBuffer & buf);
 
-template <typename DecimalType, bool cut_trailing_zeros_align_to_groups_of_thousands = false>
+template <typename DecimalType>
 inline void writeDateTime64FractionalText(typename DecimalType::NativeType fractional, UInt32 scale, WriteBuffer & buf)
 {
     static constexpr UInt32 MaxScale = DecimalUtils::max_precision<DecimalType>;
@@ -830,23 +821,7 @@ inline void writeDateTime64FractionalText(typename DecimalType::NativeType fract
     for (Int32 pos = scale - 1; pos >= 0 && fractional; --pos, fractional /= DateTime64(10))
         data[pos] += fractional % DateTime64(10);
 
-    if constexpr (cut_trailing_zeros_align_to_groups_of_thousands)
-    {
-        UInt32 last_none_zero_pos = 0;
-        for (UInt32 pos = 0; pos < scale; ++pos)
-        {
-            if (data[pos] != '0')
-            {
-                last_none_zero_pos = pos;
-            }
-        }
-        size_t new_scale = (last_none_zero_pos >= 3 ? 6 : 3);
-        writeString(&data[0], new_scale, buf);
-    }
-    else
-    {
-        writeString(&data[0], static_cast<size_t>(scale), buf);
-    }
+    writeString(&data[0], static_cast<size_t>(scale), buf);
 }
 
 static const char digits100[201] =
@@ -959,12 +934,7 @@ inline void writeDateTimeText(time_t datetime, WriteBuffer & buf, const DateLUTI
 }
 
 /// In the format YYYY-MM-DD HH:MM:SS.NNNNNNNNN, according to the specified time zone.
-template <
-    char date_delimeter = '-',
-    char time_delimeter = ':',
-    char between_date_time_delimiter = ' ',
-    char fractional_time_delimiter = '.',
-    bool cut_trailing_zeros_align_to_groups_of_thousands = false>
+template <char date_delimeter = '-', char time_delimeter = ':', char between_date_time_delimiter = ' ', char fractional_time_delimiter = '.'>
 inline void writeDateTimeText(DateTime64 datetime64, UInt32 scale, WriteBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance())
 {
     static constexpr UInt32 MaxScale = DecimalUtils::max_precision<DateTime64>;
@@ -989,27 +959,12 @@ inline void writeDateTimeText(DateTime64 datetime64, UInt32 scale, WriteBuffer &
     }
 
     writeDateTimeText<date_delimeter, time_delimeter, between_date_time_delimiter>(LocalDateTime(components.whole, time_zone), buf);
-    if constexpr (cut_trailing_zeros_align_to_groups_of_thousands)
-    {
-        if (scale > 0 && components.fractional != 0)
-        {
-            buf.write(fractional_time_delimiter);
-            writeDateTime64FractionalText<DateTime64, true>(components.fractional, scale, buf);
-        }
-    }
-    else
-    {
-        if (scale > 0)
-        {
-            buf.write(fractional_time_delimiter);
-            writeDateTime64FractionalText<DateTime64, false>(components.fractional, scale, buf);
-        }
-    }
-}
 
-inline void writeDateTimeTextCutTrailingZerosAlignToGroupOfThousands(DateTime64 datetime64, UInt32 scale, WriteBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance())
-{
-    writeDateTimeText<'-', ':', ' ', '.', true>(datetime64, scale, buf, time_zone);
+    if (scale > 0)
+    {
+        buf.write(fractional_time_delimiter);
+        writeDateTime64FractionalText<DateTime64>(components.fractional, scale, buf);
+    }
 }
 
 /// In the RFC 1123 format: "Tue, 03 Dec 2019 00:11:50 GMT". You must provide GMT DateLUT.
@@ -1107,9 +1062,7 @@ inline void writeText(is_integer auto x, WriteBuffer & buf)
         writeIntText(x, buf);
 }
 
-template <typename T>
-requires is_floating_point<T>
-inline void writeText(T x, WriteBuffer & buf) { writeFloatText(x, buf); }
+inline void writeText(is_floating_point auto x, WriteBuffer & buf) { writeFloatText(x, buf); }
 
 inline void writeText(is_enum auto x, WriteBuffer & buf) { writeText(magic_enum::enum_name(x), buf); }
 
@@ -1135,12 +1088,12 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
             writeDecimalFractional(static_cast<UInt32>(x), scale, ostr, trailing_zeros, fixed_fractional_length, fractional_length);
             return;
         }
-        if (x <= std::numeric_limits<UInt64>::max())
+        else if (x <= std::numeric_limits<UInt64>::max())
         {
             writeDecimalFractional(static_cast<UInt64>(x), scale, ostr, trailing_zeros, fixed_fractional_length, fractional_length);
             return;
         }
-        if (x <= std::numeric_limits<UInt128>::max())
+        else if (x <= std::numeric_limits<UInt128>::max())
         {
             writeDecimalFractional(static_cast<UInt128>(x), scale, ostr, trailing_zeros, fixed_fractional_length, fractional_length);
             return;
@@ -1153,7 +1106,7 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
             writeDecimalFractional(static_cast<UInt32>(x), scale, ostr, trailing_zeros, fixed_fractional_length, fractional_length);
             return;
         }
-        if (x <= std::numeric_limits<UInt64>::max())
+        else if (x <= std::numeric_limits<UInt64>::max())
         {
             writeDecimalFractional(static_cast<UInt64>(x), scale, ostr, trailing_zeros, fixed_fractional_length, fractional_length);
             return;
@@ -1451,7 +1404,7 @@ String fourSpaceIndent(size_t indent);
 
 bool inline isWritingToTerminal(const WriteBuffer & buf)
 {
-    const auto * write_buffer_to_descriptor = dynamic_cast<const WriteBufferFromFileDescriptor *>(&buf);
+    const auto * write_buffer_to_descriptor = typeid_cast<const WriteBufferFromFileDescriptor *>(&buf);
     return write_buffer_to_descriptor && write_buffer_to_descriptor->getFD() == STDOUT_FILENO && isatty(STDOUT_FILENO);
 }
 

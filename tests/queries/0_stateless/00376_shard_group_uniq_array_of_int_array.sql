@@ -1,6 +1,4 @@
--- Tags: long
-
-SET max_rows_to_read = '55M';
+-- Tags: shard
 
 DROP TABLE IF EXISTS group_uniq_arr_int;
 CREATE TABLE group_uniq_arr_int ENGINE = Memory AS

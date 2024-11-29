@@ -28,12 +28,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 external_storage_max_read_bytes;
-    extern const SettingsUInt64 external_storage_max_read_rows;
-    extern const SettingsUInt64 max_block_size;
-}
 
 namespace ErrorCodes
 {
@@ -42,9 +36,8 @@ namespace ErrorCodes
 }
 
 StreamSettings::StreamSettings(const Settings & settings, bool auto_close_, bool fetch_by_name_, size_t max_retry_)
-    : max_read_mysql_row_nums(
-          (settings[Setting::external_storage_max_read_rows]) ? settings[Setting::external_storage_max_read_rows] : settings[Setting::max_block_size])
-    , max_read_mysql_bytes_size(settings[Setting::external_storage_max_read_bytes])
+    : max_read_mysql_row_nums((settings.external_storage_max_read_rows) ? settings.external_storage_max_read_rows : settings.max_block_size)
+    , max_read_mysql_bytes_size(settings.external_storage_max_read_bytes)
     , auto_close(auto_close_)
     , fetch_by_name(fetch_by_name_)
     , default_num_tries_on_connection_loss(max_retry_)
