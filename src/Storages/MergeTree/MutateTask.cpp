@@ -985,7 +985,6 @@ void finalizeMutatedPart(
 
     new_data_part->rows_count = source_part->rows_count;
     new_data_part->index_granularity = source_part->index_granularity;
-    new_data_part->setIndex(*source_part->getIndex());
     new_data_part->minmax_idx = source_part->minmax_idx;
     new_data_part->modification_time = time(nullptr);
 
@@ -994,6 +993,10 @@ void finalizeMutatedPart(
         if (auto new_index_granularity = new_data_part->index_granularity->optimize())
             new_data_part->index_granularity = std::move(new_index_granularity);
     }
+
+    /// It's important to set index after index granularity.
+    if (!new_data_part->storage.getPrimaryIndexCache())
+        new_data_part->setIndex(*source_part->getIndex());
 
     /// Load rest projections which are hardlinked
     bool noop;
@@ -1649,7 +1652,6 @@ private:
             std::move(index_granularity_ptr),
             ctx->txn ? ctx->txn->tid : Tx::PrehistoricTID,
             /*reset_columns=*/ true,
-            /*save_marks_in_cache=*/ false,
             /*blocks_are_granules_size=*/ false,
             ctx->context->getWriteSettings());
 

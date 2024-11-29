@@ -3,14 +3,14 @@ import json
 from pathlib import Path
 from typing import List
 
-from praktika._environment import _Environment
-from praktika.gh import GH
-from praktika.parser import WorkflowConfigParser
-from praktika.result import Result, ResultInfo, _ResultS3
-from praktika.runtime import RunConfig
-from praktika.s3 import S3
-from praktika.settings import Settings
-from praktika.utils import Utils
+from ._environment import _Environment
+from .gh import GH
+from .parser import WorkflowConfigParser
+from .result import Result, ResultInfo, _ResultS3
+from .runtime import RunConfig
+from .s3 import S3
+from .settings import Settings
+from .utils import Utils
 
 
 @dataclasses.dataclass
@@ -128,9 +128,6 @@ class HtmlRunnerHooks:
         for job in _workflow.jobs:
             if job.name not in skip_jobs:
                 result = Result.generate_pending(job.name)
-                # Preemptively add the general job log to the result directory to ensure
-                #   the post-job handler can upload it, even if the job is terminated unexpectedly
-                result.set_files([Settings.RUN_LOG])
             else:
                 result = Result.generate_skipped(job.name, job_cache_records[job.name])
             results.append(result)
