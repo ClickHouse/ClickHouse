@@ -1,6 +1,6 @@
 import os
 
-from praktika.utils import MetaClasses
+from ..utils import MetaClasses
 
 
 class ScalingType(metaclass=MetaClasses.WithIter):

@@ -569,8 +569,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->new_data_part->index_granularity_info,
         ctx->blocks_are_granules_size);
 
-    bool save_marks_in_cache = (*storage_settings)[MergeTreeSetting::prewarm_mark_cache] && global_ctx->context->getMarkCache();
-
     global_ctx->to = std::make_shared<MergedBlockOutputStream>(
         global_ctx->new_data_part,
         global_ctx->metadata_snapshot,
@@ -581,7 +579,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         std::move(index_granularity_ptr),
         global_ctx->txn ? global_ctx->txn->tid : Tx::PrehistoricTID,
         /*reset_columns=*/ true,
-        save_marks_in_cache,
         ctx->blocks_are_granules_size,
         global_ctx->context->getWriteSettings());
 
@@ -1120,8 +1117,6 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
     ctx->executor = std::make_unique<PullingPipelineExecutor>(ctx->column_parts_pipeline);
     NamesAndTypesList columns_list = {*ctx->it_name_and_type};
 
-    bool save_marks_in_cache = (*global_ctx->data->getSettings())[MergeTreeSetting::prewarm_mark_cache] && global_ctx->context->getMarkCache();
-
     ctx->column_to = std::make_unique<MergedColumnOnlyOutputStream>(
         global_ctx->new_data_part,
         global_ctx->metadata_snapshot,
@@ -1130,8 +1125,7 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         getStatisticsForColumns(columns_list, global_ctx->metadata_snapshot),
         ctx->compression_codec,
         global_ctx->to->getIndexGranularity(),
-        &global_ctx->written_offset_columns,
-        save_marks_in_cache);
+        &global_ctx->written_offset_columns);
 
     ctx->column_elems_written = 0;
 }
@@ -1167,6 +1161,8 @@ void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn() const
     ctx->executor.reset();
     auto changed_checksums = ctx->column_to->fillChecksums(global_ctx->new_data_part, global_ctx->checksums_gathered_columns);
     global_ctx->checksums_gathered_columns.add(std::move(changed_checksums));
+    const auto & columns_sample = ctx->column_to->getColumnsSample().getColumnsWithTypeAndName();
+    global_ctx->gathered_columns_samples.insert(global_ctx->gathered_columns_samples.end(), columns_sample.begin(), columns_sample.end());
 
     auto cached_marks = ctx->column_to->releaseCachedMarks();
     for (auto & [name, marks] : cached_marks)
@@ -1316,7 +1312,7 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
     if (global_ctx->chosen_merge_algorithm != MergeAlgorithm::Vertical)
         global_ctx->to->finalizePart(global_ctx->new_data_part, ctx->need_sync);
     else
-        global_ctx->to->finalizePart(global_ctx->new_data_part, ctx->need_sync, &global_ctx->storage_columns, &global_ctx->checksums_gathered_columns);
+        global_ctx->to->finalizePart(global_ctx->new_data_part, ctx->need_sync, &global_ctx->storage_columns, &global_ctx->checksums_gathered_columns, &global_ctx->gathered_columns_samples);
 
     auto cached_marks = global_ctx->to->releaseCachedMarks();
     for (auto & [name, marks] : cached_marks)

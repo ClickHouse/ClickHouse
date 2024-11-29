@@ -17,6 +17,7 @@
 #include <Functions/indexHint.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Functions/IFunctionDateOrDateTime.h>
 #include <Functions/geometryConverters.h>
 #include <Common/FieldVisitorToString.h>
@@ -905,7 +906,7 @@ static Field applyFunctionForField(
         { arg_type->createColumnConst(1, arg_value), arg_type, "x" },
     };
 
-    auto col = func->execute(columns, func->getResultType(), 1);
+    auto col = func->execute(columns, func->getResultType(), 1, /* dry_run = */ false);
     return (*col)[0];
 }
 
@@ -939,7 +940,7 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
         /// When cache is missed, we calculate the whole column where the field comes from. This will avoid repeated calculation.
         ColumnsWithTypeAndName args{(*columns)[field.column_idx]};
         field.columns->emplace_back(ColumnWithTypeAndName {nullptr, func->getResultType(), result_name});
-        (*columns)[result_idx].column = func->execute(args, (*columns)[result_idx].type, columns->front().column->size());
+        (*columns)[result_idx].column = func->execute(args, (*columns)[result_idx].type, columns->front().column->size(), /* dry_run = */ false);
     }
 
     return {field.columns, field.row_idx, result_idx};
@@ -979,13 +980,13 @@ bool applyFunctionChainToColumn(
 
     // And cast it to the argument type of the first function in the chain
     auto in_argument_type = getArgumentTypeOfMonotonicFunction(*functions[0]);
-    if (canBeSafelyCasted(result_type, in_argument_type))
+    if (canBeSafelyCast(result_type, in_argument_type))
     {
         result_column = castColumnAccurate({result_column, result_type, ""}, in_argument_type);
         result_type = in_argument_type;
     }
-    // If column cannot be casted accurate, casting with OrNull, and in case all
-    // values has been casted (no nulls), unpacking nested column from nullable.
+    // If column cannot be cast accurate, casting with OrNull, and in case all
+    // values has been cast (no nulls), unpacking nested column from nullable.
     // In case any further functions require Nullable input, they'll be able
     // to cast it.
     else
@@ -1008,11 +1009,11 @@ bool applyFunctionChainToColumn(
             return false;
 
         auto argument_type = getArgumentTypeOfMonotonicFunction(*func);
-        if (!canBeSafelyCasted(result_type, argument_type))
+        if (!canBeSafelyCast(result_type, argument_type))
             return false;
 
         result_column = castColumnAccurate({result_column, result_type, ""}, argument_type);
-        result_column = func->execute({{result_column, argument_type, ""}}, func->getResultType(), result_column->size());
+        result_column = func->execute({{result_column, argument_type, ""}}, func->getResultType(), result_column->size(), /* dry_run = */ false);
         result_type = func->getResultType();
 
         // Transforming nullable columns to the nested ones, in case no nulls found
@@ -1308,7 +1309,7 @@ bool KeyCondition::tryPrepareSetIndex(
             is_constant_transformed = true;
         }
 
-        if (canBeSafelyCasted(set_element_type, key_column_type))
+        if (canBeSafelyCast(set_element_type, key_column_type))
         {
             transformed_set_columns[set_element_index] = castColumn({set_column, set_element_type, {}}, key_column_type);
             continue;
@@ -2099,7 +2100,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
             else
                 key_expr_type_not_null = key_expr_type;
 
-            bool cast_not_needed = is_set_const /// Set args are already casted inside Set::createFromAST
+            bool cast_not_needed = is_set_const /// Set args are already cast inside Set::createFromAST
                 || ((isNativeInteger(key_expr_type_not_null) || isDateTime(key_expr_type_not_null))
                     && (isNativeInteger(const_type) || isDateTime(const_type))); /// Native integers and DateTime are accurately compared without cast.
 
