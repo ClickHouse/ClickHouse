@@ -1593,7 +1593,7 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
             if (need_to_qualify)
                 need_to_qualify = IdentifierResolver::tryBindIdentifierToTableExpressions(identifier_lookup, table_expression_node, scope);
 
-            if (IdentifierResolver::tryBindIdentifierToAliases(identifier_lookup, scope))
+            if (IdentifierResolver::tryBindIdentifierToAliases(identifier_lookup, scope) || IdentifierResolver::tryBindIdentifierToArrayJoinExpressions(identifier_lookup, scope))
                 need_to_qualify = true;
 
             if (need_to_qualify)
@@ -5366,6 +5366,7 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
     };
 
     add_table_expression_alias_into_scope(join_tree_node);
+    scope.registered_table_expression_nodes.insert(join_tree_node);
     scope.table_expressions_in_resolve_process.erase(join_tree_node.get());
 }
 

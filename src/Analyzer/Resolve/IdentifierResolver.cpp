@@ -680,6 +680,27 @@ bool IdentifierResolver::tryBindIdentifierToTableExpressions(const IdentifierLoo
     return can_bind_identifier_to_table_expression;
 }
 
+bool IdentifierResolver::tryBindIdentifierToArrayJoinExpressions(const IdentifierLookup & identifier_lookup, const IdentifierResolveScope & scope)
+{
+    bool result = false;
+
+    for (const auto & table_expression : scope.registered_table_expression_nodes)
+    {
+        auto * array_join_node = table_expression->as<ArrayJoinNode>();
+        if (!array_join_node)
+            continue;
+
+        for (const auto & array_join_expression : array_join_node->getJoinExpressions())
+        {
+            auto array_join_expression_alias = array_join_expression->getAlias();
+            if (identifier_lookup.identifier.front() == array_join_expression_alias)
+                return true;
+        }
+    }
+
+    return result;
+}
+
 QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromStorage(
     const Identifier & identifier,
     const QueryTreeNodePtr & table_expression_node,

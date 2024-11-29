@@ -135,14 +135,6 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<CreateUniqueArrayJoinAliasesVisitor>;
     using Base::Base;
 
-    bool needChildVisit(VisitQueryTreeNodeType & parent [[maybe_unused]], VisitQueryTreeNodeType & child [[maybe_unused]])
-    {
-        auto * array_join = parent->as<ArrayJoinNode>();
-        if (!array_join)
-            return true;
-        return child != array_join->getJoinExpressionsNode();
-    }
-
     void enterImpl(QueryTreeNodePtr & node)
     {
         if (auto * array_join_typed = node->as<ArrayJoinNode>())
