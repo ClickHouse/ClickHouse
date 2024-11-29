@@ -9088,6 +9088,16 @@ bool MergeTreeData::initializeDiskOnConfigChange(const std::set<String> & new_ad
     return true;
 }
 
+void MergeTreeData::loadPrimaryKeys() const
+{
+    auto data_parts = getDataPartsVectorForInternalUsage();
+    for (const auto & data_part : data_parts)
+    {
+        /// We call getIndex() because it calls loadIndex() after locking its mutex, but we don't need its value.
+        data_part->getIndex();
+    }
+}
+
 void MergeTreeData::unloadPrimaryKeys()
 {
     for (auto & part : getAllDataPartsVector())

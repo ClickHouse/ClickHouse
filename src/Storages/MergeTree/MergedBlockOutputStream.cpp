@@ -118,7 +118,7 @@ struct MergedBlockOutputStream::Finalizer::Impl
     }
 
     void finish();
-    void cancel();
+    void cancel() noexcept;
 };
 
 void MergedBlockOutputStream::Finalizer::finish()
@@ -129,7 +129,7 @@ void MergedBlockOutputStream::Finalizer::finish()
         to_finish->finish();
 }
 
-void MergedBlockOutputStream::Finalizer::cancel()
+void MergedBlockOutputStream::Finalizer::cancel() noexcept
 {
     std::unique_ptr<Impl> to_cancel = std::move(impl);
     impl.reset();
@@ -166,7 +166,7 @@ void MergedBlockOutputStream::Finalizer::Impl::finish()
         part->getDataPartStorage().removeFile(file_name);
 }
 
-void MergedBlockOutputStream::Finalizer::Impl::cancel()
+void MergedBlockOutputStream::Finalizer::Impl::cancel() noexcept
 {
     writer.cancel();
 
@@ -182,15 +182,8 @@ MergedBlockOutputStream::Finalizer::Finalizer(std::unique_ptr<Impl> impl_) : imp
 
 MergedBlockOutputStream::Finalizer::~Finalizer()
 {
-    try
-    {
-        if (impl)
-            finish();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    if (impl)
+        cancel();
 }
 
 
@@ -270,6 +263,7 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
             new_part->index_granularity = std::move(new_index_granularity);
     }
 
+    /// It's important to set index after index granularity.
     if (auto computed_index = writer->releaseIndexColumns())
         new_part->setIndex(std::move(*computed_index));
 
