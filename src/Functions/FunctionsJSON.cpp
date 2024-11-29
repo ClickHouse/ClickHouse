@@ -460,7 +460,7 @@ private:
 #if USE_SIMDJSON
         if (allow_simdjson)
         {
-            if constexpr (std::is_same_v<Name, NameIsValidJSON>)
+            if constexpr (std::is_same_v<Name, NameIsValidJSON> || std::is_same_v<Name, NameJSONExtract>)
                 return FunctionJSONHelpers::Executor<Name, Impl, SimdJSONParser>::run(arguments, result_type, input_rows_count, format_settings);
             else
                 return FunctionJSONHelpers::Executor<Name, Impl, OnDemandSimdJSONParser>::run(arguments, result_type, input_rows_count, format_settings);
