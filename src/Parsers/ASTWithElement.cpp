@@ -11,7 +11,8 @@ ASTPtr ASTWithElement::clone() const
     const auto res = std::make_shared<ASTWithElement>(*this);
     res->children.clear();
     res->subquery = subquery->clone();
-    res->aliases = aliases->clone();
+    if (aliases)
+        res->aliases = aliases->clone();
     res->children.emplace_back(res->subquery);
     return res;
 }
