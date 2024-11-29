@@ -11,7 +11,7 @@ sidebar_label: SELECT
 ## Syntax
 
 ``` sql
-[WITH expr_list|(subquery)]
+[WITH expr_list [(alias1 [, alias2 ...])] | (subquery)]
 SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [FROM [db.]table | (subquery) | table_function] [FINAL]
 [SAMPLE sample_coeff]
