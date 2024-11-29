@@ -55,11 +55,6 @@ namespace Setting
     extern const SettingsBool flatten_nested;
 }
 
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsBool enable_minmax_index_for_all_numeric_columns;
-}
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
