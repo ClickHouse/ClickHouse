@@ -26,6 +26,7 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
     RangesInDataParts parts_,
     MutationsSnapshotPtr mutations_snapshot_,
     VirtualFields shared_virtual_fields_,
+    bool has_limit_below_one_block_,
     const StorageSnapshotPtr & storage_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
     const ExpressionActionsSettings & actions_settings_,
@@ -48,6 +49,7 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
         context_)
     , extension(std::move(extension_))
     , mode(mode_)
+    , has_limit_below_one_block(has_limit_below_one_block_)
     , min_marks_per_task(pool_settings.min_marks_for_concurrent_read)
 {
     for (const auto & info : per_part_infos)
@@ -95,6 +97,28 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
                     {
                         auto result = std::move(desc.ranges);
                         desc.ranges = MarkRanges{};
+                        ProfileEvents::increment(ProfileEvents::ParallelReplicasReadMarks, result.getNumberOfMarks());
+                        return result;
+                    }
+
+                    /// for asc limit, just return one range
+                    if (has_limit_below_one_block)
+                    {
+                        MarkRanges result;
+                        auto & range = desc.ranges.front();
+                        if (range.begin + marks_in_range < range.end)
+                        {
+                            result.emplace_front(range.begin, range.begin + marks_in_range);
+                            range.begin += marks_in_range;
+                            marks_in_range *= 2;
+                        }
+                        else
+                        {
+                            result.emplace_front(range.begin, range.end);
+                            desc.ranges.pop_back();
+                        }
+
+                        chassert(result.size() == 1);
                         ProfileEvents::increment(ProfileEvents::ParallelReplicasReadMarks, result.getNumberOfMarks());
                         return result;
                     }
