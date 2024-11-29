@@ -1803,6 +1803,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         /// Calculate sorting key expressions so that they are available for merge sorting.
         const auto & sorting_key_expression = global_ctx->metadata_snapshot->getSortingKey().expression;
         auto subcolumns = getSubcolumnsUsedInExpression(merge_parts_query_plan.getCurrentHeader(), sorting_key_expression);
+        /// If sorting expressions contain subcolumns, we need to add additional step
+        /// that will extract these subcolumns and add them to the block.
         if (!subcolumns.empty())
         {
             NamesAndTypesList required_columns = merge_parts_query_plan.getCurrentHeader().getNamesAndTypesList();
@@ -1899,6 +1901,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     {
         auto indices_expression = global_ctx->merging_skip_indexes.getSingleExpressionForIndices(global_ctx->metadata_snapshot->getColumns(), global_ctx->data->getContext());
         auto subcolumns = getSubcolumnsUsedInExpression(merge_parts_query_plan.getCurrentHeader(), indices_expression);
+        /// If index expressions contain subcolumns, we need to add additional step
+        /// that will extract these subcolumns and add them to the block.
         if (!subcolumns.empty())
         {
             NamesAndTypesList required_columns = merge_parts_query_plan.getCurrentHeader().getNamesAndTypesList();
