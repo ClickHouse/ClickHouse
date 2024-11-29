@@ -40,8 +40,6 @@ public:
         bool need_prefix_);
 
     bool execute();
-    void cancel() noexcept;
-
     void updateProfileEvents() const;
 
     std::future<MergeTreeData::MutableDataPartPtr> getFuture()

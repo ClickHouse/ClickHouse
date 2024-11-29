@@ -657,9 +657,9 @@ void ObjectStorageQueueSource::commit(bool success, const std::string & exceptio
 
 void ObjectStorageQueueSource::applyActionAfterProcessing(const String & path)
 {
-    if (files_metadata->getTableMetadata().after_processing == ObjectStorageQueueAction::DELETE)
+    if (files_metadata->getTableMetadata().after_processing == "delete")
     {
-        object_storage->removeObjectIfExists(StoredObject(path));
+        object_storage->removeObject(StoredObject(path));
     }
 }
 

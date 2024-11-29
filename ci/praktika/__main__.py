@@ -8,12 +8,12 @@ from praktika.yaml_generator import YamlGenerator
 
 
 def create_parser():
-    parser = argparse.ArgumentParser(prog="praktika")
+    parser = argparse.ArgumentParser(prog="python3 -m praktika")
 
     subparsers = parser.add_subparsers(dest="command", help="Available subcommands")
 
     run_parser = subparsers.add_parser("run", help="Job Runner")
-    run_parser.add_argument("job", help="Job Name", type=str)
+    run_parser.add_argument("--job", help="Job Name", type=str, required=True)
     run_parser.add_argument(
         "--workflow",
         help="Workflow Name (required if job name is not uniq per config)",
@@ -38,30 +38,6 @@ def create_parser():
         default=None,
     )
     run_parser.add_argument(
-        "--test",
-        help="Custom parameter to pass into a job script, it's up to job script how to use it, for local test",
-        type=str,
-        default="",
-    )
-    run_parser.add_argument(
-        "--pr",
-        help="PR number. Optional parameter for local run. Set if you want an required artifact to be uploaded from CI run in that PR",
-        type=int,
-        default=None,
-    )
-    run_parser.add_argument(
-        "--sha",
-        help="Commit sha. Optional parameter for local run. Set if you want an required artifact to be uploaded from CI run on that sha, head sha will be used if not set",
-        type=str,
-        default=None,
-    )
-    run_parser.add_argument(
-        "--branch",
-        help="Commit sha. Optional parameter for local run. Set if you want an required artifact to be uploaded from CI run on that branch, main branch name will be used if not set",
-        type=str,
-        default=None,
-    )
-    run_parser.add_argument(
         "--ci",
         help="When not set - dummy env will be generated, for local test",
         action="store_true",
@@ -75,8 +51,7 @@ def create_parser():
     return parser
 
 
-def main():
-    sys.path.append(".")
+if __name__ == "__main__":
     parser = create_parser()
     args = parser.parse_args()
 
@@ -110,18 +85,10 @@ def main():
                 workflow=workflow,
                 job=job,
                 docker=args.docker,
-                local_run=not args.ci,
+                dummy_env=not args.ci,
                 no_docker=args.no_docker,
                 param=args.param,
-                test=args.test,
-                pr=args.pr,
-                branch=args.branch,
-                sha=args.sha,
             )
     else:
         parser.print_help()
         sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()

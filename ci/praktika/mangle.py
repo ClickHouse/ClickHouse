@@ -1,10 +1,11 @@
 import copy
 import importlib.util
 from pathlib import Path
+from typing import Any, Dict
 
 from praktika import Job
-from praktika.settings import Settings
-from praktika.utils import Utils
+from praktika._settings import _USER_DEFINED_SETTINGS, _Settings
+from praktika.utils import ContextManager, Utils
 
 
 def _get_workflows(name=None, file=None):
@@ -13,34 +14,35 @@ def _get_workflows(name=None, file=None):
     """
     res = []
 
-    directory = Path(Settings.WORKFLOWS_DIRECTORY)
-    for py_file in directory.glob("*.py"):
-        if file and file not in str(py_file):
-            continue
-        module_name = py_file.name.removeprefix(".py")
-        spec = importlib.util.spec_from_file_location(
-            module_name, f"{Settings.WORKFLOWS_DIRECTORY}/{module_name}"
-        )
-        assert spec
-        foo = importlib.util.module_from_spec(spec)
-        assert spec.loader
-        spec.loader.exec_module(foo)
-        try:
-            for workflow in foo.WORKFLOWS:
-                if name:
-                    if name == workflow.name:
-                        print(f"Read workflow [{name}] config from [{module_name}]")
-                        res = [workflow]
-                        break
-                    else:
-                        continue
-                else:
-                    res += foo.WORKFLOWS
-                    print(f"Read workflow configs from [{module_name}]")
-        except Exception as e:
-            print(
-                f"WARNING: Failed to add WORKFLOWS config from [{module_name}], exception [{e}]"
+    with ContextManager.cd():
+        directory = Path(_Settings.WORKFLOWS_DIRECTORY)
+        for py_file in directory.glob("*.py"):
+            if file and file not in str(py_file):
+                continue
+            module_name = py_file.name.removeprefix(".py")
+            spec = importlib.util.spec_from_file_location(
+                module_name, f"{_Settings.WORKFLOWS_DIRECTORY}/{module_name}"
             )
+            assert spec
+            foo = importlib.util.module_from_spec(spec)
+            assert spec.loader
+            spec.loader.exec_module(foo)
+            try:
+                for workflow in foo.WORKFLOWS:
+                    if name:
+                        if name == workflow.name:
+                            print(f"Read workflow [{name}] config from [{module_name}]")
+                            res = [workflow]
+                            break
+                        else:
+                            continue
+                    else:
+                        res += foo.WORKFLOWS
+                        print(f"Read workflow configs from [{module_name}]")
+            except Exception as e:
+                print(
+                    f"WARNING: Failed to add WORKFLOWS config from [{module_name}], exception [{e}]"
+                )
     if not res:
         Utils.raise_with_error(f"Failed to find workflow [{name or file}]")
 
@@ -56,6 +58,7 @@ def _update_workflow_artifacts(workflow):
     artifact_job = {}
     for job in workflow.jobs:
         for artifact_name in job.provides:
+            assert artifact_name not in artifact_job
             artifact_job[artifact_name] = job.name
     for artifact in workflow.artifacts:
         artifact._provided_by = artifact_job[artifact.name]
@@ -68,7 +71,9 @@ def _update_workflow_with_native_jobs(workflow):
         print(f"Enable native job [{_docker_build_job.name}] for [{workflow.name}]")
         aux_job = copy.deepcopy(_docker_build_job)
         if workflow.enable_cache:
-            print(f"Add automatic digest config for [{aux_job.name}] job")
+            print(
+                f"Add automatic digest config for [{aux_job.name}] job since cache is enabled"
+            )
             docker_digest_config = Job.CacheDigestConfig()
             for docker_config in workflow.dockers:
                 docker_digest_config.include_paths.append(docker_config.path)
@@ -103,3 +108,30 @@ def _update_workflow_with_native_jobs(workflow):
         for job in workflow.jobs:
             aux_job.requires.append(job.name)
         workflow.jobs.append(aux_job)
+
+
+def _get_user_settings() -> Dict[str, Any]:
+    """
+    Gets user's settings
+    """
+    res = {}  # type: Dict[str, Any]
+
+    directory = Path(_Settings.SETTINGS_DIRECTORY)
+    for py_file in directory.glob("*.py"):
+        module_name = py_file.name.removeprefix(".py")
+        spec = importlib.util.spec_from_file_location(
+            module_name, f"{_Settings.SETTINGS_DIRECTORY}/{module_name}"
+        )
+        assert spec
+        foo = importlib.util.module_from_spec(spec)
+        assert spec.loader
+        spec.loader.exec_module(foo)
+        for setting in _USER_DEFINED_SETTINGS:
+            try:
+                value = getattr(foo, setting)
+                res[setting] = value
+                print(f"Apply user defined setting [{setting} = {value}]")
+            except Exception as e:
+                pass
+
+    return res

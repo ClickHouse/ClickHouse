@@ -1,22 +1,27 @@
-#include <base/phdr_cache.h>
-#include <Common/EnvironmentChecks.h>
-#include <Common/StringUtils.h>
-#include <Common/getHashOfLoadedBinary.h>
+#include <unistd.h>
+#include <fcntl.h>
 
-#if defined(SANITIZE_COVERAGE)
-#    include <Common/Coverage.h>
-#endif
+#include <new>
+#include <iostream>
+#include <vector>
+#include <string>
+#include <string_view>
+#include <utility> /// pair
+
+#include <fmt/format.h>
 
 #include "config.h"
 #include "config_tools.h"
 
-#include <filesystem>
-#include <iostream>
-#include <new>
-#include <string>
-#include <string_view>
-#include <utility> /// pair
-#include <vector>
+#include <Common/EnvironmentChecks.h>
+#include <Common/Coverage.h>
+#include <Common/StringUtils.h>
+#include <Common/getHashOfLoadedBinary.h>
+#include <Common/IO.h>
+
+#include <base/phdr_cache.h>
+#include <base/coverage.h>
+
 
 /// Universal executable for various clickhouse applications
 int mainEntryClickHouseServer(int argc, char ** argv);
@@ -233,12 +238,9 @@ int main(int argc_, char ** argv_)
     ///     clickhouse # spawn local
     ///     clickhouse local # spawn local
     ///     clickhouse "select ..." # spawn local
-    ///     clickhouse /tmp/repro --enable-analyzer
     ///
-    std::error_code ec;
-    if (main_func == printHelp && !argv.empty()
-        && (argv.size() == 1 || argv[1][0] == '-' || std::string_view(argv[1]).contains(' ')
-            || std::filesystem::is_regular_file(std::filesystem::path{argv[1]}, ec)))
+    if (main_func == printHelp && !argv.empty() && (argv.size() == 1 || argv[1][0] == '-'
+        || std::string_view(argv[1]).contains(' ')))
     {
         main_func = mainEntryClickHouseLocal;
     }

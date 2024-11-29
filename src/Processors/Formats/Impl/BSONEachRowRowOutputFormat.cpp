@@ -36,10 +36,9 @@ namespace ErrorCodes
 static String toValidUTF8String(const String & name, const FormatSettings & settings)
 {
     WriteBufferFromOwnString buf;
-    {
-        WriteBufferValidUTF8 validating_buf(buf);
-        writeJSONString(name, validating_buf, settings);
-    }
+    WriteBufferValidUTF8 validating_buf(buf);
+    writeJSONString(name, validating_buf, settings);
+    validating_buf.finalize();
     /// Return value without quotes
     return buf.str().substr(1, buf.str().size() - 2);
 }

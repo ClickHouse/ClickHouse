@@ -1,7 +1,5 @@
 #include <Client/ClientApplicationBase.h>
 
-#include <filesystem>
-
 namespace DB
 {
 
@@ -110,7 +108,6 @@ void ClientApplicationBase::parseAndCheckOptions(OptionsDescription & options_de
         {
             /// Two special cases for better usability:
             /// - if the option contains a whitespace, it might be a query: clickhouse "SELECT 1"
-            /// - if the option is a filesystem file, then it's likely a queries file (clickhouse repro.sql)
             /// These are relevant for interactive usage - user-friendly, but questionable in general.
             /// In case of ambiguity or for scripts, prefer using proper options.
 
@@ -118,11 +115,8 @@ void ClientApplicationBase::parseAndCheckOptions(OptionsDescription & options_de
             po::variable_value value(boost::any(op.value), false);
 
             const char * option;
-            std::error_code ec;
             if (token.contains(' '))
                 option = "query";
-            else if (std::filesystem::is_regular_file(std::filesystem::path{token}, ec))
-                option = "queries-file";
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Positional option `{}` is not supported.", token);
 

@@ -7,6 +7,7 @@
 #include <condition_variable>
 #include <mutex>
 
+#include "config.h"
 
 namespace DB
 {
@@ -41,7 +42,7 @@ static struct InitFiu
     REGULAR(use_delayed_remote_source) \
     REGULAR(cluster_discovery_faults) \
     REGULAR(replicated_sends_failpoint) \
-    REGULAR(stripe_log_sink_write_fallpoint) \
+    REGULAR(stripe_log_sink_write_fallpoint)\
     ONCE(smt_commit_merge_mutate_zk_fail_after_op) \
     ONCE(smt_commit_merge_mutate_zk_fail_before_op) \
     ONCE(smt_commit_write_zk_fail_after_op) \
@@ -92,7 +93,6 @@ APPLY_FOR_FAILPOINTS(M, M, M, M)
 
 std::unordered_map<String, std::shared_ptr<FailPointChannel>> FailPointInjection::fail_point_wait_channels;
 std::mutex FailPointInjection::mu;
-
 class FailPointChannel : private boost::noncopyable
 {
 public:

@@ -131,7 +131,7 @@ bool tryGetNumericValueFromJSONElement(
     switch (element.type())
     {
         case ElementType::DOUBLE:
-            if constexpr (is_floating_point<NumberType>)
+            if constexpr (std::is_floating_point_v<NumberType>)
             {
                 /// We permit inaccurate conversion of double to float.
                 /// Example: double 0.1 from JSON is not representable in float.
@@ -175,7 +175,7 @@ bool tryGetNumericValueFromJSONElement(
                 return false;
 
             auto rb = ReadBufferFromMemory{element.getString()};
-            if constexpr (is_floating_point<NumberType>)
+            if constexpr (std::is_floating_point_v<NumberType>)
             {
                 if (!tryReadFloatText(value, rb) || !rb.eof())
                 {
@@ -362,10 +362,9 @@ public:
 
             auto & col_str = assert_cast<ColumnString &>(column);
             auto & chars = col_str.getChars();
-            {
-                WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
-                jsonElementToString<JSONParser>(element, buf, format_settings);
-            }
+            WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
+            jsonElementToString<JSONParser>(element, buf, format_settings);
+            buf.finalize();
             chars.push_back(0);
             col_str.getOffsets().push_back(chars.size());
         }
@@ -1086,7 +1085,7 @@ public:
         }
 
         auto & col_lc = assert_cast<ColumnLowCardinality &>(column);
-        auto tmp_nested = removeNullable(col_lc.getDictionary().getNestedColumn()->cloneEmpty())->assumeMutable();
+        auto tmp_nested = col_lc.getDictionary().getNestedColumn()->cloneEmpty();
         if (!nested->insertResultToColumn(*tmp_nested, element, insert_settings, format_settings, error))
             return false;
 
@@ -1443,8 +1442,7 @@ public:
         auto shared_variant_discr = column_dynamic.getSharedVariantDiscriminator();
         auto insert_settings_with_no_type_conversion = insert_settings;
         insert_settings_with_no_type_conversion.allow_type_conversion = false;
-        auto order = SerializationVariant::getVariantsDeserializeTextOrder(assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants());
-        for (size_t i : order)
+        for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
         {
             if (i != shared_variant_discr)
             {

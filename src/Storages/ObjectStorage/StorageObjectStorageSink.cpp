@@ -74,7 +74,6 @@ void StorageObjectStorageSink::finalizeBuffers()
     catch (...)
     {
         /// Stop ParallelFormattingOutputFormat correctly.
-        cancelBuffers();
         releaseBuffers();
         throw;
     }

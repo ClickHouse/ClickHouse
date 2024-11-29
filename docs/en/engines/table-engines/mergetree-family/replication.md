@@ -304,8 +304,6 @@ We use the term `MergeTree` to refer to all table engines in the `MergeTree fami
 
 If you had a `MergeTree` table that was manually replicated, you can convert it to a replicated table. You might need to do this if you have already collected a large amount of data in a `MergeTree` table and now you want to enable replication.
 
-[ATTACH TABLE ... AS REPLICATED](/docs/en/sql-reference/statements/attach.md#attach-mergetree-table-as-replicatedmergetree) statement allows to attach detached `MergeTree` table as `ReplicatedMergeTree`.
-
 `MergeTree` table can be automatically converted on server restart if `convert_to_replicated` flag is set at the table's data directory (`/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/` for `Atomic` database).
 Create empty `convert_to_replicated` file and the table will be loaded as replicated on next server restart.
 
@@ -322,7 +320,7 @@ To create a converted table on other replicas, you will need to explicitly speci
 SELECT zookeeper_path FROM system.replicas WHERE table = 'table_name';
 ```
 
-There is also a manual way to do this.
+There is also a manual way to do this without server restart.
 
 If the data differs on various replicas, first sync it, or delete this data on all the replicas except one.
 
@@ -332,9 +330,7 @@ Then run `ALTER TABLE ATTACH PARTITION` on one of the replicas to add these data
 
 ## Converting from ReplicatedMergeTree to MergeTree {#converting-from-replicatedmergetree-to-mergetree}
 
-Use [ATTACH TABLE ... AS NOT REPLICATED](/docs/en/sql-reference/statements/attach.md#attach-mergetree-table-as-replicatedmergetree) statement to attach detached `ReplicatedMergeTree` table as `MergeTree` on a single server.
-
-Another way to do this involves server restart. Create a MergeTree table with a different name. Move all the data from the directory with the `ReplicatedMergeTree` table data to the new table’s data directory. Then delete the `ReplicatedMergeTree` table and restart the server.
+Create a MergeTree table with a different name. Move all the data from the directory with the `ReplicatedMergeTree` table data to the new table’s data directory. Then delete the `ReplicatedMergeTree` table and restart the server.
 
 If you want to get rid of a `ReplicatedMergeTree` table without launching the server:
 
