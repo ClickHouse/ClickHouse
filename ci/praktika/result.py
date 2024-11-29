@@ -141,6 +141,8 @@ class Result(MetaClasses.Serializable):
         return self
 
     def set_files(self, files) -> "Result":
+        if isinstance(files, (str, Path)):
+            files = [files]
         for file in files:
             assert Path(
                 file
@@ -152,7 +154,7 @@ class Result(MetaClasses.Serializable):
                 print(
                     f"WARNING: File [{file}] is already present in Result [{self.name}] - skip"
                 )
-                files.remove(files)
+                files.remove(file)
         self.files += files
         self.dump()
         return self
@@ -535,7 +537,7 @@ class _ResultS3:
     #     return True
 
     @classmethod
-    def upload_result_files_to_s3(cls, result, s3_subprefix=""):
+    def upload_result_files_to_s3(cls, result: Result, s3_subprefix=""):
         s3_subprefix = "/".join([s3_subprefix, Utils.normalize_string(result.name)])
         if result.results:
             for result_ in result.results:
@@ -543,7 +545,7 @@ class _ResultS3:
         for file in result.files:
             if not Path(file).is_file():
                 print(f"ERROR: Invalid file [{file}] in [{result.name}] - skip upload")
-                result.info += f"\nWARNING: Result file [{file}] was not found"
+                result.set_info(f"WARNING: Result file [{file}] was not found")
                 file_link = S3._upload_file_to_s3(file, upload_to_s3=False)
             else:
                 is_text = False
@@ -561,11 +563,7 @@ class _ResultS3:
                     s3_subprefix=s3_subprefix,
                 )
             result.links.append(file_link)
-        if result.files:
-            print(
-                f"Result files [{result.files}] uploaded to s3 [{result.links[-len(result.files):]}] - clean files list"
-            )
-            result.files = []
+        result.files = []
         result.dump()
 
     @classmethod
@@ -669,7 +667,9 @@ class ResultTranslator:
             )
 
         try:
-            with open(cls.GTEST_RESULT_FILE, "r", encoding="utf-8") as j:
+            with open(
+                cls.GTEST_RESULT_FILE, "r", encoding="utf-8", errors="ignore"
+            ) as j:
                 report = json.load(j)
         except Exception as e:
             print(f"ERROR: failed to read json [{e}]")

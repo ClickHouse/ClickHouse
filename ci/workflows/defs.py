@@ -261,7 +261,7 @@ class JobNames:
     STATEFUL = "Stateful tests"
     STRESS = "Stress tests"
     UPGRADE = "Upgrade tests"
-    PERFORMANCE = "Performance tests"
+    PERFORMANCE = "Performance comparison"
     COMPATIBILITY = "Compatibility check"
 
 
@@ -305,7 +305,11 @@ class ArtifactNames:
     DEB_ARM_RELEASE = "DEB_ARM_RELEASE"
     DEB_ARM_ASAN = "DEB_ARM_ASAN"
 
-    PERF_REPORTS_AMD = "PERF_REPORTS_AMD"
+    PERF_REPORTS_AMD_1_3 = "PERF_REPORTS_AMD_1_3"
+    PERF_REPORTS_AMD_2_3 = "PERF_REPORTS_AMD_2_3"
+    PERF_REPORTS_AMD_1_3_WITH_RELEASE = "PERF_REPORTS_AMD_1_3_WITH_RELEASE"
+    PERF_REPORTS_AMD_2_3_WITH_RELEASE = "PERF_REPORTS_AMD_2_3_WITH_RELEASE"
+
     PERF_REPORTS_ARM = "PERF_REPORTS_ARM"
 
 
@@ -384,16 +388,23 @@ ARTIFACTS = [
         type=Artifact.Type.S3,
         path=f"{Settings.TEMP_DIR}/output/*.deb",
     ),
-    Artifact.Config(
-        name=ArtifactNames.PERF_REPORTS_AMD,
+    *Artifact.Config(
+        name="",
         type=Artifact.Type.S3,
-        path=f"{Settings.TEMP_DIR}/*.html",
+        path=f"{Settings.TEMP_DIR}/perf_wd/*.html",
+    ).parametrize(
+        names=[
+            ArtifactNames.PERF_REPORTS_AMD_1_3,
+            ArtifactNames.PERF_REPORTS_AMD_2_3,
+            ArtifactNames.PERF_REPORTS_AMD_1_3_WITH_RELEASE,
+            ArtifactNames.PERF_REPORTS_AMD_2_3_WITH_RELEASE,
+        ]
     ),
-    Artifact.Config(
-        name=ArtifactNames.PERF_REPORTS_ARM,
-        type=Artifact.Type.S3,
-        path=f"{Settings.TEMP_DIR}/*.html",
-    ),
+    # Artifact.Config(
+    #     name=ArtifactNames.PERF_REPORTS_ARM,
+    #     type=Artifact.Type.S3,
+    #     path=f"{Settings.TEMP_DIR}/perf_wd/*.html",
+    # ),
 ]
 
 
@@ -657,23 +668,38 @@ class Jobs:
     performance_test_jobs = Job.Config(
         name=JobNames.PERFORMANCE,
         runs_on=["#from param"],
-        command="./ci/jobs/performance_tests.sh",
+        command="python3 ./ci/jobs/performance_tests.py --test-options {PARAMETER}",
         run_in_docker="clickhouse/stateless-test",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./tests/performance/",
                 "./ci/jobs/scripts/perf/",
-                "./ci/jobs/performance_tests.sh",
+                "./ci/jobs/performance_tests.py",
             ],
         ),
+        timeout=2 * 3600,
     ).parametrize(
-        parameter=["amd_release", "arm_release"],
-        runs_on=[
-            [RunnerLabels.FUNC_TESTER_AMD],
-            [RunnerLabels.FUNC_TESTER_ARM],
+        parameter=[
+            "amd_release,head_master,1/2",
+            "amd_release,head_master,2/2",
+            "amd_release,prev_release,1/2",
+            "amd_release,prev_release,2/2",
         ],
-        requires=[[ArtifactNames.CH_AMD_RELEASE], [ArtifactNames.CH_ARM_RELEASE]],
-        provides=[[ArtifactNames.PERF_REPORTS_AMD], [ArtifactNames.PERF_REPORTS_ARM]],
+        # "arm_release,1/3"],
+        runs_on=[
+            [RunnerLabels.FUNC_TESTER_AMD]
+            for _ in range(4)
+            # [RunnerLabels.FUNC_TESTER_ARM],
+        ],
+        requires=[[ArtifactNames.CH_AMD_RELEASE] for _ in range(4)],
+        # [ArtifactNames.CH_ARM_RELEASE]],
+        provides=[
+            [ArtifactNames.PERF_REPORTS_AMD_1_3],
+            [ArtifactNames.PERF_REPORTS_AMD_2_3],
+            [ArtifactNames.PERF_REPORTS_AMD_1_3_WITH_RELEASE],
+            [ArtifactNames.PERF_REPORTS_AMD_2_3_WITH_RELEASE],
+        ],
+        # [ArtifactNames.PERF_REPORTS_ARM]],
     )
 
     compatibility_test_jobs = Job.Config(
