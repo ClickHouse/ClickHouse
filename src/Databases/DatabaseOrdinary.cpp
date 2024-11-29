@@ -381,7 +381,7 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
     if (!checking_disk->existsFile(convert_to_replicated_flag_path))
         return;
 
-    (void)db_disk->removeFileIfExists(convert_to_replicated_flag_path);
+    (void)checking_disk->removeFileIfExists(convert_to_replicated_flag_path);
     LOG_INFO
     (
         log,
