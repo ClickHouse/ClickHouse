@@ -237,7 +237,14 @@ void AccessRightsElement::throwIfNotGrantable() const
         return;
     auto grantable_flags = getGrantableFlags();
     if (grantable_flags)
+    {
+        if (!anyColumn() && (anyTable() || anyDatabase()))
+        {
+            // Specifying specific columns with a wildcard for a database/table is grammatically valid, but not logically valid
+            throw Exception(ErrorCodes::INVALID_GRANT, "{} on wildcards cannot be granted on the column level", access_flags.toString());
+        }
         return;
+    }
 
     if (!anyColumn())
         throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted on the column level", access_flags.toString());
