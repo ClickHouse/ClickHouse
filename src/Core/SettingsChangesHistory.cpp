@@ -64,7 +64,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"max_size_to_preallocate_for_joins", 100'000'000, 1'000'000'000'000, "Enable optimisation for bigger tables."},
             {"parallel_replicas_index_analysis_only_on_coordinator", false, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"},
             {"use_async_executor_for_materialized_views", false, false, "New setting."},
-            {"spark_text_output_format", "default", "default", "New setting"},
+            {"composed_data_type_output_format_mode", "default", "default", "New setting"},
         }
     },
     {"24.11",
@@ -145,7 +145,6 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"allow_reorder_prewhere_conditions", true, true, "New setting"},
             {"input_format_parquet_bloom_filter_push_down", false, true, "When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and bloom filter in the Parquet metadata."},
             {"date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands", false, false, "Dynamically trim the trailing zeros of datetime64 values to adjust the output scale to (0, 3, 6), corresponding to 'seconds', 'milliseconds', and 'microseconds'."},
-            {"composed_data_type_output_format_mode", "default", "default", "New setting"},
         }
     },
     {"24.9",
