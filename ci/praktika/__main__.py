@@ -99,25 +99,25 @@ def main():
             Utils.raise_with_error(
                 f"Failed to find job [{args.job}] workflow [{args.workflow}]"
             )
-        elif len(job_workflow_pairs) > 1:
+        if len(job_workflow_pairs) > 1:
             Utils.raise_with_error(
                 f"More than one job [{args.job}] found - try specifying workflow name with --workflow"
             )
-        else:
-            job, workflow = job_workflow_pairs[0][0], job_workflow_pairs[0][1]
-            print(f"Going to run job [{job.name}], workflow [{workflow.name}]")
-            Runner().run(
-                workflow=workflow,
-                job=job,
-                docker=args.docker,
-                local_run=not args.ci,
-                no_docker=args.no_docker,
-                param=args.param,
-                test=args.test,
-                pr=args.pr,
-                branch=args.branch,
-                sha=args.sha,
-            )
+
+        job, workflow = job_workflow_pairs[0]
+        print(f"Going to run job [{job.name}], workflow [{workflow.name}]")
+        Runner().run(
+            workflow=workflow,
+            job=job,
+            docker=args.docker,
+            local_run=not args.ci,
+            no_docker=args.no_docker,
+            param=args.param,
+            test=args.test,
+            pr=args.pr,
+            branch=args.branch,
+            sha=args.sha,
+        )
     else:
         parser.print_help()
         sys.exit(1)
