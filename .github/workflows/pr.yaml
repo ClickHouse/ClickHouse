@@ -1220,11 +1220,11 @@ jobs:
             python3 -m praktika run "Upgrade tests (arm_asan)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
           fi
 
-  performance_tests_amd_release:
+  performance_tests_amd_release1_5:
     runs-on: [func-tester]
     needs: [config_workflow, docker_builds, build_amd_release]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgdGVzdHMgKGFtZF9yZWxlYXNlKQ==') }}
-    name: "Performance tests (amd_release)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgdGVzdHMgKGFtZF9yZWxlYXNlLDEvNSk=') }}
+    name: "Performance tests (amd_release,1/5)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -1255,16 +1255,16 @@ jobs:
           . /tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Performance tests (amd_release)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Performance tests (amd_release,1/5)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
           else
-            python3 -m praktika run "Performance tests (amd_release)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Performance tests (amd_release,1/5)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
           fi
 
-  performance_tests_arm_release:
+  performance_tests_arm_release1_5:
     runs-on: [func-tester-aarch64]
     needs: [config_workflow, docker_builds, build_arm_release]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgdGVzdHMgKGFybV9yZWxlYXNlKQ==') }}
-    name: "Performance tests (arm_release)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgdGVzdHMgKGFybV9yZWxlYXNlLDEvNSk=') }}
+    name: "Performance tests (arm_release,1/5)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -1295,9 +1295,9 @@ jobs:
           . /tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Performance tests (arm_release)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Performance tests (arm_release,1/5)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
           else
-            python3 -m praktika run "Performance tests (arm_release)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Performance tests (arm_release,1/5)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
           fi
 
   compatibility_check_amd_release:
@@ -1382,7 +1382,7 @@ jobs:
 
   finish_workflow:
     runs-on: [ci_services]
-    needs: [config_workflow, docker_builds, style_check, fast_test, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_release, build_arm_asan, stateless_tests_amd_debugparallel, stateless_tests_amd_debugnon_parallel, stateless_tests_amd_releaseparallel, stateless_tests_amd_releasenon_parallel, stateless_tests_arm_asanparallel, stateless_tests_arm_asannon_parallel, stateful_tests_arm_release, stateful_tests_amd_asan, stateful_tests_amd_tsan, stateful_tests_amd_msan, stateful_tests_amd_ubsan, stateful_tests_amd_debug, stress_tests_arm_release, upgrade_tests_amd_debug, upgrade_tests_amd_msan, upgrade_tests_amd_tsan, upgrade_tests_arm_asan, performance_tests_amd_release, performance_tests_arm_release, compatibility_check_amd_release, compatibility_check_arm_release]
+    needs: [config_workflow, docker_builds, style_check, fast_test, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_release, build_arm_asan, stateless_tests_amd_debugparallel, stateless_tests_amd_debugnon_parallel, stateless_tests_amd_releaseparallel, stateless_tests_amd_releasenon_parallel, stateless_tests_arm_asanparallel, stateless_tests_arm_asannon_parallel, stateful_tests_arm_release, stateful_tests_amd_asan, stateful_tests_amd_tsan, stateful_tests_amd_msan, stateful_tests_amd_ubsan, stateful_tests_amd_debug, stress_tests_arm_release, upgrade_tests_amd_debug, upgrade_tests_amd_msan, upgrade_tests_amd_tsan, upgrade_tests_arm_asan, performance_tests_amd_release1_5, performance_tests_arm_release1_5, compatibility_check_amd_release, compatibility_check_arm_release]
     if: ${{ !cancelled() }}
     name: "Finish Workflow"
     outputs:

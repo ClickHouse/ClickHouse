@@ -138,12 +138,12 @@ DOCKERS = [
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
-    Docker.Config(
-        name="clickhouse/stateful-test",
-        path="./ci/docker/stateful-test",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/stateless-test"],
-    ),
+    # Docker.Config(
+    #     name="clickhouse/stateful-test",
+    #     path="./ci/docker/stateful-test",
+    #     platforms=Docker.Platforms.arm_amd,
+    #     depends_on=["clickhouse/stateless-test"],
+    # ),
     # Docker.Config(
     #     name="clickhouse/stress-test",
     #     path="./ci/docker/test/stress",
@@ -387,12 +387,12 @@ ARTIFACTS = [
     Artifact.Config(
         name=ArtifactNames.PERF_REPORTS_AMD,
         type=Artifact.Type.S3,
-        path=f"{Settings.TEMP_DIR}/*.html",
+        path=f"{Settings.TEMP_DIR}/perf_wd/*.html",
     ),
     Artifact.Config(
         name=ArtifactNames.PERF_REPORTS_ARM,
         type=Artifact.Type.S3,
-        path=f"{Settings.TEMP_DIR}/*.html",
+        path=f"{Settings.TEMP_DIR}/perf_wd/*.html",
     ),
 ]
 
@@ -657,17 +657,18 @@ class Jobs:
     performance_test_jobs = Job.Config(
         name=JobNames.PERFORMANCE,
         runs_on=["#from param"],
-        command="./ci/jobs/performance_tests.sh",
+        command="python3 ./ci/jobs/performance_tests.py --test-options {PARAMETER}",
         run_in_docker="clickhouse/stateless-test",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./tests/performance/",
                 "./ci/jobs/scripts/perf/",
-                "./ci/jobs/performance_tests.sh",
+                "./ci/jobs/performance_tests.py",
             ],
         ),
+        timeout=2 * 3600,
     ).parametrize(
-        parameter=["amd_release", "arm_release"],
+        parameter=["amd_release,1/5", "arm_release,1/5"],
         runs_on=[
             [RunnerLabels.FUNC_TESTER_AMD],
             [RunnerLabels.FUNC_TESTER_ARM],

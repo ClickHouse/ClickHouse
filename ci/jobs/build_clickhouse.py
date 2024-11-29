@@ -1,7 +1,7 @@
 import argparse
 import os
 
-from praktika.result import Result
+from praktika.result import Result, ResultTranslator
 from praktika.settings import Settings
 from praktika.utils import MetaClasses, Shell, Utils
 
@@ -220,6 +220,12 @@ def main():
                 with_log=False,
             )
         )
+        if not results[-1].is_ok():
+            results[-1].set_files(CIFiles.UNIT_TESTS_BIN)
+
+        # TODO: test, remove
+        results[-1].set_files(ResultTranslator.GTEST_RESULT_FILE)
+
         res = results[-1].is_ok()
 
     Result.create_from(results=results, stopwatch=stop_watch).complete_job()

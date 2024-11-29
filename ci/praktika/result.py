@@ -141,6 +141,8 @@ class Result(MetaClasses.Serializable):
         return self
 
     def set_files(self, files) -> "Result":
+        if isinstance(files, (str, Path)):
+            files = [files]
         for file in files:
             assert Path(
                 file
@@ -152,7 +154,7 @@ class Result(MetaClasses.Serializable):
                 print(
                     f"WARNING: File [{file}] is already present in Result [{self.name}] - skip"
                 )
-                files.remove(files)
+                files.remove(file)
         self.files += files
         self.dump()
         return self

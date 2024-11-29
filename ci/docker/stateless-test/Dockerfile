@@ -21,6 +21,7 @@ RUN addgroup --gid 1001 clickhouse2 && adduser --uid 1001 --gid 1001 --disabled-
 # gnuplot - for perf tests
 # imagemagick - for perf tests
 # parallel - for perf tests
+# time - GNU time for perf, as it's difficult to use built-in bash time from python
 
 # golang version 1.13 on Ubuntu 20 is enough for tests
 RUN apt-get update -y \
@@ -68,6 +69,7 @@ RUN apt-get update -y \
             gnuplot \
             imagemagick \
             parallel \
+            time \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 

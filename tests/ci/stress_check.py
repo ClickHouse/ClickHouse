@@ -164,7 +164,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
         assert Shell.check(
             f"cp /tmp/praktika/input/*.deb {packages_path}", verbose=True
         )
-        docker_image = pull_image(get_docker_image("clickhouse/stateful-test"))
+        docker_image = pull_image(get_docker_image("clickhouse/stateless-test"))
     else:
         download_all_deb_packages(check_name, reports_path, packages_path)
         docker_image = pull_image(get_docker_image("clickhouse/stress-test"))
