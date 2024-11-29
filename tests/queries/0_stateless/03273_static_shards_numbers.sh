@@ -93,6 +93,5 @@ cat > "$config_path" <<EOL
 EOL
 $CLICKHOUSE_CLIENT --query="SYSTEM RELOAD CONFIG; -- { serverError 577 }" 
 
-
-
-
+rm $config_path
+$CLICKHOUSE_CLIENT --query="SYSTEM RELOAD CONFIG;"
