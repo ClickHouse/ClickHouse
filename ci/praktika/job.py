@@ -3,6 +3,8 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, List, Optional
 
+Jobs = List["Job.Config"]
+
 
 class Job:
     @dataclass
@@ -50,19 +52,20 @@ class Job:
 
         def parametrize(
             self,
-            parameter: Optional[List[Any]] = None,
-            runs_on: Optional[List[List[str]]] = None,
-            provides: Optional[List[List[str]]] = None,
-            requires: Optional[List[List[str]]] = None,
-            timeout: Optional[List[int]] = None,
-        ):
+            parameter: Optional[List[Optional[Any]]] = None,
+            runs_on: Optional[List[Optional[List[str]]]] = None,
+            provides: Optional[List[Optional[List[str]]]] = None,
+            requires: Optional[List[Optional[List[str]]]] = None,
+            timeout: Optional[List[Optional[int]]] = None,
+        ) -> Jobs:
             assert (
                 parameter or runs_on
             ), "Either :parameter or :runs_on must be non empty list for parametrisation"
             if runs_on:
                 assert isinstance(runs_on, list) and isinstance(runs_on[0], list)
             if not parameter:
-                parameter = [None] * len(runs_on)
+                # runs_on is asserted above
+                parameter = [None] * len(runs_on)  # type: ignore[arg-type]
             if not runs_on:
                 runs_on = [None] * len(parameter)
             if not timeout:

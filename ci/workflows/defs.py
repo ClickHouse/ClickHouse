@@ -399,7 +399,7 @@ class Jobs:
         runs_on=["...from params..."],
         requires=[],
         command="python3 ./ci/jobs/build_clickhouse.py --build-type {PARAMETER}",
-        run_in_docker="clickhouse/binary-builder",
+        run_in_docker="clickhouse/binary-builder+--network=host",
         timeout=3600 * 2,
         digest_config=Job.CacheDigestConfig(
             include_paths=[
