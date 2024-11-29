@@ -1,14 +1,17 @@
 -- Tags: no-parallel, no-random-settings
-DROP TABLE IF EXISTS test;
-DROP TABLE IF EXISTS test2;
+-- no-parallel: test loads/unloads _all_ PKs in the system, affecting itself when it runs in parallel
+-- no-random-settings: random settings may set 'use_primary_key_cache', changing the expected behavior
 
-CREATE TABLE test (s String) ENGINE = MergeTree ORDER BY s SETTINGS index_granularity = 1;
-CREATE TABLE test2 (s String) ENGINE = MergeTree ORDER BY s SETTINGS index_granularity = 1;
+DROP TABLE IF EXISTS tab1;
+DROP TABLE IF EXISTS tab2;
+
+CREATE TABLE tab1 (s String) ENGINE = MergeTree ORDER BY s SETTINGS index_granularity = 1;
+CREATE TABLE tab2 (s String) ENGINE = MergeTree ORDER BY s SETTINGS index_granularity = 1;
 
 SELECT '-- Insert data into columns';
-INSERT INTO test SELECT randomString(1000) FROM numbers(100000);
-INSERT INTO test2 SELECT randomString(1000) FROM numbers(100000);
-SELECT (SELECT count() FROM test), (SELECT count() FROM test2);
+INSERT INTO tab1 SELECT randomString(1000) FROM numbers(100000);
+INSERT INTO tab2 SELECT randomString(1000) FROM numbers(100000);
+SELECT (SELECT count() FROM tab1), (SELECT count() FROM tab2);
 
 SELECT '-- Check primary key memory after inserting into both tables';
 SELECT
@@ -18,7 +21,7 @@ SELECT
 FROM system.parts
 WHERE
     database = currentDatabase()
-    AND table IN ('test', 'test2')
+    AND table IN ('tab1', 'tab2')
 ORDER BY table;
 
 SELECT '-- Unload primary keys for all tables in the database';
@@ -33,7 +36,7 @@ SELECT
 FROM system.parts
 WHERE
     database = currentDatabase()
-    AND table IN ('test', 'test2')
+    AND table IN ('tab1', 'tab2')
 ORDER BY table;
 
 SELECT '-- Load primary key for all tables';
@@ -48,7 +51,7 @@ SELECT
 FROM system.parts
 WHERE
     database = currentDatabase()
-    AND table IN ('test', 'test2')
+    AND table IN ('tab1', 'tab2')
 ORDER BY table;
 
 SELECT '-- Unload primary keys for all tables in the database';
@@ -63,11 +66,11 @@ SELECT
 FROM system.parts
 WHERE
     database = currentDatabase()
-    AND table IN ('test', 'test2')
+    AND table IN ('tab1', 'tab2')
 ORDER BY table;
 
 SELECT '-- Load primary key for only one table';
-SYSTEM LOAD PRIMARY KEY test;
+SYSTEM LOAD PRIMARY KEY tab1;
 SELECT 'OK';
 
 SELECT '-- Check the primary key memory after loading only one table';
@@ -78,8 +81,8 @@ SELECT
 FROM system.parts
 WHERE
     database = currentDatabase()
-    AND table IN ('test', 'test2')
+    AND table IN ('tab1', 'tab2')
 ORDER BY table;
 
-DROP TABLE test;
-DROP TABLE test2;
+DROP TABLE tab1;
+DROP TABLE tab2;
