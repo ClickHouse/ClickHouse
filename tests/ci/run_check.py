@@ -42,6 +42,7 @@ TRUSTED_CONTRIBUTORS = {
         "tsolodov",  # ClickHouse, Inc
         "justindeguzman",  # ClickHouse, Inc
         "XuJia0210",  # ClickHouse, Inc
+        "nauu",  # ClickHouse, Inc
     ]
 }
 
