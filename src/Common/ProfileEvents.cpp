@@ -814,7 +814,7 @@ The server successfully detected this situation and will download merged part fr
     M(LogWarning, "Number of log messages with level Warning", ValueType::Number) \
     M(LogError, "Number of log messages with level Error", ValueType::Number) \
     M(LogFatal, "Number of log messages with level Fatal", ValueType::Number) \
-    M(LoggerElapsedNanoseconds, "Number of log messages with level Fatal", ValueType::Nanoseconds) \
+    M(LoggerElapsedNanoseconds, "Cumulative time spend in logging", ValueType::Nanoseconds) \
     \
     M(InterfaceHTTPSendBytes, "Number of bytes sent through HTTP interfaces", ValueType::Bytes) \
     M(InterfaceHTTPReceiveBytes, "Number of bytes received through HTTP interfaces", ValueType::Bytes) \
