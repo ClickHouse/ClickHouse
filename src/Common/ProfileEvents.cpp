@@ -814,6 +814,7 @@ The server successfully detected this situation and will download merged part fr
     M(LogWarning, "Number of log messages with level Warning", ValueType::Number) \
     M(LogError, "Number of log messages with level Error", ValueType::Number) \
     M(LogFatal, "Number of log messages with level Fatal", ValueType::Number) \
+    M(LoggerElapsedNanoseconds, "Number of log messages with level Fatal", ValueType::Nanoseconds) \
     \
     M(InterfaceHTTPSendBytes, "Number of bytes sent through HTTP interfaces", ValueType::Bytes) \
     M(InterfaceHTTPReceiveBytes, "Number of bytes received through HTTP interfaces", ValueType::Bytes) \
@@ -1085,6 +1086,11 @@ void incrementForLogMessage(Poco::Message::Priority priority)
         case Poco::Message::PRIO_FATAL: increment(LogFatal); break;
         default: break;
     }
+}
+
+void incrementLoggerElapsedNanoseconds(UInt64 ns)
+{
+    increment(LoggerElapsedNanoseconds, ns);
 }
 
 CountersIncrement::CountersIncrement(Counters::Snapshot const & snapshot)
