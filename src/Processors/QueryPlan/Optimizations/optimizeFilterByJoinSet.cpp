@@ -134,6 +134,9 @@ void optimizeFilterByJoinSet(QueryPlan::Node & node)
     if (table_join.kind() != JoinKind::Inner && table_join.kind() != JoinKind::Right)
         return;
 
+    if (table_join.strictness() != JoinStrictness::Any && table_join.strictness() != JoinStrictness::All && table_join.strictness() != JoinStrictness::Semi)
+        return;
+
     const auto & clauses = table_join.getClauses();
     if (clauses.empty())
         return;

@@ -21,12 +21,6 @@ Positions: 4 0 2 1
   Strictness: ALL
   Algorithm: ConcurrentHashJoin
   Clauses: [(__table1.id) = (__table2.id)]
-  Dynamic Filter
-  Actions: INPUT : 0 -> id UInt64 : 0
-           COLUMN Const(Set) ->  Set : 1
-           ALIAS id :: 0 -> __table1.id UInt64 : 2
-           FUNCTION in(__table1.id :: 2,  :: 1) -> in(__table1.id, ) UInt8 : 0
-  Positions: 0
     Expression ((JOIN actions + Change column names to column identifiers))
     Header: __table1.id UInt64
             __table1.value_1 String
@@ -84,15 +78,6 @@ Positions: 6 0 3 1
   Algorithm: HashJoin
   ASOF inequality: LESS
   Clauses: [(__table1.id, __table1.value_2) = (__table2.id, __table2.value_2)]
-  Dynamic Filter
-  Actions: INPUT : 0 -> id UInt64 : 0
-           INPUT : 1 -> value_2 UInt64 : 1
-           COLUMN Const(Set) ->  Set : 2
-           ALIAS id :: 0 -> __table1.id UInt64 : 3
-           ALIAS value_2 :: 1 -> __table1.value_2 UInt64 : 0
-           FUNCTION tuple(__table1.id :: 3, __table1.value_2 :: 0) -> tuple(__table1.id, __table1.value_2) Tuple(UInt64, UInt64) : 1
-           FUNCTION in(tuple(__table1.id, __table1.value_2) :: 1,  :: 2) -> in(tuple(__table1.id, __table1.value_2), ) UInt8 : 0
-  Positions: 0
     Expression ((JOIN actions + Change column names to column identifiers))
     Header: __table1.id UInt64
             __table1.value_1 String
