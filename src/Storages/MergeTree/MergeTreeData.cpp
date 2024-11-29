@@ -9090,17 +9090,13 @@ bool MergeTreeData::initializeDiskOnConfigChange(const std::set<String> & new_ad
     return true;
 }
 
-void MergeTreeData::loadPrimaryKeys()
+void MergeTreeData::loadPrimaryKeys() const
 {
-    static DataPartStates affordable_states = { MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated, MergeTreeDataPartState::Deleting };
-    for (const auto & data_part : getDataParts(affordable_states))
+    auto data_parts = getDataPartsVectorForInternalUsage();
+    for (const auto & data_part : data_parts)
     {
-        if (data_part->isProjectionPart())
-            continue;
-
-        if (!data_part->isIndexLoaded())
-            /// We call getIndex() because it calls loadIndex() after locking its mutex, but we don't need its value.
-            UNUSED(const_cast<IMergeTreeDataPart &>(*data_part).getIndex());
+        /// We call getIndex() because it calls loadIndex() after locking its mutex, but we don't need its value.
+        data_part->getIndex();
     }
 }
 

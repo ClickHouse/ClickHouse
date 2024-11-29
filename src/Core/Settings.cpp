@@ -2315,6 +2315,9 @@ What to do when the limit is exceeded.
     DECLARE(UInt64, max_bytes_before_external_group_by, 0, R"(
 If memory usage during GROUP BY operation is exceeding this threshold in bytes, activate the 'external aggregation' mode (spill data to disk). Recommended value is half of the available system memory.
 )", 0) \
+    DECLARE(Double, max_bytes_ratio_before_external_group_by, 0., R"(
+Ratio of used memory before enabling external GROUP BY. If you set it to 0.6 the external GROUP BY will be used once the memory usage will reach 60% of allowed memory for query.
+)", 0) \
     \
     DECLARE(UInt64, max_rows_to_sort, 0, R"(
 If more than the specified amount of records have to be processed for ORDER BY operation, the behavior will be determined by the 'sort_overflow_mode' which by default is - throw an exception
@@ -2330,6 +2333,9 @@ Prefer maximum block bytes for external sort, reduce the memory usage during mer
 )", 0) \
     DECLARE(UInt64, max_bytes_before_external_sort, 0, R"(
 If memory usage during ORDER BY operation is exceeding this threshold in bytes, activate the 'external sorting' mode (spill data to disk). Recommended value is half of the available system memory.
+)", 0) \
+    DECLARE(Double, max_bytes_ratio_before_external_sort, 0., R"(
+Ratio of used memory before enabling external ORDER BY. If you set it to 0.6 the external ORDER BY will be used once the memory usage will reach 60% of allowed memory for query.
 )", 0) \
     DECLARE(UInt64, max_bytes_before_remerge_sort, 1000000000, R"(
 In case of ORDER BY with LIMIT, when memory usage is higher than specified threshold, perform additional steps of merging blocks before final merge to keep just top LIMIT rows.
@@ -4312,14 +4318,14 @@ Result:
     DECLARE(Bool, collect_hash_table_stats_during_aggregation, true, R"(
 Enable collecting hash table statistics to optimize memory allocation
 )", 0) \
-    DECLARE(UInt64, max_size_to_preallocate_for_aggregation, 100'000'000, R"(
+    DECLARE(UInt64, max_size_to_preallocate_for_aggregation, 1'000'000'000'000, R"(
 For how many elements it is allowed to preallocate space in all hash tables in total before aggregation
 )", 0) \
     \
     DECLARE(Bool, collect_hash_table_stats_during_joins, true, R"(
 Enable collecting hash table statistics to optimize memory allocation
 )", 0) \
-    DECLARE(UInt64, max_size_to_preallocate_for_joins, 100'000'000, R"(
+    DECLARE(UInt64, max_size_to_preallocate_for_joins, 1'000'000'000'000, R"(
 For how many elements it is allowed to preallocate space in all hash tables in total before join
 )", 0) \
     \
