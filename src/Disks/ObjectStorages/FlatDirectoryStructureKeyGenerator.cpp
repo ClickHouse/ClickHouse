@@ -1,5 +1,5 @@
 #include "FlatDirectoryStructureKeyGenerator.h"
-#include <Disks/ObjectStorages/InMemoryDirectoryPathMap.h>
+#include <Disks/ObjectStorages/InMemoryPathMap.h>
 #include "Common/ObjectStorageKey.h"
 #include <Common/SharedLockGuard.h>
 #include <Common/SharedMutex.h>
@@ -12,8 +12,7 @@
 namespace DB
 {
 
-FlatDirectoryStructureKeyGenerator::FlatDirectoryStructureKeyGenerator(
-    String storage_key_prefix_, std::weak_ptr<InMemoryDirectoryPathMap> path_map_)
+FlatDirectoryStructureKeyGenerator::FlatDirectoryStructureKeyGenerator(String storage_key_prefix_, std::weak_ptr<InMemoryPathMap> path_map_)
     : storage_key_prefix(storage_key_prefix_), path_map(std::move(path_map_))
 {
 }
@@ -32,11 +31,11 @@ ObjectStorageKey FlatDirectoryStructureKeyGenerator::generate(const String & pat
         SharedLockGuard lock(ptr->mutex);
         auto it = ptr->map.find(p);
         if (it != ptr->map.end())
-            return ObjectStorageKey::createAsRelative(key_prefix.has_value() ? *key_prefix : storage_key_prefix, it->second.path);
+            return ObjectStorageKey::createAsRelative(key_prefix.has_value() ? *key_prefix : storage_key_prefix, it->second);
 
         it = ptr->map.find(directory);
         if (it != ptr->map.end())
-            remote_path = it->second.path;
+            remote_path = it->second;
     }
     constexpr size_t part_size = 32;
     std::filesystem::path key = remote_path.has_value() ? *remote_path

@@ -44,9 +44,10 @@ private:
         {
             if (is_literal)
                 return executeLiteral(format);
-            if (isColumnConst(*input.column))
+            else if (isColumnConst(*input.column))
                 return executeConstant(input);
-            return executeNonconstant(input);
+            else
+                return executeNonconstant(input);
         }
 
     private:
@@ -142,17 +143,19 @@ private:
             {
                 return {std::move(res_col), std::make_shared<DataTypeString>(), arg.name};
             }
-            if (which.isStringOrFixedString()
+            else if (
+                which.isStringOrFixedString()
                 && (executeString<ColumnString>(*arg.column, res_chars, res_offsets)
                     || executeString<ColumnFixedString>(*arg.column, res_chars, res_offsets)))
             {
                 return {std::move(res_col), std::make_shared<DataTypeString>(), arg.name};
             }
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "The argument type of function {} is {}, but native numeric or string type is expected",
-                FunctionPrintf::name,
-                arg.type->getName());
+            else
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "The argument type of function {} is {}, but native numeric or string type is expected",
+                    FunctionPrintf::name,
+                    arg.type->getName());
         }
     };
 
@@ -232,17 +235,18 @@ public:
                         instruction.format,
                         getName(),
                         e.what());
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Bad format {} in function {} with {} as input argument, reason: {}",
-                    instructions[i].format,
-                    getName(),
-                    instruction.input.dumpStructure(),
-                    e.what());
+                else
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Bad format {} in function {} with {} as input argument, reason: {}",
+                        instructions[i].format,
+                        getName(),
+                        instruction.input.dumpStructure(),
+                        e.what());
             }
         }
 
-        auto res = function_concat->build(concat_args)->execute(concat_args, std::make_shared<DataTypeString>(), input_rows_count, /* dry_run = */ false);
+        auto res = function_concat->build(concat_args)->execute(concat_args, std::make_shared<DataTypeString>(), input_rows_count);
         return res;
     }
 

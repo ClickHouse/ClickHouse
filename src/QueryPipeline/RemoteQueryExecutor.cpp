@@ -22,12 +22,9 @@
 #include <Client/MultiplexedConnections.h>
 #include <Client/HedgedConnections.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
-#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/StorageMemory.h>
+#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
-#include <Access/AccessControl.h>
-#include <Access/User.h>
-#include <Access/Role.h>
 
 namespace ProfileEvents
 {
@@ -47,7 +44,6 @@ namespace Setting
     extern const SettingsBool skip_unavailable_shards;
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsBool use_hedged_requests;
-    extern const SettingsBool push_external_roles_in_interserver_queries;
 }
 
 namespace ErrorCodes
@@ -403,25 +399,7 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     if (!duplicated_part_uuids.empty())
         connections->sendIgnoredPartUUIDs(duplicated_part_uuids);
 
-    // Collect all roles granted on this node and pass those to the remote node
-    std::vector<String> local_granted_roles;
-    if (context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries] && !modified_client_info.initial_user.empty())
-    {
-        auto user = context->getAccessControl().read<User>(modified_client_info.initial_user, true);
-        boost::container::flat_set<String> granted_roles;
-        if (user)
-        {
-            const auto & access_control = context->getAccessControl();
-            for (const auto & e : user->granted_roles.getElements())
-            {
-                auto names = access_control.readNames(e.ids);
-                granted_roles.insert(names.begin(), names.end());
-            }
-        }
-        local_granted_roles.insert(local_granted_roles.end(), granted_roles.begin(), granted_roles.end());
-    }
-
-    connections->sendQuery(timeouts, query, query_id, stage, modified_client_info, true, local_granted_roles);
+    connections->sendQuery(timeouts, query, query_id, stage, modified_client_info, true);
 
     established = false;
     sent_query = true;
@@ -593,7 +571,8 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::restartQueryWithoutDuplicat
     /// Consecutive read will implicitly send query first.
     if (!read_context)
         return read();
-    return readAsync();
+    else
+        return readAsync();
 }
 
 RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet)

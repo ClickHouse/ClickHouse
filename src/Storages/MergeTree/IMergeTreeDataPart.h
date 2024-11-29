@@ -25,7 +25,6 @@
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Storages/MergeTree/IPartMetadataManager.h>
-#include <Storages/MergeTree/PrimaryIndexCache.h>
 
 
 namespace zkutil
@@ -78,8 +77,7 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     using NameToNumber = std::unordered_map<std::string, size_t>;
 
-    using Index = Columns;
-    using IndexPtr = std::shared_ptr<const Index>;
+    using Index = std::shared_ptr<const Columns>;
     using IndexSizeByName = std::unordered_map<std::string, ColumnSize>;
 
     using Type = MergeTreeDataPartType;
@@ -107,10 +105,10 @@ public:
         const ReadBufferFromFileBase::ProfileCallback & profile_callback_) const = 0;
 
     virtual bool isStoredOnDisk() const = 0;
-    virtual bool isStoredOnReadonlyDisk() const = 0;
-    virtual bool isStoredOnRemoteDisk() const = 0;
-    virtual bool isStoredOnRemoteDiskWithZeroCopySupport() const = 0;
 
+    virtual bool isStoredOnRemoteDisk() const = 0;
+
+    virtual bool isStoredOnRemoteDiskWithZeroCopySupport() const = 0;
 
     /// NOTE: Returns zeros if column files are not found in checksums.
     /// Otherwise return information about column size on disk.
@@ -129,7 +127,7 @@ public:
     ColumnSize getTotalColumnsSize() const { return total_columns_size; }
 
     /// Return information about secondary indexes size on disk for all indexes in part
-    IndexSize getTotalSecondaryIndicesSize() const { return total_secondary_indices_size; }
+    IndexSize getTotalSeconaryIndicesSize() const { return total_secondary_indices_size; }
 
     virtual std::optional<String> getFileNameForColumn(const NameAndTypePair & column) const = 0;
 
@@ -181,9 +179,6 @@ public:
     void appendFilesOfColumnsChecksumsIndexes(Strings & files, bool include_projection = false) const;
 
     void loadRowsCountFileForUnexpectedPart();
-
-    /// Loads marks and saves them into mark cache for specified columns.
-    virtual void loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const = 0;
 
     String getMarksFileExtension() const { return index_granularity_info.mark_type.getFileExtension(); }
 
@@ -323,7 +318,7 @@ public:
 
     /// Amount of rows between marks
     /// As index always loaded into memory
-    MergeTreeIndexGranularityPtr index_granularity;
+    MergeTreeIndexGranularity index_granularity;
 
     /// Index that for each part stores min and max values of a set of columns. This allows quickly excluding
     /// parts based on conditions on these columns imposed by a query.
@@ -373,19 +368,15 @@ public:
     /// Version of part metadata (columns, pk and so on). Managed properly only for replicated merge tree.
     int32_t metadata_version;
 
-    IndexPtr getIndex() const;
-    IndexPtr loadIndexToCache(PrimaryIndexCache & index_cache) const;
-    void moveIndexToCache(PrimaryIndexCache & index_cache);
-
-    void setIndex(Columns index_columns);
+    Index getIndex() const;
+    void setIndex(const Columns & cols_);
+    void setIndex(Columns && cols_);
     void unloadIndex();
     bool isIndexLoaded() const;
 
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
     UInt64 getIndexSizeInAllocatedBytes() const;
-    UInt64 getIndexGranularityBytes() const;
-    UInt64 getIndexGranularityAllocatedBytes() const;
     UInt64 getMarksCount() const;
     UInt64 getIndexSizeFromFile() const;
 
@@ -605,7 +596,8 @@ protected:
     /// Lazily loaded in RAM. Contains each index_granularity-th value of primary key tuple.
     /// Note that marks (also correspond to primary key) are not always in RAM, but cached. See MarkCache.h.
     mutable std::mutex index_mutex;
-    mutable IndexPtr index;
+    mutable Index index TSA_GUARDED_BY(index_mutex);
+    mutable bool index_loaded TSA_GUARDED_BY(index_mutex) = false;
 
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk
     ColumnSize total_columns_size;
@@ -635,7 +627,7 @@ protected:
 
     mutable PartMetadataManagerPtr metadata_manager;
 
-    void removeIfNeeded() noexcept;
+    void removeIfNeeded();
 
     /// Fill each_columns_size and total_size with sizes from columns files on
     /// disk using columns and checksums.
@@ -700,11 +692,7 @@ private:
     virtual void appendFilesOfIndexGranularity(Strings & files) const;
 
     /// Loads the index file.
-    std::shared_ptr<Index> loadIndex() const;
-
-    /// Optimize index. Drop useless columns from suffix of primary key.
-    template <typename Columns>
-    void optimizeIndexColumns(size_t marks_count, Columns & index_columns) const;
+    void loadIndex() const TSA_REQUIRES(index_mutex);
 
     void appendFilesOfIndex(Strings & files) const;
 
@@ -766,6 +754,7 @@ bool isCompactPart(const MergeTreeDataPartPtr & data_part);
 bool isWidePart(const MergeTreeDataPartPtr & data_part);
 
 inline String getIndexExtension(bool is_compressed_primary_key) { return is_compressed_primary_key ? ".cidx" : ".idx"; }
+std::optional<String> getIndexExtensionFromFilesystem(const IDataPartStorage & data_part_storage);
 bool isCompressedFromIndexExtension(const String & index_extension);
 
 using MergeTreeDataPartsVector = std::vector<MergeTreeDataPartPtr>;

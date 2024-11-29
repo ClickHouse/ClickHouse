@@ -53,10 +53,6 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeString>();
-    }
 
     template <typename DataType>
     bool executeConstant(ColumnPtr col_times, ColumnString::Offsets & res_offsets, ColumnString::Chars & res_chars, size_t input_rows_count) const
@@ -145,7 +141,7 @@ public:
         ColumnString::Offsets & res_offsets = col_res->getOffsets();
         ColumnString::Chars & res_chars = col_res->getChars();
 
-        if (const ColumnConst * /*col_num_const*/ _ = checkAndGetColumn<ColumnConst>(col_num.get()))
+        if (const ColumnConst * col_num_const = checkAndGetColumn<ColumnConst>(col_num.get()))
         {
             if ((executeConstant<DataTypeUInt8>(col_num, res_offsets, res_chars, input_rows_count))
                 || (executeConstant<DataTypeUInt16>(col_num, res_offsets, res_chars, input_rows_count))

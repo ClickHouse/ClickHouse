@@ -303,7 +303,6 @@ public:
         int64_t zxid{0};
         std::optional<Digest> digest;
         int64_t log_idx{0};
-        bool use_xid_64{false};
     };
     using RequestsForSessions = std::vector<RequestForSession>;
 

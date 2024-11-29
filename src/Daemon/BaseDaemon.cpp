@@ -331,7 +331,7 @@ void BaseDaemon::initialize(Application & self)
                 throw Poco::OpenFileException("File " + stderr_path + " (logger.stderr) is not writable");
             if (fd != -1)
             {
-                [[maybe_unused]] int err = ::close(fd);
+                int err = ::close(fd);
                 chassert(!err || errno == EINTR);
             }
         }
@@ -440,7 +440,6 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     HandledSignals::instance().setupCommonDeadlySignalHandlers();
     HandledSignals::instance().setupCommonTerminateRequestSignalHandlers();
     HandledSignals::instance().addSignalHandler({SIGHUP}, closeLogsSignalHandler, true);
-    HandledSignals::instance().addSignalHandler({SIGCHLD}, childSignalHandler, true);
 
     /// Set up Poco ErrorHandler for Poco Threads.
     static KillingErrorHandler killing_error_handler;
@@ -631,8 +630,8 @@ void BaseDaemon::setupWatchdog()
             logger().setChannel(log);
         }
 
-        /// Concurrent writing logs to the same file from two threads is questionable on its own,
-        /// but rotating them from two threads is disastrous.
+        /// Cuncurrent writing logs to the same file from two threads is questionable on its own,
+        ///  but rotating them from two threads is disastrous.
         if (auto * channel = dynamic_cast<OwnSplitChannel *>(logger().getChannel()))
         {
             channel->setChannelProperty("log", Poco::FileChannel::PROP_ROTATION, "never");
@@ -798,9 +797,11 @@ void systemdNotify(const std::string_view & command)
         {
             if (errno == EINTR)
                 continue;
-            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Failed to notify systemd, sendto returned error");
+            else
+                throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Failed to notify systemd, sendto returned error");
         }
-        sent_bytes_total += sent_bytes;
+        else
+            sent_bytes_total += sent_bytes;
     }
 }
 #endif
