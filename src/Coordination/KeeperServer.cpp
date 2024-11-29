@@ -303,6 +303,11 @@ struct KeeperServer::KeeperRaftServer : public nuraft::raft_server
         return std::unique_lock(lock_);
     }
 
+    std::unique_lock<std::mutex> lockCommit()
+    {
+        return std::unique_lock(commit_lock_);
+    }
+
     bool isCommitInProgress() const
     {
         return sm_commit_exec_in_progress_;
@@ -1228,6 +1233,7 @@ Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
 
 uint64_t KeeperServer::createSnapshot()
 {
+    auto commit_lock = raft_instance->lockCommit();
     uint64_t log_idx = raft_instance->create_snapshot();
     if (log_idx != 0)
         LOG_INFO(log, "Snapshot creation scheduled with last committed log index {}.", log_idx);
