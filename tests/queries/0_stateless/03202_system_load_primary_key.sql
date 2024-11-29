@@ -1,4 +1,6 @@
 -- Tags: no-parallel
+-- no-parallel: test loads/unloads PKs of all tables, this affects expected results if the test runs in parallel
+
 DROP TABLE IF EXISTS test;
 DROP TABLE IF EXISTS test2;
 
