@@ -97,7 +97,7 @@ std::tuple<const MarksInCompressedFile::BlockInfo *, size_t> MarksInCompressedFi
 
 size_t MarksInCompressedFile::approximateMemoryUsage() const
 {
-    return sizeof(*this) + blocks.size() * sizeof(blocks[0]) + packed.size() * sizeof(packed[0]);
+    return sizeof(*this) + blocks.allocated_bytes() + packed.allocated_bytes();
 }
 
 }
