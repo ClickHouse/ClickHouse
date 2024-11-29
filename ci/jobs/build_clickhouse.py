@@ -1,5 +1,6 @@
 import argparse
 import os
+from typing import List, Tuple
 
 from praktika.result import Result
 from praktika.settings import Settings
@@ -7,7 +8,6 @@ from praktika.utils import MetaClasses, Shell, Utils
 
 from ci.jobs.scripts.clickhouse_version import CHVersion
 from ci.workflows.defs import CIFiles, ToolSet
-from ci.workflows.pull_request import S3_BUILDS_BUCKET
 
 
 class JobStages(metaclass=MetaClasses.WithIter):
@@ -19,7 +19,7 @@ class JobStages(metaclass=MetaClasses.WithIter):
     UNIT = "unit"
 
 
-def parse_args():
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="ClickHouse Build Job")
     parser.add_argument(
         "--build-type",
@@ -43,9 +43,10 @@ CMAKE_CMD = """cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA \
 -DCMAKE_C_COMPILER={COMPILER} -DCMAKE_CXX_COMPILER={COMPILER_CPP} \
 -DCOMPILER_CACHE={CACHE_TYPE} -DENABLE_BUILD_PROFILING=1 {DIR}"""
 
-# release:          cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None -DSANITIZE= -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_SYSCONFDIR=/etc -DCMAKE_INSTALL_LOCALSTATEDIR=/var -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON -DSPLIT_DEBUG_SYMBOLS=ON -DBUILD_STANDALONE_KEEPER=1 -DCMAKE_C_COMPILER=clang-18 -DCMAKE_CXX_COMPILER=clang++-18 -DCOMPILER_CACHE=sccache -DENABLE_BUILD_PROFILING=1 ..
-# binary release:   cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None -DSANITIZE= -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER=clang-18 -DCMAKE_CXX_COMPILER=clang++-18 -DCOMPILER_CACHE=sccache -DENABLE_BUILD_PROFILING=1 ..
-# release coverage: cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None -DSANITIZE= -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_SYSCONFDIR=/etc -DCMAKE_INSTALL_LOCALSTATEDIR=/var -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON -DCMAKE_C_COMPILER=clang-18 -DCMAKE_CXX_COMPILER=clang++-18 -DSANITIZE_COVERAGE=1 -DBUILD_STANDALONE_KEEPER=0 -DCOMPILER_CACHE=sccache -DENABLE_BUILD_PROFILING=1 ..
+
+def build_args(build_type: List[str]) -> Tuple[str, str]:
+    cmake_prefix = "cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA"
+    return
 
 
 def main():
@@ -204,7 +205,8 @@ def main():
                 command=[
                     f"DESTDIR={build_dir}/root ninja programs/install",
                     f"ln -sf {build_dir}/root {Utils.cwd()}/packages/root",
-                    f"cd {Utils.cwd()}/packages/ && OUTPUT_DIR={output_dir} BUILD_TYPE={package_type} VERSION_STRING={version} DEB_ARCH={deb_arch} ./build --deb",
+                    f"cd {Utils.cwd()}/packages/ && OUTPUT_DIR={output_dir} "
+                    f"BUILD_TYPE={package_type} VERSION_STRING={version} DEB_ARCH={deb_arch} ./build --deb",
                 ],
                 workdir=build_dir,
                 with_log=True,

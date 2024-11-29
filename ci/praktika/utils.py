@@ -22,7 +22,7 @@ T = TypeVar("T", bound="MetaClasses.Serializable")
 
 class MetaClasses:
     class WithIter(type):
-        def __iter__(cls):
+        def __iter__(cls: type) -> Iterator[Any]:
             return (v for k, v in cls.__dict__.items() if not k.startswith("_"))
 
     @dataclasses.dataclass

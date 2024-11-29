@@ -1,5 +1,6 @@
 import copy
 from dataclasses import dataclass
+from typing import List
 
 
 class Artifact:
@@ -25,7 +26,7 @@ class Artifact:
         def is_s3_artifact(self):
             return self.type == Artifact.Type.S3
 
-        def parametrize(self, names):
+        def parametrize(self, names: List[str]) -> List[str]:
             res = []
             for name in names:
                 obj = copy.deepcopy(self)
