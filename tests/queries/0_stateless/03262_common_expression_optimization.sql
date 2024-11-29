@@ -3,7 +3,16 @@ SET optimize_extract_common_expressions = 1;
 
 DROP TABLE IF EXISTS x;
 CREATE TABLE x (x Int64, A UInt8, B UInt8, C UInt8, D UInt8, E UInt8, F UInt8) ENGINE = MergeTree ORDER BY x;
-INSERT INTO x SELECT x, A%2 AS A, B%2 AS B, C%2 AS C, D%2 AS D, E%2 AS E, F%2 AS F FROM generateRandom('x Int64, A UInt8, B UInt8, C UInt8, D UInt8, E UInt8, F UInt8', 42) LIMIT 2000;
+INSERT INTO x
+    SELECT
+        cityHash64(number) AS x,
+        cityHash64(number + 1) % 2 AS A,
+        cityHash64(number + 2) % 2 AS B,
+        cityHash64(number + 3) % 2 AS C,
+        cityHash64(number + 4) % 2 AS D,
+        cityHash64(number + 5) % 2 AS E,
+        cityHash64(number + 6) % 2 AS F
+    FROM numbers(2000);
 
 -- Verify that optimization optimization setting works as expected
 EXPLAIN QUERY TREE dump_ast = 1 SELECT count() FROM x WHERE (A AND B) OR (A AND C) SETTINGS optimize_extract_common_expressions = 0;
@@ -110,10 +119,10 @@ EXPLAIN QUERY TREE dump_ast = 1 SELECT x, max(A) AS mA, max(B) AS mB, max(C) AS 
 
 -- QUALIFY
 SELECT
-	x,
-	max(A) OVER (PARTITION BY x % 1000) AS mA,
-	max(B) OVER (PARTITION BY x % 1000) AS mB,
-	max(C) OVER (PARTITION BY x % 1000) AS mC
+    x,
+    max(A) OVER (PARTITION BY x % 1000) AS mA,
+    max(B) OVER (PARTITION BY x % 1000) AS mB,
+    max(C) OVER (PARTITION BY x % 1000) AS mC
 FROM x
 QUALIFY (mA AND mB) OR (mA AND mC)
 ORDER BY x
@@ -121,10 +130,10 @@ LIMIT 10
 SETTINGS optimize_extract_common_expressions = 0;
 
 SELECT
-	x,
-	max(A) OVER (PARTITION BY x % 1000) AS mA,
-	max(B) OVER (PARTITION BY x % 1000) AS mB,
-	max(C) OVER (PARTITION BY x % 1000) AS mC
+    x,
+    max(A) OVER (PARTITION BY x % 1000) AS mA,
+    max(B) OVER (PARTITION BY x % 1000) AS mB,
+    max(C) OVER (PARTITION BY x % 1000) AS mC
 FROM x
 QUALIFY (mA AND mB) OR (mA AND mC)
 ORDER BY x
@@ -132,9 +141,9 @@ LIMIT 10;
 
 EXPLAIN QUERY TREE dump_ast = 1
 SELECT
-	x,
-	max(A) OVER (PARTITION BY x % 1000) AS mA,
-	max(B) OVER (PARTITION BY x % 1000) AS mB,
-	max(C) OVER (PARTITION BY x % 1000) AS mC
+    x,
+    max(A) OVER (PARTITION BY x % 1000) AS mA,
+    max(B) OVER (PARTITION BY x % 1000) AS mB,
+    max(C) OVER (PARTITION BY x % 1000) AS mC
 FROM x
 QUALIFY (mA AND mB) OR (mA AND mC);
