@@ -21,7 +21,8 @@ namespace ErrorCodes
     extern const int JSON_PARSE_ERROR;
 }
 
-// NOLINTNEXTLINE(bugprone-macro-parentheses)
+// NOLINTBEGIN(bugprone-macro-parentheses)
+
 #define SIMDJSON_ASSIGN_OR_THROW_IMPL(_result, _lhs, _rexpr) \
     auto && (_result) = (_rexpr);                               \
     if ((_result).error() != ::simdjson::SUCCESS)                \
@@ -31,6 +32,8 @@ namespace ErrorCodes
 #define SIMDJSON_ASSIGN_OR_THROW(_lhs, _rexpr) \
     SIMDJSON_ASSIGN_OR_THROW_IMPL(               \
         DB_ANONYMOUS_VARIABLE(_simdjson_sesult), _lhs, _rexpr)
+
+// NOLINTEND(bugprone-macro-parentheses)
 
 /// Format elements of basic types into string.
 /// The original implementation is mini_formatter in simdjson.h. But it is not public API, so we
@@ -279,6 +282,8 @@ public:
 
     void append(simdjson::ondemand::value value)
     {
+        #pragma clang diagnostic push
+        #pragma clang diagnostic ignored "-Wcovered-switch-default"
         switch (value.type())
         {
             case simdjson::ondemand::json_type::array:
@@ -307,6 +312,8 @@ public:
                     case simdjson::ondemand::number_type::big_integer:
                         format.string(value.get_string().value_unsafe());
                         break;
+                    default:
+                        break;
                 }
                 break;
             }
@@ -322,7 +329,10 @@ public:
             case simdjson::ondemand::json_type::null:
                 format.nullAtom();
                 break;
+            default:
+                break;
         }
+        #pragma clang diagnostic pop
     }
 
     void append(simdjson::ondemand::array array)
@@ -541,15 +551,22 @@ struct OnDemandSimdJSONParser
 
         ALWAYS_INLINE ElementType type() const
         {
-            if (value.type() == simdjson::ondemand::json_type::object)
+            auto t = value.type();
+            if (t.error())
+            {
+                //std::cerr << "gethere type error: " << t.error() << std::endl;
+                return ElementType::NULL_VALUE;
+            }
+
+            if (t.value() == simdjson::ondemand::json_type::object)
                 return ElementType::OBJECT;
-            if (value.type() == simdjson::ondemand::json_type::array)
+            if (t.value() == simdjson::ondemand::json_type::array)
                 return ElementType::ARRAY;
-            if (value.type() == simdjson::ondemand::json_type::boolean)
+            if (t.value() == simdjson::ondemand::json_type::boolean)
                 return ElementType::BOOL;
-            if (value.type() == simdjson::ondemand::json_type::string)
+            if (t.value() == simdjson::ondemand::json_type::string)
                 return ElementType::STRING;
-            if (value.type() == simdjson::ondemand::json_type::number)
+            if (t.value() == simdjson::ondemand::json_type::number)
             {
                 auto res = value.get_number_type();
                 if (res.error())
@@ -564,10 +581,57 @@ struct OnDemandSimdJSONParser
             return ElementType::NULL_VALUE;
         }
 
-        ALWAYS_INLINE bool isInt64() const { auto res = value.get_number_type(); return !res.error() && res.value() == simdjson::ondemand::number_type::signed_integer; }
-        ALWAYS_INLINE bool isUInt64() const { auto res = value.get_number_type(); return !res.error() && res.value() == simdjson::ondemand::number_type::unsigned_integer; }
-        ALWAYS_INLINE bool isDouble() const { auto res = value.get_number_type(); return !res.error() && res.value() == simdjson::ondemand::number_type::floating_point_number; }
-        ALWAYS_INLINE bool isString() const { auto r = value.type(); return !r.error() && r.value() == simdjson::ondemand::json_type::string; }
+        ALWAYS_INLINE bool isInt64() const
+        {
+            //std::cerr << "gethere is int64" << std::endl;
+            auto t = value.type();
+            if (t.error())
+            {
+                //std::cerr << "gethere isint64 error: " << t.error() << std::endl;
+                return false;
+            }
+            //std::cerr << "gethere type: " << t.value() << std::endl;
+            if (t.value() != simdjson::ondemand::json_type::number)
+                return false;
+            auto res = value.get_number_type();
+            return !res.error() && res.value() == simdjson::ondemand::number_type::signed_integer;
+        }
+        ALWAYS_INLINE bool isUInt64() const
+        {
+            auto t = value.type();
+            if (t.error())
+            {
+                //std::cerr << "gethere isuint64 error: " << t.error() << std::endl;
+                return false;
+            }
+            //std::cerr << "gethere type: " << t.value() << std::endl;
+            if (t.value() != simdjson::ondemand::json_type::number)
+                return false;
+            //std::cerr << "gethere is uint64" << std::endl;
+            auto res = value.get_number_type();
+            return !res.error() && res.value() == simdjson::ondemand::number_type::unsigned_integer;
+        }
+        ALWAYS_INLINE bool isDouble() const
+        {
+            auto t = value.type();
+            if (t.error())
+            {
+                //std::cerr << "gethere isdouble error: " << t.error() << std::endl;
+                return false;
+            }
+            //std::cerr << "gethere type: " << t.value() << std::endl;
+            if (t.value() != simdjson::ondemand::json_type::number)
+                return false;
+            //std::cerr << "gethere is double" << std::endl;
+            auto res = value.get_number_type();
+            return !res.error() && res.value() == simdjson::ondemand::number_type::floating_point_number;
+        }
+        ALWAYS_INLINE bool isString() const
+        {
+            //std::cerr << "gethere is string" << std::endl;
+            auto r = value.type();
+            return !r.error() && r.value() == simdjson::ondemand::json_type::string;
+        }
         ALWAYS_INLINE bool isArray() const
         {
             //std::cerr <<"gethere is array" << std::endl;
@@ -581,7 +645,17 @@ struct OnDemandSimdJSONParser
             auto r = value.type();
             return !r.error() && r.value() == simdjson::ondemand::json_type::object;
         }
-        ALWAYS_INLINE bool isBool() const { return value.type() == simdjson::ondemand::json_type::boolean; }
+        ALWAYS_INLINE bool isBool() const
+        {
+            //std::cerr <<"gethere is bool" << std::endl;
+            auto r = value.type();
+            if (r.error())
+            {
+                //std::cerr << "error: " << r.error() << std::endl;
+                return false;
+            }
+            return r.value() == simdjson::ondemand::json_type::boolean;
+        }
         ALWAYS_INLINE bool isNull() const
         {
             //std::cerr <<"gethere isnull()" << std::endl;
@@ -598,7 +672,16 @@ struct OnDemandSimdJSONParser
         ALWAYS_INLINE Int64 getInt64() const { return value.get_int64().value(); }
         ALWAYS_INLINE UInt64 getUInt64() const { return value.get_uint64().value(); }
         ALWAYS_INLINE double getDouble() const { return value.get_double().value(); }
-        ALWAYS_INLINE bool getBool() const { return value.get_bool().value(); }
+        ALWAYS_INLINE bool getBool() const
+        {
+            auto b = value.get_bool();
+            if (b.error())
+            {
+                //std::cerr << "gethere getbool error:" << b.error() << std::endl;
+                return false;
+            }
+            return b.value();
+        }
         ALWAYS_INLINE std::string_view getString() const
         {
             auto r = value.get_string();
@@ -608,7 +691,7 @@ struct OnDemandSimdJSONParser
         }
         ALWAYS_INLINE Array getArray() const
         {
-            //std::cerr << "gethere getarray" << std::endl;
+            //std::cerr << "gethere getarray, stack:" << StackTrace().toString()<< std::endl;
 
             //array = std::make_shared<Array>(value.get_array().value());
             SIMDJSON_ASSIGN_OR_THROW(auto arr, value.get_array());
@@ -816,7 +899,6 @@ struct OnDemandSimdJSONParser
             return false;
         }
         //std::cerr << "gethere parse json ok: " << json << std::endl;
-        //std::cerr << "gethere is_scalar ok? " << r.error()<< std::endl;
         document = std::move(doc.value());
         auto scalar = document.is_scalar();
         if (scalar.error())
@@ -824,13 +906,6 @@ struct OnDemandSimdJSONParser
             //std::cerr << "gethere is_scalar call fail:" << scalar.error() << std::endl;
             return false;
         }
-        auto type = document.type();
-        if (type.error())
-        {
-            //std::cerr << "gethere type call fail:" << type.error() << std::endl;
-            return false;
-        }
-        //std::cerr << "gethere type " << type.value() << std::endl;
         if (scalar.value())
         {
             //std::cerr << "gethere scala: " << json << std::endl;
@@ -857,15 +932,12 @@ struct OnDemandSimdJSONParser
             return true;
         }
         //std::cerr << "gethere parse json not scalar" << std::endl;
-        //document = std::move(res.value());
-
         auto v = document.get_value();
         if (v.error())
         {
             //std::cerr << "gethere get value fail, " << v.error() << std::endl;
             return false;
         }
-
         //std::cerr << "gethere get value ok" << std::endl;
         result = v.value();
         return true;
@@ -879,8 +951,7 @@ private:
     simdjson::padded_string_view padstr_view;
 };
 
-using SimdJSONParser = OnDemandSimdJSONParser;
-//using SimdJSONParser = DomSimdJSONParser;
+using SimdJSONParser = DomSimdJSONParser;
 
 }
 

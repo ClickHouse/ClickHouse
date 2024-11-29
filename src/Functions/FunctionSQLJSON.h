@@ -257,8 +257,8 @@ public:
         if (allow_simdjson)
             return FunctionSQLJSONHelpers::Executor<
                 Name,
-                Impl<SimdJSONParser, JSONStringSerializer<SimdJSONParser::Element, SimdJSONElementFormatter>>,
-                SimdJSONParser>::run(arguments, result_type, input_rows_count, parse_depth, parse_backtracks, function_json_value_return_type_allow_complex);
+                Impl<OnDemandSimdJSONParser, JSONStringSerializer<OnDemandSimdJSONParser::Element, SimdJSONElementFormatter>>,
+                OnDemandSimdJSONParser>::run(arguments, result_type, input_rows_count, parse_depth, parse_backtracks, function_json_value_return_type_allow_complex);
 #endif
         return FunctionSQLJSONHelpers::
             Executor<Name, Impl<DummyJSONParser, DefaultJSONStringSerializer<DummyJSONParser::Element>>, DummyJSONParser>::run(

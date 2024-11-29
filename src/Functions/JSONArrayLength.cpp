@@ -65,8 +65,8 @@ namespace
             data->reserve(input_rows_count);
 
 #if USE_SIMDJSON
-            SimdJSONParser parser;
-            SimdJSONParser::Element element;
+            OnDemandSimdJSONParser parser;
+            OnDemandSimdJSONParser::Element element;
 #elif USE_RAPIDJSON
             RapidJSONParser parser;
             RapidJSONParser::Element element;

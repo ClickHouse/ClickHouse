@@ -124,10 +124,13 @@ public:
             bool document_ok = false;
             if (col_json_const)
             {
-                std::string_view json{reinterpret_cast<const char *>(chars.data()), offsets[0] - 1};
-                document_ok = parser.parse(json, document);
+                if constexpr (!std::is_same_v<JSONParser, OnDemandSimdJSONParser>)
+                {
+                    std::string_view json{reinterpret_cast<const char *>(chars.data()), offsets[0] - 1};
+                    document_ok = parser.parse(json, document);
+                }
             }
-
+            //std::cerr <<"gethere is jsonconst?" << col_json_const << std::endl;
             String error;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
@@ -136,9 +139,16 @@ public:
                     std::string_view json{reinterpret_cast<const char *>(&chars[offsets[i - 1]]), offsets[i] - offsets[i - 1] - 1};
                     document_ok = parser.parse(json, document);
                 }
+                else if constexpr (std::is_same_v<JSONParser, OnDemandSimdJSONParser>)
+                {
+                    //std::cerr <<"gethere jsonconst, need reset dock:" << document_ok << std::endl;
+                    ///document.reset();
+                    std::string_view json{reinterpret_cast<const char *>(chars.data()), offsets[0] - 1};
+                    document_ok = parser.parse(json, document);
+                }
 
                 bool added_to_column = false;
-                //std::cerr <<"gethere doc ok?" << document_ok<< std::endl;
+                //std::cerr <<"gethere i:" << i << ", doc ok?" << document_ok<< std::endl;
                 if (document_ok)
                 {
                     /// Perform moves.
@@ -229,14 +239,15 @@ private:
         typename JSONParser::Element res_element = document;
         std::string_view key;
 
-        ////std::cerr << "gethere move size: " << moves.size() << std::endl;
+        //std::cerr << "gethere move size: " << moves.size() << std::endl;
         for (size_t j = 0; j != moves.size(); ++j)
         {
-            ////std::cerr <<"gethere perform move: " << j << std::endl;
+            //std::cerr <<"gethere perform move: " << j << std::endl;
             switch (moves[j].type)
             {
                 case MoveType::ConstIndex:
                 {
+                    //std::cerr <<"gethere move by index: " << moves[j].index << std::endl;
                     if (!moveToElementByIndex<JSONParser>(res_element, static_cast<int>(moves[j].index), key))
                         return false;
                     break;
@@ -244,6 +255,7 @@ private:
                 case MoveType::ConstKey:
                 {
                     key = moves[j].key;
+                    //std::cerr <<"gethere move by constkey: " << key << std::endl;
                     if (!moveToElementByKey<JSONParser>(res_element, key))
                         return false;
                     break;
@@ -251,6 +263,7 @@ private:
                 case MoveType::Index:
                 {
                     Int64 index = (*arguments[j + 1].column)[row].safeGet<Int64>();
+                    //std::cerr <<"gethere move by index: " << index << std::endl;
                     if (!moveToElementByIndex<JSONParser>(res_element, static_cast<int>(index), key))
                         return false;
                     break;
@@ -258,12 +271,13 @@ private:
                 case MoveType::Key:
                 {
                     key = arguments[j + 1].column->getDataAt(row).toView();
+                    //std::cerr <<"gethere move by key: " << key << std::endl;
                     if (!moveToElementByKey<JSONParser>(res_element, key))
                         return false;
                     break;
                 }
             }
-            ////std::cerr <<"gethere perform move: " << j  << " done"<< std::endl;
+            //std::cerr <<"gethere perform move: " << j  << " done"<< std::endl;
         }
 
         element = res_element;
@@ -276,11 +290,8 @@ private:
     {
         if (element.isArray())
         {
-            ////std::cerr << "gethere move array" << std::endl;
             auto array = element.getArray();
-            ////std::cerr <<"gethere getarray succ " << std::endl;
             size_t array_size = array.size();
-            ////std::cerr <<"gethere size succ " << array_size << std::endl;
             if (index >= 0)
                 --index;
             else
@@ -295,10 +306,8 @@ private:
 
         if constexpr (HasIndexOperator<typename JSONParser::Object>)
         {
-            ////std::cerr << "gethere move obj" << std::endl;
             if (element.isObject())
             {
-            ////std::cerr << "gethere move obj" << std::endl;
                 auto object = element.getObject();
                 size_t object_size = object.size();
                 if (index >= 0)
@@ -452,9 +461,9 @@ private:
         if (allow_simdjson)
         {
             if constexpr (std::is_same_v<Name, NameIsValidJSON>)
-                return FunctionJSONHelpers::Executor<Name, Impl, DomSimdJSONParser>::run(arguments, result_type, input_rows_count, format_settings);
-            else
                 return FunctionJSONHelpers::Executor<Name, Impl, SimdJSONParser>::run(arguments, result_type, input_rows_count, format_settings);
+            else
+                return FunctionJSONHelpers::Executor<Name, Impl, OnDemandSimdJSONParser>::run(arguments, result_type, input_rows_count, format_settings);
         }
 #endif
 
@@ -791,23 +800,18 @@ public:
     static bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view, const FormatSettings &, String &)
     {
         bool value;
-        //std::cerr << "gethere extract bool, ele type" << std::endl;
         switch (element.type())
         {
             case ElementType::BOOL:
-                //std::cerr << "gethere extract bool, bool" << std::endl;
                 value = element.getBool();
                 break;
             case ElementType::INT64:
-                //std::cerr << "gethere extract bool, int64" << std::endl;
                 value = element.getInt64() != 0;
                 break;
             case ElementType::UINT64:
-                //std::cerr << "gethere extract bool, uint64" << std::endl;
                 value = element.getUInt64() != 0;
                 break;
             default:
-                //std::cerr << "gethere extract bool, default" << std::endl;
                 return false;
         }
 

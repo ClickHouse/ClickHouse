@@ -102,6 +102,7 @@ void jsonElementToString(const typename JSONParser::Element & element, WriteBuff
         writeChar(']', buf);
         return;
     }
+    //std::cerr << "gethere is object" << std::endl;
     if (element.isObject())
     {
         writeChar('{', buf);
@@ -117,6 +118,7 @@ void jsonElementToString(const typename JSONParser::Element & element, WriteBuff
         writeChar('}', buf);
         return;
     }
+    //std::cerr << "gethere is null" << std::endl;
     if (element.isNull())
     {
         writeCString("null", buf);
@@ -1607,8 +1609,6 @@ private:
                 for (auto value : array)
                     types.push_back(elementToDataTypeImpl(value, format_settings, json_inference_info));
 
-                array.reset();
-
                 if (types.empty())
                     return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNothing>());
 
@@ -2048,7 +2048,13 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
 
 #if USE_SIMDJSON
 template void jsonElementToString<SimdJSONParser>(const SimdJSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings);
+template void jsonElementToString<OnDemandSimdJSONParser>(const OnDemandSimdJSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings);
 template std::unique_ptr<JSONExtractTreeNode<SimdJSONParser>> buildJSONExtractTree<SimdJSONParser>(const DataTypePtr & type, const char * source_for_exception_message);
+template bool tryGetNumericValueFromJSONElement<OnDemandSimdJSONParser, Int64>(Int64 & value, const OnDemandSimdJSONParser::Element & element, bool convert_bool_to_integer, bool allow_type_conversion, String & error);
+template bool tryGetNumericValueFromJSONElement<OnDemandSimdJSONParser, UInt64>(UInt64 & value, const OnDemandSimdJSONParser::Element & element, bool convert_bool_to_integer, bool allow_type_conversion, String & error);
+template bool tryGetNumericValueFromJSONElement<OnDemandSimdJSONParser, Float64>(Float64 & value, const OnDemandSimdJSONParser::Element & element, bool convert_bool_to_integer, bool allow_type_conversion, String & error);
+template std::unique_ptr<DB::JSONExtractTreeNode<DB::OnDemandSimdJSONParser>, std::default_delete<DB::JSONExtractTreeNode<DB::OnDemandSimdJSONParser>>>
+    DB::buildJSONExtractTree<DB::OnDemandSimdJSONParser>(std::shared_ptr<DB::IDataType const> const &, char const *);
 #endif
 
 #if USE_RAPIDJSON
