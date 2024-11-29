@@ -6,11 +6,10 @@
 namespace DB
 {
 
-ExtractColumnsStep::ExtractColumnsStep(const Header & input_header_, const NamesAndTypesList & requested_columns_)
-    : ITransformingStep(
-        input_header_,
-        ExtractColumnsTransform::transformHeader(input_header_, requested_columns_),
-        ITransformingStep::Traits{
+static ITransformingStep::Traits getTraits()
+{
+    return ITransformingStep::Traits
+        {
             {
                 .returns_single_stream = false,
                 .preserves_number_of_streams = true,
@@ -18,7 +17,12 @@ ExtractColumnsStep::ExtractColumnsStep(const Header & input_header_, const Names
             },
             {
                 .preserves_number_of_rows = true,
-            }})
+            }
+        };
+}
+
+ExtractColumnsStep::ExtractColumnsStep(const Header & input_header_, const NamesAndTypesList & requested_columns_)
+    : ITransformingStep(input_header_, ExtractColumnsTransform::transformHeader(input_header_, requested_columns_), getTraits())
     , requested_columns(requested_columns_)
 {
 }
