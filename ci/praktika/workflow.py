@@ -40,23 +40,33 @@ class Workflow:
             return self.event == Workflow.Event.PUSH
 
         def get_job(self, name):
-            job = self.find_job(name)
-            if not job:
+            jobs = self.find_jobs(name)
+            if not jobs:
                 Utils.raise_with_error(
                     f"Failed to find job [{name}], workflow [{self.name}]"
                 )
-            return job
+                assert len(jobs) == 1
+            return jobs[0]
 
-        def find_job(self, name, lazy=False):
+        def find_jobs(self, name, lazy=False):
             name = str(name)
+            res = []
             for job in self.jobs:
                 if lazy:
-                    if name.lower() in job.name.lower():
-                        return job
+                    tokens = name.lower().split("*")
+                    match = True
+                    for token in tokens:
+                        if token in job.name.lower():
+                            continue
+                        else:
+                            match = False
+                            break
+                    if match:
+                        res.append(job)
                 else:
                     if job.name == name:
-                        return job
-            return None
+                        res.append(job)
+            return res
 
         def get_secret(self, name) -> Optional[Secret.Config]:
             name = str(name)

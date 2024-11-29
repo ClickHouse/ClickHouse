@@ -73,9 +73,10 @@ def main():
         no_azure = True
 
     ch_path = args.ch_path
-    assert Path(
-        ch_path + "/clickhouse"
-    ).is_file(), f"clickhouse binary not found under [{ch_path}]"
+    assert (
+        Path(ch_path + "/clickhouse").is_file()
+        or Path(ch_path + "/clickhouse").is_symlink()
+    ), f"clickhouse binary not found under [{ch_path}]"
 
     stop_watch = Utils.Stopwatch()
 

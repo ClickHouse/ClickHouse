@@ -1,5 +1,4 @@
 #!/bin/bash
-
 set -exu
 set -o pipefail
 trap "exit" INT TERM
@@ -9,8 +8,6 @@ trap 'kill $(jobs -pr) ${watchdog_pid:-} ||:' EXIT
 
 stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-
-cd /tmp/praktika
 
 # upstream/master
 LEFT_SERVER_PORT=9001
@@ -96,7 +93,6 @@ function configure
         --keeper_server.storage_path coordination0
         --tcp_port $LEFT_SERVER_PORT
     )
-    ls -l left/clickhouse-server
     left/clickhouse-server "${setup_left_server_opts[@]}" &> setup-server-log.log &
     left_pid=$!
     kill -0 $left_pid
@@ -151,8 +147,7 @@ function restart
         --zookeeper.node.port $LEFT_SERVER_KEEPER_PORT
         --interserver_http_port $LEFT_SERVER_INTERSERVER_PORT
     )
-    rm -f left-server-log.log
-    left/clickhouse-server "${left_server_opts[@]}" &> left-server-log.log &
+    left/clickhouse-server "${left_server_opts[@]}" &>> left-server-log.log &
     left_pid=$!
     kill -0 $left_pid
     disown $left_pid
@@ -172,7 +167,7 @@ function restart
         --zookeeper.node.port $RIGHT_SERVER_KEEPER_PORT
         --interserver_http_port $RIGHT_SERVER_INTERSERVER_PORT
     )
-    right/clickhouse-server "${right_server_opts[@]}" &> right-server-log.log &
+    right/clickhouse-server "${right_server_opts[@]}" &>> right-server-log.log &
     right_pid=$!
     kill -0 $right_pid
     disown $right_pid
@@ -200,12 +195,14 @@ function restart
 function run_tests
 {
     # Just check that the script runs at all
-    "$script_dir/../../../../tests/performance/scripts/perf.py" --help > /dev/null
+    "$script_dir/perf.py" --help > /dev/null
+
     # Find the directory with test files.
     if [ -v CHPC_TEST_PATH ]
     then
         # Use the explicitly set path to directory with test files.
         test_prefix="$CHPC_TEST_PATH"
+# TODO: remove?
 #    elif [ "$PR_TO_TEST" == "0" ]
 #    then
 #        # When testing commits from master, use the older test files. This
@@ -225,6 +222,7 @@ function run_tests
         # Run only explicitly specified tests, if any.
         # shellcheck disable=SC2010
         test_files=($(ls "$test_prefix" | rg "$CHPC_TEST_GREP" | xargs -I{} -n1 readlink -f "$test_prefix/{}"))
+# TODO: remove
 #    elif [ "$PR_TO_TEST" -ne 0 ] \
 #        && [ "$(wc -l < changed-test-definitions.txt)" -gt 0 ] \
 #        && [ "$(wc -l < other-changed-files.txt)" -eq 0 ]
@@ -259,7 +257,7 @@ function run_tests
 
     if [ "$run_only_changed_tests" -ne 0 ]; then
         if [ ${#test_files[@]} -eq 0 ]; then
-            time "$script_dir/../../../../tests/performance/scripts/report.py" --no-tests-run > report.html
+            time "$script_dir/report.py" --no-tests-run > report.html
             exit 0
         fi
     fi
@@ -324,6 +322,7 @@ function run_tests
         profile_seconds=$(awk "BEGIN { print ($profile_seconds_left > 0 ? 10 : 0) }")
 
         max_queries=0
+# TODO: remove?
 #        if rg --quiet "$(basename $test)" changed-test-definitions.txt
 #        then
 #          # Run all queries from changed test files to ensure that all new queries will be tested.
@@ -346,7 +345,7 @@ function run_tests
             TIMEFORMAT=$(printf "$test_name\t%%3R\t%%3U\t%%3S\n")
             # one more subshell to suppress trace output for "set +x"
             (
-                time "$script_dir/../../../../tests/performance/scripts/perf.py" "${argv[@]}" > "$test_name-raw.tsv" 2> "$test_name-err.log"
+                time "$script_dir/perf.py" "${argv[@]}" > "$test_name-raw.tsv" 2> "$test_name-err.log"
             ) 2>>wall-clock-times.tsv >/dev/null \
                 || echo "Test $test_name failed with error code $?" >> "$test_name-err.log"
         ) 2>/dev/null
@@ -559,7 +558,7 @@ do
         "clickhouse-local \
             --file \"$file\" \
             --structure 'test text, query text, run int, version UInt8, metrics Array(float)' \
-            --query \"$(cat "$script_dir/../../../../tests/performance/scripts/eqmed.sql")\" \
+            --query \"$(cat "$script_dir/eqmed.sql")\" \
             >> \"analyze/query-metric-stats.tsv\"" \
             2>> analyze/errors.log \
         >> analyze/commands.txt
@@ -571,10 +570,8 @@ unset IFS
 # The comparison script might be bound to one NUMA node for better test
 # stability, and the calculation runs out of memory because of this. Use
 # all nodes.
-if command -v numactl >/dev/null 2>&1; then
-  numactl --show
-  numactl --cpunodebind=all --membind=all numactl --show
-fi
+#numactl --show
+#numactl --cpunodebind=all --membind=all numactl --show
 
 # Notes for parallel:
 #
@@ -589,15 +586,9 @@ fi
 #
 #   If the available memory falls below 2 * size, GNU parallel will suspend some of the running jobs.
 
-if ! echo pwd | parallel -v >/dev/null 2>&1; then
-   echo "ERROR: parallel not installed or wrong version, apt-get install parallel?"
-   exit 1
-fi
-if command -v numactl >/dev/null 2>&1; then
-    numactl --cpunodebind=all --membind=all parallel -v --joblog analyze/parallel-log.txt --memsuspend 15G --null < analyze/commands.txt 2>> analyze/errors.log
-else
-    parallel -v --joblog analyze/parallel-log.txt --memsuspend 15G --null < analyze/commands.txt 2>> analyze/errors.log
-fi
+#TODO: check why parallel hangs locally
+parallel -v --joblog analyze/parallel-log.txt --memsuspend 15G --null < analyze/commands.txt 2>> analyze/errors.log
+#bash analyze/commands.txt 2>> analyze/errors.log
 
 clickhouse-local --query "
 -- Join the metric names back to the metric statistics we've calculated, and make
@@ -859,7 +850,7 @@ create view total_client_time_per_query as select *
         'test text, query_index int, client float, server float');
 
 create table wall_clock_time_per_test engine Memory as select *
-    from file('wall-clock-times.tsv', TSV, 'test text, real float, user float, system float');
+    from file('wall-clock-times.tsv', TSV, 'test text, real float');
 
 create table test_time engine Memory as
     select test, sum(client) total_client_time,
@@ -1387,14 +1378,11 @@ case "$stage" in
     time configure
     ;&
 "restart")
-    if command -v numactl >/dev/null 2>&1; then
-      numactl --show
-      numactl --hardware
-    fi
-    lscpu
-    if command -v dmidecode >/dev/null 2>&1; then
-      dmidecode -t 4 ||:
-    fi
+# TODO: remove
+#    numactl --show ||:
+#    numactl --hardware ||:
+#    lscpu ||:
+#    dmidecode -t 4 ||:
     time restart
     ;&
 "run_tests")
@@ -1431,7 +1419,9 @@ case "$stage" in
 
     # Kill the whole process group, because somehow when the subshell is killed,
     # the sleep inside remains alive and orphaned.
-    while env kill -- -$watchdog_pid ; do sleep 1; done
+    # TODO: while hangs
+    #while env kill -- -$watchdog_pid ; do sleep 1; done
+    env kill -- -$watchdog_pid
 
     # Stop the servers to free memory for the subsequent query analysis.
     while pkill -f clickhouse-serv ; do echo . ; sleep 1 ; done
@@ -1448,8 +1438,8 @@ case "$stage" in
     cat metrics/errors.log >> report/errors.log ||:
     ;&
 "report_html")
-    time "$script_dir/../../../../tests/performance/scripts/report.py" --report=all-queries > all-queries.html 2> >(tee -a report/errors.log 1>&2) ||:
-    time "$script_dir/../../../../tests/performance/scripts/report.py" > report.html
+    time "$script_dir/report.py" --report=all-queries > all-queries.html 2> >(tee -a report/errors.log 1>&2) ||:
+    time "$script_dir/report.py" > report.html
     ;&
 #"upload_results")
 #    time upload_results ||:

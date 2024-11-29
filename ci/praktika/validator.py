@@ -127,6 +127,7 @@ class Validator:
                     assert (
                         Path(part).is_file() or Path(part).is_dir()
                     ), f"Apparently run command [{run_command}] for job [{job}] has invalid path [{part}]. Setting to disable check: VALIDATE_FILE_PATHS"
+                    break
 
     @classmethod
     def validate_file_paths_in_digest_configs(cls, workflow: Workflow.Config) -> None:
