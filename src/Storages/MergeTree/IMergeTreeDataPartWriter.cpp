@@ -2,6 +2,7 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Columns/ColumnSparse.h>
+#include <Interpreters/getColumnFromBlock.h>
 
 namespace DB
 {
@@ -17,7 +18,7 @@ Block getIndexBlockAndPermute(const Block & block, const Names & names, const IC
     Block result;
     for (size_t i = 0, size = names.size(); i < size; ++i)
     {
-        auto src_column = block.getByName(names[i]);
+        auto src_column = block.getColumnOrSubcolumnByName(names[i]);
         src_column.column = recursiveRemoveSparse(src_column.column);
         result.insert(i, src_column);
 

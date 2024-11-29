@@ -1,0 +1,228 @@
+create table test (id UInt64, json JSON(a UInt32), data String, index idx1 json.a type minmax, index idx2 json.b::String type minmax, index idx3 json.a || json.b::String type minmax) engine=MergeTree order by tuple() settings min_rows_for_wide_part=100000000, min_bytes_for_wide_part=1000000000, vertical_merge_algorithm_min_columns_to_activate=10;
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+20	{"a":20,"b":"str_20","c":[]}	Hello, World!
+21	{"a":21,"b":"str_21","c":["0"]}	Hello, World!
+22	{"a":22,"b":"str_22","c":["0","1"]}	Hello, World!
+23	{"a":23,"b":"str_23","c":["0","1","2"]}	Hello, World!
+24	{"a":24,"b":"str_24","c":["0","1","2","3"]}	Hello, World!
+25	{"a":25,"b":"str_25","c":["0","1","2","3","4"]}	Hello, World!
+26	{"a":26,"b":"str_26","c":["0","1","2","3","4","5"]}	Hello, World!
+27	{"a":27,"b":"str_27","c":["0","1","2","3","4","5","6"]}	Hello, World!
+28	{"a":28,"b":"str_28","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+29	{"a":29,"b":"str_29","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+1
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+20	{"a":20,"b":"str_20","c":[]}	Hello, World!
+21	{"a":21,"b":"str_21","c":["0"]}	Hello, World!
+22	{"a":22,"b":"str_22","c":["0","1"]}	Hello, World!
+23	{"a":23,"b":"str_23","c":["0","1","2"]}	Hello, World!
+24	{"a":24,"b":"str_24","c":["0","1","2","3"]}	Hello, World!
+25	{"a":25,"b":"str_25","c":["0","1","2","3","4"]}	Hello, World!
+26	{"a":26,"b":"str_26","c":["0","1","2","3","4","5"]}	Hello, World!
+27	{"a":27,"b":"str_27","c":["0","1","2","3","4","5","6"]}	Hello, World!
+28	{"a":28,"b":"str_28","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+29	{"a":29,"b":"str_29","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+Indexes:
+Skip
+Indexes:
+Skip
+Indexes:
+Skip
+Skip
+Indexes:
+Skip
+1
+Indexes:
+Skip
+Indexes:
+Skip
+Indexes:
+Skip
+Skip
+Indexes:
+Skip
+create table test (id UInt64, json JSON(a UInt32), data String, index idx1 json.a type minmax, index idx2 json.b::String type minmax, index idx3 json.a || json.b::String type minmax) engine=MergeTree order by tuple() settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1, vertical_merge_algorithm_min_columns_to_activate=10;
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+20	{"a":20,"b":"str_20","c":[]}	Hello, World!
+21	{"a":21,"b":"str_21","c":["0"]}	Hello, World!
+22	{"a":22,"b":"str_22","c":["0","1"]}	Hello, World!
+23	{"a":23,"b":"str_23","c":["0","1","2"]}	Hello, World!
+24	{"a":24,"b":"str_24","c":["0","1","2","3"]}	Hello, World!
+25	{"a":25,"b":"str_25","c":["0","1","2","3","4"]}	Hello, World!
+26	{"a":26,"b":"str_26","c":["0","1","2","3","4","5"]}	Hello, World!
+27	{"a":27,"b":"str_27","c":["0","1","2","3","4","5","6"]}	Hello, World!
+28	{"a":28,"b":"str_28","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+29	{"a":29,"b":"str_29","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+1
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+20	{"a":20,"b":"str_20","c":[]}	Hello, World!
+21	{"a":21,"b":"str_21","c":["0"]}	Hello, World!
+22	{"a":22,"b":"str_22","c":["0","1"]}	Hello, World!
+23	{"a":23,"b":"str_23","c":["0","1","2"]}	Hello, World!
+24	{"a":24,"b":"str_24","c":["0","1","2","3"]}	Hello, World!
+25	{"a":25,"b":"str_25","c":["0","1","2","3","4"]}	Hello, World!
+26	{"a":26,"b":"str_26","c":["0","1","2","3","4","5"]}	Hello, World!
+27	{"a":27,"b":"str_27","c":["0","1","2","3","4","5","6"]}	Hello, World!
+28	{"a":28,"b":"str_28","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+29	{"a":29,"b":"str_29","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+Indexes:
+Skip
+Indexes:
+Skip
+Indexes:
+Skip
+Skip
+Indexes:
+Skip
+1
+Indexes:
+Skip
+Indexes:
+Skip
+Indexes:
+Skip
+Skip
+Indexes:
+Skip
+create table test (id UInt64, json JSON(a UInt32), data String, index idx1 json.a type minmax, index idx2 json.b::String type minmax, index idx3 json.a || json.b::String type minmax) engine=MergeTree order by tuple() settings min_rows_for_wide_part=100000000, min_bytes_for_wide_part=1000000000, vertical_merge_algorithm_min_columns_to_activate=1;
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+20	{"a":20,"b":"str_20","c":[]}	Hello, World!
+21	{"a":21,"b":"str_21","c":["0"]}	Hello, World!
+22	{"a":22,"b":"str_22","c":["0","1"]}	Hello, World!
+23	{"a":23,"b":"str_23","c":["0","1","2"]}	Hello, World!
+24	{"a":24,"b":"str_24","c":["0","1","2","3"]}	Hello, World!
+25	{"a":25,"b":"str_25","c":["0","1","2","3","4"]}	Hello, World!
+26	{"a":26,"b":"str_26","c":["0","1","2","3","4","5"]}	Hello, World!
+27	{"a":27,"b":"str_27","c":["0","1","2","3","4","5","6"]}	Hello, World!
+28	{"a":28,"b":"str_28","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+29	{"a":29,"b":"str_29","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+1
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+20	{"a":20,"b":"str_20","c":[]}	Hello, World!
+21	{"a":21,"b":"str_21","c":["0"]}	Hello, World!
+22	{"a":22,"b":"str_22","c":["0","1"]}	Hello, World!
+23	{"a":23,"b":"str_23","c":["0","1","2"]}	Hello, World!
+24	{"a":24,"b":"str_24","c":["0","1","2","3"]}	Hello, World!
+25	{"a":25,"b":"str_25","c":["0","1","2","3","4"]}	Hello, World!
+26	{"a":26,"b":"str_26","c":["0","1","2","3","4","5"]}	Hello, World!
+27	{"a":27,"b":"str_27","c":["0","1","2","3","4","5","6"]}	Hello, World!
+28	{"a":28,"b":"str_28","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+29	{"a":29,"b":"str_29","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+Indexes:
+Skip
+Indexes:
+Skip
+Indexes:
+Skip
+Skip
+Indexes:
+Skip
+1
+Indexes:
+Skip
+Indexes:
+Skip
+Indexes:
+Skip
+Skip
+Indexes:
+Skip
+create table test (id UInt64, json JSON(a UInt32), data String, index idx1 json.a type minmax, index idx2 json.b::String type minmax, index idx3 json.a || json.b::String type minmax) engine=MergeTree order by tuple() settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1, vertical_merge_algorithm_min_columns_to_activate=1;
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+20	{"a":20,"b":"str_20","c":[]}	Hello, World!
+21	{"a":21,"b":"str_21","c":["0"]}	Hello, World!
+22	{"a":22,"b":"str_22","c":["0","1"]}	Hello, World!
+23	{"a":23,"b":"str_23","c":["0","1","2"]}	Hello, World!
+24	{"a":24,"b":"str_24","c":["0","1","2","3"]}	Hello, World!
+25	{"a":25,"b":"str_25","c":["0","1","2","3","4"]}	Hello, World!
+26	{"a":26,"b":"str_26","c":["0","1","2","3","4","5"]}	Hello, World!
+27	{"a":27,"b":"str_27","c":["0","1","2","3","4","5","6"]}	Hello, World!
+28	{"a":28,"b":"str_28","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+29	{"a":29,"b":"str_29","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+1
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+20	{"a":20,"b":"str_20","c":[]}	Hello, World!
+21	{"a":21,"b":"str_21","c":["0"]}	Hello, World!
+22	{"a":22,"b":"str_22","c":["0","1"]}	Hello, World!
+23	{"a":23,"b":"str_23","c":["0","1","2"]}	Hello, World!
+24	{"a":24,"b":"str_24","c":["0","1","2","3"]}	Hello, World!
+25	{"a":25,"b":"str_25","c":["0","1","2","3","4"]}	Hello, World!
+26	{"a":26,"b":"str_26","c":["0","1","2","3","4","5"]}	Hello, World!
+27	{"a":27,"b":"str_27","c":["0","1","2","3","4","5","6"]}	Hello, World!
+28	{"a":28,"b":"str_28","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+29	{"a":29,"b":"str_29","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+Indexes:
+Skip
+Indexes:
+Skip
+Indexes:
+Skip
+Skip
+Indexes:
+Skip
+1
+Indexes:
+Skip
+Indexes:
+Skip
+Indexes:
+Skip
+Skip
+Indexes:
+Skip

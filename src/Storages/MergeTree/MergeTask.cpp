@@ -12,6 +12,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <DataTypes/ObjectUtils.h>
+#include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <IO/ReadBufferFromEmptyFile.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -38,6 +39,7 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/TemporaryFiles.h>
+#include <Processors/QueryPlan/ExtractColumnsStep.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -111,6 +113,7 @@ namespace ErrorCodes
     extern const int DIRECTORY_ALREADY_EXISTS;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
 }
 
 
@@ -239,7 +242,17 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
     const auto & sorting_key_expr = global_ctx->metadata_snapshot->getSortingKey().expression;
     Names sort_key_columns_vec = sorting_key_expr->getRequiredColumns();
 
-    std::set<String> key_columns(sort_key_columns_vec.cbegin(), sort_key_columns_vec.cend());
+    /// Collect columns used in the sorting key expressions.
+    std::set<String> key_columns;
+    auto storage_columns = global_ctx->storage_columns.getNameSet();
+    for (const auto & name : sort_key_columns_vec)
+    {
+        if (storage_columns.contains(name))
+            key_columns.insert(name);
+        /// If we don't have this column in storage columns, it must be a subcolumn of one of the storage columns.
+        else
+            key_columns.insert(Nested::splitName(name).first);
+    }
 
     /// Force sign column for Collapsing mode
     if (global_ctx->merging_params.mode == MergeTreeData::MergingParams::Collapsing)
@@ -275,7 +288,15 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
         }
         else
         {
-            std::ranges::copy(index_columns, std::inserter(key_columns, key_columns.end()));
+            for (const auto & index_column : index_columns)
+            {
+                if (storage_columns.contains(index_column))
+                    key_columns.insert(index_column);
+                /// If we don't have this column in storage columns, it must be a subcolumn of one of the storage columns.
+                else
+                    key_columns.insert(Nested::splitName(index_column).first);
+            }
+
             global_ctx->merging_skip_indexes.push_back(index);
         }
     }
@@ -1676,6 +1697,34 @@ private:
     PreparedSets::Subqueries subqueries_for_sets;
 };
 
+namespace
+{
+
+NamesAndTypesList getSubcolumnsUsedInExpression(const Block & header, const ExpressionActionsPtr & expr)
+{
+    NamesAndTypesList subcolumns;
+    for (const auto & name : expr->getRequiredColumns())
+    {
+        if (!header.has(name))
+        {
+            auto [column_name, subcolumn_name] = Nested::splitName(name);
+            const auto * column = header.findByName(column_name);
+            if (!column)
+                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Column {} from sorting key/index expression is not found in block {}", column_name, header.dumpStructure());
+
+            auto subcolumn_type = column->type->tryGetSubcolumnType(subcolumn_name);
+            if (!subcolumn_type)
+                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Subcolumn {} from sorting key/index expression is not found in block {}", name, header.dumpStructure());
+
+            subcolumns.emplace_back(column_name, subcolumn_name, column->type, subcolumn_type);
+        }
+    }
+
+    return subcolumns;
+}
+
+}
+
 
 void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
 {
@@ -1752,7 +1801,17 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     if (global_ctx->metadata_snapshot->hasSortingKey())
     {
         /// Calculate sorting key expressions so that they are available for merge sorting.
-        auto sorting_key_expression_dag = global_ctx->metadata_snapshot->getSortingKey().expression->getActionsDAG().clone();
+        const auto & sorting_key_expression = global_ctx->metadata_snapshot->getSortingKey().expression;
+        auto subcolumns = getSubcolumnsUsedInExpression(merge_parts_query_plan.getCurrentHeader(), sorting_key_expression);
+        if (!subcolumns.empty())
+        {
+            NamesAndTypesList required_columns = merge_parts_query_plan.getCurrentHeader().getNamesAndTypesList();
+            required_columns.splice(required_columns.end(), subcolumns);
+            auto extract_columns_step = std::make_unique<ExtractColumnsStep>(merge_parts_query_plan.getCurrentHeader(), required_columns);
+            merge_parts_query_plan.addStep(std::move(extract_columns_step));
+        }
+
+        auto sorting_key_expression_dag = sorting_key_expression->getActionsDAG().clone();
         auto calculate_sorting_key_expression_step = std::make_unique<ExpressionStep>(
             merge_parts_query_plan.getCurrentHeader(),
             std::move(sorting_key_expression_dag));
@@ -1838,7 +1897,17 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     /// Secondary indices expressions
     if (!global_ctx->merging_skip_indexes.empty())
     {
-        auto indices_expression_dag = global_ctx->merging_skip_indexes.getSingleExpressionForIndices(global_ctx->metadata_snapshot->getColumns(), global_ctx->data->getContext())->getActionsDAG().clone();
+        auto indices_expression = global_ctx->merging_skip_indexes.getSingleExpressionForIndices(global_ctx->metadata_snapshot->getColumns(), global_ctx->data->getContext());
+        auto subcolumns = getSubcolumnsUsedInExpression(merge_parts_query_plan.getCurrentHeader(), indices_expression);
+        if (!subcolumns.empty())
+        {
+            NamesAndTypesList required_columns = merge_parts_query_plan.getCurrentHeader().getNamesAndTypesList();
+            required_columns.splice(required_columns.end(), subcolumns);
+            auto extract_columns_step = std::make_unique<ExtractColumnsStep>(merge_parts_query_plan.getCurrentHeader(), required_columns);
+            merge_parts_query_plan.addStep(std::move(extract_columns_step));
+        }
+
+        auto indices_expression_dag = indices_expression->getActionsDAG().clone();
         indices_expression_dag.addMaterializingOutputActions(/*materialize_sparse=*/ true); /// Const columns cannot be written without materialization.
         auto calculate_indices_expression_step = std::make_unique<ExpressionStep>(
             merge_parts_query_plan.getCurrentHeader(),

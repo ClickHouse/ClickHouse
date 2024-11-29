@@ -1,0 +1,1468 @@
+create table test (id UInt64, json JSON(a UInt32), data String) engine=MergeTree order by (json.a, json.b::String) settings min_rows_for_wide_part=100000000, min_bytes_for_wide_part=1000000000, vertical_merge_algorithm_min_columns_to_activate=10;
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+1
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a ASC
+Sorting: json.a ASC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a DESC
+Sorting: json.a DESC
+Sorting (Sorting for ORDER BY)
+Sorting: CAST(__table1.json.b, \'String\'_String) ASC
+Sorting (Sorting for ORDER BY)
+Sorting: CAST(__table1.json.b, \'String\'_String) DESC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a ASC, CAST(__table1.json.b, \'String\'_String) ASC
+Sorting: json.a ASC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a DESC, CAST(__table1.json.b, \'String\'_String) ASC
+Sorting: json.a DESC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a ASC, CAST(__table1.json.b, \'String\'_String) DESC
+Sorting: json.a ASC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a DESC, CAST(__table1.json.b, \'String\'_String) DESC
+Sorting: json.a DESC
+1
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a ASC
+Sorting: json.a ASC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a DESC
+Sorting: json.a DESC
+Sorting (Sorting for ORDER BY)
+Sorting: CAST(__table1.json.b, \'String\'_String) ASC
+Sorting (Sorting for ORDER BY)
+Sorting: CAST(__table1.json.b, \'String\'_String) DESC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a ASC, CAST(__table1.json.b, \'String\'_String) ASC
+Sorting: json.a ASC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a DESC, CAST(__table1.json.b, \'String\'_String) ASC
+Sorting: json.a DESC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a ASC, CAST(__table1.json.b, \'String\'_String) DESC
+Sorting: json.a ASC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a DESC, CAST(__table1.json.b, \'String\'_String) DESC
+Sorting: json.a DESC
+create table test (id UInt64, json JSON(a UInt32), data String) engine=MergeTree order by (json.a, json.b::String) settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1, vertical_merge_algorithm_min_columns_to_activate=10;
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+1
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a ASC
+Sorting: json.a ASC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a DESC
+Sorting: json.a DESC
+Sorting (Sorting for ORDER BY)
+Sorting: CAST(__table1.json.b, \'String\'_String) ASC
+Sorting (Sorting for ORDER BY)
+Sorting: CAST(__table1.json.b, \'String\'_String) DESC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a ASC, CAST(__table1.json.b, \'String\'_String) ASC
+Sorting: json.a ASC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a DESC, CAST(__table1.json.b, \'String\'_String) ASC
+Sorting: json.a DESC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a ASC, CAST(__table1.json.b, \'String\'_String) DESC
+Sorting: json.a ASC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a DESC, CAST(__table1.json.b, \'String\'_String) DESC
+Sorting: json.a DESC
+1
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a ASC
+Sorting: json.a ASC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a DESC
+Sorting: json.a DESC
+Sorting (Sorting for ORDER BY)
+Sorting: CAST(__table1.json.b, \'String\'_String) ASC
+Sorting (Sorting for ORDER BY)
+Sorting: CAST(__table1.json.b, \'String\'_String) DESC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a ASC, CAST(__table1.json.b, \'String\'_String) ASC
+Sorting: json.a ASC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a DESC, CAST(__table1.json.b, \'String\'_String) ASC
+Sorting: json.a DESC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a ASC, CAST(__table1.json.b, \'String\'_String) DESC
+Sorting: json.a ASC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a DESC, CAST(__table1.json.b, \'String\'_String) DESC
+Sorting: json.a DESC
+create table test (id UInt64, json JSON(a UInt32), data String) engine=MergeTree order by (json.a, json.b::String) settings min_rows_for_wide_part=100000000, min_bytes_for_wide_part=1000000000, vertical_merge_algorithm_min_columns_to_activate=1;
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+1
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a ASC
+Sorting: json.a ASC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a DESC
+Sorting: json.a DESC
+Sorting (Sorting for ORDER BY)
+Sorting: CAST(__table1.json.b, \'String\'_String) ASC
+Sorting (Sorting for ORDER BY)
+Sorting: CAST(__table1.json.b, \'String\'_String) DESC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a ASC, CAST(__table1.json.b, \'String\'_String) ASC
+Sorting: json.a ASC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a DESC, CAST(__table1.json.b, \'String\'_String) ASC
+Sorting: json.a DESC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a ASC, CAST(__table1.json.b, \'String\'_String) DESC
+Sorting: json.a ASC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a DESC, CAST(__table1.json.b, \'String\'_String) DESC
+Sorting: json.a DESC
+1
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a ASC
+Sorting: json.a ASC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a DESC
+Sorting: json.a DESC
+Sorting (Sorting for ORDER BY)
+Sorting: CAST(__table1.json.b, \'String\'_String) ASC
+Sorting (Sorting for ORDER BY)
+Sorting: CAST(__table1.json.b, \'String\'_String) DESC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a ASC, CAST(__table1.json.b, \'String\'_String) ASC
+Sorting: json.a ASC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a DESC, CAST(__table1.json.b, \'String\'_String) ASC
+Sorting: json.a DESC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a ASC, CAST(__table1.json.b, \'String\'_String) DESC
+Sorting: json.a ASC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a DESC, CAST(__table1.json.b, \'String\'_String) DESC
+Sorting: json.a DESC
+create table test (id UInt64, json JSON(a UInt32), data String) engine=MergeTree order by (json.a, json.b::String) settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1, vertical_merge_algorithm_min_columns_to_activate=1;
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+1
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+23	{"a":3,"b":"str_2","c":["0","1","2"]}	Hello, World!
+7	{"a":3,"b":"str_1","c":["0","1","2","3","4","5","6"]}	Hello, World!
+3	{"a":3,"b":"str_0","c":["0","1","2"]}	Hello, World!
+27	{"a":3,"b":"str_0","c":["0","1","2","3","4","5","6"]}	Hello, World!
+2	{"a":2,"b":"str_2","c":["0","1"]}	Hello, World!
+26	{"a":2,"b":"str_2","c":["0","1","2","3","4","5"]}	Hello, World!
+22	{"a":2,"b":"str_1","c":["0","1"]}	Hello, World!
+6	{"a":2,"b":"str_0","c":["0","1","2","3","4","5"]}	Hello, World!
+5	{"a":1,"b":"str_2","c":["0","1","2","3","4"]}	Hello, World!
+29	{"a":1,"b":"str_2","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+1	{"a":1,"b":"str_1","c":["0"]}	Hello, World!
+25	{"a":1,"b":"str_1","c":["0","1","2","3","4"]}	Hello, World!
+9	{"a":1,"b":"str_0","c":["0","1","2","3","4","5","6","7","8"]}	Hello, World!
+21	{"a":1,"b":"str_0","c":["0"]}	Hello, World!
+8	{"a":0,"b":"str_2","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+20	{"a":0,"b":"str_2","c":[]}	Hello, World!
+4	{"a":0,"b":"str_1","c":["0","1","2","3"]}	Hello, World!
+28	{"a":0,"b":"str_1","c":["0","1","2","3","4","5","6","7"]}	Hello, World!
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+24	{"a":0,"b":"str_0","c":["0","1","2","3"]}	Hello, World!
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a ASC
+Sorting: json.a ASC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a DESC
+Sorting: json.a DESC
+Sorting (Sorting for ORDER BY)
+Sorting: CAST(__table1.json.b, \'String\'_String) ASC
+Sorting (Sorting for ORDER BY)
+Sorting: CAST(__table1.json.b, \'String\'_String) DESC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a ASC, CAST(__table1.json.b, \'String\'_String) ASC
+Sorting: json.a ASC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a DESC, CAST(__table1.json.b, \'String\'_String) ASC
+Sorting: json.a DESC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a ASC, CAST(__table1.json.b, \'String\'_String) DESC
+Sorting: json.a ASC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a DESC, CAST(__table1.json.b, \'String\'_String) DESC
+Sorting: json.a DESC
+1
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a ASC
+Sorting: json.a ASC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a DESC
+Sorting: json.a DESC
+Sorting (Sorting for ORDER BY)
+Sorting: CAST(__table1.json.b, \'String\'_String) ASC
+Sorting (Sorting for ORDER BY)
+Sorting: CAST(__table1.json.b, \'String\'_String) DESC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a ASC, CAST(__table1.json.b, \'String\'_String) ASC
+Sorting: json.a ASC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a DESC, CAST(__table1.json.b, \'String\'_String) ASC
+Sorting: json.a DESC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a ASC, CAST(__table1.json.b, \'String\'_String) DESC
+Sorting: json.a ASC
+Sorting (Sorting for ORDER BY)
+Sorting: __table1.json.a DESC, CAST(__table1.json.b, \'String\'_String) DESC
+Sorting: json.a DESC
