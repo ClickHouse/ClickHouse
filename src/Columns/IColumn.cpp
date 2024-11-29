@@ -249,7 +249,7 @@ double IColumnHelper<Derived, Parent>::getRatioOfDefaultRows(double sample_ratio
     size_t num_rows = self.size();
     size_t num_sampled_rows = static_cast<size_t>(num_rows * sample_ratio);
 
-    if (num_sampled_rows == 0)
+    if (num_rows == 0)
         return 0;
 
     size_t num_defaults = 0;
@@ -267,7 +267,7 @@ double IColumnHelper<Derived, Parent>::getRatioOfDefaultRows(double sample_ratio
         /// In this case we may sample more rows than requested
         /// if 1.0 / sample_ratio is not integer, but it's ok.
         size_t sample_step = static_cast<size_t>(1.0 / sample_ratio);
-        num_checked_rows = num_rows / sample_step;
+        num_checked_rows = (num_rows + sample_step - 1) / sample_step;
 
         for (size_t i = 0; i < num_rows; i += sample_step)
             num_defaults += self.isDefaultAt(i);
