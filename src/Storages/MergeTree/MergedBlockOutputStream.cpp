@@ -219,14 +219,11 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
 
     LOG_TRACE(getLogger("MergedBlockOutputStream"), "filled checksums {}", new_part->getNameWithState());
 
-    if (!new_part->isProjectionPart())
-    {
-        for (const auto & [projection_name, projection_part] : new_part->getProjectionParts())
-            checksums.addFile(
-                projection_name + ".proj",
-                projection_part->checksums.getTotalSizeOnDisk(),
-                projection_part->checksums.getTotalChecksumUInt128());
-    }
+    for (const auto & [projection_name, projection_part] : new_part->getProjectionParts())
+        checksums.addFile(
+            projection_name + ".proj",
+            projection_part->checksums.getTotalSizeOnDisk(),
+            projection_part->checksums.getTotalChecksumUInt128());
 
     NameSet files_to_remove_after_sync;
     if (reset_columns)
