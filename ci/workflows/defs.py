@@ -665,7 +665,7 @@ class Jobs:
     #     timeout=3600,
     # )
 
-    performance_test_jobs = Job.Config(
+    performance_comparison_head_jobs = Job.Config(
         name=JobNames.PERFORMANCE,
         runs_on=["#from param"],
         command="python3 ./ci/jobs/performance_tests.py --test-options {PARAMETER}",
@@ -682,20 +682,49 @@ class Jobs:
         parameter=[
             "amd_release,head_master,1/2",
             "amd_release,head_master,2/2",
+        ],
+        # "arm_release,1/3"],
+        runs_on=[
+            [RunnerLabels.FUNC_TESTER_AMD]
+            for _ in range(2)
+            # [RunnerLabels.FUNC_TESTER_ARM],
+        ],
+        requires=[[ArtifactNames.CH_AMD_RELEASE] for _ in range(2)],
+        # [ArtifactNames.CH_ARM_RELEASE]],
+        provides=[
+            [ArtifactNames.PERF_REPORTS_AMD_1_3],
+            [ArtifactNames.PERF_REPORTS_AMD_2_3],
+        ],
+        # [ArtifactNames.PERF_REPORTS_ARM]],
+    )
+
+    performance_comparison_release_jobs = Job.Config(
+        name=JobNames.PERFORMANCE,
+        runs_on=["#from param"],
+        command="python3 ./ci/jobs/performance_tests.py --test-options {PARAMETER}",
+        run_in_docker="clickhouse/stateless-test",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./tests/performance/",
+                "./ci/jobs/scripts/perf/",
+                "./ci/jobs/performance_tests.py",
+            ],
+        ),
+        timeout=2 * 3600,
+    ).parametrize(
+        parameter=[
             "amd_release,prev_release,1/2",
             "amd_release,prev_release,2/2",
         ],
         # "arm_release,1/3"],
         runs_on=[
             [RunnerLabels.FUNC_TESTER_AMD]
-            for _ in range(4)
+            for _ in range(2)
             # [RunnerLabels.FUNC_TESTER_ARM],
         ],
-        requires=[[ArtifactNames.CH_AMD_RELEASE] for _ in range(4)],
+        requires=[[ArtifactNames.CH_AMD_RELEASE] for _ in range(2)],
         # [ArtifactNames.CH_ARM_RELEASE]],
         provides=[
-            [ArtifactNames.PERF_REPORTS_AMD_1_3],
-            [ArtifactNames.PERF_REPORTS_AMD_2_3],
             [ArtifactNames.PERF_REPORTS_AMD_1_3_WITH_RELEASE],
             [ArtifactNames.PERF_REPORTS_AMD_2_3_WITH_RELEASE],
         ],

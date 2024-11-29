@@ -16,7 +16,7 @@ workflow = Workflow.Config(
         *Jobs.stateful_tests_jobs,
         *Jobs.stress_test_jobs,
         *Jobs.upgrade_test_jobs,
-        *Jobs.performance_test_jobs,
+        *Jobs.performance_comparison_head_jobs,
         *Jobs.compatibility_test_jobs,
     ],
     artifacts=ARTIFACTS,

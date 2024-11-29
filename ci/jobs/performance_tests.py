@@ -394,7 +394,7 @@ def main():
             f"rm -r {db_path}/preprocessed_configs",
             f"rm -r {db_path}/data/system",
             f"rm -r {db_path}/metadata/system",
-            f"rm -r {db_path}/status",
+            f"rm -rf {db_path}/status",
             f"cp -al {db_path} {perf_left}/db",
             f"cp -al {db_path} {perf_right}/db",
             f"cp -R /tmp/praktika/coordination0 {perf_left}/coordination",

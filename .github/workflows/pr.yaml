@@ -37,7 +37,6 @@ jobs:
         run: |
           cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-
           cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
@@ -77,7 +76,6 @@ jobs:
         run: |
           cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-
           cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
@@ -101,7 +99,7 @@ jobs:
           fi
 
   style_check:
-    runs-on: [ci_services]
+    runs-on: [style-checker-aarch64]
     needs: [config_workflow, docker_builds]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3R5bGUgQ2hlY2s=') }}
     name: "Style Check"
@@ -117,7 +115,6 @@ jobs:
         run: |
           cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-
           cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
@@ -157,7 +154,6 @@ jobs:
         run: |
           cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-
           cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
@@ -197,7 +193,6 @@ jobs:
         run: |
           cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-
           cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
@@ -237,7 +232,6 @@ jobs:
         run: |
           cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-
           cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
@@ -277,7 +271,6 @@ jobs:
         run: |
           cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-
           cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
@@ -317,7 +310,6 @@ jobs:
         run: |
           cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-
           cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
@@ -357,7 +349,6 @@ jobs:
         run: |
           cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-
           cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
@@ -397,7 +388,6 @@ jobs:
         run: |
           cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-
           cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
@@ -437,7 +427,6 @@ jobs:
         run: |
           cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-
           cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
@@ -477,7 +466,6 @@ jobs:
         run: |
           cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-
           cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
@@ -517,7 +505,6 @@ jobs:
         run: |
           cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-
           cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
@@ -557,7 +544,6 @@ jobs:
         run: |
           cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-
           cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
@@ -597,7 +583,6 @@ jobs:
         run: |
           cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-
           cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
@@ -637,7 +622,6 @@ jobs:
         run: |
           cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-
           cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
@@ -677,7 +661,6 @@ jobs:
         run: |
           cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-
           cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
@@ -717,7 +700,6 @@ jobs:
         run: |
           cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-
           cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
@@ -757,7 +739,6 @@ jobs:
         run: |
           cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-
           cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
@@ -797,7 +778,6 @@ jobs:
         run: |
           cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-
           cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
@@ -837,7 +817,6 @@ jobs:
         run: |
           cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-
           cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
@@ -877,7 +856,6 @@ jobs:
         run: |
           cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-
           cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
@@ -917,7 +895,6 @@ jobs:
         run: |
           cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-
           cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
@@ -957,7 +934,6 @@ jobs:
         run: |
           cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-
           cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
@@ -997,7 +973,6 @@ jobs:
         run: |
           cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-
           cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
@@ -1037,7 +1012,6 @@ jobs:
         run: |
           cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-
           cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
@@ -1077,7 +1051,6 @@ jobs:
         run: |
           cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-
           cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
@@ -1117,7 +1090,6 @@ jobs:
         run: |
           cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-
           cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
@@ -1157,7 +1129,6 @@ jobs:
         run: |
           cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-
           cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
@@ -1197,7 +1168,6 @@ jobs:
         run: |
           cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-
           cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
@@ -1237,7 +1207,6 @@ jobs:
         run: |
           cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-
           cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
@@ -1277,7 +1246,6 @@ jobs:
         run: |
           cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-
           cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
@@ -1300,86 +1268,6 @@ jobs:
             python3 -m praktika run "Performance comparison (amd_release,head_master,2/2)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
           fi
 
-  performance_comparison_amd_releaseprev_release1_2:
-    runs-on: [func-tester]
-    needs: [config_workflow, docker_builds, build_amd_release]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgY29tcGFyaXNvbiAoYW1kX3JlbGVhc2UscHJldl9yZWxlYXNlLDEvMik=') }}
-    name: "Performance comparison (amd_release,prev_release,1/2)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-            ref: ${{ github.head_ref }}
-
-      - name: Prepare env script
-        run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.
-
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
-          ${{ needs.config_workflow.outputs.data }}
-          EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
-      - name: Run
-        id: run
-        run: |
-          . /tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run "Performance comparison (amd_release,prev_release,1/2)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
-          else
-            python3 -m praktika run "Performance comparison (amd_release,prev_release,1/2)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
-          fi
-
-  performance_comparison_amd_releaseprev_release2_2:
-    runs-on: [func-tester]
-    needs: [config_workflow, docker_builds, build_amd_release]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgY29tcGFyaXNvbiAoYW1kX3JlbGVhc2UscHJldl9yZWxlYXNlLDIvMik=') }}
-    name: "Performance comparison (amd_release,prev_release,2/2)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-            ref: ${{ github.head_ref }}
-
-      - name: Prepare env script
-        run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.
-
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
-          ${{ needs.config_workflow.outputs.data }}
-          EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
-      - name: Run
-        id: run
-        run: |
-          . /tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run "Performance comparison (amd_release,prev_release,2/2)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
-          else
-            python3 -m praktika run "Performance comparison (amd_release,prev_release,2/2)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
-          fi
-
   compatibility_check_amd_release:
     runs-on: [style-checker]
     needs: [config_workflow, docker_builds, build_amd_release]
@@ -1397,7 +1285,6 @@ jobs:
         run: |
           cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-
           cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
@@ -1437,7 +1324,6 @@ jobs:
         run: |
           cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-
           cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
@@ -1462,7 +1348,7 @@ jobs:
 
   finish_workflow:
     runs-on: [ci_services]
-    needs: [config_workflow, docker_builds, style_check, fast_test, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_release, build_arm_asan, stateless_tests_amd_debugparallel, stateless_tests_amd_debugnon_parallel, stateless_tests_amd_releaseparallel, stateless_tests_amd_releasenon_parallel, stateless_tests_arm_asanparallel, stateless_tests_arm_asannon_parallel, stateful_tests_arm_release, stateful_tests_amd_asan, stateful_tests_amd_tsan, stateful_tests_amd_msan, stateful_tests_amd_ubsan, stateful_tests_amd_debug, stress_tests_arm_release, upgrade_tests_amd_debug, upgrade_tests_amd_msan, upgrade_tests_amd_tsan, upgrade_tests_arm_asan, performance_comparison_amd_releasehead_master1_2, performance_comparison_amd_releasehead_master2_2, performance_comparison_amd_releaseprev_release1_2, performance_comparison_amd_releaseprev_release2_2, compatibility_check_amd_release, compatibility_check_arm_release]
+    needs: [config_workflow, docker_builds, style_check, fast_test, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_release, build_arm_asan, stateless_tests_amd_debugparallel, stateless_tests_amd_debugnon_parallel, stateless_tests_amd_releaseparallel, stateless_tests_amd_releasenon_parallel, stateless_tests_arm_asanparallel, stateless_tests_arm_asannon_parallel, stateful_tests_arm_release, stateful_tests_amd_asan, stateful_tests_amd_tsan, stateful_tests_amd_msan, stateful_tests_amd_ubsan, stateful_tests_amd_debug, stress_tests_arm_release, upgrade_tests_amd_debug, upgrade_tests_amd_msan, upgrade_tests_amd_tsan, upgrade_tests_arm_asan, performance_comparison_amd_releasehead_master1_2, performance_comparison_amd_releasehead_master2_2, compatibility_check_amd_release, compatibility_check_arm_release]
     if: ${{ !cancelled() }}
     name: "Finish Workflow"
     outputs:
@@ -1477,7 +1363,6 @@ jobs:
         run: |
           cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-
           cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
