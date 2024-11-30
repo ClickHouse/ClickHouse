@@ -524,6 +524,9 @@ void HTTPHandler::processQuery(
 
         if (details.timezone)
             response.add("X-ClickHouse-Timezone", *details.timezone);
+
+        for (const auto & [name, value] : details.additional_headers)
+            response.set(name, value);
     };
 
     auto handle_exception_in_output_format = [&](IOutputFormat & current_output_format,
