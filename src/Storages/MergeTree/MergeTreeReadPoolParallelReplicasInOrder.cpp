@@ -115,7 +115,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
                         else
                         {
                             result.emplace_front(range.begin, range.end);
-                            desc.ranges.pop_back();
+                            desc.ranges.pop_front();
                         }
 
                         chassert(result.size() == 1);
