@@ -19,13 +19,9 @@ size_t QueryConditionCache::KeyHasher::operator()(const Key & key) const
     return hash.get64();
 }
 
-std::optional<MarkFilter> QueryConditionCache::read(const MergeTreeDataPartPtr & data_part, size_t condition_id)
+std::optional<MarkFilter> QueryConditionCache::read(const UUID & table_id, const String & part_name, size_t condition_id)
 {
-    if (!data_part)
-        return std::nullopt;
-
-    auto table = data_part->storage.getStorageID();
-    Key key{table.uuid, data_part->name, condition_id};
+    Key key{table_id, part_name, condition_id};
 
     if (auto entry = cache.get(key))
     {
@@ -40,21 +36,16 @@ std::optional<MarkFilter> QueryConditionCache::read(const MergeTreeDataPartPtr &
     return std::nullopt;
 }
 
-void QueryConditionCache::write(const MergeTreeDataPartPtr & data_part, size_t condition_id, const MarkRanges & mark_ranges)
+void QueryConditionCache::write(const UUID & table_id, const String & part_name, size_t condition_id, const MarkRanges & mark_ranges, size_t marks_count)
 {
-    if (!data_part || mark_ranges.empty())
-        return;
+    Key key{table_id, part_name, condition_id};
 
-    auto table = data_part->storage.getStorageID();
-    Key key{table.uuid, data_part->name, condition_id};
-
-    size_t count = data_part->index_granularity->getMarksCount();
     auto [entry, _] = cache.getOrSet(key, [&]()
     {
-        return std::make_shared<Entry>(count);
+        return std::make_shared<Entry>(marks_count);
     });
 
-    chassert(count == entry->mark_filter.size());
+    chassert(marks_count == entry->mark_filter.size());
 
     /// Set MarkRanges to false, so there is no need to read these marks again later.
     {

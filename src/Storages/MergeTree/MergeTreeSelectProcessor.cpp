@@ -175,7 +175,28 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
         try
         {
             if (!task || algorithm->needNewTask(*task))
+            {
+                if (task && prewhere_info && reader_settings.use_query_condition_cache)
+                {
+                    for (const auto * dag : prewhere_info->prewhere_actions.getOutputs())
+                    {
+                        if (dag->result_name == prewhere_info->prewhere_column_name)
+                        {
+                            auto data_part = task->getInfo().data_part;
+                            auto storage_id = data_part->storage.getStorageID();
+                            auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
+                            query_condition_cache->write(storage_id.uuid,
+                                data_part->name,
+                                dag->getHash(),
+                                task->getPreWhereUnmatchedMarks(),
+                                data_part->index_granularity->getMarksCount());
+                            break;
+                        }
+                    }
+                }
+
                 task = algorithm->getNewTask(*pool, task.get());
+            }
 
             if (!task)
                 break;
@@ -217,18 +238,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                 .is_finished = false};
         }
         if (reader_settings.use_query_condition_cache && prewhere_info)
-        {
-            for (const auto * dag : prewhere_info->prewhere_actions.getOutputs())
-            {
-                if (dag->result_name == prewhere_info->prewhere_column_name)
-                {
-                    auto data_part = task->getInfo().data_part;
-                    auto query_condition_cache = data_part->storage.getContext()->getQueryConditionCache();
-                    query_condition_cache->write(data_part, dag->getHash(), res.read_mark_ranges);
-                    break;
-                }
-            }
-        }
+            task->addPreWhereUnmatchedMarks(res.read_mark_ranges);
 
         return {Chunk(), res.num_read_rows, res.num_read_bytes, false};
     }

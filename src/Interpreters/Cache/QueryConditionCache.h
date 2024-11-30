@@ -19,10 +19,10 @@ public:
     {}
 
     /// Read the filter and return empty if it does not exist.
-    std::optional<MarkFilter> read(const std::shared_ptr<const IMergeTreeDataPart> & data_part, size_t condition_id);
+    std::optional<MarkFilter> read(const UUID & table_id, const String & part_name, size_t condition_id);
 
     /// Take out the mark filter corresponding to the query condition and set it to false on the corresponding mark.
-    void write(const MergeTreeDataPartPtr & data_part, size_t condition_id, const MarkRanges & mark_ranges);
+    void write(const UUID & table_id, const String & part_name, size_t condition_id, const MarkRanges & mark_ranges, size_t marks_count);
 
     void clear() { cache.clear(); }
 
@@ -33,6 +33,7 @@ private:
     {
         const UUID table_id;
         const String part_name;
+        /// Hash value of all filter operation dag.
         const size_t condition_id;
 
         bool operator==(const Key & other) const { return table_id == other.table_id && part_name == other.part_name && condition_id == other.condition_id; }
@@ -45,7 +46,8 @@ private:
 
     struct Entry
     {
-        /// If the mark at the corresponding position is false, there is no need to read.
+        /// 0 means "none of the rows in the mark match the predicate".
+        /// 1 means "at least one row in the mark matches the predicate".
         MarkFilter mark_filter;
         std::mutex mutex;
 

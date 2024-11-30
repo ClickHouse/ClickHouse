@@ -916,7 +916,9 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(RangesInDataP
             auto & part_with_ranges = *it;
             stat.total_granules += part_with_ranges.getMarksCount();
 
-            auto filter = query_condition_cache->read(part_with_ranges.data_part, condition_id);
+            auto & data_part = part_with_ranges.data_part;
+            auto storage_id = data_part->storage.getStorageID();
+            auto filter = query_condition_cache->read(storage_id.uuid, data_part->name, condition_id);
             if (!filter)
             {
                 ++it;

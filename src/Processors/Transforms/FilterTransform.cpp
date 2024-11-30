@@ -115,7 +115,13 @@ void FilterTransform::doTransform(Chunk & chunk)
         if (!mark_info)
             return;
 
-        query_condition_cache->write(mark_info->getDataPart(), *condition_id, mark_info->getMarkRanges());
+        auto data_part = mark_info->getDataPart();
+        auto storage_id = data_part->storage.getStorageID();
+        query_condition_cache->write(storage_id.uuid,
+            data_part->name,
+            *condition_id,
+            mark_info->getMarkRanges(),
+            data_part->index_granularity->getMarksCount());
     };
 
     {
