@@ -98,6 +98,9 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUInt64 keeper_max_retries;
+    extern const SettingsUInt64 keeper_retry_initial_backoff_ms;
+    extern const SettingsUInt64 keeper_retry_max_backoff_ms;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsSeconds receive_timeout;
     extern const SettingsMaxThreads max_threads;
@@ -878,7 +881,13 @@ void InterpreterSystemQuery::restoreReplica()
     if (table_replicated_ptr == nullptr)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), table_id.getNameForLogs());
 
-    table_replicated_ptr->restoreMetadataInZooKeeper();
+    const auto & settings = getContext()->getSettingsRef();
+
+    table_replicated_ptr->restoreMetadataInZooKeeper(
+        getContext()->getProcessListElementSafe(),
+        ZooKeeperRetriesInfo{settings[Setting::keeper_max_retries],
+                             settings[Setting::keeper_retry_initial_backoff_ms],
+                             settings[Setting::keeper_retry_max_backoff_ms]});
 }
 
 StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, ContextMutablePtr system_context)
