@@ -1818,7 +1818,7 @@ Possible values:
 - 1 — Enabled.
 )", 0) \
     DECLARE(Map, http_response_headers, "", R"(
-Allows to add or override HTTP headers which the server will return it the response with a successful query result.
+Allows to add or override HTTP headers which the server will return in the response with a successful query result.
 This only affects the HTTP interface.
 
 If the header is already set by default, the provided value will override it.
