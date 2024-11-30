@@ -118,7 +118,7 @@ struct MergedBlockOutputStream::Finalizer::Impl
     }
 
     void finish();
-    void cancel() noexcept;
+    void cancel();
 };
 
 void MergedBlockOutputStream::Finalizer::finish()
@@ -129,7 +129,7 @@ void MergedBlockOutputStream::Finalizer::finish()
         to_finish->finish();
 }
 
-void MergedBlockOutputStream::Finalizer::cancel() noexcept
+void MergedBlockOutputStream::Finalizer::cancel()
 {
     std::unique_ptr<Impl> to_cancel = std::move(impl);
     impl.reset();
@@ -166,7 +166,7 @@ void MergedBlockOutputStream::Finalizer::Impl::finish()
         part->getDataPartStorage().removeFile(file_name);
 }
 
-void MergedBlockOutputStream::Finalizer::Impl::cancel() noexcept
+void MergedBlockOutputStream::Finalizer::Impl::cancel()
 {
     writer.cancel();
 
@@ -182,8 +182,15 @@ MergedBlockOutputStream::Finalizer::Finalizer(std::unique_ptr<Impl> impl_) : imp
 
 MergedBlockOutputStream::Finalizer::~Finalizer()
 {
-    if (impl)
-        cancel();
+    try
+    {
+        if (impl)
+            finish();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 
