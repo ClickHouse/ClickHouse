@@ -1,4 +1,3 @@
-#include "DataTypes/IDataType.h"
 #include <Analyzer/ConstantNode.h>
 
 #include <Analyzer/FunctionNode.h>
@@ -55,14 +54,12 @@ String ConstantNode::getValueStringRepresentation() const
     return applyVisitor(FieldVisitorToString(), getValue());
 }
 
-bool ConstantNode::requiresCastCall() const
+bool ConstantNode::requiresCastCall(Field::Types::Which type, const DataTypePtr & field_type, const DataTypePtr & data_type)
 {
-    const auto & constant_value_literal = getValue();
     bool need_to_add_cast_function = false;
-    auto constant_value_literal_type = constant_value_literal.getType();
-    WhichDataType constant_value_type(constant_value.getType());
+    WhichDataType constant_value_type(data_type);
 
-    switch (constant_value_literal_type)
+    switch (type)
     {
         case Field::Types::String:
         {
@@ -73,7 +70,7 @@ bool ConstantNode::requiresCastCall() const
         case Field::Types::Int64:
         case Field::Types::Float64:
         {
-            WhichDataType constant_value_field_type(applyVisitor(FieldToDataType(), constant_value_literal));
+            WhichDataType constant_value_field_type(field_type);
             need_to_add_cast_function = constant_value_field_type.idx != constant_value_type.idx;
             break;
         }
@@ -102,10 +99,13 @@ bool ConstantNode::requiresCastCall() const
         }
     }
 
-    // Add cast if constant was created as a result of constant folding.
-    // Constant folding may lead to type transformation and literal on shard
-    // may have a different type.
-    return need_to_add_cast_function || source_expression != nullptr;
+    return need_to_add_cast_function;
+}
+
+bool ConstantNode::requiresCastCall() const
+{
+    const auto & [name, type, field_type] = getFieldAttributes();
+    return requiresCastCall(type, field_type, getResultType());
 }
 
 bool ConstantNode::receivedFromInitiatorServer() const
@@ -185,14 +185,16 @@ QueryTreeNodePtr ConstantNode::cloneImpl() const
 
 ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    const auto constant_value_literal = getValue();
     const auto & constant_value_type = constant_value.getType();
-    auto constant_value_ast = std::make_shared<ASTLiteral>(constant_value_literal);
+    auto constant_value_ast = std::make_shared<ASTLiteral>(getValue());
 
     if (!options.add_cast_for_constants)
         return constant_value_ast;
 
-    if (requiresCastCall())
+    // Add cast if constant was created as a result of constant folding.
+    // Constant folding may lead to type transformation and literal on shard
+    // may have a different type.
+    if (source_expression != nullptr || requiresCastCall(constant_value_ast->value.getType(), applyVisitor(FieldToDataType(), constant_value_ast->value), getResultType()))
     {
         /** Value for DateTime64 is Decimal64, which is serialized as a string literal.
           * If we serialize it as is, DateTime64 would be parsed from that string literal, which can be incorrect.
@@ -205,7 +207,7 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
         {
             const auto * date_time_type = typeid_cast<const DataTypeDateTime64 *>(constant_value_end_type.get());
             DecimalField<Decimal64> decimal_value;
-            if (constant_value_literal.tryGet<DecimalField<Decimal64>>(decimal_value))
+            if (constant_value_ast->value.tryGet<DecimalField<Decimal64>>(decimal_value))
             {
                 WriteBufferFromOwnString ostr;
                 writeDateTimeText(decimal_value.getValue(), date_time_type->getScale(), ostr, date_time_type->getTimeZone());

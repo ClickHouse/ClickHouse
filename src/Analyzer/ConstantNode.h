@@ -92,6 +92,8 @@ public:
         return constant_value.getType();
     }
 
+    static bool requiresCastCall(Field::Types::Which type, const DataTypePtr & field_type, const DataTypePtr & data_type);
+
     /// Check if conversion to AST requires wrapping with _CAST function.
     bool requiresCastCall() const;
 
@@ -106,6 +108,12 @@ public:
     void convertToNullable() override;
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
+
+    std::tuple<String, Field::Types::Which, DataTypePtr> getFieldAttributes() const
+    {
+        const auto & [name, type, field_type] = constant_value.getFieldAttributes();
+        return {name + "_" + constant_value.getType()->getName(), type, field_type};
+    }
 
 protected:
     bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const override;
