@@ -910,7 +910,8 @@ void finalizeMutatedPart(
     const CompressionCodecPtr & codec,
     ContextPtr context,
     StorageMetadataPtr metadata_snapshot,
-    bool sync)
+    bool sync,
+    MergeTreeData::MutableDataPartPtr new_projection_part)
 {
     std::vector<std::unique_ptr<WriteBufferFromFileBase>> written_files;
 
@@ -995,6 +996,12 @@ void finalizeMutatedPart(
             new_data_part->index_granularity = std::move(new_index_granularity);
     }
 
+    if (new_projection_part)
+    {
+        auto projection_name = metadata_snapshot->getProjections().begin()->name;
+        new_data_part->addProjectionPart(projection_name, std::move(new_projection_part));
+    }
+
     /// Load rest projections which are hardlinked
     bool noop;
     new_data_part->loadProjections(false, false, noop, true /* if_not_loaded */);
@@ -1022,6 +1029,10 @@ struct ProjectionMutationContext
 
     MergeTreeData::MutableDataPartPtr new_part;
     IMergedBlockOutputStreamPtr out;
+
+    Block updated_header;
+    NameSet files_to_skip;
+    String mrk_extension;
 };
 
 struct MutationContext
@@ -1980,18 +1991,14 @@ private:
             chassert (ctx->projection_mutation_context.mutating_pipeline_builder.initialized());
             builder = std::make_unique<QueryPipelineBuilder>(std::move(ctx->projection_mutation_context.mutating_pipeline_builder));
 
-            // ctx->projection_out = std::make_shared<MergedColumnOnlyOutputStream>(
-            //     ctx->new_projection_part,
-            //     ctx->metadata_snapshot,
-            //     ctx->updated_header.getNamesAndTypesList(),
-            //     ctx->compression_codec,
-            //     std::vector<MergeTreeIndexPtr>(),
-            //     std::vector<ColumnStatisticsPartPtr>(),
-            //     nullptr,
-            //     /*save_marks_in_cache=*/ false,
-            //     ctx->projection_part->index_granularity,
-            //     &ctx->projection_part->index_granularity_info
-            // );
+            ctx->projection_mutation_context.out = std::make_shared<MergedColumnOnlyOutputStream>(
+                ctx->projection_mutation_context.new_part,
+                ctx->projection_mutation_context.metadata_snapshot,
+                ctx->projection_mutation_context.updated_header.getNamesAndTypesList(),
+                MergeTreeIndices{},
+                ColumnsStatistics{},
+                ctx->data->getContext()->chooseCompressionCodec(0, 0),
+                ctx->projection_mutation_context.source_part->index_granularity);
 
             ctx->projection_mutation_context.mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
             ctx->projection_mutation_context.mutating_pipeline.disableProfileEventUpdate();
@@ -2004,6 +2011,21 @@ private:
 
     void finalize()
     {
+        if (ctx->projection_mutation_context.mutating_executor)
+        {
+            ctx->projection_mutation_context.mutating_executor.reset();
+            ctx->projection_mutation_context.mutating_pipeline.reset();
+
+            auto changed_checksums =
+                static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->projection_mutation_context.out)->fillChecksums(
+                    ctx->projection_mutation_context.new_part, ctx->projection_mutation_context.new_part->checksums);
+            ctx->projection_mutation_context.new_part->checksums.add(std::move(changed_checksums));
+
+            static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->projection_mutation_context.out)->finish(ctx->need_sync);
+
+            ctx->projection_mutation_context.out.reset();
+        }
+
         if (ctx->mutating_executor)
         {
             ctx->mutating_executor.reset();
@@ -2032,7 +2054,11 @@ private:
             }
         }
 
-        MutationHelpers::finalizeMutatedPart(ctx->source_part, ctx->new_data_part, ctx->execute_ttl_type, ctx->compression_codec, ctx->context, ctx->metadata_snapshot, ctx->need_sync);
+        MutationHelpers::finalizeMutatedPart(ctx->projection_mutation_context.source_part, ctx->projection_mutation_context.new_part, ExecuteTTLType::NONE, 
+            ctx->compression_codec, ctx->context, ctx->projection_mutation_context.metadata_snapshot, ctx->need_sync, nullptr);
+
+        MutationHelpers::finalizeMutatedPart(ctx->source_part, ctx->new_data_part, ctx->execute_ttl_type, 
+            ctx->compression_codec, ctx->context, ctx->metadata_snapshot, ctx->need_sync, ctx->projection_mutation_context.new_part);
     }
 
     enum class State : uint8_t
@@ -2392,7 +2418,6 @@ bool MutateTask::prepare()
     bool lightweight_delete_mode = false;
 
     MutationCommands projection_commands;
-    Block projection_updated_header;
 
     if (!ctx->for_interpreter.empty())
     {
@@ -2436,7 +2461,7 @@ bool MutateTask::prepare()
             proj_desc.metadata->getColumns().getNamesOfPhysical(), context_for_reading, settings);
 
         ctx->projection_mutation_context.mutating_pipeline_builder = projection_interpreter->execute();
-        projection_updated_header = projection_interpreter->getUpdatedHeader();
+        ctx->projection_mutation_context.updated_header = projection_interpreter->getUpdatedHeader();
 
         lightweight_delete_mode = ctx->updated_header.has(RowExistsColumn::name);
         /// If under the condition of lightweight delete mode with rebuild option, add projections again here as we can only know
@@ -2489,7 +2514,7 @@ bool MutateTask::prepare()
     ctx->projection_mutation_context.new_part = ctx->new_data_part->getProjectionPartBuilder(part_name, false).withPartType(ctx->projection_mutation_context.source_part->getType()).build();
 
     auto [projection_new_columns, projection_new_infos] = MutationHelpers::getColumnsForNewDataPart(
-        ctx->projection_mutation_context.source_part, projection_updated_header, ctx->projection_mutation_context.metadata_snapshot->getColumns().getAllPhysical(),
+        ctx->projection_mutation_context.source_part, ctx->projection_mutation_context.updated_header, ctx->projection_mutation_context.metadata_snapshot->getColumns().getAllPhysical(),
         ctx->projection_mutation_context.source_part->getSerializationInfos(), projection_commands, ctx->for_file_renames);
 
     ctx->projection_mutation_context.new_part->setColumns(projection_new_columns, projection_new_infos, ctx->projection_mutation_context.metadata_snapshot->getMetadataVersion());
@@ -2497,6 +2522,8 @@ bool MutateTask::prepare()
 
     /// Don't change granularity type while mutating subset of columns
     ctx->mrk_extension = ctx->source_part->index_granularity_info.mark_type.getFileExtension();
+
+    ctx->projection_mutation_context.mrk_extension = ctx->projection_mutation_context.source_part->index_granularity_info.mark_type.getFileExtension();
 
     const auto data_settings = ctx->data->getSettings();
     ctx->need_sync = data_settings->needSyncPart(ctx->source_part->rows_count, ctx->source_part->getBytesOnDisk());
@@ -2583,6 +2610,15 @@ bool MutateTask::prepare()
             ctx->mrk_extension,
             *projections_to_skip,
             ctx->stats_to_recalc);
+
+        ctx->projection_mutation_context.files_to_skip = MutationHelpers::collectFilesToSkip(
+            ctx->projection_mutation_context.source_part,
+            ctx->projection_mutation_context.new_part,
+            ctx->projection_mutation_context.updated_header,
+            {},
+            ctx->projection_mutation_context.mrk_extension,
+            {},
+            {});
 
         ctx->files_to_rename = MutationHelpers::collectFilesForRenames(
             ctx->source_part,
