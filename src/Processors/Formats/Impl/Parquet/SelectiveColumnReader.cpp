@@ -1294,6 +1294,13 @@ void PlainDecoder::decodeFixedValueSpace(
     remain_rows -= rows_to_read;
 }
 
+void insertManyToFilter(PaddedPODArray<bool> &filter, bool value, size_t count)
+{
+    filter.resize(filter.size() + count);
+    std::fill(filter.end() - count, filter.end(), value);
+}
+
+
 void ListColumnReader::read(MutableColumnPtr & column, OptionalRowSet & row_set, size_t rows_to_read)
 {
     ColumnNullable* null_column = nullptr;
@@ -1309,58 +1316,80 @@ void ListColumnReader::read(MutableColumnPtr & column, OptionalRowSet & row_set,
         throw DB::Exception(ErrorCodes::PARQUET_EXCEPTION, "column type should be array, but is {}", column->getName());
     }
     ColumnArray* array_column = static_cast<ColumnArray *>(column.get());
-    if (!row_set)
+    size_t valid_count = row_set ? row_set->count() : rows_to_read;
+    auto & offsets = array_column->getOffsets();
+    auto old_size = offsets.size();
+    offsets.reserve(old_size + valid_count);
+    const auto & def_levels = child->getDefinitionLevels();
+    bool has_def_level = !def_levels.empty();
+    const auto & rep_levels = child->getRepetitionLevels();
+    size_t start = rep_levels.size() - child->currentRemainRows();
+    // generate offsets;
+    int array_size = 0;
+    const bool has_filter = row_set.has_value();
+    PaddedPODArray<bool> child_filter;
+    if (has_filter)
+        child_filter.reserve(rows_to_read);
+    size_t rows_read = 0;
+    size_t count = 0;
+    while (offsets.size() < old_size + valid_count)
     {
-        auto & offsets = array_column->getOffsets();
-        auto old_size = offsets.size();
-        offsets.reserve(old_size + rows_to_read);
-        size_t count = 0;
-        const auto & def_levels = child->getDefinitionLevels();
-        bool has_def_level = !def_levels.empty();
-        const auto & rep_levels = child->getRepetitionLevels();
-        size_t start = rep_levels.size() - child->currentRemainRows();
-        // generate offsets;
-        int array_size = 0;
-        while (offsets.size() - old_size < rows_to_read)
+        size_t idx = start + count;
+        if (idx >= rep_levels.size())
+            break;
+        if (rep_levels[idx] <= rep_level)
         {
-            size_t idx = start + count;
-            if (idx >= rep_levels.size())
-                break;
-            if (rep_levels[idx] <= rep_level)
+            if (count)
             {
-                if (count)
+                rows_read++;
+                if (has_filter)
                 {
-                    offsets.push_back(offsets.back() + array_size);
-                    array_size = 0;
-                }
-                if (has_def_level && def_levels[idx] < def_level)
-                {
-                    // value is null
-                    if (null_map)
+                    auto valid = row_set->get(rows_read - 1);
+                    if (valid)
                     {
-                        null_map->data()[offsets.size()] = 1;
+                        insertManyToFilter(child_filter, true, array_size);
+                        offsets.push_back(offsets.back() + array_size);
                     }
                     else
-                        throw Exception(ErrorCodes::PARQUET_EXCEPTION, "null value is not supported");
+                        insertManyToFilter(child_filter, false, array_size);
                 }
                 else
+                    offsets.push_back(offsets.back() + array_size);
+                array_size = 0;
+            }
+            if (has_def_level && def_levels[idx] < def_level)
+            {
+                // value is null
+                if (null_map)
                 {
-                    array_size++;
+                    null_map->data()[offsets.size()] = 1;
                 }
+                else
+                    throw Exception(ErrorCodes::PARQUET_EXCEPTION, "null value is not supported");
             }
             else
-                array_size ++;
-            count++;
+            {
+                array_size++;
+            }
+        }
+        else
+            array_size ++;
+        count++;
+    }
+    if (!has_filter || row_set->get(row_set->totalRows() - 1))
+    {
+        if (has_filter)
+        {
+            for (int i = 0; i < array_size; i++)
+                child_filter.push_back(true);
         }
         offsets.push_back(offsets.back() + array_size);
-        auto data_column = array_column->getDataPtr()->assumeMutable();
-        OptionalRowSet filter;
-        child->read(data_column, filter, offsets.back());
     }
-    else
-    {
-        throw Exception(ErrorCodes::PARQUET_EXCEPTION, "filter is not supported");
-    }
+    auto data_column = array_column->getDataPtr()->assumeMutable();
+    OptionalRowSet filter;
+    if (has_filter)
+        filter = RowSet(child_filter);
+    child->read(data_column, filter, has_filter ? filter->totalRows() : offsets.back());
 }
 void ListColumnReader::computeRowSet(std::optional<RowSet> & , size_t )
 {
@@ -1396,39 +1425,65 @@ void MapColumnReader::read(MutableColumnPtr & column, OptionalRowSet & row_set, 
     }
     auto key_column = tuple_col.getColumns()[0]->assumeMutable();
     auto value_column = tuple_col.getColumns()[1]->assumeMutable();
-    if (!row_set)
+    auto & offsets = nested_column->getOffsets();
+    auto old_size = offsets.size();
+    offsets.reserve(old_size + rows_to_read);
+    size_t valid_count = row_set ? row_set->count() : rows_to_read;
+    const auto & rep_levels = key_reader->getRepetitionLevels();
+    size_t start = rep_levels.size() - key_reader->currentRemainRows();
+    // generate offsets;
+    int array_size = 0;
+    const bool has_filter = row_set.has_value();
+    PaddedPODArray<bool> child_filter;
+    if (has_filter)
+        child_filter.reserve(rows_to_read);
+    size_t rows_read = 0;
+    size_t count = 0;
+    while (offsets.size() < old_size + valid_count)
     {
-        auto & offsets = nested_column->getOffsets();
-        auto old_size = offsets.size();
-        offsets.reserve(old_size + rows_to_read);
-        size_t count = 0;
-        const auto & rep_levels = key_reader->getRepetitionLevels();
-        size_t start = rep_levels.size() - key_reader->currentRemainRows();
-        // generate offsets;
-        int array_size = 0;
-        while (offsets.size() - old_size < rows_to_read)
+        size_t idx = start + count;
+        if (idx >= rep_levels.size())
+            break;
+        if (rep_levels[idx] <= rep_level)
         {
-            size_t idx = start + count;
-            if (idx >= rep_levels.size())
-                break;
-            if (rep_levels[idx] <= rep_level)
+            if (count)
             {
-                if (count)
+                rows_read++;
+                if (has_filter)
                 {
-                    offsets.push_back(offsets.back() + array_size);
-                    array_size = 0;
+                    auto valid = row_set->get(rows_read - 1);
+                    if (valid)
+                    {
+                        insertManyToFilter(child_filter, true, array_size);
+                        offsets.push_back(offsets.back() + array_size);
+                    }
+                    else
+                        insertManyToFilter(child_filter, false, array_size);
                 }
-                array_size++;
+                else
+                    offsets.push_back(offsets.back() + array_size);
+                array_size = 0;
             }
-            else
-                array_size ++;
-            count++;
+            array_size++;
+        }
+        else
+            array_size ++;
+        count++;
+    }
+    if (!has_filter || row_set->get(row_set->totalRows() - 1))
+    {
+        if (has_filter)
+        {
+            for (int i = 0; i < array_size; i++)
+                child_filter.push_back(true);
         }
         offsets.push_back(offsets.back() + array_size);
-        OptionalRowSet filter;
-        key_reader->read(key_column, filter, offsets.back());
-        value_reader->read(value_column, filter, offsets.back());
     }
+    OptionalRowSet filter;
+    if (has_filter)
+        filter = RowSet(child_filter);
+    key_reader->read(key_column, filter, has_filter ? filter->totalRows() : offsets.back());
+    value_reader->read(value_column, filter, has_filter ? filter->totalRows() : offsets.back());
 }
 void MapColumnReader::computeRowSet(std::optional<RowSet> & , size_t )
 {

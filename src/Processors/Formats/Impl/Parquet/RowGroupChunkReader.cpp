@@ -132,8 +132,14 @@ void RowGroupPrefetch::startPrefetch()
     if (fetched)
         return;
     fetched = true;
-    ranges = arrow::io::internal::CoalesceReadRanges(
+    auto status = arrow::io::internal::CoalesceReadRanges(
         ranges, arrow_properties.cache_options().hole_size_limit, arrow_properties.cache_options().range_size_limit);
+    if (!status.ok())
+    {
+        throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Failed to coalesce read ranges: {}", status.status().message());
+    }
+    else
+        ranges = status.MoveValueUnsafe();
     read_range_buffers.resize(ranges.size());
     for (size_t i = 0; i < ranges.size(); i++)
     {

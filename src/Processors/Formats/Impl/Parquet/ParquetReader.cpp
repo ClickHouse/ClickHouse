@@ -112,8 +112,8 @@ std::unique_ptr<SubRowGroupRangeReader> ParquetReader::getSubRowGroupRangeReader
 //                prefetch->prefetchRange(range);
 //        }
         row_group_prefetches.push_back(std::move(prefetch));
-        if (!condition_prefetch->isEmpty())
-            row_group_condition_prefetches.push_back(std::move(condition_prefetch));
+//        if (!condition_prefetch->isEmpty())
+        row_group_condition_prefetches.push_back(std::move(condition_prefetch));
     }
     return std::make_unique<SubRowGroupRangeReader>(
         row_group_indices_,

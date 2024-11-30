@@ -26,6 +26,11 @@ public:
         std::fill(mask.begin(), mask.end(), true);
     }
 
+    explicit RowSet(PaddedPODArray<bool>& mask_) : max_rows(mask_.size())
+    {
+        mask.swap(mask_);
+    }
+
     inline void set(size_t i, bool value) { mask[offset + i] = value; }
     inline bool get(size_t i) const
     {
