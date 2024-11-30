@@ -13,3 +13,5 @@ Check that we can override it:
 It does not allow bad characters:
 BAD_ARGUMENTS
 BAD_ARGUMENTS
+It does not let duplicate entries:
+BAD_ARGUMENTS

@@ -1705,7 +1705,8 @@ void executeQuery(
                 || std::find_if(value.begin(), value.end(), isControlASCII) != value.end())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "The values of the `additional_http_headers` cannot contain ASCII control characters");
 
-            result_details.additional_headers.emplace(key, value);
+            if (!result_details.additional_headers.emplace(key, value).second)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are duplicate entries in the `additional_http_headers` setting");
         }
     }
 
