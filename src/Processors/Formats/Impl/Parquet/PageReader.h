@@ -1,6 +1,6 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <Common/PODArray.h>
-#include <Processors/Formats/Impl/Parquet/generated/parquet_types.h>
+#include <generated/parquet_types.h>
 #include <parquet/properties.h>
 #include <parquet/column_page.h>
 
