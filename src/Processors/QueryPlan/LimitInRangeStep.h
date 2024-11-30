@@ -9,7 +9,7 @@ class LimitInRangeStep : public ITransformingStep
 {
 public:
     LimitInRangeStep(
-        const DataStream & input_stream_, String from_filter_column_name_, String to_filter_column_name_,
+        const Header & input_header_, String from_filter_column_name_, String to_filter_column_name_,
         UInt64 limit_inrange_window, bool remove_filter_column_);
 
     String getName() const override { return "Limit InRange"; }
@@ -23,7 +23,7 @@ public:
     bool removesFilterColumn() const { return remove_filter_column; }
 
 private:
-    void updateOutputStream() override;
+    void updateOutputHeader() override;
 
     String from_filter_column_name;
     String to_filter_column_name;

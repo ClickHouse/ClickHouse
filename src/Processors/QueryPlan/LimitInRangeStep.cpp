@@ -26,12 +26,12 @@ static ITransformingStep::Traits getTraits()
 }
 
 LimitInRangeStep::LimitInRangeStep(
-    const DataStream & input_stream_, String from_filter_column_name_, String to_filter_column_name_,
+    const Header & input_header_, String from_filter_column_name_, String to_filter_column_name_,
     UInt64 limit_inrange_window_, bool remove_filter_column_)
     : ITransformingStep(
-        input_stream_,
+        input_header_,
         LimitInRangeTransform::transformHeader(
-            input_stream_.header, from_filter_column_name_, to_filter_column_name_, limit_inrange_window_, remove_filter_column_),
+            input_header_, from_filter_column_name_, to_filter_column_name_, limit_inrange_window_, remove_filter_column_),
         getTraits())
     , from_filter_column_name(std::move(from_filter_column_name_))
     , to_filter_column_name(std::move(to_filter_column_name_))
@@ -50,11 +50,11 @@ void LimitInRangeStep::transformPipeline(QueryPipelineBuilder & pipeline, const 
                 header, from_filter_column_name, to_filter_column_name, limit_inrange_window, remove_filter_column, on_totals);
         });
 
-    if (!blocksHaveEqualStructure(pipeline.getHeader(), output_stream->header))
+    if (!blocksHaveEqualStructure(pipeline.getHeader(), *output_header))
     {
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
             pipeline.getHeader().getColumnsWithTypeAndName(),
-            output_stream->header.getColumnsWithTypeAndName(),
+            output_header->getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Name);
         auto convert_actions = std::make_shared<ExpressionActions>(std::move(convert_actions_dag), settings.getActionsSettings());
 
@@ -82,13 +82,9 @@ void LimitInRangeStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Removes Filter", remove_filter_column);
 }
 
-void LimitInRangeStep::updateOutputStream()
+void LimitInRangeStep::updateOutputHeader()
 {
-    output_stream = createOutputStream(
-        input_streams.front(),
-        LimitInRangeTransform::transformHeader(
-            input_streams.front().header, from_filter_column_name, to_filter_column_name, limit_inrange_window, remove_filter_column),
-        getDataStreamTraits());
+    output_header = LimitInRangeTransform::transformHeader(input_headers.front(), from_filter_column_name, to_filter_column_name, limit_inrange_window, remove_filter_column);
 }
 
 }

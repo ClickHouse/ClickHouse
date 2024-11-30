@@ -419,10 +419,10 @@ void addLimitInRangeStep(
         limit_inrange_window = query_node.getInrangeWindow()->as<ConstantNode &>().getValue().safeGet<UInt64>();
 
     const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
-    limit_inrange_window = std::min<UInt64>(limit_inrange_window, settings.max_block_size);
+    limit_inrange_window = std::min<UInt64>(limit_inrange_window, settings[Setting::max_block_size]);
 
     auto limit_inrange_step = std::make_unique<LimitInRangeStep>(
-        query_plan.getCurrentDataStream(),
+        query_plan.getCurrentHeader(),
         limit_inrange_analysis_result.from_filter_column_name,
         limit_inrange_analysis_result.to_filter_column_name,
         limit_inrange_window,
