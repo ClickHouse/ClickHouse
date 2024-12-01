@@ -884,10 +884,10 @@ void InterpreterSystemQuery::restoreReplica()
     const auto & settings = getContext()->getSettingsRef();
 
     table_replicated_ptr->restoreMetadataInZooKeeper(
-        getContext()->getProcessListElementSafe(),
         ZooKeeperRetriesInfo{settings[Setting::keeper_max_retries],
                              settings[Setting::keeper_retry_initial_backoff_ms],
-                             settings[Setting::keeper_retry_max_backoff_ms]});
+                             settings[Setting::keeper_retry_max_backoff_ms],
+                             getContext()->getProcessListElementSafe()});
 }
 
 StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, ContextMutablePtr system_context)

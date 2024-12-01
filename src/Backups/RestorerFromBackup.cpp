@@ -109,7 +109,8 @@ RestorerFromBackup::RestorerFromBackup(
     , zookeeper_retries_info(
           context->getSettingsRef()[Setting::backup_restore_keeper_max_retries],
           context->getSettingsRef()[Setting::backup_restore_keeper_retry_initial_backoff_ms],
-          context->getSettingsRef()[Setting::backup_restore_keeper_retry_max_backoff_ms])
+          context->getSettingsRef()[Setting::backup_restore_keeper_retry_max_backoff_ms],
+          context->getProcessListElementSafe())
     , tables_dependencies("RestorerFromBackup")
     , thread_pool(thread_pool_)
 {

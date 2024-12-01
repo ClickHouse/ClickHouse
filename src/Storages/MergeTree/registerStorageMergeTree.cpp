@@ -835,11 +835,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (auto txn = args.getLocalContext()->getZooKeeperMetadataTransaction())
             need_check_table_structure = txn->isInitialQuery();
 
-        ZooKeeperRetriesInfo create_query_zk_retries_info;
-        create_query_zk_retries_info.max_retries = local_settings[Setting::keeper_max_retries];
-        create_query_zk_retries_info.initial_backoff_ms = local_settings[Setting::keeper_retry_initial_backoff_ms];
-        create_query_zk_retries_info.max_backoff_ms = local_settings[Setting::keeper_retry_max_backoff_ms];
-        auto create_query_status = args.getLocalContext()->getProcessListElementSafe();
+        ZooKeeperRetriesInfo create_query_zk_retries_info{
+            local_settings[Setting::keeper_max_retries],
+            local_settings[Setting::keeper_retry_initial_backoff_ms],
+            local_settings[Setting::keeper_retry_max_backoff_ms],
+            args.getLocalContext()->getProcessListElementSafe()};
 
         return std::make_shared<StorageReplicatedMergeTree>(
             zookeeper_info,
@@ -852,8 +852,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             merging_params,
             std::move(storage_settings),
             need_check_table_structure,
-            create_query_zk_retries_info,
-            create_query_status);
+            create_query_zk_retries_info);
     }
 
     return std::make_shared<StorageMergeTree>(

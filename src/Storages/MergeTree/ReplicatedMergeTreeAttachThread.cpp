@@ -167,23 +167,23 @@ void ReplicatedMergeTreeAttachThread::runImpl()
     zookeeper->tryRemove(replica_path + "/flags/force_restore_data");
 
     /// Here `zookeeper_retries_info = {}` because the attach thread has its own retries (see ReplicatedMergeTreeAttachThread::run()).
-    storage.checkTableStructure(replica_path, metadata_snapshot, /* metadata_version = */ nullptr, /* strict_check = */ true, /* zookeeper_retries_info = */ {}, /* process_list_element = */ nullptr);
+    storage.checkTableStructure(replica_path, metadata_snapshot, /* metadata_version = */ nullptr, /* strict_check = */ true, /* zookeeper_retries_info = */ {});
     storage.checkParts(skip_sanity_checks);
 
     /// Temporary directories contain uninitialized results of Merges or Fetches (after forced restart),
     /// don't allow to reinitialize them, delete each of them immediately.
     storage.clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
 
-    storage.createNewZooKeeperNodes(/* zookeeper_retries_info = */ {}, /* process_list_element = */ nullptr);
-    storage.syncPinnedPartUUIDs(/* zookeeper_retries_info = */ {}, /* process_list_element = */ nullptr);
+    storage.createNewZooKeeperNodes(/* zookeeper_retries_info = */ {});
+    storage.syncPinnedPartUUIDs(/* zookeeper_retries_info = */ {});
 
     std::lock_guard lock(storage.table_shared_id_mutex);
-    storage.createTableSharedID(/* zookeeper_retries_info = */ {}, /* process_list_element = */ nullptr);
+    storage.createTableSharedID(/* zookeeper_retries_info = */ {});
 };
 
 void ReplicatedMergeTreeAttachThread::finalizeInitialization() TSA_NO_THREAD_SAFETY_ANALYSIS
 {
-    storage.startupImpl(/* from_attach_thread */ true, /* zookeeper_retries_info = */ {}, /* process_list_element = */ nullptr);
+    storage.startupImpl(/* from_attach_thread */ true, /* zookeeper_retries_info = */ {});
     storage.initialization_done = true;
     LOG_INFO(log, "Table is initialized");
 }

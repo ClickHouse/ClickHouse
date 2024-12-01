@@ -367,8 +367,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     const MergingParams & merging_params_,
     std::unique_ptr<MergeTreeSettings> settings_,
     bool need_check_structure,
-    const ZooKeeperRetriesInfo & create_query_zookeeper_retries_info_,
-    QueryStatusPtr create_query_status_)
+    const ZooKeeperRetriesInfo & create_query_zookeeper_retries_info_)
     : MergeTreeData(table_id_,
                     metadata_,
                     context_,
@@ -383,7 +382,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , replica_name(zookeeper_info.replica_name)
     , replica_path(fs::path(zookeeper_path) / "replicas" / replica_name)
     , create_query_zookeeper_retries_info(create_query_zookeeper_retries_info_)
-    , create_query_status(create_query_status_)
     , reader(*this)
     , writer(*this)
     , merger_mutator(*this)
@@ -573,7 +571,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
     try
     {
-        bool is_first_replica = createTableIfNotExists(metadata_snapshot, getCreateQueryZooKeeperRetriesInfo(), getCreateQueryStatus());
+        bool is_first_replica = createTableIfNotExists(metadata_snapshot, getCreateQueryZooKeeperRetriesInfo());
 
         try
         {
@@ -582,13 +580,13 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
             /// We have to check granularity on other replicas. If it's fixed we
             /// must create our new replica with fixed granularity and store this
             /// information in /replica/metadata.
-            other_replicas_fixed_granularity = checkFixedGranularityInZookeeper(getCreateQueryZooKeeperRetriesInfo(), getCreateQueryStatus());
+            other_replicas_fixed_granularity = checkFixedGranularityInZookeeper(getCreateQueryZooKeeperRetriesInfo());
 
             /// Allow structure mismatch for secondary queries from Replicated database.
             /// It may happen if the table was altered just after creation.
             /// Metadata will be updated in cloneMetadataIfNeeded(...), metadata_version will be 0 for a while.
             int32_t metadata_version;
-            bool same_structure = checkTableStructure(zookeeper_path, metadata_snapshot, &metadata_version, need_check_structure, getCreateQueryZooKeeperRetriesInfo(), getCreateQueryStatus());
+            bool same_structure = checkTableStructure(zookeeper_path, metadata_snapshot, &metadata_version, need_check_structure, getCreateQueryZooKeeperRetriesInfo());
 
             if (same_structure)
             {
@@ -609,13 +607,13 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         }
 
         if (!is_first_replica)
-            createReplica(metadata_snapshot, getCreateQueryZooKeeperRetriesInfo(), getCreateQueryStatus());
+            createReplica(metadata_snapshot, getCreateQueryZooKeeperRetriesInfo());
 
-        createNewZooKeeperNodes(getCreateQueryZooKeeperRetriesInfo(), getCreateQueryStatus());
-        syncPinnedPartUUIDs(getCreateQueryZooKeeperRetriesInfo(), getCreateQueryStatus());
+        createNewZooKeeperNodes(getCreateQueryZooKeeperRetriesInfo());
+        syncPinnedPartUUIDs(getCreateQueryZooKeeperRetriesInfo());
 
         if (!has_metadata_in_zookeeper.has_value() || *has_metadata_in_zookeeper)
-            createTableSharedID(getCreateQueryZooKeeperRetriesInfo(), getCreateQueryStatus());
+            createTableSharedID(getCreateQueryZooKeeperRetriesInfo());
     }
     catch (...)
     {
@@ -628,7 +626,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 }
 
 
-bool StorageReplicatedMergeTree::checkFixedGranularityInZookeeper(const ZooKeeperRetriesInfo & zookeeper_retries_info, QueryStatusPtr process_list_element) const
+bool StorageReplicatedMergeTree::checkFixedGranularityInZookeeper(const ZooKeeperRetriesInfo & zookeeper_retries_info) const
 {
     bool fixed_granularity = false;
 
@@ -642,7 +640,7 @@ bool StorageReplicatedMergeTree::checkFixedGranularityInZookeeper(const ZooKeepe
 
     if (zookeeper_retries_info.max_retries > 0)
     {
-        ZooKeeperRetriesControl retries_ctl{"StorageReplicatedMergeTree::checkFixedGranularityInZookeeper", log.load(), zookeeper_retries_info, process_list_element};
+        ZooKeeperRetriesControl retries_ctl{"StorageReplicatedMergeTree::checkFixedGranularityInZookeeper", log.load(), zookeeper_retries_info};
         retries_ctl.retryLoop([&] { check_fixed_granularity(); });
     }
     else
@@ -825,11 +823,11 @@ std::vector<String> getAncestors(const String & path)
 
 }
 
-void StorageReplicatedMergeTree::createNewZooKeeperNodes(const ZooKeeperRetriesInfo & zookeeper_retries_info, QueryStatusPtr process_list_element) const
+void StorageReplicatedMergeTree::createNewZooKeeperNodes(const ZooKeeperRetriesInfo & zookeeper_retries_info) const
 {
     if (zookeeper_retries_info.max_retries > 0)
     {
-        ZooKeeperRetriesControl retries_ctl{"StorageReplicatedMergeTree::createNewZooKeeperNodes", log.load(), zookeeper_retries_info, process_list_element};
+        ZooKeeperRetriesControl retries_ctl{"StorageReplicatedMergeTree::createNewZooKeeperNodes", log.load(), zookeeper_retries_info};
         retries_ctl.retryLoop([&] { createNewZooKeeperNodesAttempt(); });
     }
     else
@@ -903,19 +901,17 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodesAttempt() const
     }
 }
 
-bool StorageReplicatedMergeTree::createTableIfNotExists(const StorageMetadataPtr & metadata_snapshot,
-                                                        const ZooKeeperRetriesInfo & zookeeper_retries_info,
-                                                        QueryStatusPtr process_list_element) const
+bool StorageReplicatedMergeTree::createTableIfNotExists(const StorageMetadataPtr & metadata_snapshot, const ZooKeeperRetriesInfo & zookeeper_retries_info) const
 {
     bool table_created = false;
     if (zookeeper_retries_info.max_retries > 0)
     {
-        ZooKeeperRetriesControl retries_ctl{"StorageReplicatedMergeTree::createTableIfNotExists", log.load(), zookeeper_retries_info, process_list_element};
-        retries_ctl.retryLoop([&] { table_created = createTableIfNotExistsAttempt(metadata_snapshot, process_list_element); });
+        ZooKeeperRetriesControl retries_ctl{"StorageReplicatedMergeTree::createTableIfNotExists", log.load(), zookeeper_retries_info};
+        retries_ctl.retryLoop([&] { table_created = createTableIfNotExistsAttempt(metadata_snapshot, zookeeper_retries_info.query_status); });
     }
     else
     {
-        table_created = createTableIfNotExistsAttempt(metadata_snapshot, process_list_element);
+        table_created = createTableIfNotExistsAttempt(metadata_snapshot, zookeeper_retries_info.query_status);
     }
     return table_created;
 }
@@ -1069,18 +1065,16 @@ bool StorageReplicatedMergeTree::createTableIfNotExistsAttempt(const StorageMeta
                     "of wrong zookeeper_path or because of logical error");
 }
 
-void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metadata_snapshot,
-                                               const ZooKeeperRetriesInfo & zookeeper_retries_info,
-                                               QueryStatusPtr process_list_element) const
+void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metadata_snapshot, const ZooKeeperRetriesInfo & zookeeper_retries_info) const
 {
     if (zookeeper_retries_info.max_retries > 0)
     {
-        ZooKeeperRetriesControl retries_ctl{"StorageReplicatedMergeTree::createReplica", log.load(), zookeeper_retries_info, process_list_element};
-        retries_ctl.retryLoop([&] { createReplicaAttempt(metadata_snapshot, process_list_element); });
+        ZooKeeperRetriesControl retries_ctl{"StorageReplicatedMergeTree::createReplica", log.load(), zookeeper_retries_info};
+        retries_ctl.retryLoop([&] { createReplicaAttempt(metadata_snapshot, zookeeper_retries_info.query_status); });
     }
     else
     {
-        createReplicaAttempt(metadata_snapshot, process_list_element);
+        createReplicaAttempt(metadata_snapshot, zookeeper_retries_info.query_status);
     }
 }
 
@@ -1244,17 +1238,10 @@ ZooKeeperRetriesInfo StorageReplicatedMergeTree::getCreateQueryZooKeeperRetriesI
     return create_query_zookeeper_retries_info;
 }
 
-QueryStatusPtr StorageReplicatedMergeTree::getCreateQueryStatus() const
-{
-    std::lock_guard lock{create_query_zookeeper_retries_info_mutex};
-    return create_query_status;
-}
-
 void StorageReplicatedMergeTree::clearCreateQueryZooKeeperRetriesInfo()
 {
     std::lock_guard lock{create_query_zookeeper_retries_info_mutex};
     create_query_zookeeper_retries_info = {};
-    create_query_status = {};
 }
 
 
@@ -1620,12 +1607,12 @@ bool StorageReplicatedMergeTree::removeTableNodesFromZooKeeper(zkutil::ZooKeeper
   */
 bool StorageReplicatedMergeTree::checkTableStructure(
     const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot, int32_t * metadata_version, bool strict_check,
-    const ZooKeeperRetriesInfo & zookeeper_retries_info, QueryStatusPtr process_list_element) const
+    const ZooKeeperRetriesInfo & zookeeper_retries_info) const
 {
     bool same_structure = false;
     if (zookeeper_retries_info.max_retries > 0)
     {
-        ZooKeeperRetriesControl retries_ctl{"StorageReplicatedMergeTree::checkTableStructure", log.load(), zookeeper_retries_info, process_list_element};
+        ZooKeeperRetriesControl retries_ctl{"StorageReplicatedMergeTree::checkTableStructure", log.load(), zookeeper_retries_info};
         retries_ctl.retryLoop([&] { same_structure = checkTableStructureAttempt(zookeeper_prefix, metadata_snapshot, metadata_version, strict_check); });
     }
     else
@@ -1970,7 +1957,7 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
 }
 
 
-void StorageReplicatedMergeTree::syncPinnedPartUUIDs(const ZooKeeperRetriesInfo & zookeeper_retries_info, QueryStatusPtr process_list_element)
+void StorageReplicatedMergeTree::syncPinnedPartUUIDs(const ZooKeeperRetriesInfo & zookeeper_retries_info)
 {
     String new_pinned_part_uuids_str;
     Coordination::Stat new_stat;
@@ -1983,7 +1970,7 @@ void StorageReplicatedMergeTree::syncPinnedPartUUIDs(const ZooKeeperRetriesInfo 
 
     if (zookeeper_retries_info.max_retries > 0)
     {
-        ZooKeeperRetriesControl retries_ctl{"StorageReplicatedMergeTree::syncPinnedPartUUIDs", log.load(), zookeeper_retries_info, process_list_element};
+        ZooKeeperRetriesControl retries_ctl{"StorageReplicatedMergeTree::syncPinnedPartUUIDs", log.load(), zookeeper_retries_info};
         retries_ctl.retryLoop([&] { read_pinned_part_uuids(); });
     }
     else
@@ -2352,7 +2339,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
         case LogEntry::ALTER_METADATA:
             return executeMetadataAlter(entry);
         case LogEntry::SYNC_PINNED_PART_UUIDS:
-            syncPinnedPartUUIDs(/* zookeeper_retries_info = */ {}, /* process_list_element = */ nullptr);
+            syncPinnedPartUUIDs(/* zookeeper_retries_info = */ {});
             return true;
         case LogEntry::CLONE_PART_FROM_SHARD:
             executeClonePartFromShard(entry);
@@ -4501,7 +4488,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 }
 
 
-void StorageReplicatedMergeTree::startBeingLeader(const ZooKeeperRetriesInfo & zookeeper_retries_info, QueryStatusPtr process_list_element)
+void StorageReplicatedMergeTree::startBeingLeader(const ZooKeeperRetriesInfo & zookeeper_retries_info)
 {
     if (!(*getSettings())[MergeTreeSetting::replicated_can_become_leader])
     {
@@ -4517,7 +4504,7 @@ void StorageReplicatedMergeTree::startBeingLeader(const ZooKeeperRetriesInfo & z
 
     if (zookeeper_retries_info.max_retries > 0)
     {
-        ZooKeeperRetriesControl retries_ctl{"StorageReplicatedMergeTree::startBeingLeader", log.load(), zookeeper_retries_info, process_list_element};
+        ZooKeeperRetriesControl retries_ctl{"StorageReplicatedMergeTree::startBeingLeader", log.load(), zookeeper_retries_info};
         retries_ctl.retryLoop([&] { start_being_leader(); });
     }
     else
@@ -5396,10 +5383,10 @@ void StorageReplicatedMergeTree::startup()
         return;
     }
 
-    startupImpl(/* from_attach_thread */ false, getCreateQueryZooKeeperRetriesInfo(), getCreateQueryStatus());
+    startupImpl(/* from_attach_thread */ false, getCreateQueryZooKeeperRetriesInfo());
 }
 
-void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread, const ZooKeeperRetriesInfo & zookeeper_retries_info, QueryStatusPtr process_list_element)
+void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread, const ZooKeeperRetriesInfo & zookeeper_retries_info)
 {
     /// Do not start replication if ZooKeeper is not configured or there is no metadata in zookeeper
     if (!has_metadata_in_zookeeper.has_value() || !*has_metadata_in_zookeeper)
@@ -5428,7 +5415,7 @@ void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread, const ZooK
         getContext()->getInterserverIOHandler().addEndpoint(
             data_parts_exchange_ptr->getId(getEndpointName()), data_parts_exchange_ptr);
 
-        startBeingLeader(zookeeper_retries_info, process_list_element);
+        startBeingLeader(zookeeper_retries_info);
 
         if (from_attach_thread)
         {
@@ -6683,7 +6670,7 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(
     return true;
 }
 
-void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(QueryStatusPtr query_status, const ZooKeeperRetriesInfo & zookeeper_retries_info)
+void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(const ZooKeeperRetriesInfo & zookeeper_retries_info)
 {
     LOG_INFO(log, "Restoring replica metadata");
 
@@ -6726,14 +6713,14 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(QueryStatusPtr query
 
     LOG_INFO(log, "Moved all parts to detached/");
 
-    const bool is_first_replica = createTableIfNotExists(metadata_snapshot, zookeeper_retries_info, query_status);
+    const bool is_first_replica = createTableIfNotExists(metadata_snapshot, zookeeper_retries_info);
 
     LOG_INFO(log, "Created initial ZK nodes, replica is first: {}", is_first_replica);
 
     if (!is_first_replica)
-        createReplica(metadata_snapshot, zookeeper_retries_info, query_status);
+        createReplica(metadata_snapshot, zookeeper_retries_info);
 
-    createNewZooKeeperNodes(zookeeper_retries_info, query_status);
+    createNewZooKeeperNodes(zookeeper_retries_info);
 
     LOG_INFO(log, "Created ZK nodes for table");
 
@@ -6745,7 +6732,7 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(QueryStatusPtr query
 
     LOG_INFO(log, "Attached all partitions, starting table");
 
-    startupImpl(/* from_attach_thread */ false, zookeeper_retries_info, query_status);
+    startupImpl(/* from_attach_thread */ false, zookeeper_retries_info);
 }
 
 void StorageReplicatedMergeTree::dropPartNoWaitNoThrow(const String & part_name)
@@ -8034,8 +8021,8 @@ void StorageReplicatedMergeTree::forcefullyRemoveBrokenOutdatedPartFromZooKeeper
     String part_path = replica_path + "/parts/" + part_name;
     const auto & settings = getContext()->getSettingsRef();
     ZooKeeperRetriesInfo retries_info{
-        settings[Setting::keeper_max_retries], settings[Setting::keeper_retry_initial_backoff_ms], settings[Setting::keeper_retry_max_backoff_ms]};
-    ZooKeeperRetriesControl retries_ctl("outdatedPartExists", log.load(), retries_info, nullptr);
+        settings[Setting::keeper_max_retries], settings[Setting::keeper_retry_initial_backoff_ms], settings[Setting::keeper_retry_max_backoff_ms], nullptr};
+    ZooKeeperRetriesControl retries_ctl("outdatedPartExists", log.load(), retries_info);
 
     retries_ctl.retryLoop([&]() { exists = getZooKeeper()->exists(part_path); });
     if (!exists)
@@ -8924,7 +8911,7 @@ void StorageReplicatedMergeTree::movePartitionToShard(
 
     {
         /// Optimistic check that for compatible destination table structure.
-        checkTableStructure(to, getInMemoryMetadataPtr(), /* metadata_version = */ nullptr, /* strict_check = */ true, /* zookeeper_retries_info = */ {}, /* process_list_element = */ nullptr);
+        checkTableStructure(to, getInMemoryMetadataPtr(), /* metadata_version = */ nullptr, /* strict_check = */ true, /* zookeeper_retries_info = */ {});
     }
 
     PinnedPartUUIDs src_pins;
@@ -9527,7 +9514,7 @@ String StorageReplicatedMergeTree::getTableSharedID() const
     {
         /// Can happen if table was partially initialized before drop by DatabaseCatalog
         if (table_shared_id == UUIDHelpers::Nil)
-            createTableSharedID(/* zookeeper_retries_info = */ {}, /* process_list_element = */ nullptr);
+            createTableSharedID(/* zookeeper_retries_info = */ {});
     }
     else
     {
@@ -9542,11 +9529,11 @@ std::map<std::string, MutationCommands> StorageReplicatedMergeTree::getUnfinishe
     return queue.getUnfinishedMutations();
 }
 
-void StorageReplicatedMergeTree::createTableSharedID(const ZooKeeperRetriesInfo & zookeeper_retries_info, QueryStatusPtr process_list_element) const
+void StorageReplicatedMergeTree::createTableSharedID(const ZooKeeperRetriesInfo & zookeeper_retries_info) const
 {
     if (zookeeper_retries_info.max_retries > 0)
     {
-        ZooKeeperRetriesControl retries_ctl{"StorageReplicatedMergeTree::createTableSharedID", log.load(), zookeeper_retries_info, process_list_element};
+        ZooKeeperRetriesControl retries_ctl{"StorageReplicatedMergeTree::createTableSharedID", log.load(), zookeeper_retries_info};
         retries_ctl.retryLoop([&] { createTableSharedIDAttempt(); });
     }
     else
@@ -10836,7 +10823,7 @@ void StorageReplicatedMergeTree::backupData(
         bool exists = false;
         Strings mutation_ids;
         {
-            ZooKeeperRetriesControl retries_ctl("getMutations", log.load(), zookeeper_retries_info, nullptr);
+            ZooKeeperRetriesControl retries_ctl("getMutations", log.load(), zookeeper_retries_info);
             retries_ctl.retryLoop([&]()
             {
                 if (!zookeeper || zookeeper->expired())
@@ -10855,7 +10842,7 @@ void StorageReplicatedMergeTree::backupData(
                 bool mutation_id_exists = false;
                 String mutation;
 
-                ZooKeeperRetriesControl retries_ctl("getMutation", log.load(), zookeeper_retries_info, nullptr);
+                ZooKeeperRetriesControl retries_ctl("getMutation", log.load(), zookeeper_retries_info);
                 retries_ctl.retryLoop([&]()
                 {
                     if (!zookeeper || zookeeper->expired())
