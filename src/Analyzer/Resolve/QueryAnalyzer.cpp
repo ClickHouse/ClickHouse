@@ -3505,7 +3505,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             if (all_arguments_constants)
             {
-                size_t num_rows = 0;
+                size_t num_rows = 1;
                 if (!argument_columns.empty())
                     num_rows = argument_columns.front().column->size();
                 column = executable_function->execute(argument_columns, result_type, num_rows, true);
