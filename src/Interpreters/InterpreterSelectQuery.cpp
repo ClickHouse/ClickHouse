@@ -3214,7 +3214,7 @@ void InterpreterSelectQuery::executeLimitInRange(QueryPlan & query_plan, bool re
     if (!query.limitInRangeFrom() && !query.limitInRangeTo())
         return;
 
-    UInt64 limit_inrange_window = getLimitUIntValue(query.limitInRangeWindow(), context, "INRANGE WINDOW");
+    UInt64 limit_inrange_window = (query.limitInRangeWindow() ? getLimitUIntValue(query.limitInRangeWindow(), context, "INRANGE WINDOW") : 0);
     const Settings & settings = context->getSettingsRef();
     limit_inrange_window = std::min<UInt64>(limit_inrange_window, settings[Setting::max_block_size]);
 
