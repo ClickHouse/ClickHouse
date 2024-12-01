@@ -210,6 +210,8 @@ namespace DB
     DECLARE(UInt64, threadpool_writer_pool_size, 100, "Size of background pool for write requests to object storages", 0) \
     DECLARE(UInt64, threadpool_writer_queue_size, 1000000, "Number of tasks which is possible to push into background pool for write requests to object storages", 0) \
     DECLARE(UInt32, allow_feature_tier, 0, "0 - All feature tiers allowed (experimental, beta, production). 1 - Only beta and production feature tiers allowed. 2 - Only production feature tier allowed", 0) \
+    DECLARE(Bool, dictionaries_lazy_load, 1, "1 - Load dictionaries lazily, i.e. a dictionary will be loaded when it's used for the first time. 0 - ClickHouse will start loading dictionaries immediately at startup.", 0) \
+    DECLARE(Bool, wait_dictionaries_load_at_startup, 1, "Wait at startup until all the dictionaries finish their loading (successfully or not) before receiving any connections. Affects dictionaries only if `dictionaries_lazy_load` is false. Setting this to false can make ClickHouse start faster, however some queries can be executed slower.", 0) \
 
 
 // clang-format on
