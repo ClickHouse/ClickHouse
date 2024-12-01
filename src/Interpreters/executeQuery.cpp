@@ -1538,7 +1538,7 @@ std::pair<ASTPtr, BlockIO> executeQuery(
                 ? getIdentifierName(ast_query_with_output->format)
                 : context->getDefaultFormat();
 
-        if (format_name == "Null")
+        if (boost::iequals(format_name, "Null"))
             res.null_format = true;
     }
 
