@@ -96,9 +96,8 @@ public:
     LoadedConfig loadConfigWithZooKeeperIncludes(
         zkutil::ZooKeeperNodeCache & zk_node_cache,
         const zkutil::EventPtr & zk_changed_event,
-        bool fallback_to_preprocessed,
-        bool is_config_changed,
-        bool sync_zookeeper);
+        bool fallback_to_preprocessed = false,
+        bool is_config_changed = true);
 
     /// Save preprocessed config to specified directory.
     /// If preprocessed_dir is empty - calculate from loaded_config.path + /preprocessed_configs/

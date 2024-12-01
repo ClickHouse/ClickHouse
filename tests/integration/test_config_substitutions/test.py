@@ -19,7 +19,6 @@ node3 = cluster.add_instance(
     ],
     main_configs=[
         "configs/config_zk_include_test.xml",
-        "configs/overrides.xml",
     ],
     with_zookeeper=True,
 )

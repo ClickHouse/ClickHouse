@@ -1,10 +1,11 @@
+#include "ConfigReloader.h"
+
 #include <Poco/Util/Application.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-#include <Common/Config/ConfigReloader.h>
-#include <Common/Config/ConfigProcessor.h>
-#include <Common/filesystemHelpers.h>
+#include "ConfigProcessor.h"
 #include <filesystem>
+#include <Common/filesystemHelpers.h>
 
 
 namespace fs = std::filesystem;
@@ -18,7 +19,6 @@ ConfigReloader::ConfigReloader(
         const std::string & preprocessed_dir_,
         zkutil::ZooKeeperNodeCache && zk_node_cache_,
         const zkutil::EventPtr & zk_changed_event_,
-        bool sync_zookeeper_,
         Updater && updater_)
     : config_path(config_path_)
     , extra_paths(extra_paths_)
@@ -26,7 +26,6 @@ ConfigReloader::ConfigReloader(
     , zk_node_cache(std::move(zk_node_cache_))
     , zk_changed_event(zk_changed_event_)
     , updater(std::move(updater_))
-    , sync_zookeeper(sync_zookeeper_)
 {
     auto config = reloadIfNewer(/* force = */ true, /* throw_on_error = */ true, /* fallback_to_preprocessed = */ true, /* initial_loading = */ true);
 
@@ -35,7 +34,7 @@ ConfigReloader::ConfigReloader(
     else
         reload_interval = DEFAULT_RELOAD_INTERVAL;
 
-    LOG_TRACE(log, "Config reload interval set to {}ms (sync_zookeeper: {})", reload_interval.count(), sync_zookeeper);
+    LOG_TRACE(log, "Config reload interval set to {}ms", reload_interval.count());
 }
 
 void ConfigReloader::start()
@@ -125,11 +124,7 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
             loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true, is_config_changed);
             if (loaded_config.has_zk_includes)
                 loaded_config = config_processor.loadConfigWithZooKeeperIncludes(
-                    zk_node_cache,
-                    zk_changed_event,
-                    fallback_to_preprocessed,
-                    is_config_changed,
-                    sync_zookeeper);
+                    zk_node_cache, zk_changed_event, fallback_to_preprocessed, is_config_changed);
         }
         catch (const Coordination::Exception & e)
         {

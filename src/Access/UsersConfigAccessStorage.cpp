@@ -14,7 +14,6 @@
 #include <Common/StringUtils.h>
 #include <Common/quoteString.h>
 #include <Common/transformEndianness.h>
-#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/Access/ASTGrantQuery.h>
@@ -41,11 +40,6 @@ namespace ErrorCodes
     extern const int THERE_IS_NO_PROFILE;
     extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
-}
-
-namespace ServerSetting
-{
-    extern const ServerSettingsBool config_reload_sync_zookeeper;
 }
 
 namespace
@@ -886,21 +880,15 @@ void UsersConfigAccessStorage::load(
     const String & preprocessed_dir,
     const zkutil::GetZooKeeper & get_zookeeper_function)
 {
-    bool sync_zookeeper = false;
-    if (auto context = Context::getGlobalContextInstance())
-        sync_zookeeper = context->getServerSettings()[ServerSetting::config_reload_sync_zookeeper];
-
     std::lock_guard lock{load_mutex};
     path = std::filesystem::path{users_config_path}.lexically_normal();
     config_reloader.reset();
-
     config_reloader = std::make_unique<ConfigReloader>(
         users_config_path,
         std::vector{{include_from_path}},
         preprocessed_dir,
         zkutil::ZooKeeperNodeCache(get_zookeeper_function),
         std::make_shared<Poco::Event>(),
-        sync_zookeeper,
         [&](Poco::AutoPtr<Poco::Util::AbstractConfiguration> new_config, bool /*initial_loading*/)
         {
             Settings::checkNoSettingNamesAtTopLevel(*new_config, users_config_path);

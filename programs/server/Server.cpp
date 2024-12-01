@@ -284,7 +284,6 @@ namespace ServerSetting
     extern const ServerSettingsString primary_index_cache_policy;
     extern const ServerSettingsUInt64 primary_index_cache_size;
     extern const ServerSettingsDouble primary_index_cache_size_ratio;
-    extern const ServerSettingsBool config_reload_sync_zookeeper;
 }
 
 }
@@ -1248,11 +1247,7 @@ try
         auto old_configuration = loaded_config.configuration;
         ConfigProcessor config_processor(config_path);
         loaded_config = config_processor.loadConfigWithZooKeeperIncludes(
-            main_config_zk_node_cache,
-            main_config_zk_changed_event,
-            /*fallback_to_preprocessed =*/ true,
-            /*is_config_changed=*/ true,
-            server_settings[ServerSetting::config_reload_sync_zookeeper]);
+            main_config_zk_node_cache, main_config_zk_changed_event, /* fallback_to_preprocessed = */ true);
         config_processor.savePreprocessedConfig(loaded_config, path_str);
         config().removeConfiguration(old_configuration.get());
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
@@ -1686,7 +1681,6 @@ try
         config().getString("path", DBMS_DEFAULT_PATH),
         std::move(main_config_zk_node_cache),
         main_config_zk_changed_event,
-        server_settings[ServerSetting::config_reload_sync_zookeeper],
         [&, config_file = config().getString("config-file", "config.xml")](ConfigurationPtr config, bool initial_loading)
         {
             if (!initial_loading)

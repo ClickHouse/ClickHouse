@@ -811,17 +811,14 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
     zkutil::ZooKeeperNodeCache & zk_node_cache,
     const zkutil::EventPtr & zk_changed_event,
     bool fallback_to_preprocessed,
-    bool is_config_changed,
-    bool sync_zookeeper)
+    bool is_config_changed)
 {
     XMLDocumentPtr config_xml;
     bool has_zk_includes;
     bool processed_successfully = false;
     try
     {
-        if (sync_zookeeper)
-            zk_node_cache.sync();
-
+        zk_node_cache.sync();
         config_xml = processConfig(&has_zk_includes, &zk_node_cache, zk_changed_event, is_config_changed);
         processed_successfully = true;
     }
