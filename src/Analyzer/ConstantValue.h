@@ -21,7 +21,7 @@ public:
     ConstantValue(const Field & field_, DataTypePtr data_type_)
         : column(data_type_->createColumnConst(1, field_))
         , data_type(std::move(data_type_))
-        , field_cache(applyVisitor(FieldVisitorToString(), field_), field_.getType(), applyVisitor(FieldToDataType(), field_))
+        , field_cache(applyVisitor(FieldVisitorToString(), field_), field_.getType(), applyVisitor(FieldToDataType<LeastSupertypeOnError::Variant>(), field_))
     {}
 
     const ColumnPtr & getColumn() const
@@ -40,7 +40,7 @@ public:
         {
             Field field;
             column->get(0, field);
-            field_cache = {applyVisitor(FieldVisitorToString(), field), field.getType(), applyVisitor(FieldToDataType(), field)};
+             field_cache = {applyVisitor(FieldVisitorToString(), field), field.getType(), applyVisitor(FieldToDataType<LeastSupertypeOnError::Variant>(), field)};
         }
 
         return field_cache;
