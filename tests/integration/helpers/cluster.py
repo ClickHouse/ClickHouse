@@ -17,6 +17,7 @@ import subprocess
 import time
 import traceback
 import urllib.parse
+from contextlib import contextmanager
 from functools import cache
 from pathlib import Path
 from typing import Any, List, Sequence, Tuple, Union
@@ -4541,6 +4542,20 @@ class ClickHouseInstance:
                 for key, value in list(driver_setup.items()):
                     if key != "DSN":
                         f.write(key + "=" + value + "\n")
+
+    @contextmanager
+    def with_replace_config(self, path, replacement):
+        """Create a copy of existing config (if exists) and revert on leaving the context"""
+        self.exec_in_container(
+            ["bash", "-c", f"test ! -f {path} || mv --no-clobber {path} {path}.bak"]
+        )
+        self.exec_in_container(
+            ["bash", "-c", "echo '{}' > {}".format(replacement, path)]
+        )
+        yield
+        self.exec_in_container(
+            ["bash", "-c", f"test ! -f {path}.bak || mv {path}.bak {path}"]
+        )
 
     def replace_config(self, path_to_config, replacement):
         self.exec_in_container(
