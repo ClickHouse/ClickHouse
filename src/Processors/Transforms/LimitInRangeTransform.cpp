@@ -307,10 +307,10 @@ void LimitInRangeTransform::transform(Chunk & chunk)
     removeFilterIfNeed(chunk);
 }
 
-std::optional<size_t> LimitInRangeTransform::findIndex(Chunk & chunk, size_t column_position, bool & index_found)
+std::optional<size_t> LimitInRangeTransform::findIndex(Chunk & chunk, size_t column_position, bool & index_found, size_t starting_pos = 0)
 {
     auto filter_description = initializeColumn(chunk.getColumns(), column_position);
-    std::optional<size_t> index = findFirstOneIndex(filter_description.data);
+    std::optional<size_t> index = findFirstOneIndex(filter_description.data, starting_pos);
 
     if (index)
         index_found = true;
@@ -400,7 +400,7 @@ void LimitInRangeTransform::doFromAndToTransform(Chunk & chunk)
         return;
     }
 
-    auto to_index = findIndex(chunk, to_filter_column_position, to_index_found);
+    auto to_index = findIndex(chunk, to_filter_column_position, to_index_found, *from_index + 1);
     if (!to_index)
     {
         handleFromCase(chunk, from_index);

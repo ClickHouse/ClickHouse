@@ -61,7 +61,7 @@ private:
     bool processRemainingWindow(Chunk & chunk);
     void removeFilterIfNeed(Chunk & chunk) const;
 
-    std::optional<size_t> findIndex(Chunk & chunk, size_t column_position, bool & index_found);
+    std::optional<size_t> findIndex(Chunk & chunk, size_t column_position, bool & index_found, size_t starting_pos);
 };
 
 }
