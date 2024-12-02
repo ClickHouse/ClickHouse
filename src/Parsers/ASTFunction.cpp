@@ -160,7 +160,7 @@ ASTPtr ASTFunction::clone() const
     res->children.clear();
 
     // Special handling for groupConcat with two arguments
-    if (name == "groupConcat" && arguments && arguments->children.size() == 2)
+    if ((name == "groupConcat" || Poco::toLower(name) == "group_concat") && arguments && arguments->children.size() == 2)
         groupConcatArgumentOverride(res);
     else
     {
