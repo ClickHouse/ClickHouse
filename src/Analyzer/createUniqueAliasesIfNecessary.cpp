@@ -59,6 +59,12 @@ public:
                 }
                 break;
             }
+            case QueryTreeNodeType::ARRAY_JOIN:
+            {
+                /// Simulate previous behaviour and preserve table naming with previous versions
+                ++next_id;
+                break;
+            }
             default:
                 break;
         }
@@ -170,18 +176,20 @@ private:
     {
         if (result.empty())
         {
+            String unique_array_join_name = fmt::format("__array_join_{}", ++next_id);
+
             for (auto & array_join_expression : array_join->getJoinExpressions())
             {
                 auto * array_join_column = array_join_expression->as<ColumnNode>();
                 chassert(array_join_column != nullptr);
 
-                String unique_name = fmt::format("__array_join_exp_{}", ++next_id);
-                result.emplace(array_join_column->getColumnName(), unique_name);
+                String unique_expression_name = fmt::format("{}.{}", unique_array_join_name, array_join_column->getColumnName());
+                result.emplace(array_join_column->getColumnName(), unique_expression_name);
 
                 auto replacement_column = array_join_column->getColumn();
-                replacement_column.name = unique_name;
+                replacement_column.name = unique_expression_name;
                 auto replacement_column_node = std::make_shared<ColumnNode>(replacement_column, array_join_column->getExpression(), array_join_column->getColumnSource());
-                replacement_column_node->setAlias(unique_name);
+                replacement_column_node->setAlias(unique_expression_name);
 
                 array_join_expression = std::move(replacement_column_node);
                 replaced_nodes_set.insert(array_join_expression);
