@@ -1596,7 +1596,7 @@ void StorageWindowView::writeIntoWindowView(
         return std::make_shared<DeduplicationToken::SetViewBlockNumberTransform>(stream_header);
     });
 
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
     builder.addSimpleTransform([&](const Block & stream_header)
     {
         return std::make_shared<DeduplicationToken::CheckTokenTransform>("StorageWindowView: Afrer tmp table before squashing", stream_header);
@@ -1643,7 +1643,7 @@ void StorageWindowView::writeIntoWindowView(
             lateness_upper_bound);
     });
 
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
     builder.addSimpleTransform([&](const Block & stream_header)
     {
         return std::make_shared<DeduplicationToken::CheckTokenTransform>("StorageWindowView: Afrer WatermarkTransform", stream_header);
@@ -1668,7 +1668,7 @@ void StorageWindowView::writeIntoWindowView(
         builder.addSimpleTransform([&](const Block & header_) { return std::make_shared<ExpressionTransform>(header_, convert_actions); });
     }
 
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
     builder.addSimpleTransform([&](const Block & stream_header)
     {
         return std::make_shared<DeduplicationToken::CheckTokenTransform>("StorageWindowView: Before out", stream_header);
