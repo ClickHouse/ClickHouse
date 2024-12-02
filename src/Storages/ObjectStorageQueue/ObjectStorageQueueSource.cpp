@@ -616,7 +616,7 @@ void ObjectStorageQueueSource::commit(bool success, const std::string & exceptio
                 /* overwrite_status */true);
 
         }
-        appendLogElement(file_metadata->getPath(), *file_metadata->getFileStatus(), processed_rows_from_file, /* processed */success);
+        appendLogElement(file_metadata->getPath(), *file_metadata->getFileStatus(), /* processed */success);
     }
 
     for (const auto & file_metadata : failed_during_read_files)
@@ -628,7 +628,7 @@ void ObjectStorageQueueSource::commit(bool success, const std::string & exceptio
             /* reduce_retry_count */true,
             /* overwrite_status */false);
 
-        appendLogElement(file_metadata->getPath(), *file_metadata->getFileStatus(), processed_rows_from_file, /* processed */false);
+        appendLogElement(file_metadata->getPath(), *file_metadata->getFileStatus(), /* processed */false);
     }
 }
 
@@ -649,7 +649,6 @@ void ObjectStorageQueueSource::applyActionAfterProcessing(const String & path)
 void ObjectStorageQueueSource::appendLogElement(
     const std::string & filename,
     ObjectStorageQueueMetadata::FileStatus & file_status_,
-    size_t processed_rows,
     bool processed)
 {
     if (!system_queue_log)
@@ -664,7 +663,7 @@ void ObjectStorageQueueSource::appendLogElement(
             .table = storage_id.table_name,
             .uuid = toString(storage_id.uuid),
             .file_name = filename,
-            .rows_processed = processed_rows,
+            .rows_processed = file_status_.processed_rows,
             .status = processed ? ObjectStorageQueueLogElement::ObjectStorageQueueStatus::Processed : ObjectStorageQueueLogElement::ObjectStorageQueueStatus::Failed,
             .processing_start_time = file_status_.processing_start_time,
             .processing_end_time = file_status_.processing_end_time,
