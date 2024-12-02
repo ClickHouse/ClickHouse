@@ -978,7 +978,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             // which will lead to incorrect result
                             // Example: SELECT * FROM t1 FULL JOIN t2 INNER JOIN t3
                             // Here, joins done in the following order (t1 FULL JOIN t2) INNER JOIN t3
-                            // J1 i.e. (t1 FULL JOIN t2) can't be choosen because FULL JOIN can't be executed with PR
+                            // J1 i.e. (t1 FULL JOIN t2) can't be chosen because FULL JOIN can't be executed with PR
                             // J1 INNER JOIN t3 shouldn't be parallelized since (1) and t3 is on right side
                             // To parallelize INNER JOIN, the query it can be rewritten into
                             // SELECT * FROM t3 INNER JOIN (SELECT * FROM t1 FULL JOIN t2) as j1
