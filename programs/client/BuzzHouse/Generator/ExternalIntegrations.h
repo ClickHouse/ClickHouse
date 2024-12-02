@@ -115,102 +115,59 @@ public:
         return false;
     }
 
-    void updateColumnDefinition(ColumnDef & cdef)
+    bool dropPeerTableOnRemote(const SQLTable & t)
     {
-        cdef.clear_codecs();
-        cdef.clear_stats();
-        cdef.clear_is_pkey();
-        cdef.clear_settings();
+        assert(t.hasDatabasePeer());
+        buf.resize(0);
+        buf += "DROP TABLE IF EXISTS ";
+        buf += getTableName(t.tname);
+        buf += ";";
+        return performQuery(buf);
     }
-
-    void updateForeignTableDefinition(
-        RandomGenerator & rg,
-        const SQLBase & b,
-        const std::string & tname,
-        const TableEngineValues new_teng,
-        const CreateTable * ct,
-        CreateTable & newt)
-    {
-        auto & tdef = const_cast<TableDef &>(newt.table_def());
-        auto & teng = const_cast<TableEngine &>(newt.engine());
-
-        teng.Clear();
-        teng.set_engine(new_teng);
-        setEngineDetails(rg, b, tname, &teng);
-        newt.clear_settings();
-
-        tdef.clear_other_defs();
-        for (auto it = ct->table_def().other_defs().cbegin(); it != ct->table_def().other_defs().cend(); it++)
-        {
-            if (it->has_col_def())
-            {
-                tdef.add_other_defs()->CopyFrom(*it);
-            }
-        }
-        updateColumnDefinition(const_cast<ColumnDef &>(tdef.col_def()));
-        for (auto & entry : tdef.other_defs())
-        {
-            updateColumnDefinition(const_cast<ColumnDef &>(entry.col_def()));
-        }
-    }
-
-    virtual void updateTableDefinition(RandomGenerator &, const SQLBase &, const std::string &, const CreateTable *, CreateTable &) { }
 
     bool performCreatePeerTable(
         RandomGenerator & rg,
-        const bool requires_integration,
+        const bool is_clickhouse_integration,
         const SQLTable & t,
         const CreateTable * ct,
         std::vector<InsertEntry> & entries)
     {
-        bool res = true;
-        const std::string peer_name = t.getPeerName(), otherdb_name = getTableName(t.tname);
+        //drop table if exists in other db
+        bool res = dropPeerTableOnRemote(t);
 
-        buf.resize(0); //drop table if exists in other db
-        buf += "DROP TABLE IF EXISTS ";
-        buf += otherdb_name;
-        buf += ";";
-        res &= performQuery(buf);
-
-        if (res)
+        //create table on other server
+        if (res && is_clickhouse_integration)
         {
-            //create peer table in this ClickHouse server
             CreateTable newt;
-
             newt.CopyFrom(*ct);
+
             assert(newt.has_est() && !newt.has_table_as());
             ExprSchemaTable & est = const_cast<ExprSchemaTable &>(newt.est());
-            est.mutable_table()->set_table(peer_name); //use another name
-
-            //point to the table in other db with the same name as the original in ClickHouse
-            updateTableDefinition(rg, t, "t" + std::to_string(t.tname), ct, newt);
+            est.mutable_database()->set_database("test");
 
             buf.resize(0);
             CreateTableToString(buf, newt);
             buf += ";";
-            res &= fc.processServerQuery(buf);
+            res &= performQuery(buf);
         }
-        if (res && requires_integration)
+        else if (res)
         {
             res &= performIntegration(rg, t.tname, entries);
         }
         return res;
     }
 
-    void dropPeerTable(const SQLTable & t)
+    void virtual truncateStatement(std::string & outbuf) = 0;
+
+    void truncatePeerTableOnRemote(const SQLTable & t)
     {
         assert(t.hasDatabasePeer());
         buf.resize(0);
-        buf += "DROP TABLE IF EXISTS ";
-        if (t.db)
-        {
-            buf += "d";
-            buf += std::to_string(t.db->dname);
-            buf += ".";
-        }
-        buf += t.getPeerName();
+        truncateStatement(buf);
+        buf += " ";
+        buf += getTableName(t.tname);
         buf += ";";
-        fc.processServerQuery(buf);
+        (void)performQuery(buf);
     }
 
     ~ClickHouseIntegratedDatabase() override = default;
@@ -283,16 +240,29 @@ public:
         }
     }
 
-    void updateTableDefinition(
-        RandomGenerator & rg, const SQLBase & b, const std::string & tname, const CreateTable * ct, CreateTable & newt) override
+    std::string getTableName(const uint32_t tname) override { return "test.t" + std::to_string(tname); }
+
+    void truncateStatement(std::string & outbuf) override
     {
-        if (!is_clickhouse)
+        outbuf += "TRUNCATE";
+        if (is_clickhouse)
         {
-            updateForeignTableDefinition(rg, b, tname, TableEngineValues::MySQL, ct, newt);
+            outbuf += " TABLE";
         }
     }
 
-    std::string getTableName(const uint32_t tname) override { return "test.t" + std::to_string(tname); }
+    void optimizePeerTableOnRemote(const SQLTable & t)
+    {
+        assert(t.hasDatabasePeer());
+        if (is_clickhouse && t.supportsFinal())
+        {
+            buf.resize(0);
+            buf += "OPTIMIZE TABLE ";
+            buf += getTableName(t.tname);
+            buf += " FINAL;";
+            (void)performQuery(buf);
+        }
+    }
 
     bool performQuery(const std::string & query) override
     {
@@ -444,13 +414,9 @@ public:
         }
     }
 
-    void updateTableDefinition(
-        RandomGenerator & rg, const SQLBase & b, const std::string & tname, const CreateTable * ct, CreateTable & newt) override
-    {
-        updateForeignTableDefinition(rg, b, tname, TableEngineValues::PostgreSQL, ct, newt);
-    }
-
     std::string getTableName(const uint32_t tname) override { return "test.t" + std::to_string(tname); }
+
+    void truncateStatement(std::string & outbuf) override { outbuf += "TRUNCATE"; }
 
     void getTypeString(RandomGenerator & rg, const SQLType * tp, std::string & out) const override
     {
@@ -543,13 +509,9 @@ public:
         te->add_params()->set_svalue(tname);
     }
 
-    void updateTableDefinition(
-        RandomGenerator & rg, const SQLBase & b, const std::string & tname, const CreateTable * ct, CreateTable & newt) override
-    {
-        updateForeignTableDefinition(rg, b, tname, TableEngineValues::SQLite, ct, newt);
-    }
-
     std::string getTableName(const uint32_t tname) override { return "t" + std::to_string(tname); }
+
+    void truncateStatement(std::string & outbuf) override { outbuf += "DELETE FROM"; }
 
     void getTypeString(RandomGenerator & rg, const SQLType * tp, std::string & out) const override { tp->SQLitetypeName(rg, out, false); }
 
@@ -808,6 +770,7 @@ private:
     MinIOIntegration * minio = nullptr;
     MySQLIntegration * clickhouse = nullptr;
 
+    std::filesystem::path default_sqlite_path;
     size_t requires_external_call_check = 0;
     std::vector<bool> next_calls_succeeded;
 
@@ -833,6 +796,8 @@ public:
     bool hasMinIOConnection() const { return minio != nullptr; }
 
     bool hasClickHouseExtraServerConnection() const { return clickhouse != nullptr; }
+
+    const std::filesystem::path & getSQLitePath() const { return hasSQLiteConnection() ? sqlite->sqlite_path : default_sqlite_path; }
 
     void resetExternalStatus()
     {
@@ -911,16 +876,16 @@ public:
         switch (pt)
         {
             case PeerTableDatabase::PeerClickHouse:
-                next_calls_succeeded.push_back(clickhouse->performCreatePeerTable(rg, false, t, ct, entries));
+                next_calls_succeeded.push_back(clickhouse->performCreatePeerTable(rg, true, t, ct, entries));
                 break;
             case PeerTableDatabase::PeerMySQL:
-                next_calls_succeeded.push_back(mysql->performCreatePeerTable(rg, true, t, ct, entries));
+                next_calls_succeeded.push_back(mysql->performCreatePeerTable(rg, false, t, ct, entries));
                 break;
             case PeerTableDatabase::PeerPostgreSQL:
-                next_calls_succeeded.push_back(postresql->performCreatePeerTable(rg, true, t, ct, entries));
+                next_calls_succeeded.push_back(postresql->performCreatePeerTable(rg, false, t, ct, entries));
                 break;
             case PeerTableDatabase::PeerSQLite:
-                next_calls_succeeded.push_back(sqlite->performCreatePeerTable(rg, true, t, ct, entries));
+                next_calls_succeeded.push_back(sqlite->performCreatePeerTable(rg, false, t, ct, entries));
                 break;
             case PeerTableDatabase::PeerNone:
                 assert(0);
@@ -928,21 +893,57 @@ public:
         }
     }
 
-    void dropPeerTable(const SQLTable & t)
+    void truncatePeerTableOnRemote(const SQLTable & t)
     {
         switch (t.peer_table)
         {
             case PeerTableDatabase::PeerClickHouse:
-                clickhouse->dropPeerTable(t);
+                clickhouse->truncatePeerTableOnRemote(t);
                 break;
             case PeerTableDatabase::PeerMySQL:
-                mysql->dropPeerTable(t);
+                mysql->truncatePeerTableOnRemote(t);
                 break;
             case PeerTableDatabase::PeerPostgreSQL:
-                postresql->dropPeerTable(t);
+                postresql->truncatePeerTableOnRemote(t);
                 break;
             case PeerTableDatabase::PeerSQLite:
-                sqlite->dropPeerTable(t);
+                sqlite->truncatePeerTableOnRemote(t);
+                break;
+            case PeerTableDatabase::PeerNone:
+                break;
+        }
+    }
+
+    void optimizePeerTableOnRemote(const SQLTable & t)
+    {
+        switch (t.peer_table)
+        {
+            case PeerTableDatabase::PeerClickHouse:
+                clickhouse->optimizePeerTableOnRemote(t);
+                break;
+            case PeerTableDatabase::PeerMySQL:
+            case PeerTableDatabase::PeerPostgreSQL:
+            case PeerTableDatabase::PeerSQLite:
+            case PeerTableDatabase::PeerNone:
+                break;
+        }
+    }
+
+    void dropPeerTableOnRemote(const SQLTable & t)
+    {
+        switch (t.peer_table)
+        {
+            case PeerTableDatabase::PeerClickHouse:
+                clickhouse->dropPeerTableOnRemote(t);
+                break;
+            case PeerTableDatabase::PeerMySQL:
+                mysql->dropPeerTableOnRemote(t);
+                break;
+            case PeerTableDatabase::PeerPostgreSQL:
+                postresql->dropPeerTableOnRemote(t);
+                break;
+            case PeerTableDatabase::PeerSQLite:
+                sqlite->dropPeerTableOnRemote(t);
                 break;
             case PeerTableDatabase::PeerNone:
                 break;

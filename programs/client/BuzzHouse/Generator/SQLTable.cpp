@@ -188,7 +188,7 @@ const std::vector<SQLFunc> dates_hash
        SQLFunc::FUNCtoModifiedJulianDayOrNull,
        SQLFunc::FUNCtoUTCTimestamp};
 
-void StatementGenerator::insertEntryRef(const InsertEntry & entry, Expr * expr)
+void StatementGenerator::insertEntryRef(const InsertEntry & entry, Expr * expr) const
 {
     ExprColumn * ecol = expr->mutable_comp_expr()->mutable_expr_stc()->mutable_col();
 
@@ -199,7 +199,7 @@ void StatementGenerator::insertEntryRef(const InsertEntry & entry, Expr * expr)
     }
 }
 
-void StatementGenerator::insertEntryRefCP(const InsertEntry & entry, ColumnPath * cp)
+void StatementGenerator::insertEntryRefCP(const InsertEntry & entry, ColumnPath * cp) const
 {
     cp->mutable_col()->set_column("c" + std::to_string(entry.cname1));
     if (entry.cname2.has_value())
@@ -879,7 +879,8 @@ PeerTableDatabase StatementGenerator::getNextPeerTableDatabase(RandomGenerator &
     {
         this->ids.push_back(PeerTableDatabase::PeerSQLite);
     }
-    if (connections.hasClickHouseExtraServerConnection())
+    if (teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree
+        && connections.hasClickHouseExtraServerConnection())
     {
         this->ids.push_back(PeerTableDatabase::PeerClickHouse);
         this->ids.push_back(PeerTableDatabase::PeerClickHouse); // give more probability

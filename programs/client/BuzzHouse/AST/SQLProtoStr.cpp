@@ -1733,6 +1733,84 @@ CONV_FN(GenerateSeriesFunc, gsf)
     ret += ")";
 }
 
+CONV_FN(RemoteFunc, rfunc)
+{
+    ret += "remote('";
+    ret += rfunc.address();
+    ret += "'";
+    if (rfunc.has_rdatabase())
+    {
+        ret += ", '";
+        ret += rfunc.rdatabase();
+        ret += "'";
+    }
+    if (rfunc.has_rtable())
+    {
+        ret += ", '";
+        ret += rfunc.rtable();
+        ret += "'";
+    }
+    if (rfunc.has_user() && !rfunc.user().empty())
+    {
+        ret += ", '";
+        ret += rfunc.user();
+        ret += "'";
+    }
+    if (rfunc.has_password())
+    {
+        ret += ", '";
+        ret += rfunc.password();
+        ret += "'";
+    }
+    ret += ")";
+}
+
+CONV_FN(MySQLFunc, mfunc)
+{
+    ret += "mysql('";
+    ret += mfunc.address();
+    ret += "', '";
+    ret += mfunc.rdatabase();
+    ret += "', '";
+    ret += mfunc.rtable();
+    ret += "', '";
+    ret += mfunc.user();
+    ret += "', '";
+    ret += mfunc.password();
+    ret += "')";
+}
+
+CONV_FN(PostgreSQLFunc, pfunc)
+{
+    ret += "postgresql('";
+    ret += pfunc.address();
+    ret += "', '";
+    ret += pfunc.rdatabase();
+    ret += "', '";
+    ret += pfunc.rtable();
+    ret += "', '";
+    ret += pfunc.user();
+    ret += "', '";
+    ret += pfunc.password();
+    ret += "'";
+    if (pfunc.has_rschema())
+    {
+        ret += ", '";
+        ret += pfunc.rschema();
+        ret += "'";
+    }
+    ret += ")";
+}
+
+CONV_FN(SQLiteFunc, sfunc)
+{
+    ret += "sqlite('";
+    ret += sfunc.rdatabase();
+    ret += "', '";
+    ret += sfunc.rtable();
+    ret += "')";
+}
+
 CONV_FN(TableFunction, tf)
 {
     using TableFunctionType = TableFunction::JtfOneofCase;
@@ -1746,6 +1824,18 @@ CONV_FN(TableFunction, tf)
             break;
         case TableFunctionType::kGseries:
             GenerateSeriesFuncToString(ret, tf.gseries());
+            break;
+        case TableFunctionType::kRemote:
+            RemoteFuncToString(ret, tf.remote());
+            break;
+        case TableFunctionType::kMysql:
+            MySQLFuncToString(ret, tf.mysql());
+            break;
+        case TableFunctionType::kPostgresql:
+            PostgreSQLFuncToString(ret, tf.postgresql());
+            break;
+        case TableFunctionType::kSqlite:
+            SQLiteFuncToString(ret, tf.sqlite());
             break;
         default:
             ret += "numbers(10)";

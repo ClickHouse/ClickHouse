@@ -1971,7 +1971,7 @@ void StatementGenerator::dropTable(const bool staged, const uint32_t tname)
 
     if (map_to_delete.find(tname) != map_to_delete.end())
     {
-        connections.dropPeerTable(map_to_delete[tname]);
+        connections.dropPeerTableOnRemote(map_to_delete[tname]);
         map_to_delete.erase(tname);
     }
 }

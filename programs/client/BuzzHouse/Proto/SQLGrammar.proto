@@ -2372,11 +2372,45 @@ message GenerateSeriesFunc {
     optional Expr expr3 = 4;
 }
 
+message RemoteFunc {
+    required string address = 1;
+    optional string rdatabase = 2;
+    optional string rtable = 3;
+    optional string user = 4;
+    optional string password = 5;
+}
+
+message MySQLFunc {
+    required string address = 1;
+    required string rdatabase = 2;
+    required string rtable = 3;
+    required string user = 4;
+    required string password = 5;
+}
+
+message PostgreSQLFunc {
+    required string address = 1;
+    required string rdatabase = 2;
+    required string rtable = 3;
+    required string user = 4;
+    required string password = 5;
+    optional string rschema = 6;
+}
+
+message SQLiteFunc {
+    required string rdatabase = 1;
+    required string rtable = 2;
+}
+
 message TableFunction {
     oneof jtf_oneof {
         FileFunc file = 1;
         FormatFunc format = 2;
         GenerateSeriesFunc gseries = 3;
+        RemoteFunc remote = 4;
+        MySQLFunc mysql = 5;
+        PostgreSQLFunc postgresql = 6;
+        SQLiteFunc sqlite = 7;
     }
 }
 

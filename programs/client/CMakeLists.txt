@@ -1,5 +1,6 @@
 set (CLICKHOUSE_CLIENT_SOURCES
     Client.cpp
+    FuzzLoop.cpp
 )
 
 set (CLICKHOUSE_CLIENT_LINK

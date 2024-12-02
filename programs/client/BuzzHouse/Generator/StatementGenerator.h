@@ -202,8 +202,8 @@ public:
     }
 
 private:
-    void insertEntryRef(const InsertEntry & entry, Expr * expr);
-    void insertEntryRefCP(const InsertEntry & entry, ColumnPath * cp);
+    void insertEntryRef(const InsertEntry & entry, Expr * expr) const;
+    void insertEntryRefCP(const InsertEntry & entry, ColumnPath * cp) const;
     void addTableRelation(RandomGenerator & rg, bool allow_internal_cols, const std::string & rel_name, const SQLTable & t);
 
     void strAppendBottomValue(RandomGenerator & rg, std::string & ret, const SQLType * tp);
@@ -291,6 +291,7 @@ private:
     int generateArrayJoin(RandomGenerator & rg, ArrayJoin * aj);
     int generateFromElement(RandomGenerator & rg, uint32_t allowed_clauses, TableOrSubquery * tos);
     int generateJoinConstraint(RandomGenerator & rg, bool allow_using, JoinConstraint * jc);
+    int setTableRemote(const SQLTable & t, TableFunction * tfunc) const;
     int generateDerivedTable(RandomGenerator & rg, SQLRelation & rel, uint32_t allowed_clauses, Select * sel);
     int generateFromStatement(RandomGenerator & rg, uint32_t allowed_clauses, FromStatement * ft);
     int addCTEs(RandomGenerator & rg, uint32_t allowed_clauses, CTEs * qctes);
@@ -356,7 +357,11 @@ public:
 
     const std::function<bool(const SQLTable &)> attached_tables_for_oracle = [](const SQLTable & t)
     { return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED && !t.isNotTruncableEngine(); };
-
+    const std::function<bool(const SQLTable &)> attached_tables_for_oracle_with_peers = [](const SQLTable & t)
+    {
+        return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED && !t.isNotTruncableEngine()
+            && t.hasDatabasePeer();
+    };
 
     const std::function<bool(const std::shared_ptr<SQLDatabase> &)> detached_databases
         = [](const std::shared_ptr<SQLDatabase> & d) { return d->attached != DetachStatus::ATTACHED; };

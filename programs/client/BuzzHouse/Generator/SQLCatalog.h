@@ -190,8 +190,6 @@ public:
     bool hasSQLitePeer() const { return peer_table == PeerTableDatabase::PeerSQLite; }
 
     bool hasClickHousePeer() const { return peer_table == PeerTableDatabase::PeerClickHouse; }
-
-    std::string getPeerName() const { return "peer_t" + std::to_string(tname); }
 };
 
 struct SQLView : SQLBase

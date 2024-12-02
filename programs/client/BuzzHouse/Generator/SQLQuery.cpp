@@ -112,6 +112,56 @@ int StatementGenerator::generateDerivedTable(RandomGenerator & rg, SQLRelation &
     return 0;
 }
 
+int StatementGenerator::setTableRemote(const SQLTable & t, TableFunction * tfunc) const
+{
+    if (t.hasClickHousePeer())
+    {
+        const ServerCredentials & sc = fc.clickhouse_server.value();
+        RemoteFunc * rfunc = tfunc->mutable_remote();
+
+        rfunc->set_address(sc.hostname + ":" + std::to_string(sc.port));
+        rfunc->set_rdatabase("test");
+        rfunc->set_rtable("t" + std::to_string(t.tname));
+        rfunc->set_user(sc.user);
+        rfunc->set_password(sc.password);
+    }
+    else if (t.hasMySQLPeer())
+    {
+        const ServerCredentials & sc = fc.mysql_server.value();
+        MySQLFunc * mfunc = tfunc->mutable_mysql();
+
+        mfunc->set_address(sc.hostname + ":" + std::to_string(sc.port));
+        mfunc->set_rdatabase(sc.database);
+        mfunc->set_rtable("t" + std::to_string(t.tname));
+        mfunc->set_user(sc.user);
+        mfunc->set_password(sc.password);
+    }
+    else if (t.hasPostgreSQLPeer())
+    {
+        const ServerCredentials & sc = fc.postgresql_server.value();
+        PostgreSQLFunc * pfunc = tfunc->mutable_postgresql();
+
+        pfunc->set_address(sc.hostname + ":" + std::to_string(sc.port));
+        pfunc->set_rdatabase(sc.database);
+        pfunc->set_rtable("t" + std::to_string(t.tname));
+        pfunc->set_user(sc.user);
+        pfunc->set_password(sc.password);
+        pfunc->set_rschema("test");
+    }
+    else if (t.hasPostgreSQLPeer())
+    {
+        SQLiteFunc * sfunc = tfunc->mutable_sqlite();
+
+        sfunc->set_rdatabase(connections.getSQLitePath().generic_string());
+        sfunc->set_rtable("t" + std::to_string(t.tname));
+    }
+    else
+    {
+        assert(0);
+    }
+    return 0;
+}
+
 int StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_t allowed_clauses, TableOrSubquery * tos)
 {
     std::string name;
