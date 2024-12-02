@@ -665,7 +665,7 @@ std::optional<Field> convertFieldToTypeStrict(const Field & from_value, const ID
     {
         result_value = convertFieldToType(from_value, to_type, &from_type, format_settings);
     }
-    catch(const std::exception &)
+    catch (...)
     {
         return {};
     }
