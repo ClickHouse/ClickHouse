@@ -1,8 +1,8 @@
 import dataclasses
 from typing import Any, Dict, List
 
-from praktika import Artifact, Workflow
-from praktika.mangle import _get_workflows
+from . import Artifact, Workflow
+from .mangle import _get_workflows
 
 
 class AddonType:

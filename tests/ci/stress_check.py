@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import List, Tuple
 
 from build_download_helper import download_all_deb_packages
+from ci_utils import Shell
 from clickhouse_helper import CiLogsCredentials
 from docker_images_helper import DockerImage, get_docker_image, pull_image
 from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
@@ -154,12 +155,19 @@ def run_stress_test(upgrade_check: bool = False) -> None:
 
     pr_info = PRInfo()
 
-    docker_image = pull_image(get_docker_image("clickhouse/stress-test"))
-
     packages_path = temp_path / "packages"
     packages_path.mkdir(parents=True, exist_ok=True)
 
-    download_all_deb_packages(check_name, reports_path, packages_path)
+    if check_name in ("amd_release", "amd_debug", "arm_release"):
+        # this is praktika based CI
+        print("Copy input *.deb artifacts")
+        assert Shell.check(
+            f"cp /tmp/praktika/input/*.deb {packages_path}", verbose=True
+        )
+        docker_image = pull_image(get_docker_image("clickhouse/stateful-test"))
+    else:
+        download_all_deb_packages(check_name, reports_path, packages_path)
+        docker_image = pull_image(get_docker_image("clickhouse/stress-test"))
 
     server_log_path = temp_path / "server_log"
     server_log_path.mkdir(parents=True, exist_ok=True)
@@ -201,6 +209,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
         result_path, server_log_path, run_log_path
     )
 
+    Shell.check("pwd", verbose=True)
     JobReport(
         description=description,
         test_results=test_results,

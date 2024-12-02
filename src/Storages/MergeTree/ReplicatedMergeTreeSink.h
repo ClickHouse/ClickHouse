@@ -5,6 +5,7 @@
 #include <base/types.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
+#include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/AsyncBlockIDsCache.h>
 
 
@@ -129,6 +130,7 @@ private:
     std::unique_ptr<DelayedChunk> delayed_chunk;
 
     void finishDelayedChunk(const ZooKeeperWithFaultInjectionPtr & zookeeper);
+    void prewarmCaches(const MergeTreeDataWriter::TemporaryPart & temp_part) const;
 };
 
 using ReplicatedMergeTreeSinkWithAsyncDeduplicate = ReplicatedMergeTreeSinkImpl<true>;
