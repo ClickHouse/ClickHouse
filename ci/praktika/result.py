@@ -5,11 +5,11 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-from praktika._environment import _Environment
-from praktika.cache import Cache
-from praktika.s3 import S3
-from praktika.settings import Settings
-from praktika.utils import ContextManager, MetaClasses, Shell, Utils
+from ._environment import _Environment
+from .cache import Cache
+from .s3 import S3
+from .settings import Settings
+from .utils import ContextManager, MetaClasses, Shell, Utils
 
 
 @dataclasses.dataclass

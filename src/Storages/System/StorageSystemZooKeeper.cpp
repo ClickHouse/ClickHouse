@@ -141,7 +141,7 @@ public:
             String path = block.getByPosition(2).column->getDataAt(i).toString();
 
             /// We don't expect a "name" contains a path.
-            if (name.find('/') != std::string::npos)
+            if (name.contains('/'))
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Column `name` should not contain '/'");
             }

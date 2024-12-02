@@ -64,39 +64,47 @@ USING (id);
 
 INSERT INTO t VALUES (1, 100, '1970-01-01'), (1, 200, '1970-01-02');
 
+SELECT '-';
 SELECT *
 FROM (SELECT item_id FROM t GROUP BY item_id WITH TOTALS ORDER BY item_id) l
 LEFT JOIN (SELECT item_id FROM t ) r
 ON l.item_id = r.item_id;
 
+SELECT '-';
 SELECT *
 FROM (SELECT item_id FROM t GROUP BY item_id WITH TOTALS ORDER BY item_id) l
 RIGHT JOIN (SELECT item_id FROM t ) r
 ON l.item_id = r.item_id;
 
+SELECT '-';
 SELECT *
 FROM (SELECT item_id FROM t) l
 LEFT JOIN (SELECT item_id FROM t GROUP BY item_id WITH TOTALS ORDER BY item_id ) r
 ON l.item_id = r.item_id;
 
+SELECT '-';
 SELECT *
 FROM (SELECT item_id FROM t) l
 RIGHT JOIN (SELECT item_id FROM t GROUP BY item_id WITH TOTALS ORDER BY item_id ) r
 ON l.item_id = r.item_id;
 
+SELECT '-';
 SELECT *
 FROM (SELECT item_id FROM t GROUP BY item_id WITH TOTALS ORDER BY item_id) l
 LEFT JOIN (SELECT item_id FROM t GROUP BY item_id WITH TOTALS ORDER BY item_id ) r
 ON l.item_id = r.item_id;
 
+SELECT '-';
 SELECT *
 FROM (SELECT item_id, 'foo' AS key, 1 AS val FROM t GROUP BY item_id WITH TOTALS ORDER BY item_id) l
 LEFT JOIN (SELECT item_id, sum(price_sold) AS val FROM t GROUP BY item_id WITH TOTALS ORDER BY item_id ) r
 ON l.item_id = r.item_id;
 
+SELECT '-';
 SELECT *
 FROM (SELECT * FROM t GROUP BY item_id, price_sold, date WITH TOTALS ORDER BY item_id, price_sold, date) l
 LEFT JOIN (SELECT * FROM t GROUP BY item_id, price_sold, date WITH TOTALS ORDER BY item_id, price_sold, date ) r
-ON l.item_id = r.item_id;
+ON l.item_id = r.item_id
+ORDER BY ALL;
 
 DROP TABLE t;

@@ -506,6 +506,18 @@ Will do sync syscall.
 SYSTEM SYNC FILE CACHE [ON CLUSTER cluster_name]
 ```
 
+### LOAD PRIMARY KEY
+
+Load the primary keys for the given table or for all tables.
+
+```sql
+SYSTEM LOAD PRIMARY KEY [db.]name
+```
+
+```sql
+SYSTEM LOAD PRIMARY KEY
+```
+
 ### UNLOAD PRIMARY KEY
 
 Unload the primary keys for the given table or for all tables.

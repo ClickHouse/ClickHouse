@@ -781,6 +781,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
 
         loadIndexGranularity();
 
+        /// It's important to load index after index granularity.
         if (!(*storage.getSettings())[MergeTreeSetting::primary_key_lazy_load])
             index = loadIndex();
 
@@ -959,13 +960,18 @@ void IMergeTreeDataPart::appendFilesOfIndexGranularity(Strings & /* files */) co
 template <typename Columns>
 void IMergeTreeDataPart::optimizeIndexColumns(size_t marks_count, Columns & index_columns) const
 {
+    if (marks_count == 0)
+    {
+        chassert(isEmpty());
+        return;
+    }
+
     size_t key_size = index_columns.size();
     Float64 ratio_to_drop_suffix_columns = (*storage.getSettings())[MergeTreeSetting::primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns];
 
     /// Cut useless suffix columns, if necessary.
     if (key_size > 1 && ratio_to_drop_suffix_columns > 0 && ratio_to_drop_suffix_columns < 1)
     {
-        chassert(marks_count > 0);
         for (size_t j = 0; j < key_size - 1; ++j)
         {
             size_t num_changes = 0;

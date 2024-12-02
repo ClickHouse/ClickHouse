@@ -1,12 +1,12 @@
 import dataclasses
 from typing import List
 
-from praktika import Artifact, Job, Workflow
-from praktika.mangle import _get_workflows
-from praktika.parser import WorkflowConfigParser
-from praktika.runtime import RunConfig
-from praktika.settings import Settings
-from praktika.utils import ContextManager, Shell, Utils
+from . import Artifact, Job, Workflow
+from .mangle import _get_workflows
+from .parser import WorkflowConfigParser
+from .runtime import RunConfig
+from .settings import Settings
+from .utils import Shell, Utils
 
 
 class YamlGenerator:

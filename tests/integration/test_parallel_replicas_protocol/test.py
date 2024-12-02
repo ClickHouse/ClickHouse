@@ -1,4 +1,5 @@
 import re
+import uuid
 from random import randint
 
 import pytest
@@ -16,15 +17,6 @@ nodes = [
     )
     for num in range(3)
 ]
-
-
-@pytest.fixture(scope="module", autouse=True)
-def start_cluster():
-    try:
-        cluster.start()
-        yield cluster
-    finally:
-        cluster.shutdown()
 
 
 def _create_tables(table_name):
@@ -48,28 +40,41 @@ def _create_tables(table_name):
     nodes[0].query(f"SYSTEM SYNC REPLICA ON CLUSTER 'parallel_replicas' {table_name}")
 
 
+table_name = "t"
+
+
+@pytest.fixture(scope="module", autouse=True)
+def start_cluster():
+    try:
+        cluster.start()
+        _create_tables(table_name)
+        yield cluster
+    finally:
+        cluster.shutdown()
+
+
 # now mark_segment_size is part of the protocol and is communicated to the initiator.
 # let's check that the correct value is actually used by the coordinator
-def test_mark_segment_size_communicated_correctly(start_cluster):
-    table_name = "t"
-    _create_tables(table_name)
+@pytest.mark.parametrize("local_plan", [0, 1])
+@pytest.mark.parametrize("index_analysis_only_on_coordinator", [0, 1])
+def test_mark_segment_size_communicated_correctly(
+    start_cluster, local_plan, index_analysis_only_on_coordinator
+):
 
-    for local_plan in [0, 1]:
-        query_id = f"query_id_{randint(0, 1000000)}"
-        nodes[0].query(
-            f"SELECT sum(value) FROM {table_name}",
-            settings={
-                "allow_experimental_parallel_reading_from_replicas": 2,
-                "max_parallel_replicas": 100,
-                "cluster_for_parallel_replicas": "parallel_replicas",
-                "parallel_replicas_mark_segment_size": 0,
-                "parallel_replicas_local_plan": local_plan,
-                "query_id": query_id,
-            },
-        )
+    query_id = f"query_id_{str(uuid.uuid4())}"
+    nodes[0].query(
+        f"SELECT sum(value) FROM {table_name}",
+        settings={
+            "allow_experimental_parallel_reading_from_replicas": 2,
+            "max_parallel_replicas": 100,
+            "cluster_for_parallel_replicas": "parallel_replicas",
+            "parallel_replicas_mark_segment_size": 0,
+            "parallel_replicas_local_plan": local_plan,
+            "query_id": query_id,
+            "parallel_replicas_index_analysis_only_on_coordinator": index_analysis_only_on_coordinator,
+        },
+    )
 
-        nodes[0].query("SYSTEM FLUSH LOGS")
-        log_line = nodes[0].grep_in_log(
-            f"{query_id}.*Reading state is fully initialized"
-        )
-        assert re.search(r"mark_segment_size: (\d+)", log_line).group(1) == "16384"
+    nodes[0].query("SYSTEM FLUSH LOGS")
+    log_line = nodes[0].grep_in_log(f"{query_id}.*Reading state is fully initialized")
+    assert re.search(r"mark_segment_size: (\d+)", log_line).group(1) == "16384"

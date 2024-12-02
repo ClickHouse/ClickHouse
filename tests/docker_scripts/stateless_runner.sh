@@ -57,8 +57,6 @@ source /repo/tests/docker_scripts/utils.lib
 
 /repo/tests/docker_scripts/setup_minio.sh stateless
 
-/repo/tests/docker_scripts/setup_hdfs_minicluster.sh
-
 config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
 
 if [[ -n "$BUGFIX_VALIDATE_CHECK" ]] && [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; then

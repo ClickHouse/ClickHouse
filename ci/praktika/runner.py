@@ -6,17 +6,17 @@ import sys
 import traceback
 from pathlib import Path
 
-from praktika._environment import _Environment
-from praktika.artifact import Artifact
-from praktika.cidb import CIDB
-from praktika.digest import Digest
-from praktika.hook_cache import CacheRunnerHooks
-from praktika.hook_html import HtmlRunnerHooks
-from praktika.result import Result, ResultInfo
-from praktika.runtime import RunConfig
-from praktika.s3 import S3
-from praktika.settings import Settings
-from praktika.utils import Shell, TeePopen, Utils
+from ._environment import _Environment
+from .artifact import Artifact
+from .cidb import CIDB
+from .digest import Digest
+from .hook_cache import CacheRunnerHooks
+from .hook_html import HtmlRunnerHooks
+from .result import Result, ResultInfo
+from .runtime import RunConfig
+from .s3 import S3
+from .settings import Settings
+from .utils import Shell, TeePopen, Utils
 
 
 class Runner:

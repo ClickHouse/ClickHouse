@@ -5,10 +5,10 @@ from hashlib import md5
 from pathlib import Path
 from typing import List
 
-from praktika import Job
-from praktika.docker import Docker
-from praktika.settings import Settings
-from praktika.utils import Utils
+from . import Job
+from .docker import Docker
+from .settings import Settings
+from .utils import Utils
 
 
 class Digest:

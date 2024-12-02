@@ -1,7 +1,7 @@
 import dataclasses
 from typing import List
 
-from praktika.utils import Shell
+from .utils import Shell
 
 
 class Docker:

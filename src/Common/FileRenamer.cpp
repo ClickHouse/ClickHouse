@@ -38,7 +38,7 @@ String FileRenamer::generateNewFilename(const String & filename) const
 
     // Get current timestamp in microseconds
     String timestamp;
-    if (rule.find("%t") != String::npos)
+    if (rule.contains("%t"))
     {
         auto now = std::chrono::system_clock::now();
         timestamp = std::to_string(timeInMicroseconds(now));

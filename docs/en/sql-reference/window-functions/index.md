@@ -47,7 +47,7 @@ aggregate_function (column_name)
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
         [ROWS or RANGE expression_to_bound_rows_withing_the_group]] | [window_name])
 FROM table_name
-WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
+WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column]])
 ```
 
 - `PARTITION BY` - defines how to break a resultset into groups.
@@ -110,8 +110,10 @@ INSERT INTO salaries FORMAT Values
 ```
 
 ```sql
-SELECT player, salary, 
-       row_number() OVER (ORDER BY salary) AS row
+SELECT
+    player,
+    salary,
+    row_number() OVER (ORDER BY salary ASC) AS row
 FROM salaries;
 ```
 
@@ -126,10 +128,12 @@ FROM salaries;
 ```
 
 ```sql
-SELECT player, salary, 
-       row_number() OVER (ORDER BY salary) AS row,
-       rank() OVER (ORDER BY salary) AS rank,
-       dense_rank() OVER (ORDER BY salary) AS denseRank
+SELECT
+    player,
+    salary,
+    row_number() OVER (ORDER BY salary ASC) AS row,
+    rank() OVER (ORDER BY salary ASC) AS rank,
+    dense_rank() OVER (ORDER BY salary ASC) AS denseRank
 FROM salaries;
 ```
 
@@ -148,9 +152,12 @@ FROM salaries;
 Compare each player's salary to the average for their team.
 
 ```sql
-SELECT player, salary, team,
-       avg(salary) OVER (PARTITION BY team) AS teamAvg,
-       salary - teamAvg AS diff
+SELECT
+    player,
+    salary,
+    team,
+    avg(salary) OVER (PARTITION BY team) AS teamAvg,
+    salary - teamAvg AS diff
 FROM salaries;
 ```
 
@@ -167,14 +174,17 @@ FROM salaries;
 Compare each player's salary to the maximum for their team.
 
 ```sql
-SELECT player, salary, team,
-       max(salary) OVER (PARTITION BY team) AS teamAvg,
-       salary - teamAvg AS diff
+SELECT
+    player,
+    salary,
+    team,
+    max(salary) OVER (PARTITION BY team) AS teamMax,
+    salary - teamMax AS diff
 FROM salaries;
 ```
 
 ```text
-┌─player──────────┬─salary─┬─team──────────────────────┬─teamAvg─┬───diff─┐
+┌─player──────────┬─salary─┬─team──────────────────────┬─teamMax─┬───diff─┐
 │ Charles Juarez  │ 190000 │ New Coreystad Archdukes   │  190000 │      0 │
 │ Scott Harrison  │ 150000 │ New Coreystad Archdukes   │  190000 │ -40000 │
 │ Gary Chen       │ 195000 │ Port Elizabeth Barbarians │  195000 │      0 │
@@ -240,7 +250,7 @@ SELECT
     groupArray(value) OVER (
         PARTITION BY part_key 
         ORDER BY order ASC
-        Rows BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+        ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
     ) AS frame_values
 FROM wf_frame
 ORDER BY
@@ -257,23 +267,27 @@ ORDER BY
 ```
 
 ```sql
--- short form - no bound expression, no order by
+-- short form - no bound expression, no order by,
+-- an equalent of `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`
 SELECT
     part_key,
     value,
     order,
-    groupArray(value) OVER (PARTITION BY part_key) AS frame_values
+    groupArray(value) OVER (PARTITION BY part_key) AS frame_values_short,
+    groupArray(value) OVER (PARTITION BY part_key
+         ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+    ) AS frame_values
 FROM wf_frame
 ORDER BY
     part_key ASC,
     value ASC;
-┌─part_key─┬─value─┬─order─┬─frame_values─┐
-│        1 │     1 │     1 │ [1,2,3,4,5]  │
-│        1 │     2 │     2 │ [1,2,3,4,5]  │
-│        1 │     3 │     3 │ [1,2,3,4,5]  │
-│        1 │     4 │     4 │ [1,2,3,4,5]  │
-│        1 │     5 │     5 │ [1,2,3,4,5]  │
-└──────────┴───────┴───────┴──────────────┘
+┌─part_key─┬─value─┬─order─┬─frame_values_short─┬─frame_values─┐
+│        1 │     1 │     1 │ [1,2,3,4,5]        │ [1,2,3,4,5]  │
+│        1 │     2 │     2 │ [1,2,3,4,5]        │ [1,2,3,4,5]  │
+│        1 │     3 │     3 │ [1,2,3,4,5]        │ [1,2,3,4,5]  │
+│        1 │     4 │     4 │ [1,2,3,4,5]        │ [1,2,3,4,5]  │
+│        1 │     5 │     5 │ [1,2,3,4,5]        │ [1,2,3,4,5]  │
+└──────────┴───────┴───────┴────────────────────┴──────────────┘
 ```
 
 ```sql
@@ -285,7 +299,7 @@ SELECT
     groupArray(value) OVER (
         PARTITION BY part_key 
         ORDER BY order ASC
-        Rows BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
     ) AS frame_values
 FROM wf_frame
 ORDER BY
@@ -303,22 +317,27 @@ ORDER BY
 
 ```sql
 -- short form (frame is bounded by the beginning of a partition and the current row)
+-- an equalent of `ORDER BY order ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`
 SELECT
     part_key,
     value,
     order,
-    groupArray(value) OVER (PARTITION BY part_key ORDER BY order ASC) AS frame_values
+    groupArray(value) OVER (PARTITION BY part_key ORDER BY order ASC) AS frame_values_short,
+    groupArray(value) OVER (PARTITION BY part_key ORDER BY order ASC
+       ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS frame_values
 FROM wf_frame
 ORDER BY
     part_key ASC,
     value ASC;
-┌─part_key─┬─value─┬─order─┬─frame_values─┐
-│        1 │     1 │     1 │ [1]          │
-│        1 │     2 │     2 │ [1,2]        │
-│        1 │     3 │     3 │ [1,2,3]      │
-│        1 │     4 │     4 │ [1,2,3,4]    │
-│        1 │     5 │     5 │ [1,2,3,4,5]  │
-└──────────┴───────┴───────┴──────────────┘
+
+┌─part_key─┬─value─┬─order─┬─frame_values_short─┬─frame_values─┐
+│        1 │     1 │     1 │ [1]                │ [1]          │
+│        1 │     2 │     2 │ [1,2]              │ [1,2]        │
+│        1 │     3 │     3 │ [1,2,3]            │ [1,2,3]      │
+│        1 │     4 │     4 │ [1,2,3,4]          │ [1,2,3,4]    │
+│        1 │     5 │     5 │ [1,2,3,4,5]        │ [1,2,3,4,5]  │
+└──────────┴───────┴───────┴────────────────────┴──────────────┘
 ```
 
 ```sql
@@ -332,6 +351,7 @@ FROM wf_frame
 ORDER BY
     part_key ASC,
     value ASC;
+
 ┌─part_key─┬─value─┬─order─┬─frame_values─┐
 │        1 │     1 │     1 │ [5,4,3,2,1]  │
 │        1 │     2 │     2 │ [5,4,3,2]    │
@@ -350,7 +370,7 @@ SELECT
     groupArray(value) OVER (
         PARTITION BY part_key 
         ORDER BY order ASC
-        Rows BETWEEN 1 PRECEDING AND CURRENT ROW
+        ROWS BETWEEN 1 PRECEDING AND CURRENT ROW
     ) AS frame_values
 FROM wf_frame
 ORDER BY
@@ -367,7 +387,7 @@ ORDER BY
 ```
 
 ```sql
--- sliding frame - Rows BETWEEN 1 PRECEDING AND UNBOUNDED FOLLOWING 
+-- sliding frame - ROWS BETWEEN 1 PRECEDING AND UNBOUNDED FOLLOWING 
 SELECT
     part_key,
     value,
@@ -375,12 +395,13 @@ SELECT
     groupArray(value) OVER (
         PARTITION BY part_key 
         ORDER BY order ASC
-        Rows BETWEEN 1 PRECEDING AND UNBOUNDED FOLLOWING
+        ROWS BETWEEN 1 PRECEDING AND UNBOUNDED FOLLOWING
     ) AS frame_values
 FROM wf_frame
 ORDER BY
     part_key ASC,
     value ASC;
+
 ┌─part_key─┬─value─┬─order─┬─frame_values─┐
 │        1 │     1 │     1 │ [1,2,3,4,5]  │
 │        1 │     2 │     2 │ [1,2,3,4,5]  │
@@ -407,11 +428,12 @@ WINDOW
     w2 AS (
         PARTITION BY part_key 
         ORDER BY order DESC 
-        Rows BETWEEN 1 PRECEDING AND CURRENT ROW
+        ROWS BETWEEN 1 PRECEDING AND CURRENT ROW
     )
 ORDER BY
     part_key ASC,
     value ASC;
+
 ┌─part_key─┬─value─┬─order─┬─frame_values─┬─rn_1─┬─rn_2─┬─rn_3─┬─rn_4─┐
 │        1 │     1 │     1 │ [5,4,3,2,1]  │    5 │    5 │    5 │    2 │
 │        1 │     2 │     2 │ [5,4,3,2]    │    4 │    4 │    4 │    2 │
@@ -433,10 +455,11 @@ SELECT
 FROM wf_frame
 WINDOW
     w1 AS (PARTITION BY part_key ORDER BY order ASC),
-    w2 AS (PARTITION BY part_key ORDER BY order ASC Rows BETWEEN 1 PRECEDING AND CURRENT ROW)
+    w2 AS (PARTITION BY part_key ORDER BY order ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)
 ORDER BY
     part_key ASC,
     value ASC;
+
 ┌─frame_values_1─┬─first_value_1─┬─last_value_1─┬─frame_values_2─┬─first_value_2─┬─last_value_2─┐
 │ [1]            │             1 │            1 │ [1]            │             1 │            1 │
 │ [1,2]          │             1 │            2 │ [1,2]          │             1 │            2 │
@@ -452,10 +475,11 @@ SELECT
     groupArray(value) OVER w1 AS frame_values_1,
     nth_value(value, 2) OVER w1 AS second_value
 FROM wf_frame
-WINDOW w1 AS (PARTITION BY part_key ORDER BY order ASC Rows BETWEEN 3 PRECEDING AND CURRENT ROW)
+WINDOW w1 AS (PARTITION BY part_key ORDER BY order ASC ROWS BETWEEN 3 PRECEDING AND CURRENT ROW)
 ORDER BY
     part_key ASC,
-    value ASC
+    value ASC;
+
 ┌─frame_values_1─┬─second_value─┐
 │ [1]            │            0 │
 │ [1,2]          │            2 │
@@ -471,10 +495,11 @@ SELECT
     groupArray(value) OVER w1 AS frame_values_1,
     nth_value(toNullable(value), 2) OVER w1 AS second_value
 FROM wf_frame
-WINDOW w1 AS (PARTITION BY part_key ORDER BY order ASC Rows BETWEEN 3 PRECEDING AND CURRENT ROW)
+WINDOW w1 AS (PARTITION BY part_key ORDER BY order ASC ROWS BETWEEN 3 PRECEDING AND CURRENT ROW)
 ORDER BY
     part_key ASC,
-    value ASC
+    value ASC;
+
 ┌─frame_values_1─┬─second_value─┐
 │ [1]            │         ᴺᵁᴸᴸ │
 │ [1,2]          │            2 │
@@ -614,7 +639,7 @@ SELECT
     avg(value) OVER (
         PARTITION BY metric 
         ORDER BY ts ASC 
-        Rows BETWEEN 2 PRECEDING AND CURRENT ROW
+        ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
     ) AS moving_avg_temp
 FROM sensors
 ORDER BY

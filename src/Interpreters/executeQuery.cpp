@@ -163,6 +163,7 @@ namespace Setting
     extern const SettingsSeconds wait_for_async_insert_timeout;
     extern const SettingsBool implicit_select;
     extern const SettingsBool enforce_strict_identifier_format;
+    extern const SettingsMap http_response_headers;
 }
 
 namespace ErrorCodes
@@ -179,6 +180,7 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int INCORRECT_QUERY;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace FailPoints
@@ -1681,6 +1683,33 @@ void executeQuery(
     /// The timezone was already set before query was processed,
     /// But `session_timezone` setting could be modified in the query itself, so we update the value.
     result_details.timezone = DateLUT::instance().getTimeZone();
+
+    const Map & additional_http_headers = context->getSettingsRef()[Setting::http_response_headers].value;
+    if (!additional_http_headers.empty())
+    {
+        for (const auto & key_value : additional_http_headers)
+        {
+            if (key_value.getType() != Field::Types::Tuple
+                || key_value.safeGet<Tuple>().size() != 2)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of the `additional_http_headers` setting must be a Map");
+
+            if (key_value.safeGet<Tuple>().at(0).getType() != Field::Types::String)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The keys of the `additional_http_headers` setting must be Strings");
+
+            if (key_value.safeGet<Tuple>().at(1).getType() != Field::Types::String)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The values of the `additional_http_headers` setting must be Strings");
+
+            String key = key_value.safeGet<Tuple>().at(0).safeGet<String>();
+            String value = key_value.safeGet<Tuple>().at(1).safeGet<String>();
+
+            if (std::find_if(key.begin(), key.end(), isControlASCII) != key.end()
+                || std::find_if(value.begin(), value.end(), isControlASCII) != value.end())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The values of the `additional_http_headers` cannot contain ASCII control characters");
+
+            if (!result_details.additional_headers.emplace(key, value).second)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are duplicate entries in the `additional_http_headers` setting");
+        }
+    }
 
     auto & pipeline = streams.pipeline;
 

@@ -133,7 +133,7 @@ public:
 
     void cancel() noexcept override;
 
-    Block getColumnsSample() const override { return block_sample; }
+    const Block & getColumnsSample() const override { return block_sample; }
 
 protected:
      /// Count index_granularity for block and store in `index_granularity`

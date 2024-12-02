@@ -205,6 +205,20 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
     return true;
 }
 
+SortDescription duduplicateSortDescription(const SortDescription & sort_description)
+{
+    SortDescription result;
+    std::unordered_set<std::string> unique_columns;
+    for (const auto & desc : sort_description)
+    {
+        const auto & [_, inserted] = unique_columns.insert(desc.column_name);
+        if (!inserted)
+            continue;
+        result.push_back(desc);
+    }
+    return result;
+}
+
 FillingTransform::FillingTransform(
     const Block & header_,
     const SortDescription & sort_description_,
@@ -212,7 +226,7 @@ FillingTransform::FillingTransform(
     InterpolateDescriptionPtr interpolate_description_,
     const bool use_with_fill_by_sorting_prefix_)
     : ISimpleTransform(header_, transformHeader(header_, fill_description_), true)
-    , sort_description(sort_description_)
+    , sort_description(duduplicateSortDescription(sort_description_))
     , fill_description(fill_description_)
     , interpolate_description(interpolate_description_)
     , filling_row(fill_description_)

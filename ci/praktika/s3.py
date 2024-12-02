@@ -4,9 +4,9 @@ from pathlib import Path
 from typing import Dict
 from urllib.parse import quote
 
-from praktika._environment import _Environment
-from praktika.settings import Settings
-from praktika.utils import Shell
+from ._environment import _Environment
+from .settings import Settings
+from .utils import Shell
 
 
 class S3:
