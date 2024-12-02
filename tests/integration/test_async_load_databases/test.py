@@ -1,8 +1,12 @@
+import logging
 import random
+import threading
 import time
+from multiprocessing.dummy import Pool
 
 import pytest
 
+from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
@@ -18,6 +22,7 @@ node1 = cluster.add_instance(
     "node1",
     main_configs=["configs/config.xml"],
     dictionaries=DICTIONARY_FILES,
+    with_zookeeper=True,
     stay_alive=True,
 )
 
@@ -27,6 +32,7 @@ node2 = cluster.add_instance(
         "configs/async_load_system_database.xml",
     ],
     dictionaries=DICTIONARY_FILES,
+    with_zookeeper=True,
     stay_alive=True,
 )
 
@@ -36,13 +42,19 @@ def started_cluster():
     try:
         cluster.start()
 
+        nodenum=1
         for node in [node1, node2]:
             node.query(
-                """
+                f"""
                 CREATE DATABASE IF NOT EXISTS dict ENGINE=Dictionary;
                 CREATE DATABASE IF NOT EXISTS test;
+                CREATE TABLE test_table_src(date Date, id UInt32, dummy UInt32)
+                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_table', '{nodenum}')
+                PARTITION BY date ORDER BY id
                 """
             )
+            nodenum+=1
+
 
         yield cluster
 
@@ -311,11 +323,80 @@ def test_materialzed_views_cascaded_multiple(started_cluster):
     assert query("select * from test_mv.x Format CSV") == '"42"\n'
     assert query("select * from test_mv.z Format CSV") == "42,2\n"
 
-    query("drop view t_to_a")
-    query("drop view t_to_x")
-    query("drop view ax_to_z")
-    query("drop table test_mv.t")
-    query("drop table test_mv.a")
-    query("drop table test_mv.x")
-    query("drop table test_mv.z")
-    query("drop database test_mv")
+    query("drop view t_to_a sync")
+    query("drop view t_to_x sync")
+    query("drop view ax_to_z sync")
+    query("drop table test_mv.t sync")
+    query("drop table test_mv.a sync")
+    query("drop table test_mv.x sync")
+    query("drop table test_mv.z sync")
+    query("drop database test_mv sync")
+
+def test_materialzed_views_replicated(started_cluster):
+    nodenum=1
+    for node in [node1, node2]:
+        node.query(
+            f"""
+            CREATE DATABASE test_mv;
+            CREATE TABLE test_mv.test_table_src(id UInt32)
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_table_src', '{nodenum}')
+            ORDER BY id;
+            CREATE TABLE test_mv.test_table_dst(id UInt32)
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_table_dst', '{nodenum}')
+            ORDER BY id;
+            CREATE MATERIALIZED VIEW test_mv.test_mv TO test_mv.test_table_dst
+            AS SELECT id FROM test_mv.test_table_src;
+            """
+        )
+        nodenum += 1
+
+    plr = 1
+
+    p = Pool(1)
+    disconnect_event = threading.Event()
+
+    def reload_node(node, event):
+        node.restart_clickhouse()
+        event.set()
+
+    for i in range(100):
+        node1.query(f"INSERT INTO test_mv.test_table_src SETTINGS prefer_localhost_replica={plr} VALUES({i}) ")
+
+    job = p.apply_async(
+        reload_node,
+        (
+            node1,
+            disconnect_event,
+        ),
+    )
+
+    i = 0
+    for i in range(100, 130):
+        try:
+            node1.query(f"INSERT INTO test_mv.test_table_src SETTINGS prefer_localhost_replica={plr} VALUES({i})")
+        except QueryRuntimeException as e:
+            time.sleep(0.1)
+    logging.debug(f"i is {i}")
+
+    disconnect_event.wait(90)
+
+    for i in range(2000, 2100):
+        node1.query(f"INSERT INTO test_mv.test_table_src SETTINGS prefer_localhost_replica={plr} VALUES({i})")
+
+    src_rows = node1.query("select count(*) from test_mv.test_table_src Format CSV")
+    logging.debug(f"{src_rows} are found in test_mv.test_table_src")
+    assert node1.query("select count(*) from test_mv.test_table_dst Format CSV") == src_rows
+
+    job.wait()
+    p.close()
+    p.join()
+
+    for node in [node1, node2]:
+        node.query(
+            f"""
+            DROP TABLE test_mv.test_table_dst SYNC;
+            DROP TABLE test_mv.test_table_src SYNC;
+            DROP VIEW test_mv.test_mv SYNC;
+            DROP DATABASE test_mv SYNC;
+            """
+        )
