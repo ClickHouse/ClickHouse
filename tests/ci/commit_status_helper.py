@@ -294,7 +294,13 @@ def create_ci_report(pr_info: PRInfo, statuses: CommitStatuses) -> str:
             )
         )
     return upload_results(
-        S3Helper(), pr_info.number, pr_info.sha, test_results, [], CI_STATUS_NAME
+        S3Helper(),
+        pr_info.number,
+        pr_info.sha,
+        pr_info.head_ref,
+        test_results,
+        [],
+        CI_STATUS_NAME,
     )
 
 

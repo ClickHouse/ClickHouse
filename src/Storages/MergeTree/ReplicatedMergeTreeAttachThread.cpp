@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeAttachThread.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/ZooKeeper/IKeeper.h>
 
@@ -158,33 +159,6 @@ void ReplicatedMergeTreeAttachThread::runImpl()
 
     /// Just in case it was not removed earlier due to connection loss
     zookeeper->tryRemove(replica_path + "/flags/force_restore_data");
-
-    String replica_metadata_version;
-    const bool replica_metadata_version_exists = zookeeper->tryGet(replica_path + "/metadata_version", replica_metadata_version);
-    if (replica_metadata_version_exists)
-    {
-        storage.setInMemoryMetadata(metadata_snapshot->withMetadataVersion(parse<int>(replica_metadata_version)));
-    }
-    else
-    {
-        /// Table was created before 20.4 and was never altered,
-        /// let's initialize replica metadata version from global metadata version.
-        Coordination::Stat table_metadata_version_stat;
-        zookeeper->get(zookeeper_path + "/metadata", &table_metadata_version_stat);
-
-        Coordination::Requests ops;
-        ops.emplace_back(zkutil::makeCheckRequest(zookeeper_path + "/metadata", table_metadata_version_stat.version));
-        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/metadata_version", toString(table_metadata_version_stat.version), zkutil::CreateMode::Persistent));
-
-        Coordination::Responses res;
-        auto code = zookeeper->tryMulti(ops, res);
-
-        if (code == Coordination::Error::ZBADVERSION)
-            throw Exception(ErrorCodes::REPLICA_STATUS_CHANGED, "Failed to initialize metadata_version "
-                                                                "because table was concurrently altered, will retry");
-
-        zkutil::KeeperMultiException::check(code, ops, res);
-    }
 
     storage.checkTableStructure(replica_path, metadata_snapshot);
     storage.checkParts(skip_sanity_checks);
