@@ -33,7 +33,7 @@ void JSONRowOutputFormat::writePrefix()
 
 void JSONRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
 {
-    JSONUtils::writeFieldFromColumn(column, serialization, row_num, yield_strings, settings, *ostr, names[field_number], 3, "", settings.json.pretty_print);
+    JSONUtils::writeFieldFromColumn(column, serialization, row_num, yield_strings, settings, *ostr, names[field_number], 3, " ", settings.json.pretty_print);
     ++field_number;
 }
 
