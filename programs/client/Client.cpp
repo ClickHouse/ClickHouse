@@ -53,12 +53,9 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int UNKNOWN_PACKET_FROM_SERVER;
-extern const int SYNTAX_ERROR;
-extern const int TOO_DEEP_RECURSION;
 extern const int NETWORK_ERROR;
 extern const int AUTHENTICATION_FAILED;
 extern const int NO_ELEMENTS_IN_CONFIG;
-extern const int NOT_IMPLEMENTED;
 extern const int USER_EXPIRED;
 }
 

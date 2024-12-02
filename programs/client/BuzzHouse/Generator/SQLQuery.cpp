@@ -150,7 +150,7 @@ int StatementGenerator::setTableRemote(const SQLTable & t, TableFunction * tfunc
     }
     else if (t.hasPostgreSQLPeer())
     {
-        SQLiteFunc * sfunc = tfunc->mutable_sqlite();
+        SQLiteFunc * sfunc = tfunc->mutable_sqite();
 
         sfunc->set_rdatabase(connections.getSQLitePath().generic_string());
         sfunc->set_rtable("t" + std::to_string(t.tname));

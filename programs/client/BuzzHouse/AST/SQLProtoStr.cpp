@@ -1834,8 +1834,8 @@ CONV_FN(TableFunction, tf)
         case TableFunctionType::kPostgresql:
             PostgreSQLFuncToString(ret, tf.postgresql());
             break;
-        case TableFunctionType::kSqlite:
-            SQLiteFuncToString(ret, tf.sqlite());
+        case TableFunctionType::kSqite:
+            SQLiteFuncToString(ret, tf.sqite());
             break;
         default:
             ret += "numbers(10)";

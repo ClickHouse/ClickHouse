@@ -29,6 +29,8 @@ extern const SettingsDialect dialect;
 namespace ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
+extern const int SYNTAX_ERROR;
+extern const int TOO_DEEP_RECURSION;
 }
 
 std::optional<bool> Client::processFuzzingStep(const String & query_to_execute, const ASTPtr & parsed_query, const bool permissive)

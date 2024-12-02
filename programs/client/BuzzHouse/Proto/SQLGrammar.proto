@@ -2410,7 +2410,7 @@ message TableFunction {
         RemoteFunc remote = 4;
         MySQLFunc mysql = 5;
         PostgreSQLFunc postgresql = 6;
-        SQLiteFunc sqlite = 7;
+        SQLiteFunc sqite = 7;
     }
 }
 
