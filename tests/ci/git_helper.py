@@ -36,19 +36,6 @@ with tempfile.NamedTemporaryFile("w", delete=False) as f:
     atexit.register(os.remove, f.name)
 
 
-# Py 3.8 removeprefix and removesuffix
-def removeprefix(string: str, prefix: str) -> str:
-    if string.startswith(prefix):
-        return string[len(prefix) :]  # noqa: ignore E203, false positive
-    return string
-
-
-def removesuffix(string: str, suffix: str) -> str:
-    if string.endswith(suffix):
-        return string[: -len(suffix)]
-    return string
-
-
 def commit(name: str) -> str:
     if not SHA_REGEXP.match(name):
         raise argparse.ArgumentTypeError(
@@ -155,7 +142,7 @@ class Git:
         self.commits_since_new = 0
         self.update()
 
-    def update(self):
+    def update(self) -> None:
         """Is used to refresh all attributes after updates, e.g. checkout or commit"""
         self.sha = self.run("git rev-parse HEAD")
         self.branch = self.run("git branch --show-current") or self.sha
