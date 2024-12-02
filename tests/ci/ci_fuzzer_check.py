@@ -143,7 +143,7 @@ def main():
     if compressed_fuzzer_output_sql_path.exists():
         paths["fuzzer_out.sql.zst"] = compressed_fuzzer_log_path
     else:
-        not_compressed_fuzzer_output_sql_path= workspace_path / "fuzzer_out.sql"
+        not_compressed_fuzzer_output_sql_path = workspace_path / "fuzzer_out.sql"
         if not_compressed_fuzzer_output_sql_path.exists():
             paths["fuzzer_out.sql"] = not_compressed_fuzzer_log_path
 
