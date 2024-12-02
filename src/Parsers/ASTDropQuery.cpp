@@ -33,43 +33,43 @@ ASTPtr ASTDropQuery::clone() const
     return res;
 }
 
-void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "");
+    ostr << (settings.hilite ? hilite_keyword : "");
     if (kind == ASTDropQuery::Kind::Drop)
-        settings.ostr << "DROP ";
+        ostr << "DROP ";
     else if (kind == ASTDropQuery::Kind::Detach)
-        settings.ostr << "DETACH ";
+        ostr << "DETACH ";
     else if (kind == ASTDropQuery::Kind::Truncate)
-        settings.ostr << "TRUNCATE ";
+        ostr << "TRUNCATE ";
     else
         throw Exception(ErrorCodes::SYNTAX_ERROR, "Not supported kind of drop query.");
 
     if (temporary)
-        settings.ostr << "TEMPORARY ";
+        ostr << "TEMPORARY ";
 
     if (has_all_tables)
-        settings.ostr << "ALL TABLES FROM ";
+        ostr << "ALL TABLES FROM ";
     else if (!table && !database_and_tables && database)
-        settings.ostr << "DATABASE ";
+        ostr << "DATABASE ";
     else if (is_dictionary)
-        settings.ostr << "DICTIONARY ";
+        ostr << "DICTIONARY ";
     else if (is_view)
-        settings.ostr << "VIEW ";
+        ostr << "VIEW ";
     else
-        settings.ostr << "TABLE ";
+        ostr << "TABLE ";
 
     if (if_exists)
-        settings.ostr << "IF EXISTS ";
+        ostr << "IF EXISTS ";
 
     if (if_empty)
-        settings.ostr << "IF EMPTY ";
+        ostr << "IF EMPTY ";
 
-    settings.ostr << (settings.hilite ? hilite_none : "");
+    ostr << (settings.hilite ? hilite_none : "");
 
     if (!table && !database_and_tables && database)
     {
-        database->formatImpl(settings, state, frame);
+        database->formatImpl(ostr, settings, state, frame);
     }
     else if (database_and_tables)
     {
@@ -77,7 +77,7 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
         for (auto * it = list.children.begin(); it != list.children.end(); ++it)
         {
             if (it != list.children.begin())
-                settings.ostr << ", ";
+                ostr << ", ";
 
             auto identifier = dynamic_pointer_cast<ASTTableIdentifier>(*it);
             if (!identifier)
@@ -85,34 +85,34 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
 
             if (auto db = identifier->getDatabase())
             {
-                db->formatImpl(settings, state, frame);
-                settings.ostr << '.';
+                db->formatImpl(ostr, settings, state, frame);
+                ostr << '.';
             }
 
             auto tb = identifier->getTable();
             chassert(tb);
-            tb->formatImpl(settings, state, frame);
+            tb->formatImpl(ostr, settings, state, frame);
         }
     }
     else
     {
         if (database)
         {
-            database->formatImpl(settings, state, frame);
-            settings.ostr << '.';
+            database->formatImpl(ostr, settings, state, frame);
+            ostr << '.';
         }
 
         chassert(table);
-        table->formatImpl(settings, state, frame);
+        table->formatImpl(ostr, settings, state, frame);
     }
 
-    formatOnCluster(settings);
+    formatOnCluster(ostr, settings);
 
     if (permanently)
-        settings.ostr << " PERMANENTLY";
+        ostr << " PERMANENTLY";
 
     if (sync)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " SYNC" << (settings.hilite ? hilite_none : "");
+        ostr << (settings.hilite ? hilite_keyword : "") << " SYNC" << (settings.hilite ? hilite_none : "");
 }
 
 ASTs ASTDropQuery::getRewrittenASTsOfSingleTable()
