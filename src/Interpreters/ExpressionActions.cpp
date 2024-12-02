@@ -1,5 +1,4 @@
 #include <Interpreters/Set.h>
-#include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/ExpressionActions.h>
@@ -60,15 +59,7 @@ ExpressionActions::ExpressionActions(ActionsDAG actions_dag_, const ExpressionAc
 
 #if USE_EMBEDDED_COMPILER
     if (settings.can_compile_expressions && settings.compile_expressions == CompileExpressions::yes)
-    {
-        LOG_TEST(
-            getLogger("ExpressionActions"),
-            "Actions before compilation: {} with {} lazy_executed_nodes",
-            actions_dag.dumpDAG(),
-            lazy_executed_nodes.size());
         actions_dag.compileExpressions(settings.min_count_to_compile_expression, lazy_executed_nodes);
-        LOG_TEST(getLogger("ExpressionActions"), "Actions after compilation: {}", actions_dag.dumpDAG());
-    }
 #endif
 
     linearizeActions(lazy_executed_nodes);
@@ -1068,16 +1059,16 @@ std::string ExpressionActionsChain::dumpChain() const
     return ss.str();
 }
 
-ExpressionActionsChain::ArrayJoinStep::ArrayJoinStep(const Names & array_join_columns_, ColumnsWithTypeAndName required_columns_)
+ExpressionActionsChain::ArrayJoinStep::ArrayJoinStep(ArrayJoinActionPtr array_join_, ColumnsWithTypeAndName required_columns_)
     : Step({})
-    , array_join_columns(array_join_columns_.begin(), array_join_columns_.end())
+    , array_join(std::move(array_join_))
     , result_columns(std::move(required_columns_))
 {
     for (auto & column : result_columns)
     {
         required_columns.emplace_back(NameAndTypePair(column.name, column.type));
 
-        if (array_join_columns.contains(column.name))
+        if (array_join->columns.contains(column.name))
         {
             const auto & array = getArrayJoinDataType(column.type);
             column.type = array->getNestedType();
@@ -1094,12 +1085,12 @@ void ExpressionActionsChain::ArrayJoinStep::finalize(const NameSet & required_ou
 
     for (const auto & column : result_columns)
     {
-        if (array_join_columns.contains(column.name) || required_output_.contains(column.name))
+        if (array_join->columns.contains(column.name) || required_output_.contains(column.name))
             new_result_columns.emplace_back(column);
     }
     for (const auto & column : required_columns)
     {
-        if (array_join_columns.contains(column.name) || required_output_.contains(column.name))
+        if (array_join->columns.contains(column.name) || required_output_.contains(column.name))
             new_required_columns.emplace_back(column);
     }
 

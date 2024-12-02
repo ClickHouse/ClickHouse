@@ -28,18 +28,10 @@ public:
     using WrittenOffsetColumns = std::set<std::string>;
 
     virtual void write(const Block & block) = 0;
-    virtual void cancel() noexcept = 0;
 
-    MergeTreeIndexGranularityPtr getIndexGranularity() const
+    const MergeTreeIndexGranularity & getIndexGranularity() const
     {
         return writer->getIndexGranularity();
-    }
-
-    PlainMarksByName releaseCachedMarks();
-
-    size_t getNumberOfOpenStreams() const
-    {
-        return writer->getNumberOfOpenStreams();
     }
 
 protected:

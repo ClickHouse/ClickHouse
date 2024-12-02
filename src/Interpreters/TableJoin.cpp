@@ -7,9 +7,7 @@
 
 #include <Core/Block.h>
 #include <Core/ColumnsWithTypeAndName.h>
-#include <Core/Joins.h>
 #include <Core/Settings.h>
-#include <Common/logger_useful.h>
 
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -30,6 +28,7 @@
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageJoin.h>
 
+#include <Common/logger_useful.h>
 #include <algorithm>
 #include <string>
 #include <type_traits>
@@ -39,28 +38,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_join_right_table_sorting;
-    extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsUInt64 cross_join_min_bytes_to_compress;
-    extern const SettingsUInt64 cross_join_min_rows_to_compress;
-    extern const SettingsUInt64 default_max_bytes_in_join;
-    extern const SettingsJoinAlgorithm join_algorithm;
-    extern const SettingsUInt64 join_on_disk_max_files_to_merge;
-    extern const SettingsUInt64 join_output_by_rowlist_perkey_rows_threshold;
-    extern const SettingsOverflowMode join_overflow_mode;
-    extern const SettingsUInt64 join_to_sort_maximum_table_rows;
-    extern const SettingsUInt64 join_to_sort_minimum_perkey_rows;
-    extern const SettingsBool join_use_nulls;
-    extern const SettingsUInt64 max_bytes_in_join;
-    extern const SettingsUInt64 max_joined_block_size_rows;
-    extern const SettingsUInt64 max_memory_usage;
-    extern const SettingsUInt64 max_rows_in_join;
-    extern const SettingsUInt64 partial_merge_join_left_table_buffer_bytes;
-    extern const SettingsUInt64 partial_merge_join_rows_in_right_blocks;
-    extern const SettingsString temporary_files_codec;
-}
 
 namespace ErrorCodes
 {
@@ -127,25 +104,20 @@ bool forAllKeys(OnExpr & expressions, Func callback)
 }
 
 TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_)
-    : size_limits(SizeLimits{settings[Setting::max_rows_in_join], settings[Setting::max_bytes_in_join], settings[Setting::join_overflow_mode]})
-    , default_max_bytes(settings[Setting::default_max_bytes_in_join])
-    , join_use_nulls(settings[Setting::join_use_nulls])
-    , cross_join_min_rows_to_compress(settings[Setting::cross_join_min_rows_to_compress])
-    , cross_join_min_bytes_to_compress(settings[Setting::cross_join_min_bytes_to_compress])
-    , max_joined_block_rows(settings[Setting::max_joined_block_size_rows])
-    , join_algorithm(settings[Setting::join_algorithm])
-    , partial_merge_join_rows_in_right_blocks(settings[Setting::partial_merge_join_rows_in_right_blocks])
-    , partial_merge_join_left_table_buffer_bytes(settings[Setting::partial_merge_join_left_table_buffer_bytes])
-    , max_files_to_merge(settings[Setting::join_on_disk_max_files_to_merge])
-    , temporary_files_codec(settings[Setting::temporary_files_codec])
-    , output_by_rowlist_perkey_rows_threshold(settings[Setting::join_output_by_rowlist_perkey_rows_threshold])
-    , sort_right_minimum_perkey_rows(settings[Setting::join_to_sort_minimum_perkey_rows])
-    , sort_right_maximum_table_rows(settings[Setting::join_to_sort_maximum_table_rows])
-    , allow_join_sorting(settings[Setting::allow_experimental_join_right_table_sorting])
-    , max_memory_usage(settings[Setting::max_memory_usage])
+    : size_limits(SizeLimits{settings.max_rows_in_join, settings.max_bytes_in_join, settings.join_overflow_mode})
+    , default_max_bytes(settings.default_max_bytes_in_join)
+    , join_use_nulls(settings.join_use_nulls)
+    , cross_join_min_rows_to_compress(settings.cross_join_min_rows_to_compress)
+    , cross_join_min_bytes_to_compress(settings.cross_join_min_bytes_to_compress)
+    , max_joined_block_rows(settings.max_joined_block_size_rows)
+    , join_algorithm(settings.join_algorithm)
+    , partial_merge_join_rows_in_right_blocks(settings.partial_merge_join_rows_in_right_blocks)
+    , partial_merge_join_left_table_buffer_bytes(settings.partial_merge_join_left_table_buffer_bytes)
+    , max_files_to_merge(settings.join_on_disk_max_files_to_merge)
+    , temporary_files_codec(settings.temporary_files_codec)
+    , max_memory_usage(settings.max_memory_usage)
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
-    , enable_analyzer(settings[Setting::allow_experimental_analyzer])
 {
 }
 
@@ -164,8 +136,6 @@ void TableJoin::resetCollected()
     clauses.clear();
     columns_from_joined_table.clear();
     columns_added_by_join.clear();
-    columns_from_left_table.clear();
-    result_columns_from_left_table.clear();
     original_names.clear();
     renames.clear();
     left_type_map.clear();
@@ -206,20 +176,6 @@ size_t TableJoin::rightKeyInclusion(const String & name) const
     for (const auto & clause : clauses)
         count += std::count(clause.key_names_right.begin(), clause.key_names_right.end(), name);
     return count;
-}
-
-void TableJoin::setInputColumns(NamesAndTypesList left_output_columns, NamesAndTypesList right_output_columns)
-{
-    columns_from_left_table = std::move(left_output_columns);
-    columns_from_joined_table = std::move(right_output_columns);
-}
-
-
-const NamesAndTypesList & TableJoin::getOutputColumns(JoinTableSide side)
-{
-    if (side == JoinTableSide::Left)
-        return result_columns_from_left_table;
-    return columns_added_by_join;
 }
 
 void TableJoin::deduplicateAndQualifyColumnNames(const NameSet & left_table_columns, const String & right_table_prefix)
@@ -370,18 +326,9 @@ bool TableJoin::rightBecomeNullable(const DataTypePtr & column_type) const
     return forceNullableRight() && JoinCommon::canBecomeNullable(column_type);
 }
 
-void TableJoin::setUsedColumn(const NameAndTypePair & joined_column, JoinTableSide side)
-{
-    if (side == JoinTableSide::Left)
-        result_columns_from_left_table.push_back(joined_column);
-    else
-        columns_added_by_join.push_back(joined_column);
-
-}
-
 void TableJoin::addJoinedColumn(const NameAndTypePair & joined_column)
 {
-    setUsedColumn(joined_column, JoinTableSide::Right);
+    columns_added_by_join.emplace_back(joined_column);
 }
 
 NamesAndTypesList TableJoin::correctedColumnsAddedByJoin() const
@@ -772,7 +719,7 @@ static std::optional<ActionsDAG> changeKeyTypes(const ColumnsWithTypeAndName & c
         /* result= */ cols_dst,
         /* mode= */ ActionsDAG::MatchColumnsMode::Name,
         /* ignore_constant_values= */ true,
-        /* add_cast_columns= */ add_new_cols,
+        /* add_casted_columns= */ add_new_cols,
         /* new_names= */ &key_column_rename);
 }
 
@@ -799,7 +746,7 @@ static std::optional<ActionsDAG> changeTypesToNullable(
         /* result= */ cols_dst,
         /* mode= */ ActionsDAG::MatchColumnsMode::Name,
         /* ignore_constant_values= */ true,
-        /* add_cast_columns= */ false,
+        /* add_casted_columns= */ false,
         /* new_names= */ nullptr);
 }
 
@@ -998,8 +945,7 @@ void TableJoin::resetToCross()
 
 bool TableJoin::allowParallelHashJoin() const
 {
-    if (std::ranges::none_of(
-            join_algorithm, [](auto algo) { return algo == JoinAlgorithm::DEFAULT || algo == JoinAlgorithm::PARALLEL_HASH; }))
+    if (std::find(join_algorithm.begin(), join_algorithm.end(), JoinAlgorithm::PARALLEL_HASH) == join_algorithm.end())
         return false;
     if (!right_storage_name.empty())
         return false;
@@ -1024,32 +970,5 @@ size_t TableJoin::getMaxMemoryUsage() const
     return max_memory_usage;
 }
 
-void TableJoin::swapSides()
-{
-    assertEnableEnalyzer();
-
-    std::swap(key_asts_left, key_asts_right);
-    std::swap(left_type_map, right_type_map);
-    for (auto & clause : clauses)
-    {
-        std::swap(clause.key_names_left, clause.key_names_right);
-        std::swap(clause.on_filter_condition_left, clause.on_filter_condition_right);
-        std::swap(clause.analyzer_left_filter_condition_column_name, clause.analyzer_right_filter_condition_column_name);
-    }
-
-    std::swap(columns_from_left_table, columns_from_joined_table);
-    std::swap(result_columns_from_left_table, columns_added_by_join);
-
-    if (table_join.kind == JoinKind::Left)
-        table_join.kind = JoinKind::Right;
-    else if (table_join.kind == JoinKind::Right)
-        table_join.kind = JoinKind::Left;
-}
-
-void TableJoin::assertEnableEnalyzer() const
-{
-    if (!enable_analyzer)
-        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "TableJoin: analyzer is disabled");
-}
 
 }

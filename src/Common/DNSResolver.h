@@ -68,8 +68,6 @@ public:
     /// Returns true if IP of any host has been changed or an element was dropped (too many failures)
     bool updateCache(UInt32 max_consecutive_failures);
 
-    void setFilterSettings(bool dns_allow_resolve_names_to_ipv4, bool dns_allow_resolve_names_to_ipv6);
-
     /// Returns a copy of cache entries
     std::vector<std::pair<std::string, CacheEntry>> cacheEntries() const;
 
@@ -88,10 +86,6 @@ private:
 
     struct Impl;
     std::unique_ptr<Impl> impl;
-
-    struct AddressFilter;
-    std::unique_ptr<AddressFilter> addressFilter;
-
     LoggerPtr log;
 
     /// Updates cached value and returns true it has been changed.
@@ -100,9 +94,6 @@ private:
 
     void addToNewHosts(const String & host);
     void addToNewAddresses(const Poco::Net::IPAddress & address);
-
-    IPAddresses resolveIPAddressWithCache(const std::string & host);
-    IPAddresses getResolvedIPAdressessWithFiltering(const std::string & host);
 };
 
 }

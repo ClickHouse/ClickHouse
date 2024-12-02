@@ -20,9 +20,6 @@ static constexpr auto DBMS_DEFAULT_POLL_INTERVAL = 10;
 /// The size of the I/O buffer by default.
 static constexpr auto DBMS_DEFAULT_BUFFER_SIZE = 1048576ULL;
 
-/// The initial size of adaptive I/O buffer by default.
-static constexpr auto DBMS_DEFAULT_INITIAL_ADAPTIVE_BUFFER_SIZE = 16384ULL;
-
 static constexpr auto PADDING_FOR_SIMD = 64;
 
 /** Which blocks by default read the data (by number of rows).
@@ -95,9 +92,6 @@ static constexpr auto DEFAULT_UNCOMPRESSED_CACHE_SIZE_RATIO = 0.5l;
 static constexpr auto DEFAULT_MARK_CACHE_POLICY = "SLRU";
 static constexpr auto DEFAULT_MARK_CACHE_MAX_SIZE = 5_GiB;
 static constexpr auto DEFAULT_MARK_CACHE_SIZE_RATIO = 0.5l;
-static constexpr auto DEFAULT_PRIMARY_INDEX_CACHE_POLICY = "SLRU";
-static constexpr auto DEFAULT_PRIMARY_INDEX_CACHE_MAX_SIZE = 5_GiB;
-static constexpr auto DEFAULT_PRIMARY_INDEX_CACHE_SIZE_RATIO = 0.5l;
 static constexpr auto DEFAULT_INDEX_UNCOMPRESSED_CACHE_POLICY = "SLRU";
 static constexpr auto DEFAULT_INDEX_UNCOMPRESSED_CACHE_MAX_SIZE = 0;
 static constexpr auto DEFAULT_INDEX_UNCOMPRESSED_CACHE_SIZE_RATIO = 0.5;

@@ -121,7 +121,7 @@ While inside the `build` directory, configure your build by running CMake. Befor
     export CC=clang CXX=clang++
     cmake ..
 
-If you installed clang using the automatic installation script above, also specify the version of clang installed in the first command, e.g. `export CC=clang-19 CXX=clang++-19`. The clang version will be in the script output.
+If you installed clang using the automatic installation script above, also specify the version of clang installed in the first command, e.g. `export CC=clang-18 CXX=clang++-18`. The clang version will be in the script output.
 
 The `CC` variable specifies the compiler for C (short for C Compiler), and `CXX` variable instructs which C++ compiler is to be used for building.
 
@@ -232,7 +232,7 @@ Below you can find some quick links which may be useful when writing code for Cl
 - [The code style guide](https://clickhouse.com/docs/en/development/style/).
 - [Adding third-party libraries](https://clickhouse.com/docs/en/development/contrib/#adding-third-party-libraries)
 - [Writing tests](https://clickhouse.com/docs/en/development/tests/)
-- [List of open issues](https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22)
+- [List of open issues](https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3Ahacktoberfest)
 
 ## Writing Documentation {#writing-documentation}
 
