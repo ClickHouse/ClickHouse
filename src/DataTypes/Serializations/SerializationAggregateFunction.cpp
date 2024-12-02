@@ -60,12 +60,11 @@ void SerializationAggregateFunction::serializeBinaryBulk(const IColumn & column,
     const ColumnAggregateFunction & real_column = typeid_cast<const ColumnAggregateFunction &>(column);
     const ColumnAggregateFunction::Container & vec = real_column.getData();
 
-    ColumnAggregateFunction::Container::const_iterator it = vec.begin() + offset;
-    ColumnAggregateFunction::Container::const_iterator end = limit ? it + limit : vec.end();
+    size_t end = vec.size();
+    if (limit)
+        end = std::min(end, offset + limit);
 
-    end = std::min(end, vec.end());
-    for (; it != end; ++it)
-        function->serialize(*it, ostr, version);
+    function->serializeBatch(vec, offset, end, ostr, version);
 }
 
 void SerializationAggregateFunction::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
