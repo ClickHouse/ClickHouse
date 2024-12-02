@@ -691,7 +691,7 @@ struct OnDemandSimdJSONParser
         }
         ALWAYS_INLINE Array getArray() const
         {
-            //std::cerr << "gethere getarray, stack:" << StackTrace().toString()<< std::endl;
+            //std::cerr << "gethere getarray, stack:" << std::endl;
 
             //array = std::make_shared<Array>(value.get_array().value());
             SIMDJSON_ASSIGN_OR_THROW(auto arr, value.get_array());
@@ -755,14 +755,17 @@ struct OnDemandSimdJSONParser
         {
             reset();
             //std::cerr << "gethere array.size()" << std::endl;
-            if (arr_size)
-            {
-                //std::cerr << "gethere array size cached :" << *arr_size << std::endl;
-                return *arr_size;
-            }
+            //if (arr_size)
+            //{
+            //    //std::cerr << "gethere array size cached :" << *arr_size << std::endl;
+            //    return *arr_size;
+            //}
             //std::cerr << "gethere array.size() no cached " << std::endl;
-            arr_size = array.count_elements().value();
-            return *arr_size;
+            auto r = array.count_elements();
+            if (r.error())
+                return 0;
+            return r.value();
+            //return *arr_size;
             //return array.count_elements().value();
         }
         ALWAYS_INLINE Element operator[](size_t index) const
@@ -848,7 +851,10 @@ struct OnDemandSimdJSONParser
         ALWAYS_INLINE size_t size() const
         {
             //std::cerr << "gethere obj size" << std::endl;
-            return object.count_fields().value();
+            auto r = object.count_fields();
+            if (r.error())
+                return 0;
+            return r.value();
         }
 
         bool find(std::string_view key, Element & result) const
