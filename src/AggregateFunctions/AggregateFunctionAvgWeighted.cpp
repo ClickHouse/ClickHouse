@@ -59,13 +59,13 @@ public:
 
     bool isCompilable() const override
     {
-        bool can_be_compiled = Base::isCompilable();
-        can_be_compiled &= canBeNativeType<Weight>();
-
-        return can_be_compiled;
+        if constexpr (!canBeNativeType<Weight>() || !canBeNativeType<Numerator>() || !canBeNativeType<Denominator>())
+            return false;
+        return Base::isCompilable();
     }
 
-    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const override
+    void compileAddImpl(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const
+    requires(canBeNativeType<Weight>() && canBeNativeType<Numerator>() && canBeNativeType<Denominator>())
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
@@ -92,6 +92,12 @@ public:
         auto * denominator_value_updated = denominator_type->isIntegerTy() ? b.CreateAdd(denominator_value, weight_cast_to_denominator) : b.CreateFAdd(denominator_value, weight_cast_to_denominator);
 
         b.CreateStore(denominator_value_updated, denominator_ptr);
+    }
+
+    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const override
+    {
+        if constexpr (canBeNativeType<Weight>() && canBeNativeType<Numerator>() && canBeNativeType<Denominator>())
+            compileAddImpl(builder, aggregate_data_ptr, arguments);
     }
 
 #endif

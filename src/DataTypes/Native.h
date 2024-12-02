@@ -30,7 +30,7 @@ bool canBeNativeType(const IDataType & type);
 bool canBeNativeType(const DataTypePtr & type);
 
 template <typename Type>
-static inline bool canBeNativeType()
+static constexpr bool canBeNativeType()
 {
     if constexpr (std::is_same_v<Type, Int8> || std::is_same_v<Type, UInt8>)
         return true;

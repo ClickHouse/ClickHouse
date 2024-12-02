@@ -141,6 +141,9 @@ public:
 
     bool isCompilable() const override
     {
+        if constexpr (!canBeNativeType<Numerator>() || !canBeNativeType<Denominator>())
+            return false;
+
         bool can_be_compiled = true;
 
         for (const auto & argument : this->argument_types)
@@ -158,7 +161,8 @@ public:
         b.CreateMemSet(aggregate_data_ptr, llvm::ConstantInt::get(b.getInt8Ty(), 0), sizeof(Fraction), llvm::assumeAligned(this->alignOfData()));
     }
 
-    void compileMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr) const override
+    void compileMergeImpl(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr) const
+    requires(canBeNativeType<Numerator>() && canBeNativeType<Denominator>())
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
@@ -185,7 +189,15 @@ public:
         b.CreateStore(denominator_result_value, denominator_dst_ptr);
     }
 
-    llvm::Value * compileGetResult(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
+    void
+    compileMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr) const override
+    {
+        if constexpr (canBeNativeType<Numerator>() && canBeNativeType<Denominator>())
+            compileMergeImpl(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+    }
+
+    llvm::Value * compileGetResultImpl(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const
+    requires(canBeNativeType<Numerator>() && canBeNativeType<Denominator>())
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
@@ -202,6 +214,12 @@ public:
         auto * double_denominator = nativeCast<Denominator>(b, denominator_value, this->getResultType());
 
         return b.CreateFDiv(double_numerator, double_denominator);
+    }
+
+    llvm::Value * compileGetResult(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
+    {
+        if constexpr (canBeNativeType<Numerator>() && canBeNativeType<Denominator>())
+            return compileGetResultImpl(builder, aggregate_data_ptr);
     }
 
 #endif
