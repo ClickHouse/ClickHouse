@@ -27,6 +27,7 @@
 #include <Core/Settings.h>
 
 #include <Disks/ObjectStorages/IMetadataStorage.h>
+#include <Disks/SingleDiskVolume.h>
 
 #include <base/sort.h>
 

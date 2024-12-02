@@ -8,6 +8,7 @@
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
+#include <Disks/VolumeJBOD.h>
 
 #include <algorithm>
 #include <set>
