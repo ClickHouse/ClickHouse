@@ -44,9 +44,9 @@ SELECT length(groupConcat(number)) FROM numbers(100000);
 
 SELECT 'TESTING GroupConcat second argument overload';
 
-SELECT groupConcat(p_int, ',') FROM test_groupConcat;
+SELECT groupConcat(',', p_int) FROM test_groupConcat;
 SELECT groupConcat('.')(p_string) FROM test_groupConcat;
-SELECT groupConcat(p_array, '/') FROM test_groupConcat;
+SELECT groupConcat('/', p_array) FROM test_groupConcat;
 
 DROP TABLE IF EXISTS test_groupConcat;
 

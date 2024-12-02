@@ -130,13 +130,51 @@ String ASTFunction::getID(char delim) const
     return "Function" + (delim + name);
 }
 
+void ASTFunction::groupConcatArgumentOverride(std::shared_ptr<ASTFunction> res) const
+{
+    // Clone the first argument to be used as a parameter
+    ASTPtr first_arg = arguments->children[0]->clone();
+
+    // Clone the second argument to remain as the function argument
+    ASTPtr second_arg = arguments->children[1]->clone();
+
+    // Initialize or clear parameters
+    if (!res->parameters)
+        res->parameters = std::make_shared<ASTExpressionList>();
+    else
+        res->parameters->children.clear();
+
+    // Add the first argument as a parameter
+    res->parameters->children.emplace_back(first_arg);
+    res->children.emplace_back(res->parameters);
+
+    // Initialize arguments with the second argument only
+    res->arguments = std::make_shared<ASTExpressionList>();
+    res->arguments->children.emplace_back(second_arg);
+    res->children.emplace_back(res->arguments);
+}
+
 ASTPtr ASTFunction::clone() const
 {
     auto res = std::make_shared<ASTFunction>(*this);
     res->children.clear();
 
-    if (arguments) { res->arguments = arguments->clone(); res->children.push_back(res->arguments); }
-    if (parameters) { res->parameters = parameters->clone(); res->children.push_back(res->parameters); }
+    // Special handling for groupConcat with two arguments
+    if (name == "groupConcat" && arguments && arguments->children.size() == 2)
+        groupConcatArgumentOverride(res);
+    else
+    {
+        if (arguments)
+        {
+            res->arguments = arguments->clone();
+            res->children.push_back(res->arguments);
+        }
+        if (parameters)
+        {
+            res->parameters = parameters->clone();
+            res->children.push_back(res->parameters);
+        }
+    }
 
     if (window_definition)
     {
