@@ -5611,7 +5611,8 @@ void StorageReplicatedMergeTree::read(
             cluster->getName());
     }
 
-    readLocalImpl(query_plan, column_names, storage_snapshot, query_info, local_context, max_block_size, num_streams); }
+    readLocalImpl(query_plan, column_names, storage_snapshot, query_info, local_context, max_block_size, num_streams);
+}
 
 void StorageReplicatedMergeTree::readLocalSequentialConsistencyImpl(
     QueryPlan & query_plan,
