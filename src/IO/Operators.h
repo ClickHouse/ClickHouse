@@ -10,6 +10,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
+
 /** Implements the ability to write and read data in/from WriteBuffer/ReadBuffer
   *  with the help of << and >> operators and also manipulators,
   *  providing a way of using, similar to iostreams.
