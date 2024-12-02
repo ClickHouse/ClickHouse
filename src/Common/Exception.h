@@ -3,8 +3,6 @@
 #include <base/defines.h>
 #include <base/errnoToString.h>
 #include <base/int8_to_string.h>
-#include <base/scope_guard.h>
-#include <Common/Logger.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/StackTrace.h>
 #include <Core/LogsLevel.h>
@@ -18,7 +16,15 @@
 #include <Poco/Exception.h>
 
 
-namespace Poco { class Logger; }
+namespace Poco
+{
+class Channel;
+class Logger;
+using LoggerPtr = std::shared_ptr<Logger>;
+}
+
+using LoggerPtr = std::shared_ptr<Poco::Logger>;
+using LoggerRawPtr = Poco::Logger *;
 
 namespace DB
 {
@@ -27,18 +33,6 @@ class AtomicLogger;
 
 /// This flag can be set for testing purposes - to check that no exceptions are thrown.
 extern bool terminate_on_any_exception;
-
-/// This flag controls if error statistics should be updated when an exception is thrown. These
-/// statistics are shown for example in system.errors. Defaults to true. If the error is internal,
-/// non-critical, and handled otherwise it is useful to disable the statistics update and not
-/// alarm the user needlessly.
-extern thread_local bool update_error_statistics;
-
-/// Disable the update of error statistics
-#define DO_NOT_UPDATE_ERROR_STATISTICS() \
-    update_error_statistics = false; \
-    SCOPE_EXIT({ update_error_statistics = true; })
-
 
 class Exception : public Poco::Exception
 {

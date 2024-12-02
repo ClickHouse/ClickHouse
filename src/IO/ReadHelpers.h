@@ -40,8 +40,6 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/VarInt.h>
 
-#include <pcg_random.hpp>
-
 static constexpr auto DEFAULT_MAX_STRING_SIZE = 1_GiB;
 
 namespace DB
@@ -1916,26 +1914,6 @@ bool loadAtPosition(ReadBuffer & in, Memory<Allocator<false>> & memory, char * &
 /// Skip data until start of the next row or eof (the end of row is determined by two delimiters:
 /// row_after_delimiter and row_between_delimiter).
 void skipToNextRowOrEof(PeekableReadBuffer & buf, const String & row_after_delimiter, const String & row_between_delimiter, bool skip_spaces);
-
-struct PcgDeserializer
-{
-    static void deserializePcg32(pcg32_fast & rng, ReadBuffer & buf)
-    {
-        decltype(rng.state_) multiplier, increment, state;
-        readText(multiplier, buf);
-        assertChar(' ', buf);
-        readText(increment, buf);
-        assertChar(' ', buf);
-        readText(state, buf);
-
-        if (multiplier != pcg32_fast::multiplier())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect multiplier in pcg32: expected {}, got {}", pcg32_fast::multiplier(), multiplier);
-        if (increment != pcg32_fast::increment())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect increment in pcg32: expected {}, got {}", pcg32_fast::increment(), increment);
-
-        rng.state_ = state;
-    }
-};
 
 void readParsedValueIntoString(String & s, ReadBuffer & buf, std::function<void(ReadBuffer &)> parse_func);
 
