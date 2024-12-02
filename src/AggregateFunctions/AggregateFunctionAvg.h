@@ -10,7 +10,6 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionSum.h>
 #include <Core/DecimalFunctions.h>
-#include <Core/IResolvedFunction.h>
 
 #include "config.h"
 
@@ -220,6 +219,7 @@ public:
     {
         if constexpr (canBeNativeType<Numerator>() && canBeNativeType<Denominator>())
             return compileGetResultImpl(builder, aggregate_data_ptr);
+        return nullptr;
     }
 
 #endif

@@ -15,7 +15,6 @@
 #include <Common/LocalDate.h>
 #include <Common/LocalDateTime.h>
 #include <Common/transformEndianness.h>
-#include <base/StringRef.h>
 #include <base/arithmeticOverflow.h>
 #include <base/unit.h>
 
@@ -1709,8 +1708,8 @@ inline void skipWhitespaceIfAny(ReadBuffer & buf, bool one_line = false)
 }
 
 /// Skips json value.
-void skipJSONField(ReadBuffer & buf, StringRef name_of_field, const FormatSettings::JSON & settings);
-bool trySkipJSONField(ReadBuffer & buf, StringRef name_of_field, const FormatSettings::JSON & settings);
+void skipJSONField(ReadBuffer & buf, std::string_view name_of_field, const FormatSettings::JSON & settings);
+bool trySkipJSONField(ReadBuffer & buf, std::string_view name_of_field, const FormatSettings::JSON & settings);
 
 
 /** Read serialized exception.
