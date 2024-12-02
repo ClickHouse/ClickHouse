@@ -176,14 +176,12 @@ private:
     {
         if (result.empty())
         {
-            String unique_array_join_name = fmt::format("__array_join_{}", ++next_id);
-
             for (auto & array_join_expression : array_join->getJoinExpressions())
             {
                 auto * array_join_column = array_join_expression->as<ColumnNode>();
                 chassert(array_join_column != nullptr);
 
-                String unique_expression_name = fmt::format("{}.{}", unique_array_join_name, array_join_column->getColumnName());
+                String unique_expression_name = fmt::format("__array_join_exp_{}", ++next_id);
                 result.emplace(array_join_column->getColumnName(), unique_expression_name);
 
                 auto replacement_column = array_join_column->getColumn();
