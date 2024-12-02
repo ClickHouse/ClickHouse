@@ -120,7 +120,10 @@ public:
     {
         auto & b = static_cast<llvm::IRBuilder<> &>(builder);
         if (arguments[0].type->isNullable())
-            return b.CreateExtractValue(arguments[0].value, {1});
+        {
+            auto * is_null = b.CreateExtractValue(arguments[0].value, {1});
+            return b.CreateSelect(is_null, b.getInt8(1), b.getInt8(0));
+        }
         else
             return b.getInt8(0);
     }
