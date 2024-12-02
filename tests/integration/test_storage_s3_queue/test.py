@@ -279,7 +279,7 @@ def create_mv(
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
 def test_delete_after_processing(started_cluster, mode, engine_name):
     node = started_cluster.instances["instance"]
-    table_name = f"test.delete_after_processing_{mode}_{engine_name}"
+    table_name = f"delete_after_processing_{mode}_{engine_name}"
     dst_table_name = f"{table_name}_dst"
     files_path = f"{table_name}_data"
     files_num = 5
