@@ -35,7 +35,7 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* n
     QueryPlan::Node * node = parent_node;
 
     /// This optimization pass doesn't change the structure of the query plan.
-    const size_t updated_layers = 0;
+    constexpr size_t updated_layers = 0;
 
     /// Expect this query plan:
     /// LimitStep
@@ -91,17 +91,8 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* n
     /// The ActionDAG of the ExpressionStep underneath SortingStep may have arbitrary output nodes (e.g. stuff
     /// in the SELECT clause). Find the output node which corresponds to the first ORDER BY clause.
     const ActionsDAG & expression = expression_step->getExpression();
-    const ActionsDAG::NodeRawConstPtrs & outputs = expression.getOutputs();
-    const ActionsDAG::Node * sort_column_node = nullptr;
-    for (const auto * output : outputs)
-    {
-        if (output->result_name == sort_column && output->type == ActionsDAG::ActionType::FUNCTION)
-        {
-            sort_column_node = output;
-            break;
-        }
-    }
-    if (sort_column_node == nullptr)
+    const ActionsDAG::Node * sort_column_node = expression.tryFindInOutputs(sort_column);
+    if (sort_column_node == nullptr || sort_column_node->type != ActionsDAG::ActionType::FUNCTION)
         return updated_layers;
 
     /// Extract distance_function
@@ -145,7 +136,7 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* n
             {
                 Field::Types::Which field_array_value_type = field_array_value.getType();
                 if (field_array_value_type != Field::Types::Float64)
-                    break;
+                    return updated_layers;
                 Float64 float64 = field_array_value.safeGet<Float64>();
                 reference_vector.push_back(float64);
             }

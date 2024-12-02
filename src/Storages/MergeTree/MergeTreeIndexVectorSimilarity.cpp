@@ -421,6 +421,8 @@ bool MergeTreeIndexConditionVectorSimilarity::mayBeTrueOnGranule(MergeTreeIndexG
 
 bool MergeTreeIndexConditionVectorSimilarity::alwaysUnknownOrTrue() const
 {
+    /// The vector similarity index was build for a specific distance function ("metric_kind").
+    /// We can only it for vector search if the distance function used in the SELECT query is the same.
     bool distance_function_in_query_and_distance_function_in_index_match = parameters &&
         ((parameters->distance_function == "L2Distance" && metric_kind == unum::usearch::metric_kind_t::l2sq_k)
         || (parameters->distance_function == "cosineDistance" && metric_kind == unum::usearch::metric_kind_t::cos_k));

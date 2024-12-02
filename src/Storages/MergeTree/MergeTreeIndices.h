@@ -195,7 +195,7 @@ struct IMergeTreeIndex
         const std::optional<VectorSearchParameters> & /*parameters*/) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "createIndexCondition is not implemented for index of type {}", index.type);
+            "createIndexCondition with vector search parameters is not implemented for index of type {}", index.type);
     }
 
     virtual bool isVectorSimilarityIndex() const { return false; }

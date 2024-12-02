@@ -4,8 +4,7 @@
 
 SET allow_experimental_vector_similarity_index = 1;
 
--- Test what happens if the analyzer is disabled
-
+-- Test that vector search also works if the analyzer is disabled
 SET enable_analyzer = 0;
 
 DROP TABLE IF EXISTS tab;
