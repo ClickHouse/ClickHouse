@@ -485,13 +485,13 @@ public:
     }
     template <typename T> auto safeGet() const &&
     {
-        return safeGet<T>();
+        return std::move(const_cast<Field *>(this)->safeGet<T>());
     }
 
     template <typename T> auto & safeGet() &;
     template <typename T> auto safeGet() &&
     {
-        return safeGet<T>();
+        return std::move(safeGet<T>());
     }
 
     bool operator< (const Field & rhs) const
