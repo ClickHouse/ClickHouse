@@ -35,7 +35,10 @@ public:
         return writer->getIndexGranularity();
     }
 
-    PlainMarksByName releaseCachedMarks();
+    PlainMarksByName releaseCachedMarks()
+    {
+        return writer ? writer->releaseCachedMarks() : PlainMarksByName{};
+    }
 
     size_t getNumberOfOpenStreams() const
     {
@@ -43,7 +46,6 @@ public:
     }
 
 protected:
-
     /// Remove all columns marked expired in data_part. Also, clears checksums
     /// and columns array. Return set of removed files names.
     NameSet removeEmptyColumnsFromPart(

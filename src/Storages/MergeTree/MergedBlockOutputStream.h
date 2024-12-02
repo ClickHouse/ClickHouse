@@ -24,6 +24,7 @@ public:
         CompressionCodecPtr default_codec_,
         MergeTreeIndexGranularityPtr index_granularity_ptr,
         TransactionID tid,
+        size_t part_uncompressed_bytes,
         bool reset_columns_ = false,
         bool blocks_are_granules_size = false,
         const WriteSettings & write_settings = {});

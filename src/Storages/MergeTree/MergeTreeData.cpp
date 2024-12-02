@@ -238,6 +238,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool prewarm_mark_cache;
     extern const MergeTreeSettingsBool primary_key_lazy_load;
     extern const MergeTreeSettingsBool enforce_index_structure_match_on_partition_manipulation;
+    extern const MergeTreeSettingsUInt64 min_bytes_to_prewarm_caches;
 }
 
 namespace ServerSetting
@@ -2366,17 +2367,29 @@ PrimaryIndexCachePtr MergeTreeData::getPrimaryIndexCache() const
     return getContext()->getPrimaryIndexCache();
 }
 
-PrimaryIndexCachePtr MergeTreeData::getPrimaryIndexCacheToPrewarm() const
+PrimaryIndexCachePtr MergeTreeData::getPrimaryIndexCacheToPrewarm(size_t part_uncompressed_bytes) const
 {
     if (!(*getSettings())[MergeTreeSetting::prewarm_primary_key_cache])
+        return nullptr;
+
+    /// Do not load data to caches for small parts because
+    /// they will be likely replaced by merge immediately.
+    size_t min_bytes_to_prewarm = (*getSettings())[MergeTreeSetting::min_bytes_to_prewarm_caches];
+    if (part_uncompressed_bytes && part_uncompressed_bytes < min_bytes_to_prewarm)
         return nullptr;
 
     return getPrimaryIndexCache();
 }
 
-MarkCachePtr MergeTreeData::getMarkCacheToPrewarm() const
+MarkCachePtr MergeTreeData::getMarkCacheToPrewarm(size_t part_uncompressed_bytes) const
 {
     if (!(*getSettings())[MergeTreeSetting::prewarm_mark_cache])
+        return nullptr;
+
+    /// Do not load data to caches for small parts because
+    /// they will be likely replaced by merge immediately.
+    size_t min_bytes_to_prewarm = (*getSettings())[MergeTreeSetting::min_bytes_to_prewarm_caches];
+    if (part_uncompressed_bytes && part_uncompressed_bytes < min_bytes_to_prewarm)
         return nullptr;
 
     return getContext()->getMarkCache();
@@ -9035,7 +9048,8 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         ColumnsStatistics{},
         compression_codec,
         std::make_shared<MergeTreeIndexGranularityAdaptive>(),
-        txn ? txn->tid : Tx::PrehistoricTID);
+        txn ? txn->tid : Tx::PrehistoricTID,
+        /*part_uncompressed_bytes=*/ 0);
 
     bool sync_on_insert = (*settings)[MergeTreeSetting::fsync_after_insert];
 
@@ -9108,14 +9122,14 @@ void MergeTreeData::unloadPrimaryKeys()
     }
 }
 
-size_t MergeTreeData::unloadPrimaryKeysOfOutdatedParts()
+size_t MergeTreeData::unloadPrimaryKeysAndClearCachesOfOutdatedParts()
 {
     /// If the method is already called from another thread, then we don't need to do anything.
     std::unique_lock lock(unload_primary_key_mutex, std::defer_lock);
     if (!lock.try_lock())
         return 0;
 
-    DataPartsVector parts_to_unload_index;
+    DataPartsVector parts_to_clear;
 
     {
         auto parts_lock = lockParts();
@@ -9126,18 +9140,22 @@ size_t MergeTreeData::unloadPrimaryKeysOfOutdatedParts()
             /// Outdated part may be hold by SELECT query and still needs the index.
             /// This check requires lock of index_mutex but if outdated part is unique then there is no
             /// contention on it, so it's relatively cheap and it's ok to check under a global parts lock.
-            if (isSharedPtrUnique(part) && part->isIndexLoaded())
-                parts_to_unload_index.push_back(part);
+            if (isSharedPtrUnique(part) && (part->isIndexLoaded() || part->mayStoreDataInCaches()))
+                parts_to_clear.push_back(part);
         }
     }
 
-    for (const auto & part : parts_to_unload_index)
+    for (const auto & part : parts_to_clear)
     {
-        const_cast<IMergeTreeDataPart &>(*part).unloadIndex();
+        auto & part_mut = const_cast<IMergeTreeDataPart &>(*part);
+
+        part_mut.unloadIndex();
+        part_mut.clearCaches();
+
         LOG_TEST(log, "Unloaded primary key for outdated part {}", part->name);
     }
 
-    return parts_to_unload_index.size();
+    return parts_to_clear.size();
 }
 
 void MergeTreeData::verifySortingKey(const KeyDescription & sorting_key)

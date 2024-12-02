@@ -173,6 +173,9 @@ namespace ProfileEvents
     /// Increment a counter for log messages.
     void incrementForLogMessage(Poco::Message::Priority priority);
 
+    /// Increment time consumed by logging.
+    void incrementLoggerElapsedNanoseconds(UInt64 ns);
+
     /// Get name of event by identifier. Returns statically allocated string.
     const char * getName(Event event);
 

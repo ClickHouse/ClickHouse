@@ -515,8 +515,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
     prewarmCaches(
         getActivePartsLoadingThreadPool().get(),
-        getMarkCacheToPrewarm(),
-        getPrimaryIndexCacheToPrewarm());
+        getMarkCacheToPrewarm(0),
+        getPrimaryIndexCacheToPrewarm(0));
 
     if (LoadingStrictnessLevel::ATTACH <= mode)
     {
@@ -5089,13 +5089,15 @@ bool StorageReplicatedMergeTree::fetchPart(
                 ProfileEvents::increment(ProfileEvents::ObsoleteReplicatedParts);
             }
 
-            if (auto mark_cache = getMarkCacheToPrewarm())
+            size_t bytes_uncompressed = part->getBytesUncompressedOnDisk();
+
+            if (auto mark_cache = getMarkCacheToPrewarm(bytes_uncompressed))
             {
                 auto column_names = getColumnsToPrewarmMarks(*getSettings(), part->getColumns());
                 part->loadMarksToCache(column_names, mark_cache.get());
             }
 
-            if (auto index_cache = getPrimaryIndexCacheToPrewarm())
+            if (auto index_cache = getPrimaryIndexCacheToPrewarm(bytes_uncompressed))
             {
                 part->loadIndexToCache(*index_cache);
             }

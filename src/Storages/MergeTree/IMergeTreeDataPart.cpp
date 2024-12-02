@@ -387,7 +387,7 @@ IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::getIndex() const
 
 IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::loadIndexToCache(PrimaryIndexCache & index_cache) const
 {
-    auto key = PrimaryIndexCache::hash(getDataPartStorage().getFullPath());
+    auto key = PrimaryIndexCache::hash(getRelativePathOfActivePart());
     auto callback = [this] { return loadIndex(); };
     return index_cache.getOrSet(key, callback);
 }
@@ -398,12 +398,21 @@ void IMergeTreeDataPart::moveIndexToCache(PrimaryIndexCache & index_cache)
     if (!index)
         return;
 
-    auto key = PrimaryIndexCache::hash(getDataPartStorage().getFullPath());
+    auto key = PrimaryIndexCache::hash(getRelativePathOfActivePart());
     index_cache.set(key, std::const_pointer_cast<Index>(index));
     index.reset();
 
     for (const auto & [_, projection] : projection_parts)
         projection->moveIndexToCache(index_cache);
+}
+
+void IMergeTreeDataPart::removeIndexFromCache(PrimaryIndexCache * index_cache) const
+{
+    if (!index_cache)
+        return;
+
+    auto key = PrimaryIndexCache::hash(getRelativePathOfActivePart());
+    index_cache->remove(key);
 }
 
 void IMergeTreeDataPart::setIndex(Columns index_columns)
@@ -574,17 +583,49 @@ bool IMergeTreeDataPart::isMovingPart() const
     return part_directory_path.parent_path().filename() == "moving";
 }
 
+void IMergeTreeDataPart::clearCaches()
+{
+    if (cleared_data_in_caches.exchange(true) || is_duplicate)
+        return;
+
+    size_t uncompressed_bytes = getBytesUncompressedOnDisk();
+
+    /// Remove index and marks from cache if it was prewarmed to avoid threshing it with outdated data.
+    /// Do not remove in other cases to avoid extra contention on caches.
+    removeMarksFromCache(storage.getMarkCacheToPrewarm(uncompressed_bytes).get());
+    removeIndexFromCache(storage.getPrimaryIndexCacheToPrewarm(uncompressed_bytes).get());
+}
+
+bool IMergeTreeDataPart::mayStoreDataInCaches() const
+{
+    size_t uncompressed_bytes = getBytesUncompressedOnDisk();
+
+    auto mark_cache = storage.getMarkCacheToPrewarm(uncompressed_bytes);
+    auto index_cache = storage.getPrimaryIndexCacheToPrewarm(uncompressed_bytes);
+
+    return (mark_cache || index_cache) && !cleared_data_in_caches;
+}
+
 void IMergeTreeDataPart::removeIfNeeded() noexcept
 {
     assert(assertHasValidVersionMetadata());
-    if (!is_temp && state != MergeTreeDataPartState::DeleteOnDestroy)
-        return;
-
     std::string path;
+
     try
     {
         path = getDataPartStorage().getRelativePath();
+        clearCaches();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("while removing part {} with path {}", name, path));
+    }
 
+    if (!is_temp && state != MergeTreeDataPartState::DeleteOnDestroy)
+        return;
+
+    try
+    {
         if (!getDataPartStorage().exists()) // path
             return;
 
@@ -2111,6 +2152,11 @@ std::optional<String> IMergeTreeDataPart::getRelativePathForDetachedPart(const S
     if (auto path = getRelativePathForPrefix(prefix, /* detached */ true, broken))
         return fs::path(MergeTreeData::DETACHED_DIR_NAME) / *path;
     return {};
+}
+
+String IMergeTreeDataPart::getRelativePathOfActivePart() const
+{
+    return fs::path(getDataPartStorage().getFullRootPath()) / name / "";
 }
 
 void IMergeTreeDataPart::renameToDetached(const String & prefix)

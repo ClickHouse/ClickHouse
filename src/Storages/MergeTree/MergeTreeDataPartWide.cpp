@@ -244,6 +244,27 @@ void MergeTreeDataPartWide::loadMarksToCache(const Names & column_names, MarkCac
         loader->loadMarks();
 }
 
+void MergeTreeDataPartWide::removeMarksFromCache(MarkCache * mark_cache) const
+{
+    if (!mark_cache)
+        return;
+
+    const auto & serializations = getSerializations();
+    for (const auto & [column_name, serialization] : serializations)
+    {
+        serialization->enumerateStreams([&](const auto & subpath)
+        {
+            auto stream_name = getStreamNameForColumn(column_name, subpath, checksums);
+            if (!stream_name)
+                return;
+
+            auto mark_path = index_granularity_info.getMarksFilePath(*stream_name);
+            auto key = MarkCache::hash(fs::path(getRelativePathOfActivePart()) / mark_path);
+            mark_cache->remove(key);
+        });
+    }
+}
+
 bool MergeTreeDataPartWide::isStoredOnRemoteDisk() const
 {
     return getDataPartStorage().isStoredOnRemoteDisk();

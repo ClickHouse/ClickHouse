@@ -38,6 +38,7 @@ struct FormatSettings
     bool try_infer_variant = false;
 
     bool seekable_read = true;
+    String composed_data_type_output_format_mode = "default";
     UInt64 max_rows_to_read_for_schema_inference = 25000;
     UInt64 max_bytes_to_read_for_schema_inference = 32 * 1024 * 1024;
 

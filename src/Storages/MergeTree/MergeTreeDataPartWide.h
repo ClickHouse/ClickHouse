@@ -52,6 +52,7 @@ public:
     std::optional<time_t> getColumnModificationTime(const String & column_name) const override;
 
     void loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const override;
+    void removeMarksFromCache(MarkCache * mark_cache) const override;
 
 protected:
     static void loadIndexGranularityImpl(
