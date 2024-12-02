@@ -63,7 +63,7 @@ MarksInCompressedFile::MarksInCompressedFile(const PlainArray & marks)
 
     // Overallocate by +1 element to let the bit packing/unpacking do less bounds checking.
     size_t packed_length = (packed_bits + 63) / 64 + 1;
-    packed.reserve(packed_length);
+    packed.reserve_exact(packed_length);
     packed.resize_fill(packed_length);
 
     // Second pass: write out the packed marks.
@@ -97,7 +97,7 @@ std::tuple<const MarksInCompressedFile::BlockInfo *, size_t> MarksInCompressedFi
 
 size_t MarksInCompressedFile::approximateMemoryUsage() const
 {
-    return sizeof(*this) + blocks.size() * sizeof(blocks[0]) + packed.size() * sizeof(packed[0]);
+    return sizeof(*this) + blocks.allocated_bytes() + packed.allocated_bytes();
 }
 
 }
