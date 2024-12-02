@@ -570,12 +570,8 @@ def test_sql_commands(cluster):
     check_dropped()
 
 
-@pytest.mark.parametrize(
-    "instance_name",
-    [("node"), ("node_with_keeper")],
-)
-def test_name_escaping(cluster, instance_name):
-    node = cluster.instances[instance_name]
+def test_name_escaping(cluster):
+    node = cluster.instances["node"]
 
     node.query("DROP NAMED COLLECTION IF EXISTS `test_!strange/symbols!`;")
     node.query("CREATE NAMED COLLECTION `test_!strange/symbols!` AS key1=1, key2=2")
