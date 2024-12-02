@@ -5756,6 +5756,9 @@ Allows creation of [Dynamic](../../sql-reference/data-types/dynamic.md) data typ
     DECLARE(Bool, allow_experimental_json_type, false, R"(
 Allows creation of [JSON](../../sql-reference/data-types/newjson.md) data type.
 )", BETA) ALIAS(enable_json_type) \
+    DECLARE(Bool, allow_general_join_algorithm, true, R"(
+TODO(antaljanosbenjamon)
+)", 0) \
     \
     \
     /* ####################################################### */ \

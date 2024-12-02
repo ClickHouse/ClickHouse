@@ -55,6 +55,7 @@ namespace Setting
     extern const SettingsBool join_use_nulls;
     extern const SettingsUInt64 max_size_to_preallocate_for_joins;
     extern const SettingsMaxThreads max_threads;
+    extern const SettingsBool allow_general_join_algorithm;
 }
 
 namespace ServerSetting
@@ -430,6 +431,181 @@ JoinClauses makeCrossProduct(const JoinClauses & lhs, const JoinClauses & rhs)
     return result;
 }
 
+void buildJoinClause(
+    ActionsDAG & left_dag,
+    ActionsDAG & right_dag,
+    ActionsDAG & mixed_dag,
+    const PlannerContextPtr & planner_context,
+    const QueryTreeNodePtr & join_expression,
+    const TableExpressionSet & left_table_expressions,
+    const TableExpressionSet & right_table_expressions,
+    const JoinNode & join_node,
+    JoinClause & join_clause)
+{
+    std::string function_name;
+    auto * function_node = join_expression->as<FunctionNode>();
+    if (function_node)
+        function_name = function_node->getFunction()->getName();
+
+    /// For 'and' function go into children
+    if (function_name == "and")
+    {
+        for (const auto & child : function_node->getArguments())
+        {
+            buildJoinClause(
+                left_dag,
+                right_dag,
+                mixed_dag,
+                planner_context,
+                child,
+                left_table_expressions,
+                right_table_expressions,
+                join_node,
+                join_clause);
+        }
+
+        return;
+    }
+
+    auto asof_inequality = getASOFJoinInequality(function_name);
+    bool is_asof_join_inequality = join_node.getStrictness() == JoinStrictness::Asof && asof_inequality != ASOFJoinInequality::None;
+
+    if (function_name == "equals" || function_name == "isNotDistinctFrom" || is_asof_join_inequality)
+    {
+        const auto left_child = function_node->getArguments().getNodes().at(0);
+        const auto right_child = function_node->getArguments().getNodes().at(1);
+
+        auto left_expression_sides
+            = extractJoinTableSidesFromExpression(left_child.get(), left_table_expressions, right_table_expressions, join_node);
+
+        auto right_expression_sides
+            = extractJoinTableSidesFromExpression(right_child.get(), left_table_expressions, right_table_expressions, join_node);
+
+        if (left_expression_sides.empty() && right_expression_sides.empty())
+        {
+            throw Exception(
+                ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                "JOIN {} ON expression expected non-empty left and right table expressions",
+                join_node.formatASTForErrorMessage());
+        }
+        if (left_expression_sides.size() == 1 && right_expression_sides.empty())
+        {
+            auto expression_side = *left_expression_sides.begin();
+            auto & dag = expression_side == JoinTableSide::Left ? left_dag : right_dag;
+            const auto * node = appendExpression(dag, join_expression, planner_context, join_node);
+            join_clause.addCondition(expression_side, node);
+        }
+        else if (left_expression_sides.empty() && right_expression_sides.size() == 1)
+        {
+            auto expression_side = *right_expression_sides.begin();
+            auto & dag = expression_side == JoinTableSide::Left ? left_dag : right_dag;
+            const auto * node = appendExpression(dag, join_expression, planner_context, join_node);
+            join_clause.addCondition(expression_side, node);
+        }
+        else if (left_expression_sides.size() == 1 && right_expression_sides.size() == 1)
+        {
+            auto left_expression_side = *left_expression_sides.begin();
+            auto right_expression_side = *right_expression_sides.begin();
+
+            if (left_expression_side != right_expression_side)
+            {
+                auto left_key = left_child;
+                auto right_key = right_child;
+
+                if (left_expression_side == JoinTableSide::Right)
+                {
+                    left_key = right_child;
+                    right_key = left_child;
+                    asof_inequality = reverseASOFJoinInequality(asof_inequality);
+                }
+
+                const auto * left_node = appendExpression(left_dag, left_key, planner_context, join_node);
+                const auto * right_node = appendExpression(right_dag, right_key, planner_context, join_node);
+
+                if (is_asof_join_inequality)
+                {
+                    if (join_clause.hasASOF())
+                    {
+                        throw Exception(
+                            ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                            "JOIN {} ASOF JOIN expects exactly one inequality in ON section",
+                            join_node.formatASTForErrorMessage());
+                    }
+
+                    join_clause.addASOFKey(left_node, right_node, asof_inequality);
+                }
+                else
+                {
+                    bool null_safe_comparison = function_name == "isNotDistinctFrom";
+                    join_clause.addKey(left_node, right_node, null_safe_comparison);
+                }
+            }
+            else
+            {
+                auto & dag = left_expression_side == JoinTableSide::Left ? left_dag : right_dag;
+                const auto * node = appendExpression(dag, join_expression, planner_context, join_node);
+                join_clause.addCondition(left_expression_side, node);
+            }
+        }
+        else
+        {
+            auto support_mixed_join_condition
+                = planner_context->getQueryContext()->getSettingsRef()[Setting::allow_experimental_join_condition];
+            auto join_use_nulls = planner_context->getQueryContext()->getSettingsRef()[Setting::join_use_nulls];
+            /// If join_use_nulls = true, the columns' nullability will be changed later which make this expression not right.
+            if (support_mixed_join_condition && !join_use_nulls)
+            {
+                /// expression involves both tables.
+                /// `expr1(left.col1, right.col2) == expr2(left.col3, right.col4)`
+                const auto * node = appendExpression(mixed_dag, join_expression, planner_context, join_node);
+                join_clause.addMixedCondition(node);
+            }
+            else
+            {
+                throw Exception(
+                    ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                    "JOIN {} join expression contains column from left and right table, you may try experimental support of this feature "
+                    "by `SET allow_experimental_join_condition = 1`",
+                    join_node.formatASTForErrorMessage());
+            }
+        }
+    }
+    else
+    {
+        auto expression_sides
+            = extractJoinTableSidesFromExpression(join_expression.get(), left_table_expressions, right_table_expressions, join_node);
+        // expression_sides.empty() = true, the expression is constant
+        if (expression_sides.empty() || expression_sides.size() == 1)
+        {
+            auto expression_side = expression_sides.empty() ? JoinTableSide::Right : *expression_sides.begin();
+            auto & dag = expression_side == JoinTableSide::Left ? left_dag : right_dag;
+            const auto * node = appendExpression(dag, join_expression, planner_context, join_node);
+            join_clause.addCondition(expression_side, node);
+        }
+        else
+        {
+            auto support_mixed_join_condition
+                = planner_context->getQueryContext()->getSettingsRef()[Setting::allow_experimental_join_condition];
+            auto join_use_nulls = planner_context->getQueryContext()->getSettingsRef()[Setting::join_use_nulls];
+            /// If join_use_nulls = true, the columns' nullability will be changed later which make this expression not right.
+            if (support_mixed_join_condition && !join_use_nulls)
+            {
+                /// expression involves both tables.
+                const auto * node = appendExpression(mixed_dag, join_expression, planner_context, join_node);
+                join_clause.addMixedCondition(node);
+            }
+            else
+            {
+                throw Exception(
+                    ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                    "JOIN {} join expression contains column from left and right table, you may try experimental support of this feature "
+                    "by `SET allow_experimental_join_condition = 1`",
+                    join_node.formatASTForErrorMessage());
+            }
+        }
+    }
+}
+
 JoinClauses buildJoinClauses(
     ActionsDAG & left_dag,
     ActionsDAG & right_dag,
@@ -528,6 +704,78 @@ JoinClauses buildJoinClauses(
     return std::move(built_clauses.at(join_expression.get()));
 }
 
+std::pair<JoinClauses, bool /*is_inequal_join*/> buildAllJoinClauses(
+    ActionsDAG & left_join_actions,
+    ActionsDAG & right_join_actions,
+    ActionsDAG & mixed_join_actions,
+    const PlannerContextPtr & planner_context,
+    const QueryTreeNodePtr & join_expression,
+    const TableExpressionSet & join_left_table_expressions,
+    const TableExpressionSet & join_right_table_expressions,
+    const JoinNode & join_node,
+    const FunctionNode & function_node)
+{
+    if (planner_context->getQueryContext()->getSettingsRef()[Setting::allow_general_join_algorithm])
+    {
+        auto join_clauses = buildJoinClauses(
+            left_join_actions,
+            right_join_actions,
+            mixed_join_actions,
+            planner_context,
+            join_expression,
+            join_left_table_expressions,
+            join_right_table_expressions,
+            join_node);
+
+        const auto is_inequal_join = std::any_of(
+            join_clauses.begin(),
+            join_clauses.end(),
+            [](const JoinClause & clause) { return !clause.getMixedFilterConditionNodes().empty(); });
+
+        return std::make_pair(std::move(join_clauses), is_inequal_join);
+    }
+
+    bool is_inequal_join = false;
+    JoinClauses join_clauses;
+    const auto & function_name = function_node.getFunction()->getName();
+    if (function_name == "or")
+    {
+        for (const auto & child : function_node.getArguments())
+        {
+            join_clauses.emplace_back();
+
+            buildJoinClause(
+                left_join_actions,
+                right_join_actions,
+                mixed_join_actions,
+                planner_context,
+                child,
+                join_left_table_expressions,
+                join_right_table_expressions,
+                join_node,
+                join_clauses.back());
+            is_inequal_join |= !join_clauses.back().getMixedFilterConditionNodes().empty();
+        }
+    }
+    else
+    {
+        join_clauses.emplace_back();
+
+        buildJoinClause(
+            left_join_actions,
+            right_join_actions,
+            mixed_join_actions,
+            planner_context,
+            join_expression,
+            join_left_table_expressions,
+            join_right_table_expressions,
+            join_node,
+            join_clauses.back());
+        is_inequal_join |= !join_clauses.back().getMixedFilterConditionNodes().empty();
+    }
+    return std::make_pair(std::move(join_clauses), is_inequal_join);
+}
+
 JoinClausesAndActions buildJoinClausesAndActions(
     const ColumnsWithTypeAndName & left_table_expression_columns,
     const ColumnsWithTypeAndName & right_table_expression_columns,
@@ -598,8 +846,9 @@ JoinClausesAndActions buildJoinClausesAndActions(
     auto join_right_table_expressions = extractTableExpressionsSet(join_node.getRightTableExpression());
 
     JoinClausesAndActions result;
+    bool is_inequal_join;
 
-    result.join_clauses = buildJoinClauses(
+    std::tie(result.join_clauses, is_inequal_join) = buildAllJoinClauses(
         left_join_actions,
         right_join_actions,
         mixed_join_actions,
@@ -607,12 +856,8 @@ JoinClausesAndActions buildJoinClausesAndActions(
         join_expression,
         join_left_table_expressions,
         join_right_table_expressions,
-        join_node);
-
-    const auto is_inequal_join = std::any_of(
-        result.join_clauses.begin(),
-        result.join_clauses.end(),
-        [](const JoinClause & clause) { return !clause.getMixedFilterConditionNodes().empty(); });
+        join_node,
+        *function_node);
 
     auto and_function = FunctionFactory::instance().get("and", planner_context->getQueryContext());
 
