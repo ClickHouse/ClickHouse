@@ -4200,7 +4200,7 @@ private:
     /// nested JSON type name to the JSON type name with reduced parameters (see replaceJSONTypeNameIfNeeded function in DataTypeObject.cpp).
     /// It's done to allow the user to request nested JSON subcolumns without specifying these parameters.
     /// All this means that during conversion from one Object type to another the max_dynamic_types/max_dynamic_paths
-    /// parameters may change and it we should change the parameters of all nested Object types recursively.
+    /// parameters may change and we should change the parameters of all nested Object types recursively.
     /// The next few functions are needed to do this conversion of nested Object types.
 
     /// Convert all nested object types to new provided object type. Go inside Array and Tuple types.
@@ -4381,9 +4381,11 @@ private:
             {
                 typed_paths_are_changed = true;
                 have_new_typed_paths = true;
+                break;
             }
+
             /// Check if type is changed for this typed path.
-            else if (!it->second->equals(*new_type))
+            if (!it->second->equals(*new_type))
             {
                 typed_paths_are_changed = true;
             }
@@ -4598,7 +4600,7 @@ private:
                 /// Check if we need to move this path to typed paths. If yes, cast dynamic column to the required type.
                 if (auto it = new_typed_paths_types.find(path); it != new_typed_paths_types.end())
                     new_typed_paths[path] = typed_paths_wrappers.at(path)(args, it->second, nullptr, column->size());
-                /// Otherwise move cast it to new Dynamic type and move it to new dynamic paths if not skipped.
+                /// Otherwise cast it to new Dynamic type and move it to new dynamic paths if not skipped.
                 else if (!skip_rules_are_changed || !should_skip_path(path))
                     new_dynamic_paths[path] = wrapper_from_old_to_new_dynamic_type(args, new_dynamic_type, nullptr, column->size());
             }
