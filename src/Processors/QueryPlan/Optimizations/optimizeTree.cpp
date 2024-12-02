@@ -229,6 +229,9 @@ void addStepsToBuildSets(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::No
         /// NOTE: frame cannot be safely used after stack was modified.
         auto & frame = stack.back();
 
+        if (frame.next_child == 0)
+            optimizeJoin(*frame.node, nodes);
+
         /// Traverse all children first.
         if (frame.next_child < frame.node->children.size())
         {
