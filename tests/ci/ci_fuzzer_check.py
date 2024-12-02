@@ -138,6 +138,15 @@ def main():
         if not_compressed_fuzzer_log_path.exists():
             paths["fuzzer.log"] = not_compressed_fuzzer_log_path
 
+    # Same idea but with the fuzzer output SQL
+    compressed_fuzzer_output_sql_path = workspace_path / "fuzzer_out.sql.zst"
+    if compressed_fuzzer_output_sql_path.exists():
+        paths["fuzzer_out.sql.zst"] = compressed_fuzzer_log_path
+    else:
+        not_compressed_fuzzer_output_sql_path= workspace_path / "fuzzer_out.sql"
+        if not_compressed_fuzzer_output_sql_path.exists():
+            paths["fuzzer_out.sql"] = not_compressed_fuzzer_log_path
+
     # Try to get status message saved by the fuzzer
     try:
         with open(workspace_path / "status.txt", "r", encoding="utf-8") as status_f:

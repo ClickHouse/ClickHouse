@@ -256,7 +256,7 @@ function fuzz
     # shellcheck disable=SC2012,SC2046
 
     # Setup arguments for the fuzzer
-    OUTPUT_SQL_FILE=out.sql
+    FUZZER_OUTPUT_SQL_FILE=''
 
     if [[ "$FUZZER_TO_RUN" = "AST Fuzzer" ]];
     then
@@ -264,13 +264,13 @@ function fuzz
         FUZZER_ARGS="--query-fuzzer-runs=1000 --create-query-fuzzer-runs=50 --queries-file $QUERIES_FILE $NEW_TESTS_OPT"
     elif [ "$FUZZER_TO_RUN" = "BuzzHouse" ]
     then
-        touch out.sql fuzz.json
-        OUTPUT_SQL_FILE=$(realpath out.sql)
+        touch fuzzer_out.sql fuzz.json
+        FUZZER_OUTPUT_SQL_FILE=$(realpath fuzzer_out.sql)
         BUZZHOUSE_CONFIG_FILE=$(realpath fuzz.json)
 cat << EOF > $BUZZHOUSE_CONFIG_FILE
 {
     "db_file_path": "/var/lib/clickhouse/user_files",
-    "log_path": "$OUTPUT_SQL_FILE",
+    "log_path": "$FUZZER_OUTPUT_SQL_FILE",
     "seed": 0,
     "read_log": false,
     "fuzz_floating_points": false,
@@ -456,9 +456,9 @@ zstd --threads=0 --rm server.log
 zstd --threads=0 --rm fuzzer.log
 
 SQL_LOG_LINK=''
-if [ -f $OUTPUT_SQL_FILE ]; then
-    zstd --threads=0 --rm $OUTPUT_SQL_FILE
-    SQL_LOG_LINK="\n<a href="$OUTPUT_SQL_FILE.zst">$OUTPUT_SQL_FILE.zst</a>"
+if [ -f $FUZZER_OUTPUT_SQL_FILE ]; then
+    zstd --threads=0 --rm $FUZZER_OUTPUT_SQL_FILE
+    SQL_LOG_LINK="\n<a href="$FUZZER_OUTPUT_SQL_FILE.zst">$FUZZER_OUTPUT_SQL_FILE.zst</a>"
 fi
 
 cat > report.html <<EOF ||:
