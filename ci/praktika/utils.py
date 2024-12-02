@@ -107,11 +107,13 @@ class ContextManager:
 
 class Shell:
     @classmethod
-    def get_output_or_raise(cls, command, verbose=False):
+    def get_output_or_raise(cls, command: str, verbose: bool = False) -> str:
         return cls.get_output(command, verbose=verbose, strict=True).strip()
 
     @classmethod
-    def get_output(cls, command, strict=False, verbose=False):
+    def get_output(
+        cls, command: str, strict: bool = False, verbose: bool = False
+    ) -> str:
         if verbose:
             print(f"Run command [{command}]")
         res = subprocess.run(
