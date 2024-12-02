@@ -3,6 +3,7 @@
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
+#include <IO/WriteBufferFromString.h>
 
 namespace Poco
 {
@@ -15,7 +16,6 @@ class AbstractConfiguration;
 namespace DB
 {
 struct CoordinationSettingsImpl;
-class WriteBufferFromOwnString;
 
 /// List of available types supported in CoordinationSettings object
 #define COORDINATION_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \

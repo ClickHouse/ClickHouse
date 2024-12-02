@@ -421,7 +421,7 @@ Syntax: `tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, ran
 
 #### Special-purpose
 
-- Experimental indexes to support approximate nearest neighbor (ANN) search. See [here](annindexes.md) for details.
+- An experimental index to support approximate nearest neighbor search. See [here](annindexes.md) for details.
 - An experimental full-text index to support full-text search. See [here](invertedindexes.md) for details.
 
 ### Functions Support {#functions-support}
@@ -684,8 +684,7 @@ If you perform the `SELECT` query between merges, you may get expired data. To a
 
 **See Also**
 
-- [ttl_only_drop_parts](/docs/en/operations/settings/settings.md/#ttl_only_drop_parts) setting
-
+- [ttl_only_drop_parts](/docs/en/operations/settings/merge-tree-settings#ttl_only_drop_parts) setting
 
 ## Disk types
 

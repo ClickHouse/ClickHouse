@@ -787,12 +787,14 @@ std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoi
 }
 }
 
-static std::shared_ptr<IJoin> tryCreateJoin(JoinAlgorithm algorithm,
+static std::shared_ptr<IJoin> tryCreateJoin(
+    JoinAlgorithm algorithm,
     std::shared_ptr<TableJoin> & table_join,
     const QueryTreeNodePtr & right_table_expression,
     const Block & left_table_expression_header,
     const Block & right_table_expression_header,
-    const PlannerContextPtr & planner_context)
+    const PlannerContextPtr & planner_context,
+    const SelectQueryInfo & select_query_info)
 {
     if (table_join->kind() == JoinKind::Paste)
         return std::make_shared<PasteJoin>(table_join, right_table_expression_header);
@@ -822,7 +824,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(JoinAlgorithm algorithm,
         {
             const auto & settings = query_context->getSettingsRef();
             StatsCollectingParams params{
-                calculateCacheKey(table_join, right_table_expression),
+                calculateCacheKey(table_join, right_table_expression, select_query_info),
                 settings[Setting::collect_hash_table_stats_during_joins],
                 query_context->getServerSettings()[ServerSetting::max_entries_for_hash_table_stats],
                 settings[Setting::max_size_to_preallocate_for_joins]};
@@ -864,11 +866,13 @@ static std::shared_ptr<IJoin> tryCreateJoin(JoinAlgorithm algorithm,
     return nullptr;
 }
 
-std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_join,
+std::shared_ptr<IJoin> chooseJoinAlgorithm(
+    std::shared_ptr<TableJoin> & table_join,
     const QueryTreeNodePtr & right_table_expression,
     const Block & left_table_expression_header,
     const Block & right_table_expression_header,
-    const PlannerContextPtr & planner_context)
+    const PlannerContextPtr & planner_context,
+    const SelectQueryInfo & select_query_info)
 {
     if (table_join->getMixedJoinExpression()
         && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH)
@@ -924,7 +928,14 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
 
     for (auto algorithm : table_join->getEnabledJoinAlgorithms())
     {
-        auto join = tryCreateJoin(algorithm, table_join, right_table_expression, left_table_expression_header, right_table_expression_header, planner_context);
+        auto join = tryCreateJoin(
+            algorithm,
+            table_join,
+            right_table_expression,
+            left_table_expression_header,
+            right_table_expression_header,
+            planner_context,
+            select_query_info);
         if (join)
             return join;
     }
