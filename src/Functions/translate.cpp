@@ -34,30 +34,26 @@ struct TranslateImpl
     {
         iota(map.data(), map.size(), UInt8(0));
 
-        for (size_t i = 0; i < map_from.size(); ++i)
+        size_t min_size = std::min(map_from.size(), map_to.size());
+
+        // Map characters from map_from to map_to for the overlapping range
+        for (size_t i = 0; i < min_size; ++i)
         {
-            if (i < map_to.size())
-            {
-                if (!isASCII(map_from[i]) || !isASCII(map_to[i]))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second and third arguments must be ASCII strings");
-
-                map[map_from[i]] = map_to[i];
-            }
-            else
-            {
-                while (i < map_from.size())
-                {
-                    if (!isASCII(map_from[i]))
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument must be ASCII strings");
-
-                    map[map_from[i]] = ascii_upper_bound + 1;
-                    ++i;
-                }
-                return;
-            }
+            if (!isASCII(map_from[i]) || !isASCII(map_to[i]))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second and third arguments must be ASCII strings");
+            map[static_cast<unsigned char>(map_from[i])] = static_cast<UInt8>(map_to[i]);
         }
 
-        for (size_t i = map_from.size(); i < map_to.size(); ++i)
+        // Handle any remaining characters in map_from by assigning a default value
+        for (size_t i = min_size; i < map_from.size(); ++i)
+        {
+            if (!isASCII(map_from[i]))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument must be ASCII strings");
+            map[static_cast<unsigned char>(map_from[i])] = ascii_upper_bound + 1;
+        }
+
+        // Validate any extra characters in map_to to ensure they are ASCII
+        for (size_t i = min_size; i < map_to.size(); ++i)
         {
             if (!isASCII(map_to[i]))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Third argument must be ASCII strings");
@@ -91,14 +87,12 @@ struct TranslateImpl
             {
                 if (*src <= ascii_upper_bound && map[*src] != ascii_upper_bound + 1)
                 {
-                    *dst = map[*src];
-                    ++dst;
+                    *dst++ = map[*src];
                     ++data_size;
                 }
                 else if (*src > ascii_upper_bound)
                 {
-                    *dst = *src;
-                    ++dst;
+                    *dst++ = *src;
                     ++data_size;
                 }
 
@@ -268,16 +262,13 @@ struct TranslateUTF8Impl
                         auto * it = map.find(*src_code_point);
                         if (it != map.end())
                         {
+                            src += src_len;
                             if (it->getMapped() == max_uint32)
-                            {
-                                src += src_len;
                                 continue;
-                            }
 
                             size_t dst_len = UTF8::convertCodePointToUTF8(it->getMapped(), dst, 4);
                             assert(0 < dst_len && dst_len <= 4);
 
-                            src += src_len;
                             dst += dst_len;
                             data_size += dst_len;
                             continue;
