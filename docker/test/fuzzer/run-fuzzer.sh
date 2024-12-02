@@ -283,12 +283,17 @@ EOF
         exit 1
     fi
 
+    # Workaround to pass that many arguments through the command line. While it works without this
+    # when running the process in the foreground, it fails when we run it in the background, for
+    # some reason.
+    echo $FUZZER_ARGS > fuzzer_args.txt
+
     timeout -s TERM --preserve-status 1m clickhouse-client \
         --max_memory_usage_in_client=1000000000 \
         --receive_timeout=10 \
         --receive_data_timeout_ms=10000 \
         --stacktrace \
-        $FUZZER_ARGS \
+        <(cat fuzzer_args.txt) \
         > fuzzer.log \
         2>&1 &
     fuzzer_pid=$!
