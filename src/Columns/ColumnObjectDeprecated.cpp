@@ -392,14 +392,14 @@ void ColumnObjectDeprecated::Subcolumn::insertRangeFrom(const Subcolumn & src, s
 
         if (n * 3 >= column->size())
         {
-            auto casted_column = castColumn({column, column_type, ""}, least_common_type.get());
-            data.back()->insertRangeFrom(*casted_column, from, n);
+            auto cast_column = castColumn({column, column_type, ""}, least_common_type.get());
+            data.back()->insertRangeFrom(*cast_column, from, n);
             return;
         }
 
-        auto casted_column = column->cut(from, n);
-        casted_column = castColumn({casted_column, column_type, ""}, least_common_type.get());
-        data.back()->insertRangeFrom(*casted_column, 0, n);
+        auto cast_column = column->cut(from, n);
+        cast_column = castColumn({cast_column, column_type, ""}, least_common_type.get());
+        data.back()->insertRangeFrom(*cast_column, 0, n);
     };
 
     size_t pos = 0;

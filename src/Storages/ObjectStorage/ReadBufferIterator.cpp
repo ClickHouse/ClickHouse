@@ -218,7 +218,6 @@ ReadBufferIterator::Data ReadBufferIterator::next()
         }
 
         const auto filename = current_object_info->getFileName();
-        chassert(!filename.empty());
 
         /// file iterator could get new keys after new iteration
         if (read_keys.size() > prev_read_keys_size)

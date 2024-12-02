@@ -162,7 +162,8 @@ bool CachedOnDiskReadBufferFromFile::nextFileSegmentsBatch()
             file_size.value(),
             create_settings,
             info.settings.filesystem_cache_segments_batch_size,
-            user);
+            user,
+            info.settings.filesystem_cache_boundary_alignment);
     }
 
     return !info.file_segments->empty();
