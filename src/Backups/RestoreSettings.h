@@ -155,6 +155,9 @@ struct RestoreSettings
     /// This is used to generate coordination path and for concurrency check
     std::optional<UUID> restore_uuid;
 
+    /// The maximum read speed in bytes per second for a backup. Zero means unlimited.
+    std::optional<UInt64> max_backup_bandwidth;
+
     static RestoreSettings fromRestoreQuery(const ASTBackupQuery & query);
     void copySettingsToQuery(ASTBackupQuery & query) const;
 };
