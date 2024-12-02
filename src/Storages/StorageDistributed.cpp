@@ -161,6 +161,7 @@ namespace Setting
     extern const SettingsBool optimize_skip_unused_shards;
     extern const SettingsUInt64 optimize_skip_unused_shards_limit;
     extern const SettingsUInt64 parallel_distributed_insert_select;
+    extern const SettingsBool prefer_localhost_replica;
 }
 
 namespace DistributedSetting
@@ -1030,7 +1031,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     for (size_t shard_index : collections::range(0, shards_info.size()))
     {
         const auto & shard_info = shards_info[shard_index];
-        if (shard_info.isLocal() && settings.prefer_localhost_replica)
+        if (shard_info.isLocal() && settings[Setting::prefer_localhost_replica])
         {
             InterpreterInsertQuery interpreter(
                 new_query,
