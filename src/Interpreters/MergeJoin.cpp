@@ -603,7 +603,17 @@ void MergeJoin::mergeInMemoryRightBlocks()
 
     /// TODO: there should be no split keys by blocks for RIGHT|FULL JOIN
     builder.addTransform(std::make_shared<MergeSortingTransform>(
-        builder.getHeader(), right_sort_description, max_rows_in_right_block, 0, 0, false, 0, 0, 0, nullptr, 0));
+        builder.getHeader(),
+        right_sort_description,
+        max_rows_in_right_block,
+        /*max_block_bytes=*/0,
+        /*limit_=*/0,
+        /*increase_sort_description_compile_attempts=*/false,
+        /*max_bytes_before_remerge_*/0,
+        /*remerge_lowered_memory_bytes_ratio_*/0,
+        /*max_bytes_before_external_sort_*/0,
+        /*tmp_data_*/nullptr,
+        /*min_free_disk_space_*/0));
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
     PullingPipelineExecutor executor(pipeline);
