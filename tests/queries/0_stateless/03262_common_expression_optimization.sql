@@ -19,68 +19,68 @@ EXPLAIN QUERY TREE dump_ast = 1 SELECT count() FROM x WHERE (A AND B) OR (A AND 
 EXPLAIN QUERY TREE dump_ast = 1 SELECT count() FROM x WHERE (A AND B) OR (A AND C) SETTINGS optimize_extract_common_expressions = 1;
 
 -- Test multiple cases
-SELECT * FROM x WHERE A AND ((B AND C) OR (B AND C AND F)) ORDER BY A, B, C, D, E, F LIMIT 10 SETTINGS optimize_extract_common_expressions = 0;
-SELECT * FROM x WHERE A AND ((B AND C) OR (B AND C AND F)) ORDER BY A, B, C, D, E, F LIMIT 10;
+SELECT * FROM x WHERE A AND ((B AND C) OR (B AND C AND F)) ORDER BY x LIMIT 10 SETTINGS optimize_extract_common_expressions = 0;
+SELECT * FROM x WHERE A AND ((B AND C) OR (B AND C AND F)) ORDER BY x LIMIT 10;
 EXPLAIN QUERY TREE dump_ast = 1 SELECT count() FROM x WHERE A AND ((B AND C) OR (B AND C AND F));
 
-SELECT * FROM x WHERE A AND ((B AND C AND E) OR (B AND C AND F)) ORDER BY A, B, C, D, E, F LIMIT 10 SETTINGS optimize_extract_common_expressions = 0;
-SELECT * FROM x WHERE A AND ((B AND C AND E) OR (B AND C AND F)) ORDER BY A, B, C, D, E, F LIMIT 10;
+SELECT * FROM x WHERE A AND ((B AND C AND E) OR (B AND C AND F)) ORDER BY x LIMIT 10 SETTINGS optimize_extract_common_expressions = 0;
+SELECT * FROM x WHERE A AND ((B AND C AND E) OR (B AND C AND F)) ORDER BY x LIMIT 10;
 EXPLAIN QUERY TREE dump_ast = 1 SELECT count() FROM x WHERE A AND ((B AND C AND E) OR (B AND C AND F));
 
-SELECT * FROM x WHERE A AND ((B AND (C AND E)) OR (B AND C AND F)) ORDER BY A, B, C, D, E, F LIMIT 10 SETTINGS optimize_extract_common_expressions = 0;
-SELECT * FROM x WHERE A AND ((B AND (C AND E)) OR (B AND C AND F)) ORDER BY A, B, C, D, E, F LIMIT 10;
+SELECT * FROM x WHERE A AND ((B AND (C AND E)) OR (B AND C AND F)) ORDER BY x LIMIT 10 SETTINGS optimize_extract_common_expressions = 0;
+SELECT * FROM x WHERE A AND ((B AND (C AND E)) OR (B AND C AND F)) ORDER BY x LIMIT 10;
 EXPLAIN QUERY TREE dump_ast = 1 SELECT count() FROM x WHERE A AND ((B AND (C AND E)) OR (B AND C AND F));
 
-SELECT * FROM x WHERE A AND ((B AND C) OR (B AND D) OR (B AND E)) ORDER BY A, B, C, D, E, F LIMIT 10 SETTINGS optimize_extract_common_expressions = 0;
-SELECT * FROM x WHERE A AND ((B AND C) OR (B AND D) OR (B AND E)) ORDER BY A, B, C, D, E, F LIMIT 10;
+SELECT * FROM x WHERE A AND ((B AND C) OR (B AND D) OR (B AND E)) ORDER BY x LIMIT 10 SETTINGS optimize_extract_common_expressions = 0;
+SELECT * FROM x WHERE A AND ((B AND C) OR (B AND D) OR (B AND E)) ORDER BY x LIMIT 10;
 EXPLAIN QUERY TREE dump_ast = 1 SELECT count() FROM x WHERE A AND ((B AND C) OR (B AND D) OR (B AND E));
 
-SELECT * FROM x WHERE A AND ((B AND C) OR ((B AND D) OR (B AND E))) ORDER BY A, B, C, D, E, F LIMIT 10 SETTINGS optimize_extract_common_expressions = 0;
-SELECT * FROM x WHERE A AND ((B AND C) OR ((B AND D) OR (B AND E))) ORDER BY A, B, C, D, E, F LIMIT 10;
+SELECT * FROM x WHERE A AND ((B AND C) OR ((B AND D) OR (B AND E))) ORDER BY x LIMIT 10 SETTINGS optimize_extract_common_expressions = 0;
+SELECT * FROM x WHERE A AND ((B AND C) OR ((B AND D) OR (B AND E))) ORDER BY x LIMIT 10;
 EXPLAIN QUERY TREE dump_ast = 1 SELECT count() FROM x WHERE A AND ((B AND C) OR ((B AND D) OR (B AND E)));
 
 -- Without AND as a root
-SELECT * FROM x WHERE ((B AND C) OR (B AND C AND F)) ORDER BY A, B, C, D, E, F LIMIT 10 SETTINGS optimize_extract_common_expressions = 0;
-SELECT * FROM x WHERE ((B AND C) OR (B AND C AND F)) ORDER BY A, B, C, D, E, F LIMIT 10;
+SELECT * FROM x WHERE ((B AND C) OR (B AND C AND F)) ORDER BY x LIMIT 10 SETTINGS optimize_extract_common_expressions = 0;
+SELECT * FROM x WHERE ((B AND C) OR (B AND C AND F)) ORDER BY x LIMIT 10;
 EXPLAIN QUERY TREE dump_ast = 1 SELECT count() FROM x WHERE ((B AND C) OR (B AND C AND F));
 
-SELECT * FROM x WHERE ((B AND C AND E) OR (B AND C AND F)) ORDER BY A, B, C, D, E, F LIMIT 10 SETTINGS optimize_extract_common_expressions = 0;
-SELECT * FROM x WHERE ((B AND C AND E) OR (B AND C AND F)) ORDER BY A, B, C, D, E, F LIMIT 10;
+SELECT * FROM x WHERE ((B AND C AND E) OR (B AND C AND F)) ORDER BY x LIMIT 10 SETTINGS optimize_extract_common_expressions = 0;
+SELECT * FROM x WHERE ((B AND C AND E) OR (B AND C AND F)) ORDER BY x LIMIT 10;
 EXPLAIN QUERY TREE dump_ast = 1 SELECT count() FROM x WHERE ((B AND C AND E) OR (B AND C AND F));
 
-SELECT * FROM x WHERE ((B AND (C AND E)) OR (B AND C AND F)) ORDER BY A, B, C, D, E, F LIMIT 10 SETTINGS optimize_extract_common_expressions = 0;
-SELECT * FROM x WHERE ((B AND (C AND E)) OR (B AND C AND F)) ORDER BY A, B, C, D, E, F LIMIT 10;
+SELECT * FROM x WHERE ((B AND (C AND E)) OR (B AND C AND F)) ORDER BY x LIMIT 10 SETTINGS optimize_extract_common_expressions = 0;
+SELECT * FROM x WHERE ((B AND (C AND E)) OR (B AND C AND F)) ORDER BY x LIMIT 10;
 EXPLAIN QUERY TREE dump_ast = 1 SELECT count() FROM x WHERE ((B AND (C AND E)) OR (B AND C AND F));
 
-SELECT * FROM x WHERE ((B AND C) OR (B AND D) OR (B AND E)) ORDER BY A, B, C, D, E, F LIMIT 10 SETTINGS optimize_extract_common_expressions = 0;
-SELECT * FROM x WHERE ((B AND C) OR (B AND D) OR (B AND E)) ORDER BY A, B, C, D, E, F LIMIT 10;
+SELECT * FROM x WHERE ((B AND C) OR (B AND D) OR (B AND E)) ORDER BY x LIMIT 10 SETTINGS optimize_extract_common_expressions = 0;
+SELECT * FROM x WHERE ((B AND C) OR (B AND D) OR (B AND E)) ORDER BY x LIMIT 10;
 EXPLAIN QUERY TREE dump_ast = 1 SELECT count() FROM x WHERE ((B AND C) OR (B AND D) OR (B AND E));
 
-SELECT * FROM x WHERE ((B AND C) OR ((B AND D) OR (B AND E))) ORDER BY A, B, C, D, E, F LIMIT 10 SETTINGS optimize_extract_common_expressions = 0;
-SELECT * FROM x WHERE ((B AND C) OR ((B AND D) OR (B AND E))) ORDER BY A, B, C, D, E, F LIMIT 10;
+SELECT * FROM x WHERE ((B AND C) OR ((B AND D) OR (B AND E))) ORDER BY x LIMIT 10 SETTINGS optimize_extract_common_expressions = 0;
+SELECT * FROM x WHERE ((B AND C) OR ((B AND D) OR (B AND E))) ORDER BY x LIMIT 10;
 EXPLAIN QUERY TREE dump_ast = 1 SELECT count() FROM x WHERE ((B AND C) OR ((B AND D) OR (B AND E)));
 
 -- Complex expression
-SELECT * FROM x WHERE (A AND (sipHash64(C) = sipHash64(D))) OR (B AND (sipHash64(C) = sipHash64(D))) ORDER BY A, B, C, D, E, F LIMIT 10 SETTINGS optimize_extract_common_expressions = 0;
-SELECT * FROM x WHERE (A AND (sipHash64(C) = sipHash64(D))) OR (B AND (sipHash64(C) = sipHash64(D))) ORDER BY A, B, C, D, E, F LIMIT 10;
+SELECT * FROM x WHERE (A AND (sipHash64(C) = sipHash64(D))) OR (B AND (sipHash64(C) = sipHash64(D))) ORDER BY x LIMIT 10 SETTINGS optimize_extract_common_expressions = 0;
+SELECT * FROM x WHERE (A AND (sipHash64(C) = sipHash64(D))) OR (B AND (sipHash64(C) = sipHash64(D))) ORDER BY x LIMIT 10;
 EXPLAIN QUERY TREE dump_ast = 1 SELECT count() FROM x WHERE (A AND (sipHash64(C) = sipHash64(D))) OR (B AND (sipHash64(C) = sipHash64(D)));
 
 -- Flattening is only happening if something can be extracted
-SELECT * FROM x WHERE ((A AND B) OR ((C AND D) OR (E AND F))) ORDER BY A, B, C, D, E, F LIMIT 10 SETTINGS optimize_extract_common_expressions = 0;
-SELECT * FROM x WHERE ((A AND B) OR ((C AND D) OR (E AND F))) ORDER BY A, B, C, D, E, F LIMIT 10;
+SELECT * FROM x WHERE ((A AND B) OR ((C AND D) OR (E AND F))) ORDER BY x LIMIT 10 SETTINGS optimize_extract_common_expressions = 0;
+SELECT * FROM x WHERE ((A AND B) OR ((C AND D) OR (E AND F))) ORDER BY x LIMIT 10;
 EXPLAIN QUERY TREE dump_ast = 1 SELECT count() FROM x WHERE ((A AND B) OR ((C AND D) OR (E AND F)));
 
-SELECT * FROM x WHERE ((A AND B) OR ((B AND D) OR (E AND F))) ORDER BY A, B, C, D, E, F LIMIT 10 SETTINGS optimize_extract_common_expressions = 0;
-SELECT * FROM x WHERE ((A AND B) OR ((B AND D) OR (E AND F))) ORDER BY A, B, C, D, E, F LIMIT 10;
+SELECT * FROM x WHERE ((A AND B) OR ((B AND D) OR (E AND F))) ORDER BY x LIMIT 10 SETTINGS optimize_extract_common_expressions = 0;
+SELECT * FROM x WHERE ((A AND B) OR ((B AND D) OR (E AND F))) ORDER BY x LIMIT 10;
 EXPLAIN QUERY TREE dump_ast = 1 SELECT count() FROM x WHERE ((A AND B) OR ((B AND D) OR (E AND F)));
 
 -- Duplicates
-SELECT * FROM x WHERE (A AND B AND C) OR ((A AND A AND A AND B AND B AND E AND E) OR (A AND B AND B AND F AND F)) ORDER BY A, B, C, D, E, F LIMIT 10 SETTINGS optimize_extract_common_expressions = 0;
-SELECT * FROM x WHERE (A AND B AND C) OR ((A AND A AND A AND B AND B AND E AND E) OR (A AND B AND B AND F AND F)) ORDER BY A, B, C, D, E, F LIMIT 10;
+SELECT * FROM x WHERE (A AND B AND C) OR ((A AND A AND A AND B AND B AND E AND E) OR (A AND B AND B AND F AND F)) ORDER BY x LIMIT 10 SETTINGS optimize_extract_common_expressions = 0;
+SELECT * FROM x WHERE (A AND B AND C) OR ((A AND A AND A AND B AND B AND E AND E) OR (A AND B AND B AND F AND F)) ORDER BY x LIMIT 10;
 EXPLAIN QUERY TREE dump_ast = 1 SELECT count() FROM x WHERE (A AND B AND C) OR ((A AND A AND A AND B AND B AND E AND E) OR (A AND B AND B AND F AND F));
 
-SELECT * FROM x WHERE ((A AND B AND C) OR (A AND B AND D)) AND ((B AND A AND E) OR (B AND A AND F)) ORDER BY A, B, C, D, E, F LIMIT 10 SETTINGS optimize_extract_common_expressions = 0;
-SELECT * FROM x WHERE ((A AND B AND C) OR (A AND B AND D)) AND ((B AND A AND E) OR (B AND A AND F)) ORDER BY A, B, C, D, E, F LIMIT 10;
+SELECT * FROM x WHERE ((A AND B AND C) OR (A AND B AND D)) AND ((B AND A AND E) OR (B AND A AND F)) ORDER BY x LIMIT 10 SETTINGS optimize_extract_common_expressions = 0;
+SELECT * FROM x WHERE ((A AND B AND C) OR (A AND B AND D)) AND ((B AND A AND E) OR (B AND A AND F)) ORDER BY x LIMIT 10;
 EXPLAIN QUERY TREE dump_ast = 1 SELECT count() FROM x WHERE ((A AND B AND C) OR (A AND B AND D)) AND ((B AND A AND E) OR (B AND A AND F));
 
 
