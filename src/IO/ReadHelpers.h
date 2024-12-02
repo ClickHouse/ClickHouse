@@ -1,12 +1,9 @@
 #pragma once
 
-#include <cmath>
 #include <cstring>
 #include <string>
 #include <string_view>
 #include <limits>
-#include <algorithm>
-#include <iterator>
 #include <bit>
 #include <span>
 
@@ -20,12 +17,10 @@
 #include <Common/transformEndianness.h>
 #include <base/StringRef.h>
 #include <base/arithmeticOverflow.h>
-#include <base/sort.h>
 #include <base/unit.h>
 
 #include <Core/Types.h>
 #include <Core/DecimalFunctions.h>
-#include <Core/UUID.h>
 #include <base/IPv4andIPv6.h>
 
 #include <Common/Allocator.h>
@@ -35,7 +30,6 @@
 
 #include <Formats/FormatSettings.h>
 
-#include <IO/CompressionMethod.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/VarInt.h>
