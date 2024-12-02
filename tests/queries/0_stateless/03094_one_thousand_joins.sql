@@ -3,6 +3,7 @@
 
 SET join_algorithm = 'default'; -- for 'full_sorting_merge' the query is 10x slower
 SET enable_analyzer = 1; -- old analyzer returns TOO_DEEP_SUBQUERIES
+SET query_plan_join_swap_table = 'auto'; -- 'true' is slower
 SET max_threads = 8;
 
 -- Bug 33446, marked as 'long' because it still runs around 10 sec
