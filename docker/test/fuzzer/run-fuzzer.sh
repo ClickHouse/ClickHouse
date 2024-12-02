@@ -288,7 +288,7 @@ EOF
     # some reason.
     echo $FUZZER_ARGS > fuzzer_args.txt
 
-    timeout -s TERM --preserve-status 1m clickhouse-client \
+    timeout -s TERM --preserve-status 30m clickhouse-client \
         --max_memory_usage_in_client=1000000000 \
         --receive_timeout=10 \
         --receive_data_timeout_ms=10000 \
