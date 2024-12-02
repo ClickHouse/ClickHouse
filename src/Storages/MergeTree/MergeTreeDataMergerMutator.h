@@ -203,9 +203,6 @@ private:
       */
     MergeTreeData::DataPartsVector selectAllPartsFromPartition(const String & partition_id);
 
-    friend class MutateTask;
-    friend class MergeTask;
-
 public :
     /** Is used to cancel all merges and mutations. On cancel() call all currently running actions will throw exception soon.
       * All new attempts to start a merge or mutation will throw an exception until all 'LockHolder' objects will be destroyed.

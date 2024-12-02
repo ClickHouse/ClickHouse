@@ -33,6 +33,7 @@ public:
         const PartsRanges & parts_ranges,
         size_t max_total_size_to_merge) override;
 
+protected:
     /// Get TTL value for part, may depend on child type and some settings in
     /// constructor.
     virtual time_t getTTLForPart(const IMergeSelector::Part & part) const = 0;
@@ -41,7 +42,6 @@ public:
     /// stored in part and don't assign merge for such part.
     virtual bool isTTLAlreadySatisfied(const IMergeSelector::Part & part) const = 0;
 
-protected:
     time_t current_time;
 
 private:
@@ -56,8 +56,6 @@ private:
 class TTLDeleteMergeSelector : public ITTLMergeSelector
 {
 public:
-    using PartitionIdToTTLs = std::map<String, time_t>;
-
     struct Params
     {
         PartitionIdToTTLs & merge_due_times;
@@ -71,13 +69,13 @@ public:
         : ITTLMergeSelector(params.merge_due_times, params.current_time, params.merge_cooldown_time, params.dry_run)
         , only_drop_parts(params.only_drop_parts) {}
 
+private:
     time_t getTTLForPart(const IMergeSelector::Part & part) const override;
 
     /// Delete TTL should be checked only by TTL time, there are no other ways
     /// to satisfy it.
     bool isTTLAlreadySatisfied(const IMergeSelector::Part &) const override;
 
-private:
     bool only_drop_parts;
 };
 
@@ -100,6 +98,7 @@ public:
         , recompression_ttls(params.recompression_ttls)
     {}
 
+private:
     /// Return part min recompression TTL.
     time_t getTTLForPart(const IMergeSelector::Part & part) const override;
 
@@ -107,7 +106,7 @@ public:
     /// according to recompression TTL. It doesn't make sense to assign such
     /// merge.
     bool isTTLAlreadySatisfied(const IMergeSelector::Part & part) const override;
-private:
+
     TTLDescriptions recompression_ttls;
 };
 
