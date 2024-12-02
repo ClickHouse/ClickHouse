@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -8,8 +7,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 set -e
 
 
-rm -rf "${CLICKHOUSE_USER_FILES_UNIQUE}"
 mkdir -p "${CLICKHOUSE_USER_FILES_UNIQUE}"
+rm -rf "${CLICKHOUSE_USER_FILES_UNIQUE}"/*
 
 
 FILE_CSV="${CLICKHOUSE_USER_FILES_UNIQUE}/03277.csv"
@@ -27,6 +26,7 @@ $CLICKHOUSE_CLIENT -q "
 $CLICKHOUSE_CLIENT -q "SELECT * from t0"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t0"
 
+
 $CLICKHOUSE_CLIENT -q "
     SET async_insert = 1;
     SELECT '${FILE_ARROW}';
@@ -37,4 +37,5 @@ $CLICKHOUSE_CLIENT -q "
 $CLICKHOUSE_CLIENT -q "SELECT * from t0"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t0"
 
-rm -rf "${CLICKHOUSE_USER_FILES_UNIQUE}"
+
+rm -rf "${CLICKHOUSE_USER_FILES_UNIQUE}"/*
