@@ -378,7 +378,8 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     LoggerPtr log_,
     std::shared_ptr<const StorageLimitsList> storage_limits_,
     std::vector<ConnectionPoolPtr> pools_to_use_,
-    std::optional<size_t> exclude_pool_index_)
+    std::optional<size_t> exclude_pool_index_,
+    ConnectionPoolWithFailoverPtr connection_pool_with_failover_)
     : ISourceStep(std::move(header_))
     , cluster(cluster_)
     , query_ast(query_ast_)
@@ -393,6 +394,7 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     , log(log_)
     , pools_to_use(std::move(pools_to_use_))
     , exclude_pool_index(exclude_pool_index_)
+    , connection_pool_with_failover(connection_pool_with_failover_)
 {
     chassert(cluster->getShardCount() == 1);
 
@@ -487,7 +489,8 @@ void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(
         scalars,
         external_tables,
         stage,
-        RemoteQueryExecutor::Extension{.parallel_reading_coordinator = coordinator, .replica_info = std::move(replica_info)});
+        RemoteQueryExecutor::Extension{.parallel_reading_coordinator = coordinator, .replica_info = std::move(replica_info)},
+        connection_pool_with_failover);
 
     remote_query_executor->setLogger(log);
     remote_query_executor->setMainTable(storage_id);
