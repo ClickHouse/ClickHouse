@@ -38,9 +38,8 @@ struct AlterCommand
         DROP_CONSTRAINT,
         ADD_PROJECTION,
         DROP_PROJECTION,
-        ADD_STATISTICS,
-        DROP_STATISTICS,
-        MODIFY_STATISTICS,
+        ADD_STATISTIC,
+        DROP_STATISTIC,
         MODIFY_TTL,
         MODIFY_SETTING,
         RESET_SETTING,
@@ -55,7 +54,7 @@ struct AlterCommand
     };
 
     /// Which property user wants to remove from column
-    enum class RemoveProperty : uint8_t
+    enum class RemoveProperty
     {
         NO_PROPERTY,
         /// Default specifiers
@@ -124,9 +123,9 @@ struct AlterCommand
     /// For ADD/DROP PROJECTION
     String projection_name;
 
-    ASTPtr statistics_decl = nullptr;
-    std::vector<String> statistics_columns;
-    std::vector<String> statistics_types;
+    ASTPtr statistic_decl = nullptr;
+    std::vector<String> statistic_columns;
+    String statistic_type;
 
     /// For MODIFY TTL
     ASTPtr ttl = nullptr;
@@ -235,12 +234,8 @@ public:
     /// additional mutation command (MATERIALIZE_TTL) will be returned.
     MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters=false) const;
 
-    /// Check if commands have any full-text index or a (legacy) inverted index
-    static bool hasFullTextIndex(const StorageInMemoryMetadata & metadata);
-    static bool hasLegacyInvertedIndex(const StorageInMemoryMetadata & metadata);
-
-    /// Check if commands have any vector similarity index
-    static bool hasVectorSimilarityIndex(const StorageInMemoryMetadata & metadata);
+    /// Check if commands have any inverted index
+    static bool hasInvertedIndex(const StorageInMemoryMetadata & metadata);
 };
 
 }

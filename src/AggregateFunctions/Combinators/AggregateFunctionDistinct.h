@@ -150,7 +150,7 @@ struct AggregateFunctionDistinctMultipleGenericData : public AggregateFunctionDi
   * Adding -Distinct suffix to aggregate function
 **/
 template <typename Data>
-class AggregateFunctionDistinct final : public IAggregateFunctionDataHelper<Data, AggregateFunctionDistinct<Data>>
+class AggregateFunctionDistinct : public IAggregateFunctionDataHelper<Data, AggregateFunctionDistinct<Data>>
 {
 private:
     AggregateFunctionPtr nested_func;

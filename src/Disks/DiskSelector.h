@@ -6,8 +6,6 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <map>
-#include <sstream>
-#include <string_view>
 
 namespace DB
 {
@@ -22,7 +20,7 @@ class DiskSelector
 public:
     static constexpr auto TMP_INTERNAL_DISK_PREFIX = "__tmp_internal_";
 
-    explicit DiskSelector(std::unordered_set<String> skip_types_ = {}) : skip_types(skip_types_) { }
+    DiskSelector() = default;
     DiskSelector(const DiskSelector & from) = default;
 
     using DiskValidator = std::function<bool(const Poco::Util::AbstractConfiguration & config, const String & disk_config_prefix, const String & disk_name)>;
@@ -50,10 +48,6 @@ private:
     bool is_initialized = false;
 
     void assertInitialized() const;
-
-    const std::unordered_set<String> skip_types;
-
-    bool throw_away_local_on_update = false;
 };
 
 }

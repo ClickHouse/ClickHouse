@@ -1,8 +1,0 @@
-position: 2
-label: 'Developer Guides'
-collapsible: true
-collapsed: true
-link:
-  type: generated-index
-  title: Developer Guides
-  slug: /ja/guides/developer

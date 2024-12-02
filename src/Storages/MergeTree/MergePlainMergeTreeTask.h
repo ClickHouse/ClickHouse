@@ -49,19 +49,17 @@ public:
         txn = std::move(txn_);
     }
 
-    void cancel() noexcept override;
-
 private:
     void prepare();
     void finish();
 
-    enum class State : uint8_t
+    enum class State
     {
         NEED_PREPARE,
         NEED_EXECUTE,
         NEED_FINISH,
 
-        SUCCESS,
+        SUCCESS
     };
 
     State state{State::NEED_PREPARE};

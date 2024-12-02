@@ -323,7 +323,9 @@ void ASTColumnsReplaceTransformer::formatImpl(const FormatSettings & settings, F
 {
     settings.ostr << (settings.hilite ? hilite_keyword : "") << "REPLACE" << (is_strict ? " STRICT " : " ") << (settings.hilite ? hilite_none : "");
 
-    settings.ostr << "(";
+    if (children.size() > 1)
+        settings.ostr << "(";
+
     for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
     {
         if (it != children.begin())
@@ -331,7 +333,9 @@ void ASTColumnsReplaceTransformer::formatImpl(const FormatSettings & settings, F
 
         (*it)->formatImpl(settings, state, frame);
     }
-    settings.ostr << ")";
+
+    if (children.size() > 1)
+        settings.ostr << ")";
 }
 
 void ASTColumnsReplaceTransformer::appendColumnName(WriteBuffer & ostr) const

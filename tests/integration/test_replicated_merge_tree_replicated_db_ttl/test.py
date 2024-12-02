@@ -4,12 +4,12 @@ import logging
 import random
 import string
 import time
-from multiprocessing.dummy import Pool
 
-import minio
 import pytest
-
+from multiprocessing.dummy import Pool
 from helpers.cluster import ClickHouseCluster
+import minio
+
 
 cluster = ClickHouseCluster(__file__)
 
@@ -36,7 +36,10 @@ def started_cluster():
 def test_replicated_db_and_ttl(started_cluster):
     node1 = cluster.instances["node1"]
     node1.query("DROP DATABASE default")
-    node1.query("CREATE DATABASE default ENGINE Replicated('/replicated')")
+    node1.query(
+        "CREATE DATABASE default ENGINE Replicated('/replicated')",
+        settings={"allow_experimental_database_replicated": 1},
+    )
 
     node1.query(
         "CREATE TABLE 02908_main (a UInt32) ENGINE = ReplicatedMergeTree ORDER BY a"

@@ -1,20 +1,20 @@
 #pragma once
+#include "config.h"
 
 #include <Common/Exception.h>
 #include <Core/Types.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
-#include "config.h"
-
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdocumentation"
 #pragma clang diagnostic ignored "-Wreserved-macro-identifier"
-#  include <fiu.h>
-#  include <fiu-control.h>
+
+#include <fiu.h>
+#include <fiu-control.h>
+
 #pragma clang diagnostic pop
 
 #include <unordered_map>
-
 
 namespace DB
 {
@@ -28,7 +28,6 @@ namespace DB
 /// 3. in test file, we can use system failpoint enable/disable 'failpoint_name'
 
 class FailPointChannel;
-
 class FailPointInjection
 {
 public:

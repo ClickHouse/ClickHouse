@@ -13,7 +13,7 @@ class ASTRolesOrUsersSet;
 class ASTSetRoleQuery : public IAST
 {
 public:
-    enum class Kind : uint8_t
+    enum class Kind
     {
         SET_ROLE,
         SET_ROLE_DEFAULT,

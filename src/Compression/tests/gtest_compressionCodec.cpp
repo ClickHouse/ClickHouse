@@ -7,6 +7,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/IParser.h>
 #include <Parsers/TokenIterator.h>
+#include <base/types.h>
 #include <Common/PODArray.h>
 #include <Common/Stopwatch.h>
 
@@ -482,7 +483,7 @@ void testTranscoding(Timer & timer, ICompressionCodec & codec, const CodecTestSe
 
     ASSERT_TRUE(EqualByteContainers(test_sequence.data_type->getSizeOfValueInMemory(), source_data, decoded));
 
-    const auto header_size = ICompressionCodec::getHeaderSize();
+    const auto header_size = codec.getHeaderSize();
     const auto compression_ratio = (encoded_size - header_size) / (source_data.size() * 1.0);
 
     if (expected_compression_ratio)
@@ -521,7 +522,7 @@ public:
 TEST_P(CodecTest, TranscodingWithDataType)
 {
     /// Gorilla can only be applied to floating point columns
-    bool codec_is_gorilla = std::get<0>(GetParam()).codec_statement.contains("Gorilla");
+    bool codec_is_gorilla = std::get<0>(GetParam()).codec_statement.find("Gorilla") != std::string::npos;
     WhichDataType which(std::get<1>(GetParam()).data_type.get());
     bool data_is_float = which.isFloat();
     if (codec_is_gorilla && !data_is_float)
@@ -793,7 +794,7 @@ std::vector<CodecTestSequence> generatePyramidOfSequences(const size_t sequences
     for (size_t i = 1; i < sequences_count; ++i)
     {
         std::string name = generator_name + std::string(" from 0 to ") + std::to_string(i);
-        sequences.push_back(generateSeq<T>(generator, name.c_str(), 0, i));
+        sequences.push_back(generateSeq<T>(std::forward<decltype(generator)>(generator), name.c_str(), 0, i));
     }
 
     return sequences;

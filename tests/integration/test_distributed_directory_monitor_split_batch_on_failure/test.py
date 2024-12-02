@@ -1,5 +1,4 @@
 import pytest
-
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
@@ -78,7 +77,7 @@ def test_distributed_background_insert_split_batch_on_failure_OFF(started_cluste
             with pytest.raises(
                 QueryRuntimeException,
                 # no DOTALL in pytest.raises, use '(.|\n)'
-                match=r"DB::Exception: Received from.*Query memory limit exceeded: (.|\n)*While sending a batch",
+                match=r"DB::Exception: Received from.*Memory limit \(for query\) exceeded: (.|\n)*While sending a batch",
             ):
                 node2.query("system flush distributed dist")
             assert int(node2.query("select count() from dist_data")) == 0
