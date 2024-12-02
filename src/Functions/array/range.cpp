@@ -132,7 +132,8 @@ private:
 
             return ColumnArray::create(std::move(data_col), std::move(offsets_col));
         }
-        return nullptr;
+        else
+            return nullptr;
     }
 
     template <typename T>

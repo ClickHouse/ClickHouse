@@ -100,7 +100,6 @@ public:
     bool is_time_series_table{false}; /// CREATE TABLE ... ENGINE=TimeSeries() ...
     bool is_populate{false};
     bool is_create_empty{false};    /// CREATE TABLE ... EMPTY AS SELECT ...
-    bool is_clone_as{false};    /// CREATE TABLE ... CLONE AS ...
     bool replace_view{false}; /// CREATE OR REPLACE VIEW
     bool has_uuid{false}; // CREATE TABLE x UUID '...'
 
@@ -133,8 +132,6 @@ public:
     bool attach_short_syntax{false};
 
     std::optional<String> attach_from_path = std::nullopt;
-
-    std::optional<bool> attach_as_replicated = std::nullopt;
 
     bool replace_table{false};
     bool create_or_replace{false};

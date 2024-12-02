@@ -69,8 +69,6 @@ SETTINGS
 
 ## Settings {#settings}
 
-To get a list of settings, configured for the table, use `system.s3_queue_settings` table. Available from `24.10`.
-
 ### mode {#mode}
 
 Possible values:
@@ -122,7 +120,7 @@ Default value: `0`.
 
 ### s3queue_polling_min_timeout_ms {#polling_min_timeout_ms}
 
-Specifies the minimum time, in milliseconds, that ClickHouse waits before making the next polling attempt.
+Minimal timeout before next polling (in milliseconds).
 
 Possible values:
 
@@ -132,7 +130,7 @@ Default value: `1000`.
 
 ### s3queue_polling_max_timeout_ms {#polling_max_timeout_ms}
 
-Defines the maximum time, in milliseconds, that ClickHouse waits before initiating the next polling attempt.
+Maximum timeout before next polling (in milliseconds).
 
 Possible values:
 
@@ -142,7 +140,7 @@ Default value: `10000`.
 
 ### s3queue_polling_backoff_ms {#polling_backoff_ms}
 
-Determines the additional wait time added to the previous polling interval when no new files are found. The next poll occurs after the sum of the previous interval and this backoff value, or the maximum interval, whichever is lower.
+Polling backoff (in milliseconds).
 
 Possible values:
 

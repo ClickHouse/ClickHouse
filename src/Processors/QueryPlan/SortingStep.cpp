@@ -8,7 +8,6 @@
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/QueryPlan/BufferChunksTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Common/MemoryTrackerUtils.h>
 #include <Common/JSONBuilder.h>
 #include <Core/Settings.h>
 
@@ -28,7 +27,6 @@ namespace Setting
 {
     extern const SettingsUInt64 max_block_size;
     extern const SettingsUInt64 max_bytes_before_external_sort;
-    extern const SettingsDouble max_bytes_ratio_before_external_sort;
     extern const SettingsUInt64 max_bytes_before_remerge_sort;
     extern const SettingsUInt64 max_bytes_to_sort;
     extern const SettingsUInt64 max_rows_to_sort;
@@ -42,7 +40,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
 }
 
 SortingStep::Settings::Settings(const Context & context)
@@ -57,30 +54,6 @@ SortingStep::Settings::Settings(const Context & context)
     min_free_disk_space = settings[Setting::min_free_disk_space_for_temporary_data];
     max_block_bytes = settings[Setting::prefer_external_sort_block_bytes];
     read_in_order_use_buffering = settings[Setting::read_in_order_use_buffering];
-
-    if (settings[Setting::max_bytes_ratio_before_external_sort] != 0.)
-    {
-        if (settings[Setting::max_bytes_before_external_sort] > 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings max_bytes_ratio_before_external_sort and max_bytes_before_external_sort cannot be set simultaneously");
-
-        double ratio = settings[Setting::max_bytes_ratio_before_external_sort];
-        if (ratio < 0 || ratio >= 1.)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_sort should be >= 0 and < 1 ({})", ratio);
-
-        auto available_system_memory = getMostStrictAvailableSystemMemory();
-        if (available_system_memory.has_value())
-        {
-            max_bytes_before_external_sort = static_cast<size_t>(*available_system_memory * ratio);
-            LOG_TEST(getLogger("SortingStep"), "Set max_bytes_before_external_sort={} (ratio: {}, available system memory: {})",
-                formatReadableSizeWithBinarySuffix(max_bytes_before_external_sort),
-                ratio,
-                formatReadableSizeWithBinarySuffix(*available_system_memory));
-        }
-        else
-        {
-            LOG_WARNING(getLogger("SortingStep"), "No system memory limits configured. Ignoring max_bytes_ratio_before_external_sort");
-        }
-    }
 }
 
 SortingStep::Settings::Settings(size_t max_block_size_)
@@ -104,51 +77,66 @@ static ITransformingStep::Traits getTraits(size_t limit)
 }
 
 SortingStep::SortingStep(
-    const Header & input_header, SortDescription description_, UInt64 limit_, const Settings & settings_, bool is_sorting_for_merge_join_)
-    : ITransformingStep(input_header, input_header, getTraits(limit_))
+    const DataStream & input_stream,
+    SortDescription description_,
+    UInt64 limit_,
+    const Settings & settings_,
+    bool optimize_sorting_by_input_stream_properties_)
+    : ITransformingStep(input_stream, input_stream.header, getTraits(limit_))
     , type(Type::Full)
     , result_description(std::move(description_))
-    , is_sorting_for_merge_join(is_sorting_for_merge_join_)
     , limit(limit_)
     , sort_settings(settings_)
+    , optimize_sorting_by_input_stream_properties(optimize_sorting_by_input_stream_properties_)
 {
     if (sort_settings.max_bytes_before_external_sort && sort_settings.tmp_data == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary data storage for external sorting is not provided");
+
+    /// TODO: check input_stream is partially sorted by the same description.
+    output_stream->sort_description = result_description;
+    output_stream->sort_scope = DataStream::SortScope::Global;
 }
 
 SortingStep::SortingStep(
-        const Header & input_header,
+        const DataStream & input_stream,
         const SortDescription & description_,
         const SortDescription & partition_by_description_,
         UInt64 limit_,
-        const Settings & settings_)
-    : SortingStep(input_header, description_, limit_, settings_)
+        const Settings & settings_,
+        bool optimize_sorting_by_input_stream_properties_)
+    : SortingStep(input_stream, description_, limit_, settings_, optimize_sorting_by_input_stream_properties_)
 {
     partition_by_description = partition_by_description_;
+
+    output_stream->sort_description = result_description;
+    output_stream->sort_scope = DataStream::SortScope::Stream;
 }
 
 SortingStep::SortingStep(
-    const Header & input_header,
+    const DataStream & input_stream_,
     SortDescription prefix_description_,
     SortDescription result_description_,
     size_t max_block_size_,
     UInt64 limit_)
-    : ITransformingStep(input_header, input_header, getTraits(limit_))
+    : ITransformingStep(input_stream_, input_stream_.header, getTraits(limit_))
     , type(Type::FinishSorting)
     , prefix_description(std::move(prefix_description_))
     , result_description(std::move(result_description_))
     , limit(limit_)
     , sort_settings(max_block_size_)
 {
+    /// TODO: check input_stream is sorted by prefix_description.
+    output_stream->sort_description = result_description;
+    output_stream->sort_scope = DataStream::SortScope::Global;
 }
 
 SortingStep::SortingStep(
-    const Header & input_header,
+    const DataStream & input_stream,
     SortDescription sort_description_,
     size_t max_block_size_,
     UInt64 limit_,
     bool always_read_till_end_)
-    : ITransformingStep(input_header, input_header, getTraits(limit_))
+    : ITransformingStep(input_stream, input_stream.header, getTraits(limit_))
     , type(Type::MergingSorted)
     , result_description(std::move(sort_description_))
     , limit(limit_)
@@ -156,11 +144,20 @@ SortingStep::SortingStep(
     , sort_settings(max_block_size_)
 {
     sort_settings.max_block_size = max_block_size_;
+    /// TODO: check input_stream is partially sorted (each port) by the same description.
+    output_stream->sort_description = result_description;
+    output_stream->sort_scope = DataStream::SortScope::Global;
 }
 
-void SortingStep::updateOutputHeader()
+void SortingStep::updateOutputStream()
 {
-    output_header = input_headers.front();
+    output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
+    output_stream->sort_description = result_description;
+
+    if (partition_by_description.empty())
+        output_stream->sort_scope = DataStream::SortScope::Global;
+    else
+        output_stream->sort_scope = DataStream::SortScope::Stream;
 }
 
 void SortingStep::updateLimit(size_t limit_)
@@ -172,12 +169,11 @@ void SortingStep::updateLimit(size_t limit_)
     }
 }
 
-void SortingStep::convertToFinishSorting(SortDescription prefix_description_, bool use_buffering_, bool apply_virtual_row_conversions_)
+void SortingStep::convertToFinishSorting(SortDescription prefix_description_, bool use_buffering_)
 {
     type = Type::FinishSorting;
     prefix_description = std::move(prefix_description_);
     use_buffering = use_buffering_;
-    apply_virtual_row_conversions = apply_virtual_row_conversions_;
 }
 
 void SortingStep::scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline)
@@ -281,10 +277,7 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
             /*max_block_size_bytes=*/0,
             SortingQueueStrategy::Batch,
             limit_,
-            always_read_till_end,
-            nullptr,
-            false,
-            apply_virtual_row_conversions);
+            always_read_till_end);
 
         pipeline.addTransform(std::move(transform));
     }
@@ -309,9 +302,9 @@ void SortingStep::mergeSorting(
             if (increase_sort_description_compile_attempts)
                 increase_sort_description_compile_attempts = false;
 
-            TemporaryDataOnDiskScopePtr tmp_data_on_disk = nullptr;
-            if (sort_settings.tmp_data)
-                tmp_data_on_disk = sort_settings.tmp_data->childScope(CurrentMetrics::TemporaryFilesForSort);
+            auto tmp_data_on_disk = sort_settings.tmp_data
+                ? std::make_unique<TemporaryDataOnDisk>(sort_settings.tmp_data, CurrentMetrics::TemporaryFilesForSort)
+                : std::unique_ptr<TemporaryDataOnDisk>();
 
             return std::make_shared<MergeSortingTransform>(
                 header,
@@ -408,6 +401,39 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
             finishSorting(pipeline, prefix_description, result_description, limit);
 
         return;
+    }
+
+    const auto input_sort_mode = input_streams.front().sort_scope;
+    const SortDescription & input_sort_desc = input_streams.front().sort_description;
+    if (optimize_sorting_by_input_stream_properties)
+    {
+        /// skip sorting if stream is already sorted
+        if (input_sort_mode == DataStream::SortScope::Global && input_sort_desc.hasPrefix(result_description))
+        {
+            if (pipeline.getNumStreams() != 1)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "If input stream is globally sorted then there should be only 1 input stream at this stage. Number of input streams: "
+                    "{}",
+                    pipeline.getNumStreams());
+
+            return;
+        }
+
+        /// merge sorted
+        if (input_sort_mode == DataStream::SortScope::Stream && input_sort_desc.hasPrefix(result_description))
+        {
+            mergingSorted(pipeline, result_description, limit);
+            return;
+        }
+
+        /// if chunks already sorted according to result_sort_desc, then we can skip chunk sorting
+        if (input_sort_mode == DataStream::SortScope::Chunk && input_sort_desc.hasPrefix(result_description))
+        {
+            const bool skip_partial_sort = true;
+            fullSort(pipeline, result_description, limit, skip_partial_sort);
+            return;
+        }
     }
 
     fullSort(pipeline, result_description, limit);

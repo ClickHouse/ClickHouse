@@ -4,9 +4,9 @@
 #include <Core/Field.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
-#include <Core/SettingsTierType.h>
 #include <Core/SettingsWriteFormat.h>
 #include <base/types.h>
+#include <Common/SettingConstraintWritability.h>
 #include <Common/SettingsChanges.h>
 
 #include <string_view>
@@ -45,7 +45,6 @@ class WriteBuffer;
 #define COMMON_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, ArrowCompression) \
     M(CLASS_NAME, Bool) \
-    M(CLASS_NAME, BoolAuto) \
     M(CLASS_NAME, CapnProtoEnumComparingMode) \
     M(CLASS_NAME, Char) \
     M(CLASS_NAME, DateTimeInputFormat) \
@@ -54,8 +53,6 @@ class WriteBuffer;
     M(CLASS_NAME, DefaultDatabaseEngine) \
     M(CLASS_NAME, DefaultTableEngine) \
     M(CLASS_NAME, Dialect) \
-    M(CLASS_NAME, DistributedCacheLogMode) /* Cloud only */ \
-    M(CLASS_NAME, DistributedCachePoolBehaviourOnLimit) /* Cloud only */ \
     M(CLASS_NAME, DistributedDDLOutputMode) \
     M(CLASS_NAME, DistributedProductMode) \
     M(CLASS_NAME, Double) \
@@ -82,7 +79,6 @@ class WriteBuffer;
     M(CLASS_NAME, ORCCompression) \
     M(CLASS_NAME, OverflowMode) \
     M(CLASS_NAME, OverflowModeGroupBy) \
-    M(CLASS_NAME, ParallelReplicasMode) \
     M(CLASS_NAME, ParallelReplicasCustomKeyFilterType) \
     M(CLASS_NAME, ParquetCompression) \
     M(CLASS_NAME, ParquetVersion) \
@@ -119,7 +115,6 @@ struct Settings
     /// General API as needed
     bool has(std::string_view name) const;
     bool isChanged(std::string_view name) const;
-    SettingsTierType getTier(std::string_view name) const;
 
     bool tryGet(std::string_view name, Field & value) const;
     Field get(std::string_view name) const;

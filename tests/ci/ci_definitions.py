@@ -1,7 +1,7 @@
 import copy
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, List, Literal, Optional, Union
+from typing import List, Union, Iterable, Optional, Literal, Any
 
 from ci_utils import WithIter
 from integration_test_images import IMAGES
@@ -22,7 +22,6 @@ class Labels:
     PR_CHERRYPICK = "pr-cherrypick"
     PR_CI = "pr-ci"
     PR_FEATURE = "pr-feature"
-    PR_PERFORMANCE = "pr-performance"
     PR_SYNCED_TO_CLOUD = "pr-synced-to-cloud"
     PR_SYNC_UPSTREAM = "pr-sync-upstream"
     RELEASE = "release"
@@ -58,11 +57,11 @@ class Runners(metaclass=WithIter):
     """
 
     BUILDER = "builder"
-    BUILDER_AARCH64 = "builder-aarch64"
+    BUILDER_ARM = "builder-aarch64"
     STYLE_CHECKER = "style-checker"
-    STYLE_CHECKER_AARCH64 = "style-checker-aarch64"
+    STYLE_CHECKER_ARM = "style-checker-aarch64"
     FUNC_TESTER = "func-tester"
-    FUNC_TESTER_AARCH64 = "func-tester-aarch64"
+    FUNC_TESTER_ARM = "func-tester-aarch64"
     FUZZER_UNIT_TESTER = "fuzzer-unit-tester"
 
 
@@ -78,7 +77,7 @@ class Tags(metaclass=WithIter):
     # to upload all binaries from build jobs
     UPLOAD_ALL_ARTIFACTS = "upload_all"
     CI_SET_SYNC = "ci_set_sync"
-    CI_SET_AARCH64 = "ci_set_aarch64"
+    CI_SET_ARM = "ci_set_arm"
     CI_SET_REQUIRED = "ci_set_required"
     CI_SET_BUILDS = "ci_set_builds"
 
@@ -92,7 +91,6 @@ class WorkFlowNames(metaclass=WithIter):
 
     JEPSEN = "JepsenWorkflow"
     CreateRelease = "CreateRelease"
-    NIGHTLY = "NightlyBuilds"
 
 
 class BuildNames(metaclass=WithIter):
@@ -101,13 +99,12 @@ class BuildNames(metaclass=WithIter):
     """
 
     PACKAGE_RELEASE = "package_release"
+    PACKAGE_AARCH64 = "package_aarch64"
     PACKAGE_ASAN = "package_asan"
     PACKAGE_UBSAN = "package_ubsan"
     PACKAGE_TSAN = "package_tsan"
     PACKAGE_MSAN = "package_msan"
     PACKAGE_DEBUG = "package_debug"
-    PACKAGE_AARCH64 = "package_aarch64"
-    PACKAGE_AARCH64_ASAN = "package_aarch64_asan"
     PACKAGE_RELEASE_COVERAGE = "package_release_coverage"
     BINARY_RELEASE = "binary_release"
     BINARY_TIDY = "binary_tidy"
@@ -135,14 +132,13 @@ class JobNames(metaclass=WithIter):
     DOCKER_SERVER = "Docker server image"
     DOCKER_KEEPER = "Docker keeper image"
     INSTALL_TEST_AMD = "Install packages (release)"
-    INSTALL_TEST_AARCH64 = "Install packages (aarch64)"
+    INSTALL_TEST_ARM = "Install packages (aarch64)"
 
     STATELESS_TEST_DEBUG = "Stateless tests (debug)"
     STATELESS_TEST_RELEASE = "Stateless tests (release)"
     STATELESS_TEST_RELEASE_COVERAGE = "Stateless tests (coverage)"
     STATELESS_TEST_AARCH64 = "Stateless tests (aarch64)"
     STATELESS_TEST_ASAN = "Stateless tests (asan)"
-    STATELESS_TEST_AARCH64_ASAN = "Stateless tests (aarch64, asan)"
     STATELESS_TEST_TSAN = "Stateless tests (tsan)"
     STATELESS_TEST_MSAN = "Stateless tests (msan)"
     STATELESS_TEST_UBSAN = "Stateless tests (ubsan)"
@@ -159,7 +155,6 @@ class JobNames(metaclass=WithIter):
     STATEFUL_TEST_RELEASE_COVERAGE = "Stateful tests (coverage)"
     STATEFUL_TEST_AARCH64 = "Stateful tests (aarch64)"
     STATEFUL_TEST_ASAN = "Stateful tests (asan)"
-    STATEFUL_TEST_AARCH64_ASAN = "Stateful tests (aarch64, asan)"
     STATEFUL_TEST_TSAN = "Stateful tests (tsan)"
     STATEFUL_TEST_MSAN = "Stateful tests (msan)"
     STATEFUL_TEST_UBSAN = "Stateful tests (ubsan)"
@@ -182,7 +177,7 @@ class JobNames(metaclass=WithIter):
     INTEGRATION_TEST_ASAN = "Integration tests (asan)"
     INTEGRATION_TEST_ASAN_OLD_ANALYZER = "Integration tests (asan, old analyzer)"
     INTEGRATION_TEST_TSAN = "Integration tests (tsan)"
-    INTEGRATION_TEST_AARCH64 = "Integration tests (aarch64)"
+    INTEGRATION_TEST_ARM = "Integration tests (aarch64)"
     INTEGRATION_TEST_FLAKY = "Integration tests flaky check (asan)"
 
     UPGRADE_TEST_DEBUG = "Upgrade check (debug)"
@@ -206,7 +201,7 @@ class JobNames(metaclass=WithIter):
     JEPSEN_SERVER = "ClickHouse Server Jepsen"
 
     PERFORMANCE_TEST_AMD64 = "Performance Comparison (release)"
-    PERFORMANCE_TEST_AARCH64 = "Performance Comparison (aarch64)"
+    PERFORMANCE_TEST_ARM64 = "Performance Comparison (aarch64)"
 
     # SQL_LOGIC_TEST = "Sqllogic test (release)"
 
@@ -215,10 +210,10 @@ class JobNames(metaclass=WithIter):
     SQLTEST = "SQLTest"
 
     COMPATIBILITY_TEST = "Compatibility check (release)"
-    COMPATIBILITY_TEST_AARCH64 = "Compatibility check (aarch64)"
+    COMPATIBILITY_TEST_ARM = "Compatibility check (aarch64)"
 
     CLICKBENCH_TEST = "ClickBench (release)"
-    CLICKBENCH_TEST_AARCH64 = "ClickBench (aarch64)"
+    CLICKBENCH_TEST_ARM = "ClickBench (aarch64)"
 
     LIBFUZZER_TEST = "libFuzzer tests"
 
@@ -244,7 +239,7 @@ class StatusNames(metaclass=WithIter):
     # mergeable status
     MERGEABLE = "Mergeable Check"
     # status of a sync pr
-    SYNC = "CH Inc sync"
+    SYNC = "Cloud fork sync (only for ClickHouse Inc. employees)"
     # PR formatting check status
     PR_CHECK = "PR Check"
 
@@ -340,7 +335,7 @@ class JobConfig:
     # sets number of batches for a multi-batch job
     num_batches: int = 1
     # label that enables job in CI, if set digest isn't used
-    run_by_labels: List[str] = field(default_factory=list)
+    run_by_label: str = ""
     # to run always regardless of the job digest or/and label
     run_always: bool = False
     # disables CI await for a given job
@@ -388,7 +383,7 @@ class CommonJobConfigs:
                 "./tests/ci/upload_result_helper.py",
             ],
         ),
-        runner_type=Runners.STYLE_CHECKER_AARCH64,
+        runner_type=Runners.STYLE_CHECKER_ARM,
         disable_await=True,
     )
     COMPATIBILITY_TEST = JobConfig(
@@ -571,7 +566,6 @@ class CommonJobConfigs:
                 "tests/ci/docker_server.py",
                 "tests/ci/docker_images_helper.py",
                 "./docker/server",
-                "./docker/keeper",
             ]
         ),
         runner_type=Runners.STYLE_CHECKER,
@@ -636,8 +630,6 @@ REQUIRED_CHECKS = [
     JobNames.STATEFUL_TEST_RELEASE,
     JobNames.STATELESS_TEST_RELEASE,
     JobNames.STATELESS_TEST_ASAN,
-    JobNames.STATELESS_TEST_AARCH64_ASAN,
-    JobNames.STATEFUL_TEST_AARCH64_ASAN,
     JobNames.STATELESS_TEST_FLAKY_ASAN,
     JobNames.STATEFUL_TEST_ASAN,
     JobNames.STYLE_CHECK,

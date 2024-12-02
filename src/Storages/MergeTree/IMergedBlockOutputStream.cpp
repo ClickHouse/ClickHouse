@@ -7,11 +7,6 @@
 namespace DB
 {
 
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
-}
-
 IMergedBlockOutputStream::IMergedBlockOutputStream(
     const MergeTreeSettingsPtr & storage_settings_,
     MutableDataPartStoragePtr data_part_storage_,
@@ -27,7 +22,7 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     {
         SerializationInfo::Settings info_settings =
         {
-            .ratio_of_defaults_for_sparse = (*storage_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+            .ratio_of_defaults_for_sparse = storage_settings->ratio_of_defaults_for_sparse_serialization,
             .choose_kind = false,
         };
 
@@ -120,10 +115,4 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     return remove_files;
 }
 
-PlainMarksByName IMergedBlockOutputStream::releaseCachedMarks()
-{
-    if (!writer)
-        return {};
-    return writer->releaseCachedMarks();
-}
 }

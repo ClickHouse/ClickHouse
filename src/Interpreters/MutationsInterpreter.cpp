@@ -52,15 +52,6 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_nondeterministic_mutations;
     extern const SettingsUInt64 max_block_size;
-    extern const SettingsBool use_concurrency_control;
-    extern const SettingsBool validate_mutation_query;
-}
-
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsUInt64 index_granularity_bytes;
-    extern const MergeTreeSettingsBool materialize_ttl_recalculate_only;
-    extern const MergeTreeSettingsBool ttl_only_drop_parts;
 }
 
 namespace ErrorCodes
@@ -223,14 +214,13 @@ bool isStorageTouchedByMutations(
     }
 
     PullingAsyncPipelineExecutor executor(io.pipeline);
-    io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
     Block block;
     while (block.rows() == 0 && executor.pull(block));
 
     if (!block.rows())
         return false;
-    if (block.rows() != 1)
+    else if (block.rows() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "count() expression returned {} rows, not 1", block.rows());
 
     Block tmp_block;
@@ -268,7 +258,8 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
 
     if (command.predicate && command.partition)
         return makeASTFunction("and", command.predicate->clone(), std::move(partition_predicate_as_ast_func));
-    return command.predicate ? command.predicate->clone() : partition_predicate_as_ast_func;
+    else
+        return command.predicate ? command.predicate->clone() : partition_predicate_as_ast_func;
 }
 
 
@@ -345,7 +336,7 @@ bool MutationsInterpreter::Source::supportsLightweightDelete() const
 
 bool MutationsInterpreter::Source::materializeTTLRecalculateOnly() const
 {
-    return data && (*data->getSettings())[MergeTreeSetting::materialize_ttl_recalculate_only];
+    return data && data->getSettings()->materialize_ttl_recalculate_only;
 }
 
 bool MutationsInterpreter::Source::hasSecondaryIndex(const String & name) const
@@ -446,7 +437,7 @@ MutationsInterpreter::MutationsInterpreter(
     if (new_context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         new_context->setSetting("allow_experimental_analyzer", false);
-        LOG_TEST(logger, "Will use old analyzer to prepare mutation");
+        LOG_DEBUG(logger, "Will use old analyzer to prepare mutation");
     }
     context = std::move(new_context);
 }
@@ -784,7 +775,7 @@ void MutationsInterpreter::prepare(bool dry_run)
 
             /// If the part is compact and adaptive index granularity is enabled, modify data in one column via ALTER UPDATE can change
             /// the part granularity, so we need to rebuild indexes
-            if (source.isCompactPart() && source.getMergeTreeData() && (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::index_granularity_bytes] > 0)
+            if (source.isCompactPart() && source.getMergeTreeData() && source.getMergeTreeData()->getSettings()->index_granularity_bytes > 0)
                 need_rebuild_indexes = true;
         }
         else if (command.type == MutationCommand::MATERIALIZE_COLUMN)
@@ -1295,10 +1286,6 @@ void MutationsInterpreter::Source::read(
 
 void MutationsInterpreter::initQueryPlan(Stage & first_stage, QueryPlan & plan)
 {
-    // Mutations are not using concurrency control now. Queries, merges and mutations running together could lead to CPU overcommit.
-    // TODO(serxa): Enable concurrency control for mutation queries and mutations. This should be done after CPU scheduler introduction.
-    plan.setConcurrencyControl(false);
-
     source.read(first_stage, plan, metadata_snapshot, context, settings.apply_deleted_mask, settings.can_execute);
     addCreatingSetsStep(plan, first_stage.analyzer->getPreparedSets(), context);
 }
@@ -1317,17 +1304,17 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
             {
                 auto dag = step->actions()->dag.clone();
                 if (step->actions()->project_input)
-                    dag.appendInputsForUnusedColumns(plan.getCurrentHeader());
+                    dag.appendInputsForUnusedColumns(plan.getCurrentDataStream().header);
                 /// Execute DELETEs.
-                plan.addStep(std::make_unique<FilterStep>(plan.getCurrentHeader(), std::move(dag), stage.filter_column_names[i], false));
+                plan.addStep(std::make_unique<FilterStep>(plan.getCurrentDataStream(), std::move(dag), stage.filter_column_names[i], false));
             }
             else
             {
                 auto dag = step->actions()->dag.clone();
                 if (step->actions()->project_input)
-                    dag.appendInputsForUnusedColumns(plan.getCurrentHeader());
+                    dag.appendInputsForUnusedColumns(plan.getCurrentDataStream().header);
                 /// Execute UPDATE or final projection.
-                plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(dag)));
+                plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), std::move(dag)));
             }
         }
 
@@ -1381,18 +1368,6 @@ void MutationsInterpreter::validate()
                                 "Cannot update column {} with type {}: updates of columns with dynamic subcolumns are not supported",
                                 backQuote(column_name), storage_columns.getColumn(GetColumnsOptions::Ordinary, column_name).type->getName());
             }
-        }
-    }
-
-    // Make sure the mutation query is valid
-    if (context->getSettingsRef()[Setting::validate_mutation_query])
-    {
-        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-            prepareQueryAffectedQueryTree(commands, source.getStorage(), context);
-        else
-        {
-            ASTPtr select_query = prepareQueryAffectedAST(commands, source.getStorage(), context);
-            InterpreterSelectQuery(select_query, context, source.getStorage(), metadata_snapshot);
         }
     }
 
