@@ -156,10 +156,10 @@ namespace
 
 ProviderType deduceProviderType(const std::string & url)
 {
-    if (url.contains(".amazonaws.com"))
+    if (url.find(".amazonaws.com") != std::string::npos)
         return ProviderType::AWS;
 
-    if (url.contains("storage.googleapis.com"))
+    if (url.find("storage.googleapis.com") != std::string::npos)
         return ProviderType::GCS;
 
     return ProviderType::UNKNOWN;

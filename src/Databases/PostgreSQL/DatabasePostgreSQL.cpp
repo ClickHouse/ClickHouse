@@ -135,7 +135,8 @@ DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local
 
 bool DatabasePostgreSQL::checkPostgresTable(const String & table_name) const
 {
-    if (table_name.contains('\'') || table_name.contains('\\'))
+    if (table_name.find('\'') != std::string::npos
+        || table_name.find('\\') != std::string::npos)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "PostgreSQL table name cannot contain single quote or backslash characters, passed {}", table_name);

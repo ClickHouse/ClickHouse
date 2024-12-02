@@ -1,19 +1,19 @@
 import argparse
 import sys
 
-from .html_prepare import Html
-from .utils import Utils
-from .validator import Validator
-from .yaml_generator import YamlGenerator
+from praktika.html_prepare import Html
+from praktika.utils import Utils
+from praktika.validator import Validator
+from praktika.yaml_generator import YamlGenerator
 
 
 def create_parser():
-    parser = argparse.ArgumentParser(prog="praktika")
+    parser = argparse.ArgumentParser(prog="python3 -m praktika")
 
     subparsers = parser.add_subparsers(dest="command", help="Available subcommands")
 
     run_parser = subparsers.add_parser("run", help="Job Runner")
-    run_parser.add_argument("job", help="Job Name", type=str)
+    run_parser.add_argument("--job", help="Job Name", type=str, required=True)
     run_parser.add_argument(
         "--workflow",
         help="Workflow Name (required if job name is not uniq per config)",
@@ -75,8 +75,7 @@ def create_parser():
     return parser
 
 
-def main():
-    sys.path.append(".")
+if __name__ == "__main__":
     parser = create_parser()
     args = parser.parse_args()
 
@@ -86,8 +85,8 @@ def main():
     elif args.command == "html":
         Html.prepare()
     elif args.command == "run":
-        from .mangle import _get_workflows
-        from .runner import Runner
+        from praktika.mangle import _get_workflows
+        from praktika.runner import Runner
 
         workflows = _get_workflows(name=args.workflow or None)
         job_workflow_pairs = []
@@ -121,7 +120,3 @@ def main():
     else:
         parser.print_help()
         sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()

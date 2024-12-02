@@ -78,7 +78,7 @@ static inline auto emptyQueryStringFilter()
     return [](const HTTPServerRequest & request)
     {
         const auto & uri = request.getURI();
-        return !uri.contains('?');
+        return std::string::npos == uri.find('?');
     };
 }
 

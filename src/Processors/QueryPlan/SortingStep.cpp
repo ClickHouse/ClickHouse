@@ -8,7 +8,6 @@
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/QueryPlan/BufferChunksTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Common/MemoryTrackerUtils.h>
 #include <Common/JSONBuilder.h>
 #include <Core/Settings.h>
 
@@ -28,7 +27,6 @@ namespace Setting
 {
     extern const SettingsUInt64 max_block_size;
     extern const SettingsUInt64 max_bytes_before_external_sort;
-    extern const SettingsDouble max_bytes_ratio_before_external_sort;
     extern const SettingsUInt64 max_bytes_before_remerge_sort;
     extern const SettingsUInt64 max_bytes_to_sort;
     extern const SettingsUInt64 max_rows_to_sort;
@@ -42,7 +40,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
 }
 
 SortingStep::Settings::Settings(const Context & context)
@@ -57,30 +54,6 @@ SortingStep::Settings::Settings(const Context & context)
     min_free_disk_space = settings[Setting::min_free_disk_space_for_temporary_data];
     max_block_bytes = settings[Setting::prefer_external_sort_block_bytes];
     read_in_order_use_buffering = settings[Setting::read_in_order_use_buffering];
-
-    if (settings[Setting::max_bytes_ratio_before_external_sort] != 0.)
-    {
-        if (settings[Setting::max_bytes_before_external_sort] > 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings max_bytes_ratio_before_external_sort and max_bytes_before_external_sort cannot be set simultaneously");
-
-        double ratio = settings[Setting::max_bytes_ratio_before_external_sort];
-        if (ratio < 0 || ratio >= 1.)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_sort should be >= 0 and < 1 ({})", ratio);
-
-        auto available_system_memory = getMostStrictAvailableSystemMemory();
-        if (available_system_memory.has_value())
-        {
-            max_bytes_before_external_sort = static_cast<size_t>(*available_system_memory * ratio);
-            LOG_TEST(getLogger("SortingStep"), "Set max_bytes_before_external_sort={} (ratio: {}, available system memory: {})",
-                formatReadableSizeWithBinarySuffix(max_bytes_before_external_sort),
-                ratio,
-                formatReadableSizeWithBinarySuffix(*available_system_memory));
-        }
-        else
-        {
-            LOG_WARNING(getLogger("SortingStep"), "No system memory limits configured. Ignoring max_bytes_ratio_before_external_sort");
-        }
-    }
 }
 
 SortingStep::Settings::Settings(size_t max_block_size_)

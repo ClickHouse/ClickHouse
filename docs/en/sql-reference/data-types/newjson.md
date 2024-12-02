@@ -187,7 +187,7 @@ select json.a.g.:Float64, dynamicType(json.a.g), json.d.:Date, dynamicType(json.
 └─────────────────────┴───────────────────────┴────────────────┴─────────────────────┘
 ```
 
-`Dynamic` subcolumns can be cast to any data type. In this case the exception will be thrown if internal type inside `Dynamic` cannot be cast to the requested type:
+`Dynamic` subcolumns can be casted to any data type. In this case the exception will be thrown if internal type inside `Dynamic` cannot be casted to the requested type:
 
 ```sql
 select json.a.g::UInt64 as uint FROM test;

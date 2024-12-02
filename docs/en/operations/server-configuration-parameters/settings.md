@@ -3279,6 +3279,14 @@ Default value: 100
 
 Zero means unlimited
 
+## use_legacy_mongodb_integration
+
+Use the legacy MongoDB integration implementation. Deprecated.
+
+Type: Bool
+
+Default value: `true`.
+
 ## allow_feature_tier
 
 Controls if the user can change settings related to the different feature tiers.

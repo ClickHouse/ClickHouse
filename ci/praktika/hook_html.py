@@ -3,14 +3,14 @@ import json
 from pathlib import Path
 from typing import List
 
-from ._environment import _Environment
-from .gh import GH
-from .parser import WorkflowConfigParser
-from .result import Result, ResultInfo, _ResultS3
-from .runtime import RunConfig
-from .s3 import S3
-from .settings import Settings
-from .utils import Utils
+from praktika._environment import _Environment
+from praktika.gh import GH
+from praktika.parser import WorkflowConfigParser
+from praktika.result import Result, ResultInfo, _ResultS3
+from praktika.runtime import RunConfig
+from praktika.s3 import S3
+from praktika.settings import Settings
+from praktika.utils import Utils
 
 
 @dataclasses.dataclass
@@ -137,14 +137,14 @@ class HtmlRunnerHooks:
         summary_result.start_time = Utils.timestamp()
 
         assert _ResultS3.copy_result_to_s3_with_version(summary_result, version=0)
-        page_url = env.get_report_url(settings=Settings, latest=True)
+        page_url = env.get_report_url(settings=Settings)
         print(f"CI Status page url [{page_url}]")
 
         res1 = GH.post_commit_status(
             name=_workflow.name,
             status=Result.Status.PENDING,
             description="",
-            url=page_url,
+            url=env.get_report_url(settings=Settings, latest=True),
         )
         res2 = GH.post_pr_comment(
             comment_body=f"Workflow [[{_workflow.name}]({page_url})], commit [{_Environment.get().SHA[:8]}]",

@@ -11,6 +11,11 @@ MongoDB engine is read-only table engine which allows to read data from remote [
 Only MongoDB v3.6+ servers are supported.
 [Seed list(`mongodb+srv`)](https://www.mongodb.com/docs/manual/reference/glossary/#std-term-seed-list) is not yet supported.
 
+:::note
+If you're facing troubles, please report the issue, and try to use [the legacy implementation](../../../operations/server-configuration-parameters/settings.md#use_legacy_mongodb_integration).
+Keep in mind that it is deprecated, and will be removed in next releases.
+:::
+
 ## Creating a Table {#creating-a-table}
 
 ``` sql

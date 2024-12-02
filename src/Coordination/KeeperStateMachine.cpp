@@ -142,14 +142,13 @@ void KeeperStateMachine<Storage>::init()
         }
         catch (...)
         {
-            LOG_FATAL(
+            tryLogCurrentException(
                 log,
-                "Failure to load from latest snapshot with index {}: {}",
-                latest_log_index,
-                getCurrentExceptionMessage(true, true, false));
-            LOG_FATAL(
-                log, "Manual intervention is necessary for recovery. Problematic snapshot can be removed but it will lead to data loss");
-            abort();
+                fmt::format(
+                    "Aborting because of failure to load from latest snapshot with index {}. Problematic snapshot can be removed but it will "
+                    "lead to data loss",
+                    latest_log_index));
+            std::abort();
         }
     }
 
@@ -428,13 +427,8 @@ bool KeeperStateMachine<Storage>::preprocess(const KeeperStorageBase::RequestFor
     }
     catch (...)
     {
-        LOG_FATAL(
-            log,
-            "Failed to preprocess stored log at index {}: {}",
-            request_for_session.log_idx,
-            getCurrentExceptionMessage(true, true, false));
-        LOG_FATAL(log, "Aborting to avoid inconsistent state");
-        abort();
+        tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Failed to preprocess stored log at index {}, aborting to avoid inconsistent state", request_for_session.log_idx));
+        std::abort();
     }
 
     if (keeper_context->digestEnabled() && request_for_session.digest)

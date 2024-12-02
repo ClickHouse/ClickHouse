@@ -1,19 +1,19 @@
 import sys
 from typing import Dict
 
-from . import Job, Workflow
-from ._environment import _Environment
-from .cidb import CIDB
-from .digest import Digest
-from .docker import Docker
-from .gh import GH
-from .hook_cache import CacheRunnerHooks
-from .hook_html import HtmlRunnerHooks
-from .mangle import _get_workflows
-from .result import Result, ResultInfo, _ResultS3
-from .runtime import RunConfig
-from .settings import Settings
-from .utils import Shell, Utils
+from praktika import Job, Workflow
+from praktika._environment import _Environment
+from praktika.cidb import CIDB
+from praktika.digest import Digest
+from praktika.docker import Docker
+from praktika.gh import GH
+from praktika.hook_cache import CacheRunnerHooks
+from praktika.hook_html import HtmlRunnerHooks
+from praktika.mangle import _get_workflows
+from praktika.result import Result, ResultInfo, _ResultS3
+from praktika.runtime import RunConfig
+from praktika.settings import Settings
+from praktika.utils import Shell, Utils
 
 assert Settings.CI_CONFIG_RUNS_ON
 
@@ -144,7 +144,7 @@ def _config_workflow(workflow: Workflow.Config, job_name):
             f"git diff-index HEAD -- {Settings.WORKFLOW_PATH_PREFIX}"
         )
         info = ""
-        status = Result.Status.FAILED
+        status = Result.Status.SUCCESS
         if exit_code != 0:
             info = f"workspace has uncommitted files unexpectedly [{output}]"
             status = Result.Status.ERROR
@@ -154,14 +154,10 @@ def _config_workflow(workflow: Workflow.Config, job_name):
             exit_code, output, err = Shell.get_res_stdout_stderr(
                 f"git diff-index HEAD -- {Settings.WORKFLOW_PATH_PREFIX}"
             )
-            if output:
-                info = f"workflows are outdated: [{output}]"
-                status = Result.Status.FAILED
+            if exit_code != 0:
+                info = f"workspace has outdated workflows [{output}] - regenerate with [python -m praktika --generate]"
+                status = Result.Status.ERROR
                 print("ERROR: ", info)
-            elif exit_code == 0 and not err:
-                status = Result.Status.SUCCESS
-            else:
-                print(f"ERROR: exit code [{exit_code}], err [{err}]")
 
         return (
             Result(
@@ -314,7 +310,7 @@ def _finish_workflow(workflow, job_name):
     print(env.get_needs_statuses())
 
     print("Check Workflow results")
-    version = _ResultS3.copy_result_from_s3_with_version(
+    _ResultS3.copy_result_from_s3(
         Result.file_name_static(workflow.name),
     )
     workflow_result = Result.from_fs(workflow.name)
@@ -337,7 +333,7 @@ def _finish_workflow(workflow, job_name):
             # dump workflow result after update - to have an updated result in post
             workflow_result.dump()
             # add error into env - should apper in the report
-            env.add_info(f"{result.name}: {ResultInfo.NOT_FINALIZED}")
+            env.add_info(ResultInfo.NOT_FINALIZED + f" [{result.name}]")
             update_final_report = True
         job = workflow.get_job(result.name)
         if not job or not job.allow_merge_on_failure:
@@ -362,7 +358,9 @@ def _finish_workflow(workflow, job_name):
         env.add_info(ResultInfo.GH_STATUS_ERROR)
 
     if update_final_report:
-        _ResultS3.copy_result_to_s3_with_version(workflow_result, version + 1)
+        _ResultS3.copy_result_to_s3(
+            workflow_result,
+        )
 
     Result.from_fs(job_name).set_status(Result.Status.SUCCESS)
 

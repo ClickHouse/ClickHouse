@@ -2,7 +2,6 @@
 #include <future>
 #include <numeric>
 #include <Poco/Util/Application.h>
-#include <Core/Settings.h>
 
 #ifdef OS_LINUX
 #    include <unistd.h>
@@ -31,7 +30,6 @@
 #include <Common/CurrentThread.h>
 #include <Common/JSONBuilder.h>
 #include <Common/MemoryTracker.h>
-#include <Common/MemoryTrackerUtils.h>
 #include <Common/Stopwatch.h>
 #include <Common/assert_cast.h>
 #include <Common/formatReadable.h>
@@ -73,24 +71,7 @@ namespace ErrorCodes
     extern const int EMPTY_DATA_PASSED;
     extern const int CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS;
     extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
 }
-
-namespace Setting
-{
-    extern const SettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
-    extern const SettingsUInt64 max_rows_to_group_by;
-    extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
-    extern const SettingsUInt64 max_bytes_before_external_group_by;
-    extern const SettingsDouble max_bytes_ratio_before_external_group_by;
-    extern const SettingsMaxThreads max_threads;
-    extern const SettingsUInt64 min_free_disk_space_for_temporary_data;
-    extern const SettingsBool compile_aggregate_expressions;
-    extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
-    extern const SettingsUInt64 max_block_size;
-    extern const SettingsBool enable_software_prefetch_in_aggregation;
-    extern const SettingsBool optimize_group_by_constant_keys;
-};
 
 }
 
@@ -192,84 +173,6 @@ namespace DB
 Block Aggregator::getHeader(bool final) const
 {
     return params.getHeader(header, final);
-}
-
-Aggregator::Params::Params(
-    const Settings & settings,
-    const Names & keys_,
-    const AggregateDescriptions & aggregates_,
-    bool overflow_row_,
-    size_t group_by_two_level_threshold_,
-    size_t group_by_two_level_threshold_bytes_,
-    bool empty_result_for_aggregation_by_empty_set_,
-    TemporaryDataOnDiskScopePtr tmp_data_scope_,
-    bool only_merge_, // true for projections
-    const StatsCollectingParams & stats_collecting_params_)
-    : keys(keys_)
-    , keys_size(keys.size())
-    , aggregates(aggregates_)
-    , aggregates_size(aggregates.size())
-    , overflow_row(overflow_row_)
-    , max_rows_to_group_by(settings[Setting::max_rows_to_group_by])
-    , group_by_overflow_mode(settings[Setting::group_by_overflow_mode])
-    , group_by_two_level_threshold(group_by_two_level_threshold_)
-    , group_by_two_level_threshold_bytes(group_by_two_level_threshold_bytes_)
-    , max_bytes_before_external_group_by(settings[Setting::max_bytes_before_external_group_by])
-    , empty_result_for_aggregation_by_empty_set(empty_result_for_aggregation_by_empty_set_)
-    , tmp_data_scope(std::move(tmp_data_scope_))
-    , max_threads(settings[Setting::max_threads])
-    , min_free_disk_space(settings[Setting::min_free_disk_space_for_temporary_data])
-    , compile_aggregate_expressions(settings[Setting::compile_aggregate_expressions])
-    , min_count_to_compile_aggregate_expression(settings[Setting::min_count_to_compile_aggregate_expression])
-    , max_block_size(settings[Setting::max_block_size])
-    , only_merge(only_merge_)
-    , enable_prefetch(settings[Setting::enable_software_prefetch_in_aggregation])
-    , optimize_group_by_constant_keys(settings[Setting::optimize_group_by_constant_keys])
-    , min_hit_rate_to_use_consecutive_keys_optimization(settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization])
-    , stats_collecting_params(stats_collecting_params_)
-{
-    if (settings[Setting::max_bytes_ratio_before_external_group_by] != 0.)
-    {
-        if (settings[Setting::max_bytes_before_external_group_by] > 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings max_bytes_ratio_before_external_group_by and max_bytes_before_external_group_by cannot be set simultaneously");
-
-        double ratio = settings[Setting::max_bytes_ratio_before_external_group_by];
-        if (ratio < 0 || ratio >= 1.)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_group_by should be >= 0 and < 1 ({})", ratio);
-
-        auto available_system_memory = getMostStrictAvailableSystemMemory();
-        if (available_system_memory.has_value())
-        {
-            max_bytes_before_external_group_by = static_cast<size_t>(*available_system_memory * ratio);
-            LOG_TEST(getLogger("Aggregator"), "Set max_bytes_before_external_group_by={} (ratio: {}, available system memory: {})",
-                formatReadableSizeWithBinarySuffix(max_bytes_before_external_group_by),
-                ratio,
-                formatReadableSizeWithBinarySuffix(*available_system_memory));
-        }
-        else
-        {
-            LOG_WARNING(getLogger("Aggregator"), "No system memory limits configured. Ignoring max_bytes_ratio_before_external_group_by");
-        }
-    }
-}
-
-Aggregator::Params::Params(
-    const Names & keys_,
-    const AggregateDescriptions & aggregates_,
-    bool overflow_row_,
-    size_t max_threads_,
-    size_t max_block_size_,
-    double min_hit_rate_to_use_consecutive_keys_optimization_)
-    : keys(keys_)
-    , keys_size(keys.size())
-    , aggregates(aggregates_)
-    , aggregates_size(aggregates_.size())
-    , overflow_row(overflow_row_)
-    , max_threads(max_threads_)
-    , max_block_size(max_block_size_)
-    , only_merge(true)
-    , min_hit_rate_to_use_consecutive_keys_optimization(min_hit_rate_to_use_consecutive_keys_optimization_)
-{
 }
 
 Block Aggregator::Params::getHeader(
@@ -435,7 +338,10 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     , tmp_data(params.tmp_data_scope ? params.tmp_data_scope->childScope(CurrentMetrics::TemporaryFilesForAggregation) : nullptr)
     , min_bytes_for_prefetch(getMinBytesForPrefetch())
 {
-    memory_usage_before_aggregation = getCurrentQueryMemoryUsage();
+    /// Use query-level memory tracker
+    if (auto * memory_tracker_child = CurrentThread::getMemoryTracker())
+        if (auto * memory_tracker = memory_tracker_child->getParent())
+            memory_usage_before_aggregation = memory_tracker->get();
 
     aggregate_functions.resize(params.aggregates_size);
     for (size_t i = 0; i < params.aggregates_size; ++i)
@@ -1568,7 +1474,10 @@ bool Aggregator::executeOnBlock(Columns columns,
     }
 
     size_t result_size = result.sizeWithoutOverflowRow();
-    Int64 current_memory_usage = getCurrentQueryMemoryUsage();
+    Int64 current_memory_usage = 0;
+    if (auto * memory_tracker_child = CurrentThread::getMemoryTracker())
+        if (auto * memory_tracker = memory_tracker_child->getParent())
+            current_memory_usage = memory_tracker->get();
 
     /// Here all the results in the sum are taken into account, from different threads.
     auto result_size_bytes = current_memory_usage - memory_usage_before_aggregation;
@@ -2997,7 +2906,10 @@ bool Aggregator::mergeOnBlock(Block block, AggregatedDataVariants & result, bool
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
 
     size_t result_size = result.sizeWithoutOverflowRow();
-    Int64 current_memory_usage = getCurrentQueryMemoryUsage();
+    Int64 current_memory_usage = 0;
+    if (auto * memory_tracker_child = CurrentThread::getMemoryTracker())
+        if (auto * memory_tracker = memory_tracker_child->getParent())
+            current_memory_usage = memory_tracker->get();
 
     /// Here all the results in the sum are taken into account, from different threads.
     auto result_size_bytes = current_memory_usage - memory_usage_before_aggregation;

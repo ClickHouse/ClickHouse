@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2985
+personal_ws-1.1 en 2984
 AArch
 ACLs
 ALTERs
@@ -1388,6 +1388,7 @@ bools
 boringssl
 boundingRatio
 bozerkins
+broadcasted
 brotli
 bson
 bsoneachrow
@@ -1413,6 +1414,7 @@ cardinalities
 cardinality
 cartesian
 cassandra
+casted
 catboost
 catboostEvaluate
 categoricalInformationValue
@@ -1823,7 +1825,6 @@ geoip
 geospatial
 getClientHTTPHeader
 getMacro
-getMaxTableNameLengthForDatabase
 getOSKernelVersion
 getServerPort
 getSetting
@@ -2826,7 +2827,6 @@ summapwithoverflow
 summingmergetree
 sumwithoverflow
 superaggregates
-superset
 supertype
 supremum
 symlink

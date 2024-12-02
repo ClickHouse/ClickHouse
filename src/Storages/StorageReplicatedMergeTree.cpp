@@ -208,6 +208,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool use_minimalistic_checksums_in_zookeeper;
     extern const MergeTreeSettingsBool use_minimalistic_part_header_in_zookeeper;
     extern const MergeTreeSettingsMilliseconds wait_for_unique_parts_send_before_shutdown_ms;
+    extern const MergeTreeSettingsBool prewarm_mark_cache;
 }
 
 namespace FailPoints
@@ -512,11 +513,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     }
 
     loadDataParts(skip_sanity_checks, expected_parts_on_this_replica);
-
-    prewarmCaches(
-        getActivePartsLoadingThreadPool().get(),
-        getMarkCacheToPrewarm(),
-        getPrimaryIndexCacheToPrewarm());
+    prewarmMarkCacheIfNeeded(getActivePartsLoadingThreadPool().get());
 
     if (LoadingStrictnessLevel::ATTACH <= mode)
     {
@@ -5089,15 +5086,10 @@ bool StorageReplicatedMergeTree::fetchPart(
                 ProfileEvents::increment(ProfileEvents::ObsoleteReplicatedParts);
             }
 
-            if (auto mark_cache = getMarkCacheToPrewarm())
+            if ((*getSettings())[MergeTreeSetting::prewarm_mark_cache] && getContext()->getMarkCache())
             {
                 auto column_names = getColumnsToPrewarmMarks(*getSettings(), part->getColumns());
-                part->loadMarksToCache(column_names, mark_cache.get());
-            }
-
-            if (auto index_cache = getPrimaryIndexCacheToPrewarm())
-            {
-                part->loadIndexToCache(*index_cache);
+                part->loadMarksToCache(column_names, getContext()->getMarkCache().get());
             }
 
             write_part_log({});

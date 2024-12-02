@@ -970,7 +970,7 @@ std::vector<String> ColumnsDescription::getAllRegisteredNames() const
     names.reserve(columns.size());
     for (const auto & column : columns)
     {
-        if (!column.name.contains('.'))
+        if (column.name.find('.') == std::string::npos)
             names.push_back(column.name);
     }
     return names;

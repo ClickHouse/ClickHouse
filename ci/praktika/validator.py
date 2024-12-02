@@ -3,9 +3,9 @@ import sys
 from itertools import chain
 from pathlib import Path
 
-from . import Workflow
-from .mangle import _get_workflows
-from .settings import GHRunners, Settings
+from praktika import Workflow
+from praktika.mangle import _get_workflows
+from praktika.settings import GHRunners, Settings
 
 
 class Validator:

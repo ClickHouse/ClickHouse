@@ -1,8 +1,8 @@
-from ._environment import _Environment
-from .cache import Cache
-from .runtime import RunConfig
-from .settings import Settings
-from .utils import Utils
+from praktika._environment import _Environment
+from praktika.cache import Cache
+from praktika.runtime import RunConfig
+from praktika.settings import Settings
+from praktika.utils import Utils
 
 
 class CacheRunnerHooks:

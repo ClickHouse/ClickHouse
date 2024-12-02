@@ -83,12 +83,6 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         new_values["MarkCacheFiles"] = { mark_cache->count(), "Total number of mark files cached in the mark cache" };
     }
 
-    if (auto primary_index_cache = getContext()->getPrimaryIndexCache())
-    {
-        new_values["PrimaryIndexCacheBytes"] = { primary_index_cache->sizeInBytes(), "Total size of primary index cache in bytes" };
-        new_values["PrimaryIndexCacheFiles"] = { primary_index_cache->count(), "Total number of index files cached in the primary index cache" };
-    }
-
     if (auto page_cache = getContext()->getPageCache())
     {
         auto rss = page_cache->getResidentSetSize();

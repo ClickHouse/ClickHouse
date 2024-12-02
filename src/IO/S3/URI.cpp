@@ -99,7 +99,7 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
     /// '?' can not be used as a wildcard, otherwise it will be ambiguous.
     /// If no "versionId" in the http parameter, '?' can be used as a wildcard.
     /// It is necessary to encode '?' to avoid deletion during parsing path.
-    if (!has_version_id && uri_.contains('?'))
+    if (!has_version_id && uri_.find('?') != String::npos)
     {
         String uri_with_question_mark_encode;
         Poco::URI::encode(uri_, "?", uri_with_question_mark_encode);

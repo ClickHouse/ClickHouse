@@ -100,7 +100,6 @@ namespace ErrorCodes
     DECLARE(String, merge_workload, "", "Name of workload to be used to access resources for merges", 0) \
     DECLARE(String, mutation_workload, "", "Name of workload to be used to access resources for mutations", 0) \
     DECLARE(Milliseconds, background_task_preferred_step_execution_time_ms, 50, "Target time to execution of one step of merge or mutation. Can be exceeded if one step takes longer time", 0) \
-    DECLARE(Bool, enforce_index_structure_match_on_partition_manipulation, false, "If this setting is enabled for destination table of a partition manipulation query (`ATTACH/MOVE/REPLACE PARTITION`), the indices and projections must be identical between the source and destination tables. Otherwise, the destination table can have a superset of the source table's indices and projections.", 0) \
     DECLARE(MergeSelectorAlgorithm, merge_selector_algorithm, MergeSelectorAlgorithm::SIMPLE, "The algorithm to select parts for merges assignment", EXPERIMENTAL) \
     DECLARE(Bool, merge_selector_enable_heuristic_to_remove_small_parts_at_right, true, "Enable heuristic for selecting parts for merge which removes parts from right side of range, if their size is less than specified ratio (0.01) of sum_size. Works for Simple and StochasticSimple merge selectors", 0) \
     DECLARE(Float, merge_selector_base, 5.0, "Affects write amplification of assigned merges (expert level setting, don't change if you don't understand what it is doing). Works for Simple and StochasticSimple merge selectors", 0) \
@@ -240,8 +239,6 @@ namespace ErrorCodes
     DECLARE(UInt64, primary_key_compress_block_size, 65536, "Primary compress block size, the actual size of the block to compress.", 0) \
     DECLARE(Bool, primary_key_lazy_load, true, "Load primary key in memory on first use instead of on table initialization. This can save memory in the presence of a large number of tables.", 0) \
     DECLARE(Float, primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns, 0.9f, "If the value of a column of the primary key in data part changes at least in this ratio of times, skip loading next columns in memory. This allows to save memory usage by not loading useless columns of the primary key.", 0) \
-    DECLARE(Bool, use_primary_key_cache, false, "Use cache for primary index instead of saving all indexes in memory. Can be useful for very large tables", 0) \
-    DECLARE(Bool, prewarm_primary_key_cache, false, "If true primary index cache will be prewarmed by saving marks to mark cache on inserts, merges, fetches and on startup of server", 0) \
     DECLARE(Bool, prewarm_mark_cache, false, "If true mark cache will be prewarmed by saving marks to mark cache on inserts, merges, fetches and on startup of server", 0) \
     DECLARE(String, columns_to_prewarm_mark_cache, "", "List of columns to prewarm mark cache for (if enabled). Empty means all columns", 0) \
     /** Projection settings. */ \

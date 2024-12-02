@@ -233,17 +233,12 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString storage_policy;
     extern const MergeTreeSettingsFloat zero_copy_concurrent_part_removal_max_postpone_ratio;
     extern const MergeTreeSettingsUInt64 zero_copy_concurrent_part_removal_max_split_times;
-    extern const MergeTreeSettingsBool use_primary_key_cache;
-    extern const MergeTreeSettingsBool prewarm_primary_key_cache;
     extern const MergeTreeSettingsBool prewarm_mark_cache;
-    extern const MergeTreeSettingsBool primary_key_lazy_load;
-    extern const MergeTreeSettingsBool enforce_index_structure_match_on_partition_manipulation;
 }
 
 namespace ServerSetting
 {
     extern const ServerSettingsDouble mark_cache_prewarm_ratio;
-    extern const ServerSettingsDouble primary_index_cache_prewarm_ratio;
 }
 
 namespace ErrorCodes
@@ -2355,44 +2350,32 @@ void MergeTreeData::stopOutdatedAndUnexpectedDataPartsLoadingTask()
     }
 }
 
-PrimaryIndexCachePtr MergeTreeData::getPrimaryIndexCache() const
-{
-    bool use_primary_key_cache = (*getSettings())[MergeTreeSetting::use_primary_key_cache];
-    bool primary_key_lazy_load = (*getSettings())[MergeTreeSetting::primary_key_lazy_load];
-
-    if (!use_primary_key_cache || !primary_key_lazy_load)
-        return nullptr;
-
-    return getContext()->getPrimaryIndexCache();
-}
-
-PrimaryIndexCachePtr MergeTreeData::getPrimaryIndexCacheToPrewarm() const
-{
-    if (!(*getSettings())[MergeTreeSetting::prewarm_primary_key_cache])
-        return nullptr;
-
-    return getPrimaryIndexCache();
-}
-
-MarkCachePtr MergeTreeData::getMarkCacheToPrewarm() const
+void MergeTreeData::prewarmMarkCacheIfNeeded(ThreadPool & pool)
 {
     if (!(*getSettings())[MergeTreeSetting::prewarm_mark_cache])
-        return nullptr;
+        return;
 
-    return getContext()->getMarkCache();
+    prewarmMarkCache(pool);
 }
 
-void MergeTreeData::prewarmCaches(ThreadPool & pool, MarkCachePtr mark_cache, PrimaryIndexCachePtr index_cache)
+void MergeTreeData::prewarmMarkCache(ThreadPool & pool)
 {
-    if (!mark_cache && !index_cache)
+    auto * mark_cache = getContext()->getMarkCache().get();
+    if (!mark_cache)
+        return;
+
+    auto metadata_snaphost = getInMemoryMetadataPtr();
+    auto column_names = getColumnsToPrewarmMarks(*getSettings(), metadata_snaphost->getColumns().getAllPhysical());
+
+    if (column_names.empty())
         return;
 
     Stopwatch watch;
-    LOG_TRACE(log, "Prewarming mark and/or primary index caches");
+    LOG_TRACE(log, "Prewarming mark cache");
 
     auto data_parts = getDataPartsVectorForInternalUsage();
 
-    /// Prewarm caches firstly for the most fresh parts according
+    /// Prewarm mark cache firstly for the most fresh parts according
     /// to time columns in partition key (if exists) and by modification time.
 
     auto to_tuple = [](const auto & part)
@@ -2405,43 +2388,20 @@ void MergeTreeData::prewarmCaches(ThreadPool & pool, MarkCachePtr mark_cache, Pr
         return to_tuple(lhs) > to_tuple(rhs);
     });
 
-    double marks_ratio_to_prewarm = getContext()->getServerSettings()[ServerSetting::mark_cache_prewarm_ratio];
-    double index_ratio_to_prewarm = getContext()->getServerSettings()[ServerSetting::primary_index_cache_prewarm_ratio];
-
-    Names columns_to_prewarm_marks;
-
-    if (mark_cache)
-    {
-        auto metadata_snaphost = getInMemoryMetadataPtr();
-        columns_to_prewarm_marks = getColumnsToPrewarmMarks(*getSettings(), metadata_snaphost->getColumns().getAllPhysical());
-    }
-
-    /// Allocate runner on stack after all used local variables to make its destructor
-    /// is called first and all tasks stopped before local variables are being destroyed.
-    ThreadPoolCallbackRunnerLocal<void> runner(pool, "PrewarmCaches");
+    ThreadPoolCallbackRunnerLocal<void> runner(pool, "PrewarmMarks");
+    double ratio_to_prewarm = getContext()->getServerSettings()[ServerSetting::mark_cache_prewarm_ratio];
 
     for (const auto & part : data_parts)
     {
-        bool added_task = false;
-
-        if (index_cache && !part->isIndexLoaded() && index_cache->sizeInBytes() < index_cache->maxSizeInBytes() * index_ratio_to_prewarm)
-        {
-            added_task = true;
-            runner([&] { part->loadIndexToCache(*index_cache); });
-        }
-
-        if (mark_cache && mark_cache->sizeInBytes() < mark_cache->maxSizeInBytes() * marks_ratio_to_prewarm)
-        {
-            added_task = true;
-            runner([&] { part->loadMarksToCache(columns_to_prewarm_marks, mark_cache.get()); });
-        }
-
-        if (!added_task)
+        if (mark_cache->sizeInBytes() >= mark_cache->maxSizeInBytes() * ratio_to_prewarm)
             break;
+
+        runner([&] { part->loadMarksToCache(column_names, mark_cache); });
     }
 
     runner.waitForAllToFinishAndRethrowFirstError();
-    LOG_TRACE(log, "Prewarmed mark and/or primary index caches in {} seconds", watch.elapsedSeconds());
+    watch.stop();
+    LOG_TRACE(log, "Prewarmed mark cache in {} seconds", watch.elapsedSeconds());
 }
 
 /// Is the part directory old.
@@ -6505,7 +6465,7 @@ DetachedPartsInfo MergeTreeData::getDetachedParts() const
 
 void MergeTreeData::validateDetachedPartName(const String & name)
 {
-    if (name.contains('/') || name == "." || name == "..")
+    if (name.find('/') != std::string::npos || name == "." || name == "..")
         throw DB::Exception(ErrorCodes::INCORRECT_FILE_NAME, "Invalid part name '{}'", name);
 
     if (startsWith(name, "attaching_") || startsWith(name, "deleting_"))
@@ -7573,11 +7533,10 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
 
     if (query_to_string(my_snapshot->getPrimaryKeyAST()) != query_to_string(src_snapshot->getPrimaryKeyAST()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different primary key");
-    const auto check_definitions = [this](const auto & my_descriptions, const auto & src_descriptions)
+
+    const auto check_definitions = [](const auto & my_descriptions, const auto & src_descriptions)
     {
-        bool strict_match = (*getSettings())[MergeTreeSetting::enforce_index_structure_match_on_partition_manipulation];
-        if ((my_descriptions.size() < src_descriptions.size()) ||
-            (strict_match && my_descriptions.size() != src_descriptions.size()))
+        if (my_descriptions.size() != src_descriptions.size())
             return false;
 
         std::unordered_set<std::string> my_query_strings;
@@ -9088,16 +9047,6 @@ bool MergeTreeData::initializeDiskOnConfigChange(const std::set<String> & new_ad
         }
     }
     return true;
-}
-
-void MergeTreeData::loadPrimaryKeys() const
-{
-    auto data_parts = getDataPartsVectorForInternalUsage();
-    for (const auto & data_part : data_parts)
-    {
-        /// We call getIndex() because it calls loadIndex() after locking its mutex, but we don't need its value.
-        data_part->getIndex();
-    }
 }
 
 void MergeTreeData::unloadPrimaryKeys()
