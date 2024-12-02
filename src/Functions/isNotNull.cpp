@@ -125,7 +125,7 @@ public:
         if (arguments[0].type->isNullable())
         {
             auto * is_null = b.CreateExtractValue(arguments[0].value, {1});
-            return b.CreateNot(is_null);
+            return b.CreateSelect(is_null, b.getInt8(0), b.getInt8(1));
         }
         else
             return b.getInt8(1);
