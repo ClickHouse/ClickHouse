@@ -1019,7 +1019,6 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         file_offset_of_buffer_end,
         state,
         info,
-        /* reset_downloader_after_read */true,
         implementation_buffer_can_be_reused,
         log);
 
@@ -1048,7 +1047,6 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
     size_t & offset,
     ReadFromFileSegmentState & state,
     ReadInfo & info,
-    bool ,
     bool & implementation_buffer_can_be_reused,
     LoggerPtr log)
 {
@@ -1305,7 +1303,6 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
             /* offset */range_begin,
             current_state,
             current_info,
-            /* reset_downloader_after_read */false,
             implementation_buffer_can_be_reused,
             log);
 

@@ -147,7 +147,6 @@ private:
         size_t & offset,
         ReadFromFileSegmentState & state,
         ReadInfo & info,
-        bool reset_downloader_after_read,
         bool & implementation_buffer_can_be_reused,
         LoggerPtr log);
 
