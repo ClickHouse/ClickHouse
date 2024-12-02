@@ -17,6 +17,8 @@ $CLICKHOUSE_CLIENT --query "
         use_primary_key_cache = 1,
         prewarm_primary_key_cache = 1,
         prewarm_mark_cache = 1,
+        max_cleanup_delay_period = 1,
+        cleanup_delay_period = 1,
         min_bytes_to_prewarm_caches = 30000;
 
     SYSTEM DROP MARK CACHE;
@@ -47,7 +49,10 @@ $CLICKHOUSE_CLIENT --query "
 "
 
 for _ in {1..100}; do
-    res=$($CLICKHOUSE_CLIENT -q "SELECT metric FROM system.asynchronous_metrics WHERE metric = 'PrimaryIndexCacheFiles'")
+    res=$($CLICKHOUSE_CLIENT -q "
+        SYSTEM RELOAD ASYNCHRONOUS METRICS;
+        SELECT value FROM system.asynchronous_metrics WHERE metric = 'PrimaryIndexCacheFiles';
+    ")
     if [[ $res -eq 0 ]]; then
         break
     fi
