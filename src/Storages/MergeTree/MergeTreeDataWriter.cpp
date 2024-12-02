@@ -14,7 +14,7 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/RowOrderOptimizer.h>
-#include "Common/logger_useful.h"
+#include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
@@ -74,7 +74,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsFloat min_free_disk_ratio_to_perform_insert;
     extern const MergeTreeSettingsBool optimize_row_order;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
-    extern const MergeTreeSettingsBool prewarm_mark_cache;
 }
 
 namespace ErrorCodes
@@ -226,6 +225,27 @@ void MergeTreeDataWriter::TemporaryPart::finalize()
         projection->getDataPartStorage().precommitTransaction();
 }
 
+void MergeTreeDataWriter::TemporaryPart::prewarmCaches()
+{
+    /// This method must be called after rename and commit of part
+    /// because a correct path is required for the keys of caches.
+
+    if (auto mark_cache = part->storage.getMarkCacheToPrewarm())
+    {
+        for (const auto & stream : streams)
+        {
+            auto marks = stream.stream->releaseCachedMarks();
+            addMarksToCache(*part, marks, mark_cache.get());
+        }
+    }
+
+    if (auto index_cache = part->storage.getPrimaryIndexCacheToPrewarm())
+    {
+        /// Index was already set during writing. Now move it to cache.
+        part->moveIndexToCache(*index_cache);
+    }
+}
+
 std::vector<AsyncInsertInfoPtr> scatterAsyncInsertInfoBySelector(AsyncInsertInfoPtr async_insert_info, const IColumn::Selector & selector, size_t partition_num)
 {
     if (nullptr == async_insert_info)
@@ -298,62 +318,67 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
 
     ColumnRawPtrs partition_columns;
     partition_columns.reserve(partition_key_names_and_types.size());
+    bool all_partition_columns_are_equal = true;
     for (const auto & element : partition_key_names_and_types)
+    {
         partition_columns.emplace_back(block_copy.getByName(element.name).column.get());
-
-    PODArray<size_t> partition_num_to_first_row;
-    IColumn::Selector selector;
-    buildScatterSelector(partition_columns, partition_num_to_first_row, selector, max_parts, context);
-
-    auto async_insert_info_with_partition = scatterAsyncInsertInfoBySelector(async_insert_info, selector, partition_num_to_first_row.size());
-
-    size_t partitions_count = partition_num_to_first_row.size();
-    result.reserve(partitions_count);
-
-    auto get_partition = [&](size_t num)
+        if (!partition_columns.back()->hasEqualValues())
+            all_partition_columns_are_equal = false;
+    }
+    auto get_partition = [&](size_t row_num)
     {
         Row partition(partition_columns.size());
         for (size_t i = 0; i < partition_columns.size(); ++i)
-            partition[i] = (*partition_columns[i])[partition_num_to_first_row[num]];
+            partition[i] = (*partition_columns[i])[row_num];
         return partition;
     };
 
-    if (partitions_count == 1)
+    if (!all_partition_columns_are_equal)
+    {
+        PODArray<size_t> partition_num_to_first_row;
+        IColumn::Selector selector;
+        buildScatterSelector(partition_columns, partition_num_to_first_row, selector, max_parts, context);
+
+        auto async_insert_info_with_partition = scatterAsyncInsertInfoBySelector(async_insert_info, selector, partition_num_to_first_row.size());
+
+        size_t partitions_count = partition_num_to_first_row.size();
+        result.reserve(partitions_count);
+
+        for (size_t i = 0; i < partitions_count; ++i)
+            result.emplace_back(block.cloneEmpty(), get_partition(partition_num_to_first_row[i]));
+
+        for (size_t col = 0; col < block.columns(); ++col)
+        {
+            MutableColumns scattered = block.getByPosition(col).column->scatter(partitions_count, selector);
+            for (size_t i = 0; i < partitions_count; ++i)
+                result[i].block.getByPosition(col).column = std::move(scattered[i]);
+        }
+
+        for (size_t i = 0; i < async_insert_info_with_partition.size(); ++i)
+        {
+            if (async_insert_info_with_partition[i] == nullptr)
+            {
+                LOG_ERROR(
+                    getLogger("MergeTreeDataWriter"),
+                    "The {}th element in async_insert_info_with_partition is nullptr. There are totally {} partitions in the insert. Selector content is ({}). Offsets content is ({})",
+                    i, partitions_count, fmt::join(selector.begin(), selector.end(), ","), fmt::join(async_insert_info->offsets.begin(), async_insert_info->offsets.end(), ","));
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error for async deduplicated insert, please check error logs");
+            }
+            result[i].offsets = std::move(async_insert_info_with_partition[i]->offsets);
+            result[i].tokens = std::move(async_insert_info_with_partition[i]->tokens);
+        }
+    }
+    else
     {
         /// A typical case is when there is one partition (you do not need to split anything).
         /// NOTE: returning a copy of the original block so that calculated partition key columns
         /// do not interfere with possible calculated primary key columns of the same name.
         result.emplace_back(Block(block), get_partition(0));
-        if (!async_insert_info_with_partition.empty())
+        if (async_insert_info != nullptr)
         {
-            result[0].offsets = std::move(async_insert_info_with_partition[0]->offsets);
-            result[0].tokens = std::move(async_insert_info_with_partition[0]->tokens);
+            result[0].offsets = std::move(async_insert_info->offsets);
+            result[0].tokens = std::move(async_insert_info->tokens);
         }
-        return result;
-    }
-
-    for (size_t i = 0; i < partitions_count; ++i)
-        result.emplace_back(block.cloneEmpty(), get_partition(i));
-
-    for (size_t col = 0; col < block.columns(); ++col)
-    {
-        MutableColumns scattered = block.getByPosition(col).column->scatter(partitions_count, selector);
-        for (size_t i = 0; i < partitions_count; ++i)
-            result[i].block.getByPosition(col).column = std::move(scattered[i]);
-    }
-
-    for (size_t i = 0; i < async_insert_info_with_partition.size(); ++i)
-    {
-        if (async_insert_info_with_partition[i] == nullptr)
-        {
-            LOG_ERROR(
-                getLogger("MergeTreeDataWriter"),
-                "The {}th element in async_insert_info_with_partition is nullptr. There are totally {} partitions in the insert. Selector content is ({}). Offsets content is ({})",
-                i, partitions_count, fmt::join(selector.begin(), selector.end(), ","), fmt::join(async_insert_info->offsets.begin(), async_insert_info->offsets.end(), ","));
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error for async deduplicated insert, please check error logs");
-        }
-        result[i].offsets = std::move(async_insert_info_with_partition[i]->offsets);
-        result[i].tokens = std::move(async_insert_info_with_partition[i]->tokens);
     }
 
     return result;
@@ -684,7 +709,6 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     /// This effectively chooses minimal compression method:
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
     auto compression_codec = data.getContext()->chooseCompressionCodec(0, 0);
-    bool save_marks_in_cache = (*data_settings)[MergeTreeSetting::prewarm_mark_cache] && data.getContext()->getMarkCache();
 
     auto index_granularity_ptr = createMergeTreeIndexGranularity(
         block.rows(),
@@ -703,7 +727,6 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
         std::move(index_granularity_ptr),
         context->getCurrentTransaction() ? context->getCurrentTransaction()->tid : Tx::PrehistoricTID,
         /*reset_columns=*/ false,
-        save_marks_in_cache,
         /*blocks_are_granules_size=*/ false,
         context->getWriteSettings());
 
@@ -838,7 +861,6 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     /// This effectively chooses minimal compression method:
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
     auto compression_codec = data.getContext()->chooseCompressionCodec(0, 0);
-    bool save_marks_in_cache = (*data.getSettings())[MergeTreeSetting::prewarm_mark_cache] && data.getContext()->getMarkCache();
 
     auto index_granularity_ptr = createMergeTreeIndexGranularity(
         block.rows(),
@@ -858,7 +880,6 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
         std::move(index_granularity_ptr),
         Tx::PrehistoricTID,
         /*reset_columns=*/ false,
-        save_marks_in_cache,
         /*blocks_are_granules_size=*/ false,
         data.getContext()->getWriteSettings());
 
