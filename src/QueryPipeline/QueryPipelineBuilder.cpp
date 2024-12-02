@@ -341,6 +341,7 @@ QueryPipelineBuilderPtr QueryPipelineBuilder::mergePipelines(
     left->pipe.processors->insert(left->pipe.processors->end(), right->pipe.processors->begin(), right->pipe.processors->end());
     left->pipe.header = left->pipe.output_ports.front()->getHeader();
     left->pipe.max_parallel_streams = std::max(left->pipe.max_parallel_streams, right->pipe.max_parallel_streams);
+    left->resources = std::move(right->resources);
     return left;
 }
 
