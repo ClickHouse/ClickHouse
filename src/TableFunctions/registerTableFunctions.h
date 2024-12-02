@@ -70,10 +70,9 @@ void registerTableFunctionExplain(TableFunctionFactory & factory);
 void registerTableFunctionObjectStorage(TableFunctionFactory & factory);
 void registerTableFunctionObjectStorageCluster(TableFunctionFactory & factory);
 void registerDataLakeTableFunctions(TableFunctionFactory & factory);
-void registerDataLakeClusterTableFunctions(TableFunctionFactory & factory);
 
 void registerTableFunctionTimeSeries(TableFunctionFactory & factory);
 
-void registerTableFunctions();
+void registerTableFunctions(bool use_legacy_mongodb_integration [[maybe_unused]]);
 
 }

@@ -276,7 +276,7 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
                 thread_group->performance_counters.setTraceProfileEvents(settings[Setting::trace_profile_events]);
             }
 
-            thread_group->memory_tracker.setDescription("Query");
+            thread_group->memory_tracker.setDescription("(for query)");
             if (settings[Setting::memory_tracker_fault_probability] > 0.0)
                 thread_group->memory_tracker.setFaultProbability(settings[Setting::memory_tracker_fault_probability]);
 
@@ -311,7 +311,7 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
         /// Track memory usage for all simultaneously running queries from single user.
         user_process_list.user_memory_tracker.setOrRaiseHardLimit(settings[Setting::max_memory_usage_for_user]);
         user_process_list.user_memory_tracker.setSoftLimit(settings[Setting::memory_overcommit_ratio_denominator_for_user]);
-        user_process_list.user_memory_tracker.setDescription("User");
+        user_process_list.user_memory_tracker.setDescription("(for user)");
 
         if (!total_network_throttler && settings[Setting::max_network_bandwidth_for_all_users])
         {
@@ -447,16 +447,12 @@ void QueryStatus::ExecutorHolder::remove()
     executor = nullptr;
 }
 
-CancellationCode QueryStatus::cancelQuery(bool /* kill */, std::exception_ptr exception)
+CancellationCode QueryStatus::cancelQuery(bool)
 {
-    if (is_killed.exchange(true))
+    if (is_killed.load())
         return CancellationCode::CancelSent;
 
-    {
-        std::lock_guard lock{cancellation_exception_mutex};
-        if (!cancellation_exception)
-            cancellation_exception = exception;
-    }
+    is_killed.store(true);
 
     std::vector<ExecutorHolderPtr> executors_snapshot;
 
@@ -490,7 +486,7 @@ void QueryStatus::addPipelineExecutor(PipelineExecutor * e)
     /// addPipelineExecutor() from the cancelQuery() context, and this will
     /// lead to deadlock.
     if (is_killed.load())
-        throwQueryWasCancelled();
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 
     std::lock_guard lock(executors_mutex);
     assert(!executors.contains(e));
@@ -516,18 +512,9 @@ void QueryStatus::removePipelineExecutor(PipelineExecutor * e)
 bool QueryStatus::checkTimeLimit()
 {
     if (is_killed.load())
-        throwQueryWasCancelled();
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 
     return limits.checkTimeLimit(watch, overflow_mode);
-}
-
-void QueryStatus::throwQueryWasCancelled() const
-{
-    std::lock_guard lock{cancellation_exception_mutex};
-    if (cancellation_exception)
-        std::rethrow_exception(cancellation_exception);
-    else
-        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 }
 
 bool QueryStatus::checkTimeLimitSoft()

@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionHelpers.h>
 
 namespace DB
 {

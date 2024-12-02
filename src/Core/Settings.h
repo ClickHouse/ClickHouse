@@ -4,7 +4,6 @@
 #include <Core/Field.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
-#include <Core/SettingsTierType.h>
 #include <Core/SettingsWriteFormat.h>
 #include <base/types.h>
 #include <Common/SettingsChanges.h>
@@ -45,7 +44,6 @@ class WriteBuffer;
 #define COMMON_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, ArrowCompression) \
     M(CLASS_NAME, Bool) \
-    M(CLASS_NAME, BoolAuto) \
     M(CLASS_NAME, CapnProtoEnumComparingMode) \
     M(CLASS_NAME, Char) \
     M(CLASS_NAME, DateTimeInputFormat) \
@@ -119,7 +117,6 @@ struct Settings
     /// General API as needed
     bool has(std::string_view name) const;
     bool isChanged(std::string_view name) const;
-    SettingsTierType getTier(std::string_view name) const;
 
     bool tryGet(std::string_view name, Field & value) const;
     Field get(std::string_view name) const;

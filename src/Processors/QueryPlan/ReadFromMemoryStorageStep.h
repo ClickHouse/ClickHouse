@@ -35,8 +35,6 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    const StoragePtr & getStorage() const { return storage; }
-
 private:
     static constexpr auto name = "ReadFromMemoryStorage";
 

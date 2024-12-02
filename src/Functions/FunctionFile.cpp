@@ -138,8 +138,9 @@ public:
                     throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File is not inside {}", user_files_absolute_path.string());
 
                 ReadBufferFromFile in(file_path);
-                auto out = WriteBufferFromVector<ColumnString::Chars>(res_chars, AppendModeTag{});
+                WriteBufferFromVector out(res_chars, AppendModeTag{});
                 copyData(in, out);
+                out.finalize();
             }
             catch (...)
             {

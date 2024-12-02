@@ -406,10 +406,9 @@ WeakHash32 ColumnAggregateFunction::getWeakHash32() const
     std::vector<UInt8> v;
     for (size_t i = 0; i < s; ++i)
     {
-        {
-            WriteBufferFromVector<std::vector<UInt8>> wbuf(v);
-            func->serialize(data[i], wbuf, version);
-        }
+        WriteBufferFromVector<std::vector<UInt8>> wbuf(v);
+        func->serialize(data[i], wbuf, version);
+        wbuf.finalize();
         hash_data[i] = ::updateWeakHash32(v.data(), v.size(), hash_data[i]);
     }
 
@@ -418,10 +417,9 @@ WeakHash32 ColumnAggregateFunction::getWeakHash32() const
 
 void ColumnAggregateFunction::updateHashFast(SipHash & hash) const
 {
-    WriteBufferFromOwnString wbuf;
-    const ColumnAggregateFunction::Container & vec = getData();
-    func->serializeBatch(vec, 0, size(), wbuf);
-    hash.update(wbuf.str().c_str(), wbuf.str().size());
+    /// Fallback to per-element hashing, as there is no faster way
+    for (size_t i = 0; i < size(); ++i)
+        updateHashWithValue(i, hash);
 }
 
 /// The returned size is less than real size. The reason is that some parts of

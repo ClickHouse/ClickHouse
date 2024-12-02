@@ -401,7 +401,7 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
 
 
 template <typename Writer>
-static void serializeTextImpl(const IColumn & column, size_t row_num, const FormatSettings & settings, WriteBuffer & ostr, Writer && write_nested)
+static void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, Writer && write_nested)
 {
     const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
     const ColumnArray::Offsets & offsets = column_array.getOffsets();
@@ -412,14 +412,10 @@ static void serializeTextImpl(const IColumn & column, size_t row_num, const Form
     const IColumn & nested_column = column_array.getData();
 
     writeChar('[', ostr);
-
-    if (next_offset != offset)
-        write_nested(nested_column, offset);
-    for (size_t i = offset + 1; i < next_offset; ++i)
+    for (size_t i = offset; i < next_offset; ++i)
     {
-        writeChar(',', ostr);
-        if (settings.composed_data_type_output_format_mode == "spark")
-            writeChar(' ', ostr);
+        if (i != offset)
+            writeChar(',', ostr);
         write_nested(nested_column, i);
     }
     writeChar(']', ostr);
@@ -524,13 +520,10 @@ static ReturnType deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reade
 
 void SerializationArray::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    serializeTextImpl(column, row_num, settings, ostr,
+    serializeTextImpl(column, row_num, ostr,
         [&](const IColumn & nested_column, size_t i)
         {
-            if (settings.composed_data_type_output_format_mode == "spark")
-                nested->serializeText(nested_column, i, ostr, settings);
-            else
-                nested->serializeTextQuoted(nested_column, i, ostr, settings);
+            nested->serializeTextQuoted(nested_column, i, ostr, settings);
         });
 }
 
