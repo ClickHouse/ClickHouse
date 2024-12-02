@@ -274,9 +274,6 @@ void buildSimpleJoinClause(
     if (function_node)
         function_name = function_node->getFunction()->getName();
 
-    if (function_name == "and" || function_name == "or")
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot build simple join clause for AND or OR functions");
-
     auto asof_inequality = getASOFJoinInequality(function_name);
     bool is_asof_join_inequality = join_node.getStrictness() == JoinStrictness::Asof && asof_inequality != ASOFJoinInequality::None;
 
@@ -319,6 +316,12 @@ void buildSimpleJoinClause(
 
             if (left_expression_side != right_expression_side)
             {
+                if (function_name == "or" || function_name == "and")
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Cannot build simple join clause for '{}' expression containing expressions from both tables!",
+                        function_name);
+
                 auto left_key = left_child;
                 auto right_key = right_child;
 
@@ -642,7 +645,10 @@ JoinClauses buildJoinClauses(
         auto node = nodes_to_process.top();
         auto * function_node = node->as<FunctionNode>();
         const auto function_name = function_node ? function_node->getFunctionName() : String();
-        if (function_name == "and" || function_name == "or")
+        const auto expression_sides
+            = extractJoinTableSidesFromExpression(node.get(), left_table_expressions, right_table_expressions, join_node);
+        // If the expression is a logical expression and it contains expressions from both sides, let's combine the clauses, otherwise let's just build one join clause
+        if ((function_name == "and" || function_name == "or") && expression_sides.size() == 2)
         {
             auto & arguments = function_node->getArguments().getNodes();
             auto * first_argument = arguments.front().get();
