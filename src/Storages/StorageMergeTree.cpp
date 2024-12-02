@@ -317,6 +317,16 @@ std::optional<UInt64> StorageMergeTree::totalBytesUncompressed(const Settings &)
     return res;
 }
 
+std::optional<UInt64> StorageMergeTree::totalBytesWithInactive(const Settings &) const
+{
+    UInt64 res = 0;
+    auto outdated_parts = getDataPartsVectorForInternalUsage({DataPartState::Outdated});
+    for (const auto & part : outdated_parts)
+        res += part->getBytesOnDisk();
+    return res;
+}
+
+
 SinkToStoragePtr
 StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
