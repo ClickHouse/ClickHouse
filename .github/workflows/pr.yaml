@@ -180,11 +180,11 @@ jobs:
             python3 -m praktika run '''Fast test''' --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
           fi
 
-  build_amd_debug:
+  build_package_amd_debug:
     runs-on: [builder]
     needs: [config_workflow, docker_builds]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF9kZWJ1Zyk=') }}
-    name: "Build (amd_debug)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKHBhY2thZ2VfYW1kX2RlYnVnKQ==') }}
+    name: "Build (package_amd_debug)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -215,16 +215,16 @@ jobs:
           . /tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run '''Build (amd_debug)''' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run '''Build (package_amd_debug)''' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
           else
-            python3 -m praktika run '''Build (amd_debug)''' --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run '''Build (package_amd_debug)''' --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
           fi
 
-  build_amd_release:
+  build_package_amd_release:
     runs-on: [builder]
     needs: [config_workflow, docker_builds]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF9yZWxlYXNlKQ==') }}
-    name: "Build (amd_release)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKHBhY2thZ2VfYW1kX3JlbGVhc2Up') }}
+    name: "Build (package_amd_release)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -255,16 +255,16 @@ jobs:
           . /tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run '''Build (amd_release)''' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run '''Build (package_amd_release)''' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
           else
-            python3 -m praktika run '''Build (amd_release)''' --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run '''Build (package_amd_release)''' --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
           fi
 
-  build_amd_asan:
+  build_package_amd_asan:
     runs-on: [builder]
     needs: [config_workflow, docker_builds]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF9hc2FuKQ==') }}
-    name: "Build (amd_asan)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKHBhY2thZ2VfYW1kX2FzYW4p') }}
+    name: "Build (package_amd_asan)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -295,16 +295,16 @@ jobs:
           . /tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run '''Build (amd_asan)''' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run '''Build (package_amd_asan)''' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
           else
-            python3 -m praktika run '''Build (amd_asan)''' --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run '''Build (package_amd_asan)''' --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
           fi
 
-  build_amd_tsan:
+  build_package_amd_tsan:
     runs-on: [builder]
     needs: [config_workflow, docker_builds]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF90c2FuKQ==') }}
-    name: "Build (amd_tsan)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKHBhY2thZ2VfYW1kX3RzYW4p') }}
+    name: "Build (package_amd_tsan)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -335,16 +335,16 @@ jobs:
           . /tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run '''Build (amd_tsan)''' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run '''Build (package_amd_tsan)''' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
           else
-            python3 -m praktika run '''Build (amd_tsan)''' --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run '''Build (package_amd_tsan)''' --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
           fi
 
-  build_amd_msan:
+  build_package_amd_msan:
     runs-on: [builder]
     needs: [config_workflow, docker_builds]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF9tc2FuKQ==') }}
-    name: "Build (amd_msan)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKHBhY2thZ2VfYW1kX21zYW4p') }}
+    name: "Build (package_amd_msan)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -375,16 +375,16 @@ jobs:
           . /tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run '''Build (amd_msan)''' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run '''Build (package_amd_msan)''' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
           else
-            python3 -m praktika run '''Build (amd_msan)''' --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run '''Build (package_amd_msan)''' --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
           fi
 
-  build_amd_ubsan:
+  build_package_amd_ubsan:
     runs-on: [builder]
     needs: [config_workflow, docker_builds]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF91YnNhbik=') }}
-    name: "Build (amd_ubsan)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKHBhY2thZ2VfYW1kX3Vic2FuKQ==') }}
+    name: "Build (package_amd_ubsan)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -415,16 +415,16 @@ jobs:
           . /tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run '''Build (amd_ubsan)''' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run '''Build (package_amd_ubsan)''' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
           else
-            python3 -m praktika run '''Build (amd_ubsan)''' --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run '''Build (package_amd_ubsan)''' --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
           fi
 
-  build_amd_binary:
+  build_package_amd_binary:
     runs-on: [builder]
     needs: [config_workflow, docker_builds]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF9iaW5hcnkp') }}
-    name: "Build (amd_binary)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKHBhY2thZ2VfYW1kX2JpbmFyeSk=') }}
+    name: "Build (package_amd_binary)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -455,16 +455,16 @@ jobs:
           . /tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run '''Build (amd_binary)''' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run '''Build (package_amd_binary)''' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
           else
-            python3 -m praktika run '''Build (amd_binary)''' --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run '''Build (package_amd_binary)''' --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
           fi
 
-  build_arm_release:
+  build_package_arm_release:
     runs-on: [builder-aarch64]
     needs: [config_workflow, docker_builds]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFybV9yZWxlYXNlKQ==') }}
-    name: "Build (arm_release)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKHBhY2thZ2VfYXJtX3JlbGVhc2Up') }}
+    name: "Build (package_arm_release)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -495,16 +495,16 @@ jobs:
           . /tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run '''Build (arm_release)''' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run '''Build (package_arm_release)''' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
           else
-            python3 -m praktika run '''Build (arm_release)''' --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run '''Build (package_arm_release)''' --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
           fi
 
-  build_arm_asan:
+  build_package_arm_asan:
     runs-on: [builder-aarch64]
     needs: [config_workflow, docker_builds]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFybV9hc2FuKQ==') }}
-    name: "Build (arm_asan)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKHBhY2thZ2VfYXJtX2FzYW4p') }}
+    name: "Build (package_arm_asan)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -535,14 +535,14 @@ jobs:
           . /tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run '''Build (arm_asan)''' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run '''Build (package_arm_asan)''' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
           else
-            python3 -m praktika run '''Build (arm_asan)''' --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run '''Build (package_arm_asan)''' --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
           fi
 
   stateless_tests_amd_debugparallel:
     runs-on: [builder]
-    needs: [config_workflow, docker_builds, build_amd_debug]
+    needs: [config_workflow, docker_builds, build_package_amd_debug]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfZGVidWcscGFyYWxsZWwp') }}
     name: "Stateless tests (amd_debug,parallel)"
     outputs:
@@ -582,7 +582,7 @@ jobs:
 
   stateless_tests_amd_debugnon_parallel:
     runs-on: [func-tester]
-    needs: [config_workflow, docker_builds, build_amd_debug]
+    needs: [config_workflow, docker_builds, build_package_amd_debug]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfZGVidWcsbm9uLXBhcmFsbGVsKQ==') }}
     name: "Stateless tests (amd_debug,non-parallel)"
     outputs:
@@ -622,7 +622,7 @@ jobs:
 
   stateless_tests_amd_releaseparallel:
     runs-on: [builder]
-    needs: [config_workflow, docker_builds, build_amd_release]
+    needs: [config_workflow, docker_builds, build_package_amd_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfcmVsZWFzZSxwYXJhbGxlbCk=') }}
     name: "Stateless tests (amd_release,parallel)"
     outputs:
@@ -662,7 +662,7 @@ jobs:
 
   stateless_tests_amd_releasenon_parallel:
     runs-on: [func-tester]
-    needs: [config_workflow, docker_builds, build_amd_release]
+    needs: [config_workflow, docker_builds, build_package_amd_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfcmVsZWFzZSxub24tcGFyYWxsZWwp') }}
     name: "Stateless tests (amd_release,non-parallel)"
     outputs:
@@ -702,7 +702,7 @@ jobs:
 
   stateless_tests_arm_asanparallel:
     runs-on: [builder-aarch64]
-    needs: [config_workflow, docker_builds, build_arm_asan]
+    needs: [config_workflow, docker_builds, build_package_arm_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYXNhbixwYXJhbGxlbCk=') }}
     name: "Stateless tests (arm_asan,parallel)"
     outputs:
@@ -742,7 +742,7 @@ jobs:
 
   stateless_tests_arm_asannon_parallel:
     runs-on: [func-tester-aarch64]
-    needs: [config_workflow, docker_builds, build_arm_asan]
+    needs: [config_workflow, docker_builds, build_package_arm_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYXNhbixub24tcGFyYWxsZWwp') }}
     name: "Stateless tests (arm_asan,non-parallel)"
     outputs:
@@ -782,7 +782,7 @@ jobs:
 
   stateful_tests_amd_releaseparallel:
     runs-on: [builder]
-    needs: [config_workflow, docker_builds, build_amd_debug]
+    needs: [config_workflow, docker_builds, build_package_amd_debug]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVmdWwgdGVzdHMgKGFtZF9yZWxlYXNlLHBhcmFsbGVsKQ==') }}
     name: "Stateful tests (amd_release,parallel)"
     outputs:
@@ -822,7 +822,7 @@ jobs:
 
   stress_tests_arm_release:
     runs-on: [func-tester-aarch64]
-    needs: [config_workflow, docker_builds, build_arm_release]
+    needs: [config_workflow, docker_builds, build_package_arm_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RyZXNzIHRlc3RzIChhcm1fcmVsZWFzZSk=') }}
     name: "Stress tests (arm_release)"
     outputs:
@@ -862,7 +862,7 @@ jobs:
 
   performance_tests:
     runs-on: [func-tester-aarch64]
-    needs: [config_workflow, docker_builds, build_arm_release]
+    needs: [config_workflow, docker_builds, build_package_arm_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgdGVzdHM=') }}
     name: "Performance tests"
     outputs:
@@ -902,7 +902,7 @@ jobs:
 
   compatibility_check_amd_release:
     runs-on: [style-checker]
-    needs: [config_workflow, docker_builds, build_amd_release]
+    needs: [config_workflow, docker_builds, build_package_amd_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'Q29tcGF0aWJpbGl0eSBjaGVjayAoYW1kX3JlbGVhc2Up') }}
     name: "Compatibility check (amd_release)"
     outputs:
@@ -942,7 +942,7 @@ jobs:
 
   compatibility_check_arm_release:
     runs-on: [style-checker-aarch64]
-    needs: [config_workflow, docker_builds, build_arm_release]
+    needs: [config_workflow, docker_builds, build_package_arm_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'Q29tcGF0aWJpbGl0eSBjaGVjayAoYXJtX3JlbGVhc2Up') }}
     name: "Compatibility check (arm_release)"
     outputs:
@@ -982,7 +982,7 @@ jobs:
 
   finish_workflow:
     runs-on: [ci_services]
-    needs: [config_workflow, docker_builds, style_check, fast_test, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_release, build_arm_asan, stateless_tests_amd_debugparallel, stateless_tests_amd_debugnon_parallel, stateless_tests_amd_releaseparallel, stateless_tests_amd_releasenon_parallel, stateless_tests_arm_asanparallel, stateless_tests_arm_asannon_parallel, stateful_tests_amd_releaseparallel, stress_tests_arm_release, performance_tests, compatibility_check_amd_release, compatibility_check_arm_release]
+    needs: [config_workflow, docker_builds, style_check, fast_test, build_package_amd_debug, build_package_amd_release, build_package_amd_asan, build_package_amd_tsan, build_package_amd_msan, build_package_amd_ubsan, build_package_amd_binary, build_package_arm_release, build_package_arm_asan, stateless_tests_amd_debugparallel, stateless_tests_amd_debugnon_parallel, stateless_tests_amd_releaseparallel, stateless_tests_amd_releasenon_parallel, stateless_tests_arm_asanparallel, stateless_tests_arm_asannon_parallel, stateful_tests_amd_releaseparallel, stress_tests_arm_release, performance_tests, compatibility_check_amd_release, compatibility_check_arm_release]
     if: ${{ !cancelled() }}
     name: "Finish Workflow"
     outputs:
