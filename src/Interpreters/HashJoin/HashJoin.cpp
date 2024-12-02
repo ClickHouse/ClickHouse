@@ -431,6 +431,16 @@ size_t HashJoin::getTotalByteCount() const
     return res;
 }
 
+bool HashJoin::isUsedByAnotherAlgorithm() const
+{
+    return table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO) || table_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH);
+}
+
+bool HashJoin::canRemoveColumnsFromLeftBlock() const
+{
+    return table_join->enableEnalyzer() && !table_join->hasUsing() && !isUsedByAnotherAlgorithm() && strictness != JoinStrictness::RightAny;
+}
+
 void HashJoin::initRightBlockStructure(Block & saved_block_sample)
 {
     if (isCrossOrComma(kind))
@@ -442,8 +452,10 @@ void HashJoin::initRightBlockStructure(Block & saved_block_sample)
 
     bool multiple_disjuncts = !table_join->oneDisjunct();
     /// We could remove key columns for LEFT | INNER HashJoin but we should keep them for JoinSwitcher (if any).
-    bool save_key_columns = table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO) || table_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH)
-        || isRightOrFull(kind) || multiple_disjuncts || table_join->getMixedJoinExpression();
+    bool save_key_columns = isUsedByAnotherAlgorithm() ||
+                            isRightOrFull(kind) ||
+                            multiple_disjuncts ||
+                            table_join->getMixedJoinExpression();
     if (save_key_columns)
     {
         saved_block_sample = right_table_keys.cloneEmpty();
@@ -1356,7 +1368,10 @@ HashJoin::getNonJoinedBlocks(const Block & left_sample_block, const Block & resu
 {
     if (!JoinCommon::hasNonJoinedBlocks(*table_join))
         return {};
+
     size_t left_columns_count = left_sample_block.columns();
+    if (canRemoveColumnsFromLeftBlock())
+        left_columns_count = table_join->getOutputColumns(JoinTableSide::Left).size();
 
     bool flag_per_row = needUsedFlagsForPerRightTableRow(table_join);
     if (!flag_per_row)
@@ -1365,14 +1380,9 @@ HashJoin::getNonJoinedBlocks(const Block & left_sample_block, const Block & resu
         size_t expected_columns_count = left_columns_count + required_right_keys.columns() + sample_block_with_columns_to_add.columns();
         if (expected_columns_count != result_sample_block.columns())
         {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Unexpected number of columns in result sample block: {} instead of {} ({} + {} + {})",
-                result_sample_block.columns(),
-                expected_columns_count,
-                left_columns_count,
-                required_right_keys.columns(),
-                sample_block_with_columns_to_add.columns());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected number of columns in result sample block: {} expected {} ([{}] + [{}] + [{}])",
+                            result_sample_block.columns(), expected_columns_count,
+                            left_sample_block.dumpNames(), required_right_keys.dumpNames(), sample_block_with_columns_to_add.dumpNames());
         }
     }
 

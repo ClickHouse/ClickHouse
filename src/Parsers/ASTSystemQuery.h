@@ -105,6 +105,7 @@ public:
         STOP_VIEWS,
         CANCEL_VIEW,
         TEST_VIEW,
+        LOAD_PRIMARY_KEY,
         UNLOAD_PRIMARY_KEY,
         END
     };

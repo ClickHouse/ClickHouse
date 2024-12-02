@@ -3934,7 +3934,7 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
     auto zookeeper = shared->auxiliary_zookeepers.find(name);
     if (zookeeper == shared->auxiliary_zookeepers.end())
     {
-        if (name.find(':') != std::string::npos || name.find('/') != std::string::npos)
+        if (name.contains(':') || name.contains('/'))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid auxiliary ZooKeeper name {}: ':' and '/' are not allowed", name);
 
         const auto & config = shared->auxiliary_zookeepers_config ? *shared->auxiliary_zookeepers_config : getConfigRef();
@@ -5032,7 +5032,7 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
 
     /// Don't check for constraints on first load. This makes the default profile consistent with other users, where
     /// the default value set in the config might be outside of the constraints range
-    /// It makes it possible to change the value of experimental settings with `allowed_feature_tier` != 2
+    /// It makes it possible to change the value of experimental settings with `allow_feature_tier` != 2
     bool check_constraints = false;
     setCurrentProfile(shared->system_profile_name, check_constraints);
 
