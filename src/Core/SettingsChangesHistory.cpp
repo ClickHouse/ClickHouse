@@ -60,6 +60,15 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
 {
     {"24.12",
         {
+            {"query_plan_join_swap_table", "false", "auto", "New setting. Right table was always chosen before."},
+            {"max_size_to_preallocate_for_aggregation", 100'000'000, 1'000'000'000'000, "Enable optimisation for bigger tables."},
+            {"max_size_to_preallocate_for_joins", 100'000'000, 1'000'000'000'000, "Enable optimisation for bigger tables."},
+            {"parallel_replicas_index_analysis_only_on_coordinator", false, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"},
+            {"max_bytes_ratio_before_external_group_by", 0., 0., "New setting."},
+            {"max_bytes_ratio_before_external_sort", 0., 0., "New setting."},
+            {"use_async_executor_for_materialized_views", false, false, "New setting."},
+            {"composed_data_type_output_format_mode", "default", "default", "New setting"},
+            {"http_response_headers", "", "", "New setting."},
         }
     },
     {"24.11",
@@ -79,9 +88,19 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"backup_restore_finish_timeout_after_error_sec", 0, 180, "New setting."},
             {"query_plan_merge_filters", false, true, "Allow to merge filters in the query plan. This is required to properly support filter-push-down with a new analyzer."},
             {"parallel_replicas_local_plan", false, true, "Use local plan for local replica in a query with parallel replicas"},
+            {"allow_experimental_shared_set_join", 1, 0, "Disable a setting for ClickHouse Cloud"},
+            {"merge_tree_use_v1_object_and_dynamic_serialization", true, false, "Add new serialization V2 version for JSON and Dynamic types"},
+            {"min_joined_block_size_bytes", 524288, 524288, "New setting."},
+            {"allow_experimental_bfloat16_type", false, false, "Add new experimental BFloat16 type"},
             {"filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit", 1, 1, "Rename of setting skip_download_if_exceeds_query_cache_limit"},
             {"filesystem_cache_prefer_bigger_buffer_size", true, true, "New setting"},
             {"read_in_order_use_virtual_row", false, false, "Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only relevant ones are touched."},
+            {"s3_skip_empty_files", false, true, "We hope it will provide better UX"},
+            {"filesystem_cache_boundary_alignment", 0, 0, "New setting"},
+            {"push_external_roles_in_interserver_queries", false, false, "New setting."},
+            {"enable_variant_type", false, false, "Add alias to allow_experimental_variant_type"},
+            {"enable_dynamic_type", false, false, "Add alias to allow_experimental_dynamic_type"},
+            {"enable_json_type", false, false, "Add alias to allow_experimental_json_type"},
         }
     },
     {"24.10",
@@ -107,7 +126,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"min_free_disk_ratio_to_perform_insert", 0.0, 0.0, "New setting."},
             {"enable_named_columns_in_function_tuple", false, false, "Disabled pending usability improvements"},
             {"cloud_mode_database_engine", 1, 1, "A setting for ClickHouse Cloud"},
-            {"allow_experimental_shared_set_join", 1, 1, "A setting for ClickHouse Cloud"},
+            {"allow_experimental_shared_set_join", 0, 0, "A setting for ClickHouse Cloud"},
             {"read_through_distributed_cache", 0, 0, "A setting for ClickHouse Cloud"},
             {"write_through_distributed_cache", 0, 0, "A setting for ClickHouse Cloud"},
             {"distributed_cache_throw_on_error", 0, 0, "A setting for ClickHouse Cloud"},
@@ -127,7 +146,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"allow_experimental_refreshable_materialized_view", false, true, "Not experimental anymore"},
             {"max_parts_to_move", 0, 1000, "New setting"},
             {"hnsw_candidate_list_size_for_search", 64, 256, "New setting. Previously, the value was optionally specified in CREATE INDEX and 64 by default."},
-            {"allow_reorder_prewhere_conditions", false, true, "New setting"},
+            {"allow_reorder_prewhere_conditions", true, true, "New setting"},
             {"input_format_parquet_bloom_filter_push_down", false, true, "When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and bloom filter in the Parquet metadata."},
             {"date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands", false, false, "Dynamically trim the trailing zeros of datetime64 values to adjust the output scale to (0, 3, 6), corresponding to 'seconds', 'milliseconds', and 'microseconds'."},
         }
@@ -598,6 +617,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
 {
     {"24.12",
         {
+            {"enforce_index_structure_match_on_partition_manipulation", true, false, "Add new setting to allow attach when source table's projections and secondary indices is a subset of those in the target table."}
         }
     },
     {"24.11",

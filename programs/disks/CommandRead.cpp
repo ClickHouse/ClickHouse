@@ -22,7 +22,7 @@ public:
 
     void executeImpl(const CommandLineOptions & options, DisksClient & client) override
     {
-        auto disk = client.getCurrentDiskWithPath();
+        const auto & disk = client.getCurrentDiskWithPath();
         String path_from = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path-from"));
         std::optional<String> path_to = getValueFromCommandLineOptionsWithOptional<String>(options, "path-to");
 

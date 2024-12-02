@@ -34,6 +34,7 @@
 #include <Storages/MergeTree/ReplicatedFetchList.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/CompressionCodecSelector.h>
 #include <IO/S3Settings.h>
@@ -364,6 +365,8 @@ struct ContextSharedPart : boost::noncopyable
     /// Child scopes for more fine-grained accounting are created per user/query/etc.
     /// Initialized once during server startup.
     TemporaryDataOnDiskScopePtr root_temp_data_on_disk TSA_GUARDED_BY(mutex);
+    /// TODO: remove, use only root_temp_data_on_disk
+    VolumePtr temporary_volume_legacy;
 
     mutable OnceFlag async_loader_initialized;
     mutable std::unique_ptr<AsyncLoader> async_loader; /// Thread pool for asynchronous initialization of arbitrary DAG of `LoadJob`s (used for tables loading)
@@ -406,6 +409,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable ResourceManagerPtr resource_manager;
     mutable UncompressedCachePtr uncompressed_cache TSA_GUARDED_BY(mutex);            /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache TSA_GUARDED_BY(mutex);                            /// Cache of marks in compressed files.
+    mutable PrimaryIndexCachePtr primary_index_cache TSA_GUARDED_BY(mutex);
     mutable OnceFlag load_marks_threadpool_initialized;
     mutable std::unique_ptr<ThreadPool> load_marks_threadpool;  /// Threadpool for loading marks cache.
     mutable OnceFlag prefetch_threadpool_initialized;
@@ -537,9 +541,6 @@ struct ContextSharedPart : boost::noncopyable
 
     /// No lock required for application_type modified only during initialization
     Context::ApplicationType application_type = Context::ApplicationType::SERVER;
-
-    /// vector of xdbc-bridge commands, they will be killed when Context will be destroyed
-    std::vector<std::unique_ptr<ShellCommand>> bridge_commands TSA_GUARDED_BY(mutex);
 
     /// No lock required for config_reload_callback, start_servers_callback, stop_servers_callback modified only during initialization
     Context::ConfigReloadCallback config_reload_callback;
@@ -799,10 +800,9 @@ struct ContextSharedPart : boost::noncopyable
             }
 
             /// Special volumes might also use disks that require shutdown.
-            auto & tmp_data = root_temp_data_on_disk;
-            if (tmp_data && tmp_data->getVolume())
+            if (temporary_volume_legacy)
             {
-                auto & disks = tmp_data->getVolume()->getDisks();
+                auto & disks = temporary_volume_legacy->getDisks();
                 for (auto & disk : disks)
                     disk->shutdown();
             }
@@ -1184,8 +1184,8 @@ VolumePtr Context::getGlobalTemporaryVolume() const
     SharedLockGuard lock(shared->mutex);
     /// Calling this method we just bypass the `temp_data_on_disk` and write to the file on the volume directly.
     /// Volume is the same for `root_temp_data_on_disk` (always set) and `temp_data_on_disk` (if it's set).
-    if (shared->root_temp_data_on_disk)
-        return shared->root_temp_data_on_disk->getVolume();
+    if (shared->temporary_volume_legacy)
+        return shared->temporary_volume_legacy;
     return nullptr;
 }
 
@@ -1273,6 +1273,10 @@ try
             /// We skip directories (for example, 'http_buffers' - it's used for buffering of the results) and all other file types.
         }
     }
+    else
+    {
+        fs::create_directories(path);
+    }
 }
 catch (...)
 {
@@ -1306,7 +1310,8 @@ void Context::setTemporaryStoragePath(const String & path, size_t max_size)
 
     TemporaryDataOnDiskSettings temporary_data_on_disk_settings;
     temporary_data_on_disk_settings.max_size_on_disk = max_size;
-    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(std::move(volume), std::move(temporary_data_on_disk_settings));
+    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, std::move(temporary_data_on_disk_settings));
+    shared->temporary_volume_legacy = volume;
 }
 
 void Context::setTemporaryStoragePolicy(const String & policy_name, size_t max_size)
@@ -1354,7 +1359,8 @@ void Context::setTemporaryStoragePolicy(const String & policy_name, size_t max_s
 
     TemporaryDataOnDiskSettings temporary_data_on_disk_settings;
     temporary_data_on_disk_settings.max_size_on_disk = max_size;
-    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(std::move(volume), std::move(temporary_data_on_disk_settings));
+    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, std::move(temporary_data_on_disk_settings));
+    shared->temporary_volume_legacy = volume;
 }
 
 void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t max_size)
@@ -1378,7 +1384,8 @@ void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t 
 
     TemporaryDataOnDiskSettings temporary_data_on_disk_settings;
     temporary_data_on_disk_settings.max_size_on_disk = max_size;
-    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(std::move(volume), file_cache.get(), std::move(temporary_data_on_disk_settings));
+    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(file_cache.get(), std::move(temporary_data_on_disk_settings));
+    shared->temporary_volume_legacy = volume;
 }
 
 void Context::setFlagsPath(const String & path)
@@ -1485,7 +1492,7 @@ ConfigurationPtr Context::getUsersConfig()
     return shared->users_config;
 }
 
-void Context::setUser(const UUID & user_id_)
+void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_)
 {
     /// Prepare lists of user's profiles, constraints, settings, roles.
     /// NOTE: AccessControl::read<User>() and other AccessControl's functions may require some IO work,
@@ -1500,7 +1507,6 @@ void Context::setUser(const UUID & user_id_)
     const auto & database = user->default_database;
 
     /// Apply user's profiles, constraints, settings, roles.
-
     std::lock_guard lock(mutex);
 
     setUserIDWithLock(user_id_, lock);
@@ -1510,6 +1516,7 @@ void Context::setUser(const UUID & user_id_)
     setCurrentProfilesWithLock(*enabled_profiles, /* check_constraints= */ false, lock);
 
     setCurrentRolesWithLock(default_roles, lock);
+    setExternalRolesWithLock(external_roles_, lock);
 
     /// It's optional to specify the DEFAULT DATABASE in the user's definition.
     if (!database.empty())
@@ -1551,6 +1558,18 @@ void Context::setCurrentRolesWithLock(const std::vector<UUID> & new_current_role
     else
         current_roles = std::make_shared<std::vector<UUID>>(new_current_roles);
     need_recalculate_access = true;
+}
+
+void Context::setExternalRolesWithLock(const std::vector<UUID> & new_external_roles, const std::lock_guard<ContextSharedMutex> &)
+{
+    if (!new_external_roles.empty())
+    {
+        if (current_roles)
+            current_roles->insert(current_roles->end(), new_external_roles.begin(), new_external_roles.end());
+        else
+            current_roles = std::make_shared<std::vector<UUID>>(new_external_roles);
+        need_recalculate_access = true;
+    }
 }
 
 void Context::setCurrentRolesImpl(const std::vector<UUID> & new_current_roles, bool throw_if_not_granted, bool skip_if_not_granted, const std::shared_ptr<const User> & user)
@@ -1667,7 +1686,7 @@ std::shared_ptr<const ContextAccessWrapper> Context::getAccess() const
         bool full_access = !user_id;
 
         return ContextAccessParams{
-            user_id, full_access, /* use_default_roles= */ false, current_roles, *settings, current_database, client_info};
+            user_id, full_access, /* use_default_roles= */ false, current_roles, external_roles, *settings, current_database, client_info};
     };
 
     /// Check if the current access rights are still valid, otherwise get parameters for recalculating access rights.
@@ -3234,6 +3253,41 @@ ThreadPool & Context::getLoadMarksThreadpool() const
     return *shared->load_marks_threadpool;
 }
 
+void Context::setPrimaryIndexCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->primary_index_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Primary index cache has been already created.");
+
+    shared->primary_index_cache = std::make_shared<PrimaryIndexCache>(cache_policy, max_cache_size_in_bytes, size_ratio);
+}
+
+void Context::updatePrimaryIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->primary_index_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Primary index cache was not created yet.");
+
+    size_t max_size_in_bytes = config.getUInt64("primary_index_cache_size", DEFAULT_PRIMARY_INDEX_CACHE_MAX_SIZE);
+    shared->primary_index_cache->setMaxSizeInBytes(max_size_in_bytes);
+}
+
+PrimaryIndexCachePtr Context::getPrimaryIndexCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->primary_index_cache;
+}
+
+void Context::clearPrimaryIndexCache() const
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->primary_index_cache)
+        shared->primary_index_cache->clear();
+}
+
 void Context::setIndexUncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
 {
     std::lock_guard lock(shared->mutex);
@@ -3388,6 +3442,10 @@ void Context::clearCaches() const
     if (!shared->mark_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mark cache was not created yet.");
     shared->mark_cache->clear();
+
+    if (!shared->primary_index_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Primary index cache was not created yet.");
+    shared->primary_index_cache->clear();
 
     if (!shared->index_uncompressed_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index uncompressed cache was not created yet.");
@@ -3876,7 +3934,7 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
     auto zookeeper = shared->auxiliary_zookeepers.find(name);
     if (zookeeper == shared->auxiliary_zookeepers.end())
     {
-        if (name.find(':') != std::string::npos || name.find('/') != std::string::npos)
+        if (name.contains(':') || name.contains('/'))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid auxiliary ZooKeeper name {}: ':' and '/' are not allowed", name);
 
         const auto & config = shared->auxiliary_zookeepers_config ? *shared->auxiliary_zookeepers_config : getConfigRef();
@@ -4971,7 +5029,12 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
     getAccessControl().setDefaultProfileName(shared->default_profile_name);
 
     shared->system_profile_name = config.getString("system_profile", shared->default_profile_name);
-    setCurrentProfile(shared->system_profile_name);
+
+    /// Don't check for constraints on first load. This makes the default profile consistent with other users, where
+    /// the default value set in the config might be outside of the constraints range
+    /// It makes it possible to change the value of experimental settings with `allow_feature_tier` != 2
+    bool check_constraints = false;
+    setCurrentProfile(shared->system_profile_name, check_constraints);
 
     applySettingsQuirks(*settings, getLogger("SettingsQuirks"));
     doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
@@ -5040,12 +5103,6 @@ void Context::addQueryParameters(const NameToNameMap & parameters)
 {
     for (const auto & [name, value] : parameters)
         query_parameters.insert_or_assign(name, value);
-}
-
-void Context::addBridgeCommand(std::unique_ptr<ShellCommand> cmd) const
-{
-    std::lock_guard lock(shared->mutex);
-    shared->bridge_commands.emplace_back(std::move(cmd));
 }
 
 

@@ -360,11 +360,14 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
                 "Expected DOWNLOADING state, got {}", stateToString(download_state));
 
         const size_t first_non_downloaded_offset = getCurrentWriteOffset();
+
         if (offset_in_file != first_non_downloaded_offset)
+        {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Attempt to write {} bytes to offset: {}, but current write offset is {}",
                 size, offset_in_file, first_non_downloaded_offset);
+        }
 
         const size_t current_downloaded_size = getDownloadedSize();
         chassert(reserved_size >= current_downloaded_size);
@@ -375,8 +378,19 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
                 ErrorCodes::LOGICAL_ERROR,
                 "Not enough space is reserved. Available: {}, expected: {}", free_reserved_size, size);
 
-        if (!is_unbound && current_downloaded_size == range().size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "File segment is already fully downloaded");
+        if (!is_unbound)
+        {
+            if (current_downloaded_size == range().size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "File segment is already fully downloaded");
+
+            if (current_downloaded_size + size > range().size())
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Cannot download beyond file segment boundaries: {}. Write offset: {}, size: {}, downloaded size: {}",
+                    range().size(), first_non_downloaded_offset, size, current_downloaded_size);
+            }
+        }
 
         if (!cache_writer && current_downloaded_size > 0)
             throw Exception(
@@ -602,7 +616,7 @@ void FileSegment::setDownloadFailedUnlocked(const FileSegmentGuard::Lock & lock)
 
     if (cache_writer)
     {
-        cache_writer->finalize();
+        cache_writer->cancel();
         cache_writer.reset();
     }
 
@@ -931,7 +945,12 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
             chassert(downloaded_size == reserved_size);
             chassert(downloaded_size == range().size());
             chassert(downloaded_size > 0);
-            chassert(fs::file_size(getPath()) > 0);
+
+            auto file_size = fs::file_size(getPath());
+            UNUSED(file_size);
+
+            chassert(file_size == range().size());
+            chassert(downloaded_size == range().size());
 
             chassert(queue_iterator || on_delayed_removal);
             check_iterator(queue_iterator);
@@ -953,7 +972,13 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
 
             chassert(reserved_size >= downloaded_size);
             chassert(downloaded_size > 0);
-            chassert(fs::file_size(getPath()) > 0);
+
+            auto file_size = fs::file_size(getPath());
+            UNUSED(file_size);
+
+            chassert(file_size > 0);
+            chassert(file_size <= range().size());
+            chassert(downloaded_size <= range().size());
 
             chassert(queue_iterator);
             check_iterator(queue_iterator);
@@ -1045,15 +1070,10 @@ void FileSegment::setDetachedState(const FileSegmentGuard::Lock & lock)
     setDownloadState(State::DETACHED, lock);
     key_metadata.reset();
     queue_iterator = nullptr;
-    try
-    {
-        cache_writer.reset();
-        remote_file_reader.reset();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    if (cache_writer)
+        cache_writer->cancel();
+    cache_writer.reset();
+    remote_file_reader.reset();
 }
 
 void FileSegment::detach(const FileSegmentGuard::Lock & lock, const LockedKey &)
