@@ -1787,22 +1787,6 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
                 required_columns_after_join.insert(right_header.getByPosition(0).name);
         }
 
-        for (auto & column_from_joined_table : columns_from_left_table)
-        {
-            /// Add columns to output only if they are presented in outer scope, otherwise they can be dropped
-            if (planner_context->getGlobalPlannerContext()->hasColumnIdentifier(column_from_joined_table.name) &&
-                required_columns_after_join.contains(column_from_joined_table.name))
-                table_join->setUsedColumn(column_from_joined_table, JoinTableSide::Left);
-        }
-
-        for (auto & column_from_joined_table : columns_from_right_table)
-        {
-            /// Add columns to output only if they are presented in outer scope, otherwise they can be dropped
-            if (planner_context->getGlobalPlannerContext()->hasColumnIdentifier(column_from_joined_table.name) &&
-                required_columns_after_join.contains(column_from_joined_table.name))
-                table_join->setUsedColumn(column_from_joined_table, JoinTableSide::Right);
-        }
-
         auto join_step = std::make_unique<JoinStep>(
             left_plan.getCurrentHeader(),
             right_plan.getCurrentHeader(),
