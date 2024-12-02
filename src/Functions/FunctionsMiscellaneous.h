@@ -131,7 +131,7 @@ private:
     ExpressionActionsPtr expression_actions;
     LambdaCapturePtr capture;
 
-    /// This is reduntant and is built from capture.
+    /// This is redundant and is built from capture.
     SignaturePtr signature;
     DataTypes argument_types;
 };
