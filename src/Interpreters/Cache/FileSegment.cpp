@@ -64,6 +64,7 @@ FileSegment::FileSegment(
     , segment_range(offset_, offset_ + size_ - 1)
     , segment_kind(settings.kind)
     , is_unbound(settings.unbounded)
+    , created_from_write_through_cache(settings.write_through_cache)
     , background_download_enabled(background_download_enabled_)
     , download_state(download_state_)
     , key_metadata(key_metadata_)
@@ -645,6 +646,9 @@ void FileSegment::completePartAndResetDownloader()
 
 void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key, const FileSegmentGuard::Lock & lock)
 {
+    chassert(downloaded_size);
+    chassert(fs::file_size(getPath()) > 0);
+
     if (downloaded_size == range().size())
     {
         /// Nothing to resize;
@@ -659,26 +663,39 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
             getInfoForLog());
     }
 
-    size_t aligned_downloaded_size = FileCacheUtils::roundUpToMultiple(downloaded_size, cache->getBoundaryAlignment());
-    chassert(aligned_downloaded_size >= downloaded_size);
+    size_t result_size = downloaded_size;
 
-    if (aligned_downloaded_size == range().size())
+    const bool shrink_to_aligned_size = !created_from_write_through_cache;
+    if (shrink_to_aligned_size)
+    {
+        size_t aligned_downloaded_size = FileCacheUtils::roundUpToMultiple(downloaded_size, cache->getBoundaryAlignment());
+        chassert(aligned_downloaded_size >= downloaded_size);
+        if (aligned_downloaded_size < range().size()
+            && aligned_downloaded_size != downloaded_size)
+        {
+            result_size = aligned_downloaded_size;
+        }
+    }
+
+    chassert(result_size <= range().size());
+    chassert(result_size >= downloaded_size);
+
+    if (result_size == range().size())
     {
         /// Nothing to resize;
         return;
     }
-    else if (aligned_downloaded_size > range().size()
-             || downloaded_size == aligned_downloaded_size)
+
+    if (downloaded_size == result_size)
     {
         /// Does not make sense to resize upwords.
+        /// Resize to already downloaded size.
         setDownloadState(State::DOWNLOADED, lock);
-        segment_range.right = segment_range.left + downloaded_size - 1;
     }
     else
-    {
         setDownloadState(State::PARTIALLY_DOWNLOADED, lock);
-        segment_range.right = segment_range.left + aligned_downloaded_size - 1;
-    }
+
+    segment_range.right = segment_range.left + result_size - 1;
 
     const size_t diff = reserved_size - downloaded_size;
     chassert(reserved_size >= downloaded_size);

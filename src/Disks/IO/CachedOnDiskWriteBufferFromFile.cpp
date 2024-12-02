@@ -151,7 +151,7 @@ FileSegment & FileSegmentRangeWriter::allocateFileSegment(size_t offset, FileSeg
     * File segment capacity will equal `max_file_segment_size`, but actual size is 0.
     */
 
-    CreateFileSegmentSettings create_settings(segment_kind);
+    CreateFileSegmentSettings create_settings(segment_kind, /* write_through_cache */true);
 
     /// We set max_file_segment_size to be downloaded,
     /// if we have less size to write, file segment will be resized in complete() method.
