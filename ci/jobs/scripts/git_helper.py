@@ -7,7 +7,9 @@ import os.path as p
 import re
 import subprocess
 import tempfile
-from typing import Any, List, Literal, Optional
+from typing import List, Literal
+
+from praktika.utils import Shell
 
 logger = logging.getLogger(__name__)
 
@@ -51,48 +53,7 @@ def release_branch(name: str) -> str:
     return name
 
 
-class Runner:
-    """lightweight check_output wrapper with stripping last NEW_LINE"""
-
-    def __init__(self, cwd: str = CWD, set_cwd_to_git_root: bool = False):
-        self._cwd = cwd
-        # delayed set cwd to the repo's root, to not do it at the import stage
-        self._git_root = None  # type: Optional[str]
-        self._set_cwd_to_git_root = set_cwd_to_git_root
-
-    def run(self, cmd: str, cwd: Optional[str] = None, **kwargs: Any) -> str:
-        if cwd is None:
-            cwd = self.cwd
-        logger.debug("Running command: %s", cmd)
-        output = str(
-            subprocess.check_output(
-                cmd, shell=True, cwd=cwd, encoding="utf-8", **kwargs
-            ).strip()
-        )
-        return output
-
-    @property
-    def cwd(self) -> str:
-        if self._set_cwd_to_git_root:
-            if self._git_root is None:
-                self._git_root = p.realpath(
-                    p.join(self._cwd, self.run("git rev-parse --show-cdup", self._cwd))
-                )
-            return self._git_root
-        return self._cwd
-
-    @cwd.setter
-    def cwd(self, value: str) -> None:
-        # Set _cwd only once, then set it to readonly
-        if self._cwd != CWD:
-            return
-        self._cwd = value
-
-    def __call__(self, *args: Any, **kwargs: Any) -> str:
-        return self.run(*args, **kwargs)
-
-
-git_runner = Runner(set_cwd_to_git_root=True)
+git_runner = Shell.get_output
 
 
 def is_shallow() -> bool:
@@ -103,6 +64,15 @@ def get_tags() -> List[str]:
     if is_shallow():
         raise RuntimeError("attempt to run on a shallow repository")
     return git_runner.run("git tag").split()
+
+
+def unshallow_cmd(full: bool = True) -> str:
+    no_tree = "" if full else "--no-tags --filter=tree:0"
+    return f"git fetch --depth 0 --no-tags {no_tree} origin HEAD^{{}}"
+
+
+def fetch_submodules() -> List[str]:
+    return []
 
 
 class Git:
