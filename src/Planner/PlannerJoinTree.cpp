@@ -668,7 +668,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
     bool is_single_table_expression,
     bool wrap_read_columns_in_subquery)
 {
-    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "\n{}", StackTrace().toString());
+    // LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "\n{}", StackTrace().toString());
 
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
@@ -963,7 +963,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 /// query_plan can be empty if there is nothing to read
                 if (query_plan.isInitialized() && parallel_replicas_enabled_for_storage(storage, settings))
                 {
-                    const bool allow_parallel_replicas_for_table_expression = [](const QueryTreeNodePtr & join_tree_node, const QueryTreeNodePtr & table_expression_node)
+                    auto allow_parallel_replicas_for_table_expression = [](const QueryTreeNodePtr & join_tree_node, const QueryTreeNodePtr & table_expression_node)
                     {
                         const JoinNode * join_node = join_tree_node->as<JoinNode>();
                         if (!join_node)
@@ -980,16 +980,24 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             // Here, joins done in the following order (t1 FULL JOIN t2) INNER JOIN t3
                             // J1 i.e. (t1 FULL JOIN t2) can't be chosen because FULL JOIN can't be executed with PR
                             // J1 INNER JOIN t3 shouldn't be parallelized since (1) and t3 is on right side
-                            // To parallelize INNER JOIN, the query it can be rewritten into
+                            // To parallelize INNER JOIN, the query it can be rewritten to following one:
                             // SELECT * FROM t3 INNER JOIN (SELECT * FROM t1 FULL JOIN t2) as j1
                             if (join_node->getLeftTableExpression() == table_expression_node)
                                 return true;
                         }
-                        if (join_kind == JoinKind::Right && join_node->getRightTableExpression() == table_expression_node)
+                        if (join_kind == JoinKind::Right)
+                        {
+                            LOG_DEBUG(
+                                getLogger(__PRETTY_FUNCTION__),
+                                "right table in join:\n{}\ntable expression:\n{}",
+                                join_node->getRightTableExpression()->dumpTree(),
+                                table_expression_node->dumpTree());
+                            // chassert(join_node->getRightTableExpression() == table_expression_node);
                             return true;
+                        }
 
                         return false;
-                    }(parent_join_tree, table_expression);
+                    };
 
                     if (query_context->canUseParallelReplicasCustomKey() && query_context->getClientInfo().distributed_depth == 0)
                     {
@@ -1013,7 +1021,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             query_plan = std::move(query_plan_parallel_replicas);
                         }
                     }
-                    else if (ClusterProxy::canUseParallelReplicasOnInitiator(query_context) && allow_parallel_replicas_for_table_expression)
+                    else if (
+                        ClusterProxy::canUseParallelReplicasOnInitiator(query_context)
+                        && allow_parallel_replicas_for_table_expression(parent_join_tree, table_expression))
                     {
                         // (1) find read step
                         QueryPlan::Node * node = query_plan.getRootNode();
@@ -1911,7 +1921,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     const ColumnIdentifierSet & outer_scope_columns,
     PlannerContextPtr & planner_context)
 {
-    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "{}", StackTrace().toString());
+    // LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "{}", StackTrace().toString());
 
     const QueryTreeNodePtr & join_tree_node = query_node->as<QueryNode &>().getJoinTree();
     auto table_expressions_stack = buildTableExpressionsStack(join_tree_node);
