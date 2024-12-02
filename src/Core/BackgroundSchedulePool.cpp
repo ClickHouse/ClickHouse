@@ -269,6 +269,9 @@ void BackgroundSchedulePool::cancelDelayedTask(const TaskInfoPtr & task, std::lo
 {
     {
         std::lock_guard lock(delayed_tasks_mutex);
+        /// This method could be already called previously from scheduleImpl
+        if (!task->delayed)
+            return;
         delayed_tasks.erase(task->iterator);
         task->delayed = false;
     }
