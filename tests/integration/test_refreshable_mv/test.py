@@ -20,7 +20,6 @@ node1 = cluster.add_instance(
     main_configs=["configs/config.xml"],
     user_configs=["configs/users.xml"],
     with_zookeeper=True,
-    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
     macros={"shard": "shard1", "replica": "1"},
     stay_alive=True,
 )
@@ -29,7 +28,6 @@ node2 = cluster.add_instance(
     main_configs=["configs/config.xml"],
     user_configs=["configs/users.xml"],
     with_zookeeper=True,
-    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
     macros={"shard": "shard1", "replica": "2"},
 )
 nodes = [node1, node2]

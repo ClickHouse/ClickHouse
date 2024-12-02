@@ -41,10 +41,9 @@ void registerStorageS3Queue(StorageFactory & factory);
 #if USE_PARQUET
 void registerStorageDeltaLake(StorageFactory & factory);
 #endif
-#endif
-
 #if USE_AVRO
 void registerStorageIceberg(StorageFactory & factory);
+#endif
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
@@ -94,6 +93,10 @@ void registerStoragePostgreSQL(StorageFactory & factory);
 void registerStorageMaterializedPostgreSQL(StorageFactory & factory);
 #endif
 
+#if USE_MYSQL || USE_LIBPQXX
+void registerStorageExternalDistributed(StorageFactory & factory);
+#endif
+
 #if USE_FILELOG
 void registerStorageFileLog(StorageFactory & factory);
 #endif
@@ -106,7 +109,7 @@ void registerStorageKeeperMap(StorageFactory & factory);
 
 void registerStorageObjectStorage(StorageFactory & factory);
 
-void registerStorages()
+void registerStorages(bool use_legacy_mongodb_integration [[maybe_unused]])
 {
     auto & factory = StorageFactory::instance();
 
@@ -141,10 +144,6 @@ void registerStorages()
     registerStorageAzureQueue(factory);
 #endif
 
-#if USE_AVRO
-    registerStorageIceberg(factory);
-#endif
-
 #if USE_AWS_S3
     registerStorageHudi(factory);
     registerStorageS3Queue(factory);
@@ -153,10 +152,14 @@ void registerStorages()
     registerStorageDeltaLake(factory);
     #endif
 
-#endif
+    #if USE_AVRO
+    registerStorageIceberg(factory);
+    #endif
 
-#if USE_HDFS
-#    if USE_HIVE
+    #endif
+
+    #if USE_HDFS
+    #if USE_HIVE
     registerStorageHive(factory);
     #endif
     #endif
@@ -169,7 +172,10 @@ void registerStorages()
     #endif
 
     #if USE_MONGODB
-    registerStorageMongoDB(factory);
+    if (use_legacy_mongodb_integration)
+        registerStorageMongoDBPocoLegacy(factory);
+    else
+        registerStorageMongoDB(factory);
     #endif
 
     registerStorageRedis(factory);
@@ -197,6 +203,10 @@ void registerStorages()
     #if USE_LIBPQXX
     registerStoragePostgreSQL(factory);
     registerStorageMaterializedPostgreSQL(factory);
+    #endif
+
+    #if USE_MYSQL || USE_LIBPQXX
+    registerStorageExternalDistributed(factory);
     #endif
 
     #if USE_SQLITE

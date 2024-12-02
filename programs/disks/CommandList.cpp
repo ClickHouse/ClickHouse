@@ -23,7 +23,7 @@ public:
     {
         bool recursive = options.count("recursive");
         bool show_hidden = options.count("all");
-        const auto & disk = client.getCurrentDiskWithPath();
+        auto disk = client.getCurrentDiskWithPath();
         String path = getValueFromCommandLineOptionsWithDefault<String>(options, "path", ".");
 
         if (recursive)

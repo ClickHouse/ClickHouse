@@ -569,7 +569,7 @@ void ParquetBlockOutputFormat::threadFunction()
 
             PODArray<char> serialized;
             {
-                auto buf = WriteBufferFromVector<PODArray<char>>(serialized);
+                WriteBufferFromVector buf(serialized);
                 writeColumnChunkBody(task.state, options, buf);
             }
 

@@ -1459,9 +1459,8 @@ ActionsDAG ActionsDAG::makeConvertingActions(
     const ColumnsWithTypeAndName & result,
     MatchColumnsMode mode,
     bool ignore_constant_values,
-    bool add_cast_columns,
-    NameToNameMap * new_names,
-    NameSet * columns_contain_compiled_function)
+    bool add_casted_columns,
+    NameToNameMap * new_names)
 {
     size_t num_input_columns = source.size();
     size_t num_result_columns = result.size();
@@ -1469,8 +1468,8 @@ ActionsDAG ActionsDAG::makeConvertingActions(
     if (mode == MatchColumnsMode::Position && num_input_columns != num_result_columns)
         throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH, "Number of columns doesn't match (source: {} and result: {})", num_input_columns, num_result_columns);
 
-    if (add_cast_columns && mode != MatchColumnsMode::Name)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Converting with add_cast_columns supported only for MatchColumnsMode::Name");
+    if (add_casted_columns && mode != MatchColumnsMode::Name)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Converting with add_casted_columns supported only for MatchColumnsMode::Name");
 
     ActionsDAG actions_dag(source);
     NodeRawConstPtrs projection(num_result_columns);
@@ -1534,15 +1533,6 @@ ActionsDAG ActionsDAG::makeConvertingActions(
                         "Cannot convert column `{}` because it is constant but values of constants are different in source and result",
                         res_elem.name);
             }
-            else if (columns_contain_compiled_function && columns_contain_compiled_function->contains(res_elem.name))
-            {
-                /// It may happen when JIT compilation is enabled that source column is constant and destination column is not constant.
-                /// e.g. expression "and(equals(materialize(null::Nullable(UInt64)), null::Nullable(UInt64)), equals(null::Nullable(UInt64), null::Nullable(UInt64)))"
-                /// compiled expression is "and(equals(input: Nullable(UInt64), null), null). Partial evaluation of the compiled expression isn't able to infer that the result column is constant.
-                /// It causes inconsistency between pipeline header(source column is not constant) and output header of ExpressionStep(destination column is constant).
-                /// So we need to convert non-constant column to constant column under this condition.
-                dst_node = &actions_dag.addColumn(res_elem);
-            }
             else
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
@@ -1577,7 +1567,7 @@ ActionsDAG ActionsDAG::makeConvertingActions(
 
         if (dst_node->result_name != res_elem.name)
         {
-            if (add_cast_columns)
+            if (add_casted_columns)
             {
                 if (inputs.contains(dst_node->result_name))
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot convert column `{}` to `{}` because other column have same name",

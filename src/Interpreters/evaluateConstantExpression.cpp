@@ -597,15 +597,15 @@ namespace
         if (column->size() > max_elements)
             return {};
 
-        ColumnPtr cast_col;
+        ColumnPtr casted_col;
         const NullMap * null_map = nullptr;
 
         if (!type->equals(*node->result_type))
         {
-            cast_col = tryCastColumn(column, value->result_type, node->result_type);
-            if (!cast_col)
+            casted_col = tryCastColumn(column, value->result_type, node->result_type);
+            if (!casted_col)
                 return {};
-            const auto & col_nullable = assert_cast<const ColumnNullable &>(*cast_col);
+            const auto & col_nullable = assert_cast<const ColumnNullable &>(*casted_col);
             null_map = &col_nullable.getNullMapData();
             column = col_nullable.getNestedColumnPtr();
         }

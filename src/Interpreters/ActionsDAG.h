@@ -298,16 +298,16 @@ public:
     /// It is needed to convert result from different sources to the same structure, e.g. for UNION query.
     /// Conversion should be possible with only usage of CAST function and renames.
     /// @param ignore_constant_values - Do not check that constants are same. Use value from result_header.
-    /// @param add_cast_columns - Create new columns with converted values instead of replacing original.
-    /// @param new_names - Output parameter for new column names when add_cast_columns is used.
+    /// @param add_casted_columns - Create new columns with converted values instead of replacing original.
+    /// @param new_names - Output parameter for new column names when add_casted_columns is used.
     static ActionsDAG makeConvertingActions(
         const ColumnsWithTypeAndName & source,
         const ColumnsWithTypeAndName & result,
         MatchColumnsMode mode,
         bool ignore_constant_values = false,
-        bool add_cast_columns = false,
-        NameToNameMap * new_names = nullptr,
-        NameSet * columns_contain_compiled_function = nullptr);
+        bool add_casted_columns = false,
+        NameToNameMap * new_names = nullptr);
+
     /// Create expression which add const column and then materialize it.
     static ActionsDAG makeAddingColumnActions(ColumnWithTypeAndName column);
 

@@ -73,7 +73,6 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabaseOnDisk.h>
-#include <Databases/DatabaseOrdinary.h>
 #include <Databases/TablesLoader.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/NormalizeAndEvaluateConstantsVisitor.h>
@@ -99,9 +98,6 @@
 namespace CurrentMetrics
 {
     extern const Metric AttachedTable;
-    extern const Metric AttachedReplicatedTable;
-    extern const Metric AttachedDictionary;
-    extern const Metric AttachedView;
 }
 
 namespace DB
@@ -149,10 +145,7 @@ namespace ServerSetting
 {
     extern const ServerSettingsBool ignore_empty_sql_security_in_create_view_query;
     extern const ServerSettingsUInt64 max_database_num_to_throw;
-    extern const ServerSettingsUInt64 max_dictionary_num_to_throw;
     extern const ServerSettingsUInt64 max_table_num_to_throw;
-    extern const ServerSettingsUInt64 max_replicated_table_num_to_throw;
-    extern const ServerSettingsUInt64 max_view_num_to_throw;
 }
 
 namespace ErrorCodes
@@ -819,18 +812,18 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             {
                 IndexDescription index_desc = IndexDescription::getIndexFromAST(index->clone(), properties.columns, getContext());
                 if (properties.indices.has(index_desc.name))
-                    throw Exception(ErrorCodes::ILLEGAL_INDEX, "Duplicated index name {} is not allowed. Please use a different index name", backQuoteIfNeed(index_desc.name));
+                    throw Exception(ErrorCodes::ILLEGAL_INDEX, "Duplicated index name {} is not allowed. Please use different index names.", backQuoteIfNeed(index_desc.name));
 
                 const auto & settings = getContext()->getSettingsRef();
                 if (index_desc.type == FULL_TEXT_INDEX_NAME && !settings[Setting::allow_experimental_full_text_index])
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The experimental full-text index feature is disabled. Enable the setting 'allow_experimental_full_text_index' to use it");
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Experimental full-text index feature is disabled. Turn on setting 'allow_experimental_full_text_index'");
                 /// ----
                 /// Temporary check during a transition period. Please remove at the end of 2024.
                 if (index_desc.type == INVERTED_INDEX_NAME && !settings[Setting::allow_experimental_inverted_index])
-                    throw Exception(ErrorCodes::ILLEGAL_INDEX, "The 'inverted' index type is deprecated. Please use the 'full_text' index type instead");
+                    throw Exception(ErrorCodes::ILLEGAL_INDEX, "Please use index type 'full_text' instead of 'inverted'");
                 /// ----
                 if (index_desc.type == "vector_similarity" && !settings[Setting::allow_experimental_vector_similarity_index])
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The experimental vector similarity index feature is disabled. Enable the setting 'allow_experimental_vector_similarity_index' to use it");
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Experimental vector similarity index is disabled. Turn on setting 'allow_experimental_vector_similarity_index'");
 
                 properties.indices.push_back(index_desc);
             }
@@ -1445,8 +1438,8 @@ void addTableDependencies(const ASTCreateQuery & create, const ASTPtr & query_pt
 void checkTableCanBeAddedWithNoCyclicDependencies(const ASTCreateQuery & create, const ASTPtr & query_ptr, const ContextPtr & context)
 {
     QualifiedTableName qualified_name{create.getDatabase(), create.getTable()};
-    auto ref_dependencies = getDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase(), /*can_throw*/true);
-    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, /*can_throw*/ true);
+    auto ref_dependencies = getDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase());
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr);
     DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(qualified_name, ref_dependencies, loading_dependencies);
 }
 
@@ -1474,7 +1467,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     bool is_secondary_query = getContext()->getZooKeeperMetadataTransaction() && !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery();
     auto mode = getLoadingStrictnessLevel(create.attach, /*force_attach*/ false, /*has_force_restore_data_flag*/ false, is_secondary_query || is_restore_from_backup);
 
-    if (!create.sql_security && create.supportSQLSecurity() && (create.refresh_strategy || !getContext()->getServerSettings()[ServerSetting::ignore_empty_sql_security_in_create_view_query]))
+    if (!create.sql_security && create.supportSQLSecurity() && !getContext()->getServerSettings()[ServerSetting::ignore_empty_sql_security_in_create_view_query])
         create.sql_security = std::make_shared<ASTSQLSecurity>();
 
     if (create.sql_security)
@@ -1513,10 +1506,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         FunctionNameNormalizer::visit(query.get());
         auto create_query = query->as<ASTCreateQuery &>();
 
-        /// Set replicated or not replicated MergeTree engine in metadata and query
-        if (create.attach_as_replicated.has_value())
-            convertMergeTreeTableIfPossible(create_query, database, create.attach_as_replicated.value());
-
         if (!create.is_dictionary && create_query.is_dictionary)
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                 "Cannot ATTACH TABLE {}.{}, it is a Dictionary",
@@ -1539,9 +1528,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     }
 
     /// TODO throw exception if !create.attach_short_syntax && !create.attach_from_path && !internal
-    if (!create.attach_short_syntax && create.attach_as_replicated.has_value())
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Attaching table as [not] replicated is supported only for short attach queries");
 
     if (create.attach_from_path)
     {
@@ -1926,8 +1912,16 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         }
     }
 
-    if (!internal)
-        throwIfTooManyEntities(create, res);
+    UInt64 table_num_limit = getContext()->getGlobalContext()->getServerSettings()[ServerSetting::max_table_num_to_throw];
+    if (table_num_limit > 0 && !internal)
+    {
+        UInt64 table_count = CurrentMetrics::get(CurrentMetrics::AttachedTable);
+        if (table_count >= table_num_limit)
+            throw Exception(ErrorCodes::TOO_MANY_TABLES,
+                            "Too many tables. "
+                            "The limit (server configuration parameter `max_table_num_to_throw`) is set to {}, the current number of tables is {}",
+                            table_num_limit, table_count);
+    }
 
     database->createTable(getContext(), create.getTable(), res, query_ptr);
 
@@ -1951,30 +1945,6 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
     res->startup();
     return true;
-}
-
-
-void InterpreterCreateQuery::throwIfTooManyEntities(ASTCreateQuery & create, StoragePtr storage) const
-{
-    auto check_and_throw = [&](auto setting, CurrentMetrics::Metric metric, String setting_name, String entity_name)
-        {
-            UInt64 num_limit = getContext()->getGlobalContext()->getServerSettings()[setting];
-            UInt64 attached_count = CurrentMetrics::get(metric);
-            if (num_limit > 0 && attached_count >= num_limit)
-                throw Exception(ErrorCodes::TOO_MANY_TABLES,
-                                "Too many {}. "
-                                "The limit (server configuration parameter `{}`) is set to {}, the current number is {}",
-                                entity_name, setting_name, num_limit, attached_count);
-        };
-
-    if (typeid_cast<StorageReplicatedMergeTree *>(storage.get()) != nullptr)
-        check_and_throw(ServerSetting::max_replicated_table_num_to_throw, CurrentMetrics::AttachedReplicatedTable, "max_replicated_table_num_to_throw", "replicated tables");
-    else if (create.is_dictionary)
-        check_and_throw(ServerSetting::max_dictionary_num_to_throw, CurrentMetrics::AttachedDictionary, "max_dictionary_num_to_throw", "dictionaries");
-    else if (create.isView())
-        check_and_throw(ServerSetting::max_view_num_to_throw, CurrentMetrics::AttachedView, "max_view_num_to_throw", "views");
-    else
-        check_and_throw(ServerSetting::max_table_num_to_throw, CurrentMetrics::AttachedTable, "max_table_num_to_throw", "tables");
 }
 
 
@@ -2016,12 +1986,6 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             /// Avoid different table name on database replicas
             UInt16 hashed_zk_path = sipHash64(txn->getTaskZooKeeperPath());
             random_suffix = getHexUIntLowercase(hashed_zk_path);
-        }
-        else if (!current_context->getCurrentQueryId().empty())
-        {
-            random_suffix = getRandomASCIIString(/*length=*/2);
-            UInt8 hashed_query_id = sipHash64(current_context->getCurrentQueryId());
-            random_suffix += getHexUIntLowercase(hashed_query_id);
         }
         else
         {
@@ -2245,11 +2209,6 @@ BlockIO InterpreterCreateQuery::execute()
     bool is_create_database = create.database && !create.table;
     if (!create.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
-        if (create.attach_as_replicated.has_value())
-            throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED,
-                "ATTACH AS [NOT] REPLICATED is not supported for ON CLUSTER queries");
-
         auto on_cluster_version = getContext()->getSettingsRef()[Setting::distributed_ddl_entry_format_version];
         if (is_create_database || on_cluster_version < DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION)
             return executeQueryOnCluster(create);
@@ -2411,44 +2370,6 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextPtr context_, ASTSQ
 
     if (sql_security.type == SQLSecurityType::NONE && !skip_check_permissions)
         context_->checkAccess(AccessType::ALLOW_SQL_SECURITY_NONE);
-}
-
-void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & create, DatabasePtr database, bool to_replicated)
-{
-    /// Check engine can be changed
-    if (database->getEngineName() != "Atomic")
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Table engine conversion to replicated is supported only for Atomic databases");
-
-    if (!create.storage || !create.storage->engine || create.storage->engine->name.find("MergeTree") == std::string::npos)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Table engine conversion is supported only for MergeTree family engines");
-
-    String engine_name = create.storage->engine->name;
-    if (engine_name.starts_with("Replicated"))
-    {
-        if (to_replicated)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Can not attach table as replicated, table is already replicated");
-    }
-    else if (!to_replicated)
-       throw Exception(ErrorCodes::INCORRECT_QUERY, "Can not attach table as not replicated, table is already not replicated");
-
-    /// Set new engine
-    DatabaseOrdinary::setMergeTreeEngine(create, getContext(), to_replicated);
-
-    /// Save new metadata
-    String table_metadata_path = database->getObjectMetadataPath(create.getTable());
-    String table_metadata_tmp_path = table_metadata_path + ".tmp";
-    String statement = DB::getObjectDefinitionFromCreateQuery(create.clone());
-    {
-        WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
-        writeString(statement, out);
-        out.next();
-        if (getContext()->getSettingsRef()[Setting::fsync_metadata])
-            out.sync();
-        out.close();
-    }
-    fs::rename(table_metadata_tmp_path, table_metadata_path);
 }
 
 void registerInterpreterCreateQuery(InterpreterFactory & factory)
