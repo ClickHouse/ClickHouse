@@ -11,8 +11,7 @@ ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/down
 RUN mkdir /etc/clickhouse-server /etc/clickhouse-keeper /etc/clickhouse-client && chmod 777 /etc/clickhouse-* \
     && mkdir -p /var/lib/clickhouse /var/log/clickhouse-server && chmod 777 /var/log/clickhouse-server /var/lib/clickhouse
 
-RUN addgroup --gid 1000 clickhouse && adduser --uid 1000 --gid 1000 --disabled-password clickhouse
-RUN addgroup --gid 1001 clickhouse2 && adduser --uid 1001 --gid 1001 --disabled-password clickhouse2
+RUN addgroup --gid 1001 clickhouse && adduser --uid 1001 --gid 1001 --disabled-password clickhouse
 
 # moreutils - provides ts fo FT
 # expect, bzip2 - requried by FT
@@ -59,7 +58,6 @@ RUN apt-get update -y \
             curl \
             wget \
             xz-utils \
-            ripgrep \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
@@ -116,5 +114,4 @@ RUN curl -L --no-verbose -O 'https://archive.apache.org/dist/hadoop/common/hadoo
 RUN npm install -g azurite@3.30.0 \
     && npm install -g tslib && npm install -g node
 
-ENV PYTHONPATH=".:./ci"
 USER clickhouse

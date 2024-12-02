@@ -2,11 +2,10 @@ import dataclasses
 import json
 from pathlib import Path
 from typing import Dict
-from urllib.parse import quote
 
-from ._environment import _Environment
-from .settings import Settings
-from .utils import Shell
+from praktika._environment import _Environment
+from praktika.settings import Settings
+from praktika.utils import Shell
 
 
 class S3:
@@ -56,7 +55,7 @@ class S3:
         bucket = s3_path.split("/")[0]
         endpoint = Settings.S3_BUCKET_TO_HTTP_ENDPOINT[bucket]
         assert endpoint
-        return quote(f"https://{s3_full_path}".replace(bucket, endpoint), safe=":/?&=")
+        return f"https://{s3_full_path}".replace(bucket, endpoint)
 
     @classmethod
     def put(cls, s3_path, local_path, text=False, metadata=None, if_none_matched=False):
@@ -118,21 +117,15 @@ class S3:
         return res
 
     @classmethod
-    def copy_file_from_s3(
-        cls, s3_path, local_path, recursive=False, include_pattern=""
-    ):
+    def copy_file_from_s3(cls, s3_path, local_path):
         assert Path(s3_path), f"Invalid S3 Path [{s3_path}]"
         if Path(local_path).is_dir():
-            pass
+            local_path = Path(local_path) / Path(s3_path).name
         else:
             assert Path(
                 local_path
             ).parent.is_dir(), f"Parent path for [{local_path}] does not exist"
         cmd = f"aws s3 cp s3://{s3_path}  {local_path}"
-        if recursive:
-            cmd += " --recursive"
-        if include_pattern:
-            cmd += f" --include {include_pattern}"
         res = cls.run_command_with_retries(cmd)
         return res
 

@@ -46,7 +46,7 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
         std::string buffer(matched);
         oss_for_replacing << escaped_with_globs.substr(current_index, matched.data() - escaped_with_globs.data() - current_index - 1) << '(';
 
-        if (!buffer.contains(','))
+        if (buffer.find(',') == std::string::npos)
         {
             size_t range_begin = 0;
             size_t range_end = 0;

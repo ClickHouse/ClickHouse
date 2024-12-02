@@ -10,7 +10,7 @@
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Coordination/KeeperConstants.h>
-#include <Common/ZooKeeper/KeeperFeatureFlags.h>
+#include <Coordination/KeeperFeatureFlags.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>

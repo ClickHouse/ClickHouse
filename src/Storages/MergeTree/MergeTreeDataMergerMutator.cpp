@@ -457,7 +457,6 @@ MergeTreeDataMergerMutator::MergeSelectingInfo MergeTreeDataMergerMutator::getPo
 
         auto & partition_info = partitions_info[partition_id];
         partition_info.min_age = std::min(partition_info.min_age, part_info.age);
-        ++partition_info.num_parts;
 
         ++res.parts_selected_precondition;
 
@@ -640,21 +639,11 @@ String MergeTreeDataMergerMutator::getBestPartitionToOptimizeEntire(
     auto best_partition_it = std::max_element(
         partitions_info.begin(),
         partitions_info.end(),
-        [](const auto & e1, const auto & e2)
-        {
-            // If one partition has only a single part, always select the other partition.
-            if (e1.second.num_parts == 1)
-                return true;
-            if (e2.second.num_parts == 1)
-                return false;
-            // If both partitions have more than one part, select the older partition.
-            return e1.second.min_age < e2.second.min_age;
-        });
+        [](const auto & e1, const auto & e2) { return e1.second.min_age < e2.second.min_age; });
 
     assert(best_partition_it != partitions_info.end());
 
-    if ((static_cast<size_t>(best_partition_it->second.min_age) < (*data_settings)[MergeTreeSetting::min_age_to_force_merge_seconds])
-        || static_cast<size_t>(best_partition_it->second.num_parts) == 1)
+    if (static_cast<size_t>(best_partition_it->second.min_age) < (*data_settings)[MergeTreeSetting::min_age_to_force_merge_seconds])
         return {};
 
     return best_partition_it->first;

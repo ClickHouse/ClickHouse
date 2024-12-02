@@ -7,9 +7,7 @@
 
 #include <Core/Block.h>
 #include <Core/ColumnsWithTypeAndName.h>
-#include <Core/Joins.h>
 #include <Core/Settings.h>
-#include <Common/logger_useful.h>
 
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -30,6 +28,7 @@
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageJoin.h>
 
+#include <Common/logger_useful.h>
 #include <algorithm>
 #include <string>
 #include <type_traits>
@@ -745,7 +744,7 @@ static std::optional<ActionsDAG> changeKeyTypes(const ColumnsWithTypeAndName & c
         /* result= */ cols_dst,
         /* mode= */ ActionsDAG::MatchColumnsMode::Name,
         /* ignore_constant_values= */ true,
-        /* add_cast_columns= */ add_new_cols,
+        /* add_casted_columns= */ add_new_cols,
         /* new_names= */ &key_column_rename);
 }
 
@@ -772,7 +771,7 @@ static std::optional<ActionsDAG> changeTypesToNullable(
         /* result= */ cols_dst,
         /* mode= */ ActionsDAG::MatchColumnsMode::Name,
         /* ignore_constant_values= */ true,
-        /* add_cast_columns= */ false,
+        /* add_casted_columns= */ false,
         /* new_names= */ nullptr);
 }
 
@@ -971,8 +970,7 @@ void TableJoin::resetToCross()
 
 bool TableJoin::allowParallelHashJoin() const
 {
-    if (std::ranges::none_of(
-            join_algorithm, [](auto algo) { return algo == JoinAlgorithm::DEFAULT || algo == JoinAlgorithm::PARALLEL_HASH; }))
+    if (std::find(join_algorithm.begin(), join_algorithm.end(), JoinAlgorithm::PARALLEL_HASH) == join_algorithm.end())
         return false;
     if (!right_storage_name.empty())
         return false;

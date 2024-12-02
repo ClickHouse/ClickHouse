@@ -1,5 +1,5 @@
 #pragma once
-#include <Common/ZooKeeper/KeeperFeatureFlags.h>
+#include <Coordination/KeeperFeatureFlags.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <atomic>

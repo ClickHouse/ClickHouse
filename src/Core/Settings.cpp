@@ -2461,7 +2461,7 @@ Possible values:
 
 - default
 
- This is the equivalent of `hash`, `parallel_hash` or `direct`, if possible (same as `direct,parallel_hash,hash`)
+ This is the equivalent of `hash` or `direct`, if possible (same as `direct,hash`)
 
 - grace_hash
 
@@ -2475,13 +2475,11 @@ Possible values:
 
  [Hash join algorithm](https://en.wikipedia.org/wiki/Hash_join) is used. The most generic implementation that supports all combinations of kind and strictness and multiple join keys that are combined with `OR` in the `JOIN ON` section.
 
- When using the `hash` algorithm, the right part of `JOIN` is uploaded into RAM.
-
 - parallel_hash
 
  A variation of `hash` join that splits the data into buckets and builds several hashtables instead of one concurrently to speed up this process.
 
- When using the `parallel_hash` algorithm, the right part of `JOIN` is uploaded into RAM.
+ When using the `hash` algorithm, the right part of `JOIN` is uploaded into RAM.
 
 - partial_merge
 
@@ -5523,8 +5521,6 @@ The default value is `CURRENT_USER`.
     DECLARE(UInt64, cache_warmer_threads, 4, R"(
 Only available in ClickHouse Cloud. Number of background threads for speculatively downloading new data parts into file cache, when cache_populated_by_fetch is enabled. Zero to disable.
 )", 0) \
-    DECLARE(Bool, use_async_executor_for_materialized_views, false, R"(
-Use async and potentially multithreaded execution of materialized view query, can speedup views processing during INSERT, but also consume more memory.)", 0) \
     DECLARE(Int64, ignore_cold_parts_seconds, 0, R"(
 Only available in ClickHouse Cloud. Exclude new data parts from SELECT queries until they're either pre-warmed (see cache_populated_by_fetch) or this many seconds old. Only for Replicated-/SharedMergeTree.
 )", 0) \
@@ -5731,7 +5727,7 @@ Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting
 If enabled, only allow identifiers containing alphanumeric characters and underscores.
 )", 0) \
     DECLARE(Bool, mongodb_throw_on_unsupported_query, true, R"(
-If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally. This option is not applied when 'enable_analyzer=0'.
+If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally. This option does not apply to the legacy implementation or when 'allow_experimental_analyzer=0'.
 )", 0) \
     DECLARE(Bool, implicit_select, false, R"(
 Allow writing simple SELECT queries without the leading SELECT keyword, which makes it simple for calculator-style usage, e.g. `1 + 2` becomes a valid query.

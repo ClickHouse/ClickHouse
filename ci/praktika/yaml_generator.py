@@ -1,12 +1,12 @@
 import dataclasses
 from typing import List
 
-from . import Artifact, Job, Workflow
-from .mangle import _get_workflows
-from .parser import WorkflowConfigParser
-from .runtime import RunConfig
-from .settings import Settings
-from .utils import Shell, Utils
+from praktika import Artifact, Job, Workflow
+from praktika.mangle import _get_workflows
+from praktika.parser import WorkflowConfigParser
+from praktika.runtime import RunConfig
+from praktika.settings import Settings
+from praktika.utils import ContextManager, Shell, Utils
 
 
 class YamlGenerator:
@@ -105,9 +105,9 @@ jobs:
           . /tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run '''{JOB_NAME}''' --workflow "{WORKFLOW_NAME}" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run --job '''{JOB_NAME}''' --workflow "{WORKFLOW_NAME}" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
           else
-            python3 -m praktika run '''{JOB_NAME}''' --workflow "{WORKFLOW_NAME}" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run --job '''{JOB_NAME}''' --workflow "{WORKFLOW_NAME}" --ci |& tee /tmp/praktika/praktika_run.log
           fi
 {UPLOADS_GITHUB}\
 """

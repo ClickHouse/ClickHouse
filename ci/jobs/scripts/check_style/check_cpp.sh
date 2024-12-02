@@ -15,7 +15,7 @@
 LC_ALL="en_US.UTF-8"
 ROOT_PATH="."
 EXCLUDE='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*.cpp|utils/keeper-bench/example.yaml'
-EXCLUDE_DOCS='Settings\.cpp|FormatFactorySettings\.h'
+EXCLUDE_DOCS='Settings\.cpp|FormatFactorySettingsDeclaration\.h'
 
 # From [1]:
 #     But since array_to_string_internal() in array.c still loops over array
@@ -85,8 +85,6 @@ EXTERN_TYPES_EXCLUDES=(
     CurrentMetrics::add
     CurrentMetrics::sub
     CurrentMetrics::get
-    CurrentMetrics::getDocumentation
-    CurrentMetrics::getName
     CurrentMetrics::set
     CurrentMetrics::end
     CurrentMetrics::Increment

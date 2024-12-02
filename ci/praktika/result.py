@@ -1,15 +1,14 @@
 import dataclasses
 import datetime
-import json
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-from ._environment import _Environment
-from .cache import Cache
-from .s3 import S3
-from .settings import Settings
-from .utils import ContextManager, MetaClasses, Shell, Utils
+from praktika._environment import _Environment
+from praktika.cache import Cache
+from praktika.s3 import S3
+from praktika.settings import Settings
+from praktika.utils import ContextManager, MetaClasses, Shell, Utils
 
 
 @dataclasses.dataclass
@@ -81,19 +80,12 @@ class Result(MetaClasses.Serializable):
                 infos += info
         if results and not status:
             for result in results:
-                if result.status not in (
-                    Result.Status.SUCCESS,
-                    Result.Status.FAILED,
-                    Result.Status.ERROR,
-                ):
+                if result.status not in (Result.Status.SUCCESS, Result.Status.FAILED):
                     Utils.raise_with_error(
                         f"Unexpected result status [{result.status}] for Result.create_from call"
                     )
                 if result.status != Result.Status.SUCCESS:
                     result_status = Result.Status.FAILED
-                if result.status == Result.Status.ERROR:
-                    result_status = Result.Status.ERROR
-                    break
         if results:
             for result in results:
                 if result.info and with_info_from_results:
@@ -128,9 +120,6 @@ class Result(MetaClasses.Serializable):
 
     def set_success(self) -> "Result":
         return self.set_status(Result.Status.SUCCESS)
-
-    def set_failed(self) -> "Result":
-        return self.set_status(Result.Status.FAILED)
 
     def set_results(self, results: List["Result"]) -> "Result":
         self.results = results
@@ -174,14 +163,17 @@ class Result(MetaClasses.Serializable):
         return Result(**obj)
 
     def update_duration(self):
-        if self.duration:
-            return self
-        if self.start_time:
+        if not self.duration and self.start_time:
             self.duration = datetime.datetime.utcnow().timestamp() - self.start_time
         else:
-            print(
-                f"NOTE: start_time is not set for job [{self.name}] Result - do not update duration"
-            )
+            if not self.duration:
+                print(
+                    f"NOTE: duration is set for job [{self.name}] Result - do not update by CI"
+                )
+            else:
+                print(
+                    f"NOTE: start_time is not set for job [{self.name}] Result - do not update duration"
+                )
         return self
 
     def set_timing(self, stopwatch: Utils.Stopwatch):
@@ -255,21 +247,7 @@ class Result(MetaClasses.Serializable):
         )
 
     @classmethod
-    def from_gtest_run(cls, name, unit_tests_path, with_log=False):
-        Shell.check(f"rm {ResultTranslator.GTEST_RESULT_FILE}")
-        result = Result.from_commands_run(
-            name=name,
-            command=[
-                f"{unit_tests_path} --gtest_output='json:{ResultTranslator.GTEST_RESULT_FILE}'"
-            ],
-            with_log=with_log,
-        )
-        status, results, info = ResultTranslator.from_gtest()
-        result.set_status(status).set_results(results).set_info(info)
-        return result
-
-    @classmethod
-    def from_commands_run(
+    def create_from_command_execution(
         cls,
         name,
         command,
@@ -526,11 +504,10 @@ class _ResultS3:
     #     return True
 
     @classmethod
-    def upload_result_files_to_s3(cls, result, s3_subprefix=""):
-        s3_subprefix = "/".join([s3_subprefix, Utils.normalize_string(result.name)])
+    def upload_result_files_to_s3(cls, result):
         if result.results:
             for result_ in result.results:
-                cls.upload_result_files_to_s3(result_, s3_subprefix=s3_subprefix)
+                cls.upload_result_files_to_s3(result_)
         for file in result.files:
             if not Path(file).is_file():
                 print(f"ERROR: Invalid file [{file}] in [{result.name}] - skip upload")
@@ -549,7 +526,7 @@ class _ResultS3:
                     file,
                     upload_to_s3=True,
                     text=is_text,
-                    s3_subprefix=s3_subprefix,
+                    s3_subprefix=Utils.normalize_string(result.name),
                 )
             result.links.append(file_link)
         if result.files:
@@ -592,138 +569,3 @@ class _ResultS3:
             return new_status
         else:
             return None
-
-
-class ResultTranslator:
-    GTEST_RESULT_FILE = "/tmp/praktika/gtest.json"
-
-    @classmethod
-    def from_gtest(cls):
-        """The json is described by the next proto3 scheme:
-        (It's wrong, but that's a copy/paste from
-        https://google.github.io/googletest/advanced.html#generating-a-json-report)
-
-        syntax = "proto3";
-
-        package googletest;
-
-        import "google/protobuf/timestamp.proto";
-        import "google/protobuf/duration.proto";
-
-        message UnitTest {
-          int32 tests = 1;
-          int32 failures = 2;
-          int32 disabled = 3;
-          int32 errors = 4;
-          google.protobuf.Timestamp timestamp = 5;
-          google.protobuf.Duration time = 6;
-          string name = 7;
-          repeated TestCase testsuites = 8;
-        }
-
-        message TestCase {
-          string name = 1;
-          int32 tests = 2;
-          int32 failures = 3;
-          int32 disabled = 4;
-          int32 errors = 5;
-          google.protobuf.Duration time = 6;
-          repeated TestInfo testsuite = 7;
-        }
-
-        message TestInfo {
-          string name = 1;
-          string file = 6;
-          int32 line = 7;
-          enum Status {
-            RUN = 0;
-            NOTRUN = 1;
-          }
-          Status status = 2;
-          google.protobuf.Duration time = 3;
-          string classname = 4;
-          message Failure {
-            string failures = 1;
-            string type = 2;
-          }
-          repeated Failure failures = 5;
-        }"""
-
-        test_results = []  # type: List[Result]
-
-        if not Path(cls.GTEST_RESULT_FILE).exists():
-            print(f"ERROR: No test result file [{cls.GTEST_RESULT_FILE}]")
-            return (
-                Result.Status.ERROR,
-                test_results,
-                f"No test result file [{cls.GTEST_RESULT_FILE}]",
-            )
-
-        with open(cls.GTEST_RESULT_FILE, "r", encoding="utf-8") as j:
-            report = json.load(j)
-
-        total_counter = report["tests"]
-        failed_counter = report["failures"]
-        error_counter = report["errors"]
-
-        description = ""
-        SEGFAULT = "Segmentation fault. "
-        SIGNAL = "Exit on signal. "
-        for suite in report["testsuites"]:
-            suite_name = suite["name"]
-            for test_case in suite["testsuite"]:
-                case_name = test_case["name"]
-                test_time = float(test_case["time"][:-1])
-                raw_logs = None
-                if "failures" in test_case:
-                    raw_logs = ""
-                    for failure in test_case["failures"]:
-                        raw_logs += failure[Result.Status.FAILED]
-                    if (
-                        "Segmentation fault" in raw_logs  # type: ignore
-                        and SEGFAULT not in description
-                    ):
-                        description += SEGFAULT
-                    if (
-                        "received signal SIG" in raw_logs  # type: ignore
-                        and SIGNAL not in description
-                    ):
-                        description += SIGNAL
-                if test_case["status"] == "NOTRUN":
-                    test_status = "SKIPPED"
-                elif raw_logs is None:
-                    test_status = Result.Status.SUCCESS
-                else:
-                    test_status = Result.Status.FAILED
-
-                test_results.append(
-                    Result(
-                        f"{suite_name}.{case_name}",
-                        test_status,
-                        duration=test_time,
-                        info=raw_logs,
-                    )
-                )
-
-        check_status = Result.Status.SUCCESS
-        tests_status = Result.Status.SUCCESS
-        tests_time = float(report["time"][:-1])
-        if failed_counter:
-            check_status = Result.Status.FAILED
-            test_status = Result.Status.FAILED
-        if error_counter:
-            check_status = Result.Status.ERROR
-            test_status = Result.Status.ERROR
-        test_results.append(Result(report["name"], tests_status, duration=tests_time))
-
-        if not description:
-            description += (
-                f"fail: {failed_counter + error_counter}, "
-                f"passed: {total_counter - failed_counter - error_counter}"
-            )
-
-        return (
-            check_status,
-            test_results,
-            description,
-        )

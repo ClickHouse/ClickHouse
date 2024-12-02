@@ -1,25 +1,24 @@
 #pragma once
 
-#include <Core/Joins.h>
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
-#include <DataTypes/getLeastSupertype.h>
-#include <Interpreters/IJoin.h>
-#include <Interpreters/IKeyValueEntity.h>
-#include <Interpreters/JoinUtils.h>
-#include <Interpreters/TemporaryDataOnDisk.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/IAST_fwd.h>
+#include <Interpreters/IJoin.h>
+#include <Interpreters/JoinUtils.h>
 #include <QueryPipeline/SizeLimits.h>
+#include <DataTypes/getLeastSupertype.h>
+#include <Interpreters/IKeyValueEntity.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
+
 #include <Common/Exception.h>
+#include <Parsers/IAST_fwd.h>
 
-#include <base/types.h>
-
-#include <algorithm>
 #include <cstddef>
-#include <memory>
 #include <unordered_map>
+
 #include <utility>
+#include <memory>
+#include <base/types.h>
 
 namespace CurrentMetrics
 {
@@ -279,12 +278,10 @@ public:
 
     bool isEnabledAlgorithm(JoinAlgorithm val) const
     {
-        /// When join_algorithm = 'default' (not specified by user) we use [parallel_]hash or direct algorithm.
+        /// When join_algorithm = 'default' (not specified by user) we use hash or direct algorithm.
         /// It's behaviour that was initially supported by clickhouse.
         bool is_default_enabled = std::find(join_algorithm.begin(), join_algorithm.end(), JoinAlgorithm::DEFAULT) != join_algorithm.end();
-        constexpr auto default_algorithms = std::array<JoinAlgorithm, 4>{
-            JoinAlgorithm::DEFAULT, JoinAlgorithm::HASH, JoinAlgorithm::PARALLEL_HASH, JoinAlgorithm::DIRECT};
-        if (is_default_enabled && std::ranges::find(default_algorithms, val) != default_algorithms.end())
+        if (is_default_enabled && (val == JoinAlgorithm::DEFAULT || val == JoinAlgorithm::HASH || val == JoinAlgorithm::DIRECT))
             return true;
         return std::find(join_algorithm.begin(), join_algorithm.end(), val) != join_algorithm.end();
     }

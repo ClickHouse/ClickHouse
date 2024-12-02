@@ -514,12 +514,12 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     nuraft::ptr<nuraft::delayed_task_scheduler> scheduler = asio_service;
     nuraft::ptr<nuraft::rpc_client_factory> rpc_cli_factory = asio_service;
 
-    nuraft::ptr<nuraft::state_mgr> cast_state_manager = state_manager;
-    nuraft::ptr<nuraft::state_machine> cast_state_machine = state_machine;
+    nuraft::ptr<nuraft::state_mgr> casted_state_manager = state_manager;
+    nuraft::ptr<nuraft::state_machine> casted_state_machine = state_machine;
 
     /// raft_server creates unique_ptr from it
     nuraft::context * ctx
-        = new nuraft::context(cast_state_manager, cast_state_machine, asio_listeners, logger, rpc_cli_factory, scheduler, params);
+        = new nuraft::context(casted_state_manager, casted_state_machine, asio_listeners, logger, rpc_cli_factory, scheduler, params);
 
     raft_instance = nuraft::cs_new<KeeperRaftServer>(ctx, init_options);
 
@@ -535,11 +535,11 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
 
     raft_instance->start_server(init_options.skip_initial_election_timeout_);
 
-    nuraft::ptr<nuraft::raft_server> cast_raft_server = raft_instance;
+    nuraft::ptr<nuraft::raft_server> casted_raft_server = raft_instance;
 
     for (const auto & asio_listener : asio_listeners)
     {
-        asio_listener->listen(cast_raft_server);
+        asio_listener->listen(casted_raft_server);
     }
 }
 

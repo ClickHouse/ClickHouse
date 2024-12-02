@@ -2614,7 +2614,7 @@ bool ClientBase::addMergeTreeSettings(ASTCreateQuery & ast_create)
         || !ast_create.storage
         || !ast_create.storage->isExtendedStorageDefinition()
         || !ast_create.storage->engine
-        || !ast_create.storage->engine->name.contains("MergeTree"))
+        || ast_create.storage->engine->name.find("MergeTree") == std::string::npos)
         return false;
 
     auto all_changed = cmd_merge_tree_settings.changes();

@@ -2,7 +2,6 @@
 
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
-#include <Common/ShellCommandsHolder.h>
 #include <IO/ConnectionTimeouts.h>
 
 namespace DB
@@ -30,7 +29,7 @@ LibraryBridgeHelper::LibraryBridgeHelper(ContextPtr context_)
 
 void LibraryBridgeHelper::startBridge(std::unique_ptr<ShellCommand> cmd) const
 {
-    ShellCommandsHolder::instance().addCommand(std::move(cmd));
+    getContext()->addBridgeCommand(std::move(cmd));
 }
 
 

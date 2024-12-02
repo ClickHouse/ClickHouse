@@ -525,7 +525,6 @@ void TCPHandler::runImpl()
                 query_state->logs_queue->setSourceRegexp(query_state->query_context->getSettingsRef()[Setting::send_logs_source_regexp]);
                 CurrentThread::attachInternalTextLogsQueue(query_state->logs_queue, client_logs_level);
             }
-
             if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS)
             {
                 query_state->profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
@@ -1154,7 +1153,6 @@ void TCPHandler::processInsertQuery(QueryState & state)
         if (result.status == AsynchronousInsertQueue::PushResult::OK)
         {
             /// Reset pipeline because it may hold write lock for some storages.
-            state.io.pipeline.cancel();
             state.io.pipeline.reset();
             if (settings[Setting::wait_for_async_insert])
             {
