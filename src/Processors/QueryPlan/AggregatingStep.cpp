@@ -266,30 +266,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             Processors processors;
             for (size_t i = 0; i < grouping_sets_size; ++i)
             {
-                Aggregator::Params params_for_set
-                {
-                    grouping_sets_params[i].used_keys,
-                    transform_params->params.aggregates,
-                    transform_params->params.overflow_row,
-                    transform_params->params.max_rows_to_group_by,
-                    transform_params->params.group_by_overflow_mode,
-                    transform_params->params.group_by_two_level_threshold,
-                    transform_params->params.group_by_two_level_threshold_bytes,
-                    transform_params->params.max_bytes_before_external_group_by,
-                    transform_params->params.empty_result_for_aggregation_by_empty_set,
-                    transform_params->params.tmp_data_scope,
-                    transform_params->params.max_threads,
-                    transform_params->params.min_free_disk_space,
-                    transform_params->params.compile_aggregate_expressions,
-                    transform_params->params.min_count_to_compile_aggregate_expression,
-                    transform_params->params.max_block_size,
-                    transform_params->params.enable_prefetch,
-                    /* only_merge */ false,
-                    transform_params->params.optimize_group_by_constant_keys,
-                    transform_params->params.min_hit_rate_to_use_consecutive_keys_optimization,
-                    transform_params->params.stats_collecting_params,
-                };
-
+                Aggregator::Params params_for_set = transform_params->params.cloneWithKeys(grouping_sets_params[i].used_keys, false);
                 auto transform_params_for_set = std::make_shared<AggregatingTransformParams>(src_header, std::move(params_for_set), final);
 
                 if (streams > 1)
