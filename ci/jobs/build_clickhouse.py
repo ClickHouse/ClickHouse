@@ -42,16 +42,6 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-CMAKE_CMD = """cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA \
--DCMAKE_BUILD_TYPE={BUILD_TYPE} \
--DSANITIZE={SANITIZER} \
--DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 \
--DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DCMAKE_INSTALL_PREFIX=/usr \
--DCMAKE_INSTALL_SYSCONFDIR=/etc -DCMAKE_INSTALL_LOCALSTATEDIR=/var -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON \
-{AUX_DEFS} \
--DCMAKE_C_COMPILER={COMPILER} -DCMAKE_CXX_COMPILER={COMPILER_CPP} \
--DCOMPILER_CACHE={CACHE_TYPE} -DENABLE_BUILD_PROFILING=1 {DIR}"""
-
 CMAKE_BASE = (
     "cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1"
     " -LA -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_BUILD_PROFILING=1"
@@ -105,7 +95,7 @@ def build_args(build_type: List[str]) -> Tuple[str, str]:
         sanitizer = ""
 
     if sanitizer:
-        cmake = f"{cmake} -DENABLE_TESTS=1 -DSANITIZE={SANITIZERS.get(sanitizer, "")}"
+        cmake = f"{cmake} -DENABLE_TESTS=1 -DSANITIZE={SANITIZERS.get(sanitizer, '')}"
 
     if "debug" in build_type:
         cmake = f"{cmake} -DCMAKE_BUILD_TYPE=Debug"
