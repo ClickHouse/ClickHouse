@@ -44,8 +44,6 @@ MergeTreeSink::~MergeTreeSink()
     if (!delayed_chunk)
         return;
 
-    chassert(isCancelled());
-
     for (auto & partition : delayed_chunk->partitions)
     {
         partition.temp_part.cancel();

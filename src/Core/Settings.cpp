@@ -1817,6 +1817,22 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
+    DECLARE(Map, http_response_headers, "", R"(
+Allows to add or override HTTP headers which the server will return in the response with a successful query result.
+This only affects the HTTP interface.
+
+If the header is already set by default, the provided value will override it.
+If the header was not set by default, it will be added to the list of headers.
+Headers that are set by the server by default and not overridden by this setting, will remain.
+
+The setting allows you to set a header to a constant value. Currently there is no way to set a header to a dynamically calculated value.
+
+Neither names or values can contain ASCII control characters.
+
+If you implement a UI application which allows users to modify settings but at the same time makes decisions based on the returned headers, it is recommended to restrict this setting to readonly.
+
+Example: `SET http_response_headers = '{"Content-Type": "image/png"}'`
+)", 0) \
     \
     DECLARE(String, count_distinct_implementation, "uniqExact", R"(
 Specifies which of the `uniq*` functions should be used to perform the [COUNT(DISTINCT ...)](../../sql-reference/aggregate-functions/reference/count.md/#agg_function-count) construction.
@@ -1923,6 +1939,13 @@ See also:
     DECLARE(Bool, single_join_prefer_left_table, true, R"(
 For single JOIN in case of identifier ambiguity prefer left table
 )", IMPORTANT) \
+    \
+DECLARE(BoolAuto, query_plan_join_swap_table, Field("auto"), R"(
+    Determine which side of the join should be the build table (also called inner, the one inserted into the hash table for a hash join) in the query plan. This setting is supported only for `ALL` join strictness with the `JOIN ON` clause. Possible values are:
+    - 'auto': Let the planner decide which table to use as the build table.
+    - 'false': Never swap tables (the right table is the build table).
+    - 'true': Always swap tables (the left table is the build table).
+)", 0) \
     \
     DECLARE(UInt64, preferred_block_size_bytes, 1000000, R"(
 This setting adjusts the data block size for query processing and represents additional fine-tuning to the more rough 'max_block_size' setting. If the columns are large and with 'max_block_size' rows the block size is likely to be larger than the specified amount of bytes, its size will be lowered for better CPU cache locality.
