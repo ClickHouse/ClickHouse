@@ -64,9 +64,7 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
      {
          const std::vector<std::string> & choices
              = {"'simple', date_time_input_format = 'basic'", "'iso', date_time_input_format = 'best_effort'"};
-         ret += "'";
          ret += rg.pickRandomlyFromVector(choices);
-         ret += "'";
      }},
     {"describe_include_subcolumns", trueOrFalse},
     {"dictionary_use_async_executor", trueOrFalse},

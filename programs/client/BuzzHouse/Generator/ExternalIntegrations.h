@@ -48,7 +48,7 @@ public:
 
     virtual void setEngineDetails(RandomGenerator &, const SQLBase &, const std::string &, TableEngine *) { }
 
-    virtual bool performIntegration(RandomGenerator &, uint32_t, std::vector<InsertEntry> &) { return false; }
+    virtual bool performIntegration(RandomGenerator &, uint32_t, bool, std::vector<InsertEntry> &) { return false; }
 
     virtual ~ClickHouseIntegration() = default;
 };
@@ -68,7 +68,7 @@ public:
 
     virtual void getTypeString(RandomGenerator &, const SQLType *, std::string &) const { }
 
-    bool performIntegration(RandomGenerator & rg, const uint32_t tname, std::vector<InsertEntry> & entries) override
+    bool performIntegration(RandomGenerator & rg, const uint32_t tname, const bool can_shuffle, std::vector<InsertEntry> & entries) override
     {
         const std::string str_tname = getTableName(tname);
 
@@ -86,7 +86,7 @@ public:
             buf += str_tname;
             buf += "(";
 
-            if (rg.nextSmallNumber() < 7)
+            if (can_shuffle && rg.nextSmallNumber() < 7)
             {
                 std::shuffle(entries.begin(), entries.end(), rg.generator);
             }
@@ -154,7 +154,7 @@ public:
         }
         else if (res)
         {
-            res &= performIntegration(rg, t.tname, entries);
+            res &= performIntegration(rg, t.tname, false, entries);
         }
         return res;
     }
@@ -566,7 +566,7 @@ public:
         te->add_params()->set_num(rg.nextBool() ? 16 : rg.nextLargeNumber() % 33);
     }
 
-    bool performIntegration(RandomGenerator &, const uint32_t, std::vector<InsertEntry> &) override { return true; }
+    bool performIntegration(RandomGenerator &, const uint32_t, const bool, std::vector<InsertEntry> &) override { return true; }
 
     ~RedisIntegration() override = default;
 };
@@ -660,11 +660,11 @@ public:
         te->add_params()->set_svalue(sc.password);
     }
 
-    bool performIntegration(RandomGenerator & rg, const uint32_t tname, std::vector<InsertEntry> & entries) override
+    bool performIntegration(RandomGenerator & rg, const uint32_t tname, const bool can_shuffle, std::vector<InsertEntry> & entries) override
     {
         try
         {
-            const bool permute = rg.nextBool(), miss_cols = rg.nextBool();
+            const bool permute = can_shuffle && rg.nextBool(), miss_cols = rg.nextBool();
             const uint32_t ndocuments = rg.nextMediumNumber();
             const std::string str_tname = "t" + std::to_string(tname);
             mongocxx::collection coll = database[str_tname];
@@ -741,7 +741,7 @@ public:
         te->add_params()->set_svalue(sc.password);
     }
 
-    bool performIntegration(RandomGenerator &, const uint32_t tname, std::vector<InsertEntry> &) override
+    bool performIntegration(RandomGenerator &, const uint32_t tname, const bool, std::vector<InsertEntry> &) override
     {
         return sendRequest(sc.database + "/file" + std::to_string(tname));
     }
@@ -833,27 +833,27 @@ public:
         switch (dc)
         {
             case IntegrationCall::IntMySQL:
-                next_calls_succeeded.push_back(mysql->performIntegration(rg, b.tname, entries));
+                next_calls_succeeded.push_back(mysql->performIntegration(rg, b.tname, true, entries));
                 mysql->setEngineDetails(rg, b, tname, te);
                 break;
             case IntegrationCall::IntPostgreSQL:
-                next_calls_succeeded.push_back(postresql->performIntegration(rg, b.tname, entries));
+                next_calls_succeeded.push_back(postresql->performIntegration(rg, b.tname, true, entries));
                 postresql->setEngineDetails(rg, b, tname, te);
                 break;
             case IntegrationCall::IntSQLite:
-                next_calls_succeeded.push_back(sqlite->performIntegration(rg, b.tname, entries));
+                next_calls_succeeded.push_back(sqlite->performIntegration(rg, b.tname, true, entries));
                 sqlite->setEngineDetails(rg, b, tname, te);
                 break;
             case IntegrationCall::IntMongoDB:
-                next_calls_succeeded.push_back(mongodb->performIntegration(rg, b.tname, entries));
+                next_calls_succeeded.push_back(mongodb->performIntegration(rg, b.tname, true, entries));
                 mongodb->setEngineDetails(rg, b, tname, te);
                 break;
             case IntegrationCall::IntRedis:
-                next_calls_succeeded.push_back(redis->performIntegration(rg, b.tname, entries));
+                next_calls_succeeded.push_back(redis->performIntegration(rg, b.tname, true, entries));
                 redis->setEngineDetails(rg, b, tname, te);
                 break;
             case IntegrationCall::IntMinIO:
-                next_calls_succeeded.push_back(minio->performIntegration(rg, b.tname, entries));
+                next_calls_succeeded.push_back(minio->performIntegration(rg, b.tname, true, entries));
                 minio->setEngineDetails(rg, b, tname, te);
                 break;
         }
