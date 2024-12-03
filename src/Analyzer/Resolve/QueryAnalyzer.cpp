@@ -3470,11 +3470,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             auto set = std::make_shared<Set>(size_limits_for_set, 0, settings[Setting::transform_null_in]);
 
-            set->setHeader(result_block.cloneEmpty().getColumnsWithTypeAndName());
-            set->insertFromBlock(result_block.getColumnsWithTypeAndName());
-            set->finishInsert();
-
-            auto future_set = std::make_shared<FutureSetFromStorage>(std::move(set));
+            auto hash = function_arguments[1]->getTreeHash();
+            auto future_set = std::make_shared<FutureSetFromTuple>(hash, std::move(result_block), settings[Setting::transform_null_in], size_limits_for_set);
 
             /// Create constant set column for constant folding
 

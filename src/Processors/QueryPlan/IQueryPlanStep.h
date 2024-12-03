@@ -24,6 +24,8 @@ namespace JSONBuilder { class JSONMap; }
 class QueryPlan;
 using QueryPlanRawPtrs = std::list<QueryPlan *>;
 
+struct QueryPlanSerializationSettings;
+
 using Header = Block;
 using Headers = std::vector<Header>;
 
@@ -36,6 +38,7 @@ public:
     virtual ~IQueryPlanStep() = default;
 
     virtual String getName() const = 0;
+    virtual String getSerializationName() const { return getName(); }
 
     /// Add processors from current step to QueryPipeline.
     /// Calling this method, we assume and don't check that:
@@ -54,6 +57,11 @@ public:
     const std::string & getStepDescription() const { return step_description; }
     void setStepDescription(std::string description) { step_description = std::move(description); }
 
+    struct Serialization;
+    struct Deserialization;
+
+    virtual void serializeSettings(QueryPlanSerializationSettings & /*settings*/) const {}
+    virtual void serialize(Serialization & /*ctx*/) const;
     virtual const SortDescription & getSortDescription() const;
 
     struct FormatSettings
