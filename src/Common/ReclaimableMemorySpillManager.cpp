@@ -20,24 +20,9 @@ Int64 RelaimableMemorySpillManager::needSpill(IProcessor * processor)
     }
     auto reclaimable_mem = processor->getReclaimableMemoryUsage();
     std::unique_lock lock(mutex);
-    auto it = processor_reclaimable_memory.find(processor);
-    if (it == processor_reclaimable_memory.end())
-    {
-        processor_reclaimable_memory[processor] = reclaimable_mem;
-        it = processor_reclaimable_memory.find(processor);
-        total_spill_aux_bytes += it->second.spill_aux_bytes;
-    }
-    else
-    {
-        total_spill_aux_bytes += (reclaimable_mem.spill_aux_bytes - it->second.spill_aux_bytes);
-        if (total_spill_aux_bytes < 0)
-        {
-            total_spill_aux_bytes = 0;
-        }
-        it->second = reclaimable_mem;
-    }
-
-    if (getCurrentQueryMemoryUsage() + total_spill_aux_bytes < getHardLimit())
+    processor_reclaimable_memory[processor] = reclaimable_mem;
+    refreshLargestProcessor();
+    if (getCurrentQueryMemoryUsage() + largest_spill_aux_bytes < getHardLimit())
         return 0;
     refreshLargestProcessor();
     return processor == largest_processor ? reclaimable_mem.reclaimable_bytes : 0;
@@ -69,13 +54,13 @@ void RelaimableMemorySpillManager::processorFinished(IProcessor * processor)
 
 void RelaimableMemorySpillManager::refreshLargestProcessor()
 {
-    Int64 largest_reclaimable_bytes = 0;
+    largest_spill_aux_bytes = 0;
     for (const auto & [proc, memory] : processor_reclaimable_memory)
     {
-        if (!largest_processor || memory.reclaimable_bytes > largest_reclaimable_bytes)
+        if (!largest_processor || memory.spill_aux_bytes > largest_spill_aux_bytes)
         {
             largest_processor = proc;
-            largest_reclaimable_bytes = memory.reclaimable_bytes;
+            largest_spill_aux_bytes = memory.reclaimable_bytes;
         }
     }
 }
