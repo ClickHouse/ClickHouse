@@ -135,11 +135,11 @@ static void compileFunction(llvm::Module & module, const IFunctionBase & functio
     }
 
     /// Compile values for column rows and store compiled value
-    std::cerr << "before compile:" << std::endl;
-    module.print(llvm::errs(), nullptr);
+    // std::cerr << "before compile:" << std::endl;
+    // module.print(llvm::errs(), nullptr);
     auto * result = function.compile(b, arguments);
-    std::cerr << "after compile:" << std::endl;
-    module.print(llvm::errs(), nullptr);
+    // std::cerr << "after compile:" << std::endl;
+    // module.print(llvm::errs(), nullptr);
     auto * result_column_element_ptr = b.CreateInBoundsGEP(columns.back().data_element_type, columns.back().data_ptr, counter_phi);
 
     if (columns.back().null_data_ptr)
