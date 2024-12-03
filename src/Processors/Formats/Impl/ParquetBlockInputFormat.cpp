@@ -610,17 +610,18 @@ void ParquetBlockInputFormat::initializeIfNeeded()
     };
 
     std::unordered_set<std::size_t> filtering_columns;
+    KeyCondition::RPN parquet_rpn = key_condition->getRPN();
 
     if (format_settings.parquet.bloom_filter_push_down && key_condition)
     {
         bf_reader = parquet::BloomFilterReader::Make(arrow_file, metadata, bf_reader_properties, nullptr);
 
-        const auto parquet_conditions = keyConditionRPNToParquetRPN(
-            key_condition->getRPN(),
+        parquet_rpn = keyConditionRPNToParquetRPN(
+            parquet_rpn,
             index_mapping,
             metadata->RowGroup(0));
 
-        filtering_columns = getBloomFilterFilteringColumnKeys(parquet_conditions);
+        filtering_columns = getBloomFilterFilteringColumnKeys(parquet_rpn);
     }
 
     auto skip_row_group_based_on_filters = [&](int row_group)
@@ -630,7 +631,6 @@ void ParquetBlockInputFormat::initializeIfNeeded()
             return false;
         }
 
-        KeyCondition::RPN possibly_modified_rpn = key_condition->getRPN();
         KeyCondition::ColumnIndexToBloomFilter column_index_to_bloom_filter;
 
         const auto & header = getPort().getHeader();
@@ -644,15 +644,11 @@ void ParquetBlockInputFormat::initializeIfNeeded()
 
         if (format_settings.parquet.bloom_filter_push_down)
         {
-            possibly_modified_rpn = keyConditionRPNToParquetRPN(key_condition->getRPN(),
-                                                                index_mapping,
-                                                                metadata->RowGroup(row_group));
-
             column_index_to_bloom_filter = buildColumnIndexToBF(*bf_reader, row_group, index_mapping, filtering_columns);
         }
 
         bool maybe_exists = KeyCondition::checkRPNAgainstHyperrectangle(
-                                possibly_modified_rpn,
+                                parquet_rpn,
                                 hyperrectangle,
                                 key_condition->key_space_filling_curves,
                                 getPort().getHeader().getDataTypes(),
