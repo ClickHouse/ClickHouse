@@ -266,7 +266,7 @@ struct KeeperServer::KeeperRaftServer : public nuraft::raft_server
         }
 
         const size_t voting_members = get_num_voting_members();
-        const auto not_responding_peers = get_not_responding_peers();
+        const auto not_responding_peers = get_not_responding_peers_count();
         const auto quorum_size = voting_members / 2 + 1;
         const auto max_not_responding_peers = voting_members - quorum_size;
 
@@ -301,6 +301,11 @@ struct KeeperServer::KeeperRaftServer : public nuraft::raft_server
     std::unique_lock<std::recursive_mutex> lockRaft()
     {
         return std::unique_lock(lock_);
+    }
+
+    std::unique_lock<std::mutex> lockCommit()
+    {
+        return std::unique_lock(commit_lock_);
     }
 
     bool isCommitInProgress() const
@@ -514,12 +519,12 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     nuraft::ptr<nuraft::delayed_task_scheduler> scheduler = asio_service;
     nuraft::ptr<nuraft::rpc_client_factory> rpc_cli_factory = asio_service;
 
-    nuraft::ptr<nuraft::state_mgr> casted_state_manager = state_manager;
-    nuraft::ptr<nuraft::state_machine> casted_state_machine = state_machine;
+    nuraft::ptr<nuraft::state_mgr> cast_state_manager = state_manager;
+    nuraft::ptr<nuraft::state_machine> cast_state_machine = state_machine;
 
     /// raft_server creates unique_ptr from it
     nuraft::context * ctx
-        = new nuraft::context(casted_state_manager, casted_state_machine, asio_listeners, logger, rpc_cli_factory, scheduler, params);
+        = new nuraft::context(cast_state_manager, cast_state_machine, asio_listeners, logger, rpc_cli_factory, scheduler, params);
 
     raft_instance = nuraft::cs_new<KeeperRaftServer>(ctx, init_options);
 
@@ -535,11 +540,11 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
 
     raft_instance->start_server(init_options.skip_initial_election_timeout_);
 
-    nuraft::ptr<nuraft::raft_server> casted_raft_server = raft_instance;
+    nuraft::ptr<nuraft::raft_server> cast_raft_server = raft_instance;
 
     for (const auto & asio_listener : asio_listeners)
     {
-        asio_listener->listen(casted_raft_server);
+        asio_listener->listen(cast_raft_server);
     }
 }
 
@@ -1228,6 +1233,7 @@ Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
 
 uint64_t KeeperServer::createSnapshot()
 {
+    auto commit_lock = raft_instance->lockCommit();
     uint64_t log_idx = raft_instance->create_snapshot();
     if (log_idx != 0)
         LOG_INFO(log, "Snapshot creation scheduled with last committed log index {}.", log_idx);

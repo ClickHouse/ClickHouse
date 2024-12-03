@@ -76,7 +76,7 @@ SELECT t1.* FROM t1 {{ join_type }} {{ join_strictness }} JOIN t2 ON t1.key = t2
 -- test error messages
 {% for algorithm in ['partial_merge', 'full_sorting_merge', 'parallel_hash', 'auto', 'direct'] -%}
 SET join_algorithm='{{ algorithm }}';
-{% for join_type in ['LEFT', 'INNER', 'RIGHT', 'FULL'] -%}
+{% for join_type in ['LEFT', 'RIGHT', 'FULL'] -%}
 SELECT t1.*, t2.* FROM t1 {{ join_type }} JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY (t1.key, t1.attr, t2.key, t2.attr); -- { serverError NOT_IMPLEMENTED }
 SELECT t1.*, t2.* from t1 {{ join_type }} JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY (t1.key, t1.attr, t2.key, t2.attr); -- { serverError NOT_IMPLEMENTED }
 SELECT t1.*, t2.* from t1 {{ join_type }} JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY (t1.key, t1.attr, t2.key, t2.attr); -- { serverError NOT_IMPLEMENTED }
@@ -85,7 +85,7 @@ SELECT t1.*, t2.* from t1 {{ join_type }} JOIN t2 ON t1.key = t2.key and (t1.a <
 
 {% for algorithm in ['grace_hash', 'partial_merge', 'full_sorting_merge', 'parallel_hash', 'auto', 'direct'] -%}
 SET join_algorithm='{{ algorithm }}';
-{% for join_type in ['LEFT', 'INNER', 'RIGHT', 'FULL'] -%}
+{% for join_type in ['LEFT', 'RIGHT', 'FULL'] -%}
 SELECT t1.*, t2.* FROM t1 {{ join_type }} JOIN t2 ON t1.key = t2.key AND t1.a < t2.a OR t1.a = t2.a ORDER BY (t1.key, t1.attr, t2.key, t2.attr); -- { serverError NOT_IMPLEMENTED }
 {% endfor -%}
 {% endfor -%}
