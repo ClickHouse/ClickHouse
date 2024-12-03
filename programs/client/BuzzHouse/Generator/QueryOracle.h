@@ -18,7 +18,7 @@ private:
     std::set<uint32_t> found_tables;
     std::vector<std::string> nsettings;
 
-    void findTablesWithPeersAndReplace(google::protobuf::Message * mes, const StatementGenerator & gen);
+    void findTablesWithPeersAndReplace(google::protobuf::Message & mes, const StatementGenerator & gen);
 
 public:
     explicit QueryOracle(const FuzzConfig & ffc) : fc(ffc) { buf.reserve(4096); }

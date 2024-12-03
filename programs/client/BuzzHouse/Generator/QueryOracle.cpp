@@ -537,16 +537,73 @@ int QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, StatementGenera
     return 0;
 }
 
-void QueryOracle::findTablesWithPeersAndReplace(google::protobuf::Message * mes, const StatementGenerator & gen)
+void QueryOracle::findTablesWithPeersAndReplace(google::protobuf::Message & mes, const StatementGenerator & gen)
 {
-    const auto * desc = mes->GetDescriptor();
-    const auto * refl = mes->GetReflection();
-    const int fieldCount = desc->field_count();
-
     checkStackSize();
-    if (mes->GetTypeName() == "BuzzHouse.TableOrSubquery")
+
+    if (mes.GetTypeName() == "BuzzHouse.Select")
     {
-        auto & tos = static_cast<TableOrSubquery &>(*mes);
+        auto & sel = static_cast<Select &>(mes);
+
+        if (sel.has_select_core())
+        {
+            findTablesWithPeersAndReplace(const_cast<SelectStatementCore &>(sel.select_core()), gen);
+        }
+        else if (sel.has_set_query())
+        {
+            findTablesWithPeersAndReplace(const_cast<SetQuery &>(sel.set_query()), gen);
+        }
+        if (sel.has_ctes())
+        {
+            findTablesWithPeersAndReplace(const_cast<Select &>(sel.ctes().cte().query()), gen);
+            for (int i = 0; i < sel.ctes().other_ctes_size(); i++)
+            {
+                findTablesWithPeersAndReplace(const_cast<Select &>(sel.ctes().other_ctes(i).query()), gen);
+            }
+        }
+    }
+    else if (mes.GetTypeName() == "BuzzHouse.SetQuery")
+    {
+        auto & setq = static_cast<SetQuery &>(mes);
+
+        findTablesWithPeersAndReplace(const_cast<Select &>(setq.sel1()), gen);
+        findTablesWithPeersAndReplace(const_cast<Select &>(setq.sel2()), gen);
+    }
+    else if (mes.GetTypeName() == "BuzzHouse.SelectStatementCore")
+    {
+        auto & ssc = static_cast<SelectStatementCore &>(mes);
+
+        if (ssc.has_from())
+        {
+            findTablesWithPeersAndReplace(const_cast<JoinedQuery &>(ssc.from().tos()), gen);
+        }
+    }
+    else if (mes.GetTypeName() == "BuzzHouse.JoinedQuery")
+    {
+        auto & jquery = static_cast<JoinedQuery &>(mes);
+
+        for (int i = 0; i < jquery.tos_list_size(); i++)
+        {
+            findTablesWithPeersAndReplace(const_cast<TableOrSubquery &>(jquery.tos_list(i)), gen);
+        }
+        findTablesWithPeersAndReplace(const_cast<JoinClause &>(jquery.join_clause()), gen);
+    }
+    else if (mes.GetTypeName() == "BuzzHouse.JoinClause")
+    {
+        auto & jclause = static_cast<JoinClause &>(mes);
+
+        for (int i = 0; i < jclause.clauses_size(); i++)
+        {
+            if (jclause.clauses(i).has_core())
+            {
+                findTablesWithPeersAndReplace(const_cast<TableOrSubquery &>(jclause.clauses(i).core().tos()), gen);
+            }
+        }
+        findTablesWithPeersAndReplace(const_cast<TableOrSubquery &>(jclause.tos()), gen);
+    }
+    else if (mes.GetTypeName() == "BuzzHouse.TableOrSubquery")
+    {
+        auto & tos = static_cast<TableOrSubquery &>(mes);
 
         if (tos.has_joined_table())
         {
@@ -567,28 +624,14 @@ void QueryOracle::findTablesWithPeersAndReplace(google::protobuf::Message * mes,
                     found_tables.insert(tname);
                 }
             }
-            return;
         }
-    }
-    for (int i = 0; i < fieldCount; i++)
-    {
-        const auto * field = desc->field(i);
-
-        if (field->type() == google::protobuf::FieldDescriptor::TYPE_MESSAGE)
+        else if (tos.has_joined_derived_query())
         {
-            if (field->is_repeated())
-            {
-                const int fieldSize = refl->FieldSize(*mes, field);
-
-                for (int j = 0; j < fieldSize; j++)
-                {
-                    findTablesWithPeersAndReplace(&const_cast<google::protobuf::Message &>(refl->GetRepeatedMessage(*mes, field, j)), gen);
-                }
-            }
-            else
-            {
-                findTablesWithPeersAndReplace(&const_cast<google::protobuf::Message &>(refl->GetMessage(*mes, field)), gen);
-            }
+            findTablesWithPeersAndReplace(const_cast<Select &>(tos.joined_derived_query().select()), gen);
+        }
+        else if (tos.has_joined_query())
+        {
+            findTablesWithPeersAndReplace(const_cast<JoinedQuery &>(tos.joined_query()), gen);
         }
     }
 }
@@ -620,7 +663,7 @@ int QueryOracle::replaceQueryWithTablePeers(
     peer_queries.clear();
 
     sq2.CopyFrom(sq1);
-    findTablesWithPeersAndReplace(&sq2, gen);
+    findTablesWithPeersAndReplace(sq2, gen);
     for (const auto & entry : found_tables)
     {
         SQLQuery next;
