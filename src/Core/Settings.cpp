@@ -997,7 +997,7 @@ See also:
 - [GROUP BY clause](/docs/en/sql-reference/statements/select/group-by.md)
 )", 0) \
     \
-    DECLARE(Bool, group_by_use_sharding, false, R"(
+    DECLARE(Bool, group_by_use_sharding, true, R"(
 Execute GROUP BY by sharding data by GROUP BY key. Skips merge phase and reduce memory usage. Not implemented for distributed processing.
 )", 0) \
     DECLARE(Bool, skip_unavailable_shards, false, R"(
