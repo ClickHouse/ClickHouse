@@ -632,7 +632,7 @@ void StorageMaterializedView::dropTempTable(StorageID table_id, ContextMutablePt
         auto query_for_logging = drop_query->formatForLogging(refresh_context->getSettingsRef()[Setting::log_queries_cut_to_length]);
         logExceptionBeforeStart(query_for_logging, refresh_context, drop_query, nullptr, stopwatch.elapsedMilliseconds());
         LOG_ERROR(getLogger("StorageMaterializedView"),
-            "{}: Failed to drop temporary table after refresh. Table {} is left behind and requires manual cleanup!",
+            "{}: Failed to drop temporary table after refresh. Table {} is left behind and requires manual cleanup.",
             getStorageID().getFullTableName(), table_id.getFullTableName());
         out_exception = getCurrentExceptionMessage(true);
     }
