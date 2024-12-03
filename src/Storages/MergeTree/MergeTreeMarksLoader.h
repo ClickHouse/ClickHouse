@@ -83,6 +83,9 @@ struct MergeTreeSettings;
 /// Adds computed marks for part to the marks cache.
 void addMarksToCache(const IMergeTreeDataPart & part, const PlainMarksByName & cached_marks, MarkCache * mark_cache);
 
+/// Removes cached marks for all columns from part.
+void removeMarksFromCache(const IMergeTreeDataPart & part, MarkCache * mark_cache);
+
 /// Returns the list of columns suitable for prewarming of mark cache according to settings.
 Names getColumnsToPrewarmMarks(const MergeTreeSettings & settings, const NamesAndTypesList & columns_list);
 

@@ -2,7 +2,7 @@ DROP TABLE IF EXISTS t_index_lazy_load;
 
 CREATE TABLE t_index_lazy_load (a UInt64)
 ENGINE = MergeTree  ORDER BY a
-SETTINGS index_granularity = 4, index_granularity_bytes = '10M', primary_key_lazy_load = 1, primary_key_compress_in_memory = 0;
+SETTINGS index_granularity = 4, index_granularity_bytes = '10M', primary_key_lazy_load = 1, use_primary_key_cache = 0, primary_key_compress_in_memory = 0;
 
 INSERT INTO t_index_lazy_load SELECT number FROM numbers(15);
 

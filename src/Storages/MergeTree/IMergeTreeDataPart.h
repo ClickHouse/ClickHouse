@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <unordered_map>
 #include <IO/WriteSettings.h>
 #include <Core/Block.h>
@@ -185,6 +186,15 @@ public:
 
     /// Loads marks and saves them into mark cache for specified columns.
     virtual void loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const = 0;
+
+    /// Removes marks from cache for all columns in part.
+    virtual void removeMarksFromCache(MarkCache * mark_cache) const = 0;
+
+    /// Removes data related to data part from mark and primary index caches.
+    void clearCaches();
+
+    /// Returns true if data related to data part may be stored in mark and primary index caches.
+    bool mayStoreDataInCaches() const;
 
     String getMarksFileExtension() const { return index_granularity_info.mark_type.getFileExtension(); }
 
@@ -377,6 +387,7 @@ public:
     IndexPtr getIndex() const;
     IndexPtr loadIndexToCache(PrimaryIndexCache & index_cache) const;
     void moveIndexToCache(PrimaryIndexCache & index_cache);
+    void removeIndexFromCache(PrimaryIndexCache * index_cache) const;
 
     void setIndex(Columns index_columns);
     void setIndex(IndexPtr new_index);
@@ -437,6 +448,10 @@ public:
     void calculateColumnsAndSecondaryIndicesSizesOnDisk(std::optional<Block> columns_sample = std::nullopt);
 
     std::optional<String> getRelativePathForPrefix(const String & prefix, bool detached = false, bool broken = false) const;
+
+    /// This method ignores current tmp prefix of part and returns
+    /// the name of part when it was or will be in Active state.
+    String getRelativePathOfActivePart() const;
 
     bool isProjectionPart() const { return parent_part != nullptr; }
 
@@ -765,6 +780,9 @@ private:
 
     /// This ugly flag is needed for debug assertions only
     mutable bool part_is_probably_removed_from_disk = false;
+
+    /// If it's true then data related to this part is cleared from mark and index caches.
+    mutable std::atomic_bool cleared_data_in_caches = false;
 };
 
 using MergeTreeDataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;

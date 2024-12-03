@@ -256,10 +256,6 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
     Int64 will_be = size ? size + amount.fetch_add(size, std::memory_order_relaxed) : amount.load(std::memory_order_relaxed);
     Int64 will_be_rss = size ? size + rss.fetch_add(size, std::memory_order_relaxed) : rss.load(std::memory_order_relaxed);
 
-    auto metric_loaded = metric.load(std::memory_order_relaxed);
-    if (metric_loaded != CurrentMetrics::end() && size)
-        CurrentMetrics::add(metric_loaded, size);
-
     Int64 current_hard_limit = hard_limit.load(std::memory_order_relaxed);
     Int64 current_profiler_limit = profiler_limit.load(std::memory_order_relaxed);
 
@@ -370,6 +366,10 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
             debugLogBigAllocationWithoutCheck(size);
         }
     }
+
+    auto metric_loaded = metric.load(std::memory_order_relaxed);
+    if (metric_loaded != CurrentMetrics::end() && size)
+        CurrentMetrics::add(metric_loaded, size);
 
     if (peak_updated && allocation_traced)
     {
