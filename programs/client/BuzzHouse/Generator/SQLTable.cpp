@@ -30,7 +30,10 @@ void StatementGenerator::addTableRelation(
     {
         if (t.isMergeTreeFamily())
         {
-            rel.cols.push_back(SQLRelationCol(rel_name, "_block_number", std::nullopt));
+            if (this->allow_not_deterministic)
+            {
+                rel.cols.push_back(SQLRelationCol(rel_name, "_block_number", std::nullopt));
+            }
             rel.cols.push_back(SQLRelationCol(rel_name, "_part", std::nullopt));
             rel.cols.push_back(SQLRelationCol(rel_name, "_part_data_version", std::nullopt));
             rel.cols.push_back(SQLRelationCol(rel_name, "_part_index", std::nullopt));
