@@ -22,7 +22,7 @@ void tryUpdateQueryConditionCache(const QueryPlanOptimizationSettings & optimiza
     if (!filter_actions_dag || query_info.isFinal())
         return;
 
-    if (!VirtualColumnUtils::isDeterministic(filter_actions_dag->getOutputs().front()))
+    if (!VirtualColumnUtils::isDeterministic(filter_actions_dag->getOutputs().front())) /// TODO check if front() still works for >1 condition
         return;
 
     for (auto iter = stack.rbegin() + 1; iter != stack.rend(); ++iter)
