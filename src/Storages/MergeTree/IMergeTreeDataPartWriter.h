@@ -48,7 +48,7 @@ public:
     Columns releaseIndexColumns();
     const MergeTreeIndexGranularity & getIndexGranularity() const { return index_granularity; }
 
-    virtual Block getColumnsSample() const = 0;
+    virtual const Block & getColumnsSample() const = 0;
 
 protected:
     SerializationPtr getSerialization(const String & column_name) const;
