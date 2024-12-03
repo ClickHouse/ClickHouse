@@ -555,7 +555,8 @@ void makeBloomFilter(const HashSet<UInt64, TrivialHash> & hashes, ColumnChunkInd
         num_blocks *= 2;
     }
     PODArray<UInt32> & data = indexes.bloom_filter_data;
-    data.resize_exact(num_blocks * 8);
+    data.reserve_exact(num_blocks * 8);
+    data.resize_fill(num_blocks * 8);
     for (const auto & cell : hashes)
     {
         size_t h = cell.key;
