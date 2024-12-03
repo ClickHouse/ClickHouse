@@ -64,7 +64,7 @@ public:
 
     virtual bool performQuery(const std::string &) { return false; }
 
-    virtual std::string getTableName(uint32_t) { return std::string(""); }
+    virtual std::string getTableName(uint32_t) { return std::string(); }
 
     virtual void getTypeString(RandomGenerator &, const SQLType *, std::string &) const { }
 
