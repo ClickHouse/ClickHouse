@@ -70,6 +70,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_QUERY_PARAMETER;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
