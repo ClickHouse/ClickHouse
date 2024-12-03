@@ -62,7 +62,8 @@ std::shared_ptr<ISource> multiColumnsSource(const std::vector<DataTypePtr> & typ
 void validatePageIndex(
     String path,
     std::optional<std::function<void(std::vector<bool>)>> validate_null_pages = std::nullopt,
-    std::optional<std::function<void(std::vector<int64_t>)>> validate_null_counts = std::nullopt)
+    std::optional<std::function<void(std::vector<int64_t>)>> validate_null_counts = std::nullopt,
+    bool expect_statistics_in_page_headers = true)
 {
     std::shared_ptr<::arrow::io::RandomAccessFile> source;
     PARQUET_ASSIGN_OR_THROW(source, ::arrow::io::ReadableFile::Open(path))
@@ -131,8 +132,11 @@ void validatePageIndex(
                 ASSERT_TRUE(header.type == parquet::format::PageType::DATA_PAGE);
                 if (!column_index->null_pages().at(l))
                 {
-                    ASSERT_EQ(header.data_page_header.statistics.min_value, column_index->encoded_min_values().at(l));
-                    ASSERT_EQ(header.data_page_header.statistics.max_value, column_index->encoded_max_values().at(l));
+                    if (expect_statistics_in_page_headers)
+                    {
+                        ASSERT_EQ(header.data_page_header.statistics.min_value, column_index->encoded_min_values().at(l));
+                        ASSERT_EQ(header.data_page_header.statistics.max_value, column_index->encoded_max_values().at(l));
+                    }
                     if (column_index->has_null_counts())
                         ASSERT_GT(header.data_page_header.num_values, column_index->null_counts().at(l));
                 }
@@ -358,7 +362,9 @@ TEST(Parquet, WriteParquetPageIndexArrowEncoder)
             {
                 ASSERT_TRUE(null_count > 0);
             }
-        });
+        },
+        /// arrow doesn't write statistics to data page headers
+        /*expect_statistics_in_page_headers*/ false);
 }
 }
 #endif
