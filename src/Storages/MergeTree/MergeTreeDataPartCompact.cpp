@@ -81,7 +81,7 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartCompactWriter(
 }
 
 
-void MergeTreeDataPartCompact::calculateEachColumnSizes(ColumnSizeByName & /*each_columns_size*/, ColumnSize & total_size) const
+void MergeTreeDataPartCompact::calculateEachColumnSizes(ColumnSizeByName & /*each_columns_size*/, ColumnSize & total_size, std::optional<Block> /*columns_sample*/) const
 {
     auto bin_checksum = checksums.files.find(DATA_FILE_NAME_WITH_EXTENSION);
     if (bin_checksum != checksums.files.end())
@@ -232,7 +232,14 @@ bool MergeTreeDataPartCompact::isStoredOnRemoteDiskWithZeroCopySupport() const
 
 MergeTreeDataPartCompact::~MergeTreeDataPartCompact()
 {
-    removeIfNeeded();
+    try
+    {
+        removeIfNeeded();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 }

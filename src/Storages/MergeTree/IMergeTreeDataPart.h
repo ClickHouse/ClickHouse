@@ -423,11 +423,14 @@ public:
     bool shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const;
 
     /// Calculate column and secondary indices sizes on disk.
-    void calculateColumnsAndSecondaryIndicesSizesOnDisk();
+    void calculateColumnsAndSecondaryIndicesSizesOnDisk(std::optional<Block> columns_sample = std::nullopt);
 
     std::optional<String> getRelativePathForPrefix(const String & prefix, bool detached = false, bool broken = false) const;
 
     bool isProjectionPart() const { return parent_part != nullptr; }
+
+    /// Check if the part is in the `/moving` directory
+    bool isMovingPart() const;
 
     const IMergeTreeDataPart * getParentPart() const { return parent_part; }
     String getParentPartName() const { return parent_part_name; }
@@ -628,7 +631,7 @@ protected:
 
     /// Fill each_columns_size and total_size with sizes from columns files on
     /// disk using columns and checksums.
-    virtual void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const = 0;
+    virtual void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size, std::optional<Block> columns_sample) const = 0;
 
     std::optional<String> getRelativePathForDetachedPart(const String & prefix, bool broken) const;
 
@@ -710,7 +713,7 @@ private:
 
     void loadPartitionAndMinMaxIndex();
 
-    void calculateColumnsSizesOnDisk();
+    void calculateColumnsSizesOnDisk(std::optional<Block> columns_sample = std::nullopt);
 
     void calculateSecondaryIndicesSizesOnDisk();
 

@@ -289,7 +289,9 @@ def generate_random_string(length=6):
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
 def test_delete_after_processing(started_cluster, mode, engine_name):
     node = started_cluster.instances["instance"]
-    table_name = f"delete_after_processing_{mode}_{engine_name}"
+    table_name = (
+        f"delete_after_processing_{mode}_{engine_name}_{generate_random_string()}"
+    )
     dst_table_name = f"{table_name}_dst"
     files_path = f"{table_name}_data"
     files_num = 5
@@ -331,6 +333,21 @@ def test_delete_after_processing(started_cluster, mode, engine_name):
             f"SELECT column1, column2, column3 FROM {dst_table_name} ORDER BY column1, column2, column3"
         ).splitlines()
     ] == sorted(total_values, key=lambda x: (x[0], x[1], x[2]))
+
+    node.query("system flush logs")
+
+    if engine_name == "S3Queue":
+        system_table_name = "s3queue_log"
+    else:
+        system_table_name = "azure_queue_log"
+    assert (
+        int(
+            node.query(
+                f"SELECT sum(rows_processed) FROM system.{system_table_name} WHERE table = '{table_name}'"
+            )
+        )
+        == files_num * row_num
+    )
 
     if engine_name == "S3Queue":
         minio = started_cluster.minio_client
