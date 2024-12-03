@@ -77,7 +77,8 @@ SELECT
         'ok',
         'fail: ' || toString(count()) || ' ' || toString(any(ProfileEvents))
     )
-    FROM system.query_log WHERE current_database = currentDatabase()
+    FROM system.query_log
+    WHERE current_database = currentDatabase()
         AND log_comment = '02402_external_disk_mertrics/join'
         AND query ILIKE 'SELECT%2097152%' AND type = 'QueryFinish';
 

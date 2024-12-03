@@ -289,7 +289,10 @@ BlockIO InterpreterSystemQuery::execute()
 
     /// Use global context with fresh system profile settings
     auto system_context = Context::createCopy(getContext()->getGlobalContext());
-    system_context->setSetting("profile", getContext()->getSystemProfileName());
+    /// Don't check for constraints when changing profile. It was accepted before (for example it might include
+    /// some experimental settings)
+    bool check_constraints = false;
+    system_context->setCurrentProfile(getContext()->getSystemProfileName(), check_constraints);
 
     /// Make canonical query for simpler processing
     if (query.type == Type::RELOAD_DICTIONARY)
@@ -368,9 +371,18 @@ BlockIO InterpreterSystemQuery::execute()
             prewarmMarkCache();
             break;
         }
+        case Type::PREWARM_PRIMARY_INDEX_CACHE:
+        {
+            prewarmPrimaryIndexCache();
+            break;
+        }
         case Type::DROP_MARK_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MARK_CACHE);
             system_context->clearMarkCache();
+            break;
+        case Type::DROP_PRIMARY_INDEX_CACHE:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_PRIMARY_INDEX_CACHE);
+            system_context->clearPrimaryIndexCache();
             break;
         case Type::DROP_UNCOMPRESSED_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
@@ -795,15 +807,19 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::WAIT_FAILPOINT:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
-            LOG_TRACE(log, "waiting for failpoint {}", query.fail_point_name);
+            LOG_TRACE(log, "Waiting for failpoint {}", query.fail_point_name);
             FailPointInjection::pauseFailPoint(query.fail_point_name);
-            LOG_TRACE(log, "finished failpoint {}", query.fail_point_name);
+            LOG_TRACE(log, "Finished waiting for failpoint {}", query.fail_point_name);
             break;
         }
         case Type::RESET_COVERAGE:
         {
             getContext()->checkAccess(AccessType::SYSTEM);
             resetCoverage();
+            break;
+        }
+        case Type::LOAD_PRIMARY_KEY: {
+            loadPrimaryKeys();
             break;
         }
         case Type::UNLOAD_PRIMARY_KEY:
@@ -1212,28 +1228,38 @@ void InterpreterSystemQuery::waitLoadingParts()
     }
 }
 
+void InterpreterSystemQuery::loadPrimaryKeys()
+{
+    loadOrUnloadPrimaryKeysImpl(true);
+};
+
 void InterpreterSystemQuery::unloadPrimaryKeys()
+{
+    loadOrUnloadPrimaryKeysImpl(false);
+}
+
+void InterpreterSystemQuery::loadOrUnloadPrimaryKeysImpl(bool load)
 {
     if (!table_id.empty())
     {
-        getContext()->checkAccess(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY, table_id.database_name, table_id.table_name);
+        getContext()->checkAccess(load ? AccessType::SYSTEM_LOAD_PRIMARY_KEY : AccessType::SYSTEM_UNLOAD_PRIMARY_KEY, table_id.database_name, table_id.table_name);
         StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
 
         if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
         {
-            LOG_TRACE(log, "Unloading primary keys for table {}", table_id.getFullTableName());
-            merge_tree->unloadPrimaryKeys();
+            LOG_TRACE(log, "{} primary keys for table {}", load ? "Loading" : "Unloading", table_id.getFullTableName());
+            load ? merge_tree->loadPrimaryKeys() : merge_tree->unloadPrimaryKeys();
         }
         else
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Command UNLOAD PRIMARY KEY is supported only for MergeTree table, but got: {}", table->getName());
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Command {} PRIMARY KEY is supported only for MergeTree tables, but got: {}", load ? "LOAD" : "UNLOAD", table->getName());
         }
     }
     else
     {
-        getContext()->checkAccess(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY);
-        LOG_TRACE(log, "Unloading primary keys for all tables");
+        getContext()->checkAccess(load ? AccessType::SYSTEM_LOAD_PRIMARY_KEY : AccessType::SYSTEM_UNLOAD_PRIMARY_KEY);
+        LOG_TRACE(log, "{} primary keys for all tables", load ? "Loading" : "Unloading");
 
         for (auto & database : DatabaseCatalog::instance().getDatabases())
         {
@@ -1241,7 +1267,7 @@ void InterpreterSystemQuery::unloadPrimaryKeys()
             {
                 if (auto * merge_tree = dynamic_cast<MergeTreeData *>(it->table().get()))
                 {
-                    merge_tree->unloadPrimaryKeys();
+                    load ? merge_tree->loadPrimaryKeys() : merge_tree->unloadPrimaryKeys();
                 }
             }
         }
@@ -1316,9 +1342,12 @@ void InterpreterSystemQuery::prewarmMarkCache()
 
     auto table_ptr = DatabaseCatalog::instance().getTable(table_id, getContext());
     auto * merge_tree = dynamic_cast<MergeTreeData *>(table_ptr.get());
-
     if (!merge_tree)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Command PREWARM MARK CACHE is supported only for MergeTree table, but got: {}", table_ptr->getName());
+
+    auto mark_cache = getContext()->getMarkCache();
+    if (!mark_cache)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mark cache is not configured");
 
     ThreadPool pool(
         CurrentMetrics::MergeTreePartsLoaderThreads,
@@ -1326,7 +1355,32 @@ void InterpreterSystemQuery::prewarmMarkCache()
         CurrentMetrics::MergeTreePartsLoaderThreadsScheduled,
         getContext()->getSettingsRef()[Setting::max_threads]);
 
-    merge_tree->prewarmMarkCache(pool);
+    merge_tree->prewarmCaches(pool, std::move(mark_cache), nullptr);
+}
+
+void InterpreterSystemQuery::prewarmPrimaryIndexCache()
+{
+    if (table_id.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table is not specified for PREWARM PRIMARY INDEX CACHE command");
+
+    getContext()->checkAccess(AccessType::SYSTEM_PREWARM_PRIMARY_INDEX_CACHE, table_id);
+
+    auto table_ptr = DatabaseCatalog::instance().getTable(table_id, getContext());
+    auto * merge_tree = dynamic_cast<MergeTreeData *>(table_ptr.get());
+    if (!merge_tree)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Command PREWARM PRIMARY INDEX CACHE is supported only for MergeTree table, but got: {}", table_ptr->getName());
+
+    auto index_cache = merge_tree->getPrimaryIndexCache();
+    if (!index_cache)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary index cache is not configured or is not enabled for table {}", table_id.getFullTableName());
+
+    ThreadPool pool(
+        CurrentMetrics::MergeTreePartsLoaderThreads,
+        CurrentMetrics::MergeTreePartsLoaderThreadsActive,
+        CurrentMetrics::MergeTreePartsLoaderThreadsScheduled,
+        getContext()->getSettingsRef()[Setting::max_threads]);
+
+    merge_tree->prewarmCaches(pool, nullptr, std::move(index_cache));
 }
 
 
@@ -1348,6 +1402,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_DNS_CACHE:
         case Type::DROP_CONNECTIONS_CACHE:
         case Type::DROP_MARK_CACHE:
+        case Type::DROP_PRIMARY_INDEX_CACHE:
         case Type::DROP_MMAP_CACHE:
         case Type::DROP_QUERY_CACHE:
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
@@ -1535,6 +1590,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_PREWARM_MARK_CACHE, query.getDatabase(), query.getTable());
             break;
         }
+        case Type::PREWARM_PRIMARY_INDEX_CACHE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_PREWARM_MARK_CACHE, query.getDatabase(), query.getTable());
+            break;
+        }
         case Type::SYNC_DATABASE_REPLICA:
         {
             required_access.emplace_back(AccessType::SYSTEM_SYNC_DATABASE_REPLICA, query.getDatabase());
@@ -1587,6 +1647,14 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::JEMALLOC_FLUSH_PROFILE:
         {
             required_access.emplace_back(AccessType::SYSTEM_JEMALLOC);
+            break;
+        }
+        case Type::LOAD_PRIMARY_KEY:
+        {
+            if (!query.table)
+                required_access.emplace_back(AccessType::SYSTEM_LOAD_PRIMARY_KEY);
+            else
+                required_access.emplace_back(AccessType::SYSTEM_LOAD_PRIMARY_KEY, query.getDatabase(), query.getTable());
             break;
         }
         case Type::UNLOAD_PRIMARY_KEY:

@@ -117,11 +117,15 @@ std::vector<Int64> testSelfDeduplicate(std::vector<Int64> data, std::vector<size
     part.filterSelfDuplicate();
 
     ColumnPtr col = part.block_with_partition.block.getColumns()[0];
+
     std::vector<Int64> result;
+    result.reserve(col->size());
+
     for (size_t i = 0; i < col->size(); i++)
     {
         result.push_back(col->getInt(i));
     }
+
     return result;
 }
 
@@ -486,16 +490,9 @@ void ReplicatedMergeTreeSinkImpl<false>::finishDelayedChunk(const ZooKeeperWithF
 
             /// Set a special error code if the block is duplicate
             int error = (deduplicate && deduplicated) ? ErrorCodes::INSERT_WAS_DEDUPLICATED : 0;
-            auto * mark_cache = storage.getContext()->getMarkCache().get();
 
-            if (!error && mark_cache)
-            {
-                for (const auto & stream : partition.temp_part.streams)
-                {
-                    auto marks = stream.stream->releaseCachedMarks();
-                    addMarksToCache(*part, marks, mark_cache);
-                }
-            }
+            if (!error)
+                partition.temp_part.prewarmCaches();
 
             auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
             PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot), ExecutionStatus(error));
@@ -540,14 +537,7 @@ void ReplicatedMergeTreeSinkImpl<true>::finishDelayedChunk(const ZooKeeperWithFa
 
             if (conflict_block_ids.empty())
             {
-                if (auto * mark_cache = storage.getContext()->getMarkCache().get())
-                {
-                    for (const auto & stream : partition.temp_part.streams)
-                    {
-                        auto marks = stream.stream->releaseCachedMarks();
-                        addMarksToCache(*partition.temp_part.part, marks, mark_cache);
-                    }
-                }
+                partition.temp_part.prewarmCaches();
 
                 auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
                 PartLog::addNewPart(
@@ -619,8 +609,17 @@ bool ReplicatedMergeTreeSinkImpl<false>::writeExistingPart(MergeTreeData::Mutabl
         String block_id = deduplicate ? fmt::format("{}_{}", part->info.partition_id, part->checksums.getTotalChecksumHex()) : "";
         bool deduplicated = commitPart(zookeeper, part, block_id, replicas_num).second;
 
+        int error = 0;
         /// Set a special error code if the block is duplicate
-        int error = (deduplicate && deduplicated) ? ErrorCodes::INSERT_WAS_DEDUPLICATED : 0;
+        /// And remove attaching_ prefix
+        if (deduplicate && deduplicated)
+        {
+            error = ErrorCodes::INSERT_WAS_DEDUPLICATED;
+            if (!endsWith(part->getDataPartStorage().getRelativePath(), "detached/attaching_" + part->name + "/"))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected relative path for a deduplicated part: {}", part->getDataPartStorage().getRelativePath());
+            fs::path new_relative_path = fs::path("detached") / part->getNewName(part->info);
+            part->renameTo(new_relative_path, false);
+        }
         PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, watch.elapsed(), profile_events_scope.getSnapshot()), ExecutionStatus(error));
         return deduplicated;
     }
@@ -880,8 +879,9 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             }
         }
 
-        /// Save the current temporary path in case we need to revert the change to retry (ZK connection loss)
+        /// Save the current temporary path and name in case we need to revert the change to retry (ZK connection loss) or in case part is deduplicated.
         const String temporary_part_relative_path = part->getDataPartStorage().getPartDirectory();
+        const String initial_part_name = part->name;
 
         /// Obtain incremental block number and lock it. The lock holds our intention to add the block to the filesystem.
         /// We remove the lock just after renaming the part. In case of exception, block number will be marked as abandoned.
@@ -1050,16 +1050,6 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             zkutil::KeeperMultiException::check(multi_code, ops, responses);
         }
 
-        transaction.rollback();
-
-        if (!Coordination::isUserError(multi_code))
-            throw Exception(
-                    ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
-                    "Unexpected ZooKeeper error while adding block {} with ID '{}': {}",
-                    block_number,
-                    toString(block_id),
-                    multi_code);
-
         auto failed_op_idx = zkutil::getFailedOpIndex(multi_code, responses);
         String failed_op_path = ops[failed_op_idx]->getPath();
 
@@ -1068,6 +1058,11 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             /// Block with the same id have just appeared in table (or other replica), rollback the insertion.
             LOG_INFO(log, "Block with ID {} already exists (it was just appeared) for part {}. Ignore it.",
                      toString(block_id), part->name);
+
+            transaction.rollbackPartsToTemporaryState();
+            part->is_temp = true;
+            part->setName(initial_part_name);
+            part->renameTo(temporary_part_relative_path, false);
 
             if constexpr (async_insert)
             {
@@ -1079,6 +1074,16 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
 
             return CommitRetryContext::DUPLICATED_PART;
         }
+
+        transaction.rollback();
+
+        if (!Coordination::isUserError(multi_code))
+            throw Exception(
+                    ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
+                    "Unexpected ZooKeeper error while adding block {} with ID '{}': {}",
+                    block_number,
+                    toString(block_id),
+                    multi_code);
 
         if (multi_code == Coordination::Error::ZNONODE && failed_op_idx == block_unlock_op_idx)
             throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,

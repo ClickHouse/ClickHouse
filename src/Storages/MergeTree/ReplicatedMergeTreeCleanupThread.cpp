@@ -193,7 +193,7 @@ Float32 ReplicatedMergeTreeCleanupThread::iterate()
         cleaned_part_like += storage.clearEmptyParts();
     }
 
-    cleaned_part_like += storage.unloadPrimaryKeysOfOutdatedParts();
+    cleaned_part_like += storage.unloadPrimaryKeysAndClearCachesOfOutdatedParts();
 
     /// We need to measure the number of removed objects somehow (for better scheduling),
     /// but just summing the number of removed async blocks, logs, and empty parts does not make any sense.
@@ -425,6 +425,8 @@ void ReplicatedMergeTreeCleanupThread::markLostReplicas(const std::unordered_map
         throw Exception(ErrorCodes::ALL_REPLICAS_LOST, "All replicas are stale: we won't mark any replica as lost");
 
     std::vector<zkutil::ZooKeeper::FutureMulti> futures;
+    futures.reserve(candidate_lost_replicas.size());
+
     for (size_t i = 0; i < candidate_lost_replicas.size(); ++i)
         futures.emplace_back(zookeeper->asyncTryMultiNoThrow(requests[i]));
 

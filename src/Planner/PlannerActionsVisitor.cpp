@@ -804,7 +804,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
     auto lambda_node_name = calculateActionNodeName(node, *planner_context);
     auto function_capture = std::make_shared<FunctionCaptureOverloadResolver>(
-        lambda_actions, captured_column_names, lambda_arguments_names_and_types, lambda_node.getExpression()->getResultType(), lambda_expression_node_name);
+        lambda_actions, captured_column_names, lambda_arguments_names_and_types, lambda_node.getExpression()->getResultType(), lambda_expression_node_name, true);
 
     // TODO: Pass IFunctionBase here not FunctionCaptureOverloadResolver.
     const auto * actions_node = actions_stack[level].addFunctionIfNecessary(lambda_node_name, std::move(lambda_children), function_capture);
@@ -866,7 +866,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
             PreparedSets::toString(set_key, set_element_types));
 
     ColumnWithTypeAndName column;
-    column.name = planner_context->createSetKey(in_first_argument->getResultType(), in_second_argument);
+    column.name = DB::PlannerContext::createSetKey(in_first_argument->getResultType(), in_second_argument);
     column.type = std::make_shared<DataTypeSet>();
 
     bool set_is_created = set->get() != nullptr;

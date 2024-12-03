@@ -100,7 +100,7 @@ private:
     struct CastArgumentsResult
     {
         ColumnsWithTypeAndName initial;
-        ColumnsWithTypeAndName casted;
+        ColumnsWithTypeAndName cast;
     };
 
     static CastArgumentsResult castColumns(const ColumnsWithTypeAndName & arguments,
@@ -214,8 +214,8 @@ ColumnPtr FunctionArrayIntersect<Mode>::castRemoveNullable(const ColumnPtr & col
         const auto & nested = column_nullable->getNestedColumnPtr();
         if (nullable_type)
         {
-            auto casted_column = castRemoveNullable(nested, nullable_type->getNestedType());
-            return ColumnNullable::create(casted_column, column_nullable->getNullMapColumnPtr());
+            auto cast_column = castRemoveNullable(nested, nullable_type->getNestedType());
+            return ColumnNullable::create(cast_column, column_nullable->getNullMapColumnPtr());
         }
         return castRemoveNullable(nested, data_type);
     }
@@ -229,8 +229,8 @@ ColumnPtr FunctionArrayIntersect<Mode>::castRemoveNullable(const ColumnPtr & col
                 data_type->getName(),
                 getName());
 
-        auto casted_column = castRemoveNullable(column_array->getDataPtr(), array_type->getNestedType());
-        return ColumnArray::create(casted_column, column_array->getOffsetsPtr());
+        auto cast_column = castRemoveNullable(column_array->getDataPtr(), array_type->getNestedType());
+        return ColumnArray::create(cast_column, column_array->getOffsetsPtr());
     }
     if (const auto * column_tuple = checkAndGetColumn<ColumnTuple>(column.get()))
     {
@@ -261,7 +261,7 @@ FunctionArrayIntersect<Mode>::CastArgumentsResult FunctionArrayIntersect<Mode>::
 {
     size_t num_args = arguments.size();
     ColumnsWithTypeAndName initial_columns(num_args);
-    ColumnsWithTypeAndName casted_columns(num_args);
+    ColumnsWithTypeAndName cast_columns(num_args);
 
     const auto * type_array = checkAndGetDataType<DataTypeArray>(return_type.get());
     const auto & type_nested = type_array->getNestedType();
@@ -288,8 +288,8 @@ FunctionArrayIntersect<Mode>::CastArgumentsResult FunctionArrayIntersect<Mode>::
     {
         const ColumnWithTypeAndName & arg = arguments[i];
         initial_columns[i] = arg;
-        casted_columns[i] = arg;
-        auto & column = casted_columns[i];
+        cast_columns[i] = arg;
+        auto & column = cast_columns[i];
 
         if (is_numeric_or_string)
         {
@@ -332,14 +332,14 @@ FunctionArrayIntersect<Mode>::CastArgumentsResult FunctionArrayIntersect<Mode>::
         }
     }
 
-    return {.initial = initial_columns, .casted = casted_columns};
+    return {.initial = initial_columns, .cast = cast_columns};
 }
 
 static ColumnPtr callFunctionNotEquals(ColumnWithTypeAndName first, ColumnWithTypeAndName second, ContextPtr context)
 {
     ColumnsWithTypeAndName args{first, second};
     auto eq_func = FunctionFactory::instance().get("notEquals", context)->build(args);
-    return eq_func->execute(args, eq_func->getResultType(), args.front().column->size());
+    return eq_func->execute(args, eq_func->getResultType(), args.front().column->size(), /* dry_run = */ false);
 }
 
 template <typename Mode>
@@ -385,7 +385,7 @@ FunctionArrayIntersect<Mode>::UnpackedArrays FunctionArrayIntersect<Mode>::prepa
                     initial_column = &typeid_cast<const ColumnNullable &>(*initial_column).getNestedColumn();
             }
 
-            /// In case the column was casted, we need to create an overflow mask for integer types.
+            /// In case the column was cast, we need to create an overflow mask for integer types.
             if (arg.nested_column != initial_column)
             {
                 const auto & nested_init_type = typeid_cast<const DataTypeArray &>(*removeNullable(initial_columns[i].type)).getNestedType();
@@ -396,7 +396,7 @@ FunctionArrayIntersect<Mode>::UnpackedArrays FunctionArrayIntersect<Mode>::prepa
                     || isDateTime(nested_init_type)
                     || isDateTime64(nested_init_type))
                 {
-                    /// Compare original and casted columns. It seem to be the easiest way.
+                    /// Compare original and cast columns. It seem to be the easiest way.
                     auto overflow_mask = callFunctionNotEquals(
                             {arg.nested_column->getPtr(), nested_init_type, ""},
                             {initial_column->getPtr(), nested_cast_type, ""},
@@ -458,9 +458,9 @@ ColumnPtr FunctionArrayIntersect<Mode>::executeImpl(const ColumnsWithTypeAndName
     else
         return_type_with_nulls = getLeastSupertype(data_types);
 
-    auto casted_columns = castColumns(arguments, result_type, return_type_with_nulls);
+    auto cast_columns = castColumns(arguments, result_type, return_type_with_nulls);
 
-    UnpackedArrays arrays = prepareArrays(casted_columns.casted, casted_columns.initial);
+    UnpackedArrays arrays = prepareArrays(cast_columns.cast, cast_columns.initial);
 
     ColumnPtr result_column;
     auto not_nullable_nested_return_type = removeNullable(nested_return_type);
