@@ -33,6 +33,8 @@ public:
 
     void transform(Chunk & chunk) override;
 
+    static bool canUseType(const DataTypePtr & type);
+
 private:
     ExpressionActionsPtr expression;
     String filter_column_name;

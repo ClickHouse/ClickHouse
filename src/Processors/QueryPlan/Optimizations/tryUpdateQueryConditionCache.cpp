@@ -30,7 +30,7 @@ void tryUpdateQueryConditionCache(const QueryPlanOptimizationSettings & optimiza
         if (auto * filter_step = typeid_cast<FilterStep *>(iter->node->step.get()))
         {
             size_t condition_id = filter_dag->getOutputs().front()->getHash();
-            filter_step->setQueryConditiondKey(condition_id);
+            filter_step->setQueryConditionKey(condition_id);
             return;
         }
     }

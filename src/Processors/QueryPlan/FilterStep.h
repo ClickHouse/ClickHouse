@@ -26,7 +26,9 @@ public:
     ActionsDAG & getExpression() { return actions_dag; }
     const String & getFilterColumnName() const { return filter_column_name; }
     bool removesFilterColumn() const { return remove_filter_column; }
-    void setQueryConditiondKey(size_t condition_id_);
+    void setQueryConditionKey(size_t condition_id_);
+
+    static bool canUseType(const DataTypePtr & type);
 
 private:
     void updateOutputHeader() override;
