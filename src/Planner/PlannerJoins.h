@@ -54,6 +54,12 @@ struct ASOFCondition
 class JoinClause
 {
 public:
+    JoinClause() = default;
+    JoinClause(JoinClause &&) = default;
+    JoinClause(const JoinClause &) = delete;
+    JoinClause & operator=(JoinClause &&) = default;
+    JoinClause & operator=(const JoinClause &) = delete;
+
     /// Add keys
     void addKey(const ActionsDAG::Node * left_key_node, const ActionsDAG::Node * right_key_node, bool null_safe_comparison = false)
     {
@@ -162,6 +168,8 @@ public:
 
     /// Dump clause
     String dump() const;
+
+    static JoinClause concatClauses(const JoinClause& lhs, const JoinClause& rhs);
 
 private:
     ActionsDAG::NodeRawConstPtrs left_key_nodes;
