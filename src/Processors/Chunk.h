@@ -25,10 +25,13 @@ public:
 template <typename Derived>
 class ChunkInfoCloneable : public ChunkInfo
 {
-public:
+    friend Derived;
+
+private:
     ChunkInfoCloneable() = default;
     ChunkInfoCloneable(const ChunkInfoCloneable & other) = default;
 
+public:
     Ptr clone() const override
     {
         return std::static_pointer_cast<ChunkInfo>(std::make_shared<Derived>(*static_cast<const Derived*>(this)));

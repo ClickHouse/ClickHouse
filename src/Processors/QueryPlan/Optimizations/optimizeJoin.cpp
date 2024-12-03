@@ -57,8 +57,9 @@ void optimizeJoin(QueryPlan::Node & node, QueryPlan::Nodes &)
 
     const auto & table_join = join->getTableJoin();
 
-    /// Algorithms other than HashJoin may not support OUTER JOINs
-    if (table_join.kind() != JoinKind::Inner && !typeid_cast<const HashJoin *>(join.get()))
+    /// Algorithms other than HashJoin may not support all JOIN kinds, so changing from LEFT to RIGHT is not always possible
+    bool allow_outer_join = typeid_cast<const HashJoin *>(join.get());
+    if (table_join.kind() != JoinKind::Inner && !allow_outer_join)
         return;
 
     /// fixme: USING clause handled specially in join algorithm, so swap breaks it
@@ -67,7 +68,7 @@ void optimizeJoin(QueryPlan::Node & node, QueryPlan::Nodes &)
         return;
 
     bool need_swap = false;
-    if (join_step->inner_table_selection_mode == JoinInnerTableSelectionMode::Auto)
+    if (!join_step->swap_join_tables.has_value())
     {
         auto lhs_extimation = estimateReadRowsCount(*node.children[0]);
         auto rhs_extimation = estimateReadRowsCount(*node.children[1]);
@@ -78,7 +79,7 @@ void optimizeJoin(QueryPlan::Node & node, QueryPlan::Nodes &)
         if (lhs_extimation && rhs_extimation && *lhs_extimation < *rhs_extimation)
             need_swap = true;
     }
-    else if (join_step->inner_table_selection_mode == JoinInnerTableSelectionMode::Left)
+    else if (join_step->swap_join_tables.value())
     {
         need_swap = true;
     }

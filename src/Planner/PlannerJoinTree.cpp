@@ -2,8 +2,8 @@
 
 #include <Core/Settings.h>
 
-#include <Common/scope_guard_safe.h>
 #include <Core/ParallelReplicasMode.h>
+#include <Common/scope_guard_safe.h>
 
 #include <Columns/ColumnAggregateFunction.h>
 
@@ -104,7 +104,8 @@ namespace Setting
     extern const SettingsBool optimize_move_to_prewhere;
     extern const SettingsBool optimize_move_to_prewhere_if_final;
     extern const SettingsBool use_concurrency_control;
-    extern const SettingsJoinInnerTableSelectionMode query_plan_join_inner_table_selection;
+    extern const SettingsBoolAuto query_plan_join_swap_table;
+    extern const SettingsUInt64 min_joined_block_size_bytes;
 }
 
 namespace ErrorCodes
@@ -660,6 +661,7 @@ std::unique_ptr<ExpressionStep> createComputeAliasColumnsStep(
 }
 
 JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
+    const QueryTreeNodePtr & parent_join_tree,
     const SelectQueryInfo & select_query_info,
     const SelectQueryOptions & select_query_options,
     PlannerContextPtr & planner_context,
@@ -697,8 +699,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         table_expression_query_info.table_expression = table_expression;
         if (const auto & filter_actions = table_expression_data.getFilterActions())
             table_expression_query_info.filter_actions_dag = std::make_shared<const ActionsDAG>(filter_actions->clone());
-        table_expression_query_info.current_table_chosen_for_reading_with_parallel_replicas
-            = table_node == planner_context->getGlobalPlannerContext()->parallel_replicas_table;
 
         size_t max_streams = settings[Setting::max_threads];
         size_t max_threads_execute_query = settings[Setting::max_threads];
@@ -913,21 +913,35 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 /// It is just a safety check needed until we have a proper sending plan to replicas.
                 /// If we have a non-trivial storage like View it might create its own Planner inside read(), run findTableForParallelReplicas()
                 /// and find some other table that might be used for reading with parallel replicas. It will lead to errors.
-                const bool other_table_already_chosen_for_reading_with_parallel_replicas
-                    = planner_context->getGlobalPlannerContext()->parallel_replicas_table
-                    && !table_expression_query_info.current_table_chosen_for_reading_with_parallel_replicas;
-                if (other_table_already_chosen_for_reading_with_parallel_replicas)
-                    planner_context->getMutableQueryContext()->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-
-                storage->read(
-                    query_plan,
-                    columns_names,
-                    storage_snapshot,
-                    table_expression_query_info,
-                    query_context,
-                    from_stage,
-                    max_block_size,
-                    max_streams);
+                const bool no_tables_or_another_table_chosen_for_reading_with_parallel_replicas_mode
+                    = query_context->canUseParallelReplicasOnFollower()
+                    && table_node != planner_context->getGlobalPlannerContext()->parallel_replicas_table;
+                if (no_tables_or_another_table_chosen_for_reading_with_parallel_replicas_mode)
+                {
+                    auto mutable_context = Context::createCopy(query_context);
+                    mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+                    storage->read(
+                        query_plan,
+                        columns_names,
+                        storage_snapshot,
+                        table_expression_query_info,
+                        std::move(mutable_context),
+                        from_stage,
+                        max_block_size,
+                        max_streams);
+                }
+                else
+                {
+                    storage->read(
+                        query_plan,
+                        columns_names,
+                        storage_snapshot,
+                        table_expression_query_info,
+                        query_context,
+                        from_stage,
+                        max_block_size,
+                        max_streams);
+                }
 
                 auto parallel_replicas_enabled_for_storage = [](const StoragePtr & table, const Settings & query_settings)
                 {
@@ -943,6 +957,21 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 /// query_plan can be empty if there is nothing to read
                 if (query_plan.isInitialized() && parallel_replicas_enabled_for_storage(storage, settings))
                 {
+                    const bool allow_parallel_replicas_for_table_expression = [](const QueryTreeNodePtr & join_tree_node)
+                    {
+                        const JoinNode * join_node = join_tree_node->as<JoinNode>();
+                        if (!join_node)
+                            return true;
+
+                        const auto join_kind = join_node->getKind();
+                        const auto join_strictness = join_node->getStrictness();
+                        if (join_kind == JoinKind::Left || join_kind == JoinKind::Right
+                            || (join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All))
+                            return true;
+
+                        return false;
+                    }(parent_join_tree);
+
                     if (query_context->canUseParallelReplicasCustomKey() && query_context->getClientInfo().distributed_depth == 0)
                     {
                         if (auto cluster = query_context->getClusterForParallelReplicas();
@@ -965,7 +994,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             query_plan = std::move(query_plan_parallel_replicas);
                         }
                     }
-                    else if (ClusterProxy::canUseParallelReplicasOnInitiator(query_context))
+                    else if (ClusterProxy::canUseParallelReplicasOnInitiator(query_context) && allow_parallel_replicas_for_table_expression)
                     {
                         // (1) find read step
                         QueryPlan::Node * node = query_plan.getRootNode();
@@ -1291,11 +1320,13 @@ std::optional<ActionsDAG> createStepToDropColumns(
     return drop_unused_columns_after_join_actions_dag;
 }
 
-JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_expression,
+JoinTreeQueryPlan buildQueryPlanForJoinNode(
+    const QueryTreeNodePtr & join_table_expression,
     JoinTreeQueryPlan left_join_tree_query_plan,
     JoinTreeQueryPlan right_join_tree_query_plan,
     const ColumnIdentifierSet & outer_scope_columns,
-    PlannerContextPtr & planner_context)
+    PlannerContextPtr & planner_context,
+    const SelectQueryInfo & select_query_info)
 {
     auto & join_node = join_table_expression->as<JoinNode &>();
     if (left_join_tree_query_plan.from_stage != QueryProcessingStage::FetchColumns)
@@ -1586,16 +1617,25 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             table_join->setUsedColumn(column_from_joined_table, JoinTableSide::Right);
     }
 
+
     if (table_join->getOutputColumns(JoinTableSide::Left).empty() && table_join->getOutputColumns(JoinTableSide::Right).empty())
     {
+        /// We should add all duplicated columns, because join algorithm add either all column with specified name or none
+        auto set_used_column_with_duplicates = [&](const NamesAndTypesList & columns, JoinTableSide join_table_side)
+        {
+            const auto & column_name = columns.front().name;
+            for (const auto & column : columns)
+                if (column.name == column_name)
+                    table_join->setUsedColumn(column, join_table_side);
+        };
+
         if (!columns_from_left_table.empty())
-            table_join->setUsedColumn(columns_from_left_table.front(), JoinTableSide::Left);
+            set_used_column_with_duplicates(columns_from_left_table, JoinTableSide::Left);
         else if (!columns_from_right_table.empty())
-            table_join->setUsedColumn(columns_from_right_table.front(), JoinTableSide::Right);
+            set_used_column_with_duplicates(columns_from_right_table, JoinTableSide::Right);
     }
 
-    auto join_algorithm = chooseJoinAlgorithm(table_join, join_node.getRightTableExpression(), left_header, right_header, planner_context);
-
+    auto join_algorithm = chooseJoinAlgorithm(table_join, join_node.getRightTableExpression(), left_header, right_header, planner_context, select_query_info);
     auto result_plan = QueryPlan();
 
     bool is_filled_join = join_algorithm->isFilled();
@@ -1621,10 +1661,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             SortingStep::Settings sort_settings(*query_context);
 
             auto sorting_step = std::make_unique<SortingStep>(
-                plan.getCurrentHeader(),
-                std::move(sort_description),
-                0 /*limit*/,
-                sort_settings);
+                plan.getCurrentHeader(), std::move(sort_description), 0 /*limit*/, sort_settings, true /*is_sorting_for_merge_join*/);
             sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", join_table_side));
             plan.addStep(std::move(sorting_step));
         };
@@ -1699,11 +1736,13 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             right_plan.getCurrentHeader(),
             std::move(join_algorithm),
             settings[Setting::max_block_size],
+            settings[Setting::min_joined_block_size_bytes],
             settings[Setting::max_threads],
             outer_scope_columns.empty() ? outer_scope_columns_nonempty : outer_scope_columns,
             false /*optimize_read_in_order*/,
             true /*optimize_skip_unused_shards*/);
-        join_step->inner_table_selection_mode = settings[Setting::query_plan_join_inner_table_selection];
+
+        join_step->swap_join_tables = settings[Setting::query_plan_join_swap_table].get();
 
         join_step->setStepDescription(fmt::format("JOIN {}", join_pipeline_type));
 
@@ -1847,7 +1886,8 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     const ColumnIdentifierSet & outer_scope_columns,
     PlannerContextPtr & planner_context)
 {
-    auto table_expressions_stack = buildTableExpressionsStack(query_node->as<QueryNode &>().getJoinTree());
+    const QueryTreeNodePtr & join_tree_node = query_node->as<QueryNode &>().getJoinTree();
+    auto table_expressions_stack = buildTableExpressionsStack(join_tree_node);
     size_t table_expressions_stack_size = table_expressions_stack.size();
     bool is_single_table_expression = table_expressions_stack_size == 1;
 
@@ -1882,7 +1922,9 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
       * Examples: Distributed, LiveView, Merge storages.
       */
     auto left_table_expression = table_expressions_stack.front();
-    auto left_table_expression_query_plan = buildQueryPlanForTableExpression(left_table_expression,
+    auto left_table_expression_query_plan = buildQueryPlanForTableExpression(
+        left_table_expression,
+        join_tree_node,
         select_query_info,
         select_query_options,
         planner_context,
@@ -1936,11 +1978,13 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             auto left_query_plan = std::move(query_plans_stack.back());
             query_plans_stack.pop_back();
 
-            query_plans_stack.push_back(buildQueryPlanForJoinNode(table_expression,
+            query_plans_stack.push_back(buildQueryPlanForJoinNode(
+                table_expression,
                 std::move(left_query_plan),
                 std::move(right_query_plan),
                 table_expressions_outer_scope_columns[i],
-                planner_context));
+                planner_context,
+                select_query_info));
         }
         else
         {
@@ -1955,7 +1999,9 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
               * table expression in subquery.
               */
             bool is_remote = planner_context->getTableExpressionDataOrThrow(table_expression).isRemote();
-            query_plans_stack.push_back(buildQueryPlanForTableExpression(table_expression,
+            query_plans_stack.push_back(buildQueryPlanForTableExpression(
+                table_expression,
+                join_tree_node,
                 select_query_info,
                 select_query_options,
                 planner_context,

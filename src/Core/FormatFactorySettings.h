@@ -1247,6 +1247,9 @@ Set the quoting rule for identifiers in SHOW CREATE query
     DECLARE(IdentifierQuotingStyle, show_create_query_identifier_quoting_style, IdentifierQuotingStyle::Backticks, R"(
 Set the quoting style for identifiers in SHOW CREATE query
 )", 0) \
+    DECLARE(String, composed_data_type_output_format_mode, "default", R"(
+Set composed data type output format mode, default or spark.
+)", 0) \
 
 // End of FORMAT_FACTORY_SETTINGS
 

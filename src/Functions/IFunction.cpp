@@ -390,6 +390,13 @@ ColumnPtr IExecutableFunction::execute(const ColumnsWithTypeAndName & arguments,
     return executeWithoutSparseColumns(arguments, result_type, input_rows_count, dry_run);
 }
 
+ColumnPtr IFunctionBase::execute(const DB::ColumnsWithTypeAndName& arguments, const DB::DataTypePtr& result_type,
+        size_t input_rows_count, bool dry_run) const
+{
+    checkFunctionArgumentSizes(arguments, input_rows_count);
+    return prepare(arguments)->execute(arguments, result_type, input_rows_count, dry_run);
+}
+
 void IFunctionOverloadResolver::checkNumberOfArguments(size_t number_of_arguments) const
 {
     if (isVariadic())

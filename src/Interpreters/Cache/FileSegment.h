@@ -177,13 +177,15 @@ public:
 
     void setQueueIterator(Priority::IteratorPtr iterator);
 
-    void resetQueueIterator();
+    void markDelayedRemovalAndResetQueueIterator();
 
     KeyMetadataPtr tryGetKeyMetadata() const;
 
     KeyMetadataPtr getKeyMetadata() const;
 
     bool assertCorrectness() const;
+
+    size_t getSizeForBackgroundDownload() const;
 
     /**
      * ========== Methods that must do cv.notify() ==================
@@ -230,6 +232,7 @@ private:
     String getDownloaderUnlocked(const FileSegmentGuard::Lock &) const;
     bool isDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock) const;
     void resetDownloaderUnlocked(const FileSegmentGuard::Lock &);
+    size_t getSizeForBackgroundDownloadUnlocked(const FileSegmentGuard::Lock &) const;
 
     void setDownloadState(State state, const FileSegmentGuard::Lock &);
     void resetDownloadingStateUnlocked(const FileSegmentGuard::Lock &);
@@ -249,12 +252,13 @@ private:
 
     String tryGetPath() const;
 
-    Key file_key;
+    const Key file_key;
     Range segment_range;
     const FileSegmentKind segment_kind;
     /// Size of the segment is not known until it is downloaded and
     /// can be bigger than max_file_segment_size.
-    const bool is_unbound = false;
+    /// is_unbound == true for temporary data in cache.
+    const bool is_unbound;
     const bool background_download_enabled;
 
     std::atomic<State> download_state;
@@ -278,6 +282,8 @@ private:
 
     std::atomic<size_t> hits_count = 0; /// cache hits.
     std::atomic<size_t> ref_count = 0; /// Used for getting snapshot state
+
+    bool on_delayed_removal = false;
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::CacheFileSegments};
 };
