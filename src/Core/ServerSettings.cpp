@@ -15,6 +15,8 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <boost/algorithm/string/replace.hpp>
+
 
 namespace CurrentMetrics
 {
@@ -206,7 +208,27 @@ namespace DB
     DECLARE(UInt64, threadpool_writer_pool_size, 100, "Size of background pool for write requests to object storages", 0) \
     DECLARE(UInt64, threadpool_writer_queue_size, 1000000, "Number of tasks which is possible to push into background pool for write requests to object storages", 0) \
     DECLARE(UInt32, allowed_feature_tier, 0, "0 - All feature tiers allowed (experimental, beta, production). 1 - Only beta and production feature tiers allowed. 2 - Only production feature tier allowed", 0) \
-
+    \
+    DECLARE(String, openSSL__server__certificateFile, "", "Path to the server SSL certificate file", 0) \
+    DECLARE(String, openSSL__server__privateKeyFile, "", "Path to the server SSL private key file", 0) \
+    DECLARE(UInt64, query_cache__max_size_in_bytes, DEFAULT_QUERY_CACHE_MAX_SIZE, "The maximum cache size in bytes. 0 means the query cache is disabled", 0) \
+    DECLARE(UInt64, query_cache__max_entries, DEFAULT_QUERY_CACHE_MAX_ENTRIES, "The maximum number of SELECT query results stored in the cache", 0) \
+    DECLARE(UInt64, query_cache__max_entry_size_in_bytes, DEFAULT_QUERY_CACHE_MAX_ENTRY_SIZE_IN_BYTES, "The maximum size in bytes SELECT query results may have to be saved in the cache", 0) \
+    DECLARE(UInt64, query_cache__max_entry_rows_in_rows, DEFAULT_QUERY_CACHE_MAX_ENTRY_SIZE_IN_ROWS, "The maximum number of rows SELECT query results may have to be saved in the cache", 0) \
+    DECLARE(String, interserver_http_port, "", "Port for exchanging data between ClickHouse servers", 0) \
+    DECLARE(String, interserver_https_port, "", "Port for exchanging data between ClickHouse servers over HTTPS", 0) \
+    DECLARE(String, interserver_http_host, "", "The hostname that can be used by other servers to access this server. If omitted, it is defined in the same way as the hostname -f command", 0) \
+    DECLARE(String, interserver_https_host, "", "Similar to interserver_http_host, except that this hostname can be used by other servers to access this server over HTTPS.", 0) \
+    DECLARE(UInt64, max_open_files, 0, "The maximum number of open files. By default: maximum.", 0) \
+    DECLARE(Bool, local_cache_for_remote_fs__enable, false, "Enable local cache for remote filesystem", 0) \
+    DECLARE(String, local_cache_for_remote_fs__root_dir, "", "Root directory for the remote filesystem cache", 0) \
+    DECLARE(UInt64, local_cache_for_remote_fs__limit_size, 0, "Limit size for the remote filesystem cache. Default: 0 (unlimited)", 0) \
+    DECLARE(UInt64, local_cache_for_remote_fs__bytes_read_before_flush, DBMS_DEFAULT_BUFFER_SIZE, "Bytes read before flush for the remote filesystem", 0) \
+    DECLARE(Bool, dictionaries_lazy_load, true, "Lazy loading of dictionaries", 0) \
+    DECLARE(Bool, wait_dictionaries_load_at_startup, true, "This setting allows to specify behavior if dictionaries_lazy_load is false. (If dictionaries_lazy_load is true this setting doesn't affect anything.)", 0) \
+    DECLARE(String, distributed_ddl__path, "/clickhouse/task_queue/ddl/", "The path in Keeper for the task_queue for DDL queries", 0) \
+    DECLARE(String, distributed_ddl__replicas_path, "/clickhouse/task_queue/replicas/", "The profile used to execute the DDL queries", 0) \
+    DECLARE(Int32, distributed_ddl__pool_size, 1, "How many ON CLUSTER queries can be run simultaneously", 0) \
 
 // clang-format on
 
@@ -242,8 +264,10 @@ void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfig
     for (const auto & setting : all())
     {
         const auto & name = setting.getName();
-        if (config.has(name))
-            set(name, config.getString(name));
+        String name_with_dots(name);
+        boost::replace_all(name_with_dots, "__", ".");
+        if (config.has(name_with_dots))
+            set(name, config.getString(name_with_dots));
         else if (settings_from_profile_allowlist.contains(name) && config.has("profiles.default." + name))
             set(name, config.getString("profiles.default." + name));
     }

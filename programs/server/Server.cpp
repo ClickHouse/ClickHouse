@@ -195,10 +195,14 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 config_reload_interval_ms;
     extern const ServerSettingsUInt64 database_catalog_drop_table_concurrency;
     extern const ServerSettingsString default_database;
+    extern const ServerSettingsBool dictionaries_lazy_load;
     extern const ServerSettingsBool disable_internal_dns_cache;
     extern const ServerSettingsUInt64 disk_connections_soft_limit;
     extern const ServerSettingsUInt64 disk_connections_store_limit;
     extern const ServerSettingsUInt64 disk_connections_warn_limit;
+    extern const ServerSettingsString distributed_ddl__path;
+    extern const ServerSettingsString distributed_ddl__replicas_path;
+    extern const ServerSettingsInt32 distributed_ddl__pool_size;
     extern const ServerSettingsBool dns_allow_resolve_names_to_ipv4;
     extern const ServerSettingsBool dns_allow_resolve_names_to_ipv6;
     extern const ServerSettingsUInt64 dns_cache_max_entries;
@@ -217,8 +221,16 @@ namespace ServerSetting
     extern const ServerSettingsString index_uncompressed_cache_policy;
     extern const ServerSettingsUInt64 index_uncompressed_cache_size;
     extern const ServerSettingsDouble index_uncompressed_cache_size_ratio;
+    extern const ServerSettingsString interserver_http_host;
+    extern const ServerSettingsString interserver_http_port;
+    extern const ServerSettingsString interserver_https_host;
+    extern const ServerSettingsString interserver_https_port;
     extern const ServerSettingsUInt64 io_thread_pool_queue_size;
     extern const ServerSettingsSeconds keep_alive_timeout;
+    extern const ServerSettingsBool local_cache_for_remote_fs__enable;
+    extern const ServerSettingsString local_cache_for_remote_fs__root_dir;
+    extern const ServerSettingsUInt64 local_cache_for_remote_fs__limit_size;
+    extern const ServerSettingsUInt64 local_cache_for_remote_fs__bytes_read_before_flush;
     extern const ServerSettingsString mark_cache_policy;
     extern const ServerSettingsUInt64 mark_cache_size;
     extern const ServerSettingsDouble mark_cache_size_ratio;
@@ -255,12 +267,18 @@ namespace ServerSetting
     extern const ServerSettingsString merge_workload;
     extern const ServerSettingsUInt64 mmap_cache_size;
     extern const ServerSettingsString mutation_workload;
+    extern const ServerSettingsString openSSL__server__certificateFile;
+    extern const ServerSettingsString openSSL__server__privateKeyFile;
     extern const ServerSettingsUInt64 page_cache_chunk_size;
     extern const ServerSettingsUInt64 page_cache_mmap_size;
     extern const ServerSettingsUInt64 page_cache_size;
     extern const ServerSettingsBool page_cache_use_madv_free;
     extern const ServerSettingsBool page_cache_use_transparent_huge_pages;
     extern const ServerSettingsBool prepare_system_log_tables_on_startup;
+    extern const ServerSettingsUInt64 query_cache__max_entries;
+    extern const ServerSettingsUInt64 query_cache__max_entry_size_in_bytes;
+    extern const ServerSettingsUInt64 query_cache__max_entry_rows_in_rows;
+    extern const ServerSettingsUInt64 query_cache__max_size_in_bytes;
     extern const ServerSettingsBool show_addresses_in_stack_traces;
     extern const ServerSettingsBool shutdown_wait_backups_and_restores;
     extern const ServerSettingsUInt64 shutdown_wait_unfinished;
@@ -281,6 +299,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 uncompressed_cache_size;
     extern const ServerSettingsDouble uncompressed_cache_size_ratio;
     extern const ServerSettingsBool use_legacy_mongodb_integration;
+    extern const ServerSettingsBool wait_dictionaries_load_at_startup;
 }
 
 }
@@ -1205,17 +1224,12 @@ try
         server_settings[ServerSetting::database_catalog_drop_table_concurrency]);
 
     /// Initialize global local cache for remote filesystem.
-    if (config().has("local_cache_for_remote_fs"))
+    if (server_settings[ServerSetting::local_cache_for_remote_fs__enable])
     {
-        bool enable = config().getBool("local_cache_for_remote_fs.enable", false);
-        if (enable)
-        {
-            String root_dir = config().getString("local_cache_for_remote_fs.root_dir");
-            UInt64 limit_size = config().getUInt64("local_cache_for_remote_fs.limit_size");
-            UInt64 bytes_read_before_flush
-                = config().getUInt64("local_cache_for_remote_fs.bytes_read_before_flush", DBMS_DEFAULT_BUFFER_SIZE);
-            ExternalDataSourceCache::instance().initOnce(global_context, root_dir, limit_size, bytes_read_before_flush);
-        }
+        String root_dir = server_settings[ServerSetting::local_cache_for_remote_fs__root_dir];
+        UInt64 limit_size = server_settings[ServerSetting::local_cache_for_remote_fs__limit_size];
+        UInt64 bytes_read_before_flush = server_settings[ServerSetting::local_cache_for_remote_fs__bytes_read_before_flush];
+        ExternalDataSourceCache::instance().initOnce(global_context, root_dir, limit_size, bytes_read_before_flush);
     }
 
     std::string path_str = getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH));
@@ -1500,33 +1514,33 @@ try
         fs::create_directories(path / "metadata_dropped");
     }
 
-    if (config().has("interserver_http_port") && config().has("interserver_https_port"))
+    if (server_settings[ServerSetting::interserver_http_port].changed && server_settings[ServerSetting::interserver_https_port].changed)
         throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "Both http and https interserver ports are specified");
 
     static const auto interserver_tags =
     {
-        std::make_tuple("interserver_http_host", "interserver_http_port", "http"),
-        std::make_tuple("interserver_https_host", "interserver_https_port", "https")
+        std::make_tuple(ServerSetting::interserver_http_host, ServerSetting::interserver_http_port, "http"),
+        std::make_tuple(ServerSetting::interserver_https_host, ServerSetting::interserver_https_port, "https")
     };
 
     for (auto [host_tag, port_tag, scheme] : interserver_tags)
     {
-        if (config().has(port_tag))
+        if (server_settings[port_tag].changed)
         {
-            String this_host = config().getString(host_tag, "");
+            String this_host = server_settings[host_tag];
 
             if (this_host.empty())
             {
                 this_host = getFQDNOrHostName();
-                LOG_DEBUG(log, "Configuration parameter '{}' doesn't exist or exists and empty. Will use '{}' as replica host.",
-                    host_tag, this_host);
+                LOG_DEBUG(log, "Configuration parameter 'interserver_http[s]_host' doesn't exist or exists and empty. Will use '{}' as replica host.",
+                    this_host);
             }
 
-            String port_str = config().getString(port_tag);
+            String port_str = server_settings[port_tag];
             int port = parse<int>(port_str);
 
             if (port < 0 || port > 0xFFFF)
-                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Out of range '{}': {}", String(port_tag), port);
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Out of range 'interserver_http[s]_port': {}", port);
 
             global_context->setInterserverIOAddress(this_host, port);
             global_context->setInterserverScheme(scheme);
@@ -1598,10 +1612,10 @@ try
     }
     global_context->setMMappedFileCache(mmap_cache_size);
 
-    size_t query_cache_max_size_in_bytes = config().getUInt64("query_cache.max_size_in_bytes", DEFAULT_QUERY_CACHE_MAX_SIZE);
-    size_t query_cache_max_entries = config().getUInt64("query_cache.max_entries", DEFAULT_QUERY_CACHE_MAX_ENTRIES);
-    size_t query_cache_query_cache_max_entry_size_in_bytes = config().getUInt64("query_cache.max_entry_size_in_bytes", DEFAULT_QUERY_CACHE_MAX_ENTRY_SIZE_IN_BYTES);
-    size_t query_cache_max_entry_size_in_rows = config().getUInt64("query_cache.max_entry_rows_in_rows", DEFAULT_QUERY_CACHE_MAX_ENTRY_SIZE_IN_ROWS);
+    size_t query_cache_max_size_in_bytes = server_settings[ServerSetting::query_cache__max_size_in_bytes];
+    size_t query_cache_max_entries = server_settings[ServerSetting::query_cache__max_entries];
+    size_t query_cache_query_cache_max_entry_size_in_bytes = server_settings[ServerSetting::query_cache__max_entry_size_in_bytes];
+    size_t query_cache_max_entry_size_in_rows = server_settings[ServerSetting::query_cache__max_entry_rows_in_rows];
     if (query_cache_max_size_in_bytes > max_cache_size)
     {
         query_cache_max_size_in_bytes = max_cache_size;
@@ -1639,8 +1653,8 @@ try
         tryLogCurrentException(log, "Disabling cgroup memory observer because of an error during initialization");
     }
 
-    std::string cert_path = config().getString("openSSL.server.certificateFile", "");
-    std::string key_path = config().getString("openSSL.server.privateKeyFile", "");
+    std::string cert_path = server_settings[ServerSetting::openSSL__server__certificateFile];
+    std::string key_path = server_settings[ServerSetting::openSSL__server__privateKeyFile];
 
     std::vector<std::string> extra_paths = {include_from_path};
     if (!cert_path.empty())
@@ -2363,7 +2377,7 @@ try
         {
             global_context->loadOrReloadDictionaries(config());
 
-            if (!config().getBool("dictionaries_lazy_load", true) && config().getBool("wait_dictionaries_load_at_startup", true))
+            if (!server_settings[ServerSetting::dictionaries_lazy_load] && server_settings[ServerSetting::wait_dictionaries_load_at_startup])
                 global_context->waitForDictionariesLoad();
         }
         catch (...)
@@ -2397,9 +2411,9 @@ try
         if (has_zookeeper && config().has("distributed_ddl"))
         {
             /// DDL worker should be started after all tables were loaded
-            String ddl_queue_path = config().getString("distributed_ddl.path", "/clickhouse/task_queue/ddl/");
-            String ddl_replicas_path = config().getString("distributed_ddl.replicas_path", "/clickhouse/task_queue/replicas/");
-            int pool_size = config().getInt("distributed_ddl.pool_size", 1);
+            String ddl_queue_path = server_settings[ServerSetting::distributed_ddl__path];
+            String ddl_replicas_path = server_settings[ServerSetting::distributed_ddl__replicas_path];
+            int pool_size = server_settings[ServerSetting::distributed_ddl__pool_size];
             if (pool_size < 1)
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "distributed_ddl.pool_size should be greater then 0");
             global_context->setDDLWorker(
