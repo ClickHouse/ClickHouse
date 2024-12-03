@@ -32,7 +32,7 @@ private:
     std::shared_mutex mutex;
     std::unordered_map<IProcessor *, ProcessorReclaimableMemory> processor_reclaimable_memory;
     IProcessor * largest_processor = nullptr;
-    Int64 total_spill_aux_bytes = 0;
+    Int64 largest_spill_aux_bytes = 0;
     std::atomic<Int64> hard_limit = -1;
 
     void refreshLargestProcessor();
