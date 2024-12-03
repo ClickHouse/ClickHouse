@@ -1,3 +1,5 @@
+#pragma once
+
 #ifndef DB_GROUP_CONCAT_H
 #define DB_GROUP_CONCAT_H
 
