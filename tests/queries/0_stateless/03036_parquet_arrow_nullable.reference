@@ -1,66 +1,125 @@
+select * from generateRandom('a UInt64, a_nullable Nullable(UInt64)', 42) limit 10
 Parquet
+a	UInt64					
+a_nullable	UInt64					
+a	Nullable(UInt64)					
+a_nullable	Nullable(UInt64)					
 a	UInt64					
 a_nullable	Nullable(UInt64)					
 a	UInt64					
-a_nullable	UInt64					
+a_nullable	Nullable(UInt64)					
 Arrow
 a	UInt64					
+a_nullable	UInt64					
+a	Nullable(UInt64)					
 a_nullable	Nullable(UInt64)					
 a	UInt64					
-a_nullable	UInt64					
+a_nullable	Nullable(UInt64)					
+a	UInt64					
+a_nullable	Nullable(UInt64)					
+select * from generateRandom('b Array(UInt64), b_nullable Array(Nullable(UInt64))', 42) limit 10
 Parquet
-b	Array(UInt64)					
-b_nullable	Array(Nullable(UInt64))					
 b	Array(UInt64)					
 b_nullable	Array(UInt64)					
-Arrow
 b	Array(Nullable(UInt64))					
 b_nullable	Array(Nullable(UInt64))					
 b	Array(UInt64)					
+b_nullable	Array(Nullable(UInt64))					
+b	Array(UInt64)					
+b_nullable	Array(Nullable(UInt64))					
+Arrow
+b	Array(UInt64)					
 b_nullable	Array(UInt64)					
+b	Array(Nullable(UInt64))					
+b_nullable	Array(Nullable(UInt64))					
+b	Array(UInt64)					
+b_nullable	Array(Nullable(UInt64))					
+b	Array(UInt64)					
+b_nullable	Array(Nullable(UInt64))					
+select * from generateRandom('c Tuple(a UInt64, b String), c_nullable Tuple(a Nullable(UInt64), b Nullable(String))', 42) limit 10
 Parquet
+c	Tuple(\n    a UInt64,\n    b String)					
+c_nullable	Tuple(\n    a UInt64,\n    b String)					
+c	Tuple(\n    a Nullable(UInt64),\n    b Nullable(String))					
+c_nullable	Tuple(\n    a Nullable(UInt64),\n    b Nullable(String))					
 c	Tuple(\n    a UInt64,\n    b String)					
 c_nullable	Tuple(\n    a Nullable(UInt64),\n    b Nullable(String))					
 c	Tuple(\n    a UInt64,\n    b String)					
-c_nullable	Tuple(\n    a UInt64,\n    b String)					
+c_nullable	Tuple(\n    a Nullable(UInt64),\n    b Nullable(String))					
 Arrow
+c	Tuple(\n    a UInt64,\n    b String)					
+c_nullable	Tuple(\n    a UInt64,\n    b String)					
+c	Tuple(\n    a Nullable(UInt64),\n    b Nullable(String))					
+c_nullable	Tuple(\n    a Nullable(UInt64),\n    b Nullable(String))					
 c	Tuple(\n    a UInt64,\n    b String)					
 c_nullable	Tuple(\n    a Nullable(UInt64),\n    b Nullable(String))					
 c	Tuple(\n    a UInt64,\n    b String)					
-c_nullable	Tuple(\n    a UInt64,\n    b String)					
+c_nullable	Tuple(\n    a Nullable(UInt64),\n    b Nullable(String))					
+select * from generateRandom('d Tuple(a UInt64, b Tuple(a UInt64, b String), d_nullable Tuple(a UInt64, b Tuple(a Nullable(UInt64), b Nullable(String))))', 42) limit 10
 Parquet
-d	Tuple(\n    a UInt64,\n    b Tuple(\n        a UInt64,\n        b String),\n    d_nullable Tuple(\n        a UInt64,\n        b Tuple(\n            a Nullable(UInt64),\n            b Nullable(String))))					
 d	Tuple(\n    a UInt64,\n    b Tuple(\n        a UInt64,\n        b String),\n    d_nullable Tuple(\n        a UInt64,\n        b Tuple(\n            a UInt64,\n            b String)))					
+d	Tuple(\n    a Nullable(UInt64),\n    b Tuple(\n        a Nullable(UInt64),\n        b Nullable(String)),\n    d_nullable Tuple(\n        a Nullable(UInt64),\n        b Tuple(\n            a Nullable(UInt64),\n            b Nullable(String))))					
+d	Tuple(\n    a UInt64,\n    b Tuple(\n        a UInt64,\n        b String),\n    d_nullable Tuple(\n        a UInt64,\n        b Tuple(\n            a Nullable(UInt64),\n            b Nullable(String))))					
+d	Tuple(\n    a UInt64,\n    b Tuple(\n        a UInt64,\n        b String),\n    d_nullable Tuple(\n        a UInt64,\n        b Tuple(\n            a Nullable(UInt64),\n            b Nullable(String))))					
 Arrow
-d	Tuple(\n    a UInt64,\n    b Tuple(\n        a UInt64,\n        b String),\n    d_nullable Tuple(\n        a UInt64,\n        b Tuple(\n            a Nullable(UInt64),\n            b Nullable(String))))					
 d	Tuple(\n    a UInt64,\n    b Tuple(\n        a UInt64,\n        b String),\n    d_nullable Tuple(\n        a UInt64,\n        b Tuple(\n            a UInt64,\n            b String)))					
+d	Tuple(\n    a Nullable(UInt64),\n    b Tuple(\n        a Nullable(UInt64),\n        b Nullable(String)),\n    d_nullable Tuple(\n        a Nullable(UInt64),\n        b Tuple(\n            a Nullable(UInt64),\n            b Nullable(String))))					
+d	Tuple(\n    a UInt64,\n    b Tuple(\n        a UInt64,\n        b String),\n    d_nullable Tuple(\n        a UInt64,\n        b Tuple(\n            a Nullable(UInt64),\n            b Nullable(String))))					
+d	Tuple(\n    a UInt64,\n    b Tuple(\n        a UInt64,\n        b String),\n    d_nullable Tuple(\n        a UInt64,\n        b Tuple(\n            a Nullable(UInt64),\n            b Nullable(String))))					
+select * from generateRandom('e Map(UInt64, String), e_nullable Map(UInt64, Nullable(String))', 42) limit 10
 Parquet
-e	Map(UInt64, String)					
-e_nullable	Map(UInt64, Nullable(String))					
 e	Map(UInt64, String)					
 e_nullable	Map(UInt64, String)					
-Arrow
 e	Map(UInt64, Nullable(String))					
 e_nullable	Map(UInt64, Nullable(String))					
 e	Map(UInt64, String)					
+e_nullable	Map(UInt64, Nullable(String))					
+e	Map(UInt64, String)					
+e_nullable	Map(UInt64, Nullable(String))					
+Arrow
+e	Map(UInt64, String)					
 e_nullable	Map(UInt64, String)					
+e	Map(UInt64, Nullable(String))					
+e_nullable	Map(UInt64, Nullable(String))					
+e	Map(UInt64, String)					
+e_nullable	Map(UInt64, Nullable(String))					
+e	Map(UInt64, String)					
+e_nullable	Map(UInt64, Nullable(String))					
+select * from generateRandom('f Map(UInt64, Map(UInt64, String)), f_nullables Map(UInt64, Map(UInt64, Nullable(String)))', 42) limit 10
 Parquet
 f	Map(UInt64, Map(UInt64, String))					
-f_nullables	Map(UInt64, Map(UInt64, Nullable(String)))					
-f	Map(UInt64, Map(UInt64, String))					
 f_nullables	Map(UInt64, Map(UInt64, String))					
-Arrow
 f	Map(UInt64, Map(UInt64, Nullable(String)))					
 f_nullables	Map(UInt64, Map(UInt64, Nullable(String)))					
 f	Map(UInt64, Map(UInt64, String))					
+f_nullables	Map(UInt64, Map(UInt64, Nullable(String)))					
+f	Map(UInt64, Map(UInt64, String))					
+f_nullables	Map(UInt64, Map(UInt64, Nullable(String)))					
+Arrow
+f	Map(UInt64, Map(UInt64, String))					
 f_nullables	Map(UInt64, Map(UInt64, String))					
+f	Map(UInt64, Map(UInt64, Nullable(String)))					
+f_nullables	Map(UInt64, Map(UInt64, Nullable(String)))					
+f	Map(UInt64, Map(UInt64, String))					
+f_nullables	Map(UInt64, Map(UInt64, Nullable(String)))					
+f	Map(UInt64, Map(UInt64, String))					
+f_nullables	Map(UInt64, Map(UInt64, Nullable(String)))					
+select * from generateRandom('g LowCardinality(String), g_nullable LowCardinality(Nullable(String))', 42) limit 10 settings output_format_arrow_low_cardinality_as_dictionary=1, allow_suspicious_low_cardinality_types=1
 Parquet
+g	String					
+g_nullable	String					
+g	Nullable(String)					
+g_nullable	Nullable(String)					
 g	String					
 g_nullable	Nullable(String)					
 g	String					
-g_nullable	String					
+g_nullable	Nullable(String)					
 Arrow
 g	LowCardinality(String)					
 g_nullable	LowCardinality(String)					
+g	LowCardinality(Nullable(String))					
+g_nullable	LowCardinality(Nullable(String))					
 g	LowCardinality(String)					
-g_nullable	LowCardinality(String)					
+g_nullable	LowCardinality(Nullable(String))					
+g	LowCardinality(String)					
+g_nullable	LowCardinality(Nullable(String))					
