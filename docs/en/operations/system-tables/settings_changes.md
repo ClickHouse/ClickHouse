@@ -7,7 +7,7 @@ Contains information about setting changes in previous ClickHouse versions.
 
 Columns:
 
-- `type` ([String](../../sql-reference/data-types/string.md)) - The group of settings (Core, MergeTree...)
+- `type` ([Enum](../../sql-reference/data-types/enum.md)) - The settings type: `Core` (general / query settings), `MergeTree`.
 - `version` ([String](../../sql-reference/data-types/string.md)) — The ClickHouse version in which settings were changed
 - `changes` ([Array](../../sql-reference/data-types/array.md) of [Tuple](../../sql-reference/data-types/tuple.md)) — A description of the setting changes: (setting name, previous value, new value, reason for the change)
 
