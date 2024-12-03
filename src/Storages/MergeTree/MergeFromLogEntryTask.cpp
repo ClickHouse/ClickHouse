@@ -445,8 +445,15 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
     finish_callback = [storage_ptr = &storage]() { storage_ptr->merge_selecting_task->schedule(); };
     ProfileEvents::increment(ProfileEvents::ReplicatedPartMerges);
 
-    if (auto * mark_cache = storage.getContext()->getMarkCache().get())
-        addMarksToCache(*part, cached_marks, mark_cache);
+    size_t bytes_uncompressed = part->getBytesUncompressedOnDisk();
+
+    if (auto mark_cache = storage.getMarkCacheToPrewarm(bytes_uncompressed))
+        addMarksToCache(*part, cached_marks, mark_cache.get());
+
+    /// Move index to cache and reset it here because we need
+    /// a correct part name after rename for a key of cache entry.
+    if (auto index_cache = storage.getPrimaryIndexCacheToPrewarm(bytes_uncompressed))
+        part->moveIndexToCache(*index_cache);
 
     write_part_log({});
     StorageReplicatedMergeTree::incrementMergedPartsProfileEvent(part->getType());

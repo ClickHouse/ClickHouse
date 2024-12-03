@@ -60,6 +60,15 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
 {
     {"24.12",
         {
+            {"query_plan_join_swap_table", "false", "auto", "New setting. Right table was always chosen before."},
+            {"max_size_to_preallocate_for_aggregation", 100'000'000, 1'000'000'000'000, "Enable optimisation for bigger tables."},
+            {"max_size_to_preallocate_for_joins", 100'000'000, 1'000'000'000'000, "Enable optimisation for bigger tables."},
+            {"parallel_replicas_index_analysis_only_on_coordinator", false, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"},
+            {"max_bytes_ratio_before_external_group_by", 0., 0., "New setting."},
+            {"max_bytes_ratio_before_external_sort", 0., 0., "New setting."},
+            {"use_async_executor_for_materialized_views", false, false, "New setting."},
+            {"composed_data_type_output_format_mode", "default", "default", "New setting"},
+            {"http_response_headers", "", "", "New setting."},
         }
     },
     {"24.11",
@@ -89,6 +98,9 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"s3_skip_empty_files", false, true, "We hope it will provide better UX"},
             {"filesystem_cache_boundary_alignment", 0, 0, "New setting"},
             {"push_external_roles_in_interserver_queries", false, false, "New setting."},
+            {"enable_variant_type", false, false, "Add alias to allow_experimental_variant_type"},
+            {"enable_dynamic_type", false, false, "Add alias to allow_experimental_dynamic_type"},
+            {"enable_json_type", false, false, "Add alias to allow_experimental_json_type"},
         }
     },
     {"24.10",
@@ -114,7 +126,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"min_free_disk_ratio_to_perform_insert", 0.0, 0.0, "New setting."},
             {"enable_named_columns_in_function_tuple", false, false, "Disabled pending usability improvements"},
             {"cloud_mode_database_engine", 1, 1, "A setting for ClickHouse Cloud"},
-            {"allow_experimental_shared_set_join", 1, 1, "A setting for ClickHouse Cloud"},
+            {"allow_experimental_shared_set_join", 0, 0, "A setting for ClickHouse Cloud"},
             {"read_through_distributed_cache", 0, 0, "A setting for ClickHouse Cloud"},
             {"write_through_distributed_cache", 0, 0, "A setting for ClickHouse Cloud"},
             {"distributed_cache_throw_on_error", 0, 0, "A setting for ClickHouse Cloud"},

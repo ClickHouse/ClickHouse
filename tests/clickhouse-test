@@ -795,6 +795,7 @@ def _running_on_arm():
     return "arm" in get_cpu_info()["arch"].lower()
 
 
+# Refer to `tests/integration/helpers/random_settings.py` for integration test random settings
 class SettingsRandomizer:
     settings = {
         "max_insert_threads": lambda: (
@@ -926,6 +927,7 @@ class SettingsRandomizer:
         "max_parsing_threads": lambda: random.choice([0, 1, 10]),
         "optimize_functions_to_subcolumns": lambda: random.randint(0, 1),
         "parallel_replicas_local_plan": lambda: random.randint(0, 1),
+        "query_plan_join_swap_table": lambda: random.choice(["auto", "false", "true"]),
         "output_format_native_write_json_as_string": lambda: random.randint(0, 1),
         "enable_vertical_final": lambda: random.randint(0, 1),
     }
@@ -991,6 +993,8 @@ class MergeTreeSettingsRandomizer:
         "prewarm_mark_cache": lambda: random.randint(0, 1),
         "use_const_adaptive_granularity": lambda: random.randint(0, 1),
         "enable_index_granularity_compression": lambda: random.randint(0, 1),
+        "use_primary_key_cache": lambda: random.randint(0, 1),
+        "prewarm_primary_key_cache": lambda: random.randint(0, 1),
     }
 
     @staticmethod
