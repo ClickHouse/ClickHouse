@@ -12,6 +12,8 @@
 namespace DB
 {
 
+struct SelectQueryInfo;
+
 /** Join clause represent single JOIN ON section clause.
   * Join clause consists of JOIN keys and conditions.
   *
@@ -218,10 +220,11 @@ std::optional<bool> tryExtractConstantFromJoinNode(const QueryTreeNodePtr & join
   * Table join structure can be modified during JOIN algorithm choosing for special JOIN algorithms.
   * For example JOIN with Dictionary engine, or JOIN with JOIN engine.
   */
-std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_join,
+std::shared_ptr<IJoin> chooseJoinAlgorithm(
+    std::shared_ptr<TableJoin> & table_join,
     const QueryTreeNodePtr & right_table_expression,
     const Block & left_table_expression_header,
     const Block & right_table_expression_header,
-    const PlannerContextPtr & planner_context);
-
+    const PlannerContextPtr & planner_context,
+    const SelectQueryInfo & select_query_info);
 }

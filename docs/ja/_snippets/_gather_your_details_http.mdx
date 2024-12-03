@@ -1,0 +1,17 @@
+HTTP(S) を使用して ClickHouse に接続するには、以下の情報が必要です：
+
+- **HOST と PORT**: 通常、TLS を使用する場合のポートは 8443、TLS を使用しない場合は 8123 です。
+
+- **データベース名**: デフォルトで `default` という名前のデータベースがありますが、接続したいデータベースの名前を使用してください。
+
+- **ユーザー名とパスワード**: デフォルトでユーザー名は `default` です。使用ケースに適したユーザー名を使用してください。
+
+ClickHouse Cloud サービスの詳細は、ClickHouse Cloud コンソールで確認できます。 接続するサービスを選択し、**接続** をクリックします:
+
+![ClickHouse Cloud service connect button](@site/docs/ja/_snippets/images/cloud-connect-button.png)
+
+**HTTPS** を選択すると、サンプルの `curl` コマンドで詳細が確認できます。
+
+![ClickHouse Cloud HTTPS connection details](@site/docs/ja/_snippets/images/connection-details-https.png)
+
+セルフマネージドの ClickHouse を使用している場合、接続の詳細は ClickHouse 管理者によって設定されます。

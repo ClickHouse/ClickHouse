@@ -16,6 +16,7 @@ namespace ProfileEvents
 {
     extern const Event WaitMarksLoadMicroseconds;
     extern const Event BackgroundLoadingMarksTasks;
+    extern const Event LoadedMarksFiles;
     extern const Event LoadedMarksCount;
     extern const Event LoadedMarksMemoryBytes;
 }
@@ -156,7 +157,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
     if (!index_granularity_info.mark_type.adaptive)
     {
         /// Read directly to marks.
-        chassert(expected_uncompressed_size == plain_marks.size() * sizeof(MarkInCompressedFile));
+        chassert(expected_uncompressed_size == plain_marks.size() * sizeof(MarkInCompressedFile));  /// NOLINT(bugprone-sizeof-expression)
         reader->readStrict(reinterpret_cast<char *>(plain_marks.data()), expected_uncompressed_size);
 
         if (!reader->eof())
@@ -203,6 +204,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
 
     auto res = std::make_shared<MarksInCompressedFile>(plain_marks);
 
+    ProfileEvents::increment(ProfileEvents::LoadedMarksFiles);
     ProfileEvents::increment(ProfileEvents::LoadedMarksCount, marks_count * num_columns_in_mark);
     ProfileEvents::increment(ProfileEvents::LoadedMarksMemoryBytes, res->approximateMemoryUsage());
 
@@ -264,7 +266,7 @@ void addMarksToCache(const IMergeTreeDataPart & part, const PlainMarksByName & c
     for (const auto & [stream_name, marks] : cached_marks)
     {
         auto mark_path = part.index_granularity_info.getMarksFilePath(stream_name);
-        auto key = MarkCache::hash(fs::path(part.getDataPartStorage().getFullPath()) / mark_path);
+        auto key = MarkCache::hash(fs::path(part.getRelativePathOfActivePart()) / mark_path);
         mark_cache->set(key, std::make_shared<MarksInCompressedFile>(*marks));
     }
 }

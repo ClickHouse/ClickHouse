@@ -695,7 +695,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
         static const char AWS_ECS_CONTAINER_CREDENTIALS_RELATIVE_URI[] = "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI";
         static const char AWS_ECS_CONTAINER_CREDENTIALS_FULL_URI[] = "AWS_CONTAINER_CREDENTIALS_FULL_URI";
         static const char AWS_ECS_CONTAINER_AUTHORIZATION_TOKEN[] = "AWS_CONTAINER_AUTHORIZATION_TOKEN";
-        static const char AWS_ECS_CONTAINER_AUTHORIZATION_TOKEN_PATH[] = "AWS_CONTAINER_AUTHORIZATION_TOKEN_PATH";
+        static const char AWS_ECS_CONTAINER_AUTHORIZATION_TOKEN_FILE[] = "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE";
         static const char AWS_EC2_METADATA_DISABLED[] = "AWS_EC2_METADATA_DISABLED";
 
         /// The only difference from DefaultAWSCredentialsProviderChain::DefaultAWSCredentialsProviderChain()
@@ -754,11 +754,11 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
         else if (!absolute_uri.empty())
         {
             auto token = Aws::Environment::GetEnv(AWS_ECS_CONTAINER_AUTHORIZATION_TOKEN);
-            const auto token_path = Aws::Environment::GetEnv(AWS_ECS_CONTAINER_AUTHORIZATION_TOKEN_PATH);
+            const auto token_path = Aws::Environment::GetEnv(AWS_ECS_CONTAINER_AUTHORIZATION_TOKEN_FILE);
 
             if (!token_path.empty())
             {
-                LOG_INFO(logger, "The environment variable value {} is {}", AWS_ECS_CONTAINER_AUTHORIZATION_TOKEN_PATH, token_path);
+                LOG_INFO(logger, "The environment variable value {} is {}", AWS_ECS_CONTAINER_AUTHORIZATION_TOKEN_FILE, token_path);
 
                 String token_from_file;
 
