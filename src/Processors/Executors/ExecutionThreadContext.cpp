@@ -48,7 +48,7 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
 {
     try
     {
-        if (auto bytes = CurrentThread::getGroup()->reclaimable_memory_spill_manager.needSpill(node->processor))
+        if (auto bytes = CurrentThread::getGroup()->memory_spill_scheduler.needSpill(node->processor))
         {
             LOG_ERROR(getLogger("ExecutionThreadContext"), "xxx try spill. processor: {}@{}, bytes: {}", node->processor->getName(), fmt::ptr(node->processor), bytes);
             node->processor->trySpill(bytes);
