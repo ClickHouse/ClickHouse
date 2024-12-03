@@ -49,8 +49,6 @@ class GroupConcatImpl : public IAggregateFunctionDataHelper<GroupConcatData<has_
 {
     static constexpr auto name = "groupConcat";
 
-    constexpr static std::array<const char *, 2> names_and_aliases = { "groupConcat", "group_concat" };
-
     SerializationPtr serialization;
     UInt64 limit;
     const String delimiter;
@@ -61,9 +59,10 @@ public:
 
     String getName() const override;
 
-    static std::array<const char *, 2> getNameAndAliases()
+    static const std::vector<std::string>& getNameAndAliases()
     {
-        return names_and_aliases;
+        static const std::vector<std::string> aliases = {"groupConcat", "group_concat"};
+        return aliases;
     }
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override;

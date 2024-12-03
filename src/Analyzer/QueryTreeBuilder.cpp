@@ -648,11 +648,10 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
         }
         else
         {
-            const char * name = function->name.c_str();
-            // Check if the function is groupConcat with exactly two arguments
-            if (std::any_of(GroupConcatImpl<false>::getNameAndAliases().begin(),
-                            GroupConcatImpl<false>::getNameAndAliases().end(),
-                            [name](const char *alias) { return std::strcmp(name, alias) == 0; })
+            const auto & group_concat_aliases = GroupConcatImpl<false>::getNameAndAliases();
+            if (!function->name.empty() && std::any_of(
+                    group_concat_aliases.begin(), group_concat_aliases.end(),
+                    [&](const std::string &s) { return s == function->name; })
                 && function->arguments && function->arguments->children.size() == 2)
             {
                 result = setFirstArgumentAsParameter(function, context);
