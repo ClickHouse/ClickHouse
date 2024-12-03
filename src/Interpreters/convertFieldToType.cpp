@@ -660,14 +660,18 @@ static bool decimalEqualsFloat(Field field, Float64 float_value)
 
 std::optional<Field> convertFieldToTypeStrict(const Field & from_value, const IDataType & from_type, const IDataType & to_type, const FormatSettings & format_settings)
 {
+        //Field result_value = convertFieldToType(from_value, to_type, &from_type, format_settings);
+
     Field result_value;
     try
     {
         result_value = convertFieldToType(from_value, to_type, &from_type, format_settings);
     }
-    catch (...)
+    catch (Exception & e)
     {
-        return {};
+        if (isEnum(from_type) && e.code() == ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM)
+            return {};
+        throw;
     }
 
     if (Field::isDecimal(from_value.getType()) && Field::isDecimal(result_value.getType()))
