@@ -83,8 +83,7 @@ void EvictionCandidates::removeQueueEntries(const CachePriorityGuard::Lock & loc
             queue_iterator->invalidate();
 
             chassert(candidate->releasable());
-            candidate->file_segment->markDelayedRemovalAndResetQueueIterator();
-
+            candidate->file_segment->resetQueueIterator();
             /// We need to set removed flag in file segment metadata,
             /// because in dynamic cache resize we first remove queue entries,
             /// then evict which also removes file segment metadata,
@@ -243,7 +242,8 @@ void EvictionCandidates::setSpaceHolder(
 {
     if (hold_space)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Space hold is already set");
-    hold_space = std::make_unique<IFileCachePriority::HoldSpace>(size, elements, priority, lock);
+    else
+        hold_space = std::make_unique<IFileCachePriority::HoldSpace>(size, elements, priority, lock);
 }
 
 }

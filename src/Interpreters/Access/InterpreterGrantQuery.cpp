@@ -418,7 +418,7 @@ BlockIO InterpreterGrantQuery::execute()
     auto & query = updated_query->as<ASTGrantQuery &>();
 
     query.replaceCurrentUserTag(getContext()->getUserName());
-    query.access_rights_elements.eraseNotGrantable();
+    query.access_rights_elements.eraseNonGrantable();
 
     if (!query.access_rights_elements.sameOptions())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Elements of an ASTGrantQuery are expected to have the same options");
@@ -474,7 +474,7 @@ BlockIO InterpreterGrantQuery::execute()
         calculateCurrentGrantRightsWithIntersection(new_rights, current_user_access, elements_to_grant);
 
     /// Update roles and users listed in `grantees`.
-    auto update_func = [&](const AccessEntityPtr & entity, const UUID &) -> AccessEntityPtr
+    auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
     {
         auto clone = entity->clone();
         if (query.current_grants)

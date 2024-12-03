@@ -131,8 +131,8 @@ For the query to run successfully, the following conditions must be met:
 
 - Both tables must have the same structure.
 - Both tables must have the same partition key, the same order by key and the same primary key.
+- Both tables must have the same indices and projections.
 - Both tables must have the same storage policy.
-- The destination table must include all indices and projections from the source table. If the `enforce_index_structure_match_on_partition_manipulation` setting is enabled in destination table, the indices and projections must be identical. Otherwise, the destination table can have a superset of the source table’s indices and projections.
 
 ## REPLACE PARTITION
 
@@ -151,8 +151,8 @@ For the query to run successfully, the following conditions must be met:
 
 - Both tables must have the same structure.
 - Both tables must have the same partition key, the same order by key and the same primary key.
+- Both tables must have the same indices and projections.
 - Both tables must have the same storage policy.
-- The destination table must include all indices and projections from the source table. If the `enforce_index_structure_match_on_partition_manipulation` setting is enabled in destination table, the indices and projections must be identical. Otherwise, the destination table can have a superset of the source table’s indices and projections.
 
 ## MOVE PARTITION TO TABLE
 
@@ -166,9 +166,9 @@ For the query to run successfully, the following conditions must be met:
 
 - Both tables must have the same structure.
 - Both tables must have the same partition key, the same order by key and the same primary key.
+- Both tables must have the same indices and projections.
 - Both tables must have the same storage policy.
 - Both tables must be the same engine family (replicated or non-replicated).
-- The destination table must include all indices and projections from the source table. If the `enforce_index_structure_match_on_partition_manipulation` setting is enabled in destination table, the indices and projections must be identical. Otherwise, the destination table can have a superset of the source table’s indices and projections.
 
 ## CLEAR COLUMN IN PARTITION
 
@@ -351,7 +351,7 @@ ALTER TABLE mt DELETE IN PARTITION ID '2' WHERE p = 2;
 You can specify the partition expression in `ALTER ... PARTITION` queries in different ways:
 
 - As a value from the `partition` column of the `system.parts` table. For example, `ALTER TABLE visits DETACH PARTITION 201901`.
-- Using the keyword `ALL`. It can be used only with DROP/DETACH/ATTACH/ATTACH FROM. For example, `ALTER TABLE visits ATTACH PARTITION ALL`.
+- Using the keyword `ALL`. It can be used only with DROP/DETACH/ATTACH. For example, `ALTER TABLE visits ATTACH PARTITION ALL`.
 - As a tuple of expressions or constants that matches (in types) the table partitioning keys tuple. In the case of a single element partitioning key, the expression should be wrapped in the `tuple (...)` function. For example, `ALTER TABLE visits DETACH PARTITION tuple(toYYYYMM(toDate('2019-01-25')))`.
 - Using the partition ID. Partition ID is a string identifier of the partition (human-readable, if possible) that is used as the names of partitions in the file system and in ZooKeeper. The partition ID must be specified in the `PARTITION ID` clause, in a single quotes. For example, `ALTER TABLE visits DETACH PARTITION ID '201901'`.
 - In the [ALTER ATTACH PART](#attach-partitionpart) and [DROP DETACHED PART](#drop-detached-partitionpart) query, to specify the name of a part, use string literal with a value from the `name` column of the [system.detached_parts](/docs/en/operations/system-tables/detached_parts.md/#system_tables-detached_parts) table. For example, `ALTER TABLE visits ATTACH PART '201901_1_1_0'`.
