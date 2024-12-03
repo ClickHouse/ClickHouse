@@ -40,6 +40,8 @@ public:
         FileIterator(
             std::shared_ptr<ObjectStorageQueueMetadata> metadata_,
             std::unique_ptr<Source::GlobIterator> glob_iterator_,
+            ObjectStoragePtr object_storage_,
+            bool file_deletion_on_processed_enabled_,
             std::atomic<bool> & shutdown_called_,
             LoggerPtr logger_);
 
@@ -67,7 +69,9 @@ public:
         using Processor = ObjectStorageQueueMetadata::Processor;
 
         const std::shared_ptr<ObjectStorageQueueMetadata> metadata;
+        const ObjectStoragePtr object_storage;
         const std::unique_ptr<Source::GlobIterator> glob_iterator;
+        const bool file_deletion_on_processed_enabled;
 
         std::atomic<bool> & shutdown_called;
         std::mutex mutex;
