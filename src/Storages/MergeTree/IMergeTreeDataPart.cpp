@@ -518,6 +518,11 @@ std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
     return {};
 }
 
+bool IMergeTreeDataPart::enabledMaxMinTimeOfDataInsertion() const
+{
+    return (*storage.getSettings())[MergeTreeSetting::allow_generate_min_max_data_insert_file];
+}
+
 time_t IMergeTreeDataPart::getMinTimeOfDataInsertion() const
 {
     if (!(*storage.getSettings())[MergeTreeSetting::allow_generate_min_max_data_insert_file])
