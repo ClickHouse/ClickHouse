@@ -154,7 +154,7 @@ def create_initial_data_file(
             file('{table_name}.parquet')
         SETTINGS
             output_format_parquet_compression_method='{compression_method}',
-            s3_truncate_on_insert=1 {query}
+            engine_file_truncate_on_insert=1 {query}
         FORMAT Parquet"""
     )
     user_files_path = os.path.join(
