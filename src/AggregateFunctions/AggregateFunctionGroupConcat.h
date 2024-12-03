@@ -75,6 +75,6 @@ public:
     bool allocatesMemoryInArena() const override;
 };
 
-} // namespace DB
+}
 
-#endif // DB_GROUP_CONCAT_H
+#endif
