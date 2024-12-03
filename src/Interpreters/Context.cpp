@@ -3173,10 +3173,11 @@ UncompressedCachePtr Context::getUncompressedCache() const
 
 void Context::clearUncompressedCache() const
 {
-    std::lock_guard lock(shared->mutex);
+    UncompressedCachePtr cache = getUncompressedCache();
 
-    if (shared->uncompressed_cache)
-        shared->uncompressed_cache->clear();
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
 }
 
 void Context::setPageCache(size_t bytes_per_chunk, size_t bytes_per_mmap, size_t bytes_total, bool use_madv_free, bool use_huge_pages)
@@ -3284,10 +3285,11 @@ PrimaryIndexCachePtr Context::getPrimaryIndexCache() const
 
 void Context::clearPrimaryIndexCache() const
 {
-    std::lock_guard lock(shared->mutex);
+    PrimaryIndexCachePtr cache = getPrimaryIndexCache();
 
-    if (shared->primary_index_cache)
-        shared->primary_index_cache->clear();
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
 }
 
 void Context::setIndexUncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
@@ -3319,10 +3321,11 @@ UncompressedCachePtr Context::getIndexUncompressedCache() const
 
 void Context::clearIndexUncompressedCache() const
 {
-    std::lock_guard lock(shared->mutex);
+    UncompressedCachePtr cache = getIndexUncompressedCache();
 
-    if (shared->index_uncompressed_cache)
-        shared->index_uncompressed_cache->clear();
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
 }
 
 void Context::setIndexMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio)
@@ -3354,10 +3357,11 @@ MarkCachePtr Context::getIndexMarkCache() const
 
 void Context::clearIndexMarkCache() const
 {
-    std::lock_guard lock(shared->mutex);
+    MarkCachePtr cache = getIndexMarkCache();
 
-    if (shared->index_mark_cache)
-        shared->index_mark_cache->clear();
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
 }
 
 void Context::setMMappedFileCache(size_t max_cache_size_in_num_entries)
@@ -3389,10 +3393,11 @@ MMappedFileCachePtr Context::getMMappedFileCache() const
 
 void Context::clearMMappedFileCache() const
 {
-    std::lock_guard lock(shared->mutex);
+    MMappedFileCachePtr cache = getMMappedFileCache();
 
-    if (shared->mmap_cache)
-        shared->mmap_cache->clear();
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
 }
 
 void Context::setQueryCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows)
@@ -3427,10 +3432,11 @@ QueryCachePtr Context::getQueryCache() const
 
 void Context::clearQueryCache(const std::optional<String> & tag) const
 {
-    std::lock_guard lock(shared->mutex);
+    QueryCachePtr cache = getQueryCache();
 
-    if (shared->query_cache)
-        shared->query_cache->clear(tag);
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear(tag);
 }
 
 void Context::clearCaches() const
