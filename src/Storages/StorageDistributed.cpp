@@ -12,6 +12,8 @@
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/NestedUtils.h>
 
+#include <Disks/IVolume.h>
+
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/Distributed/DistributedSink.h>
 #include <Storages/StorageFactory.h>
