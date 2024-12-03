@@ -77,7 +77,7 @@ StorageObjectStorageSource::StorageObjectStorageSource(
           CurrentMetrics::StorageObjectStorageThreads,
           CurrentMetrics::StorageObjectStorageThreadsActive,
           CurrentMetrics::StorageObjectStorageThreadsScheduled,
-          1 /* max_threads */))
+          1/* max_threads */))
     , file_iterator(file_iterator_)
     , schema_cache(StorageObjectStorage::getSchemaCache(context_, configuration->getTypeName()))
     , create_reader_scheduler(threadPoolCallbackRunnerUnsafe<ReaderHolder>(*create_reader_pool, "Reader"))
@@ -607,7 +607,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
         recursive = key_with_globs == "/**";
         if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, local_context))
         {
-            VirtualColumnUtils::buildSetsForDAG(*filter_dag, read_context);
+            VirtualColumnUtils::buildSetsForDAG(*filter_dag, getContext());
             filter_expr = std::make_shared<ExpressionActions>(std::move(*filter_dag));
         }
     }
@@ -877,7 +877,7 @@ StorageObjectStorageSource::ArchiveIterator::createArchiveReader(ObjectInfoPtr o
         /* path_to_archive */
         object_info->getPath(),
         /* archive_read_function */ [=, this]()
-        { return StorageObjectStorageSource::createReadBuffer(*object_info, object_storage, read_context, logger); },
+        { return StorageObjectStorageSource::createReadBuffer(*object_info, object_storage, getContext(), logger); },
         /* archive_size */ size);
 }
 
