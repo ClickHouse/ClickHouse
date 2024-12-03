@@ -46,7 +46,7 @@ public:
 
     ClickHouseIntegration(const FuzzConfig & fcc, const ServerCredentials & scc) : fc(fcc), sc(scc) { buf.reserve(4096); }
 
-    virtual void setEngineDetails(RandomGenerator & rg, const SQLBase & b, const std::string & tname, TableEngine * te) = 0;
+    virtual void setEngineDetails(RandomGenerator &, const SQLBase &, const std::string &, TableEngine *) { }
 
     virtual bool performIntegration(RandomGenerator &, uint32_t, std::vector<InsertEntry> &) { return false; }
 
@@ -62,11 +62,11 @@ public:
     {
     }
 
-    virtual bool performQuery(const std::string & buf) = 0;
+    virtual bool performQuery(const std::string &) { return false; }
 
-    virtual std::string getTableName(uint32_t tname) = 0;
+    virtual std::string getTableName(uint32_t) { return std::string(""); }
 
-    virtual void getTypeString(RandomGenerator & rg, const SQLType * tp, std::string & out) const = 0;
+    virtual void getTypeString(RandomGenerator &, const SQLType *, std::string &) const { }
 
     bool performIntegration(RandomGenerator & rg, const uint32_t tname, std::vector<InsertEntry> & entries) override
     {
@@ -125,6 +125,8 @@ public:
         return performQuery(buf);
     }
 
+    virtual void optimizePeerTableOnRemote(const SQLTable &) { }
+
     bool performCreatePeerTable(
         RandomGenerator & rg,
         const bool is_clickhouse_integration,
@@ -157,7 +159,7 @@ public:
         return res;
     }
 
-    void virtual truncateStatement(std::string & outbuf) = 0;
+    void virtual truncateStatement(std::string &) { }
 
     void truncatePeerTableOnRemote(const SQLTable & t)
     {
@@ -173,9 +175,9 @@ public:
     ~ClickHouseIntegratedDatabase() override = default;
 };
 
-#if defined USE_MYSQL && USE_MYSQL
 class MySQLIntegration : public ClickHouseIntegratedDatabase
 {
+#if defined USE_MYSQL && USE_MYSQL
 private:
     const bool is_clickhouse = false;
     MYSQL * mysql_connection = nullptr;
@@ -251,7 +253,7 @@ public:
         }
     }
 
-    void optimizePeerTableOnRemote(const SQLTable & t)
+    void optimizePeerTableOnRemote(const SQLTable & t) override
     {
         assert(t.hasDatabasePeer());
         if (is_clickhouse && t.supportsFinal())
@@ -289,26 +291,23 @@ public:
             mysql_close(mysql_connection);
         }
     }
-};
 #else
-class MySQLIntegration : public ClickHouseIntegration
-{
 public:
-    MySQLIntegration(const FuzzConfig & fcc, const ServerCredentials & scc) : ClickHouseIntegration(fcc, scc) { }
+    MySQLIntegration(const FuzzConfig & fcc, const ServerCredentials & scc) : ClickHouseIntegratedDatabase(fcc, scc) { }
 
-    static MySQLIntegration * TestAndAddMySQLConnection(const FuzzConfig &, const ServerCredentials & scc, const bool, const std::string &)
+    static MySQLIntegration * TestAndAddMySQLConnection(const FuzzConfig &, const ServerCredentials &, const bool, const std::string &)
     {
         std::cout << "ClickHouse not compiled with MySQL connector, skipping MySQL integration" << std::endl;
         return nullptr;
     }
 
     ~MySQLIntegration() override = default;
-};
 #endif
+};
 
-#if defined USE_LIBPQXX && USE_LIBPQXX
 class PostgreSQLIntegration : public ClickHouseIntegratedDatabase
 {
+#if defined USE_LIBPQXX && USE_LIBPQXX
 private:
     pqxx::connection * postgres_connection = nullptr;
 
@@ -447,12 +446,9 @@ public:
     }
 
     ~PostgreSQLIntegration() override { delete postgres_connection; }
-};
 #else
-class PostgreSQLIntegration : public ClickHouseIntegration
-{
 public:
-    PostgreSQLIntegration(const FuzzConfig & fcc, const ServerCredentials & scc) : ClickHouseIntegration(fcc, scc) { }
+    PostgreSQLIntegration(const FuzzConfig & fcc, const ServerCredentials & scc) : ClickHouseIntegratedDatabase(fcc, scc) { }
 
     static PostgreSQLIntegration * TestAndAddPostgreSQLIntegration(const FuzzConfig &, const ServerCredentials &, const bool)
     {
@@ -461,12 +457,12 @@ public:
     }
 
     ~PostgreSQLIntegration() override = default;
-};
 #endif
+};
 
-#if defined USE_SQLITE && USE_SQLITE
 class SQLiteIntegration : public ClickHouseIntegratedDatabase
 {
+#if defined USE_SQLITE && USE_SQLITE
 private:
     sqlite3 * sqlite_connection = nullptr;
 
@@ -541,14 +537,11 @@ public:
             sqlite3_close(sqlite_connection);
         }
     }
-};
 #else
-class SQLiteIntegration : public ClickHouseIntegration
-{
 public:
     const std::filesystem::path sqlite_path;
 
-    SQLiteIntegration(const FuzzConfig & fcc, const ServerCredentials & scc) : ClickHouseIntegration(fcc, scc) { }
+    SQLiteIntegration(const FuzzConfig & fcc, const ServerCredentials & scc) : ClickHouseIntegratedDatabase(fcc, scc) { }
 
     static SQLiteIntegration * TestAndAddSQLiteIntegration(const FuzzConfig &, const ServerCredentials &)
     {
@@ -557,8 +550,8 @@ public:
     }
 
     ~SQLiteIntegration() override = default;
-};
 #endif
+};
 
 class RedisIntegration : public ClickHouseIntegration
 {
@@ -578,9 +571,9 @@ public:
     ~RedisIntegration() override = default;
 };
 
-#if defined USE_MONGODB && USE_MONGODB
 class MongoDBIntegration : public ClickHouseIntegration
 {
+#if defined USE_MONGODB && USE_MONGODB
 private:
     std::string buf2;
     std::ofstream out_file;
@@ -718,10 +711,7 @@ public:
     }
 
     ~MongoDBIntegration() override = default;
-};
 #else
-class MongoDBIntegration : public ClickHouseIntegration
-{
 public:
     MongoDBIntegration(const FuzzConfig & fcc, const ServerCredentials & scc) : ClickHouseIntegration(fcc, scc) { }
 
@@ -732,8 +722,8 @@ public:
     }
 
     ~MongoDBIntegration() override = default;
-};
 #endif
+};
 
 class MinIOIntegration : public ClickHouseIntegration
 {
