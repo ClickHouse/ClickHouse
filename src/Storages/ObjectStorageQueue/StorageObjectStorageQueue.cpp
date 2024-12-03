@@ -741,8 +741,7 @@ StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const Ac
 
     const auto & table_metadata = getTableMetadata();
     bool file_deletion_enabled = table_metadata.getMode() == ObjectStorageQueueMode::UNORDERED
-        && table_metadata.tracked_files_ttl_sec
-        && table_metadata.tracked_files_limit;
+        && (table_metadata.tracked_files_ttl_sec || table_metadata.tracked_files_limit);
 
     return std::make_shared<FileIterator>(
         files_metadata, std::move(glob_iterator), object_storage, file_deletion_enabled, shutdown_called, log);

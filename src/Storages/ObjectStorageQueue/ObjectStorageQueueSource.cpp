@@ -120,7 +120,7 @@ ObjectStorageQueueSource::Source::ObjectInfoPtr ObjectStorageQueueSource::FileIt
         if (file_metadata->setProcessing())
         {
             if (file_deletion_on_processed_enabled
-                && !object_storage->exists(StoredObject(object_info->getPath())))
+                && !object_storage->exists(StoredObject(object_info->relative_path)))
             {
                 /// Imagine the following case:
                 /// Replica A processed fileA and deletes it afterwards.
