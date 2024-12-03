@@ -371,7 +371,8 @@ SpillMemoryStats FillingRightJoinSideTransform::getSpillMemoryStats()
     {
         SpillMemoryStats res;
         res.spillable_bytes = grace_join->getTotalByteCount();
-        res.spill_aux_bytes = res.spillable_bytes;
+        // in case the hash table will resize which will require more than 2x additional memory.
+        res.spill_aux_bytes = res.spillable_bytes * 3;
         return res;
     }
     return {};

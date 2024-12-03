@@ -24,8 +24,9 @@ Int64 MemorySpillScheduler::needSpill(IProcessor * processor)
     refreshTopProcessor();
     if (getCurrentQueryMemoryUsage() + max_spill_aux_bytes < getHardLimit())
         return 0;
-    LOG_ERROR(getLogger("RelaimableMemorySpillManager"), "need to spill. current memory usage: {}, hard limit: {}, max_spill_aux_bytes: {}",
-              getCurrentQueryMemoryUsage(), getHardLimit(), max_spill_aux_bytes);
+    LOG_DEBUG(getLogger("MemorySpillScheduler"),
+        "need to spill. current memory usage: {}, hard limit: {}, max_spill_aux_bytes: {}",
+        getCurrentQueryMemoryUsage(), getHardLimit(), max_spill_aux_bytes);
     refreshTopProcessor();
     return processor == top_processor ? stats.spillable_bytes : 0;
 }
