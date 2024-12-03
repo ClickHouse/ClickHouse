@@ -2326,7 +2326,7 @@ message JoinClause {
 
 message JoinedDerivedQuery {
     required Select select = 1;
-    required Table table_alias = 2;
+    optional Table table_alias = 2;
 }
 
 message JoinedTable {

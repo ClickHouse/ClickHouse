@@ -168,6 +168,17 @@ public:
         return res;
     }
 
+    size_t numberOfInsertableColumns() const
+    {
+        size_t res = 0;
+
+        for (const auto & entry : cols)
+        {
+            res += entry.second.CanBeInserted() ? 1 : 0;
+        }
+        return res;
+    }
+
     bool supportsFinal() const
     {
         return (teng >= TableEngineValues::ReplacingMergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree)

@@ -507,7 +507,26 @@ public:
     void MySQLtypeName(RandomGenerator &, std::string &, const bool) const override { assert(0); }
     void PostgreSQLtypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
-        subtype->PostgreSQLtypeName(rg, ret, escape);
+        const SQLType * nsubtype = subtype;
+        const Nullable * nl = nullptr;
+        const LowCardinality * lc = nullptr;
+
+        while (true)
+        {
+            if ((nl = dynamic_cast<const Nullable *>(nsubtype)))
+            {
+                nsubtype = nl->subtype;
+            }
+            else if ((lc = dynamic_cast<const LowCardinality *>(nsubtype)))
+            {
+                nsubtype = lc->subtype;
+            }
+            else
+            {
+                break;
+            }
+        }
+        nsubtype->PostgreSQLtypeName(rg, ret, escape);
         ret += "[]";
     }
     void SQLitetypeName(RandomGenerator &, std::string &, const bool) const override { assert(0); }
@@ -669,7 +688,7 @@ public:
     }
 };
 
-template <typename T, bool SArray>
+template <typename T, bool SArray, bool SNullable>
 bool hasType(const SQLType * tp)
 {
     const Nullable * nl;
@@ -680,19 +699,22 @@ bool hasType(const SQLType * tp)
     {
         return true;
     }
-    if ((nl = dynamic_cast<const Nullable *>(tp)))
+    if constexpr (SNullable)
     {
-        return hasType<T, SArray>(nl->subtype);
+        if ((nl = dynamic_cast<const Nullable *>(tp)))
+        {
+            return hasType<T, SArray, SNullable>(nl->subtype);
+        }
     }
     if ((lc = dynamic_cast<const LowCardinality *>(tp)))
     {
-        return hasType<T, SArray>(lc->subtype);
+        return hasType<T, SArray, SNullable>(lc->subtype);
     }
     if constexpr (SArray)
     {
         if ((at = dynamic_cast<const ArrayType *>(tp)))
         {
-            return hasType<T, SArray>(at->subtype);
+            return hasType<T, SArray, SNullable>(at->subtype);
         }
     }
     return false;

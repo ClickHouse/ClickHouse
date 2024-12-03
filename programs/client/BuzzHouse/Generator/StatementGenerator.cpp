@@ -151,7 +151,7 @@ int StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView 
     cv->set_replace(replace);
     next.is_materialized = rg.nextBool();
     cv->set_materialized(next.is_materialized);
-    next.ncols = (rg.nextMediumNumber() % (rg.nextBool() ? 5 : 30)) + 1;
+    next.ncols = (rg.nextMediumNumber() % 5) + 1;
     if (next.db)
     {
         est->mutable_database()->set_database("d" + std::to_string(next.db->dname));
@@ -747,7 +747,7 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
             }
             else
             {
-                v.staged_ncols = (rg.nextMediumNumber() % (rg.nextBool() ? 5 : 30)) + 1;
+                v.staged_ncols = (rg.nextMediumNumber() % 5) + 1;
                 if (v.is_deterministic)
                 {
                     this->setAllowNotDetermistic(false);
@@ -1709,7 +1709,7 @@ int StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner * 
         * static_cast<uint32_t>(
                               collectionCount<SQLTable>(attached_tables) > 3 || collectionCount<SQLView>(attached_views) > 3
                               || collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3 || functions.size() > 3),
-                   insert = 120 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables)),
+                   insert = 150 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables)),
                    light_delete = 6 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables)),
                    truncate = 2
         * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases)
@@ -1748,7 +1748,7 @@ int StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner * 
                                 || collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3),
                    create_database = 2 * static_cast<uint32_t>(static_cast<uint32_t>(databases.size()) < this->fc.max_databases),
                    create_function = 5 * static_cast<uint32_t>(static_cast<uint32_t>(functions.size()) < this->fc.max_functions),
-                   select_query = 450,
+                   select_query = 800,
                    prob_space = create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table
         + desc_table + exchange_tables + alter_table + set_values + attach + detach + create_database + create_function + select_query;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
@@ -1965,13 +1965,16 @@ int StatementGenerator::generateNextStatement(RandomGenerator & rg, SQLQuery & s
     }
 }
 
-void StatementGenerator::dropTable(const bool staged, const uint32_t tname)
+void StatementGenerator::dropTable(const bool staged, bool drop_peer, const uint32_t tname)
 {
     auto & map_to_delete = staged ? this->staged_tables : this->tables;
 
     if (map_to_delete.find(tname) != map_to_delete.end())
     {
-        connections.dropPeerTableOnRemote(map_to_delete[tname]);
+        if (drop_peer)
+        {
+            connections.dropPeerTableOnRemote(map_to_delete[tname]);
+        }
         map_to_delete.erase(tname);
     }
 }
@@ -1983,7 +1986,7 @@ void StatementGenerator::dropDatabase(const uint32_t dname)
         ++next_it;
         if (it->second.db && it->second.db->dname == dname)
         {
-            dropTable(false, it->first);
+            dropTable(false, true, it->first);
         }
     }
     for (auto it = this->views.cbegin(), next_it = it; it != this->views.cend(); it = next_it)
@@ -2011,11 +2014,11 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
         {
             if (query.create_table().replace())
             {
-                dropTable(false, tname);
+                dropTable(false, true, tname);
             }
             this->tables[tname] = std::move(this->staged_tables[tname]);
         }
-        dropTable(true, tname);
+        dropTable(true, !success, tname);
     }
     else if ((sq.has_explain() || sq.has_inner_query()) && query.has_create_view())
     {
@@ -2037,7 +2040,7 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
 
         if (drp.sobject() == SQLObject::TABLE)
         {
-            dropTable(false, static_cast<uint32_t>(std::stoul(drp.object().est().table().table().substr(1))));
+            dropTable(false, true, static_cast<uint32_t>(std::stoul(drp.object().est().table().table().substr(1))));
         }
         else if (drp.sobject() == SQLObject::VIEW)
         {

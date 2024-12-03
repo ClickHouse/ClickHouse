@@ -30,7 +30,6 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
     {"allow_introspection_functions", trueOrFalse},
     {"allow_prefetched_read_pool_for_remote_filesystem", trueOrFalse},
     {"allow_reorder_prewhere_conditions", trueOrFalse},
-    {"allow_suspicious_low_cardinality_types", trueOrFalse},
     {"alter_sync", zeroOneTwo},
     {"any_join_distinct_right_table_keys", trueOrFalse},
     {"async_insert", trueOrFalse},
@@ -60,17 +59,11 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
      }},
     //{"deduplicate_blocks_in_dependent_materialized_views", trueOrFalse},
     {"date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands", trueOrFalse},
-    {"date_time_input_format",
-     [](RandomGenerator & rg, std::string & ret)
-     {
-         ret += "'";
-         ret += rg.nextBool() ? "best_effort" : "basic";
-         ret += "'";
-     }},
     {"date_time_output_format",
      [](RandomGenerator & rg, std::string & ret)
      {
-         const std::vector<std::string> & choices = {"simple", "iso", "unix_timestamp"};
+         const std::vector<std::string> & choices
+             = {"'simple', date_time_input_format = 'basic'", "'iso', date_time_input_format = 'best_effort'"};
          ret += "'";
          ret += rg.pickRandomlyFromVector(choices);
          ret += "'";
@@ -279,14 +272,6 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
          ret += "'";
      }},
     {"join_any_take_last_row", trueOrFalse},
-    {"join_default_strictness",
-     [](RandomGenerator & rg, std::string & ret)
-     {
-         const std::vector<std::string> & choices = {"ALL", "ANY", "ASOF"}; /*Don't use empty case*/
-         ret += "'";
-         ret += rg.pickRandomlyFromVector(choices);
-         ret += "'";
-     }},
     /*{"join_overflow_mode",
      [](RandomGenerator & rg, std::string & ret)
      {
@@ -799,12 +784,6 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
         [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 0, 1000)); }},
        {"non_replicated_deduplication_window",
         [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 0, 1000)); }},
-       {"number_of_free_entries_in_pool_to_lower_max_size_of_merge",
-        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.3, 1, 100)); }},
-       {"number_of_free_entries_in_pool_to_execute_mutation",
-        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.3, 1, 100)); }},
-       {"number_of_free_entries_in_pool_to_execute_optimize_entire_partition",
-        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.3, 1, 100)); }},
        {"old_parts_lifetime",
         [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.3, 10, 8 * 60)); }},
        {"optimize_row_order", trueOrFalse},

@@ -663,7 +663,7 @@ int QueryOracle::replaceQueryWithTablePeers(
     peer_queries.clear();
 
     sq2.CopyFrom(sq1);
-    findTablesWithPeersAndReplace(sq2, gen);
+    findTablesWithPeersAndReplace(const_cast<Select &>(sq2.inner_query().select().sel()), gen);
     for (const auto & entry : found_tables)
     {
         SQLQuery next;

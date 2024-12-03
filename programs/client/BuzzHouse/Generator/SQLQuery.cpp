@@ -130,7 +130,7 @@ int StatementGenerator::setTableRemote(const SQLTable & t, TableFunction * tfunc
         const ServerCredentials & sc = fc.mysql_server.value();
         MySQLFunc * mfunc = tfunc->mutable_mysql();
 
-        mfunc->set_address(sc.hostname + ":" + std::to_string(sc.port));
+        mfunc->set_address(sc.hostname + ":" + std::to_string(sc.mysql_port ? sc.mysql_port : sc.port));
         mfunc->set_rdatabase(sc.database);
         mfunc->set_rtable("t" + std::to_string(t.tname));
         mfunc->set_user(sc.user);
@@ -148,7 +148,7 @@ int StatementGenerator::setTableRemote(const SQLTable & t, TableFunction * tfunc
         pfunc->set_password(sc.password);
         pfunc->set_rschema("test");
     }
-    else if (t.hasPostgreSQLPeer())
+    else if (t.hasSQLitePeer())
     {
         SQLiteFunc * sfunc = tfunc->mutable_sqite();
 
@@ -762,7 +762,7 @@ int StatementGenerator::generateGroupBy(
         return 0;
     }
     this->depth++;
-    if (enforce_having || rg.nextSmallNumber() < (available_cols.empty() ? 3 : 9))
+    if (enforce_having || !allow_settings || rg.nextSmallNumber() < (available_cols.empty() ? 3 : 9))
     {
         std::vector<GroupCol> gcols;
         const uint32_t next_opt = rg.nextMediumNumber();
@@ -841,7 +841,7 @@ int StatementGenerator::generateGroupBy(
 
 int StatementGenerator::generateOrderBy(RandomGenerator & rg, const uint32_t ncols, const bool allow_settings, OrderByStatement * ob)
 {
-    if (rg.nextSmallNumber() < 3)
+    if (allow_settings && rg.nextSmallNumber() < 3)
     {
         ob->set_oall(true);
     }
@@ -1082,7 +1082,7 @@ int StatementGenerator::addCTEs(RandomGenerator & rg, const uint32_t allowed_cla
 }
 
 int StatementGenerator::generateSelect(
-    RandomGenerator & rg, const bool top, bool force_global_agg, const uint32_t ncols, const uint32_t allowed_clauses, Select * sel)
+    RandomGenerator & rg, const bool top, bool force_global_agg, const uint32_t ncols, uint32_t allowed_clauses, Select * sel)
 {
     int res = 0;
 
@@ -1143,7 +1143,15 @@ int StatementGenerator::generateSelect(
 
             force_global_agg |= nopt < 4;
             force_group_by |= nopt > 3 && nopt < 7;
-            force_order_by |= nopt > 6;
+            if (force_global_agg || force_group_by)
+            {
+                allowed_clauses &= ~(allow_orderby);
+            }
+            else
+            {
+                allowed_clauses &= ~(allow_groupby | allow_global_aggregate);
+                force_order_by = true;
+            }
         }
 
         if ((allowed_clauses & allow_groupby) && !force_global_agg && this->depth < this->fc.max_depth && this->width < this->fc.max_width
@@ -1153,7 +1161,8 @@ int StatementGenerator::generateSelect(
         }
         else
         {
-            this->levels[this->current_level].global_aggregate = force_global_agg || rg.nextSmallNumber() < 4;
+            this->levels[this->current_level].global_aggregate
+                = (allowed_clauses & allow_global_aggregate) && (force_global_agg || rg.nextSmallNumber() < 4);
         }
         this->levels[this->current_level].allow_aggregates = prev_allow_aggregates;
         this->levels[this->current_level].allow_window_funcs = prev_allow_window_funcs;

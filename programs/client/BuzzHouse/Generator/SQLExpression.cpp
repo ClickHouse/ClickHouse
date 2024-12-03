@@ -91,19 +91,19 @@ int StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * ex
         const SQLType * tp = randomNextType(rg, ~(allow_nested), col_counter, expr->mutable_dynamic_subtype()->mutable_type());
         delete tp;
     }
-    if (nsuboption < 15)
+    if (nsuboption < 8)
     {
         expr->set_null(true);
     }
-    else if (nsuboption < 31)
+    else if (nsuboption < 15)
     {
         expr->set_keys(true);
     }
-    else if (nsuboption < 46)
+    else if (nsuboption < 22)
     {
         expr->set_values(true);
     }
-    else if (nsuboption < 61)
+    else if (nsuboption < 29)
     {
         expr->set_array_size(rg.nextMediumNumber() % 3);
     }
@@ -1049,7 +1049,7 @@ int StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
         this->levels[this->current_level].allow_window_funcs = prev_allow_window_funcs;
     }
     addFieldAccess(rg, expr, 16);
-    if (eca && this->allow_in_expression_alias && rg.nextSmallNumber() < 4)
+    if (eca && this->allow_in_expression_alias && !this->inside_projection && rg.nextSmallNumber() < 4)
     {
         SQLRelation rel("");
         const uint32_t cname = this->levels[this->current_level].aliases_counter++;

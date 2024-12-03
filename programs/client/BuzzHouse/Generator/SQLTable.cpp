@@ -233,7 +233,7 @@ int StatementGenerator::generateTableKey(RandomGenerator & rg, const TableEngine
             {
                 const InsertEntry & entry = this->entries[i];
 
-                if ((hasType<DateType, false>(entry.tp) || hasType<DateTimeType, false>(entry.tp)) && rg.nextBool())
+                if ((hasType<DateType, false, true>(entry.tp) || hasType<DateTimeType, false, true>(entry.tp)) && rg.nextBool())
                 {
                     //Use date functions for partitioning/keys
                     SQLFuncCall * func_call = tkey->add_exprs()->mutable_comp_expr()->mutable_func_call();
@@ -241,7 +241,7 @@ int StatementGenerator::generateTableKey(RandomGenerator & rg, const TableEngine
                     func_call->mutable_func()->set_catalog_func(rg.pickRandomlyFromVector(dates_hash));
                     insertEntryRef(entry, func_call->add_args()->mutable_expr());
                 }
-                else if (hasType<IntType, true>(entry.tp) && rg.nextBool())
+                else if (hasType<IntType, true, true>(entry.tp) && rg.nextBool())
                 {
                     //Use modulo function for partitioning/keys
                     BinaryExpr * bexpr = tkey->add_exprs()->mutable_comp_expr()->mutable_binary_expr();
@@ -276,19 +276,23 @@ int StatementGenerator::generateMergeTreeEngineDetails(
     {
         generateTableKey(rg, teng, te->mutable_order());
     }
-    if (te->order().exprs_size() && add_pkey && rg.nextSmallNumber() < 5)
+    if (te->has_order() && add_pkey && rg.nextSmallNumber() < 5)
     {
         //pkey is a subset of order by
         TableKey * tkey = te->mutable_primary_key();
-        std::uniform_int_distribution<uint32_t> table_order_by(1, te->order().exprs_size());
-        const uint32_t pkey_size = table_order_by(rg.generator);
 
-        for (uint32_t i = 0; i < pkey_size; i++)
+        if (te->order().exprs_size())
         {
-            tkey->add_exprs()->CopyFrom(te->order().exprs(i));
+            std::uniform_int_distribution<uint32_t> table_order_by(1, te->order().exprs_size());
+            const uint32_t pkey_size = table_order_by(rg.generator);
+
+            for (uint32_t i = 0; i < pkey_size; i++)
+            {
+                tkey->add_exprs()->CopyFrom(te->order().exprs(i));
+            }
         }
     }
-    else if (!te->order().exprs_size() && add_pkey)
+    else if (!te->has_order() && add_pkey)
     {
         generateTableKey(rg, teng, te->mutable_primary_key());
     }
@@ -607,7 +611,7 @@ int StatementGenerator::addTableColumn(
     {
         generateNextStatistics(rg, cd->mutable_stats());
     }
-    if (rg.nextSmallNumber() < 2)
+    if (col.special == ColumnSpecial::NONE && rg.nextSmallNumber() < 2)
     {
         DefaultModifier * def_value = cd->mutable_defaultv();
         DModifier dmod = static_cast<DModifier>((rg.nextRandomUInt32() % static_cast<uint32_t>(DModifier_MAX)) + 1);
@@ -678,7 +682,7 @@ int StatementGenerator::addTableColumn(
                 }
             }
         }
-        if (!csettings.empty() && rg.nextMediumNumber() < 16)
+        if ((!col.dmod.has_value() || col.dmod.value() != DModifier::DEF_EPHEMERAL) && !csettings.empty() && rg.nextMediumNumber() < 16)
         {
             generateSettingValues(rg, csettings, cd->mutable_settings());
         }
@@ -716,7 +720,7 @@ int StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const 
             {
                 for (const auto & entry2 : ntp->subtypes)
                 {
-                    if (itpe < IndexType::IDX_ngrambf_v1 || hasType<StringType, true>(entry2.subtype))
+                    if (itpe < IndexType::IDX_ngrambf_v1 || hasType<StringType, true, false>(entry2.subtype))
                     {
                         entries.push_back(InsertEntry(
                             entry.second.nullable,
@@ -728,7 +732,7 @@ int StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const 
                     }
                 }
             }
-            else if (itpe < IndexType::IDX_ngrambf_v1 || hasType<StringType, true>(entry.second.tp))
+            else if (itpe < IndexType::IDX_ngrambf_v1 || hasType<StringType, true, false>(entry.second.tp))
             {
                 entries.push_back(InsertEntry(
                     entry.second.nullable, entry.second.special, entry.second.cname, std::nullopt, entry.second.tp, entry.second.dmod));
@@ -867,23 +871,26 @@ int StatementGenerator::addTableConstraint(RandomGenerator & rg, SQLTable & t, c
 PeerTableDatabase StatementGenerator::getNextPeerTableDatabase(RandomGenerator & rg, TableEngineValues teng)
 {
     assert(this->ids.empty());
-    if (teng != TableEngineValues::MySQL && connections.hasMySQLConnection())
+    if (teng != TableEngineValues::Set)
     {
-        this->ids.push_back(PeerTableDatabase::PeerMySQL);
-    }
-    if (teng != TableEngineValues::PostgreSQL && connections.hasPostgreSQLConnection())
-    {
-        this->ids.push_back(PeerTableDatabase::PeerPostgreSQL);
-    }
-    if (teng != TableEngineValues::SQLite && connections.hasSQLiteConnection())
-    {
-        this->ids.push_back(PeerTableDatabase::PeerSQLite);
-    }
-    if (teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree
-        && connections.hasClickHouseExtraServerConnection())
-    {
-        this->ids.push_back(PeerTableDatabase::PeerClickHouse);
-        this->ids.push_back(PeerTableDatabase::PeerClickHouse); // give more probability
+        if (teng != TableEngineValues::MySQL && connections.hasMySQLConnection())
+        {
+            this->ids.push_back(PeerTableDatabase::PeerMySQL);
+        }
+        if (teng != TableEngineValues::PostgreSQL && connections.hasPostgreSQLConnection())
+        {
+            this->ids.push_back(PeerTableDatabase::PeerPostgreSQL);
+        }
+        if (teng != TableEngineValues::SQLite && connections.hasSQLiteConnection())
+        {
+            this->ids.push_back(PeerTableDatabase::PeerSQLite);
+        }
+        if (teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree
+            && connections.hasClickHouseExtraServerConnection())
+        {
+            this->ids.push_back(PeerTableDatabase::PeerClickHouse);
+            this->ids.push_back(PeerTableDatabase::PeerClickHouse); // give more probability
+        }
     }
     const auto res = (this->ids.empty() || rg.nextBool()) ? PeerTableDatabase::PeerNone
                                                           : static_cast<PeerTableDatabase>(rg.pickRandomlyFromVector(this->ids));
@@ -1032,7 +1039,7 @@ int StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTabl
             && !next.hasSQLitePeer() && rg.nextSmallNumber() < 4;
         uint32_t added_cols = 0, added_idxs = 0, added_projs = 0, added_consts = 0, added_sign = 0, added_is_deleted = 0, added_version = 0;
         const uint32_t to_addcols
-            = (rg.nextMediumNumber() % (rg.nextBool() ? 5 : 30)) + 1,
+            = (rg.nextMediumNumber() % 5) + 1,
             to_addidxs = (rg.nextMediumNumber() % 4) * static_cast<uint32_t>(next.isMergeTreeFamily() && rg.nextSmallNumber() < 4),
             to_addprojs = (rg.nextMediumNumber() % 3) * static_cast<uint32_t>(next.isMergeTreeFamily() && rg.nextSmallNumber() < 5),
             to_addconsts = (rg.nextMediumNumber() % 3) * static_cast<uint32_t>(rg.nextSmallNumber() < 3),
@@ -1120,7 +1127,7 @@ int StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTabl
                 rg,
                 true,
                 false,
-                static_cast<uint32_t>(next.realNumberOfColumns()),
+                static_cast<uint32_t>(next.numberOfInsertableColumns()),
                 std::numeric_limits<uint32_t>::max(),
                 ct->mutable_as_select_stmt());
         }

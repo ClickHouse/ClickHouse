@@ -61,8 +61,9 @@ public:
 };
 
 const constexpr uint32_t allow_set = (1 << 0), allow_cte = (1 << 1), allow_distinct = (1 << 2), allow_from = (1 << 3),
-                         allow_prewhere = (1 << 4), allow_where = (1 << 5), allow_groupby = (1 << 6), allow_groupby_settings = (1 << 7),
-                         allow_orderby = (1 << 8), allow_orderby_settings = (1 << 9), allow_limit = (1 << 10);
+                         allow_prewhere = (1 << 4), allow_where = (1 << 5), allow_groupby = (1 << 6), allow_global_aggregate = (1 << 7),
+                         allow_groupby_settings = (1 << 8), allow_orderby = (1 << 9), allow_orderby_settings = (1 << 10),
+                         allow_limit = (1 << 11);
 
 class StatementGenerator
 {
@@ -312,7 +313,7 @@ private:
     const SQLType * randomNextType(RandomGenerator & rg, uint32_t allowed_types);
     const SQLType * randomNextType(RandomGenerator & rg, uint32_t allowed_types, uint32_t & col_counter, TopTypeName * tp);
 
-    void dropTable(bool staged, uint32_t tname);
+    void dropTable(bool staged, bool drop_peer, uint32_t tname);
     void dropDatabase(uint32_t dname);
 
     template <bool AllowParts>

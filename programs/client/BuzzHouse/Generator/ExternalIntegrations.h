@@ -203,7 +203,7 @@ public:
                      scc.user.empty() ? nullptr : scc.user.c_str(),
                      scc.password.empty() ? nullptr : scc.password.c_str(),
                      nullptr,
-                     scc.port,
+                     scc.mysql_port ? scc.mysql_port : scc.port,
                      scc.unix_socket.empty() ? nullptr : scc.unix_socket.c_str(),
                      0))
         {
@@ -231,7 +231,7 @@ public:
 
     void setEngineDetails(RandomGenerator & rg, const SQLBase &, const std::string & tname, TableEngine * te) override
     {
-        te->add_params()->set_svalue(sc.hostname + ":" + std::to_string(sc.port));
+        te->add_params()->set_svalue(sc.hostname + ":" + std::to_string(sc.mysql_port ? sc.mysql_port : sc.port));
         te->add_params()->set_svalue(sc.database);
         te->add_params()->set_svalue(tname);
         te->add_params()->set_svalue(sc.user);

@@ -1653,8 +1653,12 @@ CONV_FN(JoinedDerivedQuery, tos)
 {
     ret += "(";
     SelectToString(ret, tos.select());
-    ret += ") ";
-    TableToString(ret, tos.table_alias());
+    ret += ")";
+    if (tos.has_table_alias())
+    {
+        ret += " ";
+        TableToString(ret, tos.table_alias());
+    }
 }
 
 CONV_FN(JoinedTable, jt)

@@ -34,21 +34,22 @@ class ServerCredentials
 {
 public:
     std::string hostname;
-    uint32_t port;
+    uint32_t port, mysql_port;
     std::string unix_socket, user, password, database;
     std::filesystem::path query_log_file;
 
-    ServerCredentials() : hostname("localhost"), port(0), user("test") { }
+    ServerCredentials() : hostname("localhost"), port(0), mysql_port(0), user("test") { }
 
     ServerCredentials(
         const std::string & h,
         const uint32_t p,
+        const uint32_t mp,
         const std::string & us,
         const std::string & u,
         const std::string & pass,
         const std::string & db,
         const std::filesystem::path & qlf)
-        : hostname(h), port(p), unix_socket(us), user(u), password(pass), database(db), query_log_file(qlf)
+        : hostname(h), port(p), mysql_port(mp), unix_socket(us), user(u), password(pass), database(db), query_log_file(qlf)
     {
     }
 
@@ -58,10 +59,10 @@ public:
     ServerCredentials & operator=(ServerCredentials && c) = default;
 };
 
-static std::optional<ServerCredentials>
-loadServerCredentials(const JSONParserImpl::Element & jobj, const std::string & sname, const uint32_t & default_port)
+static std::optional<ServerCredentials> loadServerCredentials(
+    const JSONParserImpl::Element & jobj, const std::string & sname, const uint32_t default_port, const uint32_t default_mysql_port = 0)
 {
-    uint32_t port = default_port;
+    uint32_t port = default_port, mysql_port = default_mysql_port;
     std::string hostname = "localhost", unix_socket, user = "test", password, database = "test";
     std::filesystem::path query_log_file = std::filesystem::temp_directory_path() / (sname + ".sql");
 
@@ -74,6 +75,10 @@ loadServerCredentials(const JSONParserImpl::Element & jobj, const std::string & 
         else if (key == "port")
         {
             port = static_cast<uint32_t>(value.getUInt64());
+        }
+        else if (key == "mysql_port")
+        {
+            mysql_port = static_cast<uint32_t>(value.getUInt64());
         }
         else if (key == "unix_socket")
         {
@@ -100,7 +105,8 @@ loadServerCredentials(const JSONParserImpl::Element & jobj, const std::string & 
             throw std::runtime_error("Unknown option: " + std::string(key));
         }
     }
-    return std::optional<ServerCredentials>(ServerCredentials(hostname, port, unix_socket, user, password, database, query_log_file));
+    return std::optional<ServerCredentials>(
+        ServerCredentials(hostname, port, mysql_port, unix_socket, user, password, database, query_log_file));
 }
 
 class FuzzConfig
@@ -196,11 +202,11 @@ public:
             }
             else if (key == "clickhouse")
             {
-                clickhouse_server = loadServerCredentials(value, "clickhouse", 9004);
+                clickhouse_server = loadServerCredentials(value, "clickhouse", 9004, 9005);
             }
             else if (key == "mysql")
             {
-                mysql_server = loadServerCredentials(value, "mysql", 33060);
+                mysql_server = loadServerCredentials(value, "mysql", 3306, 3306);
             }
             else if (key == "postgresql")
             {
