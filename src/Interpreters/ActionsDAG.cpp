@@ -133,27 +133,32 @@ size_t ActionsDAG::Node::getHash() const
     updateHash(hash_state);
     return hash_state.get64();
 }
+
 void ActionsDAG::Node::updateHash(SipHash & hash_state) const
 {
     hash_state.update(type);
 
-    if (result_type)
-        hash_state.update(result_type->getName());
-
     if (!result_name.empty())
         hash_state.update(result_name);
 
-    if (column)
-        hash_state.update(column->getName());
+    if (result_type)
+        hash_state.update(result_type->getName());
 
     if (function_base)
         hash_state.update(function_base->getName());
 
-    hash_state.update(children.size());
+    if (function)
+        hash_state.update(function->getName());
+
+    hash_state.update(is_function_compiled);
+    hash_state.update(is_deterministic_constant);
+
+    if (column)
+        hash_state.update(column->getName());
+
     for (const auto & child : children)
         child->updateHash(hash_state);
 }
-
 
 ActionsDAG::ActionsDAG(const NamesAndTypesList & inputs_)
 {

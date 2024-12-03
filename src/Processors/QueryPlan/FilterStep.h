@@ -26,7 +26,7 @@ public:
     ActionsDAG & getExpression() { return actions_dag; }
     const String & getFilterColumnName() const { return filter_column_name; }
     bool removesFilterColumn() const { return remove_filter_column; }
-    void setQueryConditionKey(size_t condition_id_);
+    void setQueryConditionKey(size_t condition_hash_);
 
     static bool canUseType(const DataTypePtr & type);
 
@@ -37,7 +37,7 @@ private:
     String filter_column_name;
     bool remove_filter_column;
 
-    std::optional<size_t> condition_id;
+    std::optional<size_t> condition_hash;
 };
 
 }

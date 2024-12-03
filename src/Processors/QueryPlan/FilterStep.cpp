@@ -165,9 +165,8 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type)
     {
         bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
-        if (condition_id.has_value())
-            return std::make_shared<FilterTransform>(header, expression, filter_column_name, remove_filter_column, on_totals,
-                nullptr, condition_id);
+        if (condition_hash)
+            return std::make_shared<FilterTransform>(header, expression, filter_column_name, remove_filter_column, on_totals, nullptr, condition_hash);
 
         return std::make_shared<FilterTransform>(header, expression, filter_column_name, remove_filter_column, on_totals);
     });
@@ -244,9 +243,9 @@ void FilterStep::updateOutputHeader()
         return;
 }
 
-void FilterStep::setQueryConditionKey(size_t condition_id_)
+void FilterStep::setQueryConditionKey(size_t condition_hash_)
 {
-    condition_id = condition_id_;
+    condition_hash = condition_hash_;
 }
 
 bool FilterStep::canUseType(const DataTypePtr & filter_type)
