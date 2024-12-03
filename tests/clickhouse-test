@@ -2281,7 +2281,6 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite, bool
         test_suite,
         is_concurrent,
     ) = all_tests_with_params
-    all_tests = list(all_tests)  # don't modify the original
     global stop_time
     global exit_code
     global server_died
@@ -2697,7 +2696,7 @@ def do_run_tests(jobs, test_suite: TestSuite):
     if test_suite.sequential_tests:
         run_tests_array(
             (
-                test_suite.sequential_tests,
+                list(test_suite.sequential_tests),
                 len(test_suite.sequential_tests),
                 test_suite,
                 False,
