@@ -669,7 +669,7 @@ std::optional<Field> convertFieldToTypeStrict(const Field & from_value, const ID
     }
     catch (Exception & e)
     {
-        if (isEnum(from_type) && e.code() == ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM)
+        if (isEnum(to_type) && e.code() == ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM)
             return {};
         throw;
     }
