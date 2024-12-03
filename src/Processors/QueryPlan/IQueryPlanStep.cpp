@@ -10,6 +10,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+IQueryPlanStep::IQueryPlanStep()
+{
+    step_index = CurrentThread::isInitialized() ? CurrentThread::get().getNextPlanStepIndex() : 0;
+}
+
 void IQueryPlanStep::updateInputHeaders(Headers input_headers_)
 {
     input_headers = std::move(input_headers_);

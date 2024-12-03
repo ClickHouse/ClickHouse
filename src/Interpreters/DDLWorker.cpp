@@ -18,6 +18,7 @@
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ParserQuery.h>
+#include <IO/NullWriteBuffer.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Poco/Timestamp.h>
@@ -484,8 +485,6 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
     String query_to_show_in_logs = query_prefix + task.query_for_logging;
 
     ReadBufferFromString istr(query_to_execute);
-    String dummy_string;
-    WriteBufferFromString ostr(dummy_string);
     std::optional<CurrentThread::QueryScope> query_scope;
 
     try
@@ -505,7 +504,8 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
         if (!task.is_initial_query)
             query_scope.emplace(query_context);
 
-        executeQuery(istr, ostr, !task.is_initial_query, query_context, {}, QueryFlags{ .internal = false, .distributed_backup_restore = task.entry.is_backup_restore });
+        NullWriteBuffer nullwb;
+        executeQuery(istr, nullwb, !task.is_initial_query, query_context, {}, QueryFlags{ .internal = false, .distributed_backup_restore = task.entry.is_backup_restore });
 
         if (auto txn = query_context->getZooKeeperMetadataTransaction())
         {
@@ -990,7 +990,7 @@ void DDLWorker::cleanupQueue(Int64, const ZooKeeperPtr & zookeeper)
                 /// No one has started to process the entry, so node_path/active and node_path/finished nodes were never created, node_path has no children.
                 /// Entry became outdated, but we cannot remove remove it in a transaction with node_path/finished.
                 chassert(res[0]->error == Coordination::Error::ZOK && res[1]->error == Coordination::Error::ZNONODE);
-                rm_entry_res = zookeeper->tryRemove(node_path);
+                rm_entry_res = zookeeper->tryRemove(node_path);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
                 chassert(rm_entry_res != Coordination::Error::ZNOTEMPTY);
                 continue;
             }
