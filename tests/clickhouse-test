@@ -2281,7 +2281,7 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite, bool
         test_suite,
         is_concurrent,
     ) = all_tests_with_params
-    all_tests = list(all_tests) # don't modify the original
+    all_tests = list(all_tests)  # don't modify the original
     global stop_time
     global exit_code
     global server_died
