@@ -1,5 +1,6 @@
 #include <Processors/Executors/ExecutingGraph.h>
 #include <Common/Stopwatch.h>
+#include <Common/CurrentThread.h>
 
 #include <shared_mutex>
 #include <stack>
@@ -279,6 +280,10 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(uint64_t pid, Queue 
                     const auto last_status = node.last_processor_status;
                     IProcessor::Status status = processor.prepare(node.updated_input_ports, node.updated_output_ports);
                     node.last_processor_status = status;
+                    if (status == IProcessor::Status::Finished)
+                    {
+                        CurrentThread::getGroup()->reclaimable_memory_spill_manager.processorFinished(&processor);
+                    }
 
                     if (profile_processors)
                     {

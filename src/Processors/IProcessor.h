@@ -4,6 +4,7 @@
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Common/CurrentThread.h>
+#include <Common/ReclaimableMemorySpillManager.h>
 #include <Common/Stopwatch.h>
 
 #include <memory>
@@ -378,6 +379,19 @@ public:
     /// Set rows_before_aggregation counter for current processor.
     /// This counter is used to calculate the number of rows right before AggregatingTransform.
     virtual void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr /* counter */) { }
+
+    // aggregate, join and sort processors can be spillable.
+    // For unspillable processors, the memory usage is not tracked.
+    virtual bool spillable() const { return false; }
+    
+    virtual ProcessorReclaimableMemory getReclaimableMemoryUsage()
+    {
+        return {};
+    }
+
+    // Only the current reclaimable memory is larger than the memory_limit, the processor will be spilled.
+    // In case that one data is shared among multiple processors, the data should be spilled only once.
+    virtual void trySpill(size_t /*memory_limit*/) {}
 
 protected:
     virtual void onCancel() noexcept {}
