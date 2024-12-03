@@ -103,7 +103,6 @@
 #include <Backups/RestorerFromBackup.h>
 
 #include <Common/scope_guard_safe.h>
-#include <IO/SharedThreadPools.h>
 
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/replace.hpp>
@@ -208,7 +207,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool use_minimalistic_checksums_in_zookeeper;
     extern const MergeTreeSettingsBool use_minimalistic_part_header_in_zookeeper;
     extern const MergeTreeSettingsMilliseconds wait_for_unique_parts_send_before_shutdown_ms;
-    extern const MergeTreeSettingsBool prewarm_mark_cache;
 }
 
 namespace FailPoints
@@ -511,7 +509,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     }
 
     loadDataParts(skip_sanity_checks, expected_parts_on_this_replica);
-    prewarmMarkCacheIfNeeded(getActivePartsLoadingThreadPool().get());
 
     if (LoadingStrictnessLevel::ATTACH <= mode)
     {
@@ -2097,7 +2094,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
             const auto part_old_name = part_info->getPartNameV1();
             const auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_old_name, disk);
 
-            auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path(DETACHED_DIR_NAME) / part_old_name, getReadSettings())
+            auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path(DETACHED_DIR_NAME) / part_old_name)
                 .withPartFormatFromDisk()
                 .build();
 
@@ -5082,12 +5079,6 @@ bool StorageReplicatedMergeTree::fetchPart(
             {
                 LOG_DEBUG(log, "Part {} is rendered obsolete by fetching part {}", replaced_part->name, part_name);
                 ProfileEvents::increment(ProfileEvents::ObsoleteReplicatedParts);
-            }
-
-            if ((*getSettings())[MergeTreeSetting::prewarm_mark_cache] && getContext()->getMarkCache())
-            {
-                auto column_names = getColumnsToPrewarmMarks(*getSettings(), part->getColumns());
-                part->loadMarksToCache(column_names, getContext()->getMarkCache().get());
             }
 
             write_part_log({});
@@ -9899,14 +9890,7 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
         }
         else if (error_code == Coordination::Error::ZNOTEMPTY)
         {
-            LOG_TRACE(
-                logger,
-                "Cannot remove last parent zookeeper lock {} for part {} with id {}, another replica locked part concurrently",
-                zookeeper_part_uniq_node,
-                part_name,
-                part_id);
-            part_has_no_more_locks = false;
-            continue;
+            LOG_TRACE(logger, "Cannot remove last parent zookeeper lock {} for part {} with id {}, another replica locked part concurrently", zookeeper_part_uniq_node, part_name, part_id);
         }
         else if (error_code == Coordination::Error::ZNONODE)
         {

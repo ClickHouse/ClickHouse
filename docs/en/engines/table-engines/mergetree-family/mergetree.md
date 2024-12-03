@@ -684,7 +684,8 @@ If you perform the `SELECT` query between merges, you may get expired data. To a
 
 **See Also**
 
-- [ttl_only_drop_parts](/docs/en/operations/settings/merge-tree-settings#ttl_only_drop_parts) setting
+- [ttl_only_drop_parts](/docs/en/operations/settings/settings.md/#ttl_only_drop_parts) setting
+
 
 ## Disk types
 

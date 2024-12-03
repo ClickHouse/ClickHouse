@@ -74,7 +74,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsBool replace_long_file_name_to_hash;
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
-    extern const MergeTreeSettingsBool enable_index_granularity_compression;
 }
 
 namespace ErrorCodes
@@ -989,12 +988,6 @@ void finalizeMutatedPart(
     new_data_part->minmax_idx = source_part->minmax_idx;
     new_data_part->modification_time = time(nullptr);
 
-    if ((*new_data_part->storage.getSettings())[MergeTreeSetting::enable_index_granularity_compression])
-    {
-        if (auto new_index_granularity = new_data_part->index_granularity->optimize())
-            new_data_part->index_granularity = std::move(new_index_granularity);
-    }
-
     /// Load rest projections which are hardlinked
     bool noop;
     new_data_part->loadProjections(false, false, noop, true /* if_not_loaded */);
@@ -1394,14 +1387,6 @@ public:
         return false;
     }
 
-    void cancel() noexcept override
-    {
-        if (ctx->out)
-        {
-            ctx->out->cancel();
-        }
-    }
-
 private:
 
     void prepare()
@@ -1612,6 +1597,7 @@ private:
 
         ctx->minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
 
+        MergeTreeIndexGranularity computed_granularity;
         bool has_delete = false;
 
         for (auto & command_for_interpreter : ctx->for_interpreter)
@@ -1624,21 +1610,9 @@ private:
             }
         }
 
-        MergeTreeIndexGranularityPtr index_granularity_ptr;
         /// Reuse source part granularity if mutation does not change number of rows
         if (!has_delete && ctx->execute_ttl_type == ExecuteTTLType::NONE)
-        {
-            index_granularity_ptr = ctx->source_part->index_granularity;
-        }
-        else
-        {
-            index_granularity_ptr = createMergeTreeIndexGranularity(
-                ctx->new_data_part->rows_count,
-                ctx->new_data_part->getBytesUncompressedOnDisk(),
-                *ctx->data->getSettings(),
-                ctx->new_data_part->index_granularity_info,
-                /*blocks_are_granules=*/ false);
-        }
+            computed_granularity = ctx->source_part->index_granularity;
 
         ctx->out = std::make_shared<MergedBlockOutputStream>(
             ctx->new_data_part,
@@ -1647,12 +1621,11 @@ private:
             skip_indices,
             stats_to_rewrite,
             ctx->compression_codec,
-            std::move(index_granularity_ptr),
             ctx->txn ? ctx->txn->tid : Tx::PrehistoricTID,
             /*reset_columns=*/ true,
-            /*save_marks_in_cache=*/ false,
             /*blocks_are_granules_size=*/ false,
-            ctx->context->getWriteSettings());
+            ctx->context->getWriteSettings(),
+            computed_granularity);
 
         ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
         ctx->mutating_pipeline.setProgressCallback(ctx->progress_callback);
@@ -1735,14 +1708,6 @@ public:
             }
         }
         return false;
-    }
-
-    void cancel() noexcept override
-    {
-        if (ctx->out)
-        {
-            ctx->out->cancel();
-        }
     }
 
 private:
@@ -1882,10 +1847,13 @@ private:
                 ctx->new_data_part,
                 ctx->metadata_snapshot,
                 ctx->updated_header.getNamesAndTypesList(),
+                ctx->compression_codec,
                 std::vector<MergeTreeIndexPtr>(ctx->indices_to_recalc.begin(), ctx->indices_to_recalc.end()),
                 ColumnsStatistics(ctx->stats_to_recalc.begin(), ctx->stats_to_recalc.end()),
-                ctx->compression_codec,
-                ctx->source_part->index_granularity);
+                nullptr,
+                ctx->source_part->index_granularity,
+                &ctx->source_part->index_granularity_info
+            );
 
             ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
             ctx->mutating_pipeline.setProgressCallback(ctx->progress_callback);
@@ -1913,8 +1881,6 @@ private:
             ctx->new_data_part->checksums.add(std::move(changed_checksums));
 
             static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out)->finish(ctx->need_sync);
-
-            ctx->out.reset();
         }
 
         for (const auto & [rename_from, rename_to] : ctx->files_to_rename)
@@ -1992,11 +1958,6 @@ public:
             }
         }
         return false;
-    }
-
-    void cancel() noexcept override
-    {
-        executable_task->cancel();
     }
 
 private:
@@ -2104,12 +2065,6 @@ bool MutateTask::execute()
         }
     }
     return false;
-}
-
-void MutateTask::cancel() noexcept
-{
-    if (task)
-        task->cancel();
 }
 
 void MutateTask::updateProfileEvents() const
@@ -2332,7 +2287,7 @@ bool MutateTask::prepare()
     String tmp_part_dir_name = prefix + ctx->future_part->name;
     ctx->temporary_directory_lock = ctx->data->getTemporaryPartDirectoryHolder(tmp_part_dir_name);
 
-    auto builder = ctx->data->getDataPartBuilder(ctx->future_part->name, single_disk_volume, tmp_part_dir_name, getReadSettings());
+    auto builder = ctx->data->getDataPartBuilder(ctx->future_part->name, single_disk_volume, tmp_part_dir_name);
     builder.withPartFormat(ctx->future_part->part_format);
     builder.withPartInfo(ctx->future_part->part_info);
 

@@ -1,7 +1,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringOrArrayToT.h>
-#include <Functions/IFunctionAdaptors.h>
 #include <Functions/EmptyImpl.h>
 #include <Columns/ColumnObject.h>
 

@@ -480,7 +480,8 @@ struct WriteFileObjectStorageOperation final : public IDiskObjectStorageOperatio
 
     void undo() override
     {
-        object_storage.removeObjectIfExists(object);
+        if (object_storage.exists(object))
+            object_storage.removeObject(object);
     }
 
     void finalize() override
@@ -542,7 +543,8 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
 
     void undo() override
     {
-         destination_object_storage.removeObjectsIfExist(created_objects);
+        for (const auto & object : created_objects)
+            destination_object_storage.removeObject(object);
     }
 
     void finalize() override

@@ -29,7 +29,6 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/Backup.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 #include <base/JSON.h>
 #include <boost/algorithm/string/join.hpp>
 #include <Common/CurrentMetrics.h>
@@ -553,7 +552,7 @@ bool IMergeTreeDataPart::isMovingPart() const
     return part_directory_path.parent_path().filename() == "moving";
 }
 
-void IMergeTreeDataPart::removeIfNeeded() noexcept
+void IMergeTreeDataPart::removeIfNeeded()
 {
     assert(assertHasValidVersionMetadata());
     if (!is_temp && state != MergeTreeDataPartState::DeleteOnDestroy)
@@ -630,16 +629,6 @@ UInt64 IMergeTreeDataPart::getIndexSizeInAllocatedBytes() const
     return res;
 }
 
-UInt64 IMergeTreeDataPart::getIndexGranularityBytes() const
-{
-    return index_granularity->getBytesSize();
-}
-
-UInt64 IMergeTreeDataPart::getIndexGranularityAllocatedBytes() const
-{
-    return index_granularity->getBytesAllocated();
-}
-
 void IMergeTreeDataPart::assertState(const std::initializer_list<MergeTreeDataPartState> & affordable_states) const
 {
     if (!checkState(affordable_states))
@@ -668,7 +657,7 @@ void IMergeTreeDataPart::assertOnDisk() const
 
 UInt64 IMergeTreeDataPart::getMarksCount() const
 {
-    return index_granularity->getMarksCount();
+    return index_granularity.getMarksCount();
 }
 
 UInt64 IMergeTreeDataPart::getExistingBytesOnDisk() const
@@ -751,7 +740,6 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
             loadUUID();
         loadColumns(require_columns_checksums);
         loadChecksums(require_columns_checksums);
-
         loadIndexGranularity();
 
         if (!(*storage.getSettings())[MergeTreeSetting::primary_key_lazy_load])
@@ -850,7 +838,7 @@ MergeTreeDataPartBuilder IMergeTreeDataPart::getProjectionPartBuilder(const Stri
 {
     const char * projection_extension = is_temp_projection ? ".tmp_proj" : ".proj";
     auto projection_storage = getDataPartStorage().getProjection(projection_name + projection_extension, !is_temp_projection);
-    MergeTreeDataPartBuilder builder(storage, projection_name, projection_storage, getReadSettings());
+    MergeTreeDataPartBuilder builder(storage, projection_name, projection_storage);
     return builder.withPartInfo(MergeListElement::FAKE_RESULT_PART_FOR_PROJECTION).withParentPart(this);
 }
 
@@ -948,13 +936,13 @@ void IMergeTreeDataPart::loadIndex() const
         for (size_t i = 0; i < key_size; ++i)
         {
             loaded_index[i] = primary_key.data_types[i]->createColumn();
-            loaded_index[i]->reserve(index_granularity->getMarksCount());
+            loaded_index[i]->reserve(index_granularity.getMarksCount());
         }
 
         String index_name = "primary" + getIndexExtensionFromFilesystem(getDataPartStorage());
         String index_path = fs::path(getDataPartStorage().getRelativePath()) / index_name;
         auto index_file = metadata_manager->read(index_name);
-        size_t marks_count = index_granularity->getMarksCount();
+        size_t marks_count = index_granularity.getMarksCount();
 
         Serializations key_serializations(key_size);
         for (size_t j = 0; j < key_size; ++j)
@@ -993,8 +981,6 @@ void IMergeTreeDataPart::loadIndex() const
                 throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all data from index file {}(expected size: "
                     "{}, read: {})", index_path, marks_count, loaded_index[i]->size());
         }
-
-        LOG_TEST(storage.log, "Loaded primary key index for part {}, {} columns are kept in memory", name, key_size);
 
         if (!index_file->eof())
             throw Exception(ErrorCodes::EXPECTED_END_OF_FILE, "Index file {} is unexpectedly long", index_path);
@@ -1298,7 +1284,7 @@ void IMergeTreeDataPart::appendFilesOfPartitionAndMinMaxIndex(Strings & files) c
         MergeTreePartition::appendFiles(storage, files);
 
     if (!parent_part)
-        IMergeTreeDataPart::MinMaxIndex::appendFiles(storage, files);
+        minmax_idx->appendFiles(storage, files);
 }
 
 void IMergeTreeDataPart::loadChecksums(bool require)
@@ -1369,7 +1355,7 @@ void IMergeTreeDataPart::loadRowsCount()
         assertEOF(*buf);
     };
 
-    if (index_granularity->empty())
+    if (index_granularity.empty())
     {
         rows_count = 0;
     }
@@ -1404,9 +1390,9 @@ void IMergeTreeDataPart::loadRowsCount()
                                     backQuote(column.name), rows_in_column, name, rows_count);
                 }
 
-                size_t last_possibly_incomplete_mark_rows = index_granularity->getLastNonFinalMarkRows();
+                size_t last_possibly_incomplete_mark_rows = index_granularity.getLastNonFinalMarkRows();
                 /// All this rows have to be written in column
-                size_t index_granularity_without_last_mark = index_granularity->getTotalRows() - last_possibly_incomplete_mark_rows;
+                size_t index_granularity_without_last_mark = index_granularity.getTotalRows() - last_possibly_incomplete_mark_rows;
                 /// We have more rows in column than in index granularity without last possibly incomplete mark
                 if (rows_in_column < index_granularity_without_last_mark)
                 {
@@ -1416,7 +1402,7 @@ void IMergeTreeDataPart::loadRowsCount()
                                     "and size of single value, "
                                     "but index granularity in part {} without last mark has {} rows, which "
                                     "is more than in column",
-                                    backQuote(column.name), rows_in_column, name, index_granularity->getTotalRows());
+                                    backQuote(column.name), rows_in_column, name, index_granularity.getTotalRows());
                 }
 
                 /// In last mark we actually written less or equal rows than stored in last mark of index granularity
@@ -1464,8 +1450,8 @@ void IMergeTreeDataPart::loadRowsCount()
                                 column.name, column_size, sizeof_field);
             }
 
-            size_t last_mark_index_granularity = index_granularity->getLastNonFinalMarkRows();
-            size_t rows_approx = index_granularity->getTotalRows();
+            size_t last_mark_index_granularity = index_granularity.getLastNonFinalMarkRows();
+            size_t rows_approx = index_granularity.getTotalRows();
             if (!(rows_count <= rows_approx && rows_approx < rows_count + last_mark_index_granularity))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of column {}: "
                     "{} rows, expected {}+-{} rows according to the index",
@@ -1528,7 +1514,7 @@ UInt64 IMergeTreeDataPart::readExistingRowsCount()
 
     while (current_row < rows_count)
     {
-        size_t rows_to_read = index_granularity->getMarkRows(current_mark);
+        size_t rows_to_read = index_granularity.getMarkRows(current_mark);
         continue_reading = (current_mark != 0);
 
         Columns result;
@@ -1976,9 +1962,6 @@ void IMergeTreeDataPart::initializeIndexGranularityInfo()
         index_granularity_info = MergeTreeIndexGranularityInfo(storage, *mrk_type);
     else
         index_granularity_info = MergeTreeIndexGranularityInfo(storage, part_type);
-
-    /// It may be converted to constant index granularity after loading it.
-    index_granularity = std::make_unique<MergeTreeIndexGranularityAdaptive>();
 }
 
 void IMergeTreeDataPart::remove()
@@ -2252,9 +2235,9 @@ void IMergeTreeDataPart::checkConsistency(bool require_part_metadata) const
             "part_state: [{}]",
             columns.toString(),
             index_granularity_info.getMarkSizeInBytes(columns.size()),
-            index_granularity->getMarksCount(),
+            index_granularity.getMarksCount(),
             index_granularity_info.describe(),
-            index_granularity->describe(),
+            index_granularity.describe(),
             part_state);
 
         e.addMessage(debug_info);

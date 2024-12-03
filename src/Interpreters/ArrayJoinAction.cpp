@@ -5,7 +5,6 @@
 #include <Columns/ColumnMap.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/IFunctionAdaptors.h>
 #include <Functions/array/length.h>
 #include <Functions/array/arrayResize.h>
 #include <Functions/array/emptyArrayToSingle.h>
@@ -167,7 +166,7 @@ ArrayJoinResultIterator::ArrayJoinResultIterator(const ArrayJoinAction * array_j
 
             ColumnWithTypeAndName array_col = convertArrayJoinColumn(src_col);
             ColumnsWithTypeAndName tmp_block{array_col}; //, {{}, uint64, {}}};
-            auto len_col = function_length->build(tmp_block)->execute(tmp_block, uint64, rows, /* dry_run = */ false);
+            auto len_col = function_length->build(tmp_block)->execute(tmp_block, uint64, rows);
             updateMaxLength(*max_length, *len_col);
         }
 
@@ -178,7 +177,7 @@ ArrayJoinResultIterator::ArrayJoinResultIterator(const ArrayJoinAction * array_j
 
             ColumnWithTypeAndName array_col = convertArrayJoinColumn(src_col);
             ColumnsWithTypeAndName tmp_block{array_col, column_of_max_length};
-            array_col.column = function_array_resize->build(tmp_block)->execute(tmp_block, array_col.type, rows, /* dry_run = */ false);
+            array_col.column = function_array_resize->build(tmp_block)->execute(tmp_block, array_col.type, rows);
 
             src_col = std::move(array_col);
             any_array_map_ptr = src_col.column->convertToFullColumnIfConst();
@@ -195,7 +194,7 @@ ArrayJoinResultIterator::ArrayJoinResultIterator(const ArrayJoinAction * array_j
             const auto & src_col = block.getByName(name);
             ColumnWithTypeAndName array_col = convertArrayJoinColumn(src_col);
             ColumnsWithTypeAndName tmp_block{array_col};
-            non_empty_array_columns[name] = function_builder->build(tmp_block)->execute(tmp_block, array_col.type, array_col.column->size(), /* dry_run = */ false);
+            non_empty_array_columns[name] = function_builder->build(tmp_block)->execute(tmp_block, array_col.type, array_col.column->size());
         }
 
         any_array_map_ptr = non_empty_array_columns.begin()->second->convertToFullColumnIfConst();

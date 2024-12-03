@@ -3,7 +3,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromPocoSocket.h>
-#include <IO/WriteBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/parseQuery.h>
@@ -61,7 +60,7 @@ PostgreSQLHandler::PostgreSQLHandler(
 void PostgreSQLHandler::changeIO(Poco::Net::StreamSocket & socket)
 {
     in = std::make_shared<ReadBufferFromPocoSocket>(socket, read_event);
-    out = std::make_shared<AutoCanceledWriteBuffer<WriteBufferFromPocoSocket>>(socket, write_event);
+    out = std::make_shared<WriteBufferFromPocoSocket>(socket, write_event);
     message_transport = std::make_shared<PostgreSQLProtocol::Messaging::MessageTransport>(in.get(), out.get());
 }
 
@@ -95,7 +94,6 @@ void PostgreSQLHandler::run()
             {
                 case PostgreSQLProtocol::Messaging::FrontMessageType::QUERY:
                     processQuery();
-                    message_transport->flush();
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::TERMINATE:
                     LOG_DEBUG(log, "Client closed the connection");
@@ -208,7 +206,7 @@ void PostgreSQLHandler::establishSecureConnection(Int32 & payload_size, Int32 & 
 #if USE_SSL
 void PostgreSQLHandler::makeSecureConnectionSSL()
 {
-    message_transport->send('S', true);
+    message_transport->send('S');
     ss = std::make_shared<Poco::Net::SecureStreamSocket>(
         Poco::Net::SecureStreamSocket::attach(socket(), Poco::Net::SSLManager::instance().defaultServerContext()));
     changeIO(*ss);

@@ -7,6 +7,7 @@
 #include <condition_variable>
 #include <mutex>
 
+#include "config.h"
 
 namespace DB
 {
@@ -90,7 +91,6 @@ APPLY_FOR_FAILPOINTS(M, M, M, M)
 
 std::unordered_map<String, std::shared_ptr<FailPointChannel>> FailPointInjection::fail_point_wait_channels;
 std::mutex FailPointInjection::mu;
-
 class FailPointChannel : private boost::noncopyable
 {
 public:

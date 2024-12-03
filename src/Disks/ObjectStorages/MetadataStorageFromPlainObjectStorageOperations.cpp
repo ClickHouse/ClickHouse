@@ -248,7 +248,7 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute(std:
 
     auto metadata_object_key = createMetadataObjectKey(key_prefix, metadata_key_prefix);
     auto metadata_object = StoredObject(/*remote_path*/ metadata_object_key.serialize(), /*local_path*/ path / PREFIX_PATH_FILE_NAME);
-    object_storage->removeObjectIfExists(metadata_object);
+    object_storage->removeObject(metadata_object);
 
     if (path_map.removePathIfExists(base_path))
     {
