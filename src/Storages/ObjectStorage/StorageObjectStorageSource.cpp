@@ -41,6 +41,7 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsBool use_cache_for_count_from_files;
     extern const SettingsString filesystem_cache_name;
+    extern const SettingsUInt64 filesystem_cache_boundary_alignment;
 }
 
 namespace ErrorCodes
@@ -305,7 +306,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     {
         object_info = file_iterator->next(processor);
 
-        if (!object_info || object_info->getFileName().empty())
+        if (!object_info || object_info->getPath().empty())
             return {};
 
         if (!object_info->metadata)
@@ -489,6 +490,8 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
                 return object_storage->readObject(StoredObject(path, "", object_size), modified_read_settings);
             };
 
+            modified_read_settings.filesystem_cache_boundary_alignment = settings[Setting::filesystem_cache_boundary_alignment];
+
             impl = std::make_unique<CachedOnDiskReadBufferFromFile>(
                 object_info.getPath(),
                 cache_key,
@@ -517,9 +520,19 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
 
     LOG_TRACE(log, "Downloading object of size {} with initial prefetch", object_size);
 
+    bool prefer_bigger_buffer_size = read_settings.filesystem_cache_prefer_bigger_buffer_size && impl->isCached();
+    size_t buffer_size = prefer_bigger_buffer_size
+        ? std::max<size_t>(read_settings.remote_fs_buffer_size, DBMS_DEFAULT_BUFFER_SIZE)
+        : read_settings.remote_fs_buffer_size;
+    if (object_size)
+        buffer_size = std::min<size_t>(object_size, buffer_size);
+
     auto & reader = context_->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
     impl = std::make_unique<AsynchronousBoundedReadBuffer>(
-        std::move(impl), reader, modified_read_settings,
+        std::move(impl),
+        reader,
+        modified_read_settings,
+        buffer_size,
         context_->getAsyncReadCounters(),
         context_->getFilesystemReadPrefetchesLog());
 

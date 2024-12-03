@@ -66,6 +66,7 @@ if (ENABLE_CHECK_HEAVY_BUILDS)
         # Twice as large
         set (RLIMIT_DATA 10000000000)
         set (RLIMIT_AS 20000000000)
+        set (RLIMIT_CPU 2000)
     endif()
 
     # For some files currently building RISCV64/LOONGARCH64 might be too slow.
@@ -88,6 +89,7 @@ string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
 list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
 
 option (ENABLE_FUZZING "Fuzzy testing using libfuzzer" OFF)
+option (ENABLE_FUZZER_TEST "Build testing fuzzers in order to test libFuzzer functionality" OFF)
 
 if (ENABLE_FUZZING)
     # Also set WITH_COVERAGE=1 for better fuzzing process

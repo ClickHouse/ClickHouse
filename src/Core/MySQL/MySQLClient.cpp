@@ -7,6 +7,7 @@
 #include <Core/MySQL/PacketsReplication.h>
 #include <Core/MySQL/MySQLReplication.h>
 #include <Common/DNSResolver.h>
+#include <IO/WriteBuffer.h>
 #include <Poco/String.h>
 
 
@@ -55,7 +56,7 @@ void MySQLClient::connect()
     connected = true;
 
     in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
-    out = std::make_shared<WriteBufferFromPocoSocket>(*socket);
+    out = std::make_shared<AutoCanceledWriteBuffer<WriteBufferFromPocoSocket>>(*socket);
     packet_endpoint = std::make_shared<MySQLProtocol::PacketEndpoint>(*in, *out, sequence_id);
 
     handshake();
@@ -88,7 +89,7 @@ void MySQLClient::handshake()
 
     HandshakeResponse handshake_response(
         client_capabilities, MAX_PACKET_LENGTH, charset_utf8, user, "", auth_plugin_data, mysql_native_password);
-    packet_endpoint->sendPacket<HandshakeResponse>(handshake_response, true);
+    packet_endpoint->sendPacket<HandshakeResponse>(handshake_response);
 
     ResponsePacket packet_response(client_capabilities, true);
     packet_endpoint->receivePacket(packet_response);
@@ -103,7 +104,7 @@ void MySQLClient::handshake()
 void MySQLClient::writeCommand(char command, String query)
 {
     WriteCommand write_command(command, query);
-    packet_endpoint->sendPacket<WriteCommand>(write_command, true);
+    packet_endpoint->sendPacket<WriteCommand>(write_command);
 
     ResponsePacket packet_response(client_capabilities);
     packet_endpoint->receivePacket(packet_response);
@@ -122,7 +123,7 @@ void MySQLClient::writeCommand(char command, String query)
 void MySQLClient::registerSlaveOnMaster(UInt32 slave_id)
 {
     RegisterSlave register_slave(slave_id);
-    packet_endpoint->sendPacket<RegisterSlave>(register_slave, true);
+    packet_endpoint->sendPacket<RegisterSlave>(register_slave);
 
     ResponsePacket packet_response(client_capabilities);
     packet_endpoint->receivePacket(packet_response);
@@ -167,7 +168,7 @@ void MySQLClient::startBinlogDumpGTID(UInt32 slave_id, String replicate_db, std:
     replication.setReplicateTables(replicate_tables);
 
     BinlogDumpGTID binlog_dump(slave_id, gtid_sets.toPayload());
-    packet_endpoint->sendPacket<BinlogDumpGTID>(binlog_dump, true);
+    packet_endpoint->sendPacket<BinlogDumpGTID>(binlog_dump);
 }
 
 BinlogEventPtr MySQLClient::readOneBinlogEvent(UInt64 milliseconds)
