@@ -105,6 +105,10 @@ public:
     Status prepare() override;
     void work() override;
 
+    bool spillable() const override;
+    ProcessorReclaimableMemory getReclaimableMemoryUsage() override;
+    void trySpill(size_t memory_limit) override;
+
 private:
     JoinPtr join;
     FinishCounterPtr finish_counter;
