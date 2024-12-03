@@ -134,6 +134,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             /// Release closed. Please use 25.1
         });
         addSettingsChanges(settings_changes_history, "24.11",
+            {"enable_adaptive_memory_spill_scheduler", false, false, "New setting. Enable spill memory data into external storage adaptively."},
+        }
+    },
+    {"24.11",
         {
             {"validate_mutation_query", false, true, "New setting to validate mutation queries by default."},
             {"enable_job_stack_trace", false, true, "Enable by default collecting stack traces from job's scheduling."},

@@ -384,14 +384,13 @@ public:
     // For unspillable processors, the memory usage is not tracked.
     virtual bool spillable() const { return false; }
     
-    virtual SpillMemoryStats getSpillMemoryStats()
+    virtual ProcessorMemoryStats getMemoryStats()
     {
         return {};
     }
 
-    // Only the current reclaimable memory is larger than the memory_limit, the processor will be spilled.
-    // In case that one data is shared among multiple processors, the data should be spilled only once.
-    virtual void trySpill(size_t /*memory_limit*/) {}
+    // If the in-memory data's size is not larger then bytes, it doesn't spill
+    virtual bool spillOnSize(size_t /*bytes*/) { return false; }
 
 protected:
     virtual void onCancel() noexcept {}

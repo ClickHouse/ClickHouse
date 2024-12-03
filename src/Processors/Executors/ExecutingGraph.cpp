@@ -280,10 +280,8 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(uint64_t pid, Queue 
                     const auto last_status = node.last_processor_status;
                     IProcessor::Status status = processor.prepare(node.updated_input_ports, node.updated_output_ports);
                     node.last_processor_status = status;
-                    if (status == IProcessor::Status::Finished)
-                    {
-                        CurrentThread::getGroup()->memory_spill_scheduler.processorFinished(&processor);
-                    }
+                    if (status == IProcessor::Status::Finished && CurrentThread::getGroup())
+                        CurrentThread::getGroup()->memory_spill_scheduler.remove(&processor);
 
                     if (profile_processors)
                     {

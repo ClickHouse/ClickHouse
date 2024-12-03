@@ -9,33 +9,31 @@
 
 namespace DB
 {
-// If current memory is over limit and the processor is the largest one that has the largest
-// reclaimable memory, let the processor spill.
-Int64 MemorySpillScheduler::needSpill(IProcessor * processor)
+void MemorySpillScheduler::checkAndSpill(IProcessor * processor)
 {
 
-    if (!processor->spillable() || !getHardLimit())
+    if (!enable || !processor->spillable() || !getHardLimit())
     {
-        return 0;
+        return;
     }
-    auto stats = processor->getSpillMemoryStats();
+    auto stats = processor->getMemoryStats();
     std::lock_guard lock(mutex);
     processor_stats[processor] = stats;
-    refreshTopProcessor();
-    if (getCurrentQueryMemoryUsage() + max_spill_aux_bytes < getHardLimit())
-        return 0;
+    updateTopProcessor();
+    if (getCurrentQueryMemoryUsage() + max_reserved_memory_bytes < getHardLimit())
+        return;
     LOG_DEBUG(getLogger("MemorySpillScheduler"),
-        "need to spill. current memory usage: {}, hard limit: {}, max_spill_aux_bytes: {}",
-        getCurrentQueryMemoryUsage(), getHardLimit(), max_spill_aux_bytes);
-    refreshTopProcessor();
-    return processor == top_processor ? stats.spillable_bytes : 0;
+        "need to spill. current memory usage: {}, hard limit: {}, max_reserved_memory_bytes: {}",
+        getCurrentQueryMemoryUsage(), getHardLimit(), max_reserved_memory_bytes);
+    if (processor == top_processor)
+        processor->spillOnSize(stats.spillable_memory_bytes);
 }
 
 Int64 MemorySpillScheduler::getHardLimit()
 {
     if (hard_limit < 0) [[unlikely]]
     {
-        auto most_hard_limit = getMostHardLimit();
+        auto most_hard_limit = getCurrentQueryHardLimit();
         if (most_hard_limit)
             hard_limit = *most_hard_limit;
         else
@@ -44,31 +42,30 @@ Int64 MemorySpillScheduler::getHardLimit()
     return hard_limit;
 }
 
-void MemorySpillScheduler::processorFinished(IProcessor * processor)
+void MemorySpillScheduler::remove(IProcessor * processor)
 {
     // Only the spillable processors are tracked.
-    if (!processor->spillable())
+    if (!enable || !processor->spillable())
         return;
     std::lock_guard lock(mutex);
     processor_stats.erase(processor);
-    if (processor == top_processor)
-        refreshTopProcessor();
+    updateTopProcessor();
 }
 
-void MemorySpillScheduler::refreshTopProcessor()
+void MemorySpillScheduler::updateTopProcessor()
 {
-    Int64 max_spillable_bytes = 0;
-    max_spill_aux_bytes = 0;
+    Int64 max_spillable_memory_bytes = 0;
+    max_reserved_memory_bytes = 0;
     for (const auto & [proc, stats] : processor_stats)
     {
-        if (stats.spill_aux_bytes > max_spill_aux_bytes)
+        if (stats.need_reserved_memory_bytes > max_reserved_memory_bytes)
         {
-            max_spill_aux_bytes = stats.spill_aux_bytes;
+            max_reserved_memory_bytes = stats.need_reserved_memory_bytes;
         }
-        if (!top_processor || stats.spillable_bytes > max_spillable_bytes)
+        if (!top_processor || stats.spillable_memory_bytes > max_spillable_memory_bytes)
         {
             top_processor = proc;
-            max_spillable_bytes = stats.spillable_bytes;
+            max_spillable_memory_bytes = stats.spillable_memory_bytes;
         }
     }
 }

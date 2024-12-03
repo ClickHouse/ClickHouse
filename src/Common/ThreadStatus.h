@@ -79,9 +79,9 @@ public:
 
     const FatalErrorCallback fatal_error_callback;
 
+    MemorySpillScheduler memory_spill_scheduler;
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
-    MemorySpillScheduler memory_spill_scheduler;
 
     struct SharedData
     {
@@ -123,8 +123,6 @@ public:
 
     void linkThread(UInt64 thread_id);
     void unlinkThread();
-
-
 
 private:
     mutable std::mutex mutex;

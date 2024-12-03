@@ -2,8 +2,6 @@
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Common/Stopwatch.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
-#include <Common/logger_useful.h>
-#include <Poco/Logger.h>
 
 namespace DB
 {
@@ -48,11 +46,8 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
 {
     try
     {
-        if (auto bytes = CurrentThread::getGroup()->memory_spill_scheduler.needSpill(node->processor))
-        {
-            LOG_ERROR(getLogger("ExecutionThreadContext"), "xxx try spill. processor: {}@{}, bytes: {}", node->processor->getName(), fmt::ptr(node->processor), bytes);
-            node->processor->trySpill(bytes);
-        }
+        if (CurrentThread::getGroup())
+            CurrentThread::getGroup()->memory_spill_scheduler.checkAndSpill(node->processor);
 
         node->processor->work();
 
