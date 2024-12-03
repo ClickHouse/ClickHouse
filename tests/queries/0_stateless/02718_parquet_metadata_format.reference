@@ -61,6 +61,7 @@
     ],
     "row_groups": [
         {
+            "file_offset": "4",
             "num_columns": "3",
             "num_rows": "65409",
             "total_uncompressed_size": "200527",
@@ -114,6 +115,7 @@
             ]
         },
         {
+            "file_offset": "14635",
             "num_columns": "3",
             "num_rows": "34591",
             "total_uncompressed_size": "113620",
@@ -257,6 +259,7 @@
     ],
     "row_groups": [
         {
+            "file_offset": "4",
             "num_columns": "1",
             "num_rows": "5",
             "total_uncompressed_size": "105",
