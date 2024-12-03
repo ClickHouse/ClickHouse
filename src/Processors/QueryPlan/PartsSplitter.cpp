@@ -201,11 +201,11 @@ public:
 
     size_t getMarkRows(size_t part_idx, size_t mark) const
     {
-        return parts[part_idx].data_part->index_granularity.getMarkRows(mark);
+        return parts[part_idx].data_part->index_granularity->getMarkRows(mark);
     }
 private:
     const RangesInDataParts & parts;
-    std::vector<IMergeTreeDataPart::Index> indices;
+    std::vector<IMergeTreeDataPart::IndexPtr> indices;
     size_t loaded_columns = std::numeric_limits<size_t>::max();
 };
 
@@ -444,7 +444,7 @@ SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, 
             parts_ranges.push_back(
                 {index_access.getValue(part_index, range.begin), range, part_index, PartsRangesIterator::EventType::RangeStart});
 
-            const bool value_is_defined_at_end_mark = range.end < index_granularity.getMarksCount();
+            const bool value_is_defined_at_end_mark = range.end < index_granularity->getMarksCount();
             if (!value_is_defined_at_end_mark)
                 continue;
 
@@ -667,7 +667,7 @@ std::pair<std::vector<RangesInDataParts>, std::vector<Values>> splitIntersecting
             PartRangeIndex parts_range_start_index(parts_range_start);
             parts_ranges_queue.push({std::move(parts_range_start), std::move(parts_range_start_index)});
 
-            const bool value_is_defined_at_end_mark = range.end < index_granularity.getMarksCount();
+            const bool value_is_defined_at_end_mark = range.end < index_granularity->getMarksCount();
             if (!value_is_defined_at_end_mark)
                 continue;
 

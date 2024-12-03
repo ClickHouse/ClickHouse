@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Backups/IRestoreCoordination.h>
-#include <Backups/BackupConcurrencyCheck.h>
 #include <Backups/BackupCoordinationCleaner.h>
 #include <Backups/BackupCoordinationStageSync.h>
 #include <Backups/WithRetries.h>
@@ -15,7 +14,7 @@ class RestoreCoordinationOnCluster : public IRestoreCoordination
 {
 public:
     /// Empty string as the current host is used to mark the initiator of a RESTORE ON CLUSTER query.
-    static const constexpr std::string_view kInitiator;
+    static const constexpr std::string_view kInitiator = BackupCoordinationStageSync::kInitiator;
 
     RestoreCoordinationOnCluster(
         const UUID & restore_uuid_,
@@ -31,13 +30,13 @@ public:
 
     ~RestoreCoordinationOnCluster() override;
 
+    void setRestoreQueryIsSentToOtherHosts() override;
+    bool isRestoreQuerySentToOtherHosts() const override;
     Strings setStage(const String & new_stage, const String & message, bool sync) override;
-    void setRestoreQueryWasSentToOtherHosts() override;
-    bool trySetError(std::exception_ptr exception) override;
-    void finish() override;
-    bool tryFinishAfterError() noexcept override;
-    void waitForOtherHostsToFinish() override;
-    bool tryWaitForOtherHostsToFinishAfterError() noexcept override;
+    bool setError(std::exception_ptr exception, bool throw_if_error) override;
+    bool waitOtherHostsFinish(bool throw_if_error) const override;
+    bool finish(bool throw_if_error) override;
+    bool cleanup(bool throw_if_error) override;
 
     /// Starts creating a table in a replicated database. Returns false if there is another host which is already creating this table.
     bool acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name) override;
@@ -78,11 +77,10 @@ private:
     const size_t current_host_index;
     LoggerPtr const log;
 
+    /// The order is important: `stage_sync` must be initialized after `with_retries` and `cleaner`.
     const WithRetries with_retries;
-    BackupConcurrencyCheck concurrency_check;
-    BackupCoordinationStageSync stage_sync;
     BackupCoordinationCleaner cleaner;
-    std::atomic<bool> restore_query_was_sent_to_other_hosts = false;
+    BackupCoordinationStageSync stage_sync;
 };
 
 }

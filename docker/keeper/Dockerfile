@@ -31,14 +31,14 @@ COPY entrypoint.sh /entrypoint.sh
 ARG TARGETARCH
 RUN arch=${TARGETARCH:-amd64} \
     && case $arch in \
-        amd64) mkdir -p /lib64 && ln -sf /lib/ld-2.31.so /lib64/ld-linux-x86-64.so.2 ;; \
-        arm64) ln -sf /lib/ld-2.31.so /lib/ld-linux-aarch64.so.1 ;; \
+        amd64) mkdir -p /lib64 && ln -sf /lib/ld-2.35.so /lib64/ld-linux-x86-64.so.2 ;; \
+        arm64) ln -sf /lib/ld-2.35.so /lib/ld-linux-aarch64.so.1 ;; \
     esac
 
 # lts / testing / prestable / etc
 ARG REPO_CHANNEL="stable"
 ARG REPOSITORY="https://packages.clickhouse.com/tgz/${REPO_CHANNEL}"
-ARG VERSION="24.10.1.2812"
+ARG VERSION="24.11.1.2557"
 ARG PACKAGES="clickhouse-keeper"
 ARG DIRECT_DOWNLOAD_URLS=""
 
@@ -86,7 +86,8 @@ RUN arch=${TARGETARCH:-amd64} \
 ARG DEFAULT_CONFIG_DIR="/etc/clickhouse-keeper"
 ARG DEFAULT_DATA_DIR="/var/lib/clickhouse-keeper"
 ARG DEFAULT_LOG_DIR="/var/log/clickhouse-keeper"
-RUN mkdir -p "${DEFAULT_DATA_DIR}" "${DEFAULT_LOG_DIR}" "${DEFAULT_CONFIG_DIR}" \
+RUN clickhouse-keeper --version \
+    && mkdir -p "${DEFAULT_DATA_DIR}" "${DEFAULT_LOG_DIR}" "${DEFAULT_CONFIG_DIR}" \
     && chown clickhouse:clickhouse "${DEFAULT_DATA_DIR}" \
     && chown root:clickhouse "${DEFAULT_LOG_DIR}" \
     && chmod ugo+Xrw -R "${DEFAULT_DATA_DIR}" "${DEFAULT_LOG_DIR}" "${DEFAULT_CONFIG_DIR}"

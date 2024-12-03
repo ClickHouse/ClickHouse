@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeReaderCompactSingleBuffer.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 
 namespace DB
@@ -13,6 +14,11 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int NO_FILE_IN_DATA_PART;
     extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
+}
+
+namespace MergeTreeSetting
+{
+    extern MergeTreeSettingsBool enable_index_granularity_compression;
 }
 
 MergeTreeDataPartCompact::MergeTreeDataPartCompact(
@@ -62,7 +68,7 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartCompactWriter(
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & writer_settings,
-    const MergeTreeIndexGranularity & computed_index_granularity)
+    MergeTreeIndexGranularityPtr computed_index_granularity)
 {
     NamesAndTypesList ordered_columns_list;
     std::copy_if(columns_list.begin(), columns_list.end(), std::back_inserter(ordered_columns_list),
@@ -76,11 +82,11 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartCompactWriter(
         data_part_name_, logger_name_, serializations_, data_part_storage_,
         index_granularity_info_, storage_settings_, ordered_columns_list, metadata_snapshot, virtual_columns,
         indices_to_recalc, stats_to_recalc_, marks_file_extension_,
-        default_codec_, writer_settings, computed_index_granularity);
+        default_codec_, writer_settings, std::move(computed_index_granularity));
 }
 
 
-void MergeTreeDataPartCompact::calculateEachColumnSizes(ColumnSizeByName & /*each_columns_size*/, ColumnSize & total_size) const
+void MergeTreeDataPartCompact::calculateEachColumnSizes(ColumnSizeByName & /*each_columns_size*/, ColumnSize & total_size, std::optional<Block> /*columns_sample*/) const
 {
     auto bin_checksum = checksums.files.find(DATA_FILE_NAME_WITH_EXTENSION);
     if (bin_checksum != checksums.files.end())
@@ -95,8 +101,11 @@ void MergeTreeDataPartCompact::calculateEachColumnSizes(ColumnSizeByName & /*eac
 }
 
 void MergeTreeDataPartCompact::loadIndexGranularityImpl(
-    MergeTreeIndexGranularity & index_granularity_, const MergeTreeIndexGranularityInfo & index_granularity_info_,
-    size_t columns_count, const IDataPartStorage & data_part_storage_)
+    MergeTreeIndexGranularityPtr & index_granularity_ptr,
+    const MergeTreeIndexGranularityInfo & index_granularity_info_,
+    size_t columns_count,
+    const IDataPartStorage & data_part_storage_,
+    const MergeTreeSettings & storage_settings)
 {
     if (!index_granularity_info_.mark_type.adaptive)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeTreeDataPartCompact cannot be created with non-adaptive granularity.");
@@ -122,10 +131,14 @@ void MergeTreeDataPartCompact::loadIndexGranularityImpl(
         marks_reader->ignore(columns_count * sizeof(MarkInCompressedFile));
         size_t granularity;
         readBinaryLittleEndian(granularity, *marks_reader);
-        index_granularity_.appendMark(granularity);
+        index_granularity_ptr->appendMark(granularity);
     }
 
-    index_granularity_.setInitialized();
+    if (storage_settings[MergeTreeSetting::enable_index_granularity_compression])
+    {
+        if (auto new_granularity_ptr = index_granularity_ptr->optimize())
+            index_granularity_ptr = std::move(new_granularity_ptr);
+    }
 }
 
 void MergeTreeDataPartCompact::loadIndexGranularity()
@@ -133,7 +146,7 @@ void MergeTreeDataPartCompact::loadIndexGranularity()
     if (columns.empty())
         throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns in part {}", name);
 
-    loadIndexGranularityImpl(index_granularity, index_granularity_info, columns.size(), getDataPartStorage());
+    loadIndexGranularityImpl(index_granularity, index_granularity_info, columns.size(), getDataPartStorage(), *storage.getSettings());
 }
 
 void MergeTreeDataPartCompact::loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const
@@ -152,7 +165,7 @@ void MergeTreeDataPartCompact::loadMarksToCache(const Names & column_names, Mark
         info_for_read,
         mark_cache,
         index_granularity_info.getMarksFilePath(DATA_FILE_NAME),
-        index_granularity.getMarksCount(),
+        index_granularity->getMarksCount(),
         index_granularity_info,
         /*save_marks_in_cache=*/ true,
         read_settings,
@@ -160,6 +173,16 @@ void MergeTreeDataPartCompact::loadMarksToCache(const Names & column_names, Mark
         columns.size());
 
     loader.loadMarks();
+}
+
+void MergeTreeDataPartCompact::removeMarksFromCache(MarkCache * mark_cache) const
+{
+    if (!mark_cache)
+        return;
+
+    auto mark_path = index_granularity_info.getMarksFilePath(DATA_FILE_NAME);
+    auto key = MarkCache::hash(fs::path(getRelativePathOfActivePart()) / mark_path);
+    mark_cache->remove(key);
 }
 
 bool MergeTreeDataPartCompact::hasColumnFiles(const NameAndTypePair & column) const
@@ -227,7 +250,7 @@ void MergeTreeDataPartCompact::doCheckConsistency(bool require_part_metadata) co
                     getDataPartStorage().getRelativePath(),
                     std::string(fs::path(getDataPartStorage().getFullPath()) / mrk_file_name));
 
-            UInt64 expected_file_size = index_granularity_info.getMarkSizeInBytes(columns.size()) * index_granularity.getMarksCount();
+            UInt64 expected_file_size = index_granularity_info.getMarkSizeInBytes(columns.size()) * index_granularity->getMarksCount();
             if (expected_file_size != file_size)
                 throw Exception(
                     ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
