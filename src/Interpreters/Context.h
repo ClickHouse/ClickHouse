@@ -1077,8 +1077,6 @@ public:
     void clearMarkCache() const;
     ThreadPool & getLoadMarksThreadpool() const;
 
-    ThreadPool & getIcebergCatalogThreadpool() const;
-
     void setPrimaryIndexCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
     void updatePrimaryIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<PrimaryIndexCache> getPrimaryIndexCache() const;
@@ -1125,6 +1123,7 @@ public:
     size_t getPrefetchThreadpoolSize() const;
 
     ThreadPool & getBuildVectorSimilarityIndexThreadPool() const;
+    ThreadPool & getIcebergCatalogThreadpool() const;
 
     /// Settings for MergeTree background tasks stored in config.xml
     BackgroundTaskSchedulingSettings getBackgroundProcessingTaskSchedulingSettings() const;

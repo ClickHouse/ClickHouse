@@ -321,7 +321,7 @@ parseTableSchemaV1Method(const Poco::JSON::Object::Ptr & metadata_object, bool i
     return {schema, current_schema_id};
 }
 
-std::pair<NamesAndTypesList, Int32> parseTableSchema(
+std::pair<NamesAndTypesList, Int32> IcebergMetadata::parseTableSchema(
     const Poco::JSON::Object::Ptr & metadata_object, LoggerPtr metadata_logger, int format_version, bool ignore_schema_evolution)
 {
     Poco::JSON::Object::Ptr schema;

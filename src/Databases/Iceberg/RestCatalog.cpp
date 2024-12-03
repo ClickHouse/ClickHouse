@@ -2,6 +2,7 @@
 #include <Databases/Iceberg/StorageCredentials.h>
 
 #include <base/find_symbols.h>
+#include <Core/Settings.h>
 #include <Common/escapeForFileName.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/Base64.h>
@@ -25,6 +26,11 @@ namespace DB::ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
+}
+
+namespace DB::Setting
+{
+    extern const SettingsBool iceberg_engine_ignore_schema_evolution;
 }
 
 namespace Iceberg
@@ -571,8 +577,11 @@ bool RestCatalog::getTableMetadataImpl(
 
     if (result.requiresSchema())
     {
+        const auto & settings = getContext()->getSettingsRef();
         int format_version = metadata_object->getValue<int>("format-version");
-        result.setSchema(DB::IcebergMetadata::parseTableSchema(metadata_object, format_version, true).first);
+        auto schema = DB::IcebergMetadata::parseTableSchema(
+            metadata_object, log, format_version, settings[DB::Setting::iceberg_engine_ignore_schema_evolution]).first;
+        result.setSchema(schema);
     }
 
     if (result.requiresCredentials() && object->has("config"))

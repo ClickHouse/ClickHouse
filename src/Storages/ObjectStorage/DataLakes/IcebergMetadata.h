@@ -98,6 +98,7 @@ public:
 
     static std::pair<NamesAndTypesList, Int32> parseTableSchema(
         const Poco::JSON::Object::Ptr & metadata_object,
+        LoggerPtr metadata_logger,
         int format_version,
         bool ignore_schema_evolution);
 
