@@ -365,13 +365,13 @@ bool FillingRightJoinSideTransform::spillable() const
     return typeid_cast<GraceHashJoin *>(join.get()) != nullptr;
 }
 
-ProcessorReclaimableMemory FillingRightJoinSideTransform::getReclaimableMemoryUsage()
+SpillMemoryStats FillingRightJoinSideTransform::getSpillMemoryStats()
 {
     if (auto * grace_join = typeid_cast<GraceHashJoin *>(join.get()))
     {
-        ProcessorReclaimableMemory res;
-        res.reclaimable_bytes = grace_join->getTotalByteCount();
-        res.spill_aux_bytes = res.reclaimable_bytes;
+        SpillMemoryStats res;
+        res.spillable_bytes = grace_join->getTotalByteCount();
+        res.spill_aux_bytes = res.spillable_bytes;
         return res;
     }
     return {};

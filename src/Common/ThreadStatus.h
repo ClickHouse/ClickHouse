@@ -8,7 +8,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Scheduler/ResourceLink.h>
-#include <Common/ReclaimableMemorySpillManager.h>
+#include <Common/MemorySpillScheduler.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -81,7 +81,7 @@ public:
 
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
-    RelaimableMemorySpillManager reclaimable_memory_spill_manager;
+    MemorySpillScheduler memory_spill_scheduler;
 
     struct SharedData
     {

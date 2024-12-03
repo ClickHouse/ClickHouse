@@ -282,7 +282,7 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(uint64_t pid, Queue 
                     node.last_processor_status = status;
                     if (status == IProcessor::Status::Finished)
                     {
-                        CurrentThread::getGroup()->reclaimable_memory_spill_manager.processorFinished(&processor);
+                        CurrentThread::getGroup()->memory_spill_scheduler.processorFinished(&processor);
                     }
 
                     if (profile_processors)
