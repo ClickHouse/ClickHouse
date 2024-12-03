@@ -2,6 +2,7 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/EnabledQuota.h>
+#include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ConcatReadBuffer.h>

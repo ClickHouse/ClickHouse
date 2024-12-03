@@ -6,6 +6,7 @@
 #include <Processors/Merges/Algorithms/Graphite.h>
 #include <base/find_symbols.h>
 #include <base/sort.h>
+#include <Common/SipHash.h>
 
 #include <string_view>
 #include <vector>
