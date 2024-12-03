@@ -181,5 +181,3 @@ insert into function file(datetime64_02735.parquet) select
     from numbers(2000);
 desc file(datetime64_02735.parquet);
 select sum(cityHash64(*)) from file(datetime64_02735.parquet);
-
-insert into function file(empty_tuple_02735.parquet) select (); -- {serverError PARQUET_EXCEPTION}

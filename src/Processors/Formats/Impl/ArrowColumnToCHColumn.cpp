@@ -1001,7 +1001,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             else
                 tuple_column = ColumnTuple::create(std::move(tuple_elements));
             auto tuple_type = std::make_shared<DataTypeTuple>(std::move(tuple_types), std::move(tuple_names));
-            return {std::move(tuple_column), std::move(tuple_type), column_name};
+            return {tuple_column, tuple_type, column_name};
         }
         case arrow::Type::DICTIONARY:
         {
