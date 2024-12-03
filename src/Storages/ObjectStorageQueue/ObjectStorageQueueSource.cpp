@@ -137,7 +137,7 @@ ObjectStorageQueueSource::Source::ObjectInfoPtr ObjectStorageQueueSource::FileIt
                 /// so replica B would successfully set itself as processor of this file in keeper
                 /// and face "The specified key does not exist" after that.
                 ///
-                /// This existance check here is enough,
+                /// This existence check here is enough,
                 /// only because we do applyActionAfterProcessing BEFORE setting file as processed
                 /// and because at this exact place we already successfully set file as processing,
                 /// e.g. file deletion and marking file as processed in keeper already took place.
