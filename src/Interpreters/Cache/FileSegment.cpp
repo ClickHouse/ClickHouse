@@ -820,6 +820,11 @@ void FileSegment::complete(bool allow_background_download)
 
                 if (!added_to_download_queue)
                 {
+                    if (cache_writer)
+                    {
+                        cache_writer->finalize();
+                        cache_writer.reset();
+                    }
                     shrinkFileSegmentToDownloadedSize(*locked_key, segment_lock);
                 }
             }
@@ -838,6 +843,12 @@ void FileSegment::complete(bool allow_background_download)
                 else
                 {
                     LOG_TEST(log, "Resize file segment {} to downloaded: {}", range().toString(), current_downloaded_size);
+
+                    if (cache_writer)
+                    {
+                        cache_writer->finalize();
+                        cache_writer.reset();
+                    }
 
                     /**
                     * Only last holder of current file segment can resize the file segment,
