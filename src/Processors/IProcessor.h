@@ -4,7 +4,7 @@
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Common/CurrentThread.h>
-#include <Common/ReclaimableMemorySpillManager.h>
+#include <Common/MemorySpillScheduler.h>
 #include <Common/Stopwatch.h>
 
 #include <memory>
@@ -384,7 +384,7 @@ public:
     // For unspillable processors, the memory usage is not tracked.
     virtual bool spillable() const { return false; }
     
-    virtual ProcessorReclaimableMemory getReclaimableMemoryUsage()
+    virtual SpillMemoryStats getSpillMemoryStats()
     {
         return {};
     }
