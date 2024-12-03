@@ -37,9 +37,9 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameNegate>
     static IFunction::Monotonicity get(const IDataType & original_type, const Field & left, const Field & right)
     {
         const IDataType * type = &original_type;
-        if (auto t = typeid_cast<const DataTypeLowCardinality *>(type))
+        if (const DataTypeLowCardinality * t = typeid_cast<const DataTypeLowCardinality *>(type))
             type = t->getDictionaryType().get();
-        if (auto t = typeid_cast<const DataTypeNullable *>(type))
+        if (const DataTypeNullable * t = typeid_cast<const DataTypeNullable *>(type))
             type = t->getNestedType().get();
 
         /// If the input is signed, assume monotonic.
