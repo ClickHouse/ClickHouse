@@ -351,6 +351,7 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/utilities/table_properties_collectors/compact_on_deletion_collector.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/trace/file_trace_reader_writer.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/trace/replayer_impl.cc
+    ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/lock_manager.cc # Unused but dead code elimination is hard for some linkers
     ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/point/point_lock_tracker.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/point/point_lock_manager.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/range/range_tree/range_tree_lock_manager.cc
