@@ -782,9 +782,9 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     }
     else
     {
-        auto write_operation = std::make_unique<WriteFileObjectStorageOperation>(object_storage, metadata_storage, object);
+        auto write_operation = std::make_shared<WriteFileObjectStorageOperation>(object_storage, metadata_storage, object);
 
-        create_metadata_callback = [object_storage_tx = shared_from_this(), write_op = write_operation.get(), mode, path, key_ = std::move(object_key)](size_t count)
+        create_metadata_callback = [object_storage_tx = shared_from_this(), write_op = write_operation, mode, path, key_ = std::move(object_key)](size_t count)
         {
             /// This callback called in WriteBuffer finalize method -- only there we actually know
             /// how many bytes were written. We don't control when this finalize method will be called

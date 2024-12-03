@@ -158,7 +158,6 @@ private:
     void appendLogElement(
         const std::string & filename,
         ObjectStorageQueueMetadata::FileStatus & file_status_,
-        size_t processed_rows,
         bool processed);
 };
 
