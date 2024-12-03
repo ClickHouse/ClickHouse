@@ -1,10 +1,10 @@
 import argparse
 import sys
 
-from praktika.html_prepare import Html
-from praktika.utils import Utils
-from praktika.validator import Validator
-from praktika.yaml_generator import YamlGenerator
+from .html_prepare import Html
+from .utils import Utils
+from .validator import Validator
+from .yaml_generator import YamlGenerator
 
 
 def create_parser():
@@ -86,8 +86,8 @@ def main():
     elif args.command == "html":
         Html.prepare()
     elif args.command == "run":
-        from praktika.mangle import _get_workflows
-        from praktika.runner import Runner
+        from .mangle import _get_workflows
+        from .runner import Runner
 
         workflows = _get_workflows(name=args.workflow or None)
         job_workflow_pairs = []
