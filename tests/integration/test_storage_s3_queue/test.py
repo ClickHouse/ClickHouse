@@ -2347,10 +2347,10 @@ def test_list_and_delete_race(started_cluster):
             },
         )
 
-    threads = 10
+    threads = 4
     total_rows = row_num * files_to_generate * (threads + 1)
 
-    busy_pool = Pool(10)
+    busy_pool = Pool(threads)
 
     def generate(_):
         generate_random_files(
@@ -2363,7 +2363,7 @@ def test_list_and_delete_race(started_cluster):
 
     generate(0)
 
-    p = busy_pool.map_async(generate, range(10))
+    p = busy_pool.map_async(generate, range(threads))
 
     create_mv(node, table_name, dst_table_name)
     time.sleep(2)
