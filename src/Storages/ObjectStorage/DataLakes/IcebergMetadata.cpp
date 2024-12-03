@@ -139,6 +139,7 @@ enum class DataFileContent : uint8_t
  * }
  */
 
+
 DataTypePtr getSimpleTypeByName(const String & type_name)
 {
     if (type_name == "boolean")
@@ -248,7 +249,83 @@ DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & field, const String & t
 
 }
 
-std::pair<NamesAndTypesList, Int32> parseTableSchema(const Poco::JSON::Object::Ptr & metadata_object, int format_version, bool ignore_schema_evolution)
+std::pair<Poco::JSON::Object::Ptr, Int32>
+parseTableSchemaV2Method(const Poco::JSON::Object::Ptr & metadata_object, bool ignore_schema_evolution)
+{
+    Poco::JSON::Object::Ptr schema;
+    if (!metadata_object->has("current-schema-id"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: 'current-schema-id' field is missing in metadata");
+    auto current_schema_id = metadata_object->getValue<int>("current-schema-id");
+    if (!metadata_object->has("schemas"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: 'schemas' field is missing in metadata");
+    auto schemas = metadata_object->get("schemas").extract<Poco::JSON::Array::Ptr>();
+    if (schemas->size() == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: schemas field is empty");
+
+    if (ignore_schema_evolution)
+    {
+        /// If we ignore schema evolution, we will just use latest schema for all data files.
+        /// Find schema with 'schema-id' equal to 'current_schema_id'.
+        for (uint32_t i = 0; i != schemas->size(); ++i)
+        {
+            auto current_schema = schemas->getObject(i);
+            if (!current_schema->has("schema-id"))
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: 'schema-id' field is missing in schema");
+            }
+            if (current_schema->getValue<int>("schema-id") == current_schema_id)
+            {
+                schema = current_schema;
+                break;
+            }
+        }
+
+        if (!schema)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, R"(There is no schema with "schema-id" that matches "current-schema-id" in metadata)");
+    }
+    else
+    {
+        if (schemas->size() == 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: schemas field is empty");
+        if (schemas->size() > 1)
+            throw Exception(
+                ErrorCodes::UNSUPPORTED_METHOD,
+                "Cannot read Iceberg table: the table schema has been changed at least 1 time, reading tables with evolved schema is "
+                "supported. If you want to ignore schema evolution and read all files using latest schema saved on table creation, enable "
+                "setting "
+                "iceberg_engine_ignore_schema_evolution (Note: enabling this setting can lead to incorrect result)");
+
+        /// Now we sure that there is only one schema.
+        schema = schemas->getObject(0);
+        if (schema->getValue<int>("schema-id") != current_schema_id)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, R"(Field "schema-id" of the schema doesn't match "current-schema-id" in metadata)");
+    }
+    return {schema, current_schema_id};
+}
+
+std::pair<Poco::JSON::Object::Ptr, Int32>
+parseTableSchemaV1Method(const Poco::JSON::Object::Ptr & metadata_object, bool ignore_schema_evolution)
+{
+    if (!metadata_object->has("schema"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: 'schema' field is missing in metadata");
+    Poco::JSON::Object::Ptr schema = metadata_object->getObject("schema");
+    if (!metadata_object->has("schema"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: 'schema-id' field is missing in schema");
+    auto current_schema_id = schema->getValue<int>("schema-id");
+    if (!ignore_schema_evolution && metadata_object->has("schemas")
+        && metadata_object->get("schemas").extract<Poco::JSON::Array::Ptr>()->size() > 1)
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD,
+            "Cannot read Iceberg table: the table schema has been changed at least 1 time, reading tables with evolved schema is not "
+            "supported. If you want to ignore schema evolution and read all files using latest schema saved on table creation, enable "
+            "setting "
+            "iceberg_engine_ignore_schema_evolution (Note: enabling this setting can lead to incorrect result)");
+    return {schema, current_schema_id};
+}
+
+std::pair<NamesAndTypesList, Int32> parseTableSchema(
+    const Poco::JSON::Object::Ptr & metadata_object, LoggerPtr metadata_logger, int format_version, bool ignore_schema_evolution)
 {
     Poco::JSON::Object::Ptr schema;
     Int32 current_schema_id;
@@ -259,54 +336,40 @@ std::pair<NamesAndTypesList, Int32> parseTableSchema(const Poco::JSON::Object::P
     /// (we will compare schema id from manifest file and currently used schema).
     if (format_version == 2)
     {
-        current_schema_id = metadata_object->getValue<int>("current-schema-id");
-        auto schemas = metadata_object->get("schemas").extract<Poco::JSON::Array::Ptr>();
-        if (schemas->size() == 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: schemas field is empty");
-
-        if (ignore_schema_evolution)
-        {
-            /// If we ignore schema evolution, we will just use latest schema for all data files.
-            /// Find schema with 'schema-id' equal to 'current_schema_id'.
-            for (uint32_t i = 0; i != schemas->size(); ++i)
-            {
-                auto current_schema = schemas->getObject(i);
-                if (current_schema->getValue<int>("schema-id") == current_schema_id)
-                {
-                    schema = current_schema;
-                    break;
-                }
-            }
-
-            if (!schema)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, R"(There is no schema with "schema-id" that matches "current-schema-id" in metadata)");
-        }
-        else
-        {
-            if (schemas->size() != 1)
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                    "Cannot read Iceberg table: the table schema has been changed at least 1 time, reading tables with evolved schema is "
-                    "supported. If you want to ignore schema evolution and read all files using latest schema saved on table creation, enable setting "
-                    "iceberg_engine_ignore_schema_evolution (Note: enabling this setting can lead to incorrect result)");
-
-            /// Now we sure that there is only one schema.
-            schema = schemas->getObject(0);
-            if (schema->getValue<int>("schema-id") != current_schema_id)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, R"(Field "schema-id" of the schema doesn't match "current-schema-id" in metadata)");
-        }
+        std::tie(schema, current_schema_id) = parseTableSchemaV2Method(metadata_object, ignore_schema_evolution);
     }
     else
     {
-        schema = metadata_object->getObject("schema");
-        current_schema_id = schema->getValue<int>("schema-id");
-        /// Field "schemas" is optional for version 1, but after version 2 was introduced,
-        /// in most cases this field is added for new tables in version 1 as well.
-        if (!ignore_schema_evolution && metadata_object->has("schemas") && metadata_object->get("schemas").extract<Poco::JSON::Array::Ptr>()->size() > 1)
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Cannot read Iceberg table: the table schema has been changed at least 1 time, reading tables with evolved schema is not "
-                "supported. If you want to ignore schema evolution and read all files using latest schema saved on table creation, enable setting "
-                "iceberg_engine_ignore_schema_evolution (Note: enabling this setting can lead to incorrect result)");
+        try
+        {
+            std::tie(schema, current_schema_id) = parseTableSchemaV1Method(metadata_object, ignore_schema_evolution);
+        }
+        catch (const Exception & first_error)
+        {
+            if (first_error.code() != ErrorCodes::BAD_ARGUMENTS)
+                throw;
+            try
+            {
+                std::tie(schema, current_schema_id) = parseTableSchemaV2Method(metadata_object, ignore_schema_evolution);
+                LOG_WARNING(
+                    metadata_logger,
+                    "Iceberg table schema was parsed using v2 specification, but it was impossible to parse it using v1 specification. Be "
+                    "aware that you Iceberg writing engine violates Iceberg specification. Error during parsing {}",
+                    first_error.displayText());
+            }
+            catch (const Exception & second_error)
+            {
+                if (first_error.code() != ErrorCodes::BAD_ARGUMENTS)
+                    throw;
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot parse Iceberg table schema both with v1 and v2 methods. Old method error: {}. New method error: {}",
+                    first_error.displayText(),
+                    second_error.displayText());
+            }
+        }
     }
+
 
     NamesAndTypesList names_and_types;
     auto fields = schema->get("fields").extract<Poco::JSON::Array::Ptr>();
@@ -404,7 +467,7 @@ IcebergMetadata::create(ObjectStoragePtr object_storage, ConfigurationObserverPt
 
     auto format_version = object->getValue<int>("format-version");
     auto [schema, schema_id]
-        = parseTableSchema(object, format_version, local_context->getSettingsRef()[Setting::iceberg_engine_ignore_schema_evolution]);
+        = parseTableSchema(object, log, format_version, local_context->getSettingsRef()[Setting::iceberg_engine_ignore_schema_evolution]);
 
     auto current_snapshot_id = object->getValue<Int64>("current-snapshot-id");
     auto snapshots = object->get("snapshots").extract<Poco::JSON::Array::Ptr>();
@@ -501,11 +564,17 @@ Strings IcebergMetadata::getDataFiles() const
         /// Manifest file should always have table schema in avro file metadata. By now we don't support tables with evolved schema,
         /// so we should check if all manifest files have the same schema as in table metadata.
         auto avro_metadata = manifest_file_reader->metadata();
-        std::vector<uint8_t> schema_json = avro_metadata["schema"];
+        auto avro_schema_it = avro_metadata.find("schema");
+        if (avro_schema_it == avro_metadata.end())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot read Iceberg table: manifest file {} doesn't have table schema in its metadata",
+                manifest_file);
+        std::vector<uint8_t> schema_json = avro_schema_it->second;
         String schema_json_string = String(reinterpret_cast<char *>(schema_json.data()), schema_json.size());
         Poco::JSON::Parser parser;
         Poco::Dynamic::Var json = parser.parse(schema_json_string);
-        Poco::JSON::Object::Ptr schema_object = json.extract<Poco::JSON::Object::Ptr>();
+        const Poco::JSON::Object::Ptr & schema_object = json.extract<Poco::JSON::Object::Ptr>();
         if (!context->getSettingsRef()[Setting::iceberg_engine_ignore_schema_evolution]
             && schema_object->getValue<int>("schema-id") != current_schema_id)
             throw Exception(

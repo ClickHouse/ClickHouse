@@ -26,6 +26,7 @@
 #include <Functions/FunctionIfBase.h>
 #include <Functions/GatherUtils/Algorithms.h>
 #include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <Common/assert_cast.h>
@@ -668,6 +669,9 @@ private:
         temporary_columns[0] = arguments[0];
 
         size_t tuple_size = type1.getElements().size();
+        if (tuple_size == 0)
+            return ColumnTuple::create(input_rows_count);
+
         Columns tuple_columns(tuple_size);
 
         for (size_t i = 0; i < tuple_size; ++i)

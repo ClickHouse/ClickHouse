@@ -41,12 +41,14 @@ SELECT 'JOIN {{ join_type }}';
 
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
 t2.id AS t2_id, toTypeName(t2_id), t2.value AS t2_value, toTypeName(t2_value)
-FROM test_table_join_1 AS t1 {{ join_type }} JOIN test_table_join_2 AS t2 USING (id);
+FROM test_table_join_1 AS t1 {{ join_type }} JOIN test_table_join_2 AS t2 USING (id)
+ORDER BY ALL;
 
 SELECT '--';
 
 SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value)
-FROM test_table_join_1 AS t1 {{ join_type }} JOIN test_table_join_2 AS t2 USING (id);
+FROM test_table_join_1 AS t1 {{ join_type }} JOIN test_table_join_2 AS t2 USING (id)
+ORDER BY ALL;
 
 SELECT '--';
 
@@ -64,16 +66,18 @@ SELECT 'First JOIN {{ first_join_type }} second JOIN {{ second_join_type }}';
 
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
 t2.id AS t2_id, toTypeName(t2_id), t2.value AS t2_value, toTypeName(t2_value), t3.id AS t3_id, toTypeName(t3_id), t3.value AS t3_value, toTypeName(t3_value)
-FROM test_table_join_1 AS t1 {{ first_join_type }} JOIN test_table_join_2 AS t2 USING (id) {{ second_join_type }} JOIN test_table_join_3 AS t3 USING(id);
+FROM test_table_join_1 AS t1 {{ first_join_type }} JOIN test_table_join_2 AS t2 USING (id) {{ second_join_type }} JOIN test_table_join_3 AS t3 USING(id)
+ORDER BY ALL;
 
 SELECT '--';
 
 SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value), t3.value AS t3_value, toTypeName(t3_value)
-FROM test_table_join_1 AS t1 {{ first_join_type }} JOIN test_table_join_2 AS t2 USING (id) {{ second_join_type }} JOIN test_table_join_3 AS t3 USING(id);
+FROM test_table_join_1 AS t1 {{ first_join_type }} JOIN test_table_join_2 AS t2 USING (id) {{ second_join_type }} JOIN test_table_join_3 AS t3 USING(id)
+ORDER BY ALL;
 
 SELECT '--';
 
-SELECT 1 FROM test_table_join_1 AS t1 {{ first_join_type }} JOIN test_table_join_2 AS t2 USING (id) {{ second_join_type }} JOIN test_table_join_3 AS t3 USING(id);
+SELECT 1 FROM test_table_join_1 AS t1 {{ first_join_type }} JOIN test_table_join_2 AS t2 USING (id) {{ second_join_type }} JOIN test_table_join_3 AS t3 USING(id) ORDER BY ALL;
 
 SELECT id FROM test_table_join_1 AS t1 {{ first_join_type }} JOIN test_table_join_2 AS t2 ON t1.id = t2.id {{ second_join_type }} JOIN test_table_join_3 AS t3 USING (id); -- { serverError AMBIGUOUS_IDENTIFIER }
 
