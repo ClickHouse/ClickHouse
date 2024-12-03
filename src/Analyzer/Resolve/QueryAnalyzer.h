@@ -172,15 +172,15 @@ private:
 
     /// Resolve identifier functions
 
-    QueryTreeNodePtr tryResolveIdentifierFromAliases(const IdentifierLookup & identifier_lookup,
+    IdentifierResolveResult tryResolveIdentifierFromAliases(const IdentifierLookup & identifier_lookup,
         IdentifierResolveScope & scope,
-        IdentifierResolveSettings identifier_resolve_settings);
+        IdentifierResolveContext identifier_resolve_context);
 
-    IdentifierResolveResult tryResolveIdentifierInParentScopes(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope);
+    IdentifierResolveResult tryResolveIdentifierInParentScopes(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope, const IdentifierResolveContext identifier_resolve_settings);
 
     IdentifierResolveResult tryResolveIdentifier(const IdentifierLookup & identifier_lookup,
         IdentifierResolveScope & scope,
-        IdentifierResolveSettings identifier_resolve_settings = {});
+        IdentifierResolveContext identifier_resolve_settings = {});
 
     /// Resolve query tree nodes functions
 
@@ -195,7 +195,7 @@ private:
     QueryTreeNodesWithNames getMatchedColumnNodesWithNames(const QueryTreeNodePtr & matcher_node,
         const QueryTreeNodePtr & table_expression_node,
         const NamesAndTypes & matched_columns,
-        const IdentifierResolveScope & scope);
+        IdentifierResolveScope & scope);
 
     void updateMatchedColumnsFromJoinUsing(QueryTreeNodesWithNames & result_matched_column_nodes_with_names, const QueryTreeNodePtr & source_table_expression, IdentifierResolveScope & scope);
 
@@ -249,7 +249,7 @@ private:
     void resolveUnion(const QueryTreeNodePtr & union_node, IdentifierResolveScope & scope);
 
     /// Lambdas that are currently in resolve process
-    std::unordered_set<IQueryTreeNode *> lambdas_in_resolve_process;
+    QueryTreeNodePtrWithHashSet lambdas_in_resolve_process;
 
     /// CTEs that are currently in resolve process
     std::unordered_set<std::string_view> ctes_in_resolve_process;

@@ -9,10 +9,7 @@ namespace DB
 struct ScopeAliases
 {
     /// Alias name to query expression node
-    std::unordered_map<std::string, QueryTreeNodePtr> alias_name_to_expression_node_before_group_by;
-    std::unordered_map<std::string, QueryTreeNodePtr> alias_name_to_expression_node_after_group_by;
-
-    std::unordered_map<std::string, QueryTreeNodePtr> * alias_name_to_expression_node = nullptr;
+    std::unordered_map<std::string, QueryTreeNodePtr> alias_name_to_expression_node;
 
     /// Alias name to lambda node
     std::unordered_map<std::string, QueryTreeNodePtr> alias_name_to_lambda_node;
@@ -27,6 +24,11 @@ struct ScopeAliases
     std::unordered_set<QueryTreeNodePtr> nodes_with_duplicated_aliases;
     std::vector<QueryTreeNodePtr> cloned_nodes_with_duplicated_aliases;
 
+    /// Cloned resolved expressions with aliases that must be removed
+    QueryTreeNodes node_to_remove_aliases;
+
+    std::unordered_map<std::string, DataTypePtr> alias_name_to_expression_type;
+
     /// Names which are aliases from ARRAY JOIN.
     /// This is needed to properly qualify columns from matchers and avoid name collision.
     std::unordered_set<std::string> array_join_aliases;
@@ -35,7 +37,7 @@ struct ScopeAliases
     {
         switch (lookup_context)
         {
-            case IdentifierLookupContext::EXPRESSION: return *alias_name_to_expression_node;
+            case IdentifierLookupContext::EXPRESSION: return alias_name_to_expression_node;
             case IdentifierLookupContext::FUNCTION: return alias_name_to_lambda_node;
             case IdentifierLookupContext::TABLE_EXPRESSION: return alias_name_to_table_expression_node;
         }

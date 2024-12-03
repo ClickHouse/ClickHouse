@@ -92,11 +92,11 @@ public:
 
     void dump(WriteBuffer & buffer) const
     {
-        buffer << expressions.size() << '\n';
+        buffer << "Expression resolve process stack size: " << expressions.size() << '\n';
 
         for (const auto & expression : expressions)
         {
-            buffer << "Expression ";
+            buffer << " Expression ";
             buffer << expression->formatASTForErrorMessage();
 
             const auto & alias = expression->getAlias();

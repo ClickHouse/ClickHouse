@@ -137,7 +137,7 @@ struct IdentifierResolveScope
     ContextPtr context;
 
     /// Identifier lookup to result
-    std::unordered_map<IdentifierLookup, IdentifierResolveState, IdentifierLookupHash> identifier_lookup_to_resolve_state;
+    std::unordered_map<IdentifierLookup, IdentifierResolveState, IdentifierLookupHash> identifier_in_lookup_process;
 
     /// Argument can be expression like constant, column, function or table expression
     std::unordered_map<std::string, QueryTreeNodePtr> expression_argument_name_to_node;
@@ -165,6 +165,9 @@ struct IdentifierResolveScope
     /// Table expression node to data
     std::unordered_map<QueryTreeNodePtr, AnalysisTableExpressionData> table_expression_node_to_data;
 
+    /// Table expression nodes that appear in the join tree of the corresponding query
+    std::unordered_set<QueryTreeNodePtr> registered_table_expression_nodes;
+
     QueryTreeNodePtrWithHashIgnoreTypesSet nullable_group_by_keys;
     /// Here we count the number of nullable GROUP BY keys we met resolving expression.
     /// E.g. for a query `SELECT tuple(tuple(number)) FROM numbers(10) GROUP BY (number, tuple(number)) with cube`
@@ -179,9 +182,6 @@ struct IdentifierResolveScope
       * This map is used to revert these columns back to their original columns in the source table.
       */
     QueryTreeNodePtrWithHashMap<QueryTreeNodePtr> join_columns_with_changed_types;
-
-    /// Use identifier lookup to result cache
-    bool use_identifier_lookup_to_result_cache = true;
 
     /// Apply nullability to aggregation keys
     bool group_by_use_nulls = false;
