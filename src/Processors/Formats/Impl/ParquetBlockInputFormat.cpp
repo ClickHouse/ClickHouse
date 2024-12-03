@@ -610,18 +610,22 @@ void ParquetBlockInputFormat::initializeIfNeeded()
     };
 
     std::unordered_set<std::size_t> filtering_columns;
-    KeyCondition::RPN parquet_rpn = key_condition->getRPN();
+    KeyCondition::RPN parquet_rpn;
 
-    if (format_settings.parquet.bloom_filter_push_down && key_condition)
+    if (key_condition)
     {
-        bf_reader = parquet::BloomFilterReader::Make(arrow_file, metadata, bf_reader_properties, nullptr);
+        parquet_rpn = key_condition->getRPN();
+        if (format_settings.parquet.bloom_filter_push_down)
+        {
+            bf_reader = parquet::BloomFilterReader::Make(arrow_file, metadata, bf_reader_properties, nullptr);
 
-        parquet_rpn = keyConditionRPNToParquetRPN(
-            parquet_rpn,
-            index_mapping,
-            metadata->RowGroup(0));
+            parquet_rpn = keyConditionRPNToParquetRPN(
+                parquet_rpn,
+                index_mapping,
+                metadata->RowGroup(0));
 
-        filtering_columns = getBloomFilterFilteringColumnKeys(parquet_rpn);
+            filtering_columns = getBloomFilterFilteringColumnKeys(parquet_rpn);
+        }
     }
 
     auto skip_row_group_based_on_filters = [&](int row_group)
