@@ -244,14 +244,14 @@ void FilterStep::updateOutputHeader()
         return;
 }
 
+void FilterStep::setQueryConditionKey(size_t condition_id_)
+{
+    condition_id = condition_id_;
+}
+
 bool FilterStep::canUseType(const DataTypePtr & filter_type)
 {
     return FilterTransform::canUseType(filter_type);
-}
-
-void FilterStep::setQueryConditiondKey(size_t condition_id_)
-{
-    condition_id = condition_id_;
 }
 
 }
