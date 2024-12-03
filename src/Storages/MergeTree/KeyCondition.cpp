@@ -3019,8 +3019,7 @@ bool mayExistOnBloomFilter(const KeyCondition::BloomFilterData & condition_bloom
 
         if (!column_maybe_contains)
         {
-            maybe_true = false;
-            break;
+            return false;
         }
     }
 
@@ -3049,7 +3048,6 @@ BoolMask KeyCondition::checkRPNAgainstHyperrectangle(
     {
         if (element.argument_num_of_space_filling_curve.has_value())
         {
-            // todo arthur, not sure what to do here yet
             /// If a condition on argument of a space filling curve wasn't collapsed into FUNCTION_ARGS_IN_HYPERRECTANGLE,
             /// we cannot process it.
             rpn_stack.emplace_back(true, true);
