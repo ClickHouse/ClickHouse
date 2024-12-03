@@ -46,8 +46,15 @@ struct PartsComparatorByOldestData
 {
     bool operator()(const MergeTreeData::DataPartPtr & f, const MergeTreeData::DataPartPtr & s) const
     {
-        return std::forward_as_tuple(f->getMinTimeOfDataInsertion(), f->getMaxTimeOfDataInsertion()) >
-               std::forward_as_tuple(s->getMinTimeOfDataInsertion(), s->getMaxTimeOfDataInsertion());
+        if (f->enabledMaxMinTimeOfDataInsertion() && s->enabledMaxMinTimeOfDataInsertion())
+        {
+            return std::forward_as_tuple(f->getMinTimeOfDataInsertion(), f->getMaxTimeOfDataInsertion()) >
+                std::forward_as_tuple(s->getMinTimeOfDataInsertion(), s->getMaxTimeOfDataInsertion());
+        }
+        /// Backoff if new files not generated.
+
+        /// What should we do if there is no minmax time column in the table? Should we add more backoffs, like comparing by the part name.
+        return f->getMinMaxTime() < s->getMinMaxTime();
     }
 };
 
