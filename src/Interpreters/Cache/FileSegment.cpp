@@ -392,12 +392,6 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
                     range().size(), first_non_downloaded_offset, size, current_downloaded_size);
             }
         }
-
-        if (!cache_writer && current_downloaded_size > 0)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cache writer was finalized (downloaded size: {}, state: {})",
-                current_downloaded_size, stateToString(download_state));
     }
 
     try
@@ -409,7 +403,12 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
 #endif
 
         if (!cache_writer)
-            cache_writer = std::make_unique<WriteBufferFromFile>(getPath(), /* buf_size */0);
+        {
+            int flags = -1;
+            if (downloaded_size > 0)
+                flags = O_WRONLY | O_APPEND | O_CLOEXEC;
+            cache_writer = std::make_unique<WriteBufferFromFile>(getPath(), /* buf_size */0, flags);
+        }
 
         /// Size is equal to offset as offset for write buffer points to data end.
         cache_writer->set(from, /* size */size, /* offset */size);
