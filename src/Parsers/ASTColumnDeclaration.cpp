@@ -128,4 +128,27 @@ void ASTColumnDeclaration::formatImpl(const FormatSettings & format_settings, Fo
     }
 }
 
+void ASTColumnDeclaration::forEachPointerToChild(std::function<void(void **)> f)
+{
+    auto visit_child = [&f](ASTPtr & member)
+    {
+        IAST * new_member_ptr = member.get();
+        f(reinterpret_cast<void **>(&new_member_ptr));
+        if (new_member_ptr != member.get())
+        {
+            if (new_member_ptr)
+                member = new_member_ptr->ptr();
+            else
+                member.reset();
+        }
+    };
+
+    visit_child(default_expression);
+    visit_child(comment);
+    visit_child(codec);
+    visit_child(statistics_desc);
+    visit_child(ttl);
+    visit_child(collation);
+    visit_child(settings);
+}
 }

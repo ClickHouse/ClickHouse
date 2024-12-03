@@ -1,6 +1,8 @@
 -- Tags: no-fasttest
 
 SET allow_experimental_json_type = 1;
+SET allow_suspicious_types_in_order_by = 1;
+SET allow_suspicious_types_in_order_by = 1;
 
 DROP TABLE IF EXISTS type_json_src;
 DROP TABLE IF EXISTS type_json_dst;

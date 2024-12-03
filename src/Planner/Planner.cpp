@@ -98,11 +98,9 @@ namespace Setting
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
-    extern const SettingsBool compile_aggregate_expressions;
     extern const SettingsOverflowMode distinct_overflow_mode;
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsBool enable_memory_bound_merging_of_aggregation_results;
-    extern const SettingsBool enable_software_prefetch_in_aggregation;
     extern const SettingsBool empty_result_for_aggregation_by_constant_keys_on_empty_set;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool exact_rows_before_limit;
@@ -112,7 +110,6 @@ namespace Setting
     extern const SettingsUInt64 group_by_two_level_threshold;
     extern const SettingsUInt64 group_by_two_level_threshold_bytes;
     extern const SettingsBool group_by_use_nulls;
-    extern const SettingsUInt64 max_bytes_before_external_group_by;
     extern const SettingsUInt64 max_bytes_in_distinct;
     extern const SettingsUInt64 max_block_size;
     extern const SettingsUInt64 max_size_to_preallocate_for_aggregation;
@@ -120,12 +117,7 @@ namespace Setting
     extern const SettingsUInt64 max_rows_in_distinct;
     extern const SettingsUInt64 max_rows_to_group_by;
     extern const SettingsMaxThreads max_threads;
-    extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
     extern const SettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
-    extern const SettingsUInt64 min_free_disk_space_for_temporary_data;
-    extern const SettingsBool optimize_distinct_in_order;
-    extern const SettingsBool optimize_group_by_constant_keys;
-    extern const SettingsBool optimize_sorting_by_input_stream_properties;
     extern const SettingsBool parallel_replicas_allow_in_with_subquery;
     extern const SettingsString parallel_replicas_custom_key;
     extern const SettingsUInt64 parallel_replicas_min_number_of_rows_per_replica;
@@ -274,7 +266,7 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
     return res;
 }
 
-FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree_node, SelectQueryOptions & select_query_options)
+FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options)
 {
     if (select_query_options.only_analyze)
         return {};
@@ -437,27 +429,15 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
     }
 
     Aggregator::Params aggregator_params = Aggregator::Params(
+        settings,
         aggregation_analysis_result.aggregation_keys,
         aggregate_descriptions,
         query_analysis_result.aggregate_overflow_row,
-        settings[Setting::max_rows_to_group_by],
-        settings[Setting::group_by_overflow_mode],
         settings[Setting::group_by_two_level_threshold],
         settings[Setting::group_by_two_level_threshold_bytes],
-        settings[Setting::max_bytes_before_external_group_by],
-        settings[Setting::empty_result_for_aggregation_by_empty_set]
-            || (settings[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set] && aggregation_analysis_result.aggregation_keys.empty()
-                && aggregation_analysis_result.group_by_with_constant_keys),
+        settings[Setting::empty_result_for_aggregation_by_empty_set] || (settings[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set] && aggregation_analysis_result.aggregation_keys.empty() && aggregation_analysis_result.group_by_with_constant_keys),
         query_context->getTempDataOnDisk(),
-        settings[Setting::max_threads],
-        settings[Setting::min_free_disk_space_for_temporary_data],
-        settings[Setting::compile_aggregate_expressions],
-        settings[Setting::min_count_to_compile_aggregate_expression],
-        settings[Setting::max_block_size],
-        settings[Setting::enable_software_prefetch_in_aggregation],
         /* only_merge */ false,
-        settings[Setting::optimize_group_by_constant_keys],
-        settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
         stats_collecting_params);
 
     return aggregator_params;

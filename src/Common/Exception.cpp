@@ -61,7 +61,7 @@ std::function<void(const std::string & msg, int code, bool remote, const Excepti
 
 /// - Aborts the process if error code is LOGICAL_ERROR.
 /// - Increments error codes statistics.
-void handle_error_code(const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
+static void handle_error_code(const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
 {
     // In debug builds and builds with sanitizers, treat LOGICAL_ERROR as an assertion failure.
     // Log the message before we fail.
@@ -251,7 +251,7 @@ void Exception::setThreadFramePointers(ThreadFramePointersBase frame_pointers)
         thread_frame_pointers.frame_pointers = std::move(frame_pointers);
 }
 
-static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string & start_of_message)
+static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string & start_of_message, LogsLevel level)
 {
     if (!isLoggingEnabled())
         return;
@@ -262,14 +262,25 @@ static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string 
         if (!start_of_message.empty())
             message.text = fmt::format("{}: {}", start_of_message, message.text);
 
-        LOG_ERROR(logger, message);
+        switch (level)
+        {
+            case LogsLevel::none: break;
+            case LogsLevel::test: LOG_TEST(logger, message); break;
+            case LogsLevel::trace: LOG_TRACE(logger, message); break;
+            case LogsLevel::debug: LOG_DEBUG(logger, message); break;
+            case LogsLevel::information: LOG_INFO(logger, message); break;
+            case LogsLevel::warning: LOG_WARNING(logger, message); break;
+            case LogsLevel::error: LOG_ERROR(logger, message); break;
+            case LogsLevel::fatal: LOG_FATAL(logger, message); break;
+        }
+
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 }
 
-void tryLogCurrentException(const char * log_name, const std::string & start_of_message)
+void tryLogCurrentException(const char * log_name, const std::string & start_of_message, LogsLevel level)
 {
     if (!isLoggingEnabled())
         return;
@@ -283,10 +294,10 @@ void tryLogCurrentException(const char * log_name, const std::string & start_of_
 
     /// getLogger can allocate memory too
     auto logger = getLogger(log_name);
-    tryLogCurrentExceptionImpl(logger.get(), start_of_message);
+    tryLogCurrentExceptionImpl(logger.get(), start_of_message, level);
 }
 
-void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message)
+void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message, LogsLevel level)
 {
     /// Under high memory pressure, new allocations throw a
     /// MEMORY_LIMIT_EXCEEDED exception.
@@ -295,17 +306,17 @@ void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_
     /// MemoryTracker until the exception will be logged.
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
-    tryLogCurrentExceptionImpl(logger, start_of_message);
+    tryLogCurrentExceptionImpl(logger, start_of_message, level);
 }
 
-void tryLogCurrentException(LoggerPtr logger, const std::string & start_of_message)
+void tryLogCurrentException(LoggerPtr logger, const std::string & start_of_message, LogsLevel level)
 {
-    tryLogCurrentException(logger.get(), start_of_message);
+    tryLogCurrentException(logger.get(), start_of_message, level);
 }
 
-void tryLogCurrentException(const AtomicLogger & logger, const std::string & start_of_message)
+void tryLogCurrentException(const AtomicLogger & logger, const std::string & start_of_message, LogsLevel level)
 {
-    tryLogCurrentException(logger.load(), start_of_message);
+    tryLogCurrentException(logger.load(), start_of_message, level);
 }
 
 static void getNoSpaceLeftInfoMessage(std::filesystem::path path, String & msg)
@@ -627,7 +638,7 @@ PreformattedMessage getExceptionMessageAndPattern(const Exception & e, bool with
     return PreformattedMessage{stream.str(), e.tryGetMessageFormatString(), e.getMessageFormatStringArgs()};
 }
 
-std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace)
+std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace, bool check_embedded_stacktrace)
 {
     try
     {
@@ -635,7 +646,7 @@ std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace)
     }
     catch (...)
     {
-        return getCurrentExceptionMessage(with_stacktrace);
+        return getCurrentExceptionMessage(with_stacktrace, check_embedded_stacktrace);
     }
 }
 

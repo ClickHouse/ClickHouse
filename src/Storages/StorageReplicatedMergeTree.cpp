@@ -208,7 +208,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool use_minimalistic_checksums_in_zookeeper;
     extern const MergeTreeSettingsBool use_minimalistic_part_header_in_zookeeper;
     extern const MergeTreeSettingsMilliseconds wait_for_unique_parts_send_before_shutdown_ms;
-    extern const MergeTreeSettingsBool prewarm_mark_cache;
 }
 
 namespace FailPoints
@@ -216,6 +215,10 @@ namespace FailPoints
     extern const char replicated_queue_fail_next_entry[];
     extern const char replicated_queue_unfail_entries[];
     extern const char finish_set_quorum_failed_parts[];
+    extern const char zero_copy_lock_zk_fail_before_op[];
+    extern const char zero_copy_lock_zk_fail_after_op[];
+    extern const char zero_copy_unlock_zk_fail_before_op[];
+    extern const char zero_copy_unlock_zk_fail_after_op[];
 }
 
 namespace ErrorCodes
@@ -509,7 +512,11 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     }
 
     loadDataParts(skip_sanity_checks, expected_parts_on_this_replica);
-    prewarmMarkCache(getActivePartsLoadingThreadPool().get());
+
+    prewarmCaches(
+        getActivePartsLoadingThreadPool().get(),
+        getMarkCacheToPrewarm(0),
+        getPrimaryIndexCacheToPrewarm(0));
 
     if (LoadingStrictnessLevel::ATTACH <= mode)
     {
@@ -2095,7 +2102,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
             const auto part_old_name = part_info->getPartNameV1();
             const auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_old_name, disk);
 
-            auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path(DETACHED_DIR_NAME) / part_old_name)
+            auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path(DETACHED_DIR_NAME) / part_old_name, getReadSettings())
                 .withPartFormatFromDisk()
                 .build();
 
@@ -5082,10 +5089,17 @@ bool StorageReplicatedMergeTree::fetchPart(
                 ProfileEvents::increment(ProfileEvents::ObsoleteReplicatedParts);
             }
 
-            if ((*getSettings())[MergeTreeSetting::prewarm_mark_cache] && getContext()->getMarkCache())
+            size_t bytes_uncompressed = part->getBytesUncompressedOnDisk();
+
+            if (auto mark_cache = getMarkCacheToPrewarm(bytes_uncompressed))
             {
                 auto column_names = getColumnsToPrewarmMarks(*getSettings(), part->getColumns());
-                part->loadMarksToCache(column_names, getContext()->getMarkCache().get());
+                part->loadMarksToCache(column_names, mark_cache.get());
+            }
+
+            if (auto index_cache = getPrimaryIndexCacheToPrewarm(bytes_uncompressed))
+            {
+                part->loadIndexToCache(*index_cache);
             }
 
             write_part_log({});
@@ -5640,10 +5654,7 @@ void StorageReplicatedMergeTree::readLocalImpl(
     const size_t max_block_size,
     const size_t num_streams)
 {
-    const bool enable_parallel_reading = local_context->canUseParallelReplicasOnFollower()
-        && (!local_context->getSettingsRef()[Setting::allow_experimental_analyzer]
-            || query_info.current_table_chosen_for_reading_with_parallel_replicas);
-
+    const bool enable_parallel_reading = local_context->canUseParallelReplicasOnFollower();
     auto plan = reader.read(
         column_names, storage_snapshot, query_info,
         local_context, max_block_size, num_streams,
@@ -9853,6 +9864,9 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
 
         LOG_TRACE(logger, "Removing zookeeper lock {} for part {} (files to keep: [{}])", zookeeper_part_replica_node, part_name, fmt::join(files_not_to_remove, ", "));
 
+        fiu_do_on(FailPoints::zero_copy_unlock_zk_fail_before_op, { zookeeper_ptr->forceFailureBeforeOperation(); });
+        fiu_do_on(FailPoints::zero_copy_unlock_zk_fail_after_op, { zookeeper_ptr->forceFailureAfterOperation(); });
+
         if (auto ec = zookeeper_ptr->tryRemove(zookeeper_part_replica_node); ec != Coordination::Error::ZOK)
         {
             /// Very complex case. It means that lock already doesn't exist when we tried to remove it.
@@ -10483,6 +10497,10 @@ void StorageReplicatedMergeTree::createZeroCopyLockNode(
         Coordination::Requests ops;
         Coordination::Responses responses;
         getZeroCopyLockNodeCreateOps(zookeeper, zookeeper_node, ops, mode, replace_existing_lock, path_to_set_hardlinked_files, hardlinked_files);
+
+        fiu_do_on(FailPoints::zero_copy_lock_zk_fail_before_op, { zookeeper->forceFailureBeforeOperation(); });
+        fiu_do_on(FailPoints::zero_copy_lock_zk_fail_after_op, { zookeeper->forceFailureAfterOperation(); });
+
         auto error = zookeeper->tryMulti(ops, responses);
         if (error == Coordination::Error::ZOK)
         {
