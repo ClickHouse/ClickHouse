@@ -585,17 +585,34 @@ llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const ValuesWith
         }
 
         auto * result = compileImpl(builder, unwrapped_arguments, removeNullable(result_type));
-
         auto * nullable_structure_type = toNativeType(b, makeNullable(getReturnTypeImpl(*denulled_arguments_types)));
         auto * nullable_structure_value = llvm::Constant::getNullValue(nullable_structure_type);
 
-        auto * nullable_structure_with_result_value = b.CreateInsertValue(nullable_structure_value, result, {0});
-        auto * nullable_structure_result_null = b.CreateExtractValue(nullable_structure_with_result_value, {1});
+        if (!result->getType()->isStructTy())
+        {
+            auto * nullable_structure_with_result_value = b.CreateInsertValue(nullable_structure_value, result, {0});
+            auto * nullable_structure_result_null = b.CreateExtractValue(nullable_structure_with_result_value, {1});
 
-        for (auto * is_null_value : is_null_values)
-            nullable_structure_result_null = b.CreateOr(nullable_structure_result_null, is_null_value);
+            for (auto * is_null_value : is_null_values)
+                nullable_structure_result_null = b.CreateOr(nullable_structure_result_null, is_null_value);
 
-        return b.CreateInsertValue(nullable_structure_with_result_value, nullable_structure_result_null, {1});
+            return b.CreateInsertValue(nullable_structure_with_result_value, nullable_structure_result_null, {1});
+        }
+        else
+        {
+            /// In case defaultImplementationForNulls returns a nullable structure, we need to merge the null values.
+            auto * result_value = b.CreateExtractValue(result, {0});
+            auto * result_is_null = b.CreateExtractValue(result, {1});
+
+            auto * nullable_structure_with_result_value = b.CreateInsertValue(nullable_structure_value, result_value, {0});
+            auto * nullable_structure_result_null = b.CreateExtractValue(nullable_structure_with_result_value, {1});
+
+            nullable_structure_result_null = b.CreateOr(nullable_structure_result_null, result_is_null);
+            for (auto * is_null_value : is_null_values)
+                nullable_structure_result_null = b.CreateOr(nullable_structure_result_null, is_null_value);
+
+            return b.CreateInsertValue(nullable_structure_with_result_value, nullable_structure_result_null, {1});
+        }
     }
 
     return compileImpl(builder, arguments, result_type);
