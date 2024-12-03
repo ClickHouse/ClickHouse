@@ -25,5 +25,8 @@ cp ${DATA_FILE} ${DATA_FILE_USER_PATH}
 # On the other hand, min max can handle both. It'll evaluate x = 3 to true (because it is within the range) and the latter to false
 # Therefore, bloom filter would determine `false or true` and minmax would determine `true or false`. Resulting in true.
 
+# Without bf to prove nothing is returned, but rows had to be read
+${CLICKHOUSE_CLIENT} --query="select * from file('${DATA_FILE_USER_PATH}', Parquet) WHERE int8 = 3 or int8 > 5 FORMAT Json SETTINGS input_format_parquet_filter_push_down=true, input_format_parquet_bloom_filter_push_down=false;" | jq 'del(.meta,.statistics.elapsed)'
+
 # Since both structures are now evaluated together, the row group should be skipped
 ${CLICKHOUSE_CLIENT} --query="select * from file('${DATA_FILE_USER_PATH}', Parquet) WHERE int8 = 3 or int8 > 5 FORMAT Json SETTINGS input_format_parquet_filter_push_down=true, input_format_parquet_bloom_filter_push_down=true;" | jq 'del(.meta,.statistics.elapsed)'
