@@ -26,6 +26,7 @@ elseif(COMPILER_CACHE STREQUAL "chcache")
         MANIFEST_PATH ${CMAKE_CURRENT_SOURCE_DIR}/utils/chcache/Cargo.toml
         PROFILE release
         LOCKED
+        FLAGS --offline
     )
     set_target_properties(chcache PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/programs/)
 
