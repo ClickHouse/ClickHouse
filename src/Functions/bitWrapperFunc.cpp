@@ -43,7 +43,7 @@ using FunctionBitWrapperFunc = FunctionUnaryArithmetic<BitWrapperFuncImpl, NameB
 template <> struct FunctionUnaryArithmeticMonotonicity<NameBitWrapperFunc>
 {
     static bool has() { return false; }
-    static IFunction::Monotonicity get(const Field &, const Field &)
+    static IFunction::Monotonicity get(const IDataType &, const Field &, const Field &)
     {
         return {};
     }
