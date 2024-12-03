@@ -62,7 +62,12 @@ $CLICKHOUSE_LOCAL --query "
                 SELECT arrayJoin(tupleElement(changes, 'name'))
                 FROM system.settings_changes
                 WHERE type = 'Core' AND splitByChar('.', version)[1]::UInt64 >= 24 AND splitByChar('.', version)[2]::UInt64 > 11
-            ))
+            )) AND (
+                -- Different values for sanitizers
+                ( SELECT count() FROM system.build_options WHERE name = 'CXX_FLAGS' AND position('sanitize' IN value) = 1 )
+                AND
+                name NOT IN ('query_profiler_cpu_time_period_ns', 'query_profiler_real_time_period_ns')
+            )
         )
         UNION ALL
         (
