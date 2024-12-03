@@ -74,10 +74,10 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , max_parsing_threads(max_parsing_threads_)
     , read_from_format_info(info)
     , create_reader_pool(std::make_shared<ThreadPool>(
-          CurrentMetrics::StorageObjectStorageThreads,
-          CurrentMetrics::StorageObjectStorageThreadsActive,
-          CurrentMetrics::StorageObjectStorageThreadsScheduled,
-          1 /* max_threads */))
+        CurrentMetrics::StorageObjectStorageThreads,
+        CurrentMetrics::StorageObjectStorageThreadsActive,
+        CurrentMetrics::StorageObjectStorageThreadsScheduled,
+        1 /* max_threads */))
     , file_iterator(file_iterator_)
     , schema_cache(StorageObjectStorage::getSchemaCache(context_, configuration->getTypeName()))
     , create_reader_scheduler(threadPoolCallbackRunnerUnsafe<ReaderHolder>(*create_reader_pool, "Reader"))
@@ -875,11 +875,11 @@ StorageObjectStorageSource::ArchiveIterator::createArchiveReader(ObjectInfoPtr o
     const auto size = object_info->metadata->size_bytes;
     return DB::createArchiveReader(
         /* path_to_archive */object_info->getPath(),
-         /* archive_read_function */[=, this]()
-         {
-             return StorageObjectStorageSource::createReadBuffer(*object_info, object_storage, getContext(), logger);
-         },
-         /* archive_size */size);
+        /* archive_read_function */[=, this]()
+        {
+            return StorageObjectStorageSource::createReadBuffer(*object_info, object_storage, getContext(), logger);
+        },
+        /* archive_size */size);
 }
 
 StorageObjectStorageSource::ObjectInfoPtr
