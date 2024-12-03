@@ -211,13 +211,12 @@ Chunk StorageObjectStorageSource::generate()
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk,
                 read_from_format_info.requested_virtual_columns,
-                {
-                  .path = getUniqueStoragePathIdentifier(*configuration, *object_info, false),
-                  .size = object_info->isArchive() ? object_info->fileSizeInArchive() : object_info->metadata->size_bytes,
-                  .filename = &filename,
-                  .last_modified = object_info->metadata->last_modified,
-                  .etag = &(object_info->metadata->etag)
-                }, getContext());
+                {.path = getUniqueStoragePathIdentifier(*configuration, *object_info, false),
+                 .size = object_info->isArchive() ? object_info->fileSizeInArchive() : object_info->metadata->size_bytes,
+                 .filename = &filename,
+                 .last_modified = object_info->metadata->last_modified,
+                 .etag = &(object_info->metadata->etag)},
+                read_context);
 
             const auto & partition_columns = configuration->getPartitionColumns();
             if (!partition_columns.empty() && chunk_size && chunk.hasColumns())
@@ -247,7 +246,7 @@ Chunk StorageObjectStorageSource::generate()
             return chunk;
         }
 
-        if (reader.getInputFormat() && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
+        if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files])
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -270,18 +269,26 @@ Chunk StorageObjectStorageSource::generate()
 void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows)
 {
     const auto cache_key = getKeyForSchemaCache(
-        getUniqueStoragePathIdentifier(*configuration, object_info),
-        configuration->format,
-        format_settings,
-        getContext());
+        getUniqueStoragePathIdentifier(*configuration, object_info), configuration->format, format_settings, read_context);
     schema_cache.addNumRows(cache_key, num_rows);
 }
 
 StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader()
 {
     return createReader(
-        0, file_iterator, configuration, object_storage, read_from_format_info, format_settings,
-        key_condition, getContext(), &schema_cache, log, max_block_size, max_parsing_threads, need_only_count);
+        0,
+        file_iterator,
+        configuration,
+        object_storage,
+        read_from_format_info,
+        format_settings,
+        key_condition,
+        read_context,
+        &schema_cache,
+        log,
+        max_block_size,
+        max_parsing_threads,
+        need_only_count);
 }
 
 StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader(
@@ -600,7 +607,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
         recursive = key_with_globs == "/**";
         if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, local_context))
         {
-            VirtualColumnUtils::buildSetsForDAG(*filter_dag, getContext());
+            VirtualColumnUtils::buildSetsForDAG(*filter_dag, read_context);
             filter_expr = std::make_shared<ExpressionActions>(std::move(*filter_dag));
         }
     }
@@ -867,12 +874,11 @@ StorageObjectStorageSource::ArchiveIterator::createArchiveReader(ObjectInfoPtr o
 {
     const auto size = object_info->metadata->size_bytes;
     return DB::createArchiveReader(
-        /* path_to_archive */object_info->getPath(),
-        /* archive_read_function */[=, this]()
-        {
-            return StorageObjectStorageSource::createReadBuffer(*object_info, object_storage, getContext(), logger);
-        },
-        /* archive_size */size);
+        /* path_to_archive */
+        object_info->getPath(),
+        /* archive_read_function */ [=, this]()
+        { return StorageObjectStorageSource::createReadBuffer(*object_info, object_storage, read_context, logger); },
+        /* archive_size */ size);
 }
 
 StorageObjectStorageSource::ObjectInfoPtr

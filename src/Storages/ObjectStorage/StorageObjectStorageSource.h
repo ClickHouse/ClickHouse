@@ -75,6 +75,7 @@ protected:
     const String name;
     ObjectStoragePtr object_storage;
     const ConfigurationPtr configuration;
+    const ContextPtr read_context;
     const std::optional<FormatSettings> format_settings;
     const UInt64 max_block_size;
     const bool need_only_count;
@@ -245,7 +246,6 @@ private:
 
     const ObjectStoragePtr object_storage;
     const ConfigurationPtr configuration;
-    const ContextPtr read_context;
     const NamesAndTypesList virtual_columns;
     const std::function<void(FileProgress)> file_progress_callback;
     const std::vector<String> keys;
