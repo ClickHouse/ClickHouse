@@ -38,6 +38,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TYPE_MISMATCH;
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
+    extern const int UNKNOWN_ELEMENT_OF_ENUM;
 }
 
 
