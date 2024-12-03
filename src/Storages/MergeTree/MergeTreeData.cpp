@@ -144,6 +144,9 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric DelayedInserts;
+    extern const Metric FreezePartThreads;
+    extern const Metric FreezePartThreadsActive;
+    extern const Metric FreezePartThreadsScheduled;
 }
 
 
@@ -7861,9 +7864,14 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
     for (const auto & disk : getStoragePolicy()->getDisks())
         disk->onFreeze(backup_path);
 
+    ThreadPool pool(
+        CurrentMetrics::FreezePartThreads,
+        CurrentMetrics::FreezePartThreadsActive,
+        CurrentMetrics::FreezePartThreadsScheduled,
+        local_context->getSettingsRef()[Setting::max_threads]);
     PartitionCommandsResultInfo result;
     std::mutex result_mutex;
-    ThreadPoolCallbackRunnerLocal<void> runner(getFreezePartThreadPool().get(), "FreezePart");
+    ThreadPoolCallbackRunnerLocal<void> runner(pool, "FreezePart");
 
     for (const auto & part : data_parts)
     {

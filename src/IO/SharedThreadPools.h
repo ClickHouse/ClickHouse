@@ -72,7 +72,4 @@ StaticThreadPool & getDatabaseReplicatedCreateTablesThreadPool();
 /// ThreadPool used for dropping tables.
 StaticThreadPool & getDatabaseCatalogDropTablesThreadPool();
 
-/// ThreadPool used for freezing tables.
-StaticThreadPool & getFreezePartThreadPool();
-
 }

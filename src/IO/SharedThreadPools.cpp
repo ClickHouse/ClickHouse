@@ -29,9 +29,6 @@ namespace CurrentMetrics
     extern const Metric DatabaseReplicatedCreateTablesThreads;
     extern const Metric DatabaseReplicatedCreateTablesThreadsActive;
     extern const Metric DatabaseReplicatedCreateTablesThreadsScheduled;
-    extern const Metric FreezePartThreads;
-    extern const Metric FreezePartThreadsActive;
-    extern const Metric FreezePartThreadsScheduled;
 
 }
 
@@ -177,12 +174,6 @@ StaticThreadPool & getDatabaseReplicatedCreateTablesThreadPool()
 StaticThreadPool & getDatabaseCatalogDropTablesThreadPool()
 {
     static StaticThreadPool instance("DropTablesThreadPool", CurrentMetrics::DatabaseCatalogThreads, CurrentMetrics::DatabaseCatalogThreadsActive, CurrentMetrics::DatabaseCatalogThreadsScheduled);
-    return instance;
-}
-
-StaticThreadPool & getFreezePartThreadPool()
-{
-    static StaticThreadPool instance("FreezePartThreadPool", CurrentMetrics::FreezePartThreads, CurrentMetrics::FreezePartThreadsActive, CurrentMetrics::FreezePartThreadsScheduled);
     return instance;
 }
 
