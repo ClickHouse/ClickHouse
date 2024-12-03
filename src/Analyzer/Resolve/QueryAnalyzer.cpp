@@ -4658,20 +4658,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().tryGet(table_function_name, scope_context);
     if (!table_function_ptr)
     {
-        String database_name = scope_context->getCurrentDatabase();
-        String table_name;
-
-        auto function_ast = table_function_node->toAST();
-        Identifier table_identifier{table_function_name};
-        if (table_identifier.getPartsSize() == 1)
-        {
-            table_name = table_identifier[0];
-        }
-        else if (table_identifier.getPartsSize() == 2)
-        {
-            database_name = table_identifier[0];
-            table_name = table_identifier[1];
-        }
+        auto [database_name, table_name] = extractDatabaseAndTableNameForParametrizedView(table_function_name, scope_context);
 
         /// Collect parametrized view arguments
         NameToNameMap view_params;
@@ -4713,9 +4700,9 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 
         if (parametrized_view_storage)
         {
-            auto fake_table_node = std::make_shared<TableNode>(parametrized_view_storage, scope_context);
-            fake_table_node->setAlias(table_function_node->getAlias());
-            table_function_node = fake_table_node;
+            std::vector<size_t> skip_analysis_arguments_indexes(table_function_node_typed.getArguments().getNodes().size());
+            std::iota(skip_analysis_arguments_indexes.begin(), skip_analysis_arguments_indexes.end(), 0);
+            table_function_node_typed.resolve({}, parametrized_view_storage, scope_context, std::move(skip_analysis_arguments_indexes));
             return;
         }
 

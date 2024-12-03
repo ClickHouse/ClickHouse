@@ -1,0 +1,10 @@
+number	UInt64					
+number	UInt64					
+number	UInt64					
+\'Biba\'	String					
+CAST(dummy, \'Int\')	Int32					
+CAST(dummy, \'String\')	String					
+0
+0
+55
+45
