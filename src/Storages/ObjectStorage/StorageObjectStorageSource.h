@@ -14,7 +14,7 @@ namespace DB
 
 class SchemaCache;
 
-class StorageObjectStorageSource : public SourceWithKeyCondition, WithContext
+class StorageObjectStorageSource : public SourceWithKeyCondition
 {
     friend class ObjectStorageQueueSource;
 public:
@@ -245,6 +245,7 @@ private:
 
     const ObjectStoragePtr object_storage;
     const ConfigurationPtr configuration;
+    const ContextPtr read_context;
     const NamesAndTypesList virtual_columns;
     const std::function<void(FileProgress)> file_progress_callback;
     const std::vector<String> keys;

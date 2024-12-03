@@ -64,20 +64,20 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     size_t max_parsing_threads_,
     bool need_only_count_)
     : SourceWithKeyCondition(info.source_header, false)
-    , WithContext(context_)
     , name(std::move(name_))
     , object_storage(object_storage_)
     , configuration(configuration_)
+    , read_context(context_)
     , format_settings(format_settings_)
     , max_block_size(max_block_size_)
     , need_only_count(need_only_count_)
     , max_parsing_threads(max_parsing_threads_)
     , read_from_format_info(info)
     , create_reader_pool(std::make_shared<ThreadPool>(
-        CurrentMetrics::StorageObjectStorageThreads,
-        CurrentMetrics::StorageObjectStorageThreadsActive,
-        CurrentMetrics::StorageObjectStorageThreadsScheduled,
-        1/* max_threads */))
+          CurrentMetrics::StorageObjectStorageThreads,
+          CurrentMetrics::StorageObjectStorageThreadsActive,
+          CurrentMetrics::StorageObjectStorageThreadsScheduled,
+          1 /* max_threads */))
     , file_iterator(file_iterator_)
     , schema_cache(StorageObjectStorage::getSchemaCache(context_, configuration->getTypeName()))
     , create_reader_scheduler(threadPoolCallbackRunnerUnsafe<ReaderHolder>(*create_reader_pool, "Reader"))
