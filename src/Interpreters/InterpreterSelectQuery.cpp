@@ -398,8 +398,8 @@ ASTPtr parseAdditionalFilterConditionForTable(
     for (const auto & additional_filter : additional_table_filters)
     {
         const auto & tuple = additional_filter.safeGet<const Tuple &>();
-        auto & table = tuple.at(0).safeGet<String>();
-        auto & filter = tuple.at(1).safeGet<String>();
+        const auto & table = tuple.at(0).safeGet<String>();
+        const auto & filter = tuple.at(1).safeGet<String>();
 
         if (table == target.alias ||
             (table == target.table && context.getCurrentDatabase() == target.database) ||
