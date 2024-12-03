@@ -841,7 +841,8 @@ void Connection::sendQuery(
             modified_settings.emplace(*settings);
             for (const SettingChange & change : settings_from_server)
             {
-                if (settings->get(change.name) == change.value)
+                Field value;
+                if (settings->tryGet(change.name, value) && value == change.value)
                 {
                     // Mark as unchanged so it's not sent.
                     modified_settings->setDefaultValue(change.name);
