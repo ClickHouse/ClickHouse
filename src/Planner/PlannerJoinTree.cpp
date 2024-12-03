@@ -982,7 +982,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             // J1 INNER JOIN t3 shouldn't be parallelized since (1) and t3 is on right side
                             // To parallelize INNER JOIN, the query it can be rewritten to following one:
                             // SELECT * FROM t3 INNER JOIN (SELECT * FROM t1 FULL JOIN t2) as j1
-                            if (join_node->getLeftTableExpression() == table_expression_node)
+                            // if (join_node->getLeftTableExpression() == table_expression_node)
                                 return true;
                         }
                         if (join_kind == JoinKind::Right)
@@ -1360,8 +1360,8 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
     const SelectQueryInfo & select_query_info)
 {
     auto & join_node = join_table_expression->as<JoinNode &>();
-    if (left_join_tree_query_plan.from_stage != QueryProcessingStage::FetchColumns
-        && left_join_tree_query_plan.from_stage != QueryProcessingStage::WithMergeableState)
+    if (left_join_tree_query_plan.from_stage != QueryProcessingStage::FetchColumns)
+        // && left_join_tree_query_plan.from_stage != QueryProcessingStage::WithMergeableState)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "JOIN {} left table expression expected to process query to fetch columns or mergeable stage. Actual {}",
             join_node.formatASTForErrorMessage(),
@@ -1369,8 +1369,8 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
 
     auto left_plan = std::move(left_join_tree_query_plan.query_plan);
     auto left_plan_output_columns = left_plan.getCurrentHeader().getColumnsWithTypeAndName();
-    if (right_join_tree_query_plan.from_stage != QueryProcessingStage::FetchColumns
-        && right_join_tree_query_plan.from_stage != QueryProcessingStage::WithMergeableState)
+    if (right_join_tree_query_plan.from_stage != QueryProcessingStage::FetchColumns)
+        // && right_join_tree_query_plan.from_stage != QueryProcessingStage::WithMergeableState)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "JOIN {} right table expression expected to process query to fetch columns or mergeable stage. Actual {}",
             join_node.formatASTForErrorMessage(),
