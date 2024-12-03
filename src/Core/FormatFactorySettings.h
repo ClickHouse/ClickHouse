@@ -984,7 +984,10 @@ Approximate number of bits to use for each distinct value in parquet bloom filte
   * 41   bits -  0.001%
 )", 0) \
     DECLARE(UInt64, output_format_parquet_bloom_filter_flush_threshold_bytes, 128 * 1024 * 1024, R"(
-Where in the parquet file to place the bloom filters. If 0, each row group's bloom filters are written immediately after the row group. If very big, bloom filters for all row groups are written together near the end of the file. If something in the middle, bloom filters are written in groups of about this size.
+Where in the parquet file to place the bloom filters. Bloom filters will be written in groups of approximately this size. In particular:
+  * if 0, each row group's bloom filters are written immediately after the row group,
+  * if greater than the total size of all bloom filters, bloom filters for all row groups will be accumulated in memory, then written together near the end of the file,
+  * otherwise, bloom filters will be accumulated in memory and written out whenever their total size goes above this value.
 )", 0) \
     DECLARE(String, output_format_avro_codec, "", R"(
 Compression codec used for output. Possible values: 'null', 'deflate', 'snappy', 'zstd'.

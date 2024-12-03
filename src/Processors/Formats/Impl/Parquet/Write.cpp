@@ -1146,6 +1146,7 @@ void writeFileFooter(FileWriteState & file, SchemaElements schema, const WriteOp
 
     writeIntBinary(static_cast<int>(footer_size), out);
     out.write("PAR1", 4);
+    file.offset += footer_size + 8;
 }
 
 }
