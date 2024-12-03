@@ -78,11 +78,9 @@ namespace CoordinationSetting
 namespace ErrorCodes
 {
     extern const int RAFT_ERROR;
-    extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int SUPPORT_IS_DISABLED;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_CONFIG_PARAMETER;
-    extern const int BAD_ARGUMENTS;
     extern const int OPENSSL_ERROR;
 }
 
@@ -98,7 +96,6 @@ auto getSslContextProvider(const Poco::Util::AbstractConfiguration & config, std
     String load_default_ca_file_property = fmt::format("openSSL.{}.loadDefaultCAFile", key);
     String verification_mode_property = fmt::format("openSSL.{}.verificationMode", key);
     String root_ca_file_property = fmt::format("openSSL.{}.caConfig", key);
-    String prefer_server_cypher_property = fmt::format("openSSL.{}.preferServerCiphers", key);
     String private_key_passphrase_property = fmt::format("openSSL.{}.privateKeyPassphraseHandler.options.password", key);
 
     Poco::Net::Context::Params params;

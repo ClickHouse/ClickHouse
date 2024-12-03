@@ -175,9 +175,7 @@ def check_invalid_configuration(filename, password):
     nodes[0].wait_for_log_line(
         "Raft ASIO listener initiated on :::9234, SSL enabled", look_behind_lines=1000
     )
-    nodes[0].wait_for_log_line(
-        "failed to connect to peer.*Connection refused"
-    )
+    nodes[0].wait_for_log_line("failed to connect to peer.*Connection refused")
 
 
 def test_secure_raft_works(started_cluster):
