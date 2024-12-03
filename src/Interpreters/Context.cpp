@@ -3235,10 +3235,12 @@ MarkCachePtr Context::getMarkCache() const
 
 void Context::clearMarkCache() const
 {
-    std::lock_guard lock(shared->mutex);
+    /// Get local shared pointer to the cache
+    MarkCachePtr cache = getMarkCache();
 
-    if (shared->mark_cache)
-        shared->mark_cache->clear();
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
 }
 
 ThreadPool & Context::getLoadMarksThreadpool() const
