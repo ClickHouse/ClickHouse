@@ -29,7 +29,6 @@ namespace CurrentMetrics
     extern const Metric DatabaseReplicatedCreateTablesThreads;
     extern const Metric DatabaseReplicatedCreateTablesThreadsActive;
     extern const Metric DatabaseReplicatedCreateTablesThreadsScheduled;
-
 }
 
 namespace DB
