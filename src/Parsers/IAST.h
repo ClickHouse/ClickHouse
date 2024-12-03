@@ -224,19 +224,6 @@ public:
         {
         }
 
-        FormatSettings(const FormatSettings & other)
-            : one_line(other.one_line)
-            , hilite(other.hilite)
-            , identifier_quoting_rule(other.identifier_quoting_rule)
-            , identifier_quoting_style(other.identifier_quoting_style)
-            , show_secrets(other.show_secrets)
-            , nl_or_ws(other.nl_or_ws)
-            , literal_escaping_style(other.literal_escaping_style)
-            , print_pretty_type_names(other.print_pretty_type_names)
-            , enforce_strict_identifier_format(other.enforce_strict_identifier_format)
-        {
-        }
-
         void writeIdentifier(WriteBuffer & ostr, const String & name, bool ambiguous) const;
         void checkIdentifier(const String & name) const;
     };
