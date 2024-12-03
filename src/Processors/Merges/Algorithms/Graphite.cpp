@@ -500,4 +500,20 @@ void setGraphitePatternsFromConfig(ContextPtr context, const String & config_ele
     }
 }
 
+void Params::updateHash(SipHash & hash) const
+{
+    hash.update(path_column_name);
+    hash.update(time_column_name);
+    hash.update(value_column_name);
+    hash.update(value_column_name);
+    hash.update(version_column_name);
+    hash.update(patterns_typed);
+    for (const auto & p : patterns)
+        p.updateHash(hash);
+    for (const auto & p : patterns_plain)
+        p.updateHash(hash);
+    for (const auto & p : patterns_tagged)
+        p.updateHash(hash);
+}
+
 }
