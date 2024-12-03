@@ -4,19 +4,28 @@ import time
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.config_manager import ConfigManager
 
 cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance(
     "node1",
     with_zookeeper=True,
-    main_configs=["configs/cluster.xml", "configs/macro.xml"],
+    main_configs=[
+        "configs/cluster.xml",
+        "configs/min_max_data_insert_time.xml",
+        "configs/macro.xml",
+    ],
     macros={"replica": "node1"},
 )
 node2 = cluster.add_instance(
     "node2",
     with_zookeeper=True,
-    main_configs=["configs/cluster.xml", "configs/macro.xml"],
+    main_configs=[
+        "configs/cluster.xml",
+        "configs/min_max_data_insert_time.xml",
+        "configs/macro.xml",
+    ],
     macros={"replica": "node2"},
 )
 
@@ -141,7 +150,7 @@ def test_replicated_fetch(started_cluster):
     db_name = "test_db"
     table_name = "test_table"
 
-    node1.query(f"DROP DATABASE IF EXISTS {db_name} ON CLUSTER '{{cluster}}'")
+    node1.query(f"DROP DATABASE IF EXISTS {db_name} ON CLUSTER '{{cluster}}' SYNC")
     node1.query(f"CREATE DATABASE {db_name} ON CLUSTER '{{cluster}}'")
     node1.query(
         f"CREATE TABLE {db_name}.{table_name} ON CLUSTER '{{cluster}}' (a int) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_table/replicated', '{{replica}}') ORDER BY a"
@@ -166,9 +175,10 @@ def test_replicated_fetch(started_cluster):
         node2, db_name, table_name
     )
     assert min_time_node1 == min_time_node2 and max_time_node1 == max_time_node2
+    node1.query(f"DROP DATABASE IF EXISTS {db_name} ON CLUSTER '{{cluster}}' SYNC")
 
 
-def test_version_compatibility(started_cluster):
+def test_version_upgrade(started_cluster):
     db_name = "test_db"
     table_name = "test_table"
     node = node_old
@@ -190,12 +200,26 @@ def test_version_compatibility(started_cluster):
 
     node.restart_with_latest_version()
 
-    # For old parts modification time will be equal modification time.
-    [min_time_node, max_time_node] = get_max_min_time_of_data_insert(
-        node, db_name, table_name
-    )
-    assert min_time_node == modification_time and max_time_node == modification_time
+    with ConfigManager() as config_manager:
+        config_manager.add_main_config(
+            node, "configs/min_max_data_insert_time.xml", reload_config=True
+        )
+        node.restart_clickhouse()
+        # For old parts modification time will be equal modification time.
+        [min_time_node, max_time_node] = get_max_min_time_of_data_insert(
+            node, db_name, table_name
+        )
 
-    node.query(f"INSERT INTO {db_name}.{table_name} SELECT 2")
+        assert min_time_node == modification_time and max_time_node == modification_time
+
+        time.sleep(1)
+        node.query(f"INSERT INTO {db_name}.{table_name} SELECT 2")
+        [min_time_node, max_time_node] = get_max_min_time_of_data_insert(
+            node, db_name, table_name
+        )
+        assert min_time_node != max_time_node
+
+        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+        config_manager.reset()
+
     node.restart_with_original_version()
-    assert node.query(f"SELECT count() FROM {db_name}.{table_name}") == "2\n"
