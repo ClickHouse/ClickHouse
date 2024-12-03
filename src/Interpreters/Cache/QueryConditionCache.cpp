@@ -36,10 +36,8 @@ void QueryConditionCache::write(const UUID & table_id, const String & part_name,
 {
     Key key = {table_id, part_name, condition_hash};
 
-    auto [entry, _] = cache.getOrSet(key, [&]()
-    {
-        return std::make_shared<Entry>(marks_count);
-    });
+    auto load_func = [&](){ return std::make_shared<Entry>(marks_count); };
+    auto [entry, _] = cache.getOrSet(key, load_func);
 
     chassert(marks_count == entry->matching_marks.size());
 
