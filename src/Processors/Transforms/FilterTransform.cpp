@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 
 namespace DB
 {
@@ -109,7 +110,7 @@ void FilterTransform::doTransform(Chunk & chunk)
     auto columns = chunk.detachColumns();
     DataTypes types;
 
-    auto updateQueryConditionCache = [&]()
+    auto update_query_condition_cache = [&]()
     {
         auto mark_info = chunk.getChunkInfos().get<MarkRangesInfo>();
         if (!mark_info)
@@ -155,7 +156,7 @@ void FilterTransform::doTransform(Chunk & chunk)
     if (constant_filter_description.always_false)
     {
         if (query_condition_cache)
-            updateQueryConditionCache();
+            update_query_condition_cache();
 
         return; /// Will finish at next prepare call
     }
@@ -207,7 +208,7 @@ void FilterTransform::doTransform(Chunk & chunk)
     if (num_filtered_rows == 0)
     {
         if (query_condition_cache)
-            updateQueryConditionCache();
+            update_query_condition_cache();
 
         /// SimpleTransform will skip it.
         return;
