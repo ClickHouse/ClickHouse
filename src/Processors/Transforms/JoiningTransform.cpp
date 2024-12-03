@@ -3,6 +3,7 @@
 #include <Interpreters/JoinUtils.h>
 
 #include <Common/logger_useful.h>
+#include <Interpreters/GraceHashJoin.h>
 
 namespace ProfileEvents
 {
@@ -357,6 +358,35 @@ void FillingRightJoinSideTransform::work()
         join->tryRerangeRightTableData();
 
     set_totals = for_totals;
+}
+
+bool FillingRightJoinSideTransform::spillable() const
+{
+    return typeid_cast<GraceHashJoin *>(join.get()) != nullptr;
+}
+
+ProcessorReclaimableMemory FillingRightJoinSideTransform::getReclaimableMemoryUsage()
+{
+    if (auto * grace_join = typeid_cast<GraceHashJoin *>(join.get()))
+    {
+        ProcessorReclaimableMemory res;
+        res.reclaimable_bytes = grace_join->getTotalByteCount();
+        res.spill_aux_bytes = res.reclaimable_bytes;
+        return res;
+    }
+    return {};
+}
+
+void FillingRightJoinSideTransform::trySpill(size_t memory_limit)
+{
+    if (auto * grace_join = typeid_cast<GraceHashJoin *>(join.get()))
+    {
+        auto total_bytes = grace_join->getTotalByteCount();
+        if (total_bytes >= memory_limit)
+        {
+            grace_join->forceSpill();
+        }
+    }
 }
 
 DelayedJoinedBlocksWorkerTransform::DelayedJoinedBlocksWorkerTransform(
