@@ -87,7 +87,7 @@ namespace
 }
 
 
-AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access, const AccessControl & access_control, const UserPtr current_user)
+AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access, const AccessControl & access_control, UserPtr current_user)
 {
     AccessFlags max_flags;
 
