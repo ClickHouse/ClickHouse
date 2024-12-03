@@ -987,16 +987,18 @@ void finalizeMutatedPart(
     /// It's important to set index after index granularity.
     if (!new_data_part->storage.getPrimaryIndexCache())
         new_data_part->setIndex(*source_part->getIndex());
-  
+
     if (new_projection_part)
     {
+        chassert(!new_data_part->isProjectionPart());
+
         auto projection_name = metadata_snapshot->getProjections().begin()->name;
         new_data_part->addProjectionPart(projection_name, std::move(new_projection_part));
-    }  
 
-    /// Load rest projections which are hardlinked
-    bool noop;
-    new_data_part->loadProjections(false, false, noop, true /* if_not_loaded */);
+        /// Load rest projections which are hardlinked
+        bool noop;
+        new_data_part->loadProjections(false, false, noop, true /* if_not_loaded */);
+    }
 
     /// All information about sizes is stored in checksums.
     /// It doesn't make sense to touch filesystem for sizes.
@@ -1726,7 +1728,6 @@ private:
             ctx->projection_mutation_context.source_part->index_granularity,
             Tx::PrehistoricTID,
             /*reset_columns=*/ false,
-            /*save_marks_in_cache=*/ false,
             /*blocks_are_granules_size=*/ false,
             ctx->data->getContext()->getWriteSettings());
 
@@ -1979,7 +1980,36 @@ private:
 
             ctx->projections_to_build = std::vector<ProjectionDescriptionRawPtr>{ctx->projections_to_recalc.begin(), ctx->projections_to_recalc.end()};
 
+
             chassert (ctx->projection_mutation_context.mutating_pipeline_builder.initialized());
+
+            ctx->projection_mutation_context.new_part->getDataPartStorage().createDirectories();
+
+            /// Create hardlinks for unchanged files
+            for (auto it = ctx->projection_mutation_context.source_part->getDataPartStorage().iterate(); it->isValid(); it->next())
+            {
+                if (ctx->projection_mutation_context.files_to_skip.contains(it->name()))
+                    continue;
+
+                String destination = it->name();
+
+                if (it->isFile())
+                {
+                    if ((*settings)[MergeTreeSetting::always_use_copy_instead_of_hardlinks])
+                    {
+                        ctx->projection_mutation_context.new_part->getDataPartStorage().copyFileFrom(
+                            ctx->projection_mutation_context.source_part->getDataPartStorage(), it->name(), destination);
+                    }
+                    else
+                    {
+                        ctx->projection_mutation_context.new_part->getDataPartStorage().createHardLinkFrom(
+                            ctx->projection_mutation_context.source_part->getDataPartStorage(), it->name(), destination);
+                    }
+                }
+            }
+
+            ctx->projection_mutation_context.new_part->checksums = ctx->projection_mutation_context.source_part->checksums;
+
             builder = std::make_unique<QueryPipelineBuilder>(std::move(ctx->projection_mutation_context.mutating_pipeline_builder));
 
             ctx->projection_mutation_context.out = std::make_shared<MergedColumnOnlyOutputStream>(
@@ -2045,10 +2075,10 @@ private:
             }
         }
 
-        MutationHelpers::finalizeMutatedPart(ctx->projection_mutation_context.source_part, ctx->projection_mutation_context.new_part, ExecuteTTLType::NONE, 
+        MutationHelpers::finalizeMutatedPart(ctx->projection_mutation_context.source_part, ctx->projection_mutation_context.new_part, ExecuteTTLType::NONE,
             ctx->compression_codec, ctx->context, ctx->projection_mutation_context.metadata_snapshot, ctx->need_sync, nullptr);
 
-        MutationHelpers::finalizeMutatedPart(ctx->source_part, ctx->new_data_part, ctx->execute_ttl_type, 
+        MutationHelpers::finalizeMutatedPart(ctx->source_part, ctx->new_data_part, ctx->execute_ttl_type,
             ctx->compression_codec, ctx->context, ctx->metadata_snapshot, ctx->need_sync, ctx->projection_mutation_context.new_part);
     }
 
@@ -2357,7 +2387,6 @@ bool MutateTask::prepare()
             ctx->commands_for_part,
             projection_commands,
             ctx->for_file_renames,
-            false,
             ctx->log);
 
         chassert(!projection_commands.empty());
