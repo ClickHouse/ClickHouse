@@ -6,35 +6,35 @@
 namespace DB 
 {
 class IProcessor;
-struct SpillMemoryStats
+struct ProcessorMemoryStats
 {
-    // memory that can be spilled into external storage.
-    // scheduler uses this to decide which processor to spill.
-    Int64 spillable_bytes = 0;
-    // to spill the data, how much additional memory is needed. The available memory should be at
-    // least this much. If current memory usage of this thread group + max_spill_aux_bytes > memory_limit,
-    // we need to spill some data.
-    Int64 spill_aux_bytes = 0;
+    // The total spillable memory in the processor
+    Int64 spillable_memory_bytes = 0;
+    // To avoid this processor cause OOM, at least `reserved_memory_bytes` should be reserved.
+    // including auxiliary memory to fihish spill.
+    Int64 need_reserved_memory_bytes = 0;
 };
 
-// ReclaimableMemorySpillManager is bound to one thread group. It's a query-scoped manager to trigger processor spill.
+// MemorySpillScheduler is bound to one thread group. It's a query-scoped manager to trigger processor spill.
 class MemorySpillScheduler
 {
 public:
-    MemorySpillScheduler() = default;
+    MemorySpillScheduler(bool enable_ = false) : enable(enable_) {}
     ~MemorySpillScheduler() = default;
 
-    Int64 needSpill(IProcessor * processor);
-    void processorFinished(IProcessor * processor);
+    void checkAndSpill(IProcessor * processor);
+    void remove(IProcessor * processor);
 
 private:
+    bool enable = true;
     std::mutex mutex;
-    std::unordered_map<IProcessor *, SpillMemoryStats> processor_stats;
+    // Only trace the spillable processors, this map is not expected to be too large.
+    std::unordered_map<IProcessor *, ProcessorMemoryStats> processor_stats;
     IProcessor * top_processor = nullptr;
-    Int64 max_spill_aux_bytes = 0;
+    Int64 max_reserved_memory_bytes = 0;
     std::atomic<Int64> hard_limit = -1;
 
-    void refreshTopProcessor();
+    void updateTopProcessor();
 
     Int64 getHardLimit();
 };

@@ -84,6 +84,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"parallel_replicas_index_analysis_only_on_coordinator", true, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}, // enabling it was moved to 24.10
             {"least_greatest_legacy_null_behavior", true, false, "New setting"},
             /// Release closed. Please use 25.1
+            {"enable_adaptive_memory_spill_scheduler", false, false, "New setting. Enable spill memory data into external storage adaptively."},
         }
     },
     {"24.11",
