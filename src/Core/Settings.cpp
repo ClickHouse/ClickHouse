@@ -5921,6 +5921,9 @@ Allow to create database with Engine=MaterializedPostgreSQL(...).
     DECLARE(Bool, allow_experimental_query_deduplication, false, R"(
 Experimental data deduplication for SELECT queries based on part UUIDs
 )", EXPERIMENTAL) \
+    DECLARE(Bool, enable_adaptive_memory_spill_scheduler, false, R"(
+Trigger processor to spill data into external storage adpatively. grace join is supported at present.
+)", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \

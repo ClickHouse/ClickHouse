@@ -69,6 +69,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"composed_data_type_output_format_mode", "default", "default", "New setting"},
             {"http_response_headers", "", "", "New setting."},
             {"parallel_replicas_index_analysis_only_on_coordinator", true, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}, // enabling it was moved to 24.10
+            {"enable_adaptive_memory_spill_scheduler", false, false, "New setting. Enable spill memory data into external storage adaptively."},
         }
     },
     {"24.11",

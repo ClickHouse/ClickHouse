@@ -111,8 +111,8 @@ public:
     void work() override;
 
     bool spillable() const override;
-    SpillMemoryStats getSpillMemoryStats() override;
-    void trySpill(size_t memory_limit) override;
+    ProcessorMemoryStats getMemoryStats() override;
+    bool spillOnSize(size_t bytes) override;
 
 private:
     JoinPtr join;
