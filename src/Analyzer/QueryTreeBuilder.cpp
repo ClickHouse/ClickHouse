@@ -40,6 +40,8 @@
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/UnionNode.h>
 
+#include <AggregateFunctions/AggregateFunctionGroupConcat.h>
+
 #include <Core/Settings.h>
 
 #include <Databases/IDatabase.h>
