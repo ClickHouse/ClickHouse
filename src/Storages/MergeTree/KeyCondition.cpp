@@ -3006,8 +3006,8 @@ bool mayExistOnBloomFilter(const KeyCondition::BloomFilterData & condition_bloom
     bool maybe_true = true;
     for (auto column_index = 0u; column_index < condition_bloom_filter_data.hashes_per_column.size(); column_index++)
     {
-        // in case bloom filter is not present for this row group
-        // https://github.com/ClickHouse/ClickHouse/pull/62966#discussion_r1722361237
+        // In case bloom filter is missing for parts of the data
+        // (e.g. for some Parquet row groups: https://github.com/ClickHouse/ClickHouse/pull/62966#discussion_r1722361237).
         if (!column_index_to_column_bf.contains(condition_bloom_filter_data.key_columns[column_index]))
         {
             continue;
