@@ -17,6 +17,8 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <boost/algorithm/string/replace.hpp>
+
 
 namespace CurrentMetrics
 {
@@ -30,6 +32,8 @@ namespace DB
 {
 
 // clang-format off
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wreserved-identifier"
 
 #define LIST_OF_SERVER_SETTINGS(DECLARE, ALIAS) \
     DECLARE(UInt64, dictionary_background_reconnect_interval, 1000, "Interval in milliseconds for reconnection attempts of failed MySQL and Postgres dictionaries having `background_reconnect` enabled.", 0) \
@@ -1058,11 +1062,28 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     <process_query_plan_packet>true</process_query_plan_packet>
     ```
     )", 0) \
-    DECLARE(Bool, storage_shared_set_join_use_inner_uuid, true, "If enabled, an inner UUID is generated during the creation of SharedSet and SharedJoin. ClickHouse Cloud only", 0) \
-    DECLARE(UInt64, os_cpu_busy_time_threshold, 1'000'000, "Threshold of OS CPU busy time in microseconds (OSCPUVirtualTimeMicroseconds metric) to consider CPU doing some useful work, no CPU overload would be considered if busy time was below this value.", 0) \
-    DECLARE(Float, min_os_cpu_wait_time_ratio_to_drop_connection, 10.0, "Min ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider dropping connections. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 0 at this point.", 0) \
-    DECLARE(Float, max_os_cpu_wait_time_ratio_to_drop_connection, 20.0, "Max ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider dropping connections. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 1 at this point.", 0) \
-
+    DECLARE(Bool, storage_shared_set_join_use_inner_uuid, true, R"(If enabled, an inner UUID is generated during the creation of SharedSet and SharedJoin. ClickHouse Cloud only)", 0) \
+    DECLARE(UInt64, os_cpu_busy_time_threshold, 1'000'000, R"(Threshold of OS CPU busy time in microseconds (OSCPUVirtualTimeMicroseconds metric) to consider CPU doing some useful work, no CPU overload would be considered if busy time was below this value.)", 0) \
+    DECLARE(Float, min_os_cpu_wait_time_ratio_to_drop_connection, 10.0, R"(Min ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider dropping connections. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 0 at this point.)", 0) \
+    DECLARE(Float, max_os_cpu_wait_time_ratio_to_drop_connection, 20.0, R"(Max ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider dropping connections. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 1 at this point.)", 0) \
+    DECLARE(String, openSSL__server__certificateFile, "", R"(Path to the server SSL certificate file)", 0) \
+    DECLARE(String, openSSL__server__privateKeyFile, "", R"(Path to the server SSL private key file", 0) \
+    DECLARE(UInt64, query_cache__max_size_in_bytes, DEFAULT_QUERY_RESULT_CACHE_MAX_SIZE, R"(The maximum cache size in bytes. 0 means the query cache is disabled)", 0) \
+    DECLARE(UInt64, query_cache__max_entries, DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRIES, R"(The maximum number of SELECT query results stored in the cache)", 0) \
+    DECLARE(UInt64, query_cache__max_entry_size_in_bytes, DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_SIZE_IN_BYTES, R"(The maximum size in bytes SELECT query results may have to be saved in the cache)", 0) \
+    DECLARE(UInt64, query_cache__max_entry_rows_in_rows, DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_SIZE_IN_ROWS, R"(The maximum number of rows SELECT query results may have to be saved in the cache)", 0) \
+    DECLARE(String, interserver_http_port, "", R"(Port for exchanging data between ClickHouse servers)", 0) \
+    DECLARE(String, interserver_https_port, "", R"(Port for exchanging data between ClickHouse servers over HTTPS)", 0) \
+    DECLARE(String, interserver_http_host, "", R"(The hostname that can be used by other servers to access this server. If omitted, it is defined in the same way as the hostname -f command)", 0) \
+    DECLARE(String, interserver_https_host, "", R"(Similar to interserver_http_host, except that this hostname can be used by other servers to access this server over HTTPS.)", 0) \
+    DECLARE(UInt64, max_open_files, 0, R"(The maximum number of open files. By default: maximum.)", 0) \
+    DECLARE(Bool, local_cache_for_remote_fs__enable, false, R"(Enable local cache for remote filesystem)", 0) \
+    DECLARE(String, local_cache_for_remote_fs__root_dir, "", R"(Root directory for the remote filesystem cache)", 0) \
+    DECLARE(UInt64, local_cache_for_remote_fs__limit_size, 0, R"(Limit size for the remote filesystem cache. Default: 0 (unlimited))", 0) \
+    DECLARE(UInt64, local_cache_for_remote_fs__bytes_read_before_flush, DBMS_DEFAULT_BUFFER_SIZE, R"(Bytes read before flush for the remote filesystem)", 0) \
+    DECLARE(String, distributed_ddl__path, "/clickhouse/task_queue/ddl/", R"(The path in Keeper for the task_queue for DDL queries)", 0) \
+    DECLARE(String, distributed_ddl__replicas_path, "/clickhouse/task_queue/replicas/", R"(The profile used to execute the DDL queries)", 0) \
+    DECLARE(Int32, distributed_ddl__pool_size, 1, R"(How many ON CLUSTER queries can be run simultaneously)", 0) \
 
 // clang-format on
 
@@ -1100,8 +1121,10 @@ void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfig
         const auto & name = setting.getName();
         try
         {
-            if (config.has(name))
-                set(name, config.getString(name));
+            String name_with_dots(name);
+            boost::replace_all(name_with_dots, "__", ".");
+            if (config.has(name_with_dots))
+                set(name, config.getString(name_with_dots));
             else if (settings_from_profile_allowlist.contains(name) && config.has("profiles.default." + name))
                 set(name, config.getString("profiles.default." + name));
         }
@@ -1268,3 +1291,5 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
     }
 }
 }
+
+#pragma clang diagnostic pop

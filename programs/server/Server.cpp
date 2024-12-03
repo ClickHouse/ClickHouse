@@ -175,6 +175,9 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
 }
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wreserved-identifier"
+
 namespace ServerSetting
 {
     extern const ServerSettingsUInt32 allow_feature_tier;
@@ -207,10 +210,14 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 config_reload_interval_ms;
     extern const ServerSettingsUInt64 database_catalog_drop_table_concurrency;
     extern const ServerSettingsString default_database;
+    extern const ServerSettingsBool dictionaries_lazy_load;
     extern const ServerSettingsBool disable_internal_dns_cache;
     extern const ServerSettingsUInt64 disk_connections_soft_limit;
     extern const ServerSettingsUInt64 disk_connections_store_limit;
     extern const ServerSettingsUInt64 disk_connections_warn_limit;
+    extern const ServerSettingsString distributed_ddl__path;
+    extern const ServerSettingsString distributed_ddl__replicas_path;
+    extern const ServerSettingsInt32 distributed_ddl__pool_size;
     extern const ServerSettingsBool dns_allow_resolve_names_to_ipv4;
     extern const ServerSettingsBool dns_allow_resolve_names_to_ipv6;
     extern const ServerSettingsUInt64 dns_cache_max_entries;
@@ -237,6 +244,10 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 iceberg_metadata_files_cache_size;
     extern const ServerSettingsUInt64 iceberg_metadata_files_cache_max_entries;
     extern const ServerSettingsDouble iceberg_metadata_files_cache_size_ratio;
+    extern const ServerSettingsString interserver_http_host;
+    extern const ServerSettingsString interserver_http_port;
+    extern const ServerSettingsString interserver_https_host;
+    extern const ServerSettingsString interserver_https_port;
     extern const ServerSettingsUInt64 io_thread_pool_queue_size;
     extern const ServerSettingsSeconds keep_alive_timeout;
     extern const ServerSettingsString mark_cache_policy;
@@ -285,7 +296,18 @@ namespace ServerSetting
     extern const ServerSettingsString query_condition_cache_policy;
     extern const ServerSettingsUInt64 query_condition_cache_size;
     extern const ServerSettingsDouble query_condition_cache_size_ratio;
+    extern const ServerSettingsString openSSL__server__certificateFile;
+    extern const ServerSettingsString openSSL__server__privateKeyFile;
+    extern const ServerSettingsUInt64 page_cache_chunk_size;
+    extern const ServerSettingsUInt64 page_cache_mmap_size;
+    extern const ServerSettingsUInt64 page_cache_size;
+    extern const ServerSettingsBool page_cache_use_madv_free;
+    extern const ServerSettingsBool page_cache_use_transparent_huge_pages;
     extern const ServerSettingsBool prepare_system_log_tables_on_startup;
+    extern const ServerSettingsUInt64 query_cache__max_entries;
+    extern const ServerSettingsUInt64 query_cache__max_entry_size_in_bytes;
+    extern const ServerSettingsUInt64 query_cache__max_entry_rows_in_rows;
+    extern const ServerSettingsUInt64 query_cache__max_size_in_bytes;
     extern const ServerSettingsBool show_addresses_in_stack_traces;
     extern const ServerSettingsBool shutdown_wait_backups_and_restores;
     extern const ServerSettingsUInt64 shutdown_wait_unfinished;
@@ -326,9 +348,13 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 os_cpu_busy_time_threshold;
     extern const ServerSettingsFloat min_os_cpu_wait_time_ratio_to_drop_connection;
     extern const ServerSettingsFloat max_os_cpu_wait_time_ratio_to_drop_connection;
+    extern const ServerSettingsBool use_legacy_mongodb_integration;
+    extern const ServerSettingsBool wait_dictionaries_load_at_startup;
 }
 
 }
+
+#pragma clang diagnostic pop
 
 namespace CurrentMetrics
 {
@@ -1658,33 +1684,33 @@ try
         fs::create_directories(path / "metadata_dropped");
     }
 
-    if (config().has("interserver_http_port") && config().has("interserver_https_port"))
+    if (server_settings[ServerSetting::interserver_http_port].changed && server_settings[ServerSetting::interserver_https_port].changed)
         throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "Both http and https interserver ports are specified");
 
     static const auto interserver_tags =
     {
-        std::make_tuple("interserver_http_host", "interserver_http_port", "http"),
-        std::make_tuple("interserver_https_host", "interserver_https_port", "https")
+        std::make_tuple(ServerSetting::interserver_http_host, ServerSetting::interserver_http_port, "http"),
+        std::make_tuple(ServerSetting::interserver_https_host, ServerSetting::interserver_https_port, "https")
     };
 
     for (auto [host_tag, port_tag, scheme] : interserver_tags)
     {
-        if (config().has(port_tag))
+        if (server_settings[port_tag].changed)
         {
-            String this_host = config().getString(host_tag, "");
+            String this_host = server_settings[host_tag];
 
             if (this_host.empty())
             {
                 this_host = getFQDNOrHostName();
-                LOG_DEBUG(log, "Configuration parameter '{}' doesn't exist or exists and empty. Will use '{}' as replica host.",
-                    host_tag, this_host);
+                LOG_DEBUG(log, "Configuration parameter 'interserver_http[s]_host' doesn't exist or exists and empty. Will use '{}' as replica host.",
+                    this_host);
             }
 
-            String port_str = config().getString(port_tag);
+            String port_str = server_settings[port_tag];
             int port = parse<int>(port_str);
 
             if (port < 0 || port > 0xFFFF)
-                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Out of range '{}': {}", String(port_tag), port);
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Out of range 'interserver_http[s]_port': {}", port);
 
             global_context->setInterserverIOAddress(this_host, port);
             global_context->setInterserverScheme(scheme);
@@ -1831,8 +1857,8 @@ try
         tryLogCurrentException(log, "Disabling cgroup memory observer because of an error during initialization");
     }
 
-    std::string cert_path = config().getString("openSSL.server.certificateFile", "");
-    std::string key_path = config().getString("openSSL.server.privateKeyFile", "");
+    std::string cert_path = server_settings[ServerSetting::openSSL__server__certificateFile];
+    std::string key_path = server_settings[ServerSetting::openSSL__server__privateKeyFile];
 
     std::vector<std::string> extra_paths = {include_from_path};
     if (!cert_path.empty())
@@ -2601,9 +2627,9 @@ try
         if (has_zookeeper && config().has("distributed_ddl"))
         {
             /// DDL worker should be started after all tables were loaded
-            String ddl_queue_path = config().getString("distributed_ddl.path", "/clickhouse/task_queue/ddl/");
-            String ddl_replicas_path = config().getString("distributed_ddl.replicas_path", "/clickhouse/task_queue/replicas/");
-            int pool_size = config().getInt("distributed_ddl.pool_size", 1);
+            String ddl_queue_path = server_settings[ServerSetting::distributed_ddl__path];
+            String ddl_replicas_path = server_settings[ServerSetting::distributed_ddl__replicas_path];
+            int pool_size = server_settings[ServerSetting::distributed_ddl__pool_size];
             if (pool_size < 1)
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "distributed_ddl.pool_size should be greater then 0");
             global_context->setDDLWorker(
