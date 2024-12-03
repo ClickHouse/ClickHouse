@@ -651,7 +651,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
             const auto & group_concat_aliases = GroupConcatImpl<false>::getNameAndAliases();
             if (!function->name.empty() && std::any_of(
                     group_concat_aliases.begin(), group_concat_aliases.end(),
-                    [&](const std::string &s) { return s == Poco::toLower(function->name); })
+                    [&](const std::string &s) { return Poco::toLower(s) == Poco::toLower(function->name); })
                 && function->arguments && function->arguments->children.size() == 2)
             {
                 result = setFirstArgumentAsParameter(function, context);
