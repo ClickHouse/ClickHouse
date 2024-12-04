@@ -55,6 +55,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int CANNOT_PARSE_NUMBER;
+    extern const int LOGICAL_ERROR;
 }
 
 #define THROW_ARROW_NOT_OK(status)                                     \
