@@ -618,6 +618,7 @@ Pipe ReadFromMergeTree::readInOrder(
             parts_with_ranges,
             mutations_snapshot,
             shared_virtual_fields,
+            has_limit_below_one_block,
             storage_snapshot,
             prewhere_info,
             actions_settings,
