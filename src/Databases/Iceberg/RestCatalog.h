@@ -24,6 +24,7 @@ public:
         const std::string & catalog_credential_,
         const std::string & auth_scope_,
         const std::string & auth_header_,
+        const std::string & oauth_server_uri_,
         DB::ContextPtr context_);
 
     ~RestCatalog() override = default;
@@ -73,6 +74,7 @@ private:
     std::string client_id;
     std::string client_secret;
     std::string auth_scope;
+    std::string oauth_server_uri;
     mutable std::optional<std::string> access_token;
 
     Poco::Net::HTTPBasicCredentials credentials{};

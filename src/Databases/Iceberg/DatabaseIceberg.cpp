@@ -36,6 +36,7 @@ namespace DatabaseIcebergSetting
     extern const DatabaseIcebergSettingsString auth_header;
     extern const DatabaseIcebergSettingsString auth_scope;
     extern const DatabaseIcebergSettingsString storage_endpoint;
+    extern const DatabaseIcebergSettingsString oauth_server_uri;
     extern const DatabaseIcebergSettingsBool vended_credentials;
 }
 namespace Setting
@@ -119,6 +120,7 @@ std::shared_ptr<Iceberg::ICatalog> DatabaseIceberg::getCatalog(ContextPtr) const
                 settings[DatabaseIcebergSetting::catalog_credential].value,
                 settings[DatabaseIcebergSetting::auth_scope].value,
                 settings[DatabaseIcebergSetting::auth_header],
+                settings[DatabaseIcebergSetting::oauth_server_uri].value,
                 Context::getGlobalContextInstance());
         }
     }
@@ -364,7 +366,7 @@ void registerDatabaseIceberg(DatabaseFactory & factory)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", database_engine_name);
 
         ASTs & engine_args = function_define->arguments->children;
-        if (engine_args.size() < 1)
+        if (engine_args.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", database_engine_name);
 
         for (auto & engine_arg : engine_args)

@@ -101,6 +101,13 @@ StorageType parseStorageTypeFromLocation(const std::string & location)
     return *storage_type;
 }
 
+std::string correctAPIURI(const std::string & uri)
+{
+    if (uri.ends_with("v1"))
+        return uri;
+    return std::filesystem::path(uri) / "v1";
+}
+
 }
 
 std::string RestCatalog::Config::toString() const
@@ -122,12 +129,14 @@ RestCatalog::RestCatalog(
     const std::string & catalog_credential_,
     const std::string & auth_scope_,
     const std::string & auth_header_,
+    const std::string & oauth_server_uri_,
     DB::ContextPtr context_)
     : ICatalog(warehouse_)
     , DB::WithContext(context_)
-    , base_url(base_url_)
+    , base_url(correctAPIURI(base_url_))
     , log(getLogger("RestCatalog(" + warehouse_ + ")"))
     , auth_scope(auth_scope_)
+    , oauth_server_uri(oauth_server_uri_)
 {
     if (!catalog_credential_.empty())
     {
@@ -217,14 +226,30 @@ std::string RestCatalog::retrieveAccessToken() const
     headers.emplace_back("Content-Type", "application/x-www-form-urlencoded");
     headers.emplace_back("Accepts", "application/json; charset=UTF-8");
 
-    Poco::URI url(base_url / oauth_tokens_endpoint);
-    Poco::URI::QueryParameters params = {
-        {"grant_type", "client_credentials"},
-        {"scope", auth_scope},
-        {"client_id", client_id},
-        {"client_secret", client_secret},
-    };
-    url.setQueryParameters(params);
+    Poco::URI url;
+    DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback;
+    if (oauth_server_uri.empty())
+    {
+        url = Poco::URI(base_url / oauth_tokens_endpoint);
+
+        Poco::URI::QueryParameters params = {
+            {"grant_type", "client_credentials"},
+            {"scope", auth_scope},
+            {"client_id", client_id},
+            {"client_secret", client_secret},
+        };
+        url.setQueryParameters(params);
+    }
+    else
+    {
+        url = Poco::URI(oauth_server_uri);
+        out_stream_callback = [&](std::ostream & os)
+        {
+            os << fmt::format(
+                "grant_type=client_credentials&scope={}&client_id={}&client_secret={}",
+                auth_scope, client_id, client_secret);
+        };
+    }
 
     const auto & context = getContext();
     auto wb = DB::BuilderRWBufferFromHTTP(url)
@@ -233,6 +258,7 @@ std::string RestCatalog::retrieveAccessToken() const
         .withSettings(context->getReadSettings())
         .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
         .withHostFilter(&context->getRemoteHostFilter())
+        .withOutCallback(std::move(out_stream_callback))
         .withSkipNotFound(false)
         .withHeaders(headers)
         .create(credentials);
