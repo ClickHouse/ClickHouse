@@ -190,10 +190,9 @@ def test_remote_query_user_does_not_exist_locally(ldap_cluster):
     Check that even if user does not exist locally, using it to execute remote queries is still possible
     """
     instance2.query("DROP USER IF EXISTS non_local")
+    instance2.query("DROP TABLE IF EXISTS test_table sync")
 
     instance2.query("CREATE USER non_local")
-
-    instance2.query("DROP TABLE IF EXISTS test_table")
     instance2.query("CREATE TABLE test_table (id Int16) ENGINE=Memory")
     instance2.query("INSERT INTO test_table VALUES (123)")
     instance2.query("GRANT SELECT ON default.test_table TO non_local")
@@ -204,4 +203,4 @@ def test_remote_query_user_does_not_exist_locally(ldap_cluster):
     assert result.strip() == "123"
 
     instance2.query("DROP USER IF EXISTS non_local")
-    instance2.query("DROP TABLE IF EXISTS test_table")
+    instance2.query("DROP TABLE IF EXISTS test_table SYNC")
