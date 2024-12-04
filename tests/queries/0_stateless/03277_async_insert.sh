@@ -11,7 +11,7 @@ FILE_PREFIX="${CLICKHOUSE_USER_FILES_UNIQUE:?}_test_03277"
 
 function cleanup()
 {
-       rm "${FILE_PREFIX}"*
+       rm "${FILE_PREFIX:?}"*
 }
 trap cleanup EXIT
 
