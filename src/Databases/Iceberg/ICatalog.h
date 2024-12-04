@@ -3,10 +3,12 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/SettingsEnums.h>
 #include <Databases/Iceberg/StorageCredentials.h>
+#include <Databases/Iceberg/DatabaseIcebergStorageType.h>
 
 namespace Iceberg
 {
 using StorageType = DB::DatabaseIcebergStorageType;
+StorageType parseStorageTypeFromLocation(const std::string & location);
 
 /// A class representing table metadata,
 /// which was received from Catalog.
@@ -31,6 +33,8 @@ public:
     bool requiresLocation() const { return with_location; }
     bool requiresSchema() const { return with_schema; }
     bool requiresCredentials() const { return with_storage_credentials; }
+
+    StorageType getStorageType() const;
 
 private:
     /// Starts with s3://, file://, etc.

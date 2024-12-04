@@ -75,32 +75,6 @@ DB::HTTPHeaderEntry parseAuthHeader(const std::string & auth_header)
     return DB::HTTPHeaderEntry(auth_header.substr(0, pos), auth_header.substr(pos + 1));
 }
 
-StorageType parseStorageTypeFromLocation(const std::string & location)
-{
-    /// Table location in catalog metadata always starts with one of s3://, file://, etc.
-    /// So just extract this part of the path and deduce storage type from it.
-
-    auto pos = location.find("://");
-    if (pos == std::string::npos)
-    {
-        throw DB::Exception(
-            DB::ErrorCodes::NOT_IMPLEMENTED,
-            "Unexpected path format: {}", location);
-    }
-
-    auto storage_type_str = location.substr(0, pos);
-    auto storage_type = magic_enum::enum_cast<StorageType>(Poco::toUpper(storage_type_str));
-
-    if (!storage_type)
-    {
-        throw DB::Exception(
-            DB::ErrorCodes::NOT_IMPLEMENTED,
-            "Unsupported storage type: {}", storage_type_str);
-    }
-
-    return *storage_type;
-}
-
 std::string correctAPIURI(const std::string & uri)
 {
     if (uri.ends_with("v1"))

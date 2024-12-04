@@ -18,7 +18,6 @@ class SettingsChanges;
     M(CLASS_NAME, UInt64) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, DatabaseIcebergCatalogType) \
-    M(CLASS_NAME, DatabaseIcebergStorageType)
 
 DATABASE_ICEBERG_SETTINGS_SUPPORTED_TYPES(DatabaseIcebergSettings, DECLARE_SETTING_TRAIT)
 

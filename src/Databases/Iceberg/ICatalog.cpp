@@ -12,6 +12,32 @@ namespace DB::ErrorCodes
 namespace Iceberg
 {
 
+StorageType parseStorageTypeFromLocation(const std::string & location)
+{
+    /// Table location in catalog metadata always starts with one of s3://, file://, etc.
+    /// So just extract this part of the path and deduce storage type from it.
+
+    auto pos = location.find("://");
+    if (pos == std::string::npos)
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::NOT_IMPLEMENTED,
+            "Unexpected path format: {}", location);
+    }
+
+    auto storage_type_str = location.substr(0, pos);
+    auto storage_type = magic_enum::enum_cast<StorageType>(Poco::toUpper(storage_type_str));
+
+    if (!storage_type)
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::NOT_IMPLEMENTED,
+            "Unsupported storage type: {}", storage_type_str);
+    }
+
+    return *storage_type;
+}
+
 void TableMetadata::setLocation(const std::string & location_)
 {
     if (!with_location)
@@ -83,4 +109,10 @@ std::shared_ptr<IStorageCredentials> TableMetadata::getStorageCredentials() cons
 
     return storage_credentials;
 }
+
+StorageType TableMetadata::getStorageType() const
+{
+    return parseStorageTypeFromLocation(location_without_path);
+}
+
 }

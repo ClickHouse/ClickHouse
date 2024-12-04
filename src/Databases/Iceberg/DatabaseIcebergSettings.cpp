@@ -16,7 +16,6 @@ namespace ErrorCodes
 
 #define DATABASE_ICEBERG_RELATED_SETTINGS(DECLARE, ALIAS) \
     DECLARE(DatabaseIcebergCatalogType, catalog_type, DatabaseIcebergCatalogType::REST, "Catalog type", 0) \
-    DECLARE(DatabaseIcebergStorageType, storage_type, DatabaseIcebergStorageType::S3, "Storage type: S3, Local, Azure, HDFS", 0) \
     DECLARE(String, catalog_credential, "", "", 0)             \
     DECLARE(Bool, vended_credentials, true, "Use vended credentials (storage credentials) from catalog", 0)             \
     DECLARE(String, auth_scope, "PRINCIPAL_ROLE:ALL", "Authorization scope for client credentials or token exchange", 0)             \

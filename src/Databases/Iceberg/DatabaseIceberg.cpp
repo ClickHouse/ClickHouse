@@ -30,7 +30,6 @@ namespace DB
 namespace DatabaseIcebergSetting
 {
     extern const DatabaseIcebergSettingsDatabaseIcebergCatalogType catalog_type;
-    extern const DatabaseIcebergSettingsDatabaseIcebergStorageType storage_type;
     extern const DatabaseIcebergSettingsString warehouse;
     extern const DatabaseIcebergSettingsString catalog_credential;
     extern const DatabaseIcebergSettingsString auth_header;
@@ -72,36 +71,23 @@ DatabaseIceberg::DatabaseIceberg(
     const std::string & database_name_,
     const std::string & url_,
     const DatabaseIcebergSettings & settings_,
-    ASTPtr database_engine_definition_,
-    ContextPtr context_)
+    ASTPtr database_engine_definition_)
     : IDatabase(database_name_)
     , url(url_)
     , settings(settings_)
     , database_engine_definition(database_engine_definition_)
     , log(getLogger("DatabaseIceberg(" + database_name_ + ")"))
 {
-    validateSettings(context_);
+    validateSettings();
 }
 
-void DatabaseIceberg::validateSettings(const ContextPtr & context_)
+void DatabaseIceberg::validateSettings()
 {
     if (settings[DatabaseIcebergSetting::warehouse].value.empty())
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "`warehouse` setting cannot be empty. "
             "Please specify 'SETTINGS warehouse=<warehouse_name>' in the CREATE DATABASE query");
-    }
-
-    if (!settings[DatabaseIcebergSetting::storage_type].changed)
-    {
-        auto catalog = getCatalog(context_);
-        const auto storage_type = catalog->getStorageType();
-        if (!storage_type)
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Storage type is not found in catalog config. "
-                "Please specify it manually via 'SETTINGS storage_type=<type>' in CREATE DATABASE query");
-        }
     }
 }
 
@@ -127,11 +113,11 @@ std::shared_ptr<Iceberg::ICatalog> DatabaseIceberg::getCatalog(ContextPtr) const
     return catalog_impl;
 }
 
-std::shared_ptr<StorageObjectStorage::Configuration> DatabaseIceberg::getConfiguration() const
+std::shared_ptr<StorageObjectStorage::Configuration> DatabaseIceberg::getConfiguration(DatabaseIcebergStorageType type) const
 {
     /// TODO: add tests for azure, local storage types.
 
-    switch (settings[DatabaseIcebergSetting::storage_type].value)
+    switch (type)
     {
 #if USE_AWS_S3
         case DB::DatabaseIcebergStorageType::S3:
@@ -234,7 +220,15 @@ StoragePtr DatabaseIceberg::tryGetTable(const String & name, ContextPtr context_
     LOG_TEST(log, "Using table endpoint: {}", table_endpoint);
 
     const auto columns = ColumnsDescription(table_metadata.getSchema());
-    const auto configuration = getConfiguration();
+
+    DatabaseIcebergStorageType storage_type;
+    auto storage_type_from_catalog = catalog->getStorageType();
+    if (storage_type_from_catalog.has_value())
+        storage_type = storage_type_from_catalog.value();
+    else
+        storage_type = table_metadata.getStorageType();
+
+    const auto configuration = getConfiguration(storage_type);
 
     /// with_table_structure = false: because there will be
     /// no table structure in table definition AST.
@@ -382,8 +376,7 @@ void registerDatabaseIceberg(DatabaseFactory & factory)
             args.database_name,
             url,
             database_settings,
-            database_engine_define->clone(),
-            args.context);
+            database_engine_define->clone());
     };
     factory.registerDatabase("Iceberg", create_fn, { .supports_arguments = true, .supports_settings = true });
 }

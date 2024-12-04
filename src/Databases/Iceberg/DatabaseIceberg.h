@@ -18,8 +18,7 @@ public:
         const std::string & database_name_,
         const std::string & url_,
         const DatabaseIcebergSettings & settings_,
-        ASTPtr database_engine_definition_,
-        ContextPtr context_);
+        ASTPtr database_engine_definition_);
 
     String getEngineName() const override { return "Iceberg"; }
 
@@ -57,9 +56,9 @@ private:
 
     mutable std::shared_ptr<Iceberg::ICatalog> catalog_impl;
 
-    void validateSettings(const ContextPtr & context_);
+    void validateSettings();
     std::shared_ptr<Iceberg::ICatalog> getCatalog(ContextPtr context_) const;
-    std::shared_ptr<StorageObjectStorage::Configuration> getConfiguration() const;
+    std::shared_ptr<StorageObjectStorage::Configuration> getConfiguration(DatabaseIcebergStorageType type) const;
     std::string getStorageEndpointForTable(const Iceberg::TableMetadata & table_metadata) const;
 };
 
