@@ -276,7 +276,7 @@ static Field decodePlainParquetValueSlow(const std::string & data, parquet::Type
     return field;
 }
 
-struct ParquetBloomFilter : public KeyCondition::BloomFilter
+struct ParquetBloomFilter final : public KeyCondition::BloomFilter
 {
     explicit ParquetBloomFilter(std::unique_ptr<parquet::BloomFilter> && parquet_bf_)
         : parquet_bf(std::move(parquet_bf_)) {}
@@ -284,6 +284,19 @@ struct ParquetBloomFilter : public KeyCondition::BloomFilter
     bool findHash(uint64_t hash) override
     {
         return parquet_bf->FindHash(hash);
+    }
+
+    bool findAnyHash(const std::vector<uint64_t> & hashes) override
+    {
+        for (const auto hash : hashes)
+        {
+            if (ParquetBloomFilter::findHash(hash))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
 private:
