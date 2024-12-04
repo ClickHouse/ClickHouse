@@ -2318,10 +2318,10 @@ def test_alter_settings(started_cluster):
 
 
 def test_list_and_delete_race(started_cluster):
+    node = started_cluster.instances["instance"]
     if node.is_built_with_sanitizer():
         # Issue does not reproduce under sanitizer
         return
-    node = started_cluster.instances["instance"]
     node_2 = started_cluster.instances["instance2"]
     table_name = f"list_and_delete_race_{generate_random_string()}"
     dst_table_name = f"{table_name}_dst"
