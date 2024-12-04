@@ -1,8 +1,6 @@
 #include "MetadataStorageFromPlainObjectStorageOperations.h"
 #include <Disks/ObjectStorages/InMemoryDirectoryPathMap.h>
 
-#include <filesystem>
-#include <mutex>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/Timestamp.h>
@@ -92,7 +90,7 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std:
         std::lock_guard lock(path_map.mutex);
         auto & map = path_map.map;
         [[maybe_unused]] auto result
-            = map.emplace(base_path, InMemoryDirectoryPathMap::RemotePathInfo{object_key_prefix, Poco::Timestamp{}.epochTime(), {}});
+            = map.emplace(base_path, InMemoryDirectoryPathMap::RemotePathInfo{object_key_prefix, Poco::Timestamp{}.epochTime()});
         chassert(result.second);
     }
     auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
@@ -157,7 +155,7 @@ std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMo
     if (validate_content)
     {
         std::string data;
-        auto read_buf = object_storage->readObject(metadata_object, ReadSettings{});
+        auto read_buf = object_storage->readObject(metadata_object);
         readStringUntilEOF(data, *read_buf);
         if (data != path_from)
             throw Exception(
@@ -248,7 +246,7 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute(std:
 
     auto metadata_object_key = createMetadataObjectKey(key_prefix, metadata_key_prefix);
     auto metadata_object = StoredObject(/*remote_path*/ metadata_object_key.serialize(), /*local_path*/ path / PREFIX_PATH_FILE_NAME);
-    object_storage->removeObjectIfExists(metadata_object);
+    object_storage->removeObject(metadata_object);
 
     if (path_map.removePathIfExists(base_path))
     {
@@ -287,122 +285,4 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::undo(std::un
     buf->finalize();
 }
 
-MetadataStorageFromPlainObjectStorageWriteFileOperation::MetadataStorageFromPlainObjectStorageWriteFileOperation(
-    const std::string & path_, InMemoryDirectoryPathMap & path_map_, ObjectStoragePtr object_storage_)
-    : path(path_), path_map(path_map_), object_storage(object_storage_)
-{
-}
-
-void MetadataStorageFromPlainObjectStorageWriteFileOperation::execute(std::unique_lock<SharedMutex> &)
-{
-    LOG_TEST(getLogger("MetadataStorageFromPlainObjectStorageWriteFileOperation"), "Creating metadata for a file  '{}'", path);
-
-    std::lock_guard lock(path_map.mutex);
-
-    auto it = path_map.map.find(path.parent_path());
-    /// Some paths (e.g., clickhouse_access_check) may not have parent directories.
-    if (it == path_map.map.end())
-        LOG_TRACE(
-            getLogger("MetadataStorageFromPlainObjectStorageWriteFileOperation"),
-            "Parent dirrectory does not exist, skipping path {}",
-            path);
-    else
-    {
-        auto [filename_it, inserted] = path_map.unique_filenames.emplace(path.filename());
-        if (inserted)
-        {
-            auto metric = object_storage->getMetadataStorageMetrics().unique_filenames_count;
-            CurrentMetrics::add(metric, 1);
-        }
-        written = it->second.filename_iterators.emplace(filename_it).second;
-        if (written)
-        {
-            auto metric = object_storage->getMetadataStorageMetrics().file_count;
-            CurrentMetrics::add(metric, 1);
-        }
-    }
-}
-
-void MetadataStorageFromPlainObjectStorageWriteFileOperation::undo(std::unique_lock<SharedMutex> &)
-{
-    if (written)
-    {
-        std::lock_guard lock(path_map.mutex);
-        auto it = path_map.map.find(path.parent_path());
-        chassert(it != path_map.map.end());
-        if (it != path_map.map.end())
-        {
-            auto filename_it = path_map.unique_filenames.find(path.filename());
-            if (filename_it != path_map.unique_filenames.end())
-            {
-                if (it->second.filename_iterators.erase(filename_it) > 0)
-                {
-                    auto metric = object_storage->getMetadataStorageMetrics().file_count;
-                    CurrentMetrics::sub(metric, 1);
-                }
-            }
-        }
-    }
-}
-
-MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation(
-    std::filesystem::path && path_, InMemoryDirectoryPathMap & path_map_, ObjectStoragePtr object_storage_)
-    : path(path_)
-    , remote_path(std::filesystem::path(object_storage_->generateObjectKeyForPath(path_, std::nullopt).serialize()))
-    , path_map(path_map_)
-    , object_storage(object_storage_)
-{
-}
-
-void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute(std::unique_lock<SharedMutex> &)
-{
-    LOG_TEST(
-        getLogger("MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation"),
-        "Unlinking metadata for a write '{}' with remote path '{}'",
-        path,
-        remote_path);
-
-    std::lock_guard lock(path_map.mutex);
-    auto it = path_map.map.find(path.parent_path());
-    if (it == path_map.map.end())
-        LOG_TRACE(
-            getLogger("MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation"),
-            "Parent directory does not exist, skipping path {}",
-            path);
-    else
-    {
-        auto & filename_iterators = it->second.filename_iterators;
-        auto filename_it = path_map.unique_filenames.find(path.filename());
-        if (filename_it != path_map.unique_filenames.end())
-            unlinked = (filename_iterators.erase(filename_it) > 0);
-
-        if (unlinked)
-        {
-            auto metric = object_storage->getMetadataStorageMetrics().file_count;
-            CurrentMetrics::sub(metric, 1);
-        }
-    }
-}
-
-void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo(std::unique_lock<SharedMutex> &)
-{
-    if (unlinked)
-    {
-        std::lock_guard lock(path_map.mutex);
-        auto it = path_map.map.find(path.parent_path());
-        chassert(it != path_map.map.end());
-        if (it != path_map.map.end())
-        {
-            auto filename_it = path_map.unique_filenames.find(path.filename());
-            if (filename_it != path_map.unique_filenames.end())
-            {
-                if (it->second.filename_iterators.emplace(filename_it).second)
-                {
-                    auto metric = object_storage->getMetadataStorageMetrics().file_count;
-                    CurrentMetrics::add(metric, 1);
-                }
-            }
-        }
-    }
-}
 }

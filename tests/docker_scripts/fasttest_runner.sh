@@ -9,7 +9,7 @@ trap 'kill $(jobs -pr) ||:' EXIT
 stage=${stage:-}
 
 # Compiler version, normally set by Dockerfile
-export LLVM_VERSION=${LLVM_VERSION:-19}
+export LLVM_VERSION=${LLVM_VERSION:-18}
 
 # A variable to pass additional flags to CMake.
 # Here we explicitly default it to nothing so that bash doesn't complain about
@@ -250,7 +250,7 @@ function configure
 
     mkdir -p "$FASTTEST_DATA"{,/client-config}
     cp -a "$FASTTEST_SOURCE/programs/server/"{config,users}.xml "$FASTTEST_DATA"
-    "$FASTTEST_SOURCE/tests/config/install.sh" "$FASTTEST_DATA" "$FASTTEST_DATA/client-config" --fast-test
+    "$FASTTEST_SOURCE/tests/config/install.sh" "$FASTTEST_DATA" "$FASTTEST_DATA/client-config"
     cp -a "$FASTTEST_SOURCE/programs/server/config.d/log_to_console.xml" "$FASTTEST_DATA/config.d"
     # doesn't support SSL
     rm -f "$FASTTEST_DATA/config.d/secure_ports.xml"
@@ -290,7 +290,7 @@ function run_tests
         --print-time
         --report-logs-stats
         --jobs "${NPROC}"
-        --timeout 45 # We don't want slow test being introduced again in this check
+        --timeout 30 # We don't want slow test being introduced again in this check
     )
     time clickhouse-test "${test_opts[@]}" -- "$FASTTEST_FOCUS" 2>&1 \
         | ts '%Y-%m-%d %H:%M:%S' \

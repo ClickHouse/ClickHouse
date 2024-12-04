@@ -40,6 +40,7 @@ class MutationsInterpreter
 {
 private:
     struct Stage;
+
 public:
     struct Settings
     {
@@ -122,7 +123,6 @@ public:
         const MergeTreeData * getMergeTreeData() const;
 
         bool supportsLightweightDelete() const;
-        bool hasLightweightDeleteMask() const;
         bool materializeTTLRecalculateOnly() const;
         bool hasSecondaryIndex(const String & name) const;
         bool hasProjection(const String & name) const;

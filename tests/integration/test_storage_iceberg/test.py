@@ -1,45 +1,43 @@
-import glob
-import json
-import logging
-import os
-import time
-import uuid
-from datetime import datetime
+import helpers.client
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.test_tools import TSV
 
 import pyspark
+import logging
+import os
+import json
 import pytest
-from azure.storage.blob import BlobServiceClient
-from minio.deleteobjects import DeleteObject
-from pyspark.sql.functions import (
-    current_timestamp,
-    monotonically_increasing_id,
-    row_number,
-)
-from pyspark.sql.readwriter import DataFrameWriter, DataFrameWriterV2
-from pyspark.sql.types import (
-    ArrayType,
-    BooleanType,
-    DateType,
-    IntegerType,
-    StringType,
-    StructField,
-    StructType,
-    TimestampType,
-)
-from pyspark.sql.window import Window
+import time
+import glob
+import uuid
+import os
 
-import helpers.client
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance, is_arm
+from pyspark.sql.types import (
+    StructType,
+    StructField,
+    StringType,
+    IntegerType,
+    DateType,
+    TimestampType,
+    BooleanType,
+    ArrayType,
+)
+from pyspark.sql.functions import current_timestamp
+from datetime import datetime
+from pyspark.sql.functions import monotonically_increasing_id, row_number
+from pyspark.sql.window import Window
+from pyspark.sql.readwriter import DataFrameWriter, DataFrameWriterV2
+from minio.deleteobjects import DeleteObject
+from azure.storage.blob import BlobServiceClient
+
 from helpers.s3_tools import (
-    AzureUploader,
-    HDFSUploader,
-    LocalUploader,
-    S3Uploader,
+    prepare_s3_bucket,
     get_file_contents,
     list_s3_objects,
-    prepare_s3_bucket,
+    S3Uploader,
+    AzureUploader,
+    LocalUploader,
 )
-from helpers.test_tools import TSV
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -67,43 +65,12 @@ def get_spark():
 def started_cluster():
     try:
         cluster = ClickHouseCluster(__file__, with_spark=True)
-        with_hdfs = True
-        if is_arm():
-            with_hdfs = False
         cluster.add_instance(
             "node1",
-            main_configs=[
-                "configs/config.d/query_log.xml",
-                "configs/config.d/cluster.xml",
-                "configs/config.d/named_collections.xml",
-                "configs/config.d/filesystem_caches.xml",
-            ],
+            main_configs=["configs/config.d/named_collections.xml"],
             user_configs=["configs/users.d/users.xml"],
             with_minio=True,
             with_azurite=True,
-            with_hdfs=with_hdfs,
-            stay_alive=True,
-        )
-        cluster.add_instance(
-            "node2",
-            main_configs=[
-                "configs/config.d/query_log.xml",
-                "configs/config.d/cluster.xml",
-                "configs/config.d/named_collections.xml",
-                "configs/config.d/filesystem_caches.xml",
-            ],
-            user_configs=["configs/users.d/users.xml"],
-            stay_alive=True,
-        )
-        cluster.add_instance(
-            "node3",
-            main_configs=[
-                "configs/config.d/query_log.xml",
-                "configs/config.d/cluster.xml",
-                "configs/config.d/named_collections.xml",
-                "configs/config.d/filesystem_caches.xml",
-            ],
-            user_configs=["configs/users.d/users.xml"],
             stay_alive=True,
         )
 
@@ -131,8 +98,6 @@ def started_cluster():
         cluster.default_azure_uploader = AzureUploader(
             cluster.blob_service_client, cluster.azure_container_name
         )
-
-        cluster.default_hdfs_uploader = HDFSUploader(cluster)
 
         cluster.default_local_uploader = LocalUploader(cluster.instances["node1"])
 
@@ -206,7 +171,6 @@ def get_creation_expression(
     cluster,
     format="Parquet",
     table_function=False,
-    run_on_cluster=False,
     **kwargs,
 ):
     if storage_type == "s3":
@@ -214,56 +178,25 @@ def get_creation_expression(
             bucket = kwargs["bucket"]
         else:
             bucket = cluster.minio_bucket
-
-        if run_on_cluster:
-            assert table_function
-            return f"icebergS3Cluster('cluster_simple', s3, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"
+        print(bucket)
+        if table_function:
+            return f"icebergS3(s3, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"
         else:
-            if table_function:
-                return f"icebergS3(s3, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"
-            else:
-                return f"""
-                    DROP TABLE IF EXISTS {table_name};
-                    CREATE TABLE {table_name}
-                    ENGINE=IcebergS3(s3, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"""
-
+            return f"""
+                DROP TABLE IF EXISTS {table_name};
+                CREATE TABLE {table_name}
+                ENGINE=IcebergS3(s3, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"""
     elif storage_type == "azure":
-        if run_on_cluster:
-            assert table_function
+        if table_function:
             return f"""
-                icebergAzureCluster('cluster_simple', azure, container = '{cluster.azure_container_name}', storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/iceberg_data/default/{table_name}/', format={format})
+                icebergAzure(azure, container = '{cluster.azure_container_name}', storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/iceberg_data/default/{table_name}/', format={format})
             """
         else:
-            if table_function:
-                return f"""
-                    icebergAzure(azure, container = '{cluster.azure_container_name}', storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/iceberg_data/default/{table_name}/', format={format})
-                """
-            else:
-                return f"""
-                    DROP TABLE IF EXISTS {table_name};
-                    CREATE TABLE {table_name}
-                    ENGINE=IcebergAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/iceberg_data/default/{table_name}/', format={format})"""
-
-    elif storage_type == "hdfs":
-        if run_on_cluster:
-            assert table_function
             return f"""
-                icebergHDFSCluster('cluster_simple', hdfs, filename= 'iceberg_data/default/{table_name}/', format={format}, url = 'hdfs://hdfs1:9000/')
-            """
-        else:
-            if table_function:
-                return f"""
-                    icebergHDFS(hdfs, filename= 'iceberg_data/default/{table_name}/', format={format}, url = 'hdfs://hdfs1:9000/')
-                """
-            else:
-                return f"""
-                    DROP TABLE IF EXISTS {table_name};
-                    CREATE TABLE {table_name}
-                    ENGINE=IcebergHDFS(hdfs, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'hdfs://hdfs1:9000/');"""
-
+                DROP TABLE IF EXISTS {table_name};
+                CREATE TABLE {table_name}
+                ENGINE=IcebergAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/iceberg_data/default/{table_name}/', format={format})"""
     elif storage_type == "local":
-        assert not run_on_cluster
-
         if table_function:
             return f"""
                 icebergLocal(local, path = '/iceberg_data/default/{table_name}/', format={format})
@@ -273,7 +206,6 @@ def get_creation_expression(
                 DROP TABLE IF EXISTS {table_name};
                 CREATE TABLE {table_name}
                 ENGINE=IcebergLocal(local, path = '/iceberg_data/default/{table_name}/', format={format});"""
-
     else:
         raise Exception(f"Unknown iceberg storage type: {storage_type}")
 
@@ -321,10 +253,6 @@ def default_upload_directory(
         return started_cluster.default_local_uploader.upload_directory(
             local_path, remote_path, **kwargs
         )
-    elif storage_type == "hdfs":
-        return started_cluster.default_hdfs_uploader.upload_directory(
-            local_path, remote_path, **kwargs
-        )
     elif storage_type == "s3":
         print(kwargs)
         return started_cluster.default_s3_uploader.upload_directory(
@@ -339,10 +267,8 @@ def default_upload_directory(
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "hdfs", "local"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_single_iceberg_file(started_cluster, format_version, storage_type):
-    if is_arm() and storage_type == "hdfs":
-        pytest.skip("Disabled test IcebergHDFS for aarch64")
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = (
@@ -371,10 +297,8 @@ def test_single_iceberg_file(started_cluster, format_version, storage_type):
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "hdfs", "local"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_partition_by(started_cluster, format_version, storage_type):
-    if is_arm() and storage_type == "hdfs":
-        pytest.skip("Disabled test IcebergHDFS for aarch64")
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = (
@@ -408,10 +332,8 @@ def test_partition_by(started_cluster, format_version, storage_type):
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "hdfs", "local"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_multiple_iceberg_files(started_cluster, format_version, storage_type):
-    if is_arm() and storage_type == "hdfs":
-        pytest.skip("Disabled test IcebergHDFS for aarch64")
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
@@ -472,10 +394,8 @@ def test_multiple_iceberg_files(started_cluster, format_version, storage_type):
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "hdfs", "local"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_types(started_cluster, format_version, storage_type):
-    if is_arm() and storage_type == "hdfs":
-        pytest.skip("Disabled test IcebergHDFS for aarch64")
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = (
@@ -540,112 +460,8 @@ def test_types(started_cluster, format_version, storage_type):
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "hdfs"])
-def test_cluster_table_function(started_cluster, format_version, storage_type):
-    if is_arm() and storage_type == "hdfs":
-        pytest.skip("Disabled test IcebergHDFS for aarch64")
-
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
-
-    TABLE_NAME = (
-        "test_iceberg_cluster_"
-        + format_version
-        + "_"
-        + storage_type
-        + "_"
-        + get_uuid_str()
-    )
-
-    def add_df(mode):
-        write_iceberg_from_df(
-            spark,
-            generate_data(spark, 0, 100),
-            TABLE_NAME,
-            mode=mode,
-            format_version=format_version,
-        )
-
-        files = default_upload_directory(
-            started_cluster,
-            storage_type,
-            f"/iceberg_data/default/{TABLE_NAME}/",
-            f"/iceberg_data/default/{TABLE_NAME}/",
-        )
-
-        logging.info(f"Adding another dataframe. result files: {files}")
-
-        return files
-
-    files = add_df(mode="overwrite")
-    for i in range(1, len(started_cluster.instances)):
-        files = add_df(mode="append")
-
-    logging.info(f"Setup complete. files: {files}")
-    assert len(files) == 5 + 4 * (len(started_cluster.instances) - 1)
-
-    clusters = instance.query(f"SELECT * FROM system.clusters")
-    logging.info(f"Clusters setup: {clusters}")
-
-    # Regular Query only node1
-    table_function_expr = get_creation_expression(
-        storage_type, TABLE_NAME, started_cluster, table_function=True
-    )
-    select_regular = (
-        instance.query(f"SELECT * FROM {table_function_expr}").strip().split()
-    )
-
-    # Cluster Query with node1 as coordinator
-    table_function_expr_cluster = get_creation_expression(
-        storage_type,
-        TABLE_NAME,
-        started_cluster,
-        table_function=True,
-        run_on_cluster=True,
-    )
-    select_cluster = (
-        instance.query(f"SELECT * FROM {table_function_expr_cluster}").strip().split()
-    )
-
-    # Simple size check
-    assert len(select_regular) == 600
-    assert len(select_cluster) == 600
-
-    # Actual check
-    assert select_cluster == select_regular
-
-    # Check query_log
-    for replica in started_cluster.instances.values():
-        replica.query("SYSTEM FLUSH LOGS")
-
-    for node_name, replica in started_cluster.instances.items():
-        cluster_secondary_queries = (
-            replica.query(
-                f"""
-                SELECT query, type, is_initial_query, read_rows, read_bytes FROM system.query_log
-                WHERE
-                    type = 'QueryStart' AND
-                    positionCaseInsensitive(query, '{storage_type}Cluster') != 0 AND
-                    position(query, '{TABLE_NAME}') != 0 AND
-                    position(query, 'system.query_log') = 0 AND
-                    NOT is_initial_query
-            """
-            )
-            .strip()
-            .split("\n")
-        )
-
-        logging.info(
-            f"[{node_name}] cluster_secondary_queries: {cluster_secondary_queries}"
-        )
-        assert len(cluster_secondary_queries) == 1
-
-
-@pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "hdfs", "local"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_delete_files(started_cluster, format_version, storage_type):
-    if is_arm() and storage_type == "hdfs":
-        pytest.skip("Disabled test IcebergHDFS for aarch64")
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
@@ -717,10 +533,8 @@ def test_delete_files(started_cluster, format_version, storage_type):
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "hdfs", "local"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_evolved_schema(started_cluster, format_version, storage_type):
-    if is_arm() and storage_type == "hdfs":
-        pytest.skip("Disabled test IcebergHDFS for aarch64")
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
@@ -772,10 +586,8 @@ def test_evolved_schema(started_cluster, format_version, storage_type):
     assert data == expected_data
 
 
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "hdfs", "local"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_row_based_deletes(started_cluster, storage_type):
-    if is_arm() and storage_type == "hdfs":
-        pytest.skip("Disabled test IcebergHDFS for aarch64")
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
@@ -813,10 +625,8 @@ def test_row_based_deletes(started_cluster, storage_type):
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "hdfs", "local"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_schema_inference(started_cluster, format_version, storage_type):
-    if is_arm() and storage_type == "hdfs":
-        pytest.skip("Disabled test IcebergHDFS for aarch64")
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     for format in ["Parquet", "ORC", "Avro"]:
@@ -883,10 +693,8 @@ def test_schema_inference(started_cluster, format_version, storage_type):
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "hdfs", "local"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_metadata_file_selection(started_cluster, format_version, storage_type):
-    if is_arm() and storage_type == "hdfs":
-        pytest.skip("Disabled test IcebergHDFS for aarch64")
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = (
@@ -920,10 +728,8 @@ def test_metadata_file_selection(started_cluster, format_version, storage_type):
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "hdfs", "local"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_metadata_file_format_with_uuid(started_cluster, format_version, storage_type):
-    if is_arm() and storage_type == "hdfs":
-        pytest.skip("Disabled test IcebergHDFS for aarch64")
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = (
@@ -1022,66 +828,3 @@ def test_restart_broken_s3(started_cluster):
     )
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
-
-
-@pytest.mark.parametrize("storage_type", ["s3"])
-def test_filesystem_cache(started_cluster, storage_type):
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
-    TABLE_NAME = "test_filesystem_cache_" + storage_type + "_" + get_uuid_str()
-
-    write_iceberg_from_df(
-        spark,
-        generate_data(spark, 0, 10),
-        TABLE_NAME,
-        mode="overwrite",
-        format_version="1",
-        partition_by="a",
-    )
-
-    default_upload_directory(
-        started_cluster,
-        storage_type,
-        f"/iceberg_data/default/{TABLE_NAME}/",
-        f"/iceberg_data/default/{TABLE_NAME}/",
-    )
-
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
-
-    query_id = f"{TABLE_NAME}-{uuid.uuid4()}"
-    instance.query(
-        f"SELECT * FROM {TABLE_NAME} SETTINGS filesystem_cache_name = 'cache1'",
-        query_id=query_id,
-    )
-
-    instance.query("SYSTEM FLUSH LOGS")
-
-    count = int(
-        instance.query(
-            f"SELECT ProfileEvents['CachedReadBufferCacheWriteBytes'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
-        )
-    )
-    assert 0 < int(
-        instance.query(
-            f"SELECT ProfileEvents['S3GetObject'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
-        )
-    )
-
-    query_id = f"{TABLE_NAME}-{uuid.uuid4()}"
-    instance.query(
-        f"SELECT * FROM {TABLE_NAME} SETTINGS filesystem_cache_name = 'cache1'",
-        query_id=query_id,
-    )
-
-    instance.query("SYSTEM FLUSH LOGS")
-
-    assert count == int(
-        instance.query(
-            f"SELECT ProfileEvents['CachedReadBufferReadFromCacheBytes'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
-        )
-    )
-    assert 0 == int(
-        instance.query(
-            f"SELECT ProfileEvents['S3GetObject'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
-        )
-    )

@@ -5,7 +5,7 @@ sidebar_label: JSON
 keywords: [json, data type]
 ---
 
-# JSON Data Type
+# JSON
 
 Stores JavaScript Object Notation (JSON) documents in a single column.
 
@@ -58,10 +58,10 @@ SELECT json FROM test;
 └───────────────────────────────────┘
 ```
 
-Using CAST from `String`:
+Using CAST from 'String':
 
 ```sql
-SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::JSON AS json;
+SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::JSON as json;
 ```
 
 ```text
@@ -70,47 +70,7 @@ SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::JSON AS json
 └────────────────────────────────────────────────┘
 ```
 
-Using CAST from `Tuple`:
-
-```sql
-SELECT (tuple(42 AS b) AS a, [1, 2, 3] AS c, 'Hello, World!' AS d)::JSON AS json;
-```
-
-```text
-┌─json───────────────────────────────────────────┐
-│ {"a":{"b":42},"c":[1,2,3],"d":"Hello, World!"} │
-└────────────────────────────────────────────────┘
-```
-
-Using CAST from `Map`:
-
-```sql
-SELECT map('a', map('b', 42), 'c', [1,2,3], 'd', 'Hello, World!')::JSON AS json;
-```
-
-```text
-┌─json───────────────────────────────────────────┐
-│ {"a":{"b":42},"c":[1,2,3],"d":"Hello, World!"} │
-└────────────────────────────────────────────────┘
-```
-
-Using CAST from deprecated `Object('json')`:
-
-```sql
- SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::Object('json')::JSON AS json;
- ```
-
-```text
-┌─json───────────────────────────────────────────┐
-│ {"a":{"b":42},"c":[1,2,3],"d":"Hello, World!"} │
-└────────────────────────────────────────────────┘
-```
-
-:::note
-CAST from `Tuple`/`Map`/`Object('json')` to `JSON` is implemented via serializing the column into `String` column containing JSON objects and deserializing it back to `JSON` type column. 
-:::
-
-CAST between `JSON` types with different arguments will be supported later.
+CAST from `JSON`, named `Tuple`, `Map` and `Object('json')` to `JSON` type will be supported later.
 
 ## Reading JSON paths as subcolumns
 
@@ -187,7 +147,7 @@ select json.a.g.:Float64, dynamicType(json.a.g), json.d.:Date, dynamicType(json.
 └─────────────────────┴───────────────────────┴────────────────┴─────────────────────┘
 ```
 
-`Dynamic` subcolumns can be cast to any data type. In this case the exception will be thrown if internal type inside `Dynamic` cannot be cast to the requested type:
+`Dynamic` subcolumns can be casted to any data type. In this case the exception will be thrown if internal type inside `Dynamic` cannot be casted to the requested type:
 
 ```sql
 select json.a.g::UInt64 as uint FROM test;
@@ -668,28 +628,6 @@ SELECT arrayJoin(distinctJSONPathsAndTypes(json)) FROM s3('s3://clickhouse-publi
 │ ('repo.url',['String'])                                     │
 │ ('type',['String'])                                         │
 └─arrayJoin(distinctJSONPathsAndTypes(json))──────────────────┘
-```
-
-## ALTER MODIFY COLUMN to JSON type
-
-It's possible to alter an existing table and change the type of the column to the new `JSON` type. Right now only alter from `String` type is supported.
-
-**Example**
-
-```sql
-CREATE TABLE test (json String) ENGINE=MergeTree ORDeR BY tuple();
-INSERT INTO test VALUES ('{"a" : 42}'), ('{"a" : 43, "b" : "Hello"}'), ('{"a" : 44, "b" : [1, 2, 3]}')), ('{"c" : "2020-01-01"}');
-ALTER TABLE test MODIFY COLUMN json JSON;
-SELECT json, json.a, json.b, json.c FROM test;
-```
-
-```text
-┌─json─────────────────────────┬─json.a─┬─json.b──┬─json.c─────┐
-│ {"a":"42"}                   │ 42     │ ᴺᵁᴸᴸ    │ ᴺᵁᴸᴸ       │
-│ {"a":"43","b":"Hello"}       │ 43     │ Hello   │ ᴺᵁᴸᴸ       │
-│ {"a":"44","b":["1","2","3"]} │ 44     │ [1,2,3] │ ᴺᵁᴸᴸ       │
-│ {"c":"2020-01-01"}           │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ    │ 2020-01-01 │
-└──────────────────────────────┴────────┴─────────┴────────────┘
 ```
 
 ## Tips for better usage of the JSON type

@@ -13,7 +13,7 @@ execute_process(COMMAND ${CMAKE_CXX_COMPILER} --version
 message (STATUS "Using compiler:\n${COMPILER_SELF_IDENTIFICATION}")
 
 # Require minimum compiler versions
-set (CLANG_MINIMUM_VERSION 18)
+set (CLANG_MINIMUM_VERSION 17)
 set (XCODE_MINIMUM_VERSION 12.0)
 set (APPLE_CLANG_MINIMUM_VERSION 12.0.0)
 
@@ -48,8 +48,6 @@ if (NOT LINKER_NAME)
         find_program (LLD_PATH NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "ld.lld")
     elseif (OS_DARWIN)
         find_program (LLD_PATH NAMES "ld")
-        # Duplicate libraries passed to the linker is not a problem.
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-no_warn_duplicate_libraries")
     endif ()
     if (LLD_PATH)
         if (OS_LINUX OR OS_DARWIN)
