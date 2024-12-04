@@ -366,11 +366,11 @@ namespace ErrorCodes
 }
 
 
-namespace StartupScriptsExecutionState
+enum StartupScriptsExecutionState : CurrentMetrics::Value
 {
-    [[maybe_unused]] const CurrentMetrics::Value NotFinished = 0;
-    const CurrentMetrics::Value Success = 1;
-    const CurrentMetrics::Value Failure = 2;
+    NotFinished = 0,
+    Success = 1,
+    Failure = 2,
 };
 
 
