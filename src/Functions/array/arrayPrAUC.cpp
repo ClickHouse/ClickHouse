@@ -78,33 +78,35 @@ public:
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayPrAUC>(); }
 
 private:
-    static Float64
-    apply(const IColumn & scores, const IColumn & labels, ColumnArray::Offset current_offset, ColumnArray::Offset next_offset)
+    static Float64 apply(const IColumn & scores, const IColumn & labels, ColumnArray::Offset current_offset, ColumnArray::Offset next_offset)
     {
+        size_t size = next_offset - current_offset;
+        if (size == 0)
+            return 0.0;
+
         struct ScoreLabel
         {
             Float64 score;
             bool label;
         };
 
-        size_t size = next_offset - current_offset;
         PODArrayWithStackMemory<ScoreLabel, 1024> sorted_labels(size);
 
         for (size_t i = 0; i < size; ++i)
         {
-            bool label = labels.getFloat64(current_offset + i) > 0;
+            sorted_labels[i].label = labels.getFloat64(current_offset + i) > 0;
             sorted_labels[i].score = scores.getFloat64(current_offset + i);
-            sorted_labels[i].label = label;
         }
 
         /// Sorting scores in descending order to traverse the Precision Recall curve from left to right
         std::sort(sorted_labels.begin(), sorted_labels.end(), [](const auto & lhs, const auto & rhs) { return lhs.score > rhs.score; });
 
-        size_t prev_tp = 0, curr_tp = 0;
+        size_t prev_tp = 0;
+        size_t curr_tp = 0;
         size_t curr_p = 0;
 
         Float64 prev_score = sorted_labels[0].score;
-        Float64 curr_precision = 1.0;
+        Float64 curr_precision;
 
         Float64 area = 0.0;
 
@@ -123,7 +125,8 @@ private:
                  *
                  * This can be done because (TP + FN) is constant and equal to total positive labels.
                  */
-                curr_precision = static_cast<Float64>(curr_tp) / curr_p;
+                curr_precision = static_cast<Float64>(curr_tp) / curr_p; /// curr_p should never be 0 because first element is not executed in this if statement
+                                                                         /// and it is always positive because it has the biggest prediction value.
                 area += curr_precision * (curr_tp - prev_tp);
                 prev_tp = curr_tp;
                 prev_score = sorted_labels[i].score;
@@ -134,12 +137,13 @@ private:
             curr_p += 1;
         }
 
-        curr_precision = curr_p > 0 ? static_cast<Float64>(curr_tp) / curr_p : 1.0;
-        area += curr_precision * (curr_tp - prev_tp);
-
         /// If there were no positive labels, Recall did not change and the area is 0
         if (curr_tp == 0)
             return 0.0;
+
+        curr_precision = curr_p > 0 ? static_cast<Float64>(curr_tp) / curr_p : 1.0;
+        area += curr_precision * (curr_tp - prev_tp);
+
         /// Finally, we divide by (TP + FN) to obtain the Recall
         /// At this point we've traversed the whole curve and curr_tp = total positive labels (TP + FN)
         return area / curr_tp;
@@ -167,7 +171,7 @@ public:
     String getName() const override { return name; }
 
     bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
+    size_t getNumberOfArguments() const override { return 2; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
