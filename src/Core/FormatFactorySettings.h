@@ -1151,6 +1151,9 @@ Target row index stride in ORC output format
     DECLARE(Double, output_format_orc_dictionary_key_size_threshold, 0.0, R"(
 For a string column in ORC output format, if the number of distinct values is greater than this fraction of the total number of non-null rows, turn off dictionary encoding. Otherwise dictionary encoding is enabled
 )", 0) \
+    DECLARE(String, output_format_orc_writer_time_zone_name, "GMT", R"(
+The time zone name for ORC writer, the default ORC writer's time zone is GMT.
+)", 0) \
     \
     DECLARE(CapnProtoEnumComparingMode, format_capn_proto_enum_comparising_mode, FormatSettings::CapnProtoEnumComparingMode::BY_VALUES, R"(
 How to map ClickHouse Enum and CapnProto Enum

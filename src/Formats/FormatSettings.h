@@ -423,6 +423,7 @@ struct FormatSettings
         UInt64 output_row_index_stride = 10'000;
         String reader_time_zone_name = "GMT";
         bool dictionary_as_low_cardinality = true;
+        String writer_time_zone_name = "GMT";
         double output_dictionary_key_size_threshold = 0.0;
     } orc{};
 

@@ -277,6 +277,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.orc.use_fast_decoder = settings[Setting::input_format_orc_use_fast_decoder];
     format_settings.orc.filter_push_down = settings[Setting::input_format_orc_filter_push_down];
     format_settings.orc.reader_time_zone_name = settings[Setting::input_format_orc_reader_time_zone_name];
+    format_settings.orc.writer_time_zone_name = settings[Setting::output_format_orc_writer_time_zone_name];
     format_settings.defaults_for_omitted_fields = settings[Setting::input_format_defaults_for_omitted_fields];
     format_settings.capn_proto.enum_comparing_mode = settings[Setting::format_capn_proto_enum_comparising_mode];
     format_settings.capn_proto.skip_fields_with_unsupported_types_in_schema_inference = settings[Setting::input_format_capn_proto_skip_fields_with_unsupported_types_in_schema_inference];
