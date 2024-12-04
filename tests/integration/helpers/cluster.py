@@ -17,6 +17,7 @@ import subprocess
 import time
 import traceback
 import urllib.parse
+import uuid
 from contextlib import contextmanager
 from functools import cache
 from pathlib import Path
@@ -4546,15 +4547,19 @@ class ClickHouseInstance:
     @contextmanager
     def with_replace_config(self, path, replacement):
         """Create a copy of existing config (if exists) and revert on leaving the context"""
+        _directory, filename = os.path.split(path)
+        basename, extension = os.path.splitext(filename)
+        id = uuid.uuid4()
+        backup_path = f"/tmp/{basename}_{id}{extension}"
         self.exec_in_container(
-            ["bash", "-c", f"test ! -f {path} || mv --no-clobber {path} {path}.bak"]
+            ["bash", "-c", f"test ! -f {path} || mv --no-clobber {path} {backup_path}"]
         )
         self.exec_in_container(
             ["bash", "-c", "echo '{}' > {}".format(replacement, path)]
         )
         yield
         self.exec_in_container(
-            ["bash", "-c", f"test ! -f {path}.bak || mv {path}.bak {path}"]
+            ["bash", "-c", f"test ! -f {backup_path} || mv {backup_path} {path}"]
         )
 
     def replace_config(self, path_to_config, replacement):
