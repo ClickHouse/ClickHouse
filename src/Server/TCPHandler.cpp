@@ -37,6 +37,7 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/LayeredConfiguration.h>
+#include "Common/StackTrace.h"
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
@@ -1110,7 +1111,12 @@ void TCPHandler::processInsertQuery(QueryState & state)
                 startInsertQuery(state);
 
             while (receivePacketsExpectDataConcurrentWithExecutor(state))
+            {
                 executor.push(std::move(state.block_for_insert));
+
+                sendLogs(state);
+                sendInsertProfileEvents(state);
+            }
 
             state.read_all_data = true;
 
