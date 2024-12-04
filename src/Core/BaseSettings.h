@@ -342,7 +342,13 @@ void BaseSettings<TTraits>::resetToDefault(std::string_view name)
     name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
+    {
         accessor.resetValueToDefault(*this, index);
+        return;
+    }
+
+    if constexpr (Traits::allow_custom_settings)
+        custom_settings_map.erase(name);
 }
 
 template <typename TTraits>

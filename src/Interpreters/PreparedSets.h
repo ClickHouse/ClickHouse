@@ -205,6 +205,7 @@ public:
     // const SetsFromSubqueries & getSetsFromSubquery() const { return sets_from_subqueries; }
 
     static String toString(const Hash & key, const DataTypes & types);
+    static SizeLimits getSizeLimitsForSet(const Settings & settings);
 
     static SizeLimits getSizeLimitsForSet(const Settings & settings);
 
