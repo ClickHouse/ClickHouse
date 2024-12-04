@@ -30,6 +30,6 @@ public:
 
     String getID(char) const override { return "RolesOrUsersSet"; }
     ASTPtr clone() const override { return std::make_shared<ASTRolesOrUsersSet>(*this); }
-    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };
 }

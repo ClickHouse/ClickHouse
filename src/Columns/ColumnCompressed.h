@@ -72,7 +72,7 @@ public:
 
     /// If data is not worth to be compressed and not 'always_compress' - returns nullptr.
     /// Note: shared_ptr is to allow to be captured by std::function.
-    static std::shared_ptr<Memory<>> compressBuffer(const void * data, size_t data_size, bool always_compress);
+    static std::shared_ptr<Memory<>> compressBuffer(const void * data, size_t data_size, bool force_compression);
 
     static void decompressBuffer(
         const void * compressed_data, void * decompressed_data, size_t compressed_size, size_t decompressed_size);

@@ -608,7 +608,7 @@ Block Block::compress() const
     size_t num_columns = data.size();
     Columns new_columns(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
-        new_columns[i] = data[i].column->compress();
+        new_columns[i] = data[i].column->compress(/*force_compression=*/false);
     return cloneWithColumns(new_columns);
 }
 
