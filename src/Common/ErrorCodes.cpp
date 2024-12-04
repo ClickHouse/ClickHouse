@@ -611,9 +611,12 @@
     M(730, REFRESH_FAILED) \
     M(731, QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE) \
     M(733, TABLE_IS_BEING_RESTARTED) \
+    M(734, CANNOT_WRITE_AFTER_BUFFER_CANCELED) \
+    M(735, QUERY_WAS_CANCELLED_BY_CLIENT) \
 \
     M(900, DISTRIBUTED_CACHE_ERROR) \
     M(901, CANNOT_USE_DISTRIBUTED_CACHE) \
+    M(902, PROTOCOL_VERSION_MISMATCH) \
 \
     M(999, KEEPER_EXCEPTION) \
     M(1000, POCO_EXCEPTION) \
@@ -647,7 +650,7 @@ namespace ErrorCodes
             APPLY_FOR_ERROR_CODES(M)
 #undef M
         }
-    } error_codes_names;
+    } static error_codes_names;
 
     std::string_view getName(ErrorCode error_code)
     {

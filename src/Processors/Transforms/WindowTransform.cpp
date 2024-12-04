@@ -1153,7 +1153,7 @@ void WindowTransform::appendChunk(Chunk & chunk)
         // Initialize output columns.
         for (auto & ws : workspaces)
         {
-            block.casted_columns.push_back(ws.window_function_impl ? ws.window_function_impl->castColumn(block.input_columns, ws.argument_column_indices) : nullptr);
+            block.cast_columns.push_back(ws.window_function_impl ? ws.window_function_impl->castColumn(block.input_columns, ws.argument_column_indices) : nullptr);
 
             block.output_columns.push_back(ws.aggregate_function->getResultType()
                 ->createColumn());
@@ -1495,11 +1495,10 @@ void WindowTransform::work()
     }
 }
 
-struct WindowFunctionRank final : public WindowFunction
+struct WindowFunctionRank final : public StatelessWindowFunction
 {
-    WindowFunctionRank(const std::string & name_,
-            const DataTypes & argument_types_, const Array & parameters_)
-        : WindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeUInt64>())
+    WindowFunctionRank(const std::string & name_, const DataTypes & argument_types_, const Array & parameters_)
+        : StatelessWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeUInt64>())
     {}
 
     bool allocatesMemoryInArena() const override { return false; }
@@ -1514,11 +1513,10 @@ struct WindowFunctionRank final : public WindowFunction
     }
 };
 
-struct WindowFunctionDenseRank final : public WindowFunction
+struct WindowFunctionDenseRank final : public StatelessWindowFunction
 {
-    WindowFunctionDenseRank(const std::string & name_,
-            const DataTypes & argument_types_, const Array & parameters_)
-        : WindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeUInt64>())
+    WindowFunctionDenseRank(const std::string & name_, const DataTypes & argument_types_, const Array & parameters_)
+        : StatelessWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeUInt64>())
     {}
 
     bool allocatesMemoryInArena() const override { return false; }
@@ -1716,7 +1714,7 @@ struct WindowFunctionExponentialTimeDecayedSum final : public StatefulWindowFunc
         const Float64 decay_length;
 };
 
-struct WindowFunctionExponentialTimeDecayedMax final : public WindowFunction
+struct WindowFunctionExponentialTimeDecayedMax final : public StatelessWindowFunction
 {
     static constexpr size_t ARGUMENT_VALUE = 0;
     static constexpr size_t ARGUMENT_TIME = 1;
@@ -1731,9 +1729,8 @@ struct WindowFunctionExponentialTimeDecayedMax final : public WindowFunction
         return applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters_[0]);
     }
 
-    WindowFunctionExponentialTimeDecayedMax(const std::string & name_,
-            const DataTypes & argument_types_, const Array & parameters_)
-        : WindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
+    WindowFunctionExponentialTimeDecayedMax(const std::string & name_, const DataTypes & argument_types_, const Array & parameters_)
+        : StatelessWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
         , decay_length(getDecayLength(parameters_, name_))
     {
         if (argument_types.size() != 2)
@@ -1991,11 +1988,10 @@ struct WindowFunctionExponentialTimeDecayedAvg final : public StatefulWindowFunc
         const Float64 decay_length;
 };
 
-struct WindowFunctionRowNumber final : public WindowFunction
+struct WindowFunctionRowNumber final : public StatelessWindowFunction
 {
-    WindowFunctionRowNumber(const std::string & name_,
-            const DataTypes & argument_types_, const Array & parameters_)
-        : WindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeUInt64>())
+    WindowFunctionRowNumber(const std::string & name_, const DataTypes & argument_types_, const Array & parameters_)
+        : StatelessWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeUInt64>())
     {}
 
     bool allocatesMemoryInArena() const override { return false; }
@@ -2273,13 +2269,12 @@ public:
 
 // ClickHouse-specific variant of lag/lead that respects the window frame.
 template <bool is_lead>
-struct WindowFunctionLagLeadInFrame final : public WindowFunction
+struct WindowFunctionLagLeadInFrame final : public StatelessWindowFunction
 {
     FunctionBasePtr func_cast = nullptr;
 
-    WindowFunctionLagLeadInFrame(const std::string & name_,
-            const DataTypes & argument_types_, const Array & parameters_)
-        : WindowFunction(name_, argument_types_, parameters_, createResultType(argument_types_, name_))
+    WindowFunctionLagLeadInFrame(const std::string & name_, const DataTypes & argument_types_, const Array & parameters_)
+        : StatelessWindowFunction(name_, argument_types_, parameters_, createResultType(argument_types_, name_))
     {
         if (!parameters.empty())
         {
@@ -2355,7 +2350,7 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
             }
         };
 
-        return func_cast->execute(arguments, argument_types[0], columns[idx[2]]->size());
+        return func_cast->execute(arguments, argument_types[0], columns[idx[2]]->size(), /* dry_run = */ false);
     }
 
     static DataTypePtr createResultType(const DataTypes & argument_types_, const std::string & name_)
@@ -2406,8 +2401,8 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
             {
                 // Column with default values is specified.
                 const IColumn & default_column =
-                    current_block.casted_columns[function_index] ?
-                        *current_block.casted_columns[function_index].get() :
+                    current_block.cast_columns[function_index] ?
+                        *current_block.cast_columns[function_index].get() :
                         *current_block.input_columns[workspace.argument_column_indices[2]].get();
 
                 to.insert(default_column[transform->current_row.row]);
@@ -2427,11 +2422,10 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
     }
 };
 
-struct WindowFunctionNthValue final : public WindowFunction
+struct WindowFunctionNthValue final : public StatelessWindowFunction
 {
-    WindowFunctionNthValue(const std::string & name_,
-            const DataTypes & argument_types_, const Array & parameters_)
-        : WindowFunction(name_, argument_types_, parameters_, createResultType(name_, argument_types_))
+    WindowFunctionNthValue(const std::string & name_, const DataTypes & argument_types_, const Array & parameters_)
+        : StatelessWindowFunction(name_, argument_types_, parameters_, createResultType(name_, argument_types_))
     {
         if (!parameters.empty())
         {
@@ -2475,7 +2469,7 @@ struct WindowFunctionNthValue final : public WindowFunction
         if (offset <= 0)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The offset for function {} must be in (0, {}], {} given",
+                "The offset for function {} must be in (1, {}], {} given",
                 getName(), INT64_MAX, offset);
         }
 

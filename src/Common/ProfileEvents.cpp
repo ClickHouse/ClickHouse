@@ -63,6 +63,8 @@
     M(TableFunctionExecute, "Number of table function calls.", ValueType::Number) \
     M(MarkCacheHits, "Number of times an entry has been found in the mark cache, so we didn't have to load a mark file.", ValueType::Number) \
     M(MarkCacheMisses, "Number of times an entry has not been found in the mark cache, so we had to load a mark file in memory, which is a costly operation, adding to query latency.", ValueType::Number) \
+    M(PrimaryIndexCacheHits, "Number of times an entry has been found in the primary index cache, so we didn't have to load a index file.", ValueType::Number) \
+    M(PrimaryIndexCacheMisses, "Number of times an entry has not been found in the primary index cache, so we had to load a index file in memory, which is a costly operation, adding to query latency.", ValueType::Number) \
     M(QueryCacheHits, "Number of times a query result has been found in the query cache (and query computation was avoided). Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
     M(QueryCacheMisses, "Number of times a query result has not been found in the query cache (and required query computation). Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
     /* Each page cache chunk access increments exactly one of the following 5 PageCacheChunk* counters. */ \
@@ -222,13 +224,20 @@
     M(SelectedBytes, "Number of bytes (uncompressed; for columns as they stored in memory) SELECTed from all tables.", ValueType::Bytes) \
     M(RowsReadByMainReader, "Number of rows read from MergeTree tables by the main reader (after PREWHERE step).", ValueType::Number) \
     M(RowsReadByPrewhereReaders, "Number of rows read from MergeTree tables (in total) by prewhere readers.", ValueType::Number) \
+    M(LoadedDataParts, "Number of data parts loaded by MergeTree tables during initialization.", ValueType::Number) \
+    M(LoadedDataPartsMicroseconds, "Microseconds spent by MergeTree tables for loading data parts during initialization.", ValueType::Microseconds) \
     \
     M(WaitMarksLoadMicroseconds, "Time spent loading marks", ValueType::Microseconds) \
     M(BackgroundLoadingMarksTasks, "Number of background tasks for loading marks", ValueType::Number) \
+    M(LoadedMarksFiles, "Number of mark files loaded.", ValueType::Number) \
     M(LoadedMarksCount, "Number of marks loaded (total across columns).", ValueType::Number) \
     M(LoadedMarksMemoryBytes, "Size of in-memory representations of loaded marks.", ValueType::Bytes) \
+    M(LoadedPrimaryIndexFiles, "Number of primary index files loaded.", ValueType::Number) \
+    M(LoadedPrimaryIndexRows, "Number of rows of primary key loaded.", ValueType::Number) \
+    M(LoadedPrimaryIndexBytes, "Number of rows of primary key loaded.", ValueType::Bytes) \
     \
     M(Merge, "Number of launched background merges.", ValueType::Number) \
+    M(MergeSourceParts, "Number of source parts scheduled for merges.", ValueType::Number) \
     M(MergedRows, "Rows read for background merges. This is the number of rows before merge.", ValueType::Number) \
     M(MergedColumns, "Number of columns merged during the horizontal stage of merges.", ValueType::Number) \
     M(GatheredColumns, "Number of columns gathered during the vertical stage of merges.", ValueType::Number) \
@@ -241,6 +250,8 @@
     M(MergeVerticalStageExecuteMilliseconds, "Total busy time spent for execution of vertical stage of background merges", ValueType::Milliseconds) \
     M(MergeProjectionStageTotalMilliseconds, "Total time spent for projection stage of background merges", ValueType::Milliseconds) \
     M(MergeProjectionStageExecuteMilliseconds, "Total busy time spent for execution of projection stage of background merges", ValueType::Milliseconds) \
+    M(MergePrewarmStageTotalMilliseconds, "Total time spent for prewarm stage of background merges", ValueType::Milliseconds) \
+    M(MergePrewarmStageExecuteMilliseconds, "Total busy time spent for execution of prewarm stage of background merges", ValueType::Milliseconds) \
     \
     M(MergingSortedMilliseconds, "Total time spent while merging sorted columns", ValueType::Milliseconds) \
     M(AggregatingSortedMilliseconds, "Total time spent while aggregating sorted columns", ValueType::Milliseconds) \
@@ -542,6 +553,7 @@ The server successfully detected this situation and will download merged part fr
     M(FilesystemCacheLoadMetadataMicroseconds, "Time spent loading filesystem cache metadata", ValueType::Microseconds) \
     M(FilesystemCacheEvictedBytes, "Number of bytes evicted from filesystem cache", ValueType::Bytes) \
     M(FilesystemCacheEvictedFileSegments, "Number of file segments evicted from filesystem cache", ValueType::Number) \
+    M(FilesystemCacheBackgroundDownloadQueuePush, "Number of file segments sent for background download in filesystem cache", ValueType::Number) \
     M(FilesystemCacheEvictionSkippedFileSegments, "Number of file segments skipped for eviction because of being in unreleasable state", ValueType::Number) \
     M(FilesystemCacheEvictionSkippedEvictingFileSegments, "Number of file segments skipped for eviction because of being in evicting state", ValueType::Number) \
     M(FilesystemCacheEvictionTries, "Number of filesystem cache eviction attempts", ValueType::Number) \
@@ -638,6 +650,8 @@ The server successfully detected this situation and will download merged part fr
     M(MetadataFromKeeperBackgroundCleanupObjects, "Number of times a old deleted object clean up was performed by background task", ValueType::Number) \
     M(MetadataFromKeeperBackgroundCleanupTransactions, "Number of times old transaction idempotency token was cleaned up by background task", ValueType::Number) \
     M(MetadataFromKeeperBackgroundCleanupErrors, "Number of times an error was encountered in background cleanup task", ValueType::Number) \
+    \
+    M(SharedMergeTreeMetadataCacheHintLoadedFromCache, "Number of times metadata cache hint was found without going to Keeper", ValueType::Number) \
     \
     M(KafkaRebalanceRevocations, "Number of partition revocations (the first stage of consumer group rebalance)", ValueType::Number) \
     M(KafkaRebalanceAssignments, "Number of partition assignments (the final stage of consumer group rebalance)", ValueType::Number) \
@@ -738,33 +752,61 @@ The server successfully detected this situation and will download merged part fr
     M(ReadTaskRequestsSentElapsedMicroseconds, "Time spent in callbacks requested from the remote server back to the initiator server to choose the read task (for s3Cluster table function and similar). Measured on the remote server side.", ValueType::Microseconds) \
     M(MergeTreeReadTaskRequestsSentElapsedMicroseconds, "Time spent in callbacks requested from the remote server back to the initiator server to choose the read task (for MergeTree tables). Measured on the remote server side.", ValueType::Microseconds) \
     M(MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds, "Time spent in sending the announcement from the remote server to the initiator server about the set of data parts (for MergeTree tables). Measured on the remote server side.", ValueType::Microseconds) \
+    M(MergerMutatorsGetPartsForMergeElapsedMicroseconds, "Time spent to take data parts snapshot to build ranges from them.", ValueType::Microseconds) \
+    M(MergerMutatorPrepareRangesForMergeElapsedMicroseconds, "Time spent to prepare parts ranges which can be merged according to merge predicate.", ValueType::Microseconds) \
+    M(MergerMutatorSelectPartsForMergeElapsedMicroseconds, "Time spent to select parts from ranges which can be merged.", ValueType::Microseconds) \
+    M(MergerMutatorRangesForMergeCount, "Amount of candidate ranges for merge", ValueType::Number) \
+    M(MergerMutatorPartsInRangesForMergeCount, "Amount of candidate parts for merge", ValueType::Number) \
+    M(MergerMutatorSelectRangePartsCount, "Amount of parts in selected range for merge", ValueType::Number) \
     \
     M(ConnectionPoolIsFullMicroseconds, "Total time spent waiting for a slot in connection pool.", ValueType::Microseconds) \
     M(AsyncLoaderWaitMicroseconds, "Total time a query was waiting for async loader jobs.", ValueType::Microseconds) \
     \
-    M(DistrCacheServerSwitches, "Number of server switches between distributed cache servers in read/write-through cache", ValueType::Number) \
-    M(DistrCacheReadMicroseconds, "Time spent reading from distributed cache", ValueType::Microseconds) \
-    M(DistrCacheFallbackReadMicroseconds, "Time spend reading from fallback buffer instead of distribted cache", ValueType::Microseconds) \
-    M(DistrCachePrecomputeRangesMicroseconds, "Time spent to precompute read ranges", ValueType::Microseconds) \
-    M(DistrCacheNextImplMicroseconds, "Time spend in ReadBufferFromDistributedCache::nextImpl", ValueType::Microseconds) \
-    M(DistrCacheOpenedConnections, "The number of open connections to distributed cache", ValueType::Number) \
-    M(DistrCacheReusedConnections, "The number of reused connections to distributed cache", ValueType::Number) \
-    M(DistrCacheHoldConnections, "The number of used connections to distributed cache", ValueType::Number) \
+    M(DistrCacheServerSwitches, "Distributed Cache read buffer event. Number of server switches between distributed cache servers in read/write-through cache", ValueType::Number) \
+    M(DistrCacheReadMicroseconds, "Distributed Cache read buffer event. Time spent reading from distributed cache", ValueType::Microseconds) \
+    M(DistrCacheFallbackReadMicroseconds, "Distributed Cache read buffer event. Time spend reading from fallback buffer instead of distributed cache", ValueType::Microseconds) \
+    M(DistrCachePrecomputeRangesMicroseconds, "Distributed Cache read buffer event. Time spent to precompute read ranges", ValueType::Microseconds) \
+    M(DistrCacheNextImplMicroseconds, "Distributed Cache read buffer event. Time spend in ReadBufferFromDistributedCache::nextImpl", ValueType::Microseconds) \
+    M(DistrCacheStartRangeMicroseconds, "Distributed Cache read buffer event. Time spent to start a new read range with distributed cache", ValueType::Microseconds) \
+    M(DistrCacheIgnoredBytesWhileWaitingProfileEvents, "Distributed Cache read buffer event. Ignored bytes while waiting for profile events in distributed cache", ValueType::Number) \
+    M(DistrCacheRangeChange, "Distributed Cache read buffer event. Number of times we changed read range because of seek/last_position change", ValueType::Number) \
     \
-    M(DistrCacheGetResponseMicroseconds, "Time spend to wait for response from distributed cache", ValueType::Microseconds) \
-    M(DistrCacheStartRangeMicroseconds, "Time spent to start a new read range with distributed cache", ValueType::Microseconds) \
-    M(DistrCacheLockRegistryMicroseconds, "Time spent to take DistributedCacheRegistry lock", ValueType::Microseconds) \
-    M(DistrCacheUnusedPackets, "Number of skipped unused packets from distributed cache", ValueType::Number) \
-    M(DistrCachePackets, "Total number of packets received from distributed cache", ValueType::Number) \
-    M(DistrCacheUnusedPacketsBytes, "The number of bytes in Data packets which were ignored", ValueType::Bytes) \
-    M(DistrCacheRegistryUpdateMicroseconds, "Time spent updating distributed cache registry", ValueType::Microseconds) \
-    M(DistrCacheRegistryUpdates, "Number of distributed cache registry updates", ValueType::Number) \
+    M(DistrCacheGetResponseMicroseconds, "Distributed Cache client event. Time spend to wait for response from distributed cache", ValueType::Microseconds) \
+    M(DistrCacheReadErrors, "Distributed Cache client event. Number of distributed cache errors during read", ValueType::Number) \
+    M(DistrCacheMakeRequestErrors, "Distributed Cache client event. Number of distributed cache errors when making a request", ValueType::Number) \
+    M(DistrCacheReceiveResponseErrors, "Distributed Cache client event. Number of distributed cache errors when receiving response a request", ValueType::Number) \
     \
-    M(DistrCacheConnectMicroseconds, "The time spent to connect to distributed cache", ValueType::Microseconds) \
-    M(DistrCacheConnectAttempts, "The number of connection attempts to distributed cache", ValueType::Number) \
-    M(DistrCacheGetClient, "Number of client access times", ValueType::Number) \
+    M(DistrCachePackets, "Distributed Cache client event. Total number of packets received from distributed cache", ValueType::Number) \
+    M(DistrCachePacketsBytes, "Distributed Cache client event. The number of bytes in Data packets which were not ignored", ValueType::Bytes) \
+    M(DistrCacheUnusedPackets, "Distributed Cache client event. Number of skipped unused packets from distributed cache", ValueType::Number) \
+    M(DistrCacheUnusedPacketsBytes, "Distributed Cache client event. The number of bytes in Data packets which were ignored", ValueType::Bytes) \
+    M(DistrCacheUnusedPacketsBufferAllocations, "Distributed Cache client event. The number of extra buffer allocations in case we could not reuse existing buffer", ValueType::Number) \
     \
-    M(DistrCacheServerProcessRequestMicroseconds, "Time spent processing request on DistributedCache server side", ValueType::Microseconds) \
+    M(DistrCacheLockRegistryMicroseconds, "Distributed Cache registry event. Time spent to take DistributedCacheRegistry lock", ValueType::Microseconds) \
+    M(DistrCacheRegistryUpdateMicroseconds, "Distributed Cache registry event. Time spent updating distributed cache registry", ValueType::Microseconds) \
+    M(DistrCacheRegistryUpdates, "Distributed Cache registry event. Number of distributed cache registry updates", ValueType::Number) \
+    M(DistrCacheHashRingRebuilds, "Distributed Cache registry event. Number of distributed cache hash ring rebuilds", ValueType::Number) \
+    \
+    M(DistrCacheReadBytesFromCache, "Distributed Cache read buffer event. Bytes read from distributed cache", ValueType::Bytes) \
+    M(DistrCacheReadBytesFromFallbackBuffer, "Distributed Cache read buffer event. Bytes read from fallback buffer", ValueType::Number) \
+    \
+    M(DistrCacheRangeResetBackward, "Distributed Cache read buffer event. Number of times we reset read range because of seek/last_position change", ValueType::Number) \
+    M(DistrCacheRangeResetForward, "Distributed Cache read buffer event. Number of times we reset read range because of seek/last_position change", ValueType::Number) \
+    \
+    M(DistrCacheOpenedConnections, "Distributed Cache connection event. The number of open connections to distributed cache", ValueType::Number) \
+    M(DistrCacheReusedConnections, "Distributed Cache connection event. The number of reused connections to distributed cache", ValueType::Number) \
+    M(DistrCacheOpenedConnectionsBypassingPool, "Distributed Cache connection event. The number of open connections to distributed cache bypassing pool", ValueType::Number) \
+    M(DistrCacheConnectMicroseconds, "Distributed Cache connection event. The time spent to connect to distributed cache", ValueType::Microseconds) \
+    M(DistrCacheConnectAttempts, "Distributed Cache connection event. The number of connection attempts to distributed cache", ValueType::Number) \
+    M(DistrCacheGetClientMicroseconds, "Distributed Cache connection event. Time spent getting client for distributed cache", ValueType::Microseconds) \
+    \
+    M(DistrCacheServerProcessRequestMicroseconds, "Distributed Cache server event. Time spent processing request on DistributedCache server side", ValueType::Microseconds) \
+    M(DistrCacheServerStartRequestPackets, "Distributed Cache server event. Number of StartRequest packets in DistributedCacheServer", ValueType::Number) \
+    M(DistrCacheServerContinueRequestPackets, "Distributed Cache server event. Number of ContinueRequest packets in DistributedCacheServer", ValueType::Number) \
+    M(DistrCacheServerEndRequestPackets, "Distributed Cache server event. Number of EndRequest packets in DistributedCacheServer", ValueType::Number) \
+    M(DistrCacheServerAckRequestPackets, "Distributed Cache server event. Number of AckRequest packets in DistributedCacheServer", ValueType::Number) \
+    M(DistrCacheServerNewS3CachedClients, "Distributed Cache server event. The number of new cached s3 clients", ValueType::Number) \
+    M(DistrCacheServerReusedS3CachedClients, "Distributed Cache server event. The number of reused cached s3 clients", ValueType::Number) \
     \
     M(LogTest, "Number of log messages with level Test", ValueType::Number) \
     M(LogTrace, "Number of log messages with level Trace", ValueType::Number) \
@@ -773,6 +815,7 @@ The server successfully detected this situation and will download merged part fr
     M(LogWarning, "Number of log messages with level Warning", ValueType::Number) \
     M(LogError, "Number of log messages with level Error", ValueType::Number) \
     M(LogFatal, "Number of log messages with level Fatal", ValueType::Number) \
+    M(LoggerElapsedNanoseconds, "Cumulative time spend in logging", ValueType::Nanoseconds) \
     \
     M(InterfaceHTTPSendBytes, "Number of bytes sent through HTTP interfaces", ValueType::Bytes) \
     M(InterfaceHTTPReceiveBytes, "Number of bytes received through HTTP interfaces", ValueType::Bytes) \
@@ -788,14 +831,37 @@ The server successfully detected this situation and will download merged part fr
     M(InterfacePostgreSQLReceiveBytes, "Number of bytes received through PostgreSQL interfaces", ValueType::Bytes) \
     \
     M(ParallelReplicasUsedCount, "Number of replicas used to execute a query with task-based parallel replicas", ValueType::Number) \
+    M(ParallelReplicasAvailableCount, "Number of replicas available to execute a query with task-based parallel replicas", ValueType::Number) \
+    M(ParallelReplicasUnavailableCount, "Number of replicas which was chosen, but found to be unavailable during query execution with task-based parallel replicas", ValueType::Number) \
     \
+    M(SharedMergeTreeVirtualPartsUpdates, "Virtual parts update count", ValueType::Number) \
+    M(SharedMergeTreeVirtualPartsUpdatesByLeader, "Virtual parts updates by leader", ValueType::Number) \
+    M(SharedMergeTreeVirtualPartsUpdateMicroseconds, "Virtual parts update microseconds", ValueType::Microseconds) \
+    M(SharedMergeTreeVirtualPartsUpdatesFromZooKeeper, "Virtual parts updates count from ZooKeeper", ValueType::Number) \
+    M(SharedMergeTreeVirtualPartsUpdatesFromZooKeeperMicroseconds, "Virtual parts updates from ZooKeeper microseconds", ValueType::Microseconds) \
+    M(SharedMergeTreeVirtualPartsUpdatesPeerNotFound, "Virtual updates from peer failed because no one found", ValueType::Number) \
+    M(SharedMergeTreeVirtualPartsUpdatesFromPeer, "Virtual parts updates count from peer", ValueType::Number) \
+    M(SharedMergeTreeVirtualPartsUpdatesFromPeerMicroseconds, "Virtual parts updates from peer microseconds", ValueType::Microseconds) \
+    M(SharedMergeTreeVirtualPartsUpdatesForMergesOrStatus, "Virtual parts updates from non-default background job", ValueType::Number) \
+    M(SharedMergeTreeVirtualPartsUpdatesLeaderFailedElection, "Virtual parts updates leader election failed", ValueType::Number) \
+    M(SharedMergeTreeVirtualPartsUpdatesLeaderSuccessfulElection, "Virtual parts updates leader election successful", ValueType::Number) \
+    M(SharedMergeTreeMergeMutationAssignmentAttempt, "How many times we tried to assign merge or mutation", ValueType::Number) \
+    M(SharedMergeTreeMergeMutationAssignmentFailedWithNothingToDo, "How many times we tried to assign merge or mutation and failed because nothing to merge", ValueType::Number) \
+    M(SharedMergeTreeMergeMutationAssignmentFailedWithConflict, "How many times we tried to assign merge or mutation and failed because of conflict in Keeper", ValueType::Number) \
+    M(SharedMergeTreeMergeMutationAssignmentSuccessful, "How many times we tried to assign merge or mutation", ValueType::Number) \
+    M(SharedMergeTreeMergePartsMovedToOudated, "How many parts moved to oudated directory", ValueType::Number) \
+    M(SharedMergeTreeMergePartsMovedToCondemned, "How many parts moved to condemned directory", ValueType::Number) \
+    M(SharedMergeTreeOutdatedPartsConfirmationRequest, "How many ZooKeeper requests were used to config outdated parts", ValueType::Number) \
+    M(SharedMergeTreeOutdatedPartsConfirmationInvocations, "How many invocations were made to confirm outdated parts", ValueType::Number) \
+    M(SharedMergeTreeOutdatedPartsHTTPRequest, "How many HTTP requests were send to confirm outdated parts", ValueType::Number) \
+    M(SharedMergeTreeOutdatedPartsHTTPResponse, "How many HTTP responses were send to confirm outdated parts", ValueType::Number) \
+    M(SharedMergeTreeCondemnedPartsKillRequest, "How many ZooKeeper requests were used to remove condemned parts", ValueType::Number) \
+    M(SharedMergeTreeCondemnedPartsLockConfict, "How many times we failed to acquite lock because of conflict", ValueType::Number) \
+    M(SharedMergeTreeCondemnedPartsRemoved, "How many condemned parts were removed", ValueType::Number) \
     M(KeeperLogsEntryReadFromLatestCache, "Number of log entries in Keeper being read from latest logs cache", ValueType::Number) \
     M(KeeperLogsEntryReadFromCommitCache, "Number of log entries in Keeper being read from commit logs cache", ValueType::Number) \
     M(KeeperLogsEntryReadFromFile, "Number of log entries in Keeper being read directly from the changelog file", ValueType::Number) \
     M(KeeperLogsPrefetchedEntries, "Number of log entries in Keeper being prefetched from the changelog file", ValueType::Number) \
-    \
-    M(ParallelReplicasAvailableCount, "Number of replicas available to execute a query with task-based parallel replicas", ValueType::Number) \
-    M(ParallelReplicasUnavailableCount, "Number of replicas which was chosen, but found to be unavailable during query execution with task-based parallel replicas", ValueType::Number) \
     \
     M(StorageConnectionsCreated, "Number of created connections for storages", ValueType::Number) \
     M(StorageConnectionsReused, "Number of reused connections for storages", ValueType::Number) \
@@ -828,12 +894,22 @@ The server successfully detected this situation and will download merged part fr
     M(ReadWriteBufferFromHTTPRequestsSent, "Number of HTTP requests sent by ReadWriteBufferFromHTTP", ValueType::Number) \
     M(ReadWriteBufferFromHTTPBytes, "Total size of payload bytes received and sent by ReadWriteBufferFromHTTP. Doesn't include HTTP headers.", ValueType::Bytes) \
     \
+    M(ConcurrencyControlSlotsGranted, "Number of CPU slot granted according to guarantee of 1 thread per query and for queries with setting 'use_concurrency_control' = 0", ValueType::Number) \
+    M(ConcurrencyControlSlotsDelayed, "Number of CPU slot not granted initially and required to wait for a free CPU slot", ValueType::Number) \
+    M(ConcurrencyControlSlotsAcquired, "Total number of CPU slot acquired", ValueType::Number) \
+    M(ConcurrencyControlQueriesDelayed, "Total number of CPU slot allocations (queries) that were required to wait for slots to upscale", ValueType::Number) \
+    \
+    M(SharedDatabaseCatalogFailedToApplyState, "Number of failures to apply new state in SharedDatabaseCatalog", ValueType::Number) \
+    M(SharedDatabaseCatalogStateApplicationMicroseconds, "Total time spend on application of new state in SharedDatabaseCatalog", ValueType::Microseconds) \
+    \
     M(GWPAsanAllocateSuccess, "Number of successful allocations done by GWPAsan", ValueType::Number) \
     M(GWPAsanAllocateFailed, "Number of failed allocations done by GWPAsan (i.e. filled pool)", ValueType::Number) \
     M(GWPAsanFree, "Number of free operations done by GWPAsan", ValueType::Number) \
     \
     M(MemoryWorkerRun, "Number of runs done by MemoryWorker in background", ValueType::Number) \
     M(MemoryWorkerRunElapsedMicroseconds, "Total time spent by MemoryWorker for background work", ValueType::Microseconds) \
+    \
+    M(ParquetFetchWaitTimeMicroseconds, "Time of waiting fetching parquet data", ValueType::Microseconds) \
 
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS
@@ -851,7 +927,7 @@ namespace ProfileEvents
 constexpr Event END = Event(__COUNTER__);
 
 /// Global variable, initialized by zeros.
-Counter global_counters_array[END] {};
+static Counter global_counters_array[END] {};
 /// Initialize global counters statically
 Counters global_counters(global_counters_array);
 
@@ -888,6 +964,15 @@ Counters::Counters(VariableContext level_, Counters * parent_)
     counters = counters_holder.get();
 }
 
+Counters::Counters(Counters && src) noexcept
+    : counters(std::exchange(src.counters, nullptr))
+    , counters_holder(std::move(src.counters_holder))
+    , parent(src.parent.exchange(nullptr))
+    , trace_profile_events(src.trace_profile_events)
+    , level(src.level)
+{
+}
+
 void Counters::resetCounters()
 {
     if (counters)
@@ -899,7 +984,7 @@ void Counters::resetCounters()
 
 void Counters::reset()
 {
-    parent = nullptr;
+    setParent(nullptr);
     resetCounters();
 }
 
@@ -1002,6 +1087,11 @@ void incrementForLogMessage(Poco::Message::Priority priority)
         case Poco::Message::PRIO_FATAL: increment(LogFatal); break;
         default: break;
     }
+}
+
+void incrementLoggerElapsedNanoseconds(UInt64 ns)
+{
+    increment(LoggerElapsedNanoseconds, ns);
 }
 
 CountersIncrement::CountersIncrement(Counters::Snapshot const & snapshot)

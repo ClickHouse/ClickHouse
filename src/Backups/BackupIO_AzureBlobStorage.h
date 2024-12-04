@@ -38,7 +38,7 @@ public:
 
 private:
     const DataSourceDescription data_source_description;
-    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> client;
+    std::shared_ptr<const AzureBlobStorage::ContainerClient> client;
     AzureBlobStorage::ConnectionParams connection_params;
     String blob_path;
     std::unique_ptr<AzureObjectStorage> object_storage;
@@ -81,13 +81,14 @@ public:
 
     void removeFile(const String & file_name) override;
     void removeFiles(const Strings & file_names) override;
+    void removeEmptyDirectories() override {}
 
 private:
     std::unique_ptr<ReadBuffer> readFile(const String & file_name, size_t expected_file_size) override;
     void removeFilesBatch(const Strings & file_names);
 
     const DataSourceDescription data_source_description;
-    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> client;
+    std::shared_ptr<const AzureBlobStorage::ContainerClient> client;
     AzureBlobStorage::ConnectionParams connection_params;
     String blob_path;
     std::unique_ptr<AzureObjectStorage> object_storage;

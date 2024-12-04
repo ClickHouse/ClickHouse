@@ -68,15 +68,15 @@ inline std::string_view toDescription(OvercommitResult result)
     case OvercommitResult::NONE:
         return "";
     case OvercommitResult::DISABLED:
-        return "Memory overcommit isn't used. Waiting time or overcommit denominator are set to zero.";
+        return "Memory overcommit isn't used. Waiting time or overcommit denominator are set to zero";
     case OvercommitResult::MEMORY_FREED:
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "OvercommitResult::MEMORY_FREED shouldn't be asked for description");
     case OvercommitResult::SELECTED:
-        return "Query was selected to stop by OvercommitTracker.";
+        return "Query was selected to stop by OvercommitTracker";
     case OvercommitResult::TIMEOUTED:
-        return "Waiting timeout for memory to be freed is reached.";
+        return "Waiting timeout for memory to be freed is reached";
     case OvercommitResult::NOT_ENOUGH_FREED:
-        return "Memory overcommit has freed not enough memory.";
+        return "Memory overcommit has not freed enough memory";
     }
 }
 
@@ -150,15 +150,23 @@ void MemoryTracker::logPeakMemoryUsage()
     auto peak_bytes = peak.load(std::memory_order::relaxed);
     if (peak_bytes < 128 * 1024)
         return;
-    LOG_DEBUG(getLogger("MemoryTracker"),
-        "Peak memory usage{}: {}.", (description ? " " + std::string(description) : ""), ReadableSize(peak_bytes));
+    LOG_DEBUG(
+        getLogger("MemoryTracker"),
+        "{}{} memory usage: {}.",
+        description ? std::string(description) : "",
+        description ? " peak" : "Peak",
+        ReadableSize(peak_bytes));
 }
 
 void MemoryTracker::logMemoryUsage(Int64 current) const
 {
     const auto * description = description_ptr.load(std::memory_order_relaxed);
-    LOG_DEBUG(getLogger("MemoryTracker"),
-        "Current memory usage{}: {}.", (description ? " " + std::string(description) : ""), ReadableSize(current));
+    LOG_DEBUG(
+        getLogger("MemoryTracker"),
+        "{}{} memory usage: {}.",
+        description ? std::string(description) : "",
+        description ? " current" : "Current",
+        ReadableSize(current));
 }
 
 void MemoryTracker::injectFault() const
@@ -178,9 +186,9 @@ void MemoryTracker::injectFault() const
     const auto * description = description_ptr.load(std::memory_order_relaxed);
     throw DB::Exception(
         DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
-        "Memory tracker{}{}: fault injected (at specific point)",
-        description ? " " : "",
-        description ? description : "");
+        "{}{}: fault injected (at specific point)",
+        description ? description : "",
+        description ? " memory tracker" : "Memory tracker");
 }
 
 void MemoryTracker::debugLogBigAllocationWithoutCheck(Int64 size [[maybe_unused]])
@@ -248,10 +256,6 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
     Int64 will_be = size ? size + amount.fetch_add(size, std::memory_order_relaxed) : amount.load(std::memory_order_relaxed);
     Int64 will_be_rss = size ? size + rss.fetch_add(size, std::memory_order_relaxed) : rss.load(std::memory_order_relaxed);
 
-    auto metric_loaded = metric.load(std::memory_order_relaxed);
-    if (metric_loaded != CurrentMetrics::end() && size)
-        CurrentMetrics::add(metric_loaded, size);
-
     Int64 current_hard_limit = hard_limit.load(std::memory_order_relaxed);
     Int64 current_profiler_limit = profiler_limit.load(std::memory_order_relaxed);
 
@@ -282,9 +286,9 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
             const auto * description = description_ptr.load(std::memory_order_relaxed);
             throw DB::Exception(
                 DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
-                "Memory tracker{}{}: fault injected. Would use {} (attempt to allocate chunk of {} bytes), maximum: {}",
-                description ? " " : "",
+                "{}{}: fault injected. Would use {} (attempt to allocate chunk of {} bytes), maximum: {}",
                 description ? description : "",
+                description ? " memory tracker" : "Memory tracker",
                 formatReadableSizeWithBinarySuffix(will_be),
                 size,
                 formatReadableSizeWithBinarySuffix(current_hard_limit));
@@ -305,6 +309,8 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
 
             if (overcommit_result != OvercommitResult::MEMORY_FREED)
             {
+                bool overcommit_result_ignore
+                    = overcommit_result == OvercommitResult::NONE || overcommit_result == OvercommitResult::DISABLED;
                 /// Revert
                 amount.fetch_sub(size, std::memory_order_relaxed);
                 rss.fetch_sub(size, std::memory_order_relaxed);
@@ -314,18 +320,18 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
                 ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
                 const auto * description = description_ptr.load(std::memory_order_relaxed);
                 throw DB::Exception(
-                                    DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
-                                    "Memory limit{}{} exceeded: "
-                                    "would use {} (attempt to allocate chunk of {} bytes), current RSS {}, maximum: {}."
-                                    "{}{}",
-                                    description ? " " : "",
-                                    description ? description : "",
-                                    formatReadableSizeWithBinarySuffix(will_be),
-                                    size,
-                                    formatReadableSizeWithBinarySuffix(rss.load(std::memory_order_relaxed)),
-                                    formatReadableSizeWithBinarySuffix(current_hard_limit),
-                                    overcommit_result == OvercommitResult::NONE ? "" : " OvercommitTracker decision: ",
-                                    toDescription(overcommit_result));
+                    DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
+                    "{}{} exceeded: "
+                    "would use {} (attempt to allocate chunk of {} bytes), current RSS {}, maximum: {}."
+                    "{}{}",
+                    description ? description : "",
+                    description ? " memory limit" : "Memory limit",
+                    formatReadableSizeWithBinarySuffix(will_be),
+                    size,
+                    formatReadableSizeWithBinarySuffix(rss.load(std::memory_order_relaxed)),
+                    formatReadableSizeWithBinarySuffix(current_hard_limit),
+                    overcommit_result_ignore ? "" : " OvercommitTracker decision: ",
+                    overcommit_result_ignore ? "" : toDescription(overcommit_result));
             }
 
             // If OvercommitTracker::needToStopQuery returned false, it guarantees that enough memory is freed.
@@ -360,6 +366,10 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
             debugLogBigAllocationWithoutCheck(size);
         }
     }
+
+    auto metric_loaded = metric.load(std::memory_order_relaxed);
+    if (metric_loaded != CurrentMetrics::end() && size)
+        CurrentMetrics::add(metric_loaded, size);
 
     if (peak_updated && allocation_traced)
     {

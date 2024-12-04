@@ -120,12 +120,12 @@ public:
         if (!child)
             return;
 
-        T * casted = dynamic_cast<T *>(child.get());
-        if (!casted)
+        T * cast = dynamic_cast<T *>(child.get());
+        if (!cast)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not cast AST subtree");
 
         children.push_back(child);
-        field = casted;
+        field = cast;
     }
 
     template <typename T>
@@ -134,8 +134,8 @@ public:
         if (!child)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to replace AST subtree with nullptr");
 
-        T * casted = dynamic_cast<T *>(child.get());
-        if (!casted)
+        T * cast = dynamic_cast<T *>(child.get());
+        if (!cast)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not cast AST subtree");
 
         for (ASTPtr & current_child : children)
@@ -143,7 +143,7 @@ public:
             if (current_child.get() == field)
             {
                 current_child = child;
-                field = casted;
+                field = cast;
                 return;
             }
         }
@@ -202,7 +202,7 @@ public:
         char nl_or_ws; /// Newline or whitespace.
         LiteralEscapingStyle literal_escaping_style;
         bool print_pretty_type_names;
-        bool enable_secure_identifiers;
+        bool enforce_strict_identifier_format;
 
         explicit FormatSettings(
             WriteBuffer & ostr_,
@@ -213,7 +213,7 @@ public:
             bool show_secrets_ = true,
             LiteralEscapingStyle literal_escaping_style_ = LiteralEscapingStyle::Regular,
             bool print_pretty_type_names_ = false,
-            bool enable_secure_identifiers_ = false)
+            bool enforce_strict_identifier_format_ = false)
             : ostr(ostr_)
             , one_line(one_line_)
             , hilite(hilite_)
@@ -223,7 +223,7 @@ public:
             , nl_or_ws(one_line ? ' ' : '\n')
             , literal_escaping_style(literal_escaping_style_)
             , print_pretty_type_names(print_pretty_type_names_)
-            , enable_secure_identifiers(enable_secure_identifiers_)
+            , enforce_strict_identifier_format(enforce_strict_identifier_format_)
         {
         }
 
@@ -237,7 +237,7 @@ public:
             , nl_or_ws(other.nl_or_ws)
             , literal_escaping_style(other.literal_escaping_style)
             , print_pretty_type_names(other.print_pretty_type_names)
-            , enable_secure_identifiers(other.enable_secure_identifiers)
+            , enforce_strict_identifier_format(other.enforce_strict_identifier_format)
         {
         }
 

@@ -10,7 +10,7 @@ class FilterStep : public ITransformingStep
 {
 public:
     FilterStep(
-        const DataStream & input_stream_,
+        const Header & input_header_,
         ActionsDAG actions_dag_,
         String filter_column_name_,
         bool remove_filter_column_);
@@ -26,8 +26,10 @@ public:
     const String & getFilterColumnName() const { return filter_column_name; }
     bool removesFilterColumn() const { return remove_filter_column; }
 
+    static bool canUseType(const DataTypePtr & type);
+
 private:
-    void updateOutputStream() override;
+    void updateOutputHeader() override;
 
     ActionsDAG actions_dag;
     String filter_column_name;

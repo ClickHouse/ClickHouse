@@ -116,7 +116,7 @@ static const std::vector<std::shared_ptr<re2::RE2>> optional_regex_keys = {
 
 bool urlWithGlobs(const String & uri)
 {
-    return (uri.find('{') != std::string::npos && uri.find('}') != std::string::npos) || uri.find('|') != std::string::npos;
+    return (uri.contains('{') && uri.contains('}')) || uri.contains('|');
 }
 
 String getSampleURI(String uri, ContextPtr context)
@@ -132,7 +132,7 @@ String getSampleURI(String uri, ContextPtr context)
 
 static ConnectionTimeouts getHTTPTimeouts(ContextPtr context)
 {
-    return ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings().keep_alive_timeout);
+    return ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
 }
 
 IStorageURLBase::IStorageURLBase(
@@ -1074,7 +1074,7 @@ public:
         std::function<void(std::ostream &)> read_post_data_callback_,
         size_t max_block_size_,
         size_t num_streams_)
-        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)}, column_names_, query_info_, storage_snapshot_, context_)
+        : SourceStepWithFilter(std::move(sample_block), column_names_, query_info_, storage_snapshot_, context_)
         , storage(std::move(storage_))
         , uri_options(uri_options_)
         , info(std::move(info_))
@@ -1338,7 +1338,7 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
     if (http_method.empty())
         http_method = Poco::Net::HTTPRequest::HTTP_POST;
 
-    bool has_wildcards = uri.find(PartitionedSink::PARTITION_ID_WILDCARD) != String::npos;
+    bool has_wildcards = uri.contains(PartitionedSink::PARTITION_ID_WILDCARD);
     const auto * insert_query = dynamic_cast<const ASTInsertQuery *>(query.get());
     auto partition_by_ast = insert_query ? (insert_query->partition_by ? insert_query->partition_by : partition_by) : nullptr;
     bool is_partitioned_implementation = partition_by_ast && has_wildcards;

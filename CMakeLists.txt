@@ -66,6 +66,7 @@ if (ENABLE_CHECK_HEAVY_BUILDS)
         # Twice as large
         set (RLIMIT_DATA 10000000000)
         set (RLIMIT_AS 20000000000)
+        set (RLIMIT_CPU 2000)
     endif()
 
     # For some files currently building RISCV64/LOONGARCH64 might be too slow.
@@ -88,6 +89,7 @@ string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
 list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
 
 option (ENABLE_FUZZING "Fuzzy testing using libfuzzer" OFF)
+option (ENABLE_FUZZER_TEST "Build testing fuzzers in order to test libFuzzer functionality" OFF)
 
 if (ENABLE_FUZZING)
     # Also set WITH_COVERAGE=1 for better fuzzing process
@@ -545,7 +547,7 @@ endif()
 
 if (CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO"
     AND NOT SANITIZE AND NOT SANITIZE_COVERAGE AND NOT ENABLE_FUZZING
-    AND OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64))
+    AND OMIT_HEAVY_DEBUG_SYMBOLS AND OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64))
     set(CHECK_LARGE_OBJECT_SIZES_DEFAULT ON)
 else ()
     set(CHECK_LARGE_OBJECT_SIZES_DEFAULT OFF)

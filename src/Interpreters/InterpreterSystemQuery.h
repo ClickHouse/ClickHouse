@@ -47,7 +47,7 @@ public:
                                           const String & database_name, const DatabasePtr & database,
                                           const ContextPtr & local_context, LoggerPtr log);
 
-    static bool trySyncReplica(IStorage * table, SyncReplicaMode sync_replica_mode, const std::unordered_set<String> & src_replicas, ContextPtr context_);
+    static bool trySyncReplica(StoragePtr table, SyncReplicaMode sync_replica_mode, const std::unordered_set<String> & src_replicas, ContextPtr context_);
 
 private:
     ASTPtr query_ptr;
@@ -64,7 +64,10 @@ private:
     void syncReplica(ASTSystemQuery & query);
     void setReplicaReadiness(bool ready);
     void waitLoadingParts();
+
+    void loadPrimaryKeys();
     void unloadPrimaryKeys();
+    void loadOrUnloadPrimaryKeysImpl(bool load);
 
     void syncReplicatedDatabase(ASTSystemQuery & query);
 
@@ -82,6 +85,12 @@ private:
 
     AccessRightsElements getRequiredAccessForDDLOnCluster() const;
     void startStopAction(StorageActionBlockType action_type, bool start);
+
+    void prewarmMarkCache();
+    void prewarmPrimaryIndexCache();
+
+    void stopReplicatedDDLQueries();
+    void startReplicatedDDLQueries();
 };
 
 

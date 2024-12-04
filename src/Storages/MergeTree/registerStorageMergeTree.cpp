@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/extractZooKeeperPathFromReplicatedTableDef.h>
+#include <Storages/MergeTree/MergeSelectors/registerMergeSelectors.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -44,6 +45,12 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool allow_floating_point_partition_key;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
     extern const MergeTreeSettingsUInt64 index_granularity;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsString default_replica_name;
+    extern const ServerSettingsString default_replica_path;
 }
 
 namespace ErrorCodes
@@ -259,8 +266,8 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
         {
             LOG_WARNING(&Poco::Logger::get("registerStorageMergeTree"), "Replacing user-provided ZooKeeper path and replica name ({}, {}) "
                                                                      "with default arguments", ast_zk_path->value.safeGet<String>(), ast_replica_name->value.safeGet<String>());
-            ast_zk_path->value = server_settings.default_replica_path;
-            ast_replica_name->value = server_settings.default_replica_name;
+            ast_zk_path->value = server_settings[ServerSetting::default_replica_path];
+            ast_replica_name->value = server_settings[ServerSetting::default_replica_name];
         }
 
         return expand_macro(ast_zk_path, ast_replica_name, ast_zk_path->value.safeGet<String>(), ast_replica_name->value.safeGet<String>());
@@ -283,7 +290,7 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
         auto * ast_zk_path = path_arg.get();
         auto * ast_replica_name = name_arg.get();
 
-        auto res = expand_macro(ast_zk_path, ast_replica_name, server_settings.default_replica_path, server_settings.default_replica_name);
+        auto res = expand_macro(ast_zk_path, ast_replica_name, server_settings[ServerSetting::default_replica_path], server_settings[ServerSetting::default_replica_name]);
 
         engine_args.emplace_back(std::move(path_arg));
         engine_args.emplace_back(std::move(name_arg));
@@ -508,7 +515,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (zookeeper_info.replica_name.empty())
             throw Exception(ErrorCodes::NO_REPLICA_NAME_GIVEN, "No replica name in config{}", verbose_help_message);
         // '\t' and '\n' will interrupt parsing 'source replica' in ReplicatedMergeTreeLogEntryData::readText
-        if (zookeeper_info.replica_name.find('\t') != String::npos || zookeeper_info.replica_name.find('\n') != String::npos)
+        if (zookeeper_info.replica_name.contains('\t') || zookeeper_info.replica_name.contains('\n'))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica name must not contain '\\t' or '\\n'");
 
         arg_cnt = engine_args.size(); /// Update `arg_cnt` here because extractZooKeeperPathAndReplicaNameFromEngineArgs() could add arguments.
@@ -850,6 +857,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
 void registerStorageMergeTree(StorageFactory & factory)
 {
+    /// Part of MergeTree
+    registerMergeSelectors();
+
     StorageFactory::StorageFeatures features{
         .supports_settings = true,
         .supports_skipping_indices = true,

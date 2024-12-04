@@ -1972,7 +1972,7 @@ Result:
 
 ## toISOYear
 
-Converts a date, or date with time, to a UInt16 number containing the ISO Year number.
+Converts a date, or date with time, to the ISO year as a UInt16 number.
 
 **Syntax**
 
@@ -1982,11 +1982,11 @@ toISOYear(value)
 
 **Arguments**
 
-- `value` — The value with date or date with time.
+- `value` — The value with date or date with time. [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
 
 **Returned value**
 
-- `value` converted to the current ISO year number. [UInt16](../data-types/int-uint.md).
+- The input value converted to a ISO year number. [UInt16](../data-types/int-uint.md).
 
 **Example**
 
@@ -1995,7 +1995,7 @@ Query:
 ```sql
 SELECT
   toISOYear(toDate('2024/10/02')) as year1,
-  toISOYear(toDateTime('2024/10/02 01:30:00')) as year2
+  toISOYear(toDateTime('2024-10-02 01:30:00')) as year2
 ```
 
 Result:
@@ -2009,6 +2009,38 @@ Result:
 ## toISOWeek
 
 Converts a date, or date with time, to a UInt8 number containing the ISO Week number.
+
+**Syntax**
+
+```sql
+toISOWeek(value)
+```
+
+**Arguments**
+
+- `value` — The value with date or date with time.
+
+**Returned value**
+
+- `value` converted to the current ISO week number. [UInt8](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+  toISOWeek(toDate('2024/10/02')) AS week1,
+  toISOWeek(toDateTime('2024/10/02 01:30:00')) AS week2
+```
+
+Response:
+
+```response
+┌─week1─┬─week2─┐
+│    40 │    40 │
+└───────┴───────┘
+```
 
 ## toWeek
 
@@ -2901,7 +2933,42 @@ The same as ‘today() - 1’.
 
 ## timeSlot
 
-Rounds the time to the half hour.
+Round the time to the start of a half-an-hour length interval.
+
+**Syntax**
+
+```sql
+timeSlot(time[, time_zone])
+```
+
+**Arguments**
+
+- `time` — Time to round to the start of a half-an-hour length interval. [DateTime](../data-types/datetime.md)/[Date32](../data-types/date32.md)/[DateTime64](../data-types/datetime64.md).
+- `time_zone` — A String type const value or an expression representing the time zone. [String](../data-types/string.md).
+
+:::note
+Though this function can take values of the extended types `Date32` and `DateTime64` as an argument, passing it a time outside the normal range (year 1970 to 2149 for `Date` / 2106 for `DateTime`) will produce wrong results.
+:::
+
+**Return type**
+
+- Returns the time rounded to the start of a half-an-hour length interval. [DateTime](../data-types/datetime.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT timeSlot(toDateTime('2000-01-02 03:04:05', 'UTC'));
+```
+
+Result:
+
+```response
+┌─timeSlot(toDateTime('2000-01-02 03:04:05', 'UTC'))─┐
+│                                2000-01-02 03:00:00 │
+└────────────────────────────────────────────────────┘
+```
 
 ## toYYYYMM
 
@@ -4422,9 +4489,9 @@ Using replacement fields, you can define a pattern for the resulting string.
 | k           | clockhour of day (1~24)                  | number        | 24                                 |
 | m           | minute of hour                           | number        | 30                                 |
 | s           | second of minute                         | number        | 55                                 |
-| S           | fraction of second (not supported yet)   | number        | 978                                |
-| z           | time zone (short name not supported yet) | text          | Pacific Standard Time; PST         |
-| Z           | time zone offset/id (not supported yet)  | zone          | -0800; -08:00; America/Los_Angeles |
+| S           | fraction of second                       | number        | 978                                |
+| z           | time zone                                | text          | Eastern Standard Time; EST         |
+| Z           | time zone offset                         | zone          | -0800; -0812                       |
 | '           | escape for text                          | delimiter     |                                    |
 | ''          | single quote                             | literal       | '                                  |
 
@@ -4706,7 +4773,7 @@ Result:
 
 ## toUTCTimestamp
 
-Convert DateTime/DateTime64 type value from other time zone to UTC timezone timestamp
+Convert DateTime/DateTime64 type value from other time zone to UTC timezone timestamp. This function is mainly included for compatibility with Apache Spark and similar frameworks.
 
 **Syntax**
 
@@ -4732,14 +4799,14 @@ SELECT toUTCTimestamp(toDateTime('2023-03-16'), 'Asia/Shanghai');
 Result:
 
 ``` text
-┌─toUTCTimestamp(toDateTime('2023-03-16'),'Asia/Shanghai')┐
+┌─toUTCTimestamp(toDateTime('2023-03-16'), 'Asia/Shanghai')┐
 │                                     2023-03-15 16:00:00 │
 └─────────────────────────────────────────────────────────┘
 ```
 
 ## fromUTCTimestamp
 
-Convert DateTime/DateTime64 type value from UTC timezone to other time zone timestamp
+Convert DateTime/DateTime64 type value from UTC timezone to other time zone timestamp.  This function is mainly included for compatibility with Apache Spark and similar frameworks.
 
 **Syntax**
 
@@ -4765,7 +4832,7 @@ SELECT fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00', 3), 'Asia/Shanghai')
 Result:
 
 ``` text
-┌─fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00',3),'Asia/Shanghai')─┐
+┌─fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00',3), 'Asia/Shanghai')─┐
 │                                                 2023-03-16 18:00:00.000 │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
