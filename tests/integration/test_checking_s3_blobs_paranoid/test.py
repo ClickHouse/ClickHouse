@@ -14,6 +14,7 @@ from helpers.test_tools import assert_eq_with_retry
 
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
 
+
 @pytest.fixture(scope="module")
 def cluster():
     try:
