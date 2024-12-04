@@ -954,13 +954,32 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTPtr & tables_in_select
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ANY FULL JOINs are not implemented");
             }
 
-            auto join_node = std::make_shared<JoinNode>(std::move(left_table_expression),
-                std::move(right_table_expression),
-                std::move(join_expression),
-                table_join.locality,
-                result_join_strictness,
-                result_join_kind,
-                table_join.using_expression_list != nullptr);
+            QueryTreeNodePtr join_node;
+            if (result_join_kind == JoinKind::Cross || result_join_kind == JoinKind::Comma)
+            {
+                QueryTreeNodes children;
+                if (auto * left_cross_join = left_table_expression->as<CrossJoinNode>())
+                    children = std::move(left_cross_join->getChildren());
+                else
+                    children = {left_table_expression};
+
+                if (auto * right_cross_join = right_table_expression->as<CrossJoinNode>())
+                    children.insert(children.end(), right_cross_join->getChildren().begin(), right_cross_join->getChildren().end());
+                else
+                    children.push_back(right_table_expression);
+
+                join_node = std::make_shared<CrossJoinNode>(std::move(children));
+            }
+            else
+            {
+                join_node = std::make_shared<JoinNode>(std::move(left_table_expression),
+                    std::move(right_table_expression),
+                    std::move(join_expression),
+                    table_join.locality,
+                    result_join_strictness,
+                    result_join_kind,
+                    table_join.using_expression_list != nullptr);
+            }
 
             join_node->setOriginalAST(table_element.table_join);
 

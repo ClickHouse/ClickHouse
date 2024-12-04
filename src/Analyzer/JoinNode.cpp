@@ -142,4 +142,55 @@ void JoinNode::crossToInner(const QueryTreeNodePtr & join_expression_)
     children[join_expression_child_index] = join_expression_;
 }
 
+
+CrossJoinNode::CrossJoinNode(QueryTreeNodes table_expressions)
+    : IQueryTreeNode(table_expressions.size())
+{
+    children = std::move(table_expressions);
+}
+
+void CrossJoinNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
+{
+    buffer << std::string(indent, ' ') << "CROSS JOIN id: " << format_state.getNodeId(this);
+
+    for (const auto & child : children)
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "TABLE EXPRESSION\n";
+        child->dumpTreeImpl(buffer, format_state, indent + 4);
+    }
+}
+
+bool CrossJoinNode::isEqualImpl(const IQueryTreeNode &, CompareOptions) const { return true; }
+void CrossJoinNode::updateTreeHashImpl(HashState &, CompareOptions) const {}
+
+QueryTreeNodePtr CrossJoinNode::cloneImpl() const { return std::make_shared<CrossJoinNode>(children); }
+
+ASTPtr CrossJoinNode::toASTImpl(const ConvertToASTOptions & options) const
+{
+    ASTPtr tables_in_select_query_ast = std::make_shared<ASTTablesInSelectQuery>();
+
+    bool first = true;
+    for (const auto & child : children)
+    {
+        size_t join_table_index = tables_in_select_query_ast->children.size();
+        addTableExpressionOrJoinIntoTablesInSelectQuery(tables_in_select_query_ast, child, options);
+
+        if (!first)
+        {
+            auto join_ast = std::make_shared<ASTTableJoin>();
+            join_ast->locality = JoinLocality::Unspecified;
+            join_ast->strictness = JoinStrictness::Unspecified;
+            join_ast->kind = JoinKind::Cross;
+
+            auto & table_element = tables_in_select_query_ast->children.at(join_table_index)->as<ASTTablesInSelectQueryElement &>();
+            table_element.children.push_back(std::move(join_ast));
+            table_element.table_join = table_element.children.back();
+        }
+
+        first = false;
+    }
+
+    return tables_in_select_query_ast;
+}
+
 }
