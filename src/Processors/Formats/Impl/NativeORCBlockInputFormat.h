@@ -99,9 +99,7 @@ private:
     const FormatSettings format_settings;
     const std::unordered_set<int> & skip_stripes;
     bool use_prefetch;
-    [[maybe_unused]] size_t min_bytes_for_seek;
-
-    // AllocatorToORCMemoryPoolAdapter memory_pool;
+    size_t min_bytes_for_seek;
 
     std::vector<int> selected_stripes;
     size_t stripes_iterator;
