@@ -11,7 +11,13 @@
 namespace DB
 {
 
-#define STORAGE_OBJECT_STORAGE_RELATED_SETTINGS(DECLARE, ALIAS) DECLARE(Bool, allow_dynamic_metadata_for_data_lakes, false, "", 0)
+#define STORAGE_OBJECT_STORAGE_RELATED_SETTINGS(DECLARE, ALIAS) \
+    DECLARE( \
+        Bool, \
+        allow_dynamic_metadata_for_data_lakes, \
+        false, \
+        "If enabled, indicates that metadata is taken from iceberg specification that is pulled from cloud before each query.", \
+        0)
 
 #define LIST_OF_STORAGE_OBJECT_STORAGE_SETTINGS(M, ALIAS) \
     STORAGE_OBJECT_STORAGE_RELATED_SETTINGS(M, ALIAS) \

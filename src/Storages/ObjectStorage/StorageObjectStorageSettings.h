@@ -54,15 +54,7 @@ struct StorageObjectStorageSettings
 
     STORAGE_OBJECT_STORAGE_SETTINGS_SUPPORTED_TYPES(StorageObjectStorageSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
-    void dumpToSystemEngineSettingsColumns(
-        MutableColumnsAndConstraints & params,
-        const std::string & table_name,
-        const std::string & database_name,
-        const StorageObjectStorage & storage) const;
-
     void loadFromQuery(ASTStorage & storage_def);
-
-    void applyChanges(const SettingsChanges & changes);
 
     Field get(const std::string & name);
 

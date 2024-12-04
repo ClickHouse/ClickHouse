@@ -5560,13 +5560,6 @@ Only available in ClickHouse Cloud. Exclude new data parts from SELECT queries u
     DECLARE(Int64, prefer_warmed_unmerged_parts_seconds, 0, R"(
 Only available in ClickHouse Cloud. If a merged part is less than this many seconds old and is not pre-warmed (see cache_populated_by_fetch), but all its source parts are available and pre-warmed, SELECT queries will read from those parts instead. Only for ReplicatedMergeTree. Note that this only checks whether CacheWarmer processed the part; if the part was fetched into cache by something else, it'll still be considered cold until CacheWarmer gets to it; if it was warmed, then evicted from cache, it'll still be considered warm.
 )", 0) \
-    DECLARE(Bool, iceberg_engine_ignore_schema_evolution, false, R"(
-Allow to ignore schema evolution in Iceberg table engine and read all data using schema specified by the user on table creation or latest schema parsed from metadata on table creation.
-
-:::note
-Enabling this setting can lead to incorrect result as in case of evolved schema all data files will be read using the same schema.
-:::
-)", 0) \
     DECLARE(Bool, allow_deprecated_error_prone_window_functions, false, R"(
 Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)
 )", 0) \
@@ -5999,6 +5992,7 @@ Experimental data deduplication for SELECT queries based on part UUIDs
     MAKE_OBSOLETE(M, Bool, optimize_monotonous_functions_in_order_by, false) \
     MAKE_OBSOLETE(M, UInt64, http_max_chunk_size, 100_GiB) \
     MAKE_OBSOLETE(M, Bool, enable_deflate_qpl_codec, false) \
+    MAKE_OBSOLETE(M, Bool, iceberg_engine_ignore_schema_evolution, false) \
 
     /** The section above is for obsolete settings. Do not add anything there. */
 #endif /// __CLION_IDE__
