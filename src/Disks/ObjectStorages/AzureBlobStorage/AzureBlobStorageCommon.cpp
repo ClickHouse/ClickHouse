@@ -109,7 +109,7 @@ ListBlobsPagedResponse ContainerClientWrapper::ListBlobs(const ListBlobsOptions 
     new_options.Prefix = blob_prefix / options.Prefix.ValueOr("");
 
     auto response = client.ListBlobs(new_options);
-    auto blob_prefix_str = fs::path(blob_prefix / "").string();
+    String blob_prefix_str = blob_prefix / "";
 
     for (auto & blob : response.Blobs)
     {
