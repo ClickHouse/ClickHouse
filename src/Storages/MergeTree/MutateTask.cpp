@@ -1721,6 +1721,7 @@ private:
                 ctx->data->getContext()->chooseCompressionCodec(0, 0),
                 mutation_context->source_part->index_granularity,
                 Tx::PrehistoricTID,
+                mutation_context->source_part->getBytesUncompressedOnDisk(),
                 /*reset_columns=*/ false,
                 /*blocks_are_granules_size=*/ false,
                 ctx->data->getContext()->getWriteSettings());
@@ -2018,7 +2019,8 @@ private:
                     MergeTreeIndices{},
                     ColumnsStatistics{},
                     ctx->data->getContext()->chooseCompressionCodec(0, 0),
-                    mutation_context->source_part->index_granularity);
+                    mutation_context->source_part->index_granularity,
+                    mutation_context->source_part->getBytesUncompressedOnDisk());
 
                 mutation_context->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
                 mutation_context->mutating_pipeline.disableProfileEventUpdate();
