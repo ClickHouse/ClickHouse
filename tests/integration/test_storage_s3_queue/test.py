@@ -2347,7 +2347,7 @@ def test_list_and_delete_race(started_cluster):
             },
         )
 
-    threads = 4
+    threads = 6
     total_rows = row_num * files_to_generate * (threads + 1)
 
     busy_pool = Pool(threads)
