@@ -1104,8 +1104,6 @@ QueryTreeNodePtr QueryTreeBuilder::setFirstArgumentAsParameter(const ASTFunction
             "If groupConcat is used with two arguments, the first argument must be a constant String");
     }
 
-    std::string separator = first_arg_literal->value.safeGet<String>();
-
     ASTPtr second_arg = function->arguments->children[1]->clone();
 
     auto function_node = std::make_shared<FunctionNode>(function->name);
