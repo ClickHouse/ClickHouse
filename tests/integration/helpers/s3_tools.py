@@ -108,7 +108,9 @@ def upload_directory(minio_client, bucket, local_path, remote_path):
 
 
 def remove_directory(minio_client, bucket, remote_path):
-    for obj in minio_client.list_objects(bucket, prefix=f"{remote_path}/", recursive=True):
+    for obj in minio_client.list_objects(
+        bucket, prefix=f"{remote_path}/", recursive=True
+    ):
         minio_client.remove_object(bucket, obj.object_name)
 
 

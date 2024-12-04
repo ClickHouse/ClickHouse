@@ -25,7 +25,12 @@ from pyspark.sql.window import Window
 
 import helpers.client
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
-from helpers.s3_tools import get_file_contents, prepare_s3_bucket, upload_directory, remove_directory
+from helpers.s3_tools import (
+    get_file_contents,
+    prepare_s3_bucket,
+    remove_directory,
+    upload_directory,
+)
 from helpers.test_tools import TSV
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
