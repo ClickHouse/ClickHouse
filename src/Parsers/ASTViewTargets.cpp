@@ -204,29 +204,29 @@ ASTPtr ASTViewTargets::clone() const
     return res;
 }
 
-void ASTViewTargets::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
+void ASTViewTargets::formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
     for (const auto & target : targets)
-        formatTarget(target, s, state, frame);
+        formatTarget(target, ostr, s, state, frame);
 }
 
-void ASTViewTargets::formatTarget(ViewTarget::Kind kind, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
+void ASTViewTargets::formatTarget(ViewTarget::Kind kind, WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
     for (const auto & target : targets)
     {
         if (target.kind == kind)
-            formatTarget(target, s, state, frame);
+            formatTarget(target, ostr, s, state, frame);
     }
 }
 
-void ASTViewTargets::formatTarget(const ViewTarget & target, const FormatSettings & s, FormatState & state, FormatStateStacked frame)
+void ASTViewTargets::formatTarget(const ViewTarget & target, WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame)
 {
     if (target.table_id)
     {
         auto keyword = getKeywordForTableID(target.kind);
         if (!keyword)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No keyword for table name of kind {}", toString(target.kind));
-        s.ostr <<  " " << (s.hilite ? hilite_keyword : "") << toStringView(*keyword)
+        ostr <<  " " << (s.hilite ? hilite_keyword : "") << toStringView(*keyword)
                << (s.hilite ? hilite_none : "") << " "
                << (!target.table_id.database_name.empty() ? backQuoteIfNeed(target.table_id.database_name) + "." : "")
                << backQuoteIfNeed(target.table_id.table_name);
@@ -237,7 +237,7 @@ void ASTViewTargets::formatTarget(const ViewTarget & target, const FormatSetting
         auto keyword = getKeywordForInnerUUID(target.kind);
         if (!keyword)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No prefix keyword for inner UUID of kind {}", toString(target.kind));
-        s.ostr << " " << (s.hilite ? hilite_keyword : "") << toStringView(*keyword)
+        ostr << " " << (s.hilite ? hilite_keyword : "") << toStringView(*keyword)
                << (s.hilite ? hilite_none : "") << " " << quoteString(toString(target.inner_uuid));
     }
 
@@ -246,8 +246,8 @@ void ASTViewTargets::formatTarget(const ViewTarget & target, const FormatSetting
         auto keyword = getKeywordForInnerStorage(target.kind);
         if (!keyword)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No prefix keyword for table engine of kind {}", toString(target.kind));
-        s.ostr << " " << (s.hilite ? hilite_keyword : "") << toStringView(*keyword) << (s.hilite ? hilite_none : "");
-        target.inner_engine->formatImpl(s, state, frame);
+        ostr << " " << (s.hilite ? hilite_keyword : "") << toStringView(*keyword) << (s.hilite ? hilite_none : "");
+        target.inner_engine->formatImpl(ostr, s, state, frame);
     }
 }
 

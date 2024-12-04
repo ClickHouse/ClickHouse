@@ -319,6 +319,8 @@ public:
         variant_column_ptr = assert_cast<ColumnVariant *>(variant_column.get());
     }
 
+    void forEachSubcolumn(ColumnCallback callback) const override { callback(variant_column); }
+
     void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
     {
         callback(*variant_column);
@@ -333,7 +335,7 @@ public:
         return false;
     }
 
-    ColumnPtr compress() const override;
+    ColumnPtr compress(bool force_compression) const override;
 
     double getRatioOfDefaultRows(double sample_ratio) const override
     {
