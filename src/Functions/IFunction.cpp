@@ -584,11 +584,12 @@ llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const ValuesWith
             unwrapped_arguments.emplace_back(unwrapped_value, (*denulled_arguments_types)[i]);
         }
 
-        auto * result = compileImpl(builder, unwrapped_arguments, removeNullable(result_type));
-        auto * nullable_structure_type = toNativeType(b, makeNullable(getReturnTypeImpl(*denulled_arguments_types)));
+        auto unwrapped_return_type = getReturnTypeImpl(*denulled_arguments_types);
+        auto * result = compileImpl(builder, unwrapped_arguments, unwrapped_return_type);
+        auto * nullable_structure_type = toNativeType(b, makeNullable(unwrapped_return_type));
         auto * nullable_structure_value = llvm::Constant::getNullValue(nullable_structure_type);
 
-        if (!result->getType()->isStructTy())
+        if (!unwrapped_return_type->isNullable())
         {
             auto * nullable_structure_with_result_value = b.CreateInsertValue(nullable_structure_value, result, {0});
             auto * nullable_structure_result_null = b.CreateExtractValue(nullable_structure_with_result_value, {1});
