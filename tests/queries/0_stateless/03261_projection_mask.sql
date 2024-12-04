@@ -6,6 +6,7 @@ CREATE TABLE users (
     name String,
     age Int16,
     projection p1 (select age, count() group by age),
+    projection p2 (select age, avg(age) group by age)
 ) ENGINE = MergeTree order by uid
 SETTINGS lightweight_mutation_projection_mode = 'rebuild', min_bytes_for_wide_part = 10485760;
 
@@ -20,6 +21,13 @@ FROM users
 GROUP BY age
 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
 
+SELECT
+    age,
+    avg(age)
+FROM users
+GROUP BY age
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+
 -- wide
 DROP TABLE IF EXISTS users;
 
@@ -28,6 +36,7 @@ CREATE TABLE users (
     name String,
     age Int16,
     projection p1 (select age, count() group by age),
+    projection p2 (select age, avg(age) group by age)
 ) ENGINE = MergeTree order by uid
 SETTINGS lightweight_mutation_projection_mode = 'rebuild', min_bytes_for_wide_part = 0;
 
@@ -38,6 +47,13 @@ DELETE FROM users WHERE age = 34;
 SELECT
     age,
     count()
+FROM users
+GROUP BY age
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+
+SELECT
+    age,
+    avg(age)
 FROM users
 GROUP BY age
 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
