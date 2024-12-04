@@ -485,10 +485,10 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
 
     if (is_ordinary_view && aliases_list && !as_table_function)
     {
-        settings.ostr << (settings.one_line ? " (" : "\n(");
+        ostr << (settings.one_line ? " (" : "\n(");
         FormatStateStacked frame_nested = frame;
-        aliases_list->formatImpl(settings, state, frame_nested);
-        settings.ostr << (settings.one_line ? ")" : "\n)");
+        aliases_list->formatImpl(ostr, settings, state, frame_nested);
+        ostr << (settings.one_line ? ")" : "\n)");
     }
 
     if (dictionary_attributes_list)
