@@ -24,7 +24,7 @@ SELECT hasToken(e, 'a') FROM test_enum_string_functions;
 -- hasTokenOrNull --
 SELECT hasTokenOrNull(e, 'a') FROM test_enum_string_functions;
 
-DROP TABLE jsons;
+DROP TABLE IF EXISTS jsons;
 CREATE TABLE jsons
 (
     `json` Enum('a', '{"a":1}')
