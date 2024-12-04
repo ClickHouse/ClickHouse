@@ -627,7 +627,7 @@ void ColumnString::getExtremes(Field & min, Field & max) const
     get(max_idx, max);
 }
 
-ColumnPtr ColumnString::compress() const
+ColumnPtr ColumnString::compress(bool force_compression) const
 {
     const size_t source_chars_size = chars.size();
     const size_t source_offsets_elements = offsets.size();
@@ -637,13 +637,13 @@ ColumnPtr ColumnString::compress() const
     if (source_chars_size < 4096) /// A wild guess.
         return ColumnCompressed::wrap(this->getPtr());
 
-    auto chars_compressed = ColumnCompressed::compressBuffer(chars.data(), source_chars_size, false);
+    auto chars_compressed = ColumnCompressed::compressBuffer(chars.data(), source_chars_size, force_compression);
 
     /// Return original column if not compressible.
     if (!chars_compressed)
         return ColumnCompressed::wrap(this->getPtr());
 
-    auto offsets_compressed = ColumnCompressed::compressBuffer(offsets.data(), source_offsets_size, true);
+    auto offsets_compressed = ColumnCompressed::compressBuffer(offsets.data(), source_offsets_size, /*force_compression=*/true);
 
     const size_t chars_compressed_size = chars_compressed->size();
     const size_t offsets_compressed_size = offsets_compressed->size();

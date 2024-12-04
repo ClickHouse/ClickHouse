@@ -469,7 +469,7 @@ void QueryCache::Writer::finalizeWrite()
             Columns compressed_columns;
             for (const auto & column : columns)
             {
-                auto compressed_column = column->compress();
+                auto compressed_column = column->compress(/*force_compression=*/false);
                 compressed_columns.push_back(compressed_column);
             }
             Chunk compressed_chunk(compressed_columns, chunk.getNumRows());
