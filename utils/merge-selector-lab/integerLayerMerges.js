@@ -1,4 +1,4 @@
-function layerFuncForBases(insertPartSize, layerBases)
+function layerFuncForIntegerBases(insertPartSize, layerBases)
 {
     let sizes = [insertPartSize];
     for (const base of layerBases)
@@ -37,7 +37,7 @@ function layerFuncForBases(insertPartSize, layerBases)
 // Lower layers get absolute priority over higher layers.
 export function* integerLayerMerges({insertPartSize, layerBases})
 {
-    const layerFunc = layerFuncForBases(insertPartSize, layerBases);
+    const layerFunc = layerFuncForIntegerBases(insertPartSize, layerBases);
     const mt = yield {type: 'getMergeTree'};
 
     const settings = {
@@ -53,11 +53,13 @@ export function* integerLayerMerges({insertPartSize, layerBases})
         let best_layer = Infinity;
         for (const cur_range of mt.getRangesForMerge())
         {
-            for (let begin = 0; begin < cur_range.length - settings.min_parts; begin++)
+            for (let begin = 0; begin <= cur_range.length - settings.min_parts; begin++)
             {
                 const layer = layerFunc(cur_range[begin].bytes);
                 if (layer >= best_layer)
                     continue; // We already have parts to merge on this layer
+                if (layer >= layerBases.length)
+                    continue; // Merging futher not requested
                 const base = layerBases[layer];
                 const end = begin + base;
                 if (end > cur_range.length)

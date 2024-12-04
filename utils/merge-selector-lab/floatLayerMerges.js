@@ -77,7 +77,7 @@ export function* floatLayerMerges({insertPartSize, layerBases})
         let best_layer = layerBases.length;
         const active_parts = mt.sortedActiveParts();
         let prev_part = null;
-        for (let begin = 0; begin < active_parts.length - 2; begin++)
+        for (let begin = 0; begin <= active_parts.length - 2; begin++)
         {
             const begin_part = active_parts[begin];
             if (begin_part.merging)
