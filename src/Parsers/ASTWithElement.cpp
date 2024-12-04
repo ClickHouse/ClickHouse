@@ -17,26 +17,26 @@ ASTPtr ASTWithElement::clone() const
     return res;
 }
 
-void ASTWithElement::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTWithElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
 
-    settings.ostr << (settings.hilite ? hilite_alias : "");
-    settings.writeIdentifier(name, /*ambiguous=*/false);
-    settings.ostr << (settings.hilite ? hilite_none : "");
+    ostr << (settings.hilite ? hilite_alias : "");
+    settings.writeIdentifier(ostr, name, /*ambiguous=*/false);
+    ostr << (settings.hilite ? hilite_none : "");
     if (aliases)
     {
         const bool prep_whitespace = frame.expression_list_prepend_whitespace;
         frame.expression_list_prepend_whitespace = false;
 
-        settings.ostr << " (";
+        ostr << " (";
         aliases->formatImpl(settings, state, frame);
-        settings.ostr << ")";
+        ostr << ")";
 
         frame.expression_list_prepend_whitespace = prep_whitespace;
     }
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS" << (settings.hilite ? hilite_none : "");
-    settings.ostr << settings.nl_or_ws << indent_str;
+    ostr << (settings.hilite ? hilite_keyword : "") << " AS" << (settings.hilite ? hilite_none : "");
+    ostr << settings.nl_or_ws << indent_str;
     dynamic_cast<const ASTWithAlias &>(*subquery).formatImplWithoutAlias(settings, state, frame);
 }
 
