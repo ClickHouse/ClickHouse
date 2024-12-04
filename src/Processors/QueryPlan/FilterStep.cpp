@@ -7,6 +7,7 @@
 #include <Common/JSONBuilder.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
 #include <stack>
@@ -238,5 +239,12 @@ void FilterStep::updateOutputHeader()
     if (!getDataStreamTraits().preserves_sorting)
         return;
 }
+
+
+bool FilterStep::canUseType(const DataTypePtr & filter_type)
+{
+    return FilterTransform::canUseType(filter_type);
+}
+
 
 }

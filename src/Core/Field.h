@@ -479,12 +479,20 @@ public:
         return true;
     }
 
-    template <typename T> auto & safeGet() const
+    template <typename T> const auto & safeGet() const &
     {
         return const_cast<Field *>(this)->safeGet<T>();
     }
+    template <typename T> auto safeGet() const &&
+    {
+        return std::move(const_cast<Field *>(this)->safeGet<T>());
+    }
 
-    template <typename T> auto & safeGet();
+    template <typename T> auto & safeGet() &;
+    template <typename T> auto safeGet() &&
+    {
+        return std::move(safeGet<T>());
+    }
 
     bool operator< (const Field & rhs) const
     {
@@ -863,6 +871,9 @@ template <> struct Field::EnumToType<Field::Types::AggregateFunctionState> { usi
 template <> struct Field::EnumToType<Field::Types::CustomType> { using Type = CustomType; };
 template <> struct Field::EnumToType<Field::Types::Bool> { using Type = UInt64; };
 
+/// Use it to prevent inclusion of magic_enum in headers, which is very expensive for the compiler
+std::string_view fieldTypeToString(Field::Types::Which type);
+
 constexpr bool isInt64OrUInt64FieldType(Field::Types::Which t)
 {
     return t == Field::Types::Int64
@@ -877,7 +888,7 @@ constexpr bool isInt64OrUInt64orBoolFieldType(Field::Types::Which t)
 }
 
 template <typename T>
-auto & Field::safeGet()
+auto & Field::safeGet() &
 {
     const Types::Which target = TypeToEnum<NearestFieldType<std::decay_t<T>>>::value;
 
@@ -886,7 +897,7 @@ auto & Field::safeGet()
     if (target != which &&
         !(which == Field::Types::Bool && (target == Field::Types::UInt64 || target == Field::Types::Int64)) &&
         !(isInt64OrUInt64FieldType(which) && isInt64OrUInt64FieldType(target)))
-            throw Exception(ErrorCodes::BAD_GET, "Bad get: has {}, requested {}", getTypeName(), target);
+        throw Exception(ErrorCodes::BAD_GET, "Bad get: has {}, requested {}", getTypeName(), fieldTypeToString(target));
 
     return get<T>();
 }
@@ -1002,8 +1013,6 @@ void readQuoted(DecimalField<T> & x, ReadBuffer & buf);
 void writeFieldText(const Field & x, WriteBuffer & buf);
 
 String toString(const Field & x);
-
-std::string_view fieldTypeToString(Field::Types::Which type);
 }
 
 template <>

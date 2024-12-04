@@ -49,7 +49,7 @@ std::string HDFSObjectStorage::extractObjectKeyFromURL(const StoredObject & obje
     if (path.starts_with(url))
         path = path.substr(url.size());
     if (path.starts_with("/"))
-        path.substr(1);
+        path = path.substr(1);
     return path;
 }
 

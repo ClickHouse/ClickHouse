@@ -13,6 +13,7 @@
 #include <DataTypes/getLeastSupertype.h>
 
 #include <Functions/FunctionFactory.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/grouping.h>
@@ -1592,7 +1593,7 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
             if (need_to_qualify)
                 need_to_qualify = IdentifierResolver::tryBindIdentifierToTableExpressions(identifier_lookup, table_expression_node, scope);
 
-            if (IdentifierResolver::tryBindIdentifierToAliases(identifier_lookup, scope))
+            if (IdentifierResolver::tryBindIdentifierToAliases(identifier_lookup, scope) || IdentifierResolver::tryBindIdentifierToArrayJoinExpressions(identifier_lookup, scope))
                 need_to_qualify = true;
 
             if (need_to_qualify)
@@ -4976,24 +4977,22 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "ARRAY JOIN requires at least single expression");
 
+    /// Register expression aliases in the scope
+    for (const auto & elem : array_join_nodes)
+    {
+        for (auto & child : elem->getChildren())
+        {
+            if (child)
+                expressions_visitor.visit(child);
+        }
+    }
+
     std::vector<QueryTreeNodePtr> array_join_column_expressions;
     array_join_column_expressions.reserve(array_join_nodes_size);
 
     for (auto & array_join_expression : array_join_nodes)
     {
         auto array_join_expression_alias = array_join_expression->getAlias();
-
-        for (const auto & elem : array_join_nodes)
-        {
-            if (elem->hasAlias())
-                scope.aliases.array_join_aliases.insert(elem->getAlias());
-
-            for (auto & child : elem->getChildren())
-            {
-                if (child)
-                    expressions_visitor.visit(child);
-            }
-        }
 
         std::string identifier_full_name;
 
@@ -5367,6 +5366,7 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
     };
 
     add_table_expression_alias_into_scope(join_tree_node);
+    scope.registered_table_expression_nodes.insert(join_tree_node);
     scope.table_expressions_in_resolve_process.erase(join_tree_node.get());
 }
 

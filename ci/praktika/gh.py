@@ -1,10 +1,10 @@
 import json
 import time
 
-from praktika._environment import _Environment
-from praktika.result import Result
-from praktika.settings import Settings
-from praktika.utils import Shell
+from ._environment import _Environment
+from .result import Result
+from .settings import Settings
+from .utils import Shell
 
 
 class GH:
@@ -18,7 +18,7 @@ class GH:
             ret_code, out, err = Shell.get_res_stdout_stderr(command, verbose=True)
             res = ret_code == 0
             if not res and "Validation Failed" in err:
-                print("ERROR: GH command validation error")
+                print(f"ERROR: GH command validation error.")
                 break
             if not res and "Bad credentials" in err:
                 print("ERROR: GH credentials/auth failure")

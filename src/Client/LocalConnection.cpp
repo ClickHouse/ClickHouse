@@ -106,6 +106,7 @@ void LocalConnection::sendQuery(
     const Settings *,
     const ClientInfo * client_info,
     bool,
+    const std::vector<String> & /*external_roles*/,
     std::function<void(const Progress &)> process_progress_callback)
 {
     /// Last query may not have been finished or cancelled due to exception on client side.

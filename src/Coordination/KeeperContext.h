@@ -1,6 +1,11 @@
 #pragma once
-#include <Coordination/KeeperFeatureFlags.h>
+#include <Common/ZooKeeper/KeeperFeatureFlags.h>
+#include <Common/ZooKeeper/ZooKeeperConstants.h>
+#include <IO/WriteBufferFromString.h>
+#include <base/defines.h>
+
 #include <Poco/Util/AbstractConfiguration.h>
+
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
@@ -103,6 +108,7 @@ public:
         return precommit_sleep_probability_for_testing;
     }
 
+    bool isOperationSupported(Coordination::OpNum operation) const;
 private:
     /// local disk defined using path or disk name
     using Storage = std::variant<DiskPtr, std::string>;

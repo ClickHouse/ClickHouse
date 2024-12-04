@@ -131,6 +131,7 @@ public:
 
     const char * getTypeName(std::string_view name) const;
     const char * getDescription(std::string_view name) const;
+    SettingsTierType getTier(std::string_view name) const;
 
     /// Checks if it's possible to assign a field to a specified value and throws an exception if not.
     /// This function doesn't change the fields, it performs check only.
@@ -338,7 +339,13 @@ void BaseSettings<TTraits>::resetToDefault(std::string_view name)
     name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
+    {
         accessor.resetValueToDefault(*this, index);
+        return;
+    }
+
+    if constexpr (Traits::allow_custom_settings)
+        custom_settings_map.erase(name);
 }
 
 template <typename TTraits>
@@ -377,6 +384,18 @@ const char * BaseSettings<TTraits>::getDescription(std::string_view name) const
         return accessor.getDescription(index);
     if (tryGetCustomSetting(name))
         return "Custom";
+    BaseSettingsHelpers::throwSettingNotFound(name);
+}
+
+template <typename TTraits>
+SettingsTierType BaseSettings<TTraits>::getTier(std::string_view name) const
+{
+    name = TTraits::resolveName(name);
+    const auto & accessor = Traits::Accessor::instance();
+    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
+        return accessor.getTier(index);
+    if (tryGetCustomSetting(name))
+        return SettingsTierType::PRODUCTION;
     BaseSettingsHelpers::throwSettingNotFound(name);
 }
 
