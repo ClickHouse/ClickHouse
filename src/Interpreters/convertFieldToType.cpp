@@ -585,6 +585,8 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             throw;
         }
 
+        if (!col->size())
+            return Field(Null());
         Field parsed = (*col)[0];
         return convertFieldToType(parsed, type, from_type_hint, format_settings);
     }
