@@ -982,29 +982,37 @@ void NativeORCBlockInputFormat::prepareFileReader()
         sargs = buildORCSearchArgument(*key_condition, getPort().getHeader(), file_reader->getType(), format_settings);
 
     selected_stripes = calculateSelectedStripes();
-    stripes_iterator = 0;
+    read_iterator = 0;
+    prefetch_iterator = 0;
 
     if (use_prefetch)
-    {
-        /// Prefetch first selected stripe
-        prefetchStripe(stripes_iterator);
-    }
+        prefetchStripes();
 }
 
-void NativeORCBlockInputFormat::prefetchStripe(size_t stripes_iterator_)
+void NativeORCBlockInputFormat::prefetchStripes()
 {
-    if (stripes_iterator_ >= selected_stripes.size())
+    if (prefetch_iterator >= selected_stripes.size())
         return;
 
-    int stripe = selected_stripes[stripes_iterator_];
+    size_t total_stripe_size = 0;
+    std::vector<uint32_t> stripes;
+    while (prefetch_iterator < selected_stripes.size() && total_stripe_size < min_bytes_for_seek)
+    {
+        int stripe = selected_stripes[prefetch_iterator];
+        stripes.push_back(stripe);
+
+        total_stripe_size += file_reader->getStripe(stripe)->getLength();
+        ++prefetch_iterator;
+    }
 
     Stopwatch time;
-    file_reader->preBuffer({static_cast<uint32_t>(stripe)}, include_indices);
+    file_reader->preBuffer(stripes, include_indices);
     LOG_TEST(
         getLogger("NativeORCBlockInputFormat"),
-        "Prefetch stripe {} with {} columns takes {} ms",
-        stripe,
+        "Prefetch {} stripes with {} columns and {} bytes takes {} ms",
+        stripes.size(),
         include_indices.size(),
+        total_stripe_size,
         time.elapsedMilliseconds());
 }
 
@@ -1028,10 +1036,10 @@ bool NativeORCBlockInputFormat::prepareStripeReader()
 {
     assert(file_reader);
 
-    if (stripes_iterator >= selected_stripes.size())
+    if (read_iterator >= selected_stripes.size())
         return false;
 
-    int current_stripe = selected_stripes[stripes_iterator];
+    int current_stripe = selected_stripes[read_iterator];
     current_stripe_info = file_reader->getStripe(current_stripe);
     if (!current_stripe_info->getNumberOfRows())
         throw Exception(ErrorCodes::INCORRECT_DATA, "ORC stripe {} has no rows", current_stripe);
@@ -1046,16 +1054,15 @@ bool NativeORCBlockInputFormat::prepareStripeReader()
         row_reader_options.searchArgument(sargs);
     }
     stripe_reader = file_reader->createRowReader(row_reader_options);
-
-    ++stripes_iterator;
+    ++read_iterator;
 
     if (use_prefetch)
     {
-        /// Release outdated buffer before boundary
+        /// Release outdated buffer before boundary to avoid OOM
         file_reader->releaseBuffer(current_stripe_info->getOffset());
 
         /// Prefetch next selected stripe
-        prefetchStripe(stripes_iterator);
+        prefetchStripes();
     }
 
     return true;
@@ -1070,11 +1077,11 @@ Chunk NativeORCBlockInputFormat::read()
 
     if (need_only_count)
     {
-        if (stripes_iterator >= selected_stripes.size())
+        if (read_iterator >= selected_stripes.size())
             return {};
 
-        int current_stripe = selected_stripes[stripes_iterator];
-        ++stripes_iterator;
+        int current_stripe = selected_stripes[read_iterator];
+        ++read_iterator;
         return getChunkForCount(file_reader->getStripe(current_stripe)->getNumberOfRows());
     }
 

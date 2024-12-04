@@ -80,7 +80,7 @@ private:
     bool prepareStripeReader();
     std::vector<int> calculateSelectedStripes() const;
 
-    void prefetchStripe(size_t stripes_iterator_);
+    void prefetchStripes();
 
     std::unique_ptr<orc::MemoryPool> memory_pool;
 
@@ -102,7 +102,8 @@ private:
     size_t min_bytes_for_seek;
 
     std::vector<int> selected_stripes;
-    size_t stripes_iterator;
+    size_t read_iterator;
+    size_t prefetch_iterator;
 
     std::unique_ptr<orc::StripeInformation> current_stripe_info;
 
