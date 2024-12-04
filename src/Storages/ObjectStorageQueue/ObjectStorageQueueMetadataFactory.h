@@ -14,25 +14,19 @@ public:
 
     FilesMetadataPtr getOrCreate(
         const std::string & zookeeper_path,
-        ObjectStorageQueueMetadataPtr metadata);
+        ObjectStorageQueueMetadataPtr metadata,
+        const StorageID & storage_id);
 
-    void remove(const std::string & zookeeper_path);
+    void remove(const std::string & zookeeper_path, const StorageID & storage_id);
 
     std::unordered_map<std::string, FilesMetadataPtr> getAll();
 
 private:
-    struct Metadata
-    {
-        explicit Metadata(std::shared_ptr<ObjectStorageQueueMetadata> metadata_) : metadata(metadata_), ref_count(1) {}
-
-        std::shared_ptr<ObjectStorageQueueMetadata> metadata;
-        /// TODO: the ref count should be kept in keeper, because of the case with distributed processing.
-        size_t ref_count = 0;
-    };
-    using MetadataByPath = std::unordered_map<std::string, Metadata>;
+    using MetadataByPath = std::unordered_map<std::string, std::shared_ptr<ObjectStorageQueueMetadata>>;
 
     MetadataByPath metadata_by_path;
     std::mutex mutex;
+    LoggerPtr log = getLogger("QueueMetadataFactory");
 };
 
 }

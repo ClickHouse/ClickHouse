@@ -16,7 +16,8 @@ ObjectStorageQueueMetadataFactory & ObjectStorageQueueMetadataFactory::instance(
 
 ObjectStorageQueueMetadataFactory::FilesMetadataPtr ObjectStorageQueueMetadataFactory::getOrCreate(
     const std::string & zookeeper_path,
-    ObjectStorageQueueMetadataPtr metadata)
+    ObjectStorageQueueMetadataPtr metadata,
+    const StorageID & storage_id)
 {
     std::lock_guard lock(mutex);
     auto it = metadata_by_path.find(zookeeper_path);
@@ -27,16 +28,16 @@ ObjectStorageQueueMetadataFactory::FilesMetadataPtr ObjectStorageQueueMetadataFa
     else
     {
         auto & metadata_from_table = metadata->getTableMetadata();
-        auto & metadata_from_keeper = it->second.metadata->getTableMetadata();
+        auto & metadata_from_keeper = it->second->getTableMetadata();
 
         metadata_from_table.checkEquals(metadata_from_keeper);
-
-        it->second.ref_count += 1;
     }
-    return it->second.metadata;
+
+    it->second->registerIfNot(storage_id);
+    return it->second;
 }
 
-void ObjectStorageQueueMetadataFactory::remove(const std::string & zookeeper_path)
+void ObjectStorageQueueMetadataFactory::remove(const std::string & zookeeper_path, const StorageID & storage_id)
 {
     std::lock_guard lock(mutex);
     auto it = metadata_by_path.find(zookeeper_path);
@@ -44,17 +45,19 @@ void ObjectStorageQueueMetadataFactory::remove(const std::string & zookeeper_pat
     if (it == metadata_by_path.end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Metadata with zookeeper path {} does not exist", zookeeper_path);
 
-    chassert(it->second.ref_count > 0);
-    if (--it->second.ref_count == 0)
+    const size_t registry_size = it->second->unregister(storage_id);
+    LOG_TRACE(log, "Remaining registry size: {}", registry_size);
+
+    if (registry_size == 0)
     {
         try
         {
             auto zk_client = Context::getGlobalContextInstance()->getZooKeeper();
-            zk_client->tryRemove(it->first);
+            zk_client->removeRecursive(it->first);
         }
         catch (...)
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            tryLogCurrentException(log);
         }
 
         metadata_by_path.erase(it);
@@ -64,8 +67,8 @@ void ObjectStorageQueueMetadataFactory::remove(const std::string & zookeeper_pat
 std::unordered_map<std::string, ObjectStorageQueueMetadataFactory::FilesMetadataPtr> ObjectStorageQueueMetadataFactory::getAll()
 {
     std::unordered_map<std::string, ObjectStorageQueueMetadataFactory::FilesMetadataPtr> result;
-    for (const auto & [zk_path, metadata_and_ref_count] : metadata_by_path)
-        result.emplace(zk_path, metadata_and_ref_count.metadata);
+    for (const auto & [zk_path, metadata] : metadata_by_path)
+        result.emplace(zk_path, metadata);
     return result;
 }
 
