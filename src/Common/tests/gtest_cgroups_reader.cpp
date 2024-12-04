@@ -136,12 +136,14 @@ class CgroupsMemoryUsageObserverFixture : public ::testing::TestWithParam<ICgrou
 
         auto stat_file = WriteBufferFromFile(tmp_dir + "/memory.stat");
         stat_file.write(SAMPLE_FILE[version].data(), SAMPLE_FILE[version].size());
+        stat_file.finalize();
         stat_file.sync();
 
         if (GetParam() == ICgroupsReader::CgroupsVersion::V2)
         {
             auto current_file = WriteBufferFromFile(tmp_dir + "/memory.current");
             current_file.write("29645422592", 11);
+            current_file.finalize();
             current_file.sync();
         }
     }

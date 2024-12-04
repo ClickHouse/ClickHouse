@@ -35,18 +35,21 @@
 #    include <Poco/JSON/Object.h>
 #    include <Poco/JSON/Parser.h>
 
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#    include <Storages/ObjectStorage/DataLakes/IcebergMetadata.h>
 #    include <DataFile.hh>
 namespace DB
 {
 
 CommonPartitionInfo PartitionPruningProcessor::getCommonPartitionInfo(
-    const Poco::JSON::Array::Ptr & partition_specification, const ColumnTuple * data_file_tuple_column) const
+    const Poco::JSON::Array::Ptr & partition_specification,
+    const ColumnTuple * data_file_tuple_column,
+    const DataTypeTuple & data_file_tuple_type) const
 {
     CommonPartitionInfo common_info;
-    ColumnPtr big_partition_column = data_file_tuple_column->getColumnPtr(data_file_tuple_type.getPositionByName("partition"));
+    const ColumnTuple * big_partition_column
+        = assert_cast<const ColumnTuple *>(data_file_tuple_column->getColumnPtr(data_file_tuple_type.getPositionByName("partition")).get());
 
-    common_info.file_path_column = big_partition_column->getColumnPtr(0);
+    common_info.file_path_column = data_file_tuple_column->getColumnPtr(data_file_tuple_type.getPositionByName("file_path"));
     for (size_t i = 0; i != partition_specification->size(); ++i)
     {
         auto current_field = partition_specification->getObject(static_cast<UInt32>(i));
