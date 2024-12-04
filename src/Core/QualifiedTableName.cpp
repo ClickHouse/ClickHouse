@@ -6,6 +6,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int SYNTAX_ERROR;
+}
+
 UInt64 QualifiedTableName::hash() const
 {
     SipHash hash_state;
