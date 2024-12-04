@@ -29,6 +29,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_IPV4;
     extern const int CANNOT_PARSE_IPV6;
     extern const int UNKNOWN_ELEMENT_OF_ENUM;
+    extern const int ILLEGAL_COLUMN;
     extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
 }
 
@@ -52,6 +53,7 @@ bool isParseError(int code)
         || code == ErrorCodes::CANNOT_PARSE_IPV4
         || code == ErrorCodes::CANNOT_PARSE_IPV6
         || code == ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM
+        || code == ErrorCodes::ILLEGAL_COLUMN             /// For binary formats when value type is wrong
         || code == ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE;
 }
 
@@ -111,10 +113,6 @@ Chunk IRowInputFormat::read()
     for (size_t i = 0; i < num_columns; ++i)
         columns[i] = header.getByPosition(i).type->createColumn(*serializations[i]);
 
-    ColumnCheckpoints checkpoints(columns.size());
-    for (size_t column_idx = 0; column_idx < columns.size(); ++column_idx)
-        checkpoints[column_idx] = columns[column_idx]->getCheckpoint();
-
     block_missing_values.clear();
 
     size_t num_rows = 0;
@@ -140,9 +138,6 @@ Chunk IRowInputFormat::read()
         {
             try
             {
-                for (size_t column_idx = 0; column_idx < columns.size(); ++column_idx)
-                    columns[column_idx]->updateCheckpoint(*checkpoints[column_idx]);
-
                 info.read_columns.clear();
                 continue_reading = readRow(columns, info);
 
@@ -206,9 +201,13 @@ Chunk IRowInputFormat::read()
 
                 syncAfterError();
 
-                /// Rollback all columns in block to initial size (remove values, that was appended to only part of columns).
+                /// Truncate all columns in block to initial size (remove values, that was appended to only part of columns).
                 for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
-                    columns[column_idx]->rollback(*checkpoints[column_idx]);
+                {
+                    auto & column = columns[column_idx];
+                    if (column->size() > num_rows)
+                        column->popBack(column->size() - num_rows);
+                }
             }
         }
     }

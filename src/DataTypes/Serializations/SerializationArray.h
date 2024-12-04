@@ -72,6 +72,8 @@ public:
         DeserializeBinaryBulkStatePtr & state,
         SubstreamsCache * cache) const override;
 
+    static void readArraySafe(IColumn & column, std::function<void()> && read_func);
+
     struct SubcolumnCreator : public ISubcolumnCreator
     {
         const ColumnPtr offsets;

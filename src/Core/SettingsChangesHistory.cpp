@@ -69,6 +69,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"use_async_executor_for_materialized_views", false, false, "New setting."},
             {"composed_data_type_output_format_mode", "default", "default", "New setting"},
             {"http_response_headers", "", "", "New setting."},
+            {"input_format_avro_skip_columns_with_unsupported_types_in_schema_inference", false, false, "Allow to ignore nodes with unsupported types in Avro schema inference"},
         }
     },
     {"24.11",

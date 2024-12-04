@@ -645,6 +645,9 @@ For Values format: when parsing and interpreting expressions using template, che
     DECLARE(Bool, input_format_avro_allow_missing_fields, false, R"(
 For Avro/AvroConfluent format: when field is not found in schema use default value instead of error
 )", 0) \
+    DECLARE(Bool, input_format_avro_skip_columns_with_unsupported_types_in_schema_inference, false, R"(
+Skip columns with unsupported types while schema inference for format Avro/AvroConfluent.
+)", 0) \
     /** This setting is obsolete and do nothing, left for compatibility reasons. */ \
     DECLARE(Bool, input_format_avro_null_as_default, false, R"(
 For Avro/AvroConfluent format: insert default in case of null and non Nullable column
