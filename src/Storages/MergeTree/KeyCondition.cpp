@@ -3358,7 +3358,6 @@ void KeyCondition::prepareBloomFilterData(std::function<std::optional<size_t>(si
             const auto & set_index = rpn_element.set_index;
             const auto & ordered_set = set_index->getOrderedSet();
             const auto & indexes_mapping = set_index->getIndexesMapping();
-            bool found_empty_column = false;
 
             std::vector<std::size_t> key_columns_for_element;
 
@@ -3373,36 +3372,6 @@ void KeyCondition::prepareBloomFilterData(std::function<std::optional<size_t>(si
                     continue;
                 }
 
-//                const auto * parquet_column_descriptor = getColumnDescriptorIfBloomFilterIsPresent(
-//                    parquet_rg_metadata,
-//                    clickhouse_column_index_to_parquet_index,
-//                    indexes_mapping[i].key_index);
-//
-//                if (!parquet_column_descriptor)
-//                {
-//                    continue;
-//                }
-//
-//                auto column = set_column;
-//
-//                if (column->empty())
-//                {
-//                    found_empty_column = true;
-//                    break;
-//                }
-//
-//                if (const auto & nullable_column = checkAndGetColumn<ColumnNullable>(set_column.get()))
-//                {
-//                    column = nullable_column->getNestedColumnPtr();
-//                }
-//
-//                auto hashes_for_column_opt = hash(column.get(), parquet_column_descriptor);
-//
-//                if (!hashes_for_column_opt)
-//                {
-//                    continue;
-//                }
-
                 auto & hashes_for_column = *hashes_for_column_opt;
 
                 if (hashes_for_column.empty())
@@ -3413,12 +3382,6 @@ void KeyCondition::prepareBloomFilterData(std::function<std::optional<size_t>(si
                 hashes.emplace_back(hashes_for_column);
 
                 key_columns_for_element.push_back(indexes_mapping[i].key_index);
-            }
-
-            if (found_empty_column)
-            {
-                // todo arthur
-                continue;
             }
 
             if (hashes.empty())
