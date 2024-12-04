@@ -186,6 +186,7 @@ def csv_compare(result, expected):
 
 def wait_condition(func, condition, max_attempts=10, delay=0.1):
     attempts = 0
+    result = None
     while attempts < max_attempts:
         result = func()
         if condition(result):
@@ -194,4 +195,6 @@ def wait_condition(func, condition, max_attempts=10, delay=0.1):
         if attempts < max_attempts:
             time.sleep(delay)
 
-    raise Exception(f"Function did not satisfy condition after {max_attempts} attempts")
+    raise Exception(
+        f"Function did not satisfy condition after {max_attempts} attempts. Last result:\n{result}"
+    )

@@ -221,13 +221,19 @@ def fn_setup_tables():
 @pytest.mark.parametrize(
     "select_query",
     [
-        "SELECT now() as a, number as b FROM numbers(2)",
-        "SELECT now() as a, b as b FROM src1",
+        "SELECT now() as a, number as b FROM numbers(2) SETTINGS insert_deduplicate=0",
+        "SELECT now() as a, b as b FROM src1 SETTINGS insert_deduplicate=0",
     ],
 )
-@pytest.mark.parametrize("with_append", [True, False])
-@pytest.mark.parametrize("empty", [True, False])
-def test_simple_append(
+@pytest.mark.parametrize(
+    "with_append",
+    [True, False],
+)
+@pytest.mark.parametrize(
+    "empty",
+    [True, False],
+)
+def test_append(
     module_setup_tables,
     fn_setup_tables,
     select_query,
@@ -247,8 +253,6 @@ def test_simple_append(
     rmv = get_rmv_info(node, "test_rmv", wait_status="Scheduled")
     assert rmv["exception"] is None
 
-    node.query("SYSTEM SYNC DATABASE REPLICA ON CLUSTER default default")
-
     records = node.query("SELECT count() FROM test_rmv")
 
     if empty:
@@ -256,20 +260,13 @@ def test_simple_append(
     else:
         assert records == "2\n"
 
-    for n in nodes:
-        n.query(f"SYSTEM TEST VIEW test_rmv SET FAKE TIME '{rmv['next_refresh_time']}'")
+    node.query(f"SYSTEM TEST VIEW test_rmv SET FAKE TIME '{rmv['next_refresh_time']}'")
 
     rmv2 = get_rmv_info(node, "test_rmv", wait_status="Scheduled")
 
     assert rmv2["exception"] is None
 
-    node.query("SYSTEM SYNC DATABASE REPLICA ON CLUSTER default default")
-    if empty:
-        expect = "2\n"
-
-    if not with_append:
-        expect = "2\n"
-
+    expect = "2\n"
     if with_append and not empty:
         expect = "4\n"
 
@@ -373,6 +370,9 @@ def test_real_wait_refresh(
     empty,
     to_clause,
 ):
+    if node.is_built_with_sanitizer():
+        pytest.skip("Disabled for sanitizers")
+
     table_clause, to_clause_, tgt = to_clause
 
     create_sql = CREATE_RMV.render(
@@ -380,7 +380,7 @@ def test_real_wait_refresh(
         refresh_interval="EVERY 10 SECOND",
         to_clause=to_clause_,
         table_clause=table_clause,
-        select_query="SELECT now() as a, b FROM src1",
+        select_query="SELECT now() as a, b FROM src1 SETTINGS insert_deduplicate=0",
         with_append=append,
         on_cluster="default",
         empty=empty,

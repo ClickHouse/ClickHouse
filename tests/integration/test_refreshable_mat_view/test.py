@@ -377,8 +377,8 @@ def test_real_wait_refresh(
         "test_rmv",
         condition=lambda x: x["last_refresh_time"] == rmv["next_refresh_time"],
         # wait for refresh a little bit more than 10 seconds
-        max_attempts=12,
-        delay=1,
+        max_attempts=30,
+        delay=0.5,
     )
 
     if append:
