@@ -101,6 +101,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"enable_variant_type", false, false, "Add alias to allow_experimental_variant_type"},
             {"enable_dynamic_type", false, false, "Add alias to allow_experimental_dynamic_type"},
             {"enable_json_type", false, false, "Add alias to allow_experimental_json_type"},
+            {"allow_experimental_ts_to_grid_aggregate_function", false, false, "Cloud only"},
         }
     },
     {"24.10",

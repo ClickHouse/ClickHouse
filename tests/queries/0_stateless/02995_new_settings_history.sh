@@ -17,7 +17,8 @@ $CLICKHOUSE_LOCAL --query "
     new_settings AS
     (
         -- Ignore settings that depend on the machine config (max_threads and similar)
-        SELECT name, default FROM system.settings WHERE default NOT LIKE '%auto(%'
+        -- Ignore settings that, for historic reasons, have different values in Cloud
+        SELECT name, default FROM system.settings WHERE default NOT LIKE '%auto(%' AND name NOT IN ('max_table_size_to_drop', 'max_partition_size_to_drop')
     )
     SELECT * FROM
     (
