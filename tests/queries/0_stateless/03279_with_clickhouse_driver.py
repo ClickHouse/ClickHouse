@@ -1,4 +1,7 @@
-import sys
+#!/usr/bin/env python3
+# Tags: no-fasttest
+
+import os
 from clickhouse_driver import Client
 
 
@@ -11,5 +14,5 @@ def run(database):
 
 
 if __name__ == "__main__":
-    database = sys.argv[1]
+    database =  os.environ["CLICKHOUSE_DATABASE"]
     run(database)
