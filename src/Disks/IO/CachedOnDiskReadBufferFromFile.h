@@ -105,12 +105,14 @@ private:
         ReadType read_type = ReadType::NONE;
         std::shared_ptr<ReadBufferFromFileBase> buf;
         size_t bytes_to_predownload = 0;
+        bool set_downloader = false;
 
         void reset()
         {
             bytes_to_predownload = 0;
             buf = nullptr;
             read_type = ReadType::NONE;
+            set_downloader = false;
         }
     };
     using ReadFromFileSegmentStatePtr = std::unique_ptr<ReadFromFileSegmentState>;

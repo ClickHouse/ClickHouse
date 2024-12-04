@@ -436,6 +436,7 @@ void CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(
                     }
 
                     state.read_type = ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE;
+                    state.set_downloader = true;
                     state.buf = getRemoteReadBuffer(file_segment, offset, state.read_type, info_);
                     return;
                 }
@@ -474,7 +475,8 @@ void CachedOnDiskReadBufferFromFile::prepareReadFromFileSegmentState(
 {
     state.reset();
 
-    chassert(!file_segment.isDownloader(), getInfoForLog(nullptr, info, offset));
+    chassert(!file_segment.isDownloader(),
+             "!isDownloader() failed in prepareReadFromFileSegmentSatte: " + getInfoForLog(nullptr, info, offset));
     chassert(offset >= file_segment.range().left);
 
     auto range = file_segment.range();
@@ -786,6 +788,7 @@ void CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
 
                 state.bytes_to_predownload = 0;
                 file_segment.completePartAndResetDownloader();
+                state.set_downloader = false;
                 chassert(file_segment.state() == FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
 
                 LOG_TEST(log, "Bypassing cache because for {}", file_segment.getInfoForLog());
@@ -942,17 +945,13 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
             auto & file_segment = info.file_segments->front();
 
-            bool download_current_segment = state.read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE;
-            if (download_current_segment)
+            if (state.set_downloader && file_segment.isDownloader())
             {
-                bool need_complete_file_segment = file_segment.isDownloader();
-                if (need_complete_file_segment)
-                {
-                    if (!implementation_buffer_can_be_reused)
-                        file_segment.resetRemoteFileReader();
+                if (!implementation_buffer_can_be_reused)
+                    file_segment.resetRemoteFileReader();
 
-                    file_segment.completePartAndResetDownloader();
-                }
+                file_segment.completePartAndResetDownloader();
+                state.set_downloader = false;
             }
 
             if (use_external_buffer && !internal_buffer.empty())
@@ -1031,10 +1030,13 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
     swap(*state.buf);
 
-    if (state.read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE)
+    if (state.set_downloader)
+    {
         file_segment.completePartAndResetDownloader();
+        state.set_downloader = false;
+    }
 
-    chassert(!file_segment.isDownloader(), getInfoForLog());
+    chassert(!file_segment.isDownloader(), "!isDownloader() failed in the end of nextImpl: " + getInfoForLog());
 
     if (file_offset_of_buffer_end > current_read_range.right)
         completeFileSegmentAndGetNext();
