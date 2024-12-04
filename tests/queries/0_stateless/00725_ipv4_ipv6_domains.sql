@@ -64,6 +64,8 @@ SELECT '192.168.0.91 is ipv4 string:                            ', isIPv4String(
 SELECT '127.0.0.1 is ipv4 string:                               ', isIPv4String('127.0.0.1');
 SELECT '8.8.8.8 is ipv4 string:                                 ', isIPv4String('8.8.8.8');
 SELECT 'hello is ipv4 string:                                   ', isIPv4String('hello');
+SELECT '192.168.1.1\0000 is ipv4 string:                        ', isIPv4String('192.168.1.1\0000');
+SELECT '192.168.1.1\00dc is ipv4 string:                        ', isIPv4String('192.168.1.1\00dc');
 SELECT '0:0:0:0:0:0:0:0 is ipv4 string:                         ', isIPv4String('0:0:0:0:0:0:0:0');
 SELECT '0000:0000:0000:0000:0000:FFFF:C1FC:110A is ipv4 string: ', isIPv4String('0000:0000:0000:0000:0000:FFFF:C1FC:110A');
 SELECT 'FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF is ipv4 string: ', isIPv4String('FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF');
