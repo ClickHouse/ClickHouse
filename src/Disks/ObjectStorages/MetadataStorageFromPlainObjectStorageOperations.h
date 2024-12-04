@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Disks/ObjectStorages/IMetadataOperation.h>
-#include <Disks/ObjectStorages/InMemoryPathMap.h>
+#include <Disks/ObjectStorages/InMemoryDirectoryPathMap.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorage.h>
 
 #include <filesystem>
@@ -14,7 +14,7 @@ class MetadataStorageFromPlainObjectStorageCreateDirectoryOperation final : publ
 {
 private:
     std::filesystem::path path;
-    InMemoryPathMap & path_map;
+    InMemoryDirectoryPathMap & path_map;
     ObjectStoragePtr object_storage;
     const std::string metadata_key_prefix;
     const std::string object_key_prefix;
@@ -26,7 +26,7 @@ public:
     MetadataStorageFromPlainObjectStorageCreateDirectoryOperation(
         /// path_ must end with a trailing '/'.
         std::filesystem::path && path_,
-        InMemoryPathMap & path_map_,
+        InMemoryDirectoryPathMap & path_map_,
         ObjectStoragePtr object_storage_,
         const std::string & metadata_key_prefix_);
 
@@ -39,7 +39,7 @@ class MetadataStorageFromPlainObjectStorageMoveDirectoryOperation final : public
 private:
     std::filesystem::path path_from;
     std::filesystem::path path_to;
-    InMemoryPathMap & path_map;
+    InMemoryDirectoryPathMap & path_map;
     ObjectStoragePtr object_storage;
     const std::string metadata_key_prefix;
 
@@ -54,7 +54,7 @@ public:
         /// Both path_from_ and path_to_ must end with a trailing '/'.
         std::filesystem::path && path_from_,
         std::filesystem::path && path_to_,
-        InMemoryPathMap & path_map_,
+        InMemoryDirectoryPathMap & path_map_,
         ObjectStoragePtr object_storage_,
         const std::string & metadata_key_prefix_);
 
@@ -68,7 +68,7 @@ class MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation final : publ
 private:
     std::filesystem::path path;
 
-    InMemoryPathMap & path_map;
+    InMemoryDirectoryPathMap & path_map;
     ObjectStoragePtr object_storage;
     const std::string metadata_key_prefix;
 
@@ -79,7 +79,7 @@ public:
     MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation(
         /// path_ must end with a trailing '/'.
         std::filesystem::path && path_,
-        InMemoryPathMap & path_map_,
+        InMemoryDirectoryPathMap & path_map_,
         ObjectStoragePtr object_storage_,
         const std::string & metadata_key_prefix_);
 
