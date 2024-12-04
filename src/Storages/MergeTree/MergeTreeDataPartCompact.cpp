@@ -175,6 +175,16 @@ void MergeTreeDataPartCompact::loadMarksToCache(const Names & column_names, Mark
     loader.loadMarks();
 }
 
+void MergeTreeDataPartCompact::removeMarksFromCache(MarkCache * mark_cache) const
+{
+    if (!mark_cache)
+        return;
+
+    auto mark_path = index_granularity_info.getMarksFilePath(DATA_FILE_NAME);
+    auto key = MarkCache::hash(fs::path(getRelativePathOfActivePart()) / mark_path);
+    mark_cache->remove(key);
+}
+
 bool MergeTreeDataPartCompact::hasColumnFiles(const NameAndTypePair & column) const
 {
     if (!getColumnPosition(column.getNameInStorage()))
