@@ -60,6 +60,7 @@ public:
         virtual ~BloomFilter() = default;
 
         virtual bool findHash(uint64_t hash) = 0;
+        virtual bool findAnyHash(const std::vector<uint64_t> & hashes) = 0;
     };
 
     using ColumnIndexToBloomFilter = std::unordered_map<std::size_t, std::unique_ptr<BloomFilter>>;

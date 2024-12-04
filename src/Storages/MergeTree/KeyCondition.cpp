@@ -727,25 +727,11 @@ const std::unordered_map<String, KeyCondition::SpaceFillingCurveType> KeyConditi
     {"hilbertEncode", SpaceFillingCurveType::Hilbert}
 };
 
-bool mayExistOnBloomFilter(const std::vector<uint64_t> & hashes, const std::unique_ptr<KeyCondition::BloomFilter> & bloom_filter)
-{
-    for (const auto hash : hashes)
-    {
-        if (bloom_filter->findHash(hash))
-        {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-bool mayExistOnBloomFilter(const KeyCondition::BloomFilterData & condition_bloom_filter_data,
+static bool mayExistOnBloomFilter(const KeyCondition::BloomFilterData & condition_bloom_filter_data,
                            const KeyCondition::ColumnIndexToBloomFilter & column_index_to_column_bf)
 {
     chassert(condition_bloom_filter_data.hashes_per_column.size() == condition_bloom_filter_data.key_columns.size());
 
-    bool maybe_true = true;
     for (auto column_index = 0u; column_index < condition_bloom_filter_data.hashes_per_column.size(); column_index++)
     {
         // In case bloom filter is missing for parts of the data
@@ -755,17 +741,16 @@ bool mayExistOnBloomFilter(const KeyCondition::BloomFilterData & condition_bloom
             continue;
         }
 
-        bool column_maybe_contains = mayExistOnBloomFilter(
-            condition_bloom_filter_data.hashes_per_column[column_index],
-            column_index_to_column_bf.at(condition_bloom_filter_data.key_columns[column_index]));
+        const auto & column_bf = column_index_to_column_bf.at(condition_bloom_filter_data.key_columns[column_index]);
+        const auto & hashes = condition_bloom_filter_data.hashes_per_column[column_index];
 
-        if (!column_maybe_contains)
+        if (!column_bf->findAnyHash(hashes))
         {
             return false;
         }
     }
 
-    return maybe_true;
+    return true;
 }
 
 ActionsDAG KeyCondition::cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context)
