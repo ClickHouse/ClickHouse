@@ -66,6 +66,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"parallel_replicas_index_analysis_only_on_coordinator", false, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"},
             {"max_bytes_ratio_before_external_group_by", 0., 0., "New setting."},
             {"max_bytes_ratio_before_external_sort", 0., 0., "New setting."},
+            {"min_external_sort_block_bytes", 0., 100_MiB, "New setting."},
             {"use_async_executor_for_materialized_views", false, false, "New setting."},
             {"composed_data_type_output_format_mode", "default", "default", "New setting"},
             {"http_response_headers", "", "", "New setting."},
