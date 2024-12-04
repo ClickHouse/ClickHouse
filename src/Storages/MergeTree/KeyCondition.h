@@ -48,10 +48,26 @@ public:
         const ExpressionActionsPtr & key_expr,
         bool single_point_ = false);
 
+    struct BloomFilterData
+    {
+        using HashesForColumns = std::vector<std::vector<uint64_t>>;
+        HashesForColumns hashes_per_column;
+        std::vector<std::size_t> key_columns;
+    };
+
+    struct BloomFilter
+    {
+        virtual ~BloomFilter() = default;
+
+        virtual bool findHash(uint64_t hash) = 0;
+    };
+
+    using ColumnIndexToBloomFilter = std::unordered_map<std::size_t, std::unique_ptr<BloomFilter>>;
     /// Whether the condition and its negation are feasible in the direct product of single column ranges specified by `hyperrectangle`.
     BoolMask checkInHyperrectangle(
         const Hyperrectangle & hyperrectangle,
-        const DataTypes & data_types) const;
+        const DataTypes & data_types,
+        const ColumnIndexToBloomFilter & column_index_to_column_bf = {}) const;
 
     /// Whether the condition and its negation are (independently) feasible in the key range.
     /// left_key and right_key must contain all fields in the sort_descr in the appropriate order.
@@ -148,13 +164,6 @@ public:
     /// TODO handle the cases when generate RPN.
     bool extractPlainRanges(Ranges & ranges) const;
 
-    struct BloomFilterData
-    {
-        using HashesForColumns = std::vector<std::vector<uint64_t>>;
-        HashesForColumns hashes_per_column;
-        std::vector<std::size_t> key_columns;
-    };
-
     /// The expression is stored as Reverse Polish Notation.
     struct RPNElement
     {
@@ -246,43 +255,10 @@ public:
 
     bool isRelaxed() const { return relaxed; }
 
-    /// Space-filling curves in the key
-    enum class SpaceFillingCurveType
-    {
-        Unknown = 0,
-        Morton,
-        Hilbert
-    };
-    static const std::unordered_map<String, SpaceFillingCurveType> space_filling_curve_name_to_type;
-
-    struct SpaceFillingCurveDescription
-    {
-        size_t key_column_pos;
-        String function_name;
-        std::vector<String> arguments;
-        SpaceFillingCurveType type;
-    };
-    using SpaceFillingCurveDescriptions = std::vector<SpaceFillingCurveDescription>;
-    SpaceFillingCurveDescriptions key_space_filling_curves;
-
-    struct BloomFilter
-    {
-        virtual ~BloomFilter() = default;
-
-        virtual bool findHash(uint64_t hash) = 0;
-    };
-
-    using ColumnIndexToBloomFilter = std::unordered_map<std::size_t, std::unique_ptr<BloomFilter>>;
-
-    static BoolMask checkRPNAgainstHyperrectangle(
-        const RPN & rpn,
-        const Hyperrectangle & hyperrectangle,
-        const KeyCondition::SpaceFillingCurveDescriptions & key_space_filling_curves,
-        const DataTypes & data_types,
-        bool single_point,
-        const ColumnIndexToBloomFilter & column_index_to_column_bf = {});
-
     bool isSinglePoint() const { return single_point; }
+
+    void prepareBloomFilterData(std::function<std::optional<size_t>(size_t column_idx, const Field &)> hash_one,
+                                std::function<std::optional<std::vector<size_t>>(size_t column_idx, const ColumnPtr &)> hash_many);
 
 private:
     BoolMask checkInRange(
@@ -403,6 +379,25 @@ private:
     const ExpressionActionsPtr key_expr;
     /// All intermediate columns are used to calculate key_expr.
     const NameSet key_subexpr_names;
+
+    /// Space-filling curves in the key
+    enum class SpaceFillingCurveType
+    {
+        Unknown = 0,
+        Morton,
+        Hilbert
+    };
+    static const std::unordered_map<String, SpaceFillingCurveType> space_filling_curve_name_to_type;
+
+    struct SpaceFillingCurveDescription
+    {
+        size_t key_column_pos;
+        String function_name;
+        std::vector<String> arguments;
+        SpaceFillingCurveType type;
+    };
+    using SpaceFillingCurveDescriptions = std::vector<SpaceFillingCurveDescription>;
+    SpaceFillingCurveDescriptions key_space_filling_curves;
 
     void getAllSpaceFillingCurves();
 

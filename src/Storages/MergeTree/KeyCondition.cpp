@@ -727,6 +727,45 @@ const std::unordered_map<String, KeyCondition::SpaceFillingCurveType> KeyConditi
     {"hilbertEncode", SpaceFillingCurveType::Hilbert}
 };
 
+bool mayExistOnBloomFilter(const std::vector<uint64_t> & hashes, const std::unique_ptr<KeyCondition::BloomFilter> & bloom_filter)
+{
+    for (const auto hash : hashes)
+    {
+        if (bloom_filter->findHash(hash))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool mayExistOnBloomFilter(const KeyCondition::BloomFilterData & condition_bloom_filter_data,
+                           const KeyCondition::ColumnIndexToBloomFilter & column_index_to_column_bf)
+{
+    bool maybe_true = true;
+    for (auto column_index = 0u; column_index < condition_bloom_filter_data.hashes_per_column.size(); column_index++)
+    {
+        // In case bloom filter is missing for parts of the data
+        // (e.g. for some Parquet row groups: https://github.com/ClickHouse/ClickHouse/pull/62966#discussion_r1722361237).
+        if (!column_index_to_column_bf.contains(condition_bloom_filter_data.key_columns[column_index]))
+        {
+            continue;
+        }
+
+        bool column_maybe_contains = mayExistOnBloomFilter(
+            condition_bloom_filter_data.hashes_per_column[column_index],
+            column_index_to_column_bf.at(condition_bloom_filter_data.key_columns[column_index]));
+
+        if (!column_maybe_contains)
+        {
+            return false;
+        }
+    }
+
+    return maybe_true;
+}
+
 ActionsDAG KeyCondition::cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context)
 {
     ActionsDAG res;
@@ -2982,57 +3021,8 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
 
 BoolMask KeyCondition::checkInHyperrectangle(
     const Hyperrectangle & hyperrectangle,
-    const DataTypes & data_types) const
-{
-    return checkRPNAgainstHyperrectangle(rpn, hyperrectangle, key_space_filling_curves, data_types, single_point);
-}
-
-bool mayExistOnBloomFilter(const std::vector<uint64_t> & hashes, const std::unique_ptr<KeyCondition::BloomFilter> & bloom_filter)
-{
-    for (const auto hash : hashes)
-    {
-        if (bloom_filter->findHash(hash))
-        {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-bool mayExistOnBloomFilter(const KeyCondition::BloomFilterData & condition_bloom_filter_data,
-                           const KeyCondition::ColumnIndexToBloomFilter & column_index_to_column_bf)
-{
-    bool maybe_true = true;
-    for (auto column_index = 0u; column_index < condition_bloom_filter_data.hashes_per_column.size(); column_index++)
-    {
-        // In case bloom filter is missing for parts of the data
-        // (e.g. for some Parquet row groups: https://github.com/ClickHouse/ClickHouse/pull/62966#discussion_r1722361237).
-        if (!column_index_to_column_bf.contains(condition_bloom_filter_data.key_columns[column_index]))
-        {
-            continue;
-        }
-
-        bool column_maybe_contains = mayExistOnBloomFilter(
-            condition_bloom_filter_data.hashes_per_column[column_index],
-            column_index_to_column_bf.at(condition_bloom_filter_data.key_columns[column_index]));
-
-        if (!column_maybe_contains)
-        {
-            return false;
-        }
-    }
-
-    return maybe_true;
-}
-
-BoolMask KeyCondition::checkRPNAgainstHyperrectangle(
-    const RPN & rpn,
-    const Hyperrectangle & hyperrectangle,
-    const KeyCondition::SpaceFillingCurveDescriptions & key_space_filling_curves,
     const DataTypes & data_types,
-    bool single_point,
-    const ColumnIndexToBloomFilter & column_index_to_column_bf)
+    const ColumnIndexToBloomFilter & column_index_to_column_bf) const
 {
     std::vector<BoolMask> rpn_stack;
 
@@ -3057,7 +3047,7 @@ BoolMask KeyCondition::checkRPNAgainstHyperrectangle(
             rpn_stack.emplace_back(true, true);
         }
         else if (element.function == RPNElement::FUNCTION_IN_RANGE
-            || element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
+                 || element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
         {
             if (element.key_column >= hyperrectangle.size())
             {
@@ -3320,6 +3310,125 @@ BoolMask KeyCondition::checkRPNAgainstHyperrectangle(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::checkInHyperrectangle");
 
     return rpn_stack[0];
+}
+
+void KeyCondition::prepareBloomFilterData(std::function<std::optional<size_t>(size_t column_idx, const Field &)> hash_one,
+                                          std::function<std::optional<std::vector<size_t>>(size_t column_idx, const ColumnPtr &)> hash_many)
+{
+    for (auto & rpn_element : rpn)
+    {
+        // this would be a problem for `where negate(x) = -58`.
+        // It would perform a bf search on `-58`, and possibly miss row groups containing this data.
+        if (!rpn_element.monotonic_functions_chain.empty())
+        {
+            continue;
+        }
+
+        KeyCondition::BloomFilterData::HashesForColumns hashes;
+
+        if (rpn_element.function == RPNElement::FUNCTION_IN_RANGE
+            || rpn_element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
+        {
+            // Only FUNCTION_EQUALS is supported and for that extremes need to be the same
+            if (rpn_element.range.left != rpn_element.range.right)
+            {
+                continue;
+            }
+
+            auto hashed_value = hash_one(rpn_element.key_column, rpn_element.range.left);
+
+            if (!hashed_value)
+            {
+                continue;
+            }
+
+            std::vector<uint64_t> hashes_for_column;
+            hashes_for_column.emplace_back(*hashed_value);
+
+            hashes.emplace_back(std::move(hashes_for_column));
+
+            std::vector<std::size_t> key_columns_for_element;
+            key_columns_for_element.emplace_back(rpn_element.key_column);
+
+            rpn_element.bloom_filter_data = KeyCondition::BloomFilterData {std::move(hashes), std::move(key_columns_for_element)};
+        }
+        else if (rpn_element.function == RPNElement::FUNCTION_IN_SET
+                 || rpn_element.function == RPNElement::FUNCTION_NOT_IN_SET)
+        {
+            const auto & set_index = rpn_element.set_index;
+            const auto & ordered_set = set_index->getOrderedSet();
+            const auto & indexes_mapping = set_index->getIndexesMapping();
+            bool found_empty_column = false;
+
+            std::vector<std::size_t> key_columns_for_element;
+
+            for (auto i = 0u; i < ordered_set.size(); i++)
+            {
+                const auto & set_column = ordered_set[i];
+
+                auto hashes_for_column_opt = hash_many(indexes_mapping[i].key_index, set_column);
+
+                if (!hashes_for_column_opt)
+                {
+                    continue;
+                }
+
+//                const auto * parquet_column_descriptor = getColumnDescriptorIfBloomFilterIsPresent(
+//                    parquet_rg_metadata,
+//                    clickhouse_column_index_to_parquet_index,
+//                    indexes_mapping[i].key_index);
+//
+//                if (!parquet_column_descriptor)
+//                {
+//                    continue;
+//                }
+//
+//                auto column = set_column;
+//
+//                if (column->empty())
+//                {
+//                    found_empty_column = true;
+//                    break;
+//                }
+//
+//                if (const auto & nullable_column = checkAndGetColumn<ColumnNullable>(set_column.get()))
+//                {
+//                    column = nullable_column->getNestedColumnPtr();
+//                }
+//
+//                auto hashes_for_column_opt = hash(column.get(), parquet_column_descriptor);
+//
+//                if (!hashes_for_column_opt)
+//                {
+//                    continue;
+//                }
+
+                auto & hashes_for_column = *hashes_for_column_opt;
+
+                if (hashes_for_column.empty())
+                {
+                    continue;
+                }
+
+                hashes.emplace_back(hashes_for_column);
+
+                key_columns_for_element.push_back(indexes_mapping[i].key_index);
+            }
+
+            if (found_empty_column)
+            {
+                // todo arthur
+                continue;
+            }
+
+            if (hashes.empty())
+            {
+                continue;
+            }
+
+            rpn_element.bloom_filter_data = {std::move(hashes), std::move(key_columns_for_element)};
+        }
+    }
 }
 
 bool KeyCondition::mayBeTrueInRange(
