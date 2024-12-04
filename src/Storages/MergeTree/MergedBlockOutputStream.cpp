@@ -29,6 +29,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     CompressionCodecPtr default_codec_,
     MergeTreeIndexGranularityPtr index_granularity_ptr,
     TransactionID tid,
+    size_t part_uncompressed_bytes,
     bool reset_columns_,
     bool blocks_are_granules_size,
     const WriteSettings & write_settings_)
@@ -38,9 +39,9 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     , write_settings(write_settings_)
 {
     /// Save marks in memory if prewarm is enabled to avoid re-reading marks file.
-    bool save_marks_in_cache = data_part->storage.getMarkCacheToPrewarm() != nullptr;
+    bool save_marks_in_cache = data_part->storage.getMarkCacheToPrewarm(part_uncompressed_bytes) != nullptr;
     /// Save primary index in memory if cache is disabled or is enabled with prewarm to avoid re-reading primary index file.
-    bool save_primary_index_in_memory = !data_part->storage.getPrimaryIndexCache() || data_part->storage.getPrimaryIndexCacheToPrewarm();
+    bool save_primary_index_in_memory = !data_part->storage.getPrimaryIndexCache() || data_part->storage.getPrimaryIndexCacheToPrewarm(part_uncompressed_bytes);
 
     MergeTreeWriterSettings writer_settings(
         data_part->storage.getContext()->getSettingsRef(),
@@ -270,6 +271,7 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
             new_part->index_granularity = std::move(new_index_granularity);
     }
 
+    /// It's important to set index after index granularity.
     if (auto computed_index = writer->releaseIndexColumns())
         new_part->setIndex(std::move(*computed_index));
 

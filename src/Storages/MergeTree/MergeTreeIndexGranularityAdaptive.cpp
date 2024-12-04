@@ -1,6 +1,12 @@
+#include <Common/CurrentMetrics.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
 
+
+namespace CurrentMetrics
+{
+    extern const Metric MergeTreeIndexGranularityInternalArraysTotalSize;
+}
 
 namespace DB
 {
@@ -60,6 +66,7 @@ void MergeTreeIndexGranularityAdaptive::appendMark(size_t rows_count)
     {
         marks_rows_partial_sums.push_back(marks_rows_partial_sums.back() + rows_count);
     }
+    CurrentMetrics::add(CurrentMetrics::MergeTreeIndexGranularityInternalArraysTotalSize, sizeof(decltype(marks_rows_partial_sums)::value_type));
 }
 
 void MergeTreeIndexGranularityAdaptive::adjustLastMark(size_t rows_count)
@@ -75,6 +82,7 @@ void MergeTreeIndexGranularityAdaptive::adjustLastMark(size_t rows_count)
     else
     {
         marks_rows_partial_sums.pop_back();
+        CurrentMetrics::sub(CurrentMetrics::MergeTreeIndexGranularityInternalArraysTotalSize, sizeof(decltype(marks_rows_partial_sums)::value_type));
         appendMark(rows_count);
     }
 }
