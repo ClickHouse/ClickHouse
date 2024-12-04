@@ -443,7 +443,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     size_t streams = pipeline.getNumStreams();
     if (streams > 1)
     {
-        if (group_by_use_sharding)
+        bool use_sharding = group_by_use_sharding && transform_params->params.keys_size > 0;
+        if (use_sharding)
         {
             if (merge_threads > 1)
             {
@@ -488,7 +489,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
         /// Add resize transform to uniformly distribute data between aggregating streams.
         /// But not if we execute aggregation over partitioned data in which case data streams shouldn't be mixed.
-        if (!storage_has_evenly_distributed_read && !skip_merging && !group_by_use_sharding)
+        if (!storage_has_evenly_distributed_read && !skip_merging && !use_sharding)
             pipeline.resize(pipeline.getNumStreams(), true, true);
 
         auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
@@ -505,7 +506,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     merge_threads,
                     temporary_data_merge_threads,
                     should_produce_results_in_order_of_bucket_number,
-                    skip_merging || group_by_use_sharding);
+                    skip_merging || use_sharding);
             });
 
         pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : params.max_threads, true /* force */);
