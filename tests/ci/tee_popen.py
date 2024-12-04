@@ -44,9 +44,12 @@ class TeePopen:
             self.timeout,
         )
         self.send_signal(signal.SIGTERM)
+        self.timeout_exceeded = True
+        self.terminate()
+
+    def terminate(self) -> None:
         time_wait = 0
         self.terminated_by_sigterm = True
-        self.timeout_exceeded = True
         while self.process.poll() is None and time_wait < 100:
             print("wait...")
             wait = 5
