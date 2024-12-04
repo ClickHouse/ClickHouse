@@ -62,6 +62,8 @@ def cluster():
 def test_async_alter_move(cluster, broken_s3):
     node = cluster.instances["node"]
 
+    node.query("DROP TABLE IF EXISTS moving_table_async SYNC")
+
     node.query(
         """
     CREATE TABLE moving_table_async
@@ -103,9 +105,13 @@ def test_async_alter_move(cluster, broken_s3):
     else:
         assert False, "Cannot find any moving background operation"
 
+    node.query("DROP TABLE IF EXISTS moving_table_async SYNC")
+
 
 def test_sync_alter_move(cluster, broken_s3):
     node = cluster.instances["node"]
+
+    node.query("DROP TABLE IF EXISTS moving_table_sync SYNC")
 
     node.query(
         """
@@ -144,3 +150,5 @@ def test_sync_alter_move(cluster, broken_s3):
         )
         == "broken_s3\n"
     )
+
+    node.query("DROP TABLE IF EXISTS moving_table_sync SYNC")
