@@ -2054,9 +2054,10 @@ message ComplicatedExpr {
         Select subquery = 14;
         SQLFuncCall func_call = 15;
         WindowFuncCall window_call = 16;
-        ArraySequence array = 17;
-        TupleSequence tuple = 18;
-        IntervalExpr interval = 19;
+        IntervalExpr interval = 17;
+        string columns = 18;
+        ArraySequence array = 19;
+        TupleSequence tuple = 20;
     }
 }
 
@@ -3325,6 +3326,69 @@ message Detach {
     optional SettingValues setting_values = 5;
 }
 
+message SyncReplica {
+    enum SyncPolicy {
+        STRICT = 1;
+        PULL = 2;
+    }
+    required ExprSchemaTable est = 1;
+    required SyncPolicy policy = 2;
+}
+
+message SystemCommand {
+    oneof system_cmd_oneof {
+        bool reload_embedded_dictionaries = 1;
+        bool reload_dictionaries = 2;
+        bool reload_models = 3;
+        bool reload_functions = 4;
+        Function reload_function = 5;
+        bool reload_asynchronous_metrics = 6;
+        bool drop_dns_cache = 7;
+        bool drop_mark_cache = 8;
+        bool drop_uncompressed_cache = 9;
+        bool drop_compiled_expression_cache = 10;
+        bool drop_query_cache = 11;
+        bool drop_format_schema_cache = 12; //bool is used here
+        bool flush_logs = 13;
+        bool reload_config = 14;
+        bool reload_users = 15;
+        ExprSchemaTable stop_merges = 16;
+        ExprSchemaTable start_merges = 17;
+        ExprSchemaTable stop_ttl_merges = 18;
+        ExprSchemaTable start_ttl_merges = 19;
+        ExprSchemaTable stop_moves = 20;
+        ExprSchemaTable start_moves = 21;
+        ExprSchemaTable wait_loading_parts = 22;
+        ExprSchemaTable stop_fetches = 23;
+        ExprSchemaTable start_fetches = 24;
+        ExprSchemaTable stop_replicated_sends = 25;
+        ExprSchemaTable start_replicated_sends = 26;
+        ExprSchemaTable stop_replication_queues = 27;
+        ExprSchemaTable start_replication_queues = 28;
+        ExprSchemaTable stop_pulling_replication_log = 29;
+        ExprSchemaTable start_pulling_replication_log = 30;
+        SyncReplica sync_replica = 31;
+        Database sync_replicated_database = 32;
+        ExprSchemaTable restart_replica = 33;
+        ExprSchemaTable restore_replica = 34;
+        bool restart_replicas = 35;
+        bool drop_filesystem_cache = 36;
+        bool sync_file_cache = 37;
+        bool load_pks = 38;
+        ExprSchemaTable load_pk = 39;
+        bool unload_pks = 40;
+        ExprSchemaTable unload_pk = 41;
+        bool refresh_views = 42;
+        ExprSchemaTable refresh_view = 43;
+        bool stop_views = 44;
+        ExprSchemaTable stop_view = 45;
+        bool start_views = 46;
+        ExprSchemaTable start_view = 47;
+        ExprSchemaTable cancel_view = 48;
+        ExprSchemaTable wait_view = 49;
+    }
+}
+
 message SQLQueryInner {
     oneof query_inner_oneof {
         TopSelect select = 1;
@@ -3344,6 +3408,7 @@ message SQLQueryInner {
         Detach detach = 15;
         CreateDatabase create_database = 16;
         CreateFunction create_function = 17;
+        SystemCommand system_cmd = 18;
     }
 }
 

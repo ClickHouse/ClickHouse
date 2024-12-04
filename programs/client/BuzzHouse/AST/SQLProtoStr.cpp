@@ -1475,6 +1475,11 @@ CONV_FN(ComplicatedExpr, expr)
         case ExprType::kInterval:
             IntervalExprToString(ret, expr.interval());
             break;
+        case ExprType::kColumns:
+            ret += "COLUMNS('";
+            ret += expr.columns();
+            ret += "')";
+            break;
         case ExprType::kArray: {
             const ArraySequence & vals = expr.array();
 
@@ -3455,6 +3460,197 @@ CONV_FN(TopSelect, top)
     }
 }
 
+CONV_FN(SystemCommand, cmd)
+{
+    ret += "SYSTEM ";
+    using CmdType = SystemCommand::SystemCmdOneofCase;
+    switch (cmd.system_cmd_oneof_case())
+    {
+        case CmdType::kReloadEmbeddedDictionaries:
+            ret += "RELOAD EMBEDDED DICTIONARIES";
+            break;
+        case CmdType::kReloadDictionaries:
+            ret += "RELOAD DICTIONARIES";
+            break;
+        case CmdType::kReloadModels:
+            ret += "RELOAD MODELS";
+            break;
+        case CmdType::kReloadFunctions:
+            ret += "RELOAD FUNCTIONS";
+            break;
+        case CmdType::kReloadFunction:
+            ret += "RELOAD FUNCTION ";
+            FunctionToString(ret, cmd.reload_function());
+            break;
+        case CmdType::kReloadAsynchronousMetrics:
+            ret += "RELOAD ASYNCHRONOUS METRICS";
+            break;
+        case CmdType::kDropDnsCache:
+            ret += "DROP DNS CACHE";
+            break;
+        case CmdType::kDropMarkCache:
+            ret += "DROP MARK CACHE";
+            break;
+        case CmdType::kDropUncompressedCache:
+            ret += "DROP UNCOMPRESSED CACHE";
+            break;
+        case CmdType::kDropCompiledExpressionCache:
+            ret += "DROP COMPILED EXPRESSION CACHE";
+            break;
+        case CmdType::kDropQueryCache:
+            ret += "DROP QUERY CACHE";
+            break;
+        case CmdType::kDropFormatSchemaCache:
+            ret += "DROP FORMAT SCHEMA CACHE";
+            if (cmd.drop_format_schema_cache())
+            {
+                ret += " FOR Protobuf";
+            }
+            break;
+        case CmdType::kFlushLogs:
+            ret += "FLUSH LOGS";
+            break;
+        case CmdType::kReloadConfig:
+            ret += "RELOAD CONFIG";
+            break;
+        case CmdType::kReloadUsers:
+            ret += "RELOAD USERS";
+            break;
+        case CmdType::kStopMerges:
+            ret += "STOP MERGES ";
+            ExprSchemaTableToString(ret, cmd.stop_merges());
+            break;
+        case CmdType::kStartMerges:
+            ret += "START MERGES ";
+            ExprSchemaTableToString(ret, cmd.start_merges());
+            break;
+        case CmdType::kStopTtlMerges:
+            ret += "STOP TTL MERGES ";
+            ExprSchemaTableToString(ret, cmd.stop_ttl_merges());
+            break;
+        case CmdType::kStartTtlMerges:
+            ret += "START TTL MERGES ";
+            ExprSchemaTableToString(ret, cmd.start_ttl_merges());
+            break;
+        case CmdType::kStopMoves:
+            ret += "STOP MOVES ";
+            ExprSchemaTableToString(ret, cmd.stop_moves());
+            break;
+        case CmdType::kStartMoves:
+            ret += "START MOVES ";
+            ExprSchemaTableToString(ret, cmd.start_moves());
+            break;
+        case CmdType::kWaitLoadingParts:
+            ret += "WAIT LOADING PARTS ";
+            ExprSchemaTableToString(ret, cmd.wait_loading_parts());
+            break;
+        case CmdType::kStopFetches:
+            ret += "STOP FETCHES ";
+            ExprSchemaTableToString(ret, cmd.stop_fetches());
+            break;
+        case CmdType::kStartFetches:
+            ret += "START FETCHES ";
+            ExprSchemaTableToString(ret, cmd.start_fetches());
+            break;
+        case CmdType::kStopReplicatedSends:
+            ret += "STOP REPLICATED SENDS ";
+            ExprSchemaTableToString(ret, cmd.stop_replicated_sends());
+            break;
+        case CmdType::kStartReplicatedSends:
+            ret += "START REPLICATED SENDS ";
+            ExprSchemaTableToString(ret, cmd.start_replicated_sends());
+            break;
+        case CmdType::kStopReplicationQueues:
+            ret += "STOP REPLICATION QUEUES ";
+            ExprSchemaTableToString(ret, cmd.stop_replication_queues());
+            break;
+        case CmdType::kStartReplicationQueues:
+            ret += "START REPLICATION QUEUES ";
+            ExprSchemaTableToString(ret, cmd.start_replication_queues());
+            break;
+        case CmdType::kStopPullingReplicationLog:
+            ret += "STOP PULLING REPLICATION LOG ";
+            ExprSchemaTableToString(ret, cmd.stop_pulling_replication_log());
+            break;
+        case CmdType::kStartPullingReplicationLog:
+            ret += "START PULLING REPLICATION LOG ";
+            ExprSchemaTableToString(ret, cmd.start_pulling_replication_log());
+            break;
+        case CmdType::kSyncReplica:
+            ret += "SYNC REPLICA ";
+            ExprSchemaTableToString(ret, cmd.sync_replica().est());
+            ret += " ";
+            ret += SyncReplica_SyncPolicy_Name(cmd.sync_replica().policy());
+            break;
+        case CmdType::kSyncReplicatedDatabase:
+            ret += "SYNC DATABASE REPLICA ";
+            DatabaseToString(ret, cmd.sync_replicated_database());
+            break;
+        case CmdType::kRestartReplica:
+            ret += "SYNC RESTART REPLICA ";
+            ExprSchemaTableToString(ret, cmd.restart_replica());
+            break;
+        case CmdType::kRestoreReplica:
+            ret += "SYNC RESTORE REPLICA ";
+            ExprSchemaTableToString(ret, cmd.restore_replica());
+            break;
+        case CmdType::kRestartReplicas:
+            ret += "RESTART REPLICAS";
+            break;
+        case CmdType::kDropFilesystemCache:
+            ret += "DROP FILESYSTEM CACHE";
+            break;
+        case CmdType::kSyncFileCache:
+            ret += "SYNC FILE CACHE";
+            break;
+        case CmdType::kLoadPks:
+            ret += "LOAD PRIMARY KEY";
+            break;
+        case CmdType::kLoadPk:
+            ret += "LOAD PRIMARY KEY ";
+            ExprSchemaTableToString(ret, cmd.load_pk());
+            break;
+        case CmdType::kUnloadPks:
+            ret += "UNLOAD PRIMARY KEY";
+            break;
+        case CmdType::kUnloadPk:
+            ret += "UNLOAD PRIMARY KEY ";
+            ExprSchemaTableToString(ret, cmd.unload_pk());
+            break;
+        case CmdType::kRefreshViews:
+            ret += "REFRESH VIEW";
+            break;
+        case CmdType::kRefreshView:
+            ret += "REFRESH VIEW ";
+            ExprSchemaTableToString(ret, cmd.refresh_view());
+            break;
+        case CmdType::kStopViews:
+            ret += "STOP VIEWS";
+            break;
+        case CmdType::kStopView:
+            ret += "STOP VIEW ";
+            ExprSchemaTableToString(ret, cmd.stop_view());
+            break;
+        case CmdType::kStartViews:
+            ret += "START VIEWS";
+            break;
+        case CmdType::kStartView:
+            ret += "START VIEW ";
+            ExprSchemaTableToString(ret, cmd.start_view());
+            break;
+        case CmdType::kCancelView:
+            ret += "CANCEL VIEW ";
+            ExprSchemaTableToString(ret, cmd.cancel_view());
+            break;
+        case CmdType::kWaitView:
+            ret += "WAIT VIEW ";
+            ExprSchemaTableToString(ret, cmd.wait_view());
+            break;
+        default:
+            ret += "REFRESH VIEW";
+    }
+}
+
 CONV_FN(SQLQueryInner, query)
 {
     using QueryType = SQLQueryInner::QueryInnerOneofCase;
@@ -3511,6 +3707,9 @@ CONV_FN(SQLQueryInner, query)
             break;
         case QueryType::kCreateFunction:
             CreateFunctionToString(ret, query.create_function());
+            break;
+        case QueryType::kSystemCmd:
+            SystemCommandToString(ret, query.system_cmd());
             break;
         default:
             ret += "SELECT 1";

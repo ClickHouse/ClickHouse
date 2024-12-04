@@ -1,5 +1,3 @@
-#include <cstddef>
-#include <cstdint>
 #include "SQLFuncs.h"
 #include "SQLTypes.h"
 #include "StatementGenerator.h"
@@ -829,6 +827,27 @@ int StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
             static_cast<IntervalExpr_Interval>((rg.nextRandomUInt32() % static_cast<uint32_t>(IntervalExpr::Interval_MAX)) + 1));
         this->generateExpression(rg, inter->mutable_expr());
         this->depth--;
+    }
+    else if (noption < 556)
+    {
+        const uint32_t nopt2 = rg.nextSmallNumber();
+
+        buf.resize(0);
+        if (nopt2 < 6)
+        {
+            buf += std::to_string(rg.nextSmallNumber() - 1);
+        }
+        else if (nopt2 < 10)
+        {
+            const uint32_t first = rg.nextSmallNumber() - 1, second = std::max(rg.nextSmallNumber() - 1, first);
+
+            buf += "[";
+            buf += std::to_string(first);
+            buf += "-";
+            buf += std::to_string(second);
+            buf += "]";
+        }
+        expr->mutable_comp_expr()->set_columns(buf);
     }
     else if (this->fc.max_width > this->width && noption < 576)
     {
