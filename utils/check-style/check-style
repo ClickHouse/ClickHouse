@@ -69,6 +69,7 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::end
     ProfileEvents::increment
     ProfileEvents::incrementForLogMessage
+    ProfileEvents::incrementLoggerElapsedNanoseconds
     ProfileEvents::getName
     ProfileEvents::Timer
     ProfileEvents::Type
