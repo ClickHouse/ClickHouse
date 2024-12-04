@@ -136,7 +136,7 @@ public:
     void updateExternalDynamicMetadata(ContextPtr) override;
 
 protected:
-    String getPathSample(StorageInMemoryMetadata metadata, ContextPtr context);
+    String getPathSample(ContextPtr context);
 
     static std::unique_ptr<ReadBufferIterator> createReadBufferIterator(
         const ObjectStoragePtr & object_storage,

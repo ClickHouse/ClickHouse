@@ -49,7 +49,7 @@ namespace StorageObjectStorageSetting
 extern const StorageObjectStorageSettingsBool allow_dynamic_metadata_for_data_lakes;
 }
 
-String StorageObjectStorage::getPathSample(StorageInMemoryMetadata metadata, ContextPtr context)
+String StorageObjectStorage::getPathSample(ContextPtr context)
 {
     auto query_settings = configuration->getQuerySettings(context);
     /// We don't want to throw an exception if there are no files with specified path.
@@ -67,7 +67,7 @@ String StorageObjectStorage::getPathSample(StorageInMemoryMetadata metadata, Con
         local_distributed_processing,
         context,
         {}, // predicate
-        metadata.getColumns().getAll(), // virtual_columns
+        {}, // virtual_columns
         nullptr, // read_keys
         {} // file_progress_callback
     );
@@ -131,7 +131,7 @@ StorageObjectStorage::StorageObjectStorage(
     metadata.setComment(comment);
 
     if (sample_path.empty() && context->getSettingsRef()[Setting::use_hive_partitioning])
-        sample_path = getPathSample(metadata, context);
+        sample_path = getPathSample(context);
 
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns, context, sample_path, format_settings));
     setInMemoryMetadata(metadata);
