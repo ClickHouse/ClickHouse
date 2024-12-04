@@ -108,7 +108,7 @@ ListBlobsPagedResponse ContainerClientWrapper::ListBlobs(const ListBlobsOptions 
     new_options.Prefix = blob_prefix / options.Prefix.ValueOr("");
 
     auto response = client.ListBlobs(new_options);
-    auto blob_prefix_str = blob_prefix.empty() ? "" : blob_prefix.string() + "/";
+    auto blob_prefix_str = blob_prefix.empty() ? "" : (blob_prefix.string() + (blob_prefix.string().back() == '/' ? "" : "/"));
 
     for (auto & blob : response.Blobs)
     {
