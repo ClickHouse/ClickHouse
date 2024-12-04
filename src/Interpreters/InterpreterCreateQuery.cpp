@@ -1461,8 +1461,8 @@ void addTableDependencies(const ASTCreateQuery & create, const ASTPtr & query_pt
 void checkTableCanBeAddedWithNoCyclicDependencies(const ASTCreateQuery & create, const ASTPtr & query_ptr, const ContextPtr & context)
 {
     QualifiedTableName qualified_name{create.getDatabase(), create.getTable()};
-    auto ref_dependencies = getDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase());
-    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr);
+    auto ref_dependencies = getDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase(), /*can_throw*/true);
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, /*can_throw*/ true);
     DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(qualified_name, ref_dependencies, loading_dependencies);
 }
 
@@ -1652,29 +1652,29 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             if (isReplicated(*inner_table_engine))
                 is_storage_replicated = true;
         }
-        }
+    }
 
-        bool allow_heavy_populate = getContext()->getSettingsRef()[Setting::database_replicated_allow_heavy_create] && create.is_populate;
-        if (!allow_heavy_populate && database && database->getEngineName() == "Replicated" && (create.select || create.is_populate))
+    bool allow_heavy_populate = getContext()->getSettingsRef()[Setting::database_replicated_allow_heavy_create] && create.is_populate;
+    if (!allow_heavy_populate && database && database->getEngineName() == "Replicated" && (create.select || create.is_populate))
+    {
+        const bool allow_create_select_for_replicated
+            = (create.isView() && !create.is_populate) || create.is_create_empty || !is_storage_replicated;
+        if (!allow_create_select_for_replicated)
         {
-            const bool allow_create_select_for_replicated
-                = (create.isView() && !create.is_populate) || create.is_create_empty || !is_storage_replicated;
-            if (!allow_create_select_for_replicated)
-            {
-                /// POPULATE can be enabled with setting, provide hint in error message
-                if (create.is_populate)
-                    throw Exception(
-                        ErrorCodes::SUPPORT_IS_DISABLED,
-                        "CREATE with POPULATE is not supported with Replicated databases. Consider using separate CREATE and INSERT "
-                        "queries. "
-                        "Alternatively, you can enable 'database_replicated_allow_heavy_create' setting to allow this operation, use with "
-                        "caution");
-
+            /// POPULATE can be enabled with setting, provide hint in error message
+            if (create.is_populate)
                 throw Exception(
                     ErrorCodes::SUPPORT_IS_DISABLED,
-                    "CREATE AS SELECT is not supported with Replicated databases. Consider using separate CREATE and INSERT queries.");
-            }
+                    "CREATE with POPULATE is not supported with Replicated databases. Consider using separate CREATE and INSERT "
+                    "queries. "
+                    "Alternatively, you can enable 'database_replicated_allow_heavy_create' setting to allow this operation, use with "
+                    "caution");
+
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "CREATE AS SELECT is not supported with Replicated databases. Consider using separate CREATE and INSERT queries.");
         }
+    }
 
     if (create.is_clone_as)
     {
