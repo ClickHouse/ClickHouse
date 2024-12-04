@@ -44,6 +44,10 @@ SELECT length(groupConcat(number)) FROM numbers(100000);
 
 SELECT 'TESTING GroupConcat second argument overload';
 
+TRUNCATE TABLE test_groupConcat;
+
+INSERT INTO test_groupConcat VALUES (0, 95, 'abc', [1, 2, 3]), (1, NULL, 'a', [993, 986, 979, 972]), (2, 123, 'makson95', []);
+
 SELECT groupConcat(',', p_int) FROM test_groupConcat;
 SELECT groupConcat('.')(p_string) FROM test_groupConcat;
 SELECT groupConcat('/', p_array) FROM test_groupConcat;
