@@ -181,6 +181,15 @@ export class MergeTreeRewinder {
             v.update();
         }
     }
+
+    setTime(time) {
+        if (this.isPlaying) {
+            this.togglePlay(); // Stop playback if playing
+        }
+        this.time = time;
+        this.onTimeSet(this.time);
+        this.container.select("input").property("value", this.time);
+    }
 }
 
 /* index.html:

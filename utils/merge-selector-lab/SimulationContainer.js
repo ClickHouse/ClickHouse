@@ -55,4 +55,9 @@ export class SimulationContainer {
             this.#showMetrics(mt);
         }
     }
+
+    setTime(time)
+    {
+        this.rewinder.setTime(time);
+    }
 }
