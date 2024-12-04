@@ -879,6 +879,7 @@ std::unique_ptr<IQueryPlanStep> AggregatingStep::deserialize(Deserialization & c
         SortDescription{},
         ctx.settings.aggregation_in_order_memory_bound_merging,
         ctx.settings.aggregation_sort_result_by_bucket_number,
+        false,
         false);
 
     return aggregating_step;
