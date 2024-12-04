@@ -507,8 +507,10 @@ void RefreshTask::refreshTask()
         lock.unlock();
 
         tryLogCurrentException(log,
-            "Unexpected exception in refresh scheduling, please investigate. The view will be stopped.");
+            "Exception in refresh scheduling. The view will be stopped.");
 #ifdef DEBUG_OR_SANITIZER_BUILD
+        /// There's at least one legitimate case where this may happen: if the user (DEFINER) was dropped.
+        /// But it's unexpected in tests.
         abortOnFailedAssertion("Unexpected exception in refresh scheduling");
 #else
         if (coordination.coordinated)

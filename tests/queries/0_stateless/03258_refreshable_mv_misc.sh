@@ -73,6 +73,6 @@ $CLICKHOUSE_CLIENT -q "
 "
 
 $CLICKHOUSE_CLIENT -q "
-    drop user $test_user;
     drop database $second_db;
+    drop user $test_user;
 "
