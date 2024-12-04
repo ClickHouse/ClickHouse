@@ -545,6 +545,9 @@ void HTTPHandler::processQuery(
                 auto header = current_output_format.getPort(IOutputFormat::PortKind::Main).getHeader();
                 used_output.exception_writer = [&, format_name, header, context_, format_settings](WriteBuffer & buf, int code, const String & message)
                 {
+                    if (used_output.out_holder->isCanceled())
+                        return;
+
                     drainRequestIfNeeded(request, response);
                     used_output.out_holder->setExceptionCode(code);
                     auto output_format = FormatFactory::instance().getOutputFormat(format_name, buf, header, context_, format_settings);
@@ -555,6 +558,9 @@ void HTTPHandler::processQuery(
             }
             else
             {
+                if (used_output.out_holder->isCanceled())
+                    return;
+
                 bool with_stacktrace = (params.getParsed<bool>("stacktrace", false) && server.config().getBool("enable_http_stacktrace", true));
                 ExecutionStatus status = ExecutionStatus::fromCurrentException("", with_stacktrace);
 
