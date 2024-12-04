@@ -743,6 +743,8 @@ bool mayExistOnBloomFilter(const std::vector<uint64_t> & hashes, const std::uniq
 bool mayExistOnBloomFilter(const KeyCondition::BloomFilterData & condition_bloom_filter_data,
                            const KeyCondition::ColumnIndexToBloomFilter & column_index_to_column_bf)
 {
+    chassert(condition_bloom_filter_data.hashes_per_column.size() == condition_bloom_filter_data.key_columns.size());
+
     bool maybe_true = true;
     for (auto column_index = 0u; column_index < condition_bloom_filter_data.hashes_per_column.size(); column_index++)
     {
@@ -3083,7 +3085,8 @@ BoolMask KeyCondition::checkInHyperrectangle(
 
             rpn_stack.emplace_back(intersects, !contains);
 
-            if (rpn_stack.back().can_be_true && element.bloom_filter_data)
+            // we don't create bloom_filter_data if monotonic_functions_chain is present
+            if (rpn_stack.back().can_be_true && element.bloom_filter_data && element.monotonic_functions_chain.empty())
             {
                 rpn_stack.back().can_be_true = mayExistOnBloomFilter(*element.bloom_filter_data, column_index_to_column_bf);
             }
