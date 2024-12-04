@@ -76,9 +76,9 @@ export function* floatLayerMerges({insertPartSize, layerBases})
         let best_end = -1;
         let best_layer = layerBases.length;
         const active_parts = mt.sortedActiveParts();
-        let prev_part = null;
         for (let begin = 0; begin <= active_parts.length - 2; begin++)
         {
+            const prev_part = begin == 0 ? null : active_parts[begin - 1];
             const begin_part = active_parts[begin];
             if (begin_part.merging)
                 continue;
@@ -162,13 +162,18 @@ export function* floatLayerMerges({insertPartSize, layerBases})
                     best_layer = layer;
                 }
             }
-            prev_part = begin_part;
             if (best_layer == 0)
                 break; // shortcut
         }
         if (best_layer != layerBases.length)
+        {
+            // console.log("SELECTED", best_end - best_begin, {best_begin, best_end, parts_to_merge: active_parts.slice(best_begin, best_end)});
             yield {type: 'merge', parts_to_merge: active_parts.slice(best_begin, best_end)};
+        }
         else
+        {
+            // console.log("SELECTOR WAIT");
             yield {type: 'wait'};
+        }
     }
 }
