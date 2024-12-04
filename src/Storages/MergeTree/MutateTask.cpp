@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MutateTask.h>
 
 #include <DataTypes/ObjectUtils.h>
+#include <Disks/SingleDiskVolume.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
@@ -1625,8 +1626,8 @@ private:
         else
         {
             index_granularity_ptr = createMergeTreeIndexGranularity(
-                ctx->new_data_part->rows_count,
-                ctx->new_data_part->getBytesUncompressedOnDisk(),
+                ctx->source_part->rows_count,
+                ctx->source_part->getBytesUncompressedOnDisk(),
                 *ctx->data->getSettings(),
                 ctx->new_data_part->index_granularity_info,
                 /*blocks_are_granules=*/ false);
@@ -1641,6 +1642,7 @@ private:
             ctx->compression_codec,
             std::move(index_granularity_ptr),
             ctx->txn ? ctx->txn->tid : Tx::PrehistoricTID,
+            ctx->source_part->getBytesUncompressedOnDisk(),
             /*reset_columns=*/ true,
             /*blocks_are_granules_size=*/ false,
             ctx->context->getWriteSettings());
@@ -1876,7 +1878,8 @@ private:
                 std::vector<MergeTreeIndexPtr>(ctx->indices_to_recalc.begin(), ctx->indices_to_recalc.end()),
                 ColumnsStatistics(ctx->stats_to_recalc.begin(), ctx->stats_to_recalc.end()),
                 ctx->compression_codec,
-                ctx->source_part->index_granularity);
+                ctx->source_part->index_granularity,
+                ctx->source_part->getBytesUncompressedOnDisk());
 
             ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
             ctx->mutating_pipeline.setProgressCallback(ctx->progress_callback);

@@ -229,6 +229,7 @@
     \
     M(WaitMarksLoadMicroseconds, "Time spent loading marks", ValueType::Microseconds) \
     M(BackgroundLoadingMarksTasks, "Number of background tasks for loading marks", ValueType::Number) \
+    M(LoadedMarksFiles, "Number of mark files loaded.", ValueType::Number) \
     M(LoadedMarksCount, "Number of marks loaded (total across columns).", ValueType::Number) \
     M(LoadedMarksMemoryBytes, "Size of in-memory representations of loaded marks.", ValueType::Bytes) \
     M(LoadedPrimaryIndexFiles, "Number of primary index files loaded.", ValueType::Number) \
@@ -814,6 +815,7 @@ The server successfully detected this situation and will download merged part fr
     M(LogWarning, "Number of log messages with level Warning", ValueType::Number) \
     M(LogError, "Number of log messages with level Error", ValueType::Number) \
     M(LogFatal, "Number of log messages with level Fatal", ValueType::Number) \
+    M(LoggerElapsedNanoseconds, "Cumulative time spend in logging", ValueType::Nanoseconds) \
     \
     M(InterfaceHTTPSendBytes, "Number of bytes sent through HTTP interfaces", ValueType::Bytes) \
     M(InterfaceHTTPReceiveBytes, "Number of bytes received through HTTP interfaces", ValueType::Bytes) \
@@ -1085,6 +1087,11 @@ void incrementForLogMessage(Poco::Message::Priority priority)
         case Poco::Message::PRIO_FATAL: increment(LogFatal); break;
         default: break;
     }
+}
+
+void incrementLoggerElapsedNanoseconds(UInt64 ns)
+{
+    increment(LoggerElapsedNanoseconds, ns);
 }
 
 CountersIncrement::CountersIncrement(Counters::Snapshot const & snapshot)
